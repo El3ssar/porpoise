@@ -195,7 +195,7 @@
         </a>
         <a class="btn btn-ghost" href="https://github.com/El3ssar/porpoise">View source</a>
       </div>
-      <p class="meta rise d5"><b>Free and open source</b> · macOS 15 or later · Apple silicon</p>
+      <p class="meta rise d5"><b>Free and open source</b><span id="version"></span> · macOS 15 or later · Apple silicon</p>
     </div>
     <div class="stage rise d4" aria-hidden="true">
       <img class="back" src="assets/shot-apps.jpg" alt="">
@@ -329,6 +329,12 @@
 </footer>
 
 <script>
+  // The newest release's version, next to the download button (the button always downloads the newest release).
+  fetch('https://api.github.com/repos/El3ssar/porpoise/releases/latest')
+    .then((r) => (r.ok ? r.json() : null))
+    .then((r) => { if (r && r.tag_name) document.getElementById('version').textContent = ' · Version ' + r.tag_name.replace(/^v/, ''); })
+    .catch(() => {});
+
   // Reveal sections as they scroll into view.
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Video previews work for every format, including AVI, WMV, FLV and MPEG files, and no longer crash the app:
+  the Information panel has its own playback controls with the video's full length.
+- Porpoise no longer leaves Android's adb running in the background after it quits.
+
 ## 0.1.0 — first public release
 
 The first release of Porpoise: a KDE Dolphin-style file manager for macOS with split view, a built-in terminal,
