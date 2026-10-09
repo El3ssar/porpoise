@@ -120,8 +120,12 @@ jobs:
           rm -f "$RUNNER_TEMP/ed.key"
           PUB=$(/usr/libexec/PlistBuddy -c "Print SUPublicEDKey" build/Porpoise.app/Contents/Info.plist)
           swift scripts/sparkle-sign.swift verify "$PUB" "$SIG" "$DMG"
-          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="v$V" -f target_commitish="$(git rev-parse HEAD)" \
-            --jq .body > build/notes.md
+          # Release notes: the version's section of CHANGELOG.md, else GitHub's list of merged pull requests.
+          awk -v v="$V" '/^## /{on = ($2 == v)} on && !/^## /' CHANGELOG.md > build/notes.md
+          if ! grep -q '[^[:space:]]' build/notes.md; then
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="v$V" -f target_commitish="$(git rev-parse HEAD)" \
+              --jq .body > build/notes.md
+          fi
           python3 scripts/make-appcast.py "$V" "$DMG" "https://github.com/$GITHUB_REPOSITORY/releases/download/v$V/Porpoise-$V.dmg" \
             "$SIG" build/notes.md > build/appcast.xml
           xmllint --noout build/appcast.xml
