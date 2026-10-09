@@ -356,7 +356,9 @@ final class ADBProvider: RemoteProvider {
     static var adbPath: String? { AndroidTools.adbPath }
 
     static func devices() -> [(serial: String, model: String)] {
-        guard let adb = adbPath, let r = try? Shell.run(adb, ["devices", "-l"]) else { return [] }
+        guard let adb = adbPath else { return [] }
+        AndroidTools.willUseServer()
+        guard let r = try? Shell.run(adb, ["devices", "-l"]) else { return [] }
         return RemoteParsing.parseADBDevices(String(decoding: r.out, as: UTF8.self))
     }
 
@@ -372,6 +374,7 @@ final class ADBProvider: RemoteProvider {
         guard let adb = Self.adbPath else {
             throw RemoteError.unsupported("Android support needs adb. Install it with: brew install android-platform-tools — then enable USB debugging on the phone.")
         }
+        AndroidTools.willUseServer()
         let r = try Shell.run(adb, ["-s", serial] + args)
         if r.status != 0 { throw RemoteError.failed(r.err.isEmpty ? "adb failed (\(r.status))" : r.err) }
         return r.out

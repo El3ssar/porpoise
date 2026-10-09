@@ -117,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         VideoPreview.shared.cleanUp()
         RemoteFS.disconnectAll()
+        AndroidTools.stopServerIfOurs()
         saveSession()
     }
 

@@ -18,6 +18,51 @@ enum AndroidTools {
 
     static var isInstalled: Bool { adbPath != nil }
 
+    // MARK: adb's server
+
+    /// adb starts a server (port 5037) on first use that keeps running after adb exits. When Porpoise started it, it
+    /// stops it on quit; one that was already running (Android Studio, a terminal) is left alone.
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var checked = false
+    nonisolated(unsafe) private static var startedServer = false
+
+    /// Call before running adb.
+    static func willUseServer() {
+        lock.lock(); defer { lock.unlock() }
+        guard !checked else { return }
+        checked = true
+        startedServer = !serverIsRunning()
+    }
+
+    static func stopServerIfOurs() {
+        lock.lock(); let ours = startedServer; lock.unlock()
+        guard ours, let adb = adbPath else { return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: adb)
+        p.arguments = ["kill-server"]
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return }
+        // Quitting shouldn't hang on it.
+        let deadline = Date().addingTimeInterval(2)
+        while p.isRunning && Date() < deadline { usleep(20_000) }
+        if p.isRunning { p.terminate() }
+    }
+
+    /// Something is listening on adb's port.
+    private static func serverIsRunning() -> Bool {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = in_port_t(5037).bigEndian
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        return withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0 }
+        }
+    }
+
     /// Downloads and unpacks platform-tools; calls back on the main thread with an error message or nil.
     static func install(done: @escaping (String?) -> Void) {
         URLSession.shared.downloadTask(with: downloadURL) { file, response, error in

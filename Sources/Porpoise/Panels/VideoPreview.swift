@@ -48,6 +48,9 @@ final class VideoPreview {
         return u
     }
 
+    /// The length of the file being streamed (a stream that is still being converted doesn't know it yet).
+    private(set) var streamDuration: Double?
+
     /// Calls back on the main thread with a URL AVPlayer can play, or nil.
     func playableURL(for url: URL, done: @escaping (URL?) -> Void) {
         token += 1
@@ -97,18 +100,32 @@ final class VideoPreview {
         let dir = root.appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         sessionDir = dir
+        streamDuration = nil
         DispatchQueue.global(qos: .userInitiated).async {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: ffmpeg)
-            p.arguments = Self.streamArguments(input: url, codecs: Self.codecs(of: url), output: dir.appendingPathComponent(Self.playlistName))
-            p.standardInput = FileHandle.nullDevice
-            p.standardOutput = FileHandle.nullDevice
-            p.standardError = FileHandle.nullDevice
-            do { try p.run() } catch { DispatchQueue.main.async { if my == self.token { done(nil) } }; return }
-            DispatchQueue.main.async { if my == self.token { self.process = p } else { p.terminate() } }
-            let ok = self.waitForFirstSegment(dir.appendingPathComponent(Self.playlistName), process: p, token: my)
+            let info = Self.probe(url)
+            let playlist = dir.appendingPathComponent(Self.playlistName)
+            /// Runs ffmpeg; true once the stream has its first part.
+            func run(_ codecs: (video: String, audio: String)) -> Bool {
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: ffmpeg)
+                p.arguments = Self.streamArguments(input: url, codecs: codecs, output: playlist)
+                p.standardInput = FileHandle.nullDevice
+                p.standardOutput = FileHandle.nullDevice
+                p.standardError = FileHandle.nullDevice
+                do { try p.run() } catch { return false }
+                DispatchQueue.main.async { if my == self.token { self.process = p } else { p.terminate() } }
+                return self.waitForFirstSegment(playlist, process: p, token: my)
+            }
+            var ok = run(info.codecs)
+            // Copying the streams as they are can fail (H.264 in AVI, odd AAC): convert them instead.
+            if !ok, my == self.token, info.codecs != ("", "") {
+                try? FileManager.default.removeItem(at: dir)
+                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                ok = run(("", ""))
+            }
             DispatchQueue.main.async {
                 guard my == self.token else { return }
+                self.streamDuration = info.duration
                 guard ok, let base = self.server.start(root: self.root) else { done(nil); return }
                 done(base.appendingPathComponent(dir.lastPathComponent).appendingPathComponent(Self.playlistName))
             }
@@ -142,11 +159,28 @@ final class VideoPreview {
         return args
     }
 
-    /// First video and audio codec names, from ffmpeg's stream listing ("Stream #0:0: Video: h264 (High), …").
-    static func codecs(of url: URL) -> (video: String, audio: String) {
+    /// Codecs and length, from ffmpeg's description of the file.
+    /// Streams are only copied out of containers that carry what the copy needs (MKV/WebM, MP4/MOV); from AVI, MPEG,
+    /// FLV and the like the copy can't be played, so their streams are converted (the codecs come back empty).
+    static func probe(_ url: URL) -> (codecs: (video: String, audio: String), duration: Double?) {
         guard let ff = ffmpeg,
-              let r = try? Shell.run(ff, ["-hide_banner", "-nostdin", "-i", "file:" + url.path], timeout: probeTimeout) else { return ("", "") }
-        return parseCodecs(r.err)
+              let r = try? Shell.run(ff, ["-hide_banner", "-nostdin", "-i", "file:" + url.path], timeout: probeTimeout) else { return (("", ""), nil) }
+        let copyable = parseContainer(r.err).contains { $0 == "matroska" || $0 == "webm" || $0 == "mov" || $0 == "mp4" }
+        return (copyable ? parseCodecs(r.err) : ("", ""), parseDuration(r.err))
+    }
+
+    /// "Input #0, matroska,webm, from …" → ["matroska", "webm"].
+    static func parseContainer(_ text: String) -> [String] {
+        guard let r = text.range(of: "Input #0, ") else { return [] }
+        return text[r.upperBound...].prefix { $0 != " " }.split(separator: ",").map(String.init)
+    }
+
+    /// "Duration: 00:34:40.56," → seconds.
+    static func parseDuration(_ text: String) -> Double? {
+        guard let r = text.range(of: "Duration: ") else { return nil }
+        let parts = text[r.upperBound...].prefix { $0 != "," }.split(separator: ":").compactMap { Double($0) }
+        guard parts.count == 3 else { return nil }
+        return parts[0] * 3600 + parts[1] * 60 + parts[2]
     }
 
     static func parseCodecs(_ text: String) -> (video: String, audio: String) {

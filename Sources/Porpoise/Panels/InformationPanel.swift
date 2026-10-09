@@ -10,8 +10,12 @@ final class InformationPanel: NSView {
     private let grid = NSStackView()
     /// Inspector look: same tinted material as the sidebar.
     private let material = TintedMaterialView(material: .sidebar, alpha: 0.72)
-    /// Dolphin's information panel plays audio/video inline.
+    /// Dolphin's information panel plays audio/video inline. The view shows no controls of its own (see MediaControls).
     private let player = AVPlayerView()
+    private let controls = MediaControls()
+    /// The pointer is over the video (its controls show while it is, and whenever it's paused).
+    private var overVideo = false
+    private var hoverArea: NSTrackingArea?
 
     private var shownURLs: [URL] = []
     /// Where the shown items come from (remote items and the selection are looked up in its model), and the
@@ -54,12 +58,15 @@ final class InformationPanel: NSView {
         grid.alignment = .leading
         grid.spacing = 4
         addSubview(material)
-        player.controlsStyle = .inline
+        player.controlsStyle = .none
         player.isHidden = true
         player.wantsLayer = true
         player.layer?.cornerRadius = 8
         player.layer?.masksToBounds = true
-        [preview, player, nameLabel, grid].forEach(addSubview)
+        // Clicking the video plays or pauses it.
+        player.addGestureRecognizer(NSClickGestureRecognizer(target: controls, action: #selector(MediaControls.togglePlay)))
+        controls.isHidden = true
+        [preview, player, controls, nameLabel, grid].forEach(addSubview)
         poster.imageScaling = .scaleProportionallyUpOrDown
         poster.wantsLayer = true
         poster.layer?.backgroundColor = NSColor.black.cgColor
@@ -81,8 +88,13 @@ final class InformationPanel: NSView {
         let side = min(w - 40, Self.maxPreviewSide)
         preview.frame = CGRect(x: (w - side) / 2, y: 16, width: side, height: Settings.shared.infoShowPreview ? side : 0)
         // Decided from the file type (never by loading the media on the main thread).
-        player.frame = playerIsAudio ? CGRect(x: 12, y: preview.frame.maxY + 6, width: w - 24, height: 44) : preview.frame
-        let ny = (player.isHidden || !playerIsAudio ? preview.frame.maxY : player.frame.maxY) + 10
+        player.frame = playerIsAudio ? CGRect(x: 12, y: preview.frame.maxY + 6, width: w - 24, height: 32) : preview.frame
+        // Songs: the bar is the player. Videos: the bar sits over the bottom of the picture.
+        controls.frame = playerIsAudio ? player.frame : CGRect(x: player.frame.minX + 8, y: player.frame.maxY - 38,
+                                                               width: player.frame.width - 16, height: 30)
+        updateTrackingAreas()
+        updateControls()
+        let ny = (controls.isHidden || !playerIsAudio ? preview.frame.maxY : controls.frame.maxY) + 10
         let nh = nameLabel.sizeThatFits(CGSize(width: w - 24, height: 200)).height
         nameLabel.frame = CGRect(x: 12, y: ny, width: w - 24, height: nh)
         grid.frame = CGRect(x: 12, y: nameLabel.frame.maxY + 12, width: w - 24, height: max(0, bounds.height - nameLabel.frame.maxY - 20))
@@ -93,6 +105,31 @@ final class InformationPanel: NSView {
     }
 
     private var valueWidth: CGFloat { max(80, bounds.width - 140) }
+
+    // MARK: Player controls
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let a = hoverArea { removeTrackingArea(a) }
+        let a = NSTrackingArea(rect: player.frame, options: [.mouseEnteredAndExited, .activeInActiveApp], owner: self, userInfo: nil)
+        addTrackingArea(a)
+        hoverArea = a
+    }
+
+    override func mouseEntered(with event: NSEvent) { overVideo = true; updateControls() }
+    override func mouseExited(with event: NSEvent) { overVideo = false; updateControls() }
+
+    /// Songs always show the bar; videos while the pointer is over them or they're paused.
+    private func updateControls() {
+        let active = player.player != nil
+        let show = active && (playerIsAudio || overVideo || !controls.isPlaying)
+        guard controls.isHidden == show else { return }
+        controls.isHidden = !show
+        if !playerIsAudio {
+            controls.alphaValue = show ? 0 : 1
+            NSAnimationContext.runAnimationGroup { $0.duration = 0.18; controls.animator().alphaValue = show ? 1 : 0 }
+        }
+    }
 
     // MARK: Visibility
 
@@ -307,6 +344,8 @@ final class InformationPanel: NSView {
         player.player?.pause()
         player.player = nil
         player.isHidden = true
+        controls.detach()
+        controls.isHidden = true
         playObservation = nil
         playerURL = nil
         poster.removeFromSuperview()
@@ -321,7 +360,7 @@ final class InformationPanel: NSView {
         stopPlayer()
         guard playable, let t = item.utType else { return }
         playerIsAudio = t.conforms(to: .audio)
-        player.isHidden = !playerIsAudio
+        player.isHidden = true
         let url = item.url
         playerURL = url
         let work = DispatchWorkItem { [weak self] in
@@ -338,7 +377,10 @@ final class InformationPanel: NSView {
         let p = AVPlayer(url: playable)
         p.automaticallyWaitsToMinimizeStalling = false
         player.player = p
-        player.isHidden = false
+        // Songs play without a picture: the bar is all there is.
+        player.isHidden = playerIsAudio
+        controls.attach(p, duration: playable.scheme == "http" ? VideoPreview.shared.streamDuration : nil)
+        controls.onStateChange = { [weak self] in self?.updateControls() }
         needsLayout = true
         // The thumbnail stays over the video until it plays (with autoplay too: no black frame while it starts).
         if !playerIsAudio, let thumb = preview.image, let overlay = player.contentOverlayView {
