@@ -61,7 +61,7 @@
   /* Hero */
   .hero { display: grid; grid-template-columns: 1fr 1.25fr; gap: 56px; align-items: center; padding: 64px 0 96px; }
   .eyebrow { font: 700 12px "JetBrains Mono", monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--sand); margin: 0 0 18px; }
-  h1 { font: 800 clamp(42px, 5.6vw, 76px)/1.02 "Unbounded", sans-serif; letter-spacing: -0.045em; margin: 0 0 24px; }
+  h1 { font: 700 clamp(40px, 5vw, 68px)/1.05 "Unbounded", sans-serif; letter-spacing: -0.04em; margin: 0 0 24px; }
   h1 em { font-style: normal; color: var(--blue); }
   .lede { font-size: 19px; color: var(--muted); max-width: 30em; margin: 0 0 34px; }
   .ctas { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
@@ -178,8 +178,8 @@
   <div class="wrap hero">
     <div>
       <p class="eyebrow rise d1">File manager for macOS</p>
-      <h1 class="rise d2">A file manager with <em>superpowers</em>. Made for the Mac.</h1>
-      <p class="lede rise d3">Split view, a terminal that follows the folder you're in, tabs and panels, in a fast native app that also speaks Finder: tags, Quick Look, iCloud and your keyboard shortcuts. Inspired by KDE Dolphin.</p>
+      <h1 class="rise d2">Work with your files, <em>faster</em>.</h1>
+      <p class="lede rise d3">Porpoise is a native file manager for macOS with split view, an integrated terminal, tabs and panels. It works with the Finder features you rely on, from tags and Quick Look to iCloud Drive and familiar shortcuts. Inspired by KDE Dolphin.</p>
       <div class="ctas rise d4">
         <a class="btn btn-primary" href="https://github.com/El3ssar/porpoise/releases/latest/download/Porpoise.dmg">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12m0 0-5-5m5 5 5-5M5 20h14"/></svg>
@@ -187,7 +187,7 @@
         </a>
         <a class="btn btn-ghost" href="https://github.com/El3ssar/porpoise">View source</a>
       </div>
-      <p class="meta rise d5"><b>Free &amp; open source</b> · macOS 15 or newer · Apple Silicon · GPL-3.0</p>
+      <p class="meta rise d5"><b>Free and open source</b> · macOS 15 or later · Apple silicon</p>
     </div>
     <div class="stage rise d4" aria-hidden="true">
       <img class="back" src="assets/shot-apps.jpg" alt="">
@@ -210,54 +210,54 @@
   <section id="features">
     <div class="wrap">
       <div class="split-head reveal">
-        <h2>Everything you need, nothing in the way.</h2>
-        <p class="sub">The tools power users reach for every day, in a native app that feels at home on your Mac.</p>
+        <h2>Built for the way you work.</h2>
+        <p class="sub">Thoughtful tools for everyday file work, in an app that feels at home on macOS.</p>
       </div>
       <div class="features">
         <article class="feature wide reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg>
           <h3>Split view and tabs</h3>
-          <p>Two folders side by side with animated split, copy or move between panes, and as many tabs as you like. Your session comes back next time.</p>
+          <p>Work in two folders side by side and move files between them with a drag. Open as many tabs as you need; your windows are restored the next time you launch.</p>
         </article>
         <article class="feature wide reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 10 3 2-3 2M12 15h5"/></svg>
-          <h3>A terminal that follows you</h3>
-          <p>Press F4 for your own shell right under the files. Change folder in the view and the terminal follows; <code>cd</code> in the terminal and the view follows.</p>
+          <h3>Integrated terminal</h3>
+          <p>Press F4 to open a terminal beneath your files. It follows the folder you're viewing, and changing directory with <code>cd</code> updates the view.</p>
         </article>
         <article class="feature reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg>
           <h3>Panels</h3>
-          <p>Places with foldable sections, a Folders tree, and an Information panel with big previews and an inline player.</p>
+          <p>Places with collapsible sections, a folder tree, and an Information panel with large previews and inline playback.</p>
         </article>
         <article class="feature reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="8" cy="12" r="3.5"/><circle cx="16" cy="12" r="3.5"/></svg>
-          <h3>Speaks Finder</h3>
-          <p>Tags, aliases, Quick Look, Get Info, Services, AirDrop, iCloud status and Finder's shortcuts.</p>
+          <h3>At home on macOS</h3>
+          <p>Tags, aliases, Quick Look, Get Info, Services, AirDrop, iCloud status and the shortcuts you already know.</p>
         </article>
         <article class="feature reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 15a4 4 0 0 1 4-4 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 18 19H7a3 3 0 0 1-3-4Z"/></svg>
-          <h3>Remote folders</h3>
-          <p>SFTP, FTP, SMB, WebDAV and Android phones, browsed like local folders.</p>
+          <h3>Remote locations</h3>
+          <p>Browse SFTP, FTP, SMB and WebDAV servers and Android devices just like local folders.</p>
         </article>
         <article class="feature wide reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
-          <h3>An app library</h3>
-          <p>Applications opens as big icons with an instant, animated search. Delete apps with ⌘⌫ or the Dock's Trash, or drop one from a disk image to install it.</p>
+          <h3>App library</h3>
+          <p>Applications opens as a clean grid of apps with instant search. Remove an app with ⌘⌫ or by dragging it to the Trash, and install one by dropping it in.</p>
         </article>
         <article class="feature wide reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3Z"/></svg>
-          <h3>Previews of everything</h3>
-          <p>Thumbnails for images, documents and every video format (MKV, WebM, AVI…), with smooth zoom from tiny icons to big previews.</p>
+          <h3>Rich previews</h3>
+          <p>Thumbnails for images, documents and video in every common format, including MKV, WebM and AVI, with smooth zooming.</p>
         </article>
         <article class="feature wide reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3 4 7v5c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V7l-8-4Z"/></svg>
-          <h3>Safe with your files</h3>
-          <p>Undo for file operations, a conflict dialog that never overwrites silently, and the Trash with put-back and Finder's sounds. Set it up once and it never nags you with password prompts.</p>
+          <h3>Careful with your data</h3>
+          <p>Undo for file operations, clear conflict handling that never overwrites silently, and Put Back from the Trash. Grant permissions once during setup, and Porpoise won't interrupt you again.</p>
         </article>
         <article class="feature wide reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg>
-          <h3>Always up to date</h3>
-          <p>Porpoise checks for new versions once a day (you choose) and updates itself in one click, keeping all your settings and permissions.</p>
+          <h3>Automatic updates</h3>
+          <p>Porpoise can check for updates daily and install them in a single click, keeping your settings and permissions intact.</p>
         </article>
       </div>
     </div>
@@ -266,48 +266,48 @@
   <div class="band">
     <figure class="wrap reveal">
       <img src="assets/shot-apps.jpg" alt="The Applications folder as an app library: big icons and a search field" loading="lazy">
-      <figcaption>Applications, as an app library. Start typing to search.</figcaption>
+      <figcaption>The Applications folder, presented as an app library.</figcaption>
     </figure>
   </div>
 
   <section id="install" class="install">
     <div class="wrap">
       <div class="split-head reveal">
-        <h2>Install in a minute.</h2>
-        <p class="sub">Everything Porpoise needs is inside the app. Nothing else to install.</p>
+        <h2>Up and running in a minute.</h2>
+        <p class="sub">Everything Porpoise needs is included. There's nothing else to install.</p>
       </div>
       <div class="steps">
         <div class="step reveal">
-          <h3>Drag to Applications</h3>
-          <p>Download <a href="https://github.com/El3ssar/porpoise/releases/latest/download/Porpoise.dmg">Porpoise.dmg</a>, open it and drag Porpoise onto the Applications folder.</p>
+          <h3>Install</h3>
+          <p>Download <a href="https://github.com/El3ssar/porpoise/releases/latest/download/Porpoise.dmg">Porpoise.dmg</a>, open it and drag Porpoise into your Applications folder.</p>
         </div>
         <div class="step reveal">
-          <h3>Allow it once</h3>
-          <p>Porpoise is free and isn't signed through Apple's paid program, so macOS asks the first time. Open <b>System Settings › Privacy &amp; Security</b> and click <b>Open Anyway</b>.</p>
+          <h3>Confirm the first launch</h3>
+          <p>Porpoise is distributed outside the Mac App Store, so macOS asks you to confirm it once. Go to <b>System Settings › Privacy &amp; Security</b> and click <b>Open Anyway</b>.</p>
           <div class="mock" aria-hidden="true"><span>"Porpoise" was blocked to protect your Mac.</span><span>Open Anyway</span></div>
         </div>
         <div class="step reveal">
-          <h3>Give it access</h3>
-          <p>Porpoise's welcome window walks you through its permissions, with Touch ID where macOS asks. Once, then it never asks again, just like Finder.</p>
+          <h3>Complete setup</h3>
+          <p>A short welcome guide helps you grant the permissions Porpoise needs. It takes a moment, and you only do it once.</p>
         </div>
       </div>
-      <p class="req reveal">Requires macOS 15 Sequoia or newer on Apple Silicon. Porpoise updates itself: when a new version is out, one click installs it and relaunches.</p>
+      <p class="req reveal">Requires macOS 15 Sequoia or later on a Mac with Apple silicon. Updates are delivered within the app.</p>
     </div>
   </section>
 
   <section id="support">
     <div class="wrap support">
       <div class="reveal">
-        <h2>Free, open source, made with care.</h2>
-        <p class="sub">Porpoise is GPL-licensed and built in the open. Ideas, bug reports and pull requests are welcome on GitHub.</p>
+        <h2>Free and open source.</h2>
+        <p class="sub">Porpoise is licensed under the GPL and developed in the open. Feedback, bug reports and contributions are always welcome.</p>
         <div class="ctas" style="margin-top:28px">
-          <a class="btn btn-ghost" href="https://github.com/El3ssar/porpoise/issues/new/choose">Report a bug or suggest a feature</a>
+          <a class="btn btn-ghost" href="https://github.com/El3ssar/porpoise/issues/new/choose">Report an issue or suggest a feature</a>
         </div>
       </div>
       <div class="card reveal">
-        <h3 style="font:700 22px 'Unbounded',sans-serif;margin:0 0 10px;letter-spacing:-.02em">Support Porpoise</h3>
-        <p>If Porpoise saves you time, a small sponsorship helps keep it going.</p>
-        <a class="btn btn-sand" href="https://github.com/sponsors/El3ssar">♥ Sponsor on GitHub</a>
+        <h3 style="font:700 22px 'Unbounded',sans-serif;margin:0 0 10px;letter-spacing:-.02em">Support development</h3>
+        <p>If Porpoise is useful to you, consider sponsoring its development on GitHub.</p>
+        <a class="btn btn-sand" href="https://github.com/sponsors/El3ssar">Sponsor on GitHub</a>
       </div>
     </div>
   </section>
