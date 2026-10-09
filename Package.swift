@@ -1,0 +1,27 @@
+// swift-tools-version:6.0
+import PackageDescription
+
+let package = Package(
+    name: "Porpoise",
+    platforms: [.macOS(.v15)],
+    products: [
+        .executable(name: "Porpoise", targets: ["Porpoise"]),
+        .executable(name: "PorpoiseHelper", targets: ["PorpoiseHelper"]),
+    ],
+    dependencies: [
+        .package(path: "Vendor/SwiftTerm"),
+        // In-app updates (MIT): checks the release feed, downloads, verifies and installs, then relaunches.
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
+    ],
+    targets: [
+        .target(name: "PorpoiseCore"),
+        .executableTarget(
+            name: "Porpoise",
+            dependencies: ["PorpoiseCore", .product(name: "SwiftTerm", package: "SwiftTerm"),
+                           .product(name: "Sparkle", package: "Sparkle")]
+        ),
+        .executableTarget(name: "PorpoiseHelper", dependencies: ["PorpoiseCore"]),
+        .testTarget(name: "PorpoiseCoreTests", dependencies: ["PorpoiseCore"]),
+    ],
+    swiftLanguageModes: [.v5]
+)

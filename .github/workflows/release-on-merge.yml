@@ -1,0 +1,47 @@
+# Merging a pull request labelled release:patch, release:minor or release:major publishes the next version:
+# the latest vX.Y.Z tag bumped accordingly (v0.1.0 + release:minor → v0.2.0).
+name: Release on merge
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  next-version:
+    if: >-
+      github.event.pull_request.merged &&
+      (contains(github.event.pull_request.labels.*.name, 'release:patch') ||
+       contains(github.event.pull_request.labels.*.name, 'release:minor') ||
+       contains(github.event.pull_request.labels.*.name, 'release:major'))
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+      - id: bump
+        env:
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+        run: |
+          LAST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+          IFS=. read -r MAJ MIN PAT <<< "${LAST:-v0.0.0}"; MAJ=${MAJ#v}
+          case " $LABELS " in
+            *" release:major "*) V="$((MAJ + 1)).0.0" ;;
+            *" release:minor "*) V="$MAJ.$((MIN + 1)).0" ;;
+            *)                   V="$MAJ.$MIN.$((PAT + 1))" ;;
+          esac
+          echo "${LAST:-none} → v$V"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: next-version
+    uses: ./.github/workflows/release.yml
+    with:
+      version: ${{ needs.next-version.outputs.version }}
+      commit: ${{ github.event.pull_request.merge_commit_sha }}
+    secrets: inherit

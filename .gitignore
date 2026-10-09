@@ -1,0 +1,7 @@
+.build/
+build/
+.swiftpm/
+*.xcodeproj
+Tests/UI/__pycache__/
+.signing*/
+.claude/

@@ -1,0 +1,14 @@
+name: Feature request
+description: An idea for Porpoise (features, themes, Dolphin or Finder behaviour you miss)
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why, and how do Dolphin or Finder do it?

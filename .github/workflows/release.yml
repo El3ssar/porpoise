@@ -1,0 +1,139 @@
+# Builds, signs and publishes a release: Porpoise-X.Y.Z.dmg plus Porpoise.dmg (the "latest" download link).
+# Runs when a vX.Y.Z tag is pushed, by hand from the Actions tab, or from release-on-merge.yml.
+name: Release
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 1.2.3 (tags the selected branch if the tag does not exist)'
+        required: true
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      commit:
+        description: 'Commit to release (default: the triggering commit)'
+        required: false
+        type: string
+    secrets:
+      SIGNING_P12_BASE64:
+        required: true
+      SIGNING_P12_PASSWORD:
+        required: true
+      SPARKLE_ED_PRIVATE_KEY:
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          fetch-depth: 0   # make-app.sh uses the commit count as the build number
+
+      - name: Work out the version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          V="${INPUT_VERSION:-${GITHUB_REF_NAME}}"
+          V="${V#v}"
+          [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::'$V' is not a version like 1.2.3"; exit 1; }
+          if gh release view "v$V" >/dev/null 2>&1; then echo "::error::Release v$V already exists"; exit 1; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Restore ffmpeg
+        id: ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/ffmpeg/ffmpeg
+            build/ffmpeg-src/ffmpeg-*/COPYING.*
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+
+      - name: Build ffmpeg
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        run: scripts/build-ffmpeg.sh
+
+      - name: Unit tests
+        run: swift test
+
+      # Every release must be signed with the same identity, or users have to grant Full Disk Access again
+      # after updating. The identity comes from secrets and goes into the keychain make-app.sh expects.
+      - name: Import signing identity
+        env:
+          P12: ${{ secrets.SIGNING_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.SIGNING_P12_PASSWORD }}
+        run: |
+          [ -n "$P12" ] || { echo "::error::The SIGNING_P12_BASE64 secret is missing (see CONTRIBUTING.md)"; exit 1; }
+          mkdir -p .signing
+          KC="$PWD/.signing/porpoise.keychain-db"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/id.p12"
+          security create-keychain -p porpoise-local "$KC"
+          security set-keychain-settings "$KC"
+          security unlock-keychain -p porpoise-local "$KC"
+          security import "$RUNNER_TEMP/id.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign >/dev/null
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k porpoise-local "$KC" >/dev/null
+          # codesign only finds identities in keychains on the search list.
+          OTHERS=$(security list-keychains -d user | tr -d '"')
+          # shellcheck disable=SC2086
+          security list-keychains -d user -s "$KC" $OTHERS
+          rm -f "$RUNNER_TEMP/id.p12"
+          security find-identity -p codesigning "$KC" | grep -q "Porpoise Signing" || { echo "::error::No 'Porpoise Signing' identity in the secret"; exit 1; }
+
+      - name: Build the app and disk image
+        env:
+          PORPOISE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          scripts/make-app.sh
+          codesign --verify --deep --strict build/Porpoise.app
+          codesign -dvv build/Porpoise.app 2>&1 | grep -q "Authority=Porpoise Signing" || { echo "::error::App is not signed with Porpoise Signing"; exit 1; }
+          scripts/make-dmg.sh
+          cp "build/Porpoise-$PORPOISE_VERSION.dmg" build/Porpoise.dmg
+          shasum -a 256 "build/Porpoise-$PORPOISE_VERSION.dmg" | tee build/SHA256SUMS.txt
+
+      # In-app updates: Sparkle reads appcast.xml from the latest release and checks the disk image's EdDSA
+      # signature against the public key built into Porpoise (SUPublicEDKey).
+      - name: Sign the update and write the feed
+        env:
+          V: ${{ steps.version.outputs.version }}
+          SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          [ -n "$SPARKLE_KEY" ] || { echo "::error::The SPARKLE_ED_PRIVATE_KEY secret is missing (see CONTRIBUTING.md)"; exit 1; }
+          umask 077
+          echo "$SPARKLE_KEY" > "$RUNNER_TEMP/ed.key"
+          DMG="build/Porpoise-$V.dmg"
+          SIG=$(swift scripts/sparkle-sign.swift sign "$RUNNER_TEMP/ed.key" "$DMG")
+          rm -f "$RUNNER_TEMP/ed.key"
+          PUB=$(/usr/libexec/PlistBuddy -c "Print SUPublicEDKey" build/Porpoise.app/Contents/Info.plist)
+          swift scripts/sparkle-sign.swift verify "$PUB" "$SIG" "$DMG"
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="v$V" -f target_commitish="$(git rev-parse HEAD)" \
+            --jq .body > build/notes.md
+          python3 scripts/make-appcast.py "$V" "$DMG" "https://github.com/$GITHUB_REPOSITORY/releases/download/v$V/Porpoise-$V.dmg" \
+            "$SIG" build/notes.md > build/appcast.xml
+          xmllint --noout build/appcast.xml
+
+      - name: Publish the release
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$V" \
+            "build/Porpoise-$V.dmg" build/Porpoise.dmg build/SHA256SUMS.txt build/appcast.xml \
+            --target "$(git rev-parse HEAD)" --title "Porpoise $V" --notes-file build/notes.md --latest
+
+      - name: Remove the keychain
+        if: always()
+        run: security delete-keychain "$PWD/.signing/porpoise.keychain-db" 2>/dev/null || true

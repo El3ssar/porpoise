@@ -1,0 +1,265 @@
+import AppKit
+import PorpoiseCore
+
+/// One tab: a primary view and an optional secondary view side by side (Dolphin's DolphinTabPage).
+///
+/// The panes and the handle between them are laid out by hand from a single `splitFraction`, so the drawn
+/// line, its hit area and both panes always move together, during the open/close animation as well as while
+/// dragging or resizing the window. (An NSSplitView here would keep its own divider state, redraw its line only
+/// when it decides to, and re-adjust the panes in its own layout pass, fighting the animation.)
+final class PorpoiseTab: NSView {
+    private(set) var primary: ViewContainer
+    private(set) var secondary: ViewContainer?
+    let navigators: [BreadcrumbView] = [BreadcrumbView(), BreadcrumbView()]
+    private(set) var activeIsSecondary = false
+    var customTitle: String?
+
+    private let handle = SplitHandleView()
+    /// Handle position as a fraction of the width, so it stays proportional when the window resizes.
+    private var splitFraction: CGFloat = 0.5
+    /// Pane being closed: still visible while it shrinks away (Dolphin keeps such "zombie" views).
+    private var closing: ViewContainer?
+    private var closingOnLeft = false
+    private let animator = Animator()
+    /// Handle position the user chose last; reopening the split returns to it (m_splitterLastPosition).
+    private static var lastFraction: CGFloat = 0.5
+
+    /// Narrowest a pane can be dragged (QSplitter keeps views usable).
+    private static let minPaneWidth: CGFloat = 160
+    private static let openDuration: TimeInterval = 0.28
+    private static let closeDuration: TimeInterval = 0.24
+    private static let resetDuration: TimeInterval = 0.2
+
+    var active: ViewContainer { activeIsSecondary ? (secondary ?? primary) : primary }
+    var inactive: ViewContainer? { secondary == nil ? nil : (activeIsSecondary ? primary : secondary) }
+    var isSplit: Bool { secondary != nil }
+    var containers: [ViewContainer] { [primary] + (secondary.map { [$0] } ?? []) }
+
+    init(url: URL) {
+        primary = ViewContainer(url: url)
+        super.init(frame: .zero)
+        addSubview(primary)
+        addSubview(handle)
+        handle.onDrag = { [weak self] x in self?.dragHandle(to: x) }
+        handle.onDoubleClick = { [weak self] in self?.resetSplitterSizes() }
+        updateActive()
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    // MARK: - Layout
+
+    override func layout() {
+        super.layout()
+        layoutPanes()
+    }
+
+    /// Places the panes and the handle at `splitFraction`; the only place their frames are set.
+    private func layoutPanes() {
+        defer { NotificationCenter.default.post(name: .splitResized, object: self) }
+        let b = bounds
+        let left: ViewContainer, right: ViewContainer
+        if let s = secondary {
+            (left, right) = (primary, s)
+        } else if let z = closing {
+            (left, right) = closingOnLeft ? (z, primary) : (primary, z)
+        } else {
+            primary.frame = b
+            handle.isHidden = true
+            return
+        }
+        let line = SplitHandleView.lineWidth
+        let x = (b.width * splitFraction).rounded()
+        left.frame = CGRect(x: 0, y: 0, width: x, height: b.height)
+        right.frame = CGRect(x: x + line, y: 0, width: max(0, b.width - x - line), height: b.height)
+        handle.isHidden = false
+        handle.frame = CGRect(x: x - SplitHandleView.grabMargin, y: 0, width: SplitHandleView.width, height: b.height)
+    }
+
+    private func setFraction(_ f: CGFloat) {
+        splitFraction = f
+        layoutPanes()
+    }
+
+    // MARK: - Handle
+
+    /// Drag on the handle; `windowX` is where the line should go, in window coordinates.
+    private func dragHandle(to windowX: CGFloat) {
+        guard secondary != nil, bounds.width > 0 else { return }
+        animator.stop()
+        let x = convert(CGPoint(x: windowX, y: 0), from: nil).x
+        let minX = Self.minPaneWidth
+        let maxX = bounds.width - Self.minPaneWidth - SplitHandleView.lineWidth
+        let clamped = minX < maxX ? min(max(x, minX), maxX) : bounds.width / 2
+        setFraction(clamped / bounds.width)
+        Self.lastFraction = splitFraction
+    }
+
+    /// Double-click on the handle: back to equal halves (DolphinTabPageSplitterHandle).
+    func resetSplitterSizes() {
+        guard secondary != nil else { return }
+        Self.lastFraction = 0.5
+        animateFraction(to: 0.5, duration: Self.resetDuration, curve: Animator.easeOutCubic)
+    }
+
+    private func animateFraction(to target: CGFloat, duration: TimeInterval, curve: @escaping (Double) -> Double,
+                                 completion: (() -> Void)? = nil) {
+        let from = splitFraction
+        animator.run(duration: duration, curve: curve, step: { [weak self] p in
+            self?.setFraction(from + (target - from) * CGFloat(p))
+        }, completion: completion)
+    }
+
+    // MARK: - Open / close
+
+    /// Opens the second view (Dolphin F3): it slides in from the right edge to its last width (OutCubic).
+    func openSplit(url: URL? = nil, animated: Bool = true) {
+        guard secondary == nil else { return }
+        finishClosing()
+        let s = ViewContainer(url: url ?? active.url)
+        s.delegate = primary.delegate
+        secondary = s
+        addSubview(s, positioned: .below, relativeTo: handle)
+        setActive(secondary: true)
+        guard animated, bounds.width > 0 else {
+            setFraction(Self.lastFraction)
+            return
+        }
+        setFraction(1)
+        animateFraction(to: Self.lastFraction, duration: Self.openDuration, curve: Animator.easeOutCubic)
+    }
+
+    /// Closes one view of the split (Dolphin's CloseSplitViewChoice); the closed view shrinks away (InCubic).
+    func closeSplit(closeActive: Bool? = nil, animated: Bool = true) {
+        guard let s = secondary else { return }
+        let closeSecondary: Bool
+        if let closeActive {
+            closeSecondary = closeActive == activeIsSecondary
+        } else {
+            switch Settings.shared.closeSplitChoice {
+            case .active: closeSecondary = activeIsSecondary
+            case .inactive: closeSecondary = !activeIsSecondary
+            case .right: closeSecondary = true
+            }
+        }
+        let zombie = closeSecondary ? s : primary
+        if !closeSecondary { primary = s }
+        secondary = nil
+        activeIsSecondary = false
+        updateActive()
+        zombie.isActive = false
+        closing = zombie
+        closingOnLeft = !closeSecondary
+        guard animated, bounds.width > 0 else {
+            finishClosing()
+            return
+        }
+        animateFraction(to: closeSecondary ? 1 : 0, duration: Self.closeDuration, curve: Animator.easeInCubic) { [weak self] in
+            self?.finishClosing()
+        }
+    }
+
+    /// Drops the zombie pane (end of the close animation, or a new split opening before it ended).
+    private func finishClosing() {
+        animator.stop()
+        guard let z = closing else { return }
+        z.removeFromSuperview()
+        closing = nil
+        layoutPanes()
+    }
+
+    // MARK: - Active view
+
+    func setActive(secondary: Bool) {
+        activeIsSecondary = secondary && self.secondary != nil
+        updateActive()
+    }
+
+    func updateActive() {
+        primary.isActive = !activeIsSecondary || secondary == nil
+        secondary?.isActive = activeIsSecondary
+        navigators[0].isActive = primary.isActive
+        navigators[1].isActive = activeIsSecondary
+    }
+
+    /// Pane x-ranges in window coordinates (for aligning toolbar navigators).
+    var paneRanges: [ClosedRange<CGFloat>] {
+        containers.map { c in
+            let r = c.convert(c.bounds, to: nil)
+            return r.minX...r.maxX
+        }
+    }
+
+    // MARK: - Title and icon
+
+    /// Tab title; in a split the inactive view's name is in parentheses, like Dolphin.
+    var title: String { title(markingInactive: true) }
+
+    /// Title without the parentheses (for the window title).
+    var plainTitle: String { title(markingInactive: false) }
+
+    private func title(markingInactive: Bool) -> String {
+        if let customTitle { return customTitle }
+        guard let s = secondary else { return Self.name(of: primary) }
+        let (l, r) = (Self.name(of: primary), Self.name(of: s))
+        guard markingInactive else { return "\(l) | \(r)" }
+        return activeIsSecondary ? "(\(l)) | \(r)" : "\(l) | (\(r))"
+    }
+
+    private static func name(of c: ViewContainer) -> String {
+        let u = c.url
+        if let p = PlacesModel.shared.title(for: u) { return p }
+        if u.scheme == "recent" { return u.path == "/files" ? "Recent Files" : "Recent Locations" }
+        if u.scheme == "network" { return "Network" }
+        if !u.isFileURL { return RemoteFS.displayName(for: u) }
+        return u.path == "/" ? "/" : u.lastPathComponent
+    }
+
+    var iconName: String {
+        let u = active.url
+        if u.isFileURL { return Icons.folderIconName(u) }
+        if u.scheme == "network" { return "network-workgroup" }
+        if u.scheme == "adb" { return "smartphone" }
+        return RemoteFS.isRemote(u) ? "folder-remote" : "document-open-recent"
+    }
+}
+
+// MARK: - Split handle
+
+/// The 1 pt line between the two panes, with a slightly wider invisible grab area (like a thin NSSplitView
+/// divider). Drag moves it, double-click resets it.
+private final class SplitHandleView: NSView {
+    static let lineWidth: CGFloat = 1
+    /// Extra grab area on each side of the line.
+    static let grabMargin: CGFloat = 2
+    static let width = lineWidth + 2 * grabMargin
+
+    var onDrag: ((CGFloat) -> Void)?
+    var onDoubleClick: (() -> Void)?
+    /// Pointer offset from the line when the drag started, so the line doesn't jump under the pointer.
+    private var grabOffset: CGFloat = 0
+
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func draw(_ dirty: NSRect) {
+        Theme.frame.setFill()
+        CGRect(x: Self.grabMargin, y: 0, width: Self.lineWidth, height: bounds.height).fill()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .columnResize)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 { onDoubleClick?(); return }
+        grabOffset = convert(event.locationInWindow, from: nil).x - Self.grabMargin
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        onDrag?(event.locationInWindow.x - grabOffset)
+    }
+}
+
+extension Notification.Name {
+    static let splitResized = Notification.Name("PorpoiseSplitResized")
+}

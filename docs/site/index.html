@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Porpoise — a Dolphin-style file manager for macOS</title>
+<meta name="description" content="Porpoise is a free, open-source file manager for macOS inspired by KDE Dolphin: split view, a built-in terminal, tabs, panels, tags and remote folders.">
+<meta property="og:title" content="Porpoise — a file manager for macOS, inspired by KDE Dolphin">
+<meta property="og:description" content="Split view, a built-in terminal that follows your folder, tabs, panels, Finder tags and remote folders. Free and open source.">
+<meta property="og:image" content="https://el3ssar.github.io/porpoise/assets/shot-panes.jpg">
+<meta name="theme-color" content="#161925">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@500;700&family=Unbounded:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Porpoise's Desert-dark palette, plus a warm sand accent. */
+    --ink: #161925;
+    --ink-2: #1d212f;
+    --ink-3: #262b3d;
+    --line: rgba(206, 214, 236, 0.10);
+    --text: #e8ebf4;
+    --muted: #9aa3bd;
+    --dim: #6c7591;
+    --blue: #5ca4f2;
+    --blue-deep: #2d6cc9;
+    --sand: #e9b872;
+    --radius: 14px;
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--ink);
+    color: var(--text);
+    font: 400 17px/1.6 "Figtree", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Faint dot grid: the texture of a folder view seen from afar. */
+  body::before {
+    content: "";
+    position: fixed; inset: 0; z-index: -1;
+    background-image: radial-gradient(rgba(206, 214, 236, 0.06) 1px, transparent 1px);
+    background-size: 28px 28px;
+    mask-image: linear-gradient(to bottom, #000, transparent 70%);
+  }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--sand); outline-offset: 3px; border-radius: 6px; }
+  .wrap { width: min(1180px, 100% - 48px); margin-inline: auto; }
+
+  /* Nav */
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font: 700 18px "Unbounded", sans-serif; letter-spacing: -0.02em; }
+  .brand img { width: 34px; height: 34px; }
+  nav ul { display: flex; gap: 28px; list-style: none; margin: 0; padding: 0; font-weight: 500; font-size: 15px; }
+  nav ul a { text-decoration: none; color: var(--muted); transition: color .15s; }
+  nav ul a:hover { color: var(--text); }
+
+  /* Hero */
+  .hero { display: grid; grid-template-columns: 1fr 1.25fr; gap: 56px; align-items: center; padding: 64px 0 96px; }
+  .eyebrow { font: 700 12px "JetBrains Mono", monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--sand); margin: 0 0 18px; }
+  h1 { font: 800 clamp(42px, 5.6vw, 76px)/1.02 "Unbounded", sans-serif; letter-spacing: -0.045em; margin: 0 0 24px; }
+  h1 em { font-style: normal; color: var(--blue); }
+  .lede { font-size: 19px; color: var(--muted); max-width: 30em; margin: 0 0 34px; }
+  .ctas { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .btn { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 600; font-size: 16px;
+         padding: 15px 26px; border-radius: 12px; transition: transform .15s var(--ease), box-shadow .2s, background .2s; }
+  .btn-primary { background: linear-gradient(180deg, #6db0f6, var(--blue-deep)); color: #fff;
+                 box-shadow: 0 1px 0 rgba(255,255,255,.25) inset, 0 10px 30px -8px rgba(45,108,201,.7); }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 1px 0 rgba(255,255,255,.25) inset, 0 16px 36px -10px rgba(45,108,201,.85); }
+  .btn-ghost { color: var(--text); border: 1px solid var(--line); background: rgba(255,255,255,.02); }
+  .btn-ghost:hover { background: rgba(255,255,255,.06); }
+  .meta { margin: 22px 0 0; font-size: 14px; color: var(--dim); }
+  .meta b { color: var(--muted); font-weight: 500; }
+
+  .stage { position: relative; aspect-ratio: 1.25; }
+  .stage img { position: absolute; border-radius: var(--radius); border: 1px solid rgba(255,255,255,.08);
+               box-shadow: 0 2px 4px rgba(0,0,0,.3), 0 40px 80px -24px rgba(0,0,0,.75); }
+  .stage .back { width: 82%; right: 0; top: 0; opacity: .75; transform: rotate(2deg); }
+  .stage .front { width: 88%; left: 0; bottom: 0; }
+  .stage::after { /* glow under the windows */
+    content: ""; position: absolute; inset: 20% 10% -10%; z-index: -1;
+    background: radial-gradient(closest-side, rgba(92,164,242,.28), transparent); filter: blur(20px); }
+
+  /* Keyboard strip */
+  .keys { border-block: 1px solid var(--line); background: linear-gradient(180deg, var(--ink-2), var(--ink)); }
+  .keys .wrap { display: flex; flex-wrap: wrap; gap: 14px 34px; justify-content: space-between; padding: 30px 0; }
+  .key { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 15px; }
+  kbd { font: 700 14px "JetBrains Mono", monospace; color: var(--text); min-width: 44px; text-align: center;
+        padding: 8px 10px; border-radius: 8px; background: var(--ink-3); border: 1px solid rgba(255,255,255,.08);
+        box-shadow: 0 3px 0 #0e1018, 0 1px 0 rgba(255,255,255,.08) inset; }
+
+  /* Sections */
+  section { padding: 110px 0; }
+  h2 { font: 700 clamp(30px, 3.6vw, 46px)/1.08 "Unbounded", sans-serif; letter-spacing: -0.035em; margin: 0 0 18px; }
+  .sub { color: var(--muted); font-size: 18px; max-width: 34em; margin: 0; }
+  .split-head { display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: end; margin-bottom: 56px; }
+
+  .features { display: grid; grid-template-columns: repeat(6, 1fr); gap: 18px; }
+  .feature { grid-column: span 2; padding: 28px; border-radius: var(--radius); background: var(--ink-2);
+             border: 1px solid var(--line); transition: border-color .2s, transform .2s var(--ease); }
+  .feature:hover { border-color: rgba(92,164,242,.35); transform: translateY(-3px); }
+  .feature.wide { grid-column: span 3; }
+  .feature svg { width: 28px; height: 28px; color: var(--sand); margin-bottom: 18px; }
+  .feature h3 { font: 600 19px "Figtree", sans-serif; margin: 0 0 8px; }
+  .feature p { margin: 0; color: var(--muted); font-size: 15.5px; }
+
+  .band { padding: 0 0 110px; }
+  .band figure { margin: 0; position: relative; }
+  .band img { width: 100%; display: block; border-radius: 18px; border: 1px solid rgba(255,255,255,.08);
+              box-shadow: 0 50px 100px -40px rgba(0,0,0,.8); }
+  .band figcaption { margin-top: 16px; color: var(--dim); font-size: 14px; text-align: right; }
+
+  /* Install */
+  .install { background: var(--ink-2); border-block: 1px solid var(--line); }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; counter-reset: step; margin-top: 56px; }
+  .step { position: relative; padding-top: 70px; }
+  .step::before { counter-increment: step; content: counter(step, decimal-leading-zero);
+                  position: absolute; top: 0; left: 0; font: 800 54px/1 "Unbounded", sans-serif; color: transparent;
+                  -webkit-text-stroke: 1.5px var(--sand); opacity: .9; }
+  .step h3 { font: 600 20px "Figtree", sans-serif; margin: 0 0 10px; }
+  .step p { margin: 0; color: var(--muted); font-size: 15.5px; }
+  code { font: 500 13.5px "JetBrains Mono", monospace; background: var(--ink-3); padding: 2px 6px; border-radius: 6px; color: var(--text); }
+  /* A sketch of macOS' "Open Anyway" row, so people recognise it. */
+  .mock { margin-top: 16px; padding: 14px 16px; border-radius: 10px; background: #2a2d36; border: 1px solid rgba(255,255,255,.08);
+          font: 500 13.5px "Figtree", sans-serif; color: #d6d8de; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .mock span:last-child { background: #5a5e69; padding: 4px 12px; border-radius: 6px; white-space: nowrap; }
+  .req { margin-top: 44px; color: var(--dim); font-size: 14.5px; }
+
+  /* Support */
+  .support { display: grid; grid-template-columns: 1.3fr 1fr; gap: 48px; align-items: center; }
+  .support .card { padding: 34px; border-radius: 18px; background: linear-gradient(160deg, rgba(233,184,114,.12), rgba(233,184,114,.02));
+                   border: 1px solid rgba(233,184,114,.25); }
+  .support .card p { color: var(--muted); margin: 0 0 22px; }
+  .btn-sand { background: var(--sand); color: #1a1408; }
+  .btn-sand:hover { transform: translateY(-2px); }
+
+  footer { border-top: 1px solid var(--line); padding: 40px 0 56px; color: var(--dim); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 32px; justify-content: space-between; }
+  footer a { color: var(--muted); }
+
+  /* Entrance */
+  .rise { opacity: 0; transform: translateY(18px); animation: rise .7s var(--ease) forwards; }
+  .d1 { animation-delay: .05s } .d2 { animation-delay: .12s } .d3 { animation-delay: .2s } .d4 { animation-delay: .28s } .d5 { animation-delay: .4s }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s var(--ease), transform .7s var(--ease); }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .rise, .reveal { animation: none; opacity: 1; transform: none; transition: none; }
+  }
+
+  @media (max-width: 900px) {
+    .hero, .split-head, .support { grid-template-columns: 1fr; }
+    .hero { padding-top: 32px; }
+    .feature, .feature.wide { grid-column: span 6; }
+    .steps { grid-template-columns: 1fr; }
+    nav ul { gap: 18px; }
+    nav ul li:not(:last-child) { display: none; }
+  }
+</style>
+</head>
+<body>
+<header class="wrap">
+  <nav>
+    <a class="brand" href="#"><img src="assets/icon.png" alt="">Porpoise</a>
+    <ul>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="https://github.com/El3ssar/porpoise">GitHub</a></li>
+      <li><a href="#support">Support</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <div>
+      <p class="eyebrow rise d1">File manager for macOS</p>
+      <h1 class="rise d2">The power of <em>Dolphin</em>. Made for the Mac.</h1>
+      <p class="lede rise d3">Split view, a terminal that follows the folder you're in, tabs and panels, in a fast native app that also speaks Finder: tags, Quick Look, iCloud and your keyboard shortcuts.</p>
+      <div class="ctas rise d4">
+        <a class="btn btn-primary" href="https://github.com/El3ssar/porpoise/releases/latest/download/Porpoise.dmg">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12m0 0-5-5m5 5 5-5M5 20h14"/></svg>
+          Download for Mac
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/El3ssar/porpoise">View source</a>
+      </div>
+      <p class="meta rise d5"><b>Free &amp; open source</b> · macOS 15 or newer · Apple Silicon · GPL-3.0</p>
+    </div>
+    <div class="stage rise d4" aria-hidden="true">
+      <img class="back" src="assets/shot-apps.jpg" alt="">
+      <img class="front" src="assets/shot-panes.jpg" alt="Porpoise with Places, split view, the Information panel and the terminal">
+    </div>
+  </div>
+
+  <div class="keys" aria-label="Keyboard shortcuts">
+    <div class="wrap">
+      <div class="key"><kbd>F3</kbd> Split view</div>
+      <div class="key"><kbd>F4</kbd> Terminal</div>
+      <div class="key"><kbd>F9</kbd> Places</div>
+      <div class="key"><kbd>⌘P</kbd> Jump to sidebar</div>
+      <div class="key"><kbd>Space</kbd> Quick Look</div>
+      <div class="key"><kbd>⌘⇧G</kbd> Go to folder</div>
+    </div>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="split-head reveal">
+        <h2>Everything Dolphin users miss on a Mac.</h2>
+        <p class="sub">Porpoise follows KDE Dolphin's layout and behaviour closely, then adds what makes a Mac a Mac.</p>
+      </div>
+      <div class="features">
+        <article class="feature wide reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg>
+          <h3>Split view and tabs</h3>
+          <p>Two folders side by side with animated split, copy or move between panes, and as many tabs as you like. Your session comes back next time.</p>
+        </article>
+        <article class="feature wide reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 10 3 2-3 2M12 15h5"/></svg>
+          <h3>A terminal that follows you</h3>
+          <p>Press F4 for your own shell right under the files. Change folder in the view and the terminal follows; <code>cd</code> in the terminal and the view follows.</p>
+        </article>
+        <article class="feature reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg>
+          <h3>Panels</h3>
+          <p>Places with foldable sections, a Folders tree, and an Information panel with big previews and an inline player.</p>
+        </article>
+        <article class="feature reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="8" cy="12" r="3.5"/><circle cx="16" cy="12" r="3.5"/></svg>
+          <h3>Speaks Finder</h3>
+          <p>Tags, aliases, Quick Look, Get Info, Services, AirDrop, iCloud status and Finder's shortcuts.</p>
+        </article>
+        <article class="feature reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 15a4 4 0 0 1 4-4 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 18 19H7a3 3 0 0 1-3-4Z"/></svg>
+          <h3>Remote folders</h3>
+          <p>SFTP, FTP, SMB, WebDAV and Android phones, browsed like local folders.</p>
+        </article>
+        <article class="feature wide reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3Z"/></svg>
+          <h3>Previews of everything</h3>
+          <p>Thumbnails for images, documents and every video format (MKV, WebM, AVI…), with smooth zoom from tiny icons to big previews.</p>
+        </article>
+        <article class="feature wide reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3 4 7v5c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V7l-8-4Z"/></svg>
+          <h3>Safe with your files</h3>
+          <p>Undo for file operations, a conflict dialog that never overwrites silently, Trash with put-back, and admin authentication for protected items.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <div class="band">
+    <figure class="wrap reveal">
+      <img src="assets/shot-apps.jpg" alt="The Applications folder as an app library: big icons and a search field" loading="lazy">
+      <figcaption>Applications, as an app library. Start typing to search.</figcaption>
+    </figure>
+  </div>
+
+  <section id="install" class="install">
+    <div class="wrap">
+      <div class="split-head reveal">
+        <h2>Install in a minute.</h2>
+        <p class="sub">Everything Porpoise needs is inside the app. Nothing else to install.</p>
+      </div>
+      <div class="steps">
+        <div class="step reveal">
+          <h3>Drag to Applications</h3>
+          <p>Download <a href="https://github.com/El3ssar/porpoise/releases/latest/download/Porpoise.dmg">Porpoise.dmg</a>, open it and drag Porpoise onto the Applications folder.</p>
+        </div>
+        <div class="step reveal">
+          <h3>Allow it once</h3>
+          <p>Porpoise is free and isn't signed through Apple's paid program, so macOS asks the first time. Open <b>System Settings › Privacy &amp; Security</b> and click <b>Open Anyway</b>.</p>
+          <div class="mock" aria-hidden="true"><span>"Porpoise" was blocked to protect your Mac.</span><span>Open Anyway</span></div>
+        </div>
+        <div class="step reveal">
+          <h3>Give it access</h3>
+          <p>Porpoise's welcome window walks you through its permissions, with Touch ID where macOS asks. Once, then it never asks again, just like Finder.</p>
+        </div>
+      </div>
+      <p class="req reveal">Requires macOS 15 Sequoia or newer on Apple Silicon. Porpoise updates itself: when a new version is out, one click installs it and relaunches.</p>
+    </div>
+  </section>
+
+  <section id="support">
+    <div class="wrap support">
+      <div class="reveal">
+        <h2>Free, open source, made with care.</h2>
+        <p class="sub">Porpoise is GPL-licensed and built in the open. Ideas, bug reports and pull requests are welcome on GitHub.</p>
+        <div class="ctas" style="margin-top:28px">
+          <a class="btn btn-ghost" href="https://github.com/El3ssar/porpoise/issues/new/choose">Report a bug or suggest a feature</a>
+        </div>
+      </div>
+      <div class="card reveal">
+        <h3 style="font:700 22px 'Unbounded',sans-serif;margin:0 0 10px;letter-spacing:-.02em">Support Porpoise</h3>
+        <p>If Porpoise saves you time, a small sponsorship helps keep it going.</p>
+        <a class="btn btn-sand" href="https://github.com/sponsors/El3ssar">♥ Sponsor on GitHub</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Porpoise · GPL-3.0-or-later · <a href="https://github.com/El3ssar/porpoise">Source on GitHub</a></span>
+    <span>Inspired by <a href="https://apps.kde.org/dolphin/">KDE Dolphin</a>; not affiliated with KDE. Icons: Tela circle.</span>
+  </div>
+</footer>
+
+<script>
+  // Reveal sections as they scroll into view.
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+  }, { threshold: 0.12 });
+  document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+</script>
+</body>
+</html>
