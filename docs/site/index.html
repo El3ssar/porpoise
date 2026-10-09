@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Porpoise — a Dolphin-style file manager for macOS</title>
-<meta name="description" content="Porpoise is a free, open-source file manager for macOS inspired by KDE Dolphin: split view, a built-in terminal, tabs, panels, tags and remote folders.">
-<meta property="og:title" content="Porpoise — a file manager for macOS, inspired by KDE Dolphin">
+<title>Porpoise — a file manager for macOS</title>
+<meta name="description" content="Porpoise is a free, open-source file manager for macOS: split view, a built-in terminal, tabs, panels, tags, remote folders and an app library.">
+<meta property="og:title" content="Porpoise — a file manager for macOS">
 <meta property="og:description" content="Split view, a built-in terminal that follows your folder, tabs, panels, Finder tags and remote folders. Free and open source.">
 <meta property="og:image" content="https://el3ssar.github.io/porpoise/assets/shot-panes.jpg">
 <meta name="theme-color" content="#161925">
@@ -108,7 +108,7 @@
   .feature p { margin: 0; color: var(--muted); font-size: 15.5px; }
 
   .band { padding: 0 0 110px; }
-  .band figure { margin: 0; position: relative; }
+  .band figure { margin-block: 0; position: relative; }
   .band img { width: 100%; display: block; border-radius: 18px; border: 1px solid rgba(255,255,255,.08);
               box-shadow: 0 50px 100px -40px rgba(0,0,0,.8); }
   .band figcaption { margin-top: 16px; color: var(--dim); font-size: 14px; text-align: right; }
@@ -178,8 +178,8 @@
   <div class="wrap hero">
     <div>
       <p class="eyebrow rise d1">File manager for macOS</p>
-      <h1 class="rise d2">The power of <em>Dolphin</em>. Made for the Mac.</h1>
-      <p class="lede rise d3">Split view, a terminal that follows the folder you're in, tabs and panels, in a fast native app that also speaks Finder: tags, Quick Look, iCloud and your keyboard shortcuts.</p>
+      <h1 class="rise d2">A file manager with <em>superpowers</em>. Made for the Mac.</h1>
+      <p class="lede rise d3">Split view, a terminal that follows the folder you're in, tabs and panels, in a fast native app that also speaks Finder: tags, Quick Look, iCloud and your keyboard shortcuts. Inspired by KDE Dolphin.</p>
       <div class="ctas rise d4">
         <a class="btn btn-primary" href="https://github.com/El3ssar/porpoise/releases/latest/download/Porpoise.dmg">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12m0 0-5-5m5 5 5-5M5 20h14"/></svg>
@@ -200,6 +200,7 @@
       <div class="key"><kbd>F3</kbd> Split view</div>
       <div class="key"><kbd>F4</kbd> Terminal</div>
       <div class="key"><kbd>F9</kbd> Places</div>
+      <div class="key"><kbd>F10</kbd> Information</div>
       <div class="key"><kbd>⌘P</kbd> Jump to sidebar</div>
       <div class="key"><kbd>Space</kbd> Quick Look</div>
       <div class="key"><kbd>⌘⇧G</kbd> Go to folder</div>
@@ -209,8 +210,8 @@
   <section id="features">
     <div class="wrap">
       <div class="split-head reveal">
-        <h2>Everything Dolphin users miss on a Mac.</h2>
-        <p class="sub">Porpoise follows KDE Dolphin's layout and behaviour closely, then adds what makes a Mac a Mac.</p>
+        <h2>Everything you need, nothing in the way.</h2>
+        <p class="sub">The tools power users reach for every day, in a native app that feels at home on your Mac.</p>
       </div>
       <div class="features">
         <article class="feature wide reveal">
@@ -239,6 +240,11 @@
           <p>SFTP, FTP, SMB, WebDAV and Android phones, browsed like local folders.</p>
         </article>
         <article class="feature wide reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
+          <h3>An app library</h3>
+          <p>Applications opens as big icons with an instant, animated search. Delete apps with ⌘⌫ or the Dock's Trash, or drop one from a disk image to install it.</p>
+        </article>
+        <article class="feature wide reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3Z"/></svg>
           <h3>Previews of everything</h3>
           <p>Thumbnails for images, documents and every video format (MKV, WebM, AVI…), with smooth zoom from tiny icons to big previews.</p>
@@ -246,7 +252,12 @@
         <article class="feature wide reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3 4 7v5c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V7l-8-4Z"/></svg>
           <h3>Safe with your files</h3>
-          <p>Undo for file operations, a conflict dialog that never overwrites silently, Trash with put-back, and admin authentication for protected items.</p>
+          <p>Undo for file operations, a conflict dialog that never overwrites silently, and the Trash with put-back and Finder's sounds. Set it up once and it never nags you with password prompts.</p>
+        </article>
+        <article class="feature wide reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg>
+          <h3>Always up to date</h3>
+          <p>Porpoise checks for new versions once a day (you choose) and updates itself in one click, keeping all your settings and permissions.</p>
         </article>
       </div>
     </div>
