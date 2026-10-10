@@ -18,14 +18,78 @@ enum PrivilegedHelper {
 
     static func disable() { try? service.unregister() }
 
+    /// macOS approves the helper of an app without an Apple team ID as that exact binary (its code hash) and refuses to
+    /// start any other ("launch constraint violation"). Releases ship the same helper binary (scripts/build-helper.sh),
+    /// so updates keep it approved. When the helper itself changed, this checks once that it still starts; if it
+    /// doesn't, it's registered again and the setup step to allow it is shown (one Touch ID).
+    static func checkAfterUpdate() {
+        guard !Settings.isTesting, let hash = helperCodeHash else { return }
+        let key = "helperCheckedCodeHash"
+        guard Settings.store.string(forKey: key) != hash else { return }
+        switch service.status {
+        case .enabled:
+            DispatchQueue.global(qos: .utility).async {
+                let ok = ping()
+                DispatchQueue.main.async {
+                    if ok { Settings.store.set(hash, forKey: key); return }
+                    do { try service.unregister() } catch { NSLog("helper unregister: \(error)") }
+                    do { try service.register() } catch { NSLog("helper register: \(error)") }
+                    askToAllow(hash: hash, key: key)
+                }
+            }
+        case .requiresApproval:
+            askToAllow(hash: hash, key: key)
+        default:
+            Settings.store.set(hash, forKey: key)   // never switched on: nothing to check
+        }
+    }
+
+    private static func askToAllow(hash: String, key: String) {
+        Settings.store.set(hash, forKey: key)
+        NotificationCenter.default.post(name: SystemIntegration.statusChanged, object: nil)
+        if service.status != .enabled { OnboardingWindowController.show(at: .admin) }
+    }
+
+    /// The bundled helper's code hash (what macOS's approval is tied to).
+    private static var helperCodeHash: String? {
+        var code: SecStaticCode?
+        var info: CFDictionary?
+        let url = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/PorpoiseHelper")
+        guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code,
+              SecCodeCopySigningInformation(code, [], &info) == errSecSuccess,
+              let unique = (info as? [String: Any])?[kSecCodeInfoUnique as String] as? Data else { return nil }
+        return unique.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The helper starts and answers (it quits again as soon as the connection closes).
+    private static func ping() -> Bool {
+        guard let req = CodeSigning.requirement(identifier: PorpoiseHelperInfo.helperIdentifier) else { return false }
+        let c = NSXPCConnection(machServiceName: PorpoiseHelperInfo.machService, options: .privileged)
+        c.remoteObjectInterface = NSXPCInterface(with: PorpoiseHelperProtocol.self)
+        c.setCodeSigningRequirement(req)
+        c.resume()
+        defer { c.invalidate() }
+        var ok = false
+        (c.synchronousRemoteObjectProxyWithErrorHandler { _ in } as? PorpoiseHelperProtocol)?.version { ok = !$0.isEmpty }
+        return ok
+    }
+
+    enum Outcome {
+        case done
+        /// A command ran and failed (its message).
+        case failed(String)
+        /// The helper couldn't be reached before anything ran: the caller can ask for a password instead.
+        case unavailable(String)
+    }
+
     /// Runs file tools as administrator (see PorpoiseHelperInfo.allowedTools), in order, over one connection: the
     /// helper quits when it closes, so one action is one short run. Stops at the first failure, except for tools in
-    /// `bestEffort`. Returns nil on success, or what went wrong.
-    static func run(_ commands: [[String]], bestEffort: Set<String> = []) -> String? {
+    /// `bestEffort`.
+    static func run(_ commands: [[String]], bestEffort: Set<String> = []) -> Outcome {
         // Test instances take commands from other processes (DebugBridge): they never get root.
-        guard !Settings.isTesting else { return "Test instances don't use Porpoise's helper." }
+        guard !Settings.isTesting else { return .unavailable("Test instances don't use Porpoise's helper.") }
         guard let req = CodeSigning.requirement(identifier: PorpoiseHelperInfo.helperIdentifier) else {
-            return "This copy of Porpoise isn't signed, so its helper can't be used."
+            return .unavailable("This copy of Porpoise isn't signed, so its helper can't be used.")
         }
         let c = NSXPCConnection(machServiceName: PorpoiseHelperInfo.machService, options: .privileged)
         c.remoteObjectInterface = NSXPCInterface(with: PorpoiseHelperProtocol.self)
@@ -34,13 +98,14 @@ enum PrivilegedHelper {
         defer { c.invalidate() }
         var failure: String?
         let proxy = c.synchronousRemoteObjectProxyWithErrorHandler { failure = $0.localizedDescription } as? PorpoiseHelperProtocol
-        for args in commands {
+        for (i, args) in commands.enumerated() {
             var result: String? = "Porpoise's helper didn't answer."
             proxy?.run(args) { result = $0 }
-            if let f = failure { return f }
-            if let r = result, !bestEffort.contains(args.first ?? "") { return r }
+            // Not reached at all (not started, or refused by macOS): nothing has run yet, if this is the first command.
+            if let f = failure { return i == 0 ? .unavailable(f) : .failed(f) }
+            if let r = result, !bestEffort.contains(args.first ?? "") { return .failed(r) }
         }
-        return nil
+        return .done
     }
 }
 

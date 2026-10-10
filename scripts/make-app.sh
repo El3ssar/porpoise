@@ -18,7 +18,8 @@ ditto "$(dirname "$BIN")/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.fr
 rm -rf "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" "$APP/Contents/Frameworks/Sparkle.framework/XPCServices"
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/Porpoise"
 # The privileged helper (approved once in System Settings › Login Items) and its launchd job.
-cp "$(dirname "$BIN")/PorpoiseHelper" "$APP/Contents/MacOS/PorpoiseHelper"
+# The committed binary, not a fresh build: macOS ties the helper's approval to its exact code (scripts/build-helper.sh).
+cp Resources/Helper/PorpoiseHelper "$APP/Contents/MacOS/PorpoiseHelper"
 mkdir -p "$APP/Contents/Library/LaunchDaemons"
 cat > "$APP/Contents/Library/LaunchDaemons/app.porpoise.Porpoise.helper.plist" <<HELPER
 <?xml version="1.0" encoding="UTF-8"?>

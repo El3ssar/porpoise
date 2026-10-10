@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.3
+
+- Fixed: after updating, Porpoise's administrator helper couldn't start (macOS ties its approval to the exact helper),
+  so emptying the Trash or deleting system-owned apps failed. The helper now stays the same from release to release,
+  and if it ever can't start, Porpoise asks for your password (Touch ID) instead of failing.
+- Updating from 0.1.2 asks once to allow Porpoise's administrator actions again; after that, updates keep it.
+
 ## 0.1.2
 
 Security

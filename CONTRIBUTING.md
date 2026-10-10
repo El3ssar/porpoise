@@ -85,6 +85,13 @@ big or breaking changes. Write the changes in `CHANGELOG.md` under a heading tha
 Without one, the notes fall back to GitHub's list of merged pull requests (grouped by the `enhancement` and `bug`
 labels; `skip-changelog` leaves one out).
 
+### The privileged helper
+
+`Resources/Helper/PorpoiseHelper` is a committed binary, shipped unchanged in every release. macOS approves the helper
+of an app without an Apple team ID as that exact binary, so a rebuilt helper would make every user approve it again.
+Only when `Sources/PorpoiseHelper` (or what it uses from PorpoiseCore) changes, run `./scripts/build-helper.sh`,
+commit the new binary, and say in the changelog that macOS will ask once to allow Porpoise's administrator actions.
+
 ### Signing and updates
 
 Two keys, both kept in `.signing/` (git-ignored) and in repository secrets:

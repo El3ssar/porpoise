@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             openInitialWindows(args)
         }
         Updates.shared.start()
+        PrivilegedHelper.checkAfterUpdate()
     }
 
     private func openInitialWindows(_ args: [(folder: URL, select: URL?)]) {

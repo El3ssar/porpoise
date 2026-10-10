@@ -352,11 +352,12 @@ final class FileOperationsController {
         // Porpoise's helper (set up in onboarding) does it at once, without asking.
         if PrivilegedHelper.isEnabled && !Settings.isTesting {
             // Clearing lock flags is best effort, as in Finder; the operation itself reports what went wrong.
-            if let err = PrivilegedHelper.run(commands, bestEffort: ["/usr/bin/chflags"]) {
-                showAuthorizationError(err)
-                return false
+            switch PrivilegedHelper.run(commands, bestEffort: ["/usr/bin/chflags"]) {
+            case .done: return true
+            case .failed(let err): showAuthorizationError(err); return false
+            // The helper couldn't start (e.g. macOS hasn't accepted this build yet): ask for a password instead.
+            case .unavailable(let why): NSLog("Porpoise helper unavailable: \(why)")
             }
-            return true
         }
         let a = NSAlert()
         a.messageText = items.count == 1 ? "Porpoise needs your permission to \(verb) “\(items[0].lastPathComponent)”."
