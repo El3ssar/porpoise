@@ -48,6 +48,16 @@ public enum RemoteFS {
     private static var providers: [String: RemoteProvider] = [:]
     private static let lock = NSLock()
 
+    private static func key(_ url: URL) -> String {
+        "\(url.scheme?.lowercased() ?? "")://\(url.user ?? "")@\(url.host ?? "")#\(url.port ?? 0)"
+    }
+
+    /// Makes `url`'s host use `provider` (nil: a new one on next use). For tests, which connect their own way.
+    static func use(_ provider: RemoteProvider?, for url: URL) {
+        lock.lock(); defer { lock.unlock() }
+        providers[key(url)] = provider
+    }
+
     /// One provider (connection) per scheme+user+host+port.
     /// Closes shared ssh connections (ControlMaster) when the app quits, instead of leaving them up for minutes.
     public static func disconnectAll() {
@@ -59,7 +69,7 @@ public enum RemoteFS {
 
     public static func provider(for url: URL) -> RemoteProvider? {
         guard let s = url.scheme?.lowercased(), isRemote(url) else { return nil }
-        let key = "\(s)://\(url.user ?? "")@\(url.host ?? "")#\(url.port ?? 0)"
+        let key = Self.key(url)
         lock.lock(); defer { lock.unlock() }
         if let p = providers[key] { return p }
         let p: RemoteProvider
@@ -97,9 +107,13 @@ public enum RemoteFS {
     /// Asks for an FTP login on the main thread (host, the user name known so far); nil when cancelled. Set by the app.
     nonisolated(unsafe) public static var askLogin: (_ host: String, _ user: String?) -> (user: String, password: String)? = { _, _ in nil }
 
+    /// Where the cache below lives (tests use a scratch folder).
+    nonisolated(unsafe) static var cacheParent = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Porpoise")
+
     /// Local cache for files opened from remote locations.
     static var cacheRoot: URL {
-        let u = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise/remote")
+        let u = cacheParent.appendingPathComponent("remote")
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
         return u
     }
