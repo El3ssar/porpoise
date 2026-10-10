@@ -37,6 +37,32 @@ swift test               # unit tests
 open build/Porpoise.app
 ```
 
+### Tests
+
+`swift test` runs two suites: `PorpoiseCoreTests` (models and algorithms) and `PorpoiseServicesTests` (file
+operations, locations, remotes, previews, the helper's checks). They work on real files, not mocks:
+
+- **Scratch folders.** `PorpoiseTestSupport` gives each test a `Scratch` folder in `$TMPDIR` and, where a second
+  volume matters (moves across volumes, a volume's own Trash), a `DiskImage`: a small APFS image attached without
+  showing in Finder. Both are removed when the test ends. Nothing touches your home folder, your Trash, your
+  keychain or `~/.ssh`.
+- **Settings.** A suite that reads or writes settings carries `.isolatedSettings`: each test gets an empty store in
+  memory, and those tests take turns.
+- **Real tools.** SSH tests start a private `sshd` on 127.0.0.1 with its own keys; video tests make short clips with
+  an ffmpeg on your `PATH` and are skipped without one; FTP and adb are replaced by small scripts that record what
+  they're given.
+- **No hanging.** Every wait has its own timeout, so a regression fails instead of stalling the run.
+
+A run leaves nothing behind. If you add a test, check: `ls -d $TMPDIR/porpoise-test-*` and `hdiutil info` show
+nothing new afterwards.
+
+Coverage of the logic layers (CI fails below its minimum):
+
+```bash
+swift test --enable-code-coverage
+python3 scripts/coverage.py
+```
+
 Without a signing identity, `make-app.sh` signs the app ad hoc. That's fine for development, but macOS forgets
 privacy grants (Full Disk Access) on every rebuild. Run `./scripts/setup-signing.sh` once to get a stable local
 identity. It's git-ignored and only used on your Mac.
@@ -60,13 +86,15 @@ run menu items, change settings and take snapshots, all inside the test instance
 ## Sending changes
 
 1. Fork, then create a branch from `main`.
-2. Make your change and run `swift test`. Try it in the app as well.
+2. Make your change, add tests for it, and run `swift test`. Try it in the app as well.
 3. Open a pull request. CI builds and tests it on macOS. Keep pull requests focused: one fix or feature each.
 
 ## Code style
 
-Swift 6 toolchain in Swift 5 language mode, AppKit, 4-space indentation. Keep functions small, comment the *why*,
-and match the surrounding code. Behaviour should follow KDE Dolphin unless the Mac way is clearly better.
+Swift 6 toolchain in Swift 5 language mode, AppKit. The layout is `swift format`'s, configured in `.swift-format`;
+CI checks it, and `swift format -i -r Sources Tests` applies it. Keep functions small, comment the *why*, and match
+the surrounding code. Logic belongs in `PorpoiseCore` or `PorpoiseServices`, where it's tested; the app target
+draws and wires things up (see `docs/ARCHITECTURE.md`). Behaviour should follow KDE Dolphin unless the Mac way is clearly better.
 
 ## Releasing (maintainers)
 
