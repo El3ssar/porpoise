@@ -46,7 +46,9 @@ public enum CodeSigning {
     private static func isIntact(_ code: SecStaticCode, requirement: String) -> Bool {
         var req: SecRequirement?
         guard SecRequirementCreateWithString(requirement as CFString, [], &req) == errSecSuccess else { return false }
-        let flags = SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSCheckNestedCode | kSecCSStrictValidate)
+        // Single-threaded: otherwise Security checks nested code on dispatch's shared threads and waits for them, which
+        // never finishes when every such thread is itself waiting here (a busy test run on a 3-core machine did).
+        let flags = SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSCheckNestedCode | kSecCSStrictValidate | kSecCSSingleThreaded)
         return SecStaticCodeCheckValidity(code, flags, req) == errSecSuccess
     }
 }
