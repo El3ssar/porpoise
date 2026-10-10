@@ -30,8 +30,7 @@ public final class VideoPreview {
     private static let probeTimeout: TimeInterval = 10
     private static let playlistName = "index.m3u8"
 
-    private var process: Process?
-    private var sessionDir: URL?
+    private var session: StreamSession?
     /// Bumped on every request/stop; background work for an older token gives up. Read off the main thread.
     private let tokenLock = NSLock()
     private var _token = 0
@@ -83,28 +82,11 @@ public final class VideoPreview {
         stop()
     }
 
-    /// How long ffmpeg may take to stop before it's killed.
-    private static let stopGrace: TimeInterval = 3
-
     /// Stops the current stream; its folder is removed once ffmpeg has exited (it may still be writing).
     public func stop() {
         token += 1
-        let p = process, dir = sessionDir
-        process = nil
-        sessionDir = nil
-        guard p != nil || dir != nil else { return }
-        p?.terminate()
-        // A queue of its own: a global one may get no thread while others wait on theirs.
-        DispatchQueue(label: "app.porpoise.video-stop", qos: .utility).async {
-            if let p {
-                // ffmpeg finishes the segment it's writing on SIGTERM; one that hasn't stopped by then is killed.
-                let deadline = Date().addingTimeInterval(Self.stopGrace)
-                while p.isRunning && Date() < deadline { usleep(20_000) }
-                if p.isRunning { kill(p.processIdentifier, SIGKILL) }
-                p.waitUntilExit()
-            }
-            if let d = dir { try? FileManager.default.removeItem(at: d) }
-        }
+        session?.stop()
+        session = nil
     }
 
     /// Removes this instance's streams and leftovers of instances that are no longer running (folders
@@ -125,7 +107,8 @@ public final class VideoPreview {
         token = my
         let dir = root.appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        sessionDir = dir
+        let session = StreamSession(dir: dir)
+        self.session = session
         streamDuration = nil
         DispatchQueue.global(qos: .userInitiated).async {
             let info = Self.probe(url)
@@ -139,9 +122,11 @@ public final class VideoPreview {
                 p.standardOutput = FileHandle.nullDevice
                 p.standardError = FileHandle.nullDevice
                 do { try p.run() } catch { return false }
-                DispatchQueue.main.async { if my == self.token { self.process = p } else { p.terminate() } }
+                // Stopped meanwhile: the session has ended this ffmpeg.
+                guard session.attach(p) else { return false }
                 if self.waitForFirstSegment(playlist, process: p, token: my) { return true }
                 // Too slow or failed: this ffmpeg must not keep writing into the folder the retry reuses.
+                session.detach(p)
                 p.terminate()
                 p.waitUntilExit()
                 return false
@@ -229,5 +214,57 @@ public final class VideoPreview {
             }
         }
         return (v, a)
+    }
+}
+
+/// One stream: its folder and the ffmpeg writing into it. Stopping ends ffmpeg (killed when SIGTERM isn't enough)
+/// and removes the folder once nothing writes into it any more, whichever comes first: the stop, or ffmpeg being
+/// started (ffmpeg would otherwise write the folder back after it was removed).
+final class StreamSession: @unchecked Sendable {
+    let dir: URL
+    private let lock = NSLock()
+    private var process: Process?
+    private var stopped = false
+    /// How long ffmpeg may take to stop before it's killed.
+    private static let stopGrace: TimeInterval = 3
+
+    init(dir: URL) { self.dir = dir }
+
+    /// The ffmpeg now writing into the folder; false (and it's ended) when the session has been stopped.
+    func attach(_ p: Process) -> Bool {
+        let wasStopped = lock.withLock {
+            if !stopped { process = p }
+            return stopped
+        }
+        if wasStopped { end(p) }
+        return !wasStopped
+    }
+
+    /// The caller ends `p` itself (to start another one).
+    func detach(_ p: Process) { lock.withLock { if process === p { process = nil } } }
+
+    func stop() {
+        let p: Process? = lock.withLock {
+            stopped = true
+            defer { process = nil }
+            return process
+        }
+        end(p)
+    }
+
+    /// Ends `p` (if any) and then removes the folder, on a queue of its own (a global one may get no thread).
+    private func end(_ p: Process?) {
+        let dir = dir
+        DispatchQueue(label: "app.porpoise.video-stop", qos: .utility).async {
+            if let p {
+                p.terminate()
+                // ffmpeg finishes the segment it's writing on SIGTERM; one that hasn't stopped by then is killed.
+                let deadline = Date().addingTimeInterval(Self.stopGrace)
+                while p.isRunning && Date() < deadline { usleep(20_000) }
+                if p.isRunning { kill(p.processIdentifier, SIGKILL) }
+                p.waitUntilExit()
+            }
+            try? FileManager.default.removeItem(at: dir)
+        }
     }
 }

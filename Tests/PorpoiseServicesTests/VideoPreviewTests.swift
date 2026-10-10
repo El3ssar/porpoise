@@ -307,3 +307,45 @@ final class VideoPreviewStreamTests {
         #expect(!fm.fileExists(atPath: streams.appendingPathComponent(String(getpid())).path))
     }
 }
+
+/// A stream's folder goes once nothing writes into it, in whichever order ffmpeg starts and the stream is stopped.
+struct StreamSessionTests {
+    private func writer(into dir: URL) throws -> Process {
+        // Stands in for ffmpeg: keeps writing into the folder, creating it again if it's gone.
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "while :; do mkdir -p \"$0\" && date > \"$0/seg.m4s\"; sleep 0.05; done", dir.path]
+        try p.run()
+        return p
+    }
+
+    private func gone(_ url: URL) -> Bool {
+        for _ in 0..<200 where FileManager.default.fileExists(atPath: url.path) { usleep(25_000) }
+        // Still gone a moment later: nothing wrote it back.
+        usleep(300_000)
+        return !FileManager.default.fileExists(atPath: url.path)
+    }
+
+    @Test func stoppedAfterFFmpegStarted() throws {
+        let s = try Scratch()
+        let dir = try s.folder("session")
+        let session = StreamSession(dir: dir)
+        let p = try writer(into: dir)
+        #expect(session.attach(p))
+        session.stop()
+        #expect(gone(dir))
+        #expect(!p.isRunning)
+    }
+
+    /// The race that left folders behind: the stop comes before ffmpeg is handed to the session.
+    @Test func stoppedBeforeFFmpegWasHandedOver() throws {
+        let s = try Scratch()
+        let dir = try s.folder("session")
+        let session = StreamSession(dir: dir)
+        session.stop()
+        let p = try writer(into: dir)
+        #expect(!session.attach(p))
+        #expect(gone(dir))
+        p.waitUntilExit()
+    }
+}

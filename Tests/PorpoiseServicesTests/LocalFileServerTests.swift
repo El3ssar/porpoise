@@ -242,6 +242,31 @@ import Testing
 
     // MARK: Where it listens
 
+    /// A client that connects and never finishes its request is disconnected, instead of holding a connection open.
+    @Test func idleConnectionsAreClosed() throws {
+        let f = try Fixture()
+        defer { f.stop() }
+        f.server.headTimeout = 0.5
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(fd) }
+        var tv = timeval(tv_sec: 10, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = f.port.bigEndian
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let ok = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        try #require(ok == 0)
+        _ = "GET /\(f.secret)/stream/index.m3u8 HTTP/1.1\r\n".withCString { send(fd, $0, strlen($0), 0) }  // no blank line
+        let started = Date()
+        var byte: UInt8 = 0
+        let n = recv(fd, &byte, 1, 0)
+        #expect(n == 0)  // closed by the server, not timed out on our side
+        #expect(Date().timeIntervalSince(started) < 5)
+    }
+
     @Test func listensOnLoopbackOnly() throws {
         let f = try Fixture(); defer { f.stop() }
         // Every other IPv4 address of this Mac, and IPv6 loopback, is refused.

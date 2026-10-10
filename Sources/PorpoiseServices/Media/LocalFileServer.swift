@@ -8,6 +8,7 @@ import PorpoiseCore
 /// - Every URL starts with a random secret, so other local users/processes can't read the stream.
 /// - Serves regular files strictly inside `root`: "..", hidden components and symlinks leading out are refused.
 /// - Files are memory-mapped and sent in chunks, never read whole into memory.
+/// - A connection that hasn't sent its request within `headTimeout` is closed (none stays open idle).
 final class LocalFileServer {
     private static let maxRequestSize = 16_384
     private static let chunkSize = 1 << 20
@@ -18,6 +19,8 @@ final class LocalFileServer {
     private var root: URL?
     private let secret = UUID().uuidString
     private let queue = DispatchQueue(label: "porpoise.preview-server")
+    /// How long a connection may take to send its request head.
+    var headTimeout: TimeInterval = 10
 
     /// Starts once (later calls just update the root) and returns the base URL to put paths under.
     func start(root: URL) -> URL? {
@@ -55,19 +58,25 @@ final class LocalFileServer {
 
     private func serve(_ c: NWConnection) {
         c.start(queue: queue)
-        receiveHead(c, buffer: Data())
+        let answered = Flag()
+        queue.asyncAfter(deadline: .now() + headTimeout) { if !answered.isSet { c.cancel() } }
+        receiveHead(c, buffer: Data(), answered: answered)
     }
 
+    /// Set once a connection's request has been read (only touched on `queue`).
+    private final class Flag { var isSet = false }
+
     /// Reads until the end of the request head (it may arrive in several packets).
-    private func receiveHead(_ c: NWConnection, buffer: Data) {
+    private func receiveHead(_ c: NWConnection, buffer: Data, answered: Flag) {
         c.receive(minimumIncompleteLength: 1, maximumLength: Self.maxRequestSize) { [weak self] data, _, isComplete, error in
             guard let self else { c.cancel(); return }
             var buf = buffer
             if let data { buf.append(data) }
             if buf.range(of: Data("\r\n\r\n".utf8)) != nil || isComplete || error != nil || buf.count >= Self.maxRequestSize {
+                answered.isSet = true
                 self.respond(c, request: buf)
             } else {
-                self.receiveHead(c, buffer: buf)
+                self.receiveHead(c, buffer: buf, answered: answered)
             }
         }
     }
