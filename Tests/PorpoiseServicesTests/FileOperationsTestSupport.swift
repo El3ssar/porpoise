@@ -58,25 +58,29 @@ final class ScriptedUI: FileOperationsUI {
     }
 }
 
-/// A controller as the app sets it up, with a scripted user and a clipboard of its own. Settings point at a
-/// throwaway domain and the run counts as a test: no helper, no sounds, no administrator prompt.
-@MainActor func makeController(_ ui: ScriptedUI) -> FileOperationsController {
-    _ = TestSettings.ready
+/// A controller as the app sets it up, with a scripted user and a clipboard of its own. Settings live in memory and
+/// the run counts as a test: no helper, no sounds, no administrator prompt.
+func makeController(_ ui: ScriptedUI) -> FileOperationsController {
+    _ = MemoryDefaults.installed
     let c = FileOperationsController()
     c.ui = ui
     c.clipboard = LocalClipboard()
     return c
 }
 
-enum TestSettings {
-    static let domain = "app.porpoise.tests.fileoperations"
-    static let ready: Void = {
+/// Settings that never reach the disk (Trash origins, "ask before trashing"…).
+final class MemoryDefaults: UserDefaults {
+    nonisolated(unsafe) static let installed: Void = {
         Settings.isTesting = true
-        Settings.store = UserDefaults(suiteName: domain)!
+        Settings.store = MemoryDefaults(suiteName: nil)!
     }()
 
-    /// Trash origins are written to the store; suites that write it remove the domain when done.
-    static func reset() { UserDefaults(suiteName: domain)?.removePersistentDomain(forName: domain) }
+    private var values: [String: Any] = [:]
+    override func object(forKey key: String) -> Any? { values[key] }
+    override func set(_ value: Any?, forKey key: String) { values[key] = value }
+    override func removeObject(forKey key: String) { values[key] = nil }
+    override func dictionary(forKey key: String) -> [String: Any]? { values[key] as? [String: Any] }
+    override func bool(forKey key: String) -> Bool { values[key] as? Bool ?? false }
 }
 
 extension FileOperationsController {

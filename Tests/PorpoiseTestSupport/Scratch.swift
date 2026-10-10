@@ -65,8 +65,11 @@ public final class Scratch {
 public final class DiskImage {
     public let volume: URL
     private let image: URL
+    /// Kept alive until the image is detached: the image and its mount point live in it.
+    private let scratch: Scratch
 
     public init(name: String = "PorpoiseTest", megabytes: Int = 20, in scratch: Scratch) throws {
+        self.scratch = scratch
         image = scratch.path("\(name).dmg")
         volume = scratch.path("mnt-\(name)")
         try Self.hdiutil(["create", "-quiet", "-size", "\(megabytes)m", "-fs", "APFS", "-volname", name, image.path])
