@@ -23,7 +23,8 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
     }
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection c: NSXPCConnection) -> Bool {
-        guard let req = clientRequirement else { return false }
+        // XPC checks the running process; its bundle on disk must be intact too (see CodeSigning.isIntact).
+        guard let req = clientRequirement, CodeSigning.isIntact(pid: c.processIdentifier, requirement: req) else { return false }
         c.setCodeSigningRequirement(req)
         c.exportedInterface = NSXPCInterface(with: PorpoiseHelperProtocol.self)
         c.exportedObject = self
@@ -39,7 +40,7 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
         return true
     }
 
-    func version(reply: @escaping (String) -> Void) { reply("4") }
+    func version(reply: @escaping (String) -> Void) { reply("5") }
 
     func checkFullDiskAccess(reply: @escaping (Bool) -> Void) {
         guard let uid = NSXPCConnection.current()?.effectiveUserIdentifier, let pw = getpwuid(uid) else { reply(false); return }

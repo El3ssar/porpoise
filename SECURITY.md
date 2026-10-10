@@ -20,8 +20,13 @@ rules each follows. Reports that break any of them are very welcome.
   It runs as root, only on demand, and quits after 10 seconds without requests.
 - **Who may talk to it.** Only a process whose code signature satisfies
   `identifier "app.porpoise.Porpoise" and certificate leaf = <the helper's own certificate>`, checked by XPC on the real
-  connection (not a process id). Porpoise and the helper run with the hardened runtime, so code can't be injected into
-  Porpoise to borrow that identity. Test instances of Porpoise (`PORPOISE_DEFAULTS_SUITE`) never use the helper.
+  connection (not a process id), and only if that process's app is intact on disk: its signature still seals
+  everything in the bundle, frameworks included. Porpoise runs with the hardened runtime (no injected libraries through
+  the environment), but it loads its frameworks without library validation, because a self-signed app has no Team ID
+  to match them against. The bundle check is what keeps a swapped framework from talking to the helper as Porpoise.
+  What it can't rule out is a program running as you that swaps a framework, starts Porpoise and puts the original
+  back before Porpoise asks the helper for something: that needs code already running in your account, which can also
+  wait for you to type your password anywhere. Test instances of Porpoise (`PORPOISE_DEFAULTS_SUITE`) never use the helper.
 - **What it will do.** Run one of `mv`, `cp`, `ln`, `mkdir`, `chmod`, `rm`, `chflags` directly (no shell, absolute paths
   only, arguments never re-parsed), or hand an item inside the requesting user's own Trash to that user
   (`chown -R -P`, never through a symlink, never outside `~/.Trash` or `/Volumes/<volume>/.Trashes/<uid>`).
