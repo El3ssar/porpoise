@@ -27,8 +27,10 @@ def main() -> None:
         sys.exit("no coverage data: run `swift test --enable-code-coverage` first")
     objects = [str(bundles[0])] + [a for b in bundles[1:] for a in ("-object", str(b))]
     export = subprocess.run(["xcrun", "llvm-cov", "export", "-summary-only", "-instr-profile", str(profile), *objects],
-                            capture_output=True, text=True, check=True).stdout
-    files = json.loads(export)["data"][0]["files"]
+                            capture_output=True, text=True)
+    if export.returncode:
+        sys.exit(f"{export.stderr.strip()}\nthe tests were rebuilt since: run `swift test --enable-code-coverage` again")
+    files = json.loads(export.stdout)["data"][0]["files"]
     rows = []
     for f in files:
         name = f["filename"].split("/Sources/", 1)[-1]
