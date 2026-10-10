@@ -157,6 +157,26 @@ import PorpoiseTestSupport
         #expect(s.read("dst/f/clash") == "old" && s.read("dst/f/fine") == "fine")
     }
 
+    // MARK: The folder an item is already in
+
+    @Test func pastingIntoItsOwnFolderReachedThroughALinkMakesACopy() throws {
+        let s = try Scratch()
+        let f = try s.file("docs/plan.txt", "plan")
+        let alias = try s.symlink("alias", to: s.path("docs").path)
+        let (job, _) = try run(.copy, [f], to: alias)
+        #expect(job.results.map(\.lastPathComponent) == ["plan copy.txt"])
+        #expect(s.listing("docs") == ["plan copy.txt", "plan.txt"])
+    }
+
+    @Test func movingIntoItsOwnFolderReachedThroughALinkDoesNothing() throws {
+        let s = try Scratch()
+        let f = try s.file("docs/plan.txt", "plan")
+        let alias = try s.symlink("alias", to: s.path("docs").path)
+        let (job, record) = try run(.move, [f], to: alias)
+        #expect(record == nil && job.results == [f])
+        #expect(s.listing("docs") == ["plan.txt"])
+    }
+
     // MARK: Into itself
 
     @Test func refusesToMoveAFolderIntoItsOwnSubfolder() throws {
@@ -185,6 +205,15 @@ import PorpoiseTestSupport
         _ = try job.run()
         #expect(job.errors.count == 1)
         #expect(s.read("a/inner/x") == "x")
+    }
+
+    @Test func refusesToCopyIntoItselfThroughADifferentlyCasedPath() throws {
+        let s = try Scratch()
+        try s.file("Photos/sub/p.jpg", "p")
+        let job = FileJob(kind: .copy, sources: [s.path("Photos")], destinationFolder: s.path("photos/sub"))
+        _ = try job.run()
+        #expect(job.errors == [FileOperationError.intoItself("Photos").errorDescription!])
+        #expect(s.listing("Photos/sub") == ["p.jpg"])
     }
 
     @Test func aSiblingWhoseNameStartsLikeTheSourceIsNotInsideIt() throws {

@@ -251,7 +251,7 @@ public final class FileJob: @unchecked Sendable {
     private func transfer(_ src: URL, into folder: URL) throws -> URL? {
         if isCancelled { throw FileOperationError.cancelled }
         // Moving an item to the folder it is already in: nothing to do, but it is still the result.
-        if kind == .move && folder.appendingPathComponent(src.lastPathComponent).standardizedFileURL == src.standardizedFileURL {
+        if kind == .move && Self.isSame(folder.appendingPathComponent(src.lastPathComponent), src) {
             return src
         }
         guard let (target, placement) = try resolveTarget(for: src, in: folder) else { return nil }
@@ -273,7 +273,7 @@ public final class FileJob: @unchecked Sendable {
     private func resolveTarget(for src: URL, in folder: URL) throws -> (URL, Placement)? {
         var target = folder.appendingPathComponent(src.lastPathComponent)
         // Copying onto itself (paste in the same folder) → automatic "copy" name, like Dolphin's Duplicate.
-        if target.standardizedFileURL == src.standardizedFileURL {
+        if Self.isSame(target, src) {
             target = folder.appendingPathComponent(FileFormat.duplicateName(for: src.lastPathComponent, existing: names(in: folder)))
         }
         while Self.itemExists(at: target) {
@@ -464,12 +464,16 @@ public final class FileJob: @unchecked Sendable {
     /// Whether `url` is `folder` or inside it, comparing real paths (/tmp vs /private/tmp). The last
     /// component of `url` is kept as is, so a symlink to a folder is not confused with the folder.
     static func isSameOrInside(_ url: URL, _ folder: URL) -> Bool {
-        func real(_ u: URL) -> String {
-            let s = u.standardizedFileURL
-            return s.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(s.lastPathComponent).path
-        }
-        let f = real(folder)
-        return (real(url) + "/").hasPrefix(f == "/" ? "/" : f + "/")
+        let f = realPath(folder)
+        return (realPath(url) + "/").hasPrefix(f == "/" ? "/" : f + "/")
+    }
+
+    /// The same path once the folders leading to it are resolved: the folder an item is in, reached through a link.
+    static func isSame(_ a: URL, _ b: URL) -> Bool { realPath(a) == realPath(b) }
+
+    private static func realPath(_ u: URL) -> String {
+        let s = u.standardizedFileURL
+        return s.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(s.lastPathComponent).path
     }
 
     static func sameVolume(_ a: URL, _ b: URL) -> Bool {
