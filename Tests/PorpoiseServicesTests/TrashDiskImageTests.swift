@@ -139,7 +139,7 @@ import PorpoiseTestSupport
         Settings.shared.confirmTrash = true
         controller.trash([f], window: nil)
         Settings.shared.confirmTrash = false
-        #expect(ui.questions.map(\.message) == ["Do you really want to move “keep.txt” to the trash?"])
+        #expect(ui.questions.map(\.message) == ["Do you really want to move “keep.txt” to the Trash?"])
         #expect(ui.finishedJobs.isEmpty && FileJob.itemExists(at: f))
     }
 
