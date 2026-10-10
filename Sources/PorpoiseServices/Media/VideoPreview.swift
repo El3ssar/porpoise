@@ -13,9 +13,14 @@ public final class VideoPreview {
 
     /// The ffmpeg bundled in Contents/Helpers (built by scripts/build-ffmpeg.sh); a system one only as a fallback.
     public static var ffmpeg: String? {
+        if let t = testFFmpeg { return t }
         let bundled = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/ffmpeg").path
         return FileManager.default.isExecutableFile(atPath: bundled) ? bundled : Shell.which("ffmpeg")
     }
+
+    /// Tests: the ffmpeg to use, and where streams go (instead of the user's Caches folder).
+    nonisolated(unsafe) static var testFFmpeg: String?
+    nonisolated(unsafe) static var testRoot: URL?
 
     /// How long to wait for the first HLS segment, and how often to look.
     private static let startupTimeout: TimeInterval = 10
@@ -32,12 +37,13 @@ public final class VideoPreview {
         get { tokenLock.lock(); defer { tokenLock.unlock() }; return _token }
         set { tokenLock.lock(); _token = newValue; tokenLock.unlock() }
     }
-    private let server = LocalFileServer()
+    let server = LocalFileServer()
 
     /// Shared by every running Dolphin (a second window process, test instances): each keeps its streams
     /// in a folder named after its process id, so one instance never removes another one's stream.
     private static var sharedRoot: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise/video-preview")
+        if let t = testRoot { return t }
+        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise/video-preview")
     }
 
     private var root: URL {
