@@ -20,10 +20,14 @@ import Testing
         let ok = Counter()
         let finished = DispatchGroup()
         for i in 0..<callers {
-            DispatchQueue.global().async(group: finished) {
+            // Threads of their own: GCD's shared queues get about one thread per core, and on a small machine the
+            // test runner's own blocked threads can hold those for longer than the test waits.
+            finished.enter()
+            Thread {
                 let r = try? Shell.run("/bin/sh", ["-c", "cat; echo \(i) >&2"], stdin: Data("hello \(i)".utf8), timeout: 20)
                 if r?.out == Data("hello \(i)".utf8) && r?.err == "\(i)\n" { ok.add() }
-            }
+                finished.leave()
+            }.start()
         }
         #expect(finished.wait(timeout: .now() + 30) == .success)
         #expect(ok.value == callers)
