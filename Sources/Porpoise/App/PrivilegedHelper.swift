@@ -9,13 +9,13 @@ import ServiceManagement
 /// a launchd job: outside the app, so app updates never affect it. After that it works without asking. Only a new
 /// helper binary (rare: scripts/build-helper.sh) is installed again, once, the next time it's needed.
 enum PrivilegedHelper {
-    private static var bundled: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/PorpoiseHelper") }
+    private static var bundled: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/Porpoise Helper.app") }
     private static var bundledPlist: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/app.porpoise.helper.plist") }
 
     /// Installed, and the same binary as the one in this app.
     static var isEnabled: Bool {
         guard FileManager.default.fileExists(atPath: PorpoiseHelperInfo.installedPlist),
-              let installed = codeHash(URL(fileURLWithPath: PorpoiseHelperInfo.installedTool)) else { return false }
+              let installed = codeHash(URL(fileURLWithPath: PorpoiseHelperInfo.installedApp)) else { return false }
         return installed == codeHash(bundled)
     }
 
@@ -26,12 +26,18 @@ enum PrivilegedHelper {
         guard !Settings.isTesting, FileManager.default.fileExists(atPath: bundled.path),
               FileManager.default.fileExists(atPath: bundledPlist.path) else { return false }
         // Replace, never stack: an old job is stopped, the files are written atomically, then the job is loaded.
+        let dest = PorpoiseHelperInfo.installedApp
         let script = """
             set -e
             /bin/launchctl bootout system/\(PorpoiseHelperInfo.machService) 2>/dev/null || true
             /bin/mkdir -p /Library/PrivilegedHelperTools
-            /usr/bin/install -o root -g wheel -m 0544 "$1" "\(PorpoiseHelperInfo.installedTool).new"
-            /bin/mv -f "\(PorpoiseHelperInfo.installedTool).new" "\(PorpoiseHelperInfo.installedTool)"
+            /bin/rm -rf "\(dest).new"
+            /usr/bin/ditto "$1" "\(dest).new"
+            /usr/sbin/chown -R root:wheel "\(dest).new"
+            /bin/chmod -R go-w "\(dest).new"
+            /bin/rm -rf "\(dest)"
+            /bin/mv "\(dest).new" "\(dest)"
+            /bin/rm -f "\(PorpoiseHelperInfo.oldInstalledTool)"
             /usr/bin/install -o root -g wheel -m 0644 "$2" "\(PorpoiseHelperInfo.installedPlist)"
             /bin/launchctl bootstrap system "\(PorpoiseHelperInfo.installedPlist)"
             """
@@ -39,14 +45,42 @@ enum PrivilegedHelper {
                                  prompt: "Porpoise wants to install its helper, so it can empty the Trash and change items that belong to the system without asking again.")
         else { return false }
         NotificationCenter.default.post(name: SystemIntegration.statusChanged, object: nil)
-        return isEnabled && ping(timeout: 3)
+        guard isEnabled, ping(timeout: 4) else { return false }
+        // Lists "Porpoise Helper" under Full Disk Access (switched off) so it's there to switch on.
+        _ = checkFullDiskAccess(timeout: 4)
+        return true
+    }
+
+    /// "Porpoise Helper" may read protected folders (the Trash): it's switched on under Full Disk Access. Read from
+    /// macOS's permission list (Porpoise can, with its own Full Disk Access); nil if that can't be read.
+    static var hasFullDiskAccess: Bool? {
+        // Listed by its bundle identifier, or by its path when macOS records it as a program.
+        let service = "kTCCServiceSystemPolicyAllFiles"
+        let value = SystemIntegration.tccAuthValue(service: service, client: PorpoiseHelperInfo.helperIdentifier)
+            ?? SystemIntegration.tccAuthValue(service: service, client: PorpoiseHelperInfo.installedTool)
+        return value.map { $0 >= 2 } ?? (SystemIntegration.hasFullDiskAccess ? false : nil)
+    }
+
+    /// Asks the helper itself (which also lists it under Full Disk Access if it isn't yet).
+    static func checkFullDiskAccess(timeout: TimeInterval) -> Bool {
+        guard !Settings.isTesting, let c = connection() else { return false }
+        defer { c.invalidate() }
+        let done = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var ok = false
+        let proxy = c.remoteObjectProxyWithErrorHandler { _ in done.signal() } as? PorpoiseHelperProtocol
+        proxy?.checkFullDiskAccess { a in lock.lock(); ok = a; lock.unlock(); done.signal() }
+        _ = done.wait(timeout: .now() + timeout)
+        lock.lock(); defer { lock.unlock() }
+        return ok
     }
 
     /// Removes the helper (Settings).
     static func disable() {
         _ = runAsAdministrator(script: """
             /bin/launchctl bootout system/\(PorpoiseHelperInfo.machService) 2>/dev/null || true
-            /bin/rm -f "\(PorpoiseHelperInfo.installedPlist)" "\(PorpoiseHelperInfo.installedTool)"
+            /bin/rm -f "\(PorpoiseHelperInfo.installedPlist)" "\(PorpoiseHelperInfo.oldInstalledTool)"
+            /bin/rm -rf "\(PorpoiseHelperInfo.installedApp)"
             """, arguments: [], prompt: "Porpoise wants to remove its helper.")
         NotificationCenter.default.post(name: SystemIntegration.statusChanged, object: nil)
     }

@@ -39,7 +39,14 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
         return true
     }
 
-    func version(reply: @escaping (String) -> Void) { reply("3") }
+    func version(reply: @escaping (String) -> Void) { reply("4") }
+
+    func checkFullDiskAccess(reply: @escaping (Bool) -> Void) {
+        guard let uid = NSXPCConnection.current()?.effectiveUserIdentifier, let pw = getpwuid(uid) else { reply(false); return }
+        // The Trash is one of the folders macOS keeps private without Full Disk Access.
+        let trash = String(cString: pw.pointee.pw_dir) + "/.Trash"
+        reply((try? FileManager.default.contentsOfDirectory(atPath: trash)) != nil)
+    }
 
     func takeOwnership(ofTrashed path: String, reply: @escaping (String?) -> Void) {
         // Who asked: the user Porpoise runs as (its signature was checked when it connected).

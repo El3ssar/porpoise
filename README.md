@@ -20,8 +20,8 @@ SSH/FTP, and previews of every video format, in a native Mac app with a dark Des
    time: open **System Settings › Privacy & Security**, scroll to *"Porpoise was blocked…"* and click **Open Anyway**.
    You only do this once. (Terminal alternative: `xattr -dr com.apple.quarantine /Applications/Porpoise.app`.)
 4. Porpoise's welcome window walks you through the permissions it needs, once: **Full Disk Access** (every folder,
-   including the Trash), **App Management** (moving and deleting apps), **Administrator Actions** (system-owned items such
-   as App Store apps, one approval with your password or Touch ID) and **Local Network** (file servers). After that it never asks again.
+   including the Trash), **App Management** (moving and deleting apps), **Administrator Actions** (a small "Porpoise Helper" for system-owned items
+   such as App Store apps in the Trash, installed with one password) and **Local Network** (file servers). After that it never asks again.
    You can revisit them any time in *Porpoise › Permissions…*.
 
 Requirements: a Mac with Apple Silicon and **macOS 15 Sequoia or newer**. Everything Porpoise needs is inside the

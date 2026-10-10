@@ -393,11 +393,21 @@ final class FileOperationsController {
     private static func showAuthorizationError(_ msg: String) {
         let e = NSAlert()
         e.alertStyle = .warning
-        e.messageText = msg.contains("Operation not permitted")
-            ? "macOS blocked this. Allow Porpoise under System Settings › Privacy & Security › App Management (for apps) or Full Disk Access, then try again."
-            : msg
         e.window.appearance = NSAppearance(named: .darkAqua)
-        e.runModal()
+        guard msg.contains("Operation not permitted") else { e.messageText = msg; e.runModal(); return }
+        // Blocked by macOS's privacy protection: name the switch that's off, and open its list.
+        if PrivilegedHelper.isEnabled, PrivilegedHelper.hasFullDiskAccess != true {
+            _ = PrivilegedHelper.checkFullDiskAccess(timeout: 3)   // makes sure it's listed
+            e.messageText = "Switch on Porpoise Helper under Full Disk Access"
+            e.informativeText = "Porpoise Helper does the work on items that belong to the system. macOS lets it into "
+                + "your Trash and other private folders once it's switched on (next to Porpoise in the same list). Then try again."
+        } else {
+            e.messageText = "macOS blocked this"
+            e.informativeText = "Check that Porpoise and Porpoise Helper are switched on under Full Disk Access (and Porpoise under App Management for apps), then try again."
+        }
+        e.addButton(withTitle: "Open Full Disk Access")
+        e.addButton(withTitle: "Cancel")
+        if e.runModal() == .alertFirstButtonReturn { SystemIntegration.openPrivacyPane("Privacy_AllFiles") }
     }
 
     /// AppleScript's "User canceled." error number.

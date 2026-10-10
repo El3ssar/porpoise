@@ -11,13 +11,20 @@ import Foundation
     /// Makes the user who asked the owner of an item in their own Trash (the home Trash or a volume's
     /// .Trashes/<uid>), so emptying the Trash later needs no administrator rights. Nothing outside it.
     func takeOwnership(ofTrashed path: String, reply: @escaping (String?) -> Void)
+    /// Whether the helper may read the asking user's Trash, i.e. has Full Disk Access. Asking also lists it (switched
+    /// off) under Full Disk Access in System Settings, so the user finds it there.
+    func checkFullDiskAccess(reply: @escaping (Bool) -> Void)
 }
 
 public enum PorpoiseHelperInfo {
     public static let machService = "app.porpoise.helper"
-    /// Where it's installed (outside the app, so app updates never touch it) and its launchd job.
-    public static let installedTool = "/Library/PrivilegedHelperTools/app.porpoise.helper"
+    /// Where it's installed (outside the app, so app updates never touch it) and its launchd job. It's a small app
+    /// bundle, "Porpoise Helper" with Porpoise's icon, so it's recognisable in System Settings' privacy lists.
+    public static let installedApp = "/Library/PrivilegedHelperTools/Porpoise Helper.app"
+    public static let installedTool = installedApp + "/Contents/MacOS/PorpoiseHelper"
     public static let installedPlist = "/Library/LaunchDaemons/app.porpoise.helper.plist"
+    /// The bare binary earlier versions installed (removed when the bundle is installed).
+    public static let oldInstalledTool = "/Library/PrivilegedHelperTools/app.porpoise.helper"
     public static let appIdentifier = "app.porpoise.Porpoise"
     public static let helperIdentifier = "app.porpoise.Porpoise.helper"
     /// The only programs the helper runs.

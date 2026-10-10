@@ -92,10 +92,16 @@ enum SystemIntegration {
             }
         }, request: ("Request Access", { requestAppManagement() })),
         Permission(title: "Administrator Actions", anchor: "", status: {
-            PrivilegedHelper.isEnabled
-                ? (true, "Allowed. Porpoise empties the Trash and changes system-owned items (such as App Store apps) without asking.")
-                : (false, "Not set up. Porpoise installs its helper the first time it needs it (one approval).")
-        }, request: ("Install Helper…", { PrivilegedHelper.enable() }), open: { SMAppService.openSystemSettingsLoginItems() }),
+            guard PrivilegedHelper.isEnabled else {
+                return (false, "Not set up. Porpoise installs its helper the first time it needs it (one approval).")
+            }
+            return PrivilegedHelper.hasFullDiskAccess == false
+                ? (false, "Installed. Switch on Porpoise Helper under Full Disk Access to let it empty the Trash.")
+                : (true, "Allowed. Porpoise empties the Trash and changes system-owned items (such as App Store apps) without asking.")
+        }, request: ("Set Up…", {
+            if !PrivilegedHelper.isEnabled { PrivilegedHelper.enable() }
+            if PrivilegedHelper.isEnabled { _ = PrivilegedHelper.checkFullDiskAccess(timeout: 3); openPrivacyPane("Privacy_AllFiles") }
+        }), open: { openPrivacyPane("Privacy_AllFiles") }),
         Permission(title: "Local Network", anchor: "Privacy_LocalNetwork", status: {
             LocalNetworkAccess.shared.isAllowed ? (true, "Allowed. File servers on your network appear under Network.")
                 : (nil, "Lets Porpoise list the file servers and shared folders on your network.")
@@ -127,11 +133,12 @@ enum SystemIntegration {
 
     /// Everything Porpoise uses is available (each permission granted, the helper switched on).
     static var allPermissionsGranted: Bool {
-        hasFullDiskAccess && appManagementState == .allowed && PrivilegedHelper.isEnabled && LocalNetworkAccess.shared.isAllowed
+        hasFullDiskAccess && appManagementState == .allowed && PrivilegedHelper.isEnabled
+            && PrivilegedHelper.hasFullDiskAccess == true && LocalNetworkAccess.shared.isAllowed
     }
 
     /// auth_value of Porpoise's row for a TCC service in the system database (2 = allowed), nil if unreadable or absent.
-    static func tccAuthValue(service: String) -> Int? {
+    static func tccAuthValue(service: String, client: String? = nil) -> Int? {
         var db: OpaquePointer?
         guard sqlite3_open_v2(tccDatabase, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
             sqlite3_close(db); return nil
@@ -142,7 +149,7 @@ enum SystemIntegration {
         defer { sqlite3_finalize(stmt) }
         let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
         sqlite3_bind_text(stmt, 1, service, -1, transient)
-        sqlite3_bind_text(stmt, 2, bundleID, -1, transient)
+        sqlite3_bind_text(stmt, 2, client ?? bundleID, -1, transient)
         return sqlite3_step(stmt) == SQLITE_ROW ? Int(sqlite3_column_int(stmt, 0)) : nil
     }
 

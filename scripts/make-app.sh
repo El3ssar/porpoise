@@ -19,14 +19,15 @@ rm -rf "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" "$APP
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/Porpoise"
 # The privileged helper, installed by Porpoise into /Library/PrivilegedHelperTools on first use (one approval). The
 # committed binary, not a fresh build: an unchanged helper means installed copies stay current (scripts/build-helper.sh).
-cp Resources/Helper/PorpoiseHelper "$APP/Contents/MacOS/PorpoiseHelper"
+mkdir -p "$APP/Contents/Helpers"
+ditto "Resources/Helper/Porpoise Helper.app" "$APP/Contents/Helpers/Porpoise Helper.app"
 # Its launchd job, copied to /Library/LaunchDaemons when Porpoise installs the helper (one approval).
 cat > "$APP/Contents/Resources/app.porpoise.helper.plist" <<HELPER
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>app.porpoise.helper</string>
-  <key>Program</key><string>/Library/PrivilegedHelperTools/app.porpoise.helper</string>
+  <key>Program</key><string>/Library/PrivilegedHelperTools/Porpoise Helper.app/Contents/MacOS/PorpoiseHelper</string>
   <key>MachServices</key><dict><key>app.porpoise.helper</key><true/></dict>
   <!-- Started on demand, quits when idle: no waiting before starting it again. -->
   <key>ThrottleInterval</key><integer>1</integer>
@@ -112,7 +113,7 @@ SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 "${SIGN[@]}" "$SPARKLE/Updater.app"
 "${SIGN[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
 "${SIGN[@]}" --identifier app.porpoise.Porpoise.ffmpeg "$APP/Contents/Helpers/ffmpeg"
-"${SIGN[@]}" --identifier app.porpoise.Porpoise.helper "$APP/Contents/MacOS/PorpoiseHelper"
+"${SIGN[@]}" --identifier app.porpoise.Porpoise.helper "$APP/Contents/Helpers/Porpoise Helper.app"
 # The hardened runtime blocks code injection (the privileged helper trusts Porpoise's signature).
 "${SIGN[@]}" --identifier app.porpoise.Porpoise --entitlements Resources/Porpoise.entitlements "$APP"
 echo "built $APP"

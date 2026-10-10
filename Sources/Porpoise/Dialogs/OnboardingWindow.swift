@@ -14,7 +14,8 @@ final class OnboardingWindowController: NSWindowController {
         return !Settings.isTesting && !Settings.store.bool(forKey: doneKey) && !SystemIntegration.allPermissionsGranted
     }
 
-    enum Step: Int, CaseIterable { case welcome, fullDisk, apps, admin, network, done }
+    /// The helper comes first: its Full Disk Access switch then sits next to Porpoise's, granted in one visit.
+    enum Step: Int, CaseIterable { case welcome, admin, fullDisk, apps, network, done }
     /// Porpoise › Permissions…: the first permission still missing.
     static var firstMissing: Step { Step.allCases.first { $0.page != nil && !($0.page!.granted()) } ?? .fullDisk }
 
@@ -327,11 +328,18 @@ extension OnboardingWindowController.Step {
             return .init(name: "Full Disk Access",
                          why: "macOS keeps some folders private (the Trash, Library, other apps' files) until you allow it once.",
                          steps: ["Click **Open System Settings** below. It opens the Full Disk Access list.",
-                                 "Switch **Porpoise** on. If it isn't in the list, drag this icon into it:",
+                                 "Switch on **Porpoise** and **Porpoise Helper**. If Porpoise isn't listed, drag this icon into it:",
                                  "Come back here. Porpoise notices on its own."],
                          tileRow: 1, button: "Open System Settings", waiting: "Waiting for Full Disk Access…",
-                         granted: { SystemIntegration.hasFullDiskAccess }, grantedText: "Full Disk Access is on.",
-                         request: { SystemIntegration.openPrivacyPane("Privacy_AllFiles") })
+                         granted: {
+                             // The helper too, when it's installed (it does the work on system-owned items in the Trash).
+                             SystemIntegration.hasFullDiskAccess && (!PrivilegedHelper.isEnabled || PrivilegedHelper.hasFullDiskAccess == true)
+                         }, grantedText: "Full Disk Access is on.",
+                         request: {
+                             // Make sure "Porpoise Helper" is in the list before it opens.
+                             if PrivilegedHelper.isEnabled { _ = PrivilegedHelper.checkFullDiskAccess(timeout: 3) }
+                             SystemIntegration.openPrivacyPane("Privacy_AllFiles")
+                         })
         case .apps:
             return .init(name: "App Management",
                          why: "Lets Porpoise move, rename and delete apps, as Finder does, without macOS blocking it.",
@@ -346,8 +354,8 @@ extension OnboardingWindowController.Step {
                          why: "Some items belong to the system, such as App Store apps. Porpoise installs a small helper once, and "
                             + "then empties the Trash and deletes, moves and changes such items without asking, as Finder does.",
                          steps: ["Click **Install Helper** below.",
-                                 "macOS asks for your password or Touch ID, once.",
-                                 "Done. Updates to Porpoise keep it."],
+                                 "macOS asks for your administrator password, once.",
+                                 "Done. Updates to Porpoise keep it; the next step switches it on."],
                          button: "Install Helper", waiting: "Not installed yet.",
                          granted: { PrivilegedHelper.isEnabled }, grantedText: "Administrator actions are allowed.",
                          request: { PrivilegedHelper.enable() })

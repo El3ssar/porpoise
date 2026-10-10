@@ -87,13 +87,14 @@ labels; `skip-changelog` leaves one out).
 
 ### The privileged helper
 
-Porpoise installs its helper once, with the administrator's approval, as `/Library/PrivilegedHelperTools/app.porpoise.helper`
-with the launchd job `/Library/LaunchDaemons/app.porpoise.helper.plist` (outside the app, so updates don't touch it).
-`Resources/Helper/PorpoiseHelper` is a committed binary shipped unchanged in every release: as long as it's the same,
+Porpoise installs its helper once, with the administrator's approval, as `/Library/PrivilegedHelperTools/Porpoise Helper.app`
+with the launchd job `/Library/LaunchDaemons/app.porpoise.helper.plist` (outside the app, so updates don't touch it). The
+user then switches on "Porpoise Helper" under Full Disk Access, next to Porpoise (setup walks through both).
+`Resources/Helper/Porpoise Helper.app` is committed and shipped unchanged in every release: as long as it's the same,
 installed copies stay current. Only when `Sources/PorpoiseHelper` (or what it uses from PorpoiseCore) changes, run
 `./scripts/build-helper.sh` and commit the new binary; users then approve the update once, the next time it's needed.
 
-To remove the helper by hand: `sudo launchctl bootout system/app.porpoise.helper; sudo rm /Library/LaunchDaemons/app.porpoise.helper.plist /Library/PrivilegedHelperTools/app.porpoise.helper`.
+To remove the helper by hand: `sudo launchctl bootout system/app.porpoise.helper; sudo rm -r /Library/LaunchDaemons/app.porpoise.helper.plist "/Library/PrivilegedHelperTools/Porpoise Helper.app"`.
 
 ### Signing and updates
 

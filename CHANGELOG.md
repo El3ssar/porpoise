@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.8
+
+- Porpoise's helper is now "Porpoise Helper", with Porpoise's icon, so it's easy to recognise in System Settings.
+- Setup installs it first, then asks once to switch on Porpoise and Porpoise Helper together in the Full Disk Access
+  list (it's already listed, no searching or dragging), detecting both on its own. The helper needs that switch to
+  reach the Trash; without it emptying the Trash was blocked.
+- If something is ever switched off, Porpoise says exactly which switch and opens that list.
+- Updating from 0.1.7: Porpoise installs the renamed helper the next time it needs it (one password), then asks to
+  switch on Porpoise Helper under Full Disk Access.
+
 ## 0.1.7
 
 - Fixed: right after installing (or using) the helper, Porpoise could report "Porpoise's helper isn't responding". The
