@@ -5,8 +5,24 @@ import PorpoiseServices
 extension MainWindowController {
     // MARK: Edit
 
-    @objc func undoFileOperation(_ sender: Any?) { FileOperationsController.shared.undo(window: window); view.reload() }
-    @objc func redoFileOperation(_ sender: Any?) { FileOperationsController.shared.redo(window: window); view.reload() }
+    /// While typing (rename, location, search, filter), ⌘Z belongs to the text: file operations are undone from the views.
+    @objc func undoFileOperation(_ sender: Any?) {
+        if let text = typingUndoManager { text.undo(); return }
+        FileOperationsController.shared.undo(window: window)
+        view.reload()
+    }
+
+    @objc func redoFileOperation(_ sender: Any?) {
+        if let text = typingUndoManager { text.redo(); return }
+        FileOperationsController.shared.redo(window: window)
+        view.reload()
+    }
+
+    /// The text field being edited, if any (the terminal handles its own keys).
+    var typingUndoManager: UndoManager? {
+        guard let text = window?.firstResponder as? NSTextView else { return nil }
+        return text.undoManager
+    }
 
     @objc func cut(_ sender: Any?) {
         guard hasSelection else { enterSelectionMode(prompt: "Select the files and folders that should be cut."); return }

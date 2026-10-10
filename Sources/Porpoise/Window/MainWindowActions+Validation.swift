@@ -19,9 +19,13 @@ extension MainWindowController: NSMenuItemValidation {
         switch item.action {
         // File / Edit
         case #selector(undoFileOperation(_:)):
+            if let text = typingUndoManager { item.title = text.undoMenuItemTitle; return text.canUndo }
+            if isTypingFocus { item.title = "Undo"; return false }
             item.title = ops.undoTitle ?? "Undo"
             return ops.canUndo
         case #selector(redoFileOperation(_:)):
+            if let text = typingUndoManager { item.title = text.redoMenuItemTitle; return text.canRedo }
+            if isTypingFocus { item.title = "Redo"; return false }
             item.title = ops.redoTitle ?? "Redo"
             return ops.canRedo
         case #selector(paste(_:)):
