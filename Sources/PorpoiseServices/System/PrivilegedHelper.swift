@@ -25,23 +25,7 @@ public enum PrivilegedHelper {
     public static func enable() -> Bool {
         guard !Settings.isTesting, FileManager.default.fileExists(atPath: bundled.path),
               FileManager.default.fileExists(atPath: bundledPlist.path) else { return false }
-        // Replace, never stack: an old job is stopped, the files are written atomically, then the job is loaded.
-        let dest = PorpoiseHelperInfo.installedApp
-        let script = """
-            set -e
-            /bin/launchctl bootout system/\(PorpoiseHelperInfo.machService) 2>/dev/null || true
-            /bin/mkdir -p /Library/PrivilegedHelperTools
-            /bin/rm -rf "\(dest).new"
-            /usr/bin/ditto "$1" "\(dest).new"
-            /usr/sbin/chown -R root:wheel "\(dest).new"
-            /bin/chmod -R go-w "\(dest).new"
-            /bin/rm -rf "\(dest)"
-            /bin/mv "\(dest).new" "\(dest)"
-            /bin/rm -f "\(PorpoiseHelperInfo.oldInstalledTool)"
-            /usr/bin/install -o root -g wheel -m 0644 "$2" "\(PorpoiseHelperInfo.installedPlist)"
-            /bin/launchctl bootstrap system "\(PorpoiseHelperInfo.installedPlist)"
-            """
-        guard runAsAdministrator(script: script, arguments: [bundled.path, bundledPlist.path],
+        guard runAsAdministrator(script: installScript, arguments: [bundled.path, bundledPlist.path],
                                  prompt: "Porpoise wants to install its helper, so it can empty the Trash and change items that belong to the system without asking again.")
         else { return false }
         NotificationCenter.default.post(name: PrivacyAccess.statusChanged, object: nil)
@@ -75,13 +59,38 @@ public enum PrivilegedHelper {
         return ok
     }
 
+    /// Run as root by `enable` with the bundled helper app as $1 and its launchd plist as $2.
+    /// Replace, never stack: an old job is stopped, the files are written atomically, then the job is loaded.
+    static var installScript: String {
+        let dest = PorpoiseHelperInfo.installedApp
+        return """
+            set -e
+            /bin/launchctl bootout system/\(PorpoiseHelperInfo.machService) 2>/dev/null || true
+            /bin/mkdir -p /Library/PrivilegedHelperTools
+            /bin/rm -rf "\(dest).new"
+            /usr/bin/ditto "$1" "\(dest).new"
+            /usr/sbin/chown -R root:wheel "\(dest).new"
+            /bin/chmod -R go-w "\(dest).new"
+            /bin/rm -rf "\(dest)"
+            /bin/mv "\(dest).new" "\(dest)"
+            /bin/rm -f "\(PorpoiseHelperInfo.oldInstalledTool)"
+            /usr/bin/install -o root -g wheel -m 0644 "$2" "\(PorpoiseHelperInfo.installedPlist)"
+            /bin/launchctl bootstrap system "\(PorpoiseHelperInfo.installedPlist)"
+            """
+    }
+
+    /// Run as root by `disable`.
+    static var removeScript: String {
+        """
+        /bin/launchctl bootout system/\(PorpoiseHelperInfo.machService) 2>/dev/null || true
+        /bin/rm -f "\(PorpoiseHelperInfo.installedPlist)" "\(PorpoiseHelperInfo.oldInstalledTool)"
+        /bin/rm -rf "\(PorpoiseHelperInfo.installedApp)"
+        """
+    }
+
     /// Removes the helper (Settings).
     static func disable() {
-        _ = runAsAdministrator(script: """
-            /bin/launchctl bootout system/\(PorpoiseHelperInfo.machService) 2>/dev/null || true
-            /bin/rm -f "\(PorpoiseHelperInfo.installedPlist)" "\(PorpoiseHelperInfo.oldInstalledTool)"
-            /bin/rm -rf "\(PorpoiseHelperInfo.installedApp)"
-            """, arguments: [], prompt: "Porpoise wants to remove its helper.")
+        _ = runAsAdministrator(script: removeScript, arguments: [], prompt: "Porpoise wants to remove its helper.")
         NotificationCenter.default.post(name: PrivacyAccess.statusChanged, object: nil)
     }
 
@@ -144,7 +153,7 @@ public enum PrivilegedHelper {
     }
 
     /// The code hash of a signed binary (what identifies the helper).
-    private static func codeHash(_ url: URL) -> String? {
+    static func codeHash(_ url: URL) -> String? {
         var code: SecStaticCode?
         var info: CFDictionary?
         guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code,

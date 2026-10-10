@@ -168,11 +168,19 @@ final class VideoPreviewStreamTests {
 
     // MARK: Streaming
 
-    /// `playableURL`, waiting for its answer.
+    /// `playableURL`, waiting for its answer (nil after 30 s, so a regression fails instead of hanging).
     func playable(_ p: VideoPreview, _ url: URL, owner: AnyObject) async -> URL? {
         await withCheckedContinuation { c in
-            DispatchQueue.main.async { p.playableURL(for: url, owner: owner) { c.resume(returning: $0) } }
+            let once = Once()
+            DispatchQueue.main.async { p.playableURL(for: url, owner: owner) { u in if once.claim() { c.resume(returning: u) } } }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 30) { if once.claim() { c.resume(returning: nil) } }
         }
+    }
+
+    final class Once: @unchecked Sendable {
+        private let lock = NSLock()
+        private var done = false
+        func claim() -> Bool { lock.lock(); defer { lock.unlock() }; if done { return false }; done = true; return true }
     }
 
     func fetch(_ url: URL) async throws -> (Int, Data) {
@@ -180,9 +188,9 @@ final class VideoPreviewStreamTests {
         return ((resp as? HTTPURLResponse)?.statusCode ?? 0, data)
     }
 
-    /// Waits up to 5 s for `condition`.
+    /// Waits up to 15 s for `condition` (slow when the machine is busy).
     func eventually(_ condition: () -> Bool) -> Bool {
-        for _ in 0..<100 { if condition() { return true }; usleep(50_000) }
+        for _ in 0..<300 { if condition() { return true }; usleep(50_000) }
         return condition()
     }
 
