@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import PorpoiseCore
+import PorpoiseTestSupport
 
 /// FolderWatcher with real FSEvents, and FileJob/FileActions cases found in the file-operations sweep.
 @Suite(.serialized) struct FolderWatcherLiveTests {
@@ -16,12 +17,12 @@ import Testing
         return condition()
     }
 
-    /// The temporary folder is reached through a symlink (/var → /private/var); FSEvents reports real
+    /// The folder is reached through a symlink (as /tmp and /var are); FSEvents reports real
     /// paths, which must still match the folder as the app names it.
     @Test func reportsChangesInFoldersReachedThroughSymlinks() throws {
-        let dir = fm.temporaryDirectory.appendingPathComponent("dolphin-watch-\(UUID().uuidString)")
-        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? fm.removeItem(at: dir) }
+        let scratch = try Scratch()
+        defer { withExtendedLifetime(scratch) {} }
+        let dir = try scratch.symlink("link", to: scratch.folder("real").path)
         #expect(FolderWatcher.realPath(dir.path) != dir.path)   // the case under test
         let lock = NSLock()
         var hits = Set<String>()
@@ -40,11 +41,11 @@ import Testing
 @Suite(.serialized) struct FileOperationSweepTests {
     let fm = FileManager.default
 
-    private func sandbox() throws -> URL {
-        let root = fm.temporaryDirectory.appendingPathComponent("dolphin-sweep-\(UUID().uuidString)")
-        try fm.createDirectory(at: root, withIntermediateDirectories: true)
-        return root
-    }
+    private let scratch: Scratch
+
+    init() throws { scratch = try Scratch("FileOperationSweep") }
+
+    private func sandbox() throws -> URL { scratch.url }
 
     /// Volumes without a Trash are told apart from other failures (the app then offers to delete).
     @Test func trashUnsupportedIsRecognized() {
@@ -55,7 +56,7 @@ import Testing
 
     /// A missing item fails as an ordinary error, not as "no Trash" (which would offer to delete).
     @Test func trashingAMissingItemIsAnError() throws {
-        let root = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let root = try sandbox()
         let job = FileJob(kind: .trash, sources: [root.appendingPathComponent("missing")])
         #expect(try job.run() == nil)
         #expect(job.errors.count == 1)
@@ -64,14 +65,14 @@ import Testing
 
     /// A dangling symlink takes its name, so the New Folder/File dialog must say the name is taken.
     @Test func validateNameSeesDanglingSymlinks() throws {
-        let root = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let root = try sandbox()
         try fm.createSymbolicLink(atPath: root.appendingPathComponent("dangling").path, withDestinationPath: "/nonexistent-\(UUID())")
         #expect(FileActions.validateName("dangling", in: root, allowSlash: false)?.isError == true)
     }
 
     /// Copying a file onto itself seen through a symlinked folder must not destroy it.
     @Test func overwriteThroughASymlinkedFolderIsRefused() throws {
-        let root = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let root = try sandbox()
         let real = root.appendingPathComponent("real"), alias = root.appendingPathComponent("alias")
         try fm.createDirectory(at: real, withIntermediateDirectories: true)
         try Data("keep".utf8).write(to: real.appendingPathComponent("f"))
