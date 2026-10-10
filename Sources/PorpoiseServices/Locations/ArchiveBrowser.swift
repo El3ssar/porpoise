@@ -16,15 +16,19 @@ public enum ArchiveBrowser {
     /// extraction happens in a temporary folder that is renamed into place only when complete, so an
     /// interrupted extraction is never mistaken for a finished one.
     public static func extractedFolder(for item: FileItem, completion: @escaping (Result<URL, Error>) -> Void) {
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        extractedFolder(for: item, in: caches.appendingPathComponent("Porpoise/archives"), completion: completion)
+    }
+
+    /// The same, with the extracted copies kept in `cache` (tests use their own folder).
+    static func extractedFolder(for item: FileItem, in cache: URL, completion: @escaping (Result<URL, Error>) -> Void) {
         let stamp = Int(item.modificationDate?.timeIntervalSince1970 ?? 0)
         let digest = SHA256.hash(data: Data(item.url.path.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
-        let parent = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Porpoise/archives/\(digest)-\(stamp)")
+        let parent = cache.appendingPathComponent("\(digest)-\(stamp)")
         let dir = parent.appendingPathComponent(item.name)
         if FileManager.default.fileExists(atPath: dir.path) { completion(.success(dir)); return }
         DispatchQueue.global(qos: .userInitiated).async {
             // Copies extracted from earlier versions of this archive are stale now: free their space.
-            let cache = parent.deletingLastPathComponent()
             for old in (try? FileManager.default.contentsOfDirectory(atPath: cache.path)) ?? []
             where old.hasPrefix(digest + "-") && old != parent.lastPathComponent {
                 try? FileManager.default.removeItem(at: cache.appendingPathComponent(old))
