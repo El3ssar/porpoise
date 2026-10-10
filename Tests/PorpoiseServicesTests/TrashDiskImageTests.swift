@@ -116,6 +116,23 @@ import PorpoiseTestSupport
         #expect(FileJob.itemExists(at: f))
     }
 
+    @MainActor @Test func unlockingALinkLeavesTheFileItPointsToAlone() async throws {
+        // A link in a read-only folder can't be trashed; unlocking it must not unlock or open up its target.
+        let target = try scratch.file("precious.txt", "keep")
+        chmod(target.path, 0o444)
+        #expect(chflags(target.path, UInt32(UF_IMMUTABLE)) == 0)
+        let folder = disk.volume.appendingPathComponent("ro")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent("link"), withDestinationURL: target)
+        chmod(folder.path, 0o555)
+        defer { chmod(folder.path, 0o755) }
+        await trash([folder.appendingPathComponent("link")])
+        var st = stat()
+        #expect(stat(target.path, &st) == 0)
+        #expect(st.st_flags & UInt32(UF_IMMUTABLE) != 0, "the target was unlocked")
+        #expect(st.st_mode & 0o777 == 0o444, "the target was made writable")
+    }
+
     @MainActor @Test func confirmingTrashAsksFirstAndDecliningKeepsTheItems() async throws {
         let f = try file("keep.txt")
         ui.confirms = false

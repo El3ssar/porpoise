@@ -55,6 +55,20 @@ import PorpoiseTestSupport
         #expect(!ui.questions.contains { $0.confirmTitle == "Authenticate" })
     }
 
+    @Test func unlockingALinkLeavesTheFileItPointsToAlone() async throws {
+        let s = try Scratch()
+        let target = try s.file("precious.txt", "keep")
+        chmod(target.path, 0o444)
+        #expect(chflags(target.path, UInt32(UF_IMMUTABLE)) == 0)
+        try s.folder("ro")
+        let link = try s.symlink("ro/link", to: target.path)
+        chmod(s.path("ro").path, 0o555)
+        await delete([link], with: ScriptedUI())
+        var st = stat()
+        #expect(stat(target.path, &st) == 0)
+        #expect(st.st_flags & UInt32(UF_IMMUTABLE) != 0 && st.st_mode & 0o777 == 0o444)
+    }
+
     @Test func aFileInAReadOnlyFolderNeedsTheAdministrator() async throws {
         let s = try Scratch()
         let f = try s.file("ro/file.txt")

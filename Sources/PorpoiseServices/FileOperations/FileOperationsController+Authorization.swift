@@ -78,9 +78,10 @@ extension FileOperationsController {
         let remaining = urls.filter { u in
             let owner = (try? fm.attributesOfItem(atPath: u.path)[.ownerAccountID] as? NSNumber)?.uint32Value
             guard owner == getuid() else { return true }
-            let recursive = kind == .delete ? ["-R"] : []
-            _ = try? Shell.run("/usr/bin/chflags", recursive + ["nouchg", u.path])
-            _ = try? Shell.run("/bin/chmod", recursive + ["u+w", u.path])
+            // On a link, the link itself: -R doesn't follow one given by name, and -h stands for it otherwise.
+            let scope = kind == .delete ? ["-R"] : ["-h"]
+            _ = try? Shell.run("/usr/bin/chflags", scope + ["nouchg", u.path])
+            _ = try? Shell.run("/bin/chmod", scope + ["u+w", u.path])
             do {
                 if kind == .delete {
                     try fm.removeItem(at: u)
