@@ -69,8 +69,8 @@ import Testing
         #expect(FileActions.validateName("dangling", in: root, allowSlash: false)?.isError == true)
     }
 
-    /// Copying a file onto itself seen through a symlinked folder must not destroy it.
-    @Test func overwriteThroughASymlinkedFolderIsRefused() throws {
+    /// Copying a file onto itself seen through a symlinked folder must not destroy it: it's a copy in its own folder.
+    @Test func copyThroughASymlinkedFolderKeepsTheOriginal() throws {
         let root = try sandbox(); defer { try? fm.removeItem(at: root) }
         let real = root.appendingPathComponent("real"), alias = root.appendingPathComponent("alias")
         try fm.createDirectory(at: real, withIntermediateDirectories: true)
@@ -80,7 +80,7 @@ import Testing
         job.resolveConflict = { _ in ConflictAnswer(.overwrite) }
         _ = try job.run()
         #expect(String(decoding: try Data(contentsOf: real.appendingPathComponent("f")), as: UTF8.self) == "keep")
-        #expect(!job.errors.isEmpty)
+        #expect(job.errors.isEmpty && fm.fileExists(atPath: real.appendingPathComponent("f copy").path))
     }
 
     /// Duplicate names skip every taken "copy N" name and keep double extensions.
