@@ -23,7 +23,10 @@ let package = Package(
                            .product(name: "Sparkle", package: "Sparkle")]
         ),
         .executableTarget(name: "PorpoiseHelper", dependencies: ["PorpoiseCore"]),
-        .testTarget(name: "PorpoiseCoreTests", dependencies: ["PorpoiseCore"]),
+        // Shared by the test targets: throwaway folders and disk images that clean up after themselves.
+        .target(name: "PorpoiseTestSupport", path: "Tests/PorpoiseTestSupport"),
+        .testTarget(name: "PorpoiseCoreTests", dependencies: ["PorpoiseCore", "PorpoiseTestSupport"]),
+        .testTarget(name: "PorpoiseServicesTests", dependencies: ["PorpoiseServices", "PorpoiseCore", "PorpoiseTestSupport"]),
     ],
     swiftLanguageModes: [.v5]
 )
