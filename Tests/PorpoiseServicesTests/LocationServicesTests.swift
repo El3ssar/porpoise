@@ -303,9 +303,10 @@ import Testing
 
 @MainActor @Suite struct SearchTests {
     /// Runs a search until it reports it is done.
-    private func search(_ text: String, in scope: URL, contents: Bool = false) async throws -> [String] {
+    private func search(_ text: String, in scope: URL, contents: Bool = false, spotlightTimeout: TimeInterval? = nil) async throws -> [String] {
         var result: [FileItem]?
         let runner = SearchRunner(text: text, scope: scope, contents: contents) { items, done in if done { result = items } }
+        if let spotlightTimeout { runner.gatheringTimeout = spotlightTimeout }
         runner.start()
         defer { runner.stop() }
         try #require(await eventually(20) { result != nil })
@@ -324,6 +325,14 @@ import Testing
         #expect(try await search(tag, in: s.url) == ["\(tag)-one.txt", "\(tag)-three", "\(tag.uppercased())-two.md"].sorted())
         #expect(try await search(tag, in: s.url, contents: true).contains("other.txt"))
         #expect(try await search("nothing-matches-\(tag)", in: s.url).isEmpty)
+    }
+
+    /// With Spotlight switched off (as on CI), a query never finishes gathering: the simple search takes over.
+    @Test func whenSpotlightNeverAnswersTheSimpleSearchTakesOver() async throws {
+        let s = try Scratch()
+        let tag = "porpoiseslow\(UUID().uuidString.prefix(6))"
+        try s.file("deep/down/\(tag).txt")
+        #expect(try await search(tag, in: s.url, spotlightTimeout: 0) == ["\(tag).txt"])
     }
 
     @Test func spotlightQueries() throws {

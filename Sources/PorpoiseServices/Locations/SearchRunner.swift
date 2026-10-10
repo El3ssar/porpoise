@@ -13,6 +13,11 @@ public final class SearchRunner: NSObject {
     /// Results already read from disk (Spotlight reports the growing list again on every progress/update).
     private var loaded: [String: FileItem] = [:]
     private var gatheringDone = false
+    private var stopped = false
+
+    /// How long Spotlight may take to gather before the simple search takes over. With Spotlight switched off (or
+    /// its server stuck), a query starts but never finishes gathering.
+    var gatheringTimeout: TimeInterval = 5
 
     private static let maxSpotlightResults = 5000
     private static let maxSimpleResults = 2000
@@ -39,7 +44,13 @@ public final class SearchRunner: NSObject {
         NotificationCenter.default.addObserver(self, selector: #selector(progress), name: .NSMetadataQueryGatheringProgress, object: query)
         // Live results: files created, renamed or deleted while the results are shown.
         NotificationCenter.default.addObserver(self, selector: #selector(liveUpdate), name: .NSMetadataQueryDidUpdate, object: query)
-        if !query.start() { simpleSearch() }
+        guard query.start() else { simpleSearch(); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + gatheringTimeout) { [weak self] in
+            guard let self, !self.stopped, !self.gatheringDone else { return }
+            self.query.stop()
+            self.gatheringDone = true
+            self.simpleSearch()
+        }
     }
 
     @objc private func progress() { publish(done: false) }
@@ -109,6 +120,7 @@ public final class SearchRunner: NSObject {
     }
 
     public func stop() {
+        stopped = true
         query.stop()
         fallbackWork?.cancel()
         loaded = [:]
