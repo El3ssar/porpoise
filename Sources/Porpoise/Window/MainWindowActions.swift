@@ -158,7 +158,7 @@ extension MainWindowController {
             }
         }
         if !denied.isEmpty {
-            FileOperationsController.authorize(verb: "rename", items: denied.map(\.0),
+            FileOperationsController.shared.authorize(verb: "rename", items: denied.map(\.0),
                                                commands: denied.flatMap { FileOperationsController.renameCommands($0.0, to: $0.1) }, window: window)
         }
         if !failed.isEmpty { reportError("Could not rename " + failed.joined(separator: "; "), in: c) }

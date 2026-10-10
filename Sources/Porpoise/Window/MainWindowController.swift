@@ -1000,7 +1000,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         } catch where FileJob.isPermissionError(error) {
             // Root-owned item or folder: authenticate, as Finder does.
             let new = old.deletingLastPathComponent().appendingPathComponent(name)
-            if FileOperationsController.authorize(verb: "rename", items: [old],
+            if FileOperationsController.shared.authorize(verb: "rename", items: [old],
                                                   commands: FileOperationsController.renameCommands(old, to: new), window: window) {
                 FileOperationsController.shared.pushUndo(.renamed(from: old, to: new))
                 c.pendingSelect = new

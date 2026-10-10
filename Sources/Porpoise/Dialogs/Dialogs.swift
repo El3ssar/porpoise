@@ -131,7 +131,7 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
                     cmd = ["/bin/cp", "--", tmp.path, dst.path]
                     tempFile = tmp
                 }
-                let ok = FileOperationsController.authorize(verb: "create an item in", items: [folder], commands: [cmd], window: window)
+                let ok = FileOperationsController.shared.authorize(verb: "create an item in", items: [folder], commands: [cmd], window: window)
                 if let t = tempFile { try? FileManager.default.removeItem(at: t) }   // also when the prompt was cancelled
                 if ok { done(dst) }
             } catch {
@@ -517,7 +517,7 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
     /// chmod, asking to authenticate for items you don't own; then the view and this page show the result.
     private func setMode(_ mode: Int) {
         do { try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: urls[0].path) } catch {
-            FileOperationsController.authorize(verb: "change the permissions of", items: [urls[0]],
+            FileOperationsController.shared.authorize(verb: "change the permissions of", items: [urls[0]],
                                                commands: [["/bin/chmod", "--", String(mode & 0o7777, radix: 8), urls[0].path]], window: window)
         }
         refreshPermissions()
