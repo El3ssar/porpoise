@@ -91,20 +91,23 @@ private extension Array where Element == String {
     }
 }
 
-/// The ffmpeg to test with: the one scripts/build-ffmpeg.sh builds, else one on PATH. CI's unit tests have neither.
+/// The ffmpeg under test: the one Porpoise ships (scripts/build-ffmpeg.sh), else one on PATH.
 let testFFmpeg: String? = {
-    let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    let built = repo.appendingPathComponent("build/ffmpeg/ffmpeg").path
-    if FileManager.default.isExecutableFile(atPath: built) { return built }
-    for dir in (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":") + ["/opt/homebrew/bin", "/usr/local/bin"] {
-        let p = "\(dir)/ffmpeg"
-        if FileManager.default.isExecutableFile(atPath: p) { return p }
-    }
-    return nil
+    let built = repoRoot.appendingPathComponent("build/ffmpeg/ffmpeg").path
+    return FileManager.default.isExecutableFile(atPath: built) ? built : fullFFmpeg
 }()
 
+/// An ffmpeg that can make test videos: Porpoise's own build is decode-only (no test sources, no H.264 encoder), so
+/// the clips come from a full one on PATH. CI's unit tests have none, and skip.
+let fullFFmpeg: String? = {
+    let dirs = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init) + ["/opt/homebrew/bin", "/usr/local/bin"]
+    return dirs.map { "\($0)/ffmpeg" }.first { FileManager.default.isExecutableFile(atPath: $0) }
+}()
+
+private let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+
 /// Probing and streaming with a real ffmpeg on tiny generated videos. Streams go to a scratch folder.
-@Suite(.serialized, .enabled(if: testFFmpeg != nil, "needs ffmpeg (build/ffmpeg/ffmpeg or on PATH)"))
+@Suite(.serialized, .enabled(if: fullFFmpeg != nil, "needs a full ffmpeg on PATH to make test videos"))
 final class VideoPreviewStreamTests {
     let scratch: Scratch
     let streams: URL
@@ -127,7 +130,7 @@ final class VideoPreviewStreamTests {
         var args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-f", "lavfi", "-i", "testsrc=duration=1:size=160x120:rate=10"]
         if audio != nil { args += ["-f", "lavfi", "-i", "sine=duration=1"] }
         args += codecArgs + (audio ?? ["-an"]) + ["-y", out.path]
-        let r = try Shell.run(testFFmpeg!, args, timeout: 30)
+        let r = try Shell.run(fullFFmpeg!, args, timeout: 30)
         try #require(r.status == 0, "ffmpeg: \(r.err)")
         return out
     }
