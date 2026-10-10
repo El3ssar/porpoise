@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+- "Reveal in Finder" is no longer in the context menu by default: Porpoise is the file manager. Switch it back on in
+  Settings › Context Menu.
+
 ## 0.2.2
 
 - Audio files show their album cover; without one, the music icon instead of a blank tile.

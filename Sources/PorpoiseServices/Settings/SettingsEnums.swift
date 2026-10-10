@@ -48,5 +48,7 @@ public enum ContextMenuEntry: String, CaseIterable {
         }
     }
     /// Dolphin defaults: everything on except Delete-alongside and Copy To/Move To.
-    var defaultOn: Bool { self != .deleteAlongsideTrash && self != .copyMoveTo }
+    /// Off unless switched on: Delete beside Move to Trash, Copy To/Move To, and Reveal in Finder (Porpoise is the
+    /// file manager; Finder is one click away for whoever wants it).
+    var defaultOn: Bool { ![.deleteAlongsideTrash, .copyMoveTo, .revealInFinder].contains(self) }
 }

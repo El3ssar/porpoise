@@ -59,8 +59,8 @@ import Testing
     }
 
     @Test func contextMenuEntries() {
-        #expect(!s.contextMenuShows(.deleteAlongsideTrash) && !s.contextMenuShows(.copyMoveTo))
-        #expect(s.contextMenuShows(.share) && s.contextMenuShows(.revealInFinder))
+        #expect(!s.contextMenuShows(.deleteAlongsideTrash) && !s.contextMenuShows(.copyMoveTo) && !s.contextMenuShows(.revealInFinder))
+        #expect(s.contextMenuShows(.share) && s.contextMenuShows(.quickLook))
         s.setContextMenu(.share, false)
         s.setContextMenu(.copyMoveTo, true)
         #expect(!s.contextMenuShows(.share) && s.contextMenuShows(.copyMoveTo))
