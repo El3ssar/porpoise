@@ -77,34 +77,55 @@ extension NSView {
 
 /// Simple per-frame animator (a 120 Hz timer in the common run loop modes, so it keeps running during
 /// event tracking such as live resize), used for custom-drawn transitions.
-final class Animator {
-    private var timer: Timer?
+final class Animator: NSObject {
+    private var link: CADisplayLink?
+    private var start: CFTimeInterval = 0
+    private var duration: TimeInterval = 0
+    private var curve: (Double) -> Double = Animator.easeOutCubic
+    private var step: ((Double) -> Void)?
+    private var completion: (() -> Void)?
 
     /// Runs `step(progress)` with progress eased 0→1 over `duration`, replacing any running animation
-    /// (whose completion is then not called).
+    /// (whose completion is then not called). Steps follow the display's refresh: one per frame shown.
     func run(
         duration: TimeInterval, curve: @escaping (Double) -> Double = Animator.easeOutCubic,
         step: @escaping (Double) -> Void, completion: (() -> Void)? = nil
     ) {
         stop()
-        // Reduce Motion (Accessibility › Display): jump to the end state.
-        if duration <= 0 || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { step(1); completion?(); return }
-        let start = CACurrentMediaTime()
-        let t = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] t in
-            let p = min(1, (CACurrentMediaTime() - start) / duration)
-            step(curve(p))
-            guard p >= 1 else { return }
-            t.invalidate()
-            self?.timer = nil
+        // Reduce Motion (Accessibility › Display), or nothing to show it on: jump to the end state.
+        guard duration > 0, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            let screen = NSScreen.main ?? NSScreen.screens.first
+        else {
+            step(1)
             completion?()
+            return
         }
-        timer = t
-        RunLoop.main.add(t, forMode: .common)
+        self.duration = duration
+        self.curve = curve
+        self.step = step
+        self.completion = completion
+        start = CACurrentMediaTime()
+        let l = screen.displayLink(target: self, selector: #selector(tick(_:)))
+        l.add(to: .main, forMode: .common)
+        link = l
     }
 
-    func stop() { timer?.invalidate(); timer = nil }
+    @objc private func tick(_ l: CADisplayLink) {
+        let p = min(1, (CACurrentMediaTime() - start) / duration)
+        step?(curve(p))
+        guard p >= 1 else { return }
+        let done = completion
+        stop()
+        done?()
+    }
 
-    deinit { timer?.invalidate() }
+    /// Ends the animation where it is, without its completion.
+    func stop() {
+        link?.invalidate()
+        link = nil
+        step = nil
+        completion = nil
+    }
 
     static func easeOutCubic(_ p: Double) -> Double { 1 - pow(1 - p, 3) }
     static func easeInCubic(_ p: Double) -> Double { p * p * p }

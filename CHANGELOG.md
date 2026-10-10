@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5
+
+- Animations (panels sliding, Places sections folding, zooming) follow the display's refresh, so they're smoother and
+  do no extra work on 60 Hz screens.
+- Zooming with ⌘+ / ⌘− respects Reduce Motion, like the other animations.
+
 ## 0.2.4
 
 - When the folder you're looking at is moved or deleted elsewhere, Porpoise goes to the nearest folder that's still

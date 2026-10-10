@@ -104,7 +104,7 @@ final class ItemListView: NSView {
     /// True while a zoom is being saved (the container then keeps the scroll position).
     private(set) var committingZoom = false
     private var zoomCommitTimer: Timer?
-    private var zoomAnimation: Timer?
+    private let zoomAnimator = Animator()
     var onZoomPreview: ((CGFloat) -> Void)?
 
     private var observers: [NSObjectProtocol] = []
@@ -129,7 +129,8 @@ final class ItemListView: NSView {
 
     deinit {
         observers.forEach(NotificationCenter.default.removeObserver)
-        for t in [hoverTimer, zoomCommitTimer, zoomAnimation, dragOpenTimer] { t?.invalidate() }
+        for t in [hoverTimer, zoomCommitTimer, dragOpenTimer] { t?.invalidate() }
+        zoomAnimator.stop()
     }
 
     override var isFlipped: Bool { true }
@@ -205,20 +206,12 @@ final class ItemListView: NSView {
 
     /// Animates to a size (Cmd+= / Cmd+-), then commits it.
     func animateZoom(to size: CGFloat) {
-        zoomAnimation?.invalidate()
         let from = iconSize
-        let start = Date()
         // Huge folders jump straight there: every frame is a full layout.
-        let duration = model.rows.count > 4000 ? 0.0 : 0.16
-        let t = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] t in
-            guard let self else { t.invalidate(); return }
-            let p = duration == 0 ? 1 : min(1, Date().timeIntervalSince(start) / duration)
-            let eased = 1 - pow(1 - p, 3)
-            self.previewZoom(from + (size - from) * CGFloat(eased), commitAfter: nil)
-            if p >= 1 { t.invalidate(); self.commitZoom() }
-        }
-        zoomAnimation = t
-        RunLoop.main.add(t, forMode: .common)
+        zoomAnimator.run(
+            duration: model.rows.count > 4000 ? 0 : 0.16,
+            step: { [weak self] p in self?.previewZoom(from + (size - from) * CGFloat(p), commitAfter: nil) },
+            completion: { [weak self] in self?.commitZoom() })
     }
 
     func commitZoom() {
