@@ -253,8 +253,18 @@ final class DebugBridge: NSObject {
             // search <n|c> <text>: names or contents, here
             if let v = wc?.view, arg.count > 2 {
                 v.showSearch()
-                v.searchBar(v.searchBar, search: String(arg.dropFirst(2)), everywhere: false, contents: arg.hasPrefix("c"))
+                v.searchBar.field.stringValue = String(arg.dropFirst(2))
+                v.searchBar.contents = arg.hasPrefix("c")
+                v.searchBar.fire()
             }
+        case "searchbar":
+            // searchbar <file>: the search bar's controls, left to right: title, frame, toggled
+            guard let bar = wc?.view.searchBar else { break }
+            let lines = bar.subviews.sorted { $0.frame.minX < $1.frame.minX }.map { v in
+                let b = v as? FlatButton
+                return "\(b?.title ?? String(describing: type(of: v))) \(NSStringFromRect(v.frame)) \(b?.isToggled == true ? "on" : "")"
+            }
+            try? lines.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
         case "lagprobe":
             // lagprobe <file> <seconds>: the longest the main thread didn't answer, in ms, every 5 ms meanwhile
             let parts = arg.split(separator: " ").map(String.init)

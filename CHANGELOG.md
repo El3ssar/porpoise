@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.10
+
+- **Names / + Contents, always in view.** The search bar has a visible switch next to Here / Everywhere: *Names*
+  finds files by name, *+ Contents* also finds them by the text inside (the old "Filter" menu is gone).
+- Content matches in very long lines (generated code, minified files) now show the part with the match.
+
 ## 0.2.9
 
 - **Much faster search.** Searching a folder ("Here") now uses fd and ripgrep, bundled with Porpoise: results start
