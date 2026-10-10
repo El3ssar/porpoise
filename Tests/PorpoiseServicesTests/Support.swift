@@ -1,30 +1,38 @@
 import Foundation
 import Testing
 @testable import PorpoiseServices
-import PorpoiseTestSupport
 
 /// `Settings.store` is one store for the whole process, so tests that read or write settings take turns: each runs
-/// with a fresh throwaway defaults domain, removed afterwards. Put `.isolatedSettings` on such a test or suite.
+/// with a fresh, empty store kept in memory (nothing is written to disk, nothing is left behind). Put
+/// `.isolatedSettings` on such a test or suite.
 struct IsolatedSettings: TestTrait, SuiteTrait, TestScoping {
     var isRecursive: Bool { true }
 
     func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
         guard testCase != nil else { return try await function() }   // the suite itself: each test gets its own
-        // A domain named by a path is kept in that file: here, in a throwaway folder (not ~/Library/Preferences).
-        let folder = try Scratch("settings")
         await SettingsTurn.shared.acquire()
-        let domain = folder.path("defaults").path
         let previous = Settings.store
-        Settings.store = UserDefaults(suiteName: domain)!
+        Settings.store = MemoryDefaults()
         Settings.isTesting = true
         var failure: Error?
         do { try await function() } catch { failure = error }
-        Settings.store.removePersistentDomain(forName: domain)
         Settings.store = previous
-        withExtendedLifetime(folder) {}
         await SettingsTurn.shared.release()
         if let failure { throw failure }
     }
+}
+
+/// UserDefaults whose values live in memory only. Every typed accessor (`bool(forKey:)`, `set(_:forKey:)` for a
+/// Double…) goes through these three, so the app's code reads and writes it exactly as it does the real store.
+final class MemoryDefaults: UserDefaults, @unchecked Sendable {
+    private var values: [String: Any] = [:]
+    private let lock = NSLock()
+
+    init() { super.init(suiteName: nil)! }
+
+    override func object(forKey key: String) -> Any? { lock.withLock { values[key] } }
+    override func set(_ value: Any?, forKey key: String) { lock.withLock { values[key] = value } }
+    override func removeObject(forKey key: String) { lock.withLock { values[key] = nil } }
 }
 
 extension Trait where Self == IsolatedSettings {
