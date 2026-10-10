@@ -13,6 +13,8 @@ Porpoise includes the following works:
 | SwiftTerm | Miguel de Icaza | MIT | `Vendor/SwiftTerm` |
 | Sparkle 2.10 (in-app updates) | Andy Matuschak, the Sparkle Project contributors | MIT (with the notices in its licence file) | Swift package, shipped as `Contents/Frameworks/Sparkle.framework` |
 | FFmpeg 8.0 | the FFmpeg developers | LGPL-2.1-or-later | built by `scripts/build-ffmpeg.sh`, shipped as `Contents/Helpers/ffmpeg` |
+| fd 10.5.0 | David Peter and contributors | MIT (or Apache-2.0) | official release binary, fetched by `scripts/fetch-search-tools.sh`, shipped as `Contents/Helpers/fd` |
+| ripgrep 15.2.0 | Andrew Gallant | MIT (or Unlicense) | official release binary, fetched by `scripts/fetch-search-tools.sh`, shipped as `Contents/Helpers/rg` |
 | Symbols Nerd Font | Ryan L McIntyre and contributors | MIT; its glyphs come from Font Awesome, Material Design Icons, Codicons, Octicons, Devicons, Powerline and other icon sets under their own open licences (SIL OFL 1.1, Apache-2.0, MIT, CC BY 4.0), see [Nerd Fonts' licence notes](https://github.com/ryanoasis/nerd-fonts#license) | `Resources/fonts` |
 
 The AGPL-3.0 colour scheme is combined with the GPL-3.0 program as allowed by section 13 of both licences; that part

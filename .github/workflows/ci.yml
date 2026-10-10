@@ -25,6 +25,9 @@ jobs:
       - name: Build ffmpeg
         if: steps.ffmpeg.outputs.cache-hit != 'true'
         run: scripts/build-ffmpeg.sh
+      # The search tools Porpoise bundles, for the search tests.
+      - name: Fetch fd and ripgrep
+        run: scripts/fetch-search-tools.sh
       - name: Tests
         run: scripts/test-with-watchdog.sh --enable-code-coverage
       - name: Coverage of the logic layers

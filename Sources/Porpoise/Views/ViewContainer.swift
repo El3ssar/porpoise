@@ -550,7 +550,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         // What's shown stays until results come (the folder, or the previous results); then it all morphs at once,
         // like the split view: what still matches glides to its place among the results, the rest fades out, and
         // the new results come in one after another.
-        searchQuery = SearchRunner(text: text, scope: scope, contents: contents) { [weak self] items, done in
+        searchQuery = SearchRunner(text: text, scope: scope, contents: contents, everywhere: everywhere) { [weak self] items, done in
             // "Nothing yet" while searching changes nothing: what's shown stays until there are results to morph to.
             guard let self, done || !items.isEmpty else { return }
             self.animatingItems(searchStyle: true) {

@@ -308,6 +308,7 @@ import Testing
     ) async throws -> [String] {
         var result: [FileItem]?
         let runner = SearchRunner(text: text, scope: scope, contents: contents) { items, done in if done { result = items } }
+        runner.folderTools = nil  // the walk, whatever tools are around
         runner.usesSpotlight = spotlight
         runner.start()
         defer { runner.stop() }

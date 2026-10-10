@@ -41,6 +41,9 @@ cp -R Resources/fonts "$APP/Contents/Resources/fonts"
 scripts/build-ffmpeg.sh
 mkdir -p "$APP/Contents/Helpers"
 cp build/ffmpeg/ffmpeg "$APP/Contents/Helpers/ffmpeg"
+# Bundled fd and ripgrep for searching folders by name and contents (fetched once by scripts/fetch-search-tools.sh).
+scripts/fetch-search-tools.sh
+cp build/search-tools/fd build/search-tools/rg "$APP/Contents/Helpers/"
 # Licences travel with the app.
 mkdir -p "$APP/Contents/Resources/Licenses"
 cp LICENSE "$APP/Contents/Resources/Licenses/Porpoise-GPL-3.0.txt"
@@ -48,6 +51,8 @@ cp LICENSE-AGPL-3.0.txt "$APP/Contents/Resources/Licenses/Desert-colour-scheme-A
 cp THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/Licenses/"
 cp build/ffmpeg-src/ffmpeg-*/COPYING.LGPLv2.1 "$APP/Contents/Resources/Licenses/FFmpeg-LGPL-2.1.txt"
 cp Vendor/SwiftTerm/LICENSE* "$APP/Contents/Resources/Licenses/SwiftTerm-MIT.txt"
+cp build/search-tools/fd-LICENSE-MIT.txt "$APP/Contents/Resources/Licenses/fd-MIT.txt"
+cp build/search-tools/ripgrep-LICENSE-MIT.txt "$APP/Contents/Resources/Licenses/ripgrep-MIT.txt"
 cp .build/checkouts/Sparkle/LICENSE "$APP/Contents/Resources/Licenses/Sparkle-MIT.txt"
 cp Resources/fonts/NerdFontsSymbols-LICENSE.txt "$APP/Contents/Resources/Licenses/SymbolsNerdFont-MIT.txt"
 # App icon
@@ -113,6 +118,8 @@ SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 "${SIGN[@]}" "$SPARKLE/Updater.app"
 "${SIGN[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
 "${SIGN[@]}" --identifier app.porpoise.Porpoise.ffmpeg "$APP/Contents/Helpers/ffmpeg"
+"${SIGN[@]}" --identifier app.porpoise.Porpoise.fd "$APP/Contents/Helpers/fd"
+"${SIGN[@]}" --identifier app.porpoise.Porpoise.rg "$APP/Contents/Helpers/rg"
 "${SIGN[@]}" --identifier app.porpoise.Porpoise.helper "$APP/Contents/Helpers/Porpoise Helper.app"
 # The hardened runtime blocks code injection (the privileged helper trusts Porpoise's signature).
 "${SIGN[@]}" --identifier app.porpoise.Porpoise --entitlements Resources/Porpoise.entitlements "$APP"

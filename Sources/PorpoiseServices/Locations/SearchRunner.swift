@@ -1,34 +1,46 @@
 import Foundation
 import PorpoiseCore
 
-/// Runs a search: Spotlight like Dolphin's Baloo search, with live results; where Spotlight finds nothing (hidden
-/// and unindexed folders) or doesn't answer, the simple search walks the folders instead.
+/// Runs a search. In a folder: the bundled fd and ripgrep, streaming results as they find them (hidden and
+/// unindexed folders included). Everywhere: Spotlight, like Dolphin's Baloo search, with live results; where it finds
+/// nothing or doesn't answer, the folders are searched as above. Without the tools, a simple walk of the folders.
 public final class SearchRunner: NSObject {
     private let update: ([FileItem], Bool) -> Void
     private let text: String
     private let scope: URL
     private let contents: Bool
+    private let everywhere: Bool
     private var spotlight: SpotlightQuery?
+    private var folderSearch: FolderSearch?
     /// Cancellation token of the running simple search.
     private var fallbackWork: DispatchWorkItem?
-    /// Results already read from disk (Spotlight reports the growing list again on every progress/update).
+    /// Results already read from disk (Spotlight reports the growing list again on every progress/update). Only
+    /// touched on `loadQueue`: reading them on the main thread made typing in the search field stutter.
     private var loaded: [String: FileItem] = [:]
+    private let loadQueue = DispatchQueue(label: "app.porpoise.search-results", qos: .userInitiated)
+    /// The newest batch of Spotlight results; older ones still loading are dropped (main queue).
+    private var generation = 0
 
     /// How long Spotlight may take to gather before the simple search takes over.
     var gatheringTimeout: TimeInterval = 5
     /// Off: only the simple search (what tests of it use, whatever Spotlight indexes on the machine).
     var usesSpotlight = true
+    /// The tools that search folders (the bundled ones; tests choose).
+    var folderTools = FolderSearch.tools
 
     private static let maxSpotlightResults = 5000
+    private static let maxFolderResults = 5000
     private static let maxSimpleResults = 2000
     private static let maxSimpleVisited = 200_000
     /// Larger files are not searched for contents by the simple search.
     private static let maxContentSearchSize = 5_000_000
 
-    public init(text: String, scope: URL, contents: Bool, update: @escaping ([FileItem], Bool) -> Void) {
+    /// `everywhere`: the scope is everything the user has (Spotlight's index); otherwise one folder.
+    public init(text: String, scope: URL, contents: Bool, everywhere: Bool = false, update: @escaping ([FileItem], Bool) -> Void) {
         self.text = text
         self.scope = scope
         self.contents = contents
+        self.everywhere = everywhere
         self.update = update
         super.init()
     }
@@ -42,7 +54,7 @@ public final class SearchRunner: NSObject {
     }
 
     public func start() {
-        guard usesSpotlight else { simpleSearch(); return }
+        guard usesSpotlight, everywhere else { searchFolders(); return }
         let q = SpotlightQuery(
             predicate: Self.predicate(text, contents: contents), scopes: [scope], limit: Self.maxSpotlightResults, live: true,
             timeout: gatheringTimeout
@@ -56,28 +68,46 @@ public final class SearchRunner: NSObject {
         case .progress(let paths): publish(paths, done: false)
         // Spotlight doesn't index hidden or excluded folders; Dolphin's simple search finds them. Without Spotlight
         // results it takes over (no "No items found" in between).
-        case .gathered(let paths) where paths.isEmpty: simpleSearch()
+        case .gathered(let paths) where paths.isEmpty: searchFolders()
         case .gathered(let paths): publish(paths, done: true)
         case .updated(let paths, let changed):
-            guard fallbackWork == nil else { return }
-            // Changed files are read again; the others come from the cache.
-            for p in changed { loaded[p] = nil }
-            publish(paths, done: true)
-        case .unavailable: simpleSearch()
+            guard fallbackWork == nil, folderSearch == nil else { return }
+            publish(paths, done: true, changed: changed)
+        case .unavailable: searchFolders()
         }
     }
 
-    private func publish(_ paths: [String], done: Bool) {
-        var items: [FileItem] = []
-        var seen: [String: FileItem] = [:]
-        for p in paths {
-            // Each path is read from disk once (Spotlight reports the whole growing list every time).
-            guard let it = loaded[p] ?? FileItem.load(URL(fileURLWithPath: p)) else { continue }
-            seen[p] = it
-            items.append(it)
+    /// Reads Spotlight's paths into items off the main thread, then shows them (unless newer ones came meanwhile).
+    private func publish(_ paths: [String], done: Bool, changed: Set<String> = []) {
+        generation += 1
+        let g = generation
+        loadQueue.async { [weak self] in
+            guard let self else { return }
+            // Changed files are read again; each other path only once (Spotlight reports the whole list every time).
+            for p in changed { self.loaded[p] = nil }
+            var items: [FileItem] = []
+            var seen: [String: FileItem] = [:]
+            for p in paths {
+                guard let it = self.loaded[p] ?? FileItem.load(URL(fileURLWithPath: p)) else { continue }
+                seen[p] = it
+                items.append(it)
+            }
+            self.loaded = seen
+            DispatchQueue.main.async {
+                guard g == self.generation else { return }
+                self.update(items, done)
+            }
         }
-        loaded = seen
-        update(items, done)
+    }
+
+    /// The folder itself searched: with the bundled tools, else walked.
+    private func searchFolders() {
+        guard let tools = folderTools else { return simpleSearch() }
+        let s = FolderSearch(text: text, scope: scope, contents: contents, limit: Self.maxFolderResults, tools: tools) {
+            [weak self] items, done in self?.update(items, done)
+        }
+        folderSearch = s
+        s.start()
     }
 
     /// Dolphin's "Simple search" (filenamesearch:/): walks the folder tree.
@@ -112,7 +142,10 @@ public final class SearchRunner: NSObject {
     public func stop() {
         spotlight?.stop()
         spotlight = nil
+        folderSearch?.stop()
+        folderSearch = nil
+        generation += 1
         fallbackWork?.cancel()
-        loaded = [:]
+        loadQueue.async { [weak self] in self?.loaded = [:] }
     }
 }
