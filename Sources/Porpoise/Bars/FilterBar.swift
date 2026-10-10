@@ -28,7 +28,7 @@ final class FilterBar: NSView, NSSearchFieldDelegate {
         // The field's clear (x) button changes the text without a text-did-change notification; its action catches it.
         field.target = self
         field.action = #selector(fieldAction)
-        field.focusRingType = .none
+        field.focusRingType = .exterior
         field.appearance = NSAppearance(named: .darkAqua)
         lockButton.onClick = { [weak self] in self?.isLocked.toggle() }
         modeButton.showsMenuIndicator = true

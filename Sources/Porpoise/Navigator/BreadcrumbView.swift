@@ -31,6 +31,17 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     }
 
     private var segments: [Segment] = []
+
+    /// VoiceOver: the path's folders, each pressable (the arrows and buttons are reachable through the menus).
+    override func accessibilityChildren() -> [Any]? {
+        if isEditing { return super.accessibilityChildren() }
+        return segments.indices.compactMap { i -> Any? in
+            guard case .crumb(let u, let title, _) = segments[i].kind else { return nil }
+            return AccessibleRegion(in: self, role: .button, label: title,
+                                    frame: { [weak self] in self.flatMap { i < $0.segments.count ? $0.segments[i].rect : nil } ?? .zero },
+                                    press: { [weak self] in if let self { self.delegate?.breadcrumb(self, navigateTo: u, newTab: false) } })
+        }
+    }
     private var hover: Int?
     private var pressed: Int?
     private var dropHover: Int?

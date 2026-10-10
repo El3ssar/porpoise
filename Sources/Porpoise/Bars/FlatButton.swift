@@ -9,7 +9,7 @@ class FlatButton: NSControl {
     /// Off: icon only (the title stays the accessibility label), for bars short of room.
     var showsTitle = true { didSet { if showsTitle != oldValue { invalidateIntrinsicContentSize(); needsDisplay = true } } }
     private var shownTitle: String { showsTitle || iconName == nil ? title : "" }
-    var isToggled = false { didSet { needsDisplay = true } }
+    var isToggled = false { didSet { needsDisplay = true; setAccessibilityValue(isToggled ? 1 : 0) } }
     var showsMenuIndicator = false { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
     var iconSize: CGFloat = 16
     var cornerRadius: CGFloat = 4
@@ -37,7 +37,37 @@ class FlatButton: NSControl {
         toolTip = tooltip
         onClick = action
         setAccessibilityRole(.button)
-        setAccessibilityLabel(tooltip ?? title)
+        // "Up (⌘↑)" reads as "Up": VoiceOver announces the shortcut by itself.
+        let label = title.isEmpty ? (tooltip ?? "") : title
+        setAccessibilityLabel(label.range(of: " (").map { String(label[..<$0.lowerBound]) } ?? label)
+    }
+
+    // MARK: Keyboard and VoiceOver
+
+    /// Reachable with Tab when Full Keyboard Access is on (System Settings › Keyboard), as standard buttons are.
+    override var acceptsFirstResponder: Bool { NSApp.isFullKeyboardAccessEnabled }
+    override var canBecomeKeyView: Bool { NSApp.isFullKeyboardAccessEnabled }
+    override var focusRingMaskBounds: NSRect { bounds }
+    override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius).fill() }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.charactersIgnoringModifiers {
+        case " ", "\r": perform()
+        default: super.keyDown(with: event)
+        }
+    }
+
+    override func accessibilityPerformPress() -> Bool { perform(); return true }
+
+    override func accessibilityPerformShowMenu() -> Bool {
+        guard let m = menuProvider?() else { return false }
+        popUpMenu(m)
+        return true
+    }
+
+    private func perform() {
+        onClick?()
+        if let a = action { NSApp.sendAction(a, to: target, from: self) }
     }
 
     override var isFlipped: Bool { true }
@@ -109,8 +139,7 @@ class FlatButton: NSControl {
         pressing = false
         needsDisplay = true
         guard wasPressing, !menuOpenedByLongPress, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
-        onClick?()
-        if let a = action { NSApp.sendAction(a, to: target, from: self) }
+        perform()
     }
 
     private func popUpMenu(_ m: NSMenu) {

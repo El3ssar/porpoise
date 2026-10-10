@@ -112,6 +112,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         model.onSelectionChanged = { [weak self] in
             guard let self else { return }
             self.list.needsDisplay = true
+            self.list.accessibilitySelectionChanged()
             self.apps?.grid.needsDisplay = true
             self.updateStatus()
             self.selectionBottom.enabled = !self.model.selection.isEmpty

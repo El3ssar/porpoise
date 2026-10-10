@@ -38,6 +38,7 @@ final class MediaControls: NSView {
         slider.isContinuous = true
         slider.target = self
         slider.action = #selector(scrub(_:))
+        slider.setAccessibilityLabel("Playback Position")
         for l in [elapsed, total] {
             l.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
             l.textColor = Theme.windowTextInactive

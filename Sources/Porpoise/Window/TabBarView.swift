@@ -32,6 +32,18 @@ final class TabBarView: NSView {
 
     override var isFlipped: Bool { true }
 
+    override func accessibilityChildren() -> [Any]? {
+        var out: [Any] = rects.indices.map { i in
+            AccessibleRegion(in: self, role: .radioButton, label: titles.indices.contains(i) ? titles[i] : "",
+                             frame: { [weak self] in self.flatMap { i < $0.rects.count ? $0.rects[i] : nil } ?? .zero },
+                             selected: { [weak self] in self?.selected == i },
+                             press: { [weak self] in if let self { self.delegate?.tabBar(self, select: i) } })
+        }
+        out.append(AccessibleRegion(in: self, role: .button, label: "New Tab", frame: { [weak self] in self?.plusRect ?? .zero },
+                                    press: { [weak self] in if let self { self.delegate?.tabBarNewTab(self, duplicate: nil) } }))
+        return out
+    }
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         registerForDraggedTypes([.fileURL])

@@ -33,7 +33,7 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
         field.placeholderString = "Search…"
         field.font = Theme.font
         field.delegate = self
-        field.focusRingType = .none
+        field.focusRingType = .exterior
         field.appearance = NSAppearance(named: .darkAqua)
         field.sendsWholeSearchString = false
         hereButton.onClick = { [weak self] in self?.everywhere = false }

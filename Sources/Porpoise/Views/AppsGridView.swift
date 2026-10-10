@@ -149,6 +149,23 @@ final class AppsGridView: NSView, NSDraggingSource {
         return (cell, 1, 1)
     }
 
+    // MARK: VoiceOver
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .list }
+    override func accessibilityLabel() -> String? { "Applications" }
+
+    /// The apps on screen, each read by name and opened on "press".
+    override func accessibilityChildren() -> [Any]? {
+        model.rows.indices.filter { cellRect($0).intersects(visibleRect) }.map { i in
+            let item = model.rows[i].item
+            return AccessibleRegion(in: self, role: .button, label: AppLibrary.displayName(item.url),
+                                    frame: { [weak self] in self?.cellRect(i) ?? .zero },
+                                    selected: { [weak self] in self?.model.selection.contains(item.url) ?? false },
+                                    press: { [weak self] in if let o = self?.owner { o.host?.appsView(o, open: [item]) } })
+        }
+    }
+
     private func cellRect(_ i: Int) -> CGRect {
         CGRect(x: originX + CGFloat(i % columns) * Self.cell.width, y: CGFloat(i / columns) * Self.cell.height,
                width: Self.cell.width, height: Self.cell.height)
