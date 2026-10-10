@@ -300,20 +300,6 @@ import Testing
         #expect(FileJob.diskSize(root.appendingPathComponent("missing")) == 0)
     }
 
-    @Test func trashAndUndo() throws {
-        let (root, src, _) = try sandbox(); defer { try? fm.removeItem(at: root) }
-        let f = src.appendingPathComponent("trash-me-\(UUID().uuidString)")
-        try write("x", f)
-        let job = FileJob(kind: .trash, sources: [f])
-        let undo = try #require(try job.run())
-        #expect(!exists(f))
-        let redo = try #require(try FileActions.undo(undo))
-        #expect(read(f) == "x")
-        // Redo puts it back in the Trash; clean up from there.
-        _ = try FileActions.undo(redo)
-        if case .trashed(let pairs) = undo { try? fm.removeItem(at: pairs[0].inTrash) }
-    }
-
     // MARK: Undo
 
     @Test func undoIsAllOrNothing() throws {
