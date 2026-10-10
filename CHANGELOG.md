@@ -1,12 +1,19 @@
 # Changelog
 
+## 0.1.7
+
+- Fixed: right after installing (or using) the helper, Porpoise could report "Porpoise's helper isn't responding". The
+  helper quit the instant a request finished, and macOS waits before starting a job that just quit, so the next
+  request went unanswered. It now stays available for 10 seconds after its last request (idle), then quits.
+- This updates the helper once more, so macOS asks one more time for the administrator's approval.
+
 ## 0.1.6
 
 - Porpoise's helper is now installed once into the system, with macOS's administrator dialog (password or Touch ID),
   instead of being switched on under Login Items. macOS kept refusing helpers registered that way after updates, which
   is why emptying the Trash failed or froze. Installed this way, updates no longer affect it, and after the one
   approval Porpoise empties the Trash and changes system-owned items without asking.
-- Porpoise never waits on a helper that doesn't answer: it reports it after two seconds instead of freezing.
+- Porpoise never waits on a helper that doesn't answer: it reports it after a few seconds instead of freezing.
 
 ## 0.1.5
 

@@ -8,10 +8,18 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
     private let clientRequirement = CodeSigning.requirement(identifier: PorpoiseHelperInfo.appIdentifier)
     /// Open connections (only touched on the main queue).
     private var connections = 0
+    private var quit: DispatchWorkItem?
+    /// Idle time before quitting. Quitting right after a request loses the next one: launchd waits before it starts
+    /// a job that just exited, and a request arriving while the helper is exiting is dropped. One action (check, then
+    /// run) and quick successive ones go to the same, already running helper.
+    private static let idleTime: TimeInterval = 10
 
-    /// Started without a request to answer (launchd only starts it for one, so this is a safety net): quit soon.
-    func quitIfUnused() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in if self?.connections == 0 { exit(0) } }
+    /// Quits once no connection has been open for `idleTime` (launchd starts it again on the next request).
+    func quitWhenIdle() {
+        quit?.cancel()
+        let w = DispatchWorkItem { [weak self] in if self?.connections == 0 { exit(0) } }
+        quit = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.idleTime, execute: w)
     }
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection c: NSXPCConnection) -> Bool {
@@ -19,20 +27,19 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
         c.setCodeSigningRequirement(req)
         c.exportedInterface = NSXPCInterface(with: PorpoiseHelperProtocol.self)
         c.exportedObject = self
-        DispatchQueue.main.async { self.connections += 1 }
+        DispatchQueue.main.async { self.connections += 1; self.quit?.cancel() }
         c.invalidationHandler = { [weak self] in
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.connections -= 1
-                // Porpoise is done: quit now; launchd starts the helper again for the next request.
-                if self.connections == 0 { exit(0) }
+                if self.connections == 0 { self.quitWhenIdle() }
             }
         }
         c.resume()
         return true
     }
 
-    func version(reply: @escaping (String) -> Void) { reply("2") }
+    func version(reply: @escaping (String) -> Void) { reply("3") }
 
     func takeOwnership(ofTrashed path: String, reply: @escaping (String?) -> Void) {
         // Who asked: the user Porpoise runs as (its signature was checked when it connected).
@@ -78,5 +85,5 @@ let helper = Helper()
 let listener = NSXPCListener(machServiceName: PorpoiseHelperInfo.machService)
 listener.delegate = helper
 listener.resume()
-helper.quitIfUnused()
+helper.quitWhenIdle()
 dispatchMain()

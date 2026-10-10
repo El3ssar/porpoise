@@ -63,7 +63,7 @@ enum PrivilegedHelper {
     /// Makes sure the helper is ready for an action that needs it: installs or updates it (one approval) if needed.
     /// False: cancelled, or it couldn't be installed.
     static func ensureOn(window: NSWindow?) -> Bool {
-        if isEnabled, ping(timeout: 2) { return true }
+        if isEnabled, ping(timeout: 4) { return true }
         return enable()
     }
 
@@ -165,7 +165,7 @@ enum PrivilegedHelper {
     static func run(_ commands: [[String]], bestEffort: Set<String> = []) -> Outcome {
         // Test instances take commands from other processes (DebugBridge): they never get root.
         guard !Settings.isTesting else { return .unavailable("Test instances don't use Porpoise's helper.") }
-        guard ping(timeout: 2) else { return .unavailable("Porpoise's helper didn't answer.") }
+        guard ping(timeout: 4) || ping(timeout: 4) else { return .unavailable("Porpoise's helper didn't answer.") }
         guard let c = connection() else { return .unavailable("This copy of Porpoise isn't signed, so its helper can't be used.") }
         defer { c.invalidate() }
         var failure: String?

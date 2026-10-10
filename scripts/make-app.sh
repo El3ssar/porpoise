@@ -28,6 +28,8 @@ cat > "$APP/Contents/Resources/app.porpoise.helper.plist" <<HELPER
   <key>Label</key><string>app.porpoise.helper</string>
   <key>Program</key><string>/Library/PrivilegedHelperTools/app.porpoise.helper</string>
   <key>MachServices</key><dict><key>app.porpoise.helper</key><true/></dict>
+  <!-- Started on demand, quits when idle: no waiting before starting it again. -->
+  <key>ThrottleInterval</key><integer>1</integer>
   <key>AssociatedBundleIdentifiers</key><array><string>app.porpoise.Porpoise</string></array>
 </dict></plist>
 HELPER
