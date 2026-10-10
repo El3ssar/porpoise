@@ -25,16 +25,6 @@ import PorpoiseTestSupport
         return Date().timeIntervalSince(start)
     }
 
-    /// Waits up to `timeout` for `condition`, polling.
-    private func wait(_ timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
-        let end = Date().addingTimeInterval(timeout)
-        while Date() < end {
-            if condition() { return true }
-            Thread.sleep(forTimeInterval: 0.02)
-        }
-        return condition()
-    }
-
     @Test func twentyThousandFilesListSortAndGroup() throws {
         let n = 20_000
         let dir = try scratch.folder("big")
@@ -141,13 +131,13 @@ import PorpoiseTestSupport
 
         try makeFiles(in: dir, count: 3000) { "burst \($0)" }
         for i in stride(from: 0, to: 3000, by: 2) { unlink(dir.path + "/burst \(i)") }
-        #expect(wait(10) { seen().contains(dir.path) })
+        #expect(waitUntil(10) { seen().contains(dir.path) })
 
         // Let the burst drain, then one more change must still come through.
-        _ = wait(1) { false }
+        Thread.sleep(forTimeInterval: 1)
         reset()
         try Data("x".utf8).write(to: other.appendingPathComponent("after"))
-        #expect(wait(10) { seen() == [other.path] })
+        #expect(waitUntil(10) { seen() == [other.path] })
 
         // Rewatching many folders at once (as a window with many tabs does) and changing all of them.
         let many = try (0..<50).map { try scratch.folder("many/\($0)") }
@@ -155,6 +145,6 @@ import PorpoiseTestSupport
         Thread.sleep(forTimeInterval: 0.3)
         reset()
         for f in many { try Data("y".utf8).write(to: f.appendingPathComponent("y")) }
-        #expect(wait(10) { seen() == Set(many.map(\.path)) }, "\(many.count - seen().count) folders not reported")
+        #expect(waitUntil(10) { seen() == Set(many.map(\.path)) }, "\(many.count - seen().count) folders not reported")
     }
 }

@@ -3,78 +3,7 @@ import Testing
 @testable import PorpoiseCore
 import PorpoiseTestSupport
 
-/// Seeded random input for parsers and quoting: pieces of the syntax they read (separators, permissions, dates, numbers
-/// at the edges of Int64, quotes, Unicode), joined at random or spliced into valid lines. Same inputs on every run.
-struct Fuzzer {
-    var rng: SeededGenerator
-
-    init(seed: UInt64) { rng = SeededGenerator(seed: seed) }
-
-    static let atoms: [String] = [
-        "\t", "\n", "\r", "\r\n", "\0", " ", "  ", "-", "/", ".", "..", ":", ",", "->", " -> ", "./", "~",
-        "d", "l", "r", "w", "x", "s", "S", "t", "T", "c", "b", "p",
-        "-rwxr-xr-x", "drwxr-xr-x", "lrwxrwxrwx", "crw-rw-rw-", "-rwsr-sr-t", "dl", "fd", "ff", "lf",
-        "0", "1", "7", "9", "42", "-1", "1,", "1, 3", "644", "0755", "99999999999999999999", "9223372036854775807",
-        "-9223372036854775808", "1700000000.5", "nan", "inf", "1e400",
-        "Jan", "Feb", "Dec", "Foo", "2024-01-05", "12:00", "24:61", "2023", "31", "00:34:40.56",
-        "%", "%2e", "%2f", "%00", "%ZZ", "\\", "'", "\"", "`", "$(", ")", "[", "]", "!", "*", "?", "^", "{", "}", "|", "+",
-        "é", "e\u{301}", "🐬", "\u{202E}", "\u{FEFF}", "\u{200B}", "한",
-        "v", "beta", "Regular File", "Directory", "Symbolic Link", "Character Device", "me", "staff", "root",
-        "device", "offline", "model:Pixel_7", "usb:1-1", "List of devices attached",
-        "[Color1]", "[Color7Intense]", "[Color9]", "[Color8Intense]", "[Background]", "[Foreground]", "Color=1,2,3",
-        "Color=-5,999,x", "Color=", "Input #0, ", "matroska,webm", "Duration: ", "Stream #0:0: Video: h264", "Audio: aac",
-        "attached pic", "S3CRET", "secret.txt", "index.m3u8",
-    ]
-
-    mutating func int(_ n: Int) -> Int { Int.random(in: 0..<n, using: &rng) }
-    mutating func pick<T>(_ a: [T]) -> T { a[int(a.count)] }
-
-    /// Up to `max` atoms, now and then a random scalar.
-    mutating func string(max: Int = 24) -> String {
-        var s = ""
-        for _ in 0..<int(max + 1) {
-            if int(10) == 0 {
-                let v = UInt32.random(in: 1...0x1_FFFF, using: &rng)
-                if let u = Unicode.Scalar(v) { s.unicodeScalars.append(u) }
-            } else {
-                s += pick(Self.atoms)
-            }
-        }
-        return s
-    }
-
-    /// `s` with a few random edits: delete a run, insert atoms, duplicate a run.
-    mutating func mutate(_ s: String) -> String {
-        var c = Array(s)
-        for _ in 0..<(1 + int(3)) {
-            let i = c.isEmpty ? 0 : int(c.count + 1)
-            switch int(3) {
-            case 0 where !c.isEmpty:
-                let len = min(c.count - min(i, c.count - 1), 1 + int(4))
-                c.removeSubrange(min(i, c.count - 1)..<min(i, c.count - 1) + len)
-            case 1:
-                c.insert(contentsOf: Array(string(max: 2)), at: min(i, c.count))
-            default:
-                guard !c.isEmpty else { continue }
-                let a = min(i, c.count - 1), len = min(c.count - a, 1 + int(6))
-                c.insert(contentsOf: c[a..<a + len], at: a)
-            }
-        }
-        return String(c)
-    }
-
-    /// Random or mutated-from-a-sample text, `lines` records joined by `separator`.
-    mutating func text(samples: [String], lines: Int = 6, separator: String = "\n") -> String {
-        (0..<(1 + int(lines))).map { _ in int(3) == 0 ? string() : mutate(pick(samples)) }.joined(separator: separator)
-    }
-}
-
-/// Collects invariant violations so a failure reports a few examples instead of thousands of expectations.
-struct Violations {
-    private(set) var list: [String] = []
-    mutating func check(_ ok: Bool, _ what: @autoclosure () -> String) { if !ok && list.count < 5 { list.append(what()) } }
-}
-
+/// Seeded fuzzing (see `Fuzzer`): no crash, and simple invariants hold for every input.
 @Suite struct ParserFuzzTests {
     private let cases = 3000
     private let folder = URL(fileURLWithPath: "/remote/folder/")

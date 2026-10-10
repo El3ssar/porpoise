@@ -77,7 +77,8 @@ public enum RemoteFS {
     /// Normalizes what users type: "user@host:/path" → sftp://user@host/path, "host:path" → sftp.
     public static func parseTyped(_ text: String) -> URL? {
         let t = text.trimmingCharacters(in: .whitespaces)
-        if t.contains("://") {
+        // A scheme first: "~/notes/http://x" is a path, not a URL without a scheme.
+        if t.range(of: "^[A-Za-z][A-Za-z0-9+.-]*://", options: .regularExpression) != nil {
             var s = t
             if s.hasPrefix("fish://") || s.hasPrefix("ssh://") || s.hasPrefix("scp://") {
                 s = "sftp://" + s.components(separatedBy: "://").dropFirst().joined(separator: "://")

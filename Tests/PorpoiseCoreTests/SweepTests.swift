@@ -5,18 +5,6 @@ import PorpoiseTestSupport
 
 /// FolderWatcher with real FSEvents, and FileJob/FileActions cases found in the file-operations sweep.
 @Suite(.serialized) struct FolderWatcherLiveTests {
-    let fm = FileManager.default
-
-    /// Waits up to `timeout` for `condition`, spinning briefly.
-    private func wait(_ timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
-        let end = Date().addingTimeInterval(timeout)
-        while Date() < end {
-            if condition() { return true }
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-        return condition()
-    }
-
     /// The folder is reached through a symlink (as /tmp and /var are); FSEvents reports real
     /// paths, which must still match the folder as the app names it.
     @Test func reportsChangesInFoldersReachedThroughSymlinks() throws {
@@ -31,7 +19,7 @@ import PorpoiseTestSupport
         defer { watcher.stop() }
         Thread.sleep(forTimeInterval: 0.3)
         try Data("x".utf8).write(to: dir.appendingPathComponent("new.txt"))
-        let got = wait(5) { lock.lock(); defer { lock.unlock() }; return !hits.isEmpty }
+        let got = waitUntil(5) { lock.lock(); defer { lock.unlock() }; return !hits.isEmpty }
         #expect(got)
         lock.lock(); let h = hits; lock.unlock()
         #expect(h == [dir.standardizedFileURL.path])
