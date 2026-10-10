@@ -162,6 +162,15 @@ import PorpoiseTestSupport
         #expect(ui.errors.count == 1)   // the remote one: nothing provides "unknown://"
     }
 
+    @MainActor @Test func decliningToDeleteTheRemoteItemsStillTrashesTheLocalOnes() async throws {
+        let f = try file("local.txt")
+        ui.confirms = false
+        controller.trash([URL(string: "unknown://host/remote.txt")!, f], window: nil)
+        await ui.nextJobFinished()
+        #expect(lastTrashed.map(\.original) == [f])
+        #expect(ui.errors.isEmpty)
+    }
+
     // MARK: Undo of things that go back through the Trash
 
     @MainActor @Test func anUndoThatCannotTrashEverythingPutsBackWhatItTrashed() async throws {

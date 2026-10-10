@@ -130,8 +130,7 @@ public final class FileOperationsController {
                 message: remote.count == 1 ? "Permanently delete “\(remote[0].lastPathComponent)”?" : "Permanently delete these \(remote.count) items?",
                 detail: "Remote locations don't have a Trash. This action cannot be undone.",
                 confirmTitle: "Delete", warning: true, destructive: true)
-            guard confirm(q, window: window) else { return }
-            runRemote(.delete, remote, to: nil, window: window, done: nil)
+            if confirm(q, window: window) { runRemote(.delete, remote, to: nil, window: window, done: nil) }
         }
         // Apple's own apps live on the read-only system volume: macOS doesn't allow removing them.
         let builtIn = urls.filter { $0.isFileURL && AppLibrary.isBuiltIn($0) }

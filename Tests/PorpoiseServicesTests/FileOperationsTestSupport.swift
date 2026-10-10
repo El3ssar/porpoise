@@ -15,7 +15,7 @@ final class ScriptedUI: FileOperationsUI {
     private(set) var errors: [String] = []
     private(set) var authorizationErrors: [String] = []
     private(set) var finishedJobs: [FileJob] = []
-    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private var waiting: [UUID: CheckedContinuation<Void, Never>] = [:]
 
     init(conflicts: [ConflictAnswer] = [], confirms: Bool = true) {
         conflictAnswers = conflicts
@@ -46,15 +46,24 @@ final class ScriptedUI: FileOperationsUI {
         finishedJobs.append(job)
         // The controller finishes its bookkeeping in the same main-queue turn, before a waiter resumes.
         let w = waiting
-        waiting = []
-        w.forEach { $0.resume() }
+        waiting = [:]
+        w.values.forEach { $0.resume() }
     }
 
     func showAuthorizationError(_ message: String) { authorizationErrors.append(message) }
 
-    /// Waits until the next job reports it has finished.
-    @MainActor func nextJobFinished() async {
-        await withCheckedContinuation { waiting.append($0) }
+    /// Waits until the next job reports it has finished; a job that never comes fails the test after `timeout`
+    /// instead of hanging the run (a time limit can't interrupt a continuation).
+    @MainActor func nextJobFinished(timeout: TimeInterval = 20, sourceLocation: SourceLocation = #_sourceLocation) async {
+        let id = UUID()
+        await withCheckedContinuation { c in
+            waiting[id] = c
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [self] in
+                guard let c = waiting.removeValue(forKey: id) else { return }
+                Issue.record("No job finished within \(Int(timeout)) seconds", sourceLocation: sourceLocation)
+                c.resume()
+            }
+        }
     }
 }
 
