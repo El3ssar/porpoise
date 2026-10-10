@@ -56,7 +56,8 @@ public struct NameFilter: Equatable, Sendable {
             default: pattern += NSRegularExpression.escapedPattern(for: String(ch))
             }
         }
-        return pattern + "$"
+        // The very end: "$" would also match before a final line break, so "*.txt" took a name ending in ".txt\n".
+        return pattern + "\\z"
     }
 
     private static func regexMatcher(_ pattern: String, _ cs: Bool,

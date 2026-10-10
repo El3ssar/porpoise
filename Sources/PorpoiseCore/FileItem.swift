@@ -81,7 +81,10 @@ public struct FileItem: Hashable, Sendable {
     public static func load(_ url: URL) -> FileItem? {
         let keys = Set(resourceKeys)
         guard let v = try? url.resourceValues(forKeys: keys) else { return nil }
-        let name = v.name ?? url.lastPathComponent
+        // The file system's spelling (case, a volume's name for "/"), except that Foundation drops a leading U+FEFF
+        // from names it reads: then the URL's own name is the real one.
+        let last = url.lastPathComponent
+        let name = last.unicodeScalars.first == "\u{FEFF}" ? last : (v.name ?? last)
         var isDir = v.isDirectory ?? false
         let isLink = v.isSymbolicLink ?? false
         var linkDest: String?
@@ -142,7 +145,10 @@ public struct FileItem: Hashable, Sendable {
 public enum DirectoryLister {
     /// Lists a folder (all entries, including hidden ones; the model decides what to show).
     public static func list(_ folder: URL) throws -> [FileItem] {
-        let names = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        // Names from URLs: the String-based listing drops a leading U+FEFF, which would lose the file. The URL-based
+        // one doesn't follow a symlink to a folder, so it is given the real folder; items keep `folder` as named.
+        let names = try FileManager.default.contentsOfDirectory(at: folder.resolvingSymlinksInPath(), includingPropertiesForKeys: nil)
+            .map(\.lastPathComponent)
         var items: [FileItem] = []
         items.reserveCapacity(names.count)
         for n in names {

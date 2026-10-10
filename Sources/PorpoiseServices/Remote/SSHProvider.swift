@@ -98,19 +98,30 @@ final class SSHProvider: RemoteProvider {
     func rootTitle(_ url: URL) -> String { target }
 
     func list(_ folder: URL) throws -> [FileItem] {
-        // GNU find where available, else BSD stat; records end with NUL so names may contain newlines.
-        let script = """
-        cd \(shellPath(folder)) || exit 2
+        Self.parseListing(String(decoding: try exec(Self.listScript(shellPath(folder))), as: UTF8.self), folder: folder)
+    }
+
+    /// Lists the folder `folderWord` (a shell word): GNU find where available, else BSD stat (whose format writes a
+    /// tab as `%t`; a `\t` would be printed as it is). Records end with NUL so names may contain newlines. stat adds
+    /// its newline only when the output doesn't already end with one (a name ending in "\n"), so `-n` turns that off
+    /// and the newline `parseBSDStat` expects is printed separately.
+    static func listScript(_ folderWord: String) -> String {
+        """
+        cd \(folderWord) || exit 2
         if find . -maxdepth 0 -printf '' >/dev/null 2>&1; then
           LC_ALL=C find . -mindepth 1 -maxdepth 1 -printf '%y%Y\\t%s\\t%T@\\t%m\\t%u\\t%g\\t%l\\t%f\\0'; echo __GNU__
         else
           for f in .* *; do
             case "$f" in .|..) continue;; esac
-            if [ -e "$f" ] || [ -L "$f" ]; then stat -f '%HT\\t%z\\t%m\\t%Lp\\t%Su\\t%Sg\\t%Y\\t%N' "./$f" && printf '\\0'; fi
+            if [ -e "$f" ] || [ -L "$f" ]; then stat -n -f '%HT%t%z%t%m%t%Lp%t%Su%t%Sg%t%Y%t%N' "./$f" && printf '\\n\\0'; fi
           done; echo __BSD__
         fi
         """
-        var out = String(decoding: try exec(script), as: UTF8.self)
+    }
+
+    /// Items from `listScript`'s output.
+    static func parseListing(_ text: String, folder: URL) -> [FileItem] {
+        var out = text
         let base = folder.path.hasSuffix("/") ? folder : folder.appendingPathComponent("", isDirectory: true)
         if out.hasSuffix("__BSD__\n") {
             out.removeLast("__BSD__\n".count)

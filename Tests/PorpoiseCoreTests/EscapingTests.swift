@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import PorpoiseCore
+import PorpoiseTestSupport
 
 @Suite(.serialized) struct EscapingTests {
     @Test func appleScriptLiterals() {
@@ -17,10 +18,13 @@ import Testing
 
     private let fm = FileManager.default
     private let secret = "S3CRET"
+    private let scratch: Scratch
+
+    init() throws { scratch = try Scratch("Escaping") }
 
     /// root/stream/index.m3u8, a secret file next to root, and symlinks inside root pointing in and out.
-    private func setup() throws -> (base: URL, root: URL) {
-        let base = fm.temporaryDirectory.appendingPathComponent("dolphin-serve-\(UUID().uuidString)").resolvingSymlinksInPath()
+    private func setup() throws -> URL {
+        let base = scratch.url
         let root = base.appendingPathComponent("root")
         try fm.createDirectory(at: root.appendingPathComponent("stream"), withIntermediateDirectories: true)
         try Data("#EXTM3U".utf8).write(to: root.appendingPathComponent("stream/index.m3u8"))
@@ -28,11 +32,11 @@ import Testing
         try Data("private".utf8).write(to: base.appendingPathComponent("secret.txt"))
         try fm.createSymbolicLink(at: root.appendingPathComponent("stream/out"), withDestinationURL: base.appendingPathComponent("secret.txt"))
         try fm.createSymbolicLink(at: root.appendingPathComponent("stream/in"), withDestinationURL: root.appendingPathComponent("stream/index.m3u8"))
-        return (base, root.resolvingSymlinksInPath())
+        return root.resolvingSymlinksInPath()
     }
 
     @Test func servesFilesInsideTheRoot() throws {
-        let (base, root) = try setup(); defer { try? fm.removeItem(at: base) }
+        let root = try setup()
         #expect(Escaping.servedFile(for: "/S3CRET/stream/index.m3u8", root: root, secret: secret)?.lastPathComponent == "index.m3u8")
         #expect(Escaping.servedFile(for: "/S3CRET/stream/seg%201.m4s?t=1", root: root, secret: secret)?.lastPathComponent == "seg 1.m4s")
         #expect(Escaping.servedFile(for: "/S3CRET//stream//index.m3u8", root: root, secret: secret) != nil)
@@ -40,7 +44,7 @@ import Testing
     }
 
     @Test func refusesEverythingElse() throws {
-        let (base, root) = try setup(); defer { try? fm.removeItem(at: base) }
+        let root = try setup()
         let bad = [
             "/stream/index.m3u8",                    // no secret
             "/WRONG/stream/index.m3u8",

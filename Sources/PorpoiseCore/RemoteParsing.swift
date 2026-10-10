@@ -43,7 +43,8 @@ public enum RemoteParsing {
         if text.contains("\0") {
             return text.split(separator: "\0").map { r in
                 var s = String(r)
-                if statNewlines, s.hasSuffix("\n") { s.removeLast() }
+                // By scalar: after a name ending in "\r", "\r\n" is one Character and hasSuffix("\n") is false.
+                if statNewlines, s.unicodeScalars.last == "\n" { s.unicodeScalars.removeLast() }
                 return s
             }.filter { !$0.isEmpty }
         }
@@ -178,7 +179,7 @@ public enum RemoteParsing {
 
     /// A single, safe path component (see the type's note on untrusted names).
     public static func isSafeName(_ name: String) -> Bool {
-        !name.isEmpty && name != "." && name != ".." && !name.contains("/") && !name.contains("\0")
+        !name.isEmpty && name != "." && name != ".." && !name.containsScalar("/") && !name.containsScalar("\0")
     }
 
     static func item(folder: URL, name: String, isDir: Bool, isLink: Bool, size: Int64, mtime: Date?, mode: Int,
@@ -188,10 +189,17 @@ public enum RemoteParsing {
         let ext = (name as NSString).pathExtension
         let type = isDir ? "public.folder" : (ext.isEmpty ? "public.data" : UTType(filenameExtension: ext)?.identifier ?? "public.data")
         return FileItem(url: url, name: name, isDirectory: isDir, isSymlink: isLink, isHidden: name.hasPrefix("."),
-                        size: size, modificationDate: mtime, contentType: type, posixPermissions: mode,
+                        size: size, modificationDate: mtime, contentType: type, posixPermissions: mode & 0o7777,
                         owner: owner.isEmpty ? nil : owner, group: group.isEmpty ? nil : group, linkDestination: link)
     }
 
-    /// POSIX shell single-quote escaping: the result is one word, whatever `s` contains.
-    public static func quote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+    /// POSIX shell single-quote escaping: the result is one word, whatever `s` contains. By code point: a quote
+    /// followed by a combining mark is one Character, which a Character-based replace leaves as it is.
+    public static func quote(_ s: String) -> String {
+        var out = "'"
+        for u in s.unicodeScalars {
+            if u == "'" { out += "'\\''" } else { out.unicodeScalars.append(u) }
+        }
+        return out + "'"
+    }
 }

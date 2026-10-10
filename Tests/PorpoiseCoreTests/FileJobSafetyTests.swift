@@ -1,18 +1,24 @@
 import Foundation
 import Testing
 @testable import PorpoiseCore
+import PorpoiseTestSupport
 
 /// Data-safety behavior of FileJob and FileActions: conflicts, overwrite, merge, undo, permissions.
 @Suite(.serialized) struct FileJobSafetyTests {
     let fm = FileManager.default
+    /// One per test (Swift Testing makes a new suite value for each), removed with it.
+    private let scratch: Scratch
 
-    /// A fresh temp folder with `src` and `dst` subfolders; removed by the caller's defer.
-    private func sandbox() throws -> (root: URL, src: URL, dst: URL) {
-        let root = fm.temporaryDirectory.appendingPathComponent("dolphin-safety-\(UUID().uuidString)")
+    private var root: URL { scratch.url }
+
+    init() throws { scratch = try Scratch("FileJobSafety") }
+
+    /// `src` and `dst` subfolders of the test's scratch folder.
+    private func sandbox() throws -> (src: URL, dst: URL) {
         let src = root.appendingPathComponent("src"), dst = root.appendingPathComponent("dst")
         try fm.createDirectory(at: src, withIntermediateDirectories: true)
         try fm.createDirectory(at: dst, withIntermediateDirectories: true)
-        return (root, src, dst)
+        return (src, dst)
     }
 
     private func write(_ text: String, _ url: URL) throws { try Data(text.utf8).write(to: url) }
@@ -23,7 +29,7 @@ import Testing
     // MARK: Overwrite
 
     @Test func overwriteReplacesFileWithoutLeftovers() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         try write("new", src.appendingPathComponent("f"))
         try write("old", dst.appendingPathComponent("f"))
         let job = FileJob(kind: .copy, sources: [src.appendingPathComponent("f")], destinationFolder: dst)
@@ -35,7 +41,7 @@ import Testing
     }
 
     @Test func failedOverwriteKeepsTheDestination() throws {
-        let (root, src, dst) = try sandbox()
+        let (src, dst) = try sandbox()
         // A folder with an unreadable subfolder: the copy fails halfway.
         let s = src.appendingPathComponent("f"), locked = s.appendingPathComponent("locked")
         try fm.createDirectory(at: locked, withIntermediateDirectories: true)
@@ -43,7 +49,7 @@ import Testing
         try write("b", locked.appendingPathComponent("b"))
         try write("old", dst.appendingPathComponent("f"))
         chmod(locked.path, 0o000)
-        defer { chmod(locked.path, 0o755); try? fm.removeItem(at: root) }
+        defer { chmod(locked.path, 0o755) }
         let job = FileJob(kind: .copy, sources: [s], destinationFolder: dst)
         job.resolveConflict = { _ in ConflictAnswer(.overwrite) }
         _ = try job.run()
@@ -54,7 +60,7 @@ import Testing
     }
 
     @Test func overwriteFileWithFolderAndBack() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         try fm.createDirectory(at: src.appendingPathComponent("x/inner"), withIntermediateDirectories: true)
         try write("file", dst.appendingPathComponent("x"))
         let job = FileJob(kind: .copy, sources: [src.appendingPathComponent("x")], destinationFolder: dst)
@@ -65,7 +71,7 @@ import Testing
     }
 
     @Test func refusesToOverwriteAFolderWithItsOwnChild() throws {
-        let (root, src, _) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, _) = try sandbox()
         // Moving src/x/x (a file) into src would overwrite src/x, which contains the source.
         try fm.createDirectory(at: src.appendingPathComponent("x"), withIntermediateDirectories: true)
         let child = src.appendingPathComponent("x/x")
@@ -80,7 +86,7 @@ import Testing
     }
 
     @Test func overwriteIfOlderComparesDates() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         let newer = src.appendingPathComponent("a"), older = src.appendingPathComponent("b")
         try write("newer", newer); try write("older", older)
         try write("dst-a", dst.appendingPathComponent("a")); try write("dst-b", dst.appendingPathComponent("b"))
@@ -99,7 +105,7 @@ import Testing
     // MARK: Conflict answers
 
     @Test func renameToAnExistingNameAsksAgain() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         try write("new", src.appendingPathComponent("a"))
         try write("A", dst.appendingPathComponent("a"))
         try write("B", dst.appendingPathComponent("b"))
@@ -116,7 +122,7 @@ import Testing
     }
 
     @Test func renameToAnInvalidNameFails() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         try write("new", src.appendingPathComponent("a"))
         try write("old", dst.appendingPathComponent("a"))
         let job = FileJob(kind: .copy, sources: [src.appendingPathComponent("a")], destinationFolder: dst)
@@ -127,7 +133,7 @@ import Testing
     }
 
     @Test func writeIntoOnAFileConflictSkipsInsteadOfDeleting() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         try write("source", src.appendingPathComponent("f"))
         try write("dest", dst.appendingPathComponent("f"))
         let job = FileJob(kind: .move, sources: [src.appendingPathComponent("f")], destinationFolder: dst)
@@ -138,7 +144,7 @@ import Testing
     }
 
     @Test func applyToAllAsksOnce() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         for n in ["a", "b", "c"] {
             try write("new", src.appendingPathComponent(n)); try write("old", dst.appendingPathComponent(n))
         }
@@ -151,7 +157,7 @@ import Testing
     }
 
     @Test func cancelStopsTheJob() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         try write("1", src.appendingPathComponent("a")); try write("2", src.appendingPathComponent("b"))
         try write("old", dst.appendingPathComponent("a"))
         let job = FileJob(kind: .copy, sources: [src.appendingPathComponent("a"), src.appendingPathComponent("b")], destinationFolder: dst)
@@ -162,7 +168,7 @@ import Testing
     }
 
     @Test func danglingSymlinkCountsAsConflict() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         try write("x", src.appendingPathComponent("l"))
         try fm.createSymbolicLink(atPath: dst.appendingPathComponent("l").path, withDestinationPath: "/nonexistent/target")
         var asked = 0
@@ -173,7 +179,7 @@ import Testing
     }
 
     @Test func moveIntoTheSameFolderIsANoOp() throws {
-        let (root, src, _) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, _) = try sandbox()
         try write("x", src.appendingPathComponent("f"))
         let job = FileJob(kind: .move, sources: [src.appendingPathComponent("f")], destinationFolder: src)
         job.resolveConflict = { _ in Issue.record("no conflict expected"); return ConflictAnswer(.cancel) }
@@ -184,7 +190,7 @@ import Testing
     // MARK: Into itself
 
     @Test func refusesCopyIntoItselfThroughASymlink() throws {
-        let (root, src, _) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, _) = try sandbox()
         let a = src.appendingPathComponent("a")
         try fm.createDirectory(at: a.appendingPathComponent("sub"), withIntermediateDirectories: true)
         let alias = root.appendingPathComponent("alias")
@@ -196,7 +202,7 @@ import Testing
     }
 
     @Test func refusesCopyOntoASymlinkToItself() throws {
-        let (root, src, _) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, _) = try sandbox()
         let a = src.appendingPathComponent("a")
         try fm.createDirectory(at: a, withIntermediateDirectories: true)
         let alias = root.appendingPathComponent("alias")
@@ -208,7 +214,7 @@ import Testing
     }
 
     @Test func movingASymlinkIntoItsTargetIsAllowed() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         let link = src.appendingPathComponent("link")
         try fm.createSymbolicLink(at: link, withDestinationURL: dst)
         let job = FileJob(kind: .move, sources: [link], destinationFolder: dst)
@@ -220,7 +226,7 @@ import Testing
     // MARK: Merge
 
     @Test func mergedMoveUndoRecreatesTheSourceFolder() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         try fm.createDirectory(at: src.appendingPathComponent("f"), withIntermediateDirectories: true)
         try fm.createDirectory(at: dst.appendingPathComponent("f"), withIntermediateDirectories: true)
         try write("1", src.appendingPathComponent("f/one"))
@@ -236,13 +242,13 @@ import Testing
     }
 
     @Test func mergeContinuesAfterAFailingChild() throws {
-        let (root, src, dst) = try sandbox()
+        let (src, dst) = try sandbox()
         try fm.createDirectory(at: src.appendingPathComponent("f"), withIntermediateDirectories: true)
         try fm.createDirectory(at: dst.appendingPathComponent("f"), withIntermediateDirectories: true)
         let bad = src.appendingPathComponent("f/a-unreadable")
         try write("x", bad); try write("y", src.appendingPathComponent("f/b-fine"))
         chmod(bad.path, 0o000)
-        defer { chmod(bad.path, 0o644); try? fm.removeItem(at: root) }
+        defer { chmod(bad.path, 0o644) }
         let job = FileJob(kind: .copy, sources: [src.appendingPathComponent("f")], destinationFolder: dst)
         job.resolveConflict = { _ in ConflictAnswer(.writeInto) }
         _ = try job.run()
@@ -252,7 +258,7 @@ import Testing
     }
 
     @Test func movedSourceSurvivesWhenMergeLeavesItems() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         try fm.createDirectory(at: src.appendingPathComponent("f"), withIntermediateDirectories: true)
         try fm.createDirectory(at: dst.appendingPathComponent("f"), withIntermediateDirectories: true)
         try write("mine", src.appendingPathComponent("f/same"))
@@ -266,7 +272,7 @@ import Testing
     // MARK: Copy details
 
     @Test func copiesFolderTreesWithProgress() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         let tree = src.appendingPathComponent("tree")
         try fm.createDirectory(at: tree.appendingPathComponent("a/b"), withIntermediateDirectories: true)
         try Data(count: 1000).write(to: tree.appendingPathComponent("a/b/f"))
@@ -282,7 +288,7 @@ import Testing
     }
 
     @Test func linkCreatesSymlinks() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         try write("x", src.appendingPathComponent("f"))
         let job = FileJob(kind: .link, sources: [src.appendingPathComponent("f")], destinationFolder: dst)
         _ = try job.run()
@@ -291,7 +297,7 @@ import Testing
     }
 
     @Test func diskSizeDoesNotFollowSymlinks() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         try Data(count: 4096).write(to: dst.appendingPathComponent("big"))
         try fm.createSymbolicLink(at: src.appendingPathComponent("link"), withDestinationURL: dst)
         #expect(FileJob.diskSize(src.appendingPathComponent("link")) == 0)
@@ -303,7 +309,7 @@ import Testing
     // MARK: Undo
 
     @Test func undoIsAllOrNothing() throws {
-        let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, dst) = try sandbox()
         for n in ["a", "b"] { try write(n, dst.appendingPathComponent(n)) }
         // "b" can't go back: its original name was taken in the meantime.
         try write("squatter", src.appendingPathComponent("b"))
@@ -315,13 +321,13 @@ import Testing
     }
 
     @Test func undoCreatedSkipsItemsDeletedSince() throws {
-        let (root, src, _) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, _) = try sandbox()
         let gone = src.appendingPathComponent("gone")
         #expect(try FileActions.undo(.created([gone])) == nil)
     }
 
     @Test func undoRename() throws {
-        let (root, src, _) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, _) = try sandbox()
         try write("x", src.appendingPathComponent("a"))
         let b = try FileActions.rename(src.appendingPathComponent("a"), to: "b")
         let redo = try #require(try FileActions.undo(.renamed(from: src.appendingPathComponent("a"), to: b)))
@@ -333,7 +339,7 @@ import Testing
     // MARK: FileActions
 
     @Test func renameValidatesNames() throws {
-        let (root, src, _) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, _) = try sandbox()
         let a = src.appendingPathComponent("a")
         try write("x", a)
         try write("y", src.appendingPathComponent("taken"))
@@ -346,16 +352,16 @@ import Testing
     }
 
     @Test func makeFileNeverOverwrites() throws {
-        let (root, src, _) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, _) = try sandbox()
         _ = try FileActions.makeFile(named: "n.txt", in: src, contents: Data("first".utf8))
         #expect(throws: FileOperationError.self) { try FileActions.makeFile(named: "n.txt", in: src, contents: Data("second".utf8)) }
         #expect(read(src.appendingPathComponent("n.txt")) == "first")
     }
 
     @Test func makeFileInProtectedFolderIsAPermissionError() throws {
-        let (root, src, _) = try sandbox()
+        let (src, _) = try sandbox()
         chmod(src.path, 0o555)
-        defer { chmod(src.path, 0o755); try? fm.removeItem(at: root) }
+        defer { chmod(src.path, 0o755) }
         do {
             _ = try FileActions.makeFile(named: "n.txt", in: src)
             Issue.record("expected an error")
@@ -365,7 +371,7 @@ import Testing
     }
 
     @Test func makeFolderRefusesDotDot() throws {
-        let (root, src, _) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let (src, _) = try sandbox()
         #expect(throws: FileOperationError.self) { try FileActions.makeFolder(named: "a/../../b", in: src) }
         #expect(try FileActions.makeFolder(named: "a/b", in: src).path.hasSuffix("src/a/b"))
         #expect(FileActions.validateName("a/../b", in: src, allowSlash: true)?.isError == true)

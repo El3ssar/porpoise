@@ -1,12 +1,7 @@
 import Foundation
 import Testing
 @testable import PorpoiseCore
-
-private func tempDir() throws -> URL {
-    let u = FileManager.default.temporaryDirectory.appendingPathComponent("dolphin-tests-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
-    return u
-}
+import PorpoiseTestSupport
 
 private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bool = false, mod: Date? = nil) -> FileItem {
     FileItem(url: URL(fileURLWithPath: "/tmp/x/" + name), name: name, isDirectory: dir,
@@ -104,8 +99,12 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bo
 }
 
 @Suite(.serialized) struct FileJobTests {
+    private let scratch: Scratch
+
+    init() throws { scratch = try Scratch("FileJob") }
+
     @Test func copyWithConflictRenameAndUndo() throws {
-        let root = try tempDir(); defer { try? FileManager.default.removeItem(at: root) }
+        let root = scratch.url
         let src = root.appendingPathComponent("src"), dst = root.appendingPathComponent("dst")
         try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: dst, withIntermediateDirectories: true)
@@ -126,7 +125,7 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bo
     }
 
     @Test func moveAndUndoMove() throws {
-        let root = try tempDir(); defer { try? FileManager.default.removeItem(at: root) }
+        let root = scratch.url
         let a = root.appendingPathComponent("a"), b = root.appendingPathComponent("b")
         try FileManager.default.createDirectory(at: a.appendingPathComponent("inner"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: b, withIntermediateDirectories: true)
@@ -142,7 +141,7 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bo
     }
 
     @Test func refusesCopyIntoItself() throws {
-        let root = try tempDir(); defer { try? FileManager.default.removeItem(at: root) }
+        let root = scratch.url
         let a = root.appendingPathComponent("a")
         try FileManager.default.createDirectory(at: a.appendingPathComponent("sub"), withIntermediateDirectories: true)
         let job = FileJob(kind: .copy, sources: [a], destinationFolder: a.appendingPathComponent("sub"))
@@ -151,7 +150,7 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bo
     }
 
     @Test func pasteIntoSameFolderMakesCopy() throws {
-        let root = try tempDir(); defer { try? FileManager.default.removeItem(at: root) }
+        let root = scratch.url
         try Data("x".utf8).write(to: root.appendingPathComponent("n.txt"))
         let job = FileJob(kind: .copy, sources: [root.appendingPathComponent("n.txt")], destinationFolder: root)
         _ = try job.run()
@@ -159,7 +158,7 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bo
     }
 
     @Test func mergeFolders() throws {
-        let root = try tempDir(); defer { try? FileManager.default.removeItem(at: root) }
+        let root = scratch.url
         let s = root.appendingPathComponent("s/f"), d = root.appendingPathComponent("d/f")
         try FileManager.default.createDirectory(at: s, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
@@ -173,7 +172,7 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bo
     }
 
     @Test func validateNames() throws {
-        let root = try tempDir(); defer { try? FileManager.default.removeItem(at: root) }
+        let root = scratch.url
         try FileManager.default.createDirectory(at: root.appendingPathComponent("x"), withIntermediateDirectories: true)
         #expect(FileActions.validateName("x", in: root, allowSlash: true)?.isError == true)
         #expect(FileActions.validateName(".h", in: root, allowSlash: true)?.isError == false)
@@ -181,12 +180,12 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bo
     }
 
     @Test func permissionDeniedIsReportedSeparately() throws {
-        let root = try tempDir()
+        let root = scratch.url
         let ro = root.appendingPathComponent("ro")
         try FileManager.default.createDirectory(at: ro, withIntermediateDirectories: true)
         try Data("x".utf8).write(to: ro.appendingPathComponent("f"))
         chmod(ro.path, 0o555)
-        defer { chmod(ro.path, 0o755); try? FileManager.default.removeItem(at: root) }
+        defer { chmod(ro.path, 0o755) }
         let job = FileJob(kind: .delete, sources: [ro.appendingPathComponent("f")])
         _ = try job.run()
         #expect(job.denied == [ro.appendingPathComponent("f")])
