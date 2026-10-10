@@ -121,24 +121,27 @@ public enum PrivilegedHelper {
         var auth: AuthorizationRef?
         guard AuthorizationCreate(nil, nil, [], &auth) == errAuthorizationSuccess, let auth else { return false }
         defer { AuthorizationFree(auth, [.destroyRights]) }
+        // Every C string handed over must live until AuthorizationCopyRights returns.
         let ok: Bool = kAuthorizationRightExecute.withCString { right in
-            prompt.withCString { text in
-                var item = AuthorizationItem(name: right, valueLength: 0, value: nil, flags: 0)
-                var promptItem = AuthorizationItem(name: kAuthorizationEnvironmentPrompt, valueLength: strlen(text),
-                                                   value: UnsafeMutableRawPointer(mutating: text), flags: 0)
-                return withUnsafeMutablePointer(to: &item) { ip in
-                    withUnsafeMutablePointer(to: &promptItem) { pp in
-                        var rights = AuthorizationRights(count: 1, items: ip)
-                        var env = AuthorizationEnvironment(count: 1, items: pp)
-                        return AuthorizationCopyRights(auth, &rights, &env, [.interactionAllowed, .extendRights, .preAuthorize], nil)
-                            == errAuthorizationSuccess
+            kAuthorizationEnvironmentPrompt.withCString { promptKey in
+                prompt.withCString { text in
+                    var item = AuthorizationItem(name: right, valueLength: 0, value: nil, flags: 0)
+                    var promptItem = AuthorizationItem(name: promptKey, valueLength: strlen(text),
+                                                       value: UnsafeMutableRawPointer(mutating: text), flags: 0)
+                    return withUnsafeMutablePointer(to: &item) { ip in
+                        withUnsafeMutablePointer(to: &promptItem) { pp in
+                            var rights = AuthorizationRights(count: 1, items: ip)
+                            var env = AuthorizationEnvironment(count: 1, items: pp)
+                            return AuthorizationCopyRights(auth, &rights, &env, [.interactionAllowed, .extendRights, .preAuthorize], nil)
+                                == errAuthorizationSuccess
+                        }
                     }
                 }
             }
         }
         guard ok else { return false }
         let args = ["-c", script, "sh"] + arguments
-        var cArgs: [UnsafeMutablePointer<CChar>?] = args.map { strdup($0) } + [nil]
+        let cArgs: [UnsafeMutablePointer<CChar>?] = args.map { strdup($0) } + [nil]
         defer { cArgs.forEach { free($0) } }
         var pipe: UnsafeMutablePointer<FILE>?
         let status = cArgs.withUnsafeBufferPointer { exec(auth, "/bin/sh", [], $0.baseAddress!, &pipe) }

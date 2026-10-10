@@ -105,7 +105,7 @@ import PorpoiseTestSupport
                 for i in 0..<runs {
                     group.addTask {
                         let r = try? Shell.run("/bin/sh", ["-c", "echo \(i); echo e >&2"], timeout: 20)
-                        lock.lock(); outputs.append(r.map { String(decoding: $0.out, as: UTF8.self) } ?? "failed"); lock.unlock()
+                        lock.withLock { outputs.append(r.map { String(decoding: $0.out, as: UTF8.self) } ?? "failed") }
                     }
                 }
             }

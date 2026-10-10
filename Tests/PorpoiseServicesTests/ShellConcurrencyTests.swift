@@ -20,8 +20,8 @@ import Testing
             finished.enter()
             Task.detached {
                 defer { finished.leave() }
-                let r = try Shell.run("/bin/sh", ["-c", "cat; echo err >&2"], stdin: Data("hello".utf8))
-                if r.out == Data("hello".utf8) && r.err == "err\n" { ok.add() }
+                let r = try? Shell.run("/bin/sh", ["-c", "cat; echo err >&2"], stdin: Data("hello".utf8))
+                if r?.out == Data("hello".utf8) && r?.err == "err\n" { ok.add() }
             }
         }
         // A plain wait with a deadline: with the pool deadlocked, nothing async could wake this test up.

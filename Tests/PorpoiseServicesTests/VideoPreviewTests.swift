@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 import PorpoiseTestSupport
 @testable import PorpoiseServices
@@ -172,10 +173,10 @@ final class VideoPreviewStreamTests {
     // MARK: Streaming
 
     /// `playableURL`, waiting for its answer (nil after 30 s, so a regression fails instead of hanging).
-    func playable(_ p: VideoPreview, _ url: URL, owner: AnyObject) async -> URL? {
+    @MainActor func playable(_ p: VideoPreview, _ url: URL, owner: AnyObject) async -> URL? {
         await withCheckedContinuation { c in
             let once = Once()
-            DispatchQueue.main.async { p.playableURL(for: url, owner: owner) { u in if once.claim() { c.resume(returning: u) } } }
+            p.playableURL(for: url, owner: owner) { u in if once.claim() { c.resume(returning: u) } }
             DispatchQueue.main.asyncAfter(deadline: .now() + 30) { if once.claim() { c.resume(returning: nil) } }
         }
     }
@@ -261,16 +262,14 @@ final class VideoPreviewStreamTests {
         let second = try video("second.avi", ["-c:v", "mpeg4"])
         let p = VideoPreview()
         defer { p.stop(); p.server.stop() }
-        let lock = NSLock()
-        var firstAnswered = false
+        let firstAnswered = OSAllocatedUnfairLock(initialState: false)
         await MainActor.run {
-            p.playableURL(for: first, owner: NSObject()) { _ in lock.lock(); firstAnswered = true; lock.unlock() }
+            p.playableURL(for: first, owner: NSObject()) { _ in firstAnswered.withLock { $0 = true } }
         }
         let url = try #require(await playable(p, second, owner: NSObject()))
         #expect(url.lastPathComponent == "index.m3u8")
         usleep(300_000)
-        lock.lock(); defer { lock.unlock() }
-        #expect(!firstAnswered)   // the older request never calls back
+        #expect(!firstAnswered.withLock { $0 })   // the older request never calls back
         #expect(eventually { !ffmpegRunning(on: first) })
         #expect(eventually { sessionFolders().count == 1 })
     }
