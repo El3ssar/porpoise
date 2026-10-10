@@ -126,7 +126,36 @@ import PorpoiseTestSupport
         #expect(ui.finishedJobs.isEmpty && FileJob.itemExists(at: f))
     }
 
+    @MainActor @Test func appsThatArePartOfMacOSAreNotTrashed() async throws {
+        let calculator = URL(fileURLWithPath: "/System/Applications/Calculator.app")
+        let f = try file("mine.txt")
+        await trash([calculator, f])
+        #expect(ui.questions.map(\.message) == ["“Calculator” is part of macOS and can't be moved to the Trash."])
+        #expect(lastTrashed.map(\.original) == [f])
+        #expect(FileJob.itemExists(at: calculator))
+    }
+
+    @MainActor @Test func remoteItemsInTheSelectionAreDeletedAfterAskingAndLocalOnesTrashed() async throws {
+        let f = try file("local.txt")
+        controller.trash([URL(string: "unknown://host/remote.txt")!, f], window: nil)
+        #expect(ui.questions.map(\.message) == ["Permanently delete “remote.txt”?"])
+        await ui.nextJobFinished()
+        if ui.finishedJobs.count < 2 { await ui.nextJobFinished() }
+        #expect(lastTrashed.map(\.original) == [f])
+        #expect(ui.errors.count == 1)   // the remote one: nothing provides "unknown://"
+    }
+
     // MARK: Undo of things that go back through the Trash
+
+    @MainActor @Test func anUndoThatCannotTrashEverythingPutsBackWhatItTrashed() async throws {
+        let a = try file("a.txt"), b = try file("b.txt")
+        controller.pushUndo(.created([a, b]))
+        #expect(chflags(b.path, UInt32(UF_IMMUTABLE)) == 0)
+        controller.undo(window: nil)
+        #expect(FileJob.itemExists(at: a) && FileJob.itemExists(at: b))
+        #expect(ui.errors.count == 1 && controller.undoTitle == "Undo: Create")
+        #expect(!FileJob.itemExists(at: volumeTrash.appendingPathComponent("a.txt")))
+    }
 
     @MainActor @Test func undoingACopyTrashesTheCopyAndRedoBringsItBack() async throws {
         let original = try file("src/photo.jpg", "pixels")

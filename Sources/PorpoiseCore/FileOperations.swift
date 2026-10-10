@@ -279,7 +279,9 @@ public final class FileJob: @unchecked Sendable {
         while Self.itemExists(at: target) {
             let srcItem = FileItem.load(src)
             let dstItem = FileItem.load(target)
-            let bothDirs = (srcItem?.isBrowsableFolder ?? false) && (dstItem?.isBrowsableFolder ?? false)
+            // A link to a folder is transferred as the link: there is nothing in it to merge.
+            let srcIsFolder = (srcItem?.isBrowsableFolder ?? false) && !(srcItem?.isSymlink ?? false)
+            let bothDirs = srcIsFolder && (dstItem?.isBrowsableFolder ?? false)
             let suggestion = FileFormat.suggestedName(for: src.lastPathComponent, existing: names(in: folder))
             let answer = conflictAnswer(srcItem, dstItem, bothDirs: bothDirs, suggestion: suggestion)
             switch answer {

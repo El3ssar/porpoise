@@ -93,6 +93,70 @@ import PorpoiseTestSupport
         #expect(last?.totalBytes == 8 << 30 && last?.fraction == 1)
     }
 
+    // MARK: Replacing
+
+    @Test func replacingALockedFileKeepsItAndLeavesNoStagedCopy() throws {
+        let s = try Scratch()
+        let src = try s.file("src/f", "new")
+        let old = try s.file("dst/f", "old")
+        #expect(chflags(old.path, UInt32(UF_IMMUTABLE)) == 0)
+        let job = FileJob(kind: .copy, sources: [src], destinationFolder: s.path("dst"))
+        job.resolveConflict = { _ in ConflictAnswer(.overwrite) }
+        _ = try job.run()
+        #expect(s.read("dst/f") == "old" && s.listing("dst") == ["f"])
+        #expect(job.denied == [src])
+    }
+
+    @Test func aMoveThatCannotReplaceALockedFilePutsTheSourceBack() throws {
+        let s = try Scratch()
+        let src = try s.file("src/f", "new")
+        let old = try s.file("dst/f", "old")
+        #expect(chflags(old.path, UInt32(UF_IMMUTABLE)) == 0)
+        let job = FileJob(kind: .move, sources: [src], destinationFolder: s.path("dst"))
+        job.resolveConflict = { _ in ConflictAnswer(.overwrite) }
+        #expect(try job.run() == nil)
+        #expect(s.read("src/f") == "new")
+        #expect(s.read("dst/f") == "old" && s.listing("dst") == ["f"])
+    }
+
+    /// A link to a folder meeting a folder of the same name: the link is what was selected, not the folder it points to.
+    private func linkMeetsFolder(_ answer: ConflictResolution) throws -> (Scratch, FileJob) {
+        let s = try Scratch()
+        try s.file("real/photos/1.jpg", "1")
+        try s.folder("src")
+        try s.symlink("src/photos", to: s.path("real/photos").path)
+        try s.file("dst/photos/2.jpg", "2")
+        let job = FileJob(kind: .move, sources: [s.path("src/photos")], destinationFolder: s.path("dst"))
+        job.resolveConflict = { _ in ConflictAnswer(answer) }
+        _ = try job.run()
+        #expect(s.listing("real/photos") == ["1.jpg"])
+        return (s, job)
+    }
+
+    @Test func writeIntoSkipsALinkToAFolder() throws {
+        let (s, job) = try linkMeetsFolder(.writeInto)
+        #expect(job.errors.isEmpty)
+        #expect(s.listing("src") == ["photos"] && s.listing("dst/photos") == ["2.jpg"])
+    }
+
+    @Test func replacingAFolderWithALinkToAFolderReplacesItWithTheLink() throws {
+        let (s, job) = try linkMeetsFolder(.overwrite)
+        #expect(job.errors.isEmpty)
+        #expect(s.listing("src").isEmpty)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: s.path("dst/photos").path) == s.path("real/photos").path)
+    }
+
+    @Test func anInvalidNameForANestedConflictFailsOnlyThatItem() throws {
+        let s = try Scratch()
+        try s.file("src/f/clash", "new"); try s.file("src/f/fine", "fine")
+        try s.file("dst/f/clash", "old")
+        let job = FileJob(kind: .copy, sources: [s.path("src/f")], destinationFolder: s.path("dst"))
+        job.resolveConflict = { info in ConflictAnswer(info.source.isBrowsableFolder ? .writeInto : .rename("no/slashes")) }
+        _ = try job.run()
+        #expect(job.errors == ["“no/slashes” is not a valid name."])
+        #expect(s.read("dst/f/clash") == "old" && s.read("dst/f/fine") == "fine")
+    }
+
     // MARK: Into itself
 
     @Test func refusesToMoveAFolderIntoItsOwnSubfolder() throws {

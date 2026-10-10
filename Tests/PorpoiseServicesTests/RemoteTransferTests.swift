@@ -23,6 +23,16 @@ import PorpoiseTestSupport
         #expect(ui.errors.count == 1 && ui.conflicts.isEmpty)
     }
 
+    @Test func aLocalItemInAMixedSelectionIsStillCopied() async throws {
+        let s = try Scratch()
+        let f = try s.file("src/local.txt", "local")
+        let ui = ScriptedUI()
+        let results = await makeController(ui).perform(.copy, [URL(string: "unknown://host/remote.txt")!, f], to: try s.folder("dst"))
+        #expect(results.map(\.lastPathComponent) == ["local.txt"])
+        #expect(s.read("dst/local.txt") == "local" && s.read("src/local.txt") == "local")
+        #expect(ui.errors.count == 1)
+    }
+
     @Test func itemsCannotBePutIntoAnUnknownKindOfLocation() async throws {
         let s = try Scratch()
         let f = try s.file("file.txt", "local")
