@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.2.0
+
+A release about reliability: Porpoise now has about 470 tests that run on real files, real disk images, a real SSH
+server and real videos, and they found the bugs below.
+
+**Security**
+- The helper only accepts Porpoise when its app on disk is intact (nothing inside it swapped or added), and it never
+  changes the owner of anything outside your Trash, even through a link. This updates the helper once: macOS asks for
+  the administrator's approval the next time it's needed.
+- File names with unusual characters (an accent right after a quote or a slash, line breaks) can no longer slip past
+  the safety checks used for remote servers, the administrator prompt and the preview server.
+
+**Fixed**
+- Folders on Mac and BSD servers over SSH showed up empty, and links to folders there opened as files.
+- An FTP password typed in the address was sent wrongly encoded.
+- Trashing a link in a locked folder unlocked the file it pointed to.
+- Pasting into a folder reached through a link offered to replace the item with itself.
+- A link to a folder meeting a folder of the same name could not be replaced.
+- Declining to delete remote items also cancelled moving the local ones in the same selection to the Trash.
+- Two rare crashes (renaming "x (9223372036854775807)", some terminal colour schemes), a file starting with an
+  invisible character not showing, and "*.txt" matching a name ending in a line break.
+- Video previews could leave ffmpeg running, and several tools started at once could stall.
+
+**Faster and smoother**
+- Scrolling folders on network drives no longer waits for tags and iCloud states; they fill in as they're read.
+- Typing in the filter bar narrows the list without sorting the whole folder again.
+- Android phones are looked for only while Porpoise is in front.
+- Thumbnails use a bounded amount of memory.
+- Porpoise reopens its windows where they were, with the same tab active.
+
+**Accessibility**
+- VoiceOver reads the file view, Places, tabs, the path bar and the apps grid, and can open and select items.
+- With Full Keyboard Access, toolbar buttons can be reached with Tab and pressed with Space.
+- Reduce Motion turns off animations; Increase Contrast strengthens the selection.
+- ⌘Z in a text field undoes the typing, not the last file operation.
+
 ## 0.1.8
 
 - Porpoise's helper is now "Porpoise Helper", with Porpoise's icon, so it's easy to recognise in System Settings.

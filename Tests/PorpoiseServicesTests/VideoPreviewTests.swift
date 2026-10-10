@@ -95,23 +95,21 @@ private extension Array where Element == String {
     }
 }
 
-/// The ffmpeg under test: the one Porpoise ships (scripts/build-ffmpeg.sh), else one on PATH.
+/// The ffmpeg under test: the one Porpoise ships (scripts/build-ffmpeg.sh), else one on PATH. CI builds Porpoise's.
 let testFFmpeg: String? = {
     let built = repoRoot.appendingPathComponent("build/ffmpeg/ffmpeg").path
-    return FileManager.default.isExecutableFile(atPath: built) ? built : fullFFmpeg
-}()
-
-/// An ffmpeg that can make test videos: Porpoise's own build is decode-only (no test sources, no H.264 encoder), so
-/// the clips come from a full one on PATH. CI's unit tests have none, and skip.
-let fullFFmpeg: String? = {
+    if FileManager.default.isExecutableFile(atPath: built) { return built }
     let dirs = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init) + ["/opt/homebrew/bin", "/usr/local/bin"]
     return dirs.map { "\($0)/ffmpeg" }.first { FileManager.default.isExecutableFile(atPath: $0) }
 }()
 
 private let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
+/// One-second test clips (160×120, a test picture and a tone), one per codec and container the tests need.
+private let clips = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Videos")
+
 /// Probing and streaming with a real ffmpeg on tiny generated videos. Streams go to a scratch folder.
-@Suite(.serialized, .enabled(if: fullFFmpeg != nil, "needs a full ffmpeg on PATH to make test videos"))
+@Suite(.serialized, .enabled(if: testFFmpeg != nil, "needs ffmpeg: scripts/build-ffmpeg.sh, or one on PATH"))
 final class VideoPreviewStreamTests {
     let scratch: Scratch
     let streams: URL
@@ -128,21 +126,17 @@ final class VideoPreviewStreamTests {
         VideoPreview.testRoot = nil
     }
 
-    /// A 1 s test picture (and tone) made by ffmpeg.
-    func video(_ name: String, _ codecArgs: [String], audio: [String]? = nil) throws -> URL {
+    /// The clip `fixture` (in Fixtures/Videos) as a file named `name` in the scratch folder.
+    func video(_ name: String, _ fixture: String) throws -> URL {
         let out = scratch.path(name)
-        var args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-f", "lavfi", "-i", "testsrc=duration=1:size=160x120:rate=10"]
-        if audio != nil { args += ["-f", "lavfi", "-i", "sine=duration=1"] }
-        args += codecArgs + (audio ?? ["-an"]) + ["-y", out.path]
-        let r = try Shell.run(fullFFmpeg!, args, timeout: 30)
-        try #require(r.status == 0, "ffmpeg: \(r.err)")
+        try FileManager.default.copyItem(at: clips.appendingPathComponent(fixture), to: out)
         return out
     }
 
     // MARK: Probing
 
     @Test func probesH264InMKVAsCopyable() throws {
-        let v = try video("x264 audio.mkv", ["-c:v", "libx264", "-pix_fmt", "yuv420p"], audio: ["-c:a", "aac"])
+        let v = try video("x264 audio.mkv", "h264-aac.mkv")
         let info = VideoPreview.probe(v)
         #expect(info.codecs == ("h264", "aac"))
         #expect(abs((info.duration ?? 0) - 1) < 0.2)
@@ -150,16 +144,16 @@ final class VideoPreviewStreamTests {
 
     @Test func probesAVIAsConvertOnly() throws {
         // AVI can't carry a copied stream: the codecs come back empty so it is converted.
-        let v = try video("mpeg4.avi", ["-c:v", "mpeg4"])
+        let v = try video("mpeg4.avi", "mpeg4.avi")
         let info = VideoPreview.probe(v)
         #expect(info.codecs == ("", ""))
         #expect(abs((info.duration ?? 0) - 1) < 0.2)
-        let h264avi = try video("x264.avi", ["-c:v", "libx264", "-pix_fmt", "yuv420p"])
+        let h264avi = try video("x264.avi", "h264.avi")
         #expect(VideoPreview.probe(h264avi).codecs == ("", ""))
     }
 
     @Test func probesNamesThatLookLikeProtocols() throws {
-        let v = try video("concat:x.mkv", ["-c:v", "mjpeg"])
+        let v = try video("concat:x.mkv", "mjpeg.mkv")
         let info = VideoPreview.probe(v)
         #expect(info.codecs.video == "mjpeg")
         #expect(info.duration != nil)
@@ -211,11 +205,10 @@ final class VideoPreviewStreamTests {
     }
 
     @Test(arguments: [
-        ("mpeg4.avi", ["-c:v", "mpeg4"]), ("mjpeg.avi", ["-c:v", "mjpeg"]),
-        ("x264.mkv", ["-c:v", "libx264", "-pix_fmt", "yuv420p"]), ("x264 in.avi", ["-c:v", "libx264", "-pix_fmt", "yuv420p"]),
+        ("mpeg4.avi", "mpeg4-aac.avi"), ("mjpeg.avi", "mjpeg-aac.avi"), ("x264.mkv", "h264-aac.mkv"), ("x264 in.avi", "h264-aac.avi"),
     ])
-    func streamsOverLocalHTTP(name: String, codec: [String]) async throws {
-        let v = try video(name, codec, audio: ["-c:a", "aac"])
+    func streamsOverLocalHTTP(name: String, fixture: String) async throws {
+        let v = try video(name, fixture)
         let p = VideoPreview()
         let owner = NSObject()
         defer { p.stop(); p.server.stop() }
@@ -238,7 +231,7 @@ final class VideoPreviewStreamTests {
     }
 
     @Test func filesAVFoundationPlaysAreReturnedAsTheyAre() async throws {
-        let v = try video("plain.mp4", ["-c:v", "libx264", "-pix_fmt", "yuv420p"])
+        let v = try video("plain.mp4", "h264.mp4")
         let p = VideoPreview()
         defer { p.stop(); p.server.stop() }
         #expect(await playable(p, v, owner: NSObject()) == v)
@@ -246,7 +239,7 @@ final class VideoPreviewStreamTests {
     }
 
     @Test func onlyTheOwnerStopsTheStream() async throws {
-        let v = try video("owned.avi", ["-c:v", "mpeg4"])
+        let v = try video("owned.avi", "mpeg4.avi")
         let p = VideoPreview()
         let owner = NSObject(), other = NSObject()
         defer { p.stop(); p.server.stop() }
@@ -263,8 +256,8 @@ final class VideoPreviewStreamTests {
     }
 
     @Test func aNewerRequestWins() async throws {
-        let first = try video("first.avi", ["-c:v", "mpeg4"])
-        let second = try video("second.avi", ["-c:v", "mpeg4"])
+        let first = try video("first.avi", "mpeg4.avi")
+        let second = try video("second.avi", "mpeg4.avi")
         let p = VideoPreview()
         defer { p.stop(); p.server.stop() }
         let firstAnswered = OSAllocatedUnfairLock(initialState: false)
@@ -288,7 +281,7 @@ final class VideoPreviewStreamTests {
     }
 
     @Test func withoutFFmpegNothingStreams() async throws {
-        let v = try video("noff.avi", ["-c:v", "mpeg4"])
+        let v = try video("noff.avi", "mpeg4.avi")
         VideoPreview.testFFmpeg = scratch.path("no-ffmpeg-here").path
         defer { VideoPreview.testFFmpeg = testFFmpeg }
         let p = VideoPreview()

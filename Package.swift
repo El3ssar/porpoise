@@ -28,7 +28,9 @@ let package = Package(
         // Shared by the test targets: throwaway folders and disk images that clean up after themselves.
         .target(name: "PorpoiseTestSupport", path: "Tests/PorpoiseTestSupport"),
         .testTarget(name: "PorpoiseCoreTests", dependencies: ["PorpoiseCore", "PorpoiseTestSupport"]),
-        .testTarget(name: "PorpoiseServicesTests", dependencies: ["PorpoiseServices", "PorpoiseCore", "PorpoiseTestSupport"]),
+        .testTarget(
+            name: "PorpoiseServicesTests", dependencies: ["PorpoiseServices", "PorpoiseCore", "PorpoiseTestSupport"],
+            exclude: ["Fixtures"]),
     ],
     swiftLanguageModes: [.v5]
 )

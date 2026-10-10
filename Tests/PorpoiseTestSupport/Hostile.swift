@@ -54,7 +54,8 @@ public func runTool(_ tool: String, _ args: [String], cwd: URL? = nil, env: [Str
     var errData = Data()
     let group = DispatchGroup()
     group.enter()
-    DispatchQueue.global().async {
+    // A queue of its own: with the test threads all blocked here, a global queue might never get a thread to run it.
+    DispatchQueue(label: "porpoise.test.stderr").async {
         errData = err.fileHandleForReading.readDataToEndOfFile(); group.leave()
     }
     let outData = out.fileHandleForReading.readDataToEndOfFile()

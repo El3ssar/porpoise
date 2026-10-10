@@ -6,13 +6,26 @@ on:
 jobs:
   build-and-test:
     runs-on: macos-26
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
       - name: Format
         run: swift format lint --strict -r Sources/PorpoiseCore Sources/PorpoiseServices Sources/Porpoise Sources/PorpoiseHelper Tests
       - name: Build
         run: swift build -c release
+      # The ffmpeg Porpoise ships, for the video preview tests (cached with the release workflow's).
+      - name: Restore ffmpeg
+        id: ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/ffmpeg/ffmpeg
+            build/ffmpeg-src/ffmpeg-*/COPYING.*
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      - name: Build ffmpeg
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        run: scripts/build-ffmpeg.sh
       - name: Tests
-        run: swift test --enable-code-coverage
+        run: scripts/test-with-watchdog.sh --enable-code-coverage
       - name: Coverage of the logic layers
         run: python3 scripts/coverage.py --min 20

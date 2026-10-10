@@ -79,10 +79,14 @@ public final class DiskImage {
 
     deinit { try? Self.hdiutil(["detach", "-quiet", "-force", volume.path]) }
 
+    /// Runs hdiutil, giving up after a minute (a stuck disk image must fail the test, not hang the run).
     private static func hdiutil(_ args: [String]) throws {
         let p = try Process.run(URL(fileURLWithPath: "/usr/bin/hdiutil"), arguments: args)
+        let deadline = Date().addingTimeInterval(60)
+        while p.isRunning && Date() < deadline { usleep(20_000) }
+        if p.isRunning { p.terminate() }
         p.waitUntilExit()
-        guard p.terminationStatus == 0 else {
+        guard p.terminationReason == .exit, p.terminationStatus == 0 else {
             throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "hdiutil \(args[0]) failed"])
         }
     }

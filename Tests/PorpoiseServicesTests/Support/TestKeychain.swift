@@ -12,14 +12,25 @@ final class TestKeychain {
         scratch = try Scratch("keychain")
         let password = "porpoise-test"
         var kc: SecKeychain?
-        let status = SecKeychainCreate(scratch.path("test.keychain-db").path, UInt32(password.utf8.count), password, false, nil, &kc)
+        let status = Self.create(scratch.path("test.keychain-db").path, UInt32(password.utf8.count), password, false, nil, &kc)
         guard status == errSecSuccess, let kc else {
             throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "SecKeychainCreate: \(status)"])
         }
         keychain = kc
     }
 
-    deinit { SecKeychainDelete(keychain) }
+    deinit { _ = Self.delete(keychain) }
+
+    // A keychain file of its own is the only way to keep tests away from the user's keychains, and the functions
+    // that make and remove one are deprecated without a replacement. Looked up by name, they build without warnings.
+    private typealias Create =
+        @convention(c) (
+            UnsafePointer<CChar>, UInt32, UnsafeRawPointer?, DarwinBoolean,
+            SecAccess?, UnsafeMutablePointer<SecKeychain?>
+        ) -> OSStatus
+    private typealias Delete = @convention(c) (SecKeychain) -> OSStatus
+    private static let create = unsafeBitCast(dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SecKeychainCreate"), to: Create.self)
+    private static let delete = unsafeBitCast(dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SecKeychainDelete"), to: Delete.self)
 
     /// Adds an internet password directly; `protocol` nil makes an item like older versions saved.
     func add(server: String, account: String, password: String, protocol proto: CFString?) {
