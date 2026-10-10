@@ -523,6 +523,11 @@ public final class DirectoryModel {
         }
     }
 
+    /// A folder counted and found empty (of what would show when expanded): Details shows no expander for it.
+    public func isKnownEmpty(_ item: FileItem) -> Bool {
+        Settings.shared.folderSizeMode == .itemCount && folderCounts[item.url] == 0
+    }
+
     public func resetFolderSizes() {
         folderCounts = [:]
         pendingCounts = []

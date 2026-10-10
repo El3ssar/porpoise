@@ -265,7 +265,8 @@ extension ItemListView {
     }
 
     func expanderRect(_ i: Int) -> CGRect? {
-        guard expanderWidth > 0, model.rows[i].item.isBrowsableFolder else { return nil }
+        let item = model.rows[i].item
+        guard expanderWidth > 0, item.isBrowsableFolder, !model.isKnownEmpty(item) else { return nil }
         let f = frames[i]
         let x = f.minX + CGFloat(model.rows[i].depth) * Self.indentPerLevel
         return CGRect(x: x, y: f.midY - 8, width: 16, height: 16)

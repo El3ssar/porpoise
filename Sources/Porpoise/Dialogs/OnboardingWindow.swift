@@ -380,7 +380,7 @@ extension OnboardingWindowController.Step {
                     "macOS asks for your administrator password, once.",
                     "Done. In the next step you switch it on, next to Porpoise.",
                 ],
-                button: "Install Helper", waiting: "Not installed yet.",
+                button: "Install Helper", waiting: "Waiting for the helper to be installed…",
                 granted: { PrivilegedHelper.isEnabled }, grantedText: "Administrator actions are allowed.",
                 request: { HelperSetup.install() })
         case .network:

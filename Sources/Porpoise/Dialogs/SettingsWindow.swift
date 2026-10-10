@@ -72,9 +72,9 @@ final class SettingsWindowController: NSWindowController {
             f.check("Keep a single Porpoise window, opening new folders in tabs", s.singleWindow) { s.singleWindow = $0 }
             f.section("Window")
             f.check("Show full path in window title", s.showFullPathInTitle) { s.showFullPathInTitle = $0 }
-            f.check("Show Applications as an app library", s.appLibraryView) { s.appLibraryView = $0 }
             f.note(
                 "The window title appears in the Window menu, Mission Control and the Dock's window list (the toolbar takes the title bar's place).")
+            f.check("Show Applications as an app library", s.appLibraryView) { s.appLibraryView = $0 }
             f.check("Show filter bar", s.showFilterBarOnStartup) { s.showFilterBarOnStartup = $0 }
             f.section("Tabs")
             f.check("Always show tab bar", s.alwaysShowTabBar) { s.alwaysShowTabBar = $0 }
@@ -203,7 +203,7 @@ final class SettingsWindowController: NSWindowController {
 
         page("Confirmations", "checkmark.shield") { f in
             f.section("Ask for confirmation when")
-            f.check("Moving files or folders to trash", s.confirmTrash) { s.confirmTrash = $0 }
+            f.check("Moving files or folders to the Trash", s.confirmTrash) { s.confirmTrash = $0 }
             f.check("Deleting files or folders", s.confirmDelete) { s.confirmDelete = $0 }
             f.check("Emptying the Trash", s.confirmEmptyTrash) { s.confirmEmptyTrash = $0 }
             f.check("Renaming changes a file's type", s.confirmRenameType) { s.confirmRenameType = $0 }
@@ -216,18 +216,6 @@ final class SettingsWindowController: NSWindowController {
                 "When opening an executable file:", ["Always ask", "Open in application", "Run script"],
                 ExecutableAction.allCases.firstIndex(of: s.executableAction) ?? 0
             ) { s.executableAction = ExecutableAction.allCases[$0] }
-            f.section("")
-            f.button("Restore All Defaults") {
-                let a = NSAlert()
-                a.messageText = "Restore all Porpoise settings to their defaults?"
-                a.informativeText = "Places, open tabs and the view styles saved for single folders are kept."
-                a.addButton(withTitle: "Restore Defaults")
-                a.addButton(withTitle: "Cancel")
-                a.runSheet(for: SettingsWindowController.window) { r in
-                    guard r == .alertFirstButtonReturn else { return }
-                    Settings.shared.resetAll()  // every control re-reads its value
-                }
-            }
         }
 
         page("Trash", "trash") { f in
@@ -327,6 +315,18 @@ final class SettingsWindowController: NSWindowController {
                         SystemIntegration.openPrivacyPane(perm.anchor)
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { refresh() }
+                }
+            }
+            f.section("Reset")
+            f.button("Restore All Defaults") {
+                let a = NSAlert()
+                a.messageText = "Restore all Porpoise settings to their defaults?"
+                a.informativeText = "Places, open tabs and the view styles saved for single folders are kept."
+                a.addButton(withTitle: "Restore Defaults")
+                a.addButton(withTitle: "Cancel")
+                a.runSheet(for: SettingsWindowController.window) { r in
+                    guard r == .alertFirstButtonReturn else { return }
+                    Settings.shared.resetAll()  // every control re-reads its value
                 }
             }
         }

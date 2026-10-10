@@ -227,6 +227,19 @@ final class Thumbnails {
 
     /// Makes the preview of `file` (the item itself, or a local copy of a remote item, removed with `cleanup` after).
     private func generate(_ k: String, for item: FileItem, file: URL, size: CGFloat, cleanup: URL? = nil) {
+        // Audio: its cover, else the theme's icon (Quick Look would draw a generic tile).
+        if let t = item.utType, t.conforms(to: .audio), !t.conforms(to: .movie) {
+            Task {
+                let image = await AudioArtwork.load(file).flatMap(NSImage.init(data:))
+                await MainActor.run {
+                    if let cleanup { try? FileManager.default.removeItem(at: cleanup) }
+                    self.pending.remove(k)
+                    if let image { self.store(image, k) } else { self.remember(failed: k) }
+                    NotificationCenter.default.post(name: Thumbnails.ready, object: item.url)
+                }
+            }
+            return
+        }
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let gen = Self.bucket(size)
         let req = QLThumbnailGenerator.Request(

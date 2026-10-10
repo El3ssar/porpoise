@@ -189,6 +189,25 @@ import Testing
         #expect(loaded == 0)
     }
 
+    /// Details shows no expander on a folder known to be empty of what expanding would show.
+    @Test func emptyFoldersAreKnownOnceCounted() async throws {
+        let s = try Scratch()
+        try s.folder("empty")
+        try s.file("full/a.txt")
+        try s.file("dotonly/.hidden")
+        let m = try await loaded(s.url)
+        let item = { (name: String) in m.rows.first { $0.item.name == name }!.item }
+        #expect(await eventually { m.isKnownEmpty(item("empty")) })
+        #expect(!m.isKnownEmpty(item("full")))
+        #expect(await eventually { m.isKnownEmpty(item("dotonly")) })  // its one item is hidden
+        m.props.showHidden = true
+        #expect(await eventually { !m.isKnownEmpty(item("dotonly")) })
+        // Sizes in bytes say nothing about being empty.
+        Settings.shared.folderSizeMode = .contentSize
+        m.resetFolderSizes()
+        #expect(!m.isKnownEmpty(item("empty")))
+    }
+
     // MARK: Selection across reloads
 
     @Test func selectionKeepsWhatStillExists() async throws {
