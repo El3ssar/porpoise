@@ -10,11 +10,19 @@ enum PrivilegedHelper {
 
     static var isEnabled: Bool { service.status == .enabled }
 
-    /// Registers the helper; macOS then lists it in Login Items for you to switch on.
+    /// Registers the helper; macOS then lists it in Login Items for you to switch on. A registration made for an
+    /// older helper binary is replaced first: macOS only starts the exact binary it was registered with.
     static func enable() {
+        if service.status != .notRegistered, Settings.store.string(forKey: registeredKey) != helperCodeHash {
+            try? service.unregister()
+        }
         do { try service.register() } catch { NSLog("helper register: \(error)") }
+        Settings.store.set(helperCodeHash, forKey: registeredKey)
         if service.status != .enabled { SMAppService.openSystemSettingsLoginItems() }
     }
+
+    /// The helper binary the current registration was made for.
+    private static let registeredKey = "helperRegisteredCodeHash"
 
     static func disable() { try? service.unregister() }
 
@@ -25,15 +33,17 @@ enum PrivilegedHelper {
     static func checkAfterUpdate() {
         guard !Settings.isTesting, let hash = helperCodeHash else { return }
         let key = "helperCheckedCodeHash"
-        guard Settings.store.string(forKey: key) != hash else { return }
+        // Checked, and registered for this very binary: nothing to do.
+        guard Settings.store.string(forKey: key) != hash || Settings.store.string(forKey: registeredKey) != hash else { return }
         switch service.status {
         case .enabled:
             DispatchQueue.global(qos: .utility).async {
                 let ok = ping()
                 DispatchQueue.main.async {
-                    if ok { Settings.store.set(hash, forKey: key); return }
-                    do { try service.unregister() } catch { NSLog("helper unregister: \(error)") }
-                    do { try service.register() } catch { NSLog("helper register: \(error)") }
+                    if ok { Settings.store.set(hash, forKey: key); Settings.store.set(hash, forKey: registeredKey); return }
+                    // Refused (registered for another binary): register this one, then it needs allowing again.
+                    try? service.unregister()
+                    Settings.store.removeObject(forKey: registeredKey)
                     askToAllow(hash: hash, key: key)
                 }
             }
@@ -46,6 +56,7 @@ enum PrivilegedHelper {
 
     private static func askToAllow(hash: String, key: String) {
         Settings.store.set(hash, forKey: key)
+        enable()   // registers this binary (replacing an older registration) and opens Login Items
         NotificationCenter.default.post(name: SystemIntegration.statusChanged, object: nil)
         if service.status != .enabled { OnboardingWindowController.show(at: .admin) }
     }
@@ -91,7 +102,10 @@ enum PrivilegedHelper {
     /// explains, System Settings opens at Login Items, and this returns true as soon as it's switched on (Touch ID).
     /// False: cancelled. nil: the user chose to type a password instead.
     static func ensureOn(window: NSWindow?) -> Bool? {
-        if service.status == .enabled { try? service.unregister() }   // on, but refused by macOS: register again
+        if service.status == .enabled {   // on, but refused by macOS: register this binary again
+            try? service.unregister()
+            Settings.store.removeObject(forKey: registeredKey)
+        }
         enable()
         if service.status == .enabled { return true }
         let a = NSAlert()

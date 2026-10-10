@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.5
+
+- When Porpoise's helper changes, Porpoise registers the new one with macOS before asking to allow it, so allowing it
+  works the first time (with 0.1.4 macOS could still be holding on to the previous helper).
+
 ## 0.1.4
 
 - Apps and other system-owned items that Porpoise moves to the Trash become yours, so emptying the Trash needs no
