@@ -5,7 +5,7 @@ import PorpoiseTestSupport
 @testable import PorpoiseServices
 
 /// Copying and moving into a folder that already has items of the same names, answered through the conflict dialog.
-@MainActor @Suite struct FileOperationsConflictTests {
+@MainActor @Suite(.isolatedSettings) struct FileOperationsConflictTests {
     @Test func skipLeavesBothItemsAlone() async throws {
         let s = try Scratch()
         let src = try s.file("src/notes.txt", "new")

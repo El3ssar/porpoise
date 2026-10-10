@@ -5,7 +5,7 @@ import PorpoiseTestSupport
 @testable import PorpoiseServices
 
 /// Cut, copy and paste through the controller's clipboard (a LocalClipboard here, the system pasteboard in the app).
-@MainActor @Suite struct ClipboardTests {
+@MainActor @Suite(.isolatedSettings) struct ClipboardTests {
     @Test func cutThenPasteMovesAndClearsTheClipboard() async throws {
         let s = try Scratch()
         let a = try s.file("src/a.txt", "a"), b = try s.file("src/b.txt", "b")

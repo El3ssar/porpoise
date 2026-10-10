@@ -5,7 +5,7 @@ import PorpoiseTestSupport
 @testable import PorpoiseServices
 
 /// Deleting permanently: asked first, and items you own are unlocked rather than handed to the administrator.
-@MainActor @Suite struct DeleteTests {
+@MainActor @Suite(.isolatedSettings) struct DeleteTests {
     private func delete(_ urls: [URL], with ui: ScriptedUI) async {
         let c = makeController(ui)
         c.delete(urls, window: nil)

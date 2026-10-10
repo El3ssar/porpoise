@@ -5,7 +5,7 @@ import PorpoiseTestSupport
 @testable import PorpoiseServices
 
 /// The controller's undo and redo stacks. Undoing anything that goes through the Trash is in TrashDiskImageTests.
-@MainActor @Suite struct UndoRedoTests {
+@MainActor @Suite(.isolatedSettings) struct UndoRedoTests {
     @Test func undoAndRedoOfAMove() async throws {
         let s = try Scratch()
         let a = try s.file("inbox/a.txt", "a"), b = try s.file("inbox/b.txt", "b")

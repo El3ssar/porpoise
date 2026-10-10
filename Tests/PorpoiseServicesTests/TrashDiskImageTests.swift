@@ -6,7 +6,7 @@ import PorpoiseTestSupport
 
 /// Moving to the Trash, Put Back and undoing what goes through the Trash. Everything happens on an attached disk
 /// image, whose own Trash (.Trashes/<uid>) takes the items: nothing ever reaches the user's ~/.Trash.
-@Suite final class TrashDiskImageTests {
+@Suite(.isolatedSettings) final class TrashDiskImageTests {
     let scratch: Scratch
     let disk: DiskImage
     let ui = ScriptedUI()

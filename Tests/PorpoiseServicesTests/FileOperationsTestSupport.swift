@@ -67,29 +67,13 @@ final class ScriptedUI: FileOperationsUI {
     }
 }
 
-/// A controller as the app sets it up, with a scripted user and a clipboard of its own. Settings live in memory and
-/// the run counts as a test: no helper, no sounds, no administrator prompt.
+/// A controller as the app sets it up, with a scripted user and a clipboard of its own. Its suite runs with
+/// `.isolatedSettings`, which also makes it a test run: no helper, no sounds, no administrator prompt.
 func makeController(_ ui: ScriptedUI) -> FileOperationsController {
-    _ = MemoryDefaults.installed
     let c = FileOperationsController()
     c.ui = ui
     c.clipboard = LocalClipboard()
     return c
-}
-
-/// Settings that never reach the disk (Trash origins, "ask before trashing"…).
-final class MemoryDefaults: UserDefaults {
-    static let installed: Void = {
-        Settings.isTesting = true
-        Settings.store = MemoryDefaults(suiteName: nil)!
-    }()
-
-    private var values: [String: Any] = [:]
-    override func object(forKey key: String) -> Any? { values[key] }
-    override func set(_ value: Any?, forKey key: String) { values[key] = value }
-    override func removeObject(forKey key: String) { values[key] = nil }
-    override func dictionary(forKey key: String) -> [String: Any]? { values[key] as? [String: Any] }
-    override func bool(forKey key: String) -> Bool { values[key] as? Bool ?? false }
 }
 
 extension FileOperationsController {

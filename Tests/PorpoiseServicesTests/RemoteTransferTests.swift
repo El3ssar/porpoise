@@ -5,7 +5,7 @@ import PorpoiseTestSupport
 @testable import PorpoiseServices
 
 /// Jobs with a non-file URL go the remote way. Without connecting anywhere, these check what it refuses.
-@MainActor @Suite struct RemoteTransferTests {
+@MainActor @Suite(.isolatedSettings) struct RemoteTransferTests {
     @Test func linksCannotBeMadeToRemoteItems() async throws {
         let s = try Scratch()
         let ui = ScriptedUI()
