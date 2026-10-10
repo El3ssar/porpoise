@@ -3,7 +3,7 @@ import PorpoiseCore
 import PorpoiseServices
 
 /// Builds a simple two-column settings form (label | control), like KDE's KCM pages.
-/// Every control re-reads its setting whenever any setting changes (menus, "Do not ask again" boxes, Restore
+/// Every control re-reads its setting whenever any setting changes (menus, "Don’t ask again" boxes, Restore
 /// Defaults…) or a window becomes key, so the window never shows stale values. Rows that depend on another
 /// setting (`enabled:`) are greyed out while they can't apply.
 final class FormBuilder: NSObject {

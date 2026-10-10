@@ -344,11 +344,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if tabs.count > 1 && Settings.shared.confirmCloseTabs {
             let a = NSAlert()
-            a.messageText = "You have multiple tabs open in this window, are you sure you want to close it?"
+            a.messageText = "Close this window with \(tabs.count) tabs open?"
             a.addButton(withTitle: "Close All Tabs")
             a.addButton(withTitle: "Cancel")
             a.showsSuppressionButton = true
-            a.suppressionButton?.title = "Do not ask again"
+            a.suppressionButton?.title = "Don’t ask again"
             let r = a.runModal()
             if a.suppressionButton?.state == .on { Settings.shared.confirmCloseTabs = false }
             if r != .alertFirstButtonReturn { return false }

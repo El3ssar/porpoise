@@ -78,11 +78,12 @@ extension MainWindowController {
     private func createRemote(folder: Bool, provider p: RemoteProvider) {
         let a = NSAlert()
         a.messageText = folder ? "Create New Folder" : "Create New File"
-        a.informativeText = "In \(view.url.absoluteString)"
+        let place = view.url.host.map { "\($0)\(view.url.path)" } ?? view.url.path
+        a.informativeText = "In \(place.removingPercentEncoding ?? place)"
         let f = NSTextField(string: folder ? "New Folder" : "New File.txt")
         f.frame = CGRect(x: 0, y: 0, width: 300, height: 24)
         a.accessoryView = f
-        a.addButton(withTitle: "OK")
+        a.addButton(withTitle: "Create")
         a.addButton(withTitle: "Cancel")
         a.window.initialFirstResponder = f
         let c = view

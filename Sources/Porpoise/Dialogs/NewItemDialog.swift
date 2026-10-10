@@ -67,7 +67,7 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
     private func present(window: NSWindow?, done: @escaping (URL) -> Void) {
         alert.messageText = kind == .folder ? "Create New Folder" : "Create \(kind.menuTitle.replacingOccurrences(of: "…", with: ""))"
         alert.informativeText = kind == .folder ? "Create new folder in:\n\(folder.path)" : "File name:"
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Create")
         alert.addButton(withTitle: "Cancel")
         alert.icon = Icons.shared.image(kind.icon, size: 64)
         let hasTarget = kind == .link || kind == .urlLink

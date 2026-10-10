@@ -92,11 +92,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Dolphin asks before quitting with several tabs open.
         if Settings.shared.confirmCloseTabs, windows.contains(where: { $0.tabs.count > 1 }) {
             let a = NSAlert()
-            a.messageText = "You have multiple tabs open, are you sure you want to quit?"
+            let tabs = windows.reduce(0) { $0 + $1.tabs.count }
+            a.messageText = "Quit Porpoise with \(tabs) tabs open?"
             a.addButton(withTitle: "Quit")
             a.addButton(withTitle: "Cancel")
             a.showsSuppressionButton = true
-            a.suppressionButton?.title = "Do not ask again"
+            a.suppressionButton?.title = "Don’t ask again"
             let r = a.runModal()
             if a.suppressionButton?.state == .on { Settings.shared.confirmCloseTabs = false }
             if r != .alertFirstButtonReturn { return .terminateCancel }

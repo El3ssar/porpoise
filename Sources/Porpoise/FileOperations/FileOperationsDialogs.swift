@@ -18,7 +18,7 @@ final class FileOperationsDialogs: FileOperationsUI {
         }
         if q.suppressible {
             a.showsSuppressionButton = true
-            a.suppressionButton?.title = "Do not ask again"
+            a.suppressionButton?.title = "Don’t ask again"
         }
         a.window.appearance = NSAppearance(named: .darkAqua)
         let confirmed = a.runModal() == .alertFirstButtonReturn

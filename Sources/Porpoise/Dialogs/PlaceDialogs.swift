@@ -7,7 +7,7 @@ enum PlaceEditDialog {
     static func run(title: String, label: String, url: URL, window: NSWindow?, done: @escaping (String, URL) -> Void) {
         let a = NSAlert()
         a.messageText = title
-        a.addButton(withTitle: "OK")
+        a.addButton(withTitle: "Save")
         a.addButton(withTitle: "Cancel")
         let v = NSView(frame: CGRect(x: 0, y: 0, width: 360, height: 58))
         let l1 = NSTextField(labelWithString: "Label:"); l1.frame = CGRect(x: 0, y: 34, width: 70, height: 20)

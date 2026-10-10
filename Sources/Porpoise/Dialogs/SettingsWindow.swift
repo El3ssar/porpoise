@@ -175,7 +175,7 @@ final class SettingsWindowController: NSWindowController {
             f.section("Ask for confirmation when")
             f.check("Moving files or folders to trash", s.confirmTrash) { s.confirmTrash = $0 }
             f.check("Deleting files or folders", s.confirmDelete) { s.confirmDelete = $0 }
-            f.check("Emptying the trash", s.confirmEmptyTrash) { s.confirmEmptyTrash = $0 }
+            f.check("Emptying the Trash", s.confirmEmptyTrash) { s.confirmEmptyTrash = $0 }
             f.check("Renaming changes a file's type", s.confirmRenameType) { s.confirmRenameType = $0 }
             f.check("Renaming hides an item", s.confirmRenameHide) { s.confirmRenameHide = $0 }
             f.check("Closing windows with multiple tabs", s.confirmCloseTabs) { s.confirmCloseTabs = $0 }

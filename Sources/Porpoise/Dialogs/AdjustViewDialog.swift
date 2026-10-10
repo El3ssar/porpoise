@@ -29,7 +29,7 @@ enum AdjustViewDialog {
         folders.frame = CGRect(x: 118, y: 18, width: 220, height: 20)
         [previews, hidden, folders].forEach(v.addSubview)
         a.accessoryView = v
-        a.addButton(withTitle: "OK")
+        a.addButton(withTitle: "Apply")
         a.addButton(withTitle: "Cancel")
         a.runSheet(for: window) { r in
             guard r == .alertFirstButtonReturn else { return }
