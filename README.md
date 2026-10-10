@@ -1,5 +1,7 @@
 # Porpoise
 
+[![CI](https://github.com/El3ssar/porpoise/actions/workflows/ci.yml/badge.svg)](https://github.com/El3ssar/porpoise/actions/workflows/ci.yml)
+
 **A fast, keyboard-friendly file manager for macOS, inspired by KDE Dolphin.**
 
 Split view, a built-in terminal that follows the folder you're in, tabs, panels, Finder tags, remote folders over
@@ -54,6 +56,8 @@ with *Porpoise › Check for Updates…*.
   "Show in Finder".
 - **Remote:** SFTP/SSH, FTP/FTPS, SMB/AFP/NFS/WebDAV (Connect to Server ⌘K), Bonjour network browsing, Android
   phones over USB, archives browsed as folders.
+- **Accessibility:** VoiceOver reads and drives the file view, Places, tabs, the path bar and the app library; toolbar
+  buttons are reachable with Tab under Full Keyboard Access; Reduce Motion and Increase Contrast are respected.
 
 ## Keyboard shortcuts
 
@@ -82,7 +86,16 @@ Dolphin's shortcuts with Ctrl → ⌘, plus Finder's.
 | New Folder / New Folder with Selection | ⌘⇧N / ⌃⌘N |
 | Duplicate / Eject / Empty Trash | ⌘D / ⌘E / ⌘⇧⌫ |
 
-## Support Porpoise
+## Reliability and security
+
+- Every change is checked by CI: about 480 tests that work on real files, real disk images, a real SSH server and real
+  videos (no mocks), at least 80% line coverage of the logic layers, a format check, and no compiler warnings.
+- The administrator helper does only single file operations, accepts only Porpoise signed with its own certificate
+  and intact on disk, and never changes ownership outside your Trash. [SECURITY.md](SECURITY.md) describes how each
+  part is protected and how to report a vulnerability privately.
+- Remote file names are treated as untrusted: they're quoted and checked before they reach a shell, an FTP command or
+  the disk.
+
 
 Porpoise is free and always will be. If it's useful to you, you can support its development through
 [GitHub Sponsors](https://github.com/sponsors/El3ssar) (also in *Help › Support Porpoise*). Bug reports and ideas are
