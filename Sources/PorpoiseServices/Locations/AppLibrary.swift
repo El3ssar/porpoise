@@ -6,11 +6,11 @@ import PorpoiseCore
 public enum AppLibrary {
     public static let location = URL(fileURLWithPath: "/Applications")
 
-    /// Folders whose apps are shown; the first one wins when two hold an app of the same name.
-    public static var roots: [URL] {
-        [location, URL(fileURLWithPath: "/System/Applications"),
-         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")]
-    }
+    /// Folders whose apps are shown; the first one wins when two hold an app of the same name. Tests use their own.
+    nonisolated(unsafe) public internal(set) static var roots: [URL] = [
+        location, URL(fileURLWithPath: "/System/Applications"),
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications"),
+    ]
 
     public static func isActive(for url: URL) -> Bool {
         Settings.shared.appLibraryView && url.isFileURL && url.standardizedFileURL.path == location.path
