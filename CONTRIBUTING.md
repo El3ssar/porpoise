@@ -11,15 +11,18 @@ what you expected and what happened. Screenshots help a lot.
 
 | Path | What |
 |---|---|
-| `Sources/PorpoiseCore` | Pure logic with unit tests: items, sorting/grouping, view properties, file operations, parsers |
-| `Sources/Porpoise/App` | App delegate, menus, settings, permissions, updates, test bridge |
-| `Sources/Porpoise/Window` | Main window, toolbar, tabs, split view, menu actions |
-| `Sources/Porpoise/Views` | The file view (`ItemListView` + extensions), its model and thumbnails |
-| `Sources/Porpoise/Panels` | Places, Folders, Information, Terminal, video previews |
-| `Sources/Porpoise/Remote` | SFTP/FTP/Android providers, network mounts, archives |
+| `Sources/PorpoiseCore` | Pure models and algorithms: items, sorting/grouping, view properties, file jobs, parsers, helper checks |
+| `Sources/PorpoiseServices` | Everything but drawing, no AppKit: settings, file operations, locations and places, remotes, previews, system |
+| `Sources/Porpoise/App` | App delegate, `ServicesSetup` (what the services ask of the app), system integration, updates, test bridge |
+| `Sources/Porpoise/Window` | Main window controller and its extensions (panels, tabs, menu actions), toolbar, tab bar |
+| `Sources/Porpoise/Views` | The file view (`ItemListView` + extensions), app library, thumbnails, badges |
+| `Sources/Porpoise/Panels` | Places, Folders, Information, Terminal |
+| `Sources/Porpoise/Bars`, `Navigator`, `Menus` | Status, filter, search and message bars; breadcrumbs; main menu and menu helpers |
+| `Sources/Porpoise/Dialogs`, `FileOperations` | Settings, onboarding, properties and other dialogs; drop menu, jobs panel, conflict dialog |
+| `Sources/PorpoiseHelper` | The privileged helper daemon (its binary is committed in `Resources/Helper`) |
 | `Vendor/SwiftTerm` | Vendored terminal emulator (MIT) |
 | `scripts/` | `make-app.sh`, `make-dmg.sh`, `build-ffmpeg.sh`, `setup-signing.sh`, test tools |
-| `docs/` | `DOLPHIN_SPEC.md` (the KDE Dolphin behaviour Porpoise follows), design notes, plan |
+| `docs/` | `ARCHITECTURE.md` (layers and rules), `DOLPHIN_SPEC.md` (the KDE Dolphin behaviour Porpoise follows), design notes, plan |
 | `docs/site` | The website, published to GitHub Pages on every push to `main` |
 | `.github/workflows` | CI (build + tests on every PR), releases, website |
 
@@ -29,7 +32,7 @@ You need macOS 15+ on Apple Silicon and Xcode 26 (or its command line tools).
 
 ```bash
 swift build              # quick compile check
-swift test               # unit tests (PorpoiseCore)
+swift test               # unit tests
 ./scripts/make-app.sh    # full app: build/Porpoise.app (the first run also builds ffmpeg, a few minutes)
 open build/Porpoise.app
 ```
