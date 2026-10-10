@@ -43,7 +43,8 @@ public enum RemoteParsing {
         if text.contains("\0") {
             return text.split(separator: "\0").map { r in
                 var s = String(r)
-                if statNewlines, s.hasSuffix("\n") { s.removeLast() }
+                // By scalar: after a name ending in "\r", "\r\n" is one Character and hasSuffix("\n") is false.
+                if statNewlines, s.unicodeScalars.last == "\n" { s.unicodeScalars.removeLast() }
                 return s
             }.filter { !$0.isEmpty }
         }
