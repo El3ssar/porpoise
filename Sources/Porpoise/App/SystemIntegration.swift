@@ -81,23 +81,23 @@ enum SystemIntegration {
     static let permissions: [Permission] = [
         Permission(title: "Full Disk Access", anchor: "Privacy_AllFiles", status: {
             PrivacyAccess.hasFullDiskAccess ? (true, "Allowed. Protected folders (Trash, Mail, other apps' data) can be shown.")
-                : (false, "Not allowed. Needed to show protected folders such as the Trash. Add Porpoise with the + button.")
+                : (false, "Not allowed. Switch Porpoise on in the list (drag it in if it isn't there): it's needed for protected folders such as the Trash.")
         }, request: nil),
         Permission(title: "App Management", anchor: "Privacy_AppBundles", status: {
             switch PrivacyAccess.appManagementState {
             case .allowed: return (true, "Allowed. Porpoise can update, move and delete other apps.")
-            case .denied: return (false, "Not allowed yet. Click Request Access: macOS adds Porpoise to the list, then switch it on.")
-            case .unknown: return (nil, "Lets Porpoise update, move and delete other apps. Click Request Access, then switch Porpoise on.")
+            case .denied: return (false, "Not allowed. Click Allow…, then switch Porpoise on in the list that opens.")
+            case .unknown: return (nil, "Lets Porpoise update, move and delete other apps. Click Allow…, then switch Porpoise on.")
             }
-        }, request: ("Request Access", { requestAppManagement() })),
+        }, request: ("Allow…", { requestAppManagement() })),
         Permission(title: "Administrator Actions", anchor: "", status: {
             guard PrivilegedHelper.isEnabled else {
-                return (false, "Not set up. Porpoise installs its helper the first time it needs it (one approval).")
+                return (false, "Not set up. Click Allow… to install Porpoise Helper (your administrator password, once).")
             }
             return PrivilegedHelper.hasFullDiskAccess == false
-                ? (false, "Installed. Switch on Porpoise Helper under Full Disk Access to let it empty the Trash.")
+                ? (false, "Installed. Click Allow…, then switch Porpoise Helper on under Full Disk Access.")
                 : (true, "Allowed. Porpoise empties the Trash and changes system-owned items (such as App Store apps) without asking.")
-        }, request: ("Set Up…", {
+        }, request: ("Allow…", {
             HelperSetup.install { if PrivilegedHelper.isEnabled { openPrivacyPane("Privacy_AllFiles") } }
         }), open: { openPrivacyPane("Privacy_AllFiles") }),
         Permission(title: "Local Network", anchor: "Privacy_LocalNetwork", status: {

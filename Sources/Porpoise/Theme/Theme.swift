@@ -47,6 +47,9 @@ enum Theme {
     static let selectionText = NSColor(rgb: 214, 219, 241)
     // Decorations
     static let focus = NSColor(rgb: 74, 103, 136)
+    /// Highlights and "done" marks in Porpoise's own windows (setup, settings).
+    static let accent = activeText
+    static let success = NSColor.systemGreen
 
     /// Breeze frame/separator color: text blended into the background at 20% (Breeze's "frameOutlineColor").
     static let frame = windowText.mixed(with: windowBackground, 0.80)

@@ -114,7 +114,7 @@ final class OnboardingWindowController: NSWindowController {
             let d = NSView(frame: CGRect(x: 0, y: 0, width: 8, height: 8))
             d.wantsLayer = true
             d.layer?.cornerRadius = 4
-            d.layer?.backgroundColor = (s == step ? NSColor.controlAccentColor : NSColor.tertiaryLabelColor).cgColor
+            d.layer?.backgroundColor = (s == step ? Theme.accent : NSColor.tertiaryLabelColor).cgColor
             d.widthAnchor.constraint(equalToConstant: 8).isActive = true
             d.heightAnchor.constraint(equalToConstant: 8).isActive = true
             dots.addArrangedSubview(d)
@@ -226,7 +226,7 @@ final class OnboardingWindowController: NSWindowController {
         badge.textColor = .white
         badge.wantsLayer = true
         badge.drawsBackground = true
-        badge.backgroundColor = .controlAccentColor
+        badge.backgroundColor = Theme.accent
         badge.layer?.cornerRadius = 10
         badge.layer?.masksToBounds = true
         badge.widthAnchor.constraint(equalToConstant: 20).isActive = true
@@ -246,7 +246,7 @@ final class OnboardingWindowController: NSWindowController {
         let icon = NSImageView(image: NSImage(systemSymbolName: allSet ? "checkmark.circle.fill" : "info.circle.fill",
                                               accessibilityDescription: nil) ?? NSImage())
         icon.symbolConfiguration = .init(pointSize: 56, weight: .regular)
-        icon.contentTintColor = allSet ? .systemGreen : .secondaryLabelColor
+        icon.contentTintColor = allSet ? Theme.success : .secondaryLabelColor
         let tips = NSGridView(views: [
             [label("F3", size: 13, weight: .semibold), label("Split view", size: 13, color: .secondaryLabelColor)],
             [label("F4", size: 13, weight: .semibold), label("Terminal that follows your folder", size: 13, color: .secondaryLabelColor)],
@@ -278,9 +278,9 @@ final class OnboardingWindowController: NSWindowController {
         spinner.isHidden = ok
         statusIcon.isHidden = !ok
         statusIcon.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
-        statusIcon.contentTintColor = .systemGreen
+        statusIcon.contentTintColor = Theme.success
         statusText.stringValue = ok ? p.grantedText : p.waiting
-        statusText.textColor = ok ? .systemGreen : .secondaryLabelColor
+        statusText.textColor = ok ? Theme.success : .secondaryLabelColor
         if ok, primary.title != "Continue" {
             primary.title = "Continue"
             secondary.title = ""
@@ -355,7 +355,7 @@ extension OnboardingWindowController.Step {
                             + "then empties the Trash and deletes, moves and changes such items without asking, as Finder does.",
                          steps: ["Click **Install Helper** below.",
                                  "macOS asks for your administrator password, once.",
-                                 "Done. Updates to Porpoise keep it; the next step switches it on."],
+                                 "Done. In the next step you switch it on, next to Porpoise."],
                          button: "Install Helper", waiting: "Not installed yet.",
                          granted: { PrivilegedHelper.isEnabled }, grantedText: "Administrator actions are allowed.",
                          request: { HelperSetup.install() })
@@ -380,7 +380,7 @@ extension OnboardingWindowController.Step {
 private final class AppDragTile: NSView, NSDraggingSource {
     override init(frame: NSRect) {
         super.init(frame: frame)
-        toolTip = "Drag Porpoise into the Full Disk Access list"
+        toolTip = "Drag Porpoise into the list"
     }
 
     required init?(coder: NSCoder) { fatalError() }
