@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Porpoise runs with the hardened runtime: no injected libraries (DYLD_* variables are ignored), no debugger
+     attaching. A self-signed app has no team ID, so library validation can't tell Porpoise's own bundled
+     frameworks (Sparkle) from others; it is turned off, and only code inside the signed bundle is loaded. -->
+<plist version="1.0"><dict>
+  <key>com.apple.security.cs.disable-library-validation</key><true/>
+</dict></plist>

@@ -120,7 +120,7 @@ enum RemoteFS {
     static func downloadStaged(_ name: String, into folder: URL, fetch: (URL) throws -> Void) throws -> URL {
         try checkName(name)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let staging = folder.appendingPathComponent(".dolphin-download-\(UUID().uuidString)")
+        let staging = folder.appendingPathComponent(".porpoise-download-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: staging) }
         try fetch(staging)

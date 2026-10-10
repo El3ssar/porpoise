@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import PorpoiseCore
 import Security
 
@@ -6,8 +7,9 @@ import Security
 
 /// Uses the user's own `ssh` (keys, agent, ~/.ssh/config, known_hosts) with a shared connection per host.
 ///
-/// Every remote command is a POSIX `sh` script passed as one single-quoted word (`sh -c '…'`), so it
-/// runs the same whatever the login shell is, and every path inside it is single-quoted as well.
+/// Every remote command is a POSIX `sh` script passed as one single-quoted word (`sh -c '…'`), and every path inside
+/// it is single-quoted as well. The login shell first reads that word, so it must be sh-compatible (bash, zsh, dash…);
+/// csh and fish read some quoting differently.
 final class SSHProvider: RemoteProvider {
     let user: String?
     let host: String
@@ -33,13 +35,21 @@ final class SSHProvider: RemoteProvider {
 
     private var target: String { user.map { "\($0)@\(host)" } ?? host }
 
+    /// The shared connection's socket. Socket paths are limited to 104 bytes and ssh adds a temporary suffix while
+    /// creating it, so instead of ssh's 40-character %C this is a 16-character hash of user, host and port.
+    private var controlPath: String {
+        let key = "\(user ?? "")@\(host):\(port.map(String.init) ?? "")"
+        let hash = SHA256.hash(data: Data(key.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+        return "\(Self.controlDir.path)/cm-\(hash)"
+    }
+
     /// Ends the shared master connection, if one is up.
     func disconnect() {
         _ = try? Shell.run(ssh, baseArgs + ["-O", "exit", "--", target], timeout: 3)
     }
 
     private var baseArgs: [String] {
-        var a = ["-o", "ControlMaster=auto", "-o", "ControlPath=\(Self.controlDir.path)/cm-%C",
+        var a = ["-o", "ControlMaster=auto", "-o", "ControlPath=\(controlPath)",
                  "-o", "ControlPersist=\(Self.controlPersist)", "-o", "ConnectTimeout=\(Self.connectTimeout)",
                  "-o", "LogLevel=ERROR", "-o", "ServerAliveInterval=30"]
         if let p = port { a += ["-p", String(p)] }
@@ -220,7 +230,8 @@ final class FTPProvider: RemoteProvider {
     @discardableResult
     private func curlRun(_ args: [String], stdoutFile: URL? = nil, retry: Bool = true) throws -> Data {
         let login = credentials
-        var all = ["-s", "-S", "--connect-timeout", String(Self.connectTimeout)]
+        // --globoff: a local file named "report[1].pdf" or "{a,b}" is a name, not a pattern (URLs are percent-encoded).
+        var all = ["-s", "-S", "--globoff", "--connect-timeout", String(Self.connectTimeout)]
         if scheme == "ftps" { all += ["--ssl-reqd"] }
         if login != nil { all += ["--config", "-"] }
         let r = try Shell.run(curl, all + args, stdin: login, stdoutFile: stdoutFile)
@@ -355,17 +366,17 @@ final class ADBProvider: RemoteProvider {
 
     static var adbPath: String? { AndroidTools.adbPath }
 
-    static func devices() -> [(serial: String, model: String)] {
+    static func devices(timeout: TimeInterval = 0) -> [(serial: String, model: String)] {
         guard let adb = adbPath else { return [] }
         AndroidTools.willUseServer()
-        guard let r = try? Shell.run(adb, ["devices", "-l"]) else { return [] }
+        guard let r = try? Shell.run(adb, ["devices", "-l"], timeout: timeout) else { return [] }
         return RemoteParsing.parseADBDevices(String(decoding: r.out, as: UTF8.self))
     }
 
-    /// Cached: breadcrumbs ask for it on the main thread.
+    /// Cached, also when the phone isn't listed: breadcrumbs ask for it on the main thread on every redraw.
     func rootTitle(_ url: URL) -> String {
         if let m = model { return m }
-        guard let m = Self.devices().first(where: { $0.serial == serial })?.model else { return serial }
+        let m = Self.devices(timeout: 3).first(where: { $0.serial == serial })?.model ?? serial
         model = m
         return m
     }
@@ -431,27 +442,44 @@ final class ADBProvider: RemoteProvider {
 
 // MARK: - Keychain (FTP passwords)
 
-/// Internet passwords keyed by server + account (lookups stay compatible with items saved before the
-/// protocol attribute was added).
+/// Internet passwords keyed by server, account and protocol: a NAS's SMB password that Finder saved must never be
+/// sent over FTP, nor be overwritten by it. Items saved without a protocol (older versions) are still found.
 enum Keychain {
+    private static func proto(_ scheme: String) -> CFString { scheme == "ftps" ? kSecAttrProtocolFTPS : kSecAttrProtocolFTP }
+
     static func password(server: String, account: String, scheme: String) -> String? {
-        let q: [String: Any] = [kSecClass as String: kSecClassInternetPassword, kSecAttrServer as String: server,
-                                kSecAttrAccount as String: account, kSecReturnData as String: true,
-                                kSecMatchLimit as String: kSecMatchLimitOne]
+        let base: [String: Any] = [kSecClass as String: kSecClassInternetPassword, kSecAttrServer as String: server,
+                                   kSecAttrAccount as String: account]
+        func data(_ q: [String: Any]) -> String? {
+            var out: AnyObject?
+            var q = q
+            q[kSecReturnData as String] = true
+            q[kSecMatchLimit as String] = kSecMatchLimitOne
+            guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data else { return nil }
+            return String(data: d, encoding: .utf8)
+        }
+        var exact = base
+        exact[kSecAttrProtocol as String] = proto(scheme)
+        if let p = data(exact) { return p }
+        // An item without a protocol (saved by an older version): found by its reference, never another protocol's.
+        var list = base
+        list[kSecReturnAttributes as String] = true
+        list[kSecReturnPersistentRef as String] = true
+        list[kSecMatchLimit as String] = kSecMatchLimitAll
         var out: AnyObject?
-        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data else { return nil }
-        return String(data: d, encoding: .utf8)
+        guard SecItemCopyMatching(list as CFDictionary, &out) == errSecSuccess, let items = out as? [[String: Any]],
+              let ref = items.first(where: { $0[kSecAttrProtocol as String] == nil })?[kSecValuePersistentRef as String] else { return nil }
+        return data([kSecClass as String: kSecClassInternetPassword, kSecValuePersistentRef as String: ref])
     }
 
     static func save(server: String, account: String, password: String, scheme: String) {
         let q: [String: Any] = [kSecClass as String: kSecClassInternetPassword, kSecAttrServer as String: server,
-                                kSecAttrAccount as String: account]
+                                kSecAttrAccount as String: account, kSecAttrProtocol as String: proto(scheme)]
         let data = Data(password.utf8)
         // Update in place keeps the item's access settings; add only when there is none yet.
         if SecItemUpdate(q as CFDictionary, [kSecValueData as String: data] as CFDictionary) == errSecSuccess { return }
         var add = q
         add[kSecValueData as String] = data
-        add[kSecAttrProtocol as String] = scheme == "ftps" ? kSecAttrProtocolFTPS : kSecAttrProtocolFTP
         add[kSecAttrLabel as String] = "Porpoise: \(scheme)://\(account)@\(server)"
         SecItemAdd(add as CFDictionary, nil)
     }

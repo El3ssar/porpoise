@@ -90,7 +90,7 @@ just as welcome: [open an issue](https://github.com/El3ssar/porpoise/issues).
 
 ## Build from source
 
-You need macOS 15+ on Apple Silicon and Xcode (or the Command Line Tools) with Swift 6.
+You need macOS 15+ on Apple Silicon and Xcode 26 (or its Command Line Tools).
 
 ```bash
 ./scripts/make-app.sh             # builds build/Porpoise.app (the first run also builds the bundled FFmpeg)

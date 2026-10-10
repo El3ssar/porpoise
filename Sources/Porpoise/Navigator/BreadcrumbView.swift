@@ -310,8 +310,9 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     override func scrollWheel(with event: NSEvent) {
         // Mouse wheel over a crumb switches to sibling folders (KUrlNavigator).
         let p = convert(event.locationInWindow, from: nil)
+        // Local folders only: listing a remote one would block the window on every wheel tick.
         guard !event.hasPreciseScrollingDeltas, event.scrollingDeltaY != 0, !isVirtual, let i = segmentIndex(at: p),
-              case .crumb(let u, _, _) = segments[i].kind, u.path != "/", u.path != "" else { super.scrollWheel(with: event); return }
+              case .crumb(let u, _, _) = segments[i].kind, u.isFileURL, u.path != "/", u.path != "" else { super.scrollWheel(with: event); return }
         let parent = u.deletingLastPathComponent()
         let sibs = subfolders(of: parent)
         guard let idx = sibs.firstIndex(where: { $0.path == u.path }) else { return }

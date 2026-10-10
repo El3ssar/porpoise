@@ -40,6 +40,7 @@ cp build/ffmpeg/ffmpeg "$APP/Contents/Helpers/ffmpeg"
 # Licences travel with the app.
 mkdir -p "$APP/Contents/Resources/Licenses"
 cp LICENSE "$APP/Contents/Resources/Licenses/Porpoise-GPL-3.0.txt"
+cp LICENSE-AGPL-3.0.txt "$APP/Contents/Resources/Licenses/Desert-colour-scheme-AGPL-3.0.txt"
 cp THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/Licenses/"
 cp build/ffmpeg-src/ffmpeg-*/COPYING.LGPLv2.1 "$APP/Contents/Resources/Licenses/FFmpeg-LGPL-2.1.txt"
 cp Vendor/SwiftTerm/LICENSE* "$APP/Contents/Resources/Licenses/SwiftTerm-MIT.txt"
@@ -98,9 +99,9 @@ KC=$PWD/.signing/porpoise.keychain-db
 if [ -f "$KC" ]; then
   security unlock-keychain -p porpoise-local "$KC"
   ID=$(security find-identity -p codesigning "$KC" | awk '/Porpoise Signing/ {print $2; exit}')
-  SIGN=(codesign --force --keychain "$KC" -s "$ID")
+  SIGN=(codesign --force --options runtime --keychain "$KC" -s "$ID")
 else
-  SIGN=(codesign --force -s -)
+  SIGN=(codesign --force --options runtime -s -)
 fi
 # Inside out: the helpers keep their own identifiers (the privileged helper checks Porpoise's, and back).
 SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
@@ -109,7 +110,8 @@ SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 "${SIGN[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
 "${SIGN[@]}" --identifier app.porpoise.Porpoise.ffmpeg "$APP/Contents/Helpers/ffmpeg"
 "${SIGN[@]}" --identifier app.porpoise.Porpoise.helper "$APP/Contents/MacOS/PorpoiseHelper"
-"${SIGN[@]}" --identifier app.porpoise.Porpoise "$APP"
+# The hardened runtime blocks code injection (the privileged helper trusts Porpoise's signature).
+"${SIGN[@]}" --identifier app.porpoise.Porpoise --entitlements Resources/Porpoise.entitlements "$APP"
 echo "built $APP"
 if [ "${1:-}" = "--install" ]; then
   mkdir -p "$HOME/Applications"

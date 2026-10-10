@@ -14,6 +14,18 @@ import Testing
         #expect(items[2].isSymlink && items[2].linkDestination == "/etc/hosts")
     }
 
+    @Test func namesKeepLeadingSpacesAndTrailingNewlines() {
+        // ls: exactly one space before the name, so " a.txt" stays " a.txt" (not "a.txt", another file).
+        let ls = "-rw-r--r--    1 me   me   12 Jan  5  2024  a.txt\n-rw-r--r--    1 me   me   12 Jan  5  2024 a.txt\n"
+        #expect(RemoteParsing.parseLsLong(ls, folder: URL(string: "ftp://h/")!).map(\.name) == [" a.txt", "a.txt"])
+        // find records end in the name itself: a name ending in a newline keeps it.
+        let find = "f\t1\t1700000000\t644\tme\tstaff\t\tfoo\n\0f\t1\t1700000000\t644\tme\tstaff\t\tfoo\0__GNU__\n"
+        #expect(RemoteParsing.parseFind(find, folder: folder).map(\.name) == ["foo\n", "foo"])
+        // stat prints a newline before each NUL; that one isn't part of the name.
+        let stat = "Regular File\t1\t1700000000\t644\tme\tstaff\t\t./foo\n\0"
+        #expect(RemoteParsing.parseBSDStat(stat, folder: folder).map(\.name) == ["foo"])
+    }
+
     @Test func ftpLsLong() {
         let now = DateComponents(calendar: .current, year: 2026, month: 10, day: 8).date!
         let out = """

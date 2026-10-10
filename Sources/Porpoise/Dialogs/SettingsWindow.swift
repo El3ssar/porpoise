@@ -58,7 +58,7 @@ final class SettingsWindowController: NSWindowController {
                 }
             }
             f.button("Use Current Location") {
-                // The frontmost Dolphin window (this Settings window is the main window while it is open).
+                // The frontmost Porpoise window (this Settings window is the main window while it is open).
                 let front = NSApp.orderedWindows.lazy.compactMap { $0.windowController as? MainWindowController }.first
                 if let u = front?.view.url, u.isFileURL { s.homeURL = u } else { NSSound.beep() }
             }

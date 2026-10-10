@@ -22,6 +22,8 @@ enum PrivilegedHelper {
     /// helper quits when it closes, so one action is one short run. Stops at the first failure, except for tools in
     /// `bestEffort`. Returns nil on success, or what went wrong.
     static func run(_ commands: [[String]], bestEffort: Set<String> = []) -> String? {
+        // Test instances take commands from other processes (DebugBridge): they never get root.
+        guard !Settings.isTesting else { return "Test instances don't use Porpoise's helper." }
         guard let req = CodeSigning.requirement(identifier: PorpoiseHelperInfo.helperIdentifier) else {
             return "This copy of Porpoise isn't signed, so its helper can't be used."
         }
@@ -39,19 +41,6 @@ enum PrivilegedHelper {
             if let r = result, !bestEffort.contains(args.first ?? "") { return r }
         }
         return nil
-    }
-
-    /// The helper is switched on and answers.
-    static var isWorking: Bool {
-        guard isEnabled, let req = CodeSigning.requirement(identifier: PorpoiseHelperInfo.helperIdentifier) else { return false }
-        let c = NSXPCConnection(machServiceName: PorpoiseHelperInfo.machService, options: .privileged)
-        c.remoteObjectInterface = NSXPCInterface(with: PorpoiseHelperProtocol.self)
-        c.setCodeSigningRequirement(req)
-        c.resume()
-        defer { c.invalidate() }
-        var ok = false
-        (c.synchronousRemoteObjectProxyWithErrorHandler { _ in } as? PorpoiseHelperProtocol)?.version { ok = !$0.isEmpty }
-        return ok
     }
 }
 
@@ -79,6 +68,9 @@ final class LocalNetworkAccess {
             guard let allowed else { return }
             DispatchQueue.main.async {
                 Settings.store.set(allowed, forKey: Self.key)
+                // Answered: stop browsing (it would otherwise run for the rest of the session).
+                self.browser?.cancel()
+                self.browser = nil
                 changed(allowed)
             }
         }

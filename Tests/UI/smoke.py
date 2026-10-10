@@ -34,11 +34,11 @@ def reset_testdata():
     open(os.path.join(TD, ".hidden_thing"), "w").close()
 
 reset_testdata()
-subprocess.run(["pkill", "-f", "MacOS/Porpoise"]); time.sleep(0.6)
-subprocess.run(["defaults", "delete", "org.kde.dolphin-mac.uitest"], capture_output=True)
-shutil.rmtree("/private/tmp/dolphin-test", ignore_errors=True)
-env = dict(os.environ, PORPOISE_DEFAULTS_SUITE="org.kde.dolphin-mac.uitest", PORPOISE_DEBUG="1")
-subprocess.Popen([os.path.join(B, "Porpoise.app/Contents/MacOS/Porpoise"), TD], env=env, stdout=open(os.path.join(B, "app.log"), "w"), stderr=subprocess.STDOUT)
+# Only the instance this test starts is ever stopped: never the Porpoise you use, nor its helper.
+subprocess.run(["defaults", "delete", "app.porpoise.uitest"], capture_output=True)
+shutil.rmtree("/private/tmp/porpoise-test", ignore_errors=True)
+env = dict(os.environ, PORPOISE_DEFAULTS_SUITE="app.porpoise.uitest", PORPOISE_DEBUG="1")
+APP = subprocess.Popen([os.path.join(B, "Porpoise.app/Contents/MacOS/Porpoise"), TD], env=env, stdout=open(os.path.join(B, "app.log"), "w"), stderr=subprocess.STDOUT)
 time.sleep(2.5)
 ui("focus")
 s = state()
@@ -250,5 +250,6 @@ dbg("navigate", os.path.expanduser("~/.Trash")); time.sleep(1.0); st = state()
 check("Trash opens or explains the macOS permission", st["url"].endswith("/.Trash") and (len(st["rows"]) > 0 or "Full Disk Access" in st["message"]), (st["rows"][:3], st["message"]))
 
 snap("final")
+APP.terminate()
 print(f"\n{len(failures)} failure(s)" + (": " + ", ".join(failures) if failures else ""))
 sys.exit(1 if failures else 0)

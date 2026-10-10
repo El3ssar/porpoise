@@ -51,8 +51,12 @@ final class VideoPreview {
     /// The length of the file being streamed (a stream that is still being converted doesn't know it yet).
     private(set) var streamDuration: Double?
 
+    /// Who asked for the current stream: only they stop it (one window's panel mustn't end another's video).
+    private weak var owner: AnyObject?
+
     /// Calls back on the main thread with a URL AVPlayer can play, or nil.
-    func playableURL(for url: URL, done: @escaping (URL?) -> Void) {
+    func playableURL(for url: URL, owner: AnyObject, done: @escaping (URL?) -> Void) {
+        self.owner = owner
         token += 1
         let my = token
         let asset = AVURLAsset(url: url)
@@ -65,6 +69,12 @@ final class VideoPreview {
                 self.startStream(url, token: my, done: done)
             }
         }
+    }
+
+    /// Stops the stream `owner` asked for (nothing if another panel has started one since).
+    func stop(for owner: AnyObject) {
+        guard owner === self.owner else { return }
+        stop()
     }
 
     /// Stops the current stream; its folder is removed once ffmpeg has exited (it may still be writing).
@@ -114,7 +124,11 @@ final class VideoPreview {
                 p.standardError = FileHandle.nullDevice
                 do { try p.run() } catch { return false }
                 DispatchQueue.main.async { if my == self.token { self.process = p } else { p.terminate() } }
-                return self.waitForFirstSegment(playlist, process: p, token: my)
+                if self.waitForFirstSegment(playlist, process: p, token: my) { return true }
+                // Too slow or failed: this ffmpeg must not keep writing into the folder the retry reuses.
+                p.terminate()
+                p.waitUntilExit()
+                return false
             }
             var ok = run(info.codecs)
             // Copying the streams as they are can fail (H.264 in AVI, odd AAC): convert them instead.
@@ -214,7 +228,7 @@ final class LocalFileServer {
     private var port: UInt16?
     private var root: URL?
     private let secret = UUID().uuidString
-    private let queue = DispatchQueue(label: "dolphin.preview-server")
+    private let queue = DispatchQueue(label: "porpoise.preview-server")
 
     /// Starts once (later calls just update the root) and returns the base URL to put paths under.
     func start(root: URL) -> URL? {

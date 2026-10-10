@@ -45,8 +45,8 @@ final class FileOperationsController {
         NotificationCenter.default.post(name: Self.cutChanged, object: nil)
     }
 
-    /// Files on the clipboard (from Dolphin, Finder or any other app), and items of remote locations
-    /// Dolphin copied (sftp://, ftp://, adb://). Web links and other URLs are not files to paste.
+    /// Files on the clipboard (from Porpoise, Finder or any other app), and items of remote locations
+    /// Porpoise copied (sftp://, ftp://, adb://). Web links and other URLs are not files to paste.
     var clipboardURLs: [URL] {
         let urls = (Self.pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL]) ?? []
         return urls.filter { $0.isFileURL || RemoteFS.isRemote($0) }
@@ -350,7 +350,7 @@ final class FileOperationsController {
     static func authorize(verb: String, items: [URL], commands: [[String]], window: NSWindow?) -> Bool {
         guard !commands.isEmpty else { return false }
         // Porpoise's helper (set up in onboarding) does it at once, without asking.
-        if PrivilegedHelper.isEnabled {
+        if PrivilegedHelper.isEnabled && !Settings.isTesting {
             // Clearing lock flags is best effort, as in Finder; the operation itself reports what went wrong.
             if let err = PrivilegedHelper.run(commands, bestEffort: ["/usr/bin/chflags"]) {
                 showAuthorizationError(err)
@@ -576,28 +576,42 @@ final class FileOperationsController {
 
     func undo(window: NSWindow?) {
         guard let r = undoStack.popLast() else { return }
-        revert(r, onto: &redoStack, keepOnFailure: &undoStack, window: window)
+        switch revert(r) {
+        case .success(let inverse): if let inverse { redoStack.append(inverse) }; stacksChanged()
+        case .failure(let error): undoStack.append(r); stacksChanged(); showErrors([error.localizedDescription], window: window)
+        }
     }
 
     func redo(window: NSWindow?) {
         guard let r = redoStack.popLast() else { return }
-        revert(r, onto: &undoStack, keepOnFailure: &redoStack, window: window)
+        switch revert(r) {
+        case .success(let inverse): if let inverse { undoStack.append(inverse) }; stacksChanged()
+        case .failure(let error): redoStack.append(r); stacksChanged(); showErrors([error.localizedDescription], window: window)
+        }
     }
 
     /// FileActions.undo is all-or-nothing, so a record that failed is still valid and goes back on its
-    /// stack for another try (e.g. after the user frees the original name).
-    private func revert(_ r: UndoRecord, onto target: inout [UndoRecord], keepOnFailure source: inout [UndoRecord], window: NSWindow?) {
+    /// stack for another try (e.g. after the user frees the original name). The stacks are changed by the
+    /// callers before any alert: a job finishing during the alert pushes onto them.
+    private func revert(_ r: UndoRecord) -> Result<UndoRecord?, Error> {
         do {
-            if let inverse = try FileActions.undo(r) {
-                target.append(inverse)
-                Self.notifyChanged(Self.urls(of: inverse))
-            }
+            let inverse = try FileActions.undo(r)
+            if let inverse { Self.notifyChanged(Self.urls(of: inverse)) }
+            return .success(inverse)
         } catch {
-            source.append(r)
-            showErrors([error.localizedDescription], window: window)
+            return .failure(error)
         }
-        NotificationCenter.default.post(name: Self.undoChanged, object: nil)
     }
+
+    /// Administrator commands that rename `old` to `new`. A change of case only goes through a temporary name:
+    /// on a case-insensitive volume `mv -n a A` sees "A" as existing and quietly does nothing.
+    static func renameCommands(_ old: URL, to new: URL) -> [[String]] {
+        guard old.path != new.path, old.path.lowercased() == new.path.lowercased() else { return [["/bin/mv", "-n", "--", old.path, new.path]] }
+        let tmp = old.deletingLastPathComponent().appendingPathComponent(".porpoise-rename-\(UUID().uuidString)").path
+        return [["/bin/mv", "-n", "--", old.path, tmp], ["/bin/mv", "-n", "--", tmp, new.path]]
+    }
+
+    private func stacksChanged() { NotificationCenter.default.post(name: Self.undoChanged, object: nil) }
 
     // MARK: Drop menu
 

@@ -24,7 +24,8 @@ final class OnboardingWindowController: NSWindowController {
     /// `onFinish` runs once the assistant is closed (by finishing or skipping), e.g. to open the first window.
     static func show(at step: Step = .welcome, onFinish: (() -> Void)? = nil) {
         if shared == nil { shared = OnboardingWindowController() }
-        shared?.onFinish = onFinish
+        // Opened again from the menu while the first-run assistant runs: keep its "open the first window".
+        if let onFinish { shared?.onFinish = onFinish }
         shared?.go(to: step)
         NSApp.activate()
         shared?.showWindow(nil)
@@ -58,17 +59,19 @@ final class OnboardingWindowController: NSWindowController {
         super.init(window: w)
         buildChrome()
         // Closed with the close button: same as finishing without marking it done (asked again next launch).
-        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
+        observers.append(NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
             self?.finish(markDone: false, closing: true)
-        }
+        })
         // Coming back from System Settings: re-check at once.
-        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+        observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             self?.checkAccess()
-        }
+        })
     }
 
+    private var observers: [NSObjectProtocol] = []
+
     required init?(coder: NSCoder) { fatalError() }
-    deinit { NotificationCenter.default.removeObserver(self) }
+    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 
     // MARK: Layout
 

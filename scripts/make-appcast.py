@@ -27,6 +27,10 @@ def notes_html(md: str) -> str:
     for line in md.splitlines():
         s = line.strip()
         bullet = re.match(r"^[*-] +(.*)", s)
+        # An indented line inside a list continues the previous bullet.
+        if in_list and not bullet and s and line[:1].isspace() and out[-1].endswith("</li>"):
+            out[-1] = out[-1][:-5] + " " + inline(s) + "</li>"
+            continue
         if in_list and not bullet:
             out.append("</ul>")
             in_list = False

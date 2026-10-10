@@ -122,7 +122,6 @@ final class Settings {
     @Pref("splitStartup") var splitViewOnStartup: Bool = false
 
     @Pref("singleWindow") var singleWindow: Bool = false
-    /// Look for a newer release on GitHub once a day.
 
     // Interface › Previews
     @Pref("pvImages") var previewImages: Bool = true

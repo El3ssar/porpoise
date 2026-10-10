@@ -69,8 +69,7 @@ and match the surrounding code. Behaviour should follow KDE Dolphin unless the M
 
 Releases are built, signed and published by GitHub Actions (`.github/workflows/release.yml`). Each one uploads
 `Porpoise-X.Y.Z.dmg`, `Porpoise.dmg` (what the website's download button points to), `SHA256SUMS.txt` and
-`appcast.xml` (the in-app update feed), with release notes generated from the merged pull requests. Installed copies
-offer the update within a day.
+`appcast.xml` (the in-app update feed). Installed copies offer the update within a day.
 
 There are three ways to cut a release. Use whichever fits:
 
@@ -81,8 +80,10 @@ There are three ways to cut a release. Use whichever fits:
 - **By hand.** Actions › Release › *Run workflow*, then enter the version. It tags the chosen branch.
 
 Versions follow [semantic versioning](https://semver.org): patch for fixes, minor for new features, major for
-big or breaking changes. Note notable changes in `CHANGELOG.md` as you go. Release notes are grouped by the
-`enhancement` and `bug` labels; `skip-changelog` leaves a pull request out.
+big or breaking changes. Write the changes in `CHANGELOG.md` under a heading that is exactly the version
+(`## 0.2.0`) before releasing: that section becomes the release notes and the text in the in-app update window.
+Without one, the notes fall back to GitHub's list of merged pull requests (grouped by the `enhancement` and `bug`
+labels; `skip-changelog` leaves one out).
 
 ### Signing and updates
 

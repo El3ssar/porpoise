@@ -104,12 +104,15 @@ extension ItemListView {
             return
         }
         let url = model.rows[i].item.url
+        // Expander and marker clicks are complete here: mouseUp must not treat them as an item click.
         if let er = expanderRect(i), er.insetBy(dx: -2, dy: -2).contains(p) {
             model.toggleExpanded(url)
+            mouseDownIndex = nil
             return
         }
         if Settings.shared.showSelectionMarker && markerRect(i).contains(p) {
             toggleSelected(url)
+            mouseDownIndex = nil
             return
         }
         mouseDownSelectedBefore = model.selection.contains(url)
@@ -184,7 +187,7 @@ extension ItemListView {
             return
         }
         // Click on an already selected item without modifiers: select just that one.
-        if let i = mouseDownIndex, event.clickCount == 1, !event.modifierFlags.contains(.command), !event.modifierFlags.contains(.shift) {
+        if let i = mouseDownIndex, i < model.rows.count, event.clickCount == 1, !event.modifierFlags.contains(.command), !event.modifierFlags.contains(.shift) {
             let url = model.rows[i].item.url
             if mouseDownSelectedBefore && model.selection.count > 1 { model.selection = [url] }
             model.anchorURL = url

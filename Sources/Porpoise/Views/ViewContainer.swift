@@ -148,7 +148,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 self.list.scroll(pos.origin)
                 if self.pendingSelect == nil, let c = pos.current, self.model.index(of: c) != nil { self.model.currentURL = c }
             }
-            if let u = self.pendingSelect { self.list.select(self.listedURL(matching: u)) }
+            if let u = self.pendingSelect, let i = self.model.index(of: self.listedURL(matching: u)) {
+                self.list.select(self.model.rows[i].item.url)
+            }
             self.pendingSelect = nil
         }
         let center = NotificationCenter.default
@@ -160,7 +162,11 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             // Restore Defaults (no key), common vs. per-folder style, media folders: show the style that now applies.
             case nil, "perFolder", "dynamicView": self.model.reloadProps()
             case "appLibraryView":
-                if self.url.standardizedFileURL == AppLibrary.location { self.model.reloadProps(); self.model.reload() }
+                if self.url.standardizedFileURL == AppLibrary.location {
+                    self.model.filter = Settings.shared.appLibraryView ? NameFilter(text: self.apps?.field.stringValue ?? "") : self.filterBar.filter
+                    self.model.reloadProps()
+                    self.model.reload()
+                }
             case "folderDepth": self.model.resetFolderSizes()
             case "expandable": if !Settings.shared.detailsExpandableFolders { self.model.collapseAll() }
             default: break
@@ -316,6 +322,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             pendingPosition = nil
         }
         pendingSelect = selecting
+        // The app library has its own search, which starts empty; elsewhere the filter bar's text applies.
+        model.filter = AppLibrary.isActive(for: u) ? NameFilter() : filterBar.filter
         model.setLocation(u)
         list.scroll(.zero)
         if AppLibrary.isActive(for: u) { apps?.prepareForDisplay() }

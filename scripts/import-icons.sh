@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 SRC=build/vendor/ic
 DST=Resources/icons
-[ -d "$SRC" ] || { echo "missing $SRC (see docs/PLAN.md: icons come from the reference VM)"; exit 1; }
+[ -d "$SRC" ] || { echo "missing $SRC (the Tela-circle-dark icon theme, from https://github.com/vinceliuice/Tela-circle-icon-theme)"; exit 1; }
 rm -rf "$DST"; mkdir -p "$DST"
 for d in scalable/places scalable/mimetypes scalable/devices 16/places 16/devices 16/status 22/emblems 22/places 22/devices; do
   mkdir -p "$DST/$d"; cp -R "$SRC/$d/." "$DST/$d/" 2>/dev/null || true

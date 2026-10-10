@@ -158,7 +158,7 @@ extension MainWindowController {
         }
         if !denied.isEmpty {
             FileOperationsController.authorize(verb: "rename", items: denied.map(\.0),
-                                               commands: denied.map { ["/bin/mv", "-n", "--", $0.0.path, $0.1.path] }, window: window)
+                                               commands: denied.flatMap { FileOperationsController.renameCommands($0.0, to: $0.1) }, window: window)
         }
         if !failed.isEmpty { reportError("Could not rename " + failed.joined(separator: "; "), in: c) }
         c.reload()
@@ -592,7 +592,10 @@ extension MainWindowController {
             p.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
             p.arguments = ["-xf", it.url.path, "-C", dest.path]
         }
-        runTool(p, failure: "Could not extract “\(it.name)”.", select: dest)
+        // A failed extraction leaves no empty folder behind (a partial one is kept: it may hold what could be read).
+        runTool(p, failure: "Could not extract “\(it.name)”.", select: dest) {
+            if ((try? FileManager.default.contentsOfDirectory(atPath: dest.path)) ?? ["?"]).isEmpty { try? FileManager.default.removeItem(at: dest) }
+        }
     }
 
     /// Deepest folder containing all `urls` (their shared parent in the usual case).
@@ -606,15 +609,15 @@ extension MainWindowController {
     }
 
     /// Runs an archiver in the background, then reloads the view (and reports failures).
-    private func runTool(_ p: Process, failure: String, select: URL?) {
+    private func runTool(_ p: Process, failure: String, select: URL?, onFailure: (() -> Void)? = nil) {
         let c = view
         p.terminationHandler = { [weak self] proc in
             DispatchQueue.main.async {
-                if proc.terminationStatus != 0 { self?.reportError(failure, in: c) } else if let select { c.pendingSelect = select }
+                if proc.terminationStatus != 0 { onFailure?(); self?.reportError(failure, in: c) } else if let select { c.pendingSelect = select }
                 c.reload()
             }
         }
-        do { try p.run() } catch { reportError("\(failure) \(error.localizedDescription)", in: c) }
+        do { try p.run() } catch { onFailure?(); reportError("\(failure) \(error.localizedDescription)", in: c) }
     }
 
     // MARK: Tabs

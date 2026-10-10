@@ -9,11 +9,13 @@ import PorpoiseCore
 /// (KIO does the same for remote files opened in local applications).
 enum RemoteOpener {
     private static var watchers: [String: DispatchSourceFileSystemObject] = [:]
+    /// Local copies with saved changes not yet uploaded (the upload failed or hasn't run): only on the main queue.
+    private static var unsynced: Set<String> = []
 
     /// Upload is delayed this long after the last change, so a burst of writes from one save uploads once.
     private static let uploadDelay: TimeInterval = 0.6
     /// Uploads run one at a time, so an older save can never land on the server after a newer one.
-    private static let uploadQueue = DispatchQueue(label: "dolphin.remote-upload")
+    private static let uploadQueue = DispatchQueue(label: "porpoise.remote-upload")
 
     /// Mirror of the remote folder inside the cache. "." and ".." components are dropped so a crafted
     /// URL (sftp://host/../../x) can't point outside the cache: the file there is replaced on download.
@@ -28,6 +30,13 @@ enum RemoteOpener {
     static func open(_ item: FileItem) {
         guard let p = RemoteFS.provider(for: item.url), RemoteParsing.isSafeName(item.url.lastPathComponent) else { return }
         let folder = cacheFolder(for: item.url)
+        let cached = folder.appendingPathComponent(item.url.lastPathComponent)
+        // Opened again before its edits reached the server: open those edits, never replace them with a download.
+        if unsynced.contains(cached.path), FileManager.default.fileExists(atPath: cached.path) {
+            NSWorkspace.shared.open(cached)
+            StatusCenter.post("Opened your copy of “\(item.name)”: its latest changes haven't been uploaded yet.")
+            return
+        }
         StatusCenter.post("Downloading “\(item.name)”…")
         DispatchQueue.global(qos: .userInitiated).async {
             do {
@@ -52,6 +61,7 @@ enum RemoteOpener {
         let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: .global())
         var pending: DispatchWorkItem?
         src.setEventHandler {
+            DispatchQueue.main.async { unsynced.insert(local.path) }
             pending?.cancel()
             let replaced = src.data.contains(.rename) || src.data.contains(.delete)
             let work = DispatchWorkItem {
@@ -69,6 +79,7 @@ enum RemoteOpener {
                     if let e = failure {
                         StatusCenter.error("Could not upload “\(remote.lastPathComponent)”: \(e.localizedDescription)")
                     } else {
+                        unsynced.remove(local.path)
                         StatusCenter.post("Uploaded changes to “\(remote.lastPathComponent)”.")
                         FileOperationsController.notifyChanged([remote])
                     }

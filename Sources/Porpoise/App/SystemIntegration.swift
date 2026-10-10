@@ -125,12 +125,12 @@ enum SystemIntegration {
         return lastAppManagement
     }
 
-    /// Everything Dolphin uses is available (App Management counts as fine unless macOS reported a denial).
+    /// Everything Porpoise uses is available (each permission granted, the helper switched on).
     static var allPermissionsGranted: Bool {
         hasFullDiskAccess && appManagementState == .allowed && PrivilegedHelper.isEnabled && LocalNetworkAccess.shared.isAllowed
     }
 
-    /// auth_value of Dolphin's row for a TCC service in the system database (2 = allowed), nil if unreadable or absent.
+    /// auth_value of Porpoise's row for a TCC service in the system database (2 = allowed), nil if unreadable or absent.
     static func tccAuthValue(service: String) -> Int? {
         var db: OpaquePointer?
         guard sqlite3_open_v2(tccDatabase, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
@@ -147,7 +147,7 @@ enum SystemIntegration {
     }
 
     /// A harmless change to another app (an empty file, removed at once). macOS checks App Management on it:
-    /// if Dolphin isn't allowed, it is added to the list (switched off) and macOS shows a notification.
+    /// if Porpoise isn't allowed, it is added to the list (switched off) and macOS shows a notification.
     static func requestAppManagement(then done: (() -> Void)? = nil) { checkAppManagementInBackground(openSettingsIfDenied: true, then: done) }
 
     /// Posted on the main queue when a background permission check has finished.
@@ -176,7 +176,7 @@ enum SystemIntegration {
                 && teamIdentifier(of: u) != nil
         }) else { if openSettingsIfDenied { DispatchQueue.main.async { openPrivacyPane("Privacy_AppBundles") } }; return }
         // An empty file created and removed at once inside the other app (its signed contents are untouched).
-        let probe = target.appendingPathComponent("Contents/.dolphin-access-check").path
+        let probe = target.appendingPathComponent("Contents/.porpoise-access-check").path
         let fd = open(probe, O_WRONLY | O_CREAT | O_EXCL, 0o600)
         if fd >= 0 { close(fd); unlink(probe); lastAppManagement = .allowed }
         else { lastAppManagement = (errno == EPERM || errno == EACCES) ? .denied : .unknown }
@@ -192,15 +192,6 @@ enum SystemIntegration {
         guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
               let d = info as? [String: Any] else { return nil }
         return d[kSecCodeInfoTeamIdentifier as String] as? String
-    }
-
-    /// Reads the protected home folders so macOS asks for each one (only needed without Full Disk Access).
-    static func requestFolders() {
-        let fm = FileManager.default
-        for d in [FileManager.SearchPathDirectory.desktopDirectory, .documentDirectory, .downloadsDirectory] {
-            if let u = fm.urls(for: d, in: .userDomainMask).first { _ = try? fm.contentsOfDirectory(atPath: u.path) }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { openPrivacyPane("Privacy_FilesAndFolders") }
     }
 
     static func openPrivacyPane(_ anchor: String) {

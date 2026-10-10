@@ -92,11 +92,8 @@ extension MainWindowController {
             if ejectable { vols.insert(v) }
         }
         guard !vols.isEmpty else { NSSound.beep(); return }
-        // Leave the volume first, or it is busy.
-        let here = view.url.standardizedFileURL.path + "/"
-        if vols.contains(where: { here.hasPrefix($0.standardizedFileURL.path + "/") }) {
-            view.setURL(FileManager.default.homeDirectoryForCurrentUser)
-        }
+        // Every view showing it (other tabs, panes and windows too) leaves the volume first, or it is busy.
+        vols.forEach(Self.leaveVolume)
         for v in vols {
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 do { try NSWorkspace.shared.unmountAndEjectDevice(at: v) } catch {

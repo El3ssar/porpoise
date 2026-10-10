@@ -1,4 +1,4 @@
-// Drives the running Dolphin window with real input events (needs Accessibility permission).
+// Drives the running Porpoise window with real input events (needs Accessibility permission).
 // Usage: ui "click 100 60; key cmd+3; type hello; wait 0.5; rclick 300 200; esc"
 // Coordinates are points relative to the window's top-left corner.
 import AppKit
@@ -6,7 +6,7 @@ import CoreGraphics
 
 func windowOrigin() -> CGPoint {
     let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-    // The main browser window: the largest normal-layer Dolphin window.
+    // The main browser window: the largest normal-layer Porpoise window.
     var best: (CGFloat, CGPoint) = (0, .zero)
     for w in list where (w[kCGWindowOwnerName as String] as? String) == "Porpoise" && (w[kCGWindowLayer as String] as? Int) == 0 {
         if let b = w[kCGWindowBounds as String] as? [String: CGFloat], (b["Width"] ?? 0) * (b["Height"] ?? 0) > best.0 {

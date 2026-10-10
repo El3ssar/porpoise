@@ -137,7 +137,13 @@ final class ItemListView: NSView {
     weak var focusRedirect: NSView?
 
     override func becomeFirstResponder() -> Bool {
-        if let r = focusRedirect, let w = window { DispatchQueue.main.async { w.makeFirstResponder(r) } }
+        // Decided on the next turn: the location may change in this one (leaving Applications clears the redirect).
+        if focusRedirect != nil, let w = window {
+            DispatchQueue.main.async { [weak self] in
+                guard let r = self?.focusRedirect, !r.isHiddenOrHasHiddenAncestor else { return }
+                w.makeFirstResponder(r)
+            }
+        }
         delegate?.itemListDidBecomeActive(self)
         needsDisplay = true
         return true

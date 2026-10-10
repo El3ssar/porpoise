@@ -11,7 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Launch and quit
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        // "Show in Finder" requests from other apps, when Dolphin is the default file browser.
+        // "Show in Finder" requests from other apps, when Porpoise is the default file browser.
         SystemIntegration.installRevealHandlers()
     }
 
@@ -121,15 +121,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         saveSession()
     }
 
-    /// Starts a new instance once this one has quit (used after granting Full Disk Access).
-    func relaunch() {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        p.arguments = ["-c", "while kill -0 \(getpid()) 2>/dev/null; do sleep 0.2; done; open \"$0\"", Bundle.main.bundlePath]
-        try? p.run()
-        NSApp.terminate(nil)
-    }
-
     // MARK: - Opening folders and revealing files
 
     /// Shows items selected in their folder (Finder's reveal).
@@ -156,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let files = urls.filter { isFolder($0) == false }
         if !files.isEmpty && files.count == urls.count { reveal(files); return }
         let folders = urls.map { isFolder($0) == true ? $0 : $0.deletingLastPathComponent() }
-        // "Keep a single Dolphin window, opening new folders in tabs".
+        // "Keep a single Porpoise window, opening new folders in tabs".
         if let w = windows.first, Settings.shared.singleWindow {
             for f in folders { w.addTab(url: f) }
             w.window?.makeKeyAndOrderFront(nil)

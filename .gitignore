@@ -5,3 +5,4 @@ build/
 Tests/UI/__pycache__/
 .signing*/
 .claude/
+.DS_Store

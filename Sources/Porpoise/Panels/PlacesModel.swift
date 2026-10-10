@@ -87,7 +87,7 @@ final class PlacesModel {
 
     private lazy var storeURL: URL = {
         let fm = FileManager.default
-        let dir = Settings.isTesting ? fm.temporaryDirectory.appendingPathComponent("dolphin-test")
+        let dir = Settings.isTesting ? fm.temporaryDirectory.appendingPathComponent("porpoise-test")
             : fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise")
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("places.json")

@@ -1,5 +1,7 @@
 # Plan: a Dolphin-like file manager for macOS
 
+> The original design plan, kept for history. The current source layout and workflow are in [CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## Goal
 A native Mac app that feels as close to KDE Dolphin as possible: same layout, same panels, same icons, same
 behavior, same shortcuts (adapted to Mac keys), same little details. Things that are naturally different on
@@ -13,7 +15,7 @@ macOS (window buttons, global menu bar, Mac file APIs) stay Mac-like.
 
 | Piece | Choice | Why |
 |---|---|---|
-| Language/UI | Swift 6.4 + AppKit, all UI in code | Native, fast with big folders. Full control over drawing, which we need to copy Breeze. |
+| Language/UI | Swift 6 + AppKit, all UI in code | Native, fast with big folders. Full control over drawing, which we need to copy Breeze. |
 | Build | Swift Package Manager + `scripts/make-app.sh` (builds the `.app`, Info.plist, icon, codesign) | Only the Command Line Tools are installed (no Xcode). That is enough, but rules out storyboards and asset catalogs. |
 | Tests | Swift Testing (`swift test`) | Checked: works with the Command Line Tools. |
 | Icons | Tela circle dark (GPL-3), bundled SVGs | Checked: macOS draws them natively, in the right colors. |
@@ -31,10 +33,10 @@ macOS (window buttons, global menu bar, Mac file APIs) stay Mac-like.
 ## Architecture
 
 ```
-dolphin-mac/
+porpoise/
   Package.swift
   scripts/make-app.sh          build .app, sign, install to ~/Applications
-  scripts/fetch-icons.sh       download Tela circle dark, recolor, keep only the needed ones
+  scripts/import-icons.sh       download Tela circle dark, recolor, keep only the needed ones
   Resources/                   icons/, fonts/, AppIcon.icns, licenses
   Sources/
     App/                       main, AppDelegate, main menu, actions + shortcuts registry
@@ -136,7 +138,7 @@ Rough total: **about 4–5 weeks** of sessions to a full daily driver; the detai
    Breeze colors. Breeze metrics/shapes are kept. Terminal panel uses `Desert-Konsole.colorscheme`.
 7. **Icons:** **Tela circle dark** (vinceliuice/Tela-circle-icon-theme, standard blue) instead of Breeze.
    - Its installer breaks on macOS: BSD `sed -i` and `ln -sr` fail silently, which leaves dark-theme icons
-     dark gray. `scripts/fetch-icons.sh` redoes the dark recolor itself (#565656/#727272 → #aaaaaa).
+     dark gray. `scripts/import-icons.sh` redoes the dark recolor itself (#565656/#727272 → #aaaaaa).
    - Verified: icons render correctly after that.
 8. **Reference Dolphin:** a temporary GCP VM running Plasma + Dolphin with the same theme and icons. Used for
    screenshots and behavior checks, then deleted. Nothing is installed on the Mac.

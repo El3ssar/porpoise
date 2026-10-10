@@ -12,7 +12,7 @@ public enum RemoteParsing {
     /// GNU find: `%y%Y\t%s\t%T@\t%m\t%u\t%g\t%l\t%f` (own type + target type, so links to folders browse).
     /// Records end with NUL (`\0`, safe for names containing newlines) or, for older callers, a newline.
     public static func parseFind(_ text: String, folder: URL) -> [FileItem] {
-        records(text).compactMap { line in
+        records(text, statNewlines: false).compactMap { line in
             let f = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
             guard f.count >= 8 else { return nil }
             let type = f[0]
@@ -26,7 +26,7 @@ public enum RemoteParsing {
     /// BSD stat: `-f '%HT\t%z\t%m\t%Lp\t%Su\t%Sg\t%Y\t%N'` (macOS / FreeBSD servers), records separated
     /// like `parseFind`'s.
     public static func parseBSDStat(_ text: String, folder: URL) -> [FileItem] {
-        records(text).compactMap { line in
+        records(text, statNewlines: true).compactMap { line in
             let f = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
             guard f.count >= 8 else { return nil }
             let name = (f[7...].joined(separator: "\t") as NSString).lastPathComponent
@@ -37,13 +37,13 @@ public enum RemoteParsing {
         }
     }
 
-    /// NUL-terminated records when present (a trailing newline per record is dropped), else lines.
-    static func records(_ text: String) -> [String] {
+    /// NUL-terminated records when present, else lines. `statNewlines`: each record ends with the newline `stat`
+    /// prints before its NUL, which is dropped; find's records end in the name itself, which may end in a newline.
+    static func records(_ text: String, statNewlines: Bool) -> [String] {
         if text.contains("\0") {
             return text.split(separator: "\0").map { r in
                 var s = String(r)
-                if s.hasPrefix("\n") { s.removeFirst() }   // newline left over from the previous record
-                if s.hasSuffix("\n") { s.removeLast() }
+                if statNewlines, s.hasSuffix("\n") { s.removeLast() }
                 return s
             }.filter { !$0.isEmpty }
         }
@@ -93,7 +93,8 @@ public enum RemoteParsing {
             if dateTokens.isEmpty, let t = nextToken() { dateTokens.append(String(t)) }
             let remaining = dateTokens.first?.contains("-") == true ? 1 : 3 - dateTokens.count
             for _ in 0..<remaining { if let t = nextToken() { dateTokens.append(String(t)) } }
-            var name = String(rest.drop(while: { $0 == " " }))
+            // Exactly one space separates the date from the name: a name may itself start with spaces.
+            var name = String(rest.hasPrefix(" ") ? rest.dropFirst() : rest)
             var link: String?
             // Only links have " -> target"; for them the first " -> " is the best guess.
             if first == "l", let r = name.range(of: " -> ") {

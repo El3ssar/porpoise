@@ -11,6 +11,9 @@ OUT=$PWD/build/ffmpeg
 mkdir -p "$SRC" "$OUT"
 if [ ! -d "$SRC/ffmpeg-$VER" ]; then
   [ -f "$SRC/ffmpeg-$VER.tar.xz" ] || curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$VER.tar.xz" -o "$SRC/ffmpeg-$VER.tar.xz"
+  # The source goes into signed releases: check it's exactly the published tarball.
+  [ "$VER" = 8.0 ] && SHA=${FFMPEG_SHA256:-b2751fccb6cc4c77708113cd78b561059b6fa904b24162fa0be2d60273d27b8e} || SHA=${FFMPEG_SHA256:?set FFMPEG_SHA256 for ffmpeg $VER}
+  echo "$SHA  $SRC/ffmpeg-$VER.tar.xz" | shasum -a 256 -c - >/dev/null || { echo "ffmpeg-$VER.tar.xz doesn't match its checksum"; rm -f "$SRC/ffmpeg-$VER.tar.xz"; exit 1; }
   tar -xJf "$SRC/ffmpeg-$VER.tar.xz" -C "$SRC"
 fi
 cd "$SRC/ffmpeg-$VER"

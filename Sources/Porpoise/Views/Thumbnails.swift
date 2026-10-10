@@ -142,7 +142,7 @@ final class Thumbnails {
     /// A frame a few seconds in (or the first one for short clips), scaled to fit `size` pixels.
     static func ffmpegFrame(_ url: URL, size: CGFloat) -> NSImage? {
         guard let ff = VideoPreview.ffmpeg else { return nil }
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("dolphin-frame-\(UUID().uuidString).jpg")
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-frame-\(UUID().uuidString).jpg")
         defer { try? FileManager.default.removeItem(at: out) }
         let s = Int(size)
         for start in ["3", "0"] {
@@ -168,7 +168,7 @@ final class Thumbnails {
             // (one at a time: a folder of photos must not open dozens of connections).
             let remote = item.url
             Self.remoteQueue.async { [weak self] in
-                let dir = FileManager.default.temporaryDirectory.appendingPathComponent("dolphin-preview-\(UUID().uuidString)")
+                let dir = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-preview-\(UUID().uuidString)")
                 let local = try? RemoteFS.provider(for: remote)?.download(remote, into: dir)
                 DispatchQueue.main.async {
                     guard let self else { try? FileManager.default.removeItem(at: dir); return }
@@ -187,7 +187,7 @@ final class Thumbnails {
     }
 
     /// Remote previews download one file at a time.
-    private static let remoteQueue = DispatchQueue(label: "dolphin.remote-previews", qos: .utility)
+    private static let remoteQueue = DispatchQueue(label: "porpoise.remote-previews", qos: .utility)
 
     /// Makes the preview of `file` (the item itself, or a local copy of a remote item, removed with `cleanup` after).
     private func generate(_ k: String, for item: FileItem, file: URL, size: CGFloat, cleanup: URL? = nil) {

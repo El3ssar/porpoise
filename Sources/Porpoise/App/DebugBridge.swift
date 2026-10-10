@@ -356,7 +356,7 @@ final class DebugBridge: NSObject {
             func step(_ name: String, _ f: () throws -> String) {
                 do { log.append("OK   \(name): \(try f())") } catch { log.append("FAIL \(name): \(error.localizedDescription)") }
             }
-            let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("dolphin-rtest-\(getpid())")
+            let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("porpoise-rtest-\(getpid())")
             try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
             let local = tmp.appendingPathComponent("up load.txt")
             try? "hello remote\n".write(to: local, atomically: true, encoding: .utf8)

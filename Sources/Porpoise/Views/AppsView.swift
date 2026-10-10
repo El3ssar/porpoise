@@ -110,7 +110,9 @@ final class AppsView: NSView, NSTextFieldDelegate {
 
     /// Shown again (entered Applications): fresh search, top of the grid.
     func prepareForDisplay() {
-        if !field.stringValue.isEmpty { field.stringValue = ""; searchChanged() }
+        // The container has reset the model's filter; the field follows.
+        field.stringValue = ""
+        clearButton.isHidden = true
         scroll.contentView.scroll(to: CGPoint(x: 0, y: -scroll.contentInsets.top))
     }
 
@@ -265,6 +267,15 @@ final class AppsGridView: NSView, NSDraggingSource {
     }
 
     override func resignFirstResponder() -> Bool { needsDisplay = true; return true }
+
+    /// Out of the window (tab closed mid-animation): the display link would keep the grid alive.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window == nil else { return }
+        link?.invalidate()
+        link = nil
+        transition = nil
+    }
 
     private func refreshRunning() {
         running = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleURL?.standardizedFileURL.path })
@@ -514,7 +525,9 @@ final class AppsGridView: NSView, NSDraggingSource {
 
     override func mouseUp(with event: NSEvent) {
         // A plain click on one of several selected apps selects just that one.
-        if mouseDownPoint != nil, let i = mouseDownIndex, event.modifierFlags.intersection([.command, .shift]).isEmpty, event.clickCount == 1 {
+        // The index is from mouseDown: an app installed or removed meanwhile can have changed the rows.
+        if mouseDownPoint != nil, let i = mouseDownIndex, i < model.rows.count,
+           event.modifierFlags.intersection([.command, .shift]).isEmpty, event.clickCount == 1 {
             model.selection = [model.rows[i].item.url]
             needsDisplay = true
         }

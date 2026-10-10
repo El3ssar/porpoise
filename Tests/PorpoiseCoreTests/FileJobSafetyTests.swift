@@ -195,6 +195,18 @@ import Testing
         #expect(listing(a.appendingPathComponent("sub")).isEmpty)
     }
 
+    @Test func refusesCopyOntoASymlinkToItself() throws {
+        let (root, src, _) = try sandbox(); defer { try? fm.removeItem(at: root) }
+        let a = src.appendingPathComponent("a")
+        try fm.createDirectory(at: a, withIntermediateDirectories: true)
+        let alias = root.appendingPathComponent("alias")
+        try fm.createSymbolicLink(at: alias, withDestinationURL: a)
+        let job = FileJob(kind: .copy, sources: [a], destinationFolder: alias)
+        _ = try job.run()
+        #expect(job.errors.count == 1)
+        #expect(listing(a).isEmpty)
+    }
+
     @Test func movingASymlinkIntoItsTargetIsAllowed() throws {
         let (root, src, dst) = try sandbox(); defer { try? fm.removeItem(at: root) }
         let link = src.appendingPathComponent("link")

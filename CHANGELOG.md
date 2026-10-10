@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.1.2
+
+Security
+- Porpoise now runs with macOS's hardened runtime, so other programs can't inject code into it (and through it
+  reach the administrator helper). Test builds never use the helper.
+- The Terminal panel doesn't follow into folders whose names contain control characters (such a name could run
+  commands in the shell).
+- FTP passwords are looked up by protocol, so a server's SMB or AFP password saved by Finder is never sent over FTP.
+
+Fixes
+- "Make Porpoise Default" no longer shows "The file couldn't be opened": other apps' Show in Finder opens Porpoise;
+  macOS 26 and later keep opening folders from the Dock and the desktop with Finder.
+- Copying a folder onto a symlink that points to that folder is refused instead of copying forever.
+- Re-opening a remote file whose edits haven't uploaded yet opens those edits instead of downloading over them.
+- SSH and SFTP work for macOS user names of 12 or more characters; FTP uploads work for names with [ ] { }.
+- Remote names starting with a space, or (over SSH) ending in a newline, are no longer mixed up with similar names.
+- Ejecting a volume leaves it in every tab and window first; Extract Here leaves no empty folder when it fails.
+- Selection markers and folder arrows no longer collapse a multiple selection; a search keeps its selection when
+  files change; expanded folders no longer show up empty after a reload.
+- The Applications search and the filter bar no longer leak into each other.
+- Video previews in two windows no longer stop each other; a stalled conversion is stopped.
+- Undo and redo can't crash while an error is shown; changing permissions as administrator no longer reports a
+  false error; renaming a protected item by case only (a → A) works.
+- F4 in a remote location opens the terminal at home instead of leaving it blank.
+
 ## 0.1.1
 
 - Video previews work for every format, including AVI, WMV, FLV and MPEG files, and no longer crash the app:

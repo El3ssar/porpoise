@@ -1,8 +1,10 @@
 # Merging a pull request labelled release:patch, release:minor or release:major publishes the next version:
 # the latest vX.Y.Z tag bumped accordingly (v0.1.0 + release:minor → v0.2.0).
+# pull_request_target, so pull requests from forks get the signing secrets too. That's safe here: it only runs
+# once a maintainer has merged, and it builds the merged commit on main, never the fork's own branch.
 name: Release on merge
 on:
-  pull_request:
+  pull_request_target:
     types: [closed]
     branches: [main]
 

@@ -240,7 +240,7 @@ final class DirectoryModel {
                 DispatchQueue.main.async {
                     guard let self, token == self.loadToken else { return }
                     self.items = listed
-                    self.children = kids
+                    self.children = self.keepingExpanded(kids)
                     self.isLoading = false
                     self.loadError = err
                     let alive = Set(self.allLoadedURLs())
@@ -307,7 +307,7 @@ final class DirectoryModel {
             DispatchQueue.main.async {
                 guard let self, token == self.loadToken else { return }
                 self.items = listed
-                self.children = kids
+                self.children = self.keepingExpanded(kids)
                 self.isLoading = false
                 self.applyDynamicView()
                 self.recountFolders = true
@@ -323,8 +323,16 @@ final class DirectoryModel {
         }
     }
 
+    /// Everything listed, search results included (a reload during a search keeps their selection).
     private func allLoadedURLs() -> [URL] {
-        items.map(\.url) + children.values.flatMap { $0.map(\.url) }
+        items.map(\.url) + children.values.flatMap { $0.map(\.url) } + (searchResults ?? []).map(\.url)
+    }
+
+    /// A reload's children, plus those of folders expanded while it ran (their own load may have finished first).
+    private func keepingExpanded(_ kids: [URL: [FileItem]]) -> [URL: [FileItem]] {
+        var out = kids
+        for e in expanded where out[e] == nil { if let c = children[e] { out[e] = c } }
+        return out
     }
 
     private func updateWatcher() {

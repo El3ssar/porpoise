@@ -8,6 +8,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     private var root: Node
     var onNavigate: ((URL, Bool) -> Void)?
     var currentURL: URL? { didSet { if currentURL != oldValue { followCurrent() } } }
+    private var settingsObserver: NSObjectProtocol?
 
     private static let cellID = NSUserInterfaceItemIdentifier("folder")
     /// Settings this panel depends on (nil: all settings were reset).
@@ -109,7 +110,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         scroll.drawsBackground = false
         scroll.appearance = NSAppearance(named: .darkAqua)
         addSubview(scroll)
-        NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
+        settingsObserver = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
             // Rebuilding collapses the tree, so only for the panel's own settings.
             if Self.settingKeys.contains(n.object as? String) { self?.resetRoot() }
         }
@@ -122,6 +123,8 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         super.layout()
         scroll.frame = bounds
     }
+
+    deinit { settingsObserver.map(NotificationCenter.default.removeObserver) }
 
     private var showHidden: Bool { Settings.shared.foldersShowHidden }
 

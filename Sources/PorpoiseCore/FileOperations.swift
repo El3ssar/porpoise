@@ -183,7 +183,9 @@ public final class FileJob: @unchecked Sendable {
         switch kind {
         case .copy, .move, .link:
             guard let dest = destinationFolder else { return }
-            if kind != .link && Self.isSameOrInside(dest, src) {
+            // The destination is where the items go, so it is resolved fully: dropping a folder onto a symlink to
+            // itself must count as "into itself" (a copy would otherwise recurse until the disk is full).
+            if kind != .link && Self.isSameOrInside(dest.resolvingSymlinksInPath(), src) {
                 throw FileOperationError.intoItself(src.lastPathComponent)
             }
             if let r = try transfer(src, into: dest) { results.append(r) }
@@ -418,7 +420,9 @@ public final class FileJob: @unchecked Sendable {
         if copyfile(src.path, dst.path, state, flags) != 0 || copyFailure != nil {
             let code = copyFailure?.code ?? errno
             let failed = copyFailure?.path.map { ($0 as NSString).lastPathComponent } ?? src.lastPathComponent
-            try? fm.removeItem(at: dst)
+            // "Already exists" at the top: someone else's item (another job pasting the same name) — never remove it.
+            let topExists = code == EEXIST && (copyFailure?.path == nil || copyFailure?.path == src.path)
+            if !topExists { try? fm.removeItem(at: dst) }
             if isCancelled { throw FileOperationError.cancelled }
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(code), userInfo: [
                 NSLocalizedDescriptionKey: "Could not copy “\(failed)”: \(String(cString: strerror(code)))",
@@ -452,7 +456,7 @@ public final class FileJob: @unchecked Sendable {
 
     /// Hidden sibling used while an overwrite is in progress.
     static func stagingURL(for target: URL) -> URL {
-        target.deletingLastPathComponent().appendingPathComponent(".\(target.lastPathComponent).dolphin-\(UUID().uuidString.prefix(8))")
+        target.deletingLastPathComponent().appendingPathComponent(".\(target.lastPathComponent).porpoise-\(UUID().uuidString.prefix(8))")
     }
 
     /// Whether `url` is `folder` or inside it, comparing real paths (/tmp vs /private/tmp). The last

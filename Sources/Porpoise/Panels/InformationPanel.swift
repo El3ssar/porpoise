@@ -342,14 +342,15 @@ final class InformationPanel: NSView {
         playerWork?.cancel()
         playerWork = nil
         player.player?.pause()
+        // Before releasing the player: the controls hold it weakly and must remove their time observer from it.
+        controls.detach()
         player.player = nil
         player.isHidden = true
-        controls.detach()
         controls.isHidden = true
         playObservation = nil
         playerURL = nil
         poster.removeFromSuperview()
-        VideoPreview.shared.stop()
+        VideoPreview.shared.stop(for: self)
     }
 
     private func setupPlayer(for item: FileItem) {
@@ -364,7 +365,8 @@ final class InformationPanel: NSView {
         let url = item.url
         playerURL = url
         let work = DispatchWorkItem { [weak self] in
-            VideoPreview.shared.playableURL(for: url) { [weak self] playable in
+            guard let owner = self else { return }
+            VideoPreview.shared.playableURL(for: url, owner: owner) { [weak self] playable in
                 guard let self, self.shownURLs == [url], let playable else { return }
                 self.startPlayer(with: playable)
             }

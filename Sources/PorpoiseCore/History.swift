@@ -49,7 +49,7 @@ public final class FolderWatcher: @unchecked Sendable {
 
     private var stream: FSEventStreamRef?
     private let callback: (Set<String>) -> Void
-    private let queue = DispatchQueue(label: "dolphin.fsevents")
+    private let queue = DispatchQueue(label: "porpoise.fsevents")
     /// Read by the FSEvents callback on `queue` while `watch` may run on another thread.
     private let lock = NSLock()
     private var _paths: [String] = []

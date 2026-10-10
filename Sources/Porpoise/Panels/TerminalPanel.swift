@@ -153,7 +153,12 @@ final class TerminalPanel: NSView, LocalProcessTerminalViewDelegate {
 
     /// `cd` into the view's folder when the shell is idle (Dolphin's sendCdToTerminal). Starts the shell on first use.
     func follow(_ url: URL) {
-        guard url.isFileURL, !isShutDown else { return }
+        guard !isShutDown else { return }
+        guard url.isFileURL else {
+            // A remote or virtual location (sftp, Network, Recent): the shell starts at home instead of staying blank.
+            if window != nil, !started { startIfNeeded(at: FileManager.default.homeDirectoryForCurrentUser) }
+            return
+        }
         guard window != nil else { pendingCd = url; return }
         if !started { startIfNeeded(at: url); return }
         guard Settings.shared.terminalFollowsDirectory else { return }
@@ -178,6 +183,13 @@ final class TerminalPanel: NSView, LocalProcessTerminalViewDelegate {
         }
         // Send at once for a new target; re-send the same target only if the first one got lost.
         guard !hasRunningProgram, lastSentTarget != url.path || Date().timeIntervalSince(lastSentCd) > Timing.resendDelay else { return }
+        // The path is typed into the shell: a name with control characters (a carriage return, Ctrl+U…) could run
+        // commands, so such folders aren't followed.
+        if url.path.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) {
+            wanted = nil
+            wantedReal = nil
+            return
+        }
         lastSentTarget = url.path
         lastSentCd = Date()
         let escaped = url.path.replacingOccurrences(of: "'", with: "'\\''")
