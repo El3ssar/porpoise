@@ -303,18 +303,21 @@ import Testing
 
 @MainActor @Suite struct SearchTests {
     /// Runs a search until it reports it is done.
-    private func search(_ text: String, in scope: URL, contents: Bool = false, spotlightTimeout: TimeInterval? = nil) async throws -> [String] {
+    private func search(
+        _ text: String, in scope: URL, contents: Bool = false, spotlight: Bool = true, spotlightTimeout: TimeInterval? = nil
+    ) async throws -> [String] {
         var result: [FileItem]?
         let runner = SearchRunner(text: text, scope: scope, contents: contents) { items, done in if done { result = items } }
         if let spotlightTimeout { runner.gatheringTimeout = spotlightTimeout }
+        runner.usesSpotlight = spotlight
         runner.start()
         defer { runner.stop() }
         try #require(await eventually(20) { result != nil })
         return (result ?? []).map(\.name).sorted()
     }
 
-    /// Spotlight doesn't index the temporary folder, so these run the simple search, as for any unindexed folder.
-    @Test func findsNamesInUnindexedFolders() async throws {
+    /// The simple search, as for folders Spotlight doesn't index: hidden folders included, app bundles not entered.
+    @Test func simpleSearchFindsNamesAndContents() async throws {
         let s = try Scratch()
         let tag = "porpoisefind\(UUID().uuidString.prefix(6))"
         try s.file("a/\(tag)-one.txt")
@@ -322,9 +325,9 @@ import Testing
         try s.file(".hidden/\(tag)-three")
         try s.file("other.txt", "mentions \(tag) inside")
         try s.folder("App.app/Contents/\(tag)-packaged")
-        #expect(try await search(tag, in: s.url) == ["\(tag)-one.txt", "\(tag)-three", "\(tag.uppercased())-two.md"].sorted())
-        #expect(try await search(tag, in: s.url, contents: true).contains("other.txt"))
-        #expect(try await search("nothing-matches-\(tag)", in: s.url).isEmpty)
+        #expect(try await search(tag, in: s.url, spotlight: false) == ["\(tag)-one.txt", "\(tag)-three", "\(tag.uppercased())-two.md"].sorted())
+        #expect(try await search(tag, in: s.url, contents: true, spotlight: false).contains("other.txt"))
+        #expect(try await search("nothing-matches-\(tag)", in: s.url, spotlight: false).isEmpty)
     }
 
     /// With Spotlight switched off (as on CI), a query never finishes gathering: the simple search takes over.

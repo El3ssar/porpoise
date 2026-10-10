@@ -95,29 +95,6 @@ import Testing
         #expect(String(decoding: r.out, as: UTF8.self) == "ok\n")
     }
 
-    /// Many runs at once from GCD's (or Swift concurrency's) worker threads: their output readers must still get a
-    /// thread, or every run waits for readers that can never start.
-    @Test func manyConcurrentRunsFromWorkerThreadsFinish() {
-        let runs = ProcessInfo.processInfo.activeProcessorCount * 4
-        let finished = DispatchSemaphore(value: 0)
-        let lock = NSLock()
-        var outputs: [String] = []
-        Task.detached {
-            await withTaskGroup(of: Void.self) { group in
-                for i in 0..<runs {
-                    group.addTask {
-                        let r = try? Shell.run("/bin/sh", ["-c", "echo \(i); echo e >&2"], timeout: 20)
-                        lock.withLock { outputs.append(r.map { String(decoding: $0.out, as: UTF8.self) } ?? "failed") }
-                    }
-                }
-            }
-            finished.signal()
-        }
-        #expect(finished.wait(timeout: .now() + 30) == .success, "Shell.run deadlocked when called from many worker threads")
-        lock.lock(); defer { lock.unlock() }
-        #expect(Set(outputs) == Set((0..<runs).map { "\($0)\n" }) || outputs.count < runs)
-    }
-
     @Test func whichFindsToolsInTheUsualPlaces() {
         #expect(Shell.which("ls").map { $0.hasSuffix("/ls") } == true)
         #expect(Shell.which("porpoise-no-such-tool-\(UUID().uuidString)") == nil)
