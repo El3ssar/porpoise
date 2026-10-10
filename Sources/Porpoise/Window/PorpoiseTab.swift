@@ -218,7 +218,7 @@ final class PorpoiseTab: NSView {
 
     var iconName: String {
         let u = active.url
-        if u.isFileURL { return Icons.folderIconName(u) }
+        if u.isFileURL { return IconTheme.folderIconName(u) }
         if u.scheme == "network" { return "network-workgroup" }
         if u.scheme == "adb" { return "smartphone" }
         return RemoteFS.isRemote(u) ? "folder-remote" : "document-open-recent"

@@ -216,7 +216,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     func outlineView(_ o: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         guard let n = item as? Node else { return nil }
         let v = (o.makeView(withIdentifier: Self.cellID, owner: self) as? NSTableCellView) ?? makeCell()
-        v.imageView?.image = Icons.shared.image(Icons.folderIconName(n.url), size: 16)
+        v.imageView?.image = Icons.shared.image(IconTheme.folderIconName(n.url), size: 16)
         v.textField?.stringValue = n.name
         return v
     }

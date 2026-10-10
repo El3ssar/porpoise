@@ -83,7 +83,7 @@ final class ToolbarView: NSView {
         // right-click with no indicator, like Mac toolbars.
         viewMode.showsMenuIndicator = true
         viewMode.isSplitButton = true
-        if !Icons.shared.has("application-menu") { hamburger.iconName = "open-menu-symbolic" }
+        if !IconTheme.shared.has("application-menu") { hamburger.iconName = "open-menu-symbolic" }
         for b in [back, forward, viewMode, split, search, hamburger] { b.iconSize = 18; b.cornerRadius = 13 }
         hairline.wantsLayer = true
         hairline.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.28).cgColor

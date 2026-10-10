@@ -542,7 +542,15 @@ extension MainWindowController {
     }
 
     @objc func cloudDownload(_ sender: Any?) { CloudActions.download(selectedURLs) }
-    @objc func cloudEvict(_ sender: Any?) { CloudActions.evict(selectedURLs, window: window) }
+    @objc func cloudEvict(_ sender: Any?) {
+        let failed = CloudActions.evict(selectedURLs)
+        guard !failed.isEmpty else { return }
+        let a = NSAlert()
+        a.messageText = "Some downloads could not be removed."
+        a.informativeText = failed.prefix(6).joined(separator: "\n")
+        a.window.appearance = NSAppearance(named: .darkAqua)
+        if let w = window { a.beginSheetModal(for: w) } else { a.runModal() }
+    }
 
     /// Zips the selection next to it: "<name>.zip" for one item, "Archive.zip" for several.
     @objc func compress(_ sender: Any?) {

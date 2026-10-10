@@ -7,5 +7,10 @@ extension AppDelegate {
         RemoteFS.askLogin = FTPLoginPrompt.ask
         FileOperationsController.shared.ui = FileOperationsDialogs()
         FileOperationsController.shared.clipboard = SystemClipboard()
+        RemoteOpener.openFile = { NSWorkspace.shared.open($0) }
+        let nc = NSWorkspace.shared.notificationCenter
+        for n in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {
+            nc.addObserver(forName: n, object: nil, queue: .main) { _ in PlacesModel.shared.refreshDevices() }
+        }
     }
 }

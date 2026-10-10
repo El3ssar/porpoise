@@ -1,34 +1,34 @@
-import AppKit
+import Foundation
 import PorpoiseCore
-import PorpoiseServices
+import UniformTypeIdentifiers
 
 /// One visible row: an item plus its tree depth (Details view's expandable folders).
-struct Row {
-    let item: FileItem
-    let depth: Int
-    var isExpanded: Bool
+public struct Row {
+    public let item: FileItem
+    public let depth: Int
+    public var isExpanded: Bool
     /// Index into `groups`, -1 when not grouping.
-    var group: Int
+    public var group: Int
 }
 
-struct ItemGroup {
-    let title: String
+public struct ItemGroup {
+    public let title: String
     let firstRow: Int
     var count: Int
 }
 
 /// The items one view shows: loading, live updates, sorting, filtering, grouping, expansion and selection.
 /// Main-thread only (Dolphin's KFileItemModel + selection manager).
-final class DirectoryModel {
-    private(set) var location: URL
-    private(set) var items: [FileItem] = []      // top level, unsorted, including hidden
-    private(set) var rows: [Row] = [] { didSet { rowIndex = nil; rowIndexByPath = nil } }
-    private(set) var groups: [ItemGroup] = []
-    private(set) var isLoading = false
-    private(set) var loadError: String?
+public final class DirectoryModel {
+    public private(set) var location: URL
+    public private(set) var items: [FileItem] = []      // top level, unsorted, including hidden
+    public private(set) var rows: [Row] = [] { didSet { rowIndex = nil; rowIndexByPath = nil } }
+    public private(set) var groups: [ItemGroup] = []
+    public private(set) var isLoading = false
+    public private(set) var loadError: String?
     /// macOS privacy protection blocked the listing (e.g. the Trash needs Full Disk Access).
-    private(set) var blockedByPrivacy = false
-    var props: ViewProperties {
+    public private(set) var blockedByPrivacy = false
+    public var props: ViewProperties {
         didSet {
             guard props != oldValue else { return }
             // Item counts include hidden items only while they are shown.
@@ -37,27 +37,27 @@ final class DirectoryModel {
             onPropsChanged?()
         }
     }
-    var filter = NameFilter() { didSet { if filter != oldValue { rebuild() } } }
+    public var filter = NameFilter() { didSet { if filter != oldValue { rebuild() } } }
 
     /// Search results replace the folder listing while set (Search bar).
-    var searchResults: [FileItem]? { didSet { rebuild() } }
-    var isSearching: Bool { searchResults != nil }
+    public var searchResults: [FileItem]? { didSet { rebuild() } }
+    public var isSearching: Bool { searchResults != nil }
 
-    private(set) var expanded: Set<URL> = []
+    public private(set) var expanded: Set<URL> = []
     private var children: [URL: [FileItem]] = [:]
     private(set) var folderCounts: [URL: Int] = [:]
     private var pendingCounts: Set<URL> = []
     /// Re-count every shown folder on the next rebuild (a reload: their contents may have changed meanwhile).
     private var recountFolders = false
 
-    var selection: Set<URL> = [] { didSet { if selection != oldValue { onSelectionChanged?() } } }
-    var currentURL: URL?
-    var anchorURL: URL?
+    public var selection: Set<URL> = [] { didSet { if selection != oldValue { onSelectionChanged?() } } }
+    public var currentURL: URL?
+    public var anchorURL: URL?
 
-    var onChange: (() -> Void)?
-    var onSelectionChanged: (() -> Void)?
-    var onPropsChanged: (() -> Void)?
-    var onLoaded: (() -> Void)?
+    public var onChange: (() -> Void)?
+    public var onSelectionChanged: (() -> Void)?
+    public var onPropsChanged: (() -> Void)?
+    public var onLoaded: (() -> Void)?
 
     /// Re-lists the folder (and expanded subfolders) when any of them changes; reloads don't flicker.
     private lazy var watcher = FolderWatcher { [weak self] _ in
@@ -73,7 +73,7 @@ final class DirectoryModel {
     /// undo a view mode the user picked in the meantime.
     private var dynamicViewPending = true
 
-    init(location: URL) {
+    public init(location: URL) {
         self.location = location
         self.props = Self.storedProps(for: location)
     }
@@ -94,7 +94,7 @@ final class DirectoryModel {
 
     /// Shows the saved display style again (the "remember per folder" choice, the common style or a dynamic-view
     /// setting changed, or Restore Defaults ran), keeping a running search's Details view.
-    func reloadProps() {
+    public func reloadProps() {
         dynamicOverride = ViewOverride()
         searchOverride = ViewOverride()
         dynamicViewPending = true
@@ -104,7 +104,7 @@ final class DirectoryModel {
     }
 
     /// Search results: Details with a Path column, for as long as the search runs.
-    func showSearchView() {
+    public func showSearchView() {
         var p = props
         searchOverride.apply(to: &p) { p in
             p.mode = .details
@@ -114,13 +114,13 @@ final class DirectoryModel {
     }
 
     /// Search closed: back to the folder's own view (what the user changed meanwhile stays).
-    func endSearchView() {
+    public func endSearchView() {
         props = searchOverride.removed(from: props)
     }
 
     // MARK: Location
 
-    func setLocation(_ url: URL) {
+    public func setLocation(_ url: URL) {
         let changed = url.standardizedFileURL != location.standardizedFileURL
         location = url
         if changed {
@@ -149,14 +149,14 @@ final class DirectoryModel {
 
     /// Finder tags of loaded items (cleared on reload or after tagging).
     private var tagCache: [URL: [FinderTags.Tag]] = [:]
-    func tags(for item: FileItem) -> [FinderTags.Tag] {
+    public func tags(for item: FileItem) -> [FinderTags.Tag] {
         guard item.url.isFileURL else { return [] }
         if let t = tagCache[item.url] { return t }
         let t = FinderTags.read(item.url)
         tagCache[item.url] = t
         return t
     }
-    func refreshTags() { tagCache = [:] }
+    public func refreshTags() { tagCache = [:] }
     private func tagMap(_ list: [FileItem]) -> [URL: [String]] {
         var m: [URL: [String]] = [:]
         for it in list {
@@ -168,27 +168,27 @@ final class DirectoryModel {
 
     /// Cloud badges (iCloud Drive, File Provider), cached like tags.
     private var cloudCache: [URL: (state: CloudState, isCloud: Bool)] = [:]
-    func cloud(for item: FileItem) -> (state: CloudState, isCloud: Bool) {
+    public func cloud(for item: FileItem) -> (state: CloudState, isCloud: Bool) {
         if let c = cloudCache[item.url] { return c }
         let c = CloudState.of(item.url)
         cloudCache[item.url] = c
         return c
     }
-    func refreshCloud() { cloudCache = [:] }
+    public func refreshCloud() { cloudCache = [:] }
 
     /// Name as shown: the full name, or without its extension when Settings › View › "Always show file extensions"
     /// is off (folders and names that are only an extension keep theirs).
-    func displayName(for item: FileItem) -> String {
+    public func displayName(for item: FileItem) -> String {
         guard !Settings.shared.showAllExtensions, !item.isBrowsableFolder, !item.fileExtension.isEmpty else { return item.name }
         let base = (item.name as NSString).deletingPathExtension
         return base.isEmpty ? item.name : base
     }
 
-    var isVirtual: Bool { !location.isFileURL }
+    public var isVirtual: Bool { !location.isFileURL }
 
     // MARK: Loading
 
-    func reload(keepSelection: Bool = true) {
+    public func reload(keepSelection: Bool = true) {
         loadToken += 1
         let token = loadToken
         let url = location
@@ -349,7 +349,7 @@ final class DirectoryModel {
         return list.filter { (props.showHidden || !$0.isHidden) && !(hideBackups && $0.name.hasSuffix("~")) && match($0.name) }
     }
 
-    func rebuild() {
+    public func rebuild() {
         let choice = Settings.shared.sortingChoice
         var out: [Row] = []
         var grps: [ItemGroup] = []
@@ -446,7 +446,7 @@ final class DirectoryModel {
         }
     }
 
-    func resetFolderSizes() {
+    public func resetFolderSizes() {
         folderCounts = [:]
         pendingCounts = []
         requestFolderCounts()
@@ -454,10 +454,10 @@ final class DirectoryModel {
 
     // MARK: Expansion (Details)
 
-    func toggleExpanded(_ url: URL) { setExpanded(url, !expanded.contains(url)) }
+    public func toggleExpanded(_ url: URL) { setExpanded(url, !expanded.contains(url)) }
 
     /// Settings › Details › "Expandable folders" turned off: the tree goes away.
-    func collapseAll() {
+    public func collapseAll() {
         guard !expanded.isEmpty else { return }
         let top = Set(items.map(\.url))
         selection = selection.intersection(top)
@@ -469,7 +469,7 @@ final class DirectoryModel {
         rebuild()
     }
 
-    func setExpanded(_ url: URL, _ on: Bool) {
+    public func setExpanded(_ url: URL, _ on: Bool) {
         if on {
             expanded.insert(url)
             if children[url] == nil { loadChildren(of: url) }
@@ -509,7 +509,7 @@ final class DirectoryModel {
     /// The same by standardized path (/tmp/x vs /private/tmp/x style mismatches), built only after a miss.
     private var rowIndexByPath: [String: Int]?
 
-    func index(of url: URL) -> Int? {
+    public func index(of url: URL) -> Int? {
         if rowIndex == nil {
             rowIndex = Dictionary(rows.enumerated().map { ($1.item.url, $0) }, uniquingKeysWith: { first, _ in first })
         }
@@ -521,9 +521,9 @@ final class DirectoryModel {
         return rowIndexByPath?[url.standardizedFileURL.path]
     }
 
-    var selectedItems: [FileItem] { rows.map(\.item).filter { selection.contains($0.url) } }
+    public var selectedItems: [FileItem] { rows.map(\.item).filter { selection.contains($0.url) } }
 
-    var visibleCounts: (folders: Int, files: Int, bytes: Int64) {
+    public var visibleCounts: (folders: Int, files: Int, bytes: Int64) {
         var f = 0, n = 0; var b: Int64 = 0
         for r in rows where r.depth == 0 {
             if r.item.isBrowsableFolder { f += 1 } else { n += 1; b += r.item.size }
@@ -531,7 +531,7 @@ final class DirectoryModel {
         return (f, n, b)
     }
 
-    var selectedCounts: (folders: Int, files: Int, bytes: Int64) {
+    public var selectedCounts: (folders: Int, files: Int, bytes: Int64) {
         var f = 0, n = 0; var b: Int64 = 0
         for it in selectedItems {
             if it.isBrowsableFolder { f += 1 } else { n += 1; b += it.size }
@@ -539,14 +539,14 @@ final class DirectoryModel {
         return (f, n, b)
     }
 
-    func folderSizeText(_ item: FileItem) -> String {
+    public func folderSizeText(_ item: FileItem) -> String {
         guard let c = folderCounts[item.url] else { return "" }
         if c < 0 { return "" }
         return Settings.shared.folderSizeMode == .contentSize ? FileFormat.size(Int64(c)) : FileFormat.itemCount(c)
     }
 
     /// Text for a role of an item, as shown in Details columns / under names.
-    func text(for role: ItemRole, of item: FileItem) -> String {
+    public func text(for role: ItemRole, of item: FileItem) -> String {
         let s = Settings.shared
         switch role {
         case .name: return item.name
@@ -578,7 +578,7 @@ final class DirectoryModel {
     }
 
     /// Saves the shown properties as the folder's (or the common) style, minus the temporary overrides.
-    func saveProps() {
+    public func saveProps() {
         guard !isVirtual else { return }
         let p = dynamicOverride.stored(searchOverride.stored(props))
         Settings.shared.save(p, for: location)

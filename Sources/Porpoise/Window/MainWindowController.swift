@@ -1142,7 +1142,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
             let it = m.addItem(withTitle: title, action: #selector(historyJump(_:)), keyEquivalent: "")
             it.target = self
             it.tag = back ? -(i + 1) : (i + 1)
-            it.image = Icons.shared.menuIcon(u.isFileURL ? Icons.folderIconName(u) : "document-open-recent")
+            it.image = Icons.shared.menuIcon(u.isFileURL ? IconTheme.folderIconName(u) : "document-open-recent")
             it.toolTip = u.path
         }
         return m

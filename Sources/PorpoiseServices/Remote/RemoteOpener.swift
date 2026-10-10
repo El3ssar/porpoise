@@ -1,14 +1,12 @@
-import AppKit
-import CryptoKit
-import NetFS
+import Foundation
 import PorpoiseCore
-import PorpoiseServices
-
-// MARK: - Opening remote files
 
 /// Opens a remote file: downloads it to a cache, opens it, and uploads it again when the app saves changes
 /// (KIO does the same for remote files opened in local applications).
-enum RemoteOpener {
+public enum RemoteOpener {
+    /// Opens a downloaded copy in its application (set by the app).
+    nonisolated(unsafe) public static var openFile: (URL) -> Void = { _ in }
+
     private static var watchers: [String: DispatchSourceFileSystemObject] = [:]
     /// Local copies with saved changes not yet uploaded (the upload failed or hasn't run): only on the main queue.
     private static var unsynced: Set<String> = []
@@ -28,13 +26,13 @@ enum RemoteOpener {
         return folder
     }
 
-    static func open(_ item: FileItem) {
+    public static func open(_ item: FileItem) {
         guard let p = RemoteFS.provider(for: item.url), RemoteParsing.isSafeName(item.url.lastPathComponent) else { return }
         let folder = cacheFolder(for: item.url)
         let cached = folder.appendingPathComponent(item.url.lastPathComponent)
         // Opened again before its edits reached the server: open those edits, never replace them with a download.
         if unsynced.contains(cached.path), FileManager.default.fileExists(atPath: cached.path) {
-            NSWorkspace.shared.open(cached)
+            openFile(cached)
             StatusCenter.post("Opened your copy of “\(item.name)”: its latest changes haven't been uploaded yet.")
             return
         }
@@ -45,7 +43,7 @@ enum RemoteOpener {
                 try? FileManager.default.removeItem(at: local)
                 let got = try p.download(item.url, into: folder)
                 DispatchQueue.main.async {
-                    NSWorkspace.shared.open(got)
+                    openFile(got)
                     watch(got, remote: item.url, provider: p)
                     StatusCenter.post("Opened “\(item.name)”. Saved changes are uploaded back automatically.")
                 }
@@ -96,86 +94,5 @@ enum RemoteOpener {
 
     private static func unwatch(_ local: URL) {
         watchers.removeValue(forKey: local.path)?.cancel()
-    }
-}
-
-// MARK: - Native mounts (SMB, AFP, NFS, WebDAV)
-
-/// Mounts network shares with macOS itself (NetFS): native login dialog and Keychain, then browsed as folders.
-enum NetworkMounts {
-    static func needsMount(_ url: URL) -> Bool { RemoteFS.mountSchemes.contains(url.scheme?.lowercased() ?? "") }
-
-    /// Returns the local mount point (asynchronously), or an error message.
-    static func mount(_ url: URL, completion: @escaping (Result<URL, Error>) -> Void) {
-        var u = url
-        // WebDAV variants → http(s) as NetFS expects.
-        if let s = url.scheme?.lowercased(), ["webdav", "dav", "webdavs", "davs"].contains(s) {
-            var c = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            c?.scheme = s.hasSuffix("s") ? "https" : "http"
-            u = c?.url ?? url
-        }
-        if url.scheme?.lowercased() == "cifs" { u = URL(string: url.absoluteString.replacingOccurrences(of: "cifs://", with: "smb://")) ?? url }
-        // Already mounted?
-        if let existing = mountedVolume(for: u) { completion(.success(existing)); return }
-        let openOptions = NSMutableDictionary()
-        openOptions[kNAUIOptionKey] = kNAUIOptionAllowUI
-        let mountOptions = NSMutableDictionary()
-        var request: AsyncRequestID?
-        let status = NetFSMountURLAsync(u as CFURL, nil, nil, nil, openOptions, mountOptions, &request, DispatchQueue.main) { status, _, mountpoints in
-            if status == 0, let mp = (mountpoints as? [String])?.first {
-                // Keep the path inside the share (smb://host/share/sub/dir → /Volumes/share/sub/dir).
-                let parts = u.pathComponents.filter { $0 != "/" }
-                var dest = URL(fileURLWithPath: mp)
-                for p in parts.dropFirst() { dest.appendPathComponent(p) }
-                PlacesModel.shared.refreshDevices()
-                completion(.success(dest))
-            } else {
-                let msg = status == ECANCELED || status == Int32(-128) ? "Connection cancelled." : "Could not connect to \(u.host ?? u.absoluteString) (error \(status))."
-                completion(.failure(RemoteError.failed(msg)))
-            }
-        }
-        if status != 0 && status != Int32(EINPROGRESS) && request == nil {
-            completion(.failure(RemoteError.failed("Could not connect to \(u.host ?? "") (error \(status)).")))
-        }
-    }
-
-    private static func mountedVolume(for url: URL) -> URL? {
-        let vols = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: [.volumeURLForRemountingKey], options: []) ?? []
-        for v in vols {
-            guard let remount = try? v.resourceValues(forKeys: [.volumeURLForRemountingKey]).volumeURLForRemounting,
-                  remount.host?.lowercased() == url.host?.lowercased(), remount.scheme?.lowercased() == url.scheme?.lowercased() else { continue }
-            let share = url.pathComponents.dropFirst().first
-            if share == nil || remount.pathComponents.dropFirst().first == share {
-                var dest = v
-                for p in url.pathComponents.filter({ $0 != "/" }).dropFirst() { dest.appendPathComponent(p) }
-                return dest
-            }
-        }
-        return nil
-    }
-}
-
-// MARK: - Cloud storage (Google Drive, OneDrive, Dropbox, Box… via their Mac apps)
-
-enum CloudStorage {
-    /// Folders that File Provider apps create in ~/Library/CloudStorage (e.g. "GoogleDrive-me@gmail.com").
-    static func locations() -> [(title: String, url: URL, icon: String)] {
-        let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/CloudStorage")
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
-        return names.sorted().compactMap { n in
-            guard !n.hasPrefix(".") else { return nil }
-            let u = root.appendingPathComponent(n)
-            let lower = n.lowercased()
-            let (title, icon): (String, String) = {
-                if lower.hasPrefix("googledrive") { return ("Google Drive", "folder-gdrive") }
-                if lower.hasPrefix("onedrive") { return ("OneDrive", "folder-onedrive") }
-                if lower.hasPrefix("dropbox") { return ("Dropbox", "folder-dropbox") }
-                if lower.hasPrefix("box") { return ("Box", "folder-cloud") }
-                if lower.hasPrefix("pcloud") { return ("pCloud", "folder-pcloud") }
-                return (n.components(separatedBy: "-").first ?? n, "folder-cloud")
-            }()
-            let account = n.contains("-") ? " (" + n.components(separatedBy: "-").dropFirst().joined(separator: "-") + ")" : ""
-            return (title + account, u, Icons.shared.has(icon) ? icon : "folder-cloud")
-        }
     }
 }

@@ -423,7 +423,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             let it = NSMenuItem(title: e.1, action: #selector(menuNavigate(_:)), keyEquivalent: "")
             it.target = self
             it.representedObject = e.0
-            it.image = Icons.shared.image(icons?[safe: i] ?? Icons.folderIconName(e.0), size: 16)
+            it.image = Icons.shared.image(icons?[safe: i] ?? IconTheme.folderIconName(e.0), size: 16)
             if e.1 == bold { it.attributedTitle = NSAttributedString(string: e.1, attributes: [.font: NSFont.menuFont(ofSize: 0).bold]) }
             m.addItem(it)
         }

@@ -62,7 +62,7 @@ extension MainWindowController {
         for e in PlacesModel.shared.allEntries where !e.hidden && e.url.isFileURL && e.icon != "user-trash" { add(e.title, e.url, e.icon) }
         let recent = RecentLocations.shared.urls.prefix(6)
         if !recent.isEmpty { m.addItem(.separator()) }
-        for u in recent { add(u.lastPathComponent, u, Icons.folderIconName(u)) }
+        for u in recent { add(u.lastPathComponent, u, IconTheme.folderIconName(u)) }
         m.addItem(.separator())
         m.addItem(item("Browse…", "document-open-folder", #selector(copyOrMoveTo(_:)), tag: move ? 1 : 0))
         return m

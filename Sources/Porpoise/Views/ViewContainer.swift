@@ -533,22 +533,6 @@ extension Notification.Name {
     static let hoverChanged = Notification.Name("PorpoiseHoverChanged")
 }
 
-/// Remembers visited folders for "Recent Locations".
-final class RecentLocations {
-    static let shared = RecentLocations()
-    private(set) var urls: [URL] = []
-    private init() {
-        urls = (Settings.store.stringArray(forKey: "recentLocations") ?? []).map { URL(fileURLWithPath: $0) }
-    }
-    func visit(_ u: URL) {
-        guard u.isFileURL else { return }
-        urls.removeAll { $0 == u }
-        urls.insert(u, at: 0)
-        if urls.count > 40 { urls.removeLast(urls.count - 40) }
-        Settings.store.set(urls.map(\.path), forKey: "recentLocations")
-    }
-}
-
 // MARK: - App library
 
 extension ViewContainer: AppsViewHost {

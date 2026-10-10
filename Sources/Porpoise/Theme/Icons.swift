@@ -8,7 +8,6 @@ import PorpoiseServices
 final class Icons {
     static let shared = Icons()
 
-    private let root: URL
     /// Rendered icons by name, pixel size and state (and app icons by path). Bounded: continuous zoom asks for
     /// many sizes, and browsing /Applications for many app icons.
     private let cache: NSCache<NSString, NSImage> = {
@@ -16,8 +15,6 @@ final class Icons {
         c.countLimit = 3000
         return c
     }()
-    /// Icon file per name and size directory (small, fixed set).
-    private var pathCache: [String: URL?] = [:]
     /// Resolved Finder alias targets (nil: unresolvable).
     private let aliasTargets: NSCache<NSString, AliasTarget> = {
         let c = NSCache<NSString, AliasTarget>()
@@ -29,47 +26,14 @@ final class Icons {
         init(_ item: FileItem?) { self.item = item }
     }
 
-    private static let fixedSizes = [16, 22, 24]
-    private static let contexts = ["actions", "places", "devices", "mimetypes", "emblems", "status"]
-
-    private init() {
-        if let env = ProcessInfo.processInfo.environment["PORPOISE_RESOURCES"] {
-            root = URL(fileURLWithPath: env).appendingPathComponent("icons")
-        } else if let r = Bundle.main.resourceURL?.appendingPathComponent("icons"),
-                  FileManager.default.fileExists(atPath: r.path) {
-            root = r
-        } else {
-            // `swift run` from the project folder.
-            root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Resources/icons")
-        }
-    }
-
-    /// Finds the best file for an icon name at a pixel size, like the freedesktop icon lookup.
-    private func file(_ name: String, size: Int) -> URL? {
-        // Exact fixed size first for small icons (pixel-perfect symbolic icons), then scalable, then any.
-        var sizeDirs: [String] = []
-        if size <= 32, let exact = Self.fixedSizes.first(where: { $0 >= size }) { sizeDirs.append("\(exact)") }
-        sizeDirs.append("scalable")
-        sizeDirs += Self.fixedSizes.reversed().map(String.init)
-        // Sizes that search the same directories share an entry.
-        let key = "\(name)@\(sizeDirs[0])"
-        if let cached = pathCache[key] { return cached }
-        let fm = FileManager.default
-        let found = sizeDirs.lazy.flatMap { dir in Self.contexts.lazy.map { (dir, $0) } }
-            .map { self.root.appendingPathComponent("\($0.0)/\($0.1)/\(name).svg") }
-            .first { fm.fileExists(atPath: $0.path) }
-        pathCache[key] = found
-        return found
-    }
-
-    func has(_ name: String) -> Bool { file(name, size: 22) != nil }
+    private init() {}
 
     /// Icon image by freedesktop name. `selected` uses highlighted-text colors (like KDE's selected state).
     func image(_ name: String, size: CGFloat, selected: Bool = false) -> NSImage? {
         let px = Int(size)
         let key = "\(name)|\(px)|\(selected)" as NSString
         if let img = cache.object(forKey: key) { return img }
-        guard let url = file(name, size: px), let svg = try? String(contentsOf: url, encoding: .utf8),
+        guard let url = IconTheme.shared.file(name, size: px), let svg = try? String(contentsOf: url, encoding: .utf8),
               let data = Self.recolor(svg, stylesheet: Theme.iconStylesheet(selected: selected)).data(using: .utf8),
               let img = NSImage(data: data) else { return nil }
         img.size = NSSize(width: size, height: size)
@@ -87,11 +51,10 @@ final class Icons {
 
     // MARK: - File icons
 
-    private static let homePath = FileManager.default.homeDirectoryForCurrentUser.path
-
     /// Icon name for a file item (freedesktop naming, Tela has them as mimetypes/places icons).
     func iconName(for item: FileItem) -> String {
-        if item.isBrowsableFolder { return Self.folderIconName(item.url) }
+        let has = IconTheme.shared.has
+        if item.isBrowsableFolder { return IconTheme.folderIconName(item.url) }
         if item.fileExtension == "savedSearch" { return "folder-saved-search" }
         if let mime = item.mimeType {
             let direct = mime.replacingOccurrences(of: "/", with: "-")
@@ -114,28 +77,6 @@ final class Icons {
         if t.conforms(to: .presentation) { return "x-office-presentation" }
         if t.conforms(to: .spreadsheet) { return "x-office-spreadsheet" }
         return "unknown"
-    }
-
-    static func folderIconName(_ url: URL) -> String {
-        let p = url.standardizedFileURL.path
-        let h = homePath
-        switch p {
-        case h: return "user-home"
-        case h + "/Desktop": return "user-desktop"
-        case h + "/Documents": return "folder-documents"
-        case h + "/Downloads": return "folder-download"
-        case h + "/Music": return "folder-music"
-        case h + "/Pictures": return "folder-pictures"
-        case h + "/Movies": return "folder-videos"
-        case h + "/Public": return "folder-public"
-        case h + "/.Trash": return "user-trash"
-        case h + "/Library/Mobile Documents/com~apple~CloudDocs": return "folder-cloud"
-        case h + "/Applications", "/Applications": return "folder-apple"
-        case "/": return "drive-harddisk"
-        default: break
-        }
-        if p.hasPrefix("/Volumes/"), url.deletingLastPathComponent().path == "/Volumes" { return "drive-removable-media" }
-        return "folder"
     }
 
     static let mimeAliases: [String: String] = [

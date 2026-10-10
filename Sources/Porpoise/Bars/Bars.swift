@@ -436,7 +436,7 @@ final class FilterBar: NSView, NSSearchFieldDelegate {
         modeButton.showsMenuIndicator = true
         modeButton.isSplitButton = true
         modeButton.menuProvider = { [weak self] in self?.modeMenu() }
-        if !Icons.shared.has("format-text-case") { caseButton.iconName = nil; caseButton.title = "Aa" }
+        if !IconTheme.shared.has("format-text-case") { caseButton.iconName = nil; caseButton.title = "Aa" }
         caseButton.onClick = { [weak self] in
             guard let self else { return }
             self.caseButton.isToggled.toggle()

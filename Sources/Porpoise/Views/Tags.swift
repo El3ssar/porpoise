@@ -2,17 +2,7 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
-/// Finder tags: names plus Finder's color index, read from the `_kMDItemUserTags` extended attribute
-/// ("Name\n6"), which is where Finder keeps each tag's color.
-enum FinderTags {
-    struct Tag: Equatable { var name: String; var color: Int }
-
-    /// Finder's standard tags with their label color numbers.
-    static let standard: [Tag] = [
-        Tag(name: "Red", color: 6), Tag(name: "Orange", color: 7), Tag(name: "Yellow", color: 5), Tag(name: "Green", color: 2),
-        Tag(name: "Blue", color: 4), Tag(name: "Purple", color: 3), Tag(name: "Gray", color: 1),
-    ]
-
+extension FinderTags {
     static func color(_ index: Int) -> NSColor? {
         switch index {
         case 1: return .systemGray
@@ -24,29 +14,6 @@ enum FinderTags {
         case 7: return .systemOrange
         default: return nil
         }
-    }
-
-    static func read(_ url: URL) -> [Tag] {
-        guard url.isFileURL else { return [] }
-        let name = "com.apple.metadata:_kMDItemUserTags"
-        let len = getxattr(url.path, name, nil, 0, 0, XATTR_NOFOLLOW)
-        guard len > 0 else { return [] }
-        var data = Data(count: len)
-        let got = data.withUnsafeMutableBytes { getxattr(url.path, name, $0.baseAddress, len, 0, XATTR_NOFOLLOW) }
-        guard got > 0 else { return [] }
-        data.count = got   // the attribute may have shrunk between the two calls
-        guard let list = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String] else { return [] }
-        return list.map { entry in
-            let parts = entry.split(separator: "\n", maxSplits: 1)
-            let n = String(parts.first ?? "")
-            let c = parts.count > 1 ? Int(parts[1]) ?? 0 : (standard.first { $0.name == n }?.color ?? 0)
-            return Tag(name: n, color: c)
-        }
-    }
-
-    /// Writes tag names; macOS assigns the standard colors itself.
-    static func set(_ names: [String], on url: URL) {
-        try? (url as NSURL).setResourceValue(names, forKey: .tagNamesKey)
     }
 
     /// Overlapping dots, as Finder draws them next to names.
@@ -69,8 +36,6 @@ enum FinderTags {
     static func dotsWidth(_ count: Int, diameter d: CGFloat) -> CGFloat {
         count == 0 ? 0 : d + CGFloat(min(count, 3) - 1) * d * 0.55
     }
-
-    static func url(for tag: String) -> URL { URL(string: "tags:/" + (tag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tag))! }
 }
 
 /// Finder's row of color dots at the bottom of a context menu: click to add or remove a tag.
@@ -146,58 +111,5 @@ final class TagDotsView: NSView {
         if current.contains(name) { current.remove(name) } else { current.insert(name) }
         needsDisplay = true
         menuItem?.menu?.cancelTracking()
-    }
-}
-
-/// Files carrying a tag (the sidebar's Tags section), found with Spotlight.
-final class MetadataListQuery: NSObject {
-    private let query = NSMetadataQuery()
-    private let done: ([FileItem]) -> Void
-
-    init(predicate: NSPredicate, scopes: [Any] = [NSMetadataQueryLocalComputerScope], done: @escaping ([FileItem]) -> Void) {
-        self.done = done
-        super.init()
-        query.predicate = predicate
-        query.searchScopes = scopes
-        NotificationCenter.default.addObserver(self, selector: #selector(gathered), name: .NSMetadataQueryDidFinishGathering, object: query)
-        query.start()
-    }
-
-    deinit {
-        // Replaced before it finished gathering (the user moved on): stop searching.
-        query.stop()
-        NotificationCenter.default.removeObserver(self)
-    }
-
-    static func tagged(_ tag: String, done: @escaping ([FileItem]) -> Void) -> MetadataListQuery {
-        MetadataListQuery(predicate: NSPredicate(format: "kMDItemUserTags == %@", tag), done: done)
-    }
-
-    /// Finder Smart Folder (.savedSearch): its raw Spotlight query and scopes.
-    static func smartFolder(_ file: URL, done: @escaping ([FileItem]) -> Void) -> MetadataListQuery? {
-        guard let d = NSDictionary(contentsOf: file), let raw = d["RawQuery"] as? String,
-              let pred = NSPredicate(fromMetadataQueryString: raw) else { return nil }
-        let crit = d["SearchCriteria"] as? [String: Any]
-        let scopes: [Any] = ((crit?["FXScopeArrayOfPaths"] as? [String]) ?? []).map { s -> Any in
-            switch s {
-            case "kMDQueryScopeHome": return NSMetadataQueryUserHomeScope
-            case "kMDQueryScopeComputer": return NSMetadataQueryLocalComputerScope
-            case "kMDQueryScopeAllIndexed": return NSMetadataQueryIndexedLocalComputerScope
-            default: return URL(fileURLWithPath: s)
-            }
-        }
-        return MetadataListQuery(predicate: pred, scopes: scopes.isEmpty ? [NSMetadataQueryLocalComputerScope] : scopes, done: done)
-    }
-
-    @objc private func gathered() {
-        query.stop()
-        var items: [FileItem] = []
-        for i in 0..<min(query.resultCount, 2000) {
-            guard let r = query.result(at: i) as? NSMetadataItem, let p = r.value(forAttribute: NSMetadataItemPathKey) as? String,
-                  let it = FileItem.load(URL(fileURLWithPath: p)) else { continue }
-            items.append(it)
-        }
-        NotificationCenter.default.removeObserver(self)
-        done(items)
     }
 }

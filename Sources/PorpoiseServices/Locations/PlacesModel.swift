@@ -1,33 +1,32 @@
-import AppKit
+import Foundation
 import PorpoiseCore
-import PorpoiseServices
 
-enum PlaceSection: String, Codable, CaseIterable {
+public enum PlaceSection: String, Codable, CaseIterable {
     case places = "Places", remote = "Remote", recent = "Recent", tags = "Tags", devices = "Devices", removable = "Removable Devices"
 }
 
-struct PlaceEntry: Codable, Equatable {
-    var title: String
-    var url: URL
-    var icon: String
-    var section: PlaceSection
-    var hidden = false
-    var isVolume = false
-    var isEjectable = false
+public struct PlaceEntry: Codable, Equatable {
+    public var title: String
+    public var url: URL
+    public var icon: String
+    public var section: PlaceSection
+    public var hidden = false
+    public var isVolume = false
+    public var isEjectable = false
 }
 
 /// Dolphin's KFilePlacesModel: default places, user bookmarks (persisted), mounted volumes,
 /// detected cloud folders and Android phones, and Finder tags.
-final class PlacesModel {
-    static let shared = PlacesModel()
-    static let changed = Notification.Name("PorpoisePlacesChanged")
+public final class PlacesModel {
+    public static let shared = PlacesModel()
+    public static let changed = Notification.Name("PorpoisePlacesChanged")
 
-    static let recentFilesURL = URL(string: "recent:/files")!
+    public static let recentFilesURL = URL(string: "recent:/files")!
     static let recentLocationsURL = URL(string: "recent:/locations")!
     /// How often Android phones are polled while adb is installed.
     private static let adbPollInterval: TimeInterval = 4
 
-    private(set) var userEntries: [PlaceEntry] = []
+    public private(set) var userEntries: [PlaceEntry] = []
     private(set) var devices: [PlaceEntry] = []
     /// Cloud storage folders (Google Drive, OneDrive…); those also bookmarked are left out by `detected`.
     private var cloudEntries: [PlaceEntry] = []
@@ -38,32 +37,32 @@ final class PlacesModel {
         PlaceEntry(title: $0.name, url: FinderTags.url(for: $0.name), icon: "tag", section: .tags)
     }
 
-    var hiddenSections: Set<PlaceSection> {
+    public var hiddenSections: Set<PlaceSection> {
         get { storedHiddenSections }
         set { storedHiddenSections = newValue; save() }
     }
     private var storedHiddenSections: Set<PlaceSection> = []
 
     /// Folded sections show only their header.
-    var collapsedSections: Set<PlaceSection> = [] { didSet { if ready, collapsedSections != oldValue { save() } } }
+    public var collapsedSections: Set<PlaceSection> = [] { didSet { if ready, collapsedSections != oldValue { save() } } }
     /// Section order (the user can drag headers); always contains every section.
     private(set) var sectionOrder: [PlaceSection] = PlaceSection.allCases
     /// Locked: no dragging or reordering of places and sections (folding still works).
-    var isLocked = false { didSet { if ready, isLocked != oldValue { save() } } }
+    public var isLocked = false { didSet { if ready, isLocked != oldValue { save() } } }
 
-    func toggleCollapsed(_ sec: PlaceSection) {
+    public func toggleCollapsed(_ sec: PlaceSection) {
         if collapsedSections.contains(sec) { collapsedSections.remove(sec) } else { collapsedSections.insert(sec) }
     }
 
     /// Moves `sec` before `target` (nil = to the end).
-    func moveSection(_ sec: PlaceSection, before target: PlaceSection?) {
+    public func moveSection(_ sec: PlaceSection, before target: PlaceSection?) {
         guard let order = sectionOrder(moving: sec, before: target) else { return }
         sectionOrder = order
         save()
     }
 
     /// Whether `moveSection(_:before:)` would change the order (a drop right before or after itself doesn't).
-    func canMoveSection(_ sec: PlaceSection, before target: PlaceSection?) -> Bool {
+    public func canMoveSection(_ sec: PlaceSection, before target: PlaceSection?) -> Bool {
         sectionOrder(moving: sec, before: target) != nil
     }
 
@@ -79,7 +78,7 @@ final class PlacesModel {
         for s in PlaceSection.allCases where !order.contains(s) { order.append(s) }   // sections added in later versions
         return order
     }
-    var showHidden = false { didSet { post() } }
+    public var showHidden = false { didSet { post() } }
 
     private var adbTimer: Timer?
     private var adbPollInFlight = false
@@ -99,10 +98,6 @@ final class PlacesModel {
         refreshDevices()
         ready = true
         DispatchQueue.main.async { self.refreshDetected() }
-        let nc = NSWorkspace.shared.notificationCenter
-        for n in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {
-            nc.addObserver(forName: n, object: nil, queue: .main) { [weak self] _ in self?.refreshDevices() }
-        }
     }
 
     // MARK: Entries
@@ -112,10 +107,10 @@ final class PlacesModel {
         let bookmarked = Set(userEntries.map(\.url.standardizedFileURL))
         return cloudEntries.filter { !bookmarked.contains($0.url.standardizedFileURL) } + phoneEntries
     }
-    var allEntries: [PlaceEntry] { userEntries + detected + tagEntries + devices }
+    public var allEntries: [PlaceEntry] { userEntries + detected + tagEntries + devices }
 
     /// Entries grouped by section, honoring hidden flags.
-    func sections() -> [(PlaceSection, [PlaceEntry])] {
+    public func sections() -> [(PlaceSection, [PlaceEntry])] {
         let all = allEntries
         return sectionOrder.compactMap { sec in
             guard showHidden || !hiddenSections.contains(sec) else { return nil }
@@ -124,15 +119,15 @@ final class PlacesModel {
         }
     }
 
-    func isUserEntry(_ entry: PlaceEntry) -> Bool { userIndex(of: entry) != nil }
+    public func isUserEntry(_ entry: PlaceEntry) -> Bool { userIndex(of: entry) != nil }
 
-    func contains(_ url: URL) -> Bool {
+    public func contains(_ url: URL) -> Bool {
         let u = url.standardizedFileURL
         return allEntries.contains { $0.url.standardizedFileURL == u }
     }
 
     /// Title for a URL if it is a place (window/tab titles use it, e.g. "Home").
-    func title(for url: URL) -> String? {
+    public func title(for url: URL) -> String? {
         if url.scheme == "smart" { return url.deletingPathExtension().lastPathComponent }
         let u = url.standardizedFileURL
         return allEntries.first { $0.url.standardizedFileURL == u }?.title
@@ -211,7 +206,7 @@ final class PlacesModel {
     private static func migrated(_ entry: PlaceEntry) -> PlaceEntry {
         var e = entry
         if e.url.path == "/Applications" && ["folder-appimage", "applications-other"].contains(e.icon) { e.icon = "view-list-icons" }
-        if !Icons.shared.has(e.icon) { e.icon = e.url.isFileURL ? Icons.folderIconName(e.url) : "folder-remote" }
+        if !IconTheme.shared.has(e.icon) { e.icon = e.url.isFileURL ? IconTheme.folderIconName(e.url) : "folder-remote" }
         return e
     }
 
@@ -226,7 +221,8 @@ final class PlacesModel {
 
     // MARK: Devices and detected places
 
-    func refreshDevices() {
+    /// Call when volumes are mounted, unmounted or renamed (the app forwards NSWorkspace's notifications).
+    public func refreshDevices() {
         let keys: [URLResourceKey] = [.volumeLocalizedNameKey, .volumeIsRemovableKey, .volumeIsEjectableKey, .volumeIsInternalKey,
                                       .volumeIsRootFileSystemKey, .volumeIsBrowsableKey, .volumeIsLocalKey]
         let vols = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: keys, options: [.skipHiddenVolumes]) ?? []
@@ -246,7 +242,7 @@ final class PlacesModel {
     }
 
     /// Cloud storage folders, and Android phones (polled while adb is installed; adb runs off the main thread).
-    func refreshDetected() {
+    public func refreshDetected() {
         let cloud = CloudStorage.locations().map { PlaceEntry(title: $0.title, url: $0.url, icon: $0.icon, section: .remote) }
         if cloud != cloudEntries { cloudEntries = cloud; post() }
         guard ADBProvider.adbPath != nil else { return }
@@ -274,7 +270,7 @@ final class PlacesModel {
 
     // MARK: Editing
 
-    func add(_ url: URL, title: String? = nil) {
+    public func add(_ url: URL, title: String? = nil) {
         guard !userEntries.contains(where: { $0.url.standardizedFileURL == url.standardizedFileURL }) else { return }
         if !url.isFileURL {
             // Network folders go to the end of the Remote section.
@@ -283,7 +279,7 @@ final class PlacesModel {
             userEntries.insert(entry, at: at)
         } else {
             // Folders go after the last "Places" entry, before Trash if present.
-            let entry = PlaceEntry(title: title ?? url.lastPathComponent, url: url, icon: Icons.folderIconName(url), section: .places)
+            let entry = PlaceEntry(title: title ?? url.lastPathComponent, url: url, icon: IconTheme.folderIconName(url), section: .places)
             let afterLast = (userEntries.lastIndex { $0.section == .places } ?? (userEntries.count - 1)) + 1
             let at = userEntries.firstIndex { $0.icon == "user-trash" } ?? afterLast
             userEntries.insert(entry, at: max(0, at))
@@ -291,32 +287,32 @@ final class PlacesModel {
         save()
     }
 
-    func remove(_ entry: PlaceEntry) {
+    public func remove(_ entry: PlaceEntry) {
         guard let i = userIndex(of: entry) else { return }
         userEntries.remove(at: i)
         save()
     }
 
-    func update(_ entry: PlaceEntry, title: String, url: URL) {
+    public func update(_ entry: PlaceEntry, title: String, url: URL) {
         guard let i = userIndex(of: entry) else { return }
         userEntries[i].title = title
         userEntries[i].url = url
         save()
     }
 
-    func setHidden(_ entry: PlaceEntry, _ hidden: Bool) {
+    public func setHidden(_ entry: PlaceEntry, _ hidden: Bool) {
         guard let i = userIndex(of: entry) else { return }
         userEntries[i].hidden = hidden
         save()
     }
 
     /// Whether `move(_:before:endOf:)` would accept this drop.
-    func canMove(_ entry: PlaceEntry, before target: PlaceEntry?, endOf section: PlaceSection) -> Bool {
+    public func canMove(_ entry: PlaceEntry, before target: PlaceEntry?, endOf section: PlaceSection) -> Bool {
         reordered(entry, before: target, endOf: section) != nil
     }
 
     /// Reorders within the entry's own section: before `target`, or at the end of `section` when target is nil.
-    func move(_ entry: PlaceEntry, before target: PlaceEntry?, endOf section: PlaceSection) {
+    public func move(_ entry: PlaceEntry, before target: PlaceEntry?, endOf section: PlaceSection) {
         guard let list = reordered(entry, before: target, endOf: section), list != userEntries else { return }
         userEntries = list
         save()
@@ -337,7 +333,7 @@ final class PlacesModel {
         return list
     }
 
-    func resetDefaults() {
+    public func resetDefaults() {
         userEntries = Self.defaultEntries()
         storedHiddenSections = []
         sectionOrder = PlaceSection.allCases
