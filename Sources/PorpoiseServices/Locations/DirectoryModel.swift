@@ -49,6 +49,8 @@ public final class DirectoryModel {
     private var pendingCounts: Set<URL> = []
     /// Re-count every shown folder on the next rebuild (a reload: their contents may have changed meanwhile).
     private var recountFolders = false
+    /// Counts from an earlier request (made with other settings) are dropped when they arrive late.
+    private var countGeneration = 0
 
     public var selection: Set<URL> = [] { didSet { if selection != oldValue { onSelectionChanged?() } } }
     public var currentURL: URL?
@@ -127,6 +129,8 @@ public final class DirectoryModel {
             expanded = []
             children = [:]
             folderCounts = [:]
+            pendingCounts = []
+            countGeneration += 1
             selection = []
             currentURL = nil
             anchorURL = nil
@@ -464,8 +468,11 @@ public final class DirectoryModel {
         guard Settings.shared.folderSizeMode != .none, location.isFileURL else { return }
         let all = recountFolders
         recountFolders = false
-        let need = rows.map(\.item).filter { $0.isBrowsableFolder && (all || folderCounts[$0.url] == nil) && !pendingCounts.contains($0.url) }
+        // Counting everything again supersedes the counts still under way: they were made with the old settings.
+        if all { countGeneration += 1 }
+        let need = rows.map(\.item).filter { $0.isBrowsableFolder && (all || (folderCounts[$0.url] == nil && !pendingCounts.contains($0.url))) }
         guard !need.isEmpty else { return }
+        let generation = countGeneration
         let urls = need.map(\.url)
         pendingCounts.formUnion(urls)
         let hidden = props.showHidden
@@ -481,7 +488,7 @@ public final class DirectoryModel {
                 }
             }
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self, self.countGeneration == generation else { return }
                 for (k, v) in res { self.folderCounts[k] = v; self.pendingCounts.remove(k) }
                 if self.props.sortRole == .size { self.rebuild() } else { self.onChange?() }
             }
@@ -519,6 +526,7 @@ public final class DirectoryModel {
     public func resetFolderSizes() {
         folderCounts = [:]
         pendingCounts = []
+        countGeneration += 1
         requestFolderCounts()
     }
 
