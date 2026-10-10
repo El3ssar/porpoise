@@ -1066,8 +1066,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     }
 
     func places(_ p: PlacesPanel, drop urls: [URL], onto url: URL) {
-        let trash = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
-        if url.standardizedFileURL == trash.standardizedFileURL {
+        if url.standardizedFileURL == TrashInfo.folder.standardizedFileURL {
             FileOperationsController.shared.trash(urls, window: window)
             return
         }

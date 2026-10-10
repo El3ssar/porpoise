@@ -10,7 +10,7 @@ extension FileOperationsController {
         if urls.allSatisfy({ $0.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL }) { return }
         let w = view.window
         // Dropping into the Trash folder is Move to Trash, as in Finder (put back works, Finder's sound plays).
-        if folder.standardizedFileURL == Self.trashFolder.standardizedFileURL, urls.allSatisfy(\.isFileURL) {
+        if folder.standardizedFileURL == TrashInfo.folder.standardizedFileURL, urls.allSatisfy(\.isFileURL) {
             trash(urls, window: w)
             return
         }

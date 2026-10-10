@@ -110,11 +110,11 @@ extension FileOperationsController {
     /// An unused name in ~/.Trash ("name.ext", "name 2.ext", "name 3.ext"…), also avoiding `reserved`,
     /// which collects the names handed out so far.
     static func freeTrashURL(for url: URL, reserving reserved: inout Set<String>) -> URL {
-        var dst = trashFolder.appendingPathComponent(url.lastPathComponent)
+        var dst = TrashInfo.folder.appendingPathComponent(url.lastPathComponent)
         var n = 2
         let ext = url.pathExtension, base = url.deletingPathExtension().lastPathComponent
         while reserved.contains(dst.lastPathComponent) || FileJob.itemExists(at: dst) {
-            dst = trashFolder.appendingPathComponent(ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)")
+            dst = TrashInfo.folder.appendingPathComponent(ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)")
             n += 1
         }
         reserved.insert(dst.lastPathComponent)

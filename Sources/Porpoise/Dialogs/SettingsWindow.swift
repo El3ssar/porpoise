@@ -6,6 +6,8 @@ import PorpoiseServices
 final class SettingsWindowController: NSWindowController {
     /// The Settings window, for the pages' sheets (whichever window happens to be key).
     private(set) static weak var window: NSWindow?
+    /// Watches ~/.Trash while the Settings window exists.
+    private static var trashWatcher: FolderWatcher?
 
     /// The pages' builders, kept so their observers live (and are removed) with the window.
     private var builders: [FormBuilder] = []
@@ -208,8 +210,8 @@ final class SettingsWindowController: NSWindowController {
                 }
             }
             refresh()
-            TrashInfo.watcher = FolderWatcher { _ in refresh() }
-            TrashInfo.watcher?.watch([MainWindowController.userTrashURL])
+            Self.trashWatcher = FolderWatcher { _ in refresh() }
+            Self.trashWatcher?.watch([TrashInfo.folder])
             f.check("Remove items from the Trash after 30 days (Finder setting)", TrashInfo.autoEmpty) { TrashInfo.autoEmpty = $0 }
             f.button("Empty Trash…", enabled: { !TrashInfo.isEmpty }) {
                 FileOperationsController.shared.emptyTrash(window: SettingsWindowController.window)
@@ -289,36 +291,6 @@ final class SettingsWindowController: NSWindowController {
 }
 
 final class FlippedView: NSView { override var isFlipped: Bool { true } }
-
-/// Trash facts and Finder's "Remove items from the Trash after 30 days" preference.
-enum TrashInfo {
-    static func summary() -> String {
-        let t = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: t.path) else {
-            return "The Trash can be shown once Porpoise has Full Disk Access (System Settings › Privacy & Security)."
-        }
-        let items = names.filter { $0 != ".DS_Store" }
-        let size = items.reduce(Int64(0)) { $0 + FileJob.diskSize(t.appendingPathComponent($1)) }
-        return items.isEmpty ? "The Trash is empty." : "\(FileFormat.itemCount(items.count)) in the Trash, \(FileFormat.size(size))."
-    }
-
-    /// Nothing in the Trash (or it can't be read without Full Disk Access).
-    static var isEmpty: Bool {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: MainWindowController.userTrashURL.path)) ?? []
-        return names.allSatisfy { $0 == ".DS_Store" }
-    }
-
-    /// Watches ~/.Trash while the Settings window exists.
-    static var watcher: FolderWatcher?
-
-    static var autoEmpty: Bool {
-        get { CFPreferencesCopyAppValue("FXRemoveOldTrashItems" as CFString, "com.apple.finder" as CFString) as? Bool ?? false }
-        set {
-            CFPreferencesSetAppValue("FXRemoveOldTrashItems" as CFString, newValue as CFBoolean, "com.apple.finder" as CFString)
-            CFPreferencesAppSynchronize("com.apple.finder" as CFString)
-        }
-    }
-}
 
 /// Builds a simple two-column settings form (label | control), like KDE's KCM pages.
 /// Every control re-reads its setting whenever any setting changes (menus, "Do not ask again" boxes, Restore

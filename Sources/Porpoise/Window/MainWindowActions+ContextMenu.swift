@@ -6,9 +6,6 @@ import PorpoiseServices
 
 extension MainWindowController {
 
-    /// The user's own Trash folder (Dolphin's trash:/).
-    static var userTrashURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash") }
-
     /// Extensions offered "Extract Here" (what ditto/bsdtar can unpack).
     static let extractableExtensions: Set<String> = ["zip", "tar", "gz", "tgz", "bz2", "xz", "7z"]
 
@@ -93,7 +90,7 @@ extension MainWindowController {
 
     private func buildContextMenu(for item: FileItem?, in c: ViewContainer) -> NSMenu {
         let m = NSMenu()
-        let inTrash = c.url.isFileURL && c.url.standardizedFileURL == Self.userTrashURL.standardizedFileURL
+        let inTrash = c.url.isFileURL && c.url.standardizedFileURL == TrashInfo.folder.standardizedFileURL
         let sel = c.model.selectedItems
         guard let item else {
             // Empty area

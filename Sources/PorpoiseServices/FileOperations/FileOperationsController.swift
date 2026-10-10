@@ -25,8 +25,6 @@ public final class FileOperationsController {
     private var cutChangeCount = -1
     public private(set) var cutURLs: Set<URL> = []
 
-    public static var trashFolder: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash") }
-
     public init() {}
 
     // MARK: Clipboard
@@ -200,7 +198,7 @@ public final class FileOperationsController {
     /// ~/.Trash plus the per-user Trash folders of other mounted volumes (/Volumes/X/.Trashes/<uid>).
     private static func allTrashFolders() -> [URL] {
         let fm = FileManager.default
-        var folders = [trashFolder]
+        var folders = [TrashInfo.folder]
         for v in fm.mountedVolumeURLs(includingResourceValuesForKeys: nil, options: [.skipHiddenVolumes]) ?? [] where v.path != "/" {
             let t = v.appendingPathComponent(".Trashes/\(getuid())")
             if FileJob.itemExists(at: t), !folders.contains(t) { folders.append(t) }
