@@ -142,6 +142,13 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         model.onLoaded = { [weak self] in
             guard let self else { return }
             self.updateStatus()
+            // The folder shown was moved or deleted: go to the nearest one left, as Dolphin does.
+            if self.model.locationVanished {
+                let gone = self.model.location
+                self.setURL(DirectoryModel.nearestExisting(gone))
+                self.messageBar.show("“\(gone.lastPathComponent)” was moved or deleted.", error: false)
+                return
+            }
             if let e = self.model.loadError {
                 if self.model.blockedByPrivacy {
                     self.messageBar.show(e, error: false, action: "Open Privacy Settings…") {

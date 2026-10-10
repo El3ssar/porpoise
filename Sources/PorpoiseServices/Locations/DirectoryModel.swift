@@ -28,6 +28,10 @@ public final class DirectoryModel {
     public private(set) var loadError: String?
     /// macOS privacy protection blocked the listing (e.g. the Trash needs Full Disk Access).
     public private(set) var blockedByPrivacy = false
+    /// The folder being shown was moved or deleted (it had loaded before): the view moves to the nearest one left.
+    public private(set) var locationVanished = false
+    /// The last location that loaded without an error.
+    private var lastLoaded: URL?
     public var props: ViewProperties {
         didSet {
             guard props != oldValue else { return }
@@ -372,6 +376,9 @@ public final class DirectoryModel {
                 self.recountFolders = true
                 self.loadError = err
                 self.blockedByPrivacy = privacy
+                let missing = err != nil && url.isFileURL && !FileManager.default.fileExists(atPath: url.path)
+                self.locationVanished = missing && self.lastLoaded?.standardizedFileURL == url.standardizedFileURL
+                if err == nil { self.lastLoaded = url }
                 let alive = Set(self.allLoadedURLs())
                 if keepSelection { self.selection = self.selection.intersection(alive) }
                 if let c = self.currentURL, !alive.contains(c) { self.currentURL = nil }
@@ -521,6 +528,16 @@ public final class DirectoryModel {
             }
             props = p
         }
+    }
+
+    /// `url`, or the closest folder above it that still exists (where to go when it's gone).
+    public static func nearestExisting(_ url: URL) -> URL {
+        var u = url.standardizedFileURL
+        var isDir: ObjCBool = false
+        while u.path != "/", !(FileManager.default.fileExists(atPath: u.path, isDirectory: &isDir) && isDir.boolValue) {
+            u = u.deletingLastPathComponent()
+        }
+        return u
     }
 
     /// A folder counted and found empty (of what would show when expanded): Details shows no expander for it.

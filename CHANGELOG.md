@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.4
+
+- When the folder you're looking at is moved or deleted elsewhere, Porpoise goes to the nearest folder that's still
+  there and says so, instead of showing "Could not open" over an empty view.
+
 ## 0.2.3
 
 - "Reveal in Finder" is no longer in the context menu by default: Porpoise is the file manager. Switch it back on in

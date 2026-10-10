@@ -208,6 +208,23 @@ import Testing
         #expect(!m.isKnownEmpty(item("empty")))
     }
 
+    /// A folder shown and then deleted is reported as gone (the view moves up); one that never loaded isn't.
+    @Test func aDeletedFolderIsReportedAsVanished() async throws {
+        let s = try Scratch()
+        let doomed = try s.folder("a/b/doomed")
+        try s.file("a/b/doomed/x.txt")
+        let m = try await loaded(doomed)
+        #expect(!m.locationVanished)
+        try FileManager.default.removeItem(at: s.path("a/b"))
+        m.reload()
+        try #require(await eventually { !m.isLoading })
+        #expect(m.locationVanished && m.loadError != nil)
+        #expect(DirectoryModel.nearestExisting(doomed).standardizedFileURL == s.path("a").standardizedFileURL)
+        // Typing a path that never existed is an error, not a vanished folder.
+        let never = try await loaded(s.path("never-here"))
+        #expect(never.loadError != nil && !never.locationVanished)
+    }
+
     // MARK: Selection across reloads
 
     @Test func selectionKeepsWhatStillExists() async throws {
