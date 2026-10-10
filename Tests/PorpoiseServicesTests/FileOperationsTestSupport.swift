@@ -70,7 +70,7 @@ func makeController(_ ui: ScriptedUI) -> FileOperationsController {
 
 /// Settings that never reach the disk (Trash origins, "ask before trashing"…).
 final class MemoryDefaults: UserDefaults {
-    nonisolated(unsafe) static let installed: Void = {
+    static let installed: Void = {
         Settings.isTesting = true
         Settings.store = MemoryDefaults(suiteName: nil)!
     }()

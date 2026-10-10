@@ -6,14 +6,14 @@ import PorpoiseTestSupport
 
 /// Moving to the Trash, Put Back and undoing what goes through the Trash. Everything happens on an attached disk
 /// image, whose own Trash (.Trashes/<uid>) takes the items: nothing ever reaches the user's ~/.Trash.
-@MainActor @Suite final class TrashDiskImageTests {
+@Suite final class TrashDiskImageTests {
     let scratch: Scratch
     let disk: DiskImage
     let ui = ScriptedUI()
     let controller: FileOperationsController
 
     /// Off the main actor, so the tests' disk images are created and attached side by side.
-    nonisolated init() async throws {
+    init() async throws {
         scratch = try Scratch()
         disk = try DiskImage(in: scratch)
         controller = makeController(ui)
@@ -39,12 +39,12 @@ import PorpoiseTestSupport
         return pairs
     }
 
-    private func trash(_ urls: [URL]) async {
+    @MainActor private func trash(_ urls: [URL]) async {
         controller.trash(urls, window: nil)
         await ui.nextJobFinished()
     }
 
-    @Test func trashedItemsLandInTheVolumesOwnTrash() async throws {
+    @MainActor @Test func trashedItemsLandInTheVolumesOwnTrash() async throws {
         let notes = try file("notes.txt"), project = try file("project/main.swift")
         await trash([notes, project.deletingLastPathComponent()])
         #expect(!FileJob.itemExists(at: notes) && !FileJob.itemExists(at: disk.volume.appendingPathComponent("project")))
@@ -54,7 +54,7 @@ import PorpoiseTestSupport
         #expect(ui.errors.isEmpty && ui.questions.isEmpty)
     }
 
-    @Test func putBackRestoresTheOriginalLocationsEvenOfRemovedFolders() async throws {
+    @MainActor @Test func putBackRestoresTheOriginalLocationsEvenOfRemovedFolders() async throws {
         let deep = try file("a/b/deep.txt", "deep")
         await trash([deep])
         try FileManager.default.removeItem(at: disk.volume.appendingPathComponent("a"))
@@ -64,7 +64,7 @@ import PorpoiseTestSupport
         #expect(controller.undoTitle == "Undo: Move")
     }
 
-    @Test func putBackPicksANewNameWhenTheOriginalIsTaken() async throws {
+    @MainActor @Test func putBackPicksANewNameWhenTheOriginalIsTaken() async throws {
         let f = try file("report.txt", "first")
         await trash([f])
         let inTrash = lastTrashed.map(\.inTrash)
@@ -74,7 +74,7 @@ import PorpoiseTestSupport
         #expect(try String(contentsOf: disk.volume.appendingPathComponent("report (1).txt"), encoding: .utf8) == "first")
     }
 
-    @Test func putBackOfAnItemTrashedElsewhereReportsItAsUnknown() async throws {
+    @MainActor @Test func putBackOfAnItemTrashedElsewhereReportsItAsUnknown() async throws {
         let f = try file("from-finder.txt")
         var out: NSURL?
         try FileManager.default.trashItem(at: f, resultingItemURL: &out)
@@ -83,7 +83,7 @@ import PorpoiseTestSupport
         #expect(FileJob.itemExists(at: inTrash) && !controller.canUndo)
     }
 
-    @Test func originsOfItemsGoneFromTheTrashAreForgotten() async throws {
+    @MainActor @Test func originsOfItemsGoneFromTheTrashAreForgotten() async throws {
         await trash([try file("one")])
         let first = lastTrashed[0].inTrash
         try FileManager.default.removeItem(at: first)
@@ -92,7 +92,7 @@ import PorpoiseTestSupport
         #expect(origins[lastTrashed[0].inTrash.path] != nil && origins[first.path] == nil)
     }
 
-    @Test func undoAndRedoOfTrash() async throws {
+    @MainActor @Test func undoAndRedoOfTrash() async throws {
         let f = try file("draft.txt", "draft")
         await trash([f])
         controller.undo(window: nil)
@@ -104,7 +104,7 @@ import PorpoiseTestSupport
         #expect(controller.canUndo && !controller.canRedo)
     }
 
-    @Test func aLockedFileYouOwnIsUnlockedAndTrashed() async throws {
+    @MainActor @Test func aLockedFileYouOwnIsUnlockedAndTrashed() async throws {
         let f = try file("locked.txt")
         #expect(chflags(f.path, UInt32(UF_IMMUTABLE)) == 0)
         await trash([f])
@@ -116,7 +116,7 @@ import PorpoiseTestSupport
         #expect(FileJob.itemExists(at: f))
     }
 
-    @Test func confirmingTrashAsksFirstAndDecliningKeepsTheItems() async throws {
+    @MainActor @Test func confirmingTrashAsksFirstAndDecliningKeepsTheItems() async throws {
         let f = try file("keep.txt")
         ui.confirms = false
         Settings.shared.confirmTrash = true
@@ -128,7 +128,7 @@ import PorpoiseTestSupport
 
     // MARK: Undo of things that go back through the Trash
 
-    @Test func undoingACopyTrashesTheCopyAndRedoBringsItBack() async throws {
+    @MainActor @Test func undoingACopyTrashesTheCopyAndRedoBringsItBack() async throws {
         let original = try file("src/photo.jpg", "pixels")
         let dst = disk.volume.appendingPathComponent("dst")
         try FileManager.default.createDirectory(at: dst, withIntermediateDirectories: true)
@@ -145,7 +145,7 @@ import PorpoiseTestSupport
         #expect(controller.undoTitle == "Undo: Move")
     }
 
-    @Test func undoingANewFolderTrashesIt() async throws {
+    @MainActor @Test func undoingANewFolderTrashesIt() async throws {
         let folder = try FileActions.makeFolder(named: "New Folder", in: disk.volume)
         controller.pushUndo(.created([folder]))
         controller.undo(window: nil)
