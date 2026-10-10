@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Video previews no longer leave their temporary folder behind when stopped at the moment they start, or when
+  macOS is slow to report that ffmpeg has finished.
+- The preview's local server closes connections that don't send a request within 10 seconds.
+
 ## 0.2.0
 
 A release about reliability: Porpoise now has about 470 tests that run on real files, real disk images, a real SSH
