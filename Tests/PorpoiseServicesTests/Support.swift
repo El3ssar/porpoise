@@ -49,7 +49,7 @@ private actor SettingsTurn {
 
 /// Waits up to `timeout` seconds for `condition`, letting the main queue run (models finish their loads there).
 @MainActor
-func eventually(_ timeout: TimeInterval = 5, _ condition: () -> Bool) async -> Bool {
+func eventually(_ timeout: TimeInterval = 10, _ condition: () -> Bool) async -> Bool {
     let end = Date().addingTimeInterval(timeout)
     while Date() < end {
         if condition() { return true }

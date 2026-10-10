@@ -220,7 +220,8 @@ import PorpoiseTestSupport
 
 // MARK: Path completion, Trash, cloud state, icons
 
-@Suite struct SmallLocationTests {
+/// On the main actor: IconTheme is main-thread only, as in the app.
+@MainActor @Suite struct SmallLocationTests {
     @Test func pathCompletionOffersFolders() throws {
         let s = try Scratch()
         try s.folder("Alpha"); try s.folder("alps"); try s.folder(".hidden"); try s.folder("beta")

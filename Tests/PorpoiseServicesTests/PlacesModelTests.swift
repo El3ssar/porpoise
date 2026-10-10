@@ -3,8 +3,9 @@ import Testing
 @testable import PorpoiseServices
 import PorpoiseTestSupport
 
-/// Places kept in a places.json inside a throwaway folder.
-@Suite struct PlacesModelTests {
+/// Places kept in a places.json inside a throwaway folder. On the main actor, as in the app: PlacesModel and IconTheme
+/// (its lookup cache) are main-thread only.
+@MainActor @Suite struct PlacesModelTests {
     let home = FileManager.default.homeDirectoryForCurrentUser
 
     private func titles(_ m: PlacesModel, _ section: PlaceSection) -> [String] {
