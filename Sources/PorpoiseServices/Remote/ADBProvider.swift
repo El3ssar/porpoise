@@ -8,12 +8,19 @@ final class ADBProvider: RemoteProvider {
     /// Printed by our rename script when the target exists (older adb doesn't pass exit codes on).
     private static let existsMarker = "__PORPOISE_EXISTS__"
 
-    init(serial: String) { self.serial = serial }
+    /// adb is looked up on every use (it may be installed while Porpoise runs); tests pass their own.
+    private let tool: String?
+    private var adbPath: String? { tool ?? Self.adbPath }
+
+    init(serial: String, adb: String? = nil) {
+        self.serial = serial
+        tool = adb
+    }
 
     static var adbPath: String? { AndroidTools.adbPath }
 
-    static func devices(timeout: TimeInterval = 0) -> [(serial: String, model: String)] {
-        guard let adb = adbPath else { return [] }
+    static func devices(timeout: TimeInterval = 0, adb: String? = nil) -> [(serial: String, model: String)] {
+        guard let adb = adb ?? adbPath else { return [] }
         AndroidTools.willUseServer()
         guard let r = try? Shell.run(adb, ["devices", "-l"], timeout: timeout) else { return [] }
         return RemoteParsing.parseADBDevices(String(decoding: r.out, as: UTF8.self))
@@ -22,13 +29,13 @@ final class ADBProvider: RemoteProvider {
     /// Cached, also when the phone isn't listed: breadcrumbs ask for it on the main thread on every redraw.
     func rootTitle(_ url: URL) -> String {
         if let m = model { return m }
-        let m = Self.devices(timeout: 3).first(where: { $0.serial == serial })?.model ?? serial
+        let m = Self.devices(timeout: 3, adb: tool).first(where: { $0.serial == serial })?.model ?? serial
         model = m
         return m
     }
 
     private func adb(_ args: [String]) throws -> Data {
-        guard let adb = Self.adbPath else {
+        guard let adb = adbPath else {
             throw RemoteError.unsupported("Android support needs adb. Install it with: brew install android-platform-tools — then enable USB debugging on the phone.")
         }
         AndroidTools.willUseServer()
