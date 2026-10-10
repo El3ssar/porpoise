@@ -34,9 +34,12 @@ public enum PorpoiseHelperInfo {
     /// `resolvedParent` is the item's folder with symlinks resolved (the helper passes the real one).
     public static func isInUsersTrash(path: String, resolvedParent: String, uid: UInt32, resolvedHomeTrash: String) -> Bool {
         let name = (path as NSString).lastPathComponent
-        guard !name.isEmpty, name != ".", name != "..", !name.contains("/") else { return false }
+        guard !name.isEmpty, name != ".", name != "..", !name.containsScalar("/") else { return false }
         if resolvedParent == resolvedHomeTrash { return true }
-        let parts = resolvedParent.split(separator: "/", omittingEmptySubsequences: false)
+        // By code point: split(separator:) compares Characters, and "X/\u{301}" (a combining mark after the slash)
+        // would stay one part, letting "/Volumes/X/\u{301}/.Trashes/501" pass for a volume's Trash.
+        let parts = resolvedParent.unicodeScalars.split(separator: "/", omittingEmptySubsequences: false)
+            .map { Substring(String(String.UnicodeScalarView($0))) }
         // ["", "Volumes", "<name>", ".Trashes", "<uid>"]
         return parts.count == 5 && parts[0].isEmpty && parts[1] == "Volumes" && !parts[2].isEmpty && parts[2] != ".."
             && parts[3] == ".Trashes" && parts[4] == Substring(String(uid))

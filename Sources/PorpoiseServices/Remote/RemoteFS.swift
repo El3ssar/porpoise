@@ -112,7 +112,8 @@ public enum RemoteFS {
     /// Throws unless `name` is a single path component (no "/", not "." or ".."); also rejects line
     /// breaks, which would split FTP commands.
     static func checkName(_ name: String) throws {
-        guard RemoteParsing.isSafeName(name), !name.contains("\n"), !name.contains("\r") else {
+        // By code point: in "a\r\nb" the line break is one Character, neither "\n" nor "\r".
+        guard RemoteParsing.isSafeName(name), !name.unicodeScalars.contains("\n"), !name.unicodeScalars.contains("\r") else {
             throw RemoteError.invalidName(name)
         }
     }

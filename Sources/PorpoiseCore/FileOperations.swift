@@ -501,7 +501,7 @@ public final class FileJob: @unchecked Sendable {
 public enum FileActions {
     /// Creates a folder; "a/b" creates nested folders (Dolphin allows slashes).
     public static func makeFolder(named name: String, in folder: URL) throws -> URL {
-        guard !name.split(separator: "/").contains(where: { $0 == "." || $0 == ".." }) else {
+        guard !name.scalarComponents(separatedBy: "/").contains(where: { $0 == "." || $0 == ".." }) else {
             throw FileOperationError.failed("“\(name)” is not a valid name.")
         }
         let url = folder.appendingPathComponent(name, isDirectory: true)
@@ -534,7 +534,7 @@ public enum FileActions {
 
     /// A single path component: not empty, no "/", not "." or "..".
     public static func isValidName(_ name: String) -> Bool {
-        !name.isEmpty && !name.contains("/") && name != "." && name != ".." && !name.contains("\0")
+        !name.isEmpty && !name.containsScalar("/") && name != "." && name != ".." && !name.containsScalar("\0")
     }
 
     /// Validation message for a new name (KIO's folder dialog), nil when fine.
@@ -542,8 +542,8 @@ public enum FileActions {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return ("", true) }
         if name == "." || name == ".." { return ("“\(name)” is not a valid name.", true) }
-        if !allowSlash && name.contains("/") { return ("A name cannot contain “/”.", true) }
-        if name.split(separator: "/").contains(where: { $0 == "." || $0 == ".." }) {
+        if !allowSlash && name.containsScalar("/") { return ("A name cannot contain “/”.", true) }
+        if name.scalarComponents(separatedBy: "/").contains(where: { $0 == "." || $0 == ".." }) {
             return ("“\(name)” is not a valid name.", true)
         }
         // itemExists: a dangling symlink also takes the name.
@@ -551,7 +551,7 @@ public enum FileActions {
             return ("A file or folder with this name already exists.", true)
         }
         if name.hasPrefix(".") { return ("The name starts with a dot, so it will be hidden by default.", false) }
-        if allowSlash && name.contains("/") { return ("Using slashes in the name will create subfolders.", false) }
+        if allowSlash && name.containsScalar("/") { return ("Using slashes in the name will create subfolders.", false) }
         if name != trimmed { return ("The name has leading or trailing spaces.", false) }
         return nil
     }

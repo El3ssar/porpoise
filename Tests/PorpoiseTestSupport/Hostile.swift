@@ -19,6 +19,8 @@ public enum HostileNames {
         "a;b|c&d>e<f", "*?[ab]{c,d}~", "back\\slash", "\\", "\\n", "\\\"", "%s%n%d", "%2e%2e", "%00",
         "\u{201C}curly\u{201D} \u{2018}quotes\u{2019}", "\u{1F42C} emoji \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}",
         "\u{202E}gnp.exe", "zero\u{200B}width", "nbsp\u{00A0}space", "\u{FEFF}bom",
+        // A combining mark makes one Character of a quote and itself: escaping by Character misses the quote.
+        "'\u{301} $(echo PWNED) '\u{301}", "\"\u{301} & (do shell script \"echo PWNED\") & \"\u{301}", "\\\u{301}", ".\u{301}dot",
         "concat:x.mkv", "file:x", "http:", "a:b", "C:\\x", "#frag?q=1&x", "~", "~root",
         "...", ".hidden", "..x", "x.", ".tar.gz", "a.tar.gz",
         "\u{D55C}\u{AE00}", "\u{0627}\u{0644}\u{0639}\u{0631}\u{0628}\u{064A}\u{0629}",

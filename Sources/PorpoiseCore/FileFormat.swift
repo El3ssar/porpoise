@@ -125,8 +125,9 @@ public enum FileFormat {
     public static func suggestedName(for name: String, existing: Set<String>) -> String {
         var (base, ext) = splitExtension(name)
         var n = 1
+        // A number too big to count on ("x (9223372036854775807)") stays part of the name.
         if let r = base.range(of: #" \((\d+)\)$"#, options: .regularExpression),
-           let num = Int(base[r].dropFirst(2).dropLast()) {
+           let num = Int(base[r].dropFirst(2).dropLast()), num < Int.max / 2 {
             n = num + 1
             base.removeSubrange(r)
         }

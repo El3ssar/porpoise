@@ -94,7 +94,7 @@ import PorpoiseTestSupport
     @Test func stagedDownloadsKeepHostileNames() throws {
         let into = try scratch.folder("downloads")
         for (i, n) in names.enumerated() {
-            if n.contains("\n") || n.contains("\r") {
+            if n.unicodeScalars.contains("\n") || n.unicodeScalars.contains("\r") {
                 #expect(throws: (any Error).self) { try RemoteFS.downloadStaged(n, into: into) { _ in } }
                 continue
             }

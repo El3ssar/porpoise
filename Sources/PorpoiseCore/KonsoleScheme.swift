@@ -35,7 +35,8 @@ public struct KonsoleScheme {
             let parts = l.dropFirst(6).split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
             guard parts.count >= 3 else { continue }
             let rgb = (parts[0], parts[1], parts[2])
-            if let m = section.range(of: #"^\[Color(\d)(Intense)?\]$"#, options: .regularExpression) {
+            // Color0…7 only: "[Color9]" would fill a slot of its own, and 16 entries would no longer mean 0…15.
+            if let m = section.range(of: #"^\[Color([0-7])(Intense)?\]$"#, options: .regularExpression) {
                 let s = section[m]
                 let idx = Int(s.dropFirst(6).prefix(1)) ?? 0
                 colors[idx + (s.contains("Intense") ? 8 : 0)] = rgb

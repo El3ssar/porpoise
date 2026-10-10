@@ -50,6 +50,33 @@ import PorpoiseTestSupport
         for n in [HostileNames.long255Ascii, HostileNames.long255TwoByte, HostileNames.long255Emoji] { #expect(n.utf8.count == 255) }
     }
 
+    /// A combining mark after "/", a quote, a dot or a line break makes one Character of the two, so checks that
+    /// compare Characters don't see the separator. Every check here must go by code point.
+    @Test func combiningMarksDontHideSeparators() throws {
+        let acute = "\u{301}"
+        for bad in ["../\(acute)", "a/\(acute)b", "/\(acute)", "x\0\(acute)"] {
+            #expect(!RemoteParsing.isSafeName(bad), "\(bad.debugDescription)")
+            #expect(!FileActions.isValidName(bad), "\(bad.debugDescription)")
+        }
+        #expect(throws: (any Error).self) { try FileActions.makeFolder(named: "../\(acute)x", in: scratch.url) }
+        #expect(FileActions.validateName("a/\(acute)", in: scratch.url, allowSlash: false)?.isError == true)
+        #expect(FileActions.validateName("../\(acute)", in: scratch.url, allowSlash: true)?.isError == true)
+        // A remote listing can't name something outside its folder.
+        let listing = "ff\t1\t1700000000\t644\tme\tstaff\t\t../\(acute)\0"
+        #expect(RemoteParsing.parseFind(listing, folder: URL(fileURLWithPath: "/remote/")).isEmpty)
+        // Quotes stay quoted.
+        #expect(RemoteParsing.quote("'\(acute)") == "''\\''\(acute)'")
+        #expect(Escaping.appleScriptString("\"\(acute)") == "\"\\\"\(acute)\"")
+        #expect(Escaping.appleScriptString("\\\(acute)") == "\"\\\\\(acute)\"")
+        // The root helper's "a volume's Trash" isn't fooled by a folder named with a combining mark.
+        #expect(!PorpoiseHelperInfo.isInUsersTrash(path: "/Volumes/X/\(acute)/.Trashes/501/f", resolvedParent: "/Volumes/X/\(acute)/.Trashes/501",
+                                                   uid: 501, resolvedHomeTrash: "/Users/me/.Trash"))
+        // The preview server doesn't serve a hidden file whose dot carries a mark.
+        let root = try scratch.folder("served-dot")
+        try Data("x".utf8).write(to: root.appendingPathComponent(".\(acute)hidden"))
+        #expect(Escaping.servedFile(for: "/K/.%CC%81hidden", root: root.resolvingSymlinksInPath(), secret: "K") == nil)
+    }
+
     @Test func listingAndLoadingKeepNamesExactly() throws {
         let dir = try populate("list")
         let items = try DirectoryLister.list(dir)
@@ -62,7 +89,7 @@ import PorpoiseTestSupport
             #expect(item.name == n, "\(n.debugDescription) → \(item.name.debugDescription)")
             #expect(item.url.lastPathComponent == n)
             #expect(!item.isDirectory && !item.isSymlink && item.size == Int64("\(i)".utf8.count))
-            #expect(item.isHidden == n.hasPrefix("."))
+            #expect(item.isHidden == (n.unicodeScalars.first == "."))
             #expect(contents(item.url) == "\(i)")
         }
         #expect(DirectoryLister.childCount(dir, includeHidden: true) == names.count)
@@ -248,7 +275,7 @@ import PorpoiseTestSupport
         for n in names {
             let enc = try #require(n.addingPercentEncoding(withAllowedCharacters: allowed))
             let got = Escaping.servedFile(for: "/K/s/\(enc)?t=1", root: root, secret: "K")
-            if n.hasPrefix(".") || n.contains("\\") {
+            if n.unicodeScalars.first == "." || n.unicodeScalars.contains("\\") {
                 #expect(got == nil, "\(n.debugDescription)")
             } else {
                 #expect(got?.lastPathComponent == n, "\(n.debugDescription)")
