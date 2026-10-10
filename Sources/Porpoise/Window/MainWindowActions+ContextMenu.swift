@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 // MARK: - Context menus (DolphinContextMenu)
 

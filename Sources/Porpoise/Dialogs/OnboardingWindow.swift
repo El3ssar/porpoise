@@ -1,4 +1,5 @@
 import AppKit
+import PorpoiseServices
 
 /// First-run assistant: welcome, then every permission Porpoise needs (Full Disk Access, App Management, administrator
 /// actions, Local Network), each detected live, then done. Shown before the first browser window; also reachable

@@ -1,11 +1,11 @@
 import Foundation
 
 /// One-time import of settings and places from the app's earlier name ("Dolphin", bundle ID org.kde.dolphin-mac).
-enum Migration {
+public enum Migration {
     private static let oldDomain = "org.kde.dolphin-mac" as CFString
     private static let doneKey = "migratedFromDolphin"
 
-    static func run() {
+    public static func run() {
         guard !Settings.isTesting else { return }
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: doneKey) else { return }

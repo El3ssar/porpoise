@@ -1,6 +1,7 @@
 import AppKit
 import SwiftTerm
 import PorpoiseCore
+import PorpoiseServices
 
 /// Dolphin's Terminal panel (F4): an embedded terminal that follows the view's folder, and moves the
 /// view when the shell changes directory. Uses SwiftTerm instead of the Konsole KPart.

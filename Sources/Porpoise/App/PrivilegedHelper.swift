@@ -1,6 +1,7 @@
 import AppKit
 import Network
 import PorpoiseCore
+import PorpoiseServices
 import ServiceManagement
 
 /// Porpoise's helper for items that belong to the system or other users (see PorpoiseHelperProtocol).

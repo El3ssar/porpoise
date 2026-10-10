@@ -1,4 +1,5 @@
 import AppKit
+import PorpoiseServices
 
 extension NSColor {
     convenience init(rgb r: Int, _ g: Int, _ b: Int, _ a: CGFloat = 1) {

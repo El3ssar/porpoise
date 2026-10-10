@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// One visible row: an item plus its tree depth (Details view's expandable folders).
 struct Row {

@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 protocol ViewContainerDelegate: AnyObject {
     func containerDidBecomeActive(_ c: ViewContainer)

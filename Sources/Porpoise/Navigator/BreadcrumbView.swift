@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 protocol BreadcrumbDelegate: AnyObject {
     func breadcrumb(_ b: BreadcrumbView, navigateTo url: URL, newTab: Bool)

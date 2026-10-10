@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// Finder tags: names plus Finder's color index, read from the `_kMDItemUserTags` extended attribute
 /// ("Name\n6"), which is where Finder keeps each tag's color.

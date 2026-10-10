@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// What the app library asks of its view container (selection, opening, menus and Quick Look go the usual way,
 /// so every menu command and shortcut works on the selected apps).

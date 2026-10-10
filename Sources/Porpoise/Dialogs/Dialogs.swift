@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 enum NewItemKind: Int, CaseIterable {
     case folder, textFile, htmlFile, emptyFile, link, urlLink

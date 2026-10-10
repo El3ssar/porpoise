@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// Items beyond this many are dragged without their own drag image.
 private let maxDragImages = 200

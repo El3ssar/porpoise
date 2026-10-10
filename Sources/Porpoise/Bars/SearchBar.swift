@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 protocol SearchBarDelegate: AnyObject {
     func searchBar(_ bar: SearchBar, search text: String, everywhere: Bool, contents: Bool)

@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 // MARK: - Menu validation (enabled state, checkmarks and dynamic titles)
 

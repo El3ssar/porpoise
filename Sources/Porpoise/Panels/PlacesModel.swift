@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 enum PlaceSection: String, Codable, CaseIterable {
     case places = "Places", remote = "Remote", recent = "Recent", tags = "Tags", devices = "Devices", removable = "Removable Devices"

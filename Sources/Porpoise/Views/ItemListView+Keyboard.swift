@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// Virtual key codes handled by the item view.
 private enum Key {

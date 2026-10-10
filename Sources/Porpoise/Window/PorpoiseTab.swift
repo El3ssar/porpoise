@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// One tab: a primary view and an optional secondary view side by side (Dolphin's DolphinTabPage).
 ///

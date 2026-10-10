@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 // MARK: - Menu item helpers (shared by the menu bar, hamburger and context menus)
 

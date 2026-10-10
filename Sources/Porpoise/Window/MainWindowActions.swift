@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 import Quartz
 
 /// Menu/shortcut actions (Dolphin's KActionCollection). Menu items target the first responder;

@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import PorpoiseCore
+import PorpoiseServices
 import Network
 
 /// Video for the Information panel in any format and size. AVFoundation plays what it can directly; anything else

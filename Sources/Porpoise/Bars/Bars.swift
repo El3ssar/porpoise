@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// Flat Breeze-style tool button (icon, optional text), with hover and pressed backgrounds.
 class FlatButton: NSControl {

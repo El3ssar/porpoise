@@ -3,6 +3,7 @@ import ServiceManagement
 import Security
 import SQLite3
 import UniformTypeIdentifiers
+import PorpoiseServices
 
 /// Standing in for Finder: default file browser (folders + "Show in Finder" requests) and privacy permissions.
 enum SystemIntegration {

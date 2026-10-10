@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 protocol PlacesPanelDelegate: AnyObject {
     func places(_ p: PlacesPanel, open url: URL, newTab: Bool, splitView: Bool)

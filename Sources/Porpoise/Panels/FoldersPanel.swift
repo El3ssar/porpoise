@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// Dolphin's Folders panel (F7): a folder tree that follows the current location.
 final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate {

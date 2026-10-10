@@ -15,9 +15,11 @@ let package = Package(
     ],
     targets: [
         .target(name: "PorpoiseCore"),
+        // Everything the app does that isn't drawing on screen: no AppKit or SwiftUI here.
+        .target(name: "PorpoiseServices", dependencies: ["PorpoiseCore"]),
         .executableTarget(
             name: "Porpoise",
-            dependencies: ["PorpoiseCore", .product(name: "SwiftTerm", package: "SwiftTerm"),
+            dependencies: ["PorpoiseCore", "PorpoiseServices", .product(name: "SwiftTerm", package: "SwiftTerm"),
                            .product(name: "Sparkle", package: "Sparkle")]
         ),
         .executableTarget(name: "PorpoiseHelper", dependencies: ["PorpoiseCore"]),

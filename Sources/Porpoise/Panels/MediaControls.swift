@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import PorpoiseServices
 
 /// Porpoise's own playback controls for the Information panel: play/pause, a time bar and the times. AVKit's
 /// built-in controls crash on macOS 26+ for streams still being converted (their length isn't known yet), so the

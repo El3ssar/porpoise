@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// The Applications folder shown as an app library (Launchpad style): every app from /Applications, Apple's own
 /// apps in /System/Applications and ~/Applications in one grid, ignoring the view settings of other folders.

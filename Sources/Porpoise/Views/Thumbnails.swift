@@ -1,6 +1,7 @@
 import AppKit
 import QuickLookThumbnailing
 import PorpoiseCore
+import PorpoiseServices
 
 /// QuickLook previews (Dolphin's "Show Previews"), cached by path + modification date + size.
 final class Thumbnails {

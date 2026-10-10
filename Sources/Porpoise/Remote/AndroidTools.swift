@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseServices
 
 /// Android support needs Google's `adb`. Google's licence doesn't allow shipping it inside Porpoise, so Porpoise
 /// downloads the official platform-tools from Google on request, into its own Application Support folder.

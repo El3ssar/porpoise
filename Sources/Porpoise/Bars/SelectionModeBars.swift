@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// Dolphin's selection mode (Space in Dolphin; menu/hamburger here): a top bar explaining the mode and a
 /// bottom bar with actions for the selection.

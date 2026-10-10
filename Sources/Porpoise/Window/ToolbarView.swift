@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// A capsule of toolbar controls: Liquid Glass on macOS 26+, a frosted material before that.
 final class GlassGroup: NSView {

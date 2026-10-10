@@ -1,4 +1,5 @@
 import AppKit
+import PorpoiseServices
 
 // ssh calls the app back as its password/confirmation prompt (SSH_ASKPASS).
 if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == "--askpass" {

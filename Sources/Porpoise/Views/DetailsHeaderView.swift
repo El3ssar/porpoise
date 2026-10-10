@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// Column header of the Details view (KItemListHeader): click to sort, drag a section edge to resize,
 /// drag a section to reorder, right-click to choose columns. Widths and order are remembered.

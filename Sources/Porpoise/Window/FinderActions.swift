@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// Finder features beyond Dolphin's own (so the app can stand in for Finder): Finder's Go shortcuts,
 /// aliases, eject, package contents, desktop picture, folder-with-selection, deselect.

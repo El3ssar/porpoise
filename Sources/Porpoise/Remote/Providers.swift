@@ -1,6 +1,7 @@
 import AppKit
 import CryptoKit
 import PorpoiseCore
+import PorpoiseServices
 import Security
 
 // MARK: - SSH / SFTP (sftp://, fish://, ssh://) through the system's ssh

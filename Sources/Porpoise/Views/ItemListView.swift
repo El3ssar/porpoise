@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 protocol ItemListViewDelegate: AnyObject {
     func itemList(_ view: ItemListView, open items: [FileItem], inNewTab: Bool)

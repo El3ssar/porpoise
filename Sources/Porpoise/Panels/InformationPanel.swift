@@ -1,6 +1,7 @@
 import AppKit
 import AVKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// Dolphin's Information panel (F10 here): large preview, name and metadata of the hovered item, the selection,
 /// or the current folder.

@@ -1,4 +1,5 @@
 import AppKit
+import PorpoiseServices
 
 /// A macOS material (vibrancy) tinted with a Desert color: the wallpaper glows through softly, like Finder's
 /// sidebar and toolbar, while the colors stay those of the Desert-Dark scheme.

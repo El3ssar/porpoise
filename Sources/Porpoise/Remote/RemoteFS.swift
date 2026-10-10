@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// A remote file system reachable through a command-line tool (Dolphin's KIO workers, the Mac way).
 protocol RemoteProvider: AnyObject {

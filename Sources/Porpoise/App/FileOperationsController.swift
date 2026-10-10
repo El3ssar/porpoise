@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 
 /// App-wide file operations: clipboard (cut/copy/paste), job progress, conflict dialog, undo/redo,
 /// Dolphin's drop menu. Mirrors KIO's job tracker + FileUndoManager.

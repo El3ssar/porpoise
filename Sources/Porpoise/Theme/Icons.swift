@@ -1,6 +1,7 @@
 import AppKit
 import UniformTypeIdentifiers
 import PorpoiseCore
+import PorpoiseServices
 
 /// Loads Tela-circle-dark icons from the app bundle and recolors them the way KDE's KIconLoader does
 /// (replacing the SVG "current-color-scheme" stylesheet with the active color scheme).
