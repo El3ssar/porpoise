@@ -6,6 +6,14 @@ public enum Shell {
     /// Grace period between SIGTERM and SIGKILL when a timeout expires.
     private static let killGrace: TimeInterval = 2
 
+    /// Feeding stdin and draining stdout/stderr each get a thread of their own. On a dispatch queue they waited for
+    /// a free pool thread while the callers held the pool's threads waiting for them: with a few `run`s at once
+    /// (Swift concurrency tasks, or blocks on `DispatchQueue.global()`), stdin was never written and all hung.
+    private static func onOwnThread(_ group: DispatchGroup, _ work: @escaping () -> Void) {
+        group.enter()
+        Thread { work(); group.leave() }.start()
+    }
+
     /// Runs a tool synchronously (call off the main thread). `stdinFile`/`stdoutFile` stream large data.
     /// stdin is written and stdout/stderr are drained concurrently, so neither side can block on a full
     /// pipe. With `timeout` > 0 the tool is terminated (then killed) when it runs longer, and the call throws.
@@ -47,12 +55,12 @@ public enum Shell {
 
         let io = DispatchGroup()
         let box = OutputBox()
-        DispatchQueue.global().async(group: io) { box.err = errPipe.fileHandleForReading.readDataToEndOfFile() }
+        onOwnThread(io) { box.err = errPipe.fileHandleForReading.readDataToEndOfFile() }
         if stdoutFile == nil {
-            DispatchQueue.global().async(group: io) { box.out = outPipe.fileHandleForReading.readDataToEndOfFile() }
+            onOwnThread(io) { box.out = outPipe.fileHandleForReading.readDataToEndOfFile() }
         }
         if let data = stdin, let w = inPipe?.fileHandleForWriting {
-            DispatchQueue.global().async(group: io) {
+            onOwnThread(io) {
                 // A tool that exits early must not take the app down with SIGPIPE.
                 _ = fcntl(w.fileDescriptor, F_SETNOSIGPIPE, 1)
                 try? w.write(contentsOf: data)
