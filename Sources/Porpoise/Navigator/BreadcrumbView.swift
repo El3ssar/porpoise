@@ -404,7 +404,15 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
 
     private func showSubfolderMenu(of u: URL, at r: CGRect) {
         let next = url.path.hasPrefix(u.path == "/" ? "/" : u.path + "/") ? url.pathComponents.dropFirst(u.pathComponents.count).first : nil
-        showMenu(subfolders(of: u).map { ($0, $0.lastPathComponent) }, at: r, bold: next)
+        guard !u.isFileURL else { showMenu(subfolders(of: u).map { ($0, $0.lastPathComponent) }, at: r, bold: next); return }
+        // A remote folder is listed over the network: never on the main thread; the menu opens when it's there.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let folders = self?.subfolders(of: u) else { return }
+            DispatchQueue.main.async {
+                guard let self, self.window != nil else { return }
+                self.showMenu(folders.map { ($0, $0.lastPathComponent) }, at: r, bold: next)
+            }
+        }
     }
 
     private func showRootMenu(at r: CGRect) {
