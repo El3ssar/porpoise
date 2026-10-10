@@ -167,7 +167,7 @@ struct SSHProviderTests {
         #expect(read(dir.appendingPathComponent("a.txt")) == "a" && read(dir.appendingPathComponent("b.txt")) == "b")
     }
 
-    @Test(arguments: ["", ".", "..", "a/b", "../escape", "line\nbreak", "cr\rhere"])
+    @Test(arguments: ["", ".", "..", "a/b", "../escape", "line\nbreak", "cr\rhere", "crlf\r\nhere", "../\u{301}up"])
     func renameRefusesNamesThatAreNotOneComponent(_ name: String) throws {
         let dir = try server.folder()
         try write("a", to: dir.appendingPathComponent("a.txt"))

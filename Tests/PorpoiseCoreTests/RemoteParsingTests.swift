@@ -184,4 +184,12 @@ import Testing
         #expect(!RemoteParsing.isSafeName("") && !RemoteParsing.isSafeName("..") && !RemoteParsing.isSafeName("a/b"))
         #expect(!RemoteParsing.isSafeName("nul\0"))
     }
+
+    @Test func aSlashHiddenInACombinedCharacterIsStillASlash() {
+        // "/" + U+0301 is one Character: a naive `contains("/")` misses it, and the name would climb out of its folder.
+        let name = "../\u{301}escaped"
+        #expect(!RemoteParsing.isSafeName(name))
+        #expect(RemoteParsing.parseFind(gnu("ff", name) + "\0", folder: folder).isEmpty)
+        #expect(RemoteParsing.isSafeName("e\u{301}t\u{301}e\u{301}"))   // combining marks themselves are fine
+    }
 }

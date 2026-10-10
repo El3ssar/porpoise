@@ -88,7 +88,7 @@ import PorpoiseTestSupport
         #expect(local.listing().isEmpty)
     }
 
-    @Test(arguments: ["", ".", "..", "../up.txt", "a/b", "nl\nname", "cr\rname"])
+    @Test(arguments: ["", ".", "..", "../up.txt", "a/b", "nl\nname", "cr\rname", "crlf\r\nname", "a/\u{301}b"])
     func stagedDownloadRefusesUnsafeNames(_ name: String) throws {
         let local = try Scratch()
         var fetched = false

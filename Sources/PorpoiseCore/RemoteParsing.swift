@@ -176,9 +176,10 @@ public enum RemoteParsing {
 
     // MARK: Helpers
 
-    /// A single, safe path component (see the type's note on untrusted names).
+    /// A single, safe path component (see the type's note on untrusted names). Checked by scalar: a "/" followed
+    /// by a combining mark is a single Character, which `contains("/")` doesn't find.
     public static func isSafeName(_ name: String) -> Bool {
-        !name.isEmpty && name != "." && name != ".." && !name.contains("/") && !name.contains("\0")
+        !name.isEmpty && name != "." && name != ".." && !name.unicodeScalars.contains { $0 == "/" || $0 == "\0" }
     }
 
     static func item(folder: URL, name: String, isDir: Bool, isLink: Bool, size: Int64, mtime: Date?, mode: Int,

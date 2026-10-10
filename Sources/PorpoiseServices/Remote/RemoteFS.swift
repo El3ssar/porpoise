@@ -126,10 +126,13 @@ public enum RemoteFS {
     /// Throws unless `name` is a single path component (no "/", not "." or ".."); also rejects line
     /// breaks, which would split FTP commands.
     static func checkName(_ name: String) throws {
-        guard RemoteParsing.isSafeName(name), !name.contains("\n"), !name.contains("\r") else {
+        guard RemoteParsing.isSafeName(name), !hasLineBreak(name) else {
             throw RemoteError.invalidName(name)
         }
     }
+
+    /// CR or LF anywhere. Checked by scalar: "\r\n" is a single Character, which `contains("\n")` doesn't find.
+    static func hasLineBreak(_ s: String) -> Bool { s.unicodeScalars.contains { $0 == "\n" || $0 == "\r" } }
 
     /// Downloads go to a hidden staging folder first: whatever the server sends (a tar stream may hold
     /// more than the one item asked for) stays there, and only the requested item is moved into place,
