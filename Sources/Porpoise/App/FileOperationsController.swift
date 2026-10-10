@@ -358,7 +358,7 @@ final class FileOperationsController {
         if !Settings.isTesting {
             // Porpoise's helper does it at once, without asking. Not installed yet (or a new version of it): it's
             // installed once, with macOS's administrator dialog, and the action continues.
-            guard PrivilegedHelper.ensureOn(window: window) else { return false }
+            guard PrivilegedHelper.ensureOn() else { return false }
             // Clearing lock flags is best effort, as in Finder; the operation itself reports what went wrong.
             switch PrivilegedHelper.run(commands, bestEffort: ["/usr/bin/chflags"]) {
             case .done: return true

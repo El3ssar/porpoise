@@ -1,7 +1,6 @@
-import AppKit
-import Network
+import Foundation
 import PorpoiseCore
-import PorpoiseServices
+import Security
 import ServiceManagement
 
 /// Porpoise's helper for items that belong to the system or other users (see PorpoiseHelperProtocol).
@@ -9,12 +8,12 @@ import ServiceManagement
 /// Installed once, with the administrator's approval (password or Touch ID), into /Library/PrivilegedHelperTools with
 /// a launchd job: outside the app, so app updates never affect it. After that it works without asking. Only a new
 /// helper binary (rare: scripts/build-helper.sh) is installed again, once, the next time it's needed.
-enum PrivilegedHelper {
+public enum PrivilegedHelper {
     private static var bundled: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/Porpoise Helper.app") }
     private static var bundledPlist: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/app.porpoise.helper.plist") }
 
     /// Installed, and the same binary as the one in this app.
-    static var isEnabled: Bool {
+    public static var isEnabled: Bool {
         guard FileManager.default.fileExists(atPath: PorpoiseHelperInfo.installedPlist),
               let installed = codeHash(URL(fileURLWithPath: PorpoiseHelperInfo.installedApp)) else { return false }
         return installed == codeHash(bundled)
@@ -23,7 +22,7 @@ enum PrivilegedHelper {
     /// Installs (or updates) the helper. macOS shows its administrator dialog (password or Touch ID). True once the
     /// helper answers.
     @discardableResult
-    static func enable() -> Bool {
+    public static func enable() -> Bool {
         guard !Settings.isTesting, FileManager.default.fileExists(atPath: bundled.path),
               FileManager.default.fileExists(atPath: bundledPlist.path) else { return false }
         // Replace, never stack: an old job is stopped, the files are written atomically, then the job is loaded.
@@ -45,7 +44,7 @@ enum PrivilegedHelper {
         guard runAsAdministrator(script: script, arguments: [bundled.path, bundledPlist.path],
                                  prompt: "Porpoise wants to install its helper, so it can empty the Trash and change items that belong to the system without asking again.")
         else { return false }
-        NotificationCenter.default.post(name: SystemIntegration.statusChanged, object: nil)
+        NotificationCenter.default.post(name: PrivacyAccess.statusChanged, object: nil)
         guard isEnabled, ping(timeout: 4) else { return false }
         // Lists "Porpoise Helper" under Full Disk Access (switched off) so it's there to switch on.
         _ = checkFullDiskAccess(timeout: 4)
@@ -54,16 +53,16 @@ enum PrivilegedHelper {
 
     /// "Porpoise Helper" may read protected folders (the Trash): it's switched on under Full Disk Access. Read from
     /// macOS's permission list (Porpoise can, with its own Full Disk Access); nil if that can't be read.
-    static var hasFullDiskAccess: Bool? {
+    public static var hasFullDiskAccess: Bool? {
         // Listed by its bundle identifier, or by its path when macOS records it as a program.
         let service = "kTCCServiceSystemPolicyAllFiles"
-        let value = SystemIntegration.tccAuthValue(service: service, client: PorpoiseHelperInfo.helperIdentifier)
-            ?? SystemIntegration.tccAuthValue(service: service, client: PorpoiseHelperInfo.installedTool)
-        return value.map { $0 >= 2 } ?? (SystemIntegration.hasFullDiskAccess ? false : nil)
+        let value = PrivacyAccess.tccAuthValue(service: service, client: PorpoiseHelperInfo.helperIdentifier)
+            ?? PrivacyAccess.tccAuthValue(service: service, client: PorpoiseHelperInfo.installedTool)
+        return value.map { $0 >= 2 } ?? (PrivacyAccess.hasFullDiskAccess ? false : nil)
     }
 
     /// Asks the helper itself (which also lists it under Full Disk Access if it isn't yet).
-    static func checkFullDiskAccess(timeout: TimeInterval) -> Bool {
+    public static func checkFullDiskAccess(timeout: TimeInterval) -> Bool {
         guard !Settings.isTesting, let c = connection() else { return false }
         defer { c.invalidate() }
         let done = DispatchSemaphore(value: 0)
@@ -83,12 +82,12 @@ enum PrivilegedHelper {
             /bin/rm -f "\(PorpoiseHelperInfo.installedPlist)" "\(PorpoiseHelperInfo.oldInstalledTool)"
             /bin/rm -rf "\(PorpoiseHelperInfo.installedApp)"
             """, arguments: [], prompt: "Porpoise wants to remove its helper.")
-        NotificationCenter.default.post(name: SystemIntegration.statusChanged, object: nil)
+        NotificationCenter.default.post(name: PrivacyAccess.statusChanged, object: nil)
     }
 
     /// Earlier versions registered the helper through System Settings › Login Items, which macOS ties to one exact
     /// build: that registration is removed once (no prompt), it's replaced by the installed helper.
-    static func migrateFromLoginItems() {
+    public static func migrateFromLoginItems() {
         guard !Settings.isTesting, !Settings.store.bool(forKey: "helperMigrated") else { return }
         Settings.store.set(true, forKey: "helperMigrated")
         let old = SMAppService.daemon(plistName: "app.porpoise.Porpoise.helper.plist")
@@ -97,7 +96,7 @@ enum PrivilegedHelper {
 
     /// Makes sure the helper is ready for an action that needs it: installs or updates it (one approval) if needed.
     /// False: cancelled, or it couldn't be installed.
-    static func ensureOn(window: NSWindow?) -> Bool {
+    public static func ensureOn() -> Bool {
         if isEnabled, ping(timeout: 4) { return true }
         return enable()
     }
@@ -179,14 +178,14 @@ enum PrivilegedHelper {
     }
 
     /// Hands items Porpoise moved into the Trash to the user, so emptying it needs no administrator rights (best effort).
-    static func takeOwnership(of paths: [String]) {
+    public static func takeOwnership(of paths: [String]) {
         guard !paths.isEmpty, isEnabled, !Settings.isTesting, let c = connection() else { return }
         defer { c.invalidate() }
         let proxy = c.synchronousRemoteObjectProxyWithErrorHandler { NSLog("helper: \($0)") } as? PorpoiseHelperProtocol
         for p in paths { proxy?.takeOwnership(ofTrashed: p) { if let e = $0 { NSLog("take ownership of \(p): \(e)") } } }
     }
 
-    enum Outcome {
+    public enum Outcome {
         case done
         /// A command ran and failed (its message).
         case failed(String)
@@ -197,7 +196,7 @@ enum PrivilegedHelper {
     /// Runs file tools as administrator (see PorpoiseHelperInfo.allowedTools), in order, over one connection: the
     /// helper quits when it closes, so one action is one short run. Stops at the first failure, except for tools in
     /// `bestEffort`. Checks first that the helper answers at all, so a broken one can't freeze the window.
-    static func run(_ commands: [[String]], bestEffort: Set<String> = []) -> Outcome {
+    public static func run(_ commands: [[String]], bestEffort: Set<String> = []) -> Outcome {
         // Test instances take commands from other processes (DebugBridge): they never get root.
         guard !Settings.isTesting else { return .unavailable("Test instances don't use Porpoise's helper.") }
         guard ping(timeout: 4) || ping(timeout: 4) else { return .unavailable("Porpoise's helper didn't answer.") }
@@ -212,40 +211,5 @@ enum PrivilegedHelper {
             if let r = result, !bestEffort.contains(args.first ?? "") { return .failed(r) }
         }
         return .done
-    }
-}
-
-/// macOS's Local Network permission (needed to list file servers in Network). Browsing asks the first time.
-final class LocalNetworkAccess {
-    static let shared = LocalNetworkAccess()
-    private static let key = "localNetworkAllowed"
-    private var browser: NWBrowser?
-
-    /// Last known answer (macOS has no API to ask without browsing).
-    var isAllowed: Bool { Settings.store.bool(forKey: Self.key) }
-
-    /// Browses for SMB servers: macOS shows its prompt if it hasn't asked yet. `changed` runs on the main queue.
-    func request(changed: @escaping (Bool) -> Void) {
-        browser?.cancel()
-        let b = NWBrowser(for: .bonjour(type: "_smb._tcp", domain: "local."), using: .tcp)
-        b.stateUpdateHandler = { state in
-            var allowed: Bool?
-            switch state {
-            case .ready: allowed = true
-            case .waiting(let e), .failed(let e):
-                if case .dns(let code) = e, code == DNSServiceErrorType(kDNSServiceErr_PolicyDenied) { allowed = false }
-            default: break
-            }
-            guard let allowed else { return }
-            DispatchQueue.main.async {
-                Settings.store.set(allowed, forKey: Self.key)
-                // Answered: stop browsing (it would otherwise run for the rest of the session).
-                self.browser?.cancel()
-                self.browser = nil
-                changed(allowed)
-            }
-        }
-        b.start(queue: .main)
-        browser = b
     }
 }

@@ -256,7 +256,7 @@ final class SettingsWindowController: NSWindowController {
             f.section("Permissions")
             f.note("macOS keeps these in System Settings › Privacy & Security. Changes take effect the next time Porpoise starts.")
             // Find out once whether App Management is in effect (silent unless macOS reports a denial).
-            if SystemIntegration.appManagementState == .unknown { SystemIntegration.checkAppManagementInBackground() }
+            if PrivacyAccess.appManagementState == .unknown { SystemIntegration.checkAppManagementInBackground() }
             for perm in SystemIntegration.permissions {
                 f.status(perm.title + ":", perm.status, button: {
                     // Granted: just a link. Otherwise the request button when there is one.
@@ -351,7 +351,7 @@ final class FormBuilder: NSObject {
         ])
         view = container
         super.init()
-        for name in [Settings.changed, NSWindow.didBecomeKeyNotification, SystemIntegration.statusChanged] {
+        for name in [Settings.changed, NSWindow.didBecomeKeyNotification, PrivacyAccess.statusChanged] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.refresh() })
         }
     }

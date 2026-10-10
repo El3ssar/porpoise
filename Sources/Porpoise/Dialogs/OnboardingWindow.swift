@@ -334,7 +334,7 @@ extension OnboardingWindowController.Step {
                          tileRow: 1, button: "Open System Settings", waiting: "Waiting for Full Disk Access…",
                          granted: {
                              // The helper too, when it's installed (it does the work on system-owned items in the Trash).
-                             SystemIntegration.hasFullDiskAccess && (!PrivilegedHelper.isEnabled || PrivilegedHelper.hasFullDiskAccess == true)
+                             PrivacyAccess.hasFullDiskAccess && (!PrivilegedHelper.isEnabled || PrivilegedHelper.hasFullDiskAccess == true)
                          }, grantedText: "Full Disk Access is on.",
                          request: {
                              // Make sure "Porpoise Helper" is in the list before it opens.
@@ -348,7 +348,7 @@ extension OnboardingWindowController.Step {
                                  "Switch **Porpoise** on. If it isn't in the list, drag this icon into it:",
                                  "Come back here. Porpoise notices on its own."],
                          tileRow: 1, button: "Open System Settings", waiting: "Waiting for App Management…",
-                         granted: { SystemIntegration.appManagementState == .allowed }, grantedText: "App Management is on.",
+                         granted: { PrivacyAccess.appManagementState == .allowed }, grantedText: "App Management is on.",
                          request: { SystemIntegration.requestAppManagement() })
         case .admin:
             return .init(name: "Administrator Actions",

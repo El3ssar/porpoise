@@ -1,24 +1,23 @@
-import AppKit
+import Foundation
 import PorpoiseCore
-import PorpoiseServices
 
 /// The Applications folder shown as an app library (Launchpad style): every app from /Applications, Apple's own
 /// apps in /System/Applications and ~/Applications in one grid, ignoring the view settings of other folders.
-enum AppLibrary {
-    static let location = URL(fileURLWithPath: "/Applications")
+public enum AppLibrary {
+    public static let location = URL(fileURLWithPath: "/Applications")
 
     /// Folders whose apps are shown; the first one wins when two hold an app of the same name.
-    static var roots: [URL] {
+    public static var roots: [URL] {
         [location, URL(fileURLWithPath: "/System/Applications"),
          FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")]
     }
 
-    static func isActive(for url: URL) -> Bool {
+    public static func isActive(for url: URL) -> Bool {
         Settings.shared.appLibraryView && url.isFileURL && url.standardizedFileURL.path == location.path
     }
 
     /// Apps in the roots and one folder level below them (Utilities, a vendor's folder…).
-    static func listAll() -> [FileItem] {
+    public static func listAll() -> [FileItem] {
         let fm = FileManager.default
         var seen = Set<String>()
         var out: [FileItem] = []
@@ -40,15 +39,15 @@ enum AppLibrary {
     }
 
     /// The name people know the app by ("Safari", not "Safari.app").
-    static func displayName(_ url: URL) -> String {
+    public static func displayName(_ url: URL) -> String {
         FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "", options: [.anchored, .backwards])
     }
 
     /// Part of macOS (System volume): can't be moved to the Trash.
-    static func isBuiltIn(_ url: URL) -> Bool { url.standardizedFileURL.path.hasPrefix("/System/") }
+    public static func isBuiltIn(_ url: URL) -> Bool { url.standardizedFileURL.path.hasPrefix("/System/") }
 
     /// View properties of the library: names A to Z, nothing hidden (the grid draws itself).
-    static func props() -> ViewProperties {
+    public static func props() -> ViewProperties {
         var p = ViewProperties()
         p.mode = .icons
         p.sortRole = .name

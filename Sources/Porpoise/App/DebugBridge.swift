@@ -142,7 +142,7 @@ final class DebugBridge: NSObject {
             OnboardingWindowController.show(at: step)
         case "appmgmt":
             SystemIntegration.requestAppManagement {
-                try? "\(SystemIntegration.appManagementState)".write(toFile: arg, atomically: true, encoding: .utf8)
+                try? "\(PrivacyAccess.appManagementState)".write(toFile: arg, atomically: true, encoding: .utf8)
             }
         case "scrollto": if let y = Double(arg) { wc?.view.list.scroll(CGPoint(x: 0, y: y)) }
         case "pinch":
@@ -317,8 +317,8 @@ final class DebugBridge: NSObject {
             "ffmpegPath": VideoPreview.ffmpeg ?? "",
             "lastSound": FinderSound.lastPlayed,
             "appsAnimation": v.apps?.grid.animationInfo ?? "none",
-            "tccAllFiles": SystemIntegration.tccAuthValue(service: "kTCCServiceSystemPolicyAllFiles") ?? -1,
-            "tccAppBundles": SystemIntegration.tccAuthValue(service: "kTCCServiceSystemPolicyAppBundles") ?? -1,
+            "tccAllFiles": PrivacyAccess.tccAuthValue(service: "kTCCServiceSystemPolicyAllFiles") ?? -1,
+            "tccAppBundles": PrivacyAccess.tccAuthValue(service: "kTCCServiceSystemPolicyAppBundles") ?? -1,
             "firstResponder": w.window?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil",
             "windowTitle": w.window?.title ?? "",
             "canUndo": FileOperationsController.shared.canUndo,
