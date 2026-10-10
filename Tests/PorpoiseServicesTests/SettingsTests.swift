@@ -168,13 +168,12 @@ import PorpoiseTestSupport
 
     @Test func migrationCopiesOldSettingsAndPlacesOnce() throws {
         let scratch = try Scratch()
+        // The old app's settings file. A domain named by a path is read from that file; it is only read here, so
+        // nothing is written outside the throwaway folder.
+        let oldSettings: [String: Any] = ["fullPathTitle": true, "sorting": "details", "NSWindow Frame Main": "{{0, 0}, {10, 10}}"]
+        try PropertyListSerialization.data(fromPropertyList: oldSettings, format: .binary, options: 0)
+            .write(to: scratch.path("old-defaults.plist"))
         let oldDomain = scratch.path("old-defaults").path
-        let old = try #require(UserDefaults(suiteName: oldDomain))
-        defer { old.removePersistentDomain(forName: oldDomain) }
-        old.set(true, forKey: "fullPathTitle")
-        old.set("details", forKey: "sorting")
-        old.set("{{0, 0}, {10, 10}}", forKey: "NSWindow Frame Main")
-        old.synchronize()
         Settings.store.set("natural", forKey: "sorting")   // already set here: stays
         let oldPlaces = try scratch.file("Dolphin/places.json", "[old]")
         let newPlaces = scratch.path("Porpoise/places.json")

@@ -96,9 +96,10 @@ import PorpoiseTestSupport
 @MainActor @Suite struct ArchiveBrowserTests {
     private func extract(_ archive: URL, cache: URL) async throws -> Result<URL, Error> {
         let item = try #require(FileItem.load(archive))
-        return await withCheckedContinuation { done in
-            ArchiveBrowser.extractedFolder(for: item, in: cache) { done.resume(returning: $0) }
-        }
+        var result: Result<URL, Error>?
+        ArchiveBrowser.extractedFolder(for: item, in: cache) { result = $0 }
+        try #require(await eventually(30) { result != nil })   // a regression fails here instead of hanging
+        return try #require(result)
     }
 
     @Test func recognizesArchives() throws {
