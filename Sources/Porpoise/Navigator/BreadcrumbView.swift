@@ -619,32 +619,6 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     }
 }
 
-/// Folder names for path completion. The listing of the folder being typed in is kept, so each keystroke
-/// only filters names (and checks whether the matches are folders, once each).
-private struct CompletionSource {
-    private var dir = ""
-    private var names: [String] = []
-    private var isFolder: [String: Bool] = [:]
-
-    mutating func folders(in dir: String, matching partial: String) -> [String] {
-        if dir != self.dir {
-            self.dir = dir
-            names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
-            isFolder = [:]
-        }
-        let lower = partial.lowercased()
-        let showDotFiles = partial.hasPrefix(".")
-        let candidates = names.filter { $0.lowercased().hasPrefix(lower) && (showDotFiles || !$0.hasPrefix(".")) }
-        return candidates.filter { n in
-            if let f = isFolder[n] { return f }
-            var d: ObjCBool = false
-            let f = FileManager.default.fileExists(atPath: (dir as NSString).appendingPathComponent(n), isDirectory: &d) && d.boolValue
-            isFolder[n] = f
-            return f
-        }.sorted()
-    }
-}
-
 /// Path text field that keeps focus styling in sync with the breadcrumb frame.
 final class PathField: NSTextField {
     override func becomeFirstResponder() -> Bool {
