@@ -2,56 +2,50 @@ import Foundation
 import PorpoiseCore
 
 /// "Recent Files": Spotlight's last-used dates (the Mac's equivalent of recentlyused:/files).
-final class RecentFilesQuery: NSObject {
-    private let query = NSMetadataQuery()
-    private let done: ([FileItem]) -> Void
+final class RecentFilesQuery {
+    private let spotlight: SpotlightQuery
     private static let maxAge: TimeInterval = 30 * 86400
     private static let maxResults = 200
 
+    /// `done` gets the files (none when Spotlight doesn't answer).
     init(done: @escaping ([FileItem]) -> Void) {
-        self.done = done
-        super.init()
         let since = Date().addingTimeInterval(-Self.maxAge)
-        query.predicate = NSPredicate(format: "kMDItemLastUsedDate >= %@ AND kMDItemContentTypeTree != 'public.folder'", since as NSDate)
-        query.searchScopes = [NSMetadataQueryUserHomeScope]
-        query.sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
-        NotificationCenter.default.addObserver(self, selector: #selector(gathered), name: .NSMetadataQueryDidFinishGathering, object: query)
-        query.start()
+        spotlight = SpotlightQuery(
+            predicate: NSPredicate(format: "kMDItemLastUsedDate >= %@ AND kMDItemContentTypeTree != 'public.folder'", since as NSDate),
+            scopes: [NSMetadataQueryUserHomeScope], sortedBy: [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)],
+            limit: Self.maxResults
+        ) { event in
+            switch event {
+            case .gathered(let paths): done(paths.filter { !$0.contains("/Library/") }.compactMap { FileItem.load(URL(fileURLWithPath: $0)) })
+            case .unavailable: done([])
+            case .progress, .updated: break
+            }
+        }
+        spotlight.start()
     }
 
-    @objc private func gathered() {
-        query.stop()
-        var items: [FileItem] = []
-        for i in 0..<min(query.resultCount, Self.maxResults) {
-            guard let r = query.result(at: i) as? NSMetadataItem, let p = r.value(forAttribute: NSMetadataItemPathKey) as? String,
-                !p.contains("/Library/"), let it = FileItem.load(URL(fileURLWithPath: p))
-            else { continue }
-            items.append(it)
-        }
-        done(items)
-        NotificationCenter.default.removeObserver(self)
-    }
+    deinit { spotlight.stop() }
 }
 
-/// Files carrying a tag (the sidebar's Tags section), found with Spotlight.
-final class MetadataListQuery: NSObject {
-    let query = NSMetadataQuery()
-    private let done: ([FileItem]) -> Void
+/// Files carrying a tag (the sidebar's Tags section), or matching a Finder Smart Folder, found with Spotlight.
+final class MetadataListQuery {
+    private let spotlight: SpotlightQuery
+    var query: NSMetadataQuery { spotlight.query }
 
+    /// `done` gets the files (none when Spotlight doesn't answer).
     init(predicate: NSPredicate, scopes: [Any] = [NSMetadataQueryLocalComputerScope], done: @escaping ([FileItem]) -> Void) {
-        self.done = done
-        super.init()
-        query.predicate = predicate
-        query.searchScopes = scopes
-        NotificationCenter.default.addObserver(self, selector: #selector(gathered), name: .NSMetadataQueryDidFinishGathering, object: query)
-        query.start()
+        spotlight = SpotlightQuery(predicate: predicate, scopes: scopes, limit: 2000) { event in
+            switch event {
+            case .gathered(let paths): done(paths.compactMap { FileItem.load(URL(fileURLWithPath: $0)) })
+            case .unavailable: done([])
+            case .progress, .updated: break
+            }
+        }
+        spotlight.start()
     }
 
-    deinit {
-        // Replaced before it finished gathering (the user moved on): stop searching.
-        query.stop()
-        NotificationCenter.default.removeObserver(self)
-    }
+    // Replaced before it finished gathering (the user moved on): stop searching.
+    deinit { spotlight.stop() }
 
     static func tagged(_ tag: String, done: @escaping ([FileItem]) -> Void) -> MetadataListQuery {
         MetadataListQuery(predicate: NSPredicate(format: "kMDItemUserTags == %@", tag), done: done)
@@ -72,18 +66,5 @@ final class MetadataListQuery: NSObject {
             }
         }
         return MetadataListQuery(predicate: pred, scopes: scopes.isEmpty ? [NSMetadataQueryLocalComputerScope] : scopes, done: done)
-    }
-
-    @objc private func gathered() {
-        query.stop()
-        var items: [FileItem] = []
-        for i in 0..<min(query.resultCount, 2000) {
-            guard let r = query.result(at: i) as? NSMetadataItem, let p = r.value(forAttribute: NSMetadataItemPathKey) as? String,
-                let it = FileItem.load(URL(fileURLWithPath: p))
-            else { continue }
-            items.append(it)
-        }
-        NotificationCenter.default.removeObserver(self)
-        done(items)
     }
 }

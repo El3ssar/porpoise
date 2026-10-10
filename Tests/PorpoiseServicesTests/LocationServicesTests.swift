@@ -304,11 +304,10 @@ import Testing
 @MainActor @Suite struct SearchTests {
     /// Runs a search until it reports it is done.
     private func search(
-        _ text: String, in scope: URL, contents: Bool = false, spotlight: Bool = true, spotlightTimeout: TimeInterval? = nil
+        _ text: String, in scope: URL, contents: Bool = false, spotlight: Bool = true
     ) async throws -> [String] {
         var result: [FileItem]?
         let runner = SearchRunner(text: text, scope: scope, contents: contents) { items, done in if done { result = items } }
-        if let spotlightTimeout { runner.gatheringTimeout = spotlightTimeout }
         runner.usesSpotlight = spotlight
         runner.start()
         defer { runner.stop() }
@@ -330,23 +329,11 @@ import Testing
         #expect(try await search("nothing-matches-\(tag)", in: s.url, spotlight: false).isEmpty)
     }
 
-    /// With Spotlight switched off (as on CI), a query never finishes gathering: the simple search takes over.
-    @Test func whenSpotlightNeverAnswersTheSimpleSearchTakesOver() async throws {
-        let s = try Scratch()
-        let tag = "porpoiseslow\(UUID().uuidString.prefix(6))"
-        try s.file("deep/down/\(tag).txt")
-        #expect(try await search(tag, in: s.url, spotlightTimeout: 0) == ["\(tag).txt"])
-    }
-
-    @Test func spotlightQueries() throws {
-        let runner = SearchRunner(text: "report", scope: URL(fileURLWithPath: "/tmp/nowhere-\(UUID().uuidString)"), contents: false) { _, _ in }
-        runner.start()
-        defer { runner.stop() }
-        #expect(runner.query.predicate?.predicateFormat == #"kMDItemFSName LIKE[cd] "*report*""#)
-        let both = SearchRunner(text: "x", scope: URL(fileURLWithPath: "/tmp"), contents: true) { _, _ in }
-        both.start()
-        defer { both.stop() }
-        #expect(both.query.predicate?.predicateFormat == #"kMDItemTextContent LIKE[cd] "*x*" OR kMDItemFSName LIKE[cd] "*x*""#)
+    @Test func spotlightPredicates() {
+        #expect(SearchRunner.predicate("report", contents: false).predicateFormat == #"kMDItemFSName LIKE[cd] "*report*""#)
+        #expect(
+            SearchRunner.predicate("x", contents: true).predicateFormat
+                == #"kMDItemTextContent LIKE[cd] "*x*" OR kMDItemFSName LIKE[cd] "*x*""#)
     }
 
     @Test func taggedFilesQuery() {

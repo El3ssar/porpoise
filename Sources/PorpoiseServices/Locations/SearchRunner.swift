@@ -1,22 +1,20 @@
 import Foundation
 import PorpoiseCore
 
-/// Runs a search: Spotlight (NSMetadataQuery) like Dolphin's Baloo search, with live results.
+/// Runs a search: Spotlight like Dolphin's Baloo search, with live results; where Spotlight finds nothing (hidden
+/// and unindexed folders) or doesn't answer, the simple search walks the folders instead.
 public final class SearchRunner: NSObject {
-    let query = NSMetadataQuery()
     private let update: ([FileItem], Bool) -> Void
     private let text: String
     private let scope: URL
     private let contents: Bool
+    private var spotlight: SpotlightQuery?
     /// Cancellation token of the running simple search.
     private var fallbackWork: DispatchWorkItem?
     /// Results already read from disk (Spotlight reports the growing list again on every progress/update).
     private var loaded: [String: FileItem] = [:]
-    private var gatheringDone = false
-    private var stopped = false
 
-    /// How long Spotlight may take to gather before the simple search takes over. With Spotlight switched off (or
-    /// its server stuck), a query starts but never finishes gathering.
+    /// How long Spotlight may take to gather before the simple search takes over.
     var gatheringTimeout: TimeInterval = 5
     /// Off: only the simple search (what tests of it use, whatever Spotlight indexes on the machine).
     var usesSpotlight = true
@@ -35,54 +33,44 @@ public final class SearchRunner: NSObject {
         super.init()
     }
 
-    public func start() {
+    /// The Spotlight predicate for `text`: names, and with `contents` the text inside files too.
+    static func predicate(_ text: String, contents: Bool) -> NSPredicate {
         let pattern = "*\(text)*"
-        query.predicate =
-            contents
+        return contents
             ? NSPredicate(format: "kMDItemTextContent LIKE[cd] %@ OR kMDItemFSName LIKE[cd] %@", pattern, pattern)
             : NSPredicate(format: "kMDItemFSName LIKE[cd] %@", pattern)
-        query.searchScopes = [scope]
-        NotificationCenter.default.addObserver(self, selector: #selector(gathered), name: .NSMetadataQueryDidFinishGathering, object: query)
-        NotificationCenter.default.addObserver(self, selector: #selector(progress), name: .NSMetadataQueryGatheringProgress, object: query)
-        // Live results: files created, renamed or deleted while the results are shown.
-        NotificationCenter.default.addObserver(self, selector: #selector(liveUpdate), name: .NSMetadataQueryDidUpdate, object: query)
-        guard usesSpotlight, query.start() else { simpleSearch(); return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + gatheringTimeout) { [weak self] in
-            guard let self, !self.stopped, !self.gatheringDone else { return }
-            self.query.stop()
-            self.gatheringDone = true
-            self.simpleSearch()
-        }
     }
 
-    @objc private func progress() { publish(done: false) }
-
-    @objc private func liveUpdate(_ n: Notification) {
-        guard gatheringDone, fallbackWork == nil else { return }
-        // Changed files are read again; the others come from the cache.
-        for case let r as NSMetadataItem in (n.userInfo?[NSMetadataQueryUpdateChangedItemsKey] as? [Any]) ?? [] {
-            if let p = r.value(forAttribute: NSMetadataItemPathKey) as? String { loaded[p] = nil }
-        }
-        query.disableUpdates()
-        publish(done: true)
-        query.enableUpdates()
+    public func start() {
+        guard usesSpotlight else { simpleSearch(); return }
+        let q = SpotlightQuery(
+            predicate: Self.predicate(text, contents: contents), scopes: [scope], limit: Self.maxSpotlightResults, live: true,
+            timeout: gatheringTimeout
+        ) { [weak self] event in self?.handle(event) }
+        spotlight = q
+        q.start()
     }
 
-    @objc private func gathered() {
-        gatheringDone = true
+    private func handle(_ event: SpotlightQuery.Event) {
+        switch event {
+        case .progress(let paths): publish(paths, done: false)
         // Spotlight doesn't index hidden or excluded folders; Dolphin's simple search finds them. Without Spotlight
         // results it takes over (no "No items found" in between).
-        if query.resultCount == 0 { simpleSearch(); return }
-        query.disableUpdates()
-        publish(done: true)
-        query.enableUpdates()
+        case .gathered(let paths) where paths.isEmpty: simpleSearch()
+        case .gathered(let paths): publish(paths, done: true)
+        case .updated(let paths, let changed):
+            guard fallbackWork == nil else { return }
+            // Changed files are read again; the others come from the cache.
+            for p in changed { loaded[p] = nil }
+            publish(paths, done: true)
+        case .unavailable: simpleSearch()
+        }
     }
 
-    private func publish(done: Bool) {
+    private func publish(_ paths: [String], done: Bool) {
         var items: [FileItem] = []
         var seen: [String: FileItem] = [:]
-        for i in 0..<min(query.resultCount, Self.maxSpotlightResults) {
-            guard let r = query.result(at: i) as? NSMetadataItem, let p = r.value(forAttribute: NSMetadataItemPathKey) as? String else { continue }
+        for p in paths {
             // Each path is read from disk once (Spotlight reports the whole growing list every time).
             guard let it = loaded[p] ?? FileItem.load(URL(fileURLWithPath: p)) else { continue }
             seen[p] = it
@@ -122,10 +110,9 @@ public final class SearchRunner: NSObject {
     }
 
     public func stop() {
-        stopped = true
-        query.stop()
+        spotlight?.stop()
+        spotlight = nil
         fallbackWork?.cancel()
         loaded = [:]
-        NotificationCenter.default.removeObserver(self)
     }
 }
