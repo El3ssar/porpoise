@@ -180,7 +180,9 @@ final class PorpoiseTab: NSView {
         let keys = start.flightImages.keys.filter { remaining.row(forKey: $0) != nil }
         closing.transitionHidden.formUnion(keys)
         closing.needsDisplay = true
-        fly(Array(keys), images: start.flightImages, from: closing, to: remaining, duration: Self.closeDuration) { done in done() }
+        fly(Array(keys), images: start.flightImages, from: closing, to: remaining, duration: Self.closeDuration, fadesIntoTarget: true) { done in
+            done()
+        }
     }
 
     /// Draws copies of the items `keys` travelling from where `source` shows them to where `target` shows them, both
@@ -188,7 +190,7 @@ final class PorpoiseTab: NSView {
     /// copies, to call once whatever replaces them is shown.
     private func fly(
         _ keys: [String], images: [String: CGImage], from source: ItemListView, to target: ItemListView, duration: TimeInterval,
-        landed: @escaping (_ done: @escaping () -> Void) -> Void
+        fadesIntoTarget: Bool = false, landed: @escaping (_ done: @escaping () -> Void) -> Void
     ) {
         endFlights()
         guard !keys.isEmpty else { return landed {} }
@@ -203,6 +205,7 @@ final class PorpoiseTab: NSView {
                 return list.convert(list.flightRect(i), to: overlay)
             }
         }
+        overlay.fadesIntoTarget = fadesIntoTarget
         overlay.source = place(source)
         overlay.target = place(target)
         addSubview(overlay, positioned: .above, relativeTo: nil)

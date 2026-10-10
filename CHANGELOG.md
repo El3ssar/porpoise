@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.7
+
+- Closing the split view: the copies flying back fade into the items they land on, instead of doubling their names
+  for a moment (most visible in Compact and Details).
+
 ## 0.2.6
 
 - **Split view, animated.** Opening it, the items in the left view glide straight to where they'll be at the new

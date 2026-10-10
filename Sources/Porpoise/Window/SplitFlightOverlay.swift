@@ -18,6 +18,9 @@ final class SplitFlightOverlay: NSView {
     var source: (String) -> CGRect? = { _ in nil }
     var target: (String) -> CGRect? = { _ in nil }
     var progress: CGFloat = 0 { didSet { needsDisplay = true } }
+    /// The copies fade out over the end of the flight, melting into the items they land on (closing: those items are
+    /// already shown, and a copy a few points off would double their text).
+    var fadesIntoTarget = false
 
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -25,6 +28,8 @@ final class SplitFlightOverlay: NSView {
     override func draw(_ dirty: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let p = progress
+        let alpha = fadesIntoTarget ? min(1, max(0, (1 - p) / 0.4)) : 1
+        guard alpha > 0.01 else { return }
         for f in flights {
             guard let from = source(f.key), let to = target(f.key) else { continue }
             let r = CGRect(
@@ -32,7 +37,7 @@ final class SplitFlightOverlay: NSView {
                 width: f.size.width, height: f.size.height)
             ctx.saveGState()
             NSImage(cgImage: f.image, size: f.size).draw(
-                in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                in: r, from: .zero, operation: .sourceOver, fraction: alpha, respectFlipped: true, hints: nil)
             ctx.restoreGState()
         }
     }
