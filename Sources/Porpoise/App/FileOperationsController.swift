@@ -287,7 +287,11 @@ final class FileOperationsController {
         if !skipped.isEmpty { showErrors(skipped, window: window) }
         let ok = Self.authorize(verb: Self.permissionVerb(kind), items: remaining, commands: cmds, window: window)
         // Remember where they came from, so "Restore" can put them back.
-        if ok && !trashPairs.isEmpty { recordTrash(.trashed(trashPairs)) }
+        if ok && !trashPairs.isEmpty {
+            recordTrash(.trashed(trashPairs))
+            // Yours from now on: emptying the Trash won't need the helper for them.
+            PrivilegedHelper.takeOwnership(of: trashPairs.map(\.inTrash.path))
+        }
         Self.notifyChanged(remaining + (folder.map { [$0] } ?? []) + results + trashPairs.map(\.inTrash))
         done(unlocked + (ok ? results + trashPairs.map(\.inTrash) + (kind == .delete ? remaining : []) : []))
     }
@@ -350,13 +354,22 @@ final class FileOperationsController {
     static func authorize(verb: String, items: [URL], commands: [[String]], window: NSWindow?) -> Bool {
         guard !commands.isEmpty else { return false }
         // Porpoise's helper (set up in onboarding) does it at once, without asking.
-        if PrivilegedHelper.isEnabled && !Settings.isTesting {
-            // Clearing lock flags is best effort, as in Finder; the operation itself reports what went wrong.
-            switch PrivilegedHelper.run(commands, bestEffort: ["/usr/bin/chflags"]) {
-            case .done: return true
-            case .failed(let err): showAuthorizationError(err); return false
-            // The helper couldn't start (e.g. macOS hasn't accepted this build yet): ask for a password instead.
-            case .unavailable(let why): NSLog("Porpoise helper unavailable: \(why)")
+        if !Settings.isTesting {
+            // Porpoise's helper does it at once, without asking. If it's off (or macOS refused it), one sheet gets it
+            // switched on (Touch ID) and the action continues; a password stays the last resort.
+            var tries = 0
+            while tries < 2 {
+                tries += 1
+                if PrivilegedHelper.isEnabled {
+                    // Clearing lock flags is best effort, as in Finder; the operation itself reports what went wrong.
+                    switch PrivilegedHelper.run(commands, bestEffort: ["/usr/bin/chflags"]) {
+                    case .done: return true
+                    case .failed(let err): showAuthorizationError(err); return false
+                    case .unavailable(let why): NSLog("Porpoise helper unavailable: \(why)")
+                    }
+                }
+                guard tries < 2, let on = PrivilegedHelper.ensureOn(window: window) else { break }
+                if !on { return false }
             }
         }
         let a = NSAlert()

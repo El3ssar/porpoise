@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4
+
+- Apps and other system-owned items that Porpoise moves to the Trash become yours, so emptying the Trash needs no
+  administrator rights for them at all.
+- No more password-only prompts: if Porpoise's helper is ever off, one sheet asks to switch it on (Touch ID) and
+  the action simply continues. A password stays available as a last resort.
+- This release updates the helper once, so macOS asks one more time to allow Porpoise's administrator actions.
+
 ## 0.1.3
 
 - Fixed: after updating, Porpoise's administrator helper couldn't start (macOS ties its approval to the exact helper),

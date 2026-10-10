@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Network
 import PorpoiseCore
 import ServiceManagement
@@ -72,6 +72,51 @@ enum PrivilegedHelper {
         var ok = false
         (c.synchronousRemoteObjectProxyWithErrorHandler { _ in } as? PorpoiseHelperProtocol)?.version { ok = !$0.isEmpty }
         return ok
+    }
+
+    /// Hands items Porpoise moved into the Trash to the user, so emptying it needs no administrator rights (best effort).
+    static func takeOwnership(of paths: [String]) {
+        guard !paths.isEmpty, isEnabled, !Settings.isTesting,
+              let req = CodeSigning.requirement(identifier: PorpoiseHelperInfo.helperIdentifier) else { return }
+        let c = NSXPCConnection(machServiceName: PorpoiseHelperInfo.machService, options: .privileged)
+        c.remoteObjectInterface = NSXPCInterface(with: PorpoiseHelperProtocol.self)
+        c.setCodeSigningRequirement(req)
+        c.resume()
+        defer { c.invalidate() }
+        let proxy = c.synchronousRemoteObjectProxyWithErrorHandler { NSLog("helper: \($0)") } as? PorpoiseHelperProtocol
+        for p in paths { proxy?.takeOwnership(ofTrashed: p) { if let e = $0 { NSLog("take ownership of \(p): \(e)") } } }
+    }
+
+    /// Makes sure the helper is on, for an action that needs it: if it's off (or macOS stopped accepting it), a sheet
+    /// explains, System Settings opens at Login Items, and this returns true as soon as it's switched on (Touch ID).
+    /// False: cancelled. nil: the user chose to type a password instead.
+    static func ensureOn(window: NSWindow?) -> Bool? {
+        if service.status == .enabled { try? service.unregister() }   // on, but refused by macOS: register again
+        enable()
+        if service.status == .enabled { return true }
+        let a = NSAlert()
+        a.messageText = "Turn on Porpoise's helper"
+        a.informativeText = "Porpoise uses a small helper for items that belong to the system, such as apps in the Trash. "
+            + "In the System Settings window that opened, switch Porpoise on under “Allow in the Background” (Touch ID). "
+            + "Porpoise continues on its own, and won't ask again."
+        a.addButton(withTitle: "Cancel")
+        a.addButton(withTitle: "Use Password Instead")
+        a.window.appearance = NSAppearance(named: .darkAqua)
+        // Ends the alert as soon as macOS reports the helper on.
+        let poll = Timer(timeInterval: 0.5, repeats: true) { t in
+            guard service.status == .enabled else { return }
+            t.invalidate()
+            NSApp.stopModal(withCode: .OK)
+        }
+        RunLoop.main.add(poll, forMode: .modalPanel)
+        let answer = a.runModal()
+        poll.invalidate()
+        NSApp.activate()
+        switch answer {
+        case .OK: return true
+        case .alertSecondButtonReturn: return nil
+        default: return false
+        }
     }
 
     enum Outcome {
