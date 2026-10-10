@@ -12,9 +12,30 @@ final class Thumbnails {
     private var failed = Set<String>()
     private var pending = Set<String>()
 
+    /// Previews are kept up to this many bytes of pixels (they go up to 1024 px, so a count alone isn't a bound).
+    private static let cacheBytes = 256 << 20
+    /// Bookkeeping sets are bounded too: a long session in big folders must not grow them forever.
+    private static let maxRemembered = 20_000
+
     init() {
         cache.countLimit = 3000
+        cache.totalCostLimit = Self.cacheBytes
+        folderCache.totalCostLimit = Self.cacheBytes / 4
+        folderLatest.totalCostLimit = Self.cacheBytes / 8
         NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] _ in self?.resetFolderPreviews() }
+    }
+
+    private func store(_ img: NSImage, _ key: String) { cache.setObject(img, forKey: key as NSString, cost: Self.cost(of: img)) }
+
+    private func remember(failed key: String) {
+        if failed.count > Self.maxRemembered { failed.removeAll() }
+        failed.insert(key)
+    }
+
+    /// Bytes of pixels an image holds (its largest representation).
+    private static func cost(of img: NSImage) -> Int {
+        let px = img.representations.map { $0.pixelsWide * $0.pixelsHigh }.max() ?? 0
+        return max(1, (px > 0 ? px : Int(img.size.width * img.size.height)) * 4)
     }
 
     /// Previews are made in a few fixed sizes and scaled when drawn, so zooming reuses them instead of flickering.
@@ -82,7 +103,11 @@ final class Thumbnails {
         }
         // Not all previews ready yet: keep showing the last one made at another size (no flicker while zooming).
         if thumbs.count < 4 && waiting { return folderLatest.object(forKey: version as NSString) }
-        guard !thumbs.isEmpty else { folderNone.insert(key); return nil }
+        guard !thumbs.isEmpty else {
+            if folderNone.count > Self.maxRemembered { folderNone.removeAll() }
+            folderNone.insert(key)
+            return nil
+        }
         let base = Icons.shared.image(for: item, size: size)
         let img = NSImage(size: NSSize(width: size, height: size), flipped: true) { r in
             base.draw(in: r)
@@ -112,8 +137,8 @@ final class Thumbnails {
             }
             return true
         }
-        folderCache.setObject(img, forKey: key as NSString)
-        folderLatest.setObject(img, forKey: version as NSString)
+        folderCache.setObject(img, forKey: key as NSString, cost: Self.cost(of: img))
+        folderLatest.setObject(img, forKey: version as NSString, cost: Self.cost(of: img))
         return img
     }
 
@@ -126,6 +151,7 @@ final class Thumbnails {
         let found = Array(names.prefix(80).compactMap { FileItem.load(folder.url.appendingPathComponent($0)) }
             .filter { !$0.isDirectory && Self.wantsPreview($0) }.prefix(8))
         if folderCandidates.count > 2000 { folderCandidates = [:] }
+        if folderCandidates.count > Self.maxRemembered / 10 { folderCandidates.removeAll() }
         folderCandidates[version] = found
         return found
     }
@@ -202,7 +228,7 @@ final class Thumbnails {
                 guard let self else { return }
                 if let rep {
                     self.pending.remove(k)
-                    self.cache.setObject(rep.nsImage, forKey: k as NSString)
+                    self.store(rep.nsImage, k)
                     NotificationCenter.default.post(name: Thumbnails.ready, object: item.url)
                 } else if VideoPreview.isVideoExtension(item.fileExtension), item.url.isFileURL, VideoPreview.ffmpeg != nil {
                     // Quick Look can't read MKV/WebM/AVI…: grab a frame with ffmpeg. Still pending meanwhile,
@@ -211,13 +237,13 @@ final class Thumbnails {
                         let img = Self.ffmpegFrame(item.url, size: gen * scale)
                         DispatchQueue.main.async {
                             self.pending.remove(k)
-                            if let img { self.cache.setObject(img, forKey: k as NSString) } else { self.failed.insert(k) }
+                            if let img { self.store(img, k) } else { self.remember(failed: k) }
                             NotificationCenter.default.post(name: Thumbnails.ready, object: item.url)
                         }
                     }
                 } else {
                     self.pending.remove(k)
-                    self.failed.insert(k)
+                    self.remember(failed: k)
                     // Folder previews wait on every candidate; tell them this one won't come.
                     NotificationCenter.default.post(name: Thumbnails.ready, object: item.url)
                 }
