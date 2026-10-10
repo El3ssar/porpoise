@@ -322,6 +322,9 @@ import PorpoiseTestSupport
         #expect(!m.text(for: .modificationTime, of: doc).hasPrefix("Today"))
         #expect(m.text(for: .type, of: sub) == "Folder")
         #expect(m.text(for: .tags, of: doc) == "")
+        #expect(m.cloud(for: doc) == (CloudState.local, false))
+        m.refreshCloud()
+        #expect(m.cloud(for: doc).isCloud == false)
         // Folders show their item count once counted (hidden items only while shown).
         #expect(await eventually { m.text(for: .size, of: sub) == "1 item" })
         m.props.showHidden = true

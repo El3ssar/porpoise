@@ -153,6 +153,25 @@ import PorpoiseTestSupport
         #expect(try FileManager.default.contentsOfDirectory(atPath: cache.path).count == 1)
     }
 
+    /// Two requests for the same archive at once (two views opening it): both get the one finished copy.
+    @Test func concurrentRequestsShareOneCopy() async throws {
+        let s = try Scratch()
+        for i in 0..<200 { try s.file("src/f\(i).txt", "\(i)") }
+        let archive = s.path("many.tar")
+        try run("/usr/bin/tar", ["-cf", archive.path, "-C", s.url.path, "src"])
+        let item = try #require(FileItem.load(archive))
+        let cache = s.path("cache")
+        var results: [Result<URL, Error>] = []
+        for _ in 0..<3 { ArchiveBrowser.extractedFolder(for: item, in: cache) { results.append($0) } }
+        #expect(await eventually { results.count == 3 })
+        let dirs = try results.map { try $0.get().path }
+        #expect(Set(dirs).count == 1)
+        #expect(s.listing("cache").count == 1)
+        let leftovers = try FileManager.default.subpathsOfDirectory(atPath: cache.path).filter { $0.contains(".partial-") }
+        #expect(leftovers.isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dirs[0] + "/src").count == 200)
+    }
+
     @Test func notAnArchive() async throws {
         let s = try Scratch()
         let fake = try s.file("fake.zip", "just text")
