@@ -12,5 +12,10 @@ extension AppDelegate {
         for n in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {
             nc.addObserver(forName: n, object: nil, queue: .main) { _ in PlacesModel.shared.refreshDevices() }
         }
+        // Increase Contrast and the like change how the theme draws: redraw everything at once.
+        nc.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { _ in
+            func redraw(_ v: NSView) { v.needsDisplay = true; v.subviews.forEach(redraw) }
+            for w in NSApp.windows { w.contentView.map(redraw) }
+        }
     }
 }

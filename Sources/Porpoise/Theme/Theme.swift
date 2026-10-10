@@ -58,9 +58,11 @@ enum Theme {
 
     // Item highlight, measured from Dolphin 25.12 + Breeze 6 with Desert-Dark (reference VM):
     // selected = Selection at 32% with a 53% outline; hover = text color at 6%, no outline.
-    static let itemSelectedFill = selection.withAlphaComponent(0.32)
-    static let itemSelectedHoverFill = selection.withAlphaComponent(0.45)
-    static let itemSelectedOutline = selection.withAlphaComponent(0.55)
+    // Increase Contrast (Accessibility › Display) makes the selection solid and its outline opaque.
+    static var itemSelectedFill: NSColor { selection.withAlphaComponent(increasedContrast ? 0.75 : 0.32) }
+    static var itemSelectedHoverFill: NSColor { selection.withAlphaComponent(increasedContrast ? 0.85 : 0.45) }
+    static var itemSelectedOutline: NSColor { increasedContrast ? windowText : selection.withAlphaComponent(0.55) }
+    static var increasedContrast: Bool { NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast }
     static let itemHoverFill = windowText.withAlphaComponent(0.06)
     static let itemHoverOutline = NSColor.clear
     /// Places panel current entry: Selection at ~23% over the window color, no outline (measured).

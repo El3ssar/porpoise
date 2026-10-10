@@ -126,6 +126,13 @@ extension ItemListView {
             path.fill()
             (selected || isDrop ? Theme.itemSelectedOutline : Theme.itemHoverOutline).setStroke()
             path.stroke()
+            // Several selected: the keyboard's current one keeps its focus frame, so arrow keys stay traceable.
+            if selected, model.selection.count > 1, model.currentURL == url, window?.firstResponder === self {
+                let inner = NSBezierPath(roundedRect: highlightRect(i).insetBy(dx: 2, dy: 2), xRadius: Theme.itemRadius, yRadius: Theme.itemRadius)
+                inner.lineWidth = 1.5
+                Theme.windowText.withAlphaComponent(0.7).setStroke()
+                inner.stroke()
+            }
         } else if model.selection.isEmpty && model.currentURL == url && window?.firstResponder === self {
             Theme.focus.withAlphaComponent(0.6).setStroke()
             path.stroke()

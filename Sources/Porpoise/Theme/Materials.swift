@@ -83,7 +83,8 @@ final class Animator {
     func run(duration: TimeInterval, curve: @escaping (Double) -> Double = Animator.easeOutCubic,
              step: @escaping (Double) -> Void, completion: (() -> Void)? = nil) {
         stop()
-        if duration <= 0 { step(1); completion?(); return }
+        // Reduce Motion (Accessibility › Display): jump to the end state.
+        if duration <= 0 || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { step(1); completion?(); return }
         let start = CACurrentMediaTime()
         let t = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] t in
             let p = min(1, (CACurrentMediaTime() - start) / duration)
