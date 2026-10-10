@@ -11,7 +11,8 @@ public enum PrivacyAccess {
     private static var bundleID: String { Bundle.main.bundleIdentifier ?? "app.porpoise.Porpoise" }
 
     /// The system-wide privacy (TCC) database.
-    private static let tccDatabase = "/Library/Application Support/com.apple.TCC/TCC.db"
+    /// (A variable so tests can point it at a database of their own.)
+    nonisolated(unsafe) static var tccDatabase = "/Library/Application Support/com.apple.TCC/TCC.db"
 
     /// TCC's own database is readable only with Full Disk Access.
     public static var hasFullDiskAccess: Bool {
