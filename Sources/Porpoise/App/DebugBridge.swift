@@ -249,6 +249,28 @@ final class DebugBridge: NSObject {
             }
             try? lines.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
         case "key": sendKey(arg)
+        case "search":
+            // search <n|c> <text>: names or contents, here
+            if let v = wc?.view, arg.count > 2 {
+                v.showSearch()
+                v.searchBar(v.searchBar, search: String(arg.dropFirst(2)), everywhere: false, contents: arg.hasPrefix("c"))
+            }
+        case "lagprobe":
+            // lagprobe <file> <seconds>: the longest the main thread didn't answer, in ms, every 5 ms meanwhile
+            let parts = arg.split(separator: " ").map(String.init)
+            guard parts.count == 2, let secs = Double(parts[1]) else { break }
+            var last = CACurrentMediaTime(), worst = 0.0
+            let end = last + secs
+            let t = Timer(timeInterval: 0.005, repeats: true) { t in
+                let now = CACurrentMediaTime()
+                worst = max(worst, now - last)
+                last = now
+                if now > end {
+                    t.invalidate()
+                    try? String(format: "%.1f", worst * 1000).write(toFile: parts[0], atomically: true, encoding: .utf8)
+                }
+            }
+            RunLoop.main.add(t, forMode: .common)
         case "set":
             // set <key> <json value>
             let kv = arg.split(separator: " ", maxSplits: 1).map(String.init)

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.9
+
+- **Much faster search.** Searching a folder ("Here") now uses fd and ripgrep, bundled with Porpoise: results start
+  coming in at once, hidden and unindexed folders included, and big folders no longer stall the window. Results are
+  read, sorted and grouped off the main thread, so typing stays smooth with thousands of them.
+- **Content search shows where it matched.** Searching in file contents groups the results into *Name matches* and
+  *Content matches*; each content match shows the line it was found in next to its name, the search text in bold
+  (the whole line is in its tooltip).
+- Apps and other packages are single results, as in Finder: their insides no longer show up.
+- Sorting by size with "Folders first" off keeps a consistent order (folders, then files).
+
 ## 0.2.8
 
 - Split view in Compact: every visible item flies into the new pane, as in Details (only the first column did).

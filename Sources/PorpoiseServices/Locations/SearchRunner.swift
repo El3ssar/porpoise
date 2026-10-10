@@ -25,6 +25,11 @@ public final class SearchRunner: NSObject {
     var gatheringTimeout: TimeInterval = 5
     /// Off: only the simple search (what tests of it use, whatever Spotlight indexes on the machine).
     var usesSpotlight = true
+    /// For the files found by their contents (in folders), the line that contains the text; current when `update`
+    /// runs.
+    public private(set) var snippets: [URL: String] = [:]
+    /// The snippets name exactly the files found by contents only (the folders were searched with the tools).
+    public var snippetsMarkContentMatches: Bool { folderSearch != nil }
     /// The tools that search folders (the bundled ones; tests choose).
     var folderTools = FolderSearch.tools
 
@@ -104,7 +109,9 @@ public final class SearchRunner: NSObject {
     private func searchFolders() {
         guard let tools = folderTools else { return simpleSearch() }
         let s = FolderSearch(text: text, scope: scope, contents: contents, limit: Self.maxFolderResults, tools: tools) {
-            [weak self] items, done in self?.update(items, done)
+            [weak self] items, snippets, done in
+            self?.snippets = snippets
+            self?.update(items, done)
         }
         folderSearch = s
         s.start()

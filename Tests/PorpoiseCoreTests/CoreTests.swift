@@ -29,6 +29,28 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bo
         #expect(sorted.map(\.name) == ["small", "big", ".h"])
     }
 
+    /// Adding items to a sorted list by merging gives the order a full sort would, whatever the sort settings.
+    @Test(arguments: [ItemRole.name, .size, .modificationTime, .type])
+    func mergingMatchesSortingEverything(role: ItemRole) {
+        var rng = SystemRandomNumberGenerator()
+        let all = (0..<300).map { i in
+            item(
+                ["file", "File", "doc", ".x", "Ünïcode"].randomElement(using: &rng)! + "\(Int.random(in: 0..<60, using: &rng))-\(i)",
+                dir: Bool.random(using: &rng), size: Int64.random(in: 0..<5, using: &rng),
+                mod: Date(timeIntervalSince1970: Double(Int.random(in: 0..<5, using: &rng))))
+        }
+        for order in [SortOrder.ascending, .descending] {
+            var p = ViewProperties()
+            p.sortRole = role
+            p.sortOrder = order
+            p.hiddenLast = Bool.random(using: &rng)
+            p.foldersFirst = Bool.random(using: &rng)
+            let first = ItemSorter.sort(Array(all.prefix(180)), props: p)
+            let merged = ItemSorter.merge(first, adding: Array(all.dropFirst(180)), props: p)
+            #expect(merged.map(\.url) == ItemSorter.sort(all, props: p).map(\.url))
+        }
+    }
+
     @Test func groupsByNameAndDate() {
         #expect(ItemGrouper.groupName(item("apple"), role: .name) == "A")
         #expect(ItemGrouper.groupName(item("9lives"), role: .name) == "0 - 9")

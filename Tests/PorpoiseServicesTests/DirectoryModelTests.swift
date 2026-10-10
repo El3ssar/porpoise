@@ -369,6 +369,59 @@ import Testing
         #expect(m.props.mode == .icons && names(m) == ["local"])
     }
 
+    /// A search of contents shows name matches first, then the files found by what's inside them, with their line.
+    @Test func contentSearchesGroupNameAndContentMatches() async throws {
+        let s = try Scratch()
+        let urls = try ["Budget.xlsx", "notes.txt", "plan.md", "budget-old.txt"].map { try s.file("r/\($0)") }
+        let m = try await loaded(s.path("r"))
+        let items = try urls.map { try #require(FileItem.load($0)) }
+        m.searchMatches = SearchMatches(text: "budget", contents: true, snippets: [items[1].url: "the budget is due"])
+        m.searchResults = items
+        #expect(m.groups.map(\.title) == ["Name matches", "Content matches"])
+        #expect(Set(m.rows.prefix(2).map(\.item.name)) == ["Budget.xlsx", "budget-old.txt"])
+        #expect(m.rows.suffix(2).map(\.item.name) == ["notes.txt", "plan.md"])
+        #expect(m.rows.map(\.group) == [0, 0, 1, 1])
+        #expect(m.searchSnippet(for: items[1]) == "the budget is due")
+        #expect(m.searchSnippet(for: items[0]) == nil)
+        // Names only: no groups; nothing found inside files: no empty group.
+        m.searchMatches = SearchMatches(text: "budget", contents: false)
+        m.searchResults = items
+        #expect(m.groups.isEmpty)
+        m.searchMatches = SearchMatches(text: "budget", contents: true)
+        m.searchResults = [items[0]]
+        #expect(m.groups.map(\.title) == ["Name matches"])
+        // Found with the tools: the snippets tell the groups apart.
+        m.searchMatches = SearchMatches(text: "budget", contents: true, snippets: [items[0].url: "x"], snippetsMarkContentMatches: true)
+        m.searchResults = items
+        #expect(m.groups.map(\.title) == ["Name matches", "Content matches"] && m.rows.last?.item.name == "Budget.xlsx")
+    }
+
+    /// Results are sorted off the main thread and shown when asked; growing ones are merged; a later change wins.
+    @Test func searchResultsSortedInTheBackground() async throws {
+        let s = try Scratch()
+        let urls = try (1...40).map { try s.file("r/f\($0).txt") }
+        let m = try await loaded(s.path("r"))
+        let items = try urls.shuffled().map { try #require(FileItem.load($0)) }
+        func show(_ list: [FileItem]) async throws {
+            var shown = false
+            m.sortSearchResults(list) { apply in
+                apply()
+                shown = true
+            }
+            try #require(await eventually { shown })
+        }
+        try await show(Array(items.prefix(25)))
+        #expect(names(m) == items.prefix(25).map(\.name).sorted { $0.localizedStandardCompare($1) == .orderedAscending })
+        try await show(items)
+        #expect(names(m) == (1...40).map { "f\($0).txt" })
+        // Closed before a sort finished: it never shows.
+        var late = false
+        m.sortSearchResults(Array(items.prefix(3))) { _ in late = true }
+        m.searchResults = nil
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(!late && !m.isSearching)
+    }
+
     // MARK: Errors
 
     @Test func unreadableFolder() async throws {

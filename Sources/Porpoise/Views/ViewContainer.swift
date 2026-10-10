@@ -529,6 +529,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         searchBar.isHidden = true
         searchBar.clear()
         animatingItems(searchStyle: true) {
+            model.searchMatches = nil
             model.searchResults = nil
             model.endSearchView()
         }
@@ -540,6 +541,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         searchQuery?.stop()
         guard !text.isEmpty else {
             animatingItems(searchStyle: true) {
+                model.searchMatches = nil
                 model.searchResults = nil
                 model.endSearchView()
             }
@@ -552,11 +554,18 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         // the new results come in one after another.
         searchQuery = SearchRunner(text: text, scope: scope, contents: contents, everywhere: everywhere) { [weak self] items, done in
             // "Nothing yet" while searching changes nothing: what's shown stays until there are results to morph to.
-            guard let self, done || !items.isEmpty else { return }
-            self.animatingItems(searchStyle: true) {
-                // Shown for the results only: never saved as the folder's style.
-                if !self.model.isSearching { self.model.showSearchView() }
-                self.model.searchResults = items
+            guard let self, done || !items.isEmpty, let runner = self.searchQuery else { return }
+            let matches = SearchMatches(
+                text: text, contents: contents, snippets: runner.snippets, snippetsMarkContentMatches: runner.snippetsMarkContentMatches)
+            // Sorted off the main thread: typing and scrolling stay smooth with thousands of results.
+            self.model.sortSearchResults(items) { [weak self] apply in
+                guard let self, self.searchQuery === runner else { return }
+                self.animatingItems(searchStyle: true) {
+                    // Shown for the results only: never saved as the folder's style.
+                    if !self.model.isSearching { self.model.showSearchView() }
+                    self.model.searchMatches = matches
+                    apply()
+                }
             }
             self.statusBar.progress = done ? nil : 0.5
             if done { self.statusBar.showMessage(items.isEmpty ? "No items found." : "\(items.count) items found.") }

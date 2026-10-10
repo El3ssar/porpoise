@@ -324,7 +324,10 @@ extension ItemListView {
         let tr = nameTextRect(i)
         let y = tr.midY - lineHeight / 2
         if showName {
-            drawNameWithTags(item, in: CGRect(x: tr.minX, y: y, width: tr.width, height: lineHeight), selected: selected)
+            let end = drawNameWithTags(item, in: CGRect(x: tr.minX, y: y, width: tr.width, height: lineHeight), selected: selected)
+            if let line = model.searchSnippet(for: item) {
+                drawSnippet(line, in: CGRect(x: end + 10, y: y, width: tr.maxX - end - 10, height: lineHeight), selected: selected)
+            }
         }
         var x = frames[i].minX + (columnWidths[.name] ?? 0)
         for role in detailsRoles.dropFirst() {
@@ -337,8 +340,26 @@ extension ItemListView {
         }
     }
 
-    /// One-line name followed by its Finder tag dots.
-    private func drawNameWithTags(_ item: FileItem, in r: CGRect, selected: Bool) {
+    /// A content match's line after its name: dimmed, the text searched for in full color.
+    private func drawSnippet(_ line: String, in r: CGRect, selected: Bool) {
+        guard r.width > 40, let text = model.searchMatches?.text else { return }
+        let s = NSMutableAttributedString(
+            string: line, attributes: [.font: font, .foregroundColor: roleTextColor(selected: selected), .paragraphStyle: Self.tailElidingParagraph])
+        var from = line.startIndex
+        while let m = line.range(of: text, options: [.caseInsensitive, .diacriticInsensitive], range: from..<line.endIndex) {
+            s.addAttributes(
+                [
+                    .foregroundColor: selected ? Theme.selectionText : Theme.viewText,
+                    .font: NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask),
+                ], range: NSRange(m, in: line))
+            from = m.upperBound
+        }
+        s.draw(in: r)
+    }
+
+    /// One-line name followed by its Finder tag dots; returns where they end.
+    @discardableResult
+    private func drawNameWithTags(_ item: FileItem, in r: CGRect, selected: Bool) -> CGFloat {
         let name = model.displayName(for: item)
         let tags = model.shownTags(for: item)
         let d = tagDotDiameter
@@ -350,6 +371,7 @@ extension ItemListView {
                 tags, at: CGPoint(x: r.minX + nameW + 5, y: r.minY + (r.height - d) / 2 + 1), diameter: d,
                 background: itemBackground(selected: selected))
         }
+        return r.minX + nameW + dw
     }
 
     /// Breeze's emblem-added / emblem-remove as KDE renders them with the color scheme: a light disc with +/−.

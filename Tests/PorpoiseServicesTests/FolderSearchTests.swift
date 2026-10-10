@@ -31,15 +31,18 @@ struct FolderSearchTests {
     }
 
     /// Runs a search to the end and returns the names found, and how many batches came before the last.
-    private func run(_ text: String, contents: Bool = false, limit: Int = 100) async throws -> (names: [String], batches: Int) {
-        var result: [FileItem]?
+    private func run(_ text: String, contents: Bool = false, limit: Int = 100) async throws -> (
+        names: [String], batches: Int, snippets: [String: String]
+    ) {
+        var result: ([FileItem], [URL: String])?
         var batches = 0
-        let search = FolderSearch(text: text, scope: s.url, contents: contents, limit: limit, tools: tools) { items, done in
-            if done { result = items } else { batches += 1 }
+        let search = FolderSearch(text: text, scope: s.url, contents: contents, limit: limit, tools: tools) { items, snippets, done in
+            if done { result = (items, snippets) } else { batches += 1 }
         }
         search.start()
         try #require(await eventually(10) { result != nil })
-        return ((result ?? []).map(\.name).sorted(), batches)
+        let (items, snippets) = result ?? ([], [:])
+        return (items.map(\.name).sorted(), batches, Dictionary(uniqueKeysWithValues: snippets.map { ($0.key.lastPathComponent, $0.value) }))
     }
 
     @Test func namesOfFilesAndFoldersInAnyCaseIncludingHiddenOnesAndOddNames() async throws {
@@ -57,6 +60,25 @@ struct FolderSearchTests {
         #expect(try await run("budget", contents: true).names == ["notes.txt"])
         // Names still count in a contents search.
         #expect(try await run("other", contents: true).names == ["other.txt"])
+    }
+
+    /// A file found by its contents comes with the line it was found in.
+    @Test func contentMatchesComeWithTheirLine() async throws {
+        try s.file("plan.md", "# Plan\n\n\t  Ask about the BUDGET early  \nbudget again\n")
+        let found = try await run("budget", contents: true)
+        #expect(found.snippets["plan.md"] == "Ask about the BUDGET early")
+        #expect(found.snippets["notes.txt"] == "the budget is due friday")
+        // A name that matches too: a name match, no line.
+        try s.file("budget-2026.txt", "budget")
+        #expect(try await run("budget", contents: true).snippets["budget-2026.txt"] == nil)
+    }
+
+    @Test func snippetsStartNearTheTextAndStayShort() {
+        #expect(FolderSearch.snippet("  a\t\tb  ", around: "b") == "a b")
+        let long = String(repeating: "word ", count: 20) + "needle " + String(repeating: "tail ", count: 100)
+        let s = FolderSearch.snippet(long, around: "NEEDLE")
+        #expect(s.hasPrefix("…") && s.contains("needle") && s.count <= 201)
+        #expect(s.distance(from: s.startIndex, to: s.range(of: "needle")!.lowerBound) < 16)
     }
 
     /// Apps and other packages are single items, as in Finder: found by name, never their insides.
@@ -77,7 +99,7 @@ struct FolderSearchTests {
     @Test func aStoppedSearchSaysNothingMoreAndLeavesNoTool() async throws {
         for i in 0..<200 { try s.file("deep/\(i)/x/y/match-\(i).txt") }
         var calls = 0
-        let search = FolderSearch(text: "match", scope: s.url, contents: true, limit: 10_000, tools: tools) { _, _ in calls += 1 }
+        let search = FolderSearch(text: "match", scope: s.url, contents: true, limit: 10_000, tools: tools) { _, _, _ in calls += 1 }
         search.start()
         search.stop()
         try await Task.sleep(nanoseconds: 500_000_000)

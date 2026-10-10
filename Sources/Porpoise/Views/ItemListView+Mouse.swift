@@ -45,10 +45,13 @@ extension ItemListView {
         if let item, hoverAlpha[item.url] == nil { hoverAlpha[item.url] = 0.01 }
         startHoverAnimation()
         delegate?.itemList(self, hovered: item)
+        let line = item.flatMap(model.searchSnippet(for:)).map { "“\($0)”" }
         if Settings.shared.showToolTips, let it = item {
-            toolTip = "\(it.name)\n\(it.typeDescription)\n" + (it.isBrowsableFolder ? model.folderSizeText(it) : FileFormat.size(it.size))
+            toolTip =
+                "\(it.name)\n\(it.typeDescription)\n" + (it.isBrowsableFolder ? model.folderSizeText(it) : FileFormat.size(it.size))
+                + (line.map { "\n\n" + $0 } ?? "")
         } else {
-            toolTip = nil
+            toolTip = line  // the whole line of a content match, which the row may cut short
         }
     }
 

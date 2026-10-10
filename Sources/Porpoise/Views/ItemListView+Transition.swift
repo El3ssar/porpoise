@@ -48,7 +48,8 @@ extension ItemListView {
     /// The same file however it's spelled: searches report /private/tmp/… for what the folder lists as /tmp/….
     static func transitionKey(_ url: URL) -> String {
         guard url.isFileURL else { return url.absoluteString }
-        let p = url.standardizedFileURL.path
+        // Items' URLs are already standard (made from paths); standardizing thousands of them each change would cost.
+        let p = url.path
         return p.hasPrefix("/private/") ? String(p.dropFirst(8)) : p
     }
 

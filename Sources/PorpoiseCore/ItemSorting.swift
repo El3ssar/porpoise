@@ -99,15 +99,41 @@ public enum ItemSorter {
         _ items: [FileItem], props: ViewProperties, choice: SortingChoice = .natural,
         folderSizes: [URL: Int] = [:], tags: [URL: [String]] = [:]
     ) -> [FileItem] {
-        let desc = props.sortOrder == .descending
-        return items.sorted { a, b in
-            if props.foldersFirst, a.isBrowsableFolder != b.isBrowsableFolder { return a.isBrowsableFolder }
-            if props.hiddenLast, a.isHidden != b.isHidden { return !a.isHidden }
-            var r = compare(a, b, role: props.sortRole, choice: choice, folderSizes: folderSizes, tags: tags)
-            if r == .orderedSame, props.sortRole != .name { r = compareNames(a.name, b.name, choice) }
-            if r == .orderedSame { r = a.url.path.compare(b.url.path) }
-            return desc ? r == .orderedDescending : r == .orderedAscending
+        items.sorted { inOrder($0, $1, props: props, choice: choice, folderSizes: folderSizes, tags: tags) }
+    }
+
+    /// `sorted` (in the order `sort` makes) with `more` (in any order) added: only `more` is sorted, then the two
+    /// are merged. What a growing list of search results needs, thousands of items long.
+    public static func merge(
+        _ sorted: [FileItem], adding more: [FileItem], props: ViewProperties, choice: SortingChoice = .natural,
+        folderSizes: [URL: Int] = [:]
+    ) -> [FileItem] {
+        let added = sort(more, props: props, choice: choice, folderSizes: folderSizes)
+        var out: [FileItem] = []
+        out.reserveCapacity(sorted.count + added.count)
+        var i = 0, j = 0
+        while i < sorted.count, j < added.count {
+            // Ties keep the sorted list first, as a stable sort of both would.
+            if inOrder(added[j], sorted[i], props: props, choice: choice, folderSizes: folderSizes, tags: [:]) {
+                out.append(added[j]); j += 1
+            } else {
+                out.append(sorted[i]); i += 1
+            }
         }
+        out.append(contentsOf: sorted[i...])
+        out.append(contentsOf: added[j...])
+        return out
+    }
+
+    private static func inOrder(
+        _ a: FileItem, _ b: FileItem, props: ViewProperties, choice: SortingChoice, folderSizes: [URL: Int], tags: [URL: [String]]
+    ) -> Bool {
+        if props.foldersFirst, a.isBrowsableFolder != b.isBrowsableFolder { return a.isBrowsableFolder }
+        if props.hiddenLast, a.isHidden != b.isHidden { return !a.isHidden }
+        var r = compare(a, b, role: props.sortRole, choice: choice, folderSizes: folderSizes, tags: tags)
+        if r == .orderedSame, props.sortRole != .name { r = compareNames(a.name, b.name, choice) }
+        if r == .orderedSame { r = a.url.path.compare(b.url.path) }
+        return props.sortOrder == .descending ? r == .orderedDescending : r == .orderedAscending
     }
 
     static func compare(
@@ -121,6 +147,9 @@ public enum ItemSorter {
             if a.isBrowsableFolder && b.isBrowsableFolder {
                 return cmp(folderSizes[a.url] ?? 0, folderSizes[b.url] ?? 0)
             }
+            // A folder's size is a count of items, a file's is bytes: they can't be compared, so folders come before
+            // files (the other way around in descending order), keeping the order consistent.
+            if a.isBrowsableFolder != b.isBrowsableFolder { return a.isBrowsableFolder ? .orderedAscending : .orderedDescending }
             return cmp(a.size, b.size)
         case .modificationTime: return cmp(a.modificationDate ?? .distantPast, b.modificationDate ?? .distantPast)
         case .creationTime: return cmp(a.creationDate ?? .distantPast, b.creationDate ?? .distantPast)

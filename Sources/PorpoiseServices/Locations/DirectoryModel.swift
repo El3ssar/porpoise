@@ -11,6 +11,29 @@ public struct Row {
     public var group: Int
 }
 
+/// What a search looked for: with `contents`, results are grouped into name and content matches.
+public struct SearchMatches {
+    public let text: String
+    public let contents: Bool
+    /// For files found by their contents, the line that contains the text.
+    public var snippets: [URL: String]
+    /// The snippets are exactly the files found by contents only (worked out while searching, off the main thread):
+    /// telling the groups apart is then a lookup, not a comparison of each name.
+    public var snippetsMarkContentMatches: Bool
+
+    public init(text: String, contents: Bool, snippets: [URL: String] = [:], snippetsMarkContentMatches: Bool = false) {
+        self.text = text
+        self.contents = contents
+        self.snippets = snippets
+        self.snippetsMarkContentMatches = snippetsMarkContentMatches
+    }
+
+    public func nameMatches(_ item: FileItem) -> Bool {
+        if snippetsMarkContentMatches { return snippets[item.url] == nil }
+        return item.name.range(of: text, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+    }
+}
+
 public struct ItemGroup {
     public let title: String
     let firstRow: Int
@@ -44,8 +67,72 @@ public final class DirectoryModel {
     public var filter = NameFilter() { didSet { if filter != oldValue { rebuild(keepingOrder: true) } } }
 
     /// Search results replace the folder listing while set (Search bar).
-    public var searchResults: [FileItem]? { didSet { rebuild() } }
+    public var searchResults: [FileItem]? {
+        didSet {
+            searchSortGeneration += 1  // results still being sorted are out of date
+            if applyingSortedResults { return }
+            // A search's next batch adds to the last: only the new results are sorted, then merged in, so thousands
+            // of results don't make each batch stall the window.
+            if let new = searchResults, let old = oldValue, !old.isEmpty, new.count > old.count,
+                old.indices.allSatisfy({ new[$0].url == old[$0].url })
+            {
+                rebuild(adding: Array(new[old.count...]))
+            } else {
+                rebuild()
+            }
+        }
+    }
     public var isSearching: Bool { searchResults != nil }
+    /// Bumped whenever the results change: a sort of older ones finishing later is dropped.
+    private var searchSortGeneration = 0
+    private var applyingSortedResults = false
+
+    /// Sorts `items` off the main thread (thousands of results take a while), then hands over a closure that shows
+    /// them, to call at once (between a snapshot and an animation). Results newer than these, or none (the search was
+    /// closed), meanwhile: nothing happens.
+    public func sortSearchResults(_ items: [FileItem], then show: @escaping (_ apply: () -> Void) -> Void) {
+        let p = props, choice = Settings.shared.sortingChoice, sizes = folderCounts
+        guard p.sortRole != .tags else { return show { self.searchResults = items } }  // tags are read here
+        searchSortGeneration += 1
+        let g = searchSortGeneration
+        // Growing results (the same search's next batch): only what's new is sorted, then merged in.
+        let old = searchResults ?? [], kept = sortedTop
+        let grows = !old.isEmpty && kept != nil && items.count >= old.count && old.indices.allSatisfy { items[$0].url == old[$0].url }
+        let shown = visible(grows ? Array(items[old.count...]) : items, filtered: false)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let top =
+                grows
+                ? ItemSorter.merge(kept ?? [], adding: shown, props: p, choice: choice, folderSizes: sizes)
+                : ItemSorter.sort(shown, props: p, choice: choice, folderSizes: sizes)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, g == self.searchSortGeneration else { return }
+                show {
+                    // Sorted with other settings meanwhile (the view's sort changed): sorted again here.
+                    guard Self.sortsAlike(self.props, p), choice == Settings.shared.sortingChoice else { return self.searchResults = items }
+                    self.applyingSortedResults = true
+                    self.searchResults = items
+                    self.applyingSortedResults = false
+                    self.sortedTop = top
+                    self.rebuild(keepingOrder: true)
+                }
+            }
+        }
+    }
+
+    /// Whether two view settings put items in the same order (and show the same ones).
+    private static func sortsAlike(_ a: ViewProperties, _ b: ViewProperties) -> Bool {
+        a.sortRole == b.sortRole && a.sortOrder == b.sortOrder && a.foldersFirst == b.foldersFirst && a.hiddenLast == b.hiddenLast
+            && a.showHidden == b.showHidden
+    }
+
+    /// What the shown results were searched for (set it before `searchResults`, which rebuilds).
+    public var searchMatches: SearchMatches?
+
+    /// The line of a content match to show with it.
+    public func searchSnippet(for item: FileItem) -> String? {
+        guard isSearching, let m = searchMatches, m.contents, !m.nameMatches(item) else { return nil }
+        return m.snippets[item.url]
+    }
 
     public private(set) var expanded: Set<URL> = []
     private var children: [URL: [FileItem]] = [:]
@@ -139,6 +226,7 @@ public final class DirectoryModel {
             currentURL = nil
             anchorURL = nil
             items = []
+            searchMatches = nil
             searchResults = nil
             dynamicOverride = ViewOverride()
             searchOverride = ViewOverride()
@@ -419,8 +507,9 @@ public final class DirectoryModel {
     /// The top level in order, before the name filter: typing in the filter bar narrows it without sorting again.
     private var sortedTop: [FileItem]?
 
-    /// Rebuilds the rows; `keepingOrder` when only the name filter changed.
-    public func rebuild(keepingOrder: Bool = false) {
+    /// Rebuilds the rows; `keepingOrder` when only the name filter changed, `adding` when only those items were added
+    /// to what's shown.
+    public func rebuild(keepingOrder: Bool = false, adding: [FileItem]? = nil) {
         let choice = Settings.shared.sortingChoice
         var out: [Row] = []
         var grps: [ItemGroup] = []
@@ -428,6 +517,9 @@ public final class DirectoryModel {
         let top: [FileItem]
         if keepingOrder, let kept = sortedTop {
             top = kept
+        } else if let adding, let kept = sortedTop, props.sortRole != .tags {
+            top = ItemSorter.merge(kept, adding: visible(adding, filtered: false), props: props, choice: choice, folderSizes: folderCounts)
+            sortedTop = top
         } else {
             let all = visible(searchResults ?? items, filtered: false)
             // Finder tags are read (and cached) only when sorting by them.
@@ -453,7 +545,18 @@ public final class DirectoryModel {
             }
         }
 
-        if let role = groupRole {
+        if isSearching, let m = searchMatches, m.contents {
+            // Names first, then what was found inside files; each keeps the sort order.
+            var byName: [FileItem] = [], inside: [FileItem] = []
+            for it in sorted {
+                if m.nameMatches(it) { byName.append(it) } else { inside.append(it) }
+            }
+            for (title, list) in [("Name matches", byName), ("Content matches", inside)] where !list.isEmpty {
+                let start = out.count
+                add(list, depth: 0, groupIndex: grps.count)
+                grps.append(ItemGroup(title: title, firstRow: start, count: out.count - start))
+            }
+        } else if let role = groupRole {
             let parts = ItemGrouper.groups(sorted, role: role, props: props, choice: choice, folderSizes: folderCounts, tags: tagNames)
             for (gi, g) in parts.enumerated() {
                 let start = out.count
