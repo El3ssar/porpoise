@@ -18,6 +18,19 @@ public final class Scratch {
         _ = try? Process.run(URL(fileURLWithPath: "/usr/bin/chflags"), arguments: ["-R", "nouchg", url.path]).waitUntilExit()
         _ = try? Process.run(URL(fileURLWithPath: "/bin/chmod"), arguments: ["-R", "u+rwx", url.path]).waitUntilExit()
         try? fm.removeItem(at: url)
+        guard fm.fileExists(atPath: url.path) else { return }
+        // Something is still mounted inside (an image whose attach finished late): detach it, then try again.
+        for case let u as URL in fm.enumerator(at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) ?? .init()
+        where Self.isMountPoint(u) {
+            _ = try? Process.run(URL(fileURLWithPath: "/usr/bin/hdiutil"), arguments: ["detach", "-quiet", "-force", u.path]).waitUntilExit()
+        }
+        try? fm.removeItem(at: url)
+    }
+
+    /// Whether `u` is the root of another volume.
+    public static func isMountPoint(_ u: URL) -> Bool {
+        var a = stat(), b = stat()
+        return lstat(u.path, &a) == 0 && lstat(u.deletingLastPathComponent().path, &b) == 0 && a.st_dev != b.st_dev
     }
 
     public func path(_ relative: String) -> URL { url.appendingPathComponent(relative) }
@@ -74,7 +87,13 @@ public final class DiskImage {
         volume = scratch.path("mnt-\(name)")
         try Self.hdiutil(["create", "-quiet", "-size", "\(megabytes)m", "-fs", "APFS", "-volname", name, image.path])
         try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
-        try Self.hdiutil(["attach", "-quiet", "-nobrowse", "-mountpoint", volume.path, image.path])
+        do {
+            try Self.hdiutil(["attach", "-quiet", "-nobrowse", "-mountpoint", volume.path, image.path])
+        } catch {
+            // Given up on, the attach may still finish: leave nothing attached behind.
+            try? Self.hdiutil(["detach", "-quiet", "-force", volume.path])
+            throw error
+        }
     }
 
     deinit { try? Self.hdiutil(["detach", "-quiet", "-force", volume.path]) }

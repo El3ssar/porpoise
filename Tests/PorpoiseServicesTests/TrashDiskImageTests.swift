@@ -45,6 +45,12 @@ import Testing
         await ui.nextJobFinished()
     }
 
+    /// What the scratch folder's cleanup relies on to find an image still attached inside it.
+    @Test func theAttachedImageIsAVolumeOfItsOwn() {
+        #expect(Scratch.isMountPoint(disk.volume))
+        #expect(!Scratch.isMountPoint(scratch.url))
+    }
+
     @MainActor @Test func trashedItemsLandInTheVolumesOwnTrash() async throws {
         let notes = try file("notes.txt"), project = try file("project/main.swift")
         await trash([notes, project.deletingLastPathComponent()])
