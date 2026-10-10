@@ -5,8 +5,9 @@ import PorpoiseCore
 public enum TrashInfo {
     public static var folder: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash") }
 
-    public static func summary() -> String {
-        let t = folder
+    public static func summary() -> String { summary(of: folder) }
+
+    static func summary(of t: URL) -> String {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: t.path) else {
             return "The Trash can be shown once Porpoise has Full Disk Access (System Settings › Privacy & Security)."
         }
@@ -16,8 +17,10 @@ public enum TrashInfo {
     }
 
     /// Nothing in the Trash (or it can't be read without Full Disk Access).
-    public static var isEmpty: Bool {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+    public static var isEmpty: Bool { isEmpty(folder) }
+
+    static func isEmpty(_ trash: URL) -> Bool {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: trash.path)) ?? []
         return names.allSatisfy { $0 == ".DS_Store" }
     }
 

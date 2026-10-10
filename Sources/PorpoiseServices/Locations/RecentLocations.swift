@@ -4,7 +4,7 @@ import Foundation
 public final class RecentLocations {
     public static let shared = RecentLocations()
     public private(set) var urls: [URL] = []
-    private init() {
+    init() {
         urls = (Settings.store.stringArray(forKey: "recentLocations") ?? []).map { URL(fileURLWithPath: $0) }
     }
     public func visit(_ u: URL) {

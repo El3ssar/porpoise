@@ -85,19 +85,26 @@ public final class PlacesModel {
     /// Notifications are held back until the initial load is done.
     private var ready = false
 
-    private lazy var storeURL: URL = {
-        let fm = FileManager.default
-        let dir = Settings.isTesting ? fm.temporaryDirectory.appendingPathComponent("porpoise-test")
-            : fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise")
-        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("places.json")
-    }()
+    /// places.json; nil keeps the places in memory only (test instances).
+    private let storeURL: URL?
 
-    private init() {
+    private convenience init() {
+        var url: URL?
+        if !Settings.isTesting {
+            let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise")
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            url = dir.appendingPathComponent("places.json")
+        }
+        self.init(storeURL: url)
+        DispatchQueue.main.async { self.refreshDetected() }
+    }
+
+    /// A model kept in `storeURL` (tests use their own file).
+    init(storeURL: URL?) {
+        self.storeURL = storeURL
         load()
         refreshDevices()
         ready = true
-        DispatchQueue.main.async { self.refreshDetected() }
     }
 
     // MARK: Entries
@@ -175,7 +182,7 @@ public final class PlacesModel {
     private static let storeVersion = 1
 
     private func load() {
-        guard !Settings.isTesting, let data = try? Data(contentsOf: storeURL) else {
+        guard let storeURL, let data = try? Data(contentsOf: storeURL) else {
             userEntries = Self.defaultEntries()
             return
         }
@@ -213,7 +220,7 @@ public final class PlacesModel {
     private func save() {
         let s = Stored(entries: userEntries, hiddenSections: Array(storedHiddenSections), collapsedSections: Array(collapsedSections),
                        sectionOrder: sectionOrder, locked: isLocked, version: Self.storeVersion)
-        if !Settings.isTesting { try? JSONEncoder().encode(s).write(to: storeURL) }
+        if let storeURL { try? JSONEncoder().encode(s).write(to: storeURL) }
         post()
     }
 

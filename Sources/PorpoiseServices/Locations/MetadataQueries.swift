@@ -34,7 +34,7 @@ final class RecentFilesQuery: NSObject {
 
 /// Files carrying a tag (the sidebar's Tags section), found with Spotlight.
 final class MetadataListQuery: NSObject {
-    private let query = NSMetadataQuery()
+    let query = NSMetadataQuery()
     private let done: ([FileItem]) -> Void
 
     init(predicate: NSPredicate, scopes: [Any] = [NSMetadataQueryLocalComputerScope], done: @escaping ([FileItem]) -> Void) {

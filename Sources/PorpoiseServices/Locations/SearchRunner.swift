@@ -3,7 +3,7 @@ import PorpoiseCore
 
 /// Runs a search: Spotlight (NSMetadataQuery) like Dolphin's Baloo search, with live results.
 public final class SearchRunner: NSObject {
-    private let query = NSMetadataQuery()
+    let query = NSMetadataQuery()
     private let update: ([FileItem], Bool) -> Void
     private let text: String
     private let scope: URL
