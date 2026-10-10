@@ -1,9 +1,8 @@
 import Foundation
-import PorpoiseServices
 
 /// Android support needs Google's `adb`. Google's licence doesn't allow shipping it inside Porpoise, so Porpoise
 /// downloads the official platform-tools from Google on request, into its own Application Support folder.
-enum AndroidTools {
+public enum AndroidTools {
     static let downloadURL = URL(string: "https://dl.google.com/android/repository/platform-tools-latest-darwin.zip")!
 
     static var installDir: URL {
@@ -12,12 +11,12 @@ enum AndroidTools {
     }
 
     /// Porpoise's own copy first, then one installed elsewhere (Homebrew, Android Studio).
-    static var adbPath: String? {
+    public static var adbPath: String? {
         let own = installDir.appendingPathComponent("adb").path
         return FileManager.default.isExecutableFile(atPath: own) ? own : Shell.which("adb")
     }
 
-    static var isInstalled: Bool { adbPath != nil }
+    public static var isInstalled: Bool { adbPath != nil }
 
     // MARK: adb's server
 
@@ -35,7 +34,7 @@ enum AndroidTools {
         startedServer = !serverIsRunning()
     }
 
-    static func stopServerIfOurs() {
+    public static func stopServerIfOurs() {
         lock.lock(); let ours = startedServer; lock.unlock()
         guard ours, let adb = adbPath else { return }
         let p = Process()
@@ -65,7 +64,7 @@ enum AndroidTools {
     }
 
     /// Downloads and unpacks platform-tools; calls back on the main thread with an error message or nil.
-    static func install(done: @escaping (String?) -> Void) {
+    public static func install(done: @escaping (String?) -> Void) {
         URLSession.shared.downloadTask(with: downloadURL) { file, response, error in
             func finish(_ msg: String?) { DispatchQueue.main.async { done(msg) } }
             guard let file, (response as? HTTPURLResponse)?.statusCode == 200 else {

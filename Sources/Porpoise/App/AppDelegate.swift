@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Launch and quit
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        connectServices()
         // "Show in Finder" requests from other apps, when Porpoise is the default file browser.
         SystemIntegration.installRevealHandlers()
     }

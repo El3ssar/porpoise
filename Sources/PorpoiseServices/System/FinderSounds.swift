@@ -1,10 +1,9 @@
 import AudioToolbox
 import Foundation
-import PorpoiseServices
 
 /// Finder's interface sounds, played from the same system files Finder uses. As system sounds they follow
 /// "Play user interface sound effects", the alert volume and the sound-effects output device.
-enum FinderSound: String {
+public enum FinderSound: String {
     case moveToTrash = "finder/move to trash"   // ⌘⌫, Move to Trash, drops on the Trash in Places
     case dragToTrash = "dock/drag to trash"     // items dropped on the Trash in the Dock
     case emptyTrash = "finder/empty trash"
@@ -12,9 +11,9 @@ enum FinderSound: String {
     private static let folder = "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/"
     nonisolated(unsafe) private static var ids: [FinderSound: SystemSoundID] = [:]
     /// The last sound requested, for the test bridge (test instances stay silent).
-    nonisolated(unsafe) private(set) static var lastPlayed = ""
+    public nonisolated(unsafe) private(set) static var lastPlayed = ""
 
-    func play() {
+    public func play() {
         Self.lastPlayed = rawValue
         guard !Settings.isTesting else { return }
         if Self.ids[self] == nil {
