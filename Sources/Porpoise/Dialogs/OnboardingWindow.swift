@@ -343,12 +343,12 @@ extension OnboardingWindowController.Step {
                          request: { SystemIntegration.requestAppManagement() })
         case .admin:
             return .init(name: "Administrator Actions",
-                         why: "Some items belong to the system, such as App Store apps. Allow this once and Porpoise deletes, "
-                            + "moves and changes them without asking for your password each time, as Finder does.",
-                         steps: ["Click **Allow in System Settings** below. It opens Login Items & Extensions.",
-                                 "Under **Allow in the Background**, switch **Porpoise** on and confirm with Touch ID or your password.",
-                                 "Come back here. Porpoise notices on its own."],
-                         button: "Allow in System Settings", waiting: "Waiting for you to switch Porpoise on…",
+                         why: "Some items belong to the system, such as App Store apps. Porpoise installs a small helper once, and "
+                            + "then empties the Trash and deletes, moves and changes such items without asking, as Finder does.",
+                         steps: ["Click **Install Helper** below.",
+                                 "macOS asks for your password or Touch ID, once.",
+                                 "Done. Updates to Porpoise keep it."],
+                         button: "Install Helper", waiting: "Not installed yet.",
                          granted: { PrivilegedHelper.isEnabled }, grantedText: "Administrator actions are allowed.",
                          request: { PrivilegedHelper.enable() })
         case .network:

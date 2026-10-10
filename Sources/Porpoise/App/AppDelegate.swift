@@ -30,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             openInitialWindows(args)
         }
         Updates.shared.start()
-        PrivilegedHelper.checkAfterUpdate()
+        PrivilegedHelper.migrateFromLoginItems()
     }
 
     private func openInitialWindows(_ args: [(folder: URL, select: URL?)]) {

@@ -355,21 +355,16 @@ final class FileOperationsController {
         guard !commands.isEmpty else { return false }
         // Porpoise's helper (set up in onboarding) does it at once, without asking.
         if !Settings.isTesting {
-            // Porpoise's helper does it at once, without asking. If it's off (or macOS refused it), one sheet gets it
-            // switched on (Touch ID) and the action continues; a password stays the last resort.
-            var tries = 0
-            while tries < 2 {
-                tries += 1
-                if PrivilegedHelper.isEnabled {
-                    // Clearing lock flags is best effort, as in Finder; the operation itself reports what went wrong.
-                    switch PrivilegedHelper.run(commands, bestEffort: ["/usr/bin/chflags"]) {
-                    case .done: return true
-                    case .failed(let err): showAuthorizationError(err); return false
-                    case .unavailable(let why): NSLog("Porpoise helper unavailable: \(why)")
-                    }
-                }
-                guard tries < 2, let on = PrivilegedHelper.ensureOn(window: window) else { break }
-                if !on { return false }
+            // Porpoise's helper does it at once, without asking. Not installed yet (or a new version of it): it's
+            // installed once, with macOS's administrator dialog, and the action continues.
+            guard PrivilegedHelper.ensureOn(window: window) else { return false }
+            // Clearing lock flags is best effort, as in Finder; the operation itself reports what went wrong.
+            switch PrivilegedHelper.run(commands, bestEffort: ["/usr/bin/chflags"]) {
+            case .done: return true
+            case .failed(let err): showAuthorizationError(err); return false
+            case .unavailable(let why):
+                showAuthorizationError("Porpoise's helper isn't responding (\(why)). If it's switched off under System Settings › General › Login Items & Extensions, switch it on and try again.")
+                return false
             }
         }
         let a = NSAlert()

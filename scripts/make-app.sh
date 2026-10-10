@@ -17,17 +17,17 @@ mkdir -p "$APP/Contents/Frameworks"
 ditto "$(dirname "$BIN")/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 rm -rf "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" "$APP/Contents/Frameworks/Sparkle.framework/XPCServices"
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/Porpoise"
-# The privileged helper (approved once in System Settings › Login Items) and its launchd job.
-# The committed binary, not a fresh build: macOS ties the helper's approval to its exact code (scripts/build-helper.sh).
+# The privileged helper, installed by Porpoise into /Library/PrivilegedHelperTools on first use (one approval). The
+# committed binary, not a fresh build: an unchanged helper means installed copies stay current (scripts/build-helper.sh).
 cp Resources/Helper/PorpoiseHelper "$APP/Contents/MacOS/PorpoiseHelper"
-mkdir -p "$APP/Contents/Library/LaunchDaemons"
-cat > "$APP/Contents/Library/LaunchDaemons/app.porpoise.Porpoise.helper.plist" <<HELPER
+# Its launchd job, copied to /Library/LaunchDaemons when Porpoise installs the helper (one approval).
+cat > "$APP/Contents/Resources/app.porpoise.helper.plist" <<HELPER
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>app.porpoise.Porpoise.helper</string>
-  <key>BundleProgram</key><string>Contents/MacOS/PorpoiseHelper</string>
-  <key>MachServices</key><dict><key>app.porpoise.Porpoise.helper</key><true/></dict>
+  <key>Label</key><string>app.porpoise.helper</string>
+  <key>Program</key><string>/Library/PrivilegedHelperTools/app.porpoise.helper</string>
+  <key>MachServices</key><dict><key>app.porpoise.helper</key><true/></dict>
   <key>AssociatedBundleIdentifiers</key><array><string>app.porpoise.Porpoise</string></array>
 </dict></plist>
 HELPER

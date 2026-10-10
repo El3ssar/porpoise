@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.6
+
+- Porpoise's helper is now installed once into the system, with macOS's administrator dialog (password or Touch ID),
+  instead of being switched on under Login Items. macOS kept refusing helpers registered that way after updates, which
+  is why emptying the Trash failed or froze. Installed this way, updates no longer affect it, and after the one
+  approval Porpoise empties the Trash and changes system-owned items without asking.
+- Porpoise never waits on a helper that doesn't answer: it reports it after two seconds instead of freezing.
+
 ## 0.1.5
 
 - When Porpoise's helper changes, Porpoise registers the new one with macOS before asking to allow it, so allowing it

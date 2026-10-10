@@ -4,163 +4,175 @@ import PorpoiseCore
 import ServiceManagement
 
 /// Porpoise's helper for items that belong to the system or other users (see PorpoiseHelperProtocol).
-/// Set up once in onboarding: macOS asks you to allow it in System Settings › Login Items (Touch ID or password).
+///
+/// Installed once, with the administrator's approval (password or Touch ID), into /Library/PrivilegedHelperTools with
+/// a launchd job: outside the app, so app updates never affect it. After that it works without asking. Only a new
+/// helper binary (rare: scripts/build-helper.sh) is installed again, once, the next time it's needed.
 enum PrivilegedHelper {
-    static var service: SMAppService { .daemon(plistName: PorpoiseHelperInfo.plistName) }
+    private static var bundled: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/PorpoiseHelper") }
+    private static var bundledPlist: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/app.porpoise.helper.plist") }
 
-    static var isEnabled: Bool { service.status == .enabled }
-
-    /// Registers the helper; macOS then lists it in Login Items for you to switch on. A registration made for an
-    /// older helper binary is replaced first: macOS only starts the exact binary it was registered with.
-    static func enable() {
-        if service.status != .notRegistered, Settings.store.string(forKey: registeredKey) != helperCodeHash {
-            try? service.unregister()
-        }
-        do { try service.register() } catch { NSLog("helper register: \(error)") }
-        Settings.store.set(helperCodeHash, forKey: registeredKey)
-        if service.status != .enabled { SMAppService.openSystemSettingsLoginItems() }
+    /// Installed, and the same binary as the one in this app.
+    static var isEnabled: Bool {
+        guard FileManager.default.fileExists(atPath: PorpoiseHelperInfo.installedPlist),
+              let installed = codeHash(URL(fileURLWithPath: PorpoiseHelperInfo.installedTool)) else { return false }
+        return installed == codeHash(bundled)
     }
 
-    /// The helper binary the current registration was made for.
-    private static let registeredKey = "helperRegisteredCodeHash"
+    /// Installs (or updates) the helper. macOS shows its administrator dialog (password or Touch ID). True once the
+    /// helper answers.
+    @discardableResult
+    static func enable() -> Bool {
+        guard !Settings.isTesting, FileManager.default.fileExists(atPath: bundled.path),
+              FileManager.default.fileExists(atPath: bundledPlist.path) else { return false }
+        // Replace, never stack: an old job is stopped, the files are written atomically, then the job is loaded.
+        let script = """
+            set -e
+            /bin/launchctl bootout system/\(PorpoiseHelperInfo.machService) 2>/dev/null || true
+            /bin/mkdir -p /Library/PrivilegedHelperTools
+            /usr/bin/install -o root -g wheel -m 0544 "$1" "\(PorpoiseHelperInfo.installedTool).new"
+            /bin/mv -f "\(PorpoiseHelperInfo.installedTool).new" "\(PorpoiseHelperInfo.installedTool)"
+            /usr/bin/install -o root -g wheel -m 0644 "$2" "\(PorpoiseHelperInfo.installedPlist)"
+            /bin/launchctl bootstrap system "\(PorpoiseHelperInfo.installedPlist)"
+            """
+        guard runAsAdministrator(script: script, arguments: [bundled.path, bundledPlist.path],
+                                 prompt: "Porpoise wants to install its helper, so it can empty the Trash and change items that belong to the system without asking again.")
+        else { return false }
+        NotificationCenter.default.post(name: SystemIntegration.statusChanged, object: nil)
+        return isEnabled && ping(timeout: 3)
+    }
 
-    static func disable() { try? service.unregister() }
+    /// Removes the helper (Settings).
+    static func disable() {
+        _ = runAsAdministrator(script: """
+            /bin/launchctl bootout system/\(PorpoiseHelperInfo.machService) 2>/dev/null || true
+            /bin/rm -f "\(PorpoiseHelperInfo.installedPlist)" "\(PorpoiseHelperInfo.installedTool)"
+            """, arguments: [], prompt: "Porpoise wants to remove its helper.")
+        NotificationCenter.default.post(name: SystemIntegration.statusChanged, object: nil)
+    }
 
-    /// macOS approves the helper of an app without an Apple team ID as that exact binary (its code hash) and refuses to
-    /// start any other ("launch constraint violation"). Releases ship the same helper binary (scripts/build-helper.sh),
-    /// so updates keep it approved. When the helper itself changed, this checks once that it still starts; if it
-    /// doesn't, it's registered again and the setup step to allow it is shown (one Touch ID).
-    static func checkAfterUpdate() {
-        guard !Settings.isTesting, let hash = helperCodeHash else { return }
-        let key = "helperCheckedCodeHash"
-        // Checked, and registered for this very binary: nothing to do.
-        guard Settings.store.string(forKey: key) != hash || Settings.store.string(forKey: registeredKey) != hash else { return }
-        switch service.status {
-        case .enabled:
-            DispatchQueue.global(qos: .utility).async {
-                let ok = ping()
-                DispatchQueue.main.async {
-                    if ok { Settings.store.set(hash, forKey: key); Settings.store.set(hash, forKey: registeredKey); return }
-                    // Refused (registered for another binary): register this one, then it needs allowing again.
-                    try? service.unregister()
-                    Settings.store.removeObject(forKey: registeredKey)
-                    askToAllow(hash: hash, key: key)
+    /// Earlier versions registered the helper through System Settings › Login Items, which macOS ties to one exact
+    /// build: that registration is removed once (no prompt), it's replaced by the installed helper.
+    static func migrateFromLoginItems() {
+        guard !Settings.isTesting, !Settings.store.bool(forKey: "helperMigrated") else { return }
+        Settings.store.set(true, forKey: "helperMigrated")
+        let old = SMAppService.daemon(plistName: "app.porpoise.Porpoise.helper.plist")
+        if old.status != .notRegistered { try? old.unregister() }
+    }
+
+    /// Makes sure the helper is ready for an action that needs it: installs or updates it (one approval) if needed.
+    /// False: cancelled, or it couldn't be installed.
+    static func ensureOn(window: NSWindow?) -> Bool {
+        if isEnabled, ping(timeout: 2) { return true }
+        return enable()
+    }
+
+    /// Runs `script` with /bin/sh as root after macOS's administrator dialog (password or Touch ID). Arguments are
+    /// passed as $1, $2… (never into the script text). True if approved and the script ran.
+    private static func runAsAdministrator(script: String, arguments: [String], prompt: String) -> Bool {
+        typealias Exec = @convention(c) (AuthorizationRef, UnsafePointer<CChar>, AuthorizationFlags,
+                                         UnsafePointer<UnsafeMutablePointer<CChar>?>, UnsafeMutablePointer<UnsafeMutablePointer<FILE>?>?) -> OSStatus
+        guard let sec = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_NOW),
+              let sym = dlsym(sec, "AuthorizationExecuteWithPrivileges") else { return false }
+        let exec = unsafeBitCast(sym, to: Exec.self)
+        var auth: AuthorizationRef?
+        guard AuthorizationCreate(nil, nil, [], &auth) == errAuthorizationSuccess, let auth else { return false }
+        defer { AuthorizationFree(auth, [.destroyRights]) }
+        let ok: Bool = kAuthorizationRightExecute.withCString { right in
+            prompt.withCString { text in
+                var item = AuthorizationItem(name: right, valueLength: 0, value: nil, flags: 0)
+                var promptItem = AuthorizationItem(name: kAuthorizationEnvironmentPrompt, valueLength: strlen(text),
+                                                   value: UnsafeMutableRawPointer(mutating: text), flags: 0)
+                return withUnsafeMutablePointer(to: &item) { ip in
+                    withUnsafeMutablePointer(to: &promptItem) { pp in
+                        var rights = AuthorizationRights(count: 1, items: ip)
+                        var env = AuthorizationEnvironment(count: 1, items: pp)
+                        return AuthorizationCopyRights(auth, &rights, &env, [.interactionAllowed, .extendRights, .preAuthorize], nil)
+                            == errAuthorizationSuccess
+                    }
                 }
             }
-        case .requiresApproval:
-            askToAllow(hash: hash, key: key)
-        default:
-            Settings.store.set(hash, forKey: key)   // never switched on: nothing to check
         }
+        guard ok else { return false }
+        let args = ["-c", script, "sh"] + arguments
+        var cArgs: [UnsafeMutablePointer<CChar>?] = args.map { strdup($0) } + [nil]
+        defer { cArgs.forEach { free($0) } }
+        var pipe: UnsafeMutablePointer<FILE>?
+        let status = cArgs.withUnsafeBufferPointer { exec(auth, "/bin/sh", [], $0.baseAddress!, &pipe) }
+        guard status == errAuthorizationSuccess else { return false }
+        // The script's output ends when it exits: read to the end to wait for it.
+        if let pipe {
+            var buf = [CChar](repeating: 0, count: 256)
+            while fgets(&buf, Int32(buf.count), pipe) != nil {}
+            fclose(pipe)
+        }
+        return true
     }
 
-    private static func askToAllow(hash: String, key: String) {
-        Settings.store.set(hash, forKey: key)
-        enable()   // registers this binary (replacing an older registration) and opens Login Items
-        NotificationCenter.default.post(name: SystemIntegration.statusChanged, object: nil)
-        if service.status != .enabled { OnboardingWindowController.show(at: .admin) }
-    }
-
-    /// The bundled helper's code hash (what macOS's approval is tied to).
-    private static var helperCodeHash: String? {
+    /// The code hash of a signed binary (what identifies the helper).
+    private static func codeHash(_ url: URL) -> String? {
         var code: SecStaticCode?
         var info: CFDictionary?
-        let url = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/PorpoiseHelper")
         guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code,
               SecCodeCopySigningInformation(code, [], &info) == errSecSuccess,
               let unique = (info as? [String: Any])?[kSecCodeInfoUnique as String] as? Data else { return nil }
         return unique.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// The helper starts and answers (it quits again as soon as the connection closes).
-    private static func ping() -> Bool {
-        guard let req = CodeSigning.requirement(identifier: PorpoiseHelperInfo.helperIdentifier) else { return false }
+    private static func connection() -> NSXPCConnection? {
+        guard let req = CodeSigning.requirement(identifier: PorpoiseHelperInfo.helperIdentifier) else { return nil }
         let c = NSXPCConnection(machServiceName: PorpoiseHelperInfo.machService, options: .privileged)
         c.remoteObjectInterface = NSXPCInterface(with: PorpoiseHelperProtocol.self)
         c.setCodeSigningRequirement(req)
         c.resume()
+        return c
+    }
+
+    /// The helper starts and answers within `timeout` (it quits again as soon as the connection closes). Never waits
+    /// longer: a helper that can't start must not freeze the window.
+    static func ping(timeout: TimeInterval) -> Bool {
+        guard !Settings.isTesting, let c = connection() else { return false }
         defer { c.invalidate() }
+        let done = DispatchSemaphore(value: 0)
+        let answered = NSLock()
         var ok = false
-        (c.synchronousRemoteObjectProxyWithErrorHandler { _ in } as? PorpoiseHelperProtocol)?.version { ok = !$0.isEmpty }
+        let proxy = c.remoteObjectProxyWithErrorHandler { _ in done.signal() } as? PorpoiseHelperProtocol
+        proxy?.version { v in answered.lock(); ok = !v.isEmpty; answered.unlock(); done.signal() }
+        _ = done.wait(timeout: .now() + timeout)
+        answered.lock(); defer { answered.unlock() }
         return ok
     }
 
     /// Hands items Porpoise moved into the Trash to the user, so emptying it needs no administrator rights (best effort).
     static func takeOwnership(of paths: [String]) {
-        guard !paths.isEmpty, isEnabled, !Settings.isTesting,
-              let req = CodeSigning.requirement(identifier: PorpoiseHelperInfo.helperIdentifier) else { return }
-        let c = NSXPCConnection(machServiceName: PorpoiseHelperInfo.machService, options: .privileged)
-        c.remoteObjectInterface = NSXPCInterface(with: PorpoiseHelperProtocol.self)
-        c.setCodeSigningRequirement(req)
-        c.resume()
+        guard !paths.isEmpty, isEnabled, !Settings.isTesting, let c = connection() else { return }
         defer { c.invalidate() }
         let proxy = c.synchronousRemoteObjectProxyWithErrorHandler { NSLog("helper: \($0)") } as? PorpoiseHelperProtocol
         for p in paths { proxy?.takeOwnership(ofTrashed: p) { if let e = $0 { NSLog("take ownership of \(p): \(e)") } } }
-    }
-
-    /// Makes sure the helper is on, for an action that needs it: if it's off (or macOS stopped accepting it), a sheet
-    /// explains, System Settings opens at Login Items, and this returns true as soon as it's switched on (Touch ID).
-    /// False: cancelled. nil: the user chose to type a password instead.
-    static func ensureOn(window: NSWindow?) -> Bool? {
-        if service.status == .enabled {   // on, but refused by macOS: register this binary again
-            try? service.unregister()
-            Settings.store.removeObject(forKey: registeredKey)
-        }
-        enable()
-        if service.status == .enabled { return true }
-        let a = NSAlert()
-        a.messageText = "Turn on Porpoise's helper"
-        a.informativeText = "Porpoise uses a small helper for items that belong to the system, such as apps in the Trash. "
-            + "In the System Settings window that opened, switch Porpoise on under “Allow in the Background” (Touch ID). "
-            + "Porpoise continues on its own, and won't ask again."
-        a.addButton(withTitle: "Cancel")
-        a.addButton(withTitle: "Use Password Instead")
-        a.window.appearance = NSAppearance(named: .darkAqua)
-        // Ends the alert as soon as macOS reports the helper on.
-        let poll = Timer(timeInterval: 0.5, repeats: true) { t in
-            guard service.status == .enabled else { return }
-            t.invalidate()
-            NSApp.stopModal(withCode: .OK)
-        }
-        RunLoop.main.add(poll, forMode: .modalPanel)
-        let answer = a.runModal()
-        poll.invalidate()
-        NSApp.activate()
-        switch answer {
-        case .OK: return true
-        case .alertSecondButtonReturn: return nil
-        default: return false
-        }
     }
 
     enum Outcome {
         case done
         /// A command ran and failed (its message).
         case failed(String)
-        /// The helper couldn't be reached before anything ran: the caller can ask for a password instead.
+        /// The helper couldn't be reached before anything ran: the caller can install it or ask for a password.
         case unavailable(String)
     }
 
     /// Runs file tools as administrator (see PorpoiseHelperInfo.allowedTools), in order, over one connection: the
     /// helper quits when it closes, so one action is one short run. Stops at the first failure, except for tools in
-    /// `bestEffort`.
+    /// `bestEffort`. Checks first that the helper answers at all, so a broken one can't freeze the window.
     static func run(_ commands: [[String]], bestEffort: Set<String> = []) -> Outcome {
         // Test instances take commands from other processes (DebugBridge): they never get root.
         guard !Settings.isTesting else { return .unavailable("Test instances don't use Porpoise's helper.") }
-        guard let req = CodeSigning.requirement(identifier: PorpoiseHelperInfo.helperIdentifier) else {
-            return .unavailable("This copy of Porpoise isn't signed, so its helper can't be used.")
-        }
-        let c = NSXPCConnection(machServiceName: PorpoiseHelperInfo.machService, options: .privileged)
-        c.remoteObjectInterface = NSXPCInterface(with: PorpoiseHelperProtocol.self)
-        c.setCodeSigningRequirement(req)
-        c.resume()
+        guard ping(timeout: 2) else { return .unavailable("Porpoise's helper didn't answer.") }
+        guard let c = connection() else { return .unavailable("This copy of Porpoise isn't signed, so its helper can't be used.") }
         defer { c.invalidate() }
         var failure: String?
         let proxy = c.synchronousRemoteObjectProxyWithErrorHandler { failure = $0.localizedDescription } as? PorpoiseHelperProtocol
         for (i, args) in commands.enumerated() {
             var result: String? = "Porpoise's helper didn't answer."
             proxy?.run(args) { result = $0 }
-            // Not reached at all (not started, or refused by macOS): nothing has run yet, if this is the first command.
             if let f = failure { return i == 0 ? .unavailable(f) : .failed(f) }
             if let r = result, !bestEffort.contains(args.first ?? "") { return .failed(r) }
         }

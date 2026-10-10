@@ -93,9 +93,9 @@ enum SystemIntegration {
         }, request: ("Request Access", { requestAppManagement() })),
         Permission(title: "Administrator Actions", anchor: "", status: {
             PrivilegedHelper.isEnabled
-                ? (true, "Allowed. Porpoise deletes, moves and changes system-owned items (such as App Store apps) without asking.")
-                : (false, "Not allowed. Porpoise asks for your password for items that belong to the system.")
-        }, request: ("Allow…", { PrivilegedHelper.enable() }), open: { SMAppService.openSystemSettingsLoginItems() }),
+                ? (true, "Allowed. Porpoise empties the Trash and changes system-owned items (such as App Store apps) without asking.")
+                : (false, "Not set up. Porpoise installs its helper the first time it needs it (one approval).")
+        }, request: ("Install Helper…", { PrivilegedHelper.enable() }), open: { SMAppService.openSystemSettingsLoginItems() }),
         Permission(title: "Local Network", anchor: "Privacy_LocalNetwork", status: {
             LocalNetworkAccess.shared.isAllowed ? (true, "Allowed. File servers on your network appear under Network.")
                 : (nil, "Lets Porpoise list the file servers and shared folders on your network.")

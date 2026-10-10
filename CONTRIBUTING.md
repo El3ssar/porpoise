@@ -87,10 +87,13 @@ labels; `skip-changelog` leaves one out).
 
 ### The privileged helper
 
-`Resources/Helper/PorpoiseHelper` is a committed binary, shipped unchanged in every release. macOS approves the helper
-of an app without an Apple team ID as that exact binary, so a rebuilt helper would make every user approve it again.
-Only when `Sources/PorpoiseHelper` (or what it uses from PorpoiseCore) changes, run `./scripts/build-helper.sh`,
-commit the new binary, and say in the changelog that macOS will ask once to allow Porpoise's administrator actions.
+Porpoise installs its helper once, with the administrator's approval, as `/Library/PrivilegedHelperTools/app.porpoise.helper`
+with the launchd job `/Library/LaunchDaemons/app.porpoise.helper.plist` (outside the app, so updates don't touch it).
+`Resources/Helper/PorpoiseHelper` is a committed binary shipped unchanged in every release: as long as it's the same,
+installed copies stay current. Only when `Sources/PorpoiseHelper` (or what it uses from PorpoiseCore) changes, run
+`./scripts/build-helper.sh` and commit the new binary; users then approve the update once, the next time it's needed.
+
+To remove the helper by hand: `sudo launchctl bootout system/app.porpoise.helper; sudo rm /Library/LaunchDaemons/app.porpoise.helper.plist /Library/PrivilegedHelperTools/app.porpoise.helper`.
 
 ### Signing and updates
 
