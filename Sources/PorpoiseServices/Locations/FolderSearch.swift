@@ -157,6 +157,39 @@ final class FolderSearch: @unchecked Sendable {
         }
     }
 
+    /// For files found some other way (Spotlight), the first line of each that contains `text`, read with ripgrep
+    /// (blocking: call it off the main thread). Files without such a line (Spotlight also matches words in other forms,
+    /// or text it extracted from documents) are left out.
+    static func lines(in paths: [String], containing text: String, rg: String) -> [String: String] {
+        var out: [String: String] = [:]
+        // A few hundred at a time, well within the length of a command line.
+        for chunk in stride(from: 0, to: paths.count, by: 400).map({ Array(paths[$0..<min($0 + 400, paths.count)]) }) {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: rg)
+            p.arguments =
+                [
+                    "--max-count", "1", "--null", "--no-heading", "--with-filename", "--no-line-number", "--color", "never",
+                    "--max-columns", "2000", "--max-columns-preview", "--ignore-case", "--fixed-strings", "--max-filesize", "5M",
+                    "--no-messages", "--", text,
+                ] + chunk
+            p.qualityOfService = .utility
+            let pipe = Pipe()
+            p.standardOutput = pipe
+            p.standardError = FileHandle.nullDevice
+            p.standardInput = FileHandle.nullDevice
+            guard (try? p.run()) != nil else { break }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            p.waitUntilExit()
+            var rest = data[...]
+            while let nul = rest.firstIndex(of: 0), let lf = rest[nul...].firstIndex(of: 10) {
+                let path = String(decoding: rest[rest.startIndex..<nul], as: UTF8.self)
+                out[path] = snippet(String(decoding: rest[rest.index(after: nul)..<lf], as: UTF8.self), around: text)
+                rest = rest[rest.index(after: lf)...]
+            }
+        }
+        return out
+    }
+
     /// The part of `line` worth showing: trimmed, starting a little before the text when it's far in.
     static func snippet(_ line: String, around text: String) -> String {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -20,6 +20,10 @@ public final class SearchRunner: NSObject {
     private let loadQueue = DispatchQueue(label: "app.porpoise.search-results", qos: .userInitiated)
     /// The newest batch of Spotlight results; older ones still loading are dropped (main queue).
     private var generation = 0
+    /// Spotlight's latest results as last shown, shown again when their lines come in (main queue).
+    private var shown: (items: [FileItem], done: Bool)?
+    /// Files already given to ripgrep for their lines, so each is read once (main queue).
+    private var asked: Set<URL> = []
 
     /// How long Spotlight may take to gather before the simple search takes over.
     var gatheringTimeout: TimeInterval = 5
@@ -100,9 +104,36 @@ public final class SearchRunner: NSObject {
             self.loaded = seen
             DispatchQueue.main.async {
                 guard g == self.generation else { return }
+                self.shown = (items, done)
                 self.update(items, done)
+                self.fetchLines(for: items)
             }
         }
+    }
+
+    /// Spotlight found files by their contents but doesn't say where: their lines are read with ripgrep (on a thread
+    /// of its own), and the results shown again with them, as a search of a folder shows them.
+    private func fetchLines(for items: [FileItem]) {
+        guard contents, let rg = folderTools?.rg else { return }
+        let text = text
+        let new = items.filter {
+            !asked.contains($0.url) && !$0.isDirectory && $0.name.range(of: text, options: [.caseInsensitive, .diacriticInsensitive]) == nil
+        }
+        guard !new.isEmpty else { return }
+        asked.formUnion(new.map(\.url))
+        let g = generation
+        Thread { [weak self] in
+            let found = FolderSearch.lines(in: new.map(\.url.path), containing: text, rg: rg)
+            DispatchQueue.main.async {
+                // Stopped (or the folders searched instead) meanwhile: nothing to show. Newer results: these lines
+                // still belong to their files.
+                guard let self, self.spotlight != nil, self.folderSearch == nil, self.fallbackWork == nil, !found.isEmpty, g <= self.generation,
+                    let shown = self.shown
+                else { return }
+                for it in new { if let l = found[it.url.path] { self.snippets[it.url] = l } }
+                self.update(shown.items, shown.done)
+            }
+        }.start()
     }
 
     /// The folder itself searched: with the bundled tools, else walked.

@@ -99,12 +99,12 @@ public final class DirectoryModel {
         let old = searchResults ?? [], kept = sortedTop
         let grows = !old.isEmpty && kept != nil && items.count >= old.count && old.indices.allSatisfy { items[$0].url == old[$0].url }
         let shown = visible(grows ? Array(items[old.count...]) : items, filtered: false)
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let top =
                 grows
                 ? ItemSorter.merge(kept ?? [], adding: shown, props: p, choice: choice, folderSizes: sizes)
                 : ItemSorter.sort(shown, props: p, choice: choice, folderSizes: sizes)
-            DispatchQueue.main.async { [weak self] in
+            DispatchQueue.main.async {
                 guard let self, g == self.searchSortGeneration else { return }
                 show {
                     // Sorted with other settings meanwhile (the view's sort changed): sorted again here.
@@ -719,7 +719,8 @@ public final class DirectoryModel {
         if let i = rowIndex?[url] { return i }
         if rowIndexByPath == nil {
             rowIndexByPath = Dictionary(
-                rows.enumerated().map { ($1.item.url.standardizedFileURL.path, $0) },
+                // Items' URLs are made from standard paths already: standardizing thousands of them would cost.
+                rows.enumerated().map { ($1.item.url.path, $0) },
                 uniquingKeysWith: { first, _ in first })
         }
         return rowIndexByPath?[url.standardizedFileURL.path]

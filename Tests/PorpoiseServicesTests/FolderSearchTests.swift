@@ -73,6 +73,17 @@ struct FolderSearchTests {
         #expect(try await run("budget", contents: true).snippets["budget-2026.txt"] == nil)
     }
 
+    /// Files found elsewhere (Spotlight) get their lines too; files without the text are left out.
+    @Test func linesOfGivenFiles() throws {
+        let odd = try s.file("we\nird name.txt", "x\n  Budget: tight\n")
+        let paths = [s.path("notes.txt").path, s.path("other.txt").path, odd.path, s.path("missing.txt").path]
+        let found = FolderSearch.lines(in: paths, containing: "budget", rg: tools.rg)
+        #expect(found == [s.path("notes.txt").path: "the budget is due friday", odd.path: "Budget: tight"])
+        // Many files: read a few hundred at a time, all of them.
+        let many = try (0..<900).map { try s.file("many/f\($0).txt", "has budget \($0)").path }
+        #expect(FolderSearch.lines(in: many, containing: "BUDGET", rg: tools.rg).count == 900)
+    }
+
     @Test func snippetsStartNearTheTextAndStayShort() {
         #expect(FolderSearch.snippet("  a\t\tb  ", around: "b") == "a b")
         let long = String(repeating: "word ", count: 20) + "needle " + String(repeating: "tail ", count: 100)

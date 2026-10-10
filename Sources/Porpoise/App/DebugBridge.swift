@@ -250,11 +250,12 @@ final class DebugBridge: NSObject {
             try? lines.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
         case "key": sendKey(arg)
         case "search":
-            // search <n|c> <text>: names or contents, here
+            // search <n|c|N|C> <text>: names or contents, here (lowercase) or everywhere (uppercase)
             if let v = wc?.view, arg.count > 2 {
                 v.showSearch()
                 v.searchBar.field.stringValue = String(arg.dropFirst(2))
-                v.searchBar.contents = arg.hasPrefix("c")
+                v.searchBar.contents = arg.lowercased().hasPrefix("c")
+                v.searchBar.everywhere = arg.first?.isUppercase == true
                 v.searchBar.fire()
             }
         case "searchbar":

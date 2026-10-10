@@ -52,6 +52,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     private var laidOutScrollSize: NSSize?
     /// Free space of the shown volume, re-read at most every few seconds (`updateStatus` runs on every hover).
     private var volumeSpace: (url: URL, read: Date, free: Int64, total: Int)?
+    /// The folder whose volume is being asked for its free space (in the background), if any.
+    private var readingSpaceOf: URL?
 
     var url: URL { model.location }
 
@@ -447,15 +449,28 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     /// Free and total bytes of the shown volume; a statfs per hover would be wasted work, so it is kept for a few seconds.
     private func freeSpace() -> (free: Int64, total: Int)? {
         guard url.isFileURL else { return nil }
-        if let v = volumeSpace, v.url == url, Date().timeIntervalSince(v.read) < 5 { return (v.free, v.total) }
-        guard let v = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]),
-            let free = v.volumeAvailableCapacityForImportantUsage, let total = v.volumeTotalCapacity, total > 0
-        else {
-            volumeSpace = nil
-            return nil
+        let known = volumeSpace.flatMap { $0.url == url ? ($0.free, $0.total) : nil }
+        if let v = volumeSpace, v.url == url, Date().timeIntervalSince(v.read) < 5 { return known }
+        // Asking the volume can take tens of milliseconds (more on a network share): it's done in the background, and
+        // what was known shows meanwhile.
+        if readingSpaceOf != url {
+            readingSpaceOf = url
+            let folder = url
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let v = try? folder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey])
+                DispatchQueue.main.async {
+                    guard let self, self.readingSpaceOf == folder else { return }
+                    self.readingSpaceOf = nil
+                    if let free = v?.volumeAvailableCapacityForImportantUsage, let total = v?.volumeTotalCapacity, total > 0 {
+                        self.volumeSpace = (folder, Date(), free, total)
+                    } else {
+                        self.volumeSpace = nil
+                    }
+                    if folder == self.url { self.updateStatus() }
+                }
+            }
         }
-        volumeSpace = (url, Date(), free, total)
-        return (free, total)
+        return known
     }
 
     // MARK: Zoom / view mode

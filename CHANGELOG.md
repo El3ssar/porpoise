@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.11
+
+- Searching *Everywhere* (Spotlight) with *+ Contents* now shows each content match's line too, read with the bundled
+  ripgrep in the background.
+- Smoother: the free space in the status bar is read in the background (asking the disk could hold up the window
+  for tens of milliseconds), and finding an item among thousands of results is quicker.
+
 ## 0.2.10
 
 - **Names / + Contents, always in view.** The search bar has a visible switch next to Here / Everywhere: *Names*

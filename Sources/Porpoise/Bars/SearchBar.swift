@@ -16,7 +16,8 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
     private let namesButton = FlatButton(icon: "edit-rename", title: "Names")
     private let contentsButton = FlatButton(icon: "document-preview", title: "+ Contents")
     private let closeButton = FlatButton(icon: "dialog-close", tooltip: "Quit Searching")
-    private var everywhere = false { didSet { if everywhere != oldValue { updateButtons(); fire() } } }
+    /// The whole home folder (Spotlight), or the folder shown.
+    var everywhere = false { didSet { if everywhere != oldValue { updateButtons(); fire() } } }
     /// Names and contents (+ Contents), or names only.
     var contents = false {
         didSet {
