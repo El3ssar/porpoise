@@ -3,8 +3,8 @@ import Foundation
 /// Google Drive, OneDrive, Dropbox, Box… through their Mac apps.
 enum CloudStorage {
     /// Folders that File Provider apps create in ~/Library/CloudStorage (e.g. "GoogleDrive-me@gmail.com").
-    static func locations() -> [(title: String, url: URL, icon: String)] {
-        let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/CloudStorage")
+    static func locations(in root: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/CloudStorage"))
+        -> [(title: String, url: URL, icon: String)] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
         return names.sorted().compactMap { n in
             guard !n.hasPrefix(".") else { return nil }
