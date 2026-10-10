@@ -28,4 +28,4 @@ jobs:
       - name: Tests
         run: scripts/test-with-watchdog.sh --enable-code-coverage
       - name: Coverage of the logic layers
-        run: python3 scripts/coverage.py --min 20
+        run: python3 scripts/coverage.py --min 80

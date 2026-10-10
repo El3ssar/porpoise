@@ -22,6 +22,10 @@ server and real videos, and they found the bugs below.
 - Two rare crashes (renaming "x (9223372036854775807)", some terminal colour schemes), a file starting with an
   invisible character not showing, and "*.txt" matching a name ending in a line break.
 - Video previews could leave ffmpeg running, and several tools started at once could stall.
+- With Spotlight switched off or stuck, searching or opening Recent Files, a tag or a smart folder froze Porpoise.
+  Spotlight now never holds up the window: without an answer within 5 seconds, a search walks the folders instead,
+  and the other views show an empty list.
+- A folder's item count could stay wrong after showing hidden files.
 
 **Faster and smoother**
 - Scrolling folders on network drives no longer waits for tags and iCloud states; they fill in as they're read.
