@@ -53,38 +53,16 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
         guard let uid = NSXPCConnection.current()?.effectiveUserIdentifier, uid != 0, let pw = getpwuid(uid) else {
             reply("Unknown user."); return
         }
-        let gid = pw.pointee.pw_gid
-        let home = String(cString: pw.pointee.pw_dir)
-        // The item must sit directly in that user's Trash, and not be a symlink (chown would change its target).
-        let item = URL(fileURLWithPath: path)
-        let parent = item.deletingLastPathComponent().resolvingSymlinksInPath().path
-        let homeTrash = URL(fileURLWithPath: home).appendingPathComponent(".Trash").resolvingSymlinksInPath().path
-        var st = stat()
-        guard PorpoiseHelperInfo.isInUsersTrash(path: path, resolvedParent: parent, uid: uid, resolvedHomeTrash: homeTrash),
-              lstat(path, &st) == 0, (st.st_mode & S_IFMT) != S_IFLNK else {
+        guard let command = HelperRequests.ownershipCommand(path: path, uid: uid, gid: pw.pointee.pw_gid,
+                                                            home: String(cString: pw.pointee.pw_dir)) else {
             reply("Only items in your own Trash can be handed over."); return
         }
-        // -P (the default with -R): symlinks inside are changed themselves, never followed.
-        run(["/usr/sbin/chown", "-R", "-P", "\(uid):\(gid)", item.resolvingSymlinksInPath().path], allowing: true, reply: reply)
+        // Built by the helper itself, so it isn't held to the app's list of tools.
+        reply(HelperRequests.run(command))
     }
 
-    func run(_ arguments: [String], reply: @escaping (String?) -> Void) { run(arguments, allowing: false, reply: reply) }
-
-    /// `allowing`: a command built by the helper itself (takeOwnership), not one sent by the app.
-    private func run(_ arguments: [String], allowing: Bool, reply: @escaping (String?) -> Void) {
-        guard let tool = arguments.first, allowing || PorpoiseHelperInfo.allowedTools.contains(tool) else {
-            reply("Porpoise's helper doesn't run \(arguments.first ?? "nothing")."); return
-        }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: tool)
-        p.arguments = Array(arguments.dropFirst())
-        let err = Pipe()
-        p.standardError = err
-        p.standardOutput = FileHandle.nullDevice
-        do { try p.run() } catch { reply(error.localizedDescription); return }
-        let msg = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        p.waitUntilExit()
-        reply(p.terminationStatus == 0 ? nil : (msg.isEmpty ? "\(tool) failed." : msg.trimmingCharacters(in: .whitespacesAndNewlines)))
+    func run(_ arguments: [String], reply: @escaping (String?) -> Void) {
+        reply(HelperRequests.refusal(arguments) ?? HelperRequests.run(arguments))
     }
 }
 
