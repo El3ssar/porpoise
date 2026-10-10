@@ -20,17 +20,25 @@ enum SystemIntegration {
         NSWorkspace.shared.urlForApplication(toOpen: .folder).flatMap { Bundle(url: $0)?.bundleIdentifier }
     }
 
-    static var isDefaultBrowser: Bool { fileViewer == bundleID && folderHandler == bundleID }
+    /// Other apps' "Show in Finder" opens Porpoise.
+    static var isDefaultBrowser: Bool { fileViewer == bundleID }
 
+    /// Makes Porpoise (or Finder again) the file viewer other apps reveal files in. Opening folders themselves (the
+    /// Dock, the desktop, Open With) is also handed over where macOS allows it; macOS 26 and later keep that with
+    /// Finder and refuse the change (paramErr), which isn't an error for the user.
     static func setDefaultBrowser(_ on: Bool, done: @escaping (Error?) -> Void) {
         let viewer: CFString? = on ? bundleID as CFString : nil
         CFPreferencesSetValue("NSFileViewer" as CFString, viewer, kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
         CFPreferencesSynchronize(kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
         let app = on ? Bundle.main.bundleURL : URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")
         NSWorkspace.shared.setDefaultApplication(at: app, toOpen: .folder) { err in
-            DispatchQueue.main.async { done(err) }
+            let refused = ((err as NSError?)?.userInfo[NSUnderlyingErrorKey] as? NSError)?.code == Int(paramErr)
+            DispatchQueue.main.async { done(refused ? nil : err) }
         }
     }
+
+    /// macOS lets Porpoise open folders from the Dock and the desktop too (not on macOS 26 and later).
+    static var opensFolders: Bool { folderHandler == bundleID }
 
     /// Handles Finder's reveal Apple Events, which NSWorkspace sends to the NSFileViewer app.
     static func installRevealHandlers() {

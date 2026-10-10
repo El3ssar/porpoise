@@ -223,9 +223,11 @@ final class SettingsWindowController: NSWindowController {
                     enabled: { u.isAvailable && u.automaticallyChecks }) { u.automaticallyInstalls = $0 }
             f.button("Check Now") { u.checkForUpdates(nil) }
             f.section("Default file browser")
-            f.note("Use Porpoise instead of Finder for opening folders and for “Show in Finder” in other apps. The desktop itself stays with Finder.")
+            f.note("Open Porpoise instead of Finder when other apps show a file (“Show in Finder”, “Reveal in Finder”, a download’s magnifying glass). macOS keeps the desktop, and opening folders from the Dock, with Finder.")
             f.status("Status:", {
-                SystemIntegration.isDefaultBrowser ? (true, "Porpoise is the default file browser") : (false, "Finder is the default file browser")
+                guard SystemIntegration.isDefaultBrowser else { return (false, "Finder shows files for other apps") }
+                return (true, SystemIntegration.opensFolders ? "Porpoise shows files and opens folders for other apps"
+                                                             : "Porpoise shows files for other apps")
             }, button: { SystemIntegration.isDefaultBrowser ? "Restore Finder" : "Make Porpoise Default" }) { refresh in
                 SystemIntegration.setDefaultBrowser(!SystemIntegration.isDefaultBrowser) { err in
                     if let err { NSAlert(error: err).runSheet(for: SettingsWindowController.window) { _ in } }
