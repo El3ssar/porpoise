@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2
+
+- Audio files show their album cover; without one, the music icon instead of a blank tile.
+- Details view: empty folders have no expand arrow.
+- Settings: "Restore All Defaults" moved to System › Reset (it resets every setting, not only confirmations), and
+  the note about the window title sits under the option it explains.
+
 ## 0.2.1
 
 - Video previews no longer leave their temporary folder behind when stopped at the moment they start, or when
