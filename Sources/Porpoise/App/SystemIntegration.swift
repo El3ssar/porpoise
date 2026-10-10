@@ -98,8 +98,7 @@ enum SystemIntegration {
                 ? (false, "Installed. Switch on Porpoise Helper under Full Disk Access to let it empty the Trash.")
                 : (true, "Allowed. Porpoise empties the Trash and changes system-owned items (such as App Store apps) without asking.")
         }, request: ("Set Up…", {
-            if !PrivilegedHelper.isEnabled { PrivilegedHelper.enable() }
-            if PrivilegedHelper.isEnabled { _ = PrivilegedHelper.checkFullDiskAccess(timeout: 3); openPrivacyPane("Privacy_AllFiles") }
+            HelperSetup.install { if PrivilegedHelper.isEnabled { openPrivacyPane("Privacy_AllFiles") } }
         }), open: { openPrivacyPane("Privacy_AllFiles") }),
         Permission(title: "Local Network", anchor: "Privacy_LocalNetwork", status: {
             LocalNetworkAccess.shared.isAllowed ? (true, "Allowed. File servers on your network appear under Network.")

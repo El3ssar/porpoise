@@ -50,7 +50,7 @@ final class FileOperationsDialogs: FileOperationsUI {
         guard msg.contains("Operation not permitted") else { e.messageText = msg; e.runModal(); return }
         // Blocked by macOS's privacy protection: name the switch that's off, and open its list.
         if PrivilegedHelper.isEnabled, PrivilegedHelper.hasFullDiskAccess != true {
-            _ = PrivilegedHelper.checkFullDiskAccess(timeout: 3)   // makes sure it's listed
+            DispatchQueue.global(qos: .userInitiated).async { _ = PrivilegedHelper.checkFullDiskAccess(timeout: 3) }   // lists it
             e.messageText = "Switch on Porpoise Helper under Full Disk Access"
             e.informativeText = "Porpoise Helper does the work on items that belong to the system. macOS lets it into "
                 + "your Trash and other private folders once it's switched on (next to Porpoise in the same list). Then try again."

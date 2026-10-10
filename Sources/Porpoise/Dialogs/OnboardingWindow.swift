@@ -338,8 +338,7 @@ extension OnboardingWindowController.Step {
                          }, grantedText: "Full Disk Access is on.",
                          request: {
                              // Make sure "Porpoise Helper" is in the list before it opens.
-                             if PrivilegedHelper.isEnabled { _ = PrivilegedHelper.checkFullDiskAccess(timeout: 3) }
-                             SystemIntegration.openPrivacyPane("Privacy_AllFiles")
+                             HelperSetup.openFullDiskAccess()
                          })
         case .apps:
             return .init(name: "App Management",
@@ -359,7 +358,7 @@ extension OnboardingWindowController.Step {
                                  "Done. Updates to Porpoise keep it; the next step switches it on."],
                          button: "Install Helper", waiting: "Not installed yet.",
                          granted: { PrivilegedHelper.isEnabled }, grantedText: "Administrator actions are allowed.",
-                         request: { PrivilegedHelper.enable() })
+                         request: { HelperSetup.install() })
         case .network:
             return .init(name: "Local Network",
                          why: "Lets Porpoise find the file servers and shared folders on your network and show them under Network.",
