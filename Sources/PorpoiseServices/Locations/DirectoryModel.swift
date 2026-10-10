@@ -246,6 +246,7 @@ public final class DirectoryModel {
         let url = location
         tagCache = [:]
         cloudCache = [:]
+        metadataWanted = []
         // Every branch starts clean: an error or a query of the previous location must not leak into this one.
         loadError = nil
         blockedByPrivacy = false

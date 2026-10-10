@@ -126,6 +126,65 @@ import PorpoiseTestSupport
         #expect(m.rows.count == 5)
     }
 
+    /// Typing in the filter bar narrows the sorted list; whatever changes the order still applies under a filter.
+    @Test func filteringKeepsTheOrderAndFollowsChanges() async throws {
+        let s = try Scratch()
+        for (n, size) in [("a.txt", 30), ("b.txt", 10), ("c.log", 20), ("d.txt", 40)] { try s.file(n, String(repeating: "x", count: size)) }
+        let m = try await loaded(s.url)
+        m.props.sortRole = .size
+        m.filter = NameFilter(text: "txt")
+        #expect(names(m) == ["b.txt", "a.txt", "d.txt"])
+        m.props.sortOrder = .descending
+        #expect(names(m) == ["d.txt", "a.txt", "b.txt"])
+        m.filter = NameFilter(text: ".t")
+        #expect(names(m) == ["d.txt", "a.txt", "b.txt"])
+        // A file that appears while filtering takes its place in the order.
+        try s.file("e.txt", String(repeating: "x", count: 35))
+        #expect(await eventually { names(m) == ["d.txt", "e.txt", "a.txt", "b.txt"] })
+        m.filter = NameFilter()
+        #expect(names(m) == ["d.txt", "e.txt", "a.txt", "c.log", "b.txt"])
+    }
+
+    /// Drawing never waits for tags or cloud states: they're read in the background, then the view is told.
+    @Test func drawingReadsItemMetadataInTheBackground() async throws {
+        let s = try Scratch()
+        let tagged = try s.file("tagged.txt")
+        FinderTags.set(["Red"], on: tagged)
+        let m = try await loaded(s.url)
+        var loaded = 0
+        m.onMetadataLoaded = { loaded += 1 }
+        let item = try #require(m.rows.first?.item)
+        #expect(m.shownTags(for: item).isEmpty)          // not read yet
+        #expect(m.shownCloud(for: item).state == .local)
+        #expect(await eventually { loaded == 1 })
+        #expect(m.shownTags(for: item).map(\.name) == ["Red"])
+        // Re-reading cloud states keeps what's known meanwhile, and tags stay cached.
+        m.refreshCloud()
+        #expect(m.shownTags(for: item).map(\.name) == ["Red"])
+        #expect(await eventually { loaded == 2 })
+        // Tagging clears the tags, which are then read again.
+        FinderTags.set([], on: tagged)
+        m.refreshTags()
+        _ = m.shownTags(for: item)
+        #expect(await eventually { loaded == 3 && m.shownTags(for: item).isEmpty })
+    }
+
+    /// Reading for drawing that finishes after the folder changed is dropped.
+    @Test func metadataOfAnEarlierLoadIsDropped() async throws {
+        let s = try Scratch()
+        let tagged = try s.file("tagged.txt")
+        FinderTags.set(["Red"], on: tagged)
+        let m = try await loaded(s.url)
+        var loaded = 0
+        m.onMetadataLoaded = { loaded += 1 }
+        let item = try #require(m.rows.first?.item)
+        _ = m.shownTags(for: item)
+        m.reload()
+        try #require(await eventually { !m.isLoading })
+        try await Task.sleep(nanoseconds: 300_000_000)
+        #expect(loaded == 0)
+    }
+
     // MARK: Selection across reloads
 
     @Test func selectionKeepsWhatStillExists() async throws {
