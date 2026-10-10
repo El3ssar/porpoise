@@ -24,7 +24,7 @@ public enum RemoteParsing {
     }
 
     /// BSD stat: `-f '%HT\t%z\t%m\t%Lp\t%Su\t%Sg\t%Y\t%N'` (macOS / FreeBSD servers), records separated
-    /// like `parseFind`'s.
+    /// like `parseFind`'s. A link to a folder has its type prefixed with "Directory " (stat alone can't tell).
     public static func parseBSDStat(_ text: String, folder: URL) -> [FileItem] {
         records(text, statNewlines: true).compactMap { line in
             let f = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
