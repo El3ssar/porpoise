@@ -48,6 +48,6 @@ public enum ContextMenuEntry: String, CaseIterable {
         }
     }
     /// Dolphin defaults: everything on except Delete-alongside and Copy To/Move To.
-    public var defaultOn: Bool { self != .deleteAlongsideTrash && self != .copyMoveTo }
+    var defaultOn: Bool { self != .deleteAlongsideTrash && self != .copyMoveTo }
 }
 

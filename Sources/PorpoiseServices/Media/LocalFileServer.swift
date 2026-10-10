@@ -8,7 +8,7 @@ import PorpoiseCore
 /// - Every URL starts with a random secret, so other local users/processes can't read the stream.
 /// - Serves regular files strictly inside `root`: "..", hidden components and symlinks leading out are refused.
 /// - Files are memory-mapped and sent in chunks, never read whole into memory.
-public final class LocalFileServer {
+final class LocalFileServer {
     private static let maxRequestSize = 16_384
     private static let chunkSize = 1 << 20
     private static let startTimeout: TimeInterval = 2
@@ -20,7 +20,7 @@ public final class LocalFileServer {
     private let queue = DispatchQueue(label: "porpoise.preview-server")
 
     /// Starts once (later calls just update the root) and returns the base URL to put paths under.
-    public func start(root: URL) -> URL? {
+    func start(root: URL) -> URL? {
         queue.sync { self.root = root.resolvingSymlinksInPath() }
         if port == nil {
             let params = NWParameters.tcp

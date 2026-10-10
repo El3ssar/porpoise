@@ -2,7 +2,7 @@ import Foundation
 import PorpoiseCore
 
 /// Android over adb. `adb shell` runs its argument with the device's sh, so paths are single-quoted.
-public final class ADBProvider: RemoteProvider {
+final class ADBProvider: RemoteProvider {
     let serial: String
     private var model: String?
     /// Printed by our rename script when the target exists (older adb doesn't pass exit codes on).
@@ -10,9 +10,9 @@ public final class ADBProvider: RemoteProvider {
 
     init(serial: String) { self.serial = serial }
 
-    public static var adbPath: String? { AndroidTools.adbPath }
+    static var adbPath: String? { AndroidTools.adbPath }
 
-    public static func devices(timeout: TimeInterval = 0) -> [(serial: String, model: String)] {
+    static func devices(timeout: TimeInterval = 0) -> [(serial: String, model: String)] {
         guard let adb = adbPath else { return [] }
         AndroidTools.willUseServer()
         guard let r = try? Shell.run(adb, ["devices", "-l"], timeout: timeout) else { return [] }
@@ -20,7 +20,7 @@ public final class ADBProvider: RemoteProvider {
     }
 
     /// Cached, also when the phone isn't listed: breadcrumbs ask for it on the main thread on every redraw.
-    public func rootTitle(_ url: URL) -> String {
+    func rootTitle(_ url: URL) -> String {
         if let m = model { return m }
         let m = Self.devices(timeout: 3).first(where: { $0.serial == serial })?.model ?? serial
         model = m
@@ -44,7 +44,7 @@ public final class ADBProvider: RemoteProvider {
     private func path(_ url: URL) -> String { url.path.isEmpty || url.path == "/" ? "/sdcard" : url.path }
     private func q(_ url: URL) -> String { RemoteParsing.quote(path(url)) }
 
-    public func list(_ folder: URL) throws -> [FileItem] {
+    func list(_ folder: URL) throws -> [FileItem] {
         let out = try shell("ls -la \(RemoteParsing.quote(path(folder) + "/"))")
         if out.contains("Permission denied") && out.split(separator: "\n").count < 2 { throw RemoteError.failed("Permission denied") }
         var base = URLComponents(url: folder, resolvingAgainstBaseURL: false)
@@ -53,35 +53,35 @@ public final class ADBProvider: RemoteProvider {
         return RemoteParsing.parseLsLong(out, folder: dir.appendingPathComponent("", isDirectory: true))
     }
 
-    public func download(_ remote: URL, into localFolder: URL) throws -> URL {
+    func download(_ remote: URL, into localFolder: URL) throws -> URL {
         try RemoteFS.downloadStaged(remote.lastPathComponent, into: localFolder) { staging in
             _ = try adb(["pull", path(remote), staging.path])
         }
     }
 
-    public func upload(_ local: URL, into remoteFolder: URL) throws { _ = try adb(["push", local.path, path(remoteFolder) + "/"]) }
+    func upload(_ local: URL, into remoteFolder: URL) throws { _ = try adb(["push", local.path, path(remoteFolder) + "/"]) }
 
-    public func delete(_ remote: [URL]) throws {
+    func delete(_ remote: [URL]) throws {
         if let top = remote.first(where: { ["/", "/sdcard", "/sdcard/"].contains(path($0)) }) {
             throw RemoteError.failed("“\(path(top))” is a top folder and can't be deleted.")
         }
         try shell("rm -rf " + remote.map(q).joined(separator: " "))
     }
 
-    public func makeFolder(_ remote: URL) throws { try shell("mkdir -p \(q(remote))") }
+    func makeFolder(_ remote: URL) throws { try shell("mkdir -p \(q(remote))") }
 
-    public func rename(_ remote: URL, to newName: String) throws {
+    func rename(_ remote: URL, to newName: String) throws {
         try RemoteFS.checkName(newName)
         let dst = q(remote.deletingLastPathComponent().appendingPathComponent(newName))
         let out = try shell("if [ -e \(dst) ]; then echo \(Self.existsMarker); else mv \(q(remote)) \(dst); fi")
         if out.contains(Self.existsMarker) { throw RemoteError.exists(newName) }
     }
 
-    public func move(_ remote: [URL], into folder: URL) throws {
+    func move(_ remote: [URL], into folder: URL) throws {
         try shell("mv " + remote.map(q).joined(separator: " ") + " " + q(folder) + "/")
     }
 
-    public func copy(_ remote: [URL], into folder: URL) throws {
+    func copy(_ remote: [URL], into folder: URL) throws {
         try shell("cp -r " + remote.map(q).joined(separator: " ") + " " + q(folder) + "/")
     }
 }

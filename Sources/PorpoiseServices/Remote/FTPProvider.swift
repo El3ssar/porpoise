@@ -3,7 +3,7 @@ import PorpoiseCore
 
 /// FTP through curl. Credentials reach curl on stdin (`--config -`), never on its command line, where
 /// any local user could read them with `ps`.
-public final class FTPProvider: RemoteProvider {
+final class FTPProvider: RemoteProvider {
     private let scheme: String
     private let host: String
     private let port: Int?
@@ -24,7 +24,7 @@ public final class FTPProvider: RemoteProvider {
         if let u = user, password == nil { password = Keychain.password(server: host, account: u, scheme: scheme) }
     }
 
-    public func rootTitle(_ url: URL) -> String { user.map { "\($0)@\(host)" } ?? host }
+    func rootTitle(_ url: URL) -> String { user.map { "\($0)@\(host)" } ?? host }
 
     /// ftps:// is FTP with required TLS (`--ssl-reqd`), so curl gets ftp:// either way.
     private func base(_ path: String) -> String {
@@ -82,7 +82,7 @@ public final class FTPProvider: RemoteProvider {
         return true
     }
 
-    public func list(_ folder: URL) throws -> [FileItem] {
+    func list(_ folder: URL) throws -> [FileItem] {
         var path = folder.path.isEmpty ? "/" : folder.path
         if !path.hasSuffix("/") { path += "/" }
         let out = String(decoding: try curlRun([base(path)]), as: UTF8.self)
@@ -97,7 +97,7 @@ public final class FTPProvider: RemoteProvider {
         try list(remote.deletingLastPathComponent()).contains { $0.name == remote.lastPathComponent }
     }
 
-    public func download(_ remote: URL, into localFolder: URL) throws -> URL {
+    func download(_ remote: URL, into localFolder: URL) throws -> URL {
         try RemoteFS.downloadStaged(remote.lastPathComponent, into: localFolder) { staging in
             try fetch(remote, to: staging.appendingPathComponent(remote.lastPathComponent))
         }
@@ -114,7 +114,7 @@ public final class FTPProvider: RemoteProvider {
         }
     }
 
-    public func upload(_ local: URL, into remoteFolder: URL) throws {
+    func upload(_ local: URL, into remoteFolder: URL) throws {
         var isDir: ObjCBool = false
         FileManager.default.fileExists(atPath: local.path, isDirectory: &isDir)
         let target = remoteFolder.appendingPathComponent(local.lastPathComponent)
@@ -126,7 +126,7 @@ public final class FTPProvider: RemoteProvider {
         }
     }
 
-    public func delete(_ remote: [URL]) throws {
+    func delete(_ remote: [URL]) throws {
         for r in remote { try delete(r, isDir: nil) }
     }
 
@@ -141,23 +141,23 @@ public final class FTPProvider: RemoteProvider {
         }
     }
 
-    public func makeFolder(_ remote: URL) throws { try command("MKD \(try rel(remote))") }
+    func makeFolder(_ remote: URL) throws { try command("MKD \(try rel(remote))") }
 
     /// Most servers let RNTO replace an existing file, so the target is checked first.
-    public func rename(_ remote: URL, to newName: String) throws {
+    func rename(_ remote: URL, to newName: String) throws {
         try RemoteFS.checkName(newName)
         let dst = remote.deletingLastPathComponent().appendingPathComponent(newName)
         if try exists(dst) { throw RemoteError.exists(newName) }
         try command("RNFR \(try rel(remote))", "RNTO \(try rel(dst))")
     }
 
-    public func move(_ remote: [URL], into folder: URL) throws {
+    func move(_ remote: [URL], into folder: URL) throws {
         for r in remote {
             try command("RNFR \(try rel(r))", "RNTO \(try rel(folder.appendingPathComponent(r.lastPathComponent)))")
         }
     }
 
-    public func copy(_ remote: [URL], into folder: URL) throws {
+    func copy(_ remote: [URL], into folder: URL) throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("ftpcopy-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }

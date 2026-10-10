@@ -4,7 +4,7 @@ import Foundation
 public enum PanelSize: String {
     case sidebarWidth = "width.left", informationWidth = "width.right", terminalHeight = "height.terminal"
 
-    public var defaultValue: CGFloat {
+    var defaultValue: CGFloat {
         switch self {
         case .sidebarWidth: 160
         case .informationWidth: 280
@@ -12,10 +12,10 @@ public enum PanelSize: String {
         }
     }
     /// Largest share of the window a panel may take; the files always keep the rest.
-    public var maxShare: CGFloat { self == .terminalHeight ? 0.7 : 0.45 }
+    var maxShare: CGFloat { self == .terminalHeight ? 0.7 : 0.45 }
     /// Room the files keep next to (below) the panel before it gives way in a small window.
-    public var filesMinimum: CGFloat { self == .terminalHeight ? 150 : 280 }
-    public var minimum: CGFloat {
+    var filesMinimum: CGFloat { self == .terminalHeight ? 150 : 280 }
+    var minimum: CGFloat {
         switch self {
         case .sidebarWidth: 120
         case .informationWidth: 200

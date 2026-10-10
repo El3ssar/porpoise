@@ -10,7 +10,7 @@ extension FileOperationsController {
         set { Settings.store.set(newValue, forKey: "trashOrigins") }
     }
 
-    public func recordTrash(_ record: UndoRecord) {
+    func recordTrash(_ record: UndoRecord) {
         guard case .trashed(let pairs) = record else { return }
         var d = trashOrigins
         for p in pairs { d[p.inTrash.path] = p.original.path }
@@ -19,7 +19,7 @@ extension FileOperationsController {
         trashOrigins = d
     }
 
-    public func originalLocation(of trashed: URL) -> URL? { trashOrigins[trashed.path].map { URL(fileURLWithPath: $0) } }
+    func originalLocation(of trashed: URL) -> URL? { trashOrigins[trashed.path].map { URL(fileURLWithPath: $0) } }
 
     /// Moves items back from the Trash to where they came from; returns the ones with unknown origins.
     public func restore(_ urls: [URL], window: AnyObject?) -> [URL] {

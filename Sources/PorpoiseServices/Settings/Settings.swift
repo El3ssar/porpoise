@@ -120,7 +120,7 @@ public final class Settings {
     public func setContextMenu(_ e: ContextMenuEntry, _ on: Bool) { set("ctx." + e.rawValue, on) }
 
     // Global (common) view properties, used unless per-folder memory is on.
-    public var globalViewProperties: ViewProperties {
+    var globalViewProperties: ViewProperties {
         get {
             guard let data = d.data(forKey: "viewProps"), let p = try? JSONDecoder().decode(ViewProperties.self, from: data) else {
                 return ViewProperties()
@@ -133,7 +133,7 @@ public final class Settings {
     /// The display style for a folder. "Use common display style for all folders": one style everywhere, and a change
     /// made in any folder changes it. "Remember display style for each folder": the folder's own saved style, else the
     /// built-in defaults of special folders (Downloads by date, Trash as details), else the common style.
-    public func viewProperties(for url: URL) -> ViewProperties {
+    func viewProperties(for url: URL) -> ViewProperties {
         guard rememberPerFolder else { return globalViewProperties }
         if let data = d.dictionary(forKey: "folderProps")?[url.path] as? Data,
            let p = try? JSONDecoder().decode(ViewProperties.self, from: data) {

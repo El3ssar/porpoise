@@ -6,7 +6,7 @@ import PorpoiseCore
 public final class FileOperationsController {
     public static let shared = FileOperationsController()
     public static let cutChanged = Notification.Name("PorpoiseCutChanged")
-    public static let undoChanged = Notification.Name("PorpoiseUndoChanged")
+    static let undoChanged = Notification.Name("PorpoiseUndoChanged")
     /// Posted after an operation with the folders it touched (KDirNotify equivalent); views reload at once.
     public static let foldersChanged = Notification.Name("PorpoiseFoldersChanged")
 
@@ -43,7 +43,7 @@ public final class FileOperationsController {
         clipboard.readURLs().filter { $0.isFileURL || RemoteFS.isRemote($0) }
     }
 
-    public var clipboardIsCut: Bool { clipboard.changeCount == cutChangeCount }
+    var clipboardIsCut: Bool { clipboard.changeCount == cutChangeCount }
 
     /// "Paste", "Paste 3 Files", "Paste One Folder" — Dolphin's dynamic label.
     public var pasteTitle: String {

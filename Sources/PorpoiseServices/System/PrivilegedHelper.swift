@@ -96,7 +96,7 @@ public enum PrivilegedHelper {
 
     /// Makes sure the helper is ready for an action that needs it: installs or updates it (one approval) if needed.
     /// False: cancelled, or it couldn't be installed.
-    public static func ensureOn() -> Bool {
+    static func ensureOn() -> Bool {
         if isEnabled, ping(timeout: 4) { return true }
         return enable()
     }
@@ -178,14 +178,14 @@ public enum PrivilegedHelper {
     }
 
     /// Hands items Porpoise moved into the Trash to the user, so emptying it needs no administrator rights (best effort).
-    public static func takeOwnership(of paths: [String]) {
+    static func takeOwnership(of paths: [String]) {
         guard !paths.isEmpty, isEnabled, !Settings.isTesting, let c = connection() else { return }
         defer { c.invalidate() }
         let proxy = c.synchronousRemoteObjectProxyWithErrorHandler { NSLog("helper: \($0)") } as? PorpoiseHelperProtocol
         for p in paths { proxy?.takeOwnership(ofTrashed: p) { if let e = $0 { NSLog("take ownership of \(p): \(e)") } } }
     }
 
-    public enum Outcome {
+    enum Outcome {
         case done
         /// A command ran and failed (its message).
         case failed(String)
@@ -196,7 +196,7 @@ public enum PrivilegedHelper {
     /// Runs file tools as administrator (see PorpoiseHelperInfo.allowedTools), in order, over one connection: the
     /// helper quits when it closes, so one action is one short run. Stops at the first failure, except for tools in
     /// `bestEffort`. Checks first that the helper answers at all, so a broken one can't freeze the window.
-    public static func run(_ commands: [[String]], bestEffort: Set<String> = []) -> Outcome {
+    static func run(_ commands: [[String]], bestEffort: Set<String> = []) -> Outcome {
         // Test instances take commands from other processes (DebugBridge): they never get root.
         guard !Settings.isTesting else { return .unavailable("Test instances don't use Porpoise's helper.") }
         guard ping(timeout: 4) || ping(timeout: 4) else { return .unavailable("Porpoise's helper didn't answer.") }

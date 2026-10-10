@@ -7,7 +7,7 @@ import PorpoiseCore
 /// Every remote command is a POSIX `sh` script passed as one single-quoted word (`sh -c '…'`), and every path inside
 /// it is single-quoted as well. The login shell first reads that word, so it must be sh-compatible (bash, zsh, dash…);
 /// csh and fish read some quoting differently.
-public final class SSHProvider: RemoteProvider {
+final class SSHProvider: RemoteProvider {
     let user: String?
     let host: String
     let port: Int?
@@ -95,9 +95,9 @@ public final class SSHProvider: RemoteProvider {
         throw RemoteError.failed(t.isEmpty ? fallback : t)
     }
 
-    public func rootTitle(_ url: URL) -> String { target }
+    func rootTitle(_ url: URL) -> String { target }
 
-    public func list(_ folder: URL) throws -> [FileItem] {
+    func list(_ folder: URL) throws -> [FileItem] {
         // GNU find where available, else BSD stat; records end with NUL so names may contain newlines.
         let script = """
         cd \(shellPath(folder)) || exit 2
@@ -120,7 +120,7 @@ public final class SSHProvider: RemoteProvider {
         return RemoteParsing.parseFind(out, folder: base)
     }
 
-    public func download(_ remote: URL, into localFolder: URL) throws -> URL {
+    func download(_ remote: URL, into localFolder: URL) throws -> URL {
         let name = remote.lastPathComponent
         return try RemoteFS.downloadStaged(name, into: localFolder) { staging in
             // tar keeps folders, permissions and times; streamed through the shared connection.
@@ -137,7 +137,7 @@ public final class SSHProvider: RemoteProvider {
         }
     }
 
-    public func upload(_ local: URL, into remoteFolder: URL) throws {
+    func upload(_ local: URL, into remoteFolder: URL) throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("ul-\(UUID().uuidString).tar")
         defer { try? FileManager.default.removeItem(at: tmp) }
         // "./name" so a name starting with "-" isn't read as a tar option.
@@ -148,14 +148,14 @@ public final class SSHProvider: RemoteProvider {
         try check(r, fallback: "Could not upload “\(local.lastPathComponent)”.")
     }
 
-    public func delete(_ remote: [URL]) throws {
+    func delete(_ remote: [URL]) throws {
         if let top = remote.first(where: isTopFolder) { throw RemoteError.failed("“\(top.path)” is a top folder and can't be deleted.") }
         try exec("rm -rf -- " + remote.map(shellPath).joined(separator: " "))
     }
 
-    public func makeFolder(_ remote: URL) throws { try exec("mkdir -p -- \(shellPath(remote))") }
+    func makeFolder(_ remote: URL) throws { try exec("mkdir -p -- \(shellPath(remote))") }
 
-    public func rename(_ remote: URL, to newName: String) throws {
+    func rename(_ remote: URL, to newName: String) throws {
         try RemoteFS.checkName(newName)
         let src = shellPath(remote), dst = shellPath(remote.deletingLastPathComponent().appendingPathComponent(newName))
         let r = try run("if [ -e \(dst) ] || [ -L \(dst) ]; then exit \(Self.existsStatus); fi; mv -- \(src) \(dst)")
@@ -164,11 +164,11 @@ public final class SSHProvider: RemoteProvider {
     }
 
     /// The trailing "/" makes mv/cp fail instead of renaming when the destination folder is missing.
-    public func move(_ remote: [URL], into folder: URL) throws {
+    func move(_ remote: [URL], into folder: URL) throws {
         try exec("mv -- " + remote.map(shellPath).joined(separator: " ") + " " + shellPath(folder) + "/")
     }
 
-    public func copy(_ remote: [URL], into folder: URL) throws {
+    func copy(_ remote: [URL], into folder: URL) throws {
         try exec("cp -R -p -- " + remote.map(shellPath).joined(separator: " ") + " " + shellPath(folder) + "/")
     }
 }

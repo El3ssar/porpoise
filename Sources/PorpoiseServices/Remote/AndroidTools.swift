@@ -11,7 +11,7 @@ public enum AndroidTools {
     }
 
     /// Porpoise's own copy first, then one installed elsewhere (Homebrew, Android Studio).
-    public static var adbPath: String? {
+    static var adbPath: String? {
         let own = installDir.appendingPathComponent("adb").path
         return FileManager.default.isExecutableFile(atPath: own) ? own : Shell.which("adb")
     }

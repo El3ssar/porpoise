@@ -17,7 +17,7 @@ public enum AppLibrary {
     }
 
     /// Apps in the roots and one folder level below them (Utilities, a vendor's folder…).
-    public static func listAll() -> [FileItem] {
+    static func listAll() -> [FileItem] {
         let fm = FileManager.default
         var seen = Set<String>()
         var out: [FileItem] = []
@@ -44,7 +44,7 @@ public enum AppLibrary {
     }
 
     /// Part of macOS (System volume): can't be moved to the Trash.
-    public static func isBuiltIn(_ url: URL) -> Bool { url.standardizedFileURL.path.hasPrefix("/System/") }
+    static func isBuiltIn(_ url: URL) -> Bool { url.standardizedFileURL.path.hasPrefix("/System/") }
 
     /// View properties of the library: names A to Z, nothing hidden (the grid draws itself).
     public static func props() -> ViewProperties {

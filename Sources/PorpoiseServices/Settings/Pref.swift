@@ -5,7 +5,7 @@ import Foundation
 @propertyWrapper
 public struct Pref<Value> {
     public let key: String
-    public let defaultValue: Value
+    let defaultValue: Value
     private let decode: (Any) -> Value?
     private let encode: (Value) -> Any
 

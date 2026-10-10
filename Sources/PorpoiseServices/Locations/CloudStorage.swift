@@ -1,7 +1,7 @@
 import Foundation
 
 /// Google Drive, OneDrive, Dropbox, Box… through their Mac apps.
-public enum CloudStorage {
+enum CloudStorage {
     /// Folders that File Provider apps create in ~/Library/CloudStorage (e.g. "GoogleDrive-me@gmail.com").
     static func locations() -> [(title: String, url: URL, icon: String)] {
         let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/CloudStorage")

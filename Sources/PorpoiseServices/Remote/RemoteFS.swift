@@ -20,10 +20,10 @@ public protocol RemoteProvider: AnyObject {
     func rootTitle(_ url: URL) -> String
 }
 
-public enum RemoteError: LocalizedError {
+enum RemoteError: LocalizedError {
     case failed(String)
     case unsupported(String)
-    public var errorDescription: String? {
+    var errorDescription: String? {
         switch self {
         case .failed(let s): return s
         case .unsupported(let s): return s
@@ -31,14 +31,14 @@ public enum RemoteError: LocalizedError {
     }
 
     static func invalidName(_ name: String) -> RemoteError { .failed("“\(name)” is not a valid name.") }
-    public static func exists(_ name: String) -> RemoteError { .failed("A file named “\(name)” already exists.") }
+    static func exists(_ name: String) -> RemoteError { .failed("A file named “\(name)” already exists.") }
 }
 
 /// Registry: which URL schemes are browsed through a provider.
 public enum RemoteFS {
     static let sshSchemes: Set<String> = ["sftp", "ssh", "fish", "scp"]
     static let ftpSchemes: Set<String> = ["ftp", "ftps"]
-    public static let mountSchemes: Set<String> = ["smb", "afp", "nfs", "webdav", "webdavs", "dav", "davs", "cifs", "vnc"]
+    static let mountSchemes: Set<String> = ["smb", "afp", "nfs", "webdav", "webdavs", "dav", "davs", "cifs", "vnc"]
 
     public static func isRemote(_ url: URL) -> Bool {
         guard let s = url.scheme?.lowercased() else { return false }
@@ -98,7 +98,7 @@ public enum RemoteFS {
     nonisolated(unsafe) public static var askLogin: (_ host: String, _ user: String?) -> (user: String, password: String)? = { _, _ in nil }
 
     /// Local cache for files opened from remote locations.
-    public static var cacheRoot: URL {
+    static var cacheRoot: URL {
         let u = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise/remote")
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
         return u

@@ -2,7 +2,7 @@ import Foundation
 import PorpoiseCore
 
 /// "Recent Files": Spotlight's last-used dates (the Mac's equivalent of recentlyused:/files).
-public final class RecentFilesQuery: NSObject {
+final class RecentFilesQuery: NSObject {
     private let query = NSMetadataQuery()
     private let done: ([FileItem]) -> Void
     private static let maxAge: TimeInterval = 30 * 86400
@@ -33,7 +33,7 @@ public final class RecentFilesQuery: NSObject {
 }
 
 /// Files carrying a tag (the sidebar's Tags section), found with Spotlight.
-public final class MetadataListQuery: NSObject {
+final class MetadataListQuery: NSObject {
     private let query = NSMetadataQuery()
     private let done: ([FileItem]) -> Void
 

@@ -3,7 +3,7 @@ import Security
 
 /// Internet passwords keyed by server, account and protocol: a NAS's SMB password that Finder saved must never be
 /// sent over FTP, nor be overwritten by it. Items saved without a protocol (older versions) are still found.
-public enum Keychain {
+enum Keychain {
     private static func proto(_ scheme: String) -> CFString { scheme == "ftps" ? kSecAttrProtocolFTPS : kSecAttrProtocolFTP }
 
     static func password(server: String, account: String, scheme: String) -> String? {
