@@ -81,6 +81,9 @@ public final class VideoPreview {
         stop()
     }
 
+    /// How long ffmpeg may take to stop before it's killed.
+    private static let stopGrace: TimeInterval = 3
+
     /// Stops the current stream; its folder is removed once ffmpeg has exited (it may still be writing).
     public func stop() {
         token += 1
@@ -89,8 +92,15 @@ public final class VideoPreview {
         sessionDir = nil
         guard p != nil || dir != nil else { return }
         p?.terminate()
-        DispatchQueue.global(qos: .utility).async {
-            p?.waitUntilExit()
+        // A queue of its own: a global one may get no thread while others wait on theirs.
+        DispatchQueue(label: "app.porpoise.video-stop", qos: .utility).async {
+            if let p {
+                // ffmpeg finishes the segment it's writing on SIGTERM; one that hasn't stopped by then is killed.
+                let deadline = Date().addingTimeInterval(Self.stopGrace)
+                while p.isRunning && Date() < deadline { usleep(20_000) }
+                if p.isRunning { kill(p.processIdentifier, SIGKILL) }
+                p.waitUntilExit()
+            }
             if let d = dir { try? FileManager.default.removeItem(at: d) }
         }
     }
