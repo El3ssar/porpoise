@@ -103,6 +103,20 @@ import Testing
         #expect(items[0].isDirectory && items[2].isSymlink)
     }
 
+    @Test func bsdStatLinksToFoldersBrowse() {
+        let out = "Directory Symbolic Link\t4\t1700000000\t755\tme\tstaff\tsub\t./to-sub\n\0"
+            + "Symbolic Link\t4\t1700000000\t755\tme\tstaff\tfile\t./to-file\n\0"
+        let items = RemoteParsing.parseBSDStat(out, folder: folder)
+        #expect(items[0].isSymlink && items[0].isDirectory && items[0].linkDestination == "sub")
+        #expect(items[1].isSymlink && !items[1].isDirectory)
+    }
+
+    @Test func bsdStatKeepsANewlineThatEndsTheName() {
+        // The script prints exactly one newline after each record; one more belongs to the name.
+        let out = "Regular File\t1\t1700000000\t644\tme\tstaff\t\t./ends\n\n\0"
+        #expect(RemoteParsing.parseBSDStat(out, folder: folder).map(\.name) == ["ends\n"])
+    }
+
     @Test func lsDeviceFilesAndMissingGroup() {
         let now = DateComponents(calendar: .current, year: 2026, month: 10, day: 8).date!
         let out = """
@@ -169,5 +183,13 @@ import Testing
         #expect(RemoteParsing.isSafeName("a b.txt") && RemoteParsing.isSafeName("..."))
         #expect(!RemoteParsing.isSafeName("") && !RemoteParsing.isSafeName("..") && !RemoteParsing.isSafeName("a/b"))
         #expect(!RemoteParsing.isSafeName("nul\0"))
+    }
+
+    @Test func aSlashHiddenInACombinedCharacterIsStillASlash() {
+        // "/" + U+0301 is one Character: a naive `contains("/")` misses it, and the name would climb out of its folder.
+        let name = "../\u{301}escaped"
+        #expect(!RemoteParsing.isSafeName(name))
+        #expect(RemoteParsing.parseFind(gnu("ff", name) + "\0", folder: folder).isEmpty)
+        #expect(RemoteParsing.isSafeName("e\u{301}t\u{301}e\u{301}"))   // combining marks themselves are fine
     }
 }

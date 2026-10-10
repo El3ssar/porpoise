@@ -24,10 +24,19 @@ final class SSHProvider: RemoteProvider {
         return u
     }()
 
-    init(url: URL) {
+    /// What tests change: extra ssh options (their own key and known_hosts instead of ~/.ssh), the folder for the
+    /// shared connection's socket, and no password prompt.
+    struct Isolation {
+        var options: [String]
+        var controlDir: URL
+    }
+    let isolation: Isolation?
+
+    init(url: URL, isolation: Isolation? = nil) {
         user = url.user
         host = url.host ?? "localhost"
         port = url.port
+        self.isolation = isolation
     }
 
     private var target: String { user.map { "\($0)@\(host)" } ?? host }
@@ -37,7 +46,7 @@ final class SSHProvider: RemoteProvider {
     private var controlPath: String {
         let key = "\(user ?? "")@\(host):\(port.map(String.init) ?? "")"
         let hash = SHA256.hash(data: Data(key.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
-        return "\(Self.controlDir.path)/cm-\(hash)"
+        return "\((isolation?.controlDir ?? Self.controlDir).path)/cm-\(hash)"
     }
 
     /// Ends the shared master connection, if one is up.
@@ -46,7 +55,8 @@ final class SSHProvider: RemoteProvider {
     }
 
     private var baseArgs: [String] {
-        var a = ["-o", "ControlMaster=auto", "-o", "ControlPath=\(controlPath)",
+        // ssh keeps the first value it gets for an option, so the isolation's come first.
+        var a = (isolation?.options ?? []) + ["-o", "ControlMaster=auto", "-o", "ControlPath=\(controlPath)",
                  "-o", "ControlPersist=\(Self.controlPersist)", "-o", "ConnectTimeout=\(Self.connectTimeout)",
                  "-o", "LogLevel=ERROR", "-o", "ServerAliveInterval=30"]
         if let p = port { a += ["-p", String(p)] }
@@ -58,7 +68,8 @@ final class SSHProvider: RemoteProvider {
     }
 
     private var env: [String: String] {
-        ["SSH_ASKPASS": AskPass.scriptPath, "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": ":0"]
+        if isolation != nil { return [:] }
+        return ["SSH_ASKPASS": AskPass.scriptPath, "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": ":0"]
     }
 
     /// Remote path as a shell word; "/~/x" (or empty) is relative to the remote home.
@@ -104,7 +115,8 @@ final class SSHProvider: RemoteProvider {
     /// Lists the folder `folderWord` (a shell word): GNU find where available, else BSD stat (whose format writes a
     /// tab as `%t`; a `\t` would be printed as it is). Records end with NUL so names may contain newlines. stat adds
     /// its newline only when the output doesn't already end with one (a name ending in "\n"), so `-n` turns that off
-    /// and the newline `parseBSDStat` expects is printed separately.
+    /// and the newline `parseBSDStat` expects is printed separately. A link to a folder is typed
+    /// "Directory Symbolic Link", so it browses like the folder.
     static func listScript(_ folderWord: String) -> String {
         """
         cd \(folderWord) || exit 2
@@ -113,7 +125,10 @@ final class SSHProvider: RemoteProvider {
         else
           for f in .* *; do
             case "$f" in .|..) continue;; esac
-            if [ -e "$f" ] || [ -L "$f" ]; then stat -n -f '%HT%t%z%t%m%t%Lp%t%Su%t%Sg%t%Y%t%N' "./$f" && printf '\\n\\0'; fi
+            if [ -e "$f" ] || [ -L "$f" ]; then
+              d=; if [ -L "$f" ] && [ -d "$f" ]; then d='Directory '; fi
+              stat -n -f "$d%HT%t%z%t%m%t%Lp%t%Su%t%Sg%t%Y%t%N" "./$f" && printf '\\n\\0'
+            fi
           done; echo __BSD__
         fi
         """

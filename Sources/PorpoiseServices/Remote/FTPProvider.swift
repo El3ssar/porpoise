@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import Security
 
 /// FTP through curl. Credentials reach curl on stdin (`--config -`), never on its command line, where
 /// any local user could read them with `ps`.
@@ -9,19 +10,25 @@ final class FTPProvider: RemoteProvider {
     private let port: Int?
     private var user: String?
     private var password: String?
-    private let curl = "/usr/bin/curl"
+    private let curl: String
+    /// Where logins are looked up and saved (nil: the user's keychains).
+    private let keychain: SecKeychain?
 
     /// curl's exit code for a refused login (CURLE_LOGIN_DENIED).
     private static let loginDenied: Int32 = 67
     private static let connectTimeout = 15
 
-    init(url: URL) {
+    /// Tests pass their own `curl` (which records what it gets) and a throwaway keychain.
+    init(url: URL, curl: String = "/usr/bin/curl", keychain: SecKeychain? = nil) {
         scheme = url.scheme?.lowercased() ?? "ftp"
         host = url.host ?? ""
         port = url.port
         user = url.user
-        password = url.password
-        if let u = user, password == nil { password = Keychain.password(server: host, account: u, scheme: scheme) }
+        // `password` alone stays percent-encoded ("p%40ss"); the server needs the password itself.
+        password = url.password(percentEncoded: false)
+        self.curl = curl
+        self.keychain = keychain
+        if let u = user, password == nil { password = Keychain.password(server: host, account: u, scheme: scheme, in: keychain) }
     }
 
     func rootTitle(_ url: URL) -> String { user.map { "\($0)@\(host)" } ?? host }
@@ -36,7 +43,7 @@ final class FTPProvider: RemoteProvider {
     /// curl URLs are relative to the login folder, so raw FTP commands must be too. Line breaks would
     /// smuggle extra commands onto the control connection, so they are refused.
     private func rel(_ u: URL) throws -> String {
-        guard !u.path.contains("\n"), !u.path.contains("\r") else { throw RemoteError.invalidName(u.lastPathComponent) }
+        guard !RemoteFS.hasLineBreak(u.path) else { throw RemoteError.invalidName(u.lastPathComponent) }
         let p = String(u.path.drop(while: { $0 == "/" }))
         return p.isEmpty ? "." : p
     }
@@ -78,7 +85,7 @@ final class FTPProvider: RemoteProvider {
         guard let login = RemoteFS.askLogin(host, user) else { return false }
         user = login.user
         password = login.password
-        Keychain.save(server: host, account: login.user, password: login.password, scheme: scheme)
+        Keychain.save(server: host, account: login.user, password: login.password, scheme: scheme, in: keychain)
         return true
     }
 

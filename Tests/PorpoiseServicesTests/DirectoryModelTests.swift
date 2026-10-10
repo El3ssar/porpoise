@@ -145,7 +145,8 @@ import PorpoiseTestSupport
         #expect(names(m) == ["d.txt", "e.txt", "a.txt", "c.log", "b.txt"])
     }
 
-    /// Drawing never waits for tags or cloud states: they're read in the background, then the view is told.
+    /// Drawing never waits for tags or cloud states: they're read in the background, then the view is told. The
+    /// checks ask again on every poll, as each redraw does (a reload in between drops what was being read).
     @Test func drawingReadsItemMetadataInTheBackground() async throws {
         let s = try Scratch()
         let tagged = try s.file("tagged.txt")
@@ -156,17 +157,16 @@ import PorpoiseTestSupport
         let item = try #require(m.rows.first?.item)
         #expect(m.shownTags(for: item).isEmpty)          // not read yet
         #expect(m.shownCloud(for: item).state == .local)
-        #expect(await eventually { loaded == 1 })
-        #expect(m.shownTags(for: item).map(\.name) == ["Red"])
-        // Re-reading cloud states keeps what's known meanwhile, and tags stay cached.
+        #expect(await eventually { m.shownTags(for: item).map(\.name) == ["Red"] })
+        #expect(loaded >= 1)
+        // Re-reading cloud states happens in the background too, and tells the view.
+        let before = loaded
         m.refreshCloud()
-        #expect(m.shownTags(for: item).map(\.name) == ["Red"])
-        #expect(await eventually { loaded == 2 })
+        #expect(await eventually { _ = m.shownCloud(for: item); return loaded > before })
         // Tagging clears the tags, which are then read again.
-        FinderTags.set([], on: tagged)
+        FinderTags.set(["Blue"], on: tagged)
         m.refreshTags()
-        _ = m.shownTags(for: item)
-        #expect(await eventually { loaded == 3 && m.shownTags(for: item).isEmpty })
+        #expect(await eventually { m.shownTags(for: item).map(\.name) == ["Blue"] })
     }
 
     /// Reading for drawing that finishes after the folder changed is dropped.
