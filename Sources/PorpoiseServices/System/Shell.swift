@@ -6,6 +6,11 @@ public enum Shell {
     /// Grace period between SIGTERM and SIGKILL when a timeout expires.
     private static let killGrace: TimeInterval = 2
 
+    /// A new serial queue for a pipe reader/writer or the timeout. Not a global (or concurrent) queue: with callers
+    /// blocked in `run` on every worker thread (many runs at once from Swift concurrency's pool) those get no thread,
+    /// so the readers never start and every run waits forever. A serial queue gets a thread beyond that limit.
+    private static func ioQueue() -> DispatchQueue { DispatchQueue(label: "porpoise.shell-io") }
+
     /// Runs a tool synchronously (call off the main thread). `stdinFile`/`stdoutFile` stream large data.
     /// stdin is written and stdout/stderr are drained concurrently, so neither side can block on a full
     /// pipe. With `timeout` > 0 the tool is terminated (then killed) when it runs longer, and the call throws.
@@ -47,12 +52,12 @@ public enum Shell {
 
         let io = DispatchGroup()
         let box = OutputBox()
-        DispatchQueue.global().async(group: io) { box.err = errPipe.fileHandleForReading.readDataToEndOfFile() }
+        Self.ioQueue().async(group: io) { box.err = errPipe.fileHandleForReading.readDataToEndOfFile() }
         if stdoutFile == nil {
-            DispatchQueue.global().async(group: io) { box.out = outPipe.fileHandleForReading.readDataToEndOfFile() }
+            Self.ioQueue().async(group: io) { box.out = outPipe.fileHandleForReading.readDataToEndOfFile() }
         }
         if let data = stdin, let w = inPipe?.fileHandleForWriting {
-            DispatchQueue.global().async(group: io) {
+            Self.ioQueue().async(group: io) {
                 // A tool that exits early must not take the app down with SIGPIPE.
                 _ = fcntl(w.fileDescriptor, F_SETNOSIGPIPE, 1)
                 try? w.write(contentsOf: data)
@@ -63,11 +68,11 @@ public enum Shell {
             guard p.isRunning else { return }
             box.timedOut = true
             p.terminate()
-            DispatchQueue.global().asyncAfter(deadline: .now() + killGrace) {
+            Self.ioQueue().asyncAfter(deadline: .now() + killGrace) {
                 if p.isRunning { kill(p.processIdentifier, SIGKILL) }
             }
         } : nil
-        if let w = watchdog { DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: w) }
+        if let w = watchdog { Self.ioQueue().asyncAfter(deadline: .now() + timeout, execute: w) }
         p.waitUntilExit()
         watchdog?.cancel()
         io.wait()
