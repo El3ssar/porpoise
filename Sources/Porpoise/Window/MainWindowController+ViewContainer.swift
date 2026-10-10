@@ -13,6 +13,7 @@ extension MainWindowController {
     }
 
     func containerDidChangeURL(_ c: ViewContainer) {
+        AppDelegate.shared.sessionChanged()
         if c === view || tab.containers.contains(where: { $0 === c }) { syncToActiveView() }
         else if allContainers.contains(where: { $0 === c }) { updateTabBar() }   // a background tab's title
     }

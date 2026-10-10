@@ -5,8 +5,10 @@ import PorpoiseServices
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static let shared = AppDelegate()
     private(set) var windows: [MainWindowController] = []
+    private var sessionSave: DispatchWorkItem?
     private var settingsWindow: SettingsWindowController?
-    /// UserDefaults key of the saved windows/tabs: [[["url": …, "split": …, "mode": …]]].
+    /// UserDefaults key of the saved windows/tabs: [[["url": …, "split": …, "mode": …]]], the first tab of each window
+    /// also with "frame" and "active".
     private static let sessionKey = "session"
 
     // MARK: - Launch and quit
@@ -77,7 +79,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                       !u.isFileURL || FileManager.default.fileExists(atPath: u.path) else { return nil }
                 return (u, t["split"].flatMap(URL.init(string:)))
             }
-            if !tabs.isEmpty { newWindow(urls: tabs.map(\.url), split: tabs.map(\.split)) }
+            guard !tabs.isEmpty else { continue }
+            newWindow(urls: tabs.map(\.url), split: tabs.map(\.split))
+            // Each window where it was (if that's still on a screen), on the tab that was active.
+            guard let wc = windows.last, let info = w.first else { continue }
+            if let f = info["frame"].map(NSRectFromString), NSScreen.screens.contains(where: { $0.visibleFrame.intersects(f) }) {
+                wc.window?.setFrame(f, display: false)
+            }
+            if let a = info["active"].flatMap(Int.init), wc.tabs.indices.contains(a) { wc.showTab(a) }
         }
         return !windows.isEmpty
     }
@@ -182,6 +191,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func saveSession() {
         let state = windows.map(\.sessionState)
         if !state.isEmpty { Settings.store.set(state, forKey: Self.sessionKey) }
+    }
+
+    /// Saves the session shortly after the last change (navigation, tabs), so a crash loses little.
+    func sessionChanged() {
+        sessionSave?.cancel()
+        let w = DispatchWorkItem { [weak self] in self?.saveSession() }
+        sessionSave = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: w)
     }
 
     /// Cmd+W in windows without tabs (Settings, Properties…) closes the window, as on any Mac.
