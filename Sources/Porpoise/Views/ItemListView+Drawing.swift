@@ -15,8 +15,9 @@ extension ItemListView {
         for (gi, gr) in groupHeaderFrames.enumerated() where gr.intersects(dirty) && gi < model.groups.count {
             drawGroupHeader(model.groups[gi].title, in: gr)
         }
-        for i in candidateIndexes(in: dirty.insetBy(dx: -40, dy: -4)) {
-            drawItem(i)
+        drawLeavingItems()
+        for i in transitionIndexes(in: dirty.insetBy(dx: -40, dy: -4)) {
+            drawItemInTransition(i, draw: drawItem)
         }
         if let rb = rubberBand {
             let path = NSBezierPath(rect: rb.insetBy(dx: 0.5, dy: 0.5))
@@ -79,6 +80,28 @@ extension ItemListView {
     }
 
     // MARK: Items
+
+    /// Row `i` drawn on its own into a picture of its cell (or of `part` of it), at the screen's scale. Drawn directly rather than
+    /// cut from a `cacheDisplay` of the view: that runs the view's display machinery, and taken during an animation
+    /// it left stale pieces of frames on screen.
+    func picture(ofRow i: Int, part: CGRect? = nil) -> CGImage? {
+        let r = part ?? frames[i]
+        let scale = window?.backingScaleFactor ?? 2
+        let w = Int((r.width * scale).rounded(.up)), h = Int((r.height * scale).rounded(.up))
+        guard w > 0, h > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
+            let ctx = CGContext(
+                data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue)
+        else { return nil }
+        // The view's flipped coordinates onto the bitmap: the cell's top-left at the image's top-left.
+        ctx.scaleBy(x: scale, y: -scale)
+        ctx.translateBy(x: -r.minX, y: -r.maxY)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
+        drawItem(i)
+        NSGraphicsContext.restoreGraphicsState()
+        return ctx.makeImage()
+    }
 
     private func drawItem(_ i: Int) {
         let item = model.rows[i].item

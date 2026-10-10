@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.6
+
+- **Split view, animated.** Opening it, the items in the left view glide straight to where they'll be at the new
+  width while the divider moves, instead of jumping column by column. The right view starts empty, and copies of the
+  items fly out of the left ones to their own places on the right (in its own order and style). Closing it is the
+  mirror: the view that stays glides to its full width, and the closing view's items fly back into it.
+- **Filtering animates.** Items that no longer match fade out, and the rest glide to their new places as you type.
+- **Search animates.** The folder's items that match glide into their places among the results while the rest fade
+  out, and new results come in one after another; closing the search morphs back to the folder.
+- All of it works in Icons, Compact and Details, and Reduce Motion turns it off.
+
 ## 0.2.5
 
 - Animations (panels sliding, Places sections folding, zooming) follow the display's refresh, so they're smoother and

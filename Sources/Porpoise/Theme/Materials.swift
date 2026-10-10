@@ -79,7 +79,8 @@ extension NSView {
 /// event tracking such as live resize), used for custom-drawn transitions.
 final class Animator: NSObject {
     private var link: CADisplayLink?
-    private var start: CFTimeInterval = 0
+    /// When the first frame was shown (nil until then).
+    private var start: CFTimeInterval?
     private var duration: TimeInterval = 0
     private var curve: (Double) -> Double = Animator.easeOutCubic
     private var step: ((Double) -> Void)?
@@ -104,20 +105,27 @@ final class Animator: NSObject {
         self.curve = curve
         self.step = step
         self.completion = completion
-        start = CACurrentMediaTime()
+        start = nil
         let l = screen.displayLink(target: self, selector: #selector(tick(_:)))
         l.add(to: .main, forMode: .common)
         link = l
     }
 
     @objc private func tick(_ l: CADisplayLink) {
-        let p = min(1, (CACurrentMediaTime() - start) / duration)
+        // The clock starts with the first frame: work done right after `run` (a new split pane being set up) would
+        // otherwise use up part of the animation before anything is drawn, and it would seem to jump.
+        let now = l.timestamp
+        let begin = start ?? now
+        start = begin
+        let p = min(1, (now - begin) / duration)
         step?(curve(p))
         guard p >= 1 else { return }
         let done = completion
         stop()
         done?()
     }
+
+    var isRunning: Bool { link != nil }
 
     /// Ends the animation where it is, without its completion.
     func stop() {
@@ -129,4 +137,5 @@ final class Animator: NSObject {
 
     static func easeOutCubic(_ p: Double) -> Double { 1 - pow(1 - p, 3) }
     static func easeInCubic(_ p: Double) -> Double { p * p * p }
+    static func easeInOutCubic(_ p: Double) -> Double { p < 0.5 ? 4 * p * p * p : 1 - pow(-2 * p + 2, 3) / 2 }
 }

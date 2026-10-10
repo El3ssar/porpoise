@@ -105,6 +105,21 @@ final class ItemListView: NSView {
     private(set) var committingZoom = false
     private var zoomCommitTimer: Timer?
     private let zoomAnimator = Animator()
+
+    // MARK: Transitions (+Transition)
+
+    var transition: ItemTransition?
+    let transitionAnimator = Animator()
+    /// Items (transition keys) not drawn until another view's flight brings them here.
+    var transitionHidden: Set<String> = []
+    /// Items fading in where a flight landed.
+    var revealing: (keys: Set<String>, progress: CGFloat)?
+    let revealAnimator = Animator()
+    /// Row per transition key, rebuilt with each layout.
+    var rowKeys: [String: Int] = [:]
+    /// Lays out at this width instead of the visible one: the width the view is about to have, while an animation
+    /// (the split opening) changes its real width, so items move once, straight to their final places.
+    var layoutWidthOverride: CGFloat? { didSet { if layoutWidthOverride != oldValue { relayout() } } }
     var onZoomPreview: ((CGFloat) -> Void)?
 
     private var observers: [NSObjectProtocol] = []
@@ -131,6 +146,8 @@ final class ItemListView: NSView {
         observers.forEach(NotificationCenter.default.removeObserver)
         for t in [hoverTimer, zoomCommitTimer, dragOpenTimer] { t?.invalidate() }
         zoomAnimator.stop()
+        transitionAnimator.stop()
+        revealAnimator.stop()
     }
 
     override var isFlipped: Bool { true }

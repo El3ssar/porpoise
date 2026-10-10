@@ -18,16 +18,22 @@ extension ItemListView {
 
     func computeLayout() {
         cloudRects = [:]
+        rowKeys = [:]
         frames = Array(repeating: .zero, count: model.rows.count)
         groupHeaderFrames = []
-        let width = max(visibleWidth, 100)
+        let width = max(layoutWidthOverride ?? visibleWidth, 100)
         let contentSize: NSSize
         switch mode {
         case .icons: contentSize = layoutIcons(width: width)
         case .compact: contentSize = layoutCompact(width: width)
         case .details: contentSize = layoutDetails(width: width)
         }
-        if frame.size != contentSize { setFrameSize(contentSize) }
+        // Laid out for a coming width while the real one animates: keep the view as wide as it is (the pane just shows
+        // less of it). Resizing it on every step makes AppKit keep stale pieces of earlier frames at its tile seams.
+        let size =
+            layoutWidthOverride == nil
+            ? contentSize : NSSize(width: max(contentSize.width, visibleWidth, frame.width), height: contentSize.height)
+        if frame.size != size { setFrameSize(size) }
         dropStaleIndexes()
         if let i = renamingIndex, i < frames.count { positionRenameField(i) }
     }

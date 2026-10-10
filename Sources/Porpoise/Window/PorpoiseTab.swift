@@ -22,6 +22,10 @@ final class PorpoiseTab: NSView {
     private var closing: ViewContainer?
     private var closingOnLeft = false
     private let animator = Animator()
+    /// Copies of the left pane's items flying into the right one as the split opens.
+    private var flightOverlay: SplitFlightOverlay?
+    private let flightAnimator = Animator()
+    private static let flightDuration: TimeInterval = 0.42
     /// Handle position the user chose last; reopening the split returns to it (m_splitterLastPosition).
     private static var lastFraction: CGFloat = 0.5
 
@@ -130,8 +134,91 @@ final class PorpoiseTab: NSView {
             setFraction(Self.lastFraction)
             return
         }
+        // Both panes are laid out at their final widths from the start: the left one's items glide straight to
+        // their places while the handle moves (instead of jumping a column at a time), and the right one, empty,
+        // receives copies of them that fly over once it has listed its folder (its own style and order apply).
+        let leftWidth = (bounds.width * Self.lastFraction).rounded()
+        let rightWidth = bounds.width - leftWidth - SplitHandleView.lineWidth
+        if let start = primary.list.snapshotForTransition() {
+            // Only Icons rearranges with the width; Details and Compact just follow it smoothly.
+            if primary.list.mode == .icons {
+                primary.list.layoutWidthOverride = primary.listWidth(forPaneWidth: leftWidth)
+                primary.list.animateLayoutChange(from: start, duration: Self.openDuration)
+            }
+            if s.list.mode == .icons { s.list.layoutWidthOverride = primary.listWidth(forPaneWidth: rightWidth) }
+            s.onNextLoad = { [weak self, weak s] in
+                guard let self, let s, s === self.secondary else { return }
+                self.flyItems(into: s)
+            }
+        }
         setFraction(1)
-        animateFraction(to: Self.lastFraction, duration: Self.openDuration, curve: Animator.easeOutCubic)
+        animateFraction(to: Self.lastFraction, duration: Self.openDuration, curve: Animator.easeOutCubic) { [weak self] in
+            guard let self else { return }
+            self.primary.list.layoutWidthOverride = nil
+            if self.flightOverlay == nil { self.secondary?.list.layoutWidthOverride = nil }
+        }
+    }
+
+    /// Opening: copies of the left pane's visible items fly to their places in `right`; its other items come in.
+    private func flyItems(into right: ViewContainer) {
+        let list = right.list
+        guard let start = primary.list.snapshotForTransition() else { return }
+        if list.frames.count != list.model.rows.count { list.computeLayout() }
+        let shown = CGRect(x: 0, y: 0, width: list.layoutWidthOverride ?? list.visibleWidth, height: list.visibleHeight)
+        let keys = list.candidateIndexes(in: shown).map(list.key(ofRow:)).filter { start.flightImages[$0] != nil }
+        list.animateAppearing(except: Set(keys))
+        fly(keys, images: start.flightImages, from: primary.list, to: list, duration: Self.flightDuration) { [weak self, weak list] done in
+            list?.reveal(Set(keys)) { done() }
+            if self?.animator.isRunning == false { list?.layoutWidthOverride = nil }
+        }
+    }
+
+    /// Closing: copies of the closing pane's visible items fly back onto the same items in the pane that stays,
+    /// and merge into them; what's only in the closing pane leaves with it.
+    private func flyItems(backFrom closing: ItemListView, to remaining: ItemListView) {
+        guard let start = closing.snapshotForTransition() else { return }
+        let keys = start.flightImages.keys.filter { remaining.row(forKey: $0) != nil }
+        closing.transitionHidden.formUnion(keys)
+        closing.needsDisplay = true
+        fly(Array(keys), images: start.flightImages, from: closing, to: remaining, duration: Self.closeDuration) { done in done() }
+    }
+
+    /// Draws copies of the items `keys` travelling from where `source` shows them to where `target` shows them, both
+    /// read at every frame (the panes and their items move meanwhile). `landed` gets a function that removes the
+    /// copies, to call once whatever replaces them is shown.
+    private func fly(
+        _ keys: [String], images: [String: CGImage], from source: ItemListView, to target: ItemListView, duration: TimeInterval,
+        landed: @escaping (_ done: @escaping () -> Void) -> Void
+    ) {
+        endFlights()
+        guard !keys.isEmpty else { return landed {} }
+        let overlay = SplitFlightOverlay(frame: bounds)
+        overlay.flights = keys.compactMap { k in
+            guard let img = images[k], let i = source.row(forKey: k) else { return nil }
+            return .init(key: k, image: img, size: source.flightRect(i).size)
+        }
+        func place(_ list: ItemListView) -> (String) -> CGRect? {
+            { [weak list, weak overlay] k in
+                guard let list, let overlay, let i = list.row(forKey: k) else { return nil }
+                return list.convert(list.flightRect(i), to: overlay)
+            }
+        }
+        overlay.source = place(source)
+        overlay.target = place(target)
+        addSubview(overlay, positioned: .above, relativeTo: nil)
+        flightOverlay = overlay
+        flightAnimator.run(
+            duration: duration, curve: Animator.easeInOutCubic,
+            step: { [weak overlay] p in overlay?.progress = CGFloat(p) },
+            completion: { [weak self, weak overlay] in
+                landed { if self?.flightOverlay === overlay { self?.endFlights() } }
+            })
+    }
+
+    private func endFlights() {
+        flightAnimator.stop()
+        flightOverlay?.removeFromSuperview()
+        flightOverlay = nil
     }
 
     /// Closes one view of the split (Dolphin's CloseSplitViewChoice); the closed view shrinks away (InCubic).
@@ -159,6 +246,18 @@ final class PorpoiseTab: NSView {
             finishClosing()
             return
         }
+        // The mirror of opening: the pane that stays is laid out at its full width at once, its items gliding to
+        // their places as it grows; the closing one keeps its layout while it shrinks away, and its items fly back
+        // onto the same ones in the pane that stays.
+        if let start = primary.list.snapshotForTransition() {
+            // Only Icons rearranges with the width; Details and Compact just follow it smoothly.
+            if zombie.list.mode == .icons { zombie.list.layoutWidthOverride = zombie.list.visibleWidth }
+            if primary.list.mode == .icons {
+                primary.list.layoutWidthOverride = primary.listWidth(forPaneWidth: bounds.width)
+                primary.list.animateLayoutChange(from: start, duration: Self.closeDuration)
+            }
+            flyItems(backFrom: zombie.list, to: primary.list)
+        }
         animateFraction(to: closeSecondary ? 1 : 0, duration: Self.closeDuration, curve: Animator.easeInCubic) { [weak self] in
             self?.finishClosing()
         }
@@ -167,6 +266,8 @@ final class PorpoiseTab: NSView {
     /// Drops the zombie pane (end of the close animation, or a new split opening before it ended).
     private func finishClosing() {
         animator.stop()
+        endFlights()
+        primary.list.layoutWidthOverride = nil
         guard let z = closing else { return }
         z.removeFromSuperview()
         closing = nil

@@ -32,6 +32,16 @@ final class DebugBridge: NSObject {
         case "snapshot": snapshot(to: arg)
         case "lsnapshot": layerSnapshot(to: arg)
         case "wsnapshot": windowServerSnapshot(to: arg)
+        case "wframes":
+            // wframes <folder> <count> <ms>: the main window every <ms> milliseconds, as 00.png, 01.png… (animations).
+            let a = arg.split(separator: " ").map(String.init)
+            guard a.count == 3, let n = Int(a[1]), let ms = Int(a[2]) else { return }
+            try? FileManager.default.createDirectory(atPath: a[0], withIntermediateDirectories: true)
+            for k in 0..<n {
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(k * ms)) { [weak self] in
+                    self?.windowServerSnapshot(to: a[0] + String(format: "/%02d.png", k))
+                }
+            }
         case "csnapshot":
             // csnapshot <png>|<title prefix or "Settings">: draws a window's views itself, so it works while the window
             // is inactive or shrunk by Stage Manager (no window-server capture).

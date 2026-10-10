@@ -142,6 +142,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         model.onLoaded = { [weak self] in
             guard let self else { return }
             self.updateStatus()
+            if let once = self.onNextLoad {
+                self.onNextLoad = nil
+                once()
+            }
             // The folder shown was moved or deleted: go to the nearest one left, as Dolphin does.
             if self.model.locationVanished {
                 let gone = self.model.location
@@ -392,6 +396,15 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     // MARK: Status
 
+    /// Called once, after the next load finishes (the split view flies items in when the new pane has them).
+    var onNextLoad: (() -> Void)?
+
+    /// The width the list gets in a pane `paneWidth` wide (the pane minus what's beside the list, such as a panel).
+    func listWidth(forPaneWidth paneWidth: CGFloat) -> CGFloat {
+        let beside = bounds.width > 0 ? bounds.width - list.visibleWidth : 0
+        return max(100, paneWidth - beside)
+    }
+
     private func modelChanged() {
         if showsApps { apps?.reload() }
         list.relayout()
@@ -470,12 +483,25 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         filterBar.focus()
     }
 
-    func filterBar(_ bar: FilterBar, changed filter: NameFilter) { model.filter = filter }
+    func filterBar(_ bar: FilterBar, changed filter: NameFilter) { animatingItems { model.filter = filter } }
+
+    /// Applies a change to what's listed (filter, search results), the items gliding to their new places, the ones
+    /// that went away fading out and new ones growing in.
+    private func animatingItems(searchStyle: Bool = false, _ change: () -> Void) {
+        let start = showsApps ? nil : list.snapshotForTransition()
+        change()
+        guard let start else { return }
+        if searchStyle {
+            list.animateLayoutChange(from: start, duration: 0.45, curve: Animator.easeInOutCubic, cascade: true)
+        } else {
+            list.animateLayoutChange(from: start)
+        }
+    }
 
     func filterBarClosed(_ bar: FilterBar) {
         bar.clear()
         bar.isHidden = true
-        model.filter = NameFilter()
+        animatingItems { model.filter = NameFilter() }
         needsLayout = true
         window?.makeFirstResponder(list)
     }
@@ -502,23 +528,36 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         searchQuery = nil
         searchBar.isHidden = true
         searchBar.clear()
-        model.searchResults = nil
-        model.endSearchView()
+        animatingItems(searchStyle: true) {
+            model.searchResults = nil
+            model.endSearchView()
+        }
         needsLayout = true
         delegate?.containerSearchVisibilityChanged(self)
     }
 
     func searchBar(_ bar: SearchBar, search text: String, everywhere: Bool, contents: Bool) {
         searchQuery?.stop()
-        guard !text.isEmpty else { model.searchResults = nil; return }
+        guard !text.isEmpty else {
+            animatingItems(searchStyle: true) {
+                model.searchResults = nil
+                model.endSearchView()
+            }
+            return
+        }
         let scope = everywhere ? FileManager.default.homeDirectoryForCurrentUser : url
-        // Shown for the results only: never saved as the folder's style.
-        model.showSearchView()
         statusBar.progress = 0.1
-        model.searchResults = []
+        // What's shown stays until results come (the folder, or the previous results); then it all morphs at once,
+        // like the split view: what still matches glides to its place among the results, the rest fades out, and
+        // the new results come in one after another.
         searchQuery = SearchRunner(text: text, scope: scope, contents: contents) { [weak self] items, done in
-            guard let self else { return }
-            self.model.searchResults = items
+            // "Nothing yet" while searching changes nothing: what's shown stays until there are results to morph to.
+            guard let self, done || !items.isEmpty else { return }
+            self.animatingItems(searchStyle: true) {
+                // Shown for the results only: never saved as the folder's style.
+                if !self.model.isSearching { self.model.showSearchView() }
+                self.model.searchResults = items
+            }
             self.statusBar.progress = done ? nil : 0.5
             if done { self.statusBar.showMessage(items.isEmpty ? "No items found." : "\(items.count) items found.") }
         }
