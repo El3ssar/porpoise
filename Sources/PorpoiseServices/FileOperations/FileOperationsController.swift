@@ -146,8 +146,8 @@ public final class FileOperationsController {
         guard !local.isEmpty else { return }
         if Settings.shared.confirmTrash {
             let q = Confirmation(
-                message: local.count == 1 ? "Do you really want to move “\(local[0].lastPathComponent)” to the trash?"
-                    : "Do you really want to move these \(local.count) items to the trash?",
+                message: local.count == 1 ? "Do you really want to move “\(local[0].lastPathComponent)” to the Trash?"
+                    : "Do you really want to move these \(local.count) items to the Trash?",
                 confirmTitle: "Move to Trash", suppressible: true)
             guard confirm(q, window: window, dontAskAgain: { Settings.shared.confirmTrash = false }) else { return }
         }

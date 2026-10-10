@@ -37,7 +37,7 @@ public final class DirectoryModel {
             onPropsChanged?()
         }
     }
-    public var filter = NameFilter() { didSet { if filter != oldValue { rebuild() } } }
+    public var filter = NameFilter() { didSet { if filter != oldValue { rebuild(keepingOrder: true) } } }
 
     /// Search results replace the folder listing while set (Search bar).
     public var searchResults: [FileItem]? { didSet { rebuild() } }
@@ -174,7 +174,59 @@ public final class DirectoryModel {
         cloudCache[item.url] = c
         return c
     }
-    public func refreshCloud() { cloudCache = [:] }
+    /// Re-reads the cloud states in the background; the ones known stay shown meanwhile (no flicker).
+    public func refreshCloud() { readMetadata(of: Set(cloudCache.keys), tags: false) }
+
+    // Drawing reads only what's cached: on a network volume every read is a round trip, and a screenful of them
+    // would stall scrolling. What's missing is read in the background, then `onMetadataLoaded` redraws.
+
+    public var onMetadataLoaded: (() -> Void)?
+    private var metadataWanted: Set<URL> = []
+    private static let metadataQueue = DispatchQueue(label: "app.porpoise.item-metadata", qos: .userInitiated)
+
+    /// Tags to draw: the cached ones, or none until they're read.
+    public func shownTags(for item: FileItem) -> [FinderTags.Tag] {
+        guard item.url.isFileURL else { return [] }
+        if let t = tagCache[item.url] { return t }
+        want(item.url)
+        return []
+    }
+
+    /// Cloud state to draw: the cached one, or `.local` until it's read.
+    public func shownCloud(for item: FileItem) -> (state: CloudState, isCloud: Bool) {
+        if let c = cloudCache[item.url] { return c }
+        if item.url.isFileURL { want(item.url) }
+        return (.local, false)
+    }
+
+    /// Collects the misses of one drawing pass and reads them together once it's done.
+    private func want(_ url: URL) {
+        if metadataWanted.isEmpty {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let urls = self.metadataWanted
+                self.metadataWanted = []
+                self.readMetadata(of: urls, tags: true)
+            }
+        }
+        metadataWanted.insert(url)
+    }
+
+    private func readMetadata(of urls: Set<URL>, tags: Bool) {
+        guard !urls.isEmpty else { return }
+        let token = loadToken
+        Self.metadataQueue.async { [weak self] in
+            let read = urls.map { ($0, tags ? FinderTags.read($0) : nil, CloudState.of($0)) }
+            DispatchQueue.main.async {
+                guard let self, self.loadToken == token else { return }
+                for (url, t, c) in read {
+                    if let t, self.tagCache[url] == nil { self.tagCache[url] = t }
+                    self.cloudCache[url] = c
+                }
+                self.onMetadataLoaded?()
+            }
+        }
+    }
 
     /// Name as shown: the full name, or without its extension when Settings › View › "Always show file extensions"
     /// is off (folders and names that are only an extension keep theirs).
@@ -343,21 +395,35 @@ public final class DirectoryModel {
 
     // MARK: Building rows
 
-    private func visible(_ list: [FileItem]) -> [FileItem] {
-        let match = filter.matcher() ?? { _ in true }
+    private func visible(_ list: [FileItem], filtered: Bool = true) -> [FileItem] {
+        let match = filtered ? filter.matcher() : nil
         let hideBackups = Settings.shared.hideBackupFiles && !props.showHidden
-        return list.filter { (props.showHidden || !$0.isHidden) && !(hideBackups && $0.name.hasSuffix("~")) && match($0.name) }
+        return list.filter {
+            (props.showHidden || !$0.isHidden) && !(hideBackups && $0.name.hasSuffix("~")) && match?($0.name) != false
+        }
     }
 
-    public func rebuild() {
+    /// The top level in order, before the name filter: typing in the filter bar narrows it without sorting again.
+    private var sortedTop: [FileItem]?
+
+    /// Rebuilds the rows; `keepingOrder` when only the name filter changed.
+    public func rebuild(keepingOrder: Bool = false) {
         let choice = Settings.shared.sortingChoice
         var out: [Row] = []
         var grps: [ItemGroup] = []
-        let base = visible(searchResults ?? items)
         let groupRole = props.effectiveGroupRole
-        // Finder tags are read (and cached) only when sorting or grouping by them.
-        let tagNames = props.sortRole == .tags || groupRole == .tags ? tagMap(base) : [:]
-        let sorted = ItemSorter.sort(base, props: props, choice: choice, folderSizes: folderCounts, tags: tagNames)
+        let top: [FileItem]
+        if keepingOrder, let kept = sortedTop {
+            top = kept
+        } else {
+            let all = visible(searchResults ?? items, filtered: false)
+            // Finder tags are read (and cached) only when sorting by them.
+            top = ItemSorter.sort(all, props: props, choice: choice, folderSizes: folderCounts,
+                                  tags: props.sortRole == .tags ? tagMap(all) : [:])
+            sortedTop = top
+        }
+        let sorted = filter.matcher().map { match in top.filter { match($0.name) } } ?? top
+        let tagNames = groupRole == .tags ? tagMap(sorted) : [:]
 
         func add(_ list: [FileItem], depth: Int, groupIndex: Int) {
             for it in list {
@@ -573,7 +639,7 @@ public final class DirectoryModel {
         case .group: return item.group ?? ""
         case .linkDestination: return item.linkDestination ?? ""
         case .tags:
-            return tags(for: item).map(\.name).joined(separator: ", ")
+            return shownTags(for: item).map(\.name).joined(separator: ", ")
         }
     }
 

@@ -109,6 +109,11 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         ]
 
         model.onChange = { [weak self] in self?.modelChanged() }
+        model.onMetadataLoaded = { [weak self] in
+            guard let self else { return }
+            // A Tags column or label sizes itself to the tags just read.
+            if self.model.props.roles(for: self.model.props.mode).contains(.tags) { self.list.relayout() } else { self.list.needsDisplay = true }
+        }
         model.onSelectionChanged = { [weak self] in
             guard let self else { return }
             self.list.needsDisplay = true

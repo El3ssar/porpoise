@@ -245,9 +245,20 @@ public final class PlacesModel {
     public func refreshDetected() {
         let cloud = CloudStorage.locations().map { PlaceEntry(title: $0.title, url: $0.url, icon: $0.icon, section: .remote) }
         if cloud != cloudEntries { cloudEntries = cloud; post() }
-        guard ADBProvider.adbPath != nil else { return }
-        pollPhones()
-        if adbTimer == nil {
+        pollsPhones = isActive
+    }
+
+    /// The app is in front: phones are polled only then (the app sets this as it activates and resigns).
+    public var isActive = true {
+        didSet { if isActive != oldValue { refreshDetected() } }
+    }
+
+    private var pollsPhones = false {
+        didSet {
+            adbTimer?.invalidate()
+            adbTimer = nil
+            guard pollsPhones, ADBProvider.adbPath != nil else { return }
+            pollPhones()
             adbTimer = Timer.scheduledTimer(withTimeInterval: Self.adbPollInterval, repeats: true) { [weak self] _ in self?.pollPhones() }
         }
     }

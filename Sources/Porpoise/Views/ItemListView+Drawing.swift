@@ -90,7 +90,7 @@ extension ItemListView {
             }
         }
         let (image, imageRect) = drawIcon(i)
-        let cloud = model.cloud(for: item).state
+        let cloud = model.shownCloud(for: item).state
         drawCloudBadge(cloud, row: i, image: image, imageRect: imageRect, selected: selected)
         if item.isSymlink || item.isAliasFile { drawLinkEmblem(i, besideCloudBadge: cloud != .local) }
 
@@ -234,7 +234,7 @@ extension ItemListView {
         let m = NSMutableAttributedString(attributedString: label)
         m.addAttribute(.foregroundColor, value: Theme.viewText.withAlphaComponent(item.isHidden ? 0.65 : 1),
                        range: NSRange(location: 0, length: m.length))
-        let tags = model.tags(for: item)
+        let tags = model.shownTags(for: item)
         let d = tagDotDiameter
         let dotsW = FinderTags.dotsWidth(tags.count, diameter: d)
         let inlineDots = !tags.isEmpty && size.height <= lineHeight + 1 && size.width + dotsW + 4 <= tr.width
@@ -298,7 +298,7 @@ extension ItemListView {
     /// One-line name followed by its Finder tag dots.
     private func drawNameWithTags(_ item: FileItem, in r: CGRect, selected: Bool) {
         let name = model.displayName(for: item)
-        let tags = model.tags(for: item)
+        let tags = model.shownTags(for: item)
         let d = tagDotDiameter
         let dw = tags.isEmpty ? 0 : FinderTags.dotsWidth(tags.count, diameter: d) + 5
         let nameW = min(textWidth(name) + 1, max(0, r.width - dw - 2))

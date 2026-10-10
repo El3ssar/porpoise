@@ -44,7 +44,7 @@ public enum PrivilegedHelper {
         guard runAsAdministrator(script: script, arguments: [bundled.path, bundledPlist.path],
                                  prompt: "Porpoise wants to install its helper, so it can empty the Trash and change items that belong to the system without asking again.")
         else { return false }
-        NotificationCenter.default.post(name: PrivacyAccess.statusChanged, object: nil)
+        DispatchQueue.main.async { NotificationCenter.default.post(name: PrivacyAccess.statusChanged, object: nil) }
         guard isEnabled, ping(timeout: 4) else { return false }
         // Lists "Porpoise Helper" under Full Disk Access (switched off) so it's there to switch on.
         _ = checkFullDiskAccess(timeout: 4)
