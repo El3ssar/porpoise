@@ -1,7 +1,7 @@
 import Foundation
-import Testing
 import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
 
 /// The helper's check that the app asking it is intact on disk, on a real bundle signed (ad hoc) by codesign.
 struct CodeSigningTests {
@@ -13,7 +13,9 @@ struct CodeSigningTests {
     init() throws {
         scratch = try Scratch("codesigning")
         app = scratch.path("Intact.app")
-        _ = try scratch.file("Intact.app/Contents/Info.plist", """
+        _ = try scratch.file(
+            "Intact.app/Contents/Info.plist",
+            """
             <?xml version="1.0" encoding="UTF-8"?>
             <plist version="1.0"><dict>
               <key>CFBundleIdentifier</key><string>test.porpoise.intact</string>
@@ -77,7 +79,7 @@ struct CodeSigningTests {
     }
 
     @Test func otherProcessesFail() {
-        #expect(!CodeSigning.isIntact(pid: getpid(), requirement: requirement))   // this test, signed otherwise
+        #expect(!CodeSigning.isIntact(pid: getpid(), requirement: requirement))  // this test, signed otherwise
         #expect(!CodeSigning.isIntact(pid: -1, requirement: requirement))
     }
 }

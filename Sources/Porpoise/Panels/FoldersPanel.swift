@@ -300,5 +300,8 @@ final class BreezeRowView: NSTableRowView {
         Theme.placesSelectedFill.setFill()
         bounds.fill()
     }
-    override var isEmphasized: Bool { get { false } set {} }
+    override var isEmphasized: Bool {
+        get { false }
+        set {}
+    }
 }

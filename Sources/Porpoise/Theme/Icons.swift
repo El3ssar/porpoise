@@ -1,7 +1,7 @@
 import AppKit
-import UniformTypeIdentifiers
 import PorpoiseCore
 import PorpoiseServices
+import UniformTypeIdentifiers
 
 /// Loads Tela-circle-dark icons from the app bundle and recolors them the way KDE's KIconLoader does
 /// (replacing the SVG "current-color-scheme" stylesheet with the active color scheme).
@@ -34,17 +34,21 @@ final class Icons {
         let key = "\(name)|\(px)|\(selected)" as NSString
         if let img = cache.object(forKey: key) { return img }
         guard let url = IconTheme.shared.file(name, size: px), let svg = try? String(contentsOf: url, encoding: .utf8),
-              let data = Self.recolor(svg, stylesheet: Theme.iconStylesheet(selected: selected)).data(using: .utf8),
-              let img = NSImage(data: data) else { return nil }
+            let data = Self.recolor(svg, stylesheet: Theme.iconStylesheet(selected: selected)).data(using: .utf8),
+            let img = NSImage(data: data)
+        else { return nil }
         img.size = NSSize(width: size, height: size)
         cache.setObject(img, forKey: key)
         return img
     }
 
     static func recolor(_ svg: String, stylesheet: String) -> String {
-        guard let r = svg.range(of: #"<style[^>]*id="current-color-scheme"[^>]*>[\s\S]*?</style>"#,
-                                options: .regularExpression),
-              let open = svg[r].range(of: ">") else { return svg }
+        guard
+            let r = svg.range(
+                of: #"<style[^>]*id="current-color-scheme"[^>]*>[\s\S]*?</style>"#,
+                options: .regularExpression),
+            let open = svg[r].range(of: ">")
+        else { return svg }
         let head = svg[r.lowerBound...open.lowerBound]
         return svg.replacingCharacters(in: r, with: head + stylesheet + "</style>")
     }

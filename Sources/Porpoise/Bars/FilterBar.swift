@@ -13,7 +13,7 @@ final class FilterBar: NSView, NSSearchFieldDelegate {
     let field = NSSearchField()
     private let lockButton = FlatButton(icon: "object-unlocked", tooltip: "Keep Filter When Changing Folders")
     private let modeButton = FlatButton(icon: nil, title: FilterMode.plainText.title)
-    private let caseButton = FlatButton(icon: "format-text-case", tooltip: "Match Case") // falls back to text
+    private let caseButton = FlatButton(icon: "format-text-case", tooltip: "Match Case")  // falls back to text
     private let closeButton = FlatButton(icon: "dialog-close", tooltip: "Hide Filter Bar")
     private let invalidLabel = NSTextField(labelWithString: "Invalid expression")
     var isLocked = false { didSet { lockButton.iconName = isLocked ? "object-locked" : "object-unlocked"; lockButton.isToggled = isLocked } }

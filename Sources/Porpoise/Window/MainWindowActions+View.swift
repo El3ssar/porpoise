@@ -133,8 +133,11 @@ extension MainWindowController {
         default:
             let show = !showTerminal
             animatePanel(.terminal, show: show) { self.showTerminal.toggle() }
-            if show { DispatchQueue.main.async { self.window?.makeFirstResponder(self.terminal.terminalView) } }
-            else { window?.makeFirstResponder(view.list) }
+            if show {
+                DispatchQueue.main.async { self.window?.makeFirstResponder(self.terminal.terminalView) }
+            } else {
+                window?.makeFirstResponder(view.list)
+            }
         }
     }
 
@@ -147,8 +150,11 @@ extension MainWindowController {
 
     @objc func focusTerminal(_ sender: Any?) {
         if !showTerminal { showTerminal = true; rebuildPanels() }
-        if window?.firstResponder === terminal.terminalView { window?.makeFirstResponder(view.list) }
-        else { window?.makeFirstResponder(terminal.terminalView) }
+        if window?.firstResponder === terminal.terminalView {
+            window?.makeFirstResponder(view.list)
+        } else {
+            window?.makeFirstResponder(terminal.terminalView)
+        }
     }
 
     private var activeNavigator: BreadcrumbView { tab.navigators[tab.activeIsSecondary ? 1 : 0] }

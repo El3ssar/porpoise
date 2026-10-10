@@ -1,8 +1,9 @@
 import Foundation
+import PorpoiseTestSupport
 import Testing
+
 @testable import PorpoiseCore
 @testable import PorpoiseServices
-import PorpoiseTestSupport
 
 /// DirectoryModel on real folders: loads finish on the main queue, so the tests wait for them (bounded).
 @MainActor @Suite(.isolatedSettings) struct DirectoryModelTests {
@@ -32,7 +33,7 @@ import PorpoiseTestSupport
         var loads = 0
         let m = try await loaded(s.url) { $0.onLoaded = { loads += 1 } }
         #expect(names(m) == ["Alpha", "zeta", "File1.txt", "file2.txt", "file10.txt"])
-        #expect(loads >= 1)   // FSEvents may report the files just made: another (quiet) reload
+        #expect(loads >= 1)  // FSEvents may report the files just made: another (quiet) reload
         #expect(m.loadError == nil && !m.blockedByPrivacy)
         #expect(m.visibleCounts.folders == 2 && m.visibleCounts.files == 3)
         #expect(m.rows.allSatisfy { $0.depth == 0 && $0.group == -1 })
@@ -49,7 +50,7 @@ import PorpoiseTestSupport
         #expect(names(m) == [".dotfile", "flagged", "notes.txt~", "shown"])
         Settings.shared.hideBackupFiles = true
         m.rebuild()
-        #expect(names(m) == [".dotfile", "flagged", "notes.txt~", "shown"])   // hidden files shown: backups too
+        #expect(names(m) == [".dotfile", "flagged", "notes.txt~", "shown"])  // hidden files shown: backups too
         m.props.showHidden = false
         #expect(names(m) == ["shown"])
         // Hidden items come last when asked.
@@ -70,12 +71,12 @@ import PorpoiseTestSupport
         m.props.sortRole = .size
         #expect(names(m) == ["dir", "small.txt", "medium.md", "big.log"])
         m.props.sortOrder = .descending
-        #expect(names(m) == ["dir", "big.log", "medium.md", "small.txt"])   // folders stay first
+        #expect(names(m) == ["dir", "big.log", "medium.md", "small.txt"])  // folders stay first
         m.props.foldersFirst = false
         m.props.sortRole = .modificationTime
         m.props.sortOrder = .ascending
         #expect(names(m).filter { $0 != "dir" } == ["big.log", "medium.md", "small.txt"])
-        #expect(names(m).last == "dir")   // created just now
+        #expect(names(m).last == "dir")  // created just now
         m.props.sortRole = .extension_
         #expect(names(m) == ["dir", "big.log", "medium.md", "small.txt"])
     }
@@ -155,14 +156,17 @@ import PorpoiseTestSupport
         var loaded = 0
         m.onMetadataLoaded = { loaded += 1 }
         let item = try #require(m.rows.first?.item)
-        #expect(m.shownTags(for: item).isEmpty)          // not read yet
+        #expect(m.shownTags(for: item).isEmpty)  // not read yet
         #expect(m.shownCloud(for: item).state == .local)
         #expect(await eventually { m.shownTags(for: item).map(\.name) == ["Red"] })
         #expect(loaded >= 1)
         // Re-reading cloud states happens in the background too, and tells the view.
         let before = loaded
         m.refreshCloud()
-        #expect(await eventually { _ = m.shownCloud(for: item); return loaded > before })
+        #expect(
+            await eventually {
+                _ = m.shownCloud(for: item); return loaded > before
+            })
         // Tagging clears the tags, which are then read again.
         FinderTags.set(["Blue"], on: tagged)
         m.refreshTags()
@@ -259,7 +263,7 @@ import PorpoiseTestSupport
     /// was expanded) must not throw it away.
     @Test func expandingDuringAReloadKeepsTheChildren() async throws {
         let s = try Scratch()
-        for i in 0..<400 { try s.file("file\(i)") }   // a slower reload than the expanded folder's listing
+        for i in 0..<400 { try s.file("file\(i)") }  // a slower reload than the expanded folder's listing
         try s.file("sub/child")
         let sub = s.path("sub")
         let m = try await loaded(s.url) { $0.props.mode = .details }
@@ -459,7 +463,7 @@ import PorpoiseTestSupport
         #expect(m.props.mode == .details && m.props.sortRole == .name && !m.props.foldersFirst)
         #expect(m.props.roles(for: .details) == [.path, .accessTime])
         m.props.mode = .icons
-        m.saveProps()   // virtual locations keep theirs
+        m.saveProps()  // virtual locations keep theirs
         #expect(Settings.store.object(forKey: "viewProps") == nil)
     }
 
@@ -471,7 +475,7 @@ import PorpoiseTestSupport
         try s.folder("Apps/Utilities/Tool.app/Contents")
         try s.folder("Apps/.Secret.app")
         try s.file("Apps/readme.txt")
-        try s.folder("System/zed.app")       // same name as one in an earlier root: the earlier one wins
+        try s.folder("System/zed.app")  // same name as one in an earlier root: the earlier one wins
         try s.folder("System/Calculator.app")
         let saved = AppLibrary.roots
         AppLibrary.roots = [s.path("Apps"), s.path("System")]

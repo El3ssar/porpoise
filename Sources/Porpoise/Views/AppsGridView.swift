@@ -99,7 +99,8 @@ final class AppsGridView: NSView, NSDraggingSource {
         let leaving = before.compactMap { url, cell in targets[url] == nil ? beforeItems[url].map { (item: $0, cell: cell) } : nil }
         let from = still ? targets.filter { before[$0.key] != nil } : before.filter { targets[$0.key] != nil }
         transition = Transition(start: CACurrentMediaTime(), from: from, leaving: leaving)
-        lastTransitionInfo = "moving=\(from.filter { $0.value != targets[$0.key] }.count) staying=\(from.count) leaving=\(leaving.count) appearing=\(targets.count - from.count)"
+        lastTransitionInfo =
+            "moving=\(from.filter { $0.value != targets[$0.key] }.count) staying=\(from.count) leaving=\(leaving.count) appearing=\(targets.count - from.count)"
         // Room for the apps on their way out; the grid takes its real height when the animation ends.
         if let low = (before.values.map(\.maxY) + [frame.height]).max(), low > frame.height { setFrameSize(NSSize(width: width, height: low)) }
         if link == nil {
@@ -144,8 +145,9 @@ final class AppsGridView: NSView, NSDraggingSource {
         guard let t = transition else { return (target, 1, 1) }
         let p = progress
         guard let from = t.from[url] else { return (target, p, 0.82 + 0.18 * p) }
-        let cell = CGRect(x: from.minX + (target.minX - from.minX) * p, y: from.minY + (target.minY - from.minY) * p,
-                          width: target.width, height: target.height)
+        let cell = CGRect(
+            x: from.minX + (target.minX - from.minX) * p, y: from.minY + (target.minY - from.minY) * p,
+            width: target.width, height: target.height)
         return (cell, 1, 1)
     }
 
@@ -159,16 +161,18 @@ final class AppsGridView: NSView, NSDraggingSource {
     override func accessibilityChildren() -> [Any]? {
         model.rows.indices.filter { cellRect($0).intersects(visibleRect) }.map { i in
             let item = model.rows[i].item
-            return AccessibleRegion(in: self, role: .button, label: AppLibrary.displayName(item.url),
-                                    frame: { [weak self] in self?.cellRect(i) ?? .zero },
-                                    selected: { [weak self] in self?.model.selection.contains(item.url) ?? false },
-                                    press: { [weak self] in if let o = self?.owner { o.host?.appsView(o, open: [item]) } })
+            return AccessibleRegion(
+                in: self, role: .button, label: AppLibrary.displayName(item.url),
+                frame: { [weak self] in self?.cellRect(i) ?? .zero },
+                selected: { [weak self] in self?.model.selection.contains(item.url) ?? false },
+                press: { [weak self] in if let o = self?.owner { o.host?.appsView(o, open: [item]) } })
         }
     }
 
     private func cellRect(_ i: Int) -> CGRect {
-        CGRect(x: originX + CGFloat(i % columns) * Self.cell.width, y: CGFloat(i / columns) * Self.cell.height,
-               width: Self.cell.width, height: Self.cell.height)
+        CGRect(
+            x: originX + CGFloat(i % columns) * Self.cell.width, y: CGFloat(i / columns) * Self.cell.height,
+            width: Self.cell.width, height: Self.cell.height)
     }
 
     private func iconRect(_ i: Int) -> CGRect { iconRect(in: cellRect(i)) }
@@ -207,20 +211,24 @@ final class AppsGridView: NSView, NSDraggingSource {
         let p = progress
         // Apps leaving the result shrink and fade out quickly, under the ones that stay.
         for l in transition?.leaving ?? [] {
-            drawItem(l.item, cell: l.cell, selected: false, hovered: false, focused: focused,
-                     alpha: max(0, 1 - p * 1.6), scale: 1 - 0.18 * p, dirty: dirtyRect)
+            drawItem(
+                l.item, cell: l.cell, selected: false, hovered: false, focused: focused,
+                alpha: max(0, 1 - p * 1.6), scale: 1 - 0.18 * p, dirty: dirtyRect)
         }
         for (i, row) in model.rows.enumerated() {
             let item = row.item
             let place = placement(item.url, target: cellRect(i))
-            drawItem(item, cell: place.cell, selected: model.selection.contains(item.url), hovered: hover == i,
-                     focused: focused, alpha: place.alpha, scale: place.scale, dirty: dirtyRect)
+            drawItem(
+                item, cell: place.cell, selected: model.selection.contains(item.url), hovered: hover == i,
+                focused: focused, alpha: place.alpha, scale: place.scale, dirty: dirtyRect)
         }
     }
 
     /// One app: highlight, icon, name and running dot, all in theme colours (like the other views).
-    private func drawItem(_ item: FileItem, cell: CGRect, selected: Bool, hovered: Bool, focused: Bool,
-                          alpha: CGFloat, scale: CGFloat, dirty: CGRect) {
+    private func drawItem(
+        _ item: FileItem, cell: CGRect, selected: Bool, hovered: Bool, focused: Bool,
+        alpha: CGFloat, scale: CGFloat, dirty: CGRect
+    ) {
         guard alpha > 0.01, cell.intersects(dirty), let ctx = NSGraphicsContext.current?.cgContext else { return }
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
@@ -249,11 +257,16 @@ final class AppsGridView: NSView, NSDraggingSource {
         iconShadow.shadowBlurRadius = 7
         iconShadow.shadowOffset = NSSize(width: 0, height: -3)
         iconShadow.set()
-        icon(for: item).draw(in: ir, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
+        icon(for: item).draw(
+            in: ir, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
         NSGraphicsContext.restoreGraphicsState()
 
         // The name, on the selection colour when selected.
-        let name = names[item.url] ?? { let n = AppLibrary.displayName(item.url); names[item.url] = n; return n }()
+        let name =
+            names[item.url]
+            ?? {
+                let n = AppLibrary.displayName(item.url); names[item.url] = n; return n
+            }()
         let attrs: [NSAttributedString.Key: Any] = [
             .font: Self.nameFont, .paragraphStyle: Self.namePara,
             .foregroundColor: selected && focused ? Theme.selectionText : Theme.viewText,
@@ -288,8 +301,10 @@ final class AppsGridView: NSView, NSDraggingSource {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-                                       owner: self, userInfo: nil))
+        addTrackingArea(
+            NSTrackingArea(
+                rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                owner: self, userInfo: nil))
     }
 
     override func mouseMoved(with event: NSEvent) { setHover(index(at: convert(event.locationInWindow, from: nil))) }
@@ -338,7 +353,8 @@ final class AppsGridView: NSView, NSDraggingSource {
         // A plain click on one of several selected apps selects just that one.
         // The index is from mouseDown: an app installed or removed meanwhile can have changed the rows.
         if mouseDownPoint != nil, let i = mouseDownIndex, i < model.rows.count,
-           event.modifierFlags.intersection([.command, .shift]).isEmpty, event.clickCount == 1 {
+            event.modifierFlags.intersection([.command, .shift]).isEmpty, event.clickCount == 1
+        {
             model.selection = [model.rows[i].item.url]
             needsDisplay = true
         }
@@ -364,22 +380,23 @@ final class AppsGridView: NSView, NSDraggingSource {
     override func keyDown(with event: NSEvent) {
         let mods = event.modifierFlags.intersection([.command, .control, .option])
         switch Int(event.keyCode) {
-        case 123: move(by: -1, extend: event.modifierFlags.contains(.shift)); return            // ←
-        case 124: move(by: 1, extend: event.modifierFlags.contains(.shift)); return             // →
-        case 126:                                                                               // ↑
+        case 123: move(by: -1, extend: event.modifierFlags.contains(.shift)); return  // ←
+        case 124: move(by: 1, extend: event.modifierFlags.contains(.shift)); return  // →
+        case 126:  // ↑
             if mods.contains(.command) { break }
             move(by: -columns, extend: event.modifierFlags.contains(.shift)); return
-        case 125:                                                                               // ↓, ⌘↓ opens
+        case 125:  // ↓, ⌘↓ opens
             if mods.contains(.command) { openSelection(); return }
             move(by: columns, extend: event.modifierFlags.contains(.shift)); return
-        case 36, 76: openSelection(); return                                                    // Return
-        case 49: if let o = owner { o.host?.appsViewQuickLook(o) }; return                      // Space
-        case 53: model.selection = []; needsDisplay = true; return                              // Escape
+        case 36, 76: openSelection(); return  // Return
+        case 49: if let o = owner { o.host?.appsViewQuickLook(o) }; return  // Space
+        case 53: model.selection = []; needsDisplay = true; return  // Escape
         default: break
         }
         // Letters search, as in Launchpad.
         if mods.isEmpty, let chars = event.characters, let c = chars.unicodeScalars.first,
-           CharacterSet.alphanumerics.union(.punctuationCharacters).union(.whitespaces).contains(c) {
+            CharacterSet.alphanumerics.union(.punctuationCharacters).union(.whitespaces).contains(c)
+        {
             owner?.startSearch(with: chars)
             return
         }

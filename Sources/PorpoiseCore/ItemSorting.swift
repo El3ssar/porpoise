@@ -60,8 +60,10 @@ public struct NameFilter: Equatable, Sendable {
         return pattern + "\\z"
     }
 
-    private static func regexMatcher(_ pattern: String, _ cs: Bool,
-                                     extra: NSRegularExpression.Options = []) -> ((String) -> Bool)? {
+    private static func regexMatcher(
+        _ pattern: String, _ cs: Bool,
+        extra: NSRegularExpression.Options = []
+    ) -> ((String) -> Bool)? {
         guard let re = try? NSRegularExpression(pattern: pattern, options: extra.union(cs ? [] : [.caseInsensitive])) else {
             return nil
         }
@@ -93,8 +95,10 @@ public enum ItemSorter {
     /// Sorts like Dolphin's KFileItemModel: folders first (optional), hidden last (optional), then by role,
     /// with the name as tie breaker. Folders-first ordering is not reversed by a descending sort.
     /// `tags`: Finder tag names per item, needed only when sorting by tags.
-    public static func sort(_ items: [FileItem], props: ViewProperties, choice: SortingChoice = .natural,
-                            folderSizes: [URL: Int] = [:], tags: [URL: [String]] = [:]) -> [FileItem] {
+    public static func sort(
+        _ items: [FileItem], props: ViewProperties, choice: SortingChoice = .natural,
+        folderSizes: [URL: Int] = [:], tags: [URL: [String]] = [:]
+    ) -> [FileItem] {
         let desc = props.sortOrder == .descending
         return items.sorted { a, b in
             if props.foldersFirst, a.isBrowsableFolder != b.isBrowsableFolder { return a.isBrowsableFolder }
@@ -106,8 +110,10 @@ public enum ItemSorter {
         }
     }
 
-    static func compare(_ a: FileItem, _ b: FileItem, role: ItemRole, choice: SortingChoice,
-                        folderSizes: [URL: Int], tags: [URL: [String]] = [:]) -> ComparisonResult {
+    static func compare(
+        _ a: FileItem, _ b: FileItem, role: ItemRole, choice: SortingChoice,
+        folderSizes: [URL: Int], tags: [URL: [String]] = [:]
+    ) -> ComparisonResult {
         func cmp<T: Comparable>(_ x: T, _ y: T) -> ComparisonResult { x < y ? .orderedAscending : (x > y ? .orderedDescending : .orderedSame) }
         switch role {
         case .name: return compareNames(a.name, b.name, choice)
@@ -141,8 +147,10 @@ public enum ItemGrouper {
     static let smallSizeLimit: Int64 = 5 * 1024 * 1024
     static let mediumSizeLimit: Int64 = 10 * 1024 * 1024
 
-    public static func groupName(_ item: FileItem, role: ItemRole, now: Date = Date(),
-                                 calendar: Calendar = .current, tags: [String] = []) -> String {
+    public static func groupName(
+        _ item: FileItem, role: ItemRole, now: Date = Date(),
+        calendar: Calendar = .current, tags: [String] = []
+    ) -> String {
         switch role {
         case .name:
             guard let first = item.name.first else { return "" }
@@ -156,7 +164,9 @@ public enum ItemGrouper {
             if s < mediumSizeLimit { return "Medium" }
             return "Big"
         case .modificationTime, .creationTime, .accessTime:
-            let date: Date? = role == .modificationTime ? item.modificationDate
+            let date: Date? =
+                role == .modificationTime
+                ? item.modificationDate
                 : (role == .creationTime ? item.creationDate : item.accessDate)
             guard let d = date else { return "Unknown" }
             return dateGroup(d, now: now, calendar: calendar)
@@ -175,9 +185,11 @@ public enum ItemGrouper {
     /// keep their sections: a folder group never takes files in (Dolphin starts a new group there). Grouped by the
     /// sort role, groups follow the sort order; grouped by another role, groups with the same title are merged and
     /// ordered by that role (dates newest first).
-    public static func groups(_ sorted: [FileItem], role: ItemRole, props: ViewProperties, choice: SortingChoice = .natural,
-                              folderSizes: [URL: Int] = [:], tags: [URL: [String]] = [:], now: Date = Date(),
-                              calendar: Calendar = .current) -> [(title: String, items: [FileItem])] {
+    public static func groups(
+        _ sorted: [FileItem], role: ItemRole, props: ViewProperties, choice: SortingChoice = .natural,
+        folderSizes: [URL: Int] = [:], tags: [URL: [String]] = [:], now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [(title: String, items: [FileItem])] {
         struct Key: Hashable { let section: Int; let title: String }
         func section(_ it: FileItem) -> Int {
             (props.foldersFirst && !it.isBrowsableFolder ? 2 : 0) + (props.hiddenLast && it.isHidden ? 1 : 0)

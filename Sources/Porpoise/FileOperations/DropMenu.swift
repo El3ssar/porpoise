@@ -28,22 +28,27 @@ extension FileOperationsController {
                 it.representedObject = kind?.rawValue
                 it.image = Icons.shared.menuIcon(icon)
                 if !key.isEmpty {
-                    it.attributedTitle = NSAttributedString(string: title + "\t" + key, attributes: [
-                        .font: NSFont.menuFont(ofSize: 0),
-                        .paragraphStyle: { let p = NSMutableParagraphStyle(); p.tabStops = [NSTextTab(textAlignment: .right, location: 180)]; return p }(),
-                    ])
+                    it.attributedTitle = NSAttributedString(
+                        string: title + "\t" + key,
+                        attributes: [
+                            .font: NSFont.menuFont(ofSize: 0),
+                            .paragraphStyle: {
+                                let p = NSMutableParagraphStyle(); p.tabStops = [NSTextTab(textAlignment: .right, location: 180)]; return p
+                            }(),
+                        ])
                 }
             }
             // Remote folders can't be checked locally (the provider reports errors); local ones owned by
             // someone else still accept drops, which then ask to authenticate. Only read-only volumes refuse.
-            let writable = !folder.isFileURL || FileManager.default.isWritableFile(atPath: folder.path)
+            let writable =
+                !folder.isFileURL || FileManager.default.isWritableFile(atPath: folder.path)
                 || (try? folder.resourceValues(forKeys: [.volumeIsReadOnlyKey]).volumeIsReadOnly) != true
             let remote = !folder.isFileURL || urls.contains { !$0.isFileURL }
             add("Move Here", "⌘", "edit-move", .move)
             add("Copy Here", "⌥", "edit-copy", .copy)
             add("Link Here", "⌘⌥", "edit-link", .link)
             if !writable { m.items.forEach { $0.isEnabled = false } }
-            if remote { m.items.last?.isEnabled = false }   // links can't point across remote locations
+            if remote { m.items.last?.isEnabled = false }  // links can't point across remote locations
             m.addItem(.separator())
             add("Cancel", "Esc", "process-stop", nil)
             objc_setAssociatedObject(m, &dropTargetKey, target, .OBJC_ASSOCIATION_RETAIN)

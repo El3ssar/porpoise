@@ -135,7 +135,9 @@ final class StatusBarView: NSView {
         defer { if diskRect != oldDiskRect { window?.invalidateCursorRects(for: self) } }
         let textMin = 12 + Self.minTextWidth + 16
         let sliderW = wantsSlider ? Self.sliderGroupWidth : 0
-        let diskW = freeSpaceText.isEmpty ? 0
+        let diskW =
+            freeSpaceText.isEmpty
+            ? 0
             : (freeSpaceText as NSString).size(withAttributes: [.font: Self.diskFont]).width + 8 + Self.diskBarWidth + 18
         let showsDisk = diskW > 0 && textMin + sliderW + diskW <= right
         let showsSlider = wantsSlider && textMin + sliderW <= right
@@ -174,15 +176,17 @@ final class StatusBarView: NSView {
             Theme.windowBackground.setFill(); p.fill()
             Theme.frame.setStroke(); p.lineWidth = 1; p.stroke()
             let s = (displayText as NSString).size(withAttributes: [.font: Theme.font])
-            (displayText as NSString).draw(in: CGRect(x: 8, y: (r.height - s.height) / 2, width: r.width - 16, height: s.height + 2),
-                                           withAttributes: [.font: Theme.font, .foregroundColor: Theme.windowText])
+            (displayText as NSString).draw(
+                in: CGRect(x: 8, y: (r.height - s.height) / 2, width: r.width - 16, height: s.height + 2),
+                withAttributes: [.font: Theme.font, .foregroundColor: Theme.windowText])
             return
         }
         let attrs = textAttrs
         let s = (displayText as NSString).size(withAttributes: attrs)
         let tx: CGFloat = progress != nil ? 32 : 12
-        (displayText as NSString).draw(in: CGRect(x: tx, y: (r.height - s.height) / 2, width: max(0, leftContentEnd - tx), height: s.height + 2),
-                                       withAttributes: attrs)
+        (displayText as NSString).draw(
+            in: CGRect(x: tx, y: (r.height - s.height) / 2, width: max(0, leftContentEnd - tx), height: s.height + 2),
+            withAttributes: attrs)
         if diskRect != .zero { drawDisk() }
     }
 
@@ -198,7 +202,9 @@ final class StatusBarView: NSView {
         track.fill()
         let used = max(0.04, min(1, usedFraction))
         let fillRect = CGRect(x: bar.minX, y: bar.minY, width: bar.width * CGFloat(used), height: bar.height)
-        let colors: [NSColor] = used > 0.9 ? [Theme.neutralText.mixed(with: .systemOrange, 0.6), Theme.negativeText]
+        let colors: [NSColor] =
+            used > 0.9
+            ? [Theme.neutralText.mixed(with: .systemOrange, 0.6), Theme.negativeText]
             : (used > 0.75 ? [Theme.selectionAlternate, .systemOrange] : [Theme.selection.lighter(150), Theme.selectionAlternate])
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(roundedRect: fillRect, xRadius: 3, yRadius: 3).addClip()

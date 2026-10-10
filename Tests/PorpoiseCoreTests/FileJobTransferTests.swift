@@ -1,14 +1,17 @@
 import Foundation
-import Testing
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseCore
 
 /// What copies, moves and links carry along: nested folders, symlinks, metadata and awkward names.
 @Suite struct FileJobTransferTests {
     let fm = FileManager.default
 
-    @Test(arguments: [" leading space", "trailing space ", "line\nbreak", "-rf", "--", "emoji 🐬🌊", "quote's \"double\"",
-                      "$(touch pwned)", "back\\slash", "tab\tname", ".hidden", "a:colon", "日本語のファイル"])
+    @Test(arguments: [
+        " leading space", "trailing space ", "line\nbreak", "-rf", "--", "emoji 🐬🌊", "quote's \"double\"",
+        "$(touch pwned)", "back\\slash", "tab\tname", ".hidden", "a:colon", "日本語のファイル",
+    ])
     func awkwardNamesSurviveCopyAndMove(_ name: String) throws {
         let s = try Scratch()
         let src = try s.file("src/\(name)", name)
@@ -82,7 +85,7 @@ import PorpoiseTestSupport
 
     @Test func sparseFilesCopyWithoutFillingTheDisk() throws {
         let s = try Scratch()
-        let big = try s.file("src/disk.img", size: 8 << 30)   // 8 GB of holes
+        let big = try s.file("src/disk.img", size: 8 << 30)  // 8 GB of holes
         try s.folder("dst")
         var last: JobProgress?
         let job = FileJob(kind: .copy, sources: [big], destinationFolder: s.path("dst"))
@@ -309,7 +312,10 @@ import PorpoiseTestSupport
         let job = FileJob(kind: .trash, sources: [f])
         let record = try #require(try job.run())
         guard case .trashed(let pairs) = record else { Issue.record("expected .trashed"); return }
-        #expect(pairs.map { $0.inTrash.resolvingSymlinksInPath() } == [disk.volume.appendingPathComponent(".Trashes/\(getuid())/draft.txt").resolvingSymlinksInPath()])
+        #expect(
+            pairs.map { $0.inTrash.resolvingSymlinksInPath() } == [
+                disk.volume.appendingPathComponent(".Trashes/\(getuid())/draft.txt").resolvingSymlinksInPath()
+            ])
         #expect(!FileJob.itemExists(at: f))
 
         let redo = try #require(try FileActions.undo(record))
@@ -320,8 +326,10 @@ import PorpoiseTestSupport
 }
 
 /// Runs a job that should meet no conflicts and no errors.
-private func run(_ kind: FileOperationKind, _ sources: [URL], to folder: URL,
-                 sourceLocation: SourceLocation = #_sourceLocation) throws -> (FileJob, UndoRecord?) {
+private func run(
+    _ kind: FileOperationKind, _ sources: [URL], to folder: URL,
+    sourceLocation: SourceLocation = #_sourceLocation
+) throws -> (FileJob, UndoRecord?) {
     let job = FileJob(kind: kind, sources: sources, destinationFolder: folder)
     job.resolveConflict = { info in
         Issue.record("Unexpected conflict for “\(info.destination.name)”", sourceLocation: sourceLocation)
@@ -334,8 +342,9 @@ private func run(_ kind: FileOperationKind, _ sources: [URL], to folder: URL,
 
 /// Permissions, a date, an extended attribute and Finder tags: what a copy must carry along.
 private func setMetadata(_ url: URL) throws {
-    try FileManager.default.setAttributes([.posixPermissions: 0o750, .modificationDate: Date(timeIntervalSince1970: 1_000_000_000)],
-                         ofItemAtPath: url.path)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o750, .modificationDate: Date(timeIntervalSince1970: 1_000_000_000)],
+        ofItemAtPath: url.path)
     let value = Array("kept".utf8)
     #expect(setxattr(url.path, "com.porpoise.test", value, value.count, 0, 0) == 0)
     try (url as NSURL).setResourceValue(["Blue", "Project"], forKey: .tagNamesKey)

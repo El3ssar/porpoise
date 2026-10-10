@@ -15,7 +15,8 @@ public final class IconTheme {
         if let env = ProcessInfo.processInfo.environment["PORPOISE_RESOURCES"] {
             root = URL(fileURLWithPath: env).appendingPathComponent("icons")
         } else if let r = Bundle.main.resourceURL?.appendingPathComponent("icons"),
-                  FileManager.default.fileExists(atPath: r.path) {
+            FileManager.default.fileExists(atPath: r.path)
+        {
             root = r
         } else {
             // `swift run` from the project folder.

@@ -22,16 +22,16 @@ public enum ViewMode: String, Codable, CaseIterable, Sendable {
     /// Default zoom level (0–16) for the icon size, matching Dolphin.
     public var defaultZoom: Int {
         switch self {
-        case .icons: return 2       // 32 px
-        case .compact, .details: return 0 // 16 px
+        case .icons: return 2  // 32 px
+        case .compact, .details: return 0  // 16 px
         }
     }
 
     /// Default zoom level used when previews are on.
     public var defaultPreviewZoom: Int {
         switch self {
-        case .icons: return 4       // 64 px
-        case .compact, .details: return 2 // 32 px
+        case .icons: return 4  // 64 px
+        case .compact, .details: return 2  // 32 px
         }
     }
 }
@@ -39,7 +39,7 @@ public enum ViewMode: String, Codable, CaseIterable, Sendable {
 /// Roles = columns / sort keys / group keys / additional information (Dolphin's "roles").
 public enum ItemRole: String, Codable, CaseIterable, Sendable {
     case name, size, modificationTime, creationTime, accessTime, type, path, extension_, permissions, owner, group,
-         linkDestination, tags
+        linkDestination, tags
 
     public var title: String {
         switch self {

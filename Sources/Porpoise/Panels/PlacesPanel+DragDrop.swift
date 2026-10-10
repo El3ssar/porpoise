@@ -26,7 +26,8 @@ extension PlacesPanel {
         if let moving = draggedPlace(sender.draggingPasteboard) {
             guard !PlacesModel.shared.isLocked else { return setDrop(nil, insert: nil) }
             guard let d = reorderDestination(insertBefore: insertion, section: moving.section),
-                  PlacesModel.shared.canMove(moving, before: d.target, endOf: d.section) else { return setDrop(nil, insert: nil) }
+                PlacesModel.shared.canMove(moving, before: d.target, endOf: d.section)
+            else { return setDrop(nil, insert: nil) }
             setDrop(nil, insert: insertion)
             return .move
         }

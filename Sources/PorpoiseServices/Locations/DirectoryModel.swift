@@ -21,7 +21,7 @@ public struct ItemGroup {
 /// Main-thread only (Dolphin's KFileItemModel + selection manager).
 public final class DirectoryModel {
     public private(set) var location: URL
-    public private(set) var items: [FileItem] = []      // top level, unsorted, including hidden
+    public private(set) var items: [FileItem] = []  // top level, unsorted, including hidden
     public private(set) var rows: [Row] = [] { didSet { rowIndex = nil; rowIndexByPath = nil } }
     public private(set) var groups: [ItemGroup] = []
     public private(set) var isLoading = false
@@ -349,7 +349,8 @@ public final class DirectoryModel {
                 if ns.code == NSFileReadNoPermissionError || posix == Int(EPERM) || posix == Int(EACCES) {
                     // EPERM on a readable folder means macOS privacy protection (TCC), not file permissions.
                     privacy = access(url.path, R_OK) == 0 || posix == Int(EPERM)
-                    err = privacy
+                    err =
+                        privacy
                         ? "macOS protects this folder. Give Porpoise Full Disk Access in System Settings to see its contents."
                         : "You don't have permission to view this folder."
                 } else {
@@ -419,8 +420,9 @@ public final class DirectoryModel {
         } else {
             let all = visible(searchResults ?? items, filtered: false)
             // Finder tags are read (and cached) only when sorting by them.
-            top = ItemSorter.sort(all, props: props, choice: choice, folderSizes: folderCounts,
-                                  tags: props.sortRole == .tags ? tagMap(all) : [:])
+            top = ItemSorter.sort(
+                all, props: props, choice: choice, folderSizes: folderCounts,
+                tags: props.sortRole == .tags ? tagMap(all) : [:])
             sortedTop = top
         }
         let sorted = filter.matcher().map { match in top.filter { match($0.name) } } ?? top
@@ -432,8 +434,9 @@ public final class DirectoryModel {
                 out.append(Row(item: it, depth: depth, isExpanded: isExp, group: groupIndex))
                 if isExp, let kids = children[it.url] {
                     let vk = visible(kids)
-                    let ks = ItemSorter.sort(vk, props: props, choice: choice, folderSizes: folderCounts,
-                                             tags: props.sortRole == .tags ? tagMap(vk) : [:])
+                    let ks = ItemSorter.sort(
+                        vk, props: props, choice: choice, folderSizes: folderCounts,
+                        tags: props.sortRole == .tags ? tagMap(vk) : [:])
                     add(ks, depth: depth + 1, groupIndex: groupIndex)
                 }
             }
@@ -467,7 +470,7 @@ public final class DirectoryModel {
         pendingCounts.formUnion(urls)
         let hidden = props.showHidden
         let mode = Settings.shared.folderSizeMode
-        let depth = Settings.shared.folderSizeDepth   // read here: Settings is main-thread only
+        let depth = Settings.shared.folderSizeDepth  // read here: Settings is main-thread only
         DispatchQueue.global(qos: .utility).async { [weak self] in
             var res: [URL: Int] = [:]
             for u in urls {
@@ -557,7 +560,7 @@ public final class DirectoryModel {
     /// Lists an expanded folder off the main thread (it may be huge or on a slow mount), then shows its rows.
     private func loadChildren(of url: URL) {
         let token = loadToken
-        let provider = RemoteFS.provider(for: url)   // sftp://, ftp://, adb:// folders expand through their provider
+        let provider = RemoteFS.provider(for: url)  // sftp://, ftp://, adb:// folders expand through their provider
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let kids = (try? provider.map { try $0.list(url) } ?? DirectoryLister.list(url)) ?? []
             DispatchQueue.main.async {
@@ -582,8 +585,9 @@ public final class DirectoryModel {
         }
         if let i = rowIndex?[url] { return i }
         if rowIndexByPath == nil {
-            rowIndexByPath = Dictionary(rows.enumerated().map { ($1.item.url.standardizedFileURL.path, $0) },
-                                        uniquingKeysWith: { first, _ in first })
+            rowIndexByPath = Dictionary(
+                rows.enumerated().map { ($1.item.url.standardizedFileURL.path, $0) },
+                uniquingKeysWith: { first, _ in first })
         }
         return rowIndexByPath?[url.standardizedFileURL.path]
     }

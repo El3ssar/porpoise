@@ -34,13 +34,16 @@ final class TabBarView: NSView {
 
     override func accessibilityChildren() -> [Any]? {
         var out: [Any] = rects.indices.map { i in
-            AccessibleRegion(in: self, role: .radioButton, label: titles.indices.contains(i) ? titles[i] : "",
-                             frame: { [weak self] in self.flatMap { i < $0.rects.count ? $0.rects[i] : nil } ?? .zero },
-                             selected: { [weak self] in self?.selected == i },
-                             press: { [weak self] in if let self { self.delegate?.tabBar(self, select: i) } })
+            AccessibleRegion(
+                in: self, role: .radioButton, label: titles.indices.contains(i) ? titles[i] : "",
+                frame: { [weak self] in self.flatMap { i < $0.rects.count ? $0.rects[i] : nil } ?? .zero },
+                selected: { [weak self] in self?.selected == i },
+                press: { [weak self] in if let self { self.delegate?.tabBar(self, select: i) } })
         }
-        out.append(AccessibleRegion(in: self, role: .button, label: "New Tab", frame: { [weak self] in self?.plusRect ?? .zero },
-                                    press: { [weak self] in if let self { self.delegate?.tabBarNewTab(self, duplicate: nil) } }))
+        out.append(
+            AccessibleRegion(
+                in: self, role: .button, label: "New Tab", frame: { [weak self] in self?.plusRect ?? .zero },
+                press: { [weak self] in if let self { self.delegate?.tabBarNewTab(self, duplicate: nil) } }))
         return out
     }
 
@@ -123,12 +126,15 @@ final class TabBarView: NSView {
             }
             let icon = i < icons.count ? icons[i] : "folder"
             let compact = r.width < Self.compactTabWidth
-            Icons.shared.image(icon, size: 16)?.draw(in: CGRect(x: compact ? r.midX - 8 : r.minX + 10, y: r.midY - 8, width: 16, height: 16), from: .zero,
-                                                     operation: .sourceOver, fraction: isSel ? 1 : 0.7, respectFlipped: true, hints: nil)
+            Icons.shared.image(icon, size: 16)?.draw(
+                in: CGRect(x: compact ? r.midX - 8 : r.minX + 10, y: r.midY - 8, width: 16, height: 16), from: .zero,
+                operation: .sourceOver, fraction: isSel ? 1 : 0.7, respectFlipped: true, hints: nil)
             if compact { continue }
             let p = NSMutableParagraphStyle(); p.lineBreakMode = .byTruncatingMiddle
-            let attrs: [NSAttributedString.Key: Any] = [.font: Theme.font, .paragraphStyle: p,
-                                                        .foregroundColor: isSel ? Theme.windowText : Theme.windowTextInactive.withAlphaComponent(0.85)]
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: Theme.font, .paragraphStyle: p,
+                .foregroundColor: isSel ? Theme.windowText : Theme.windowTextInactive.withAlphaComponent(0.85),
+            ]
             let closeW: CGFloat = Settings.shared.closeButtonsOnTabs ? 28 : 8
             (titles[i] as NSString).draw(in: CGRect(x: r.minX + 32, y: r.midY - 9, width: r.width - 32 - closeW, height: 18), withAttributes: attrs)
             if Settings.shared.closeButtonsOnTabs {
@@ -152,8 +158,9 @@ final class TabBarView: NSView {
             Theme.windowText.withAlphaComponent(0.08).setFill()
             NSBezierPath(roundedRect: plusRect, xRadius: 6, yRadius: 6).fill()
         }
-        Icons.shared.image("list-add", size: 16)?.draw(in: plusRect.insetBy(dx: 4, dy: 4), from: .zero, operation: .sourceOver,
-                                                       fraction: 0.8, respectFlipped: true, hints: nil)
+        Icons.shared.image("list-add", size: 16)?.draw(
+            in: plusRect.insetBy(dx: 4, dy: 4), from: .zero, operation: .sourceOver,
+            fraction: 0.8, respectFlipped: true, hints: nil)
     }
 
     override func updateTrackingAreas() {

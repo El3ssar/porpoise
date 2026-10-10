@@ -15,7 +15,8 @@ public enum PrivilegedHelper {
     /// Installed, and the same binary as the one in this app.
     public static var isEnabled: Bool {
         guard FileManager.default.fileExists(atPath: PorpoiseHelperInfo.installedPlist),
-              let installed = codeHash(URL(fileURLWithPath: PorpoiseHelperInfo.installedApp)) else { return false }
+            let installed = codeHash(URL(fileURLWithPath: PorpoiseHelperInfo.installedApp))
+        else { return false }
         return installed == codeHash(bundled)
     }
 
@@ -24,9 +25,14 @@ public enum PrivilegedHelper {
     @discardableResult
     public static func enable() -> Bool {
         guard !Settings.isTesting, FileManager.default.fileExists(atPath: bundled.path),
-              FileManager.default.fileExists(atPath: bundledPlist.path) else { return false }
-        guard runAsAdministrator(script: installScript, arguments: [bundled.path, bundledPlist.path],
-                                 prompt: "Porpoise wants to install its helper, so it can empty the Trash and change items that belong to the system without asking again.")
+            FileManager.default.fileExists(atPath: bundledPlist.path)
+        else { return false }
+        guard
+            runAsAdministrator(
+                script: installScript, arguments: [bundled.path, bundledPlist.path],
+                prompt:
+                    "Porpoise wants to install its helper, so it can empty the Trash and change items that belong to the system without asking again."
+            )
         else { return false }
         DispatchQueue.main.async { NotificationCenter.default.post(name: PrivacyAccess.statusChanged, object: nil) }
         guard isEnabled, ping(timeout: 4) else { return false }
@@ -40,7 +46,8 @@ public enum PrivilegedHelper {
     public static var hasFullDiskAccess: Bool? {
         // Listed by its bundle identifier, or by its path when macOS records it as a program.
         let service = "kTCCServiceSystemPolicyAllFiles"
-        let value = PrivacyAccess.tccAuthValue(service: service, client: PorpoiseHelperInfo.helperIdentifier)
+        let value =
+            PrivacyAccess.tccAuthValue(service: service, client: PorpoiseHelperInfo.helperIdentifier)
             ?? PrivacyAccess.tccAuthValue(service: service, client: PorpoiseHelperInfo.installedTool)
         return value.map { $0 >= 2 } ?? (PrivacyAccess.hasFullDiskAccess ? false : nil)
     }
@@ -53,7 +60,9 @@ public enum PrivilegedHelper {
         let lock = NSLock()
         var ok = false
         let proxy = c.remoteObjectProxyWithErrorHandler { _ in done.signal() } as? PorpoiseHelperProtocol
-        proxy?.checkFullDiskAccess { a in lock.lock(); ok = a; lock.unlock(); done.signal() }
+        proxy?.checkFullDiskAccess { a in
+            lock.lock(); ok = a; lock.unlock(); done.signal()
+        }
         _ = done.wait(timeout: .now() + timeout)
         lock.lock(); defer { lock.unlock() }
         return ok
@@ -113,10 +122,14 @@ public enum PrivilegedHelper {
     /// Runs `script` with /bin/sh as root after macOS's administrator dialog (password or Touch ID). Arguments are
     /// passed as $1, $2… (never into the script text). True if approved and the script ran.
     private static func runAsAdministrator(script: String, arguments: [String], prompt: String) -> Bool {
-        typealias Exec = @convention(c) (AuthorizationRef, UnsafePointer<CChar>, AuthorizationFlags,
-                                         UnsafePointer<UnsafeMutablePointer<CChar>?>, UnsafeMutablePointer<UnsafeMutablePointer<FILE>?>?) -> OSStatus
+        typealias Exec =
+            @convention(c) (
+                AuthorizationRef, UnsafePointer<CChar>, AuthorizationFlags,
+                UnsafePointer<UnsafeMutablePointer<CChar>?>, UnsafeMutablePointer<UnsafeMutablePointer<FILE>?>?
+            ) -> OSStatus
         guard let sec = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_NOW),
-              let sym = dlsym(sec, "AuthorizationExecuteWithPrivileges") else { return false }
+            let sym = dlsym(sec, "AuthorizationExecuteWithPrivileges")
+        else { return false }
         let exec = unsafeBitCast(sym, to: Exec.self)
         var auth: AuthorizationRef?
         guard AuthorizationCreate(nil, nil, [], &auth) == errAuthorizationSuccess, let auth else { return false }
@@ -126,8 +139,9 @@ public enum PrivilegedHelper {
             kAuthorizationEnvironmentPrompt.withCString { promptKey in
                 prompt.withCString { text in
                     var item = AuthorizationItem(name: right, valueLength: 0, value: nil, flags: 0)
-                    var promptItem = AuthorizationItem(name: promptKey, valueLength: strlen(text),
-                                                       value: UnsafeMutableRawPointer(mutating: text), flags: 0)
+                    var promptItem = AuthorizationItem(
+                        name: promptKey, valueLength: strlen(text),
+                        value: UnsafeMutableRawPointer(mutating: text), flags: 0)
                     return withUnsafeMutablePointer(to: &item) { ip in
                         withUnsafeMutablePointer(to: &promptItem) { pp in
                             var rights = AuthorizationRights(count: 1, items: ip)
@@ -160,8 +174,9 @@ public enum PrivilegedHelper {
         var code: SecStaticCode?
         var info: CFDictionary?
         guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code,
-              SecCodeCopySigningInformation(code, [], &info) == errSecSuccess,
-              let unique = (info as? [String: Any])?[kSecCodeInfoUnique as String] as? Data else { return nil }
+            SecCodeCopySigningInformation(code, [], &info) == errSecSuccess,
+            let unique = (info as? [String: Any])?[kSecCodeInfoUnique as String] as? Data
+        else { return nil }
         return unique.map { String(format: "%02x", $0) }.joined()
     }
 
@@ -183,7 +198,9 @@ public enum PrivilegedHelper {
         let answered = NSLock()
         var ok = false
         let proxy = c.remoteObjectProxyWithErrorHandler { _ in done.signal() } as? PorpoiseHelperProtocol
-        proxy?.version { v in answered.lock(); ok = !v.isEmpty; answered.unlock(); done.signal() }
+        proxy?.version { v in
+            answered.lock(); ok = !v.isEmpty; answered.unlock(); done.signal()
+        }
         _ = done.wait(timeout: .now() + timeout)
         answered.lock(); defer { answered.unlock() }
         return ok

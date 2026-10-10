@@ -81,21 +81,26 @@ final class LocalFileServer {
         guard let file = resolve(String(parts[1])), let data = try? Data(contentsOf: file, options: .alwaysMapped) else {
             return send(c, status: "404 Not Found")
         }
-        let head = "HTTP/1.1 200 OK\r\nContent-Type: \(Self.contentType(file.pathExtension))\r\nContent-Length: \(data.count)\r\n"
+        let head =
+            "HTTP/1.1 200 OK\r\nContent-Type: \(Self.contentType(file.pathExtension))\r\nContent-Length: \(data.count)\r\n"
             + "Cache-Control: no-cache\r\nConnection: close\r\n\r\n"
-        c.send(content: Data(head.utf8), completion: .contentProcessed { [weak self] error in
-            guard error == nil, method == "GET", let self else { c.cancel(); return }
-            self.sendBody(c, data, from: 0)
-        })
+        c.send(
+            content: Data(head.utf8),
+            completion: .contentProcessed { [weak self] error in
+                guard error == nil, method == "GET", let self else { c.cancel(); return }
+                self.sendBody(c, data, from: 0)
+            })
     }
 
     private func sendBody(_ c: NWConnection, _ data: Data, from offset: Int) {
         guard offset < data.count else { c.cancel(); return }
         let end = min(offset + Self.chunkSize, data.count)
-        c.send(content: data.subdata(in: offset..<end), completion: .contentProcessed { [weak self] error in
-            guard error == nil, let self else { c.cancel(); return }
-            self.sendBody(c, data, from: end)
-        })
+        c.send(
+            content: data.subdata(in: offset..<end),
+            completion: .contentProcessed { [weak self] error in
+                guard error == nil, let self else { c.cancel(); return }
+                self.sendBody(c, data, from: end)
+            })
     }
 
     private func send(_ c: NWConnection, status: String) {

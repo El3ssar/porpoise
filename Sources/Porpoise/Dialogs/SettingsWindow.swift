@@ -48,7 +48,9 @@ final class SettingsWindowController: NSWindowController {
 
         page("Folders & Tabs", "folder") { f in
             f.section("Show on startup")
-            f.radio(["Folders, tabs, and window state from last time", "Home location"], s.startup == .lastSession ? 0 : 1) { s.startup = $0 == 0 ? .lastSession : .home }
+            f.radio(["Folders, tabs, and window state from last time", "Home location"], s.startup == .lastSession ? 0 : 1) {
+                s.startup = $0 == 0 ? .lastSession : .home
+            }
             f.text("Home location:", s.homeURL.path) { [weak f] text in
                 // Only an existing folder: a mistyped path would break Home, new tabs and new windows.
                 var isDir: ObjCBool = false
@@ -57,7 +59,7 @@ final class SettingsWindowController: NSWindowController {
                     s.homeURL = URL(fileURLWithPath: path)
                 } else {
                     NSSound.beep()
-                    f?.refresh()   // back to the saved location
+                    f?.refresh()  // back to the saved location
                 }
             }
             f.button("Use Current Location") {
@@ -71,25 +73,33 @@ final class SettingsWindowController: NSWindowController {
             f.section("Window")
             f.check("Show full path in window title", s.showFullPathInTitle) { s.showFullPathInTitle = $0 }
             f.check("Show Applications as an app library", s.appLibraryView) { s.appLibraryView = $0 }
-            f.note("The window title appears in the Window menu, Mission Control and the Dock's window list (the toolbar takes the title bar's place).")
+            f.note(
+                "The window title appears in the Window menu, Mission Control and the Dock's window list (the toolbar takes the title bar's place).")
             f.check("Show filter bar", s.showFilterBarOnStartup) { s.showFilterBarOnStartup = $0 }
             f.section("Tabs")
             f.check("Always show tab bar", s.alwaysShowTabBar) { s.alwaysShowTabBar = $0 }
             f.check("Show close button on tabs", s.closeButtonsOnTabs) { s.closeButtonsOnTabs = $0 }
-            f.popup("Tab width:", ["Adapt to folder name", "Fixed width", "Span available width"], TabStyle.allCases.firstIndex(of: s.tabStyle) ?? 0) { s.tabStyle = TabStyle.allCases[$0] }
+            f.popup("Tab width:", ["Adapt to folder name", "Fixed width", "Span available width"], TabStyle.allCases.firstIndex(of: s.tabStyle) ?? 0)
+            { s.tabStyle = TabStyle.allCases[$0] }
             f.popup("Open new tabs:", ["After current tab", "At end of tab bar"], s.openNewTabsAtEnd ? 1 : 0) { s.openNewTabsAtEnd = $0 == 1 }
             f.section("Split view")
-            f.popup("When closing:", ["Close the active pane", "Close the inactive pane", "Always close the right pane"],
-                    CloseSplitChoice.allCases.firstIndex(of: s.closeSplitChoice) ?? 0) { s.closeSplitChoice = CloseSplitChoice.allCases[$0] }
+            f.popup(
+                "When closing:", ["Close the active pane", "Close the inactive pane", "Always close the right pane"],
+                CloseSplitChoice.allCases.firstIndex(of: s.closeSplitChoice) ?? 0
+            ) { s.closeSplitChoice = CloseSplitChoice.allCases[$0] }
             f.check("Open new windows in split view mode", s.splitViewOnStartup) { s.splitViewOnStartup = $0 }
         }
 
         page("View", "square.grid.2x2") { f in
             f.section("Display style")
-            f.radio(["Use common display style for all folders", "Remember display style for each folder"], s.rememberPerFolder ? 1 : 0) { s.rememberPerFolder = $0 == 1 }
+            f.radio(["Use common display style for all folders", "Remember display style for each folder"], s.rememberPerFolder ? 1 : 0) {
+                s.rememberPerFolder = $0 == 1
+            }
             // Only with the common style: a folder's remembered style always wins.
-            f.check("Use icons view mode for locations which mostly contain media files", s.dynamicView,
-                    enabled: { !s.rememberPerFolder }) { s.dynamicView = $0 }
+            f.check(
+                "Use icons view mode for locations which mostly contain media files", s.dynamicView,
+                enabled: { !s.rememberPerFolder }
+            ) { s.dynamicView = $0 }
             f.section("Browsing")
             f.check("Browse compressed files as folders", s.browseArchives) { s.browseArchives = $0 }
             f.check("Open folders during drag operations", s.openFoldersDuringDrag) { s.openFoldersDuringDrag = $0 }
@@ -100,33 +110,51 @@ final class SettingsWindowController: NSWindowController {
             f.check("Also hide backup files while hiding hidden files", s.hideBackupFiles) { s.hideBackupFiles = $0 }
             f.check("Always show file extensions", s.showAllExtensions) { s.showAllExtensions = $0 }
             f.note("When off, files are shown without their extension (“report” instead of “report.pdf”). Renaming still shows the full name.")
-            f.popup("Double-click on empty space:", BackgroundDoubleClick.allCases.map(\.title),
-                    BackgroundDoubleClick.allCases.firstIndex(of: s.doubleClickBackground) ?? 1) { s.doubleClickBackground = BackgroundDoubleClick.allCases[$0] }
+            f.popup(
+                "Double-click on empty space:", BackgroundDoubleClick.allCases.map(\.title),
+                BackgroundDoubleClick.allCases.firstIndex(of: s.doubleClickBackground) ?? 1
+            ) { s.doubleClickBackground = BackgroundDoubleClick.allCases[$0] }
             f.section("Content display")
-            f.popup("Sorting mode:", SortingChoice.allCases.map(\.title), SortingChoice.allCases.firstIndex(of: s.sortingChoice) ?? 0) { s.sortingChoice = SortingChoice.allCases[$0] }
-            f.popup("Folder size:", ["Show number of items", "Show size of contents", "Show no size"],
-                    FolderSizeMode.allCases.firstIndex(of: s.folderSizeMode) ?? 0) { s.folderSizeMode = FolderSizeMode.allCases[$0] }
-            f.stepper("Size of contents, up to:", s.folderSizeDepth, 1...30, suffix: "levels deep",
-                      enabled: { s.folderSizeMode == .contentSize }) { s.folderSizeDepth = $0 }
-            f.popup("Date style:", ["Relative (e.g. 'Yesterday at 14:00')", "Absolute"], s.dateStyle == .relative ? 0 : 1) { s.dateStyle = $0 == 0 ? .relative : .absolute }
-            f.popup("Permissions:", ["Symbolic (drwxr-xr-x)", "Numeric (755)", "Combined"],
-                    PermissionStyle.allCases.firstIndex(of: s.permissionStyle) ?? 0) { s.permissionStyle = PermissionStyle.allCases[$0] }
+            f.popup("Sorting mode:", SortingChoice.allCases.map(\.title), SortingChoice.allCases.firstIndex(of: s.sortingChoice) ?? 0) {
+                s.sortingChoice = SortingChoice.allCases[$0]
+            }
+            f.popup(
+                "Folder size:", ["Show number of items", "Show size of contents", "Show no size"],
+                FolderSizeMode.allCases.firstIndex(of: s.folderSizeMode) ?? 0
+            ) { s.folderSizeMode = FolderSizeMode.allCases[$0] }
+            f.stepper(
+                "Size of contents, up to:", s.folderSizeDepth, 1...30, suffix: "levels deep",
+                enabled: { s.folderSizeMode == .contentSize }
+            ) { s.folderSizeDepth = $0 }
+            f.popup("Date style:", ["Relative (e.g. 'Yesterday at 14:00')", "Absolute"], s.dateStyle == .relative ? 0 : 1) {
+                s.dateStyle = $0 == 0 ? .relative : .absolute
+            }
+            f.popup(
+                "Permissions:", ["Symbolic (drwxr-xr-x)", "Numeric (755)", "Combined"],
+                PermissionStyle.allCases.firstIndex(of: s.permissionStyle) ?? 0
+            ) { s.permissionStyle = PermissionStyle.allCases[$0] }
             f.popup("Long file names:", ["Elide in the middle", "Elide at the end"], s.elideMiddle ? 0 : 1) { s.elideMiddle = $0 == 0 }
         }
 
         page("View Modes", "rectangle.grid.1x2") { f in
             f.section("Label font")
-            f.fontPicker("Font:", name: s.labelFontName, size: s.labelFontSize) { name, size in s.labelFontName = name; s.labelFontSize = size }
+            f.fontPicker("Font:", name: s.labelFontName, size: s.labelFontSize) { name, size in
+                s.labelFontName = name; s.labelFontSize = size
+            }
             f.section("Icons")
             f.popup("Label width:", ["Small", "Medium", "Large", "Huge"], s.iconsLabelWidthIndex) { s.iconsLabelWidthIndex = $0 }
             f.popup("Maximum lines:", ["Unlimited", "1", "2", "3", "4", "5"], max(0, s.iconsMaxLines)) { s.iconsMaxLines = $0 }
             f.section("Compact")
-            f.popup("Maximum width:", ["Unlimited", "Small", "Medium", "Large", "Huge"], [0, 10, 20, 30, 45].firstIndex(of: s.compactMaxWidth) ?? 0) { s.compactMaxWidth = [0, 10, 20, 30, 45][$0] }
+            f.popup("Maximum width:", ["Unlimited", "Small", "Medium", "Large", "Huge"], [0, 10, 20, 30, 45].firstIndex(of: s.compactMaxWidth) ?? 0) {
+                s.compactMaxWidth = [0, 10, 20, 30, 45][$0]
+            }
             f.section("Details")
             f.check("Expandable folders", s.detailsExpandableFolders) { s.detailsExpandableFolders = $0 }
             f.check("Highlight entire row", s.detailsHighlightEntireRow) { s.detailsHighlightEntireRow = $0 }
-            f.radio(["Open files and folders by clicking anywhere on the row", "Open files and folders by clicking on the icon or name"],
-                    s.detailsClickAnywhere ? 0 : 1) { s.detailsClickAnywhere = $0 == 0 }
+            f.radio(
+                ["Open files and folders by clicking anywhere on the row", "Open files and folders by clicking on the icon or name"],
+                s.detailsClickAnywhere ? 0 : 1
+            ) { s.detailsClickAnywhere = $0 == 0 }
             f.section("Default icon size")
             f.note("Use the slider in the status bar, pinch, or ⌘+/⌘− to change the size of each view.")
         }
@@ -153,7 +181,9 @@ final class SettingsWindowController: NSWindowController {
 
         page("Bars & Panels", "sidebar.left") { f in
             f.section("Status bar")
-            f.popup("Status bar:", ["Small", "Full width", "Disabled"], StatusBarMode.allCases.firstIndex(of: s.statusBarMode) ?? 1) { s.statusBarMode = StatusBarMode.allCases[$0] }
+            f.popup("Status bar:", ["Small", "Full width", "Disabled"], StatusBarMode.allCases.firstIndex(of: s.statusBarMode) ?? 1) {
+                s.statusBarMode = StatusBarMode.allCases[$0]
+            }
             // The small status bar has no room for it (Dolphin shows it in the full-width bar only).
             f.check("Show zoom slider", s.showZoomSlider, enabled: { s.statusBarMode == .fullWidth }) { s.showZoomSlider = $0 }
             f.section("Location bar")
@@ -182,8 +212,10 @@ final class SettingsWindowController: NSWindowController {
             f.check("Closing with a program running in the Terminal panel", s.confirmCloseTerminal) { s.confirmCloseTerminal = $0 }
             f.check("Opening many folders or files at once", s.confirmOpenMany) { s.confirmOpenMany = $0 }
             f.check("Opening many terminals at once", s.confirmManyTerminals) { s.confirmManyTerminals = $0 }
-            f.popup("When opening an executable file:", ["Always ask", "Open in application", "Run script"],
-                    ExecutableAction.allCases.firstIndex(of: s.executableAction) ?? 0) { s.executableAction = ExecutableAction.allCases[$0] }
+            f.popup(
+                "When opening an executable file:", ["Always ask", "Open in application", "Run script"],
+                ExecutableAction.allCases.firstIndex(of: s.executableAction) ?? 0
+            ) { s.executableAction = ExecutableAction.allCases[$0] }
             f.section("")
             f.button("Restore All Defaults") {
                 let a = NSAlert()
@@ -193,7 +225,7 @@ final class SettingsWindowController: NSWindowController {
                 a.addButton(withTitle: "Cancel")
                 a.runSheet(for: SettingsWindowController.window) { r in
                     guard r == .alertFirstButtonReturn else { return }
-                    Settings.shared.resetAll()   // every control re-reads its value
+                    Settings.shared.resetAll()  // every control re-reads its value
                 }
             }
         }
@@ -206,7 +238,9 @@ final class SettingsWindowController: NSWindowController {
             let refresh = { [weak f] in
                 DispatchQueue.global(qos: .utility).async {
                     let text = TrashInfo.summary()
-                    DispatchQueue.main.async { summary.stringValue = text; f?.refresh() }
+                    DispatchQueue.main.async {
+                        summary.stringValue = text; f?.refresh()
+                    }
                 }
             }
             refresh()
@@ -222,27 +256,44 @@ final class SettingsWindowController: NSWindowController {
             f.section("Updates")
             let u = Updates.shared
             f.check("Check for updates automatically (once a day)", u.automaticallyChecks, enabled: { u.isAvailable }) { u.automaticallyChecks = $0 }
-            f.check("Download and install updates automatically", u.automaticallyInstalls,
-                    enabled: { u.isAvailable && u.automaticallyChecks }) { u.automaticallyInstalls = $0 }
+            f.check(
+                "Download and install updates automatically", u.automaticallyInstalls,
+                enabled: { u.isAvailable && u.automaticallyChecks }
+            ) { u.automaticallyInstalls = $0 }
             f.button("Check Now") { u.checkForUpdates(nil) }
             f.section("Default file browser")
-            f.note("Open Porpoise instead of Finder when other apps show a file (“Show in Finder”, “Reveal in Finder”, a download’s magnifying glass). macOS keeps the desktop, and opening folders from the Dock, with Finder.")
-            f.status("Status:", {
-                guard SystemIntegration.isDefaultBrowser else { return (false, "Finder shows files for other apps") }
-                return (true, SystemIntegration.opensFolders ? "Porpoise shows files and opens folders for other apps"
-                                                             : "Porpoise shows files for other apps")
-            }, button: { SystemIntegration.isDefaultBrowser ? "Restore Finder" : "Make Porpoise Default" }) { refresh in
+            f.note(
+                "Open Porpoise instead of Finder when other apps show a file (“Show in Finder”, “Reveal in Finder”, a download’s magnifying glass). macOS keeps the desktop, and opening folders from the Dock, with Finder."
+            )
+            f.status(
+                "Status:",
+                {
+                    guard SystemIntegration.isDefaultBrowser else { return (false, "Finder shows files for other apps") }
+                    return (
+                        true,
+                        SystemIntegration.opensFolders
+                            ? "Porpoise shows files and opens folders for other apps"
+                            : "Porpoise shows files for other apps"
+                    )
+                }, button: { SystemIntegration.isDefaultBrowser ? "Restore Finder" : "Make Porpoise Default" }
+            ) { refresh in
                 SystemIntegration.setDefaultBrowser(!SystemIntegration.isDefaultBrowser) { err in
                     if let err { NSAlert(error: err).runSheet(for: SettingsWindowController.window) { _ in } }
                     refresh()
                 }
             }
             f.section("Android phones")
-            f.note("Browsing Android phones over USB uses Google's adb tool. Porpoise downloads it from Google (about 15 MB) when you ask; Google's licence doesn't allow including it.")
-            f.status("Android support:", {
-                AndroidTools.isInstalled ? (true, "Installed. Connect a phone with USB debugging on; it appears under Removable Devices.")
-                    : (nil, "Not installed.")
-            }, button: { AndroidTools.isInstalled ? "Installed" : "Install Android Support" }) { refresh in
+            f.note(
+                "Browsing Android phones over USB uses Google's adb tool. Porpoise downloads it from Google (about 15 MB) when you ask; Google's licence doesn't allow including it."
+            )
+            f.status(
+                "Android support:",
+                {
+                    AndroidTools.isInstalled
+                        ? (true, "Installed. Connect a phone with USB debugging on; it appears under Removable Devices.")
+                        : (nil, "Not installed.")
+                }, button: { AndroidTools.isInstalled ? "Installed" : "Install Android Support" }
+            ) { refresh in
                 guard !AndroidTools.isInstalled else { return }
                 AndroidTools.install { err in
                     if let err {
@@ -260,13 +311,21 @@ final class SettingsWindowController: NSWindowController {
             // Find out once whether App Management is in effect (silent unless macOS reports a denial).
             if PrivacyAccess.appManagementState == .unknown { SystemIntegration.checkAppManagementInBackground() }
             for perm in SystemIntegration.permissions {
-                f.status(perm.title + ":", perm.status, button: {
-                    // Granted: just a link. Otherwise the request button when there is one.
-                    guard perm.status().0 != true, let request = perm.request else { return "Open Settings…" }
-                    return request.title
-                }) { refresh in
-                    if perm.status().0 != true, let r = perm.request { r.run() }
-                    else if let open = perm.open { open() } else { SystemIntegration.openPrivacyPane(perm.anchor) }
+                f.status(
+                    perm.title + ":", perm.status,
+                    button: {
+                        // Granted: just a link. Otherwise the request button when there is one.
+                        guard perm.status().0 != true, let request = perm.request else { return "Open Settings…" }
+                        return request.title
+                    }
+                ) { refresh in
+                    if perm.status().0 != true, let r = perm.request {
+                        r.run()
+                    } else if let open = perm.open {
+                        open()
+                    } else {
+                        SystemIntegration.openPrivacyPane(perm.anchor)
+                    }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { refresh() }
                 }
             }

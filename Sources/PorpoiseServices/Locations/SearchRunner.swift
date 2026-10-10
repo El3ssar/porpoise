@@ -30,7 +30,8 @@ public final class SearchRunner: NSObject {
 
     public func start() {
         let pattern = "*\(text)*"
-        query.predicate = contents
+        query.predicate =
+            contents
             ? NSPredicate(format: "kMDItemTextContent LIKE[cd] %@ OR kMDItemFSName LIKE[cd] %@", pattern, pattern)
             : NSPredicate(format: "kMDItemFSName LIKE[cd] %@", pattern)
         query.searchScopes = [scope]
@@ -96,7 +97,10 @@ public final class SearchRunner: NSObject {
                 if n > Self.maxSimpleVisited { break }
                 var hit = u.lastPathComponent.lowercased().contains(needle)
                 if !hit && contents, let d = try? Data(contentsOf: u, options: .mappedIfSafe), d.count < Self.maxContentSearchSize,
-                   let s = String(data: d, encoding: .utf8) { hit = s.lowercased().contains(needle) }
+                    let s = String(data: d, encoding: .utf8)
+                {
+                    hit = s.lowercased().contains(needle)
+                }
                 if hit, let it = FileItem.load(u) { out.append(it) }
                 if out.count >= Self.maxSimpleResults { break }
             }

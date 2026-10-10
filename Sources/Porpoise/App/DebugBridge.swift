@@ -1,8 +1,8 @@
 import AppKit
 import PorpoiseCore
 import PorpoiseServices
-import SwiftTerm
 import Quartz
+import SwiftTerm
 
 /// Test hook: lets scripts ask the running app for a window snapshot or its state, and trigger actions,
 /// via distributed notifications. Used by scripts/uitest.sh. Inert unless someone posts to it.
@@ -12,8 +12,9 @@ final class DebugBridge: NSObject {
     static let request = Notification.Name("app.porpoise.Porpoise.debug." + (ProcessInfo.processInfo.environment["PORPOISE_BRIDGE"] ?? "test"))
 
     func start() {
-        DistributedNotificationCenter.default().addObserver(self, selector: #selector(handle(_:)), name: Self.request, object: nil,
-                                                            suspensionBehavior: .deliverImmediately)
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(handle(_:)), name: Self.request, object: nil,
+            suspensionBehavior: .deliverImmediately)
     }
 
     /// The Settings window (its title follows the page shown).
@@ -68,13 +69,19 @@ final class DebugBridge: NSObject {
             if let t = wc?.terminal.terminalView, let rep = t.bitmapImageRepForCachingDisplay(in: t.bounds) {
                 t.cacheDisplay(in: t.bounds, to: rep)
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: arg))
-                let info = "frame=\(t.frame) superFrame=\(t.superview?.frame ?? .zero) hidden=\(t.isHidden) bg=\(t.nativeBackgroundColor) layerBg=\(String(describing: t.layer?.backgroundColor))"
+                let info =
+                    "frame=\(t.frame) superFrame=\(t.superview?.frame ?? .zero) hidden=\(t.isHidden) bg=\(t.nativeBackgroundColor) layerBg=\(String(describing: t.layer?.backgroundColor))"
                 try? info.write(toFile: arg + ".txt", atomically: true, encoding: .utf8)
             }
         case "termtext":
-            if let w = wc { try? (w.terminal.terminalView.getTerminal().getText(start: Position(col: 0, row: 0), end: Position(col: 200, row: 40))).write(toFile: arg, atomically: true, encoding: .utf8) }
+            if let w = wc {
+                try? (w.terminal.terminalView.getTerminal().getText(start: Position(col: 0, row: 0), end: Position(col: 200, row: 40))).write(
+                    toFile: arg, atomically: true, encoding: .utf8)
+            }
         case "state": writeState(to: arg)
-        case "onboarding": try? "\(OnboardingWindowController.debugStep) windows=\(AppDelegate.shared.windows.count)".write(toFile: arg, atomically: true, encoding: .utf8)
+        case "onboarding":
+            try? "\(OnboardingWindowController.debugStep) windows=\(AppDelegate.shared.windows.count)".write(
+                toFile: arg, atomically: true, encoding: .utf8)
         case "rtest": remoteTest(arg)
         case "menus": if let m = NSApp.mainMenu { dumpMenu(m, to: arg) }
         case "hamburger":
@@ -85,20 +92,26 @@ final class DebugBridge: NSObject {
             // clicks a button/checkbox, or picks a popup item, in any window of the app (no real mouse).
             let p = arg.components(separatedBy: "|")
             // "Sheet" is the open sheet or alert (they have no title).
-            let window = p[0] == "Settings" ? settingsWindow
-                : p[0] == "Sheet" ? NSApp.windows.first { $0.isVisible && ($0.isSheet || $0.isModalPanel || $0.level == .modalPanel) }
-                : NSApp.windows.first { $0.isVisible && $0.title.hasPrefix(p[0]) }
+            let window =
+                p[0] == "Settings"
+                ? settingsWindow
+                : p[0] == "Sheet"
+                    ? NSApp.windows.first { $0.isVisible && ($0.isSheet || $0.isModalPanel || $0.level == .modalPanel) }
+                    : NSApp.windows.first { $0.isVisible && $0.title.hasPrefix(p[0]) }
             guard p.count >= 2, let root = window?.contentView else { return }
             var popups: [NSPopUpButton] = []
             var button: NSButton?
             func walk(_ v: NSView) {
-                if let pop = v as? NSPopUpButton { popups.append(pop) }
-                else if let seg = v as? NSSegmentedControl,
-                        let i = (0..<seg.segmentCount).first(where: { seg.label(forSegment: $0) == p[1] }) {
+                if let pop = v as? NSPopUpButton {
+                    popups.append(pop)
+                } else if let seg = v as? NSSegmentedControl,
+                    let i = (0..<seg.segmentCount).first(where: { seg.label(forSegment: $0) == p[1] })
+                {
                     seg.selectedSegment = i
                     if let a = seg.action { NSApp.sendAction(a, to: seg.target, from: seg) }
+                } else if let b = v as? NSButton, b.title == p[1], button == nil {
+                    button = b
                 }
-                else if let b = v as? NSButton, b.title == p[1], button == nil { button = b }
                 v.subviews.forEach(walk)
             }
             walk(root)
@@ -126,13 +139,15 @@ final class DebugBridge: NSObject {
             // placesclick <title>[|eject]: clicks a Places row (or its eject button) with synthesized events.
             let parts = arg.components(separatedBy: "|")
             guard let w = wc, let win = w.window, let r = w.places.rowRect(title: parts[0]) else { return }
-            w.places.scrollToVisible(r)   // as a user would scroll to it
+            w.places.scrollToVisible(r)  // as a user would scroll to it
             w.window?.displayIfNeeded()
             let local = parts.count > 1 ? CGPoint(x: r.maxX - 26, y: r.minY + 14) : CGPoint(x: 40, y: r.midY)
             let p = w.places.convert(local, to: nil)
             for t in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-                if let e = NSEvent.mouseEvent(with: t, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                                              windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                if let e = NSEvent.mouseEvent(
+                    with: t, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+                {
                     win.sendEvent(e)
                 }
             }
@@ -165,8 +180,9 @@ final class DebugBridge: NSObject {
         case "droponto":
             // droponto <folder>: drops the selection on a folder, as a drag with the move operation would.
             guard let w = wc else { return }
-            FileOperationsController.shared.handleDrop(w.view.model.selectedItems.map(\.url), onto: URL(fileURLWithPath: arg),
-                                                        operation: .move, in: w.view)
+            FileOperationsController.shared.handleDrop(
+                w.view.model.selectedItems.map(\.url), onto: URL(fileURLWithPath: arg),
+                operation: .move, in: w.view)
         case "placesmove":
             // placesmove <title>|<before title or empty>|<section raw>
             let p = arg.components(separatedBy: "|")
@@ -184,11 +200,14 @@ final class DebugBridge: NSObject {
         case "cloudclick":
             // Clicks the cloud badge of the named item with a synthesized event (inside the app only).
             guard let w = wc, let i = w.view.model.rows.firstIndex(where: { $0.item.name == arg }), let r = w.view.list.cloudRects[i],
-                  let win = w.window else { return }
+                let win = w.window
+            else { return }
             let p = w.view.list.convert(CGPoint(x: r.midX, y: r.midY), to: nil)
             for t in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-                if let e = NSEvent.mouseEvent(with: t, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                                              windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                if let e = NSEvent.mouseEvent(
+                    with: t, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+                {
                     win.sendEvent(e)
                 }
             }
@@ -202,7 +221,9 @@ final class DebugBridge: NSObject {
                 guard let idx = menu.items.firstIndex(where: { $0.title == t && !$0.isHidden }) else { NSLog("DBGMENU no \(t)"); break }
                 if i == path.count - 1 {
                     if menu.items[idx].isEnabled { menu.performActionForItem(at: idx) } else { NSLog("DBGMENU disabled \(t)") }
-                } else { m = menu.items[idx].submenu }
+                } else {
+                    m = menu.items[idx].submenu
+                }
             }
         case "ctxmenu":
             // Context menu for the current selection (or the background), with enabled state.
@@ -210,7 +231,11 @@ final class DebugBridge: NSObject {
             let m = w.contextMenu(for: w.view.model.selectedItems.first, in: w.view)
             m.update()
             let lines = m.items.map { it -> String in
-                it.isSeparatorItem ? "---" : (it.view != nil ? "[view \(type(of: it.view!))]" : "\(it.title)\(self.isEnabled(it) ? "" : " (disabled)")\(it.isAlternate ? " (alt)" : "")\(it.submenu != nil ? " ▸" : "")")
+                it.isSeparatorItem
+                    ? "---"
+                    : (it.view != nil
+                        ? "[view \(type(of: it.view!))]"
+                        : "\(it.title)\(self.isEnabled(it) ? "" : " (disabled)")\(it.isAlternate ? " (alt)" : "")\(it.submenu != nil ? " ▸" : "")")
             }
             try? lines.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
         case "key": sendKey(arg)
@@ -226,8 +251,11 @@ final class DebugBridge: NSObject {
             try? list.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
         case "navigate": wc?.view.setURL(arg.hasPrefix("/") ? URL(fileURLWithPath: arg) : (URL(string: arg) ?? URL(fileURLWithPath: arg)))
         case "action":
-            if let w = wc, w.responds(to: NSSelectorFromString(arg)) { NSApp.sendAction(NSSelectorFromString(arg), to: w, from: nil) }
-            else { NSApp.sendAction(NSSelectorFromString(arg), to: nil, from: nil) }
+            if let w = wc, w.responds(to: NSSelectorFromString(arg)) {
+                NSApp.sendAction(NSSelectorFromString(arg), to: w, from: nil)
+            } else {
+                NSApp.sendAction(NSSelectorFromString(arg), to: nil, from: nil)
+            }
         case "select":
             if let v = wc?.view { v.list.select(arg.hasPrefix("/") ? URL(fileURLWithPath: arg) : v.url.appendingPathComponent(arg)) }
         case "settings":
@@ -252,7 +280,8 @@ final class DebugBridge: NSObject {
     /// PNG of the key window including the title bar area (traffic lights are drawn by the frame view).
     private func snapshot(to path: String) {
         guard let w = NSApp.orderedWindows.first(where: { $0.isVisible && $0.windowController is MainWindowController }) ?? NSApp.keyWindow,
-              let frameView = w.contentView?.superview else { return }
+            let frameView = w.contentView?.superview
+        else { return }
         let b = frameView.bounds
         guard let rep = frameView.bitmapImageRepForCachingDisplay(in: b) else { return }
         frameView.cacheDisplay(in: b, to: rep)
@@ -266,7 +295,8 @@ final class DebugBridge: NSObject {
         let parts = arg.components(separatedBy: "|")
         let path = parts[0]
         // The Settings window is titled after its page: "Settings" finds it whatever page is shown.
-        let w: NSWindow? = parts.count > 1
+        let w: NSWindow? =
+            parts.count > 1
             ? (parts[1] == "Settings" ? settingsWindow : NSApp.windows.first { $0.isVisible && $0.title.hasPrefix(parts[1]) })
             : NSApp.orderedWindows.first(where: { $0.windowController is MainWindowController })
         guard let w else { return }
@@ -281,11 +311,15 @@ final class DebugBridge: NSObject {
     /// Snapshot through Core Animation (captures layer-drawn content like the terminal).
     private func layerSnapshot(to path: String) {
         guard let w = NSApp.orderedWindows.first(where: { $0.windowController is MainWindowController }),
-              let v = w.contentView?.superview, let layer = v.layer else { return }
+            let v = w.contentView?.superview, let layer = v.layer
+        else { return }
         let scale = w.backingScaleFactor
         let size = CGSize(width: v.bounds.width * scale, height: v.bounds.height * scale)
-        guard let ctx = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
-                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+        guard
+            let ctx = CGContext(
+                data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return }
         ctx.scaleBy(x: scale, y: scale)
         layer.render(in: ctx)
         guard let img = ctx.makeImage() else { return }
@@ -365,25 +399,47 @@ final class DebugBridge: NSObject {
             try? FileManager.default.createDirectory(at: localDir.appendingPathComponent("inner"), withIntermediateDirectories: true)
             try? "x".write(to: localDir.appendingPathComponent("inner/a.txt"), atomically: true, encoding: .utf8)
             let work = base.appendingPathComponent("rtest work", isDirectory: true)
-            step("list root") { try p.list(base).map { "\($0.name)\($0.isDirectory ? "/" : "")\($0.isSymlink ? "@" : "")" }.sorted().joined(separator: " ") }
-            step("mkdir") { try p.makeFolder(work); return "made" }
-            step("upload file") { try p.upload(local, into: work); return "done" }
-            step("upload folder") { try p.upload(localDir, into: work); return "done" }
+            step("list root") {
+                try p.list(base).map { "\($0.name)\($0.isDirectory ? "/" : "")\($0.isSymlink ? "@" : "")" }.sorted().joined(separator: " ")
+            }
+            step("mkdir") {
+                try p.makeFolder(work); return "made"
+            }
+            step("upload file") {
+                try p.upload(local, into: work); return "done"
+            }
+            step("upload folder") {
+                try p.upload(localDir, into: work); return "done"
+            }
             step("list work") { try p.list(work).map { "\($0.name):\($0.size)" }.sorted().joined(separator: " ") }
-            step("rename") { try p.rename(work.appendingPathComponent("up load.txt"), to: "renamed file.txt"); return "done" }
-            step("copy") { try p.copy([work.appendingPathComponent("renamed file.txt")], into: work.appendingPathComponent("updir", isDirectory: true)); return "done" }
-            step("move") { try p.move([work.appendingPathComponent("renamed file.txt")], into: work.appendingPathComponent("updir/inner", isDirectory: true)); return "done" }
+            step("rename") {
+                try p.rename(work.appendingPathComponent("up load.txt"), to: "renamed file.txt"); return "done"
+            }
+            step("copy") {
+                try p.copy([work.appendingPathComponent("renamed file.txt")], into: work.appendingPathComponent("updir", isDirectory: true));
+                return "done"
+            }
+            step("move") {
+                try p.move([work.appendingPathComponent("renamed file.txt")], into: work.appendingPathComponent("updir/inner", isDirectory: true));
+                return "done"
+            }
             step("list updir") { try p.list(work.appendingPathComponent("updir", isDirectory: true)).map(\.name).sorted().joined(separator: " ") }
-            step("list inner") { try p.list(work.appendingPathComponent("updir/inner", isDirectory: true)).map(\.name).sorted().joined(separator: " ") }
+            step("list inner") {
+                try p.list(work.appendingPathComponent("updir/inner", isDirectory: true)).map(\.name).sorted().joined(separator: " ")
+            }
             step("download file") {
-                let d = try p.download(work.appendingPathComponent("updir/inner/renamed file.txt"), into: tmp.appendingPathComponent("dl", isDirectory: true))
+                let d = try p.download(
+                    work.appendingPathComponent("updir/inner/renamed file.txt"), into: tmp.appendingPathComponent("dl", isDirectory: true))
                 return (try? String(contentsOf: d, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "unreadable"
             }
             step("download folder") {
-                let d = try p.download(work.appendingPathComponent("updir", isDirectory: true), into: tmp.appendingPathComponent("dl2", isDirectory: true))
+                let d = try p.download(
+                    work.appendingPathComponent("updir", isDirectory: true), into: tmp.appendingPathComponent("dl2", isDirectory: true))
                 return (FileManager.default.subpaths(atPath: d.path) ?? []).sorted().joined(separator: " ")
             }
-            step("delete") { try p.delete([work]); return "done" }
+            step("delete") {
+                try p.delete([work]); return "done"
+            }
             step("list after delete") { try p.list(base).map(\.name).sorted().joined(separator: " ") }
             try? FileManager.default.removeItem(at: tmp)
             try? log.joined(separator: "\n").write(toFile: report, atomically: true, encoding: .utf8)
@@ -401,7 +457,7 @@ final class DebugBridge: NSObject {
     private func dumpMenu(_ menu: NSMenu, to path: String) {
         var out: [String] = []
         func walk(_ m: NSMenu, _ prefix: String) {
-            m.delegate?.menuNeedsUpdate?(m)   // as when the menu opens (dynamic submenus fill themselves)
+            m.delegate?.menuNeedsUpdate?(m)  // as when the menu opens (dynamic submenus fill themselves)
             m.update()
             for it in m.items where !it.isSeparatorItem {
                 var k = it.keyEquivalent
@@ -411,8 +467,13 @@ final class DebugBridge: NSObject {
                 }
                 if k == "\u{8}" || k == "\u{7f}" { k = "⌫" }
                 let mods = it.keyEquivalentModifierMask
-                let ks = k.isEmpty ? "" : (mods.contains(.control) ? "⌃" : "") + (mods.contains(.option) ? "⌥" : "") + (mods.contains(.shift) ? "⇧" : "") + (mods.contains(.command) ? "⌘" : "") + k
-                out.append("\(prefix)\(it.title)\t\(ks)\t\(isEnabled(it) ? "" : "disabled")\(it.isHidden ? " hidden" : "")\(it.isAlternate ? " alt" : "")")
+                let ks =
+                    k.isEmpty
+                    ? ""
+                    : (mods.contains(.control) ? "⌃" : "") + (mods.contains(.option) ? "⌥" : "") + (mods.contains(.shift) ? "⇧" : "")
+                        + (mods.contains(.command) ? "⌘" : "") + k
+                out.append(
+                    "\(prefix)\(it.title)\t\(ks)\t\(isEnabled(it) ? "" : "disabled")\(it.isHidden ? " hidden" : "")\(it.isAlternate ? " alt" : "")")
                 if let sm = it.submenu { walk(sm, prefix + "  ") }
             }
         }
@@ -432,8 +493,11 @@ final class DebugBridge: NSObject {
                 let isToggle = (b as? ClosureButton)?.isToggle == true
                 out.append(isToggle ? "  [\(b.state == .on ? "x" : " ")] \(b.title)\(off)" : "  button: \(b.title)\(off)")
             case let t as NSTextField:
-                if t.isEditable { out.append("  field: \(t.stringValue)\(off)") }
-                else if t.textColor == .disabledControlTextColor { out.append("  label (disabled): \(t.stringValue)") }
+                if t.isEditable {
+                    out.append("  field: \(t.stringValue)\(off)")
+                } else if t.textColor == .disabledControlTextColor {
+                    out.append("  label (disabled): \(t.stringValue)")
+                }
             default: break
             }
             if !(v is NSControl) { v.subviews.forEach(walk) }
@@ -453,18 +517,29 @@ final class DebugBridge: NSObject {
         let k = parts.removeLast()
         var flags: NSEvent.ModifierFlags = []
         for p in parts {
-            switch p { case "cmd": flags.insert(.command); case "shift": flags.insert(.shift); case "opt": flags.insert(.option); case "ctrl": flags.insert(.control); default: break }
+            switch p {
+            case "cmd": flags.insert(.command);
+            case "shift": flags.insert(.shift);
+            case "opt": flags.insert(.option);
+            case "ctrl": flags.insert(.control);
+            default: break
+            }
         }
-        let special: [String: (UInt16, Int)] = ["up": (126, NSUpArrowFunctionKey), "down": (125, NSDownArrowFunctionKey), "left": (123, NSLeftArrowFunctionKey),
+        let special: [String: (UInt16, Int)] = [
+            "up": (126, NSUpArrowFunctionKey), "down": (125, NSDownArrowFunctionKey), "left": (123, NSLeftArrowFunctionKey),
             "right": (124, NSRightArrowFunctionKey), "return": (36, 13), "esc": (53, 27), "tab": (48, 9), "space": (49, 32), "backspace": (51, 127),
-            "delete": (117, NSDeleteFunctionKey), "home": (115, NSHomeFunctionKey), "end": (119, NSEndFunctionKey)]
-        let letters: [Character: UInt16] = ["a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12,
+            "delete": (117, NSDeleteFunctionKey), "home": (115, NSHomeFunctionKey), "end": (119, NSEndFunctionKey),
+        ]
+        let letters: [Character: UInt16] = [
+            "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12,
             "w": 13, "e": 14, "r": 15, "y": 16, "t": 17, "1": 18, "2": 19, "3": 20, "4": 21, "6": 22, "5": 23, "=": 24, "9": 25, "7": 26,
             "-": 27, "8": 28, "0": 29, "]": 30, "o": 31, "u": 32, "[": 33, "i": 34, "p": 35, "l": 37, "j": 38, "k": 40, ";": 41, ",": 43,
-            "/": 44, "n": 45, "m": 46, ".": 47]
+            "/": 44, "n": 45, "m": 46, ".": 47,
+        ]
         var chars = k, code: UInt16 = k.count == 1 ? letters[Character(k)] ?? 0 : 0
-        if let s = special[k] { code = s.0; chars = String(Character(UnicodeScalar(s.1)!)) }
-        else if k.hasPrefix("f"), let n = Int(k.dropFirst()) {
+        if let s = special[k] {
+            code = s.0; chars = String(Character(UnicodeScalar(s.1)!))
+        } else if k.hasPrefix("f"), let n = Int(k.dropFirst()) {
             let codes: [Int: UInt16] = [1: 122, 2: 120, 3: 99, 4: 118, 5: 96, 6: 97, 7: 98, 8: 100, 9: 101, 10: 109, 11: 103, 12: 111]
             code = codes[n] ?? 0; chars = String(Character(UnicodeScalar(NSF1FunctionKey + n - 1)!)); flags.insert(.function)
         }
@@ -472,9 +547,11 @@ final class DebugBridge: NSObject {
         let ignoring = chars
         if flags.contains(.shift), chars.count == 1, chars.first?.isLetter == true { chars = chars.uppercased() }
         guard let w = wc?.window ?? NSApp.windows.first(where: \.isVisible),
-              let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
-                                       windowNumber: w.windowNumber, context: nil, characters: chars,
-                                       charactersIgnoringModifiers: ignoring, isARepeat: false, keyCode: code) else { return }
+            let e = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: w.windowNumber, context: nil, characters: chars,
+                charactersIgnoringModifiers: ignoring, isARepeat: false, keyCode: code)
+        else { return }
         let target = NSApp.keyWindow ?? w
         if !flags.intersection([.command, .control]).isEmpty || k.hasPrefix("f") {
             if target.performKeyEquivalent(with: e) { return }

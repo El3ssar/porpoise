@@ -174,8 +174,9 @@ class FlatButton: NSControl {
         let contentW = intrinsicContentSize.width - 12 - menuW
         if title.isEmpty || iconName == nil { x = (bounds.width - menuW - contentW) / 2 }
         if let name = iconName, let img = Icons.shared.image(name, size: iconSize) {
-            img.draw(in: CGRect(x: x, y: (bounds.height - iconSize) / 2, width: iconSize, height: iconSize), from: .zero,
-                     operation: .sourceOver, fraction: alpha, respectFlipped: true, hints: nil)
+            img.draw(
+                in: CGRect(x: x, y: (bounds.height - iconSize) / 2, width: iconSize, height: iconSize), from: .zero,
+                operation: .sourceOver, fraction: alpha, respectFlipped: true, hints: nil)
             x += iconSize + 6
         }
         if !title.isEmpty {
@@ -185,8 +186,9 @@ class FlatButton: NSControl {
         }
         if showsMenuIndicator {
             if isSplitButton {
-                Icons.shared.image("go-down", size: 16)?.draw(in: CGRect(x: bounds.width - 17, y: (bounds.height - 16) / 2, width: 16, height: 16),
-                                                              from: .zero, operation: .sourceOver, fraction: alpha * 0.9, respectFlipped: true, hints: nil)
+                Icons.shared.image("go-down", size: 16)?.draw(
+                    in: CGRect(x: bounds.width - 17, y: (bounds.height - 16) / 2, width: 16, height: 16),
+                    from: .zero, operation: .sourceOver, fraction: alpha * 0.9, respectFlipped: true, hints: nil)
             } else {
                 // KDE's small "has menu" arrow at the bottom right (Back/Forward).
                 let p = NSBezierPath()

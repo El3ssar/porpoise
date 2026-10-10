@@ -8,14 +8,20 @@ import Quartz
 extension MainWindowController {
     func containerDidBecomeActive(_ c: ViewContainer) {
         guard tabs.indices.contains(current) else { return }
-        if tab.secondary === c && !tab.activeIsSecondary { tab.setActive(secondary: true); syncToActiveView() }
-        else if tab.primary === c && tab.activeIsSecondary { tab.setActive(secondary: false); syncToActiveView() }
+        if tab.secondary === c && !tab.activeIsSecondary {
+            tab.setActive(secondary: true); syncToActiveView()
+        } else if tab.primary === c && tab.activeIsSecondary {
+            tab.setActive(secondary: false); syncToActiveView()
+        }
     }
 
     func containerDidChangeURL(_ c: ViewContainer) {
         AppDelegate.shared.sessionChanged()
-        if c === view || tab.containers.contains(where: { $0 === c }) { syncToActiveView() }
-        else if allContainers.contains(where: { $0 === c }) { updateTabBar() }   // a background tab's title
+        if c === view || tab.containers.contains(where: { $0 === c }) {
+            syncToActiveView()
+        } else if allContainers.contains(where: { $0 === c }) {
+            updateTabBar()
+        }  // a background tab's title
     }
 
     func containerSelectionChanged(_ c: ViewContainer) {
@@ -32,7 +38,9 @@ extension MainWindowController {
             return r
         }
         // Finder Smart Folders open as live Spotlight results.
-        if items.count == 1, items[0].url.pathExtension == "savedSearch", let u = URL(string: "smart://" + (items[0].url.path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? "")) {
+        if items.count == 1, items[0].url.pathExtension == "savedSearch",
+            let u = URL(string: "smart://" + (items[0].url.path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""))
+        {
             if inNewTab { addTab(url: u) } else { c.setURL(u) }
             return
         }
@@ -44,7 +52,8 @@ extension MainWindowController {
                 switch result {
                 case .success(let dir):
                     c.setURL(dir)
-                    c.messageBar.show("Browsing the contents of “\(archive.name)”. This is a read-only copy; changes are not saved to the archive.", error: false)
+                    c.messageBar.show(
+                        "Browsing the contents of “\(archive.name)”. This is a read-only copy; changes are not saved to the archive.", error: false)
                     c.needsLayout = true
                 case .failure(let e): c.messageBar.show(e.localizedDescription, error: true); c.needsLayout = true
                 }
@@ -109,13 +118,18 @@ extension MainWindowController {
     func container(_ c: ViewContainer, rename item: FileItem, to name: String) { rename(item, to: name, in: c) }
 
     func container(_ c: ViewContainer, middleClicked item: FileItem) {
-        if item.isBrowsableFolder { addTab(url: item.url, select: false) }
-        else if !item.url.isFileURL { RemoteOpener.open(item) }
-        else {
+        if item.isBrowsableFolder {
+            addTab(url: item.url, select: false)
+        } else if !item.url.isFileURL {
+            RemoteOpener.open(item)
+        } else {
             // Dolphin opens files with the second associated app on middle-click.
             let apps = NSWorkspace.shared.urlsForApplications(toOpen: item.url)
-            if apps.count > 1 { NSWorkspace.shared.open([item.url], withApplicationAt: apps[1], configuration: NSWorkspace.OpenConfiguration()) }
-            else { NSWorkspace.shared.open(item.url) }
+            if apps.count > 1 {
+                NSWorkspace.shared.open([item.url], withApplicationAt: apps[1], configuration: NSWorkspace.OpenConfiguration())
+            } else {
+                NSWorkspace.shared.open(item.url)
+            }
         }
     }
 
@@ -143,15 +157,21 @@ extension MainWindowController {
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     try p.rename(old, to: name)
-                    DispatchQueue.main.async { c.pendingSelect = old.deletingLastPathComponent().appendingPathComponent(name); c.reload() }
+                    DispatchQueue.main.async {
+                        c.pendingSelect = old.deletingLastPathComponent().appendingPathComponent(name); c.reload()
+                    }
                 } catch {
-                    DispatchQueue.main.async { c.messageBar.show(error.localizedDescription, error: true); c.needsLayout = true }
+                    DispatchQueue.main.async {
+                        c.messageBar.show(error.localizedDescription, error: true); c.needsLayout = true
+                    }
                 }
             }
             return
         }
         let newExt = (name as NSString).pathExtension
-        if Settings.shared.confirmRenameType, !item.isBrowsableFolder, newExt.lowercased() != item.fileExtension.lowercased(), !item.fileExtension.isEmpty {
+        if Settings.shared.confirmRenameType, !item.isBrowsableFolder, newExt.lowercased() != item.fileExtension.lowercased(),
+            !item.fileExtension.isEmpty
+        {
             let a = NSAlert()
             a.messageText = "Change File Type"
             a.informativeText = "Changing the file extension from “\(item.fileExtension)” to “\(newExt)” may change the way the file opens."
@@ -172,11 +192,13 @@ extension MainWindowController {
             FileOperationsController.shared.pushUndo(.renamed(from: old, to: new))
             c.pendingSelect = new
             c.reload()
-        } catch where FileJob.isPermissionError(error) {
+        } catch  where FileJob.isPermissionError(error) {
             // Root-owned item or folder: authenticate, as Finder does.
             let new = old.deletingLastPathComponent().appendingPathComponent(name)
-            if FileOperationsController.shared.authorize(verb: "rename", items: [old],
-                                                  commands: FileOperationsController.renameCommands(old, to: new), window: window) {
+            if FileOperationsController.shared.authorize(
+                verb: "rename", items: [old],
+                commands: FileOperationsController.renameCommands(old, to: new), window: window)
+            {
                 FileOperationsController.shared.pushUndo(.renamed(from: old, to: new))
                 c.pendingSelect = new
             }

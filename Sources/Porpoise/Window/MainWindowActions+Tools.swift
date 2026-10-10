@@ -115,7 +115,7 @@ extension MainWindowController {
         guard let it = view.model.selectedItems.first, it.url.isFileURL else { return }
         let parent = it.url.deletingLastPathComponent()
         var base = it.url.deletingPathExtension().lastPathComponent
-        if base.lowercased().hasSuffix(".tar") { base = String(base.dropLast(4)) }   // name.tar.gz
+        if base.lowercased().hasSuffix(".tar") { base = String(base.dropLast(4)) }  // name.tar.gz
         if base.isEmpty { base = "Archive" }
         let existing = Set((try? FileManager.default.contentsOfDirectory(atPath: parent.path)) ?? [])
         var name = base

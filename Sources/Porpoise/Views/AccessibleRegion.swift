@@ -9,8 +9,10 @@ final class AccessibleRegion: NSAccessibilityElement {
     private let selected: () -> Bool
     private let press: () -> Void
 
-    init(in view: NSView, role: NSAccessibility.Role, label: String, frame: @escaping () -> CGRect,
-         selected: @escaping () -> Bool = { false }, press: @escaping () -> Void) {
+    init(
+        in view: NSView, role: NSAccessibility.Role, label: String, frame: @escaping () -> CGRect,
+        selected: @escaping () -> Bool = { false }, press: @escaping () -> Void
+    ) {
         self.view = view
         self.label = label
         self.frame = frame

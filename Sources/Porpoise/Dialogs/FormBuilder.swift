@@ -96,8 +96,10 @@ final class FormBuilder: NSObject {
         }
     }
 
-    func popup(_ label: String, _ items: [String], _ selected: @autoclosure @escaping () -> Int, enabled: (() -> Bool)? = nil,
-               _ set: @escaping (Int) -> Void) {
+    func popup(
+        _ label: String, _ items: [String], _ selected: @autoclosure @escaping () -> Int, enabled: (() -> Bool)? = nil,
+        _ set: @escaping (Int) -> Void
+    ) {
         let p = ClosurePopup { set($0.indexOfSelectedItem) }
         p.addItems(withTitles: items)
         let row = labeled(label, p)
@@ -115,8 +117,10 @@ final class FormBuilder: NSObject {
         return f
     }
 
-    func stepper(_ label: String, _ value: @autoclosure @escaping () -> Int, _ range: ClosedRange<Int>, suffix: String,
-                 enabled: (() -> Bool)? = nil, _ set: @escaping (Int) -> Void) {
+    func stepper(
+        _ label: String, _ value: @autoclosure @escaping () -> Int, _ range: ClosedRange<Int>, suffix: String,
+        enabled: (() -> Bool)? = nil, _ set: @escaping (Int) -> Void
+    ) {
         let st = ClosureStepper { set($0.integerValue) }
         st.minValue = Double(range.lowerBound); st.maxValue = Double(range.upperBound)
         st.increment = range.upperBound > 1000 ? 10 : 1
@@ -148,8 +152,10 @@ final class FormBuilder: NSObject {
         return l
     }
 
-    func fontPicker(_ label: String, name: @autoclosure @escaping () -> String, size: @autoclosure @escaping () -> Double,
-                    _ set: @escaping (String, Double) -> Void) {
+    func fontPicker(
+        _ label: String, name: @autoclosure @escaping () -> String, size: @autoclosure @escaping () -> Double,
+        _ set: @escaping (String, Double) -> Void
+    ) {
         let families = ["System Font"] + NSFontManager.shared.availableFontFamilies
         let p = ClosurePopup { pop in
             let fam = pop.indexOfSelectedItem == 0 ? "" : (pop.titleOfSelectedItem ?? "")
@@ -171,12 +177,14 @@ final class FormBuilder: NSObject {
     }
 
     /// A status line (✓ / ✕ / ·) with a button; re-checked on every refresh (a window becoming key, a permission check ending).
-    func status(_ label: String, _ state: @escaping () -> (Bool?, String), button: @escaping () -> String,
-                _ action: @escaping (_ refresh: @escaping () -> Void) -> Void) {
+    func status(
+        _ label: String, _ state: @escaping () -> (Bool?, String), button: @escaping () -> String,
+        _ action: @escaping (_ refresh: @escaping () -> Void) -> Void
+    ) {
         let icon = NSImageView()
         let text = NSTextField(wrappingLabelWithString: "")
         text.preferredMaxLayoutWidth = 300
-        text.widthAnchor.constraint(equalToConstant: 300).isActive = true   // the buttons line up
+        text.widthAnchor.constraint(equalToConstant: 300).isActive = true  // the buttons line up
         text.textColor = .secondaryLabelColor
         let b = ClosureButton(title: button()) { _ in }
         let refresh = { [weak icon, weak text, weak b] in
@@ -217,7 +225,9 @@ final class FormBuilder: NSObject {
         l.alignment = .right
         let width = max(140, ceil(l.fittingSize.width), labelWidths.first?.constant ?? 0)
         labelWidths.append(l.widthAnchor.constraint(equalToConstant: width))
-        labelWidths.forEach { $0.constant = width; $0.isActive = true }
+        labelWidths.forEach {
+            $0.constant = width; $0.isActive = true
+        }
         let row = NSStackView(views: [l, v])
         row.spacing = 8
         return row

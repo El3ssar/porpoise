@@ -26,8 +26,10 @@ public enum AppLibrary {
             out.append(it)
         }
         for root in roots {
-            let entries = (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey],
-                                                      options: [.skipsHiddenFiles])) ?? []
+            let entries =
+                (try? fm.contentsOfDirectory(
+                    at: root, includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles])) ?? []
             for e in entries {
                 if e.pathExtension == "app" { add(e); continue }
                 guard (try? e.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }

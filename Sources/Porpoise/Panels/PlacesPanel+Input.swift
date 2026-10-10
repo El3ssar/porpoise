@@ -101,7 +101,8 @@ extension PlacesPanel {
     override func mouseDragged(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         guard !isDraggingRow, !PlacesModel.shared.isLocked, hypot(p.x - pressPoint.x, p.y - pressPoint.y) > Metrics.dragThreshold,
-              let i = pressed else { return }
+            let i = pressed
+        else { return }
         if let sec = header(at: i) { beginSectionDrag(sec, row: i, event: event); return }
         guard let e = entry(at: i), !e.isVolume else { return }
         isDraggingRow = true
@@ -127,7 +128,8 @@ extension PlacesPanel {
         item.setString(sec.rawValue, forType: .placeSection)
         let di = NSDraggingItem(pasteboardWriter: item)
         let end = rows.indices.first { $0 > i && header(at: $0) != nil }.map { rows[$0].y } ?? (rows.last.map { $0.y + $0.height } ?? rows[i].y)
-        let r = CGRect(x: 0, y: rows[i].y, width: min(bounds.width, Metrics.dragImageMaxWidth), height: min(max(rows[i].height, end - rows[i].y), 240))
+        let r = CGRect(
+            x: 0, y: rows[i].y, width: min(bounds.width, Metrics.dragImageMaxWidth), height: min(max(rows[i].height, end - rows[i].y), 240))
         let snapshot = NSImage(size: r.size)
         if let rep = bitmapImageRepForCachingDisplay(in: r) {
             cacheDisplay(in: r, to: rep)

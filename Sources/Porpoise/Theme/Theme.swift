@@ -8,8 +8,9 @@ extension NSColor {
 
     var hexString: String {
         guard let c = usingColorSpace(.sRGB) else { return "#000000" }
-        return String(format: "#%02x%02x%02x", Int(round(c.redComponent * 255)), Int(round(c.greenComponent * 255)),
-                      Int(round(c.blueComponent * 255)))
+        return String(
+            format: "#%02x%02x%02x", Int(round(c.redComponent * 255)), Int(round(c.greenComponent * 255)),
+            Int(round(c.blueComponent * 255)))
     }
 
     /// QColor::lighter(factor) equivalent (factor 110 = 10% lighter).
@@ -88,7 +89,8 @@ enum Theme {
     static func terminalFont(size: CGFloat = 13) -> NSFont {
         let families = ["Hack Nerd Font Mono", "Hack Nerd Font", "Hack", "JetBrainsMono Nerd Font Mono", "MesloLGS NF", "Menlo"]
         // Weight 5 is NSFontManager's "regular".
-        let font = families.lazy.compactMap { NSFontManager.shared.font(withFamily: $0, traits: [], weight: 5, size: size) }.first
+        let font =
+            families.lazy.compactMap { NSFontManager.shared.font(withFamily: $0, traits: [], weight: 5, size: size) }.first
             ?? .monospacedSystemFont(ofSize: size, weight: .regular)
         // Nerd Font symbols (prompt icons) fall back to the bundled Symbols Nerd Font, like kitty does.
         registerBundledFonts()
@@ -105,8 +107,10 @@ enum Theme {
         guard !fontsRegistered else { return }
         fontsRegistered = true
         let fm = FileManager.default
-        let candidates = [Bundle.main.resourceURL?.appendingPathComponent("fonts"),
-                          URL(fileURLWithPath: fm.currentDirectoryPath).appendingPathComponent("Resources/fonts")]
+        let candidates = [
+            Bundle.main.resourceURL?.appendingPathComponent("fonts"),
+            URL(fileURLWithPath: fm.currentDirectoryPath).appendingPathComponent("Resources/fonts"),
+        ]
         guard let dir = candidates.compactMap({ $0 }).first(where: { fm.fileExists(atPath: $0.path) }) else { return }
         for f in (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [] where f.pathExtension == "ttf" {
             CTFontManagerRegisterFontsForURL(f as CFURL, .process, nil)
@@ -117,17 +121,17 @@ enum Theme {
     static func iconStylesheet(selected: Bool = false) -> String {
         let text = selected ? selectionText : windowText
         return """
-        .ColorScheme-Text { color:\(text.hexString); }
-        .ColorScheme-Background { color:\(windowBackground.hexString); }
-        .ColorScheme-Highlight { color:\(selection.hexString); }
-        .ColorScheme-HighlightedText { color:\(selectionText.hexString); }
-        .ColorScheme-PositiveText { color:\(positiveText.hexString); }
-        .ColorScheme-NeutralText { color:\(neutralText.hexString); }
-        .ColorScheme-NegativeText { color:\(negativeText.hexString); }
-        .ColorScheme-ActiveText { color:\(activeText.hexString); }
-        .ColorScheme-Complement { color:\(windowBackground.hexString); }
-        .ColorScheme-Contrast { color:\(windowText.hexString); }
-        .ColorScheme-Accent { color:\(selection.hexString); }
-        """
+            .ColorScheme-Text { color:\(text.hexString); }
+            .ColorScheme-Background { color:\(windowBackground.hexString); }
+            .ColorScheme-Highlight { color:\(selection.hexString); }
+            .ColorScheme-HighlightedText { color:\(selectionText.hexString); }
+            .ColorScheme-PositiveText { color:\(positiveText.hexString); }
+            .ColorScheme-NeutralText { color:\(neutralText.hexString); }
+            .ColorScheme-NegativeText { color:\(negativeText.hexString); }
+            .ColorScheme-ActiveText { color:\(activeText.hexString); }
+            .ColorScheme-Complement { color:\(windowBackground.hexString); }
+            .ColorScheme-Contrast { color:\(windowText.hexString); }
+            .ColorScheme-Accent { color:\(selection.hexString); }
+            """
     }
 }

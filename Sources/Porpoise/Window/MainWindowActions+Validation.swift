@@ -11,7 +11,8 @@ extension MainWindowController: NSMenuItemValidation {
         // Shortcuts without ⌘ (⌫, ⌥←, ⌥1…) must not steal keys while typing in a field or the terminal.
         // Only key presses are affected: the same items stay usable from an open menu.
         if NSApp.currentEvent?.type == .keyDown, isTypingFocus, !item.keyEquivalent.isEmpty,
-           !item.keyEquivalentModifierMask.contains(.command), !KeyEquivalent.isFunctionKey(item.keyEquivalent) {
+            !item.keyEquivalentModifierMask.contains(.command), !KeyEquivalent.isFunctionKey(item.keyEquivalent)
+        {
             return false
         }
         let p = view.model.props
@@ -44,10 +45,11 @@ extension MainWindowController: NSMenuItemValidation {
         case #selector(duplicateItem(_:)):
             return !hasSelection ? writable : selectionIsLocal
         case #selector(shareItems(_:)), #selector(compress(_:)),
-             #selector(setTag(_:)), #selector(cloudDownload(_:)), #selector(cloudEvict(_:)):
+            #selector(setTag(_:)), #selector(cloudDownload(_:)), #selector(cloudEvict(_:)):
             return selectionIsLocal
         case #selector(extractHere(_:)):
-            return view.model.selectedItems.first.map { $0.url.isFileURL && Self.extractableExtensions.contains($0.fileExtension.lowercased()) } ?? false
+            return view.model.selectedItems.first.map { $0.url.isFileURL && Self.extractableExtensions.contains($0.fileExtension.lowercased()) }
+                ?? false
         case #selector(createFolder(_:)), #selector(createFile(_:)):
             return writable
         case #selector(addToPlaces(_:)):
@@ -68,7 +70,8 @@ extension MainWindowController: NSMenuItemValidation {
         case #selector(focusRightPane(_:)): return tab.isSplit && !tab.activeIsSecondary
         case #selector(toggleSplit(_:)):
             item.title = tab.isSplit ? (tab.activeIsSecondary ? "Close Right View" : "Close Left View") : "Split"
-            item.image = Icons.shared.menuIcon(tab.isSplit ? (tab.activeIsSecondary ? "view-right-close" : "view-left-close") : "view-split-left-right")
+            item.image = Icons.shared.menuIcon(
+                tab.isSplit ? (tab.activeIsSecondary ? "view-right-close" : "view-left-close") : "view-split-left-right")
             return true
 
         // View state (checkmarks)
@@ -86,9 +89,13 @@ extension MainWindowController: NSMenuItemValidation {
             item.state = p.sortOrder == .descending ? .on : .off
         case #selector(groupBy(_:)):
             let raw = item.representedObject as? String
-            if raw == "same" { item.state = p.groupSameAsSort ? .on : .off }
-            else if raw == nil { item.state = (p.groupRole == nil && !p.groupSameAsSort) ? .on : .off }
-            else { item.state = (!p.groupSameAsSort && p.groupRole?.rawValue == raw) ? .on : .off }
+            if raw == "same" {
+                item.state = p.groupSameAsSort ? .on : .off
+            } else if raw == nil {
+                item.state = (p.groupRole == nil && !p.groupSameAsSort) ? .on : .off
+            } else {
+                item.state = (!p.groupSameAsSort && p.groupRole?.rawValue == raw) ? .on : .off
+            }
         case #selector(toggleAdditionalRole(_:)):
             item.state = p.roles(for: p.mode).contains { $0.rawValue == item.representedObject as? String } ? .on : .off
         case #selector(togglePanel(_:)):

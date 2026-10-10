@@ -4,8 +4,10 @@ import PorpoiseServices
 
 // The main menu: Dolphin's menu bar, with Ctrl → Cmd.
 extension AppDelegate {
-    private func mi(_ title: String, _ action: Selector?, _ key: String = "", _ mods: NSEvent.ModifierFlags = .command,
-                    icon: String? = nil, tag: Int = 0) -> NSMenuItem {
+    private func mi(
+        _ title: String, _ action: Selector?, _ key: String = "", _ mods: NSEvent.ModifierFlags = .command,
+        icon: String? = nil, tag: Int = 0
+    ) -> NSMenuItem {
         .make(title, action, key: key, mods: mods, icon: icon, tag: tag)
     }
 
@@ -127,13 +129,17 @@ extension AppDelegate {
         view.addItem(sep())
         let panels = W.panelsMenu()
         // F10 (macOS reserves F11 for Show Desktop); Cmd+Opt+I (Finder's inspector key) also toggles Information.
-        panels.insertItem(mi("Information", #selector(W.togglePanel(_:)), "i", [.command, .option], icon: "documentinfo", tag: 1).hiddenAlternate(),
-                          at: W.panelToggles.count)
+        panels.insertItem(
+            mi("Information", #selector(W.togglePanel(_:)), "i", [.command, .option], icon: "documentinfo", tag: 1).hiddenAlternate(),
+            at: W.panelToggles.count)
         view.addItem(.submenu("Show Panels", icon: "view-sidetree", panels))
-        view.addItem(submenu("Location Bar", [
-            mi("Editable Location", #selector(W.editLocation(_:)), K.f(6), []),
-            mi("Replace Location", #selector(W.replaceLocation(_:)), "l"),
-        ]))
+        view.addItem(
+            submenu(
+                "Location Bar",
+                [
+                    mi("Editable Location", #selector(W.editLocation(_:)), K.f(6), []),
+                    mi("Replace Location", #selector(W.replaceLocation(_:)), "l"),
+                ]))
         view.addItem(sep())
         view.addItem(mi("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]))
         main.addItem(.submenu("View", icon: nil, view))
@@ -177,8 +183,11 @@ extension AppDelegate {
         win.addItem(mi("Previous Tab", #selector(W.previousTab(_:)), "{", .command).hiddenAlternate())
         win.addItem(mi("Next Tab", #selector(W.nextTab(_:)), K.pageDown, .command).hiddenAlternate())
         win.addItem(mi("Previous Tab", #selector(W.previousTab(_:)), K.pageUp, .command).hiddenAlternate())
-        win.addItem(submenu("Go to Tab", (1...9).map { mi("Tab \($0)", #selector(W.activateTab(_:)), "\($0)", .option, tag: $0) }
-                            + [mi("Last Tab", #selector(W.activateTab(_:)), "0", .option, tag: 0)]))
+        win.addItem(
+            submenu(
+                "Go to Tab",
+                (1...9).map { mi("Tab \($0)", #selector(W.activateTab(_:)), "\($0)", .option, tag: $0) }
+                    + [mi("Last Tab", #selector(W.activateTab(_:)), "0", .option, tag: 0)]))
         win.addItem(sep())
         win.addItem(mi("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))))
         NSApp.windowsMenu = win

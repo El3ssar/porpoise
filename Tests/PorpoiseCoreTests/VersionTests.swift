@@ -1,4 +1,5 @@
 import Testing
+
 @testable import PorpoiseCore
 
 @Suite struct VersionTests {

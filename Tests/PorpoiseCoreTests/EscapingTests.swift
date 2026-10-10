@@ -1,7 +1,8 @@
 import Foundation
-import Testing
-@testable import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseCore
 
 @Suite(.serialized) struct EscapingTests {
     @Test func appleScriptLiterals() {
@@ -11,7 +12,8 @@ import PorpoiseTestSupport
         // A quote can't end the literal early: every inner quote is preceded by a backslash.
         let lit = Escaping.appleScriptString(#"x" & do shell script "evil"#)
         #expect(!lit.dropFirst().dropLast().contains(where: { $0 == "\n" }))
-        #expect(lit.dropFirst().dropLast().replacingOccurrences(of: "\\\\", with: "").replacingOccurrences(of: "\\\"", with: "").contains("\"") == false)
+        #expect(
+            lit.dropFirst().dropLast().replacingOccurrences(of: "\\\\", with: "").replacingOccurrences(of: "\\\"", with: "").contains("\"") == false)
     }
 
     // MARK: Preview server paths
@@ -40,25 +42,25 @@ import PorpoiseTestSupport
         #expect(Escaping.servedFile(for: "/S3CRET/stream/index.m3u8", root: root, secret: secret)?.lastPathComponent == "index.m3u8")
         #expect(Escaping.servedFile(for: "/S3CRET/stream/seg%201.m4s?t=1", root: root, secret: secret)?.lastPathComponent == "seg 1.m4s")
         #expect(Escaping.servedFile(for: "/S3CRET//stream//index.m3u8", root: root, secret: secret) != nil)
-        #expect(Escaping.servedFile(for: "/S3CRET/stream/in", root: root, secret: secret) != nil)   // symlink staying inside
+        #expect(Escaping.servedFile(for: "/S3CRET/stream/in", root: root, secret: secret) != nil)  // symlink staying inside
     }
 
     @Test func refusesEverythingElse() throws {
         let root = try setup()
         let bad = [
-            "/stream/index.m3u8",                    // no secret
+            "/stream/index.m3u8",  // no secret
             "/WRONG/stream/index.m3u8",
             "/S3CRET/../secret.txt",
             "/S3CRET/stream/../../secret.txt",
-            "/S3CRET/%2e%2e/secret.txt",             // percent-encoded ..
+            "/S3CRET/%2e%2e/secret.txt",  // percent-encoded ..
             "/S3CRET/stream%2F..%2F..%2Fsecret.txt",  // encoded slashes
-            "/S3CRET/%252e%252e/secret.txt",         // double encoding stays literal (and missing)
-            "/S3CRET/stream/out",                    // symlink leading out of the root
-            "/S3CRET/stream",                        // a folder
+            "/S3CRET/%252e%252e/secret.txt",  // double encoding stays literal (and missing)
+            "/S3CRET/stream/out",  // symlink leading out of the root
+            "/S3CRET/stream",  // a folder
             "/S3CRET/",
             "/S3CRET/stream/index.m3u8%00.jpg",
             "/S3CRET/stream/..\\..\\secret.txt",
-            "/S3CRET/stream/%ZZ",                    // invalid encoding
+            "/S3CRET/stream/%ZZ",  // invalid encoding
             "",
         ]
         for target in bad {

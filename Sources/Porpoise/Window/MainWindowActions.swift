@@ -93,7 +93,9 @@ extension MainWindowController {
             let target = c.url.appendingPathComponent(name)
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    if folder { try p.makeFolder(target) } else {
+                    if folder {
+                        try p.makeFolder(target)
+                    } else {
                         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
                         defer { try? FileManager.default.removeItem(at: tmp) }
@@ -101,7 +103,9 @@ extension MainWindowController {
                         FileManager.default.createFile(atPath: file.path, contents: Data())
                         try p.upload(file, into: c.url)
                     }
-                    DispatchQueue.main.async { c.pendingSelect = target; c.reload() }
+                    DispatchQueue.main.async {
+                        c.pendingSelect = target; c.reload()
+                    }
                 } catch {
                     DispatchQueue.main.async { self?.reportError(error.localizedDescription, in: c) }
                 }
@@ -110,8 +114,11 @@ extension MainWindowController {
     }
 
     @objc func addToPlaces(_ sender: Any?) {
-        if let f = view.model.selectedItems.first(where: \.isBrowsableFolder) { PlacesModel.shared.add(f.url) }
-        else if view.url.isFileURL { PlacesModel.shared.add(view.url) }
+        if let f = view.model.selectedItems.first(where: \.isBrowsableFolder) {
+            PlacesModel.shared.add(f.url)
+        } else if view.url.isFileURL {
+            PlacesModel.shared.add(view.url)
+        }
     }
 
     @objc func renameItem(_ sender: Any?) {
@@ -124,7 +131,9 @@ extension MainWindowController {
     private func renameDialog(_ items: [FileItem]) {
         let a = NSAlert()
         a.messageText = items.count == 1 ? "Rename Item" : "Rename Items"
-        a.informativeText = items.count == 1 ? "Rename the item “\(items[0].name)” to:"
+        a.informativeText =
+            items.count == 1
+            ? "Rename the item “\(items[0].name)” to:"
             : "Rename the \(items.count) selected items to:\n(# is replaced by ascending numbers)"
         let f = NSTextField(string: items.count == 1 ? items[0].name : "New name #")
         f.frame = CGRect(x: 0, y: 0, width: 300, height: 24)
@@ -147,19 +156,20 @@ extension MainWindowController {
         for (i, it) in items.enumerated() {
             var name = pattern.replacingOccurrences(of: "#", with: String(i + 1))
             if !it.fileExtension.isEmpty { name += "." + it.fileExtension }
-            if !it.url.isFileURL { rename(it, to: name, in: c); continue }   // remote: renamed in the background
+            if !it.url.isFileURL { rename(it, to: name, in: c); continue }  // remote: renamed in the background
             do {
                 let new = try FileActions.rename(it.url, to: name)
                 FileOperationsController.shared.pushUndo(.renamed(from: it.url, to: new))
-            } catch where FileJob.isPermissionError(error) {
+            } catch  where FileJob.isPermissionError(error) {
                 denied.append((it.url, it.url.deletingLastPathComponent().appendingPathComponent(name)))
             } catch {
                 failed.append("“\(it.name)”: \(error.localizedDescription)")
             }
         }
         if !denied.isEmpty {
-            FileOperationsController.shared.authorize(verb: "rename", items: denied.map(\.0),
-                                               commands: denied.flatMap { FileOperationsController.renameCommands($0.0, to: $0.1) }, window: window)
+            FileOperationsController.shared.authorize(
+                verb: "rename", items: denied.map(\.0),
+                commands: denied.flatMap { FileOperationsController.renameCommands($0.0, to: $0.1) }, window: window)
         }
         if !failed.isEmpty { reportError("Could not rename " + failed.joined(separator: "; "), in: c) }
         c.reload()
@@ -207,7 +217,9 @@ extension MainWindowController {
         p.canChooseDirectories = true
         p.canChooseFiles = false
         p.prompt = "Restore Here"
-        p.message = unknown.count == 1 ? "The original location of “\(unknown[0].lastPathComponent)” is unknown. Choose where to restore it."
+        p.message =
+            unknown.count == 1
+            ? "The original location of “\(unknown[0].lastPathComponent)” is unknown. Choose where to restore it."
             : "The original location of \(unknown.count) items is unknown. Choose where to restore them."
         p.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         runPanel(p) { [weak self] dir in FileOperationsController.shared.run(.move, unknown, to: dir, window: self?.window) }

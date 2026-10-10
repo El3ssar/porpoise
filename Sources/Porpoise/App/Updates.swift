@@ -1,6 +1,6 @@
 import AppKit
-import Sparkle
 import PorpoiseServices
+import Sparkle
 
 /// In-app updates with Sparkle: a daily check (optional, in Settings › General), Sparkle's update window with the
 /// release notes, then download, signature check, install and relaunch. The feed is published by the release

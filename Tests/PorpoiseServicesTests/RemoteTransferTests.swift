@@ -1,7 +1,8 @@
 import Foundation
-import Testing
 import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 /// Jobs with a non-file URL go the remote way. Without connecting anywhere, these check what it refuses.

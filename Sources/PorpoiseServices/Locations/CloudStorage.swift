@@ -4,7 +4,8 @@ import Foundation
 enum CloudStorage {
     /// Folders that File Provider apps create in ~/Library/CloudStorage (e.g. "GoogleDrive-me@gmail.com").
     static func locations(in root: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/CloudStorage"))
-        -> [(title: String, url: URL, icon: String)] {
+        -> [(title: String, url: URL, icon: String)]
+    {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
         return names.sorted().compactMap { n in
             guard !n.hasPrefix(".") else { return nil }

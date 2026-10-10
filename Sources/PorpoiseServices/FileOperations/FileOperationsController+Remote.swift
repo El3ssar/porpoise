@@ -7,7 +7,7 @@ extension FileOperationsController {
     /// Copies/moves between local folders and providers. There is no conflict dialog here, so an item
     /// whose name already exists at the destination is reported and left alone, never overwritten.
     func runRemote(_ kind: FileOperationKind, _ urls: [URL], to folder: URL?, window: AnyObject?, done: (([URL]) -> Void)?) {
-        let job = FileJob(kind: kind, sources: urls, destinationFolder: folder)   // used for the progress row only
+        let job = FileJob(kind: kind, sources: urls, destinationFolder: folder)  // used for the progress row only
         ui?.jobStarted(job)
         DispatchQueue.global(qos: .userInitiated).async {
             var errors: [String] = []
@@ -16,8 +16,11 @@ extension FileOperationsController {
             for (i, src) in urls.enumerated() {
                 if job.isCancelled { break }
                 DispatchQueue.main.async {
-                    self.ui?.jobProgressed(job, JobProgress(kind: kind, totalBytes: 0, doneBytes: 0, totalItems: urls.count,
-                                                            doneItems: i, currentName: src.lastPathComponent, destination: folder))
+                    self.ui?.jobProgressed(
+                        job,
+                        JobProgress(
+                            kind: kind, totalBytes: 0, doneBytes: 0, totalItems: urls.count,
+                            doneItems: i, currentName: src.lastPathComponent, destination: folder))
                 }
                 do {
                     switch kind {

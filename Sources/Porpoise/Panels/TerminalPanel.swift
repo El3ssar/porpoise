@@ -1,7 +1,7 @@
 import AppKit
-import SwiftTerm
 import PorpoiseCore
 import PorpoiseServices
+import SwiftTerm
 
 /// Dolphin's Terminal panel (F4): an embedded terminal that follows the view's folder, and moves the
 /// view when the shell changes directory. Uses SwiftTerm instead of the Konsole KPart.
@@ -140,8 +140,9 @@ final class TerminalPanel: NSView, LocalProcessTerminalViewDelegate {
         env["COLORTERM"] = "truecolor"
         env["TERM_PROGRAM"] = "Porpoise"
         env["PWD"] = dir.path
-        t.startProcess(executable: shell, args: ["-l"], environment: env.map { "\($0.key)=\($0.value)" },
-                       execName: "-" + (shell as NSString).lastPathComponent, currentDirectory: dir.path)
+        t.startProcess(
+            executable: shell, args: ["-l"], environment: env.map { "\($0.key)=\($0.value)" },
+            execName: "-" + (shell as NSString).lastPathComponent, currentDirectory: dir.path)
         lastSyncedDir = Self.realPath(dir.path)
         wanted = dir
         wantedReal = Self.realPath(dir.path)
@@ -314,7 +315,8 @@ final class TerminalPanel: NSView, LocalProcessTerminalViewDelegate {
         if currentDirectory != nil { pollDirectory(); return }
         // The process folder is unreadable: trust a local OSC 7 report.
         guard let d = directory, let u = URL(string: d), u.isFileURL, u.host.map(Self.isLocalHost) ?? true,
-              u.path != lastSyncedDir else { return }
+            u.path != lastSyncedDir
+        else { return }
         lastSyncedDir = u.path
         if Settings.shared.terminalFollowsDirectory { onDirectoryChange?(URL(fileURLWithPath: u.path)) }
     }

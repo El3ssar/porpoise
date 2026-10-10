@@ -16,7 +16,9 @@ final class RecordingTool {
     init() throws {
         scratch = try Scratch("tool")
         let d = RemoteParsing.quote(scratch.url.path)
-        let script = try scratch.file("tool", """
+        let script = try scratch.file(
+            "tool",
+            """
             #!/bin/sh
             d=\(d)
             n=$(cat "$d/count" 2>/dev/null || echo 0); echo $((n + 1)) > "$d/count"
@@ -41,8 +43,9 @@ final class RecordingTool {
         let count = Int(scratch.read("count")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") ?? 0
         return (0..<count).map { n in
             let args = (try? Data(contentsOf: scratch.path("args-\(n)"))) ?? Data()
-            return Call(args: args.split(separator: 0, omittingEmptySubsequences: false).dropLast().map { String(decoding: $0, as: UTF8.self) },
-                        stdin: scratch.read("stdin-\(n)") ?? "")
+            return Call(
+                args: args.split(separator: 0, omittingEmptySubsequences: false).dropLast().map { String(decoding: $0, as: UTF8.self) },
+                stdin: scratch.read("stdin-\(n)") ?? "")
         }
     }
 }

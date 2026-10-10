@@ -1,6 +1,7 @@
 import Foundation
-import Testing
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 /// The preview stream's HTTP server, for real: started on a scratch folder and asked over TCP.
@@ -58,7 +59,9 @@ import PorpoiseTestSupport
             addr.sin_family = sa_family_t(AF_INET)
             addr.sin_port = port.bigEndian
             addr.sin_addr.s_addr = inet_addr("127.0.0.1")
-            let ok = withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } }
+            let ok = withUnsafePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+            }
             guard ok == 0 else { throw POSIXError(.ECONNREFUSED) }
             _ = request.withUnsafeBytes { send(fd, $0.baseAddress, $0.count, 0) }
             if halfClose { shutdown(fd, SHUT_WR) }
@@ -181,9 +184,11 @@ import PorpoiseTestSupport
 
     @Test func refusesWithoutTheRightSecret() throws {
         let f = try Fixture(); defer { f.stop() }
-        for target in ["/stream/index.m3u8", "/WRONG/stream/index.m3u8", "/\(f.secret.lowercased())/stream/index.m3u8",
-                       "/\(f.secret.dropLast())/stream/index.m3u8", "/x/\(f.secret)/stream/index.m3u8", "/", "*",
-                       "http://127.0.0.1:\(f.port)/\(f.secret)/stream/index.m3u8"] {
+        for target in [
+            "/stream/index.m3u8", "/WRONG/stream/index.m3u8", "/\(f.secret.lowercased())/stream/index.m3u8",
+            "/\(f.secret.dropLast())/stream/index.m3u8", "/x/\(f.secret)/stream/index.m3u8", "/", "*",
+            "http://127.0.0.1:\(f.port)/\(f.secret)/stream/index.m3u8",
+        ] {
             let r = try f.get(target)
             #expect(r.status == 404 && r.body.isEmpty, "\(target)")
         }
@@ -280,13 +285,17 @@ import PorpoiseTestSupport
             a.sin6_family = sa_family_t(AF_INET6)
             a.sin6_port = port.bigEndian
             inet_pton(AF_INET6, address, &a.sin6_addr)
-            return withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in6>.size)) } } == 0
+            return withUnsafePointer(to: &a) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in6>.size)) }
+            } == 0
         }
         var a = sockaddr_in()
         a.sin_family = sa_family_t(AF_INET)
         a.sin_port = port.bigEndian
         a.sin_addr.s_addr = inet_addr(address)
-        return withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } } == 0
+        return withUnsafePointer(to: &a) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        } == 0
     }
 
     @Test func contentTypes() {

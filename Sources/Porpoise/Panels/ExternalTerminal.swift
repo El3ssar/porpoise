@@ -10,7 +10,10 @@ enum ExternalTerminal {
     static func run(_ file: URL) {
         let ws = NSWorkspace.shared
         if let kitty = ws.urlForApplication(withBundleIdentifier: kittyID),
-           launchKitty(kitty, ["--single-instance", "--hold", "--directory", file.deletingLastPathComponent().path, file.path]) { return }
+            launchKitty(kitty, ["--single-instance", "--hold", "--directory", file.deletingLastPathComponent().path, file.path])
+        {
+            return
+        }
         if let term = ws.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
             ws.open([file], withApplicationAt: term, configuration: NSWorkspace.OpenConfiguration())
         }

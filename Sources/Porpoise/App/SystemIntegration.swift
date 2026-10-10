@@ -1,7 +1,7 @@
 import AppKit
+import PorpoiseServices
 import ServiceManagement
 import UniformTypeIdentifiers
-import PorpoiseServices
 
 /// Standing in for Finder: default file browser (folders + "Show in Finder" requests) and privacy permissions.
 enum SystemIntegration {
@@ -44,10 +44,12 @@ enum SystemIntegration {
         let m = NSAppleEventManager.shared()
         let h = RevealHandler.shared
         // 'misc'/'mvis' (make objects visible) and Finder's 'FNDR'/'show'.
-        m.setEventHandler(h, andSelector: #selector(RevealHandler.handle(_:reply:)),
-                          forEventClass: AEEventClass(kAEMiscStandards), andEventID: AEEventID(kAEMakeObjectsVisible))
-        m.setEventHandler(h, andSelector: #selector(RevealHandler.handle(_:reply:)),
-                          forEventClass: fourCC("FNDR"), andEventID: fourCC("show"))
+        m.setEventHandler(
+            h, andSelector: #selector(RevealHandler.handle(_:reply:)),
+            forEventClass: AEEventClass(kAEMiscStandards), andEventID: AEEventID(kAEMakeObjectsVisible))
+        m.setEventHandler(
+            h, andSelector: #selector(RevealHandler.handle(_:reply:)),
+            forEventClass: fourCC("FNDR"), andEventID: fourCC("show"))
     }
 
     static func fourCC(_ s: String) -> UInt32 { s.utf8.reduce(0) { ($0 << 8) | UInt32($1) } }
@@ -58,8 +60,7 @@ enum SystemIntegration {
             guard let direct = event.paramDescriptor(forKeyword: keyDirectObject) else { return }
             var urls: [URL] = []
             let n = direct.numberOfItems
-            if n == 0 { if let u = direct.fileURLValue { urls.append(u) } }
-            else { urls = (1...n).compactMap { direct.atIndex($0)?.fileURLValue } }
+            if n == 0 { if let u = direct.fileURLValue { urls.append(u) } } else { urls = (1...n).compactMap { direct.atIndex($0)?.fileURLValue } }
             guard !urls.isEmpty else { return }
             AppDelegate.shared.reveal(urls)
         }
@@ -79,31 +80,48 @@ enum SystemIntegration {
     }
 
     static let permissions: [Permission] = [
-        Permission(title: "Full Disk Access", anchor: "Privacy_AllFiles", status: {
-            PrivacyAccess.hasFullDiskAccess ? (true, "Allowed. Protected folders (Trash, Mail, other apps' data) can be shown.")
-                : (false, "Not allowed. Switch Porpoise on in the list (drag it in if it isn't there): it's needed for protected folders such as the Trash.")
-        }, request: nil),
-        Permission(title: "App Management", anchor: "Privacy_AppBundles", status: {
-            switch PrivacyAccess.appManagementState {
-            case .allowed: return (true, "Allowed. Porpoise can update, move and delete other apps.")
-            case .denied: return (false, "Not allowed. Click Allow…, then switch Porpoise on in the list that opens.")
-            case .unknown: return (nil, "Lets Porpoise update, move and delete other apps. Click Allow…, then switch Porpoise on.")
-            }
-        }, request: ("Allow…", { requestAppManagement() })),
-        Permission(title: "Administrator Actions", anchor: "", status: {
-            guard PrivilegedHelper.isEnabled else {
-                return (false, "Not set up. Click Allow… to install Porpoise Helper (your administrator password, once).")
-            }
-            return PrivilegedHelper.hasFullDiskAccess == false
-                ? (false, "Installed. Click Allow…, then switch Porpoise Helper on under Full Disk Access.")
-                : (true, "Allowed. Porpoise empties the Trash and changes system-owned items (such as App Store apps) without asking.")
-        }, request: ("Allow…", {
-            HelperSetup.install { if PrivilegedHelper.isEnabled { openPrivacyPane("Privacy_AllFiles") } }
-        }), open: { openPrivacyPane("Privacy_AllFiles") }),
-        Permission(title: "Local Network", anchor: "Privacy_LocalNetwork", status: {
-            LocalNetworkAccess.shared.isAllowed ? (true, "Allowed. File servers on your network appear under Network.")
-                : (nil, "Lets Porpoise list the file servers and shared folders on your network.")
-        }, request: ("Allow…", { LocalNetworkAccess.shared.request { _ in } })),
+        Permission(
+            title: "Full Disk Access", anchor: "Privacy_AllFiles",
+            status: {
+                PrivacyAccess.hasFullDiskAccess
+                    ? (true, "Allowed. Protected folders (Trash, Mail, other apps' data) can be shown.")
+                    : (
+                        false,
+                        "Not allowed. Switch Porpoise on in the list (drag it in if it isn't there): it's needed for protected folders such as the Trash."
+                    )
+            }, request: nil),
+        Permission(
+            title: "App Management", anchor: "Privacy_AppBundles",
+            status: {
+                switch PrivacyAccess.appManagementState {
+                case .allowed: return (true, "Allowed. Porpoise can update, move and delete other apps.")
+                case .denied: return (false, "Not allowed. Click Allow…, then switch Porpoise on in the list that opens.")
+                case .unknown: return (nil, "Lets Porpoise update, move and delete other apps. Click Allow…, then switch Porpoise on.")
+                }
+            }, request: ("Allow…", { requestAppManagement() })),
+        Permission(
+            title: "Administrator Actions", anchor: "",
+            status: {
+                guard PrivilegedHelper.isEnabled else {
+                    return (false, "Not set up. Click Allow… to install Porpoise Helper (your administrator password, once).")
+                }
+                return PrivilegedHelper.hasFullDiskAccess == false
+                    ? (false, "Installed. Click Allow…, then switch Porpoise Helper on under Full Disk Access.")
+                    : (true, "Allowed. Porpoise empties the Trash and changes system-owned items (such as App Store apps) without asking.")
+            },
+            request: (
+                "Allow…",
+                {
+                    HelperSetup.install { if PrivilegedHelper.isEnabled { openPrivacyPane("Privacy_AllFiles") } }
+                }
+            ), open: { openPrivacyPane("Privacy_AllFiles") }),
+        Permission(
+            title: "Local Network", anchor: "Privacy_LocalNetwork",
+            status: {
+                LocalNetworkAccess.shared.isAllowed
+                    ? (true, "Allowed. File servers on your network appear under Network.")
+                    : (nil, "Lets Porpoise list the file servers and shared folders on your network.")
+            }, request: ("Allow…", { LocalNetworkAccess.shared.request { _ in } })),
     ]
 
     /// Everything Porpoise uses is available (each permission granted, the helper switched on).
@@ -131,8 +149,11 @@ enum SystemIntegration {
     static func checkAppManagement(openSettingsIfDenied: Bool) {
         let state = PrivacyAccess.checkAppManagement()
         guard openSettingsIfDenied else { return }
-        if state == nil { DispatchQueue.main.async { openPrivacyPane("Privacy_AppBundles") } }
-        else if state != .allowed { DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { openPrivacyPane("Privacy_AppBundles") } }
+        if state == nil {
+            DispatchQueue.main.async { openPrivacyPane("Privacy_AppBundles") }
+        } else if state != .allowed {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { openPrivacyPane("Privacy_AppBundles") }
+        }
     }
 
     static func openPrivacyPane(_ anchor: String) {

@@ -8,8 +8,10 @@ enum Keychain {
     private static func proto(_ scheme: String) -> CFString { scheme == "ftps" ? kSecAttrProtocolFTPS : kSecAttrProtocolFTP }
 
     static func password(server: String, account: String, scheme: String, in keychain: SecKeychain? = nil) -> String? {
-        var base: [String: Any] = [kSecClass as String: kSecClassInternetPassword, kSecAttrServer as String: server,
-                                   kSecAttrAccount as String: account]
+        var base: [String: Any] = [
+            kSecClass as String: kSecClassInternetPassword, kSecAttrServer as String: server,
+            kSecAttrAccount as String: account,
+        ]
         if let keychain { base[kSecMatchSearchList as String] = [keychain] }
         func data(_ q: [String: Any]) -> String? {
             var out: AnyObject?
@@ -29,15 +31,18 @@ enum Keychain {
         list[kSecMatchLimit as String] = kSecMatchLimitAll
         var out: AnyObject?
         guard SecItemCopyMatching(list as CFDictionary, &out) == errSecSuccess, let items = out as? [[String: Any]],
-              let ref = items.first(where: { $0[kSecAttrProtocol as String] == nil })?[kSecValuePersistentRef as String] else { return nil }
+            let ref = items.first(where: { $0[kSecAttrProtocol as String] == nil })?[kSecValuePersistentRef as String]
+        else { return nil }
         var byRef: [String: Any] = [kSecClass as String: kSecClassInternetPassword, kSecValuePersistentRef as String: ref]
         if let keychain { byRef[kSecMatchSearchList as String] = [keychain] }
         return data(byRef)
     }
 
     static func save(server: String, account: String, password: String, scheme: String, in keychain: SecKeychain? = nil) {
-        var q: [String: Any] = [kSecClass as String: kSecClassInternetPassword, kSecAttrServer as String: server,
-                                kSecAttrAccount as String: account, kSecAttrProtocol as String: proto(scheme)]
+        var q: [String: Any] = [
+            kSecClass as String: kSecClassInternetPassword, kSecAttrServer as String: server,
+            kSecAttrAccount as String: account, kSecAttrProtocol as String: proto(scheme),
+        ]
         if let keychain { q[kSecMatchSearchList as String] = [keychain] }
         let data = Data(password.utf8)
         // Update in place keeps the item's access settings; add only when there is none yet.

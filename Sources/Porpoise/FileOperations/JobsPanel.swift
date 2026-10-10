@@ -81,8 +81,10 @@ final class JobsPanel {
     private func relayout() {
         guard !rows.isEmpty else { return }
         if panel == nil {
-            let p = NSPanel(contentRect: CGRect(x: 0, y: 0, width: Self.width, height: Self.rowHeight + Self.titleHeight), styleMask: [.titled, .utilityWindow, .nonactivatingPanel, .fullSizeContentView],
-                            backing: .buffered, defer: false)
+            let p = NSPanel(
+                contentRect: CGRect(x: 0, y: 0, width: Self.width, height: Self.rowHeight + Self.titleHeight),
+                styleMask: [.titled, .utilityWindow, .nonactivatingPanel, .fullSizeContentView],
+                backing: .buffered, defer: false)
             p.title = "File Operations"
             p.isFloatingPanel = true
             p.hidesOnDeactivate = false

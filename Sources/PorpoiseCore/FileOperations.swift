@@ -22,7 +22,7 @@ public enum ConflictResolution: Sendable, Equatable {
     case overwrite
     case overwriteIfOlder
     case rename(String)
-    case writeInto   // merge folders
+    case writeInto  // merge folders
     case cancel
 }
 
@@ -43,8 +43,8 @@ public struct ConflictAnswer: Sendable {
 
 /// A reversible record of what a job did, used for Undo/Redo.
 public enum UndoRecord: Sendable {
-    case created([URL])                  // undo: trash these (copies, links, new folders/files)
-    case moved([(from: URL, to: URL)])   // undo: move back
+    case created([URL])  // undo: trash these (copies, links, new folders/files)
+    case moved([(from: URL, to: URL)])  // undo: move back
     case trashed([(original: URL, inTrash: URL)])
     case renamed(from: URL, to: URL)
 
@@ -67,7 +67,8 @@ public struct JobProgress: Sendable {
     public var doneItems: Int
     public var currentName: String
     public var destination: URL?
-    public init(kind: FileOperationKind, totalBytes: Int64, doneBytes: Int64, totalItems: Int, doneItems: Int, currentName: String, destination: URL?) {
+    public init(kind: FileOperationKind, totalBytes: Int64, doneBytes: Int64, totalItems: Int, doneItems: Int, currentName: String, destination: URL?)
+    {
         self.kind = kind; self.totalBytes = totalBytes; self.doneBytes = doneBytes; self.totalItems = totalItems
         self.doneItems = doneItems; self.currentName = currentName; self.destination = destination
     }
@@ -143,8 +144,9 @@ public final class FileJob: @unchecked Sendable {
         self.kind = kind
         self.sources = sources
         self.destinationFolder = destinationFolder
-        progress = JobProgress(kind: kind, totalBytes: 0, doneBytes: 0, totalItems: sources.count, doneItems: 0,
-                               currentName: sources.first?.lastPathComponent ?? "", destination: destinationFolder)
+        progress = JobProgress(
+            kind: kind, totalBytes: 0, doneBytes: 0, totalItems: sources.count, doneItems: 0,
+            currentName: sources.first?.lastPathComponent ?? "", destination: destinationFolder)
     }
 
     /// Runs synchronously. Returns the undo record (nil if nothing happened).
@@ -193,7 +195,7 @@ public final class FileJob: @unchecked Sendable {
             var out: NSURL?
             do {
                 try fm.trashItem(at: src, resultingItemURL: &out)
-            } catch where Self.isTrashUnsupportedError(error) {
+            } catch  where Self.isTrashUnsupportedError(error) {
                 untrashable.append(src)
                 return
             }
@@ -263,7 +265,7 @@ public final class FileJob: @unchecked Sendable {
             return try place(src, at: target, replacing: placement == .replace)
         } catch FileOperationError.cancelled {
             throw FileOperationError.cancelled
-        } catch where Self.isPermissionError(error) {
+        } catch  where Self.isPermissionError(error) {
             record(error, for: src, target: target)
             return nil
         }
@@ -292,7 +294,7 @@ public final class FileJob: @unchecked Sendable {
                 return skipped(src)
             case .rename(let name):
                 guard FileActions.isValidName(name) else { throw FileOperationError.failed("“\(name)” is not a valid name.") }
-                target = folder.appendingPathComponent(name)   // loop: the new name may exist too
+                target = folder.appendingPathComponent(name)  // loop: the new name may exist too
             case .writeInto:
                 return bothDirs ? (target, .merge) : skipped(src)
             case .overwriteIfOlder where !bothDirs:
@@ -398,8 +400,10 @@ public final class FileJob: @unchecked Sendable {
                 // In recursive mode errors arrive here. Continuing after a content error would silently
                 // skip the item and report an incomplete copy as done (a cross-volume move would then
                 // delete the source). Metadata errors (xattrs, folder attributes on FAT/SMB) are tolerated.
-                guard what == COPYFILE_RECURSE_FILE || what == COPYFILE_RECURSE_DIR || what == COPYFILE_RECURSE_ERROR
-                        || what == COPYFILE_COPY_DATA else { return COPYFILE_CONTINUE }
+                guard
+                    what == COPYFILE_RECURSE_FILE || what == COPYFILE_RECURSE_DIR || what == COPYFILE_RECURSE_ERROR
+                        || what == COPYFILE_COPY_DATA
+                else { return COPYFILE_CONTINUE }
                 job.copyFailure = (errno, src.map { String(cString: $0) })
                 return COPYFILE_QUIT
             }
@@ -426,9 +430,11 @@ public final class FileJob: @unchecked Sendable {
             let topExists = code == EEXIST && (copyFailure?.path == nil || copyFailure?.path == src.path)
             if !topExists { try? fm.removeItem(at: dst) }
             if isCancelled { throw FileOperationError.cancelled }
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(code), userInfo: [
-                NSLocalizedDescriptionKey: "Could not copy “\(failed)”: \(String(cString: strerror(code)))",
-            ])
+            throw NSError(
+                domain: NSPOSIXErrorDomain, code: Int(code),
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Could not copy “\(failed)”: \(String(cString: strerror(code)))"
+                ])
         }
         // Clones report no data progress; account for the bytes anyway.
         let expected = Self.diskSize(src)

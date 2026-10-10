@@ -103,12 +103,16 @@ final class PorpoiseTab: NSView {
         animateFraction(to: 0.5, duration: Self.resetDuration, curve: Animator.easeOutCubic)
     }
 
-    private func animateFraction(to target: CGFloat, duration: TimeInterval, curve: @escaping (Double) -> Double,
-                                 completion: (() -> Void)? = nil) {
+    private func animateFraction(
+        to target: CGFloat, duration: TimeInterval, curve: @escaping (Double) -> Double,
+        completion: (() -> Void)? = nil
+    ) {
         let from = splitFraction
-        animator.run(duration: duration, curve: curve, step: { [weak self] p in
-            self?.setFraction(from + (target - from) * CGFloat(p))
-        }, completion: completion)
+        animator.run(
+            duration: duration, curve: curve,
+            step: { [weak self] p in
+                self?.setFraction(from + (target - from) * CGFloat(p))
+            }, completion: completion)
     }
 
     // MARK: - Open / close

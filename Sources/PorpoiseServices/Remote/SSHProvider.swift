@@ -56,9 +56,12 @@ final class SSHProvider: RemoteProvider {
 
     private var baseArgs: [String] {
         // ssh keeps the first value it gets for an option, so the isolation's come first.
-        var a = (isolation?.options ?? []) + ["-o", "ControlMaster=auto", "-o", "ControlPath=\(controlPath)",
-                 "-o", "ControlPersist=\(Self.controlPersist)", "-o", "ConnectTimeout=\(Self.connectTimeout)",
-                 "-o", "LogLevel=ERROR", "-o", "ServerAliveInterval=30"]
+        var a =
+            (isolation?.options ?? []) + [
+                "-o", "ControlMaster=auto", "-o", "ControlPath=\(controlPath)",
+                "-o", "ControlPersist=\(Self.controlPersist)", "-o", "ConnectTimeout=\(Self.connectTimeout)",
+                "-o", "LogLevel=ERROR", "-o", "ServerAliveInterval=30",
+            ]
         if let p = port { a += ["-p", String(p)] }
         // Test runs keep host keys out of ~/.ssh/known_hosts.
         if let kh = ProcessInfo.processInfo.environment["PORPOISE_KNOWN_HOSTS"] {
@@ -155,7 +158,8 @@ final class SSHProvider: RemoteProvider {
             // A symlink to a file is downloaded as the file (-h), so opening it opens its content; links
             // to folders and everything else stay as they are.
             let item = RemoteParsing.quote("./" + name)
-            let script = "cd \(shellPath(remote.deletingLastPathComponent())) && "
+            let script =
+                "cd \(shellPath(remote.deletingLastPathComponent())) && "
                 + "if [ -L \(item) ] && [ -f \(item) ]; then tar -chf - \(item); else tar -cf - \(item); fi"
             try check(try run(script, stdoutFile: tmp), fallback: "Could not download “\(name)”.")
             let x = try Shell.run("/usr/bin/tar", ["-xf", tmp.path, "-C", staging.path])
@@ -167,8 +171,12 @@ final class SSHProvider: RemoteProvider {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("ul-\(UUID().uuidString).tar")
         defer { try? FileManager.default.removeItem(at: tmp) }
         // "./name" so a name starting with "-" isn't read as a tar option.
-        let c = try Shell.run("/usr/bin/tar", ["--no-mac-metadata", "-cf", tmp.path, "-C", local.deletingLastPathComponent().path,
-                                               "./" + local.lastPathComponent], env: ["COPYFILE_DISABLE": "1"])
+        let c = try Shell.run(
+            "/usr/bin/tar",
+            [
+                "--no-mac-metadata", "-cf", tmp.path, "-C", local.deletingLastPathComponent().path,
+                "./" + local.lastPathComponent,
+            ], env: ["COPYFILE_DISABLE": "1"])
         if c.status != 0 { throw RemoteError.failed(c.err) }
         let r = try run("cd \(shellPath(remoteFolder)) && tar -xf -", stdinFile: tmp)
         try check(r, fallback: "Could not upload “\(local.lastPathComponent)”.")

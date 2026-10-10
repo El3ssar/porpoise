@@ -1,7 +1,8 @@
 import Foundation
-import Testing
-@testable import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseCore
 
 /// Data-safety behavior of FileJob and FileActions: conflicts, overwrite, merge, undo, permissions.
 @Suite(.serialized) struct FileJobSafetyTests {
@@ -36,7 +37,7 @@ import PorpoiseTestSupport
         job.resolveConflict = { _ in ConflictAnswer(.overwrite) }
         _ = try job.run()
         #expect(read(dst.appendingPathComponent("f")) == "new")
-        #expect(listing(dst) == ["f"])   // no staging file left behind
+        #expect(listing(dst) == ["f"])  // no staging file left behind
         #expect(job.errors.isEmpty)
     }
 
@@ -54,7 +55,7 @@ import PorpoiseTestSupport
         job.resolveConflict = { _ in ConflictAnswer(.overwrite) }
         _ = try job.run()
         #expect(read(dst.appendingPathComponent("f")) == "old")
-        #expect(listing(dst) == ["f"])   // the partial copy was removed
+        #expect(listing(dst) == ["f"])  // the partial copy was removed
         #expect(job.denied == [s], "\(job.errors)")
         #expect(job.deniedTargets[s]?.path == dst.appendingPathComponent("f").path)
     }
@@ -117,7 +118,7 @@ import PorpoiseTestSupport
         }
         _ = try job.run()
         #expect(asked == ["a", "b"])
-        #expect(read(dst.appendingPathComponent("b")) == "B")   // not silently overwritten
+        #expect(read(dst.appendingPathComponent("b")) == "B")  // not silently overwritten
         #expect(read(dst.appendingPathComponent("c")) == "new")
     }
 
@@ -150,7 +151,9 @@ import PorpoiseTestSupport
         }
         var asked = 0
         let job = FileJob(kind: .copy, sources: ["a", "b", "c"].map { src.appendingPathComponent($0) }, destinationFolder: dst)
-        job.resolveConflict = { _ in asked += 1; return ConflictAnswer(.skip, applyToAll: true) }
+        job.resolveConflict = { _ in
+            asked += 1; return ConflictAnswer(.skip, applyToAll: true)
+        }
         _ = try job.run()
         #expect(asked == 1)
         #expect(read(dst.appendingPathComponent("c")) == "old")
@@ -173,7 +176,9 @@ import PorpoiseTestSupport
         try fm.createSymbolicLink(atPath: dst.appendingPathComponent("l").path, withDestinationPath: "/nonexistent/target")
         var asked = 0
         let job = FileJob(kind: .copy, sources: [src.appendingPathComponent("l")], destinationFolder: dst)
-        job.resolveConflict = { _ in asked += 1; return ConflictAnswer(.skip) }
+        job.resolveConflict = { _ in
+            asked += 1; return ConflictAnswer(.skip)
+        }
         _ = try job.run()
         #expect(asked == 1)
     }
@@ -182,7 +187,9 @@ import PorpoiseTestSupport
         let (src, _) = try sandbox()
         try write("x", src.appendingPathComponent("f"))
         let job = FileJob(kind: .move, sources: [src.appendingPathComponent("f")], destinationFolder: src)
-        job.resolveConflict = { _ in Issue.record("no conflict expected"); return ConflictAnswer(.cancel) }
+        job.resolveConflict = { _ in
+            Issue.record("no conflict expected"); return ConflictAnswer(.cancel)
+        }
         #expect(try job.run() == nil)
         #expect(job.results == [src.appendingPathComponent("f")] && listing(src) == ["f"])
     }
@@ -234,7 +241,7 @@ import PorpoiseTestSupport
         let job = FileJob(kind: .move, sources: [src.appendingPathComponent("f")], destinationFolder: dst)
         job.resolveConflict = { _ in ConflictAnswer(.writeInto) }
         let undo = try #require(try job.run())
-        #expect(!exists(src.appendingPathComponent("f")))   // emptied by the merge, then removed
+        #expect(!exists(src.appendingPathComponent("f")))  // emptied by the merge, then removed
         #expect(listing(dst.appendingPathComponent("f")) == ["one", "two"])
         _ = try FileActions.undo(undo)
         #expect(read(src.appendingPathComponent("f/one")) == "1")
@@ -266,7 +273,7 @@ import PorpoiseTestSupport
         let job = FileJob(kind: .move, sources: [src.appendingPathComponent("f")], destinationFolder: dst)
         job.resolveConflict = { info in ConflictAnswer(info.source.isBrowsableFolder ? .writeInto : .skip) }
         _ = try job.run()
-        #expect(read(src.appendingPathComponent("f/same")) == "mine")   // skipped child keeps its folder
+        #expect(read(src.appendingPathComponent("f/same")) == "mine")  // skipped child keeps its folder
     }
 
     // MARK: Copy details
@@ -313,10 +320,12 @@ import PorpoiseTestSupport
         for n in ["a", "b"] { try write(n, dst.appendingPathComponent(n)) }
         // "b" can't go back: its original name was taken in the meantime.
         try write("squatter", src.appendingPathComponent("b"))
-        let record = UndoRecord.moved([(from: src.appendingPathComponent("a"), to: dst.appendingPathComponent("a")),
-                                       (from: src.appendingPathComponent("b"), to: dst.appendingPathComponent("b"))])
+        let record = UndoRecord.moved([
+            (from: src.appendingPathComponent("a"), to: dst.appendingPathComponent("a")),
+            (from: src.appendingPathComponent("b"), to: dst.appendingPathComponent("b")),
+        ])
         #expect(throws: (any Error).self) { try FileActions.undo(record) }
-        #expect(listing(dst) == ["a", "b"])   // "a" was rolled back
+        #expect(listing(dst) == ["a", "b"])  // "a" was rolled back
         #expect(read(src.appendingPathComponent("b")) == "squatter")
     }
 
@@ -347,7 +356,7 @@ import PorpoiseTestSupport
             #expect(throws: FileOperationError.self) { try FileActions.rename(a, to: bad) }
         }
         #expect(throws: FileOperationError.self) { try FileActions.rename(a, to: "taken") }
-        #expect(try FileActions.rename(a, to: "A").lastPathComponent == "A")   // case-only rename
+        #expect(try FileActions.rename(a, to: "A").lastPathComponent == "A")  // case-only rename
         #expect(listing(src) == ["A", "taken"])
     }
 
@@ -366,7 +375,7 @@ import PorpoiseTestSupport
             _ = try FileActions.makeFile(named: "n.txt", in: src)
             Issue.record("expected an error")
         } catch {
-            #expect(FileJob.isPermissionError(error))   // so the app offers to authenticate
+            #expect(FileJob.isPermissionError(error))  // so the app offers to authenticate
         }
     }
 
@@ -383,7 +392,8 @@ import PorpoiseTestSupport
     @Test func permissionErrorDetection() {
         #expect(FileJob.isPermissionError(NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))))
         #expect(FileJob.isPermissionError(NSError(domain: NSCocoaErrorDomain, code: NSFileWriteNoPermissionError)))
-        let wrapped = NSError(domain: NSCocoaErrorDomain, code: 1, userInfo: [NSUnderlyingErrorKey: NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM))])
+        let wrapped = NSError(
+            domain: NSCocoaErrorDomain, code: 1, userInfo: [NSUnderlyingErrorKey: NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM))])
         #expect(FileJob.isPermissionError(wrapped))
         #expect(!FileJob.isPermissionError(NSError(domain: NSPOSIXErrorDomain, code: Int(ENOSPC))))
         #expect(!FileJob.isPermissionError(FileOperationError.cancelled))

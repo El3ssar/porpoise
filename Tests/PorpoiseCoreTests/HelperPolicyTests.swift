@@ -1,7 +1,8 @@
 import Foundation
-import Testing
-@testable import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseCore
 
 /// The root helper hands items over only inside the asking user's own Trash.
 @Suite struct HelperPolicyTests {
@@ -12,14 +13,20 @@ import PorpoiseTestSupport
     }
 
     @Test func itemsInAVolumesTrashForThatUser() {
-        #expect(PorpoiseHelperInfo.isInUsersTrash(path: "/Volumes/Disk/.Trashes/501/x", resolvedParent: "/Volumes/Disk/.Trashes/501", uid: 501, resolvedHomeTrash: trash))
-        #expect(!PorpoiseHelperInfo.isInUsersTrash(path: "/Volumes/Disk/.Trashes/502/x", resolvedParent: "/Volumes/Disk/.Trashes/502", uid: 501, resolvedHomeTrash: trash))
+        #expect(
+            PorpoiseHelperInfo.isInUsersTrash(
+                path: "/Volumes/Disk/.Trashes/501/x", resolvedParent: "/Volumes/Disk/.Trashes/501", uid: 501, resolvedHomeTrash: trash))
+        #expect(
+            !PorpoiseHelperInfo.isInUsersTrash(
+                path: "/Volumes/Disk/.Trashes/502/x", resolvedParent: "/Volumes/Disk/.Trashes/502", uid: 501, resolvedHomeTrash: trash))
     }
 
     @Test func nothingElse() {
-        for (path, parent) in [("/etc/sudoers", "/etc"), ("/Users/me/.Trash/a/b", "/Users/me/.Trash/a"), ("/Users/other/.Trash/x", "/Users/other/.Trash"),
-                               ("/Users/me/.Trash/..", trash), ("/Volumes/Disk/.Trashes/501/../x", "/Volumes/Disk/.Trashes"),
-                               ("/Volumes/../.Trashes/501/x", "/Volumes/../.Trashes/501"), ("/Library/.Trashes/501/x", "/Library/.Trashes/501")] {
+        for (path, parent) in [
+            ("/etc/sudoers", "/etc"), ("/Users/me/.Trash/a/b", "/Users/me/.Trash/a"), ("/Users/other/.Trash/x", "/Users/other/.Trash"),
+            ("/Users/me/.Trash/..", trash), ("/Volumes/Disk/.Trashes/501/../x", "/Volumes/Disk/.Trashes"),
+            ("/Volumes/../.Trashes/501/x", "/Volumes/../.Trashes/501"), ("/Library/.Trashes/501/x", "/Library/.Trashes/501"),
+        ] {
             #expect(!PorpoiseHelperInfo.isInUsersTrash(path: path, resolvedParent: parent, uid: 501, resolvedHomeTrash: trash), "\(path)")
         }
     }
@@ -35,7 +42,8 @@ import PorpoiseTestSupport
     @Test func allowsExactlyTheListedTools() {
         for tool in PorpoiseHelperInfo.allowedTools { #expect(HelperRequests.refusal([tool, "x"]) == nil, "\(tool)") }
         #expect(PorpoiseHelperInfo.allowedTools.allSatisfy { $0.hasPrefix("/") })
-        #expect(!PorpoiseHelperInfo.allowedTools.contains { $0.hasSuffix("/sh") || $0.hasSuffix("bash") || $0.hasSuffix("zsh") || $0.hasSuffix("chown") })
+        #expect(
+            !PorpoiseHelperInfo.allowedTools.contains { $0.hasSuffix("/sh") || $0.hasSuffix("bash") || $0.hasSuffix("zsh") || $0.hasSuffix("chown") })
     }
 
     @Test func refusesEverythingElse() {
@@ -56,8 +64,10 @@ import PorpoiseTestSupport
     // MARK: Running the tools (as the current user, in a scratch folder)
 
     /// Names a shell would split, expand or run: each must stay one argument.
-    static let hostileNames = ["a b", "$(touch pwned)", "`touch pwned`", "x;touch pwned", "-rf", "--", "*", "q\"uote'", "new\nline",
-                               "|touch pwned", "&& touch pwned", "~", "$HOME", "é ü 日本", ">out", "\\back"]
+    static let hostileNames = [
+        "a b", "$(touch pwned)", "`touch pwned`", "x;touch pwned", "-rf", "--", "*", "q\"uote'", "new\nline",
+        "|touch pwned", "&& touch pwned", "~", "$HOME", "é ü 日本", ">out", "\\back",
+    ]
 
     @Test func movesCopiesAndLinksHostileNamesAsSingleArguments() throws {
         let s = try Scratch()
@@ -90,7 +100,7 @@ import PorpoiseTestSupport
         #expect((try fm.attributesOfItem(atPath: f.path)[.posixPermissions] as? NSNumber)?.intValue == 0o600)
         #expect(HelperRequests.run(["/usr/bin/chflags", "uchg", f.path]) == nil)
         #expect((try fm.attributesOfItem(atPath: f.path)[.immutable] as? Bool) == true)
-        #expect(HelperRequests.run(["/bin/rm", "-f", f.path]) != nil)   // locked: rm fails and says why
+        #expect(HelperRequests.run(["/bin/rm", "-f", f.path]) != nil)  // locked: rm fails and says why
         #expect(HelperRequests.run(["/usr/bin/chflags", "nouchg", f.path]) == nil)
         #expect(HelperRequests.run(["/bin/rm", "-rf", s.path("made").path]) == nil)
         #expect(s.listing() == [])
@@ -132,9 +142,11 @@ import PorpoiseTestSupport
         let (s, home, trash) = try home()
         try s.file("home/.Trash/dir/inner", "i")
         try s.file("home/Documents/doc", "d")
-        for p in [s.path("outside/secret").path, s.path("home/Documents/doc").path, trash.appendingPathComponent("dir/inner").path,
-                  trash.appendingPathComponent("missing").path, trash.path, trash.path + "/.", trash.path + "/..",
-                  trash.appendingPathComponent("../Documents/doc").path, "/etc/sudoers", ""] {
+        for p in [
+            s.path("outside/secret").path, s.path("home/Documents/doc").path, trash.appendingPathComponent("dir/inner").path,
+            trash.appendingPathComponent("missing").path, trash.path, trash.path + "/.", trash.path + "/..",
+            trash.appendingPathComponent("../Documents/doc").path, "/etc/sudoers", "",
+        ] {
             #expect(HelperRequests.ownershipCommand(path: p, uid: getuid(), gid: getgid(), home: home) == nil, "\(p)")
         }
     }
@@ -148,11 +160,13 @@ import PorpoiseTestSupport
         try s.folder("elsewhere")
         try s.file("elsewhere/item", "e")
         try s.symlink("home/FakeTrash", to: s.path("elsewhere").path)
-        for p in [trash.appendingPathComponent("toFile").path, trash.appendingPathComponent("toDir").path,
-                  // A trailing slash or "/." makes lstat follow the link: still refused.
-                  trash.appendingPathComponent("toDir").path + "/", trash.appendingPathComponent("toDir").path + "//",
-                  trash.appendingPathComponent("toDir").path + "/.", trash.appendingPathComponent("toDir/secret").path,
-                  s.path("home/FakeTrash/item").path] {
+        for p in [
+            trash.appendingPathComponent("toFile").path, trash.appendingPathComponent("toDir").path,
+            // A trailing slash or "/." makes lstat follow the link: still refused.
+            trash.appendingPathComponent("toDir").path + "/", trash.appendingPathComponent("toDir").path + "//",
+            trash.appendingPathComponent("toDir").path + "/.", trash.appendingPathComponent("toDir/secret").path,
+            s.path("home/FakeTrash/item").path,
+        ] {
             #expect(HelperRequests.ownershipCommand(path: p, uid: getuid(), gid: getgid(), home: home) == nil, "\(p)")
         }
     }

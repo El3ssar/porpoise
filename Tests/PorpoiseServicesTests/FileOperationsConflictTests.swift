@@ -1,7 +1,8 @@
 import Foundation
-import Testing
 import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 /// Copying and moving into a folder that already has items of the same names, answered through the conflict dialog.
@@ -48,7 +49,7 @@ import PorpoiseTestSupport
         _ = await makeController(ui).perform(.copy, sources, to: s.path("dst"))
         #expect(ui.conflicts.count == 1)
         #expect(s.read("dst/a (2).txt") == "new a.txt")
-        #expect(s.read("dst/b (1).txt") == "new b.txt")   // the suggestion for b, not a's name
+        #expect(s.read("dst/b (1).txt") == "new b.txt")  // the suggestion for b, not a's name
         #expect(s.read("dst/a (1).txt") == "older")
     }
 
@@ -63,7 +64,7 @@ import PorpoiseTestSupport
         #expect(s.listing("dst/photos") == ["2024", "mine.jpg", "top.jpg"])
         #expect(s.listing("dst/photos/2024") == ["a.jpg", "b.jpg"])
         #expect(s.listing("src").isEmpty)
-        #expect(ui.conflicts.count == 1)   // the nested folder merged without asking again
+        #expect(ui.conflicts.count == 1)  // the nested folder merged without asking again
     }
 
     @Test func replaceForAllAsksOnceAndReplacesEveryFile() async throws {
@@ -85,7 +86,7 @@ import PorpoiseTestSupport
         let c = makeController(ui)
         _ = await c.perform(.move, [a, b], to: s.path("dst"))
         #expect(s.listing("dst") == ["a"] && s.listing("src") == ["a", "b"])
-        #expect(ui.errors.isEmpty)   // cancelling isn't an error
+        #expect(ui.errors.isEmpty)  // cancelling isn't an error
         #expect(!c.canUndo)
     }
 

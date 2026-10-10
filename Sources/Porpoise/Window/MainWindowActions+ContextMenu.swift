@@ -258,8 +258,10 @@ extension MainWindowController {
 
     private func tagsMenu(for items: [FileItem]) -> NSMenu {
         let m = NSMenu()
-        let colors: [(String, NSColor)] = [("Red", .systemRed), ("Orange", .systemOrange), ("Yellow", .systemYellow), ("Green", .systemGreen),
-                                           ("Blue", .systemBlue), ("Purple", .systemPurple), ("Gray", .systemGray)]
+        let colors: [(String, NSColor)] = [
+            ("Red", .systemRed), ("Orange", .systemOrange), ("Yellow", .systemYellow), ("Green", .systemGreen),
+            ("Blue", .systemBlue), ("Purple", .systemPurple), ("Gray", .systemGray),
+        ]
         let current = Set(items.flatMap { Self.tagNames(of: $0.url) })
         for (name, color) in colors {
             let it = self.item(name, nil, #selector(setTag(_:)), obj: name)
@@ -275,7 +277,9 @@ extension MainWindowController {
     // MARK: Context menu actions
 
     @objc func ctxOpenInNewTab(_ s: NSMenuItem) { if let u = s.representedObject as? URL { addTab(url: u, select: false) } }
-    @objc func ctxOpenInNewTabs(_ s: NSMenuItem) { for it in view.model.selectedItems where it.isBrowsableFolder { addTab(url: it.url, select: false) } }
+    @objc func ctxOpenInNewTabs(_ s: NSMenuItem) {
+        for it in view.model.selectedItems where it.isBrowsableFolder { addTab(url: it.url, select: false) }
+    }
     @objc func ctxOpenInNewWindow(_ s: NSMenuItem) { if let u = s.representedObject as? URL { AppDelegate.shared.newWindow(at: u) } }
 
     @objc func ctxOpenInSplit(_ s: NSMenuItem) {

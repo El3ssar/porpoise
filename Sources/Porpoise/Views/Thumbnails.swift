@@ -1,7 +1,7 @@
 import AppKit
-import QuickLookThumbnailing
 import PorpoiseCore
 import PorpoiseServices
+import QuickLookThumbnailing
 
 /// QuickLook previews (Dolphin's "Show Previews"), cached by path + modification date + size.
 final class Thumbnails {
@@ -72,7 +72,10 @@ final class Thumbnails {
         if t.conforms(to: .movie) || t.conforms(to: .audiovisualContent) { return s.previewVideos }
         if t.conforms(to: .font) { return s.previewFonts }
         if t.conforms(to: .pdf) || t.conforms(to: .presentation) || t.conforms(to: .spreadsheet) || t.identifier.contains("document")
-            || t.conforms(to: .rtf) { return s.previewDocuments }
+            || t.conforms(to: .rtf)
+        {
+            return s.previewDocuments
+        }
         if t.conforms(to: .text) { return s.previewText }
         return t.conforms(to: .threeDContent) && s.previewDocuments
     }
@@ -98,8 +101,7 @@ final class Thumbnails {
         var thumbs: [NSImage] = []
         var waiting = false
         for c in candidates where thumbs.count < 4 {
-            if let t = thumbnail(for: c, size: size / 2, exact: true) { thumbs.append(t) }
-            else if !hasFailed(c, size / 2) { waiting = true }
+            if let t = thumbnail(for: c, size: size / 2, exact: true) { thumbs.append(t) } else if !hasFailed(c, size / 2) { waiting = true }
         }
         // Not all previews ready yet: keep showing the last one made at another size (no flicker while zooming).
         if thumbs.count < 4 && waiting { return folderLatest.object(forKey: version as NSString) }
@@ -118,7 +120,8 @@ final class Thumbnails {
             let gap = max(1.5, size / 64)
             let cw = (inner.width - gap * CGFloat(cols - 1)) / CGFloat(cols), ch = (inner.height - gap * CGFloat(rows - 1)) / CGFloat(rows)
             for (i, t) in thumbs.enumerated() {
-                let cell = CGRect(x: inner.minX + CGFloat(i % cols) * (cw + gap), y: inner.minY + CGFloat(i / cols) * (ch + gap), width: cw, height: ch)
+                let cell = CGRect(
+                    x: inner.minX + CGFloat(i % cols) * (cw + gap), y: inner.minY + CGFloat(i / cols) * (ch + gap), width: cw, height: ch)
                 let radius = max(1.5, size / 48)
                 NSGraphicsContext.saveGraphicsState()
                 let sh = NSShadow(); sh.shadowBlurRadius = max(1, size / 64); sh.shadowOffset = NSSize(width: 0, height: -0.5)
@@ -131,8 +134,9 @@ final class Thumbnails {
                 NSBezierPath(roundedRect: pic, xRadius: radius * 0.7, yRadius: radius * 0.7).addClip()
                 let ts = t.size, sc = max(pic.width / max(1, ts.width), pic.height / max(1, ts.height))
                 let w = ts.width * sc, h = ts.height * sc
-                t.draw(in: CGRect(x: pic.midX - w / 2, y: pic.midY - h / 2, width: w, height: h), from: .zero, operation: .sourceOver,
-                       fraction: 1, respectFlipped: true, hints: nil)
+                t.draw(
+                    in: CGRect(x: pic.midX - w / 2, y: pic.midY - h / 2, width: w, height: h), from: .zero, operation: .sourceOver,
+                    fraction: 1, respectFlipped: true, hints: nil)
                 NSGraphicsContext.restoreGraphicsState()
             }
             return true
@@ -148,8 +152,9 @@ final class Thumbnails {
         let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.url.path)) ?? []).filter { !$0.hasPrefix(".") }.sorted {
             $0.localizedStandardCompare($1) == .orderedAscending
         }
-        let found = Array(names.prefix(80).compactMap { FileItem.load(folder.url.appendingPathComponent($0)) }
-            .filter { !$0.isDirectory && Self.wantsPreview($0) }.prefix(8))
+        let found = Array(
+            names.prefix(80).compactMap { FileItem.load(folder.url.appendingPathComponent($0)) }
+                .filter { !$0.isDirectory && Self.wantsPreview($0) }.prefix(8))
         if folderCandidates.count > 2000 { folderCandidates = [:] }
         if folderCandidates.count > Self.maxRemembered / 10 { folderCandidates.removeAll() }
         folderCandidates[version] = found
@@ -173,8 +178,12 @@ final class Thumbnails {
         defer { try? FileManager.default.removeItem(at: out) }
         let s = Int(size)
         for start in ["3", "0"] {
-            _ = try? Shell.run(ff, ["-hide_banner", "-loglevel", "error", "-nostdin", "-ss", start, "-i", "file:" + url.path, "-frames:v", "1",
-                                    "-vf", "scale='min(\(s),iw)':'min(\(s),ih)':force_original_aspect_ratio=decrease", "-y", out.path], timeout: 15)
+            _ = try? Shell.run(
+                ff,
+                [
+                    "-hide_banner", "-loglevel", "error", "-nostdin", "-ss", start, "-i", "file:" + url.path, "-frames:v", "1",
+                    "-vf", "scale='min(\(s),iw)':'min(\(s),ih)':force_original_aspect_ratio=decrease", "-y", out.path,
+                ], timeout: 15)
             if let img = NSImage(contentsOf: out) { return img }
         }
         return nil
@@ -220,8 +229,9 @@ final class Thumbnails {
     private func generate(_ k: String, for item: FileItem, file: URL, size: CGFloat, cleanup: URL? = nil) {
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let gen = Self.bucket(size)
-        let req = QLThumbnailGenerator.Request(fileAt: file, size: CGSize(width: gen, height: gen), scale: scale,
-                                               representationTypes: .thumbnail)
+        let req = QLThumbnailGenerator.Request(
+            fileAt: file, size: CGSize(width: gen, height: gen), scale: scale,
+            representationTypes: .thumbnail)
         QLThumbnailGenerator.shared.generateBestRepresentation(for: req) { [weak self] rep, _ in
             if let cleanup { try? FileManager.default.removeItem(at: cleanup) }
             DispatchQueue.main.async {

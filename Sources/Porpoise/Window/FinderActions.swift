@@ -14,14 +14,23 @@ extension MainWindowController {
         ("Recents", "f", [.command, .shift], "document-open-recent", { PlacesModel.recentFilesURL }),
         ("Documents", "o", [.command, .shift], "folder-documents", { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first }),
         ("Desktop", "d", [.command, .shift], "user-desktop", { FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first }),
-        ("Downloads", "l", [.command, .option], "folder-download", { FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first }),
+        (
+            "Downloads", "l", [.command, .option], "folder-download",
+            { FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first }
+        ),
         ("Computer", "c", [.command, .shift], "computer", { URL(fileURLWithPath: "/Volumes") }),
         ("Applications", "a", [.command, .shift], "folder-applications", { URL(fileURLWithPath: "/Applications") }),
         ("Utilities", "u", [.command, .shift], "applications-utilities", { URL(fileURLWithPath: "/Applications/Utilities") }),
-        ("iCloud Drive", "i", [.command, .shift], "folder-cloud", {
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs")
-        }),
-        ("Library", "l", [.command, .shift], "folder-library", { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library") }),
+        (
+            "iCloud Drive", "i", [.command, .shift], "folder-cloud",
+            {
+                FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs")
+            }
+        ),
+        (
+            "Library", "l", [.command, .shift], "folder-library",
+            { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library") }
+        ),
     ]
 
     @objc func goToTarget(_ sender: NSMenuItem) {
@@ -33,8 +42,7 @@ extension MainWindowController {
     @objc func goAirDrop(_ sender: Any?) {
         let airdrop = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app/Contents/Applications/AirDrop.app")
         let files = selection.map(\.url).filter(\.isFileURL)
-        if !files.isEmpty, let s = NSSharingService(named: .sendViaAirDrop) { s.perform(withItems: files) }
-        else { NSWorkspace.shared.open(airdrop) }
+        if !files.isEmpty, let s = NSSharingService(named: .sendViaAirDrop) { s.perform(withItems: files) } else { NSWorkspace.shared.open(airdrop) }
     }
 
     /// Finder's Go to Folder (⌘⇧G): the editable location bar with its path selected.
@@ -88,7 +96,8 @@ extension MainWindowController {
         var vols = Set<URL>()
         for u in targets {
             guard let v = try? u.resourceValues(forKeys: [.volumeURLKey]).volume,
-                  let rv = try? v.resourceValues(forKeys: [.volumeIsEjectableKey, .volumeIsRemovableKey, .volumeIsLocalKey]) else { continue }
+                let rv = try? v.resourceValues(forKeys: [.volumeIsEjectableKey, .volumeIsRemovableKey, .volumeIsLocalKey])
+            else { continue }
             let ejectable: Bool = rv.volumeIsEjectable == true || rv.volumeIsRemovable == true || rv.volumeIsLocal == false
             if ejectable { vols.insert(v) }
         }

@@ -99,7 +99,8 @@ final class ToolbarView: NSView {
         let fieldMinX = modeGroup.frame.maxX + Self.fieldLeadingGap
         let fixedW = 2 * bw + 2 * inset + 6
         let fieldsMinW = navigatorViews.count == 2 ? 2 * Self.minFieldWidth + Self.fieldSpacing : Self.minFieldWidth
-        split.showsTitle = bounds.width - Self.trailingMargin - fixedW - split.width(showingTitle: true) - Self.fieldTrailingGap - fieldMinX
+        split.showsTitle =
+            bounds.width - Self.trailingMargin - fixedW - split.width(showingTitle: true) - Self.fieldTrailingGap - fieldMinX
             >= fieldsMinW
         let splitW = split.intrinsicContentSize.width + 6
         let actionW = splitW + 2 * bw + 2 * inset

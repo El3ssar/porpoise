@@ -15,8 +15,10 @@ public enum Shell {
     /// stdin is written and stdout/stderr are drained concurrently, so neither side can block on a full
     /// pipe. With `timeout` > 0 the tool is terminated (then killed) when it runs longer, and the call throws.
     @discardableResult
-    public static func run(_ tool: String, _ args: [String], env: [String: String] = [:], stdin: Data? = nil,
-                    stdoutFile: URL? = nil, stdinFile: URL? = nil, timeout: TimeInterval = 0) throws -> Result {
+    public static func run(
+        _ tool: String, _ args: [String], env: [String: String] = [:], stdin: Data? = nil,
+        stdoutFile: URL? = nil, stdinFile: URL? = nil, timeout: TimeInterval = 0
+    ) throws -> Result {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: tool)
         p.arguments = args
@@ -64,14 +66,16 @@ public enum Shell {
                 try? w.close()
             }
         }
-        let watchdog = timeout > 0 ? DispatchWorkItem {
-            guard p.isRunning else { return }
-            box.timedOut = true
-            p.terminate()
-            Self.ioQueue().asyncAfter(deadline: .now() + killGrace) {
-                if p.isRunning { kill(p.processIdentifier, SIGKILL) }
-            }
-        } : nil
+        let watchdog =
+            timeout > 0
+            ? DispatchWorkItem {
+                guard p.isRunning else { return }
+                box.timedOut = true
+                p.terminate()
+                Self.ioQueue().asyncAfter(deadline: .now() + killGrace) {
+                    if p.isRunning { kill(p.processIdentifier, SIGKILL) }
+                }
+            } : nil
         if let w = watchdog { Self.ioQueue().asyncAfter(deadline: .now() + timeout, execute: w) }
         p.waitUntilExit()
         watchdog?.cancel()
@@ -95,8 +99,10 @@ public enum Shell {
     }
 
     static func which(_ name: String) -> String? {
-        for dir in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/opt/local/bin",
-                    NSHomeDirectory() + "/Library/Android/sdk/platform-tools"] {
+        for dir in [
+            "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/opt/local/bin",
+            NSHomeDirectory() + "/Library/Android/sdk/platform-tools",
+        ] {
             let p = dir + "/" + name
             if FileManager.default.isExecutableFile(atPath: p) { return p }
         }

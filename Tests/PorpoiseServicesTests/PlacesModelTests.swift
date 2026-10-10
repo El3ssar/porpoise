@@ -1,7 +1,8 @@
 import Foundation
-import Testing
-@testable import PorpoiseServices
 import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseServices
 
 /// Places kept in a places.json inside a throwaway folder. On the main actor, as in the app: PlacesModel and IconTheme
 /// (its lookup cache) are main-thread only.
@@ -19,15 +20,18 @@ import PorpoiseTestSupport
     @Test func startsWithTheDefaultPlaces() throws {
         let s = try Scratch()
         let m = PlacesModel(storeURL: s.path("places.json"))
-        #expect(titles(m, .places) == ["Home", "Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos",
-                                      "Applications", "Trash"])
+        #expect(
+            titles(m, .places) == [
+                "Home", "Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos",
+                "Applications", "Trash",
+            ])
         #expect(titles(m, .remote).contains("Network"))
         #expect(titles(m, .recent) == ["Recent Files", "Recent Locations"])
         #expect(titles(m, .tags) == ["Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Gray"])
         #expect(m.title(for: home) == "Home")
         #expect(m.contains(URL(fileURLWithPath: "/Applications")))
         #expect(m.title(for: URL(string: "smart:/x/Big%20Files.savedSearch")!) == "Big Files")
-        #expect(s.listing().isEmpty)   // nothing written until something changes
+        #expect(s.listing().isEmpty)  // nothing written until something changes
     }
 
     @Test func addedPlacesGoBeforeTheTrashAndPersist() throws {
@@ -36,7 +40,7 @@ import PorpoiseTestSupport
         let m = PlacesModel(storeURL: store)
         let work = try s.folder("Work")
         m.add(work)
-        m.add(work)   // once only
+        m.add(work)  // once only
         m.add(URL(string: "sftp://server.local/srv")!)
         #expect(titles(m, .places).suffix(3) == ["Applications", "Work", "Trash"])
         #expect(titles(m, .remote).last == "server.local")
@@ -64,7 +68,7 @@ import PorpoiseTestSupport
         #expect(m.isUserEntry(videos))
         m.remove(videos)
         #expect(!m.isUserEntry(videos) && !titles(m, .places).contains("Videos"))
-        m.remove(videos)   // already gone: nothing happens
+        m.remove(videos)  // already gone: nothing happens
 
         let reloaded = PlacesModel(storeURL: store)
         #expect(reloaded.userEntries == m.userEntries)
@@ -82,7 +86,7 @@ import PorpoiseTestSupport
         m.move(trash, before: nil, endOf: .places)
         #expect(titles(m, .places).last == "Trash")
 
-        #expect(!m.canMove(docs, before: recent, endOf: .recent))   // another section
+        #expect(!m.canMove(docs, before: recent, endOf: .recent))  // another section
         #expect(!m.canMove(docs, before: nil, endOf: .recent))
         #expect(!m.canMove(docs, before: docs, endOf: .places))
         #expect(m.canMove(docs, before: home, endOf: .places))
@@ -97,7 +101,7 @@ import PorpoiseTestSupport
         let m = PlacesModel(storeURL: store)
 
         #expect(!m.canMoveSection(.tags, before: .tags))
-        #expect(!m.canMoveSection(.places, before: .remote))   // already there
+        #expect(!m.canMoveSection(.places, before: .remote))  // already there
         m.moveSection(.tags, before: .places)
         #expect(m.sections().map(\.0).prefix(2) == [.tags, .places])
         m.moveSection(.tags, before: nil)
@@ -126,14 +130,16 @@ import PorpoiseTestSupport
     /// the file is rewritten so that happens only once.
     @Test func migratesAnOldPlacesFile() throws {
         let s = try Scratch()
-        let store = try s.file("places.json", """
-        {"hiddenSections":["Tags"],"entries":[
-          {"title":"Home","url":"\(home.absoluteString)","icon":"user-home","section":"Places","hidden":false,"isVolume":false,"isEjectable":false},
-          {"title":"Apps","url":"file:///Applications/","icon":"folder-appimage","section":"Places","hidden":false,"isVolume":false,"isEjectable":false},
-          {"title":"Stuff","url":"file:///tmp/stuff/","icon":"no-such-icon","section":"Places","hidden":false,"isVolume":false,"isEjectable":false},
-          {"title":"Server","url":"sftp://server/","icon":"gone-too","section":"Remote","hidden":false,"isVolume":false,"isEjectable":false}
-        ]}
-        """)
+        let store = try s.file(
+            "places.json",
+            """
+            {"hiddenSections":["Tags"],"entries":[
+              {"title":"Home","url":"\(home.absoluteString)","icon":"user-home","section":"Places","hidden":false,"isVolume":false,"isEjectable":false},
+              {"title":"Apps","url":"file:///Applications/","icon":"folder-appimage","section":"Places","hidden":false,"isVolume":false,"isEjectable":false},
+              {"title":"Stuff","url":"file:///tmp/stuff/","icon":"no-such-icon","section":"Places","hidden":false,"isVolume":false,"isEjectable":false},
+              {"title":"Server","url":"sftp://server/","icon":"gone-too","section":"Remote","hidden":false,"isVolume":false,"isEjectable":false}
+            ]}
+            """)
         let m = PlacesModel(storeURL: store)
         #expect(m.userEntries.map(\.title) == ["Home", "Apps", "Stuff", "Network", "Server"])
         #expect(m.userEntries.map(\.icon) == ["user-home", "view-list-icons", "folder", "network-workgroup", "folder-remote"])
@@ -153,7 +159,7 @@ import PorpoiseTestSupport
         let m = PlacesModel(storeURL: store)
         #expect(m.userEntries == PlacesModel.defaultEntries())
         #expect(s.read("places.unreadable.json") == "{ not json")
-        #expect(s.read("places.json") == "{ not json")   // untouched until the user changes something
+        #expect(s.read("places.json") == "{ not json")  // untouched until the user changes something
     }
 
     @Test func withoutAFileNothingIsWritten() throws {
@@ -168,10 +174,16 @@ import PorpoiseTestSupport
             try s.folder(n)
         }
         let found = CloudStorage.locations(in: s.url)
-        #expect(found.map(\.title) == ["Box (Work)", "Dropbox", "Google Drive (me@example.com)", "Nextcloud (a-b)",
-                                       "OneDrive (Personal)", "pCloud"])
-        #expect(found.map(\.icon) == ["folder-cloud", "folder-dropbox", "folder-gdrive", "folder-cloud", "folder-onedrive",
-                                      "folder-pcloud"])
+        #expect(
+            found.map(\.title) == [
+                "Box (Work)", "Dropbox", "Google Drive (me@example.com)", "Nextcloud (a-b)",
+                "OneDrive (Personal)", "pCloud",
+            ])
+        #expect(
+            found.map(\.icon) == [
+                "folder-cloud", "folder-dropbox", "folder-gdrive", "folder-cloud", "folder-onedrive",
+                "folder-pcloud",
+            ])
         #expect(CloudStorage.locations(in: s.path("missing")).isEmpty)
     }
 }

@@ -1,7 +1,8 @@
 import Foundation
-import Testing
 import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 /// The commands Porpoise would run as administrator. Only built and inspected here: nothing runs with privileges.
@@ -11,8 +12,11 @@ import PorpoiseTestSupport
     @Test func deleteClearsLocksThenRemoves() {
         let u = URL(fileURLWithPath: "/Volumes/Data/-rf")
         let plan = FileOperationsController.administratorCommands(.delete, [u], targets: [:], to: nil)
-        #expect(plan.commands == [["/usr/bin/chflags", "-R", "nouchg,noschg", "/Volumes/Data/-rf"],
-                                  ["/bin/rm", "-rf", "--", "/Volumes/Data/-rf"]])
+        #expect(
+            plan.commands == [
+                ["/usr/bin/chflags", "-R", "nouchg,noschg", "/Volumes/Data/-rf"],
+                ["/bin/rm", "-rf", "--", "/Volumes/Data/-rf"],
+            ])
         #expect(plan.results.isEmpty && plan.skipped.isEmpty)
     }
 
@@ -77,7 +81,10 @@ import PorpoiseTestSupport
 
     @Test func eachCommandRunsInItsOwnSubshellAndLockClearingMayFail() {
         let script = FileOperationsController.administratorScript([["/usr/bin/chflags", "nouchg", "/a"], ["/bin/rm", "--", "/a"]])
-        #expect(script == #"do shell script "( '/usr/bin/chflags' 'nouchg' '/a' 2>/dev/null; true ) && ( '/bin/rm' '--' '/a' )" with administrator privileges"#)
+        #expect(
+            script
+                == #"do shell script "( '/usr/bin/chflags' 'nouchg' '/a' 2>/dev/null; true ) && ( '/bin/rm' '--' '/a' )" with administrator privileges"#
+        )
     }
 
     /// The script's shell line, run without privileges through `printf`, gives back every hostile name as one
@@ -100,6 +107,6 @@ import PorpoiseTestSupport
         // do shell script turns line endings into returns.
         let printed = String(decoding: data, as: UTF8.self).replacingOccurrences(of: "\r", with: "\n").dropLast()
         #expect(printed == hostile.map { "<\($0)>" }.joined())
-        #expect(s.listing().isEmpty)   // $(touch pwned) did not run
+        #expect(s.listing().isEmpty)  // $(touch pwned) did not run
     }
 }

@@ -1,6 +1,7 @@
 import Foundation
-import Testing
 import PorpoiseCore
+import Testing
+
 @testable import PorpoiseServices
 
 /// Plays the user for FileOperationsController: answers conflicts from a script, confirms or declines questions,

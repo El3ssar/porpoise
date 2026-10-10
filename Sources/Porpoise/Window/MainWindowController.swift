@@ -3,7 +3,8 @@ import PorpoiseCore
 import PorpoiseServices
 
 final class MainWindowController: NSWindowController, NSWindowDelegate, ViewContainerDelegate, BreadcrumbDelegate,
-    TabBarDelegate, PlacesPanelDelegate, NSSplitViewDelegate {
+    TabBarDelegate, PlacesPanelDelegate, NSSplitViewDelegate
+{
 
     let root = RootView()
     let toolbar = ToolbarView()
@@ -11,11 +12,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     let tabHost = NSView()
     /// Center column: Dolphin's tab bar sits above the views only (not above the Places panel).
     let centerColumn = CenterColumnView()
-    let outer = ThinSplitView()       // [full-height sidebar, main column]
+    let outer = ThinSplitView()  // [full-height sidebar, main column]
     let mainColumn = MainColumnView()
-    let vSplit = ThinSplitView()      // [hSplit, terminal]  (inside the main column)
-    let hSplit = ThinSplitView()      // [tab host, information]
-    let leftStack = ThinSplitView()   // [places, folders]
+    let vSplit = ThinSplitView()  // [hSplit, terminal]  (inside the main column)
+    let hSplit = ThinSplitView()  // [tab host, information]
+    let leftStack = ThinSplitView()  // [places, folders]
     /// Sidebar host: translucent Desert-tinted material behind Places/Folders (Finder-style).
     let sidebar = NSView()
     let sidebarMaterial = TintedMaterialView(material: .sidebar, alpha: 0.70)
@@ -53,9 +54,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     var fittingPanels = false
 
     convenience init(urls: [URL], split: [URL?] = []) {
-        let w = DolphinWindow(contentRect: CGRect(x: 0, y: 0, width: 1180, height: 760),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-                              backing: .buffered, defer: false)
+        let w = DolphinWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 1180, height: 760),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered, defer: false)
         self.init(window: w)
         w.titlebarAppearsTransparent = true
         w.titleVisibility = .hidden
@@ -87,7 +89,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         placesScroll.hasVerticalScroller = true
         placesScroll.autohidesScrollers = true
         placesScroll.scrollerStyle = .overlay
-        places.setFrameSize(NSSize(width: 160, height: places.frame.height))   // height: the panel sizes itself to its rows
+        places.setFrameSize(NSSize(width: 160, height: places.frame.height))  // height: the panel sizes itself to its rows
         places.autoresizingMask = [.width]
         places.delegate = self
         leftStack.isVertical = false
@@ -130,9 +132,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     }
 
     private func observe(_ name: Notification.Name, _ handler: @escaping (MainWindowController, Notification) -> Void) {
-        observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] n in
-            if let self { handler(self, n) }
-        })
+        observers.append(
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] n in
+                if let self { handler(self, n) }
+            })
     }
 
     private func observeNotifications() {
@@ -299,7 +302,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         toolbar.search.isToggled = !v.searchBar.isHidden
         toolbar.needsLayout = true
         places.currentURL = v.url
-        window?.title = Settings.shared.showFullPathInTitle && v.url.isFileURL ? v.url.path
+        window?.title =
+            Settings.shared.showFullPathInTitle && v.url.isFileURL
+            ? v.url.path
             : (PlacesModel.shared.title(for: v.url) ?? t.plainTitle)
         window?.representedURL = v.url.isFileURL ? v.url : nil
         updateTabBar()
@@ -355,7 +360,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         }
         if showTerminal, terminal.hasRunningProgram, Settings.shared.confirmCloseTerminal {
             let a = NSAlert()
-            a.messageText = "The program “\(terminal.runningProgramName)” is still running in the Terminal panel. Are you sure you want to close this window?"
+            a.messageText =
+                "The program “\(terminal.runningProgramName)” is still running in the Terminal panel. Are you sure you want to close this window?"
             a.addButton(withTitle: "Close Window")
             a.addButton(withTitle: "Cancel")
             if a.runModal() != .alertFirstButtonReturn { return false }

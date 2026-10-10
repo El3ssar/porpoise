@@ -50,13 +50,15 @@ final class FileOperationsDialogs: FileOperationsUI {
         guard msg.contains("Operation not permitted") else { e.messageText = msg; e.runModal(); return }
         // Blocked by macOS's privacy protection: name the switch that's off, and open its list.
         if PrivilegedHelper.isEnabled, PrivilegedHelper.hasFullDiskAccess != true {
-            DispatchQueue.global(qos: .userInitiated).async { _ = PrivilegedHelper.checkFullDiskAccess(timeout: 3) }   // lists it
+            DispatchQueue.global(qos: .userInitiated).async { _ = PrivilegedHelper.checkFullDiskAccess(timeout: 3) }  // lists it
             e.messageText = "Switch on Porpoise Helper under Full Disk Access"
-            e.informativeText = "Porpoise Helper does the work on items that belong to the system. macOS lets it into "
+            e.informativeText =
+                "Porpoise Helper does the work on items that belong to the system. macOS lets it into "
                 + "your Trash and other private folders once it's switched on (next to Porpoise in the same list). Then try again."
         } else {
             e.messageText = "macOS blocked this"
-            e.informativeText = "Check that Porpoise and Porpoise Helper are switched on under Full Disk Access (and Porpoise under App Management for apps), then try again."
+            e.informativeText =
+                "Check that Porpoise and Porpoise Helper are switched on under Full Disk Access (and Porpoise under App Management for apps), then try again."
         }
         e.addButton(withTitle: "Open Full Disk Access")
         e.addButton(withTitle: "Cancel")
@@ -67,8 +69,10 @@ final class FileOperationsDialogs: FileOperationsUI {
 /// The system clipboard, shared with Finder. Test instances use a private one, so automated tests never replace
 /// what the user copied.
 final class SystemClipboard: FileClipboard {
-    private let pasteboard: NSPasteboard = Settings.isTesting
-        ? NSPasteboard(name: NSPasteboard.Name("app.porpoise.Porpoise.test-clipboard." + (ProcessInfo.processInfo.environment["PORPOISE_BRIDGE"] ?? "test")))
+    private let pasteboard: NSPasteboard =
+        Settings.isTesting
+        ? NSPasteboard(
+            name: NSPasteboard.Name("app.porpoise.Porpoise.test-clipboard." + (ProcessInfo.processInfo.environment["PORPOISE_BRIDGE"] ?? "test")))
         : .general
 
     var changeCount: Int { pasteboard.changeCount }

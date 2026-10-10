@@ -28,7 +28,8 @@ enum NewItemKind: Int, CaseIterable {
     }
 
     /// Contents of a new HTML file.
-    static let htmlTemplate = Data("<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title></title>\n</head>\n<body>\n</body>\n</html>\n".utf8)
+    static let htmlTemplate = Data(
+        "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title></title>\n</head>\n<body>\n</body>\n</html>\n".utf8)
 
     var defaultName: String {
         switch self {
@@ -103,7 +104,8 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
                     url = try FileActions.makeFile(named: nameField.stringValue, in: folder, contents: NewItemKind.htmlTemplate)
                 case .link:
                     url = folder.appendingPathComponent(nameField.stringValue)
-                    try FileManager.default.createSymbolicLink(atPath: url.path, withDestinationPath: (targetField.stringValue as NSString).expandingTildeInPath)
+                    try FileManager.default.createSymbolicLink(
+                        atPath: url.path, withDestinationPath: (targetField.stringValue as NSString).expandingTildeInPath)
                 case .urlLink:
                     let plist = try PropertyListSerialization.data(fromPropertyList: ["URL": targetField.stringValue], format: .xml, options: 0)
                     var n = nameField.stringValue
@@ -111,7 +113,7 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
                     url = try FileActions.makeFile(named: n, in: folder, contents: plist)
                 }
                 done(url)
-            } catch where FileJob.isPermissionError(error) {
+            } catch  where FileJob.isPermissionError(error) {
                 // Protected folder: create it as administrator.
                 var n = nameField.stringValue
                 if kind == .urlLink && !n.hasSuffix(".webloc") { n += ".webloc" }
@@ -126,13 +128,17 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
                     let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                     var data = Data()
                     if kind == .htmlFile { data = NewItemKind.htmlTemplate }
-                    if kind == .urlLink { data = (try? PropertyListSerialization.data(fromPropertyList: ["URL": targetField.stringValue], format: .xml, options: 0)) ?? Data() }
+                    if kind == .urlLink {
+                        data =
+                            (try? PropertyListSerialization.data(fromPropertyList: ["URL": targetField.stringValue], format: .xml, options: 0))
+                            ?? Data()
+                    }
                     try? data.write(to: tmp)
                     cmd = ["/bin/cp", "--", tmp.path, dst.path]
                     tempFile = tmp
                 }
                 let ok = FileOperationsController.shared.authorize(verb: "create an item in", items: [folder], commands: [cmd], window: window)
-                if let t = tempFile { try? FileManager.default.removeItem(at: t) }   // also when the prompt was cancelled
+                if let t = tempFile { try? FileManager.default.removeItem(at: t) }  // also when the prompt was cancelled
                 if ok { done(dst) }
             } catch {
                 // After the sheet has gone, or the error sheet could not attach.

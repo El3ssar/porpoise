@@ -73,9 +73,11 @@ public enum RemoteFS {
         lock.lock(); defer { lock.unlock() }
         if let p = providers[key] { return p }
         let p: RemoteProvider
-        if sshSchemes.contains(s) { p = SSHProvider(url: url) }
-        else if ftpSchemes.contains(s) { p = FTPProvider(url: url) }
-        else {
+        if sshSchemes.contains(s) {
+            p = SSHProvider(url: url)
+        } else if ftpSchemes.contains(s) {
+            p = FTPProvider(url: url)
+        } else {
             // Network adb serials are "host:port", which a URL splits into host and port.
             let host = url.host ?? ""
             p = ADBProvider(serial: url.port.map { "\(host):\($0)" } ?? host)

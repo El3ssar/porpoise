@@ -29,8 +29,10 @@ enum KeyEquivalent {
 
 extension NSMenuItem {
     /// One factory for every menu in the app, so items look and behave the same everywhere.
-    static func make(_ title: String, _ action: Selector?, key: String = "", mods: NSEvent.ModifierFlags = .command,
-                     icon: String? = nil, tag: Int = 0, obj: Any? = nil) -> NSMenuItem {
+    static func make(
+        _ title: String, _ action: Selector?, key: String = "", mods: NSEvent.ModifierFlags = .command,
+        icon: String? = nil, tag: Int = 0, obj: Any? = nil
+    ) -> NSMenuItem {
         let it = NSMenuItem(title: title, action: action, keyEquivalent: key)
         it.keyEquivalentModifierMask = mods
         it.tag = tag

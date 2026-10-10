@@ -1,10 +1,12 @@
 import Foundation
 import Testing
+
 @testable import PorpoiseCore
 
 private func item(_ name: String, dir: Bool = false, size: Int64 = 0, mod: Date? = nil) -> FileItem {
-    FileItem(url: URL(fileURLWithPath: "/tmp/x/" + name), name: name, isDirectory: dir, isHidden: name.hasPrefix("."),
-             size: size, modificationDate: mod)
+    FileItem(
+        url: URL(fileURLWithPath: "/tmp/x/" + name), name: name, isDirectory: dir, isHidden: name.hasPrefix("."),
+        size: size, modificationDate: mod)
 }
 
 @Suite struct ViewOverrideTests {
@@ -18,7 +20,9 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, mod: Date?
     @Test func temporaryChangeIsNeverSaved() {
         var o = ViewOverride()
         var shown = detailsStyle()
-        o.apply(to: &shown) { $0.mode = .icons; $0.previews = true }
+        o.apply(to: &shown) {
+            $0.mode = .icons; $0.previews = true
+        }
         #expect(shown.mode == .icons && shown.previews)
         // The user changes something else (sorting): that is saved, the media-folder Icons view is not.
         shown.sortRole = .size
@@ -31,7 +35,9 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, mod: Date?
     @Test func fieldTheUserChangesIsTheirs() {
         var o = ViewOverride()
         var shown = detailsStyle()
-        o.apply(to: &shown) { $0.mode = .icons; $0.previews = true }
+        o.apply(to: &shown) {
+            $0.mode = .icons; $0.previews = true
+        }
         shown.mode = .compact
         #expect(o.stored(shown).mode == .compact)
         // ...and stays theirs, even when they go back to the temporary value later.
@@ -47,8 +53,10 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, mod: Date?
         var shown = ViewProperties()
         shown.mode = .compact
         dynamic.apply(to: &shown) { $0.mode = .icons }
-        search.apply(to: &shown) { $0.mode = .details; $0.setRoles([.path, .modificationTime], for: .details) }
-        search.apply(to: &shown) { $0.mode = .details }   // every new search text applies it again
+        search.apply(to: &shown) {
+            $0.mode = .details; $0.setRoles([.path, .modificationTime], for: .details)
+        }
+        search.apply(to: &shown) { $0.mode = .details }  // every new search text applies it again
         let saved = dynamic.stored(search.stored(shown))
         #expect(saved.mode == .compact)
         #expect(saved.extraRoles["details"] == nil)
@@ -60,8 +68,10 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, mod: Date?
 
     @Test func untouchedFieldsAreNotOverridden() {
         var o = ViewOverride()
-        var shown = ViewProperties()   // already Icons with previews
-        o.apply(to: &shown) { $0.mode = .icons; $0.previews = true }
+        var shown = ViewProperties()  // already Icons with previews
+        o.apply(to: &shown) {
+            $0.mode = .icons; $0.previews = true
+        }
         #expect(o.isEmpty)
     }
 }

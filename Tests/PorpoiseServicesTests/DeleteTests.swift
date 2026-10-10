@@ -1,7 +1,8 @@
 import Foundation
-import Testing
 import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 /// Deleting permanently: asked first, and items you own are unlocked rather than handed to the administrator.

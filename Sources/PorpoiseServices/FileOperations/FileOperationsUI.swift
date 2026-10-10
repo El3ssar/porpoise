@@ -28,8 +28,10 @@ public struct Confirmation: Equatable {
     /// Offers "Do not ask again".
     public var suppressible = false
 
-    public init(message: String, detail: String = "", confirmTitle: String? = nil, warning: Bool = false,
-                destructive: Bool = false, suppressible: Bool = false) {
+    public init(
+        message: String, detail: String = "", confirmTitle: String? = nil, warning: Bool = false,
+        destructive: Bool = false, suppressible: Bool = false
+    ) {
         self.message = message
         self.detail = detail
         self.confirmTitle = confirmTitle

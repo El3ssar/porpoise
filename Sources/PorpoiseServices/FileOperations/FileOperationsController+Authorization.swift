@@ -7,8 +7,10 @@ extension FileOperationsController {
     /// `targets` maps denied copy/move/link sources to where the job meant to put them (the job may have
     /// renamed them, and items from a merge go into subfolders); missing ones go to `folder`.
     /// `done` gets the items that ended up done: new copies/moves/links, or where trashed and deleted items were.
-    func retryDenied(_ kind: FileOperationKind, _ urls: [URL], targets: [URL: URL], to folder: URL?,
-                     window: AnyObject?, done: @escaping ([URL]) -> Void) {
+    func retryDenied(
+        _ kind: FileOperationKind, _ urls: [URL], targets: [URL: URL], to folder: URL?,
+        window: AnyObject?, done: @escaping ([URL]) -> Void
+    ) {
         var remaining = urls
         var unlocked: [URL] = []
         if kind == .delete || kind == .trash {
@@ -39,11 +41,12 @@ extension FileOperationsController {
     /// What to run as administrator for items the job wasn't allowed to touch: the commands, the items they create
     /// (`results`), where trashed ones go, and items left alone because their destination is taken (as messages).
     static func administratorCommands(_ kind: FileOperationKind, _ urls: [URL], targets: [URL: URL], to folder: URL?)
-        -> (commands: [[String]], results: [URL], trashed: [(original: URL, inTrash: URL)], skipped: [String]) {
+        -> (commands: [[String]], results: [URL], trashed: [(original: URL, inTrash: URL)], skipped: [String])
+    {
         var cmds: [[String]] = []
         var results: [URL] = []
         var skipped: [String] = []
-        var trashNames = Set<String>()   // two denied items named alike must not land on the same name
+        var trashNames = Set<String>()  // two denied items named alike must not land on the same name
         var trashPairs: [(original: URL, inTrash: URL)] = []
         for u in urls {
             switch kind {
@@ -136,13 +139,16 @@ extension FileOperationsController {
             case .done: return true
             case .failed(let err): ui?.showAuthorizationError(err); return false
             case .unavailable(let why):
-                ui?.showAuthorizationError("Porpoise's helper isn't responding (\(why)). If it's switched off under System Settings › General › Login Items & Extensions, switch it on and try again.")
+                ui?.showAuthorizationError(
+                    "Porpoise's helper isn't responding (\(why)). If it's switched off under System Settings › General › Login Items & Extensions, switch it on and try again."
+                )
                 return false
             }
         }
         // Test instances never get root through the helper: the standard macOS prompt, after explaining.
         let q = Confirmation(
-            message: items.count == 1 ? "Porpoise needs your permission to \(verb) “\(items[0].lastPathComponent)”."
+            message: items.count == 1
+                ? "Porpoise needs your permission to \(verb) “\(items[0].lastPathComponent)”."
                 : "Porpoise needs your permission to \(verb) \(items.count) items.",
             detail: (items.count > 1 ? items.prefix(6).map { "“\($0.lastPathComponent)”" }.joined(separator: ", ") + "\n\n" : "")
                 + "These items belong to another user or the system. Authenticate as an administrator to continue, "

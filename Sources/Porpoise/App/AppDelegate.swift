@@ -76,7 +76,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // Tab and split URLs stay paired when a vanished folder is dropped.
             let tabs = w.compactMap { t -> (url: URL, split: URL?)? in
                 guard let u = t["url"].flatMap(URL.init(string:)),
-                      !u.isFileURL || FileManager.default.fileExists(atPath: u.path) else { return nil }
+                    !u.isFileURL || FileManager.default.fileExists(atPath: u.path)
+                else { return nil }
                 return (u, t["split"].flatMap(URL.init(string:)))
             }
             guard !tabs.isEmpty else { continue }
@@ -113,7 +114,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         // Quitting ends the Terminal panels' shells too (closing the window asks the same).
         if Settings.shared.confirmCloseTerminal,
-           let w = windows.first(where: { $0.showTerminal && $0.terminal.hasRunningProgram }) {
+            let w = windows.first(where: { $0.showTerminal && $0.terminal.hasRunningProgram })
+        {
             let a = NSAlert()
             a.messageText = "The program “\(w.terminal.runningProgramName)” is still running in the Terminal panel. Are you sure you want to quit?"
             a.addButton(withTitle: "Quit")

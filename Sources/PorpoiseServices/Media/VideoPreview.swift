@@ -7,8 +7,10 @@ import Foundation
 public final class VideoPreview {
     public static let shared = VideoPreview()
 
-    static let videoExtensions: Set<String> = ["mkv", "webm", "avi", "wmv", "flv", "f4v", "ogv", "ogg", "mpg", "mpeg", "m2v", "ts",
-                                               "m2ts", "mts", "vob", "divx", "xvid", "3gp", "3g2", "rm", "rmvb", "asf", "mxf", "nut", "y4m"]
+    static let videoExtensions: Set<String> = [
+        "mkv", "webm", "avi", "wmv", "flv", "f4v", "ogv", "ogg", "mpg", "mpeg", "m2v", "ts",
+        "m2ts", "mts", "vob", "divx", "xvid", "3gp", "3g2", "rm", "rmvb", "asf", "mxf", "nut", "y4m",
+    ]
     public static func isVideoExtension(_ ext: String) -> Bool { videoExtensions.contains(ext.lowercased()) }
 
     /// The ffmpeg bundled in Contents/Helpers (built by scripts/build-ffmpeg.sh); a system one only as a fallback.
@@ -174,16 +176,20 @@ public final class VideoPreview {
     /// ffmpeg arguments: copy H.264/HEVC and AAC as they are, convert anything else with VideoToolbox.
     /// The input is given as "file:" so a name that looks like a protocol ("concat:…") is read literally.
     static func streamArguments(input: URL, codecs: (video: String, audio: String), output: URL) -> [String] {
-        var args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-i", "file:" + input.path,
-                    "-map", "0:v:0?", "-map", "0:a:0?", "-sn", "-dn"]
+        var args = [
+            "-hide_banner", "-loglevel", "error", "-nostdin", "-i", "file:" + input.path,
+            "-map", "0:v:0?", "-map", "0:a:0?", "-sn", "-dn",
+        ]
         switch codecs.video {
         case "h264": args += ["-c:v", "copy"]
         case "hevc": args += ["-c:v", "copy", "-tag:v", "hvc1"]
         default: args += ["-c:v", "h264_videotoolbox", "-b:v", "8M", "-pix_fmt", "yuv420p", "-vf", "scale='min(1920,iw)':-2"]
         }
         args += codecs.audio == "aac" ? ["-c:a", "copy"] : ["-c:a", "aac_at", "-b:a", "192k", "-ac", "2"]
-        args += ["-f", "hls", "-hls_time", "4", "-hls_list_size", "0", "-hls_playlist_type", "event",
-                 "-hls_segment_type", "fmp4", "-hls_flags", "independent_segments", output.path]
+        args += [
+            "-f", "hls", "-hls_time", "4", "-hls_list_size", "0", "-hls_playlist_type", "event",
+            "-hls_segment_type", "fmp4", "-hls_flags", "independent_segments", output.path,
+        ]
         return args
     }
 
@@ -192,7 +198,8 @@ public final class VideoPreview {
     /// FLV and the like the copy can't be played, so their streams are converted (the codecs come back empty).
     static func probe(_ url: URL) -> (codecs: (video: String, audio: String), duration: Double?) {
         guard let ff = ffmpeg,
-              let r = try? Shell.run(ff, ["-hide_banner", "-nostdin", "-i", "file:" + url.path], timeout: probeTimeout) else { return (("", ""), nil) }
+            let r = try? Shell.run(ff, ["-hide_banner", "-nostdin", "-i", "file:" + url.path], timeout: probeTimeout)
+        else { return (("", ""), nil) }
         let copyable = parseContainer(r.err).contains { $0 == "matroska" || $0 == "webm" || $0 == "mov" || $0 == "mp4" }
         return (copyable ? parseCodecs(r.err) : ("", ""), parseDuration(r.err))
     }

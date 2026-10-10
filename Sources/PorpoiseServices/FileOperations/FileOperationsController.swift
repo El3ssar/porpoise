@@ -76,8 +76,10 @@ public final class FileOperationsController {
     // MARK: Jobs
 
     /// `sound` plays once the job has done something (Finder's trash sounds).
-    public func run(_ kind: FileOperationKind, _ urls: [URL], to folder: URL? = nil, window: AnyObject?, sound: FinderSound? = nil,
-                    done: (([URL]) -> Void)? = nil) {
+    public func run(
+        _ kind: FileOperationKind, _ urls: [URL], to folder: URL? = nil, window: AnyObject?, sound: FinderSound? = nil,
+        done: (([URL]) -> Void)? = nil
+    ) {
         guard !urls.isEmpty else { return }
         if urls.contains(where: { !$0.isFileURL }) || (folder.map { !$0.isFileURL } ?? false) {
             runRemote(kind, urls, to: folder, window: window, done: done)
@@ -127,7 +129,8 @@ public final class FileOperationsController {
             // Remote locations have no Trash (Dolphin deletes permanently there, after asking). Local items
             // in the same selection still go to the Trash.
             let q = Confirmation(
-                message: remote.count == 1 ? "Permanently delete “\(remote[0].lastPathComponent)”?" : "Permanently delete these \(remote.count) items?",
+                message: remote.count == 1
+                    ? "Permanently delete “\(remote[0].lastPathComponent)”?" : "Permanently delete these \(remote.count) items?",
                 detail: "Remote locations don't have a Trash. This action cannot be undone.",
                 confirmTitle: "Delete", warning: true, destructive: true)
             if confirm(q, window: window) { runRemote(.delete, remote, to: nil, window: window, done: nil) }
@@ -135,17 +138,19 @@ public final class FileOperationsController {
         // Apple's own apps live on the read-only system volume: macOS doesn't allow removing them.
         let builtIn = urls.filter { $0.isFileURL && AppLibrary.isBuiltIn($0) }
         if !builtIn.isEmpty {
-            _ = confirm(Confirmation(
-                message: builtIn.count == 1
-                    ? "“\(AppLibrary.displayName(builtIn[0]))” is part of macOS and can't be moved to the Trash."
-                    : "\(builtIn.count) of these items are part of macOS and can't be moved to the Trash.",
-                detail: "macOS keeps its built-in apps on a protected system volume."), window: window)
+            _ = confirm(
+                Confirmation(
+                    message: builtIn.count == 1
+                        ? "“\(AppLibrary.displayName(builtIn[0]))” is part of macOS and can't be moved to the Trash."
+                        : "\(builtIn.count) of these items are part of macOS and can't be moved to the Trash.",
+                    detail: "macOS keeps its built-in apps on a protected system volume."), window: window)
         }
         let local = urls.filter { $0.isFileURL && !AppLibrary.isBuiltIn($0) }
         guard !local.isEmpty else { return }
         if Settings.shared.confirmTrash {
             let q = Confirmation(
-                message: local.count == 1 ? "Do you really want to move “\(local[0].lastPathComponent)” to the Trash?"
+                message: local.count == 1
+                    ? "Do you really want to move “\(local[0].lastPathComponent)” to the Trash?"
                     : "Do you really want to move these \(local.count) items to the Trash?",
                 confirmTitle: "Move to Trash", suppressible: true)
             guard confirm(q, window: window, dontAskAgain: { Settings.shared.confirmTrash = false }) else { return }
@@ -169,7 +174,8 @@ public final class FileOperationsController {
         guard !urls.isEmpty else { return }
         if Settings.shared.confirmDelete {
             let q = Confirmation(
-                message: urls.count == 1 ? "Do you really want to delete “\(urls[0].lastPathComponent)”?"
+                message: urls.count == 1
+                    ? "Do you really want to delete “\(urls[0].lastPathComponent)”?"
                     : "Do you really want to delete these \(urls.count) items?",
                 detail: "This action cannot be undone.",
                 confirmTitle: "Delete", warning: true, destructive: true, suppressible: true)
@@ -190,7 +196,7 @@ public final class FileOperationsController {
                 confirmTitle: "Empty Trash", warning: true, destructive: true, suppressible: true)
             guard confirm(q, window: window, dontAskAgain: { Settings.shared.confirmEmptyTrash = false }) else { return }
         }
-        FinderSound.emptyTrash.play()   // Finder plays it as emptying starts
+        FinderSound.emptyTrash.play()  // Finder plays it as emptying starts
         run(.delete, items, window: window)
     }
 

@@ -11,8 +11,10 @@ extension MainWindowController {
         ("Places", 9, "compass"), ("Information", 10, "documentinfo"), ("Folders", 7, "folder"), ("Terminal", 4, "dialog-scripts"),
     ]
 
-    func item(_ title: String, _ icon: String?, _ action: Selector, key: String = "", mods: NSEvent.ModifierFlags = .command,
-              tag: Int = 0, obj: Any? = nil) -> NSMenuItem {
+    func item(
+        _ title: String, _ icon: String?, _ action: Selector, key: String = "", mods: NSEvent.ModifierFlags = .command,
+        tag: Int = 0, obj: Any? = nil
+    ) -> NSMenuItem {
         .make(title, action, key: key, mods: mods, icon: icon, tag: tag, obj: obj)
     }
 

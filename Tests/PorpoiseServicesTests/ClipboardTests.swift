@@ -1,7 +1,8 @@
 import Foundation
-import Testing
 import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 /// Cut, copy and paste through the controller's clipboard (a LocalClipboard here, the system pasteboard in the app).
@@ -37,7 +38,7 @@ import PorpoiseTestSupport
         let mine = try s.file("src/mine.txt"), theirs = try s.file("src/theirs.txt")
         let c = makeController(ScriptedUI())
         c.copy([mine], cut: true)
-        c.clipboard.write([theirs])   // another app copies something
+        c.clipboard.write([theirs])  // another app copies something
         _ = await c.paste(into: try s.folder("dst"))
         #expect(s.listing("src") == ["mine.txt", "theirs.txt"] && s.listing("dst") == ["theirs.txt"])
     }

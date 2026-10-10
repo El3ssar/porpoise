@@ -37,9 +37,10 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         if isEditing { return super.accessibilityChildren() }
         return segments.indices.compactMap { i -> Any? in
             guard case .crumb(let u, let title, _) = segments[i].kind else { return nil }
-            return AccessibleRegion(in: self, role: .button, label: title,
-                                    frame: { [weak self] in self.flatMap { i < $0.segments.count ? $0.segments[i].rect : nil } ?? .zero },
-                                    press: { [weak self] in if let self { self.delegate?.breadcrumb(self, navigateTo: u, newTab: false) } })
+            return AccessibleRegion(
+                in: self, role: .button, label: title,
+                frame: { [weak self] in self.flatMap { i < $0.segments.count ? $0.segments[i].rect : nil } ?? .zero },
+                press: { [weak self] in if let self { self.delegate?.breadcrumb(self, navigateTo: u, newTab: false) } })
         }
     }
     private var hover: Int?
@@ -175,13 +176,18 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         var hidden: [URL] = []
         while total > available {
             guard let i = segs.firstIndex(where: { if case .crumb(_, _, let last) = $0.kind { return !last } else { return false } }),
-                  case .crumb(let u, _, _) = segs[i].kind else { break }
+                case .crumb(let u, _, _) = segs[i].kind
+            else { break }
             hidden.append(u)
             total -= width(of: segs[i])
             segs.remove(at: i)
             if i < segs.count, case .arrow = segs[i].kind { total -= width(of: segs[i]); segs.remove(at: i) }
         }
-        if !hidden.isEmpty, let r = segs.firstIndex(where: { if case .rootArrow = $0.kind { return true }; return false }) {
+        if !hidden.isEmpty,
+            let r = segs.firstIndex(where: {
+                if case .rootArrow = $0.kind { return true }; return false
+            })
+        {
             segs.insert(Segment(kind: .more(hidden)), at: r + 1)
         }
         for i in segs.indices {
@@ -231,12 +237,14 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             }
             switch s.kind {
             case .placesButton:
-                Icons.shared.image("folder", size: 16)?.draw(in: CGRect(x: r.midX - 8, y: r.midY - 8, width: 16, height: 16),
-                                                             from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                Icons.shared.image("folder", size: 16)?.draw(
+                    in: CGRect(x: r.midX - 8, y: r.midY - 8, width: 16, height: 16),
+                    from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             case .rootArrow, .arrow:
-                Icons.shared.image("go-next", size: 16)?.draw(in: CGRect(x: r.midX - 6, y: r.midY - 6, width: 12, height: 12),
-                                                              from: .zero, operation: .sourceOver, fraction: isActive ? (hover == i ? 1 : 0.55) : 0.35,
-                                                              respectFlipped: true, hints: nil)
+                Icons.shared.image("go-next", size: 16)?.draw(
+                    in: CGRect(x: r.midX - 6, y: r.midY - 6, width: 12, height: 12),
+                    from: .zero, operation: .sourceOver, fraction: isActive ? (hover == i ? 1 : 0.55) : 0.35,
+                    respectFlipped: true, hints: nil)
             case .more:
                 ("…" as NSString).draw(at: CGPoint(x: r.minX + 6, y: r.midY - 9), withAttributes: [.font: crumbFont, .foregroundColor: textColor])
             case .crumb(_, let title, let last):
@@ -263,7 +271,13 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         guard !isEditing else { return }
         let i = segmentIndex(at: convert(event.locationInWindow, from: nil))
         if i != hover { hover = i; needsDisplay = true }
-        if let i, case .crumb(let u, _, _) = segments[i].kind { toolTip = u.isFileURL ? u.path : u.absoluteString } else if i == nil { toolTip = "Click to Edit Location" } else { toolTip = nil }
+        if let i, case .crumb(let u, _, _) = segments[i].kind {
+            toolTip = u.isFileURL ? u.path : u.absoluteString
+        } else if i == nil {
+            toolTip = "Click to Edit Location"
+        } else {
+            toolTip = nil
+        }
     }
 
     private var fieldHover = false
@@ -324,7 +338,8 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         let p = convert(event.locationInWindow, from: nil)
         // Local folders only: listing a remote one would block the window on every wheel tick.
         guard !event.hasPreciseScrollingDeltas, event.scrollingDeltaY != 0, !isVirtual, let i = segmentIndex(at: p),
-              case .crumb(let u, _, _) = segments[i].kind, u.isFileURL, u.path != "/", u.path != "" else { super.scrollWheel(with: event); return }
+            case .crumb(let u, _, _) = segments[i].kind, u.isFileURL, u.path != "/", u.path != ""
+        else { super.scrollWheel(with: event); return }
         let parent = u.deletingLastPathComponent()
         let sibs = subfolders(of: parent)
         guard let idx = sibs.firstIndex(where: { $0.path == u.path }) else { return }
@@ -340,7 +355,9 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         m.addItem(withTitle: "Copy Location", action: #selector(copyLocation(_:)), keyEquivalent: "").representedObject = target
         m.addItem(withTitle: "Paste Location", action: #selector(pasteLocation), keyEquivalent: "")
         m.addItem(.separator())
-        let nt = m.addItem(withTitle: "Open “\(target.lastPathComponent.isEmpty ? "/" : target.lastPathComponent)” in New Tab", action: #selector(openInNewTab(_:)), keyEquivalent: "")
+        let nt = m.addItem(
+            withTitle: "Open “\(target.lastPathComponent.isEmpty ? "/" : target.lastPathComponent)” in New Tab", action: #selector(openInNewTab(_:)),
+            keyEquivalent: "")
         nt.representedObject = target
         m.addItem(.separator())
         let edit = m.addItem(withTitle: "Edit", action: #selector(setEditable(_:)), keyEquivalent: "")
@@ -365,7 +382,8 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     /// Goes to the location on the clipboard (a path, "~/…", or a remote URL), like typing it.
     @objc private func pasteLocation() {
         guard let s = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty,
-              !s.contains("\n") else { return }
+            !s.contains("\n")
+        else { return }
         delegate?.breadcrumb(self, navigateTo: typedURL(s), newTab: false)
     }
 
@@ -482,7 +500,9 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         }
         window?.makeFirstResponder(field)
         if let ed = field?.currentEditor() {
-            ed.selectedRange = selectAll ? NSRange(location: 0, length: field!.stringValue.utf16.count)
+            ed.selectedRange =
+                selectAll
+                ? NSRange(location: 0, length: field!.stringValue.utf16.count)
                 : NSRange(location: field!.stringValue.utf16.count, length: 0)
         }
     }
@@ -589,8 +609,10 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             tv.didChangeText()
         }
         isCompleting = false
-        tv.setSelectedRange(unique ? NSRange(location: min(typedLen, newLen), length: max(0, newLen - typedLen))
-                                   : NSRange(location: newLen, length: 0))
+        tv.setSelectedRange(
+            unique
+                ? NSRange(location: min(typedLen, newLen), length: max(0, newLen - typedLen))
+                : NSRange(location: newLen, length: 0))
     }
 
     // MARK: Drops onto crumbs

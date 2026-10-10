@@ -16,7 +16,8 @@ extension PlacesPanel {
             var result: [URL: VolumeCapacity] = [:]
             for u in volumes {
                 guard let v = try? u.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]),
-                      let total = v.volumeTotalCapacity, let free = v.volumeAvailableCapacityForImportantUsage else { continue }
+                    let total = v.volumeTotalCapacity, let free = v.volumeAvailableCapacityForImportantUsage
+                else { continue }
                 result[u] = VolumeCapacity(free: free, total: Int64(total))
             }
             DispatchQueue.main.async {
@@ -82,8 +83,10 @@ extension PlacesPanel {
     /// Finder-style section header: small, semibold, secondary color.
     private func drawHeader(_ sec: PlaceSection, index i: Int, in r: CGRect) {
         let hovered = headerHover == i
-        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .semibold),
-                                                    .foregroundColor: Theme.windowTextInactive.withAlphaComponent(hovered ? 0.85 : 0.62)]
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+            .foregroundColor: Theme.windowTextInactive.withAlphaComponent(hovered ? 0.85 : 0.62),
+        ]
         (sec.rawValue as NSString).draw(at: CGPoint(x: Metrics.iconX, y: r.minY + 9), withAttributes: attrs)
         // Fold chevron (Finder shows it on hover; folded sections always show theirs).
         let collapsed = PlacesModel.shared.collapsedSections.contains(sec)
@@ -101,8 +104,9 @@ extension PlacesPanel {
         t.translateX(by: box.midX, yBy: box.midY)
         t.rotate(byDegrees: 90 * open)
         t.concat()
-        c.draw(in: CGRect(x: -c.size.width / 2, y: -c.size.height / 2, width: c.size.width, height: c.size.height), from: .zero,
-               operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        c.draw(
+            in: CGRect(x: -c.size.width / 2, y: -c.size.height / 2, width: c.size.width, height: c.size.height), from: .zero,
+            operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         NSGraphicsContext.restoreGraphicsState()
     }
 
@@ -128,7 +132,9 @@ extension PlacesPanel {
         let ty = e.isVolume ? r.minY + (rowHeight - lh) / 2 - 1 : r.midY - lh / 2 - 1
         let p = NSMutableParagraphStyle()
         p.lineBreakMode = .byTruncatingTail
-        let attrs: [NSAttributedString.Key: Any] = [.font: Theme.font, .foregroundColor: Theme.windowText.withAlphaComponent(alpha), .paragraphStyle: p]
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: Theme.font, .foregroundColor: Theme.windowText.withAlphaComponent(alpha), .paragraphStyle: p,
+        ]
         let title = e.hidden ? e.title + " (hidden)" : e.title
         (title as NSString).draw(in: CGRect(x: tx, y: ty, width: r.width - tx - 14 - ejectW, height: lh + 3), withAttributes: attrs)
 
@@ -137,8 +143,9 @@ extension PlacesPanel {
         }
         if e.isEjectable, let img = Icons.shared.image("media-eject", size: Metrics.ejectIconSize) {
             let s = Metrics.ejectIconSize
-            img.draw(in: CGRect(x: r.maxX - Metrics.ejectIconRightOffset, y: r.minY + (rowHeight - s) / 2, width: s, height: s),
-                     from: .zero, operation: .sourceOver, fraction: hover == i ? 1 : 0.55, respectFlipped: true, hints: nil)
+            img.draw(
+                in: CGRect(x: r.maxX - Metrics.ejectIconRightOffset, y: r.minY + (rowHeight - s) / 2, width: s, height: s),
+                from: .zero, operation: .sourceOver, fraction: hover == i ? 1 : 0.55, respectFlipped: true, hints: nil)
         }
     }
 
@@ -178,10 +185,15 @@ extension PlacesPanel {
         }
         guard let ins = dropInsertBefore else { return }
         let y: CGFloat
-        if entry(at: ins) != nil { y = rows[ins].y }
-        else if entry(at: ins - 1) != nil { y = rows[ins - 1].y + rows[ins - 1].height }
-        else if entry(at: ins + 1) != nil { y = rows[ins + 1].y }
-        else { return }
+        if entry(at: ins) != nil {
+            y = rows[ins].y
+        } else if entry(at: ins - 1) != nil {
+            y = rows[ins - 1].y + rows[ins - 1].height
+        } else if entry(at: ins + 1) != nil {
+            y = rows[ins + 1].y
+        } else {
+            return
+        }
         Theme.selectionAlternate.setFill()
         NSBezierPath(roundedRect: CGRect(x: 12, y: y - 1, width: bounds.width - 24, height: 2), xRadius: 1, yRadius: 1).fill()
     }

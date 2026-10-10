@@ -21,7 +21,7 @@ extension ItemListView {
         let shift = mods.contains(.shift)
         switch Int(event.keyCode) {
         case Key.up where mods == [.command]: NSApp.sendAction(#selector(MainWindowController.goUp(_:)), to: nil, from: self); return
-        case Key.down where mods == [.command]: openSelection(); return   // Finder's Cmd+↓
+        case Key.down where mods == [.command]: openSelection(); return  // Finder's Cmd+↓
         case Key.up: moveCurrent(.up, extend: shift); return
         case Key.down: moveCurrent(.down, extend: shift); return
         case Key.left:
@@ -49,8 +49,9 @@ extension ItemListView {
             return
         case Key.forwardDelete where mods.isEmpty || mods == [.shift]:
             // fn+⌫ (Delete) = Move to Trash, Shift+Delete = Delete permanently.
-            NSApp.sendAction(mods.isEmpty ? #selector(MainWindowController.moveToTrash(_:)) : #selector(MainWindowController.deleteItem(_:)),
-                             to: nil, from: self)
+            NSApp.sendAction(
+                mods.isEmpty ? #selector(MainWindowController.moveToTrash(_:)) : #selector(MainWindowController.deleteItem(_:)),
+                to: nil, from: self)
             return
         case Key.space:
             if mods.isEmpty && !isTypingAhead { delegate?.itemListQuickLook(self); return }
@@ -71,7 +72,8 @@ extension ItemListView {
             return
         }
         if mods.subtracting(.shift).isEmpty, let ch = chars.first, !ch.isNewline,
-           ch.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) {
+            ch.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) })
+        {
             typeAheadSearch(chars, backwards: shift && chars.count == 1 && !ch.isLetter)
             return
         }
@@ -99,8 +101,11 @@ extension ItemListView {
 
     func openSelection() {
         let items = model.selectedItems
-        if !items.isEmpty { delegate?.itemList(self, open: items, inNewTab: false) }
-        else if let c = model.currentURL, let i = model.index(of: c) { delegate?.itemList(self, open: [model.rows[i].item], inNewTab: false) }
+        if !items.isEmpty {
+            delegate?.itemList(self, open: items, inNewTab: false)
+        } else if let c = model.currentURL, let i = model.index(of: c) {
+            delegate?.itemList(self, open: [model.rows[i].item], inNewTab: false)
+        }
     }
 
     // MARK: Moving the current item

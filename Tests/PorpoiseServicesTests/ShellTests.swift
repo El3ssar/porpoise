@@ -1,6 +1,7 @@
 import Foundation
-import Testing
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 /// Running tools: exit status, both outputs, stdin, files, timeouts, and no deadlock on large outputs.
@@ -16,7 +17,8 @@ import PorpoiseTestSupport
     @Test func argumentsAreNeverParsedByAShell() throws {
         let hostile = ["$(echo pwned)", "a b", "`id`", "x;y", "*", "'\"", "new\nline", ""]
         let r = try Shell.run("/usr/bin/printf", ["%s\\0"] + hostile)
-        #expect(String(decoding: r.out, as: UTF8.self).split(separator: "\0", omittingEmptySubsequences: false).dropLast().map(String.init) == hostile)
+        #expect(
+            String(decoding: r.out, as: UTF8.self).split(separator: "\0", omittingEmptySubsequences: false).dropLast().map(String.init) == hostile)
     }
 
     @Test func environmentIsAddedToTheInheritedOne() throws {

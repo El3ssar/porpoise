@@ -1,8 +1,9 @@
 import Foundation
+import PorpoiseTestSupport
 import Testing
+
 @testable import PorpoiseCore
 @testable import PorpoiseServices
-import PorpoiseTestSupport
 
 @Suite(.isolatedSettings) struct SettingsTests {
     let s = Settings.shared
@@ -157,11 +158,11 @@ import PorpoiseTestSupport
         let recent = RecentLocations()
         for i in 0..<45 { recent.visit(URL(fileURLWithPath: "/tmp/\(i)")) }
         recent.visit(URL(fileURLWithPath: "/tmp/10"))
-        recent.visit(URL(string: "sftp://host/x")!)   // only local folders
+        recent.visit(URL(string: "sftp://host/x")!)  // only local folders
         #expect(recent.urls.count == 40)
         #expect(recent.urls.first?.path == "/tmp/10" && recent.urls[1].path == "/tmp/44")
         #expect(recent.urls.filter { $0.path == "/tmp/10" }.count == 1)
-        #expect(RecentLocations().urls == recent.urls)   // read back from the store
+        #expect(RecentLocations().urls == recent.urls)  // read back from the store
     }
 
     // MARK: Migration from the old name
@@ -174,7 +175,7 @@ import PorpoiseTestSupport
         try PropertyListSerialization.data(fromPropertyList: oldSettings, format: .binary, options: 0)
             .write(to: scratch.path("old-defaults.plist"))
         let oldDomain = scratch.path("old-defaults").path
-        Settings.store.set("natural", forKey: "sorting")   // already set here: stays
+        Settings.store.set("natural", forKey: "sorting")  // already set here: stays
         let oldPlaces = try scratch.file("Dolphin/places.json", "[old]")
         let newPlaces = scratch.path("Porpoise/places.json")
 
@@ -220,24 +221,28 @@ import PorpoiseTestSupport
         #expect(PermissionStyle.allCases.map(\.rawValue) == ["symbolic", "numeric", "combined"])
         #expect(StartupLocation.allCases.map(\.rawValue) == ["lastSession", "home"])
         #expect(ExecutableAction.allCases.map(\.rawValue) == ["ask", "open", "run"])
-        #expect(BackgroundDoubleClick.allCases.map(\.rawValue)
-            == ["nothing", "selectAll", "goUp", "newFolder", "toggleHidden", "openTerminal"])
+        #expect(
+            BackgroundDoubleClick.allCases.map(\.rawValue)
+                == ["nothing", "selectAll", "goUp", "newFolder", "toggleHidden", "openTerminal"])
         #expect(BackgroundDoubleClick.allCases.map(\.title).allSatisfy { !$0.isEmpty })
-        #expect(ContextMenuEntry.allCases.map(\.rawValue) == [
-            "addToPlaces", "copyLocation", "duplicate", "openInNewTab", "openInNewWindow", "openInSplit", "openTerminal",
-            "otherView", "sortBy", "viewMode", "deleteAlongsideTrash", "copyMoveTo", "compress", "tags", "share",
-            "quickLook", "revealInFinder",
-        ])
-        #expect(PanelSize.sidebarWidth.rawValue == "width.left" && PanelSize.informationWidth.rawValue == "width.right"
-            && PanelSize.terminalHeight.rawValue == "height.terminal")
+        #expect(
+            ContextMenuEntry.allCases.map(\.rawValue) == [
+                "addToPlaces", "copyLocation", "duplicate", "openInNewTab", "openInNewWindow", "openInSplit", "openTerminal",
+                "otherView", "sortBy", "viewMode", "deleteAlongsideTrash", "copyMoveTo", "compress", "tags", "share",
+                "quickLook", "revealInFinder",
+            ])
+        #expect(
+            PanelSize.sidebarWidth.rawValue == "width.left" && PanelSize.informationWidth.rawValue == "width.right"
+                && PanelSize.terminalHeight.rawValue == "height.terminal")
     }
 
     @Test func viewEnums() {
         #expect(ViewMode.allCases.map(\.rawValue) == ["icons", "compact", "details"])
-        #expect(ItemRole.allCases.map(\.rawValue) == [
-            "name", "size", "modificationTime", "creationTime", "accessTime", "type", "path", "extension_", "permissions",
-            "owner", "group", "linkDestination", "tags",
-        ])
+        #expect(
+            ItemRole.allCases.map(\.rawValue) == [
+                "name", "size", "modificationTime", "creationTime", "accessTime", "type", "path", "extension_", "permissions",
+                "owner", "group", "linkDestination", "tags",
+            ])
         #expect(SortOrder.ascending.rawValue == "ascending" && SortOrder.descending.rawValue == "descending")
         #expect(SortingChoice.allCases.map(\.rawValue) == ["natural", "caseInsensitive", "caseSensitive"])
         #expect(FilterMode.allCases.map(\.rawValue) == ["plainText", "glob", "regex"])
@@ -250,16 +255,17 @@ import PorpoiseTestSupport
     /// Every @Pref key, as found on users' disks.
     @Test func prefKeys() {
         let keys = Mirror(reflecting: Settings.shared).children.compactMap { ($0.value as? PrefKey)?.key }
-        #expect(keys == [
-            "startup", "homeURL", "fullPathTitle", "appLibraryView", "filterBar", "alwaysTabBar", "tabClose", "tabStyle",
-            "tabsAtEnd", "closeSplit", "splitStartup", "singleWindow", "pvImages", "pvVideos", "pvDocs", "pvText", "pvFonts",
-            "pvFolders", "pvMax", "pvRemote", "statusBar2", "zoomSlider2", "editableUrl", "fullPathUrl", "confirmTrash",
-            "confirmDelete", "confirmEmptyTrash", "confirmCloseTabs", "confirmTerminal", "confirmOpenMany",
-            "confirmRenameType", "confirmRenameHide", "confirmTerminals", "execAction", "perFolder", "selectionMarker",
-            "renameInline", "toolTips", "autoExpand", "dblClickBg2", "dynamicView", "browseArchives", "allExtensions",
-            "hideBackup", "sorting", "folderDepth", "folderSize", "dateStyle", "permStyle", "elideMiddle", "labelWidth",
-            "maxLines", "compactMax", "clickRow", "labelFont", "labelFontSize", "expandable", "entireRow", "infoPreview",
-            "infoHover", "infoAutoPlay", "infoCondensed", "foldersHome", "foldersHidden", "termFollow", "placesIcon",
-        ])
+        #expect(
+            keys == [
+                "startup", "homeURL", "fullPathTitle", "appLibraryView", "filterBar", "alwaysTabBar", "tabClose", "tabStyle",
+                "tabsAtEnd", "closeSplit", "splitStartup", "singleWindow", "pvImages", "pvVideos", "pvDocs", "pvText", "pvFonts",
+                "pvFolders", "pvMax", "pvRemote", "statusBar2", "zoomSlider2", "editableUrl", "fullPathUrl", "confirmTrash",
+                "confirmDelete", "confirmEmptyTrash", "confirmCloseTabs", "confirmTerminal", "confirmOpenMany",
+                "confirmRenameType", "confirmRenameHide", "confirmTerminals", "execAction", "perFolder", "selectionMarker",
+                "renameInline", "toolTips", "autoExpand", "dblClickBg2", "dynamicView", "browseArchives", "allExtensions",
+                "hideBackup", "sorting", "folderDepth", "folderSize", "dateStyle", "permStyle", "elideMiddle", "labelWidth",
+                "maxLines", "compactMax", "clickRow", "labelFont", "labelFontSize", "expandable", "entireRow", "infoPreview",
+                "infoHover", "infoAutoPlay", "infoCondensed", "foldersHome", "foldersHidden", "termFollow", "placesIcon",
+            ])
     }
 }

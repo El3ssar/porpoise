@@ -37,7 +37,8 @@ public final class NetworkBrowser: NSObject, NetServiceBrowserDelegate, NetServi
     public func netServiceDidResolveAddress(_ sender: NetService) {
         defer { resolving.removeAll { $0 === sender } }
         guard let host = sender.hostName?.trimmingCharacters(in: CharacterSet(charactersIn: ".")),
-              let t = types.first(where: { $0.0 == sender.type }) else { return }
+            let t = types.first(where: { $0.0 == sender.type })
+        else { return }
         let port = sender.port
         let defaultPorts = ["smb": 445, "afp": 548, "sftp": 22, "ftp": 21, "webdav": 80, "webdavs": 443, "nfs": 2049]
         var s = "\(t.1)://\(host)"

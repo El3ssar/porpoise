@@ -28,7 +28,9 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
         c.setCodeSigningRequirement(req)
         c.exportedInterface = NSXPCInterface(with: PorpoiseHelperProtocol.self)
         c.exportedObject = self
-        DispatchQueue.main.async { self.connections += 1; self.quit?.cancel() }
+        DispatchQueue.main.async {
+            self.connections += 1; self.quit?.cancel()
+        }
         c.invalidationHandler = { [weak self] in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -54,8 +56,11 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
         guard let uid = NSXPCConnection.current()?.effectiveUserIdentifier, uid != 0, let pw = getpwuid(uid) else {
             reply("Unknown user."); return
         }
-        guard let command = HelperRequests.ownershipCommand(path: path, uid: uid, gid: pw.pointee.pw_gid,
-                                                            home: String(cString: pw.pointee.pw_dir)) else {
+        guard
+            let command = HelperRequests.ownershipCommand(
+                path: path, uid: uid, gid: pw.pointee.pw_gid,
+                home: String(cString: pw.pointee.pw_dir))
+        else {
             reply("Only items in your own Trash can be handed over."); return
         }
         // Built by the helper itself, so it isn't held to the app's list of tools.

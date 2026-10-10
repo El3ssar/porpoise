@@ -1,7 +1,8 @@
 import Foundation
-import Testing
-@testable import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseCore
 
 /// Big folders, big trees and bursts of changes. Time bounds are generous (several times what an M-series Mac
 /// needs): they catch something quadratic, not a slow machine.
@@ -119,10 +120,12 @@ import PorpoiseTestSupport
     @Test func folderWatcherKeepsUpWithABurst() throws {
         let dir = try scratch.folder("watched")
         let other = try scratch.folder("other")
-        Thread.sleep(forTimeInterval: 0.2)   // events of creating them are not part of the test
+        Thread.sleep(forTimeInterval: 0.2)  // events of creating them are not part of the test
         let lock = NSLock()
         var hits: [Set<String>] = []
-        let watcher = FolderWatcher { h in lock.lock(); hits.append(h); lock.unlock() }
+        let watcher = FolderWatcher { h in
+            lock.lock(); hits.append(h); lock.unlock()
+        }
         watcher.watch([dir, other])
         defer { watcher.stop() }
         Thread.sleep(forTimeInterval: 0.3)

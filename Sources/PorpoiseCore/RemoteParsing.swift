@@ -16,10 +16,11 @@ public enum RemoteParsing {
             let f = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
             guard f.count >= 8 else { return nil }
             let type = f[0]
-            return item(folder: folder, name: f[7...].joined(separator: "\t"), isDir: type.last == "d",
-                        isLink: type.first == "l", size: Int64(f[1]) ?? 0,
-                        mtime: Double(f[2]).map { Date(timeIntervalSince1970: $0) }, mode: Int(f[3], radix: 8) ?? 0o644,
-                        owner: f[4], group: f[5], link: f[6].isEmpty ? nil : f[6])
+            return item(
+                folder: folder, name: f[7...].joined(separator: "\t"), isDir: type.last == "d",
+                isLink: type.first == "l", size: Int64(f[1]) ?? 0,
+                mtime: Double(f[2]).map { Date(timeIntervalSince1970: $0) }, mode: Int(f[3], radix: 8) ?? 0o644,
+                owner: f[4], group: f[5], link: f[6].isEmpty ? nil : f[6])
         }
     }
 
@@ -31,9 +32,10 @@ public enum RemoteParsing {
             guard f.count >= 8 else { return nil }
             let name = (f[7...].joined(separator: "\t") as NSString).lastPathComponent
             let t = f[0].lowercased()
-            return item(folder: folder, name: name, isDir: t.contains("directory"), isLink: t.contains("symbolic"),
-                        size: Int64(f[1]) ?? 0, mtime: Double(f[2]).map { Date(timeIntervalSince1970: $0) },
-                        mode: Int(f[3], radix: 8) ?? 0o644, owner: f[4], group: f[5], link: f[6].isEmpty ? nil : f[6])
+            return item(
+                folder: folder, name: name, isDir: t.contains("directory"), isLink: t.contains("symbolic"),
+                size: Int64(f[1]) ?? 0, mtime: Double(f[2]).map { Date(timeIntervalSince1970: $0) },
+                mode: Int(f[3], radix: 8) ?? 0o644, owner: f[4], group: f[5], link: f[6].isEmpty ? nil : f[6])
         }
     }
 
@@ -81,7 +83,7 @@ public enum RemoteParsing {
             var size: Int64 = 0
             var dateTokens: [String] = []
             if tokens[4].hasSuffix(","), Int64(tokens[4].dropLast()) != nil {
-                _ = nextToken()   // device file: "major, minor" instead of a size
+                _ = nextToken()  // device file: "major, minor" instead of a size
             } else if tokens[4].contains(","), Int64(tokens[4].split(separator: ",").first ?? "") != nil {
                 // "major,minor" written without a space: nothing more to skip.
             } else if let s = Int64(tokens[4]) {
@@ -89,7 +91,9 @@ public enum RemoteParsing {
             } else if let s = Int64(tokens[3]) {
                 // No group column: tokens[4] is already the first date token.
                 size = s; group = ""; dateTokens.append(String(tokens[4]))
-            } else { continue }
+            } else {
+                continue
+            }
             // Date: "Jan 5 12:00" / "Jan 5 2023" (3 tokens) or "2024-01-05 12:00" (2 tokens).
             if dateTokens.isEmpty, let t = nextToken() { dateTokens.append(String(t)) }
             let remaining = dateTokens.first?.contains("-") == true ? 1 : 3 - dateTokens.count
@@ -102,8 +106,10 @@ public enum RemoteParsing {
                 link = String(name[r.upperBound...])
                 name = String(name[..<r.lowerBound])
             }
-            if let it = item(folder: folder, name: name, isDir: first == "d", isLink: first == "l", size: size,
-                             mtime: dates.parse(dateTokens), mode: parsePerms(perms), owner: owner, group: group, link: link) {
+            if let it = item(
+                folder: folder, name: name, isDir: first == "d", isLink: first == "l", size: size,
+                mtime: dates.parse(dateTokens), mode: parsePerms(perms), owner: owner, group: group, link: link)
+            {
                 out.append(it)
             }
         }
@@ -183,15 +189,18 @@ public enum RemoteParsing {
         !name.isEmpty && name != "." && name != ".." && !name.containsScalar("/") && !name.containsScalar("\0")
     }
 
-    static func item(folder: URL, name: String, isDir: Bool, isLink: Bool, size: Int64, mtime: Date?, mode: Int,
-                     owner: String, group: String, link: String?) -> FileItem? {
+    static func item(
+        folder: URL, name: String, isDir: Bool, isLink: Bool, size: Int64, mtime: Date?, mode: Int,
+        owner: String, group: String, link: String?
+    ) -> FileItem? {
         guard isSafeName(name) else { return nil }
         let url = folder.appendingPathComponent(name, isDirectory: isDir)
         let ext = (name as NSString).pathExtension
         let type = isDir ? "public.folder" : (ext.isEmpty ? "public.data" : UTType(filenameExtension: ext)?.identifier ?? "public.data")
-        return FileItem(url: url, name: name, isDirectory: isDir, isSymlink: isLink, isHidden: name.hasPrefix("."),
-                        size: size, modificationDate: mtime, contentType: type, posixPermissions: mode & 0o7777,
-                        owner: owner.isEmpty ? nil : owner, group: group.isEmpty ? nil : group, linkDestination: link)
+        return FileItem(
+            url: url, name: name, isDirectory: isDir, isSymlink: isLink, isHidden: name.hasPrefix("."),
+            size: size, modificationDate: mtime, contentType: type, posixPermissions: mode & 0o7777,
+            owner: owner.isEmpty ? nil : owner, group: group.isEmpty ? nil : group, linkDestination: link)
     }
 
     /// POSIX shell single-quote escaping: the result is one word, whatever `s` contains. By code point: a quote

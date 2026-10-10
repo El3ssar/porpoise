@@ -1,6 +1,7 @@
 import Foundation
-import Testing
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 /// A real OpenSSH server on 127.0.0.1, run as the current user with its own host key, client key and known_hosts,
@@ -39,7 +40,9 @@ final class SSHServer: @unchecked Sendable {
         // Trusted up front, so the client checks the key strictly and never needs to record one.
         let hostKey = (scratch.read("host_key.pub") ?? "").split(separator: " ").prefix(2).joined(separator: " ")
         try scratch.file("known_hosts", "[127.0.0.1]:\(port) \(hostKey)\n")
-        try scratch.file("sshd_config", """
+        try scratch.file(
+            "sshd_config",
+            """
             Port \(port)
             ListenAddress 127.0.0.1
             HostKey \(scratch.path("host_key").path)
@@ -80,11 +83,14 @@ final class SSHServer: @unchecked Sendable {
 
     /// A provider that connects with this server's keys only: no ~/.ssh/config, agent, user keys or known_hosts.
     func provider() -> SSHProvider {
-        let p = SSHProvider(url: url("/"), isolation: .init(options: [
-            "-F", "/dev/null", "-i", scratch.path("client_key").path, "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none",
-            "-o", "BatchMode=yes", "-o", "UserKnownHostsFile=\(scratch.path("known_hosts").path)",
-            "-o", "GlobalKnownHostsFile=/dev/null", "-o", "StrictHostKeyChecking=yes",
-        ], controlDir: controlDir))
+        let p = SSHProvider(
+            url: url("/"),
+            isolation: .init(
+                options: [
+                    "-F", "/dev/null", "-i", scratch.path("client_key").path, "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none",
+                    "-o", "BatchMode=yes", "-o", "UserKnownHostsFile=\(scratch.path("known_hosts").path)",
+                    "-o", "GlobalKnownHostsFile=/dev/null", "-o", "StrictHostKeyChecking=yes",
+                ], controlDir: controlDir))
         lock.lock(); providers.append(p); lock.unlock()
         return p
     }

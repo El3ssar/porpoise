@@ -8,8 +8,9 @@ extension ItemListView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let t = trackingArea { removeTrackingArea(t) }
-        let t = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-                               owner: self, userInfo: nil)
+        let t = NSTrackingArea(
+            rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self, userInfo: nil)
         addTrackingArea(t)
         trackingArea = t
     }
@@ -139,7 +140,8 @@ extension ItemListView {
     /// Finder: clicking the cloud badge of an item that is only in the cloud downloads it.
     private func downloadFromCloudBadge(at p: CGPoint) -> Bool {
         guard let i = cloudRects.first(where: { $0.value.contains(p) })?.key, i < model.rows.count,
-              model.cloud(for: model.rows[i].item).state == .cloudOnly else { return false }
+            model.cloud(for: model.rows[i].item).state == .cloudOnly
+        else { return false }
         CloudActions.download([model.rows[i].item.url])
         model.refreshCloud()
         needsDisplay = true
@@ -157,8 +159,9 @@ extension ItemListView {
     override func mouseDragged(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         if let start = rubberStart {
-            updateRubberBand(CGRect(x: min(start.x, p.x), y: min(start.y, p.y), width: abs(p.x - start.x), height: abs(p.y - start.y)),
-                             toggling: event.modifierFlags.contains(.command))
+            updateRubberBand(
+                CGRect(x: min(start.x, p.x), y: min(start.y, p.y), width: abs(p.x - start.x), height: abs(p.y - start.y)),
+                toggling: event.modifierFlags.contains(.command))
             autoscroll(with: event)
             return
         }
@@ -188,7 +191,9 @@ extension ItemListView {
             return
         }
         // Click on an already selected item without modifiers: select just that one.
-        if let i = mouseDownIndex, i < model.rows.count, event.clickCount == 1, !event.modifierFlags.contains(.command), !event.modifierFlags.contains(.shift) {
+        if let i = mouseDownIndex, i < model.rows.count, event.clickCount == 1, !event.modifierFlags.contains(.command),
+            !event.modifierFlags.contains(.shift)
+        {
             let url = model.rows[i].item.url
             if mouseDownSelectedBefore && model.selection.count > 1 { model.selection = [url] }
             model.anchorURL = url
@@ -253,7 +258,10 @@ extension ItemListView {
     }
 
     override func swipe(with event: NSEvent) {
-        if event.deltaX > 0 { NSApp.sendAction(#selector(MainWindowController.goBack(_:)), to: nil, from: self) }
-        else if event.deltaX < 0 { NSApp.sendAction(#selector(MainWindowController.goForward(_:)), to: nil, from: self) }
+        if event.deltaX > 0 {
+            NSApp.sendAction(#selector(MainWindowController.goBack(_:)), to: nil, from: self)
+        } else if event.deltaX < 0 {
+            NSApp.sendAction(#selector(MainWindowController.goForward(_:)), to: nil, from: self)
+        }
     }
 }

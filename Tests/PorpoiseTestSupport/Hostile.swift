@@ -7,8 +7,8 @@ public enum HostileNames {
     /// 255 bytes of UTF-8. (APFS counts its 255 limit in UTF-16 units of the decomposed name that Foundation
     /// writes, so the "é" one is longer on disk and has no room for " copy" either.)
     public static let long255Ascii = String(repeating: "n", count: 255)
-    public static let long255TwoByte = String(repeating: "\u{E9}", count: 127) + "x"        // é (NFC) × 127 + 1
-    public static let long255Emoji = String(repeating: "\u{1F42C}", count: 63) + "abc"      // 🐬 × 63 + 3
+    public static let long255TwoByte = String(repeating: "\u{E9}", count: 127) + "x"  // é (NFC) × 127 + 1
+    public static let long255Emoji = String(repeating: "\u{1F42C}", count: 63) + "abc"  // 🐬 × 63 + 3
 
     public static let all: [String] = [
         "new\nline", "trailing newline\n", "\nleading newline", "carriage\rreturn", "crlf\r\nname", "tab\there",
@@ -54,7 +54,9 @@ public func runTool(_ tool: String, _ args: [String], cwd: URL? = nil, env: [Str
     var errData = Data()
     let group = DispatchGroup()
     group.enter()
-    DispatchQueue.global().async { errData = err.fileHandleForReading.readDataToEndOfFile(); group.leave() }
+    DispatchQueue.global().async {
+        errData = err.fileHandleForReading.readDataToEndOfFile(); group.leave()
+    }
     let outData = out.fileHandleForReading.readDataToEndOfFile()
     group.wait()
     p.waitUntilExit()

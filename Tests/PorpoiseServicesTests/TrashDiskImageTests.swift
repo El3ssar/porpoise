@@ -1,7 +1,8 @@
 import Foundation
-import Testing
 import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 /// Moving to the Trash, Put Back and undoing what goes through the Trash. Everything happens on an attached disk
@@ -159,7 +160,7 @@ import PorpoiseTestSupport
         await ui.nextJobFinished()
         if ui.finishedJobs.count < 2 { await ui.nextJobFinished() }
         #expect(lastTrashed.map(\.original) == [f])
-        #expect(ui.errors.count == 1)   // the remote one: nothing provides "unknown://"
+        #expect(ui.errors.count == 1)  // the remote one: nothing provides "unknown://"
     }
 
     @MainActor @Test func decliningToDeleteTheRemoteItemsStillTrashesTheLocalOnes() async throws {

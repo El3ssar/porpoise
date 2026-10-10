@@ -136,7 +136,8 @@ public final class Settings {
     func viewProperties(for url: URL) -> ViewProperties {
         guard rememberPerFolder else { return globalViewProperties }
         if let data = d.dictionary(forKey: "folderProps")?[url.path] as? Data,
-           let p = try? JSONDecoder().decode(ViewProperties.self, from: data) {
+            let p = try? JSONDecoder().decode(ViewProperties.self, from: data)
+        {
             return p
         }
         let special = ViewProperties.defaults(for: url)

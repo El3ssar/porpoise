@@ -82,6 +82,8 @@ public final class DiskImage {
     private static func hdiutil(_ args: [String]) throws {
         let p = try Process.run(URL(fileURLWithPath: "/usr/bin/hdiutil"), arguments: args)
         p.waitUntilExit()
-        guard p.terminationStatus == 0 else { throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "hdiutil \(args[0]) failed"]) }
+        guard p.terminationStatus == 0 else {
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "hdiutil \(args[0]) failed"])
+        }
     }
 }

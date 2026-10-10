@@ -61,9 +61,11 @@ final class AppsView: NSView, NSTextFieldDelegate {
         field.textColor = Theme.viewText
         field.cell?.isScrollable = true
         field.cell?.wraps = false
-        field.placeholderAttributedString = NSAttributedString(string: "Search", attributes: [
-            .foregroundColor: Theme.viewTextInactive, .font: NSFont.systemFont(ofSize: 15),
-        ])
+        field.placeholderAttributedString = NSAttributedString(
+            string: "Search",
+            attributes: [
+                .foregroundColor: Theme.viewTextInactive, .font: NSFont.systemFont(ofSize: 15),
+            ])
         field.delegate = self
         clearButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Clear")
         clearButton.isBordered = false

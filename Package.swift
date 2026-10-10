@@ -19,8 +19,10 @@ let package = Package(
         .target(name: "PorpoiseServices", dependencies: ["PorpoiseCore"]),
         .executableTarget(
             name: "Porpoise",
-            dependencies: ["PorpoiseCore", "PorpoiseServices", .product(name: "SwiftTerm", package: "SwiftTerm"),
-                           .product(name: "Sparkle", package: "Sparkle")]
+            dependencies: [
+                "PorpoiseCore", "PorpoiseServices", .product(name: "SwiftTerm", package: "SwiftTerm"),
+                .product(name: "Sparkle", package: "Sparkle"),
+            ]
         ),
         .executableTarget(name: "PorpoiseHelper", dependencies: ["PorpoiseCore"]),
         // Shared by the test targets: throwaway folders and disk images that clean up after themselves.

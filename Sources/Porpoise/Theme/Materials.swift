@@ -6,8 +6,10 @@ import PorpoiseServices
 final class TintedMaterialView: NSVisualEffectView {
     private let tintLayer = CALayer()
 
-    init(material: NSVisualEffectView.Material, tint: NSColor = Theme.windowBackground, alpha: CGFloat = 0.72,
-         blending: NSVisualEffectView.BlendingMode = .behindWindow) {
+    init(
+        material: NSVisualEffectView.Material, tint: NSColor = Theme.windowBackground, alpha: CGFloat = 0.72,
+        blending: NSVisualEffectView.BlendingMode = .behindWindow
+    ) {
         super.init(frame: .zero)
         self.material = material
         blendingMode = blending
@@ -80,8 +82,10 @@ final class Animator {
 
     /// Runs `step(progress)` with progress eased 0→1 over `duration`, replacing any running animation
     /// (whose completion is then not called).
-    func run(duration: TimeInterval, curve: @escaping (Double) -> Double = Animator.easeOutCubic,
-             step: @escaping (Double) -> Void, completion: (() -> Void)? = nil) {
+    func run(
+        duration: TimeInterval, curve: @escaping (Double) -> Double = Animator.easeOutCubic,
+        step: @escaping (Double) -> Void, completion: (() -> Void)? = nil
+    ) {
         stop()
         // Reduce Motion (Accessibility › Display): jump to the end state.
         if duration <= 0 || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { step(1); completion?(); return }

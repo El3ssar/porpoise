@@ -1,8 +1,9 @@
 import Foundation
+import PorpoiseTestSupport
 import Testing
+
 @testable import PorpoiseCore
 @testable import PorpoiseServices
-import PorpoiseTestSupport
 
 // MARK: Tags and comments (extended attributes on real files)
 
@@ -30,10 +31,11 @@ import PorpoiseTestSupport
         let s = try Scratch()
         let f = try s.file("doc.txt")
         try setTagsAttribute(["Work\n4", "Green", "Odd\nx", ""], on: f)
-        #expect(FinderTags.read(f) == [
-            FinderTags.Tag(name: "Work", color: 4), FinderTags.Tag(name: "Green", color: 2),
-            FinderTags.Tag(name: "Odd", color: 0), FinderTags.Tag(name: "", color: 0),
-        ])
+        #expect(
+            FinderTags.read(f) == [
+                FinderTags.Tag(name: "Work", color: 4), FinderTags.Tag(name: "Green", color: 2),
+                FinderTags.Tag(name: "Odd", color: 0), FinderTags.Tag(name: "", color: 0),
+            ])
     }
 
     @Test func damagedAttributeAndLinks() throws {
@@ -64,7 +66,7 @@ import PorpoiseTestSupport
         #expect(FinderComment.read(f) == "Signed copy — keep")
         FinderComment.write("", to: f)
         #expect(FinderComment.read(f) == "")
-        #expect(getxattr(f.path, "com.apple.metadata:kMDItemFinderComment", nil, 0, 0, 0) == -1)   // removed, not left empty
+        #expect(getxattr(f.path, "com.apple.metadata:kMDItemFinderComment", nil, 0, 0, 0) == -1)  // removed, not left empty
     }
 }
 
@@ -98,7 +100,7 @@ import PorpoiseTestSupport
         let item = try #require(FileItem.load(archive))
         var result: Result<URL, Error>?
         ArchiveBrowser.extractedFolder(for: item, in: cache) { result = $0 }
-        try #require(await eventually(30) { result != nil })   // a regression fails here instead of hanging
+        try #require(await eventually(30) { result != nil })  // a regression fails here instead of hanging
         return try #require(result)
     }
 
@@ -280,7 +282,7 @@ import PorpoiseTestSupport
         // Only in 16: found for any size.
         #expect(theme.file("folder-pcloud", size: 128)?.lastPathComponent == "folder-pcloud.svg")
         #expect(theme.file("no-such-icon", size: 16) == nil)
-        #expect(theme.file("no-such-icon", size: 16) == nil)   // cached miss
+        #expect(theme.file("no-such-icon", size: 16) == nil)  // cached miss
     }
 
     @Test func folderIcons() {

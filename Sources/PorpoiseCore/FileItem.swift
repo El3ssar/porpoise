@@ -22,12 +22,14 @@ public struct FileItem: Hashable, Sendable {
     public let isReadable: Bool
     public let isWritable: Bool
 
-    public init(url: URL, name: String, isDirectory: Bool, isSymlink: Bool = false, isHidden: Bool = false,
-                isPackage: Bool = false, isApplication: Bool = false, size: Int64 = 0,
-                modificationDate: Date? = nil, creationDate: Date? = nil, accessDate: Date? = nil,
-                contentType: String? = nil, posixPermissions: Int = 0o644, owner: String? = nil,
-                group: String? = nil, linkDestination: String? = nil, isReadable: Bool = true,
-                isWritable: Bool = true) {
+    public init(
+        url: URL, name: String, isDirectory: Bool, isSymlink: Bool = false, isHidden: Bool = false,
+        isPackage: Bool = false, isApplication: Bool = false, size: Int64 = 0,
+        modificationDate: Date? = nil, creationDate: Date? = nil, accessDate: Date? = nil,
+        contentType: String? = nil, posixPermissions: Int = 0o644, owner: String? = nil,
+        group: String? = nil, linkDestination: String? = nil, isReadable: Bool = true,
+        isWritable: Bool = true
+    ) {
         self.url = url
         self.name = name
         self.isDirectory = isDirectory
@@ -112,13 +114,14 @@ public struct FileItem: Hashable, Sendable {
             owner = Self.userName(st.st_uid)
             group = Self.groupName(st.st_gid)
         }
-        return FileItem(url: url, name: name, isDirectory: isDir, isSymlink: isLink,
-                        isHidden: (v.isHidden ?? false) || name.hasPrefix("."),
-                        isPackage: isPackage, isApplication: isApp, size: size,
-                        modificationDate: v.contentModificationDate, creationDate: v.creationDate,
-                        accessDate: v.contentAccessDate, contentType: contentType,
-                        posixPermissions: perms, owner: owner, group: group, linkDestination: linkDest,
-                        isReadable: v.isReadable ?? true, isWritable: v.isWritable ?? true)
+        return FileItem(
+            url: url, name: name, isDirectory: isDir, isSymlink: isLink,
+            isHidden: (v.isHidden ?? false) || name.hasPrefix("."),
+            isPackage: isPackage, isApplication: isApp, size: size,
+            modificationDate: v.contentModificationDate, creationDate: v.creationDate,
+            accessDate: v.contentAccessDate, contentType: contentType,
+            posixPermissions: perms, owner: owner, group: group, linkDestination: linkDest,
+            isReadable: v.isReadable ?? true, isWritable: v.isWritable ?? true)
     }
 
     nonisolated(unsafe) private static var userCache: [uid_t: String] = [:]

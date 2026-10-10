@@ -1,7 +1,8 @@
 import Foundation
-import Testing
-@testable import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseCore
 
 /// Seeded fuzzing (see `Fuzzer`): no crash, and simple invariants hold for every input.
 @Suite struct ParserFuzzTests {
@@ -20,14 +21,20 @@ import PorpoiseTestSupport
     @Test func remoteListings() {
         var f = Fuzzer(seed: 1)
         var v = Violations()
-        let find = ["fd\t4096\t1700000000.5\t755\tme\tstaff\t\t./dir", "ff\t12\t1700000000\t644\tme\tstaff\t\tname\twith tab",
-                    "ld\t7\t1700000000\t777\troot\troot\t/tmp\tlink"]
-        let stat = ["Directory\t64\t1700000000\t755\tme\tstaff\t\t./dir\n", "Symbolic Link\t3\t1700000000\t755\tme\tstaff\tx\t./l\n",
-                    "Regular File\t1\t1700000000\t644\tme\tstaff\t\t./new\nline\n"]
-        let ls = ["drwxr-xr-x    2 1000     1000         4096 Jan  5  2024 pub",
-                  "-rw-r--r--    1 ftp      ftp       1048576 Oct  7 14:30 big file.iso",
-                  "lrwxrwxrwx    1 0        0              11 Mar 12 09:00 latest -> pub/v1.tar",
-                  "crw-rw-rw-  1 root root   1,   3 2025-01-01 00:00 null", "-rw-r--r-- 1 user 12 2024-01-05 12:00  two spaces"]
+        let find = [
+            "fd\t4096\t1700000000.5\t755\tme\tstaff\t\t./dir", "ff\t12\t1700000000\t644\tme\tstaff\t\tname\twith tab",
+            "ld\t7\t1700000000\t777\troot\troot\t/tmp\tlink",
+        ]
+        let stat = [
+            "Directory\t64\t1700000000\t755\tme\tstaff\t\t./dir\n", "Symbolic Link\t3\t1700000000\t755\tme\tstaff\tx\t./l\n",
+            "Regular File\t1\t1700000000\t644\tme\tstaff\t\t./new\nline\n",
+        ]
+        let ls = [
+            "drwxr-xr-x    2 1000     1000         4096 Jan  5  2024 pub",
+            "-rw-r--r--    1 ftp      ftp       1048576 Oct  7 14:30 big file.iso",
+            "lrwxrwxrwx    1 0        0              11 Mar 12 09:00 latest -> pub/v1.tar",
+            "crw-rw-rw-  1 root root   1,   3 2025-01-01 00:00 null", "-rw-r--r-- 1 user 12 2024-01-05 12:00  two spaces",
+        ]
         let now = Date(timeIntervalSince1970: 1_790_000_000)
         for _ in 0..<cases {
             let a = f.text(samples: find, separator: f.int(2) == 0 ? "\0" : "\n")
@@ -45,8 +52,10 @@ import PorpoiseTestSupport
     @Test func adbDevices() {
         var f = Fuzzer(seed: 2)
         var v = Violations()
-        let samples = ["List of devices attached", "emulator-5554 device product:sdk model:Pixel_7 device:emu",
-                       "192.168.1.5:5555 device", "R58M offline", "abc unauthorized usb:1-1"]
+        let samples = [
+            "List of devices attached", "emulator-5554 device product:sdk model:Pixel_7 device:emu",
+            "192.168.1.5:5555 device", "R58M offline", "abc unauthorized usb:1-1",
+        ]
         for _ in 0..<cases {
             let t = f.text(samples: samples)
             for d in RemoteParsing.parseADBDevices(t) {
@@ -84,7 +93,7 @@ import PorpoiseTestSupport
         var v = Violations()
         for _ in 0..<cases {
             let pattern = f.string(max: 8)
-            let names = (0..<6).map { _ in f.string(max: 4) }   // short: random regexes may backtrack
+            let names = (0..<6).map { _ in f.string(max: 4) }  // short: random regexes may backtrack
             for mode in FilterMode.allCases {
                 for cs in [false, true] {
                     guard let m = NameFilter(text: pattern, mode: mode, caseSensitive: cs).matcher() else {
@@ -147,8 +156,10 @@ import PorpoiseTestSupport
     /// Konsole color schemes: whatever the file says, there are 16 colors.
     @Test func konsoleSchemes() {
         var f = Fuzzer(seed: 6)
-        let samples = ["[Color0]", "[Color1Intense]", "[Color9]", "[Color8Intense]", "Color=1,2,3", "Color=255, 0 ,9",
-                       "[Background]", "[Foreground]", "Color=-1,1e9,3"]
+        let samples = [
+            "[Color0]", "[Color1Intense]", "[Color9]", "[Color8Intense]", "Color=1,2,3", "Color=255, 0 ,9",
+            "[Background]", "[Foreground]", "Color=-1,1e9,3",
+        ]
         for _ in 0..<cases {
             #expect(KonsoleScheme.parse(f.text(samples: samples, lines: 40)).palette.count == 16)
         }
@@ -175,7 +186,7 @@ import PorpoiseTestSupport
                 guard let n = it.next() else { return nil }
                 out.unicodeScalars.append(n)
             } else {
-                return nil   // anything unquoted could be shell syntax
+                return nil  // anything unquoted could be shell syntax
             }
         }
         return inQuote ? nil : out
@@ -213,8 +224,9 @@ import PorpoiseTestSupport
         for _ in 0..<cases {
             let s = f.string()
             v.check(shUnquote(RemoteParsing.quote(s)).map { Array($0.unicodeScalars) } == Array(s.unicodeScalars), "sh \(s.debugDescription)")
-            v.check(appleScriptUnquote(Escaping.appleScriptString(s)).map { Array($0.unicodeScalars) } == Array(s.unicodeScalars),
-                    "AppleScript \(s.debugDescription)")
+            v.check(
+                appleScriptUnquote(Escaping.appleScriptString(s)).map { Array($0.unicodeScalars) } == Array(s.unicodeScalars),
+                "AppleScript \(s.debugDescription)")
         }
         #expect(v.list.isEmpty, "\(v.list)")
     }
@@ -224,7 +236,8 @@ import PorpoiseTestSupport
     @Test func quotingRunsForReal() throws {
         var f = Fuzzer(seed: 8)
         let strings = (0..<300).map { _ in String(f.string().unicodeScalars.filter { $0 != "\0" }) }
-        let sh = try runTool("/bin/sh", ["-c", strings.map { "set -- \(RemoteParsing.quote($0)); printf '%s:%s\\0' \"$#\" \"$1\"" }.joined(separator: "\n")])
+        let sh = try runTool(
+            "/bin/sh", ["-c", strings.map { "set -- \(RemoteParsing.quote($0)); printf '%s:%s\\0' \"$#\" \"$1\"" }.joined(separator: "\n")])
         #expect(sh.status == 0)
         let got = sh.out.split(separator: 0, omittingEmptySubsequences: false).dropLast().map { String(decoding: $0, as: UTF8.self) }
         #expect(got == strings.map { "1:" + $0 })
@@ -253,8 +266,10 @@ import PorpoiseTestSupport
         let root = scratch.path("root").resolvingSymlinksInPath()
         var f = Fuzzer(seed: 9)
         var v = Violations()
-        let samples = ["/S3CRET/stream/index.m3u8", "/S3CRET/stream/out", "/S3CRET/../secret.txt", "/S3CRET/.hidden",
-                       "/S3CRET/stream/index.m3u8?x=1", "/S3CRET/stream%2Findex.m3u8"]
+        let samples = [
+            "/S3CRET/stream/index.m3u8", "/S3CRET/stream/out", "/S3CRET/../secret.txt", "/S3CRET/.hidden",
+            "/S3CRET/stream/index.m3u8?x=1", "/S3CRET/stream%2Findex.m3u8",
+        ]
         var served = 0
         for _ in 0..<cases {
             let t = f.int(4) == 0 ? f.string(max: 10) : f.mutate(f.pick(samples))

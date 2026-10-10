@@ -1,7 +1,8 @@
 import Foundation
-import os
-import Testing
 import PorpoiseTestSupport
+import Testing
+import os
+
 @testable import PorpoiseServices
 
 /// What VideoPreview decides from ffmpeg's output, and the arguments it runs ffmpeg with. No ffmpeg needed.
@@ -14,10 +15,12 @@ import PorpoiseTestSupport
     @Test func durations() {
         #expect(VideoPreview.parseDuration("  Duration: 00:34:40.56, start: 0.000000, bitrate: 1 kb/s") == 2080.56)
         #expect(VideoPreview.parseDuration("Duration: 01:00:00.00,") == 3600)
-        #expect(VideoPreview.parseDuration("Duration: 00:00:01.5") == 1.5)   // no comma: to the end
+        #expect(VideoPreview.parseDuration("Duration: 00:00:01.5") == 1.5)  // no comma: to the end
         #expect(VideoPreview.parseDuration("Duration: 123:00:00.00,") == 442_800.0)
-        for bad in ["Duration: N/A, start: 0", "Duration: 00:01, x", "Duration: 1:2:3:4,", "Duration: aa:bb:cc,", "no duration here", "",
-                    "Duration: ,"] {
+        for bad in [
+            "Duration: N/A, start: 0", "Duration: 00:01, x", "Duration: 1:2:3:4,", "Duration: aa:bb:cc,", "no duration here", "",
+            "Duration: ,",
+        ] {
             #expect(VideoPreview.parseDuration(bad) == nil, "\(bad)")
         }
     }
@@ -207,8 +210,10 @@ final class VideoPreviewStreamTests {
         (try? Shell.run("/usr/bin/pgrep", ["-f", input.path]))?.status == 0
     }
 
-    @Test(arguments: [("mpeg4.avi", ["-c:v", "mpeg4"]), ("mjpeg.avi", ["-c:v", "mjpeg"]),
-                      ("x264.mkv", ["-c:v", "libx264", "-pix_fmt", "yuv420p"]), ("x264 in.avi", ["-c:v", "libx264", "-pix_fmt", "yuv420p"])])
+    @Test(arguments: [
+        ("mpeg4.avi", ["-c:v", "mpeg4"]), ("mjpeg.avi", ["-c:v", "mjpeg"]),
+        ("x264.mkv", ["-c:v", "libx264", "-pix_fmt", "yuv420p"]), ("x264 in.avi", ["-c:v", "libx264", "-pix_fmt", "yuv420p"]),
+    ])
     func streamsOverLocalHTTP(name: String, codec: [String]) async throws {
         let v = try video(name, codec, audio: ["-c:a", "aac"])
         let p = VideoPreview()
@@ -269,7 +274,7 @@ final class VideoPreviewStreamTests {
         let url = try #require(await playable(p, second, owner: NSObject()))
         #expect(url.lastPathComponent == "index.m3u8")
         usleep(300_000)
-        #expect(!firstAnswered.withLock { $0 })   // the older request never calls back
+        #expect(!firstAnswered.withLock { $0 })  // the older request never calls back
         #expect(eventually { !ffmpegRunning(on: first) })
         #expect(eventually { sessionFolders().count == 1 })
     }

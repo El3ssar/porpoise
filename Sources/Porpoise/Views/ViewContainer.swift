@@ -76,7 +76,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         scroll.contentView.postsBoundsChangedNotifications = true
         scroll.horizontalScrollElasticity = .automatic
         scroll.appearance = NSAppearance(named: .darkAqua)
-        NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         header.list = list
         filterBar.delegate = self
         filterBar.isHidden = !Settings.shared.showFilterBarOnStartup
@@ -126,7 +127,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         model.onPropsChanged = { [weak self] in
             guard let self else { return }
             self.layoutSubtreeIfNeeded()
-            self.layout()   // now: the Details header comes or goes, which resizes the scroll view
+            self.layout()  // now: the Details header comes or goes, which resizes the scroll view
             self.list.relayout()
             // Keep the current item in view across mode changes (Dolphin does); a zoom keeps its own position.
             if !self.list.committingZoom {
@@ -161,39 +162,49 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             self.pendingSelect = nil
         }
         let center = NotificationCenter.default
-        observers.append(center.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
-            guard let self else { return }
-            self.statusBar.mode = Settings.shared.statusBarMode
-            self.needsLayout = true
-            switch n.object as? String {
-            // Restore Defaults (no key), common vs. per-folder style, media folders: show the style that now applies.
-            case nil, "perFolder", "dynamicView": self.model.reloadProps()
-            case "appLibraryView":
-                if self.url.standardizedFileURL == AppLibrary.location {
-                    self.model.filter = Settings.shared.appLibraryView ? NameFilter(text: self.apps?.field.stringValue ?? "") : self.filterBar.filter
-                    self.model.reloadProps()
-                    self.model.reload()
+        observers.append(
+            center.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
+                guard let self else { return }
+                self.statusBar.mode = Settings.shared.statusBarMode
+                self.needsLayout = true
+                switch n.object as? String {
+                // Restore Defaults (no key), common vs. per-folder style, media folders: show the style that now applies.
+                case nil, "perFolder", "dynamicView": self.model.reloadProps()
+                case "appLibraryView":
+                    if self.url.standardizedFileURL == AppLibrary.location {
+                        self.model.filter =
+                            Settings.shared.appLibraryView ? NameFilter(text: self.apps?.field.stringValue ?? "") : self.filterBar.filter
+                        self.model.reloadProps()
+                        self.model.reload()
+                    }
+                case "folderDepth": self.model.resetFolderSizes()
+                case "expandable": if !Settings.shared.detailsExpandableFolders { self.model.collapseAll() }
+                default: break
                 }
-            case "folderDepth": self.model.resetFolderSizes()
-            case "expandable": if !Settings.shared.detailsExpandableFolders { self.model.collapseAll() }
-            default: break
-            }
-            self.model.rebuild()
-        })
-        observers.append(center.addObserver(forName: StatusCenter.message, object: nil, queue: .main) { [weak self] n in
-            guard let self, self.isActive, let text = n.object as? String else { return }
-            if n.userInfo?["error"] != nil { self.messageBar.show(text, error: true); self.needsLayout = true }
-            else { self.statusBar.showMessage(text) }
-        })
-        observers.append(center.addObserver(forName: NetworkBrowser.changed, object: nil, queue: .main) { [weak self] _ in
-            if self?.url.scheme == "network" { self?.model.reload() }
-        })
-        observers.append(center.addObserver(forName: FileOperationsController.foldersChanged, object: nil, queue: .main) { [weak self] n in
-            guard let self, let paths = n.userInfo?["paths"] as? Set<String> else { return }
-            let mine = [self.model.location.isFileURL ? self.model.location.standardizedFileURL.path : self.model.location.path] + self.model.expanded.map(\.path)
-            let appRoots = self.showsApps ? AppLibrary.roots.map(\.path) : []
-            if (mine + appRoots).contains(where: paths.contains) || self.model.isSearching { self.model.reload() }
-        })
+                self.model.rebuild()
+            })
+        observers.append(
+            center.addObserver(forName: StatusCenter.message, object: nil, queue: .main) { [weak self] n in
+                guard let self, self.isActive, let text = n.object as? String else { return }
+                if n.userInfo?["error"] != nil {
+                    self.messageBar.show(text, error: true); self.needsLayout = true
+                } else {
+                    self.statusBar.showMessage(text)
+                }
+            })
+        observers.append(
+            center.addObserver(forName: NetworkBrowser.changed, object: nil, queue: .main) { [weak self] _ in
+                if self?.url.scheme == "network" { self?.model.reload() }
+            })
+        observers.append(
+            center.addObserver(forName: FileOperationsController.foldersChanged, object: nil, queue: .main) { [weak self] n in
+                guard let self, let paths = n.userInfo?["paths"] as? Set<String> else { return }
+                let mine =
+                    [self.model.location.isFileURL ? self.model.location.standardizedFileURL.path : self.model.location.path]
+                    + self.model.expanded.map(\.path)
+                let appRoots = self.showsApps ? AppLibrary.roots.map(\.path) : []
+                if (mine + appRoots).contains(where: paths.contains) || self.model.isSearching { self.model.reload() }
+            })
         statusBar.mode = Settings.shared.statusBarMode
         model.reload()
     }
@@ -212,7 +223,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     private func listedURL(matching u: URL) -> URL {
         if let i = model.index(of: u) { return model.rows[i].item.url }
         guard u.isFileURL, model.location.isFileURL,
-              u.deletingLastPathComponent().resolvingSymlinksInPath() == model.location.resolvingSymlinksInPath() else { return u }
+            u.deletingLastPathComponent().resolvingSymlinksInPath() == model.location.resolvingSymlinksInPath()
+        else { return u }
         return model.rows.first { $0.depth == 0 && $0.item.name == u.lastPathComponent }?.item.url ?? u
     }
 
@@ -386,7 +398,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             // Apps, not files and bytes (bundle sizes would need a scan of every app).
             let n = model.rows.count, sel = model.selection.count
             let apps = { (k: Int) in k == 1 ? "1 app" : "\(k) apps" }
-            statusBar.text = hoverItem.map { AppLibrary.displayName($0.url) }
+            statusBar.text =
+                hoverItem.map { AppLibrary.displayName($0.url) }
                 ?? (sel > 0 ? "\(apps(sel)) selected" : (model.isLoading && n == 0 ? "Loading apps…" : apps(n)))
         } else if let h = hoverItem {
             statusBar.text = "\(h.name) (\(h.typeDescription))"
@@ -395,7 +408,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             statusBar.text = FileFormat.summary(folders: c.folders, files: c.files, bytes: c.bytes, selected: true)
         } else {
             let c = model.visibleCounts
-            statusBar.text = model.isLoading && model.rows.isEmpty ? "Loading folder…" : FileFormat.summary(folders: c.folders, files: c.files, bytes: c.bytes, selected: false)
+            statusBar.text =
+                model.isLoading && model.rows.isEmpty
+                ? "Loading folder…" : FileFormat.summary(folders: c.folders, files: c.files, bytes: c.bytes, selected: false)
         }
         statusBar.zoomLevel = ZoomLevels.continuousLevel(for: list.iconSize)
         if Settings.shared.statusBarMode == .fullWidth, let (free, total) = freeSpace() {
@@ -414,7 +429,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         guard url.isFileURL else { return nil }
         if let v = volumeSpace, v.url == url, Date().timeIntervalSince(v.read) < 5 { return (v.free, v.total) }
         guard let v = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]),
-              let free = v.volumeAvailableCapacityForImportantUsage, let total = v.volumeTotalCapacity, total > 0 else {
+            let free = v.volumeAvailableCapacityForImportantUsage, let total = v.volumeTotalCapacity, total > 0
+        else {
             volumeSpace = nil
             return nil
         }

@@ -95,24 +95,28 @@ final class PlacesPanel: NSView {
         // Folding rows slide up until they're hidden under their header (they're clipped below it while drawn).
         foldGhosts = old.compactMap { r in
             guard !newKeys.contains(Self.rowKey(r.kind)), case .entry(let e) = r.kind, let hy = newHeaderY[e.section.rawValue],
-                  let oldHy = oldY["h|" + e.section.rawValue] else { return nil }
+                let oldHy = oldY["h|" + e.section.rawValue]
+            else { return nil }
             // Same place relative to its header, then up by the block height.
             let start = hy + (r.y - oldHy)
             return (r, r.y, start - blockHeight(old, e.section.rawValue))
         }
         foldProgress = 0
-        foldAnimator.run(duration: 0.24, curve: Animator.easeOutCubic, step: { [weak self] p in
-            self?.foldProgress = CGFloat(p)
-            self?.needsDisplay = true
-        }, completion: { [weak self] in
-            guard let self else { return }
-            self.foldProgress = 1
-            self.foldStartOffset = []
-            self.foldStartAlpha = []
-            self.foldGhosts = []
-            self.foldSection = nil
-            self.needsDisplay = true
-        })
+        foldAnimator.run(
+            duration: 0.24, curve: Animator.easeOutCubic,
+            step: { [weak self] p in
+                self?.foldProgress = CGFloat(p)
+                self?.needsDisplay = true
+            },
+            completion: { [weak self] in
+                guard let self else { return }
+                self.foldProgress = 1
+                self.foldStartOffset = []
+                self.foldStartAlpha = []
+                self.foldGhosts = []
+                self.foldSection = nil
+                self.needsDisplay = true
+            })
     }
 
     func animatedAlpha(_ i: Int) -> CGFloat {

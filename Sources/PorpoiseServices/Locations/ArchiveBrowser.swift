@@ -42,8 +42,8 @@ public enum ArchiveBrowser {
                 if r.status != 0 { throw RemoteError.failed(r.err.isEmpty ? "Could not read the archive." : r.err) }
                 do {
                     try FileManager.default.moveItem(at: partial, to: dir)
-                } catch where FileManager.default.fileExists(atPath: dir.path) {
-                    try? FileManager.default.removeItem(at: partial)   // extracted concurrently by another request
+                } catch  where FileManager.default.fileExists(atPath: dir.path) {
+                    try? FileManager.default.removeItem(at: partial)  // extracted concurrently by another request
                 }
                 DispatchQueue.main.async { completion(.success(dir)) }
             } catch {

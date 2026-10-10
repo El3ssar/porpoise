@@ -17,8 +17,9 @@ final class DolphinWindow: NSWindow {
     /// Keeps the traffic lights vertically centered in our taller, unified toolbar.
     func positionTrafficLights() {
         guard !styleMask.contains(.fullScreen),
-              let close = standardWindowButton(.closeButton),
-              let container = close.superview?.superview else { return }
+            let close = standardWindowButton(.closeButton),
+            let container = close.superview?.superview
+        else { return }
         let h = Theme.toolbarHeight
         var f = container.frame
         f.size.height = h

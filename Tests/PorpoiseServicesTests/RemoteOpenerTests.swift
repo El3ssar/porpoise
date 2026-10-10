@@ -1,7 +1,8 @@
 import Foundation
-import Testing
 import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 /// Opening a remote file: it is downloaded to the cache, saves are uploaded back, and a copy whose edits haven't
@@ -109,7 +110,8 @@ final class RemoteOpenerTests {
         let folder = RemoteOpener.cacheFolder(for: URL(string: "sftp://h.invalid/../../../etc/x/../passwd")!)
         #expect(folder.path.hasPrefix(RemoteFS.cacheRoot.path + "/"))
         #expect(!folder.pathComponents.contains(".."))
-        #expect(RemoteOpener.cacheFolder(for: URL(string: "sftp://h.invalid/srv/a%20b/file.txt")!).path
+        #expect(
+            RemoteOpener.cacheFolder(for: URL(string: "sftp://h.invalid/srv/a%20b/file.txt")!).path
                 == cache.url.path + "/remote/sftp/h.invalid/srv/a b")
     }
 

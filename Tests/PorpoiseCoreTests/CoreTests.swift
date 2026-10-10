@@ -1,11 +1,13 @@
 import Foundation
-import Testing
-@testable import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseCore
 
 private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bool = false, mod: Date? = nil) -> FileItem {
-    FileItem(url: URL(fileURLWithPath: "/tmp/x/" + name), name: name, isDirectory: dir,
-             isHidden: hidden || name.hasPrefix("."), size: size, modificationDate: mod)
+    FileItem(
+        url: URL(fileURLWithPath: "/tmp/x/" + name), name: name, isDirectory: dir,
+        isHidden: hidden || name.hasPrefix("."), size: size, modificationDate: mod)
 }
 
 @Suite struct SortingTests {
@@ -112,7 +114,9 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bo
         try Data("old".utf8).write(to: dst.appendingPathComponent("a.bin"))
         let job = FileJob(kind: .copy, sources: [src.appendingPathComponent("a.bin")], destinationFolder: dst)
         var asked = 0
-        job.resolveConflict = { info in asked += 1; return ConflictAnswer(.rename(info.suggestedName)) }
+        job.resolveConflict = { info in
+            asked += 1; return ConflictAnswer(.rename(info.suggestedName))
+        }
         var last: JobProgress?
         job.onProgress = { last = $0 }
         let undo = try job.run()

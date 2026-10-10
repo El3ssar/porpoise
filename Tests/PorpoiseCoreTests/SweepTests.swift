@@ -1,7 +1,8 @@
 import Foundation
-import Testing
-@testable import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseCore
 
 /// FolderWatcher with real FSEvents, and FileJob/FileActions cases found in the file-operations sweep.
 @Suite(.serialized) struct FolderWatcherLiveTests {
@@ -11,15 +12,19 @@ import PorpoiseTestSupport
         let scratch = try Scratch()
         defer { withExtendedLifetime(scratch) {} }
         let dir = try scratch.symlink("link", to: scratch.folder("real").path)
-        #expect(FolderWatcher.realPath(dir.path) != dir.path)   // the case under test
+        #expect(FolderWatcher.realPath(dir.path) != dir.path)  // the case under test
         let lock = NSLock()
         var hits = Set<String>()
-        let watcher = FolderWatcher { h in lock.lock(); hits.formUnion(h); lock.unlock() }
+        let watcher = FolderWatcher { h in
+            lock.lock(); hits.formUnion(h); lock.unlock()
+        }
         watcher.watch([dir])
         defer { watcher.stop() }
         Thread.sleep(forTimeInterval: 0.3)
         try Data("x".utf8).write(to: dir.appendingPathComponent("new.txt"))
-        let got = waitUntil(5) { lock.lock(); defer { lock.unlock() }; return !hits.isEmpty }
+        let got = waitUntil(5) {
+            lock.lock(); defer { lock.unlock() }; return !hits.isEmpty
+        }
         #expect(got)
         lock.lock(); let h = hits; lock.unlock()
         #expect(h == [dir.standardizedFileURL.path])

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import PorpoiseServices
 
 /// `Settings.store` is one store for the whole process, so tests that read or write settings take turns: each runs
@@ -9,7 +10,7 @@ struct IsolatedSettings: TestTrait, SuiteTrait, TestScoping {
     var isRecursive: Bool { true }
 
     func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
-        guard testCase != nil else { return try await function() }   // the suite itself: each test gets its own
+        guard testCase != nil else { return try await function() }  // the suite itself: each test gets its own
         await SettingsTurn.shared.acquire()
         let previous = Settings.store
         Settings.store = MemoryDefaults()

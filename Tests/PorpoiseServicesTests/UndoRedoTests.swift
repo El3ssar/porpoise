@@ -1,7 +1,8 @@
 import Foundation
-import Testing
 import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 /// The controller's undo and redo stacks. Undoing anything that goes through the Trash is in TrashDiskImageTests.
@@ -56,7 +57,7 @@ import PorpoiseTestSupport
         let ui = ScriptedUI()
         let c = makeController(ui)
         _ = await c.perform(.move, [f], to: try s.folder("dst"))
-        try s.file("src/plan.txt", "someone else's")   // the original name is taken meanwhile
+        try s.file("src/plan.txt", "someone else's")  // the original name is taken meanwhile
 
         c.undo(window: nil)
         #expect(ui.errors.count == 1)

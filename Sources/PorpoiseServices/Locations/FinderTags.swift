@@ -22,7 +22,7 @@ public enum FinderTags {
         var data = Data(count: len)
         let got = data.withUnsafeMutableBytes { getxattr(url.path, name, $0.baseAddress, len, 0, XATTR_NOFOLLOW) }
         guard got > 0 else { return [] }
-        data.count = got   // the attribute may have shrunk between the two calls
+        data.count = got  // the attribute may have shrunk between the two calls
         guard let list = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String] else { return [] }
         return list.map { entry in
             let parts = entry.split(separator: "\n", maxSplits: 1)
@@ -37,5 +37,7 @@ public enum FinderTags {
         try? (url as NSURL).setResourceValue(names, forKey: .tagNamesKey)
     }
 
-    public static func url(for tag: String) -> URL { URL(string: "tags:/" + (tag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tag))! }
+    public static func url(for tag: String) -> URL {
+        URL(string: "tags:/" + (tag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tag))!
+    }
 }

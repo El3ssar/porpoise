@@ -75,7 +75,7 @@ public final class PlacesModel {
 
     private static func normalizedOrder(_ stored: [PlaceSection]?) -> [PlaceSection] {
         var order = (stored ?? []).reduce(into: [PlaceSection]()) { if !$0.contains($1) { $0.append($1) } }
-        for s in PlaceSection.allCases where !order.contains(s) { order.append(s) }   // sections added in later versions
+        for s in PlaceSection.allCases where !order.contains(s) { order.append(s) }  // sections added in later versions
         return order
     }
     public var showHidden = false { didSet { post() } }
@@ -218,8 +218,9 @@ public final class PlacesModel {
     }
 
     private func save() {
-        let s = Stored(entries: userEntries, hiddenSections: Array(storedHiddenSections), collapsedSections: Array(collapsedSections),
-                       sectionOrder: sectionOrder, locked: isLocked, version: Self.storeVersion)
+        let s = Stored(
+            entries: userEntries, hiddenSections: Array(storedHiddenSections), collapsedSections: Array(collapsedSections),
+            sectionOrder: sectionOrder, locked: isLocked, version: Self.storeVersion)
         if let storeURL { try? JSONEncoder().encode(s).write(to: storeURL) }
         post()
     }
@@ -230,20 +231,24 @@ public final class PlacesModel {
 
     /// Call when volumes are mounted, unmounted or renamed (the app forwards NSWorkspace's notifications).
     public func refreshDevices() {
-        let keys: [URLResourceKey] = [.volumeLocalizedNameKey, .volumeIsRemovableKey, .volumeIsEjectableKey, .volumeIsInternalKey,
-                                      .volumeIsRootFileSystemKey, .volumeIsBrowsableKey, .volumeIsLocalKey]
+        let keys: [URLResourceKey] = [
+            .volumeLocalizedNameKey, .volumeIsRemovableKey, .volumeIsEjectableKey, .volumeIsInternalKey,
+            .volumeIsRootFileSystemKey, .volumeIsBrowsableKey, .volumeIsLocalKey,
+        ]
         let vols = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: keys, options: [.skipHiddenVolumes]) ?? []
         devices = vols.compactMap { u in
             guard let v = try? u.resourceValues(forKeys: Set(keys)), v.volumeIsBrowsable != false else { return nil }
             // Mounted network shares (SMB, AFP, NFS, WebDAV): listed with the devices and unmountable, as in Finder.
             if v.volumeIsLocal == false {
-                return PlaceEntry(title: v.volumeLocalizedName ?? u.lastPathComponent, url: u, icon: "folder-network",
-                                  section: .devices, isVolume: true, isEjectable: true)
+                return PlaceEntry(
+                    title: v.volumeLocalizedName ?? u.lastPathComponent, url: u, icon: "folder-network",
+                    section: .devices, isVolume: true, isEjectable: true)
             }
             let removable = (v.volumeIsRemovable ?? false) || (v.volumeIsEjectable ?? false) || !(v.volumeIsInternal ?? true)
             let icon = removable && v.volumeIsRootFileSystem != true ? "drive-removable-media-usb" : "drive-harddisk"
-            return PlaceEntry(title: v.volumeLocalizedName ?? u.lastPathComponent, url: u, icon: icon,
-                              section: removable ? .removable : .devices, isVolume: true, isEjectable: v.volumeIsEjectable ?? removable)
+            return PlaceEntry(
+                title: v.volumeLocalizedName ?? u.lastPathComponent, url: u, icon: icon,
+                section: removable ? .removable : .devices, isVolume: true, isEjectable: v.volumeIsEjectable ?? removable)
         }
         post()
     }
@@ -345,7 +350,8 @@ public final class PlacesModel {
         }
         var list = userEntries
         list.remove(at: from)
-        let at = target.map { t in list.firstIndex(of: t) ?? list.count }
+        let at =
+            target.map { t in list.firstIndex(of: t) ?? list.count }
             ?? list.lastIndex { $0.section == section }.map { $0 + 1 } ?? list.count
         list.insert(entry, at: at)
         return list

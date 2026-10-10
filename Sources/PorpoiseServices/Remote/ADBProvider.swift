@@ -39,7 +39,8 @@ final class ADBProvider: RemoteProvider {
 
     private func adb(_ args: [String]) throws -> Data {
         guard let adb = adbPath else {
-            throw RemoteError.unsupported("Android support needs adb. Install it with: brew install android-platform-tools — then enable USB debugging on the phone.")
+            throw RemoteError.unsupported(
+                "Android support needs adb. Install it with: brew install android-platform-tools — then enable USB debugging on the phone.")
         }
         AndroidTools.willUseServer()
         let r = try Shell.run(adb, ["-s", serial] + args)

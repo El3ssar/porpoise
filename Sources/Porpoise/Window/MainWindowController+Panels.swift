@@ -18,7 +18,9 @@ extension MainWindowController {
         rebuildingPanels = true
         defer { rebuildingPanels = false }
         for s in [outer, hSplit, vSplit, leftStack] {
-            s.arrangedSubviews.forEach { s.removeArrangedSubview($0); $0.removeFromSuperview() }
+            s.arrangedSubviews.forEach {
+                s.removeArrangedSubview($0); $0.removeFromSuperview()
+            }
         }
         if showPlaces { leftStack.addArrangedSubview(placesScroll) }
         if showFolders { leftStack.addArrangedSubview(folders) }
@@ -34,14 +36,18 @@ extension MainWindowController {
         if showTerminal { vSplit.addArrangedSubview(terminal) }
         // Panels hold their size when the window resizes; the views take up the difference.
         for (i, v) in outer.arrangedSubviews.enumerated() { outer.setHoldingPriority(v === mainColumn ? .defaultLow : .init(270), forSubviewAt: i) }
-        for (i, v) in hSplit.arrangedSubviews.enumerated() { hSplit.setHoldingPriority(v === centerColumn ? .defaultLow : .init(261), forSubviewAt: i) }
+        for (i, v) in hSplit.arrangedSubviews.enumerated() {
+            hSplit.setHoldingPriority(v === centerColumn ? .defaultLow : .init(261), forSubviewAt: i)
+        }
         for (i, v) in vSplit.arrangedSubviews.enumerated() { vSplit.setHoldingPriority(v === hSplit ? .defaultLow : .init(260), forSubviewAt: i) }
         layoutRoot()
         outer.layoutSubtreeIfNeeded()
         // Newly added panels arrive with empty frames; give every split its full extent before placing dividers
         // (setPosition only moves space between neighbours, so two zero-sized neighbours would stay at zero).
         for split in [outer, hSplit, vSplit] { split.adjustSubviews() }
-        if sidebarVisible { outer.setPosition(PanelSize.sidebarWidth.fitted(in: outer.bounds.width, divider: outer.dividerThickness), ofDividerAt: 0) }
+        if sidebarVisible {
+            outer.setPosition(PanelSize.sidebarWidth.fitted(in: outer.bounds.width, divider: outer.dividerThickness), ofDividerAt: 0)
+        }
         mainColumn.layoutSubtreeIfNeeded()
         vSplit.layoutSubtreeIfNeeded()
         if showInformation {
@@ -76,14 +82,24 @@ extension MainWindowController {
             let sidebarWasVisible = sidebarVisible
             toggle()
             if sidebarWasVisible == sidebarVisible { rebuildPanels(); return }
-            if sidebarVisible { rebuildPanels(); slide(slot, opening: true) } else {
+            if sidebarVisible {
+                rebuildPanels(); slide(slot, opening: true)
+            } else {
                 // Put the flag back while sliding out, then apply.
-                toggle(); slide(slot, opening: false) { toggle(); self.rebuildPanels() }
+                toggle();
+                slide(slot, opening: false) {
+                    toggle(); self.rebuildPanels()
+                }
             }
             return
         }
-        if show { toggle(); rebuildPanels(); slide(slot, opening: true) }
-        else { slide(slot, opening: false) { toggle(); self.rebuildPanels() } }
+        if show {
+            toggle(); rebuildPanels(); slide(slot, opening: true)
+        } else {
+            slide(slot, opening: false) {
+                toggle(); self.rebuildPanels()
+            }
+        }
     }
 
     /// Ends the running panel slide at once, applying what it was going to apply.
@@ -131,11 +147,14 @@ extension MainWindowController {
         animatingPanels = true
         pendingSlideCompletion = completion
         split.setPosition(from, ofDividerAt: divider)
-        panelAnimator.run(duration: opening ? 0.22 : 0.18, curve: opening ? Animator.easeOutCubic : Animator.easeInCubic, step: { p in
-            split.setPosition(from + (target - from) * CGFloat(p), ofDividerAt: divider)
-        }, completion: { [weak self] in
-            self?.finishPanelSlide()
-        })
+        panelAnimator.run(
+            duration: opening ? 0.22 : 0.18, curve: opening ? Animator.easeOutCubic : Animator.easeInCubic,
+            step: { p in
+                split.setPosition(from + (target - from) * CGFloat(p), ofDividerAt: divider)
+            },
+            completion: { [weak self] in
+                self?.finishPanelSlide()
+            })
     }
 
     func splitViewDidResizeSubviews(_ n: Notification) {
@@ -155,7 +174,6 @@ extension MainWindowController {
         alignNavigators()
     }
 
-
     /// Width (height for the terminal) of the panel held by `sv`, nil while it holds none.
     private func panelExtent(in sv: NSSplitView) -> CGFloat? {
         if sv === outer { return outer.arrangedSubviews.first === sidebar ? sidebar.frame.width : nil }
@@ -167,7 +185,10 @@ extension MainWindowController {
     /// For tests: frames of the panel splits' children.
     var debugSplitFrames: [String] {
         [outer, hSplit, vSplit].map { sv in
-            "\(type(of: sv)) \(Int(sv.bounds.width))x\(Int(sv.bounds.height)): " + sv.arrangedSubviews.map { "\(type(of: $0))=\(Int($0.frame.minX)),\(Int($0.frame.width))x\(Int($0.frame.height))\($0.isHidden ? " hidden" : "")" }.joined(separator: " ")
+            "\(type(of: sv)) \(Int(sv.bounds.width))x\(Int(sv.bounds.height)): "
+                + sv.arrangedSubviews.map {
+                    "\(type(of: $0))=\(Int($0.frame.minX)),\(Int($0.frame.width))x\(Int($0.frame.height))\($0.isHidden ? " hidden" : "")"
+                }.joined(separator: " ")
         }
     }
 

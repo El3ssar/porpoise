@@ -276,8 +276,9 @@ extension ItemListView {
         let ir = iconRect(i)
         switch mode {
         case .icons:
-            return CGRect(x: f.minX + 2 * Self.pad, y: ir.maxY + Self.pad, width: f.width - 4 * Self.pad,
-                          height: f.maxY - ir.maxY - Self.pad)
+            return CGRect(
+                x: f.minX + 2 * Self.pad, y: ir.maxY + Self.pad, width: f.width - 4 * Self.pad,
+                height: f.maxY - ir.maxY - Self.pad)
         case .compact:
             return CGRect(x: ir.maxX + 6, y: f.minY, width: f.maxX - ir.maxX - 10, height: f.height)
         case .details:

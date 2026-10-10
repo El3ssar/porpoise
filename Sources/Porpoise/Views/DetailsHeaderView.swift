@@ -55,8 +55,9 @@ final class DetailsHeaderView: NSView {
                 r.fill()
                 continue
             }
-            drawSection(role, in: r, sorted: props.sortRole == role, ascending: props.sortOrder == .ascending,
-                        highlighted: role == hoverRole || role == pressedRole)
+            drawSection(
+                role, in: r, sorted: props.sortRole == role, ascending: props.sortOrder == .ascending,
+                highlighted: role == hoverRole || role == pressedRole)
         }
         if let (role, r) = moving {
             // The dragged section floats over the others, with an insertion marker where it will land.
@@ -87,8 +88,9 @@ final class DetailsHeaderView: NSView {
         NSBezierPath(rect: r.insetBy(dx: 2, dy: 0)).addClip()
         title.draw(at: CGPoint(x: tx, y: (r.height - ts.height) / 2), withAttributes: attrs)
         if sorted, let arrow = Icons.shared.image(ascending ? "go-up" : "go-down", size: 16) {
-            arrow.draw(in: CGRect(x: r.maxX - 20, y: (r.height - 12) / 2, width: 12, height: 12), from: .zero,
-                       operation: .sourceOver, fraction: 0.8, respectFlipped: true, hints: nil)
+            arrow.draw(
+                in: CGRect(x: r.maxX - 20, y: (r.height - 12) / 2, width: 12, height: 12), from: .zero,
+                operation: .sourceOver, fraction: 0.8, respectFlipped: true, hints: nil)
         }
         NSGraphicsContext.restoreGraphicsState()
         Theme.separator.setFill()
@@ -100,8 +102,9 @@ final class DetailsHeaderView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let t = tracking { removeTrackingArea(t) }
-        let t = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-                               owner: self, userInfo: nil)
+        let t = NSTrackingArea(
+            rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self, userInfo: nil)
         addTrackingArea(t)
         tracking = t
     }
@@ -148,7 +151,8 @@ final class DetailsHeaderView: NSView {
         case .none:
             // Start moving a section once the mouse travels a bit (Name stays first: it hosts icons and the tree).
             guard let role = pressedRole, role != .name, abs(p.x - pressPoint.x) > 4,
-                  let r = columnRects().first(where: { $0.0 == role })?.1 else { return }
+                let r = columnRects().first(where: { $0.0 == role })?.1
+            else { return }
             drag = .move(role, grabOffset: pressPoint.x - r.minX, x: p.x - (pressPoint.x - r.minX))
             NSCursor.closedHand.set()
             needsDisplay = true
@@ -170,7 +174,7 @@ final class DetailsHeaderView: NSView {
         let center = x + w / 2
         var idx = rects.count
         for (i, (_, r)) in rects.enumerated() where center < r.midX { idx = i; break }
-        return max(1, idx)   // never before Name
+        return max(1, idx)  // never before Name
     }
 
     override func mouseUp(with event: NSEvent) {

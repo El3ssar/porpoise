@@ -26,9 +26,10 @@ final class ConflictDialog: NSObject, NSTextFieldDelegate {
         window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = Theme.windowBackground
         let v = window.contentView!
-        let header = NSTextField(wrappingLabelWithString: bothDirs
-            ? "Would you like to merge the contents of “\(info.source.name)” into “\(info.destination.url.deletingLastPathComponent().lastPathComponent)”?"
-            : "This action will overwrite the destination.")
+        let header = NSTextField(
+            wrappingLabelWithString: bothDirs
+                ? "Would you like to merge the contents of “\(info.source.name)” into “\(info.destination.url.deletingLastPathComponent().lastPathComponent)”?"
+                : "This action will overwrite the destination.")
         header.font = Theme.boldFont
         header.frame = CGRect(x: 20, y: 286, width: 580, height: 34)
         v.addSubview(header)
@@ -43,9 +44,11 @@ final class ConflictDialog: NSObject, NSTextFieldDelegate {
             let t = NSTextField(labelWithString: title); t.font = Theme.boldFont; t.frame = CGRect(x: 10, y: 122, width: 260, height: 18)
             let img = NSImageView(frame: CGRect(x: 10, y: 40, width: 72, height: 72))
             img.image = Thumbnails.shared.thumbnail(for: item, size: 72) ?? Icons.shared.image(for: item, size: 72)
-            let lines = [item.url.path,
-                         item.isBrowsableFolder ? "Folder" : FileFormat.size(item.size),
-                         item.modificationDate.map { "Modified: " + FileFormat.relativeDate($0) } ?? ""]
+            let lines = [
+                item.url.path,
+                item.isBrowsableFolder ? "Folder" : FileFormat.size(item.size),
+                item.modificationDate.map { "Modified: " + FileFormat.relativeDate($0) } ?? "",
+            ]
             for (i, l) in lines.enumerated() {
                 let f = NSTextField(labelWithString: l)
                 f.font = i == 0 ? Theme.smallFont : Theme.font
@@ -67,9 +70,13 @@ final class ConflictDialog: NSObject, NSTextFieldDelegate {
         }
         if !bothDirs {
             let diff = info.source.size - info.destination.size
-            if diff > 0 { hints.append("The source is bigger by \(FileFormat.size(diff)).") }
-            else if diff < 0 { hints.append("The source is smaller by \(FileFormat.size(-diff)).") }
-            else if info.source.modificationDate == info.destination.modificationDate { hints.append("The files are identical.") }
+            if diff > 0 {
+                hints.append("The source is bigger by \(FileFormat.size(diff)).")
+            } else if diff < 0 {
+                hints.append("The source is smaller by \(FileFormat.size(-diff)).")
+            } else if info.source.modificationDate == info.destination.modificationDate {
+                hints.append("The files are identical.")
+            }
         }
         let hint = NSTextField(labelWithString: hints.joined(separator: " "))
         hint.textColor = Theme.windowTextInactive

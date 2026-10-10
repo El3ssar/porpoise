@@ -8,7 +8,8 @@ public enum Migration {
     public static func run() {
         guard !Settings.isTesting else { return }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        run(from: oldDomain, into: .standard, oldPlaces: support.appendingPathComponent("Dolphin/places.json"),
+        run(
+            from: oldDomain, into: .standard, oldPlaces: support.appendingPathComponent("Dolphin/places.json"),
             newPlaces: support.appendingPathComponent("Porpoise/places.json"))
     }
 

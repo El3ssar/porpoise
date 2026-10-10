@@ -25,7 +25,7 @@ public enum BackgroundDoubleClick: String, CaseIterable {
 /// Context menu entries that can be switched on/off (Dolphin's Context Menu settings page).
 public enum ContextMenuEntry: String, CaseIterable {
     case addToPlaces, copyLocation, duplicate, openInNewTab, openInNewWindow, openInSplit, openTerminal, otherView,
-         sortBy, viewMode, deleteAlongsideTrash, copyMoveTo, compress, tags, share, quickLook, revealInFinder
+        sortBy, viewMode, deleteAlongsideTrash, copyMoveTo, compress, tags, share, quickLook, revealInFinder
     public var title: String {
         switch self {
         case .addToPlaces: return "Add to Places"
@@ -50,4 +50,3 @@ public enum ContextMenuEntry: String, CaseIterable {
     /// Dolphin defaults: everything on except Delete-alongside and Copy To/Move To.
     var defaultOn: Bool { self != .deleteAlongsideTrash && self != .copyMoveTo }
 }
-

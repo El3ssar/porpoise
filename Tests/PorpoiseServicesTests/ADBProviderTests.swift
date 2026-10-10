@@ -1,7 +1,8 @@
 import Foundation
-import Testing
 import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 /// ADBProvider without a phone: adb is a `RecordingTool`, so these check the commands a device would run and how
@@ -47,20 +48,24 @@ import PorpoiseTestSupport
         try provider.delete([url("/sdcard/a%20b"), url("/sdcard/-rf")])
         try provider.copy([url("/sdcard/a")], into: url("/sdcard/b%20c"))
         try provider.move([url("/sdcard/a"), url("/sdcard/d")], into: url("/sdcard/e"))
-        #expect(shellScripts == [
-            "ls -la '/sdcard/it'\\''s $(reboot)/'",
-            "mkdir -p '/sdcard/new `x`'",
-            "rm -rf '/sdcard/a b' '/sdcard/-rf'",
-            "cp -r '/sdcard/a' '/sdcard/b c'/",
-            "mv '/sdcard/a' '/sdcard/d' '/sdcard/e'/",
-        ])
+        #expect(
+            shellScripts == [
+                "ls -la '/sdcard/it'\\''s $(reboot)/'",
+                "mkdir -p '/sdcard/new `x`'",
+                "rm -rf '/sdcard/a b' '/sdcard/-rf'",
+                "cp -r '/sdcard/a' '/sdcard/b c'/",
+                "mv '/sdcard/a' '/sdcard/d' '/sdcard/e'/",
+            ])
     }
 
     @Test func renameChecksTheTargetOnTheDevice() throws {
         try adb.reply("")
         try provider.rename(url("/sdcard/old.txt"), to: "new it's.txt")
-        #expect(shellScripts == ["if [ -e '/sdcard/new it'\\''s.txt' ]; then echo __PORPOISE_EXISTS__; "
-                                 + "else mv '/sdcard/old.txt' '/sdcard/new it'\\''s.txt'; fi"])
+        #expect(
+            shellScripts == [
+                "if [ -e '/sdcard/new it'\\''s.txt' ]; then echo __PORPOISE_EXISTS__; "
+                    + "else mv '/sdcard/old.txt' '/sdcard/new it'\\''s.txt'; fi"
+            ])
         // Older adb doesn't pass exit codes on: the marker in the output is what tells.
         try adb.reply("__PORPOISE_EXISTS__\n")
         #expect { try provider.rename(url("/sdcard/old.txt"), to: "taken.txt") } throws: {
@@ -95,7 +100,7 @@ import PorpoiseTestSupport
 
     @Test func titleIsTheModelAskedOnce() throws {
         try adb.reply("List of devices attached\nR58N123 device usb:1-1 product:x model:Galaxy_S21 device:o1s\n")
-        provider.titleTimeout = 30   // a busy test run can be slow to start the stand-in adb
+        provider.titleTimeout = 30  // a busy test run can be slow to start the stand-in adb
         #expect(provider.rootTitle(url("/")) == "Galaxy S21")
         #expect(provider.rootTitle(url("/")) == "Galaxy S21")
         #expect(adb.calls.map(\.args) == [["devices", "-l"]])

@@ -115,12 +115,14 @@ final class ItemListView: NSView {
         lineHeight = Self.lineHeight(of: font)
         super.init(frame: .zero)
         registerForDraggedTypes([.fileURL, .URL])
-        observers.append(NotificationCenter.default.addObserver(forName: Thumbnails.ready, object: nil, queue: .main) { [weak self] n in
-            self?.thumbnailReady(n)
-        })
-        observers.append(NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] _ in
-            self?.settingsChanged()
-        })
+        observers.append(
+            NotificationCenter.default.addObserver(forName: Thumbnails.ready, object: nil, queue: .main) { [weak self] n in
+                self?.thumbnailReady(n)
+            })
+        observers.append(
+            NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] _ in
+                self?.settingsChanged()
+            })
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -244,7 +246,8 @@ final class ItemListView: NSView {
 extension ItemListView: NSServicesMenuRequestor {
     override func validRequestor(forSendType sendType: NSPasteboard.PasteboardType?, returnType: NSPasteboard.PasteboardType?) -> Any? {
         if let t = sendType, returnType == nil, [.fileURL, FileDragWriter.filenames].contains(t),
-           !model.selection.isEmpty, model.selection.allSatisfy(\.isFileURL) {
+            !model.selection.isEmpty, model.selection.allSatisfy(\.isFileURL)
+        {
             return self
         }
         return super.validRequestor(forSendType: sendType, returnType: returnType)

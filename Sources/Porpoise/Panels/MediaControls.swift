@@ -1,5 +1,5 @@
-import AppKit
 import AVFoundation
+import AppKit
 import PorpoiseServices
 
 /// Porpoise's own playback controls for the Information panel: play/pause, a time bar and the times. AVKit's
@@ -73,7 +73,9 @@ final class MediaControls: NSView {
         }
         statusObservation = p.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] p, _ in
             let playing = p.timeControlStatus != .paused
-            DispatchQueue.main.async { self?.updatePlayIcon(playing: playing); self?.onStateChange?() }
+            DispatchQueue.main.async {
+                self?.updatePlayIcon(playing: playing); self?.onStateChange?()
+            }
         }
         refreshTime()
     }

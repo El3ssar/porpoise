@@ -3,13 +3,15 @@ import PorpoiseCore
 
 /// iCloud Drive / File Provider (Google Drive, OneDrive, Dropbox…) state of an item, as Finder shows it.
 public enum CloudState: Equatable {
-    case local          // not a cloud item, or downloaded and in sync (no badge, like Finder)
-    case cloudOnly      // only in the cloud: Finder's cloud-with-arrow
+    case local  // not a cloud item, or downloaded and in sync (no badge, like Finder)
+    case cloudOnly  // only in the cloud: Finder's cloud-with-arrow
     case downloading
     case uploading
 
-    private static let keys: Set<URLResourceKey> = [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey,
-                                                    .ubiquitousItemIsDownloadingKey, .ubiquitousItemIsUploadingKey]
+    private static let keys: Set<URLResourceKey> = [
+        .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey,
+        .ubiquitousItemIsDownloadingKey, .ubiquitousItemIsUploadingKey,
+    ]
 
     static func of(_ url: URL) -> (state: CloudState, isCloud: Bool) {
         guard url.isFileURL, let v = try? url.resourceValues(forKeys: keys), v.isUbiquitousItem == true else { return (.local, false) }
@@ -47,7 +49,8 @@ public enum CloudActions {
                 try? fm.startDownloadingUbiquitousItem(at: u)
                 var isDir: ObjCBool = false
                 if fm.fileExists(atPath: u.path, isDirectory: &isDir), isDir.boolValue,
-                   let e = fm.enumerator(at: u, includingPropertiesForKeys: [.isUbiquitousItemKey], options: []) {
+                    let e = fm.enumerator(at: u, includingPropertiesForKeys: [.isUbiquitousItemKey], options: [])
+                {
                     for case let c as URL in e { try? fm.startDownloadingUbiquitousItem(at: c) }
                 }
             }
@@ -59,7 +62,9 @@ public enum CloudActions {
     public static func evict(_ urls: [URL]) -> [String] {
         var failed: [String] = []
         for u in urls {
-            do { try FileManager.default.evictUbiquitousItem(at: u) } catch { failed.append("“\(u.lastPathComponent)”: \(error.localizedDescription)") }
+            do { try FileManager.default.evictUbiquitousItem(at: u) } catch {
+                failed.append("“\(u.lastPathComponent)”: \(error.localizedDescription)")
+            }
         }
         FileOperationsController.notifyChanged(urls)
         return failed

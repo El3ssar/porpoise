@@ -38,8 +38,11 @@ public enum FileFormat {
 
     /// KFormat::formatRelativeDateTime: "Today at 14:05", "Yesterday at 09:12", otherwise a date.
     public static func relativeDate(_ d: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
-        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: d),
-                                           to: calendar.startOfDay(for: now)).day ?? 99
+        let days =
+            calendar.dateComponents(
+                [.day], from: calendar.startOfDay(for: d),
+                to: calendar.startOfDay(for: now)
+            ).day ?? 99
         let time = timeFormatter.string(from: d)
         switch days {
         case 0: return "Today at \(time)"
@@ -72,8 +75,10 @@ public enum FileFormat {
     /// "drwxr-xr-x" style.
     public static func permissions(_ mode: Int, isDirectory: Bool) -> String {
         var s = isDirectory ? "d" : "-"
-        let chars: [(Int, Character)] = [(0o400, "r"), (0o200, "w"), (0o100, "x"), (0o040, "r"), (0o020, "w"),
-                                         (0o010, "x"), (0o004, "r"), (0o002, "w"), (0o001, "x")]
+        let chars: [(Int, Character)] = [
+            (0o400, "r"), (0o200, "w"), (0o100, "x"), (0o040, "r"), (0o020, "w"),
+            (0o010, "x"), (0o004, "r"), (0o002, "w"), (0o001, "x"),
+        ]
         for (bit, c) in chars { s.append(mode & bit != 0 ? c : "-") }
         return s
     }
@@ -127,7 +132,8 @@ public enum FileFormat {
         var n = 1
         // A number too big to count on ("x (9223372036854775807)") stays part of the name.
         if let r = base.range(of: #" \((\d+)\)$"#, options: .regularExpression),
-           let num = Int(base[r].dropFirst(2).dropLast()), num < Int.max / 2 {
+            let num = Int(base[r].dropFirst(2).dropLast()), num < Int.max / 2
+        {
             n = num + 1
             base.removeSubrange(r)
         }

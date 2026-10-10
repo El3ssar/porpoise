@@ -9,10 +9,10 @@ public enum CodeSigning {
         var staticCode: SecStaticCode?
         var info: CFDictionary?
         guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
-              SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
-              SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
-              let certs = (info as? [String: Any])?[kSecCodeInfoCertificates as String] as? [SecCertificate],
-              let leaf = certs.first
+            SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
+            SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+            let certs = (info as? [String: Any])?[kSecCodeInfoCertificates as String] as? [SecCertificate],
+            let leaf = certs.first
         else { return nil }
         let data = SecCertificateCopyData(leaf) as Data
         return Insecure.SHA1.hash(data: data).map { String(format: "%02X", $0) }.joined()
@@ -31,7 +31,7 @@ public enum CodeSigning {
         var code: SecCode?
         var staticCode: SecStaticCode?
         guard SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: pid] as CFDictionary, [], &code) == errSecSuccess,
-              let code, SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode
+            let code, SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode
         else { return false }
         return isIntact(staticCode, requirement: requirement)
     }

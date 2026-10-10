@@ -50,8 +50,9 @@ final class OnboardingWindowController: NSWindowController {
     private static let size = NSSize(width: 660, height: 490)
 
     init() {
-        let w = NSWindow(contentRect: CGRect(origin: .zero, size: Self.size), styleMask: [.titled, .closable, .fullSizeContentView],
-                         backing: .buffered, defer: false)
+        let w = NSWindow(
+            contentRect: CGRect(origin: .zero, size: Self.size), styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered, defer: false)
         w.title = "Welcome to Porpoise"
         w.titlebarAppearsTransparent = true
         w.titleVisibility = .hidden
@@ -61,13 +62,15 @@ final class OnboardingWindowController: NSWindowController {
         super.init(window: w)
         buildChrome()
         // Closed with the close button: same as finishing without marking it done (asked again next launch).
-        observers.append(NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
-            self?.finish(markDone: false, closing: true)
-        })
+        observers.append(
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
+                self?.finish(markDone: false, closing: true)
+            })
         // Coming back from System Settings: re-check at once.
-        observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.checkAccess()
-        })
+        observers.append(
+            NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.checkAccess()
+            })
     }
 
     private var observers: [NSObjectProtocol] = []
@@ -164,12 +167,16 @@ final class OnboardingWindowController: NSWindowController {
         let icon = NSImageView(image: NSApp.applicationIconImage)
         icon.widthAnchor.constraint(equalToConstant: 128).isActive = true
         icon.heightAnchor.constraint(equalToConstant: 128).isActive = true
-        centered([icon,
-                  label("Welcome to Porpoise", size: 28, weight: .semibold),
-                  label("A file manager for macOS inspired by KDE Dolphin: split view, a built-in terminal, tabs and panels.",
-                        size: 14, color: .secondaryLabelColor),
-                  label("A few quick steps let Porpoise do everything Finder can, without asking you again later.",
-                        size: 14, color: .secondaryLabelColor)])
+        centered([
+            icon,
+            label("Welcome to Porpoise", size: 28, weight: .semibold),
+            label(
+                "A file manager for macOS inspired by KDE Dolphin: split view, a built-in terminal, tabs and panels.",
+                size: 14, color: .secondaryLabelColor),
+            label(
+                "A few quick steps let Porpoise do everything Finder can, without asking you again later.",
+                size: 14, color: .secondaryLabelColor),
+        ])
         primary.title = "Continue"
         secondary.title = ""
     }
@@ -211,8 +218,9 @@ final class OnboardingWindowController: NSWindowController {
         statusText.font = .systemFont(ofSize: 13, weight: .medium)
         let status = NSStackView(views: [spinner, statusIcon, statusText])
         status.spacing = 6
-        centered([label(p.title, size: 24, weight: .semibold), label(p.why, size: 13, color: .secondaryLabelColor), steps, status],
-                 spacing: 18)
+        centered(
+            [label(p.title, size: 24, weight: .semibold), label(p.why, size: 13, color: .secondaryLabelColor), steps, status],
+            spacing: 18)
         primary.title = p.button
         secondary.title = "Skip for Now"
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.checkAccess() }
@@ -243,8 +251,10 @@ final class OnboardingWindowController: NSWindowController {
     private func buildDone() {
         let missing = Step.allCases.compactMap { s in s.page.flatMap { $0.granted() ? nil : $0.name } }
         let allSet = missing.isEmpty
-        let icon = NSImageView(image: NSImage(systemSymbolName: allSet ? "checkmark.circle.fill" : "info.circle.fill",
-                                              accessibilityDescription: nil) ?? NSImage())
+        let icon = NSImageView(
+            image: NSImage(
+                systemSymbolName: allSet ? "checkmark.circle.fill" : "info.circle.fill",
+                accessibilityDescription: nil) ?? NSImage())
         icon.symbolConfiguration = .init(pointSize: 56, weight: .regular)
         icon.contentTintColor = allSet ? Theme.success : .secondaryLabelColor
         let tips = NSGridView(views: [
@@ -260,12 +270,17 @@ final class OnboardingWindowController: NSWindowController {
         // Only as wide as its content, so the stack centres it.
         for col in 0..<2 { tips.column(at: col).width = col == 0 ? 36 : 230 }
         tips.setContentHuggingPriority(.required, for: .horizontal)
-        centered([icon,
-                  label(allSet ? "You're all set" : "Almost there", size: 26, weight: .semibold),
-                  label(allSet ? "Porpoise can do everything Finder can, and won't ask you again."
+        centered(
+            [
+                icon,
+                label(allSet ? "You're all set" : "Almost there", size: 26, weight: .semibold),
+                label(
+                    allSet
+                        ? "Porpoise can do everything Finder can, and won't ask you again."
                         : "Still to allow: \(missing.joined(separator: ", ")). You can do it any time from Porpoise › Permissions…",
-                        size: 13, color: .secondaryLabelColor),
-                  tips], spacing: 16)
+                    size: 13, color: .secondaryLabelColor),
+                tips,
+            ], spacing: 16)
         primary.title = "Start Using Porpoise"
         secondary.title = ""
     }
@@ -326,52 +341,64 @@ extension OnboardingWindowController.Step {
         switch self {
         case .welcome, .done: return nil
         case .fullDisk:
-            return .init(name: "Full Disk Access",
-                         why: "macOS keeps some folders private (the Trash, Library, other apps' files) until you allow it once.",
-                         steps: ["Click **Open System Settings** below. It opens the Full Disk Access list.",
-                                 "Switch on **Porpoise** and **Porpoise Helper**. If Porpoise isn't listed, drag this icon into it:",
-                                 "Come back here. Porpoise notices on its own."],
-                         tileRow: 1, button: "Open System Settings", waiting: "Waiting for Full Disk Access…",
-                         granted: {
-                             // The helper too, when it's installed (it does the work on system-owned items in the Trash).
-                             PrivacyAccess.hasFullDiskAccess && (!PrivilegedHelper.isEnabled || PrivilegedHelper.hasFullDiskAccess == true)
-                         }, grantedText: "Full Disk Access is on.",
-                         request: {
-                             // Make sure "Porpoise Helper" is in the list before it opens.
-                             HelperSetup.openFullDiskAccess()
-                         })
+            return .init(
+                name: "Full Disk Access",
+                why: "macOS keeps some folders private (the Trash, Library, other apps' files) until you allow it once.",
+                steps: [
+                    "Click **Open System Settings** below. It opens the Full Disk Access list.",
+                    "Switch on **Porpoise** and **Porpoise Helper**. If Porpoise isn't listed, drag this icon into it:",
+                    "Come back here. Porpoise notices on its own.",
+                ],
+                tileRow: 1, button: "Open System Settings", waiting: "Waiting for Full Disk Access…",
+                granted: {
+                    // The helper too, when it's installed (it does the work on system-owned items in the Trash).
+                    PrivacyAccess.hasFullDiskAccess && (!PrivilegedHelper.isEnabled || PrivilegedHelper.hasFullDiskAccess == true)
+                }, grantedText: "Full Disk Access is on.",
+                request: {
+                    // Make sure "Porpoise Helper" is in the list before it opens.
+                    HelperSetup.openFullDiskAccess()
+                })
         case .apps:
-            return .init(name: "App Management",
-                         why: "Lets Porpoise move, rename and delete apps, as Finder does, without macOS blocking it.",
-                         steps: ["Click **Open System Settings** below. It opens the App Management list.",
-                                 "Switch **Porpoise** on. If it isn't in the list, drag this icon into it:",
-                                 "Come back here. Porpoise notices on its own."],
-                         tileRow: 1, button: "Open System Settings", waiting: "Waiting for App Management…",
-                         granted: { PrivacyAccess.appManagementState == .allowed }, grantedText: "App Management is on.",
-                         request: { SystemIntegration.requestAppManagement() })
+            return .init(
+                name: "App Management",
+                why: "Lets Porpoise move, rename and delete apps, as Finder does, without macOS blocking it.",
+                steps: [
+                    "Click **Open System Settings** below. It opens the App Management list.",
+                    "Switch **Porpoise** on. If it isn't in the list, drag this icon into it:",
+                    "Come back here. Porpoise notices on its own.",
+                ],
+                tileRow: 1, button: "Open System Settings", waiting: "Waiting for App Management…",
+                granted: { PrivacyAccess.appManagementState == .allowed }, grantedText: "App Management is on.",
+                request: { SystemIntegration.requestAppManagement() })
         case .admin:
-            return .init(name: "Administrator Actions",
-                         why: "Some items belong to the system, such as App Store apps. Porpoise installs a small helper once, and "
-                            + "then empties the Trash and deletes, moves and changes such items without asking, as Finder does.",
-                         steps: ["Click **Install Helper** below.",
-                                 "macOS asks for your administrator password, once.",
-                                 "Done. In the next step you switch it on, next to Porpoise."],
-                         button: "Install Helper", waiting: "Not installed yet.",
-                         granted: { PrivilegedHelper.isEnabled }, grantedText: "Administrator actions are allowed.",
-                         request: { HelperSetup.install() })
+            return .init(
+                name: "Administrator Actions",
+                why: "Some items belong to the system, such as App Store apps. Porpoise installs a small helper once, and "
+                    + "then empties the Trash and deletes, moves and changes such items without asking, as Finder does.",
+                steps: [
+                    "Click **Install Helper** below.",
+                    "macOS asks for your administrator password, once.",
+                    "Done. In the next step you switch it on, next to Porpoise.",
+                ],
+                button: "Install Helper", waiting: "Not installed yet.",
+                granted: { PrivilegedHelper.isEnabled }, grantedText: "Administrator actions are allowed.",
+                request: { HelperSetup.install() })
         case .network:
-            return .init(name: "Local Network",
-                         why: "Lets Porpoise find the file servers and shared folders on your network and show them under Network.",
-                         steps: ["Click **Allow Network Access** below.",
-                                 "macOS asks whether Porpoise may find devices on your network: click **Allow**.",
-                                 "Answered Don't Allow before? Switch Porpoise on in the Local Network list that opens."],
-                         button: "Allow Network Access", waiting: "Waiting for Local Network access…",
-                         granted: { LocalNetworkAccess.shared.isAllowed }, grantedText: "Local Network access is on.",
-                         request: {
-                             LocalNetworkAccess.shared.request { allowed in
-                                 if !allowed { SystemIntegration.openPrivacyPane("Privacy_LocalNetwork") }
-                             }
-                         })
+            return .init(
+                name: "Local Network",
+                why: "Lets Porpoise find the file servers and shared folders on your network and show them under Network.",
+                steps: [
+                    "Click **Allow Network Access** below.",
+                    "macOS asks whether Porpoise may find devices on your network: click **Allow**.",
+                    "Answered Don't Allow before? Switch Porpoise on in the Local Network list that opens.",
+                ],
+                button: "Allow Network Access", waiting: "Waiting for Local Network access…",
+                granted: { LocalNetworkAccess.shared.isAllowed }, grantedText: "Local Network access is on.",
+                request: {
+                    LocalNetworkAccess.shared.request { allowed in
+                        if !allowed { SystemIntegration.openPrivacyPane("Privacy_LocalNetwork") }
+                    }
+                })
         }
     }
 }

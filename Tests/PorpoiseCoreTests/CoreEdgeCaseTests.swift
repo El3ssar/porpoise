@@ -1,10 +1,12 @@
 import Foundation
 import Testing
+
 @testable import PorpoiseCore
 
 private func item(_ name: String, dir: Bool = false, size: Int64 = 0, type: String? = nil, mod: Date? = nil) -> FileItem {
-    FileItem(url: URL(fileURLWithPath: "/tmp/x/" + name), name: name, isDirectory: dir, isHidden: name.hasPrefix("."),
-             size: size, modificationDate: mod, contentType: type)
+    FileItem(
+        url: URL(fileURLWithPath: "/tmp/x/" + name), name: name, isDirectory: dir, isHidden: name.hasPrefix("."),
+        size: size, modificationDate: mod, contentType: type)
 }
 
 private var utc: Calendar {
@@ -89,7 +91,7 @@ private var utc: Calendar {
         func group(daysAgo: Int) -> String {
             ItemGrouper.dateGroup(now.addingTimeInterval(TimeInterval(-daysAgo * 86400)), now: now, calendar: cal)
         }
-        #expect(group(daysAgo: -3) == "Today")          // future dates
+        #expect(group(daysAgo: -3) == "Today")  // future dates
         #expect(group(daysAgo: 1) == "Yesterday")
         #expect(group(daysAgo: 2) == "Tuesday")
         #expect(group(daysAgo: 8) == "One Week Ago")
@@ -126,7 +128,7 @@ private var utc: Calendar {
 
     @Test func plainTextAndUnicode() throws {
         #expect(try matches("ÉT", .plainText, ["été", "ete"]) == ["été"])
-        #expect(try matches("", .plainText, ["x"]) == ["x"])   // inactive filter shows everything
+        #expect(try matches("", .plainText, ["x"]) == ["x"])  // inactive filter shows everything
     }
 
     @Test func invalidPatterns() {
@@ -139,7 +141,7 @@ private var utc: Calendar {
     @Test func sizeBoundaries() {
         #expect(FileFormat.size(1023) == "1023 B")
         #expect(FileFormat.size(1024) == "1.0 KiB")
-        #expect(FileFormat.size(1024 * 1024 - 1) == "1.0 MiB")   // not "1024.0 KiB"
+        #expect(FileFormat.size(1024 * 1024 - 1) == "1.0 MiB")  // not "1024.0 KiB"
         #expect(FileFormat.size(Int64.max).hasSuffix("EiB"))
     }
 
@@ -195,7 +197,7 @@ private var utc: Calendar {
         h.visit(u("b")); h.visit(u("c")); h.visit(u("d"))
         #expect(h.goBack(3) == u("a"))
         #expect(h.goBack() == nil)
-        #expect(h.goForward(0) == nil && h.goBack(-1) == nil)   // never moves the other way
+        #expect(h.goForward(0) == nil && h.goBack(-1) == nil)  // never moves the other way
         #expect(h.goForward(2) == u("c"))
         #expect(h.forwardList == [u("d")] && h.backList == [u("b"), u("a")])
     }

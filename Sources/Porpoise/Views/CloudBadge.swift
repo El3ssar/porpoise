@@ -16,15 +16,20 @@ enum CloudBadge {
         let fx = (badge.minX - imageRect.minX) / imageRect.width, fw = badge.width / imageRect.width
         let fyTop = (badge.minY - imageRect.minY) / imageRect.height, fh = badge.height / imageRect.height
         let key = "\(Int(fx * 20))|\(Int(fyTop * 20))|\(Int(fw * 20))" as NSString
-        let perImage = cache.object(forKey: image) ?? {
-            let d = NSMutableDictionary()
-            cache.setObject(d, forKey: image)
-            return d
-        }()
+        let perImage =
+            cache.object(forKey: image)
+            ?? {
+                let d = NSMutableDictionary()
+                cache.setObject(d, forKey: image)
+                return d
+            }()
         if let c = perImage[key] as? Bool { return c }
         let n = 8
-        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: n, pixelsHigh: n, bitsPerSample: 8, samplesPerPixel: 4,
-                                         hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return false }
+        guard
+            let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: n, pixelsHigh: n, bitsPerSample: 8, samplesPerPixel: 4,
+                hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+        else { return false }
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
         // Map the badge's part of the image onto the n×n bitmap.
@@ -36,13 +41,15 @@ enum CloudBadge {
         let bgL = 0.299 * bgc.redComponent + 0.587 * bgc.greenComponent + 0.114 * bgc.blueComponent
         // The icon's own pixels decide (the badge sits on the icon); the view shows through only where it's mostly empty.
         var iconL: CGFloat = 0, cover: CGFloat = 0
-        for x in 0..<n { for y in 0..<n {
-            guard let c = rep.colorAt(x: x, y: y) else { continue }
-            let a = c.alphaComponent
-            guard a > 0.05 else { continue }
-            iconL += a * min(1, (0.299 * c.redComponent + 0.587 * c.greenComponent + 0.114 * c.blueComponent) / a)
-            cover += a
-        } }
+        for x in 0..<n {
+            for y in 0..<n {
+                guard let c = rep.colorAt(x: x, y: y) else { continue }
+                let a = c.alphaComponent
+                guard a > 0.05 else { continue }
+                iconL += a * min(1, (0.299 * c.redComponent + 0.587 * c.greenComponent + 0.114 * c.blueComponent) / a)
+                cover += a
+            }
+        }
         let coverage = cover / CGFloat(n * n)
         let lum = coverage > 0.2 ? iconL / cover : (iconL + (CGFloat(n * n) - cover) * bgL) / CGFloat(n * n)
         let light = lum > 0.55
@@ -64,8 +71,9 @@ enum CloudBadge {
         sh.shadowOffset = .zero
         sh.shadowColor = onLight ? NSColor.white.withAlphaComponent(0.95) : NSColor.black.withAlphaComponent(0.85)
         sh.set()
-        img.draw(in: CGRect(x: r.midX - w / 2, y: r.midY - h / 2, width: w, height: h), from: .zero, operation: .sourceOver,
-                 fraction: 1, respectFlipped: true, hints: nil)
+        img.draw(
+            in: CGRect(x: r.midX - w / 2, y: r.midY - h / 2, width: w, height: h), from: .zero, operation: .sourceOver,
+            fraction: 1, respectFlipped: true, hints: nil)
         NSGraphicsContext.restoreGraphicsState()
     }
 }

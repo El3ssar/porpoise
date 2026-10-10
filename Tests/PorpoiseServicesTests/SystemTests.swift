@@ -1,8 +1,9 @@
 import Foundation
+import PorpoiseCore
+import PorpoiseTestSupport
 import SQLite3
 import Testing
-import PorpoiseTestSupport
-import PorpoiseCore
+
 @testable import PorpoiseServices
 
 /// Reading macOS's privacy database: a small TCC.db made in a scratch folder (never the real one).
@@ -15,7 +16,9 @@ import PorpoiseCore
         scratch = try Scratch()
         db = scratch.path("TCC.db")
         // The columns TCC's access table has that Porpoise reads, plus a few it doesn't.
-        try Self.sql(db, """
+        try Self.sql(
+            db,
+            """
             CREATE TABLE access (service TEXT NOT NULL, client TEXT NOT NULL, client_type INTEGER NOT NULL,
                 auth_value INTEGER NOT NULL, auth_reason INTEGER NOT NULL, auth_version INTEGER NOT NULL,
                 PRIMARY KEY (service, client, client_type));
@@ -37,7 +40,7 @@ import PorpoiseCore
     }
 
     @Test func readsTheAuthValueOfARow() {
-        #expect(PrivacyAccess.tccAuthValue(service: "kTCCServiceSystemPolicyAppBundles") == 2)   // this app's own row
+        #expect(PrivacyAccess.tccAuthValue(service: "kTCCServiceSystemPolicyAppBundles") == 2)  // this app's own row
         #expect(PrivacyAccess.tccAuthValue(service: "kTCCServiceSystemPolicyAllFiles", client: "com.example.other") == 2)
         #expect(PrivacyAccess.tccAuthValue(service: "kTCCServiceSystemPolicyAllFiles", client: "app.porpoise.Porpoise.helper") == 0)
         #expect(PrivacyAccess.tccAuthValue(service: "kTCCServiceCamera", client: "it's quoted") == 3)
@@ -55,7 +58,7 @@ import PorpoiseCore
             #expect(PrivacyAccess.tccAuthValue(service: s, client: "com.example.other") == nil, "\(s)")
             #expect(PrivacyAccess.tccAuthValue(service: "kTCCServiceSystemPolicyAllFiles", client: s) == nil, "\(s)")
         }
-        #expect(PrivacyAccess.tccAuthValue(service: "kTCCServiceSystemPolicyAllFiles", client: "com.example.other") == 2)   // still there
+        #expect(PrivacyAccess.tccAuthValue(service: "kTCCServiceSystemPolicyAllFiles", client: "com.example.other") == 2)  // still there
     }
 
     @Test func appManagementFromTheDatabase() throws {
@@ -72,7 +75,7 @@ import PorpoiseCore
         PrivacyAccess.tccDatabase = scratch.path("missing.db").path
         #expect(!PrivacyAccess.hasFullDiskAccess)
         #expect(PrivacyAccess.tccAuthValue(service: "kTCCServiceSystemPolicyAppBundles") == nil)
-        #expect(!FileManager.default.fileExists(atPath: scratch.path("missing.db").path))   // read-only: never created
+        #expect(!FileManager.default.fileExists(atPath: scratch.path("missing.db").path))  // read-only: never created
     }
 
     @Test func notADatabaseOrNoTable() throws {
@@ -87,11 +90,13 @@ import PorpoiseCore
     // MARK: The helper's own Full Disk Access
 
     @Test func helperFullDiskAccessByIdentifierOrPath() throws {
-        #expect(PrivilegedHelper.hasFullDiskAccess == false)   // listed, switched off
+        #expect(PrivilegedHelper.hasFullDiskAccess == false)  // listed, switched off
         try Self.sql(db, "UPDATE access SET auth_value = 2 WHERE client = 'app.porpoise.Porpoise.helper'")
         #expect(PrivilegedHelper.hasFullDiskAccess == true)
         // Recorded by its path instead.
-        try Self.sql(db, """
+        try Self.sql(
+            db,
+            """
             DELETE FROM access WHERE client = 'app.porpoise.Porpoise.helper';
             INSERT INTO access VALUES ('kTCCServiceSystemPolicyAllFiles', '\(PorpoiseHelperInfo.installedTool)', 1, 2, 4, 1);
             """)
@@ -124,16 +129,18 @@ import PorpoiseCore
         let c = try signedTool(s, "c", identifier: "app.porpoise.other")
         let ha = try #require(PrivilegedHelper.codeHash(a))
         #expect(ha.count == 40 && ha.allSatisfy { $0.isHexDigit && !$0.isUppercase })
-        #expect(PrivilegedHelper.codeHash(b) == ha)       // the same code: the same hash
-        #expect(PrivilegedHelper.codeHash(c) != ha)       // a different signature: different
-        #expect(PrivilegedHelper.codeHash(a) == ha)       // stable
+        #expect(PrivilegedHelper.codeHash(b) == ha)  // the same code: the same hash
+        #expect(PrivilegedHelper.codeHash(c) != ha)  // a different signature: different
+        #expect(PrivilegedHelper.codeHash(a) == ha)  // stable
     }
 
     @Test func codeHashOfABundle() throws {
         let s = try Scratch()
         let app = try s.folder("Helper.app/Contents/MacOS")
         try FileManager.default.copyItem(atPath: "/usr/bin/true", toPath: app.appendingPathComponent("Helper").path)
-        try s.file("Helper.app/Contents/Info.plist", """
+        try s.file(
+            "Helper.app/Contents/Info.plist",
+            """
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
             <plist version="1.0"><dict><key>CFBundleIdentifier</key><string>app.porpoise.test.helper</string>
@@ -175,7 +182,7 @@ import PorpoiseCore
         #expect(lines.firstIndex { $0.contains(#"rm -rf "/Library/PrivilegedHelperTools/Porpoise Helper.app.new""#) }! < ditto)
         #expect(ditto < chown && chown < move)
         #expect(lines.last?.contains("launchctl bootstrap system") == true)
-        #expect(lines.allSatisfy { $0.hasPrefix("/") || $0 == "set -e" })   // absolute tools only
+        #expect(lines.allSatisfy { $0.hasPrefix("/") || $0 == "set -e" })  // absolute tools only
     }
 
     @Test func removeScriptIsValidShell() throws {

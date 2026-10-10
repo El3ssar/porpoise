@@ -21,7 +21,8 @@ public enum HelperRequests {
         let target = parent + "/" + (path as NSString).lastPathComponent
         var st = stat()
         guard PorpoiseHelperInfo.isInUsersTrash(path: path, resolvedParent: parent, uid: uid, resolvedHomeTrash: homeTrash),
-              lstat(target, &st) == 0, (st.st_mode & S_IFMT) != S_IFLNK else { return nil }
+            lstat(target, &st) == 0, (st.st_mode & S_IFMT) != S_IFLNK
+        else { return nil }
         // -P (the default with -R): symlinks inside are changed themselves, never followed.
         return ["/usr/sbin/chown", "-R", "-P", "\(uid):\(gid)", target]
     }

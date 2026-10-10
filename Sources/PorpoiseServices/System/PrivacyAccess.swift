@@ -1,6 +1,6 @@
 import Foundation
-import Security
 import SQLite3
+import Security
 
 /// macOS's privacy permissions (TCC) as far as Porpoise can read them without asking: Full Disk Access and App
 /// Management. Asking for them and opening System Settings is up to the app.
@@ -42,7 +42,9 @@ public enum PrivacyAccess {
         }
         defer { sqlite3_close(db) }
         var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "SELECT auth_value FROM access WHERE service = ? AND client = ? LIMIT 1", -1, &stmt, nil) == SQLITE_OK else { return nil }
+        guard sqlite3_prepare_v2(db, "SELECT auth_value FROM access WHERE service = ? AND client = ? LIMIT 1", -1, &stmt, nil) == SQLITE_OK else {
+            return nil
+        }
         defer { sqlite3_finalize(stmt) }
         let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
         sqlite3_bind_text(stmt, 1, service, -1, transient)
@@ -59,16 +61,21 @@ public enum PrivacyAccess {
         let apps = (try? fm.contentsOfDirectory(at: URL(fileURLWithPath: "/Applications"), includingPropertiesForKeys: nil)) ?? []
         let mine = Bundle.main.bundleURL.standardizedFileURL
         // App Management protects signed apps only, so check against one with a developer signature.
-        guard let target = apps.first(where: { u in
-            u.pathExtension == "app" && u.standardizedFileURL != mine
-                && (try? fm.attributesOfItem(atPath: u.path)[.ownerAccountID] as? NSNumber)?.uint32Value == getuid()
-                && teamIdentifier(of: u) != nil
-        }) else { return nil }
+        guard
+            let target = apps.first(where: { u in
+                u.pathExtension == "app" && u.standardizedFileURL != mine
+                    && (try? fm.attributesOfItem(atPath: u.path)[.ownerAccountID] as? NSNumber)?.uint32Value == getuid()
+                    && teamIdentifier(of: u) != nil
+            })
+        else { return nil }
         // An empty file created and removed at once inside the other app (its signed contents are untouched).
         let probe = target.appendingPathComponent("Contents/.porpoise-access-check").path
         let fd = open(probe, O_WRONLY | O_CREAT | O_EXCL, 0o600)
-        if fd >= 0 { close(fd); unlink(probe); lastAppManagement = .allowed }
-        else { lastAppManagement = (errno == EPERM || errno == EACCES) ? .denied : .unknown }
+        if fd >= 0 {
+            close(fd); unlink(probe); lastAppManagement = .allowed
+        } else {
+            lastAppManagement = (errno == EPERM || errno == EACCES) ? .denied : .unknown
+        }
         return lastAppManagement
     }
 
@@ -77,7 +84,8 @@ public enum PrivacyAccess {
         guard SecStaticCodeCreateWithPath(app as CFURL, [], &code) == errSecSuccess, let code else { return nil }
         var info: CFDictionary?
         guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
-              let d = info as? [String: Any] else { return nil }
+            let d = info as? [String: Any]
+        else { return nil }
         return d[kSecCodeInfoTeamIdentifier as String] as? String
     }
 }

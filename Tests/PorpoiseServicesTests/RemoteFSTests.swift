@@ -1,7 +1,8 @@
 import Foundation
-import Testing
 import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 /// URL handling and the provider registry. Hosts are `.invalid`, so nothing here connects anywhere; FTP URLs carry
@@ -37,16 +38,18 @@ import PorpoiseTestSupport
     }
 
     @Test func oneProviderPerSchemeUserHostAndPort() throws {
-        let urls = ["sftp://me@a.invalid/x", "sftp://me@a.invalid/y/z", "sftp://you@a.invalid/", "sftp://me@a.invalid:2222/",
-                    "ftp://me:pw@a.invalid/", "adb://SERIAL123/", "adb://192.168.1.5:5555/"].map { URL(string: $0)! }
+        let urls = [
+            "sftp://me@a.invalid/x", "sftp://me@a.invalid/y/z", "sftp://you@a.invalid/", "sftp://me@a.invalid:2222/",
+            "ftp://me:pw@a.invalid/", "adb://SERIAL123/", "adb://192.168.1.5:5555/",
+        ].map { URL(string: $0)! }
         defer { urls.forEach { RemoteFS.use(nil, for: $0) } }
         let p = try urls.map { try #require(RemoteFS.provider(for: $0)) }
 
-        #expect(p[0] === p[1])                                   // same connection, any path
-        #expect(p[0] !== p[2] && p[0] !== p[3])                  // another user or port is another connection
+        #expect(p[0] === p[1])  // same connection, any path
+        #expect(p[0] !== p[2] && p[0] !== p[3])  // another user or port is another connection
         #expect(p[0] is SSHProvider && p[4] is FTPProvider)
         #expect((p[5] as? ADBProvider)?.serial == "SERIAL123")
-        #expect((p[6] as? ADBProvider)?.serial == "192.168.1.5:5555")   // network serials are host:port
+        #expect((p[6] as? ADBProvider)?.serial == "192.168.1.5:5555")  // network serials are host:port
         #expect(RemoteFS.provider(for: URL(fileURLWithPath: "/tmp")) == nil)
     }
 
@@ -68,15 +71,17 @@ import PorpoiseTestSupport
             try Data("extra".utf8).write(to: staging.appendingPathComponent("extra.sh"))
         }
         #expect(got == local.path("report.txt"))
-        #expect(local.listing() == ["report.txt"])   // no extra file, no staging folder
+        #expect(local.listing() == ["report.txt"])  // no extra file, no staging folder
     }
 
     @Test func stagedDownloadNeverReplacesALocalItem() throws {
         let local = try Scratch()
         try local.file("report.txt", "mine")
-        #expect { try RemoteFS.downloadStaged("report.txt", into: local.url) { staging in
-            try Data("theirs".utf8).write(to: staging.appendingPathComponent("report.txt"))
-        } } throws: { $0.localizedDescription.contains("already exists") }
+        #expect {
+            try RemoteFS.downloadStaged("report.txt", into: local.url) { staging in
+                try Data("theirs".utf8).write(to: staging.appendingPathComponent("report.txt"))
+            }
+        } throws: { $0.localizedDescription.contains("already exists") }
         #expect(local.read("report.txt") == "mine")
         #expect(local.listing() == ["report.txt"])
     }

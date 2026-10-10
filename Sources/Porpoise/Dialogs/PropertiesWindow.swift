@@ -48,8 +48,9 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
     private func build() {
         guard let content = window?.contentView else { return }
         pages = [generalView()] + (urls.count == 1 ? [permissionsView()] : [])
-        let seg = NSSegmentedControl(labels: urls.count == 1 ? ["General", "Permissions"] : ["General"], trackingMode: .selectOne,
-                                     target: self, action: #selector(switchPage(_:)))
+        let seg = NSSegmentedControl(
+            labels: urls.count == 1 ? ["General", "Permissions"] : ["General"], trackingMode: .selectOne,
+            target: self, action: #selector(switchPage(_:)))
         seg.selectedSegment = 0
         seg.sizeToFit()
         seg.frame.origin = CGPoint(x: (content.bounds.width - seg.frame.width) / 2, y: content.bounds.height - seg.frame.height - 14)
@@ -121,9 +122,16 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
         countSize()
         sizeLabel.frame.size.height = items.count == 1 && !items[0].isBrowsableFolder ? 20 : 38
         if items.count == 1, let volURL = try? urls[0].resourceValues(forKeys: [.volumeURLKey]).volume,
-           let vol = try? volURL.resourceValues(forKeys: [.volumeLocalizedNameKey, .volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]),
-           let free = vol.volumeAvailableCapacityForImportantUsage, let total = vol.volumeTotalCapacity {
-            row("Free space:", label("\(FileFormat.size(free)) free of \(FileFormat.size(Int64(total))) on “\(vol.volumeLocalizedName ?? volURL.lastPathComponent)”"), y: &y, in: v)
+            let vol = try? volURL.resourceValues(forKeys: [
+                .volumeLocalizedNameKey, .volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey,
+            ]),
+            let free = vol.volumeAvailableCapacityForImportantUsage, let total = vol.volumeTotalCapacity
+        {
+            row(
+                "Free space:",
+                label(
+                    "\(FileFormat.size(free)) free of \(FileFormat.size(Int64(total))) on “\(vol.volumeLocalizedName ?? volURL.lastPathComponent)”"),
+                y: &y, in: v)
         }
         y -= 8
         if items.count == 1 {
@@ -196,7 +204,9 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
                 for case let c as URL in e {
                     if cancel.isCancelled { return }
                     let rv = try? c.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
-                    if rv?.isDirectory == true { dirs += 1 } else {
+                    if rv?.isDirectory == true {
+                        dirs += 1
+                    } else {
                         files += 1
                         total += Int64(rv?.fileSize ?? 0)
                     }
@@ -206,7 +216,9 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
                 // A single folder doesn't count itself as a subfolder.
                 let sub = max(0, dirs - (all.count == 1 && dirs > 0 ? 1 : 0))
                 var text = "\(FileFormat.size(total)) (\(total.formatted()) bytes)"
-                if dirs > 0 || all.count > 1 { text += "\n\(files == 1 ? "1 file" : "\(files) files"), \(sub == 1 ? "1 subfolder" : "\(sub) subfolders")" }
+                if dirs > 0 || all.count > 1 {
+                    text += "\n\(files == 1 ? "1 file" : "\(files) files"), \(sub == 1 ? "1 subfolder" : "\(sub) subfolders")"
+                }
                 label.stringValue = text
             }
         }
@@ -220,7 +232,8 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
         let groups = [("Owner:", 6), ("Group:", 3), ("Others:", 0)]
         for (title, shift) in groups {
             let popup = NSPopUpButton(frame: .zero, pullsDown: false)
-            let choices = it.isDirectory
+            let choices =
+                it.isDirectory
                 ? ["Forbidden", "Can View Content", "Can View & Modify Content"]
                 : ["Forbidden", "Can Only View", "Can View & Modify"]
             popup.addItems(withTitles: choices)
@@ -232,7 +245,8 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
             popup.frame.size = CGSize(width: 240, height: 26)
             row(title, popup, y: &y, in: v)
         }
-        let exec = NSButton(checkboxWithTitle: it.isDirectory ? "Allow listing (execute)" : "Is executable", target: self, action: #selector(execChanged(_:)))
+        let exec = NSButton(
+            checkboxWithTitle: it.isDirectory ? "Allow listing (execute)" : "Is executable", target: self, action: #selector(execChanged(_:)))
         exec.state = it.posixPermissions & 0o100 != 0 ? .on : .off
         exec.frame.size = CGSize(width: 240, height: 20)
         row("", exec, y: &y, in: v)
@@ -356,8 +370,9 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
     /// chmod, asking to authenticate for items you don't own; then the view and this page show the result.
     private func setMode(_ mode: Int) {
         do { try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: urls[0].path) } catch {
-            FileOperationsController.shared.authorize(verb: "change the permissions of", items: [urls[0]],
-                                               commands: [["/bin/chmod", "--", String(mode & 0o7777, radix: 8), urls[0].path]], window: window)
+            FileOperationsController.shared.authorize(
+                verb: "change the permissions of", items: [urls[0]],
+                commands: [["/bin/chmod", "--", String(mode & 0o7777, radix: 8), urls[0].path]], window: window)
         }
         refreshPermissions()
         FileOperationsController.notifyChanged(urls)

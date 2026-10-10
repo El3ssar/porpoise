@@ -1,7 +1,8 @@
 import Foundation
-import Testing
-@testable import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseCore
 
 /// Hostile file names (see `HostileNames`) through the real code paths, on real files: listing, loading, copying,
 /// moving, renaming, sorting, and every place a name is quoted for a shell, AppleScript or a URL.
@@ -69,8 +70,10 @@ import PorpoiseTestSupport
         #expect(Escaping.appleScriptString("\"\(acute)") == "\"\\\"\(acute)\"")
         #expect(Escaping.appleScriptString("\\\(acute)") == "\"\\\\\(acute)\"")
         // The root helper's "a volume's Trash" isn't fooled by a folder named with a combining mark.
-        #expect(!PorpoiseHelperInfo.isInUsersTrash(path: "/Volumes/X/\(acute)/.Trashes/501/f", resolvedParent: "/Volumes/X/\(acute)/.Trashes/501",
-                                                   uid: 501, resolvedHomeTrash: "/Users/me/.Trash"))
+        #expect(
+            !PorpoiseHelperInfo.isInUsersTrash(
+                path: "/Volumes/X/\(acute)/.Trashes/501/f", resolvedParent: "/Volumes/X/\(acute)/.Trashes/501",
+                uid: 501, resolvedHomeTrash: "/Users/me/.Trash"))
         // The preview server doesn't serve a hidden file whose dot carries a mark.
         let root = try scratch.folder("served-dot")
         try Data("x".utf8).write(to: root.appendingPathComponent(".\(acute)hidden"))
@@ -161,8 +164,10 @@ import PorpoiseTestSupport
         #expect(job.errors.isEmpty, "\(job.errors)")
         let copied = dst.appendingPathComponent(outer)
         for (i, n) in names.enumerated() {
-            let f = i % 2 == 0 ? copied.appendingPathComponent(n).appendingPathComponent("f")
-                               : copied.appendingPathComponent("sub").appendingPathComponent(n)
+            let f =
+                i % 2 == 0
+                ? copied.appendingPathComponent(n).appendingPathComponent("f")
+                : copied.appendingPathComponent("sub").appendingPathComponent(n)
             #expect(contents(f) == "\(i)", "\(n.debugDescription)")
         }
     }
@@ -243,7 +248,7 @@ import PorpoiseTestSupport
         let r = try runTool("/bin/sh", ["-c", script])
         #expect(r.status == 0, "\(String(decoding: r.err, as: UTF8.self))")
         #expect(nulSeparated(r.out) == names.indices.map { "\($0)" })
-        #expect(scratch.listing("cat").count == names.count)   // nothing created by accident
+        #expect(scratch.listing("cat").count == names.count)  // nothing created by accident
     }
 
     // MARK: AppleScript
@@ -290,7 +295,7 @@ import PorpoiseTestSupport
     @Test func composedNamesOnDisk() throws {
         for (i, n) in [HostileNames.nfc, HostileNames.nfd].enumerated() {
             let dir = try scratch.folder("norm\(i)")
-            let fd = open(dir.path + "/" + n, O_CREAT | O_WRONLY, 0o644)   // the bytes of `n`, no Foundation in between
+            let fd = open(dir.path + "/" + n, O_CREAT | O_WRONLY, 0o644)  // the bytes of `n`, no Foundation in between
             #expect(fd >= 0); close(fd)
             #expect(try nameBytes(in: dir) == [bytes(n)])
             let listed = try DirectoryLister.list(dir)
@@ -324,8 +329,9 @@ import PorpoiseTestSupport
         #expect(paste.errors.isEmpty, "\(paste.errors)")
         #expect(scratch.listing("dots") == ["n copy.txt", "n.txt", "sub"])
         // Copying a folder into itself through "..": refused.
-        let into = FileJob(kind: .copy, sources: [dir.appendingPathComponent("sub")],
-                           destinationFolder: URL(fileURLWithPath: dir.path + "/sub/inner/.."))
+        let into = FileJob(
+            kind: .copy, sources: [dir.appendingPathComponent("sub")],
+            destinationFolder: URL(fileURLWithPath: dir.path + "/sub/inner/.."))
         _ = try into.run()
         #expect(into.errors.count == 1)
         #expect(scratch.listing("dots/sub") == ["inner"])
@@ -360,7 +366,7 @@ import PorpoiseTestSupport
         let mk = try runTool("/bin/sh", ["-c", "for i in 1 2 3 4 5 6; do mkdir \(segment) && cd \(segment) || exit 1; done; echo hi > f"], cwd: over)
         #expect(mk.status == 0)
         #expect(try DirectoryLister.list(over).count == 1)
-        #expect(FileJob.diskSize(over) >= 0)   // must not crash
+        #expect(FileJob.diskSize(over) >= 0)  // must not crash
         let dst = try scratch.folder("over/dst-with-a-longer-name")
         let deepCopy = FileJob(kind: .copy, sources: [over], destinationFolder: dst)
         _ = try deepCopy.run()

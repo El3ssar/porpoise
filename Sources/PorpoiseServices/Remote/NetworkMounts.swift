@@ -21,7 +21,8 @@ public enum NetworkMounts {
         openOptions[kNAUIOptionKey] = kNAUIOptionAllowUI
         let mountOptions = NSMutableDictionary()
         var request: AsyncRequestID?
-        let status = NetFSMountURLAsync(u as CFURL, nil, nil, nil, openOptions, mountOptions, &request, DispatchQueue.main) { status, _, mountpoints in
+        let status = NetFSMountURLAsync(u as CFURL, nil, nil, nil, openOptions, mountOptions, &request, DispatchQueue.main) {
+            status, _, mountpoints in
             if status == 0, let mp = (mountpoints as? [String])?.first {
                 // Keep the path inside the share (smb://host/share/sub/dir → /Volumes/share/sub/dir).
                 let parts = u.pathComponents.filter { $0 != "/" }
@@ -30,7 +31,9 @@ public enum NetworkMounts {
                 PlacesModel.shared.refreshDevices()
                 completion(.success(dest))
             } else {
-                let msg = status == ECANCELED || status == Int32(-128) ? "Connection cancelled." : "Could not connect to \(u.host ?? u.absoluteString) (error \(status))."
+                let msg =
+                    status == ECANCELED || status == Int32(-128)
+                    ? "Connection cancelled." : "Could not connect to \(u.host ?? u.absoluteString) (error \(status))."
                 completion(.failure(RemoteError.failed(msg)))
             }
         }
@@ -43,7 +46,8 @@ public enum NetworkMounts {
         let vols = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: [.volumeURLForRemountingKey], options: []) ?? []
         for v in vols {
             guard let remount = try? v.resourceValues(forKeys: [.volumeURLForRemountingKey]).volumeURLForRemounting,
-                  remount.host?.lowercased() == url.host?.lowercased(), remount.scheme?.lowercased() == url.scheme?.lowercased() else { continue }
+                remount.host?.lowercased() == url.host?.lowercased(), remount.scheme?.lowercased() == url.scheme?.lowercased()
+            else { continue }
             let share = url.pathComponents.dropFirst().first
             if share == nil || remount.pathComponents.dropFirst().first == share {
                 var dest = v

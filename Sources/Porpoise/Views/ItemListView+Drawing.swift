@@ -36,12 +36,19 @@ extension ItemListView {
 
     private func drawPlaceholder() {
         let text: String
-        if model.isLoading && model.items.isEmpty { text = "Loading…" }
-        else if let e = model.loadError { text = e }
-        else if model.isSearching { text = "No items matching the search" }
-        else if model.filter.isActive { text = "No items matching the filter" }
-        else if model.location.path == FileManager.default.homeDirectoryForCurrentUser.path + "/.Trash" { text = "Trash is empty" }
-        else { text = "Folder is empty" }
+        if model.isLoading && model.items.isEmpty {
+            text = "Loading…"
+        } else if let e = model.loadError {
+            text = e
+        } else if model.isSearching {
+            text = "No items matching the search"
+        } else if model.filter.isActive {
+            text = "No items matching the filter"
+        } else if model.location.path == FileManager.default.homeDirectoryForCurrentUser.path + "/.Trash" {
+            text = "Trash is empty"
+        } else {
+            text = "Folder is empty"
+        }
         let p = NSMutableParagraphStyle(); p.alignment = .center
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 15, weight: .regular),
@@ -49,13 +56,16 @@ extension ItemListView {
         ]
         let vr = visibleRect
         let s = (text as NSString).size(withAttributes: attrs)
-        (text as NSString).draw(in: CGRect(x: vr.minX, y: vr.midY - s.height / 2 - 20, width: vr.width, height: s.height + 4),
-                                withAttributes: attrs)
+        (text as NSString).draw(
+            in: CGRect(x: vr.minX, y: vr.midY - s.height / 2 - 20, width: vr.width, height: s.height + 4),
+            withAttributes: attrs)
     }
 
     private func drawGroupHeader(_ title: String, in r: CGRect) {
-        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: Theme.fontSize, weight: .semibold),
-                                                    .foregroundColor: Theme.viewText]
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: Theme.fontSize, weight: .semibold),
+            .foregroundColor: Theme.viewText,
+        ]
         let s = (title as NSString).size(withAttributes: attrs)
         let ty = r.minY + (r.height - s.height) / 2 + 2
         (title as NSString).draw(at: CGPoint(x: r.minX + 4, y: ty), withAttributes: attrs)
@@ -189,8 +199,9 @@ extension ItemListView {
         let es = emblem.size
         // Lower left when the cloud badge takes the lower right.
         let ex = besideCloudBadge ? ir.minX : ir.maxX - es.width
-        emblem.draw(in: CGRect(x: ex, y: ir.maxY - es.height, width: es.width, height: es.height),
-                    from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        emblem.draw(
+            in: CGRect(x: ex, y: ir.maxY - es.height, width: es.width, height: es.height),
+            from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
     }
 
     /// Roughly what is behind an item's badges and tag dots: the view color, tinted when selected.
@@ -232,8 +243,9 @@ extension ItemListView {
         let tr = nameTextRect(i)
         let (label, size) = iconsLabel(model.displayName(for: item), width: tr.width, maxLines: maxLabelLines)
         let m = NSMutableAttributedString(attributedString: label)
-        m.addAttribute(.foregroundColor, value: Theme.viewText.withAlphaComponent(item.isHidden ? 0.65 : 1),
-                       range: NSRange(location: 0, length: m.length))
+        m.addAttribute(
+            .foregroundColor, value: Theme.viewText.withAlphaComponent(item.isHidden ? 0.65 : 1),
+            range: NSRange(location: 0, length: m.length))
         let tags = model.shownTags(for: item)
         let d = tagDotDiameter
         let dotsW = FinderTags.dotsWidth(tags.count, diameter: d)
@@ -241,8 +253,9 @@ extension ItemListView {
         var nameRect = CGRect(x: tr.minX, y: tr.minY, width: tr.width, height: size.height + 2)
         if inlineDots {
             let start = tr.midX - (size.width + dotsW + 4) / 2
-            FinderTags.drawDots(tags, at: CGPoint(x: start, y: tr.minY + (lineHeight - d) / 2 + 1), diameter: d,
-                                background: itemBackground(selected: selected))
+            FinderTags.drawDots(
+                tags, at: CGPoint(x: start, y: tr.minY + (lineHeight - d) / 2 + 1), diameter: d,
+                background: itemBackground(selected: selected))
             nameRect.origin.x += (dotsW + 4) / 2
         }
         m.draw(with: nameRect, options: [.usesLineFragmentOrigin])
@@ -251,11 +264,14 @@ extension ItemListView {
             FinderTags.drawDots(tags, at: CGPoint(x: tr.midX - dotsW / 2, y: y + 2), diameter: d, background: itemBackground(selected: selected))
             y += d + 4
         }
-        let roleAttrs: [NSAttributedString.Key: Any] = [.font: font, .paragraphStyle: Self.centeredRoleParagraph,
-                                                        .foregroundColor: roleTextColor(selected: selected)]
+        let roleAttrs: [NSAttributedString.Key: Any] = [
+            .font: font, .paragraphStyle: Self.centeredRoleParagraph,
+            .foregroundColor: roleTextColor(selected: selected),
+        ]
         for role in model.props.roles(for: .icons) {
-            (model.text(for: role, of: item) as NSString).draw(in: CGRect(x: tr.minX, y: y, width: tr.width, height: lineHeight),
-                                                               withAttributes: roleAttrs)
+            (model.text(for: role, of: item) as NSString).draw(
+                in: CGRect(x: tr.minX, y: y, width: tr.width, height: lineHeight),
+                withAttributes: roleAttrs)
             y += lineHeight
         }
     }
@@ -268,10 +284,13 @@ extension ItemListView {
         var y = tr.midY - lineHeight * CGFloat(1 + roles.count) / 2
         drawNameWithTags(item, in: CGRect(x: tr.minX, y: y, width: tr.width, height: lineHeight), selected: selected)
         y += lineHeight
-        let roleAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: roleTextColor(selected: selected), .paragraphStyle: nameParagraph]
+        let roleAttrs: [NSAttributedString.Key: Any] = [
+            .font: font, .foregroundColor: roleTextColor(selected: selected), .paragraphStyle: nameParagraph,
+        ]
         for role in roles {
-            (model.text(for: role, of: item) as NSString).draw(in: CGRect(x: tr.minX, y: y, width: tr.width, height: lineHeight),
-                                                               withAttributes: roleAttrs)
+            (model.text(for: role, of: item) as NSString).draw(
+                in: CGRect(x: tr.minX, y: y, width: tr.width, height: lineHeight),
+                withAttributes: roleAttrs)
             y += lineHeight
         }
     }
@@ -304,8 +323,9 @@ extension ItemListView {
         let nameW = min(textWidth(name) + 1, max(0, r.width - dw - 2))
         (name as NSString).draw(in: CGRect(x: r.minX, y: r.minY, width: nameW, height: r.height), withAttributes: nameAttributes(item))
         if !tags.isEmpty {
-            FinderTags.drawDots(tags, at: CGPoint(x: r.minX + nameW + 5, y: r.minY + (r.height - d) / 2 + 1), diameter: d,
-                                background: itemBackground(selected: selected))
+            FinderTags.drawDots(
+                tags, at: CGPoint(x: r.minX + nameW + 5, y: r.minY + (r.height - d) / 2 + 1), diameter: d,
+                background: itemBackground(selected: selected))
         }
     }
 

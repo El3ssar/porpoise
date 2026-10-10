@@ -1,7 +1,8 @@
 import Foundation
-import Testing
 import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 /// FTPProvider drives curl. With no FTP server to test against, curl is replaced by a `RecordingTool`: these tests
@@ -41,7 +42,7 @@ import PorpoiseTestSupport
         let call = try #require(curl.calls.first)
         #expect(call.args.last == "ftp://h.invalid/pub/")
         #expect(call.args.contains("--globoff") && call.args.contains("--config"))
-        #expect(!call.args.contains { $0.contains("s3cret") })     // never visible in `ps`
+        #expect(!call.args.contains { $0.contains("s3cret") })  // never visible in `ps`
         #expect(call.stdin == "user = \"me:s3cret\"\n")
     }
 
@@ -104,7 +105,7 @@ import PorpoiseTestSupport
         #expect { try provider("ftp://h.invalid/").rename(URL(string: "ftp://h.invalid/x.txt")!, to: "pub dir") } throws: {
             $0.localizedDescription.contains("already exists")
         }
-        #expect(curl.calls.count == 1)   // only the listing
+        #expect(curl.calls.count == 1)  // only the listing
     }
 
     @Test func deletesFilesWithDELEAndRefusesTheTopFolder() throws {
@@ -139,7 +140,9 @@ import PorpoiseTestSupport
     @Test func aRefusedLoginAsksOnceAndSavesTheNewLogin() throws {
         try curl.reply("530 Login incorrect.", status: 67)
         nonisolated(unsafe) var asked: [(String, String?)] = []
-        RemoteFS.askLogin = { host, user in asked.append((host, user)); return ("you", "n3w\"pw") }
+        RemoteFS.askLogin = { host, user in
+            asked.append((host, user)); return ("you", "n3w\"pw")
+        }
         defer { RemoteFS.askLogin = { _, _ in nil } }
 
         #expect(throws: (any Error).self) { try provider("ftp://me:old@h.invalid/").list(URL(string: "ftp://h.invalid/")!) }

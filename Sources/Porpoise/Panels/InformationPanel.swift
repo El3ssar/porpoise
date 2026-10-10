@@ -1,5 +1,5 @@
-import AppKit
 import AVKit
+import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
@@ -91,8 +91,12 @@ final class InformationPanel: NSView {
         // Decided from the file type (never by loading the media on the main thread).
         player.frame = playerIsAudio ? CGRect(x: 12, y: preview.frame.maxY + 6, width: w - 24, height: 32) : preview.frame
         // Songs: the bar is the player. Videos: the bar sits over the bottom of the picture.
-        controls.frame = playerIsAudio ? player.frame : CGRect(x: player.frame.minX + 8, y: player.frame.maxY - 38,
-                                                               width: player.frame.width - 16, height: 30)
+        controls.frame =
+            playerIsAudio
+            ? player.frame
+            : CGRect(
+                x: player.frame.minX + 8, y: player.frame.maxY - 38,
+                width: player.frame.width - 16, height: 30)
         updateTrackingAreas()
         updateControls()
         let ny = (controls.isHidden || !playerIsAudio ? preview.frame.maxY : controls.frame.maxY) + 10
@@ -128,7 +132,9 @@ final class InformationPanel: NSView {
         controls.isHidden = !show
         if !playerIsAudio {
             controls.alphaValue = show ? 0 : 1
-            NSAnimationContext.runAnimationGroup { $0.duration = 0.18; controls.animator().alphaValue = show ? 1 : 0 }
+            NSAnimationContext.runAnimationGroup {
+                $0.duration = 0.18; controls.animator().alphaValue = show ? 1 : 0
+            }
         }
     }
 
@@ -139,8 +145,10 @@ final class InformationPanel: NSView {
         if let o = windowCloseObserver { NotificationCenter.default.removeObserver(o); windowCloseObserver = nil }
         guard let newWindow else { return }
         // Closing the window must silence the player even if the window controller lingers.
-        windowCloseObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: newWindow,
-                                                                     queue: .main) { [weak self] _ in self?.stopPlayer() }
+        windowCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: newWindow,
+            queue: .main
+        ) { [weak self] _ in self?.stopPlayer() }
     }
 
     override func viewDidMoveToWindow() {
@@ -174,9 +182,7 @@ final class InformationPanel: NSView {
         container = c
         hoveredURL = Settings.shared.infoShowHovered ? hovered : nil
         let urls: [URL]
-        if let h = hoveredURL { urls = [h] }
-        else if !c.model.selection.isEmpty { urls = c.model.selectedItems.map(\.url) }
-        else { urls = [c.url] }
+        if let h = hoveredURL { urls = [h] } else if !c.model.selection.isEmpty { urls = c.model.selectedItems.map(\.url) } else { urls = [c.url] }
         guard urls != shownURLs else { return }
         shownURLs = urls
         update(urls)
@@ -298,8 +304,13 @@ final class InformationPanel: NSView {
         if let w = attr(kMDItemPixelWidth) as? Int, let h = attr(kMDItemPixelHeight) as? Int { out.append(("Dimensions:", "\(w) × \(h)")) }
         if let d = attr(kMDItemDurationSeconds) as? Double {
             let s = Int(d.rounded())
-            out.append(("Duration:", s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
-                                                : String(format: "%d:%02d", s / 60, s % 60)))
+            out.append(
+                (
+                    "Duration:",
+                    s >= 3600
+                        ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
+                        : String(format: "%d:%02d", s / 60, s % 60)
+                ))
         }
         if let a = attr(kMDItemAuthors) as? [String], !a.isEmpty { out.append(("Artist:", a.joined(separator: ", "))) }
         if let al = attr(kMDItemAlbum) as? String { out.append(("Album:", al)) }
@@ -335,7 +346,8 @@ final class InformationPanel: NSView {
     var playerDebug: String {
         guard let p = player.player else { return "none" }
         let u = (p.currentItem?.asset as? AVURLAsset)?.url
-        return "\(u?.scheme ?? "-") \(p.currentItem?.status.rawValue ?? -1) \(String(format: "%.1f", p.currentTime().seconds)) poster=\(poster.superview != nil) \(p.currentItem?.error?.localizedDescription ?? "")"
+        return
+            "\(u?.scheme ?? "-") \(p.currentItem?.status.rawValue ?? -1) \(String(format: "%.1f", p.currentTime().seconds)) poster=\(poster.superview != nil) \(p.currentItem?.error?.localizedDescription ?? "")"
     }
 
     /// Pauses and releases the player, cancels a pending start and stops the ffmpeg stream.
@@ -355,8 +367,11 @@ final class InformationPanel: NSView {
     }
 
     private func setupPlayer(for item: FileItem) {
-        let playable = Settings.shared.infoShowPreview && item.url.isFileURL && (item.utType.map {
-            $0.conforms(to: .audiovisualContent) || VideoPreview.isVideoExtension(item.fileExtension) } ?? false)
+        let playable =
+            Settings.shared.infoShowPreview && item.url.isFileURL
+            && (item.utType.map {
+                $0.conforms(to: .audiovisualContent) || VideoPreview.isVideoExtension(item.fileExtension)
+            } ?? false)
         // Re-rendering the same file (a settings change, the view reloading) keeps it playing.
         if playable, playerURL == item.url, player.player != nil || playerWork != nil { return }
         stopPlayer()
@@ -393,7 +408,9 @@ final class InformationPanel: NSView {
             overlay.addSubview(poster)
             playObservation = p.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
                 guard player.timeControlStatus == .playing else { return }
-                DispatchQueue.main.async { self?.poster.removeFromSuperview(); self?.playObservation = nil }
+                DispatchQueue.main.async {
+                    self?.poster.removeFromSuperview(); self?.playObservation = nil
+                }
             }
         }
         guard playable.scheme == "http" else {

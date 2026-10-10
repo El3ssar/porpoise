@@ -1,8 +1,9 @@
 import Foundation
-import Testing
-@testable import PorpoiseServices
-@testable import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseCore
+@testable import PorpoiseServices
 
 /// Hostile names (see `HostileNames`) through the services' own scripts, run for real on local files: the SSH listing
 /// script, the administrator AppleScript, staged downloads and ffmpeg's arguments.
@@ -20,7 +21,8 @@ import PorpoiseTestSupport
     /// "" when the names are the same; otherwise what is missing and what is extra.
     private func difference(_ got: [String], _ want: [String]) -> String {
         let g = Set(got), w = Set(want)
-        return g == w && got.count == want.count ? ""
+        return g == w && got.count == want.count
+            ? ""
             : "missing \(w.subtracting(g).map(\.debugDescription)), extra \(g.subtracting(w).map(\.debugDescription)), \(got.count) vs \(want.count)"
     }
 
@@ -76,8 +78,9 @@ import PorpoiseTestSupport
     @Test func administratorScriptQuotingRunsTheRightCommand() throws {
         let src = try populate("admin-src")
         let dst = try scratch.folder("admin-dst")
-        let commands = names.map { ["/bin/cp", "--", src.appendingPathComponent($0).path, dst.appendingPathComponent($0).path] }
-            + [["/usr/bin/chflags", "nouchg", src.appendingPathComponent("missing").path]]   // best effort: may fail
+        let commands =
+            names.map { ["/bin/cp", "--", src.appendingPathComponent($0).path, dst.appendingPathComponent($0).path] }
+            + [["/usr/bin/chflags", "nouchg", src.appendingPathComponent("missing").path]]  // best effort: may fail
         let script = FileOperationsController.administratorScript(commands)
         let suffix = " with administrator privileges"
         #expect(script.hasSuffix(suffix))

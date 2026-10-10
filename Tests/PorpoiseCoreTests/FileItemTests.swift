@@ -1,7 +1,8 @@
 import Foundation
-import Testing
-@testable import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseCore
 
 /// FileItem.load on every kind of item a folder can hold.
 @Suite struct FileItemLoadingTests {
@@ -32,11 +33,13 @@ import PorpoiseTestSupport
 
     @Test func packagesAndApps() throws {
         let s = try Scratch()
-        try s.file("Mini.app/Contents/Info.plist", """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <plist version="1.0"><dict><key>CFBundlePackageType</key><string>APPL</string>
-        <key>CFBundleIdentifier</key><string>app.porpoise.tests.mini</string></dict></plist>
-        """)
+        try s.file(
+            "Mini.app/Contents/Info.plist",
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <plist version="1.0"><dict><key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleIdentifier</key><string>app.porpoise.tests.mini</string></dict></plist>
+            """)
         let app = try load(s.path("Mini.app"))
         #expect(app.isDirectory && app.isPackage && app.isApplication && !app.isBrowsableFolder)
         #expect(app.fileExtension == "app")
@@ -145,8 +148,11 @@ import PorpoiseTestSupport
         p.groupRole = .type
         p.setIconSize(40, for: .icons)
         let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(p)) as? [String: Any]
-        #expect(Set(json?.keys.map { $0 } ?? []) == ["mode", "sortRole", "sortOrder", "foldersFirst", "hiddenLast", "groupRole",
-                                                    "groupSameAsSort", "showHidden", "previews", "extraRoles", "zoom", "sizes"])
+        #expect(
+            Set(json?.keys.map { $0 } ?? []) == [
+                "mode", "sortRole", "sortOrder", "foldersFirst", "hiddenLast", "groupRole",
+                "groupSameAsSort", "showHidden", "previews", "extraRoles", "zoom", "sizes",
+            ])
         #expect((json?["sizes"] as? [String: Double])?["icons.preview"] == 40)
     }
 
@@ -157,7 +163,7 @@ import PorpoiseTestSupport
         var q = p
         q.previews = false
         #expect(q.iconSize(for: .details) == 22)
-        #expect(q.iconSize(for: .compact) == 16)   // nothing saved: the mode's default
+        #expect(q.iconSize(for: .compact) == 16)  // nothing saved: the mode's default
         // A new size replaces the legacy level.
         q.setZoomLevel(3, for: .details)
         #expect(q.iconSize(for: .details) == 48 && q.zoom["details"] == nil)
@@ -204,10 +210,13 @@ import PorpoiseTestSupport
 }
 
 @Suite struct SortingByEveryRoleTests {
-    private func item(_ name: String, created: Date? = nil, accessed: Date? = nil, perms: Int = 0o644, owner: String? = nil,
-                      group: String? = nil, link: String? = nil, type: String? = nil, folder: String = "/x") -> FileItem {
-        FileItem(url: URL(fileURLWithPath: folder + "/" + name), name: name, isDirectory: false, creationDate: created,
-                 accessDate: accessed, contentType: type, posixPermissions: perms, owner: owner, group: group, linkDestination: link)
+    private func item(
+        _ name: String, created: Date? = nil, accessed: Date? = nil, perms: Int = 0o644, owner: String? = nil,
+        group: String? = nil, link: String? = nil, type: String? = nil, folder: String = "/x"
+    ) -> FileItem {
+        FileItem(
+            url: URL(fileURLWithPath: folder + "/" + name), name: name, isDirectory: false, creationDate: created,
+            accessDate: accessed, contentType: type, posixPermissions: perms, owner: owner, group: group, linkDestination: link)
     }
 
     private func sorted(_ items: [FileItem], by role: ItemRole, _ order: PorpoiseCore.SortOrder = .ascending) -> [String] {

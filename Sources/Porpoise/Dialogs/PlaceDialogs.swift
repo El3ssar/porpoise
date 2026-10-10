@@ -32,7 +32,7 @@ enum PlaceEditDialog {
     private static func location(_ raw: String, old: URL) -> URL {
         if raw.isEmpty || raw == (old.isFileURL ? old.path : old.absoluteString) { return old }
         if raw.hasPrefix("file://"), let u = URL(string: raw), u.isFileURL { return u }
-        if let remote = RemoteFS.parseTyped(raw) { return remote }   // sftp://…, user@host:path
+        if let remote = RemoteFS.parseTyped(raw) { return remote }  // sftp://…, user@host:path
         if !raw.hasPrefix("/"), !raw.hasPrefix("~"), let u = URL(string: raw), let scheme = u.scheme, scheme.count > 1 { return u }
         return URL(fileURLWithPath: (raw as NSString).expandingTildeInPath)
     }

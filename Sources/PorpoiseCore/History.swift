@@ -1,5 +1,5 @@
-import Foundation
 import CoreServices
+import Foundation
 
 /// Back/forward history of one view (each pane of each tab has its own, like Dolphin).
 public struct NavigationHistory: Sendable {
@@ -80,8 +80,9 @@ public final class FolderWatcher: @unchecked Sendable {
         var real: [String: [String]] = [:]
         for p in newPaths { real[Self.realPath(p), default: []].append(p) }
         aliases = real
-        var ctx = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
-                                       retain: nil, release: nil, copyDescription: nil)
+        var ctx = FSEventStreamContext(
+            version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
+            retain: nil, release: nil, copyDescription: nil)
         let cb: FSEventStreamCallback = { _, info, count, eventPaths, _, _ in
             guard let info else { return }
             let me = Unmanaged<FolderWatcher>.fromOpaque(info).takeUnretainedValue()
@@ -90,11 +91,10 @@ public final class FolderWatcher: @unchecked Sendable {
             let hits = FolderWatcher.changedFolders(Array(arr.prefix(count)), watched: Set(map.keys))
             if !hits.isEmpty { me.callback(Set(hits.flatMap { map[$0] ?? [] })) }
         }
-        stream = FSEventStreamCreate(nil, cb, &ctx, Array(real.keys) as CFArray,
-                                     FSEventStreamEventId(kFSEventStreamEventIdSinceNow), Self.latency,
-                                     FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents |
-                                                              kFSEventStreamCreateFlagUseCFTypes |
-                                                              kFSEventStreamCreateFlagNoDefer))
+        stream = FSEventStreamCreate(
+            nil, cb, &ctx, Array(real.keys) as CFArray,
+            FSEventStreamEventId(kFSEventStreamEventIdSinceNow), Self.latency,
+            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer))
         if let s = stream {
             FSEventStreamSetDispatchQueue(s, queue)
             FSEventStreamStart(s)

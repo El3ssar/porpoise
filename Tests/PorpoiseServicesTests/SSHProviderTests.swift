@@ -1,7 +1,8 @@
 import Foundation
-import Testing
 import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 /// SSHProvider against a real sshd on 127.0.0.1 (see `SSHServer`). The server runs on this Mac, so its files are
@@ -12,8 +13,10 @@ struct SSHProviderTests {
     let fm = FileManager.default
 
     /// Names that break naive quoting, parsing or option handling.
-    static let hostileNames = ["with space.txt", "it's \"quoted\".txt", "new\nline", "ends in newline\n", "tab\there",
-                               "-rf", "--help", "ünïcødé 📁", "*", "$(touch pwned)", "`touch pwned`", "a\\b", ".hidden"]
+    static let hostileNames = [
+        "with space.txt", "it's \"quoted\".txt", "new\nline", "ends in newline\n", "tab\there",
+        "-rf", "--help", "ünïcødé 📁", "*", "$(touch pwned)", "`touch pwned`", "a\\b", ".hidden",
+    ]
 
     private func write(_ text: String, to url: URL) throws {
         try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -33,7 +36,7 @@ struct SSHProviderTests {
         let items = try server.provider().list(server.url(dir.path, isDirectory: true))
 
         #expect(Set(items.map(\.name)) == Set(Self.hostileNames + ["sub folder", "to-folder", "to-file", "dangling"]))
-        #expect(!fm.fileExists(atPath: dir.appendingPathComponent("pwned").path))   // no name was run as a command
+        #expect(!fm.fileExists(atPath: dir.appendingPathComponent("pwned").path))  // no name was run as a command
         let byName = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0) })
         #expect(byName["sub folder"]?.isDirectory == true)
         #expect(byName["with space.txt"]?.size == Int64("with space.txt".utf8.count))
@@ -132,7 +135,7 @@ struct SSHProviderTests {
         let file = try local.file("tagged.txt", "x")
         #expect(setxattr(file.path, "com.apple.metadata:porpoise-test", "1", 1, 0, 0) == 0)
         try server.provider().upload(file, into: server.url(dir.path))
-        #expect(try fm.contentsOfDirectory(atPath: dir.path) == ["tagged.txt"])   // no "._tagged.txt"
+        #expect(try fm.contentsOfDirectory(atPath: dir.path) == ["tagged.txt"])  // no "._tagged.txt"
     }
 
     @Test func makesRenamesAndDeletes() throws {
@@ -186,7 +189,7 @@ struct SSHProviderTests {
         try p.copy([server.url(dir.appendingPathComponent("-one it's.txt")), server.url(dir.appendingPathComponent("folder"))], into: dest)
         #expect(read(dir.appendingPathComponent("dest dir/-one it's.txt")) == "one")
         #expect(read(dir.appendingPathComponent("dest dir/folder/two.txt")) == "two")
-        #expect(read(dir.appendingPathComponent("-one it's.txt")) == "one")   // the copy left the original
+        #expect(read(dir.appendingPathComponent("-one it's.txt")) == "one")  // the copy left the original
 
         try fm.createDirectory(at: dir.appendingPathComponent("moved"), withIntermediateDirectories: false)
         try p.move([server.url(dir.appendingPathComponent("-one it's.txt"))], into: server.url(dir.appendingPathComponent("moved")))
@@ -215,12 +218,12 @@ struct SSHProviderTests {
     @Test func reusesOneConnectionUntilDisconnected() throws {
         let dir = try server.folder()
         let p = server.provider()
-        p.disconnect()   // a connection left by an earlier test
+        p.disconnect()  // a connection left by an earlier test
         let before = server.logins
 
         for _ in 0..<4 { _ = try p.list(server.url(dir.path)) }
         #expect(server.logins == before + 1)
-        #expect(try fm.contentsOfDirectory(atPath: server.controlDir.path).count == 1)   // the master's socket
+        #expect(try fm.contentsOfDirectory(atPath: server.controlDir.path).count == 1)  // the master's socket
 
         p.disconnect()
         #expect(try fm.contentsOfDirectory(atPath: server.controlDir.path).isEmpty)
@@ -232,11 +235,14 @@ struct SSHProviderTests {
         // The same server with an empty known_hosts: strict checking refuses it rather than asking or recording it.
         let empty = try Scratch()
         let knownHosts = try empty.file("known_hosts")
-        let p = SSHProvider(url: server.url("/"), isolation: .init(options: [
-            "-F", "/dev/null", "-i", server.scratch.path("client_key").path, "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none",
-            "-o", "BatchMode=yes", "-o", "UserKnownHostsFile=\(knownHosts.path)", "-o", "GlobalKnownHostsFile=/dev/null",
-            "-o", "StrictHostKeyChecking=yes", "-o", "ControlPath=none",
-        ], controlDir: empty.url))
+        let p = SSHProvider(
+            url: server.url("/"),
+            isolation: .init(
+                options: [
+                    "-F", "/dev/null", "-i", server.scratch.path("client_key").path, "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none",
+                    "-o", "BatchMode=yes", "-o", "UserKnownHostsFile=\(knownHosts.path)", "-o", "GlobalKnownHostsFile=/dev/null",
+                    "-o", "StrictHostKeyChecking=yes", "-o", "ControlPath=none",
+                ], controlDir: empty.url))
         #expect { try p.list(server.url(server.home.path)) } throws: {
             $0.localizedDescription.contains("Host key verification failed")
         }

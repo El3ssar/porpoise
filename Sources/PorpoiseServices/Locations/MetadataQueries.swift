@@ -24,7 +24,8 @@ final class RecentFilesQuery: NSObject {
         var items: [FileItem] = []
         for i in 0..<min(query.resultCount, Self.maxResults) {
             guard let r = query.result(at: i) as? NSMetadataItem, let p = r.value(forAttribute: NSMetadataItemPathKey) as? String,
-                  !p.contains("/Library/"), let it = FileItem.load(URL(fileURLWithPath: p)) else { continue }
+                !p.contains("/Library/"), let it = FileItem.load(URL(fileURLWithPath: p))
+            else { continue }
             items.append(it)
         }
         done(items)
@@ -59,7 +60,8 @@ final class MetadataListQuery: NSObject {
     /// Finder Smart Folder (.savedSearch): its raw Spotlight query and scopes.
     static func smartFolder(_ file: URL, done: @escaping ([FileItem]) -> Void) -> MetadataListQuery? {
         guard let d = NSDictionary(contentsOf: file), let raw = d["RawQuery"] as? String,
-              let pred = NSPredicate(fromMetadataQueryString: raw) else { return nil }
+            let pred = NSPredicate(fromMetadataQueryString: raw)
+        else { return nil }
         let crit = d["SearchCriteria"] as? [String: Any]
         let scopes: [Any] = ((crit?["FXScopeArrayOfPaths"] as? [String]) ?? []).map { s -> Any in
             switch s {
@@ -77,7 +79,8 @@ final class MetadataListQuery: NSObject {
         var items: [FileItem] = []
         for i in 0..<min(query.resultCount, 2000) {
             guard let r = query.result(at: i) as? NSMetadataItem, let p = r.value(forAttribute: NSMetadataItemPathKey) as? String,
-                  let it = FileItem.load(URL(fileURLWithPath: p)) else { continue }
+                let it = FileItem.load(URL(fileURLWithPath: p))
+            else { continue }
             items.append(it)
         }
         NotificationCenter.default.removeObserver(self)

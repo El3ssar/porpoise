@@ -135,8 +135,11 @@ extension PlacesPanel {
         guard let raw = s.representedObject as? String, let sec = PlaceSection(rawValue: raw) else { return }
         let shown = PlacesModel.shared.sections().map(\.0)
         guard let n = shown.firstIndex(of: sec), shown.indices.contains(n + delta) else { return }
-        if delta < 0 { PlacesModel.shared.moveSection(sec, before: shown[n - 1]) }
-        else { PlacesModel.shared.moveSection(sec, before: n + 2 < shown.count ? shown[n + 2] : nil) }
+        if delta < 0 {
+            PlacesModel.shared.moveSection(sec, before: shown[n - 1])
+        } else {
+            PlacesModel.shared.moveSection(sec, before: n + 2 < shown.count ? shown[n + 2] : nil)
+        }
     }
 
     @objc private func hideSection(_ s: NSMenuItem) {
