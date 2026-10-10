@@ -44,6 +44,13 @@ final class LocalFileServer {
         return URL(string: "http://127.0.0.1:\(p)/\(secret)/")
     }
 
+    /// Stops listening (for tests: the app keeps its one server for as long as it runs).
+    func stop() {
+        listener?.cancel()
+        listener = nil
+        port = nil
+    }
+
     // MARK: Request handling (on `queue`)
 
     private func serve(_ c: NWConnection) {
