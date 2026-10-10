@@ -250,7 +250,9 @@ final class VideoPreviewStreamTests {
         #expect(sessionFolders().count == 1)
         await MainActor.run { p.stop(for: owner) }
         // ffmpeg is ended and its folder removed once it has exited.
-        #expect(eventually { sessionFolders().isEmpty })
+        #expect(
+            eventually { sessionFolders().isEmpty },
+            "left: \(sessionFolders().map { "\($0.lastPathComponent): \((try? FileManager.default.contentsOfDirectory(atPath: $0.path)) ?? [])" })")
         #expect(eventually { !ffmpegRunning(on: v) })
         #expect(try await fetch(url).0 == 404)
     }

@@ -127,8 +127,7 @@ public final class VideoPreview {
                 if self.waitForFirstSegment(playlist, process: p, token: my) { return true }
                 // Too slow or failed: this ffmpeg must not keep writing into the folder the retry reuses.
                 session.detach(p)
-                p.terminate()
-                p.waitUntilExit()
+                StreamSession.end(p)
                 return false
             }
             var ok = run(info.codecs)
@@ -256,15 +255,18 @@ final class StreamSession: @unchecked Sendable {
     private func end(_ p: Process?) {
         let dir = dir
         DispatchQueue(label: "app.porpoise.video-stop", qos: .utility).async {
-            if let p {
-                p.terminate()
-                // ffmpeg finishes the segment it's writing on SIGTERM; one that hasn't stopped by then is killed.
-                let deadline = Date().addingTimeInterval(Self.stopGrace)
-                while p.isRunning && Date() < deadline { usleep(20_000) }
-                if p.isRunning { kill(p.processIdentifier, SIGKILL) }
-                p.waitUntilExit()
-            }
+            if let p { Self.end(p) }
             try? FileManager.default.removeItem(at: dir)
         }
+    }
+
+    /// Ends ffmpeg: it finishes the segment it's writing on SIGTERM; one that hasn't stopped by then is killed. No
+    /// unbounded `waitUntilExit()`: Foundation can notice an exit long after it happened, and a killed process
+    /// writes nothing more anyway.
+    static func end(_ p: Process) {
+        if p.isRunning { p.terminate() }
+        let deadline = Date().addingTimeInterval(stopGrace)
+        while p.isRunning && Date() < deadline { usleep(20_000) }
+        if p.isRunning { kill(p.processIdentifier, SIGKILL) }
     }
 }
