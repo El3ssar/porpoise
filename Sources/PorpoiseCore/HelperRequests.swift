@@ -17,11 +17,13 @@ public enum HelperRequests {
         let item = URL(fileURLWithPath: path)
         let parent = item.deletingLastPathComponent().resolvingSymlinksInPath().path
         let homeTrash = URL(fileURLWithPath: home).appendingPathComponent(".Trash").resolvingSymlinksInPath().path
+        // The item itself, named exactly: "link/" or "link//" would make lstat (and resolving) follow a symlink.
+        let target = parent + "/" + (path as NSString).lastPathComponent
         var st = stat()
         guard PorpoiseHelperInfo.isInUsersTrash(path: path, resolvedParent: parent, uid: uid, resolvedHomeTrash: homeTrash),
-              lstat(path, &st) == 0, (st.st_mode & S_IFMT) != S_IFLNK else { return nil }
+              lstat(target, &st) == 0, (st.st_mode & S_IFMT) != S_IFLNK else { return nil }
         // -P (the default with -R): symlinks inside are changed themselves, never followed.
-        return ["/usr/sbin/chown", "-R", "-P", "\(uid):\(gid)", item.resolvingSymlinksInPath().path]
+        return ["/usr/sbin/chown", "-R", "-P", "\(uid):\(gid)", target]
     }
 
     /// Runs a tool (no shell); nil on success, else what went wrong.
