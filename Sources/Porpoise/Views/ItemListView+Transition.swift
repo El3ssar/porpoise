@@ -16,6 +16,9 @@ struct ItemSnapshot {
     let flightImages: [String: CGImage]
     /// The view mode they were drawn in: when it changes (search results show in Details), items crossfade.
     let mode: ViewMode
+    /// Where the view's top-left was in the window: the view may move by the time the change shows (a Details
+    /// header appearing above it), and the items' start positions move with it, so nothing jumps.
+    let originInWindow: CGPoint
 }
 
 /// A running transition: items glide from where they were to their new cells, items that went away fade out
@@ -78,7 +81,8 @@ extension ItemListView {
             images[k] = picture(ofRow: i)
             flightImages[k] = mode == .icons ? images[k] : picture(ofRow: i, part: flightPart(i))
         }
-        return ItemSnapshot(rects: rects, images: images, flightImages: flightImages, mode: mode)
+        return ItemSnapshot(
+            rects: rects, images: images, flightImages: flightImages, mode: mode, originInWindow: convert(CGPoint.zero, to: nil))
     }
 
     /// The part of row `i` that flies between split panes, where it is in the final layout.
@@ -99,12 +103,16 @@ extension ItemListView {
         curve: @escaping (Double) -> Double = Animator.easeOutCubic, cascade: Bool = false
     ) {
         if frames.count != model.rows.count { computeLayout() }
+        window?.contentView?.layoutSubtreeIfNeeded()
+        // The start positions as seen in the window, in today's coordinates of the view.
+        let then = convert(start.originInWindow, from: nil)
+        let rects = start.rects.mapValues { $0.offsetBy(dx: then.x, dy: then.y) }
         let now = Set(model.rows.indices.map(key(ofRow:)))
-        let leaving = start.rects.compactMap { k, r -> (rect: CGRect, image: CGImage)? in
+        let leaving = rects.compactMap { k, r -> (rect: CGRect, image: CGImage)? in
             guard !now.contains(k), let img = start.images[k] else { return nil }
             return (r, img)
         }
-        var t = ItemTransition(from: start.rects.filter { now.contains($0.key) }, leaving: leaving)
+        var t = ItemTransition(from: rects.filter { now.contains($0.key) }, leaving: leaving)
         if start.mode != mode {
             for (k, r) in t.from { if let img = start.images[k] { t.morph[k] = (img, r.size) } }
         }
@@ -191,11 +199,16 @@ extension ItemListView {
         let shown = shownFrame(i)
         ctx.translateBy(x: shown.minX - target.minX, y: shown.minY - target.minY)
         if let m = t.morph[k] {
-            // The old look, travelling with the new one and fading out as it fades in.
+            // The old look travels with the new one: it holds through the first part, the new one takes over in the
+            // second (a plain crossfade shows the new look's small parts too early, like a row's icon in a big cell).
+            let p = t.progress
+            let smooth = { (a: CGFloat, b: CGFloat) -> CGFloat in
+                let x = min(1, max(0, (p - a) / (b - a))); return x * x * (3 - 2 * x)
+            }
             let old = CGRect(origin: target.origin, size: m.size)
             NSImage(cgImage: m.image, size: m.size).draw(
-                in: old, from: .zero, operation: .sourceOver, fraction: 1 - t.progress, respectFlipped: true, hints: nil)
-            ctx.setAlpha(t.progress)
+                in: old, from: .zero, operation: .sourceOver, fraction: 1 - smooth(0.25, 0.8), respectFlipped: true, hints: nil)
+            ctx.setAlpha(smooth(0.35, 0.9))
         }
         if t.from[k] == nil {
             let a = t.appearProgress(k)

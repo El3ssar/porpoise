@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.8
+
+- Split view in Compact: every visible item flies into the new pane, as in Details (only the first column did).
+- Search: no jump when the results replace the folder (the column header appearing no longer shifts the items at
+  the start), and items change from icon to row more smoothly.
+
 ## 0.2.7
 
 - Closing the split view: the copies flying back fade into the items they land on, instead of doubling their names

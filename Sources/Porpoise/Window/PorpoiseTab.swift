@@ -26,6 +26,9 @@ final class PorpoiseTab: NSView {
     private var flightOverlay: SplitFlightOverlay?
     private let flightAnimator = Animator()
     private static let flightDuration: TimeInterval = 0.42
+    /// The right list's width once the split has opened: which of its items fly in (in Compact, items flow in
+    /// columns, and the still narrow pane would show only the first).
+    private var openingRightWidth: CGFloat?
     /// Handle position the user chose last; reopening the split returns to it (m_splitterLastPosition).
     private static var lastFraction: CGFloat = 0.5
 
@@ -146,6 +149,7 @@ final class PorpoiseTab: NSView {
                 primary.list.animateLayoutChange(from: start, duration: Self.openDuration)
             }
             if s.list.mode == .icons { s.list.layoutWidthOverride = primary.listWidth(forPaneWidth: rightWidth) }
+            openingRightWidth = primary.listWidth(forPaneWidth: rightWidth)
             s.onNextLoad = { [weak self, weak s] in
                 guard let self, let s, s === self.secondary else { return }
                 self.flyItems(into: s)
@@ -164,7 +168,9 @@ final class PorpoiseTab: NSView {
         let list = right.list
         guard let start = primary.list.snapshotForTransition() else { return }
         if list.frames.count != list.model.rows.count { list.computeLayout() }
-        let shown = CGRect(x: 0, y: 0, width: list.layoutWidthOverride ?? list.visibleWidth, height: list.visibleHeight)
+        let shown = CGRect(
+            x: 0, y: 0, width: list.layoutWidthOverride ?? openingRightWidth ?? list.visibleWidth, height: list.visibleHeight)
+        openingRightWidth = nil
         let keys = list.candidateIndexes(in: shown).map(list.key(ofRow:)).filter { start.flightImages[$0] != nil }
         list.animateAppearing(except: Set(keys))
         fly(keys, images: start.flightImages, from: primary.list, to: list, duration: Self.flightDuration) { [weak self, weak list] done in
