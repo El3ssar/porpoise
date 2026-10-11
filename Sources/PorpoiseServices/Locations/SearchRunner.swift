@@ -97,7 +97,9 @@ public final class SearchRunner: NSObject {
             var items: [FileItem] = []
             var seen: [String: FileItem] = [:]
             for p in paths {
-                guard let it = self.loaded[p] ?? FileItem.load(URL(fileURLWithPath: p)) else { continue }
+                guard let it = self.loaded[p] ?? FileItem.load(URL(fileURLWithPath: p)), !(self.contents && it.isBrowsableFolder) else {
+                    continue
+                }
                 seen[p] = it
                 items.append(it)
             }
@@ -170,7 +172,7 @@ public final class SearchRunner: NSObject {
                 {
                     hit = s.lowercased().contains(needle)
                 }
-                if hit, let it = FileItem.load(u) { out.append(it) }
+                if hit, let it = FileItem.load(u), !(contents && it.isBrowsableFolder) { out.append(it) }
                 if out.count >= Self.maxSimpleResults { break }
             }
             DispatchQueue.main.async { if !work.isCancelled { self?.update(out, true) } }

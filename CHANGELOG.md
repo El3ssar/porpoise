@@ -2,6 +2,8 @@
 
 ## 0.2.13
 
+- Searching with *+ Contents* finds files only: folders are no longer among the results, even when their names match
+  (apps and other packages, which Finder shows as single items, still are).
 - Search results coming in while a search runs animate without first taking a picture of every row shown: each
   batch holds up the window a little less.
 

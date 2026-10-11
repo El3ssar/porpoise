@@ -327,6 +327,10 @@ import Testing
         try s.folder("App.app/Contents/\(tag)-packaged")
         #expect(try await search(tag, in: s.url, spotlight: false) == ["\(tag)-one.txt", "\(tag)-three", "\(tag.uppercased())-two.md"].sorted())
         #expect(try await search(tag, in: s.url, contents: true, spotlight: false).contains("other.txt"))
+        // Contents: files only, never a folder (even one named like the text).
+        try s.folder("\(tag)-folder")
+        #expect(try await search(tag, in: s.url, spotlight: false).contains("\(tag)-folder"))
+        #expect(try await !search(tag, in: s.url, contents: true, spotlight: false).contains("\(tag)-folder"))
         #expect(try await search("nothing-matches-\(tag)", in: s.url, spotlight: false).isEmpty)
     }
 

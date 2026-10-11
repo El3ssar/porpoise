@@ -136,7 +136,8 @@ final class FolderSearch: @unchecked Sendable {
         var items: [FileItem] = []
         var lines: [URL: String] = [:]
         for (path, line) in new {
-            guard let item = FileItem.load(URL(fileURLWithPath: path)) else { continue }
+            // A search of contents finds files: folders have none (apps and other packages are items, and stay).
+            guard let item = FileItem.load(URL(fileURLWithPath: path)), !(contents && item.isBrowsableFolder) else { continue }
             items.append(item)
             // Only files whose names don't match get a line: they're the content matches.
             if let line, item.name.range(of: text, options: [.caseInsensitive, .diacriticInsensitive]) == nil {

@@ -55,6 +55,13 @@ struct FolderSearchTests {
         #expect(try await run(".*").names.isEmpty)
     }
 
+    /// Searching contents finds files only: a folder whose name matches isn't a result (it has no contents).
+    @Test func contentSearchesShowNoFolders() async throws {
+        #expect(try await run("report").names.contains("Reports"))
+        let found = try await run("report", contents: true).names
+        #expect(!found.contains("Reports") && found.contains("Q3 Report.pdf"))
+    }
+
     @Test func contentsAddFilesThatContainTheText() async throws {
         #expect(try await run("budget").names.isEmpty)
         #expect(try await run("budget", contents: true).names == ["notes.txt"])
