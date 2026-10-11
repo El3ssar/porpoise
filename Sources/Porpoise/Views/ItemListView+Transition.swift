@@ -69,8 +69,9 @@ extension ItemListView {
     }
 
     /// The visible items as drawn now (mid-transition included), with pictures of them; nil when nothing would
-    /// animate (no window, Reduce Motion, a very large folder).
-    func snapshotForTransition() -> ItemSnapshot? {
+    /// animate (no window, Reduce Motion, a very large folder). Without `pictures`, only where they are: enough when
+    /// nothing will leave or change its look (items are only added), and much quicker.
+    func snapshotForTransition(pictures: Bool = true) -> ItemSnapshot? {
         guard animates else { return nil }
         if frames.count != model.rows.count { computeLayout() }
         let vr = visibleRect
@@ -79,6 +80,7 @@ extension ItemListView {
         for i in transitionIndexes(in: vr) {
             let k = key(ofRow: i)
             rects[k] = shownFrame(i)
+            guard pictures else { continue }
             images[k] = picture(ofRow: i)
             flightImages[k] = mode == .icons ? images[k] : picture(ofRow: i, part: flightPart(i))
         }

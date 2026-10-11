@@ -501,8 +501,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     /// Applies a change to what's listed (filter, search results), the items gliding to their new places, the ones
     /// that went away fading out and new ones growing in.
-    private func animatingItems(searchStyle: Bool = false, _ change: () -> Void) {
-        let start = showsApps ? nil : list.snapshotForTransition()
+    /// `onlyAdding`: the change only adds items (the same search's next results), so no pictures are needed.
+    private func animatingItems(searchStyle: Bool = false, onlyAdding: Bool = false, _ change: () -> Void) {
+        let start = showsApps ? nil : list.snapshotForTransition(pictures: !onlyAdding)
         change()
         guard let start else { return }
         if searchStyle {
@@ -574,7 +575,12 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             // Sorted off the main thread: typing and scrolling stay smooth with thousands of results.
             self.model.sortSearchResults(items) { [weak self] apply in
                 guard let self, self.searchQuery === runner else { return }
-                self.animatingItems(searchStyle: true) {
+                // The same search's next batch keeps what's shown and adds to it.
+                let old = self.model.searchResults ?? []
+                let adding =
+                    self.model.isSearching && !old.isEmpty && items.count >= old.count
+                    && old.indices.allSatisfy { items[$0].url == old[$0].url }
+                self.animatingItems(searchStyle: true, onlyAdding: adding) {
                     // Shown for the results only: never saved as the folder's style.
                     if !self.model.isSearching { self.model.showSearchView() }
                     self.model.searchMatches = matches

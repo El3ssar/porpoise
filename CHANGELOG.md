@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.13
+
+- Search results coming in while a search runs animate without first taking a picture of every row shown: each
+  batch holds up the window a little less.
+
 ## 0.2.12
 
 - **Light mode.** Porpoise now has a light look made to match Desert-Dark, and follows macOS: switch Light/Dark in
