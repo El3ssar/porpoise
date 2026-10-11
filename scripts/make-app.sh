@@ -97,7 +97,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleDocumentTypes</key><array><dict>
     <key>CFBundleTypeName</key><string>Folder</string>
     <key>CFBundleTypeRole</key><string>Viewer</string>
-    <key>LSItemContentTypes</key><array><string>public.folder</string></array>
+    <key>LSItemContentTypes</key><array><string>public.folder</string><string>public.volume</string></array>
     <key>LSHandlerRank</key><string>Alternate</string>
   </dict></array>
 </dict></plist>

@@ -22,18 +22,31 @@ enum SystemIntegration {
     /// Other apps' "Show in Finder" opens Porpoise.
     static var isDefaultBrowser: Bool { fileViewer == bundleID }
 
-    /// Makes Porpoise (or Finder again) the file viewer other apps reveal files in. Opening folders themselves (the
-    /// Dock, the desktop, Open With) is also handed over where macOS allows it; macOS 26 and later keep that with
-    /// Finder and refuse the change (paramErr), which isn't an error for the user.
+    /// Makes Porpoise (or Finder again) the file viewer other apps reveal files in, and the app that opens disks
+    /// (`open /Volumes/…`, other apps opening a drive); macOS asks the user to confirm that. Opening folders themselves
+    /// is asked for too, where macOS allows it: macOS 26 and later keep folders with Finder and refuse (paramErr),
+    /// which isn't an error for the user, nor is declining macOS's question.
     static func setDefaultBrowser(_ on: Bool, done: @escaping (Error?) -> Void) {
         let viewer: CFString? = on ? bundleID as CFString : nil
         CFPreferencesSetValue("NSFileViewer" as CFString, viewer, kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
         CFPreferencesSynchronize(kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
         let app = on ? Bundle.main.bundleURL : URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")
-        NSWorkspace.shared.setDefaultApplication(at: app, toOpen: .folder) { err in
-            let refused = ((err as NSError?)?.userInfo[NSUnderlyingErrorKey] as? NSError)?.code == Int(paramErr)
-            DispatchQueue.main.async { done(refused ? nil : err) }
+        func expected(_ err: Error?) -> Bool {
+            guard let e = err as NSError? else { return true }
+            let code = (e.userInfo[NSUnderlyingErrorKey] as? NSError)?.code ?? e.code
+            return code == Int(paramErr) || code == Int(userCanceledErr) || e.code == NSUserCancelledError
         }
+        NSWorkspace.shared.setDefaultApplication(at: app, toOpen: .folder) { folderErr in
+            NSWorkspace.shared.setDefaultApplication(at: app, toOpen: .volume) { volumeErr in
+                let err = [folderErr, volumeErr].first { !expected($0) } ?? nil
+                DispatchQueue.main.async { done(err) }
+            }
+        }
+    }
+
+    /// Disks (`open /Volumes/…`, other apps opening a drive) open in Porpoise.
+    static var opensDisks: Bool {
+        NSWorkspace.shared.urlForApplication(toOpen: .volume).flatMap { Bundle(url: $0)?.bundleIdentifier } == bundleID
     }
 
     /// macOS lets Porpoise open folders from the Dock and the desktop too (not on macOS 26 and later).

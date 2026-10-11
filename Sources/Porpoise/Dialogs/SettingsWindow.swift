@@ -264,7 +264,9 @@ final class SettingsWindowController: NSWindowController {
                         true,
                         SystemIntegration.opensFolders
                             ? "Porpoise shows files and opens folders for other apps"
-                            : "Porpoise shows files for other apps"
+                            : SystemIntegration.opensDisks
+                                ? "Porpoise shows files and opens disks for other apps (macOS keeps folders with Finder)"
+                                : "Porpoise shows files for other apps (macOS keeps folders with Finder)"
                     )
                 }, button: { SystemIntegration.isDefaultBrowser ? "Restore Finder" : "Make Porpoise Default" }
             ) { refresh in

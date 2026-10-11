@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.14
+
+- **Disks open in Porpoise.** "Make Porpoise Default" (Settings › System) now also asks macOS to open disks with
+  Porpoise (`open /Volumes/…`, other apps opening a drive or disk image); macOS asks you to confirm. Folders
+  themselves stay with Finder: macOS doesn't let any other app open them. Settings says which of these Porpoise does.
+
 ## 0.2.13
 
 - Searching with *+ Contents* finds files only: folders are no longer among the results, even when their names match
