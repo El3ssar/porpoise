@@ -5,7 +5,7 @@
 **A fast, keyboard-friendly file manager for macOS, inspired by KDE Dolphin.**
 
 Split view, a built-in terminal that follows the folder you're in, tabs, panels, Finder tags, remote folders over
-SSH/FTP, and previews of every video format, in a native Mac app with a dark Desert theme and Tela icons.
+SSH/FTP, and previews of every video format, in a native Mac app with Desert light and dark looks (following macOS) and Tela icons.
 
 ![Porpoise with Places (F9), split view (F3), the Information panel (F10) and the terminal (F4)](docs/screenshots/panes.png)
 
@@ -40,7 +40,11 @@ with *Porpoise › Check for Updates…*.
   location bar per pane, full-width status bar with free space and a zoom slider.
 - **Views:** Icons, Compact and Details (expandable folders, sortable/resizable/reorderable columns), smooth zoom
   (pinch, slider, ⌘+/−), previews of images, documents and every video format, grouping, natural sorting,
-  type-ahead, inline rename, rubber-band and selection mode, filter bar, Spotlight search.
+  type-ahead, inline rename, rubber-band and selection mode, filter bar.
+- **Search:** fast search of names and contents with the bundled fd and ripgrep (results stream in, content matches
+  show the line they were found in), or everywhere with Spotlight. Items glide into place as results come and go.
+- **Looks:** light and dark, switching with macOS (or fixed in Settings); icons glide when the window or a pane is
+  resized.
 - **Applications:** an app library instead of a plain folder: every app (including Apple's own) as big icons, a
   search field you can type into right away, with the results animating into place. Delete apps with ⌘⌫ or by
   dragging them to the Trash in the Dock, with Finder's sounds; drop an app from a disk image to install it.
@@ -124,6 +128,8 @@ Porpoise is free software under the **GNU General Public License v3.0 or later**
 - Colours: Desert theme by L4ki (AGPL-3.0).
 - Terminal: [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) by Miguel de Icaza (MIT).
 - Video previews: [FFmpeg](https://ffmpeg.org) (LGPL-2.1), bundled as a separate program.
+- Search: [fd](https://github.com/sharkdp/fd) (MIT/Apache-2.0) and [ripgrep](https://github.com/BurntSushi/ripgrep)
+  (MIT/Unlicense), bundled inside the app (they aren't added to your `PATH`).
 - Symbols Nerd Font (MIT).
 
 Details in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

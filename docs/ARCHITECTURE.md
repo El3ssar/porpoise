@@ -26,7 +26,7 @@ never AppKit or SwiftUI.
 |---|---|
 | `Settings` | `Settings` and `@Pref` (UserDefaults; `Settings.store` is replaceable), settings enums, `PanelSize`, migration |
 | `FileOperations` | `FileOperationsController`: jobs, undo/redo, Trash origins and Put Back, clipboard bookkeeping, remote transfers, the administrator retry; `FileOperationsUI` and `FileClipboard` |
-| `Locations` | `DirectoryModel` (what a view shows), `PlacesModel`, recent locations, Spotlight search and queries, tags, comments, cloud state, archives, the app library, Trash info, icon names (`IconTheme`), path completion |
+| `Locations` | `DirectoryModel` (what a view shows), `PlacesModel`, recent locations, search (bundled fd/ripgrep in folders, Spotlight everywhere) and queries, tags, comments, cloud state, archives, the app library, Trash info, icon names (`IconTheme`), path completion |
 | `Remote` | `RemoteFS` and the SSH/FTP/ADB providers, Keychain, Android tools, network mounts and browsing, `RemoteOpener` |
 | `Media` | `VideoPreview` (ffmpeg to HLS) and its local HTTP server |
 | `System` | `Shell`, `PrivilegedHelper` (install, XPC, ownership), `PrivacyAccess` (TCC), Local Network access, `StatusCenter`, Finder sounds |

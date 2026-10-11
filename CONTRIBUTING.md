@@ -21,7 +21,7 @@ what you expected and what happened. Screenshots help a lot.
 | `Sources/Porpoise/Dialogs`, `FileOperations` | Settings, onboarding, properties and other dialogs; drop menu, jobs panel, conflict dialog |
 | `Sources/PorpoiseHelper` | The privileged helper daemon (its binary is committed in `Resources/Helper`) |
 | `Vendor/SwiftTerm` | Vendored terminal emulator (MIT) |
-| `scripts/` | `make-app.sh`, `make-dmg.sh`, `build-ffmpeg.sh`, `setup-signing.sh`, test tools |
+| `scripts/` | `make-app.sh`, `make-dmg.sh`, `build-ffmpeg.sh`, `fetch-search-tools.sh`, `setup-signing.sh`, test tools |
 | `docs/` | `ARCHITECTURE.md` (layers and rules), `DOLPHIN_SPEC.md` (the KDE Dolphin behaviour Porpoise follows), design notes, plan |
 | `docs/site` | The website, published to GitHub Pages on every push to `main` |
 | `.github/workflows` | CI (build + tests on every PR), releases, website |
@@ -33,6 +33,7 @@ You need macOS 15+ on Apple Silicon and Xcode 26 (or its command line tools).
 ```bash
 swift build              # quick compile check
 swift test               # unit tests
+./scripts/fetch-search-tools.sh  # fd and ripgrep (checksum-verified) into build/search-tools, for search and its tests
 ./scripts/make-app.sh    # full app: build/Porpoise.app (the first run also builds ffmpeg, a few minutes)
 open build/Porpoise.app
 ```
@@ -49,7 +50,8 @@ operations, locations, remotes, previews, the helper's checks). They work on rea
 - **Settings.** A suite that reads or writes settings carries `.isolatedSettings`: each test gets an empty store in
   memory, and those tests take turns.
 - **Real tools.** SSH tests start a private `sshd` on 127.0.0.1 with its own keys; video tests make short clips with
-  an ffmpeg on your `PATH` and are skipped without one; FTP and adb are replaced by small scripts that record what
+  an ffmpeg on your `PATH` and are skipped without one; search tests run the real fd and ripgrep from
+  `build/search-tools` (`scripts/fetch-search-tools.sh`) and are skipped without them; FTP and adb are replaced by small scripts that record what
   they're given.
 - **No hanging.** Every wait has its own timeout, so a regression fails instead of stalling the run.
 
