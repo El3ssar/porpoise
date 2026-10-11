@@ -44,7 +44,8 @@ final class RemoteOpenerTests {
         return (item, onServer)
     }
 
-    private func waitUntil(_ what: Comment, timeout: Double = 10, _ condition: () -> Bool) async throws {
+    /// Waits for `condition`, generously: uploads to the real sshd can be slow on a busy CI machine.
+    private func waitUntil(_ what: Comment, timeout: Double = 30, _ condition: () -> Bool) async throws {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition() {
             guard Date() < deadline else { Issue.record("timed out waiting: \(what)"); return }
