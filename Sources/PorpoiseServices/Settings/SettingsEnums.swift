@@ -3,6 +3,17 @@ import Foundation
 public enum StatusBarMode: String, CaseIterable { case small, fullWidth, disabled }
 public enum TabStyle: String, CaseIterable { case autoSize, fixedSize, fullWidth }
 public enum CloseSplitChoice: String, CaseIterable { case active, inactive, right }
+/// Light or dark: as macOS is set (switching with it), or always one.
+public enum AppearanceChoice: String, CaseIterable {
+    case system, light, dark
+    public var title: String {
+        switch self {
+        case .system: return "Match macOS"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+}
 public enum FolderSizeMode: String, CaseIterable { case itemCount, contentSize, none }
 public enum DateStyle: String, CaseIterable { case relative, absolute }
 public enum PermissionStyle: String, CaseIterable { case symbolic, numeric, combined }

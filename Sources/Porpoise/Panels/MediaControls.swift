@@ -24,8 +24,7 @@ final class MediaControls: NSView {
         wantsLayer = true
         layer?.cornerRadius = 8
         layer?.cornerCurve = .continuous
-        layer?.backgroundColor = Theme.windowBackground.withAlphaComponent(0.82).cgColor
-        appearance = NSAppearance(named: .darkAqua)
+        Theme.whenChanged(self) { [weak self] in self?.layer?.backgroundColor = Theme.windowBackground.withAlphaComponent(0.82).cgColor }
         playButton.isBordered = false
         playButton.imageScaling = .scaleProportionallyDown
         playButton.contentTintColor = Theme.windowText

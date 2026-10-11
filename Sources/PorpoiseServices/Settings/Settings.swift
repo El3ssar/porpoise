@@ -71,6 +71,9 @@ public final class Settings {
     /// Opening an executable file: ask, open in application, or run it.
     @Pref("execAction") public var executableAction: ExecutableAction = .ask
 
+    // Interface › Appearance
+    @Pref("appearance") public var appearance: AppearanceChoice = .system
+
     // View › General
     @Pref("perFolder") public var rememberPerFolder: Bool = false
     @Pref("selectionMarker") public var showSelectionMarker: Bool = true

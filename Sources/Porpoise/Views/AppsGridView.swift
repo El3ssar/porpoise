@@ -25,12 +25,15 @@ final class AppsGridView: NSView, NSDraggingSource {
     private var shownItems: [URL: FileItem] = [:]
     /// A running filter animation: apps glide to their new places, leaving ones shrink and fade, new ones grow in.
     private struct Transition {
-        let start: CFTimeInterval
         let from: [URL: CGRect]
         let leaving: [(item: FileItem, cell: CGRect)]
     }
     private var transition: Transition?
-    private var link: CADisplayLink?
+    /// Steps the animation with the display (its clock starts at the first frame shown, and it keeps going during a
+    /// live resize).
+    private let animator = Animator()
+    /// 0…1 through the running animation, eased out (fast start, gentle landing).
+    private var progress: CGFloat = 1
     private static let duration: CFTimeInterval = 0.34
 
     init(model: DirectoryModel) {
@@ -47,7 +50,6 @@ final class AppsGridView: NSView, NSDraggingSource {
     required init?(coder: NSCoder) { fatalError() }
     deinit {
         observers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
-        link?.invalidate()
     }
 
     override var isFlipped: Bool { true }
@@ -62,12 +64,11 @@ final class AppsGridView: NSView, NSDraggingSource {
 
     override func resignFirstResponder() -> Bool { needsDisplay = true; return true }
 
-    /// Out of the window (tab closed mid-animation): the display link would keep the grid alive.
+    /// Out of the window (tab closed mid-animation): the animation stops.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window == nil else { return }
-        link?.invalidate()
-        link = nil
+        animator.stop()
         transition = nil
     }
 
@@ -77,6 +78,13 @@ final class AppsGridView: NSView, NSDraggingSource {
     }
 
     // MARK: Layout
+
+    /// The grid got another width (window or split pane resized): when the apps reflow into another number of
+    /// columns they glide to their new places, otherwise the layout just follows.
+    func resize(width: CGFloat) {
+        let newColumns = max(1, Int((width - 2 * Self.sideMargin) / Self.cell.width))
+        updateLayout(width: width, animated: newColumns != columns && !targets.isEmpty)
+    }
 
     func updateLayout(width: CGFloat, animated: Bool = false) {
         // Where things are drawn now, before the layout changes: the start of a new animation.
@@ -98,39 +106,33 @@ final class AppsGridView: NSView, NSDraggingSource {
         let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let leaving = before.compactMap { url, cell in targets[url] == nil ? beforeItems[url].map { (item: $0, cell: cell) } : nil }
         let from = still ? targets.filter { before[$0.key] != nil } : before.filter { targets[$0.key] != nil }
-        transition = Transition(start: CACurrentMediaTime(), from: from, leaving: leaving)
+        transition = Transition(from: from, leaving: leaving)
         lastTransitionInfo =
             "moving=\(from.filter { $0.value != targets[$0.key] }.count) staying=\(from.count) leaving=\(leaving.count) appearing=\(targets.count - from.count)"
         // Room for the apps on their way out; the grid takes its real height when the animation ends.
         if let low = (before.values.map(\.maxY) + [frame.height]).max(), low > frame.height { setFrameSize(NSSize(width: width, height: low)) }
-        if link == nil {
-            let l = displayLink(target: self, selector: #selector(step))
-            l.add(to: .main, forMode: .common)
-            link = l
-        }
+        progress = 0
+        animator.run(
+            duration: Self.duration,
+            step: { [weak self] p in
+                self?.progress = CGFloat(p)
+                self?.needsDisplay = true
+            },
+            completion: { [weak self] in
+                guard let self else { return }
+                self.transition = nil
+                self.progress = 1
+                self.updateLayout(width: self.bounds.width)
+                self.needsDisplay = true
+            })
         needsDisplay = true
     }
 
     /// For tests: an animation is running, with how many apps gliding and how many leaving.
-    var animationInfo: String { lastTransitionInfo }
+    var animationInfo: String {
+        lastTransitionInfo + (transition != nil ? String(format: " running %.2f", progress) : "")
+    }
     private var lastTransitionInfo = "none"
-
-    /// 0…1 through the running animation, eased out (fast start, gentle landing).
-    private var progress: CGFloat {
-        guard let t = transition else { return 1 }
-        let x = min(1, max(0, (CACurrentMediaTime() - t.start) / Self.duration))
-        return CGFloat(1 - pow(1 - x, 3))
-    }
-
-    @objc private func step() {
-        needsDisplay = true
-        if progress >= 1 {
-            transition = nil
-            link?.invalidate()
-            link = nil
-            updateLayout(width: bounds.width)
-        }
-    }
 
     /// Each shown app's cell as drawn at this moment.
     private func currentCells() -> [URL: CGRect] {

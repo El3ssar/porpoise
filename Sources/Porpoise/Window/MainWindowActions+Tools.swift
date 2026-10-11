@@ -80,7 +80,6 @@ extension MainWindowController {
         let a = NSAlert()
         a.messageText = "Some downloads could not be removed."
         a.informativeText = failed.prefix(6).joined(separator: "\n")
-        a.window.appearance = NSAppearance(named: .darkAqua)
         if let w = window { a.beginSheetModal(for: w) } else { a.runModal() }
     }
 

@@ -109,7 +109,6 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
-        scroll.appearance = NSAppearance(named: .darkAqua)
         addSubview(scroll)
         settingsObserver = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
             // Rebuilding collapses the tree, so only for the panel's own settings.

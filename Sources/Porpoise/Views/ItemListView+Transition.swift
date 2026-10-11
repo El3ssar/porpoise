@@ -64,7 +64,7 @@ extension ItemListView {
         return i
     }
 
-    private var animates: Bool {
+    var animates: Bool {
         window != nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion && model.rows.count <= Self.maxAnimatedRows
     }
 
@@ -125,6 +125,24 @@ extension ItemListView {
         runTransition(duration: duration, curve: curve)
     }
 
+    /// The view was resized (window, split pane, panel): laid out again. Items that change places (another number of
+    /// columns in Icons, of rows per column in Compact) glide there instead of jumping; a resize that keeps them in
+    /// place is shown at once, so they never trail the pointer.
+    func resized() {
+        guard mode != .details, layoutWidthOverride == nil, animates, frames.count == model.rows.count, !frames.isEmpty else {
+            return computeLayout()
+        }
+        let vr = visibleRect.insetBy(dx: -40, dy: -40)
+        let before = Dictionary(transitionIndexes(in: vr).map { (key(ofRow: $0), shownFrame($0)) }, uniquingKeysWith: { a, _ in a })
+        let old = frames
+        computeLayout()
+        // A running glide keeps going to the new places by itself; a new one starts only when the layout reflows.
+        let reflowed = zip(old, frames).contains { abs($0.minX - $1.minX) > 24 || abs($0.minY - $1.minY) > 24 }
+        guard reflowed, !before.isEmpty, frames.count == old.count else { return needsDisplay = true }
+        transition = ItemTransition(from: before, leaving: [])
+        runTransition(duration: 0.3)
+    }
+
     /// Lets the visible items come in where they are (a view that just got its items), except `except` (keys).
     func animateAppearing(except: Set<String> = [], duration: TimeInterval = ItemListView.transitionDuration) {
         guard animates else { return }
@@ -133,7 +151,7 @@ extension ItemListView {
         runTransition(duration: duration)
     }
 
-    private func runTransition(duration: TimeInterval, curve: @escaping (Double) -> Double = Animator.easeOutCubic) {
+    func runTransition(duration: TimeInterval, curve: @escaping (Double) -> Double = Animator.easeOutCubic) {
         transitionAnimator.run(
             duration: duration, curve: curve,
             step: { [weak self] p in

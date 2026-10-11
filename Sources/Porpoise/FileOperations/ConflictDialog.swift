@@ -23,7 +23,6 @@ final class ConflictDialog: NSObject, NSTextFieldDelegate {
     private func build() {
         let bothDirs = info.source.isBrowsableFolder && info.destination.isBrowsableFolder
         window.title = bothDirs ? "Folder Already Exists" : "File Already Exists"
-        window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = Theme.windowBackground
         let v = window.contentView!
         let header = NSTextField(
@@ -37,9 +36,11 @@ final class ConflictDialog: NSObject, NSTextFieldDelegate {
         func pane(_ item: FileItem, title: String, x: CGFloat) {
             let box = NSView(frame: CGRect(x: x, y: 130, width: 280, height: 150))
             box.wantsLayer = true
-            box.layer?.backgroundColor = Theme.viewBackground.cgColor
             box.layer?.cornerRadius = 5
-            box.layer?.borderColor = Theme.frame.cgColor
+            Theme.whenChanged(box) { [weak box] in
+                box?.layer?.backgroundColor = Theme.viewBackground.cgColor
+                box?.layer?.borderColor = Theme.frame.cgColor
+            }
             box.layer?.borderWidth = 1
             let t = NSTextField(labelWithString: title); t.font = Theme.boldFont; t.frame = CGRect(x: 10, y: 122, width: 260, height: 18)
             let img = NSImageView(frame: CGRect(x: 10, y: 40, width: 72, height: 72))

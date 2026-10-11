@@ -20,7 +20,6 @@ final class FileOperationsDialogs: FileOperationsUI {
             a.showsSuppressionButton = true
             a.suppressionButton?.title = "Don’t ask again"
         }
-        a.window.appearance = NSAppearance(named: .darkAqua)
         let confirmed = a.runModal() == .alertFirstButtonReturn
         return (confirmed, a.suppressionButton?.state == .on)
     }
@@ -30,7 +29,6 @@ final class FileOperationsDialogs: FileOperationsUI {
         a.alertStyle = .warning
         a.messageText = errs.count == 1 ? errs[0] : "\(errs.count) items could not be processed."
         if errs.count > 1 { a.informativeText = errs.prefix(8).joined(separator: "\n") }
-        a.window.appearance = NSAppearance(named: .darkAqua)
         // A job can outlive its window; its errors then show on their own instead of on a closed window.
         if let w = window as? NSWindow, w.isVisible { a.beginSheetModal(for: w) } else { a.runModal() }
     }
@@ -46,7 +44,6 @@ final class FileOperationsDialogs: FileOperationsUI {
     func showAuthorizationError(_ msg: String) {
         let e = NSAlert()
         e.alertStyle = .warning
-        e.window.appearance = NSAppearance(named: .darkAqua)
         guard msg.contains("Operation not permitted") else { e.messageText = msg; e.runModal(); return }
         // Blocked by macOS's privacy protection: name the switch that's off, and open its list.
         if PrivilegedHelper.isEnabled, PrivilegedHelper.hasFullDiskAccess != true {

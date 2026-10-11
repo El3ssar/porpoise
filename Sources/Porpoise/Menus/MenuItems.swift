@@ -60,7 +60,6 @@ extension NSMenuItem {
 extension NSAlert {
     /// Runs as a sheet on `window` when there is one (app-modal otherwise), always in the dark appearance.
     func runSheet(for window: NSWindow?, _ done: @escaping (NSApplication.ModalResponse) -> Void) {
-        self.window.appearance = NSAppearance(named: .darkAqua)
         if let window { beginSheetModal(for: window, completionHandler: done) } else { done(runModal()) }
     }
 }

@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private(set) var windows: [MainWindowController] = []
     private var sessionSave: DispatchWorkItem?
     private var settingsWindow: SettingsWindowController?
+    private var lookObservation: NSKeyValueObservation?
     /// UserDefaults key of the saved windows/tabs: [[["url": …, "split": …, "mode": …]]], the first tab of each window
     /// also with "frame" and "active".
     private static let sessionKey = "session"
@@ -20,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.appearance = NSAppearance(named: .darkAqua)
+        followLook()
         NSApp.mainMenu = buildMainMenu()
         NSApp.registerServicesMenuSendTypes([.fileURL], returnTypes: [])
         VideoPreview.shared.cleanUp()
@@ -35,6 +36,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         Updates.shared.start()
         PrivilegedHelper.migrateFromLoginItems()
+    }
+
+    /// Light or dark as chosen in Settings (as macOS is, by default), and the switch when either changes: what's drawn
+    /// follows by itself, layers are given their new colors.
+    private func followLook() {
+        NSApp.appearance = Theme.appearance
+        lookObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { _, _ in
+            DispatchQueue.main.async { Theme.lookChanged() }
+        }
+        NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { n in
+            guard n.object == nil || n.object as? String == "appearance" else { return }
+            MainActor.assumeIsolated { NSApp.appearance = Theme.appearance }
+        }
     }
 
     private func openInitialWindows(_ args: [(folder: URL, select: URL?)]) {
@@ -120,7 +134,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             a.messageText = "The program “\(w.terminal.runningProgramName)” is still running in the Terminal panel. Are you sure you want to quit?"
             a.addButton(withTitle: "Quit")
             a.addButton(withTitle: "Cancel")
-            a.window.appearance = NSAppearance(named: .darkAqua)
             if a.runModal() != .alertFirstButtonReturn { return .terminateCancel }
         }
         saveSession()

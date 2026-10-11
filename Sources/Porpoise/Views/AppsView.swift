@@ -36,7 +36,6 @@ final class AppsView: NSView, NSTextFieldDelegate {
         self.model = model
         grid = AppsGridView(model: model)
         super.init(frame: .zero)
-        appearance = NSAppearance(named: .darkAqua)
         wantsLayer = true
         addSubview(backdrop)
 
@@ -97,7 +96,7 @@ final class AppsView: NSView, NSTextFieldDelegate {
         clearButton.frame = CGRect(x: w - 32, y: (h - 18) / 2, width: 18, height: 18)
         let fh = ceil(field.intrinsicContentSize.height)
         field.frame = CGRect(x: 40, y: (h - fh) / 2, width: w - 40 - 38, height: fh)
-        grid.updateLayout(width: scroll.contentSize.width)
+        grid.resize(width: scroll.contentSize.width)
         noResults.sizeToFit()
         noResults.frame.origin = CGPoint(x: (bounds.width - noResults.frame.width) / 2, y: bounds.height * 0.42)
     }

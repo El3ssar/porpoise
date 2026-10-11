@@ -246,6 +246,7 @@ import Testing
         #expect(SortOrder.ascending.rawValue == "ascending" && SortOrder.descending.rawValue == "descending")
         #expect(SortingChoice.allCases.map(\.rawValue) == ["natural", "caseInsensitive", "caseSensitive"])
         #expect(FilterMode.allCases.map(\.rawValue) == ["plainText", "glob", "regex"])
+        #expect(AppearanceChoice.allCases.map(\.rawValue) == ["system", "light", "dark"])
     }
 
     @Test func placesSections() {
@@ -261,7 +262,7 @@ import Testing
                 "tabsAtEnd", "closeSplit", "splitStartup", "singleWindow", "pvImages", "pvVideos", "pvDocs", "pvText", "pvFonts",
                 "pvFolders", "pvMax", "pvRemote", "statusBar2", "zoomSlider2", "editableUrl", "fullPathUrl", "confirmTrash",
                 "confirmDelete", "confirmEmptyTrash", "confirmCloseTabs", "confirmTerminal", "confirmOpenMany",
-                "confirmRenameType", "confirmRenameHide", "confirmTerminals", "execAction", "perFolder", "selectionMarker",
+                "confirmRenameType", "confirmRenameHide", "confirmTerminals", "execAction", "appearance", "perFolder", "selectionMarker",
                 "renameInline", "toolTips", "autoExpand", "dblClickBg2", "dynamicView", "browseArchives", "allExtensions",
                 "hideBackup", "sorting", "folderDepth", "folderSize", "dateStyle", "permStyle", "elideMiddle", "labelWidth",
                 "maxLines", "compactMax", "clickRow", "labelFont", "labelFontSize", "expandable", "entireRow", "infoPreview",

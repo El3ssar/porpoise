@@ -41,12 +41,11 @@ final class StatusBarView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         hairline.wantsLayer = true
-        hairline.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.30).cgColor
+        Theme.whenChanged(hairline) { [weak hairline] in hairline?.layer?.backgroundColor = Theme.hairline.cgColor }
         slider.controlSize = .mini
         slider.isContinuous = true
         slider.target = self
         slider.action = #selector(sliderMoved)
-        slider.appearance = NSAppearance(named: .darkAqua)
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.isDisplayedWhenStopped = false
@@ -210,7 +209,7 @@ final class StatusBarView: NSView {
         NSBezierPath(roundedRect: fillRect, xRadius: 3, yRadius: 3).addClip()
         NSGradient(colors: colors)?.draw(in: fillRect, angle: 0)
         // Soft top highlight for a little depth.
-        NSColor.white.withAlphaComponent(0.18).setFill()
+        NSColor.white.withAlphaComponent(NSAppearance.currentDrawing().isDark ? 0.18 : 0.35).setFill()
         CGRect(x: fillRect.minX, y: fillRect.minY, width: fillRect.width, height: 1).fill()
         NSGraphicsContext.restoreGraphicsState()
     }

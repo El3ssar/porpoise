@@ -42,6 +42,33 @@ final class DebugBridge: NSObject {
                     self?.windowServerSnapshot(to: a[0] + String(format: "/%02d.png", k))
                 }
             }
+        case "resizeframes":
+            // resizeframes <folder> <width> <height> <count> <ms>: resizes the main window, then captures it every <ms>
+            // (the resize animations), timed in the app.
+            let a = arg.split(separator: " ").map(String.init)
+            guard a.count == 5, let w = Double(a[1]), let h = Double(a[2]), let n = Int(a[3]), let ms = Int(a[4]), let win = wc?.window
+            else { return }
+            try? FileManager.default.createDirectory(atPath: a[0], withIntermediateDirectories: true)
+            var f = win.frame
+            f.size = CGSize(width: w, height: h)
+            win.setFrame(f, display: true)
+            for k in 0..<n {
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(k * ms)) { [weak self] in
+                    self?.windowServerSnapshot(to: a[0] + String(format: "/%02d.png", k))
+                    let info = self?.wc?.view.apps?.grid.animationInfo ?? "-"
+                    try? info.write(toFile: a[0] + String(format: "/%02d.txt", k), atomically: true, encoding: .utf8)
+                }
+            }
+        case "animprobe":
+            // animprobe <file>: runs a 0.3 s animation and writes how many frames it got (the display's ticks).
+            var ticks = 0
+            let probe = Animator()
+            probe.run(duration: 0.3, step: { _ in ticks += 1 })
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                let screens = NSScreen.screens.map { "\($0.localizedName) \(Int($0.frame.width))" }.joined(separator: ", ")
+                try? "ticks=\(ticks) running=\(probe.isRunning) main=\(NSScreen.main?.localizedName ?? "-") screens=\(screens)".write(
+                    toFile: arg, atomically: true, encoding: .utf8)
+            }
         case "csnapshot":
             // csnapshot <png>|<title prefix or "Settings">: draws a window's views itself, so it works while the window
             // is inactive or shrunk by Stage Manager (no window-server capture).

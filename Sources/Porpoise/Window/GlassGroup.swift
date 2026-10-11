@@ -29,7 +29,6 @@ final class GlassGroup: NSView {
             glass = v
             addSubview(v)
         }
-        appearance = NSAppearance(named: .darkAqua)
     }
 
     required init?(coder: NSCoder) { fatalError() }

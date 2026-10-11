@@ -28,16 +28,28 @@ final class Icons {
 
     private init() {}
 
-    /// Icon image by freedesktop name. `selected` uses highlighted-text colors (like KDE's selected state).
+    /// Icon image by freedesktop name. `selected` uses highlighted-text colors (like KDE's selected state). It draws
+    /// in the colors of the look it's drawn in (light or dark), so menus and buttons holding it follow a change.
     func image(_ name: String, size: CGFloat, selected: Bool = false) -> NSImage? {
         let px = Int(size)
         let key = "\(name)|\(px)|\(selected)" as NSString
         if let img = cache.object(forKey: key) { return img }
-        guard let url = IconTheme.shared.file(name, size: px), let svg = try? String(contentsOf: url, encoding: .utf8),
-            let data = Self.recolor(svg, stylesheet: Theme.iconStylesheet(selected: selected)).data(using: .utf8),
-            let img = NSImage(data: data)
-        else { return nil }
-        img.size = NSSize(width: size, height: size)
+        guard let url = IconTheme.shared.file(name, size: px), let svg = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        // Icons without the color-scheme stylesheet look the same in both: one picture.
+        guard svg.contains("current-color-scheme") else {
+            guard let img = NSImage(data: Data(svg.utf8)) else { return nil }
+            img.size = NSSize(width: size, height: size)
+            cache.setObject(img, forKey: key)
+            return img
+        }
+        func render(dark: Bool) -> NSImage? {
+            NSImage(data: Data(Self.recolor(svg, stylesheet: Theme.iconStylesheet(selected: selected, dark: dark)).utf8))
+        }
+        guard let darkImg = render(dark: true), let lightImg = render(dark: false) else { return nil }
+        let img = NSImage(size: NSSize(width: size, height: size), flipped: false) { r in
+            (NSAppearance.currentDrawing().isDark ? darkImg : lightImg).draw(in: r)
+            return true
+        }
         cache.setObject(img, forKey: key)
         return img
     }

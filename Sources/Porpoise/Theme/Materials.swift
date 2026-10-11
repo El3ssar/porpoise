@@ -14,9 +14,8 @@ final class TintedMaterialView: NSVisualEffectView {
         self.material = material
         blendingMode = blending
         state = .followsWindowActiveState
-        appearance = NSAppearance(named: .darkAqua)
         wantsLayer = true
-        tintLayer.backgroundColor = tint.withAlphaComponent(alpha).cgColor
+        Theme.whenChanged(self) { [weak self] in self?.tintLayer.backgroundColor = tint.withAlphaComponent(alpha).cgColor }
         layer?.addSublayer(tintLayer)
     }
 
@@ -51,13 +50,14 @@ final class PillMaterialView: NSVisualEffectView {
         material = .hudWindow
         blendingMode = .withinWindow
         state = .active
-        appearance = NSAppearance(named: .darkAqua)
         wantsLayer = true
         layer?.cornerRadius = 9
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
         layer?.borderWidth = 0.5
-        layer?.borderColor = NSColor.white.withAlphaComponent(0.10).cgColor
+        Theme.whenChanged(self) { [weak self] in
+            self?.layer?.borderColor = (Theme.isDark ? NSColor.white.withAlphaComponent(0.10) : NSColor.black.withAlphaComponent(0.08)).cgColor
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }

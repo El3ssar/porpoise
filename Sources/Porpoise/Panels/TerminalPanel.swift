@@ -52,9 +52,11 @@ final class TerminalPanel: NSView, LocalProcessTerminalViewDelegate {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.backgroundColor = Theme.windowBackground.cgColor
         hairline.wantsLayer = true
-        hairline.layer?.backgroundColor = Theme.frame.cgColor
+        Theme.whenChanged(self) { [weak self] in
+            self?.layer?.backgroundColor = Theme.windowBackground.cgColor
+            self?.hairline.layer?.backgroundColor = Theme.frame.cgColor
+        }
         addSubview(hairline)
     }
 
@@ -86,16 +88,15 @@ final class TerminalPanel: NSView, LocalProcessTerminalViewDelegate {
         t.autoresizingMask = [.width, .height]
         t.processDelegate = self
         t.font = Theme.terminalFont()
-        t.appearance = NSAppearance(named: .darkAqua)
-        applyDesertKonsoleColors(t)
+        Theme.whenChanged(t) { [weak self, weak t] in if let t { self?.applyKonsoleColors(t) } }
         t.optionAsMetaKey = true
         t.menu = contextMenu(for: t)
         return t
     }
 
-    /// Desert-Konsole.colorscheme (from the Desert theme pack) mapped onto the terminal.
-    private func applyDesertKonsoleColors(_ t: TerminalView) {
-        let scheme = KonsoleScheme.desert
+    /// Desert-Konsole.colorscheme (from the Desert theme pack) mapped onto the terminal, or its light counterpart.
+    private func applyKonsoleColors(_ t: TerminalView) {
+        let scheme = Theme.isDark ? KonsoleScheme.desert : KonsoleScheme.light
         func c(_ rgb: KonsoleScheme.RGB) -> SwiftTerm.Color {
             SwiftTerm.Color(red: UInt16(rgb.0 * 257), green: UInt16(rgb.1 * 257), blue: UInt16(rgb.2 * 257))
         }

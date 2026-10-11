@@ -62,7 +62,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         w.titlebarAppearsTransparent = true
         w.titleVisibility = .hidden
         w.isMovableByWindowBackground = false
-        w.appearance = NSAppearance(named: .darkAqua)
         w.backgroundColor = Theme.windowBackground
         w.minSize = NSSize(width: 520, height: 320)
         w.tabbingMode = .disallowed
@@ -104,7 +103,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         outer.isVertical = true
         outer.dividerStyle = .thin
         outer.delegate = self
-        outer.dividerColorOverride = NSColor.black.withAlphaComponent(0.35)
+        outer.dividerColorOverride = Theme.color(dark: NSColor.black.withAlphaComponent(0.35), light: NSColor.black.withAlphaComponent(0.12))
         mainColumn.content = vSplit
         mainColumn.addSubview(vSplit)
         vSplit.isVertical = false

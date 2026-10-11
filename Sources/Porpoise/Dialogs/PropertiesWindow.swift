@@ -25,7 +25,6 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
     init(urls: [URL]) {
         self.urls = urls
         let w = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 440, height: 660), styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        w.appearance = NSAppearance(named: .darkAqua)
         w.backgroundColor = Theme.windowBackground
         w.isReleasedWhenClosed = false
         super.init(window: w)

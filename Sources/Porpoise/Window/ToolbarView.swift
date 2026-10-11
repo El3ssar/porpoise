@@ -45,7 +45,7 @@ final class ToolbarView: NSView {
         if !IconTheme.shared.has("application-menu") { hamburger.iconName = "open-menu-symbolic" }
         for b in [back, forward, viewMode, split, search, hamburger] { b.iconSize = 18; b.cornerRadius = 13 }
         hairline.wantsLayer = true
-        hairline.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.28).cgColor
+        Theme.whenChanged(hairline) { [weak hairline] in hairline?.layer?.backgroundColor = Theme.hairline.cgColor }
         addSubview(background)
         navGroup.content.addSubview(back)
         navGroup.content.addSubview(forward)

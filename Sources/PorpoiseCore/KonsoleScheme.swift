@@ -20,6 +20,14 @@ public struct KonsoleScheme {
         return KonsoleScheme(palette: builtInDesertPalette)
     }()
 
+    /// The light look's terminal: dark text on the light window color, with ANSI colors deep enough to read on it.
+    public static let light = KonsoleScheme(
+        palette: [
+            (34, 38, 52), (192, 57, 68), (0, 122, 96), (160, 112, 0), (36, 112, 186), (140, 72, 150), (24, 120, 150), (238, 240, 245),
+            (98, 105, 128), (210, 90, 60), (40, 150, 110), (190, 140, 20), (66, 132, 210), (170, 100, 180), (40, 150, 180), (255, 255, 255),
+        ],
+        background: (238, 240, 245), foreground: (34, 38, 52))
+
     public static let builtInDesertPalette: [RGB] = [
         (29, 33, 47), (191, 97, 106), (0, 160, 128), (235, 203, 139), (65, 129, 194), (180, 142, 173), (58, 129, 179), (214, 219, 241),
         (85, 97, 128), (208, 135, 112), (98, 194, 162), (240, 216, 160), (114, 159, 207), (199, 166, 199), (110, 170, 210), (255, 255, 255),

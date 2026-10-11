@@ -29,7 +29,6 @@ final class FilterBar: NSView, NSSearchFieldDelegate {
         field.target = self
         field.action = #selector(fieldAction)
         field.focusRingType = .exterior
-        field.appearance = NSAppearance(named: .darkAqua)
         lockButton.onClick = { [weak self] in self?.isLocked.toggle() }
         modeButton.showsMenuIndicator = true
         modeButton.isSplitButton = true

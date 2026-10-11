@@ -77,7 +77,6 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         scroll.borderType = .noBorder
         scroll.contentView.postsBoundsChangedNotifications = true
         scroll.horizontalScrollElasticity = .automatic
-        scroll.appearance = NSAppearance(named: .darkAqua)
         NotificationCenter.default.addObserver(
             self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         header.list = list
@@ -307,7 +306,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         scroll.frame = CGRect(x: 0, y: y, width: bounds.width, height: max(0, bottom - y))
         if scroll.frame.size != laidOutScrollSize {
             laidOutScrollSize = scroll.frame.size
-            list.computeLayout()
+            list.resized()
         }
         header.needsDisplay = true
         layoutStatusBar(bottom: bottom, mode: statusMode)

@@ -6,7 +6,7 @@ extension AskPass {
     static func runHelper(prompt: String) -> Never {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
-        NSApp.appearance = NSAppearance(named: .darkAqua)
+        NSApp.appearance = Theme.appearance
         let a = NSAlert()
         let isConfirm = prompt.lowercased().contains("yes/no") || prompt.lowercased().contains("continue connecting")
         a.messageText = isConfirm ? "Connect to this server?" : "Authentication Required"

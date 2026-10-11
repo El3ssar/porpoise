@@ -89,7 +89,6 @@ final class JobsPanel {
             p.isFloatingPanel = true
             p.hidesOnDeactivate = false
             p.titlebarAppearsTransparent = true
-            p.appearance = NSAppearance(named: .darkAqua)
             p.backgroundColor = Theme.windowBackground
             panel = p
         }

@@ -1,6 +1,10 @@
 import AppKit
 import PorpoiseServices
 
+extension NSAppearance {
+    var isDark: Bool { bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
+}
+
 extension NSColor {
     convenience init(rgb r: Int, _ g: Int, _ b: Int, _ a: CGFloat = 1) {
         self.init(srgbRed: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: a)
@@ -26,37 +30,55 @@ extension NSColor {
     }
 }
 
-/// The Desert-Dark color scheme (L4ki/Desert-Plasma-Themes, DesertDarkColor.colors), as KDE's palette groups.
+/// Porpoise's two looks, following macOS's Light/Dark setting (or the one chosen in Settings): the Desert-Dark color
+/// scheme (L4ki/Desert-Plasma-Themes, DesertDarkColor.colors) and a light scheme made to match it, as KDE's palette
+/// groups. Every color is dynamic: drawn, it takes the value for the appearance it's drawn in.
 enum Theme {
+    /// A color with a value for each look.
+    static func color(dark: NSColor, light: NSColor) -> NSColor {
+        NSColor(name: nil) { $0.isDark ? dark : light }
+    }
+
+    /// A color worked out from others (blends, alphas): computed in the appearance it's drawn in.
+    static func derived(_ make: @escaping () -> NSColor) -> NSColor {
+        NSColor(name: nil) { a in
+            var c = NSColor.clear
+            a.performAsCurrentDrawingAppearance { c = make().usingColorSpace(.sRGB) ?? make() }
+            return c
+        }
+    }
+
     // [Colors:Window]
-    static let windowBackground = NSColor(rgb: 29, 33, 47)
-    static let windowText = NSColor(rgb: 214, 219, 241)
-    static let windowTextInactive = NSColor(rgb: 180, 188, 218)
-    static let linkText = NSColor(rgb: 65, 129, 194)
-    static let activeText = NSColor(rgb: 68, 137, 206)
-    static let negativeText = NSColor(rgb: 191, 97, 106)
-    static let neutralText = NSColor(rgb: 58, 129, 179)
-    static let positiveText = NSColor(rgb: 0, 106, 128)
+    static let windowBackground = color(dark: NSColor(rgb: 29, 33, 47), light: NSColor(rgb: 238, 240, 245))
+    static let windowText = color(dark: NSColor(rgb: 214, 219, 241), light: NSColor(rgb: 34, 38, 52))
+    static let windowTextInactive = color(dark: NSColor(rgb: 180, 188, 218), light: NSColor(rgb: 98, 105, 128))
+    static let linkText = color(dark: NSColor(rgb: 65, 129, 194), light: NSColor(rgb: 36, 112, 186))
+    static let activeText = color(dark: NSColor(rgb: 68, 137, 206), light: NSColor(rgb: 45, 118, 196))
+    static let negativeText = color(dark: NSColor(rgb: 191, 97, 106), light: NSColor(rgb: 192, 57, 68))
+    static let neutralText = color(dark: NSColor(rgb: 58, 129, 179), light: NSColor(rgb: 36, 106, 160))
+    static let positiveText = color(dark: NSColor(rgb: 0, 106, 128), light: NSColor(rgb: 0, 122, 96))
     // [Colors:View]
-    static let viewBackground = NSColor(rgb: 24, 28, 39)
-    static let viewAlternate = NSColor(rgb: 29, 33, 47)
-    static let viewText = NSColor(rgb: 214, 219, 241)
-    static let viewTextInactive = NSColor(rgb: 180, 188, 218)
+    static let viewBackground = color(dark: NSColor(rgb: 24, 28, 39), light: NSColor(rgb: 252, 252, 254))
+    static let viewAlternate = color(dark: NSColor(rgb: 29, 33, 47), light: NSColor(rgb: 244, 245, 249))
+    static let viewText = color(dark: NSColor(rgb: 214, 219, 241), light: NSColor(rgb: 34, 38, 52))
+    static let viewTextInactive = color(dark: NSColor(rgb: 180, 188, 218), light: NSColor(rgb: 98, 105, 128))
     // [Colors:Selection]
-    static let selection = NSColor(rgb: 71, 99, 130)
-    static let selectionAlternate = NSColor(rgb: 29, 153, 243)
-    static let selectionText = NSColor(rgb: 214, 219, 241)
+    static let selection = color(dark: NSColor(rgb: 71, 99, 130), light: NSColor(rgb: 66, 132, 210))
+    static let selectionAlternate = color(dark: NSColor(rgb: 29, 153, 243), light: NSColor(rgb: 29, 133, 223))
+    static let selectionText = color(dark: NSColor(rgb: 214, 219, 241), light: NSColor(rgb: 26, 30, 44))
     // Decorations
-    static let focus = NSColor(rgb: 74, 103, 136)
+    static let focus = color(dark: NSColor(rgb: 74, 103, 136), light: NSColor(rgb: 66, 132, 210))
     /// Highlights and "done" marks in Porpoise's own windows (setup, settings).
     static let accent = activeText
     static let success = NSColor.systemGreen
 
     /// Breeze frame/separator color: text blended into the background at 20% (Breeze's "frameOutlineColor").
-    static let frame = windowText.mixed(with: windowBackground, 0.80)
-    static let separator = windowText.mixed(with: windowBackground, 0.85)
-    static let buttonHoverBackground = windowText.withAlphaComponent(0.10)
-    static let buttonPressedBackground = windowText.withAlphaComponent(0.16)
+    static let frame = derived { windowText.mixed(with: windowBackground, 0.80) }
+    static let separator = derived { windowText.mixed(with: windowBackground, 0.85) }
+    /// The thin line under the toolbar and above the status bar, and the split view's divider.
+    static let hairline = color(dark: NSColor.black.withAlphaComponent(0.30), light: NSColor.black.withAlphaComponent(0.10))
+    static let buttonHoverBackground = derived { windowText.withAlphaComponent(0.10) }
+    static let buttonPressedBackground = derived { windowText.withAlphaComponent(0.16) }
     /// Field (line edit) background: View background.
     static let fieldBackground = viewBackground
 
@@ -67,12 +89,44 @@ enum Theme {
     static var itemSelectedHoverFill: NSColor { selection.withAlphaComponent(increasedContrast ? 0.85 : 0.45) }
     static var itemSelectedOutline: NSColor { increasedContrast ? windowText : selection.withAlphaComponent(0.55) }
     static var increasedContrast: Bool { NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast }
-    static let itemHoverFill = windowText.withAlphaComponent(0.06)
+    static let itemHoverFill = derived { windowText.withAlphaComponent(0.06) }
     static let itemHoverOutline = NSColor.clear
     /// Places panel current entry: Selection at ~23% over the window color, no outline (measured).
-    static let placesSelectedFill = selection.withAlphaComponent(0.23)
+    static let placesSelectedFill = derived { selection.withAlphaComponent(0.23) }
     /// Split view: inactive view background is the View color with alpha 150/255 (over the window color).
-    static let inactiveViewBackgroundOpaque = windowBackground.mixed(with: viewBackground, 150.0 / 255.0)
+    static let inactiveViewBackgroundOpaque = derived { windowBackground.mixed(with: viewBackground, 150.0 / 255.0) }
+
+    // MARK: Light and dark
+
+    /// The look chosen in Settings: macOS's (nil), or always light or dark.
+    static var appearance: NSAppearance? {
+        switch Settings.shared.appearance {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+    }
+
+    /// Whether the app is in its dark look now.
+    static var isDark: Bool { NSApp.effectiveAppearance.isDark }
+
+    private static var observers: [(owner: () -> AnyObject?, apply: () -> Void)] = []
+
+    /// Runs `apply` now and whenever the look changes, with colors resolving for it: for colors handed to layers
+    /// (`cgColor`), which don't follow by themselves. Kept for as long as `owner` lives.
+    static func whenChanged(_ owner: AnyObject, _ apply: @escaping () -> Void) {
+        let ref = { [weak owner] in owner }
+        observers.append((ref, apply))
+        NSApp.effectiveAppearance.performAsCurrentDrawingAppearance(apply)
+    }
+
+    /// The look changed (macOS's setting, or the one in Settings): layers take their new colors.
+    static func lookChanged() {
+        observers.removeAll { $0.owner() == nil }
+        NSApp.effectiveAppearance.performAsCurrentDrawingAppearance {
+            for o in observers { o.apply() }
+        }
+    }
 
     // Breeze metrics
     static let frameRadius: CGFloat = 5
@@ -117,8 +171,14 @@ enum Theme {
         }
     }
 
-    /// KIconLoader's color-scheme stylesheet, injected into SVG icons (normal state).
-    static func iconStylesheet(selected: Bool = false) -> String {
+    /// KIconLoader's color-scheme stylesheet, injected into SVG icons (normal state), for the dark or light look.
+    static func iconStylesheet(selected: Bool = false, dark: Bool) -> String {
+        var sheet = ""
+        NSAppearance(named: dark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance { sheet = stylesheet(selected: selected) }
+        return sheet
+    }
+
+    private static func stylesheet(selected: Bool) -> String {
         let text = selected ? selectionText : windowText
         return """
             .ColorScheme-Text { color:\(text.hexString); }

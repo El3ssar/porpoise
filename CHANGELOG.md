@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.12
+
+- **Light mode.** Porpoise now has a light look made to match Desert-Dark, and follows macOS: switch Light/Dark in
+  System Settings (or let it change automatically) and Porpoise switches with it, live. Settings › Folders & Tabs ›
+  Appearance can also keep it always Light or always Dark. Everything follows: views, panels, the Applications
+  library, the terminal (a light palette), icons, menus and dialogs.
+- **Icons glide when resizing.** Resizing the window, a split pane or a panel no longer makes the items jump: when they
+  move to another column (or row, in Compact) they glide there, in the folder views and the Applications library.
+- The Applications library's animations step with the display (they could skip frames, or show only the end).
+
 ## 0.2.11
 
 - Searching *Everywhere* (Spotlight) with *+ Contents* now shows each content match's line too, read with the bundled

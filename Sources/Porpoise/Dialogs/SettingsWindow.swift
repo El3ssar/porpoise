@@ -71,6 +71,9 @@ final class SettingsWindowController: NSWindowController {
             f.section("Opening folders")
             f.check("Keep a single Porpoise window, opening new folders in tabs", s.singleWindow) { s.singleWindow = $0 }
             f.section("Window")
+            f.popup("Appearance:", AppearanceChoice.allCases.map(\.title), AppearanceChoice.allCases.firstIndex(of: s.appearance) ?? 0) {
+                s.appearance = AppearanceChoice.allCases[$0]
+            }
             f.check("Show full path in window title", s.showFullPathInTitle) { s.showFullPathInTitle = $0 }
             f.note(
                 "The window title appears in the Window menu, Mission Control and the Dock's window list (the toolbar takes the title bar's place).")
@@ -337,7 +340,6 @@ final class SettingsWindowController: NSWindowController {
         w.styleMask = [.titled, .closable, .resizable]
         // Wide enough for every page's toolbar item (narrower hides the last ones behind a » menu).
         w.setContentSize(NSSize(width: 760, height: 580))
-        w.appearance = NSAppearance(named: .darkAqua)
         w.isReleasedWhenClosed = false
         self.builders = builders
         super.init(window: w)

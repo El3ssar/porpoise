@@ -12,14 +12,19 @@ final class AppsBackdrop: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.backgroundColor = Theme.viewBackground.cgColor
-        wash.colors = [Theme.windowBackground.cgColor, Theme.viewBackground.cgColor]
         wash.locations = [0, 0.55]
         wash.startPoint = CGPoint(x: 0.5, y: 0)
         wash.endPoint = CGPoint(x: 0.5, y: 1)
-        for (g, color, alpha) in [(glow, Theme.selection, 0.22), (glow2, Theme.activeText, 0.10)] {
+        Theme.whenChanged(self) { [weak self] in
+            guard let self else { return }
+            self.layer?.backgroundColor = Theme.viewBackground.cgColor
+            self.wash.colors = [Theme.windowBackground.cgColor, Theme.viewBackground.cgColor]
+            for (g, color, alpha) in [(self.glow, Theme.selection, 0.22), (self.glow2, Theme.activeText, 0.10)] {
+                g.colors = [color.withAlphaComponent(alpha).cgColor, color.withAlphaComponent(0).cgColor]
+            }
+        }
+        for g in [glow, glow2] {
             g.type = .radial
-            g.colors = [color.withAlphaComponent(alpha).cgColor, color.withAlphaComponent(0).cgColor]
             g.startPoint = CGPoint(x: 0.5, y: 0.5)
             g.endPoint = CGPoint(x: 1, y: 1)
         }
