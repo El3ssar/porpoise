@@ -1,24 +1,40 @@
 import CoreServices
 import Foundation
 
-/// Owns its stream and callback context for exactly the stream lifetime.
+/// Owns its stream for exactly the stream lifetime.
 final class IndexEvents {
     static var currentEventID: UInt64 { FSEventsGetCurrentEventId() }
     private var stream: FSEventStreamRef?
     var available: Bool { stream != nil }
-    private let callback: ([String], UInt64, Bool) -> Void
     private let queue = DispatchQueue(label: "app.porpoise.index-events", qos: .utility)
+
+    /// What the stream calls. The stream holds it (retained with the stream, released when the stream goes), so a
+    /// callback that starts while IndexEvents is being freed on another queue never touches the freed object.
+    private final class Handler {
+        let callback: ([String], UInt64, Bool) -> Void
+        init(_ callback: @escaping ([String], UInt64, Bool) -> Void) { self.callback = callback }
+    }
+
     init(roots: [String], since: UInt64, callback: @escaping ([String], UInt64, Bool) -> Void) {
-        self.callback = callback
+        let handler = Handler(callback)
         var context = FSEventStreamContext(
-            version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
+            version: 0, info: Unmanaged.passUnretained(handler).toOpaque(),
+            retain: { info in
+                guard let info else { return nil }
+                _ = Unmanaged<Handler>.fromOpaque(info).retain()
+                return info
+            },
+            release: { info in
+                guard let info else { return }
+                Unmanaged<Handler>.fromOpaque(info).release()
+            }, copyDescription: nil)
         let flags = FSEventStreamCreateFlags(
             kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagWatchRoot)
         stream = FSEventStreamCreate(
             nil,
             { _, info, count, paths, flags, ids in
                 guard let info else { return }
-                let owner = Unmanaged<IndexEvents>.fromOpaque(info).takeUnretainedValue()
+                let handler = Unmanaged<Handler>.fromOpaque(info).takeUnretainedValue()
                 let names = unsafeBitCast(paths, to: NSArray.self) as! [String]
                 var rescan = false, last: UInt64 = 0
                 var changed: [String] = []
@@ -31,7 +47,7 @@ final class IndexEvents {
                             | kFSEventStreamEventFlagRootChanged | kFSEventStreamEventFlagEventIdsWrapped)
                     if flags[i] & lost != 0 { rescan = true }
                 }
-                if !changed.isEmpty { owner.callback(changed, last, rescan) }
+                if !changed.isEmpty { handler.callback(changed, last, rescan) }
             }, &context, roots as CFArray, since == 0 ? FSEventStreamEventId(kFSEventStreamEventIdSinceNow) : since, 0.1, flags)
         if let stream {
             FSEventStreamSetDispatchQueue(stream, queue)
