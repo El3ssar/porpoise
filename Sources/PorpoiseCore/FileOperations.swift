@@ -162,8 +162,8 @@ public final class FileJob: @unchecked Sendable {
     /// Top-level sources that failed (for Retry).
     public private(set) var failedSources: [URL] = []
 
-    /// Minimum interval between progress callbacks.
-    private static let publishInterval: TimeInterval = 0.05
+    /// Minimum interval between progress callbacks (tests set 0 to see every chunk).
+    var publishInterval: TimeInterval = 0.05
 
     private let fm = FileManager.default
     private let lock = NSLock()
@@ -335,7 +335,7 @@ public final class FileJob: @unchecked Sendable {
 
     private func publish(force: Bool = false) {
         let now = Date()
-        if force || now.timeIntervalSince(lastPublish) > Self.publishInterval {
+        if force || now.timeIntervalSince(lastPublish) > publishInterval {
             lastPublish = now
             onProgress(progress)
         }
