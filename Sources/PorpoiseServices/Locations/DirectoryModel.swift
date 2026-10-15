@@ -581,6 +581,10 @@ public final class DirectoryModel {
 
     // MARK: Folder sizes (Details "Size" column shows item counts, Dolphin's default)
 
+    /// Folder sizes are counted here, one model after another: a serial queue of its own always gets a thread,
+    /// where utility work on the shared pool got none while other work kept every core busy.
+    private static let countQueue = DispatchQueue(label: "app.porpoise.folder-counts", qos: .utility)
+
     private func requestFolderCounts() {
         guard Settings.shared.folderSizeMode != .none, location.isFileURL else { return }
         let all = recountFolders
@@ -597,7 +601,7 @@ public final class DirectoryModel {
         let mode = Settings.shared.folderSizeMode
         let depth = Settings.shared.folderSizeDepth  // read here: Settings is main-thread only
         let cancellation = countCancellation
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        Self.countQueue.async { [weak self] in
             var res: [URL: Int] = [:]
             for u in urls where !cancellation.isCancelled {
                 if mode == .contentSize {

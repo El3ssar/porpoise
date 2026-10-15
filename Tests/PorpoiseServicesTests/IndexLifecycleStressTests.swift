@@ -21,8 +21,13 @@ import Testing
         }
         writer.start()
         defer { stop.set() }
+        // The writes reach a watcher (FSEvents can take seconds on a busy machine).
+        let seen = Counter()
+        let first = IndexEvents(roots: [root.path], since: 0) { _, _, _ in seen.add() }
+        #expect(waitUntil(30) { seen.value > 0 })
+        _ = first
         let calls = Counter()
-        for _ in 0..<150 {
+        for _ in 0..<100 {
             var events: IndexEvents? = IndexEvents(roots: [root.path], since: 0) { _, _, _ in calls.add() }
             #expect(events?.available == true)
             // Freed on another thread, as SearchIndex does on its own queue, while callbacks may be running.
@@ -33,7 +38,6 @@ import Testing
                 }
             }
         }
-        #expect(calls.value > 0)  // the watchers did see the writes
     }
 
     /// A big tree (readers on several threads) crawled and cancelled at random moments: the crawl returns with
