@@ -8,8 +8,15 @@ enum AppearancePage {
     static func build(_ f: FormBuilder) {
         let s = Settings.shared
         let themes = ["Follow system"] + AppearanceTheme.builtIns.map(\.name) + ["Custom"]
-        f.section("Colour theme · live preview")
-        f.popup("Theme:", themes, themes.firstIndex(of: s.appearancePreferences.themeName) ?? 0) { i in
+        f.grouped = true
+        f.section("Theme")
+        f.themeCards(
+            themes, selected: { s.appearancePreferences.themeName },
+            theme: { i in
+                if let theme = AppearanceTheme.builtIns.first(where: { $0.name == themes[i] }) { return theme }
+                return s.appearancePreferences.theme(dark: Theme.isDark)
+            }
+        ) { i in
             s.updateAppearance { p in
                 if themes[i] == "Custom", p.customTheme == nil { p.customTheme = p.theme(dark: Theme.isDark) }
                 p.themeName = themes[i]
@@ -37,55 +44,43 @@ enum AppearancePage {
             }
         }
         f.button("Export Theme…") { writeFile(name: "Porpoise-theme.json") { try s.appearancePreferences.theme(dark: Theme.isDark).encoded() } }
+        f.section("Colours")
         f.note("Changing a colour creates a custom theme. Changes preview immediately in open windows.")
-        for role in ThemeRole.allCases {
-            f.colorWell(
-                role.title + ":",
-                {
-                    let c = s.appearancePreferences.theme(dark: Theme.isDark)[role]
-                    return NSColor(rgb: c.red, c.green, c.blue)
-                }
-            ) { color in
+        f.colorGrid(
+            ThemeRole.allCases.map(\.title),
+            values: { index in
+                let role = ThemeRole.allCases[index]
+                let c = s.appearancePreferences.theme(dark: Theme.isDark)[role]
+                return NSColor(rgb: c.red, c.green, c.blue)
+            },
+            set: { index, color in
+                let role = ThemeRole.allCases[index]
                 guard let c = color.usingColorSpace(.sRGB) else { return }
                 s.updateAppearance { p in
+                    if role == .folderTint { p.folderVariant = "default" }
                     var theme = p.theme(dark: Theme.isDark)
                     theme[role] = ThemeColor(
                         Int((c.redComponent * 255).rounded()), Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
                     theme.name = "Custom"; p.customTheme = theme; p.themeName = "Custom"
                 }
-            }
-        }
-        f.section("Theme terminal palette")
-        for index in 0..<16 {
-            f.colorWell(
-                "ANSI \(index):",
-                {
-                    let c = s.appearancePreferences.theme(dark: Theme.isDark).terminalPalette[index]
-                    return NSColor(rgb: c.red, c.green, c.blue)
-                }
-            ) { color in
-                guard let c = color.usingColorSpace(.sRGB) else { return }
-                s.updateAppearance { p in
-                    var theme = p.theme(dark: Theme.isDark)
-                    theme.terminalPalette[index] = ThemeColor(
-                        Int((c.redComponent * 255).rounded()), Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
-                    theme.name = "Custom"; p.customTheme = theme; p.themeName = "Custom"
-                }
-            }
-        }
+            })
         f.section("Icons")
-        let icons = ["Tela-circle", "Native macOS"] + IconTheme.installedThemes
+        let icons =
+            ["Tela-circle", "Native macOS"] + IconTheme.bundledThemes + IconTheme.installedThemes.filter { !IconTheme.bundledThemes.contains($0) }
         f.popup("Icon theme:", icons, icons.firstIndex(of: s.appearancePreferences.iconTheme) ?? 0) { i in
             s.updateAppearance { $0.iconTheme = icons[i] }
         }
         let variants = ["default", "blue", "green", "red", "orange", "yellow", "purple", "pink", "grey"]
-        f.popup("Folder colour:", variants, variants.firstIndex(of: s.appearancePreferences.folderVariant) ?? 0) { i in
+        f.popup(
+            "Folder preset:", variants.map { $0 == "default" ? "Use theme colour well" : $0.capitalized },
+            variants.firstIndex(of: s.appearancePreferences.folderVariant) ?? 0
+        ) { i in
             s.updateAppearance { $0.folderVariant = variants[i] }
         }
         f.note(
             "Install freedesktop themes in ~/Library/Application Support/Porpoise/icons, then reopen Settings. Missing icons fall back to Tela-circle."
         )
-        f.section("Typography and density")
+        f.section("Fonts & Density")
         f.fontPicker("Interface font:", name: s.appearancePreferences.uiFontName, size: s.appearancePreferences.uiFontSize) { name, size in
             s.updateAppearance {
                 $0.uiFontName = name; $0.uiFontSize = size
@@ -110,14 +105,14 @@ enum AppearancePage {
                 s.applyAppearanceIconSizes()
             }
         }
-        f.section("F4 terminal panel")
+        f.section("Terminal")
         f.popup("Shell:", ShellChoice.allCases.map(\.title), ShellChoice.allCases.firstIndex(of: s.appearancePreferences.shell) ?? 0) { i in
             s.updateAppearance { $0.shell = ShellChoice.allCases[i] }
         }
         f.text("Custom shell path:", s.appearancePreferences.customShell) { v in
             s.updateAppearance { $0.customShell = (v as NSString).expandingTildeInPath }
         }
-        f.text("Custom arguments (JSON):", argumentsJSON()) { [weak f] value in
+        f.text("Arguments (JSON):", argumentsJSON()) { [weak f] value in
             guard let args = try? JSONDecoder().decode([String].self, from: Data(value.utf8)) else { NSSound.beep(); f?.refresh(); return }
             s.updateAppearance { $0.shellArguments = args }
         }
@@ -142,6 +137,21 @@ enum AppearancePage {
                 }
             }
         }
+        f.colorGrid(
+            (0..<16).map { "ANSI \($0)" },
+            values: { index in
+                let c = s.appearancePreferences.theme(dark: Theme.isDark).terminalPalette[index]
+                return NSColor(rgb: c.red, c.green, c.blue)
+            },
+            set: { index, color in
+                guard let c = color.usingColorSpace(.sRGB) else { return }
+                s.updateAppearance { p in
+                    var theme = p.theme(dark: Theme.isDark)
+                    theme.terminalPalette[index] = ThemeColor(
+                        Int((c.redComponent * 255).rounded()), Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
+                    theme.name = "Custom"; p.customTheme = theme; p.themeName = "Custom"
+                }
+            })
         let cursors = ["block", "bar", "underline"]
         f.popup("Cursor:", cursors.map { $0.capitalized }, cursors.firstIndex(of: s.appearancePreferences.cursor) ?? 0) { i in
             s.updateAppearance { $0.cursor = cursors[i] }

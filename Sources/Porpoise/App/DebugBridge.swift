@@ -361,6 +361,19 @@ final class DebugBridge: NSObject {
             }
         case "select":
             if let v = wc?.view { v.list.select(arg.hasPrefix("/") ? URL(fileURLWithPath: arg) : v.url.appendingPathComponent(arg)) }
+        case "appearanceexport":
+            try? Settings.shared.exportAppearance().write(to: URL(fileURLWithPath: arg))
+        case "appearanceimport":
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: arg)) { try? Settings.shared.importAppearance(data) }
+        case "settingssize":
+            let dimensions = arg.split(separator: " ").compactMap { Double($0) }
+            if dimensions.count == 2 { settingsWindow?.setContentSize(NSSize(width: dimensions[0], height: dimensions[1])) }
+        case "settingsscroll":
+            if let y = Double(arg), let tabs = settingsWindow?.contentViewController as? NSTabViewController,
+                let scroll = tabs.tabViewItems[safe: tabs.selectedTabViewItemIndex]?.viewController?.view as? NSScrollView
+            {
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: y)); scroll.reflectScrolledClipView(scroll.contentView)
+            }
         case "settings":
             AppDelegate.shared.showSettings(nil)
             if let i = Int(arg), let tabs = settingsWindow?.contentViewController as? NSTabViewController {

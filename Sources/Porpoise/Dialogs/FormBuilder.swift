@@ -9,6 +9,9 @@ import PorpoiseServices
 final class FormBuilder: NSObject {
     let stack = NSStackView()
     let view: NSView
+    var grouped = false
+    private var group: NSStackView?
+    private var contentStack: NSStackView { group ?? stack }
     /// Notification observers, removed with the builder.
     private var observers: [NSObjectProtocol] = []
     /// Re-read each control's value and enabled state.
@@ -28,7 +31,7 @@ final class FormBuilder: NSObject {
             stack.topAnchor.constraint(equalTo: container.topAnchor),
             stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             container.widthAnchor.constraint(greaterThanOrEqualToConstant: 560),
         ])
         view = container
@@ -68,17 +71,86 @@ final class FormBuilder: NSObject {
     }
 
     func section(_ title: String) {
-        if let last = stack.arrangedSubviews.last { stack.setCustomSpacing(16, after: last) }
+        if let last = stack.arrangedSubviews.last { stack.setCustomSpacing(20, after: last) }
         guard !title.isEmpty else { return }
         let l = NSTextField(labelWithString: title)
         l.font = .boldSystemFont(ofSize: 13)
-        stack.addArrangedSubview(l)
+        if grouped {
+            let heading = NSStackView(views: [l])
+            heading.edgeInsets = NSEdgeInsets(top: 0, left: 4, bottom: 0, right: 0)
+            stack.addArrangedSubview(heading)
+            let body = FormSectionView()
+            body.orientation = .vertical; body.alignment = .leading; body.spacing = 12
+            body.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+            body.wantsLayer = true
+            body.layer?.cornerRadius = 10
+            body.layer?.borderWidth = 0.5
+            stack.addArrangedSubview(body)
+            body.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -60).isActive = true
+            group = body
+
+        } else {
+            stack.addArrangedSubview(l)
+        }
+    }
+
+    /// Equal-width columns make palettes compact without forcing the scroll view wider than its window.
+    func colorGrid(_ labels: [String], values: @escaping (Int) -> NSColor, set: @escaping (Int, NSColor) -> Void) {
+        let grid = NSGridView()
+        grid.columnSpacing = 24; grid.rowSpacing = 10
+        for start in stride(from: 0, to: labels.count, by: 2) {
+            var cells: [NSView] = []
+            for i in start..<min(start + 2, labels.count) {
+                let label = NSTextField(labelWithString: labels[i])
+                label.font = .systemFont(ofSize: 12)
+                let well = ClosureColorWell(color: values(i)) { set(i, $0) }
+                well.colorWellStyle = .minimal
+                well.widthAnchor.constraint(equalToConstant: 38).isActive = true
+                well.heightAnchor.constraint(equalToConstant: 24).isActive = true
+                let row = NSStackView(views: [label, NSView(), well])
+                row.spacing = 8
+                cells.append(row)
+                track(well, enabled: nil) { [weak well] in well?.color = values(i) }
+            }
+            grid.addRow(with: cells)
+        }
+        contentStack.addArrangedSubview(grid)
+        grid.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -32).isActive = true
+        if grid.numberOfColumns == 2 {
+            grid.cell(atColumnIndex: 0, rowIndex: 0).contentView?.widthAnchor.constraint(
+                equalTo: grid.cell(atColumnIndex: 1, rowIndex: 0).contentView!.widthAnchor
+            ).isActive = true
+        }
+    }
+
+    func themeCards(
+        _ names: [String], selected: @escaping () -> String, theme: @escaping (Int) -> AppearanceTheme,
+        set: @escaping (Int) -> Void
+    ) {
+        let grid = NSGridView()
+        grid.columnSpacing = 8; grid.rowSpacing = 8
+        for start in stride(from: 0, to: names.count, by: 3) {
+            let buttons: [NSView] = (start..<min(start + 3, names.count)).map { i in
+                let b = ThemePreviewButton(title: names[i], theme: { theme(i) }) { set(i) }
+                b.heightAnchor.constraint(equalToConstant: 62).isActive = true
+                track(b, enabled: nil) { [weak b] in
+                    b?.state = selected() == names[i] ? .on : .off; b?.needsDisplay = true
+                }
+                return b
+            }
+            grid.addRow(with: buttons)
+            for button in buttons {
+                button.widthAnchor.constraint(equalTo: grid.widthAnchor, multiplier: 1.0 / 3, constant: -16.0 / 3).isActive = true
+            }
+        }
+        contentStack.addArrangedSubview(grid)
+        grid.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -32).isActive = true
     }
 
     func check(_ title: String, _ value: @autoclosure @escaping () -> Bool, enabled: (() -> Bool)? = nil, _ set: @escaping (Bool) -> Void) {
         let b = ClosureButton(checkboxWithTitle: title) { set($0.state == .on) }
         let row = indented(b)
-        stack.addArrangedSubview(row)
+        contentStack.addArrangedSubview(row)
         track(row, enabled: enabled) { [weak b] in b?.state = value() ? .on : .off }
     }
 
@@ -93,7 +165,7 @@ final class FormBuilder: NSObject {
                 set(i)
             }
             group.buttons.append(WeakRef(b))
-            stack.addArrangedSubview(indented(b))
+            contentStack.addArrangedSubview(indented(b))
         }
         track(stack, enabled: nil) { [group] in
             let sel = selected()
@@ -107,16 +179,17 @@ final class FormBuilder: NSObject {
     ) {
         let p = ClosurePopup { set($0.indexOfSelectedItem) }
         p.addItems(withTitles: items)
+        if grouped { p.widthAnchor.constraint(lessThanOrEqualToConstant: 250).isActive = true }
         let row = labeled(label, p)
-        stack.addArrangedSubview(row)
+        contentStack.addArrangedSubview(row)
         track(row, enabled: enabled) { [weak p] in p?.selectItem(at: min(max(0, selected()), items.count - 1)) }
     }
 
     @discardableResult
     func text(_ label: String, _ value: @autoclosure @escaping () -> String, _ set: @escaping (String) -> Void) -> NSTextField {
         let f = ClosureTextField(string: value()) { set($0.stringValue) }
-        f.widthAnchor.constraint(equalToConstant: 300).isActive = true
-        stack.addArrangedSubview(labeled(label, f))
+        f.widthAnchor.constraint(equalToConstant: grouped ? 260 : 300).isActive = true
+        contentStack.addArrangedSubview(labeled(label, f))
         // Not while the user is typing in it.
         track(f, enabled: nil) { [weak f] in if let f, f.currentEditor() == nil { f.stringValue = value() } }
         return f
@@ -141,7 +214,7 @@ final class FormBuilder: NSObject {
         let row = NSStackView(views: [field, st, NSTextField(labelWithString: suffix)])
         row.spacing = 6
         let labeledRow = labeled(label, row)
-        stack.addArrangedSubview(labeledRow)
+        contentStack.addArrangedSubview(labeledRow)
         track(labeledRow, enabled: enabled) { [weak field, weak st] in
             guard let field, let st, field.currentEditor() == nil else { return }
             st.integerValue = value(); field.integerValue = value()
@@ -152,8 +225,8 @@ final class FormBuilder: NSObject {
     func note(_ text: String) -> NSTextField {
         let l = NSTextField(wrappingLabelWithString: text)
         l.textColor = .secondaryLabelColor
-        l.preferredMaxLayoutWidth = 520
-        stack.addArrangedSubview(indented(l))
+        l.preferredMaxLayoutWidth = grouped ? 440 : 520
+        contentStack.addArrangedSubview(indented(l))
         return l
     }
 
@@ -168,12 +241,13 @@ final class FormBuilder: NSObject {
             set(psName, size())
         }
         p.addItems(withTitles: families)
+        if grouped { p.widthAnchor.constraint(equalToConstant: 180).isActive = true }
         let sizes = ["10", "11", "12", "13", "14", "15", "16", "18"]
         let sp = ClosurePopup { pop in set(name(), Double(pop.titleOfSelectedItem ?? "13") ?? 13) }
         sp.addItems(withTitles: sizes)
         let row = NSStackView(views: [p, sp])
         row.spacing = 6
-        stack.addArrangedSubview(labeled(label, row))
+        contentStack.addArrangedSubview(labeled(label, row))
         track(row, enabled: nil) { [weak p, weak sp] in
             let n = name()
             p?.selectItem(withTitle: n.isEmpty ? "System Font" : (NSFont(name: n, size: 13)?.familyName ?? "System Font"))
@@ -206,20 +280,31 @@ final class FormBuilder: NSObject {
         let row = NSStackView(views: [icon, text, b])
         row.spacing = 8
         row.alignment = .firstBaseline
-        stack.addArrangedSubview(labeled(label, row))
+        contentStack.addArrangedSubview(labeled(label, row))
     }
 
     func button(_ title: String, enabled: (() -> Bool)? = nil, _ action: @escaping () -> Void) {
         let b = ClosureButton(title: title) { _ in action() }
-        let row = indented(b)
-        stack.addArrangedSubview(row)
-        if enabled != nil { track(row, enabled: enabled) {} }
+        if grouped {
+            if let row = contentStack.arrangedSubviews.last as? NSStackView, row.identifier?.rawValue == "actions" {
+                row.addArrangedSubview(b)
+            } else {
+                let row = NSStackView(views: [b])
+                row.spacing = 8; row.identifier = NSUserInterfaceItemIdentifier("actions")
+                contentStack.addArrangedSubview(row)
+            }
+            if enabled != nil { track(b, enabled: enabled) {} }
+        } else {
+            let row = indented(b)
+            contentStack.addArrangedSubview(row)
+            if enabled != nil { track(row, enabled: enabled) {} }
+        }
     }
 
     func colorWell(_ label: String, _ value: @escaping () -> NSColor, _ set: @escaping (NSColor) -> Void) {
         let well = ClosureColorWell(color: value(), handler: set)
         let row = labeled(label, well)
-        stack.addArrangedSubview(row)
+        contentStack.addArrangedSubview(row)
         track(row, enabled: nil) { [weak well] in well?.color = value() }
     }
 
@@ -234,8 +319,8 @@ final class FormBuilder: NSObject {
 
     private func labeled(_ label: String, _ v: NSView) -> NSView {
         let l = NSTextField(labelWithString: label)
-        l.alignment = .right
-        let width = max(140, ceil(l.fittingSize.width), labelWidths.first?.constant ?? 0)
+        l.alignment = grouped ? .left : .right
+        let width = grouped ? 158 : max(140, ceil(l.fittingSize.width), labelWidths.first?.constant ?? 0)
         labelWidths.append(l.widthAnchor.constraint(equalToConstant: width))
         labelWidths.forEach {
             $0.constant = width; $0.isActive = true
@@ -249,4 +334,19 @@ final class FormBuilder: NSObject {
 private final class WeakRef<T: AnyObject> {
     weak var value: T?
     init(_ v: T) { value = v }
+}
+
+/// Layer colours must resolve in this view's effective appearance, after the window switches light/dark.
+private final class FormSectionView: NSStackView {
+    override var wantsUpdateLayer: Bool { true }
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+    override func updateLayer() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+            layer?.borderColor = NSColor.separatorColor.cgColor
+        }
+    }
 }

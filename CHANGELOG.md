@@ -8,6 +8,10 @@
 - **Create New from templates.** Edit filename/content patterns with date, time, user, name and padded counters,
   preview their resolved values, and create without overwriting existing files. Save and edit personal templates,
   import ordinary files or portable template archives, export archives, and open the Application Support template folder.
+- **Appearance polish.** Theme preview cards, grouped settings and colour grids; folder colours now cover fixed-colour
+  artwork, special folders, sidebar icons and native folders at every size, preserving shading for very dark and pale colours.
+  Added trimmed Papirus, Breeze, Fluent, WhiteSur and Colloid icon themes (about 3.1 MB of artwork and licences).
+
 - **Collect files on a shelf.** Panels › Shelf (F8) holds references gathered from any folder, search or server: drag
   them in or choose Add to Shelf (⌥⌘S, also in the context menu and the command palette). Copy or move the collection
   to the folder shown, batch-rename, share, run a Service, open or show items in their folder, while the originals
