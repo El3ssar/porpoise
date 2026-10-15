@@ -1,14 +1,17 @@
-import Foundation
 import CoreGraphics
+import Foundation
 import Testing
+
 @testable import PorpoiseCore
 
 struct DiskUtilityCoreTests {
     @Test func standardHashVectorsAndIncrementalUpdates() {
         let expected: [ChecksumAlgorithm: String] = [
             .sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-            .sha512: "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
-            .md5: "900150983cd24fb0d6963f7d28e17f72", .sha1: "a9993e364706816aba3e25717850c26c9cd0d89d"]
+            .sha512:
+                "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
+            .md5: "900150983cd24fb0d6963f7d28e17f72", .sha1: "a9993e364706816aba3e25717850c26c9cd0d89d",
+        ]
         for algorithm in ChecksumAlgorithm.allCases {
             var h = ChecksumHasher(algorithm); h.update(Data("a".utf8)); h.update(Data("bc".utf8))
             #expect(h.finalize() == expected[algorithm]); #expect(algorithm.accepts(h.finalize().uppercased())); #expect(!algorithm.accepts("zz"))
@@ -16,23 +19,43 @@ struct DiskUtilityCoreTests {
     }
     @Test func manifestsAcceptGNUAndBSDAndRoundTripOddNames() throws {
         let digest = String(repeating: "ab", count: 32)
-        let entries = ["normal.txt", " spaces .txt", "café.txt", "line\nbreak", "back\\slash", "carriage\rreturn"].map { ChecksumEntry(path: $0, algorithm: .sha256, digest: digest) }
+        let entries = ["normal.txt", " spaces .txt", "café.txt", "line\nbreak", "back\\slash", "carriage\rreturn"].map {
+            ChecksumEntry(path: $0, algorithm: .sha256, digest: digest)
+        }
         #expect(try ChecksumManifest.parse(ChecksumManifest.export(entries)) == entries)
         #expect(try ChecksumManifest.parse("# comment\nSHA256 (a (b).txt) = \(digest.uppercased())\r\n").first?.path == "a (b).txt")
         #expect(try ChecksumManifest.parse("\(digest) *binary.txt").first?.path == "binary.txt")
-        for invalid in ["", "no checksums", "abcd  file", "\(digest)file", "\(digest)  ", "\\\(digest)  bad\\q"] { #expect(throws: ChecksumManifest.Invalid.self) { try ChecksumManifest.parse(invalid) } }
+        for invalid in ["", "no checksums", "abcd  file", "\(digest)file", "\(digest)  ", "\\\(digest)  bad\\q"] {
+            #expect(throws: ChecksumManifest.Invalid.self) { try ChecksumManifest.parse(invalid) }
+        }
     }
     @Test func usageCountsHardLinksOnlyOnceAndAggregatesParents() {
         let root = URL(fileURLWithPath: "/fixture")
-        func entry(_ name: String, inode: UInt64, dir: Bool = false) -> DiskEntry { DiskEntry(url: root.appendingPathComponent(name), identity: DiskIdentity(device: 1, inode: inode), directory: dir, size: dir ? 0 : 100, allocated: dir ? 0 : 4096, modified: .distantPast) }
-        var scan = DiskScan(); scan.entries = [entry("", inode: 1, dir: true), entry("a", inode: 2, dir: true), entry("a/file", inode: 3), entry("alias", inode: 3), entry("copy", inode: 4)]
+        func entry(_ name: String, inode: UInt64, dir: Bool = false) -> DiskEntry {
+            DiskEntry(
+                url: root.appendingPathComponent(name), identity: DiskIdentity(device: 1, inode: inode), directory: dir, size: dir ? 0 : 100,
+                allocated: dir ? 0 : 4096, modified: .distantPast)
+        }
+        var scan = DiskScan();
+        scan.entries = [
+            entry("", inode: 1, dir: true), entry("a", inode: 2, dir: true), entry("a/file", inode: 3), entry("alias", inode: 3),
+            entry("copy", inode: 4),
+        ]
         let tree = UsageTree(scan)
-        #expect(tree.nodes[0].logical == 200); #expect(tree.nodes[0].allocated == 8192); #expect(tree.nodes[0].files == 2); #expect(tree.hardLinkAliases == 1)
+        #expect(tree.nodes[0].logical == 200); #expect(tree.nodes[0].allocated == 8192); #expect(tree.nodes[0].files == 2);
+        #expect(tree.hardLinkAliases == 1)
         #expect(tree.nodes.first { $0.url?.lastPathComponent == "a" }?.logical == 100)
     }
     @Test func keepRulesAndCloneFamiliesAreDeterministic() {
-        func file(_ path: String, date: Double, inode: UInt64, clone: UInt64? = nil) -> DuplicateFile { DuplicateFile(entry: DiskEntry(url: URL(fileURLWithPath: path), identity: DiskIdentity(device: 1, inode: inode), directory: false, size: 10, allocated: 4096, modified: Date(timeIntervalSince1970: date)), cloneID: clone) }
-        let files = [file("/keep/long-name", date: 30, inode: 1, clone: 99), file("/x", date: 10, inode: 2, clone: 99), file("/other/f", date: 20, inode: 3)]
+        func file(_ path: String, date: Double, inode: UInt64, clone: UInt64? = nil) -> DuplicateFile {
+            DuplicateFile(
+                entry: DiskEntry(
+                    url: URL(fileURLWithPath: path), identity: DiskIdentity(device: 1, inode: inode), directory: false, size: 10, allocated: 4096,
+                    modified: Date(timeIntervalSince1970: date)), cloneID: clone)
+        }
+        let files = [
+            file("/keep/long-name", date: 30, inode: 1, clone: 99), file("/x", date: 10, inode: 2, clone: 99), file("/other/f", date: 20, inode: 3),
+        ]
         let group = DuplicateGroup(digest: "x", files: files)
         #expect(DuplicateKeepRule.newest.keeper(in: group)?.path == "/keep/long-name")
         #expect(DuplicateKeepRule.oldest.keeper(in: group)?.path == "/x")

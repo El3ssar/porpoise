@@ -10,8 +10,10 @@ public enum DuplicateFinder {
         public var fullHashes = 0
         public init() {}
     }
-    public static func find(in scan: DiskScan, cancellation: DiskCancellation = DiskCancellation(),
-                            progress: (DiskProgress) -> Void = { _ in }) throws -> Result {
+    public static func find(
+        in scan: DiskScan, cancellation: DiskCancellation = DiskCancellation(),
+        progress: (DiskProgress) -> Void = { _ in }
+    ) throws -> Result {
         var result = Result(), seen: Set<DiskIdentity> = [], sizes: [Int64: [DiskEntry]] = [:], done = 0
         result.errors = scan.errors
         for file in scan.entries.sorted(by: { $0.url.path < $1.url.path }) where !file.directory && !file.symlink && file.size > 0 {
@@ -24,8 +26,9 @@ public enum DuplicateFinder {
                 do {
                     let hash = try FileChecksums.digest(file.url, partial: true, expected: file, cancellation: cancellation)
                     partials[hash, default: []].append(file); result.partialHashes += 1
-                } catch is CancellationError { throw CancellationError() }
-                catch { result.errors.append("\(file.url.path): \(error.localizedDescription)") }
+                } catch is CancellationError { throw CancellationError() } catch {
+                    result.errors.append("\(file.url.path): \(error.localizedDescription)")
+                }
                 done += 1; progress(DiskProgress(files: done, path: file.url.path))
             }
             for candidates in partials.values where candidates.count > 1 {
@@ -35,10 +38,14 @@ public enum DuplicateFinder {
                     do {
                         let hash = try FileChecksums.digest(file.url, expected: file, cancellation: cancellation)
                         full[hash, default: []].append(DuplicateFile(entry: file, cloneID: CloneIdentity.read(file.url))); result.fullHashes += 1
-                    } catch is CancellationError { throw CancellationError() }
-                    catch { result.errors.append("\(file.url.path): \(error.localizedDescription)") }
+                    } catch is CancellationError { throw CancellationError() } catch {
+                        result.errors.append("\(file.url.path): \(error.localizedDescription)")
+                    }
                 }
-                result.groups.append(contentsOf: full.filter { $0.value.count > 1 }.map { DuplicateGroup(digest: $0.key, files: $0.value.sorted { $0.entry.url.path < $1.entry.url.path }) })
+                result.groups.append(
+                    contentsOf: full.filter { $0.value.count > 1 }.map {
+                        DuplicateGroup(digest: $0.key, files: $0.value.sorted { $0.entry.url.path < $1.entry.url.path })
+                    })
             }
         }
         result.groups.sort { $0.logicalSavings == $1.logicalSavings ? $0.digest < $1.digest : $0.logicalSavings > $1.logicalSavings }
@@ -58,8 +65,7 @@ public enum DuplicateFinder {
                 do {
                     let hash = try FileChecksums.digest(file.entry.url, expected: file.entry, cancellation: cancellation)
                     guard hash == group.digest else { throw FileChecksumError.unsafeReview }
-                } catch is CancellationError { throw CancellationError() }
-                catch { throw FileChecksumError.unsafeReview }
+                } catch is CancellationError { throw CancellationError() } catch { throw FileChecksumError.unsafeReview }
             }
             valid.append(contentsOf: chosen.map(\.entry.url))
         }
@@ -74,7 +80,9 @@ public final class FolderUsageCache: @unchecked Sendable {
     private let lock = NSLock()
     private var values: [String: Cached] = [:]
     public init() {}
-    public func invalidate(below url: URL) { lock.withLock { values = values.filter { !NameIndex.contains(path: $0.key.components(separatedBy: "\0")[0], in: url.path) } } }
+    public func invalidate(below url: URL) {
+        lock.withLock { values = values.filter { !NameIndex.contains(path: $0.key.components(separatedBy: "\0")[0], in: url.path) } }
+    }
     public func size(_ url: URL, depth: Int, cancellation: DiskCancellation = DiskCancellation()) -> Int64 {
         let key = url.path + "\0" + String(depth)
         let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate

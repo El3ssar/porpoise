@@ -1,8 +1,9 @@
-import Foundation
 import Darwin
-import Testing
+import Foundation
 import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 struct DiskUtilityServiceTests {
@@ -30,7 +31,10 @@ struct DiskUtilityServiceTests {
     @Test func manifestVerificationReportsMismatchMissingAndUnsafePaths() throws {
         let s = try Scratch(); try s.file("a.txt", "abc"); try s.file("other", "outside")
         let digest = try FileChecksums.digest(s.path("a.txt"))
-        let entries = [ChecksumEntry(path: "a.txt", algorithm: .sha256, digest: digest), ChecksumEntry(path: "missing", algorithm: .sha256, digest: digest), ChecksumEntry(path: "../other", algorithm: .sha256, digest: digest)]
+        let entries = [
+            ChecksumEntry(path: "a.txt", algorithm: .sha256, digest: digest), ChecksumEntry(path: "missing", algorithm: .sha256, digest: digest),
+            ChecksumEntry(path: "../other", algorithm: .sha256, digest: digest),
+        ]
         let results = try FileChecksums.verify(entries, below: s.url)
         #expect(results.map(\.matches) == [true, false, false]); #expect(results[1].error != nil); #expect(results[2].error != nil)
         try s.file("a.txt", "changed")
@@ -44,7 +48,9 @@ struct DiskUtilityServiceTests {
         let s = try Scratch(); try s.file("inside/café\nname", "abc"); try s.file("outside", "abc")
         let digest = try FileChecksums.digest(s.path("outside"))
         try s.symlink("inside/escape", to: s.path("outside").path)
-        let entries = [ChecksumEntry(path: "café\nname", algorithm: .sha256, digest: digest), ChecksumEntry(path: "escape", algorithm: .sha256, digest: digest)]
+        let entries = [
+            ChecksumEntry(path: "café\nname", algorithm: .sha256, digest: digest), ChecksumEntry(path: "escape", algorithm: .sha256, digest: digest),
+        ]
         let parsed = try ChecksumManifest.parse(ChecksumManifest.export(entries))
         let result = try FileChecksums.verify(parsed, below: s.path("inside"))
         #expect(result.map(\.matches) == [true, false]); #expect(result[1].error != nil)

@@ -4,9 +4,15 @@ import PorpoiseServices
 import Quartz
 
 extension MainWindowController {
-    @objc func showChecksums(_ sender: Any?) { let urls = actionTargets.filter(\.isFileURL); if !urls.isEmpty { ChecksumWindow(roots: urls).present() } }
-    @objc func showDiskUsage(_ sender: Any?) { let urls = actionTargets.filter(\.isFileURL); if !urls.isEmpty { DiskUsageWindow(roots: urls).present() } }
-    @objc func showDuplicates(_ sender: Any?) { let urls = actionTargets.filter(\.isFileURL); if !urls.isEmpty { DuplicateWindow(roots: urls).present() } }
+    @objc func showChecksums(_ sender: Any?) {
+        let urls = actionTargets.filter(\.isFileURL); if !urls.isEmpty { ChecksumWindow(roots: urls).present() }
+    }
+    @objc func showDiskUsage(_ sender: Any?) {
+        let urls = actionTargets.filter(\.isFileURL); if !urls.isEmpty { DiskUsageWindow(roots: urls).present() }
+    }
+    @objc func showDuplicates(_ sender: Any?) {
+        let urls = actionTargets.filter(\.isFileURL); if !urls.isEmpty { DuplicateWindow(roots: urls).present() }
+    }
 
     // MARK: Tools
 

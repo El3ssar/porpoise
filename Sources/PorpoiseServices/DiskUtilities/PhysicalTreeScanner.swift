@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 import PorpoiseCore
 
 public struct DiskProgress: Sendable {
@@ -16,12 +16,15 @@ public enum PhysicalTreeScanner {
         guard lstat(url.path, &st) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         let kind = st.st_mode & S_IFMT
         guard kind == S_IFREG || kind == S_IFDIR || kind == S_IFLNK else { throw CocoaError(.fileReadUnsupportedScheme) }
-        return DiskEntry(url: url, identity: DiskIdentity(device: st.st_dev, inode: UInt64(st.st_ino)), directory: kind == S_IFDIR,
-                         symlink: kind == S_IFLNK, size: Int64(st.st_size), allocated: Int64(st.st_blocks) * 512,
-                         modified: Date(timeIntervalSince1970: Double(st.st_mtimespec.tv_sec) + Double(st.st_mtimespec.tv_nsec) / 1e9))
+        return DiskEntry(
+            url: url, identity: DiskIdentity(device: st.st_dev, inode: UInt64(st.st_ino)), directory: kind == S_IFDIR,
+            symlink: kind == S_IFLNK, size: Int64(st.st_size), allocated: Int64(st.st_blocks) * 512,
+            modified: Date(timeIntervalSince1970: Double(st.st_mtimespec.tv_sec) + Double(st.st_mtimespec.tv_nsec) / 1e9))
     }
-    public static func scan(_ urls: [URL], crossVolumes: Bool = false, maxDepth: Int = .max,
-                            cancellation: DiskCancellation = DiskCancellation(), progress: @escaping (DiskProgress) -> Void = { _ in }) -> DiskScan {
+    public static func scan(
+        _ urls: [URL], crossVolumes: Bool = false, maxDepth: Int = .max,
+        cancellation: DiskCancellation = DiskCancellation(), progress: @escaping (DiskProgress) -> Void = { _ in }
+    ) -> DiskScan {
         let lock = NSLock(), work = OperationQueue()
         work.maxConcurrentOperationCount = min(4, ProcessInfo.processInfo.processorCount)
         var result = DiskScan(), seen: Set<DiskIdentity> = [], last = Date.distantPast, bytes: Int64 = 0
@@ -51,7 +54,12 @@ public enum PhysicalTreeScanner {
         let entries = roots.compactMap { url -> DiskEntry? in
             do { return try entry(url) } catch let err { error(url.path, err.localizedDescription); return nil }
         }
-        let unique = entries.filter { child in !entries.contains { ancestor in ancestor.directory && ancestor.url != child.url && (crossVolumes || ancestor.identity.device == child.identity.device) && NameIndex.contains(path: child.url.path, in: ancestor.url.path) } }
+        let unique = entries.filter { child in
+            !entries.contains { ancestor in
+                ancestor.directory && ancestor.url != child.url && (crossVolumes || ancestor.identity.device == child.identity.device)
+                    && NameIndex.contains(path: child.url.path, in: ancestor.url.path)
+            }
+        }
         for root in unique {
             if cancellation.isCancelled { break }
             if root.directory && maxDepth > 0 {
@@ -69,7 +77,9 @@ public enum PhysicalTreeScanner {
                         }
                     }
                 } catch let err { error(root.url.path, err.localizedDescription) }
-            } else { walk(root, device: root.identity.device, depth: 0) }
+            } else {
+                walk(root, device: root.identity.device, depth: 0)
+            }
         }
         work.waitUntilAllOperationsAreFinished()
         result.cancelled = cancellation.isCancelled
@@ -84,7 +94,8 @@ public enum PhysicalTreeScanner {
         defer { close(fd) }
         var attrs = attrlist()
         attrs.bitmapcount = UInt16(ATTR_BIT_MAP_COUNT)
-        attrs.commonattr = attrgroup_t(ATTR_CMN_RETURNED_ATTRS) | attrgroup_t(ATTR_CMN_NAME | ATTR_CMN_DEVID | ATTR_CMN_OBJTYPE | ATTR_CMN_MODTIME | ATTR_CMN_FILEID)
+        attrs.commonattr =
+            attrgroup_t(ATTR_CMN_RETURNED_ATTRS) | attrgroup_t(ATTR_CMN_NAME | ATTR_CMN_DEVID | ATTR_CMN_OBJTYPE | ATTR_CMN_MODTIME | ATTR_CMN_FILEID)
         attrs.fileattr = attrgroup_t(ATTR_FILE_ALLOCSIZE | ATTR_FILE_DATALENGTH)
         var buffer = [UInt8](repeating: 0, count: 64 * 1024), items: [DiskEntry] = []
         while true {
@@ -111,7 +122,9 @@ public enum PhysicalTreeScanner {
                         let referenceOffset = cursor
                         let ref = try read(attrreference_t.self)
                         let nameOffset = referenceOffset + Int(ref.attr_dataoffset), nameLength = Int(ref.attr_length)
-                        guard nameOffset >= 0, nameLength > 0, nameOffset <= entry.count, nameLength <= entry.count - nameOffset else { throw CocoaError(.fileReadCorruptFile) }
+                        guard nameOffset >= 0, nameLength > 0, nameOffset <= entry.count, nameLength <= entry.count - nameOffset else {
+                            throw CocoaError(.fileReadCorruptFile)
+                        }
                         let name = String(decoding: entry[nameOffset..<(nameOffset + nameLength - 1)], as: UTF8.self)
                         var device: Int32 = 0, kind: UInt32 = 0, modified = timespec(), inode: UInt64 = 0, allocated: Int64 = 0, size: Int64 = 0
                         if returned.commonattr & attrgroup_t(ATTR_CMN_DEVID) != 0 { device = try read(Int32.self) }
@@ -124,8 +137,11 @@ public enum PhysicalTreeScanner {
                         if inode == 0 || device == 0 || kind == 0 {
                             if let fallback = try? self.entry(url) { items.append(fallback) }
                         } else if kind == 1 || kind == 2 || kind == 5 {
-                            items.append(DiskEntry(url: url, identity: DiskIdentity(device: device, inode: inode), directory: kind == 2, symlink: kind == 5,
-                                                   size: max(0, size), allocated: max(0, allocated), modified: Date(timeIntervalSince1970: Double(modified.tv_sec) + Double(modified.tv_nsec) / 1e9)))
+                            items.append(
+                                DiskEntry(
+                                    url: url, identity: DiskIdentity(device: device, inode: inode), directory: kind == 2, symlink: kind == 5,
+                                    size: max(0, size), allocated: max(0, allocated),
+                                    modified: Date(timeIntervalSince1970: Double(modified.tv_sec) + Double(modified.tv_nsec) / 1e9)))
                         }
                         offset += length
                     }
@@ -139,7 +155,9 @@ public enum PhysicalTreeScanner {
         var items: [DiskEntry] = []
         while let ent = readdir(dir) {
             try cancellation.check()
-            let name = withUnsafePointer(to: &ent.pointee.d_name) { $0.withMemoryRebound(to: CChar.self, capacity: Int(ent.pointee.d_namlen) + 1) { String(cString: $0) } }
+            let name = withUnsafePointer(to: &ent.pointee.d_name) {
+                $0.withMemoryRebound(to: CChar.self, capacity: Int(ent.pointee.d_namlen) + 1) { String(cString: $0) }
+            }
             if name == "." || name == ".." { continue }
             let url = folder.appendingPathComponent(name)
             do { items.append(try entry(url)) } catch let err {

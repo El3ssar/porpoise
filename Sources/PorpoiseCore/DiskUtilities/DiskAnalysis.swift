@@ -1,5 +1,5 @@
-import Foundation
 import CoreGraphics
+import Foundation
 
 public final class DiskCancellation: @unchecked Sendable {
     private let lock = NSLock()
@@ -23,7 +23,8 @@ public struct DiskEntry: Sendable, Equatable {
     public var allocated: Int64
     public var modified: Date
     public init(url: URL, identity: DiskIdentity, directory: Bool, symlink: Bool = false, size: Int64, allocated: Int64, modified: Date) {
-        self.url = url; self.identity = identity; self.directory = directory; self.symlink = symlink; self.size = size; self.allocated = allocated; self.modified = modified
+        self.url = url; self.identity = identity; self.directory = directory; self.symlink = symlink; self.size = size; self.allocated = allocated;
+        self.modified = modified
     }
 }
 public struct DiskScan: Sendable {
@@ -53,8 +54,11 @@ public struct UsageTree: Sendable {
             let id = nodes.count, parent = paths[entry.url.deletingLastPathComponent().path] ?? 0
             var node = UsageNode(url: entry.url, parent: parent, directory: entry.directory)
             if !entry.directory && !entry.symlink {
-                if seen.insert(entry.identity).inserted { node.logical = entry.size; node.allocated = entry.allocated; node.files = 1 }
-                else { aliases += 1 }
+                if seen.insert(entry.identity).inserted {
+                    node.logical = entry.size; node.allocated = entry.allocated; node.files = 1
+                } else {
+                    aliases += 1
+                }
             }
             nodes.append(node); nodes[parent].children.append(id); paths[entry.url.path] = id
         }
@@ -78,12 +82,21 @@ public struct DuplicateGroup: Sendable {
     public var logicalSavings: Int64 { Int64(max(0, files.count - 1)) * (files.first?.entry.size ?? 0) }
     public func isClone(_ file: DuplicateFile) -> Bool {
         guard let clone = file.cloneID, clone != 0 else { return false }
-        return files.contains { $0.entry.identity != file.entry.identity && $0.entry.identity.device == file.entry.identity.device && $0.cloneID == clone }
+        return files.contains {
+            $0.entry.identity != file.entry.identity && $0.entry.identity.device == file.entry.identity.device && $0.cloneID == clone
+        }
     }
 }
 public enum DuplicateKeepRule: String, CaseIterable, Sendable {
     case newest, oldest, shortestPath, inFolder
-    public var title: String { switch self { case .newest: return "Newest"; case .oldest: return "Oldest"; case .shortestPath: return "Shortest path"; case .inFolder: return "In chosen folder" } }
+    public var title: String {
+        switch self {
+        case .newest: return "Newest";
+        case .oldest: return "Oldest";
+        case .shortestPath: return "Shortest path";
+        case .inFolder: return "In chosen folder"
+        }
+    }
     public func keeper(in group: DuplicateGroup, preferredFolder: URL? = nil) -> URL? {
         group.files.sorted { a, b in
             let x = a.entry, y = b.entry
@@ -120,8 +133,11 @@ public enum UsageTreemap {
             }
             let ratio = partial / total
             var first = rect, second = rect
-            if rect.width >= rect.height { first.size.width *= ratio; second.origin.x += first.width; second.size.width -= first.width }
-            else { first.size.height *= ratio; second.origin.y += first.height; second.size.height -= first.height }
+            if rect.width >= rect.height {
+                first.size.width *= ratio; second.origin.x += first.width; second.size.width -= first.width
+            } else {
+                first.size.height *= ratio; second.origin.y += first.height; second.size.height -= first.height
+            }
             return split(items[..<middle], first) + split(items[middle...], second)
         }
         return split(weights[...], bounds)
