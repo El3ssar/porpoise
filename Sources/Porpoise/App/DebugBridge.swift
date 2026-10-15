@@ -380,6 +380,20 @@ final class DebugBridge: NSObject {
             let list = NSApp.windows.filter(\.isVisible).map { "\($0.title)|\(type(of: $0.windowController as Any))|key=\($0.isKeyWindow)" }
             try? list.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
         case "navigate": wc?.view.setURL(arg.hasPrefix("/") ? URL(fileURLWithPath: arg) : (URL(string: arg) ?? URL(fileURLWithPath: arg)))
+        case "activitypreview": activityPreview(arg)
+        case "activitycontrol":
+            let controller = FileOperationsController.shared
+            for activity in controller.activities where activity.state.isActive {
+                switch arg {
+                case "pause": controller.pause(activity)
+                case "resume": controller.resume(activity)
+                case "cancel": controller.cancel(activity)
+                default: break
+                }
+            }
+        case "activitysize":
+            let size = arg.split(separator: " ").compactMap { Double($0) }
+            if size.count == 2 { ActivityWindowController.shared.window?.setContentSize(NSSize(width: size[0], height: size[1])) }
         case "action":
             if let w = wc, w.responds(to: NSSelectorFromString(arg)) {
                 NSApp.sendAction(NSSelectorFromString(arg), to: w, from: nil)
@@ -417,6 +431,36 @@ final class DebugBridge: NSObject {
                 try? chain.joined(separator: " < ").write(toFile: a[2], atomically: true, encoding: .utf8)
             }
         default: break
+        }
+    }
+
+    /// Isolated visual-review fixture: real copy plus explicit failed/running plan states. Test bridge only.
+    private func activityPreview(_ path: String) {
+        let root = URL(fileURLWithPath: path).appendingPathComponent("activity-" + UUID().uuidString)
+        let source = root.appendingPathComponent("Project notes.txt")
+        let destination = root.appendingPathComponent("Reports")
+        do {
+            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+            try Data(repeating: 65, count: 2_100_000).write(to: source)
+            let controller = FileOperationsController.shared
+            controller.clearEnded()
+            controller.concurrency = 2
+            controller.run(.copy, [source], to: destination, window: nil)
+            let failed = PlanJournal(
+                title: "Syncing Documents to Backup", steps: [PlanStep(id: "failed", title: "Copy archive.zip", payload: Data())])
+            _ = try controller.enqueuePlan(failed) { _, _ in throw FileOperationError.failed("Backup is full") }
+            let running = PlanJournal(
+                title: "Syncing Projects to Backup", steps: [PlanStep(id: "copy", title: "Copying project files", payload: Data())])
+            _ = try controller.enqueuePlan(running) { _, context in
+                for index in 1200..<3000 {
+                    try context.checkCancellation()
+                    context.report(fraction: Double(index) / 3000)
+                    Thread.sleep(forTimeInterval: 0.04)
+                }
+            }
+            ActivityWindowController.shared.show()
+        } catch {
+            NSLog("Activity preview failed: %@", error.localizedDescription)
         }
     }
 

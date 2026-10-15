@@ -14,9 +14,13 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
     private let activityPane = NSView()
     private let historyPane = NSView()
     private let search = NSSearchField()
-    private let concurrency = NSPopUpButton()
-    private let verify = NSButton(checkboxWithTitle: "Verify copies (size and SHA-256)", target: nil, action: nil)
-    private let empty = NSTextField(labelWithString: "No file operations yet.")
+    private let clear = NSButton(title: "Clear Finished", target: nil, action: nil)
+    private let settings = NSButton()
+    private let empty = NSStackView()
+    private let emptyTitle = NSTextField(labelWithString: "No activity")
+    private let emptyDetail = NSTextField(labelWithString: "Copies, moves and syncs show up here.")
+    private let footer = ActivityFooterView()
+    private var header: ActivityHeaderView?
     private var rows: [Activity] = []
     private var history: [HistoryEntry] = []
     private var reloadPending = false
@@ -24,9 +28,12 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
 
     private init() {
         let w = NSWindow(
-            contentRect: CGRect(x: 0, y: 0, width: 640, height: 460), styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            contentRect: CGRect(x: 0, y: 0, width: 640, height: 460),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
             backing: .buffered, defer: true)
         w.title = "Activity"
+        w.titleVisibility = .hidden
+        w.titlebarAppearsTransparent = true
         w.minSize = NSSize(width: 480, height: 300)
         w.setFrameAutosaveName("Activity")
         w.isReleasedWhenClosed = false
@@ -56,32 +63,52 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
         tabs.selectedSegment = 0
         tabs.target = self
         tabs.action = #selector(tabChanged)
-        concurrency.addItems(withTitles: (1...8).map { $0 == 1 ? "1 at a time" : "\($0) at a time" })
-        concurrency.target = self
-        concurrency.action = #selector(concurrencyChanged)
-        concurrency.toolTip = "How many copies and moves run at once; the others wait in the queue. Trashing and deleting never wait."
-        verify.target = self
-        verify.action = #selector(verifyChanged)
-        verify.toolTip = "After copying, compare every copied file with its original."
-        let clear = ClosureButton(title: "Clear Finished") { [weak self] _ in self?.controller.clearEnded() }
-        let header = NSStackView(views: [NSTextField(labelWithString: "Copies and moves:"), concurrency, NSView(), clear])
-        header.spacing = 8
-        let activityScroll = scroll(activityTable)
+        tabs.segmentStyle = .texturedRounded
+        clear.target = self
+        clear.action = #selector(clearFinished)
+        clear.isBordered = false
+        clear.font = .systemFont(ofSize: 12)
+        clear.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: "Clear Finished")
+        clear.imagePosition = .imageLeading
+        clear.toolTip = "Clear Finished"
+        settings.target = self
+        settings.action = #selector(showSettings)
+        settings.image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "Activity options")
+        settings.isBordered = false
+        settings.setAccessibilityLabel("Activity options")
+        settings.toolTip = "Activity options"
+        let header = ActivityHeaderView(tabs: tabs, clear: clear, settings: settings)
+        self.header = header
+
         activityTable.headerView = nil
         activityTable.addTableColumn(NSTableColumn(identifier: .init("job")))
-        activityTable.rowHeight = 62
+        activityTable.rowHeight = 52
+        activityTable.intercellSpacing = .zero
         activityTable.dataSource = self
         activityTable.delegate = self
         activityTable.style = .plain
-        activityTable.usesAlternatingRowBackgroundColors = false
-        empty.textColor = Theme.viewTextInactive
-        empty.alignment = .center
-        stack(activityPane, [header, verify, activityScroll], fill: activityScroll)
+        activityTable.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        let activityScroll = scroll(activityTable)
+        activityScroll.translatesAutoresizingMaskIntoConstraints = false
+        activityPane.addSubview(activityScroll)
+        NSLayoutConstraint.activate([
+            activityScroll.topAnchor.constraint(equalTo: activityPane.topAnchor),
+            activityScroll.bottomAnchor.constraint(equalTo: activityPane.bottomAnchor),
+            activityScroll.leadingAnchor.constraint(equalTo: activityPane.leadingAnchor),
+            activityScroll.trailingAnchor.constraint(equalTo: activityPane.trailingAnchor),
+        ])
+        empty.orientation = .vertical
+        empty.alignment = .centerX
+        empty.spacing = 6
+        emptyTitle.font = .systemFont(ofSize: 15, weight: .semibold)
+        emptyDetail.font = .systemFont(ofSize: 12)
+        empty.addArrangedSubview(emptyTitle)
+        empty.addArrangedSubview(emptyDetail)
         activityPane.addSubview(empty)
         empty.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            empty.centerXAnchor.constraint(equalTo: activityScroll.centerXAnchor),
-            empty.centerYAnchor.constraint(equalTo: activityScroll.centerYAnchor),
+            empty.centerXAnchor.constraint(equalTo: activityPane.centerXAnchor),
+            empty.centerYAnchor.constraint(equalTo: activityPane.centerYAnchor),
         ])
 
         search.placeholderString = "Search history"
@@ -105,20 +132,26 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
         let historyScroll = scroll(historyTable)
         stack(historyPane, [historyHeader, historyScroll], fill: historyScroll)
 
-        for v in [tabs, activityPane, historyPane] as [NSView] {
+        for v in [header, activityPane, historyPane, footer] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(v)
         }
         NSLayoutConstraint.activate([
-            tabs.topAnchor.constraint(equalTo: content.topAnchor, constant: 12),
-            tabs.centerXAnchor.constraint(equalTo: content.centerXAnchor),
+            header.topAnchor.constraint(equalTo: content.topAnchor),
+            header.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            header.heightAnchor.constraint(equalToConstant: 52),
+            footer.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            footer.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            footer.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            footer.heightAnchor.constraint(equalToConstant: 28),
         ])
         for pane in [activityPane, historyPane] {
             NSLayoutConstraint.activate([
-                pane.topAnchor.constraint(equalTo: tabs.bottomAnchor, constant: 10),
-                pane.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 12),
-                pane.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -12),
-                pane.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -12),
+                pane.topAnchor.constraint(equalTo: header.bottomAnchor),
+                pane.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+                pane.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+                pane.bottomAnchor.constraint(equalTo: footer.topAnchor),
             ])
         }
         historyPane.isHidden = true
@@ -133,14 +166,16 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
             table.backgroundColor = Theme.viewBackground
             table.enclosingScrollView?.backgroundColor = Theme.viewBackground
         }
-        empty.textColor = Theme.viewTextInactive
+        emptyTitle.textColor = Theme.viewText
+        emptyDetail.textColor = Theme.viewTextInactive
+        activityTable.reloadData()
     }
 
     private func scroll(_ table: NSTableView) -> NSScrollView {
         let s = NSScrollView()
         s.documentView = table
         s.hasVerticalScroller = true
-        s.borderType = .bezelBorder
+        s.borderType = .noBorder
         return s
     }
 
@@ -161,13 +196,33 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
 
     // MARK: Settings
 
-    private func syncSettings() {
-        concurrency.selectItem(at: min(7, controller.concurrency - 1))
+    private func syncSettings() { scheduleReload() }
+
+    @objc private func clearFinished() { controller.clearEnded() }
+
+    @objc private func showSettings() {
+        let menu = NSMenu(title: "Activity options")
+        let heading = NSMenuItem(title: "Copies, moves and syncs", action: nil, keyEquivalent: "")
+        heading.isEnabled = false
+        menu.addItem(heading)
+        for count in 1...8 {
+            let item = NSMenuItem(title: "Run \(count) at a time", action: #selector(changeConcurrency(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = count
+            item.state = controller.concurrency == count ? .on : .off
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let verify = NSMenuItem(title: "Verify Copies", action: #selector(toggleVerification), keyEquivalent: "")
+        verify.target = self
         verify.state = Settings.shared.verifyCopies ? .on : .off
+        verify.toolTip = "Compare size and SHA-256 after copying."
+        menu.addItem(verify)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: settings.bounds.maxY + 4), in: settings)
     }
 
-    @objc private func concurrencyChanged() { controller.concurrency = concurrency.indexOfSelectedItem + 1 }
-    @objc private func verifyChanged() { Settings.shared.verifyCopies = verify.state == .on }
+    @objc private func changeConcurrency(_ sender: NSMenuItem) { controller.concurrency = sender.tag }
+    @objc private func toggleVerification() { Settings.shared.verifyCopies.toggle() }
 
     @objc private func tabChanged() {
         activityPane.isHidden = tabs.selectedSegment != 0
@@ -204,9 +259,31 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
             activityTable.reloadData()
         }
         empty.isHidden = !rows.isEmpty
+        clear.isEnabled = rows.contains { $0.state.isEnded }
+        clear.contentTintColor = clear.isEnabled ? Theme.windowText : Theme.windowTextInactive
+        clear.attributedTitle = NSAttributedString(
+            string: "Clear Finished",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 12), .foregroundColor: clear.isEnabled ? Theme.windowText : Theme.windowTextInactive,
+            ])
+        header?.showsClear = historyPane.isHidden
+        let paused = rows.filter { $0.state == .paused }.count
+        let active = rows.filter { $0.state.isActive && $0.state != .paused }.count
+        let queued = rows.filter { $0.state == .queued }.count
+        let finished = rows.filter { $0.state.isEnded }.count
+        footer.text =
+            rows.isEmpty
+            ? ""
+            : [
+                active > 0 ? "\(active) running" : nil,
+                paused > 0 ? "\(paused) paused" : nil,
+                queued > 0 ? "\(queued) queued" : nil,
+                finished > 0 ? "\(finished) finished" : nil,
+            ].compactMap { $0 }.joined(separator: " · ")
         if !historyPane.isHidden {
             history = controller.history.entries(matching: search.stringValue)
             historyTable.reloadData()
+            footer.text = "\(history.count) operations in history"
         }
     }
 
@@ -216,7 +293,7 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         if tableView === activityTable {
-            let v = ActivityRowView(window: window)
+            let v = ActivityRowView(window: window, alternate: row % 2 == 1)
             v.update(rows[row])
             return v
         }
@@ -240,6 +317,12 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
     }
 
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool { tableView === historyTable }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        let view = NSTableRowView()
+        view.backgroundColor = row % 2 == 0 ? Theme.viewBackground : Theme.viewAlternate
+        return view
+    }
 
     // MARK: History
 
@@ -273,62 +356,129 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
 final class ActivityRowView: NSView {
     private let title = NSTextField(labelWithString: "")
     private let status = NSTextField(labelWithString: "")
-    private let bar = NSProgressIndicator()
+    private let statusBadge = NSImageView()
+    private let icon = NSImageView()
+    private let bar = ActivityProgressView()
     private let buttons = NSStackView()
     private weak var activity: Activity?
     private weak var parentWindow: NSWindow?
     private var shownButtons: [String] = []
+    private var tracking: NSTrackingArea?
+    private var hovered = false
+    private let alternate: Bool
 
-    init(window: NSWindow?) {
+    override var isFlipped: Bool { true }
+
+    init(window: NSWindow?, alternate: Bool) {
         parentWindow = window
+        self.alternate = alternate
         super.init(frame: .zero)
-        title.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+        title.font = .systemFont(ofSize: 13)
         title.lineBreakMode = .byTruncatingMiddle
-        status.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        status.textColor = .secondaryLabelColor
+        status.font = .systemFont(ofSize: 11)
         status.lineBreakMode = .byTruncatingTail
-        bar.style = .bar
-        bar.isIndeterminate = false
-        bar.minValue = 0
-        bar.maxValue = 1
-        buttons.spacing = 2
-        for v in [title, status, bar, buttons] as [NSView] {
-            v.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(v)
+        buttons.spacing = 8
+        icon.imageScaling = .scaleProportionallyDown
+        for v in [icon, title, statusBadge, status, bar, buttons] as [NSView] { addSubview(v) }
+        Theme.whenChanged(self) { [weak self] in
+            guard let self, let activity = self.activity else { return }
+            self.update(activity)
         }
-        NSLayoutConstraint.activate([
-            title.topAnchor.constraint(equalTo: topAnchor, constant: 6),
-            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            title.trailingAnchor.constraint(lessThanOrEqualTo: buttons.leadingAnchor, constant: -8),
-            bar.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 4),
-            bar.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: buttons.leadingAnchor, constant: -8),
-            status.topAnchor.constraint(equalTo: bar.bottomAnchor, constant: 3),
-            status.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            status.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            buttons.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -6),
-            buttons.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-        ])
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
+    override func layout() {
+        super.layout()
+        icon.frame = CGRect(x: 16, y: 10, width: 32, height: 32)
+        let actionWidth = CGFloat(shownButtons.count * 24 + max(0, shownButtons.count - 1) * 8)
+        buttons.frame = CGRect(x: bounds.width - 12 - actionWidth, y: 14, width: actionWidth, height: 24)
+        let textWidth = max(0, buttons.frame.minX - 12 - 60)
+        title.frame = CGRect(x: 60, y: 9, width: textWidth, height: 17)
+        let progressWidth = min(72, max(32, textWidth * 0.24))
+        bar.frame = CGRect(x: 60, y: 34, width: progressWidth, height: 4)
+        statusBadge.frame = CGRect(x: 60, y: 29, width: 12, height: 12)
+        let statusX: CGFloat = !statusBadge.isHidden ? 76 : bar.isHidden ? 60 : 60 + progressWidth + 8
+        status.frame = CGRect(x: statusX, y: 28, width: max(0, 60 + textWidth - statusX), height: 15)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        (alternate ? Theme.viewAlternate : Theme.viewBackground).setFill()
+        bounds.fill()
+    }
+
+    override func updateTrackingAreas() {
+        if let tracking { removeTrackingArea(tracking) }
+        tracking = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        if let tracking { addTrackingArea(tracking) }
+        super.updateTrackingAreas()
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovered = true; updateReveal() }
+    override func mouseExited(with event: NSEvent) { hovered = false; updateReveal() }
+
+    private func updateReveal() {
+        buttons.alphaValue = shownButtons == ["reveal"] && !hovered ? 0 : 1
+    }
+
     func update(_ a: Activity) {
+        if activity?.id != a.id {
+            if a.planJob != nil {
+                icon.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: "Sync")
+            } else if let source = a.sources.first, source.isFileURL {
+                icon.image = NSWorkspace.shared.icon(forFile: source.path)
+            } else {
+                icon.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "File operation")
+            }
+        }
         activity = a
-        title.stringValue = a.title
+        icon.contentTintColor = a.planJob == nil ? nil : Theme.activeText
+        let attributed = NSMutableAttributedString(
+            string: a.title, attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: Theme.viewText])
+        if let start = a.title.firstIndex(of: "“"), let end = a.title[start...].firstIndex(of: "”") {
+            let range = NSRange(start...end, in: a.title)
+            attributed.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .medium), range: range)
+        }
+        title.attributedStringValue = attributed
         var text = a.statusText
-        if a.state == .running, let why = a.pauseUnavailable { text += " — " + why }
-        status.stringValue = text
+        if let progress = a.planProgress, a.state == .running || a.state == .paused {
+            let current = min(progress.totalSteps, progress.completedSteps + 1)
+            text = "\(progress.currentTitle) · step \(current) of \(progress.totalSteps)"
+            if progress.stepFraction > 0 { text += " · \(Int(progress.stepFraction * 100)) %" }
+            if a.state == .paused { text = "Paused · " + text }
+        }
+        let failed = a.state == .failed || (a.state == .completed && (!a.errors.isEmpty || a.verification?.ok == false))
+        if failed {
+            text = (a.state == .failed ? "Failed: " : "") + text
+        } else if a.state == .completed {
+            var details = ["✓ Done"]
+            if let bytes = a.progress?.doneBytes, bytes > 0 { details.append(FileFormat.size(bytes)) }
+            if let date = a.finishedAt { details.append(date.formatted(date: .omitted, time: .shortened)) }
+            text = details.joined(separator: " · ")
+        } else if a.state == .paused {
+            text = "⏸ " + text
+        }
+        let statusText = NSMutableAttributedString(
+            string: text, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: failed ? Theme.compareDanger : Theme.viewTextInactive])
+        if a.state == .completed && !failed {
+            statusText.addAttribute(.foregroundColor, value: Theme.compareOnly, range: NSRange(location: 0, length: 6))
+        }
+        status.attributedStringValue = statusText
+        statusBadge.isHidden = !failed
+        if failed {
+            statusBadge.image = NSImage(systemSymbolName: "exclamationmark.circle.fill", accessibilityDescription: "Failed")?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.white, Theme.compareDanger]))
+        }
         status.toolTip = ([a.statusText] + a.errors.prefix(10)).joined(separator: "\n")
-        status.textColor =
-            a.state == .failed || (a.state == .completed && (!a.errors.isEmpty || a.verification?.ok == false))
-            ? Theme.negativeText : .secondaryLabelColor
+        title.toolTip = a.title
         bar.isHidden = !(a.state.isActive || a.state == .queued)
-        bar.isIndeterminate =
-            a.state == .queued
-            || (a.planProgress == nil && (a.progress?.totalBytes ?? 0) == 0 && (a.progress?.totalItems ?? 0) == 0)
-        bar.doubleValue = a.fraction
+        bar.fraction = a.fraction
+        bar.isIndeterminate = a.fraction <= 0 && a.state.isActive || a.state == .queued
         setButtons(for: a)
+        updateReveal()
+        needsLayout = true
+        needsDisplay = true
+        setAccessibilityLabel(a.title + ". " + text)
     }
 
     /// The buttons that fit its state, rebuilt only when that set changes.
@@ -352,7 +502,7 @@ final class ActivityRowView: NSView {
             switch w {
             case "pause": (symbol, tip) = ("pause.fill", "Pause (resumes from where it stopped)")
             case "resume": (symbol, tip) = ("play.fill", "Resume")
-            case "cancel": (symbol, tip) = ("xmark.circle.fill", "Cancel")
+            case "cancel": (symbol, tip) = ("stop.fill", "Stop")
             case "up": (symbol, tip) = ("arrow.up", "Start earlier")
             case "down": (symbol, tip) = ("arrow.down", "Start later")
             case "retry": (symbol, tip) = ("arrow.clockwise", "Try the failed items again")
@@ -370,15 +520,157 @@ final class ActivityRowView: NSView {
                 default: if let d = a.destination { (NSApp.delegate as? AppDelegate)?.newWindow(at: d) }
                 }
             }
-            b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
+            b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .regular))
+            b.contentTintColor = Theme.windowTextInactive
             b.imagePosition = .imageOnly
             b.bezelStyle = .accessoryBarAction
             b.isBordered = false
             b.toolTip = tip
             b.setAccessibilityLabel(tip)
-            b.widthAnchor.constraint(equalToConstant: 28).isActive = true
-            b.heightAnchor.constraint(equalToConstant: 28).isActive = true
+            b.widthAnchor.constraint(equalToConstant: 24).isActive = true
+            b.heightAnchor.constraint(equalToConstant: 24).isActive = true
             buttons.addArrangedSubview(b)
+        }
+    }
+}
+
+/// Browser-sized glass capsules and a draggable titlebar, including space for the traffic lights.
+private final class ActivityHeaderView: NSView {
+    var showsClear = true { didSet { clearGroup.isHidden = !showsClear; needsLayout = true } }
+    private let hairline = NSView()
+    private let background = TintedMaterialView(material: .titlebar, alpha: 0.78)
+    private let tabGroup = GlassGroup()
+    private let clearGroup = GlassGroup()
+    private let settingsGroup = GlassGroup()
+    private let tabs: NSSegmentedControl
+    private let clear: NSButton
+    private let settings: NSButton
+
+    override var isFlipped: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    init(tabs: NSSegmentedControl, clear: NSButton, settings: NSButton) {
+        self.tabs = tabs
+        self.clear = clear
+        self.settings = settings
+        super.init(frame: .zero)
+        addSubview(background)
+        hairline.wantsLayer = true
+        addSubview(hairline)
+        Theme.whenChanged(self) { [weak self] in self?.needsLayout = true }
+        for group in [tabGroup, clearGroup, settingsGroup] { addSubview(group) }
+        tabGroup.content.addSubview(tabs)
+        clearGroup.content.addSubview(clear)
+        settingsGroup.content.addSubview(settings)
+        setAccessibilityRole(.toolbar)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        background.frame = bounds
+        hairline.frame = CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
+        hairline.layer?.backgroundColor = Theme.hairline.cgColor
+        let narrow = bounds.width < 560
+        let clearWidth: CGFloat = narrow ? 34 : 122
+        clear.imagePosition = narrow ? .imageOnly : .imageLeading
+        settingsGroup.frame = CGRect(x: bounds.width - 46, y: 9, width: 34, height: 34)
+        clearGroup.frame = CGRect(x: settingsGroup.frame.minX - 8 - clearWidth, y: 9, width: clearWidth, height: 34)
+        tabGroup.frame = CGRect(x: max(88, min((bounds.width - 164) / 2, clearGroup.frame.minX - 176)), y: 9, width: 164, height: 34)
+        tabs.frame = CGRect(x: 4, y: 3, width: 156, height: 28)
+        clear.frame = CGRect(x: 4, y: 3, width: clearWidth - 8, height: 28)
+        settings.frame = CGRect(x: 3, y: 3, width: 28, height: 28)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        Theme.hairline.setFill()
+        CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
+    }
+}
+
+private final class ActivityFooterView: NSView {
+    private let hairline = NSView()
+    var text = "" { didSet { label.stringValue = text } }
+    private let background = TintedMaterialView(material: .titlebar, alpha: 0.82)
+    private let label = NSTextField(labelWithString: "")
+    override var isFlipped: Bool { true }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        label.font = .systemFont(ofSize: 12)
+        addSubview(background)
+        hairline.wantsLayer = true
+        addSubview(hairline)
+        addSubview(label)
+        Theme.whenChanged(self) { [weak self] in
+            self?.label.textColor = Theme.windowTextInactive
+            self?.needsLayout = true
+        }
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func layout() {
+        super.layout()
+        background.frame = bounds
+        hairline.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 1)
+        hairline.layer?.backgroundColor = Theme.hairline.cgColor
+        label.frame = CGRect(x: 16, y: 6, width: max(0, bounds.width - 32), height: 17)
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        Theme.hairline.setFill()
+        CGRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
+    }
+}
+
+private final class ActivityProgressView: NSView {
+    var fraction: Double = 0 { didSet { needsLayout = true } }
+    var isIndeterminate = false {
+        didSet {
+            if isIndeterminate != oldValue { fill.layer?.removeAnimation(forKey: "indeterminate"); needsLayout = true }
+        }
+    }
+    private let fill = NSView()
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius = 2
+        layer?.masksToBounds = true
+        fill.wantsLayer = true
+        fill.layer?.cornerRadius = 2
+        addSubview(fill)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func layout() {
+        super.layout()
+        layer?.backgroundColor = Theme.activeText.withAlphaComponent(0.16).cgColor
+        fill.layer?.backgroundColor = Theme.activeText.cgColor
+        if isIndeterminate {
+            let width = bounds.width * 0.3
+            fill.frame = CGRect(x: (bounds.width - width) / 2, y: 0, width: width, height: 4)
+            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                fill.layer?.removeAnimation(forKey: "indeterminate")
+            } else if fill.layer?.animation(forKey: "indeterminate") == nil {
+                let animation = CABasicAnimation(keyPath: "position.x")
+                animation.fromValue = -width / 2
+                animation.toValue = bounds.width + width / 2
+                animation.duration = 1.2
+                animation.repeatCount = .infinity
+                animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                fill.layer?.add(animation, forKey: "indeterminate")
+            }
+            return
+        }
+        fill.layer?.removeAnimation(forKey: "indeterminate")
+        let target = CGRect(x: 0, y: 0, width: bounds.width * max(0, min(1, fraction)), height: 4)
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || fill.frame == .zero {
+            fill.frame = target
+        } else {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.16
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                fill.animator().frame = target
+            }
         }
     }
 }
