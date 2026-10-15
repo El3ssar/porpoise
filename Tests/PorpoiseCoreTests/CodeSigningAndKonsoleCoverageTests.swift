@@ -1,0 +1,61 @@
+import Foundation
+import PorpoiseCore
+import Testing
+
+/// This process's own signature: a test binary is signed ad hoc by the linker (no certificate), so it has no leaf
+/// certificate and no requirement can be built from it; a certificate-signed build gets a SHA-1 and a requirement.
+@Suite struct OwnSignatureTests {
+    @Test func requirementFollowsTheOwnCertificate() {
+        let hash = CodeSigning.ownLeafCertificateHash()
+        let requirement = CodeSigning.requirement(identifier: "app.porpoise.test")
+        #expect((hash == nil) == (requirement == nil))
+        if let hash {
+            #expect(hash.count == 40 && hash.allSatisfy { $0.isHexDigit && !$0.isLowercase })
+            #expect(requirement == #"identifier "app.porpoise.test" and certificate leaf = H""# + hash + "\"")
+        }
+        #expect(CodeSigning.ownLeafCertificateHash() == hash)  // stable
+    }
+}
+
+/// Konsole color schemes as shipped and as written by hand.
+@Suite struct KonsoleSchemeCoverageTests {
+    @Test func desertIsReadFromResourcesWithItsOwnColors() throws {
+        let desert = KonsoleScheme.desert
+        #expect(desert.palette.count == 16)
+        // `swift test` runs in the package folder: the shipped file is found there and has its own background.
+        let file = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Resources/Desert-Konsole.colorscheme")
+        if let text = try? String(contentsOf: file, encoding: .utf8) {
+            let parsed = KonsoleScheme.parse(text)
+            #expect(desert.background.map { [$0.0, $0.1, $0.2] } == parsed.background.map { [$0.0, $0.1, $0.2] })
+            #expect(desert.palette.map { [$0.0, $0.1, $0.2] } == parsed.palette.map { [$0.0, $0.1, $0.2] })
+            #expect(desert.background != nil && desert.foreground != nil)
+        }
+    }
+
+    @Test func aCompleteSchemeReplacesTheBuiltInPalette() {
+        var text = "[General]\nDescription=Test\n"
+        for i in 0..<8 {
+            text += "[Color\(i)]\nColor=\(i),\(i),\(i)\n\n"
+            text += "[Color\(i)Intense]\n  Color=\(100 + i),\(100 + i), \(100 + i)\n"
+        }
+        text += "[Background]\nColor=1,2,3\n[Foreground]\nColor=4,5,6\n"
+        let s = KonsoleScheme.parse(text)
+        #expect(s.palette.map { $0.0 } == Array(0..<8) + Array(100..<108))
+        #expect(s.background.map { [$0.0, $0.1, $0.2] } == [1, 2, 3])
+        #expect(s.foreground.map { [$0.0, $0.1, $0.2] } == [4, 5, 6])
+    }
+
+    @Test func anIncompleteSchemeKeepsTheBuiltInPalette() {
+        let s = KonsoleScheme.parse("[Color0]\nColor=9,9,9\n[Color1]\nColor=1,2\n[Background]\nColor=x,y,z\n")
+        #expect(s.palette.map { [$0.0, $0.1, $0.2] } == KonsoleScheme.builtInDesertPalette.map { [$0.0, $0.1, $0.2] })
+        #expect(s.background == nil && s.foreground == nil)
+    }
+
+    @Test func theLightSchemeIsDarkOnLight() throws {
+        let light = KonsoleScheme.light
+        #expect(light.palette.count == 16)
+        let bg = try #require(light.background), fg = try #require(light.foreground)
+        #expect(bg.0 + bg.1 + bg.2 > fg.0 + fg.1 + fg.2)
+    }
+}
