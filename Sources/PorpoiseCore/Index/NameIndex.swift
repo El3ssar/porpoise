@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 
 /// Immutable, concurrently searchable snapshot. Records refer to two UTF-8 names in a shared arena.
 /// Paths are reconstructed only for hits; no URL, String, or stat allocation in the hot scan.
@@ -28,15 +28,19 @@ public struct NameIndex: @unchecked Sendable {
     public var storageBytes: Int { records.count * MemoryLayout<Record>.stride + arena.count }
 
     @discardableResult
-    public mutating func append(name: String, parent: UInt32 = noParent, directory: Bool = false, symlink: Bool = false,
-                                size: Int64 = 0, modified: Double = 0, content: String? = nil) -> UInt32 {
+    public mutating func append(
+        name: String, parent: UInt32 = noParent, directory: Bool = false, symlink: Bool = false,
+        size: Int64 = 0, modified: Double = 0, content: String? = nil
+    ) -> UInt32 {
         if arena.startIndex != 0 { arena = Data(arena) }
-        let original = Array(name.utf8), folded = Array(IndexQuery.fold(parent == Self.noParent && name.hasPrefix("/") ? (name as NSString).lastPathComponent : name).utf8)
+        let original = Array(name.utf8),
+            folded = Array(IndexQuery.fold(parent == Self.noParent && name.hasPrefix("/") ? (name as NSString).lastPathComponent : name).utf8)
         precondition(records.count < Int(UInt32.max) && arena.count + original.count + folded.count < Int(UInt32.max))
         let a = UInt32(arena.count); arena.append(contentsOf: original)
         let b = UInt32(arena.count); arena.append(contentsOf: folded)
-        var r = Record(parent: parent, nameOffset: a, foldedOffset: b, nameLength: UInt32(original.count),
-                       foldedLength: UInt32(folded.count), flags: (directory ? 1 : 0) | (symlink ? 2 : 0), size: size, modified: modified)
+        var r = Record(
+            parent: parent, nameOffset: a, foldedOffset: b, nameLength: UInt32(original.count),
+            foldedLength: UInt32(folded.count), flags: (directory ? 1 : 0) | (symlink ? 2 : 0), size: size, modified: modified)
         if let content {
             r.flags |= 4
             let bloom = Self.bloom(IndexQuery.fold(content))
@@ -52,7 +56,8 @@ public struct NameIndex: @unchecked Sendable {
     }
     private func storedName(_ id: Int) -> String {
         let r = records[id]
-        return String(decoding: arena[(arena.startIndex + Int(r.nameOffset))..<(arena.startIndex + Int(r.nameOffset) + Int(r.nameLength))], as: UTF8.self)
+        return String(
+            decoding: arena[(arena.startIndex + Int(r.nameOffset))..<(arena.startIndex + Int(r.nameOffset) + Int(r.nameLength))], as: UTF8.self)
     }
     public func path(_ id: Int) -> String {
         var parts: [String] = [], next = UInt32(id)
@@ -75,8 +80,10 @@ public struct NameIndex: @unchecked Sendable {
     }
 
     /// Returns ids in stable crawl order. Limit applies after scope/filter checks, cancellation every 1024 rows.
-    public func search(_ query: IndexQuery, scope: String? = nil, limit: Int = 5000, excluding: [String] = [],
-                       cancelled: () -> Bool = { false }) -> [Int] {
+    public func search(
+        _ query: IndexQuery, scope: String? = nil, limit: Int = 5000, excluding: [String] = [],
+        cancelled: () -> Bool = { false }
+    ) -> [Int] {
         guard limit > 0 else { return [] }
         let terms = query.terms.map { Array($0.utf8) }
         var found: [Int] = []
@@ -107,8 +114,7 @@ public struct NameIndex: @unchecked Sendable {
                     let matched = withoutActuallyEscaping(cancelled) { check in
                         var matched = false
                         regex.enumerateMatches(in: n, options: .reportProgress, range: NSRange(n.startIndex..., in: n)) { match, _, stop in
-                            if match != nil { matched = true; stop.pointee = true }
-                            else if check() { stop.pointee = true }
+                            if match != nil { matched = true; stop.pointee = true } else if check() { stop.pointee = true }
                         }
                         return matched
                     }
@@ -134,7 +140,7 @@ public struct NameIndex: @unchecked Sendable {
         var words = [UInt64](repeating: 0, count: 4)
         if bytes.count >= 3 {
             for i in 0..<(bytes.count - 2) {
-                let gram = UInt32(bytes[i]) | UInt32(bytes[i+1]) << 8 | UInt32(bytes[i+2]) << 16
+                let gram = UInt32(bytes[i]) | UInt32(bytes[i + 1]) << 8 | UInt32(bytes[i + 2]) << 16
                 let h = Int((gram &* 2654435761) >> 24)
                 words[h >> 6] |= UInt64(1) << (h & 63)
             }
@@ -181,7 +187,8 @@ public struct NameIndex: @unchecked Sendable {
         for (i, r) in records.enumerated() {
             guard (r.parent == Self.noParent || Int(r.parent) < i),
                 UInt64(r.nameOffset) + UInt64(r.nameLength) <= size,
-                UInt64(r.foldedOffset) + UInt64(r.foldedLength) <= size else { throw Corrupt.snapshot }
+                UInt64(r.foldedOffset) + UInt64(r.foldedLength) <= size
+            else { throw Corrupt.snapshot }
         }
     }
 }
