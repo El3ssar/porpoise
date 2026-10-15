@@ -45,7 +45,8 @@ public enum RemoteFS {
         return sshSchemes.contains(s) || ftpSchemes.contains(s) || s == "adb"
     }
 
-    private static var providers: [String: RemoteProvider] = [:]
+    /// Guarded by `lock`.
+    nonisolated(unsafe) private static var providers: [String: RemoteProvider] = [:]
     private static let lock = NSLock()
 
     private static func key(_ url: URL) -> String {

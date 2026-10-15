@@ -1,7 +1,7 @@
 import Foundation
 
 /// A Konsole `.colorscheme`: 16 ANSI colors plus background and foreground.
-public struct KonsoleScheme {
+public struct KonsoleScheme: Sendable {
     public typealias RGB = (Int, Int, Int)
     public var palette: [RGB]
     public var background: RGB?

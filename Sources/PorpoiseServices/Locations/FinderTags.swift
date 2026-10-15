@@ -3,7 +3,7 @@ import Foundation
 /// Finder tags: names plus Finder's color index, read from the `_kMDItemUserTags` extended attribute
 /// ("Name\n6"), which is where Finder keeps each tag's color.
 public enum FinderTags {
-    public struct Tag: Equatable {
+    public struct Tag: Equatable, Sendable {
         public var name: String
         public var color: Int
     }
