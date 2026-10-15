@@ -206,12 +206,14 @@ final class ItemListView: NSView {
         if anchorIndex == nil { anchorIndex = candidateIndexes(in: vr).first }
         if let i = anchorIndex, i >= frames.count { anchorIndex = nil }
         let before = anchorIndex.map { frames[$0].origin } ?? .zero
-        liveIconSize = s
-        computeLayout()
-        if let i = anchorIndex, i < frames.count {
-            let after = frames[i].origin
-            let target = CGPoint(x: mode == .compact ? max(0, vr.minX + after.x - before.x) : vr.minX, y: max(0, vr.minY + after.y - before.y))
-            scroll(target)
+        reflowing {
+            liveIconSize = s
+            computeLayout()
+            if let i = anchorIndex, i < frames.count {
+                let after = frames[i].origin
+                let target = CGPoint(x: mode == .compact ? max(0, vr.minX + after.x - before.x) : vr.minX, y: max(0, vr.minY + after.y - before.y))
+                scroll(target)
+            }
         }
         needsDisplay = true
         onZoomPreview?(s)
@@ -238,16 +240,19 @@ final class ItemListView: NSView {
         p.setIconSize(s.rounded(), for: p.mode)
         // Saving the size must not move the view: the pinch already placed it around the fingers.
         let origin = visibleRect.origin
-        liveIconSize = nil
         committingZoom = true
         defer { committingZoom = false }
-        if p != model.props {
-            model.props = p
-            model.saveProps()
-        } else {
-            relayout()
+        // The rounded size may hold one item more or less per row: that glides too.
+        reflowing {
+            liveIconSize = nil
+            if p != model.props {
+                model.props = p
+                model.saveProps()
+            } else {
+                relayout()
+            }
+            scroll(origin)
         }
-        scroll(origin)
     }
 }
 
