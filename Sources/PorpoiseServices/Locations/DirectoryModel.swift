@@ -579,7 +579,8 @@ public final class DirectoryModel {
         let all = recountFolders
         recountFolders = false
         // Counting everything again supersedes the counts still under way: they were made with the old settings.
-        if all { countGeneration += 1; FolderUsageCache.shared.invalidate(below: location) }
+        // Their folders stop being pending too, or one no longer shown (in a collapsed folder) would never be counted.
+        if all { countGeneration += 1; pendingCounts = []; FolderUsageCache.shared.invalidate(below: location) }
         let need = rows.map(\.item).filter { $0.isBrowsableFolder && (all || (folderCounts[$0.url] == nil && !pendingCounts.contains($0.url))) }
         guard !need.isEmpty else { return }
         let generation = countGeneration
