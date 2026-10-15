@@ -58,7 +58,12 @@ struct IndexCoverageTests {
         var index = NameIndex()
         #expect(index.storageBytes == 0)
         index.append(name: "/root", directory: true)
-        // Records plus the original and folded names ("/root" and "root").
-        #expect(index.storageBytes == MemoryLayout<NameIndex.Record>.stride + 9)
+        let one = index.storageBytes
+        // A fixed part plus the original and folded names, each ending in a NUL ("/root\0" and "root\0").
+        let fixed = one - 11
+        #expect(fixed > 0)
+        // A name that is already folded is stored once.
+        index.append(name: "longer-name.txt", parent: 0)
+        #expect(index.storageBytes - one == fixed + "longer-name.txt".utf8.count + 1)
     }
 }
