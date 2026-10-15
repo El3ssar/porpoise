@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import Testing
 import PorpoiseCore
 import PorpoiseTestSupport
@@ -68,6 +69,96 @@ import PorpoiseTestSupport
         try await waitReady(restored)
         #expect(restored.search("renamed", scope: s.path("root"))?.paths.isEmpty == true)
     }
+
+    @Test func runningSearchRefreshesWhenIndexedFileAppearsAndStopsCleanly() async throws {
+        let s = try Scratch(); try s.folder("root")
+        let index = setup(s)
+        defer { index.configure(IndexConfiguration()) }
+        try await waitReady(index)
+        var updates: [[String]] = []
+        let runner = SearchRunner(text: "visible", scope: s.path("root"), contents: false) { items, done in
+            if done { updates.append(items.map(\.name)) }
+        }
+        runner.index = index; runner.start()
+        defer { runner.stop() }
+        try #require(await eventually(5) { !updates.isEmpty })
+        try s.file("root/visible.txt")
+        try #require(await eventually(5) { updates.last == ["visible.txt"] })
+        runner.stop()
+        let count = updates.count
+        try s.file("root/visible2.txt")
+        try #require(await eventually(5) { index.search("visible", scope: s.path("root"))?.paths.count == 2 })
+        #expect(updates.count == count)
+        #expect(index.status.count == 3) // Root and two files, with patches counted once.
+    }
+
+
+    @Test func packagesAndIndexStorageAreNotRecursivelyIndexed() async throws {
+        let s = try Scratch()
+        try s.file("root/Test.app/Contents/hidden-name.txt")
+        try s.file("root/visible.txt")
+        let index = SearchIndex(directory: s.path("root/index-store"), defaults: UserDefaults(suiteName: "PorpoiseIndexTests.\(UUID())")!)
+        var config = IndexConfiguration(); config.enabled = true; config.roots = [s.path("root").path]
+        index.configure(config)
+        defer { index.configure(IndexConfiguration()) }
+        try await waitReady(index)
+        #expect(index.search("hidden-name", scope: s.path("root"))?.paths.isEmpty == true)
+        try #require(await eventually(5) { FileManager.default.fileExists(atPath: s.path("root/index-store/manifest.json").path) })
+        try s.file("root/after.txt")
+        try #require(await eventually(5) { index.search("after", scope: s.path("root"))?.paths.count == 1 })
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(index.search("idx", scope: s.path("root"))?.paths.isEmpty == true)
+        #expect(index.status.count == 4) // Root, package, visible and after.
+    }
+    @Test func permissionHolesUseFallbackUntilReadableAgain() async throws {
+        let s = try Scratch(); try s.file("root/denied/hidden.txt"); try s.file("root/allowed/visible.txt")
+        let path = s.path("root/denied").path
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path) }
+        let index = setup(s)
+        defer { index.configure(IndexConfiguration()) }
+        try await waitReady(index)
+        #expect(index.search("hidden", scope: s.path("root")) == nil)
+        #expect(index.search("visible", scope: s.path("root/allowed"))?.paths.count == 1)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path)
+        try #require(await eventually(5) { index.search("hidden", scope: s.path("root"))?.paths.count == 1 })
+    }
+    @Test func offlineChangesReplayFromInitialSavedCursor() async throws {
+        let s = try Scratch(); try s.file("root/original.txt")
+        let index = setup(s)
+        try await waitReady(index)
+        try #require(await eventually(5) { FileManager.default.fileExists(atPath: s.path("store/manifest.json").path) })
+        let configuration = index.configuration
+        index.configure(IndexConfiguration())
+        try s.file("root/offline-file.txt")
+        let restored = SearchIndex(directory: s.path("store"), defaults: UserDefaults(suiteName: "PorpoiseIndexTests.\(UUID())")!)
+        restored.configure(configuration)
+        defer { restored.configure(IndexConfiguration()) }
+        try await waitReady(restored)
+        try #require(await eventually(5) { restored.search("offline-file", scope: s.path("root"))?.paths.count == 1 })
+    }
+    @Test func eventBurstsConvergeWithoutDuplicateResults() async throws {
+        let s = try Scratch(); try s.folder("root")
+        let index = setup(s)
+        defer { index.configure(IndexConfiguration()) }
+        try await waitReady(index)
+        for n in 0..<128 { try s.file("root/burst-\(n).txt") }
+        try #require(await eventually(5) { index.search("burst-", scope: s.path("root"))?.paths.count == 128 })
+        #expect(index.status.count == 129)
+    }
+
+
+    @Test func boundedContentReadsRejectSpecialAndOversizedFiles() throws {
+        let s = try Scratch()
+        try s.file("text", "hello")
+        try s.file("large", size: 65537)
+        try s.file("binary", "hi\0there")
+        try s.symlink("link", to: s.path("text").path)
+        #expect(mkfifo(s.path("pipe").path, 0o600) == 0)
+        #expect(IndexFileText.read(s.path("text").path, limit: 65536) == "hello")
+        for name in ["large", "binary", "link", "pipe", "absent"] { #expect(IndexFileText.read(s.path(name).path, limit: 65536) == nil) }
+    }
+
     @Test func fallbackRunnerStillFindsFilesWithIndexOff() async throws {
         let s = try Scratch(); try s.file("fallback-name.txt")
         var result: [FileItem]?

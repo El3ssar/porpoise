@@ -3,7 +3,9 @@ import CoreServices
 
 /// Owns its stream and callback context for exactly the stream lifetime.
 final class IndexEvents {
+    static var currentEventID: UInt64 { FSEventsGetCurrentEventId() }
     private var stream: FSEventStreamRef?
+    var available: Bool { stream != nil }
     private let callback: ([String], UInt64, Bool) -> Void
     private let queue = DispatchQueue(label: "app.porpoise.index-events", qos: .utility)
     init(roots: [String], since: UInt64, callback: @escaping ([String], UInt64, Bool) -> Void) {
@@ -15,12 +17,15 @@ final class IndexEvents {
             let owner = Unmanaged<IndexEvents>.fromOpaque(info).takeUnretainedValue()
             let names = unsafeBitCast(paths, to: NSArray.self) as! [String]
             var rescan = false, last: UInt64 = 0
+            var changed: [String] = []
             for i in 0..<count {
+                if flags[i] & UInt32(kFSEventStreamEventFlagHistoryDone) != 0 { continue }
+                changed.append(names[i])
                 last = max(last, ids[i])
                 let lost = UInt32(kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped | kFSEventStreamEventFlagRootChanged | kFSEventStreamEventFlagEventIdsWrapped)
                 if flags[i] & lost != 0 { rescan = true }
             }
-            owner.callback(names, last, rescan)
+            if !changed.isEmpty { owner.callback(changed, last, rescan) }
         }, &context, roots as CFArray, since == 0 ? FSEventStreamEventId(kFSEventStreamEventIdSinceNow) : since, 0.1, flags)
         if let stream {
             FSEventStreamSetDispatchQueue(stream, queue)

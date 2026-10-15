@@ -30,7 +30,8 @@ public struct NameIndex: @unchecked Sendable {
     @discardableResult
     public mutating func append(name: String, parent: UInt32 = noParent, directory: Bool = false, symlink: Bool = false,
                                 size: Int64 = 0, modified: Double = 0, content: String? = nil) -> UInt32 {
-        let original = Array(name.utf8), folded = Array(IndexQuery.fold(name).utf8)
+        if arena.startIndex != 0 { arena = Data(arena) }
+        let original = Array(name.utf8), folded = Array(IndexQuery.fold(parent == Self.noParent && name.hasPrefix("/") ? (name as NSString).lastPathComponent : name).utf8)
         precondition(records.count < Int(UInt32.max) && arena.count + original.count + folded.count < Int(UInt32.max))
         let a = UInt32(arena.count); arena.append(contentsOf: original)
         let b = UInt32(arena.count); arena.append(contentsOf: folded)
@@ -46,13 +47,17 @@ public struct NameIndex: @unchecked Sendable {
     }
 
     public func name(_ id: Int) -> String {
+        let value = storedName(id)
+        return records[id].parent == Self.noParent && value.hasPrefix("/") ? (value as NSString).lastPathComponent : value
+    }
+    private func storedName(_ id: Int) -> String {
         let r = records[id]
-        return String(decoding: arena[Int(r.nameOffset)..<Int(r.nameOffset + r.nameLength)], as: UTF8.self)
+        return String(decoding: arena[(arena.startIndex + Int(r.nameOffset))..<(arena.startIndex + Int(r.nameOffset) + Int(r.nameLength))], as: UTF8.self)
     }
     public func path(_ id: Int) -> String {
         var parts: [String] = [], next = UInt32(id)
         repeat {
-            let r = records[Int(next)]; parts.append(name(Int(next))); next = r.parent
+            let r = records[Int(next)]; parts.append(storedName(Int(next))); next = r.parent
         } while next != Self.noParent
         return parts.reversed().joined(separator: "/").replacingOccurrences(of: "//", with: "/")
     }
@@ -99,7 +104,15 @@ public struct NameIndex: @unchecked Sendable {
                 }
                 if let regex = query.regex {
                     let n = IndexQuery.fold(name(i))
-                    if regex.firstMatch(in: n, range: NSRange(n.startIndex..., in: n)) == nil { continue }
+                    let matched = withoutActuallyEscaping(cancelled) { check in
+                        var matched = false
+                        regex.enumerateMatches(in: n, options: .reportProgress, range: NSRange(n.startIndex..., in: n)) { match, _, stop in
+                            if match != nil { matched = true; stop.pointee = true }
+                            else if check() { stop.pointee = true }
+                        }
+                        return matched
+                    }
+                    if !matched { continue }
                 }
                 if scope != nil || !query.paths.isEmpty || !excluding.isEmpty {
                     let p = path(i)
@@ -160,11 +173,11 @@ public struct NameIndex: @unchecked Sendable {
         let size = data.withUnsafeBytes { UInt64(littleEndian: $0.loadUnaligned(fromByteOffset: 16, as: UInt64.self)) }
         guard count <= UInt64((data.count - 24) / MemoryLayout<Record>.stride), size <= UInt64(data.count - 24) else { throw Corrupt.snapshot }
         let end = 24 + Int(count) * MemoryLayout<Record>.stride
-        guard UInt64(data.count - end) == size else { throw Corrupt.snapshot }
+        guard size <= UInt64(UInt32.max), UInt64(data.count - end) == size else { throw Corrupt.snapshot }
         records = data.withUnsafeBytes { bytes in
             (0..<Int(count)).map { bytes.loadUnaligned(fromByteOffset: 24 + $0 * MemoryLayout<Record>.stride, as: Record.self) }
         }
-        arena = data.subdata(in: end..<data.count)
+        arena = data[end..<data.count]
         for (i, r) in records.enumerated() {
             guard (r.parent == Self.noParent || Int(r.parent) < i),
                 UInt64(r.nameOffset) + UInt64(r.nameLength) <= size,

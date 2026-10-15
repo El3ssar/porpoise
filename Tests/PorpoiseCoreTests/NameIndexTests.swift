@@ -47,6 +47,16 @@ struct NameIndexTests {
         corrupt[24] = 0; corrupt[25] = 0; corrupt[26] = 0; corrupt[27] = 0 // A root cannot parent itself.
         #expect(throws: NameIndex.Corrupt.self) { try NameIndex(encoded: corrupt) }
     }
+    @Test func subtreeRangesAndRootNames() throws {
+        let index = fixture()
+        #expect(index.countUnderPath("/fixture/Documents") == 3)
+        #expect(index.countUnderPath("/fixture/Documents/budget.txt") == 1)
+        #expect(index.countUnderPath("/fixture") == 5)
+        #expect(index.countUnderPath("/fixture/missing") == 0)
+        var nested = NameIndex()
+        nested.append(name: "/parent/search-term/leaf", directory: true)
+        #expect(try nested.search(IndexQuery("search-term")).isEmpty)
+    }
     @Test func cancellationAndLimit() throws {
         var index = NameIndex()
         let root = index.append(name: "/fixture", directory: true)

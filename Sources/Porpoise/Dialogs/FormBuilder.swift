@@ -40,6 +40,10 @@ final class FormBuilder: NSObject {
 
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 
+    func observe(_ notification: Notification.Name) {
+        observers.append(NotificationCenter.default.addObserver(forName: notification, object: nil, queue: .main) { [weak self] _ in self?.refresh() })
+    }
+
     /// Shows the current value (and enabled state) of every control.
     func refresh() { refreshers.forEach { $0() } }
 

@@ -10,6 +10,12 @@ public final class SearchRunner: NSObject {
     private let scope: URL
     private let contents: Bool
     private let everywhere: Bool
+    private var indexObserver: NSObjectProtocol?
+    private var indexWork: DispatchWorkItem?
+    var index = SearchIndex.shared
+    var usesIndex = true
+    private var usedIndex = false
+    public private(set) var queryError: String?
     private var spotlight: SpotlightQuery?
     private var folderSearch: FolderSearch?
     /// Cancellation token of the running simple search.
@@ -33,7 +39,7 @@ public final class SearchRunner: NSObject {
     /// runs.
     public private(set) var snippets: [URL: String] = [:]
     /// The snippets name exactly the files found by contents only (the folders were searched with the tools).
-    public var snippetsMarkContentMatches: Bool { folderSearch != nil }
+    public var snippetsMarkContentMatches: Bool { folderSearch != nil || usedIndex }
     /// The tools that search folders (the bundled ones; tests choose).
     var folderTools = FolderSearch.tools
 
@@ -63,6 +69,51 @@ public final class SearchRunner: NSObject {
     }
 
     public func start() {
+        if usesIndex && indexObserver == nil {
+            indexObserver = NotificationCenter.default.addObserver(forName: SearchIndex.changed, object: index, queue: .main) { [weak self] _ in
+                guard let self else { return }
+                self.stop()
+                self.start()
+            }
+        }
+        guard usesIndex else { startFallback(); return }
+        let work = DispatchWorkItem {}
+        indexWork = work
+        loadQueue.async { [weak self] in
+            guard let self, !work.isCancelled else { return }
+            guard let result = self.index.search(self.text, scope: self.scope, contents: self.contents, cancelled: { work.isCancelled }) else {
+                DispatchQueue.main.async { [weak self] in if !work.isCancelled { self?.startFallback() } }
+                return
+            }
+            var items: [FileItem] = []
+            for (i, path) in result.paths.enumerated() {
+                if work.isCancelled { return }
+                if let item = FileItem.load(URL(fileURLWithPath: path)), !(self.contents && item.isBrowsableFolder) { items.append(item) }
+                if i == 49 && result.paths.count > 50 {
+                    let first = items
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, !work.isCancelled else { return }
+                        self.usedIndex = true
+                        self.queryError = result.error
+                        self.snippets = Dictionary(uniqueKeysWithValues: result.snippets.map { (URL(fileURLWithPath: $0.key), $0.value) })
+                        self.update(first, false)
+                    }
+                }
+            }
+            let complete = items
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !work.isCancelled else { return }
+                self.usedIndex = true
+                self.queryError = result.error
+                self.snippets = Dictionary(uniqueKeysWithValues: result.snippets.map { (URL(fileURLWithPath: $0.key), $0.value) })
+                self.update(complete, true)
+            }
+        }
+    }
+
+    private func startFallback() {
+        usedIndex = false
+        queryError = nil
         guard usesSpotlight, everywhere else { searchFolders(); return }
         let q = SpotlightQuery(
             predicate: Self.predicate(text, contents: contents), scopes: [scope], limit: Self.maxSpotlightResults, live: true,
@@ -179,7 +230,15 @@ public final class SearchRunner: NSObject {
         }
     }
 
+    deinit {
+        if let indexObserver { NotificationCenter.default.removeObserver(indexObserver) }
+        indexWork?.cancel()
+    }
+
     public func stop() {
+        if let indexObserver { NotificationCenter.default.removeObserver(indexObserver); self.indexObserver = nil }
+        indexWork?.cancel()
+        indexWork = nil
         spotlight?.stop()
         spotlight = nil
         folderSearch?.stop()

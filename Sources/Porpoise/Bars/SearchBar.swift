@@ -43,7 +43,7 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
         everywhereButton.onClick = { [weak self] in self?.everywhere = true }
         everywhereButton.toolTip = "Search your whole home folder (Spotlight)"
         namesButton.onClick = { [weak self] in self?.contents = false }
-        namesButton.toolTip = "Find files by their names"
+        namesButton.toolTip = "Find names. Indexed search supports ext:pdf, path:work, size:>10mb, dm:today, folder:, file:, regex:pattern"
         contentsButton.onClick = { [weak self] in self.map { $0.contents.toggle() } }
         contentsButton.toolTip = "Also find files by the text inside them (shown as Content matches)"
         closeButton.onClick = { [weak self] in self.map { $0.delegate?.searchBarClosed($0) } }
@@ -94,7 +94,7 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
 
     func controlTextDidChange(_ obj: Notification) {
         debounce?.invalidate()
-        debounce = Timer.scheduledTimer(withTimeInterval: Self.debounceDelay, repeats: false) { [weak self] _ in self?.fire() }
+        debounce = Timer.scheduledTimer(withTimeInterval: (!contents && SearchIndex.shared.status.updated != nil ? 0.015 : Self.debounceDelay), repeats: false) { [weak self] _ in self?.fire() }
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
