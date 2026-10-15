@@ -164,7 +164,18 @@ enum AppearancePage {
         f.button("Export Appearance…") { writeFile(name: "Porpoise-appearance.json") { try s.exportAppearance() } }
         f.button("Import Appearance…") {
             readFile(extensions: ["json"]) { _, data in
-                try s.importAppearance(data); s.applyAppearanceIconSizes()
+                // What the file would have terminals run is shown, and taken only if the user says so.
+                var commands = false
+                let asked = try s.appearanceCommands(in: data)
+                if !asked.isEmpty {
+                    let a = NSAlert()
+                    a.messageText = "This file also sets what the terminal runs"
+                    a.informativeText = asked.joined(separator: "\n") + "\n\nUse these only if you trust where the file came from."
+                    a.addButton(withTitle: "Keep My Terminal Settings")
+                    a.addButton(withTitle: "Use the File's")
+                    commands = a.runModal() == .alertSecondButtonReturn
+                }
+                try s.importAppearance(data, includingCommands: commands); s.applyAppearanceIconSizes()
             }
         }
     }
