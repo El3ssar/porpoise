@@ -337,7 +337,8 @@ From  📁 Projects  ⇄  📁 Backup                     (direction row; hidden
 
 ### 5.3 Running, paused, failed, done
 
-Sync runs as one job in the jobs engine (Activity). The window shows it in the compare bar, which takes these
+Sync runs as one job in the jobs engine (Activity), with the job row, speed/time-left rules and failure sheet of
+TRANSFERS.md (§2, §4, §5). The window shows it in the compare bar, which takes these
 forms (pills hidden while running):
 
 | State | Compare bar | Rows |
