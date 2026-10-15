@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Zooming reflows smoothly.** When zooming (⌘+/⌘−, the slider, a pinch) changes how many items fit in a row (Icons) or
+  a column (Compact), items now glide to their new places, as they do when the window is resized, instead of jumping
+  there. The item under the pointer stays put, quick repeated zooms carry on from where items are, and Reduce Motion
+  shows the change at once.
+
 ## 0.6.1
 
 - Search results stay settled when unrelated indexed files change. Live updates preserve the full list, scroll position

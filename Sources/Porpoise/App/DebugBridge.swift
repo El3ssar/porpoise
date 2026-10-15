@@ -48,12 +48,25 @@ final class DebugBridge: NSObject {
             let a = arg.split(separator: " ").map(String.init)
             guard a.count == 4, let size = Double(a[1]), let n = Int(a[2]), let ms = Int(a[3]), let list = wc?.view.list else { return }
             try? FileManager.default.createDirectory(atPath: a[0], withIntermediateDirectories: true)
-            windowServerSnapshot(to: a[0] + "/00.png")
+            // Kept in memory while the zoom runs (writing a PNG takes longer than a frame), written after the last.
+            // Beside each frame, <k>.txt: when it was taken, the icon size and how far a glide has come.
+            let t0 = CACurrentMediaTime()
+            var shots: [(image: CGImage?, info: String)] = []
+            func capture() {
+                let info = String(
+                    format: "t=%.0fms size=%.1f glide=%@", (CACurrentMediaTime() - t0) * 1000, list.iconSize,
+                    list.transition.map { String(format: "%.2f", $0.progress) } ?? "-")
+                shots.append((windowServerImage("", nominal: true), info))
+                guard shots.count == max(2, n) else { return }
+                for (k, s) in shots.enumerated() {
+                    if let img = s.image { writePNG(img, to: a[0] + String(format: "/%02d.png", k)) }
+                    try? s.info.write(toFile: a[0] + String(format: "/%02d.txt", k), atomically: true, encoding: .utf8)
+                }
+            }
+            capture()
             list.animateZoom(to: CGFloat(size))
             for k in 1..<max(2, n) {
-                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(k * ms)) { [weak self] in
-                    self?.windowServerSnapshot(to: a[0] + String(format: "/%02d.png", k))
-                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(k * ms)) { capture() }
             }
         case "resizeframes":
             // resizeframes <folder> <width> <height> <count> <ms>: resizes the main window, then captures it every <ms>
@@ -486,20 +499,28 @@ final class DebugBridge: NSObject {
 
     private func windowServerSnapshot(to arg: String) {
         // "wsnapshot <png>" = main window; "wsnapshot <png>|<title prefix>" = another window (Settings, Properties…).
+        guard let img = windowServerImage(arg) else { return }
+        writePNG(img, to: arg.components(separatedBy: "|")[0])
+    }
+
+    private func writePNG(_ img: CGImage, to path: String) {
+        try? NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+    }
+
+    /// `nominal`: at 1x, much quicker to take (frames of an animation).
+    private func windowServerImage(_ arg: String, nominal: Bool = false) -> CGImage? {
         let parts = arg.components(separatedBy: "|")
-        let path = parts[0]
         // The Settings window is titled after its page: "Settings" finds it whatever page is shown.
         let w: NSWindow? =
             parts.count > 1
             ? (parts[1] == "Settings" ? settingsWindow : NSApp.windows.first { $0.isVisible && $0.title.hasPrefix(parts[1]) })
             : NSApp.orderedWindows.first(where: { $0.windowController is MainWindowController })
-        guard let w else { return }
+        guard let w else { return nil }
         typealias Fn = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
-        guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return }
+        guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return nil }
         let fn = unsafeBitCast(sym, to: Fn.self)
-        // kCGWindowListOptionIncludingWindow = 8, kCGWindowImageBoundsIgnoreFraming = 1
-        guard let img = fn(.null, 8, UInt32(w.windowNumber), 1)?.takeRetainedValue() else { return }
-        try? NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+        // kCGWindowListOptionIncludingWindow = 8, kCGWindowImageBoundsIgnoreFraming = 1, kCGWindowImageNominalResolution = 16
+        return fn(.null, 8, UInt32(w.windowNumber), nominal ? 17 : 1)?.takeRetainedValue()
     }
 
     /// Snapshot through Core Animation (captures layer-drawn content like the terminal).
