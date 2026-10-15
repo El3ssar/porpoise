@@ -1,16 +1,19 @@
 # Changelog
 
+## 0.5.0
+
+- **Batch rename with a preview.** Select multiple local items and press F2 to combine find/replace (including regex
+  captures), numbering, case changes, insert/remove, name/date/media tokens, and extension rules. Save reusable presets.
+  The side-by-side preview blocks invalid names and collisions. Swaps, cycles and case-only renames use temporary names,
+  and the whole batch is one Undo/Redo action; failed operations restore staged files without overwriting other items.
+- Fixed: an edited remote file replaced twice in quick succession could miss its upload.
+
 ## 0.4.0
 
 - **Opt-in instant search.** Settings › Search can index selected folders and volumes, with exclusions, rebuild and live status. Filename searches support AND terms and extension, path, size, date, type and regex operators. FSEvents keeps results current across restarts; unindexed locations keep fd/ripgrep/Spotlight search.
 - Optional content trigram filters reduce candidate reads while verifying current file contents and preserving content snippets.
 
 ## 0.3.0
-
-- **Batch rename with a preview.** Select multiple local items and press F2 to combine find/replace (including regex
-  captures), numbering, case changes, insert/remove, name/date/media tokens, and extension rules. Save reusable presets.
-  The side-by-side preview blocks invalid names and collisions. Swaps, cycles and case-only renames use temporary names,
-  and the whole batch is one Undo/Redo action; failed operations restore staged files without overwriting other items.
 
 - **Make it yours.** Settings › Appearance now has ten colour themes, system light/dark pairing, live colour wells,
   KDE `.colors` and Porpoise JSON import/export, and a single file for sharing all appearance preferences.
