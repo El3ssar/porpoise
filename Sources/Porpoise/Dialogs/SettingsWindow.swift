@@ -44,6 +44,7 @@ final class SettingsWindowController: NSWindowController {
             item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
             tabs.addTabViewItem(item)
         }
+        page("Search", "magnifyingglass", IndexSettingsPage.build)
         let s = Settings.shared
 
         page("Appearance", "paintpalette") { f in AppearancePage.build(f) }

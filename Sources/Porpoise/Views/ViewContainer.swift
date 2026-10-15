@@ -588,7 +588,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 }
             }
             self.statusBar.progress = done ? nil : 0.5
-            if done { self.statusBar.showMessage(items.isEmpty ? "No items found." : "\(items.count) items found.") }
+            if done {
+                let result = items.isEmpty ? "No items found." : "\(items.count) items found."
+                self.statusBar.showMessage(runner.queryError ?? (result + " · " + SearchIndex.shared.statusText))
+            }
         }
         searchQuery?.start()
     }
