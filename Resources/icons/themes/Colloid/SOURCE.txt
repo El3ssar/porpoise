@@ -1,0 +1,6 @@
+Colloid icon theme
+Source: https://github.com/vinceliuice/Colloid-icon-theme.git
+Revision: ceac6608ecd0e40025cbc2ebbd32bf0e0f4ebc6a
+Licence: GPL-3.0 (see LICENSE.txt)
+Trimmed subset, symlinks resolved by scripts/import-icons.py.
+Artwork is recoloured at runtime by Porpoise.

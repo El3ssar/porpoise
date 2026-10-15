@@ -33,27 +33,24 @@ final class Icons {
 
     /// Icon image by freedesktop name. `selected` uses highlighted-text colors (like KDE's selected state). It draws
     /// in the colors of the look it's drawn in (light or dark), so menus and buttons holding it follow a change.
-    func image(_ name: String, size: CGFloat, selected: Bool = false) -> NSImage? {
+    func image(_ name: String, size: CGFloat, selected: Bool = false, folder: Bool = false) -> NSImage? {
         let px = Int(size)
-        let key = "\(name)|\(px)|\(selected)" as NSString
+        let preferences = Settings.shared.appearancePreferences
+        let tintKey = preferences.theme(dark: true)[.folderTint].hex + preferences.theme(dark: false)[.folderTint].hex
+        let key = "\(preferences.iconTheme)|\(preferences.folderVariant)|\(tintKey)|\(name)|\(px)|\(selected)|\(folder)" as NSString
         if let img = cache.object(forKey: key) { return img }
         guard let url = IconTheme.shared.file(name, size: px) else { return nil }
-        if url.pathExtension != "svg" {
-            guard let image = NSImage(contentsOf: url) else { return nil }
-            image.size = NSSize(width: size, height: size); cache.setObject(image, forKey: key); return image
-        }
-        guard let svg = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        // Icons without the color-scheme stylesheet look the same in both: one picture.
-        guard svg.contains("current-color-scheme") else {
-            guard let img = NSImage(data: Data(svg.utf8)) else { return nil }
-            img.size = NSSize(width: size, height: size)
-            cache.setObject(img, forKey: key)
-            return img
-        }
         func render(dark: Bool) -> NSImage? {
-            NSImage(
-                data: Data(Self.recolor(svg, stylesheet: Theme.iconStylesheet(selected: selected, dark: dark, folder: name.hasPrefix("folder"))).utf8)
-            )
+            let source: NSImage?
+            if url.pathExtension == "svg", let svg = try? String(contentsOf: url, encoding: .utf8) {
+                // Resolve symbolic colours first. Folder artwork is then mapped as a whole, including fixed palettes.
+                source = NSImage(data: Data(Self.recolor(svg, stylesheet: Theme.iconStylesheet(selected: selected, dark: dark)).utf8))
+            } else {
+                source = NSImage(contentsOf: url)
+            }
+            guard let source else { return nil }
+            if folder || IconTheme.isFolderIcon(name) { return self.folderImage(source, size: size, dark: dark) }
+            return source
         }
         guard let darkImg = render(dark: true), let lightImg = render(dark: false) else { return nil }
         let img = NSImage(size: NSSize(width: size, height: size), flipped: false) { r in
@@ -62,6 +59,68 @@ final class Icons {
         }
         cache.setObject(img, forKey: key)
         return img
+    }
+
+    private func folderImage(_ source: NSImage, size: CGFloat, dark: Bool) -> NSImage {
+        let preferences = Settings.shared.appearancePreferences
+        let tint = FolderColor.tint(preferences.theme(dark: dark)[.folderTint], variant: preferences.folderVariant)
+        let pixels = max(1, Int(ceil(size * 2)))
+        guard
+            let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels,
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+            let context = NSGraphicsContext(bitmapImageRep: rep)
+        else { return source }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        source.draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels))
+        context.flushGraphics()
+        NSGraphicsContext.restoreGraphicsState()
+        guard let bytes = rep.bitmapData else { return source }
+        func sample(_ x: Int, _ y: Int) -> ThemeColor {
+            let offset = y * rep.bytesPerRow + x * 4
+            let alpha = max(1, Int(bytes[offset + 3]))
+            return ThemeColor(
+                Int(bytes[offset]) * 255 / alpha, Int(bytes[offset + 1]) * 255 / alpha,
+                Int(bytes[offset + 2]) * 255 / alpha)
+        }
+        var chromatic = false
+        for y in 0..<pixels {
+            for x in 0..<pixels {
+                let offset = y * rep.bytesPerRow + x * 4
+                guard bytes[offset + 3] > 25 else { continue }
+                let c = sample(x, y)
+                if max(c.red, c.green, c.blue) - min(c.red, c.green, c.blue) > 40 {
+                    chromatic = true
+                    break
+                }
+            }
+            if chromatic { break }
+        }
+        var mappedColors: [Int: ThemeColor] = [:]
+        for y in 0..<pixels {
+            for x in 0..<pixels {
+                let offset = y * rep.bytesPerRow + x * 4
+                let alpha = Int(bytes[offset + 3])
+                guard alpha > 0 else { continue }
+                let original = sample(x, y)
+                let rgb = original.red << 16 | original.green << 8 | original.blue
+                let mapped: ThemeColor
+                if let cached = mappedColors[rgb] {
+                    mapped = cached
+                } else {
+                    mapped = FolderColor.map(original, to: tint, monochrome: !chromatic || size <= 24)
+                    mappedColors[rgb] = mapped
+                }
+                bytes[offset] = UInt8(mapped.red * alpha / 255)
+                bytes[offset + 1] = UInt8(mapped.green * alpha / 255)
+                bytes[offset + 2] = UInt8(mapped.blue * alpha / 255)
+            }
+        }
+        let image = NSImage(size: NSSize(width: size, height: size))
+        image.addRepresentation(rep)
+        return image
     }
 
     static func recolor(_ svg: String, stylesheet: String) -> String {
@@ -144,9 +203,11 @@ final class Icons {
         if Settings.shared.appearancePreferences.iconTheme == "Native macOS" {
             // Cached like app icons: asked for on every draw (hover fades redraw at 90 Hz), and a new image each
             // time also defeated CloudBadge's per-image cache.
-            let key = "native|\(item.url.path)|\(Int(size))" as NSString
+            let p = Settings.shared.appearancePreferences
+            let key = "native|\(item.url.path)|\(Int(size))|\(p.folderVariant)|\(p.theme(dark: Theme.isDark)[.folderTint].hex)" as NSString
             if let img = cache.object(forKey: key) { return img }
-            let image = NSWorkspace.shared.icon(forFile: item.url.path)
+            var image = NSWorkspace.shared.icon(forFile: item.url.path)
+            if item.isBrowsableFolder { image = folderImage(image, size: size, dark: Theme.isDark) }
             image.size = NSSize(width: size, height: size)
             cache.setObject(image, forKey: key)
             return image

@@ -24,8 +24,11 @@ the common view sizes; per-folder overrides and each view's zoom remain availabl
 
 Icon lookup considers the selected installed theme, installed Inherits parents (cycle bounded), then Tela-circle.
 Declared freedesktop directories support arbitrary sizes plus PNG/PDF assets. Native mode uses NSWorkspace for file
-icons; toolbar actions keep the bundled artwork. Folder variants use matching named assets where available, while
-symbolic default folders use the theme folder tint. Reopen Settings after installing a new icon theme.
+icons; toolbar actions keep the bundled artwork. Bundled subsets also include Papirus, Breeze, Fluent, WhiteSur and Colloid.
+Folder presets and the Folder tint colour well use the same luminance-preserving colour mapping, after symbolic
+SVG colours have resolved. This covers fixed-colour SVG, PNG/PDF, native macOS folder images, Home and Desktop
+as well as folder-prefixed names. Neutral emblems and highlights retain their contrast. Very dark and light
+choices are constrained to a visible lightness range. Changing the Folder tint well resets the preset. Reopen Settings after installing a new icon theme.
 
 F4 shells use executable plus argument arrays without a command shell. Shell choice applies to newly started sessions;
 font, palette, cursor and scrollback apply to existing sessions. External CLI terminals receive explicit argument arrays.

@@ -5,7 +5,7 @@
 **A fast, keyboard-friendly file manager for macOS, inspired by KDE Dolphin.**
 
 Split view, a built-in terminal that follows the folder you're in, tabs, panels, Finder tags, remote folders over
-SSH/FTP, and previews of every video format, in a native Mac app with Desert light and dark looks (following macOS) and Tela icons.
+SSH/FTP, and previews of every video format, in a native Mac app with Desert light and dark looks (following macOS) and a choice of icon themes.
 
 ![Porpoise with Places (F9), split view (F3), the Information panel (F10) and the terminal (F4)](docs/screenshots/panes.png)
 
@@ -104,9 +104,12 @@ archives, export portable archives, and open the template folder in Application 
 
 ## Appearance and terminals
 
-Settings › Appearance previews colour changes in open windows. Import KDE `.colors` files or Porpoise theme JSON,
+Settings › Appearance has theme preview cards, grouped controls and compact colour grids; changes preview in open windows. Import KDE `.colors` files or Porpoise theme JSON,
 edit the semantic colours and 16 ANSI colours, then export a theme. **Export Appearance** also includes fonts, density,
 icon choices, shell and terminal settings; **Import Appearance** validates the complete file before applying it.
+
+Choose Tela-circle, Papirus, Breeze, Fluent, WhiteSur, Colloid or native macOS icons. Folder colours preserve shading,
+including special folders and sidebar icons; choose a preset or use the Folder tint colour well.
 
 Install freedesktop icon themes as `~/Library/Application Support/Porpoise/icons/<theme>/index.theme` with the theme's
 icon directories alongside it, then reopen Settings. SVG, PNG and PDF icons and installed parent themes are supported;

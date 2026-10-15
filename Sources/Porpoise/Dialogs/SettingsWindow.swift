@@ -346,6 +346,7 @@ final class SettingsWindowController: NSWindowController {
         w.styleMask = [.titled, .closable, .resizable]
         // Wide enough for every page's toolbar item (narrower hides the last ones behind a » menu).
         w.setContentSize(NSSize(width: 760, height: 580))
+        w.contentMinSize = NSSize(width: 560, height: 420)
         w.isReleasedWhenClosed = false
         self.builders = builders
         super.init(window: w)

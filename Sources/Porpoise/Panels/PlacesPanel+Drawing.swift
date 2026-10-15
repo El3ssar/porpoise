@@ -115,7 +115,7 @@ extension PlacesPanel {
             NSBezierPath(ovalIn: iconRect.insetBy(dx: iconSize * 0.2, dy: iconSize * 0.2)).fill()
         } else {
             let name = e.icon == "user-trash" && trashIsFull() ? "user-trash-full" : e.icon
-            Icons.shared.image(name, size: iconSize, selected: current)?
+            Icons.shared.image(name, size: iconSize, selected: current, folder: e.url.isFileURL && !e.isVolume)?
                 .draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: alpha, respectFlipped: true, hints: nil)
         }
 
