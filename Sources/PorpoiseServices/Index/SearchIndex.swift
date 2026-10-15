@@ -17,7 +17,16 @@ public struct IndexConfiguration: Codable, Equatable, Sendable {
 
 /// All mutation is serialized; immutable snapshots can be scanned on any query thread. Cancellation is synchronous.
 public final class SearchIndex: @unchecked Sendable {
-    public static let shared = SearchIndex()
+    public static let shared: SearchIndex = {
+        let env = ProcessInfo.processInfo.environment
+        // UI tests opt in explicitly, keeping both snapshots and defaults away from the user's index.
+        if let suite = env["PORPOISE_DEFAULTS_SUITE"], let path = env["PORPOISE_TEST_INDEX_DIRECTORY"],
+            let defaults = UserDefaults(suiteName: suite)
+        {
+            return SearchIndex(directory: URL(fileURLWithPath: path), defaults: defaults)
+        }
+        return SearchIndex()
+    }()
     public static let changed = Notification.Name("PorpoiseIndexChanged")
     public struct Status: Sendable {
         public var count = 0

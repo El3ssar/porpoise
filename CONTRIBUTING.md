@@ -85,6 +85,11 @@ The bridge only exists in instances started with `PORPOISE_DEFAULTS_SUITE`; it c
 run menu items, change settings and take snapshots, all inside the test instance. Delete the suite afterwards
 (`defaults delete app.porpoise.mytest`).
 
+Test instances leave the index off by default. To exercise indexed search, also set
+`PORPOISE_TEST_INDEX_DIRECTORY` to a throwaway snapshot directory and put the JSON-encoded
+`IndexConfiguration` data in the test suite's `searchIndex.configuration` key before launch. Both the index
+configuration and its files then stay isolated from the user's index.
+
 ## Sending changes
 
 1. Fork, then create a branch from `main`.
