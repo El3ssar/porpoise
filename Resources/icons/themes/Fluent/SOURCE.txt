@@ -1,0 +1,6 @@
+Fluent icon theme
+Source: https://github.com/vinceliuice/Fluent-icon-theme.git
+Revision: c8a244f571ef8fb47812bdc9dbce76546cedce69
+Licence: GPL-3.0 (see LICENSE.txt)
+Trimmed subset, symlinks resolved by scripts/import-icons.py.
+Artwork is recoloured at runtime by Porpoise.

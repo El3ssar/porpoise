@@ -30,10 +30,7 @@ public final class IconTheme {
         let preferences = Settings.shared.appearancePreferences
         let key = "\(preferences.iconTheme)|\(preferences.folderVariant)|\(name)|\(size)"
         if let cached = pathCache[key] { return cached }
-        var names = [name]
-        if name.hasPrefix("folder"), preferences.folderVariant != "default" {
-            names.insert(name.replacingOccurrences(of: "folder", with: "folder-" + preferences.folderVariant), at: 0)
-        }
+        let names = [name]
         var roots: [URL] = []
         if Self.installedThemes.contains(preferences.iconTheme) {
             let selected = Self.userIconsDirectory.appendingPathComponent(preferences.iconTheme)
@@ -53,6 +50,9 @@ public final class IconTheme {
                 }
                 index += 1
             }
+        }
+        if Self.bundledThemes.contains(preferences.iconTheme) {
+            roots.append(root.appendingPathComponent("themes/" + preferences.iconTheme))
         }
         roots.append(root)
         let found = roots.lazy.compactMap { root -> URL? in
@@ -86,6 +86,12 @@ public final class IconTheme {
     public static var userIconsDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Porpoise/icons")
     }
+    public static let bundledThemes = ["Papirus", "Breeze", "Fluent", "WhiteSur", "Colloid"]
+
+    public static func isFolderIcon(_ name: String) -> Bool {
+        name == "folder" || name.hasPrefix("folder-") || ["user-home", "user-desktop", "desktop", "user-trash", "user-trash-full"].contains(name)
+    }
+
     public static var installedThemes: [String] {
         let names = (try? FileManager.default.contentsOfDirectory(at: userIconsDirectory, includingPropertiesForKeys: nil)) ?? []
         return names.filter { FileManager.default.fileExists(atPath: $0.appendingPathComponent("index.theme").path) }.map(\.lastPathComponent)

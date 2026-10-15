@@ -1,0 +1,6 @@
+Papirus icon theme
+Source: https://github.com/PapirusDevelopmentTeam/papirus-icon-theme.git
+Revision: bf539287ef5dc18529424a02cccee76175920a6f
+Licence: GPL-3.0 (see LICENSE.txt)
+Trimmed subset, symlinks resolved by scripts/import-icons.py.
+Artwork is recoloured at runtime by Porpoise.

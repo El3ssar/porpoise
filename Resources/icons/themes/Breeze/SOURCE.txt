@@ -1,0 +1,6 @@
+Breeze icon theme
+Source: https://invent.kde.org/frameworks/breeze-icons.git
+Revision: 621e0aa0d16def210d355a6c48583de550df1fe6
+Licence: LGPL-3.0-or-later (see LICENSE.txt)
+Trimmed subset, symlinks resolved by scripts/import-icons.py.
+Artwork is recoloured at runtime by Porpoise.

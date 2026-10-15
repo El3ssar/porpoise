@@ -1,0 +1,6 @@
+WhiteSur icon theme
+Source: https://github.com/vinceliuice/WhiteSur-icon-theme.git
+Revision: 73d8040da51a9ed74e47c7366e7e9ff437601a5c
+Licence: GPL-3.0 (see LICENSE.txt)
+Trimmed subset, symlinks resolved by scripts/import-icons.py.
+Artwork is recoloured at runtime by Porpoise.

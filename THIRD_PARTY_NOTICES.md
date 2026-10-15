@@ -8,6 +8,11 @@ Porpoise includes the following works:
 
 | Component | Author | Licence | Where |
 |---|---|---|---|
+| [Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme) | Papirus Development Team | GPL-3.0 | `Resources/icons/themes/Papirus` |
+| [Breeze](https://invent.kde.org/frameworks/breeze-icons) | Uri Herrera and KDE contributors | LGPL-3.0-or-later | `Resources/icons/themes/Breeze` |
+| [Fluent](https://github.com/vinceliuice/Fluent-icon-theme) | Vince Liuice and contributors | GPL-3.0 | `Resources/icons/themes/Fluent` |
+| [WhiteSur](https://github.com/vinceliuice/WhiteSur-icon-theme) | Vince Liuice and contributors | GPL-3.0 | `Resources/icons/themes/WhiteSur` |
+| [Colloid](https://github.com/vinceliuice/Colloid-icon-theme) | Vince Liuice and contributors | GPL-3.0 | `Resources/icons/themes/Colloid` |
 | Tela circle icon theme | Vince Liuice | GPL-3.0 | `Resources/icons` |
 | Desert colour scheme (Plasma / Konsole) | L4ki | AGPL-3.0 | `Resources/Desert-Konsole.colorscheme`, colours in `Theme.swift` |
 | SwiftTerm | Miguel de Icaza | MIT | `Vendor/SwiftTerm` |
@@ -25,3 +30,8 @@ https://ffmpeg.org/releases/ and can be rebuilt with `scripts/build-ffmpeg.sh`. 
 
 Android support downloads Google's Android SDK Platform-Tools from Google on request; they are not part of Porpoise
 and are covered by Google's own licence.
+
+Additional icon themes are trimmed, symlink-resolved subsets. Each theme directory contains its full licence,
+upstream revision and source URL in `SOURCE.txt`, and upstream author notices where supplied. Original artwork
+is retained; folder palettes are mapped at runtime. `scripts/import-icons.sh SOURCE DESTINATION LICENCE`
+reproduces subsets from installed themes or upstream icon trees. Missing names fall back to Tela-circle.
