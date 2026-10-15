@@ -141,3 +141,27 @@ struct NameIndexEngineTests {
         #expect(throws: NameIndex.Corrupt.self) { try NameIndex(encoded: old) }
     }
 }
+
+/// What the search bar says while an operator is typed.
+struct IndexQueryHintTests {
+    @Test func hintsForOperators() {
+        #expect(IndexQuery.hint(for: "") == nil)
+        #expect(IndexQuery.hint(for: "report") == nil)
+        #expect(IndexQuery.hint(for: "report ") == nil)
+        #expect(IndexQuery.hint(for: "report si")?.hasPrefix("Type size: to filter: size:>10mb") == true)
+        #expect(IndexQuery.hint(for: "x") == nil)  // one letter says nothing
+        #expect(IndexQuery.hint(for: "a size:")?.hasPrefix("size:>10mb") == true)
+        #expect(IndexQuery.hint(for: "a size:>10mb") == nil)  // valid: nothing to add
+        #expect(IndexQuery.hint(for: "size:>10zz")?.hasPrefix("Invalid search: size:>10zz — size:") == true)
+        #expect(IndexQuery.hint(for: "DM:")?.hasPrefix("dm:today") == true)
+        #expect(IndexQuery.hint(for: "regex:[")?.hasSuffix("a regular expression on the name") == true)
+        #expect(IndexQuery.hint(for: "foo:bar") == nil)
+    }
+
+    @Test func completions() {
+        #expect(IndexQuery.completions(for: "s") == ["size:"])
+        #expect(IndexQuery.completions(for: "F") == ["folder:", "file:"])
+        #expect(IndexQuery.completions(for: "size:").isEmpty)
+        #expect(IndexQuery.completions(for: "").count == IndexQuery.operators.count)
+    }
+}
