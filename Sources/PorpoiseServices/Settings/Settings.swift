@@ -13,6 +13,8 @@ public final class Settings {
     /// A test run: nothing is written outside `store`, and the system (sounds, helper, Trash) is left alone.
     nonisolated(unsafe) public static var isTesting: Bool = testSuite != nil
     private var d: UserDefaults { Settings.store }
+    let appearanceLock = NSLock()
+    var appearanceCache: (data: Data, value: AppearancePreferences)?
 
     private func get<T>(_ key: String, _ def: T) -> T { (d.object(forKey: key) as? T) ?? def }
     private func set(_ key: String, _ v: Any?) {
@@ -161,7 +163,7 @@ public final class Settings {
     /// What the app remembers (session, Trash origins, recent places, panel sizes, per-folder view styles) stays.
     public func resetAll() {
         let prefKeys = Mirror(reflecting: self).children.compactMap { ($0.value as? PrefKey)?.key }
-        let keys = prefKeys + ContextMenuEntry.allCases.map { "ctx." + $0.rawValue } + ["viewProps"]
+        let keys = prefKeys + ContextMenuEntry.allCases.map { "ctx." + $0.rawValue } + ["viewProps", "appearancePreferences"]
         keys.forEach(d.removeObject(forKey:))
         NotificationCenter.default.post(name: Settings.changed, object: nil)
     }
