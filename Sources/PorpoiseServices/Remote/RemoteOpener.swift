@@ -14,6 +14,9 @@ public enum RemoteOpener {
 
     /// Upload is delayed this long after the last change, so a burst of writes from one save uploads once.
     private static let uploadDelay: TimeInterval = 0.6
+    /// Runs the watch of a file that replaced the one watched, on the main queue (a test holds it back, as a busy
+    /// main queue would).
+    nonisolated(unsafe) static var rewatchOnMain: (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }
     /// Uploads run one at a time, so an older save can never land on the server after a newer one.
     private static let uploadQueue = DispatchQueue(label: "porpoise.remote-upload")
 
@@ -80,7 +83,7 @@ public enum RemoteOpener {
                 // save made while the upload runs is not missed.
                 if replaced {
                     let file = inode(of: local.path)
-                    DispatchQueue.main.async { watch(local, remote: remote, provider: provider, uploading: file) }
+                    rewatchOnMain { watch(local, remote: remote, provider: provider, uploading: file) }
                 }
                 var failure: Error?
                 do { try provider.upload(local, into: remote.deletingLastPathComponent()) } catch { failure = error }
