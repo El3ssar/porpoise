@@ -7,7 +7,10 @@ extension MainWindowController {
 
     @objc func zoomIn(_ sender: Any?) { view.zoom(by: 1) }
     @objc func zoomOut(_ sender: Any?) { view.zoom(by: -1) }
-    @objc func zoomReset(_ sender: Any?) { mutateProps { $0.resetIconSize(for: $0.mode) } }
+    @objc func zoomReset(_ sender: Any?) {
+        if view.showsApps, let g = view.apps?.grid { return g.animateZoom(to: AppsGridView.defaultIconSize) }
+        mutateProps { $0.resetIconSize(for: $0.mode) }
+    }
 
     @objc func setViewMode(_ sender: NSMenuItem) {
         guard let m = ViewMode.allCases[safe: sender.tag] else { return }

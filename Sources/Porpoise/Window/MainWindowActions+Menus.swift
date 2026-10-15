@@ -77,7 +77,7 @@ extension MainWindowController {
         Self.viewModeItems().forEach(m.addItem)
         m.addItem(.separator())
         let zoomItem = NSMenuItem()
-        zoomItem.view = ZoomSliderMenuView(level: view.model.props.zoomLevel(for: view.model.props.mode)) { [weak self] l in self?.view.setZoom(l) }
+        zoomItem.view = ZoomSliderMenuView(level: view.zoomLevel) { [weak self] l in self?.view.setZoom(l) }
         m.addItem(zoomItem)
         m.addItem(.separator())
         m.addItem(sub("Sort By", "view-sort", sortMenu()))
