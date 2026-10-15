@@ -63,7 +63,18 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
         hint.textColor = .secondaryLabelColor
         hint.alignment = .center
         let header = NSStackView(views: [shelves, NSView(), count])
+        // The shelf's name keeps a readable width; the count gives way.
+        shelves.widthAnchor.constraint(greaterThanOrEqualToConstant: 60).isActive = true
+        // Its menu's longest command (Rename Shelf…) mustn't decide its width.
+        let cap = shelves.widthAnchor.constraint(lessThanOrEqualToConstant: 70)
+        cap.priority = .required
+        cap.isActive = true
+        shelves.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        count.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        count.lineBreakMode = .byTruncatingTail
         let footer = NSStackView(views: [copyHere, moveHere])
+        footer.distribution = .fillEqually
+        footer.spacing = 6
         for v in [header, scroll, footer, hint] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
@@ -77,6 +88,7 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -4),
             footer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            footer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             footer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
             hint.centerYAnchor.constraint(equalTo: scroll.centerYAnchor),
             hint.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
@@ -114,8 +126,13 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
             shelves.menu?.addItem(mi)
         }
         let missing = items.filter { states[$0.id]?.problem != nil }.count
-        count.stringValue =
-            items.isEmpty ? "" : "\(items.count) \(items.count == 1 ? "item" : "items")" + (missing > 0 ? ", \(missing) unavailable" : "")
+        // Short, for a narrow sidebar; the tooltip says it in full.
+        count.stringValue = items.isEmpty ? "" : missing > 0 ? "\(missing) missing" : "\(items.count) \(items.count == 1 ? "item" : "items")"
+        count.toolTip =
+            items.isEmpty
+            ? nil
+            : "\(items.count) \(items.count == 1 ? "item" : "items")" + (missing > 0 ? ", \(missing) unavailable (missing or disconnected)" : "")
+        count.textColor = missing > 0 ? Theme.negativeText : .secondaryLabelColor
         table.reloadData()
         table.selectRowIndexes(IndexSet(items.indices.filter { selected.contains(items[$0].id) }), byExtendingSelection: false)
         hint.isHidden = !items.isEmpty
@@ -145,7 +162,9 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
             ?? Icons.shared.image(url.isFileURL ? "unknown" : "folder-remote", size: 22) ?? NSImage()
         v.name.stringValue = url.lastPathComponent
         if let problem = state.problem {
-            v.detail.stringValue = problem + " — " + item.url.deletingLastPathComponent().path
+            // What's wrong first: a long location is cut, not the problem.
+            v.detail.stringValue = problem + " — " + (item.url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
+            v.detail.lineBreakMode = .byTruncatingTail
             v.detail.textColor = Theme.negativeText
             v.name.textColor = .disabledControlTextColor
             v.icon.alphaValue = 0.4
