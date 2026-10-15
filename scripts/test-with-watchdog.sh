@@ -1,8 +1,12 @@
 #!/bin/bash
 # Runs `swift test` with the given arguments. If it runs longer than $TEST_TIMEOUT seconds (default 900), prints
 # the stacks of the test processes (what they're waiting on) and fails, instead of hanging until CI gives up.
+# The tests are built first, outside that time: on a slow runner compiling alone can take minutes.
 set -uo pipefail
 limit=${TEST_TIMEOUT:-900}
+build=(--build-tests)
+for a in "$@"; do [ "$a" = --enable-code-coverage ] && build+=("$a"); done  # the same build swift test then reuses
+swift build "${build[@]}" || exit $?
 swift test "$@" &
 pid=$!
 for ((i = 0; i < limit; i++)); do
