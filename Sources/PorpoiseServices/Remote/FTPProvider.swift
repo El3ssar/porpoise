@@ -51,9 +51,23 @@ final class FTPProvider: RemoteProvider {
     /// curl config with the login, in curl's quoted-string syntax.
     private var credentials: Data? {
         guard let u = user else { return nil }
-        let escaped = "\(u):\(password ?? "")".replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
-        return Data("user = \"\(escaped)\"\n".utf8)
+        return Data("user = \"\(Self.configEscaped("\(u):\(password ?? "")"))\"\n".utf8)
+    }
+
+    /// curl config quoted-string escaping, by code point: a quote followed by a combining mark is one Character,
+    /// which a Character-based replace would leave unescaped, ending the string early.
+    static func configEscaped(_ s: String) -> String {
+        var out = ""
+        for u in s.unicodeScalars {
+            switch u {
+            case "\\": out += "\\\\"
+            case "\"": out += "\\\""
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            default: out.unicodeScalars.append(u)
+            }
+        }
+        return out
     }
 
     /// Runs curl; on a login failure asks for credentials once (and keeps them in the Keychain).

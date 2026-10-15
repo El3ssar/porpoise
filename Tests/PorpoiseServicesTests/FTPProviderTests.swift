@@ -164,4 +164,9 @@ import Testing
         _ = try provider("ftp://me@h.invalid/").list(URL(string: "ftp://h.invalid/")!)
         #expect(curl.calls.first?.stdin == "user = \"me:from keychain\"\n")
     }
+
+    @Test func loginEscapingWorksByCodePoint() {
+        // "\"\u{301}" is one Character: a Character-based replace left the quote bare, ending curl's string early.
+        #expect(FTPProvider.configEscaped("me:p\"\u{301}w\\\n") == "me:p\\\"\u{301}w\\\\\\n")
+    }
 }
