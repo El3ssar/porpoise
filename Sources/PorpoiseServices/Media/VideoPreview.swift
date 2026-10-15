@@ -59,13 +59,17 @@ public final class VideoPreview {
     /// Who asked for the current stream: only they stop it (one window's panel mustn't end another's video).
     private weak var owner: AnyObject?
 
+    /// Where AVFoundation is asked whether a file plays: not on the shared cooperative threads, which a busy process
+    /// can keep occupied (a preview then waited 49s to start in a loaded test run).
+    private static let loader = QueueTaskExecutor(label: "app.porpoise.video-load", qos: .userInitiated)
+
     /// Calls back on the main thread with a URL AVPlayer can play, or nil.
     public func playableURL(for url: URL, owner: AnyObject, done: @escaping (URL?) -> Void) {
         self.owner = owner
         token += 1
         let my = token
         let asset = AVURLAsset(url: url)
-        Task {
+        Task(executorPreference: Self.loader) {
             let playable = (try? await asset.load(.isPlayable)) ?? false
             let tracks = (try? await asset.load(.tracks)) ?? []
             await MainActor.run {

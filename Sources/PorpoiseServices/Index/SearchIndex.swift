@@ -63,11 +63,12 @@ public final class SearchIndex: @unchecked Sendable {
     // One crawl at a time, on a serial queue of its own: such a queue always gets a thread. On the shared pool, utility
     // work got none while other work kept every core busy, and crawls stayed queued (CI's 3-core runner). Each crawl
     // reads folders on several threads itself, the calling one included.
+    private static let crawlThread = DispatchQueue(label: "app.porpoise.index-crawls", qos: .utility)  // held: see below
     private static let crawlers: OperationQueue = {
         let queue = OperationQueue()
         queue.name = "app.porpoise.index-crawls"
         queue.maxConcurrentOperationCount = 1
-        queue.underlyingQueue = DispatchQueue(label: "app.porpoise.index-crawls", qos: .utility)
+        queue.underlyingQueue = crawlThread  // unowned(unsafe): the static above keeps it alive
         return queue
     }()
     private let queue = DispatchQueue(label: "app.porpoise.index", qos: .utility)

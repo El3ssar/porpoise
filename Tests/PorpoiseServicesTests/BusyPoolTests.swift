@@ -59,3 +59,25 @@ import Testing
         func set() { lock.withLock { value = true } }
     }
 }
+
+/// Asking AVFoundation whether a file plays needs no free cooperative thread: synchronous work may hold them all
+/// (a preview waited 49s to start in a loaded run). Not on the main actor: the answer comes there while this test's
+/// own thread, like the others, is held.
+@Suite struct BusyCooperativePoolTests {
+    @Test func aVideoPreviewAnswersWhileEveryCooperativeThreadIsTaken() throws {
+        let s = try Scratch()
+        let file = try s.file("not a video.mkv", "plain text")
+        let p = VideoPreview()
+        defer { p.stop(); p.server.stop() }
+        let answered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let blockers = ProcessInfo.processInfo.activeProcessorCount * 2
+        for _ in 0..<blockers { Task.detached { hold(release) } }
+        defer { for _ in 0..<blockers { release.signal() } }
+        p.playableURL(for: file, owner: NSObject()) { _ in answered.signal() }
+        #expect(answered.wait(timeout: .now() + 15) == .success)
+    }
+}
+
+/// Holds a cooperative thread until `release` is signalled.
+private func hold(_ release: DispatchSemaphore) { release.wait() }
