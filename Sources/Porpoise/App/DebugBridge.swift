@@ -42,6 +42,19 @@ final class DebugBridge: NSObject {
                     self?.windowServerSnapshot(to: a[0] + String(format: "/%02d.png", k))
                 }
             }
+        case "zoomframes":
+            // zoomframes <folder> <size> <count> <ms>: an animated zoom (Cmd+=) to <size>, the main window captured every
+            // <ms> milliseconds from its start, as 00.png, 01.png… (00 is before it).
+            let a = arg.split(separator: " ").map(String.init)
+            guard a.count == 4, let size = Double(a[1]), let n = Int(a[2]), let ms = Int(a[3]), let list = wc?.view.list else { return }
+            try? FileManager.default.createDirectory(atPath: a[0], withIntermediateDirectories: true)
+            windowServerSnapshot(to: a[0] + "/00.png")
+            list.animateZoom(to: CGFloat(size))
+            for k in 1..<max(2, n) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(k * ms)) { [weak self] in
+                    self?.windowServerSnapshot(to: a[0] + String(format: "/%02d.png", k))
+                }
+            }
         case "resizeframes":
             // resizeframes <folder> <width> <height> <count> <ms>: resizes the main window, then captures it every <ms>
             // (the resize animations), timed in the app.
