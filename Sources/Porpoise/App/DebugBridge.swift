@@ -162,6 +162,39 @@ final class DebugBridge: NSObject {
             } else {
                 button?.performClick(nil)
             }
+        case "commandcatalog":
+            MenuCommandRegistry.shared.refresh()
+            let registry = MenuCommandRegistry.shared
+            let actions = registry.commands.map { command -> [String: Any] in
+                [
+                    "id": command.id, "title": command.path, "key": command.item.keyEquivalent,
+                    "modifiers": ShortcutModifiers(command.item.keyEquivalentModifierMask).rawValue,
+                ]
+            }
+            let report: [String: Any] = [
+                "actions": actions, "conflicts": Settings.shared.keyboardShortcuts.conflicts(actions: registry.commands.map(\.definition)).count,
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: URL(fileURLWithPath: arg))
+            }
+        case "shortcutsimport":
+            let paths = arg.components(separatedBy: "|")
+            guard paths.count == 2 else { return }
+            let report: String
+            do {
+                MenuCommandRegistry.shared.refresh();
+                try Settings.shared.importKeyboardShortcuts(
+                    Data(contentsOf: URL(fileURLWithPath: paths[0])), actions: MenuCommandRegistry.shared.commands.map(\.definition));
+                report = "ok"
+            } catch { report = error.localizedDescription }
+            try? report.write(toFile: paths[1], atomically: true, encoding: .utf8)
+        case "toolbarlayout":
+            let commands = arg.split(separator: ",").compactMap { ToolbarCommand(rawValue: String($0)) }
+            if let editor = NSApp.windows.first(where: { $0.windowController is ToolbarCustomizationWindow })?.toolbar {
+                editor.itemIdentifiers = commands.map(\.toolbarIdentifier)
+            } else {
+                Settings.shared.toolbarCommands = commands
+            }
         case "settingsdump":
             // settingsdump <file>: every control of the Settings window, page by page, with value and enabled state.
             dumpSettings(to: arg)
@@ -401,6 +434,7 @@ final class DebugBridge: NSObject {
         guard let w = wc else { return }
         let v = w.view
         let state: [String: Any] = [
+            "toolbarCommands": Settings.shared.toolbarCommands.map(\.rawValue),
             "url": v.url.isFileURL ? v.url.path : v.url.absoluteString,
             "mode": v.model.props.mode.rawValue,
             "zoom": v.model.props.zoomLevel(for: v.model.props.mode),

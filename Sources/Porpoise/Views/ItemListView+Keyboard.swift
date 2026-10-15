@@ -20,8 +20,13 @@ extension ItemListView {
         let chars = event.characters ?? ""
         let shift = mods.contains(.shift)
         switch Int(event.keyCode) {
-        case Key.up where mods == [.command]: NSApp.sendAction(#selector(MainWindowController.goUp(_:)), to: nil, from: self); return
-        case Key.down where mods == [.command]: openSelection(); return  // Finder's Cmd+↓
+        case Key.up where mods == [.command]:
+            if MenuCommandRegistry.shared.fallbackAllowed(#selector(MainWindowController.goUp(_:))) {
+                NSApp.sendAction(#selector(MainWindowController.goUp(_:)), to: nil, from: self)
+            }; return
+        case Key.down where mods == [.command]:
+            // Finder's Cmd+↓, unless Open has been rebound.
+            if MenuCommandRegistry.shared.fallbackAllowed(#selector(MainWindowController.openSelected(_:))) { openSelection() }; return
         case Key.up: moveCurrent(.up, extend: shift); return
         case Key.down: moveCurrent(.down, extend: shift); return
         case Key.left:
@@ -45,13 +50,14 @@ extension ItemListView {
             return
         case Key.backspace where mods.isEmpty:
             // ⌫ = Back (Dolphin's Backspace), only while the view has focus.
-            NSApp.sendAction(#selector(MainWindowController.goBack(_:)), to: nil, from: self)
+            if MenuCommandRegistry.shared.fallbackAllowed(#selector(MainWindowController.goBack(_:))) {
+                NSApp.sendAction(#selector(MainWindowController.goBack(_:)), to: nil, from: self)
+            }
             return
         case Key.forwardDelete where mods.isEmpty || mods == [.shift]:
             // fn+⌫ (Delete) = Move to Trash, Shift+Delete = Delete permanently.
-            NSApp.sendAction(
-                mods.isEmpty ? #selector(MainWindowController.moveToTrash(_:)) : #selector(MainWindowController.deleteItem(_:)),
-                to: nil, from: self)
+            let action = mods.isEmpty ? #selector(MainWindowController.moveToTrash(_:)) : #selector(MainWindowController.deleteItem(_:))
+            if MenuCommandRegistry.shared.fallbackAllowed(action) { NSApp.sendAction(action, to: nil, from: self) }
             return
         case Key.space:
             if mods.isEmpty && !isTypingAhead { delegate?.itemListQuickLook(self); return }
@@ -64,11 +70,15 @@ extension ItemListView {
         }
         if mods == [.option], event.charactersIgnoringModifiers == "." {
             // Alt+. = Show Hidden Files (Dolphin)
-            NSApp.sendAction(#selector(MainWindowController.toggleHiddenFiles(_:)), to: nil, from: self)
+            if MenuCommandRegistry.shared.fallbackAllowed(#selector(MainWindowController.toggleHiddenFiles(_:))) {
+                NSApp.sendAction(#selector(MainWindowController.toggleHiddenFiles(_:)), to: nil, from: self)
+            }
             return
         }
         if mods.isEmpty, chars == "/", !isTypingAhead {
-            NSApp.sendAction(#selector(MainWindowController.showFilterBar(_:)), to: nil, from: self)
+            if MenuCommandRegistry.shared.fallbackAllowed(#selector(MainWindowController.showFilterBar(_:))) {
+                NSApp.sendAction(#selector(MainWindowController.showFilterBar(_:)), to: nil, from: self)
+            }
             return
         }
         if mods.subtracting(.shift).isEmpty, let ch = chars.first, !ch.isNewline,

@@ -85,6 +85,9 @@ extension AppDelegate {
         edit.addItem(mi("Undo", #selector(W.undoFileOperation(_:)), "z", icon: "edit-undo"))
         edit.addItem(mi("Redo", #selector(W.redoFileOperation(_:)), "z", [.command, .shift], icon: "edit-redo"))
         edit.addItem(sep())
+        edit.addItem(mi("Command Palette…", #selector(showCommandPalette(_:)), "p", [.command, .shift], icon: "system-search"))
+        edit.addItem(mi("Command Palette…", #selector(showCommandPalette(_:)), "i", [.control, .option], icon: "system-search").hiddenAlternate())
+        edit.addItem(sep())
         edit.addItem(mi("Cut", #selector(W.cut(_:)), "x", icon: "edit-cut"))
         edit.addItem(mi("Copy", #selector(W.copy(_:)), "c", icon: "edit-copy"))
         edit.addItem(mi("Copy Location", #selector(W.copyLocation(_:)), "c", [.command, .option], icon: "edit-copy-path"))
@@ -141,6 +144,7 @@ extension AppDelegate {
                     mi("Replace Location", #selector(W.replaceLocation(_:)), "l"),
                 ]))
         view.addItem(sep())
+        view.addItem(mi("Customise Toolbar…", #selector(customizeToolbar(_:)), icon: "configure"))
         view.addItem(mi("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]))
         main.addItem(.submenu("View", icon: nil, view))
 
@@ -242,5 +246,6 @@ extension AppDelegate {
         }
         menu.removeAllItems()
         for it in built.items { built.removeItem(it); menu.addItem(it) }
+        MenuCommandRegistry.shared.apply(to: menu)
     }
 }

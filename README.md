@@ -102,6 +102,24 @@ The batch uses temporary names for swaps and cycles, rechecks source identity an
 and never overwrites existing items. **Undo: Batch Rename** restores the entire operation in one step. These transaction
 guarantees apply to local files; remote items retain individual rename. [Implementation and recovery](docs/design/BATCH_RENAME.md).
 
+## Command palette and custom controls
+
+**⌘⇧P** or **⌃⌥I** opens the command palette. Search menu actions by partial words, initials or a fuzzy sequence;
+results also include Places/bookmarks, recent locations, open tabs in every window, and connections saved in Places or
+visited in open tabs. Arrow keys choose a result, Return runs it, and Escape closes the palette. Unavailable commands
+stay visible with an explanation. Commands use the originating window's selection and normal confirmation dialogs.
+
+In **Settings › Shortcuts**, filter actions, select one, then **Record Shortcut**. Clear removes its default aliases too;
+Reset Selected and Reset All restore defaults. Conflicts with other actions are blocked, including hidden alternate
+bindings. JSON import validates the whole file before applying it; export contains overrides, allowing future defaults
+to remain available. Menu keys update immediately and persist across launches. Text editing and basic view-navigation
+keys remain local to their controls; macOS-reserved shortcuts still belong to the system.
+
+**View › Customise Toolbar** opens a native macOS toolbar editor. Drag actions in its palette to add, remove or reorder
+them; main windows preview the layout live. The Location field stays available and continues to align with split panes.
+Optional actions include Reload, New Tab, Terminal and Command Palette. Narrow windows move excess actions into the
+main-menu path. Restore defaults from the editor or Settings › Shortcuts. [Formats and verification](docs/design/COMMANDS.md).
+
 ## Keyboard shortcuts
 
 Dolphin's shortcuts with Ctrl → ⌘, plus Finder's.

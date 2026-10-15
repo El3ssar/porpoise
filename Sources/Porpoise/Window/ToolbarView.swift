@@ -12,6 +12,8 @@ final class ToolbarView: NSView {
     let split = FlatButton(icon: "view-split-left-right", title: "Split", tooltip: "Split view")
     let search = FlatButton(icon: "edit-find", tooltip: "Search")
     let hamburger = FlatButton(icon: "application-menu", tooltip: "Main Menu")
+    private var customGroups: [ToolbarCommand: GlassGroup] = [:]
+    private var extraButtons: [ToolbarCommand: FlatButton] = [:]
     private let background = TintedMaterialView(material: .titlebar, alpha: 0.78)
     private let hairline = NSView()
     private let navGroup = GlassGroup()
@@ -53,6 +55,18 @@ final class ToolbarView: NSView {
         modeGroup.content.addSubview(viewMode)
         for b in [split, search, hamburger] { actionGroup.content.addSubview(b) }
         for v in [navGroup, modeGroup, fieldGroups[0], fieldGroups[1], actionGroup, hairline] as [NSView] { addSubview(v) }
+        for command in ToolbarCommand.allCases where ![.back, .forward, .up, .viewMode, .location, .split, .search, .menu].contains(command) {
+            let button = FlatButton(icon: nil, tooltip: command.title)
+            button.iconSize = 18
+            button.onClick = { [weak self] in self?.perform(command) }
+            extraButtons[command] = button
+        }
+        for command in ToolbarCommand.allCases {
+            button(for: command)?.identifier = NSUserInterfaceItemIdentifier(command.toolbarIdentifier.rawValue)
+            if let extra = extraButtons[command] { extra.iconName = command.iconName }
+        }
+        fieldGroups[0].identifier = .init("Porpoise.toolbar.location.primary")
+        fieldGroups[1].identifier = .init("Porpoise.toolbar.location.secondary")
         setAccessibilityRole(.toolbar)
     }
 
@@ -80,6 +94,8 @@ final class ToolbarView: NSView {
         super.layout()
         background.frame = bounds
         hairline.frame = CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
+        if Settings.shared.toolbarCommands != ToolbarCommand.defaults { layoutCustom(); return }
+        restoreDefaultGroups()
         let gh = Self.capsuleHeight
         let gy = (bounds.height - gh) / 2
         let inset = Self.capsuleInset
@@ -112,6 +128,81 @@ final class ToolbarView: NSView {
         layoutFields(from: fieldMinX, to: actionGroup.frame.minX - Self.fieldTrailingGap, y: gy, height: gh)
     }
 
+    private func button(for command: ToolbarCommand) -> FlatButton? {
+        switch command {
+        case .back: return back
+        case .forward: return forward
+        case .up: return up
+        case .viewMode: return viewMode
+        case .split: return split
+        case .search: return search
+        case .menu: return hamburger
+        case .location: return nil
+        default: return extraButtons[command]
+        }
+    }
+    private func perform(_ command: ToolbarCommand) {
+        guard let controller = window?.windowController as? MainWindowController else { return }
+        switch command {
+        case .reload: controller.reloadView(nil)
+        case .newTab: controller.newTab(nil)
+        case .terminal:
+            let item = NSMenuItem(); item.tag = 3; controller.togglePanel(item)
+        case .commandPalette: AppDelegate.shared.showCommandPalette(nil)
+        default: break
+        }
+    }
+    private func restoreDefaultGroups() {
+        customGroups.values.forEach { $0.isHidden = true }
+        navGroup.isHidden = false; modeGroup.isHidden = false; actionGroup.isHidden = false
+        viewMode.showsMenuIndicator = true; viewMode.isSplitButton = true
+        for (button, group) in [
+            (back, navGroup), (forward, navGroup), (up, navGroup), (viewMode, modeGroup), (split, actionGroup), (search, actionGroup),
+            (hamburger, actionGroup),
+        ] {
+            if button.superview !== group.content { button.removeFromSuperview(); group.content.addSubview(button) }
+            button.isHidden = false
+        }
+    }
+    private func layoutCustom() {
+        navGroup.isHidden = true; modeGroup.isHidden = true; actionGroup.isHidden = true
+        viewMode.showsMenuIndicator = false; viewMode.isSplitButton = false
+        customGroups.values.forEach { $0.isHidden = true }
+        var commands = Settings.shared.toolbarCommands
+        let gh = Self.capsuleHeight, gy = (bounds.height - gh) / 2
+        let gap: CGFloat = 6
+        let available = max(0, bounds.width - leftInset - Self.trailingMargin)
+        let capacity = max(1, Int((available - 80) / 36))
+        if commands.filter({ $0 != .location }).count > capacity {
+            let visible = Set(commands.filter { $0 != .location && $0 != .menu }.prefix(max(0, capacity - 1)))
+            commands = commands.filter { $0 == .location || visible.contains($0) }
+            commands.append(.menu)  // Overflow actions remain reachable through the main menu.
+        }
+        let fixed = commands.filter { $0 != .location }
+        let desiredField = navigatorViews.count == 2 ? 180.0 : 100.0
+        let bw = max(24, min(42, (available - desiredField - CGFloat(commands.count - 1) * gap) / CGFloat(max(1, fixed.count))))
+        let locationWidth = max(0, available - CGFloat(fixed.count) * bw - CGFloat(commands.count - 1) * gap)
+        var x = leftInset
+        split.showsTitle = false
+        for command in commands {
+            if command == .location {
+                layoutFields(from: x, to: x + locationWidth, y: gy, height: gh); x += locationWidth + gap; continue
+            }
+            guard let button = button(for: command) else { continue }
+            let group: GlassGroup
+            if let existing = customGroups[command] {
+                group = existing
+            } else {
+                group = GlassGroup(); customGroups[command] = group; addSubview(group)
+            }
+            if button.superview !== group.content { button.removeFromSuperview(); group.content.addSubview(button) }
+            group.isHidden = false; button.isHidden = false
+            group.frame = CGRect(x: x, y: gy, width: bw, height: gh)
+            button.frame = group.bounds.insetBy(dx: 3, dy: 3)
+            x += bw + gap
+        }
+    }
+
     /// Location field(s) between `minX` and `maxX`: capped in width so the toolbar keeps free space to grab the
     /// window; in a split, one field per pane, the second starting where the right pane starts (Dolphin).
     private func layoutFields(from minX: CGFloat, to maxX: CGFloat, y: CGFloat, height: CGFloat) {
@@ -142,5 +233,17 @@ final class ToolbarView: NSView {
             return
         }
         window?.performDrag(with: event)
+    }
+}
+
+private extension ToolbarCommand {
+    var iconName: String {
+        switch self {
+        case .reload: return "view-refresh"
+        case .newTab: return "tab-new"
+        case .terminal: return "utilities-terminal"
+        case .commandPalette: return "system-search"
+        default: return "application-menu"
+        }
     }
 }
