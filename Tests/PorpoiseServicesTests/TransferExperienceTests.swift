@@ -7,6 +7,53 @@ import Testing
 
 @MainActor @Suite(.isolatedSettings, .serialized)
 struct TransferExperienceTests {
+    @Test func anOpenConflictKeepsTheMainQueueResponsive() async throws {
+        let s = try Scratch("async-conflict")
+        let source = try s.file("src/report", "incoming")
+        try s.file("dst/report", "old")
+        let ui = ScriptedUI()
+        var mainQueueRan = false
+        ui.asyncConflict = { _, _, completion in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                mainQueueRan = true
+                completion(.init(.overwriteIfDifferent, applyToAll: true, comparisonMethod: .content))
+            }
+        }
+        let controller = makeController(ui)
+        _ = await controller.perform(.copy, [source], to: s.path("dst"))
+        #expect(mainQueueRan)
+        #expect(s.read("dst/report") == "incoming")
+        #expect(controller.activities.last?.job?.comparisonOptions.method == .content)
+    }
+
+    @Test func stopDismissesAnUnansweredConflict() async throws {
+        let s = try Scratch("cancel-conflict")
+        let source = try s.file("src/report", "incoming")
+        try s.file("dst/report", "old")
+        let ui = ScriptedUI()
+        ui.asyncConflict = { _, job, _ in DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { job.cancel() } }
+        let controller = makeController(ui)
+        _ = await controller.perform(.copy, [source], to: s.path("dst"))
+        #expect(ui.didCancelConflict)
+        #expect(controller.activities.last?.state == .cancelled)
+        #expect(s.read("dst/report") == "old")
+    }
+
+    @Test(arguments: [FileOperationKind.copy, .move])
+    func disposalFailureRollsBackBothCompleteFiles(kind: FileOperationKind) throws {
+        let s = try Scratch("replace-rollback")
+        let source = try s.file("src/report", "incoming")
+        try s.file("dst/report", "old")
+        let job = FileJob(kind: kind, sources: [source], destinationFolder: s.path("dst"))
+        job.conflictRule = .replace
+        job.disposeReplacedItem = { _, _ in throw CocoaError(.fileWriteNoPermission) }
+        _ = try job.run()
+        #expect(s.read("src/report") == "incoming")
+        #expect(s.read("dst/report") == "old")
+        #expect(s.listing("dst") == ["report"])
+        #expect(!job.errors.isEmpty || !job.denied.isEmpty)
+    }
+
     @Test(arguments: [TransferConflictRule.newer, .different, .larger])
     func conditionalRulesApplyIndependentlyToEveryRemainingConflict(_ rule: TransferConflictRule) async throws {
         let s = try Scratch("conditional-conflicts")

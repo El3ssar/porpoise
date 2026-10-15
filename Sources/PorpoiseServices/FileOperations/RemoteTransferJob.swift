@@ -13,6 +13,8 @@ final class RemoteTransferJob {
     var options: SyncCompareOptions
     var resolve: (ConflictInfo) -> ConflictAnswer = { _ in .init(.cancel) }
     var onProgress: (JobProgress) -> Void = { _ in }
+    var onIncoming: (FileItem?) -> Void = { _ in }
+    var onNoSpace: ((Int64) -> Bool)?
     var completed: [URL: URL]
     var results: [URL] = []
     var errors: [String] = []
@@ -134,6 +136,8 @@ final class RemoteTransferJob {
         guard let incoming = try item(source) else { throw RemoteError.failed("“\(source.lastPathComponent)” is no longer there.") }
         var target = folder.appendingPathComponent(source.lastPathComponent)
         if kind == .move && source.standardized == target.standardized { completed[source] = target; finishProgress(source); return nil }
+        let topLevel = sources.contains(source)
+        defer { if topLevel { onIncoming(nil) } }
         var existing = try item(target)
         var replace = false
         while let old = existing {
@@ -144,7 +148,8 @@ final class RemoteTransferJob {
             if let selected = sticky ?? rule.resolution, selected != .writeInto || bothFolders {
                 choice = selected
             } else {
-                let answer = resolve(.init(source: incoming, destination: old, suggestedName: suggestion))
+                let answer = resolve(.init(source: incoming, destination: old, suggestedName: suggestion, comparisonOptions: options))
+                if let method = answer.comparisonMethod { options.method = method }
                 if answer.applyToAll { sticky = answer.resolution }
                 choice = answer.resolution
             }
@@ -178,6 +183,7 @@ final class RemoteTransferJob {
             if replace { break }
             existing = try item(target)
         }
+        if topLevel { publishIncoming(source, item: incoming, target: target) }
         if incoming.isDirectory && !incoming.isSymlink {
             guard !replace else { throw RemoteError.unsupported("A folder cannot replace a file across these locations. Keep Both instead.") }
             if let provider = RemoteFS.provider(for: target) {
@@ -194,7 +200,20 @@ final class RemoteTransferJob {
             activeLegs = legCount(source)
             activeBytes = 0
         }
-        try stagedFile(source, to: target, replacing: replace, modified: incoming.modificationDate)
+        while true {
+            do { try stagedFile(source, to: target, replacing: replace, modified: incoming.modificationDate); break } catch {
+                let message = error.localizedDescription.lowercased()
+                guard FileJob.isNoSpace(error) || message.contains("no space left") || message.contains("disk full"), let onNoSpace else {
+                    throw error
+                }
+                progressLock.withLock {
+                    activeBytes = 0; progress.doneBytes = committedBytes
+                }
+                publish(force: true)
+                guard onNoSpace(totals[source]?.bytes ?? incoming.size) else { control.cancel(); throw FileOperationError.cancelled }
+                try control.checkCancellation()
+            }
+        }
         if replace { progressLock.withLock { progress.replacedItems += 1 } }
         completed[source] = target
         finishProgress(source)
@@ -202,8 +221,23 @@ final class RemoteTransferJob {
         return target
     }
 
+    private func publishIncoming(_ source: URL, item: FileItem, target: URL) {
+        onIncoming(
+            FileItem(
+                url: target, name: target.lastPathComponent, isDirectory: item.isDirectory, size: totals[source]?.bytes ?? item.size,
+                modificationDate: item.modificationDate))
+    }
+
     private func merge(_ source: URL, into target: URL) throws -> URL {
-        for child in try children(source) { _ = try transfer(child.url, into: target) }
+        if sources.contains(source), let incoming = try item(source) { publishIncoming(source, item: incoming, target: target) }
+        var firstFailure: Error?
+        for child in try children(source) {
+            do { _ = try transfer(child.url, into: target) } catch {
+                if control.isCancelled || control.isInterrupted { throw error }
+                if firstFailure == nil { firstFailure = error }
+            }
+        }
+        if let firstFailure { throw firstFailure }
         // Never recursively delete a moved source folder: it may contain skipped or newly created items.
         if kind == .move {
             if source.isFileURL {
@@ -292,7 +326,19 @@ final class RemoteTransferJob {
                 guard lstat(target.path, &info) == 0, info.st_mode & S_IFMT != S_IFDIR else {
                     throw RemoteError.unsupported("A folder cannot be replaced by a remote file. Keep Both instead.")
                 }
-                guard rename(staged.path, target.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+                guard renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 else {
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
+                do {
+                    if let dispose = control.disposeReplacedItem {
+                        try dispose(staged, target)
+                    } else {
+                        try FileManager.default.removeItem(at: staged)
+                    }
+                } catch {
+                    _ = renamex_np(staged.path, target.path, UInt32(RENAME_SWAP))
+                    throw error
+                }
             } else {
                 guard renamex_np(staged.path, target.path, UInt32(RENAME_EXCL)) == 0 else { throw RemoteError.exists(target.lastPathComponent) }
             }

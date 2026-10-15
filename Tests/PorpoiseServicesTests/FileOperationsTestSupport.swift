@@ -9,6 +9,8 @@ import Testing
 final class ScriptedUI: FileOperationsUI {
     /// Answers to name conflicts, in order. A conflict nobody scripted fails the test and cancels the job.
     var conflictAnswers: [ConflictAnswer]
+    var asyncConflict: ((ConflictInfo, FileJob, @escaping (ConflictAnswer) -> Void) -> Void)?
+    var didCancelConflict = false
     var confirms: Bool
 
     private(set) var questions: [PorpoiseServices.Confirmation] = []
@@ -40,6 +42,12 @@ final class ScriptedUI: FileOperationsUI {
         return conflictAnswers.removeFirst()
     }
 
+    func resolveConflict(
+        _ info: ConflictInfo, kind: FileOperationKind, window: AnyObject?, job: FileJob, completion: @escaping (ConflictAnswer) -> Void
+    ) {
+        if let asyncConflict { asyncConflict(info, job, completion) } else { completion(resolveConflict(info, kind: kind)) }
+    }
+    func cancelConflict(for job: FileJob) { didCancelConflict = true }
     func jobStarted(_ job: FileJob) {}
     func jobProgressed(_ job: FileJob, _ progress: JobProgress) {}
 

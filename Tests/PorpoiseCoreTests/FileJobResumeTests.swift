@@ -146,6 +146,49 @@ struct FileJobResumeTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: dst.path).isEmpty)
     }
 
+    @Test func stoppedQueueResumesWithoutRecopyingFinishedItems() throws {
+        let first = try scratch.file("src/first", "finished")
+        let big = try randomFile("src/big", size: 24 << 20)
+        let destination = try scratch.folder("dst")
+        let job = FileJob(kind: .copy, sources: [first, big], destinationFolder: destination)
+        job.allowsClone = false
+        job.chunkDelay = 0.05
+        job.onProgress = { p in if p.currentName == "big", p.doneBytes > 4 << 20 { job.cancel() } }
+        _ = try job.run()
+        let copied = destination.appendingPathComponent("first")
+        let inode = try FileManager.default.attributesOfItem(atPath: copied.path)[.systemFileNumber] as? NSNumber
+        #expect(job.remainingSources == [big])
+        #expect(try FileManager.default.contentsOfDirectory(atPath: destination.path) == ["first"])
+        let resumed = FileJob(kind: .copy, sources: job.remainingSources, destinationFolder: destination)
+        _ = try resumed.run()
+        #expect(try FileManager.default.attributesOfItem(atPath: copied.path)[.systemFileNumber] as? NSNumber == inode)
+        #expect(try Data(contentsOf: destination.appendingPathComponent("big")) == Data(contentsOf: big))
+    }
+
+    @Test func stoppedMergeKeepsItsAlreadyPublishedLeavesOnResume() throws {
+        let first = try scratch.file("src/folder/a.txt", "finished")
+        _ = try randomFile("src/folder/z.bin", size: 24 << 20)
+        let destination = try scratch.folder("dst")
+        try scratch.folder("dst/folder")
+        let job = FileJob(kind: .copy, sources: [first.deletingLastPathComponent()], destinationFolder: destination)
+        job.conflictRule = .replace; job.allowsClone = false; job.chunkDelay = 0.05
+        job.onProgress = { p in if p.doneBytes > 4 << 20 { job.cancel() } }
+        _ = try job.run()
+        let copied = scratch.path("dst/folder/a.txt")
+        let inode = try FileManager.default.attributesOfItem(atPath: copied.path)[.systemFileNumber] as? NSNumber
+        #expect(
+            job.isCancelled
+                && job.completedTransfers.contains {
+                    $0.key.resolvingSymlinksInPath() == first.resolvingSymlinksInPath()
+                        && $0.value.resolvingSymlinksInPath() == copied.resolvingSymlinksInPath()
+                })
+        let resumed = FileJob(kind: .copy, sources: job.remainingSources, destinationFolder: destination)
+        resumed.conflictRule = .replace; resumed.completedTransfers = job.completedTransfers
+        _ = try resumed.run()
+        #expect(try FileManager.default.attributesOfItem(atPath: copied.path)[.systemFileNumber] as? NSNumber == inode)
+        #expect(try Data(contentsOf: scratch.path("src/folder/z.bin")) == Data(contentsOf: scratch.path("dst/folder/z.bin")))
+    }
+
     @Test func eventsForEachItem() throws {
         let a = try scratch.file("src/a.txt", "a")
         let b = try scratch.file("src/b.txt", "b")

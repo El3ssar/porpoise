@@ -7,13 +7,25 @@ extension FileOperationsController {
         completed: [URL: URL] = [:], rule: TransferConflictRule? = nil, options: SyncCompareOptions? = nil
     ) {
         let control = FileJob(kind: kind, sources: urls, destinationFolder: folder)
+        configureReplacementDisposal(control)
         let runtime = RemoteTransferJob(
             kind: kind, sources: urls, destination: folder, control: control,
             rule: rule ?? Settings.shared.transferConflictRule,
             options: options ?? SyncCompareOptions(method: Settings.shared.transferCompareMethod), completed: completed)
         let activity = Activity(kind: kind, sources: urls, destination: folder, job: nil)
+        activity.originWindow = window
         activity.controlJob = control
         activity.remoteRemaining = urls
+        runtime.onIncoming = { [weak self, weak activity] item in
+            DispatchQueue.main.async {
+                activity?.incomingItem = item
+                activity?.incomingStartBytes = activity?.progress?.doneBytes ?? 0
+                self?.activityDidChange()
+            }
+        }
+        runtime.onNoSpace = { [weak self, weak activity] bytes in
+            self?.awaitDiskSpace(bytes, activity: activity, job: control, window: window) ?? false
+        }
         runtime.onProgress = { [weak self, weak activity] snapshot in
             DispatchQueue.main.async {
                 self?.ui?.jobProgressed(control, snapshot)
@@ -21,16 +33,7 @@ extension FileOperationsController {
             }
         }
         runtime.resolve = { [weak self, weak activity] info in
-            var answer = ConflictAnswer(.cancel)
-            DispatchQueue.main.sync {
-                activity?.state = .waiting
-                self?.activityDidChange()
-                answer = self?.ui?.resolveConflict(info, kind: kind) ?? .init(.cancel)
-                activity?.rate.reset()
-                activity?.state = control.isPaused ? .paused : .running
-                self?.activityDidChange()
-            }
-            return answer
+            self?.awaitConflict(info, kind: kind, activity: activity, job: control, window: window) ?? .init(.cancel)
         }
         activity.retryPlan = { [weak self, weak activity] in
             guard let self, let activity else { return }
@@ -47,13 +50,14 @@ extension FileOperationsController {
             DispatchQueue.global(qos: .userInitiated).async {
                 runtime.run()
                 DispatchQueue.main.async {
+                    control.comparisonOptions = runtime.options
                     activity.remoteRemaining = runtime.remaining
                     activity.remoteResults = runtime.results
                     activity.failedSources = runtime.failedSources
                     self.ui?.jobFinished(control)
                     self.ended(activity, errors: runtime.errors)
                     Self.notifyChanged(urls + (folder.map { [$0] } ?? []) + runtime.results)
-                    if !runtime.errors.isEmpty && !control.isCancelled { self.showErrors(runtime.errors, window: window) }
+                    if !runtime.errors.isEmpty && !control.isCancelled { self.ui?.showTransferErrors(activity, window: window) }
                     done?(runtime.results)
                 }
             }

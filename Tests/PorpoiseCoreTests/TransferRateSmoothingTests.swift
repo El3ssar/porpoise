@@ -4,6 +4,40 @@ import Testing
 @testable import PorpoiseCore
 
 struct TransferRateSmoothingTests {
+    @Test func displayBucketsUseFinderStyleRounding() {
+        #expect(TransferRate.leftText(9) == "A few seconds left")
+        #expect(TransferRate.leftText(34) == "About 35 seconds left")
+        #expect(TransferRate.leftText(61) == "About 1 minute left")
+        #expect(TransferRate.leftText(248) == "About 4 minutes left")
+        #expect(TransferRate.leftText(7_850) == "About 2 hours 10 minutes left")
+    }
+
+    @Test func displayWaitsForEligibilityAndTwoSecondsOfStableBucket() {
+        var rate = TransferRate()
+        rate.add(bytes: 0, at: 0, totalBytes: 100_000)
+        for second in 1...3 {
+            rate.add(bytes: Int64(second * 1_000), at: Double(second), totalBytes: 100_000)
+            #expect(rate.timeLeftText == "Estimating time…")
+        }
+        rate.add(bytes: 4_000, at: 4, totalBytes: 100_000)
+        #expect(rate.timeLeftText == "About 2 minutes left")
+        #expect(rate.hasSpeedEstimate)
+        #expect(rate.speedText == 1.0.formatted(.number.precision(.fractionLength(1))) + " KB/s")
+        rate.reset()
+        #expect(!rate.hasSpeedEstimate && rate.timeLeftText == "Estimating time…")
+    }
+
+    @Test func stallAndManySmallFilesUseIndependentItemRate() {
+        var rate = TransferRate()
+        rate.add(bytes: 0, at: 0, totalBytes: 10_000, items: 0, totalItems: 1_000)
+        for second in 1...5 { rate.add(bytes: Int64(second * 1_000), at: Double(second), totalBytes: 10_000, items: second, totalItems: 1_000) }
+        #expect(rate.timeLeftText == "About 17 minutes left")
+        for second in 6...10 { rate.add(bytes: 5_000, at: Double(second), totalBytes: 10_000, items: 5, totalItems: 1_000) }
+        #expect(rate.timeLeftText == "Stalled")
+        rate.add(bytes: 6_000, at: 11, totalBytes: 10_000, items: 6, totalItems: 1_000)
+        #expect(rate.timeLeftText != "Stalled")
+    }
+
     @Test func smoothingDoesNotDependOnCallbackFrequency() {
         func start() -> TransferRate {
             var rate = TransferRate()

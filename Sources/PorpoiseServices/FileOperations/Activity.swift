@@ -15,6 +15,13 @@ public final class Activity: Identifiable {
     public let kind: FileOperationKind
     public let sources: [URL]
     public let destination: URL?
+    public weak var originWindow: AnyObject?
+    public internal(set) var incomingItem: FileItem?
+    var incomingStartBytes: Int64 = 0
+    public var incomingFraction: Double {
+        guard let incomingItem else { return 0 }
+        return incomingItem.size > 0 ? min(1, Double(max(0, (progress?.doneBytes ?? 0) - incomingStartBytes)) / Double(incomingItem.size)) : fraction
+    }
     public internal(set) var state: State = .queued
     public internal(set) var progress: JobProgress?
     public internal(set) var rate = TransferRate()
@@ -90,7 +97,6 @@ public final class Activity: Identifiable {
             }
             var parts: [String] = []
             if let p, p.totalFiles > 0 { parts.append("\(p.doneFiles) of \(p.totalFiles) files") }
-            if let p, !p.currentName.isEmpty { parts.append(p.currentName) }
             if !amounts.isEmpty { parts.append(amounts) }
             if rate.hasSpeedEstimate { parts.append(rate.speedText) }
             if let p, p.totalBytes > 0 || p.totalFiles > 0 { parts.append(rate.timeLeftText) }
@@ -99,11 +105,19 @@ public final class Activity: Identifiable {
             let base = errors.isEmpty ? "Done" : "Done, with \(errors.count) \(errors.count == 1 ? "error" : "errors")"
             var summary: [String] = []
             if let p, p.replacedItems > 0 { summary.append("Replaced \(p.replacedItems)") }
-            if let p, p.skippedIdenticalItems > 0 { summary.append("Skipped \(p.skippedIdenticalItems) identical") }
+            if let p, p.skippedIdenticalItems > 0 { summary.append("Skipped \(p.skippedIdenticalItems) identical (\(comparisonMethodTitle))") }
             return [([base] + summary).joined(separator: " · "), verification?.summary].compactMap { $0 }.joined(separator: ". ")
         case .failed: return errors.first ?? "Failed"
         case .cancelled: return "Cancelled"
         case .interrupted: return "Interrupted: it can be resumed next time Porpoise starts"
+        }
+    }
+
+    public var comparisonMethodTitle: String {
+        switch job?.comparisonOptions.method ?? controlJob?.comparisonOptions.method ?? .sizeAndDate {
+        case .sizeAndDate: return "by size & date"
+        case .sizeOnly: return "by size"
+        case .content: return "by contents"
         }
     }
 
@@ -169,6 +183,13 @@ extension FileOperationsController {
         activity.state = .running
         activity.startedAt = Date()
         guard let job = activity.job else { return }
+        job.onIncoming = { [weak self, weak activity] item in
+            DispatchQueue.main.async {
+                activity?.incomingItem = item
+                activity?.incomingStartBytes = activity?.progress?.doneBytes ?? 0
+                self?.activityDidChange()
+            }
+        }
         let store = journals
         let id = activity.id
         job.onEvent = { [weak activity] e in
@@ -189,6 +210,7 @@ extension FileOperationsController {
     /// Ends it: history, journal, verification, then the next queued job.
     func ended(_ activity: Activity, errors: [String]) {
         let job = activity.job
+        activity.incomingItem = nil
         activity.errors = errors
         if let job { activity.failedSources = job.failedSources }
         if job?.isInterrupted == true || activity.controlJob?.isInterrupted == true || activity.planJob?.isInterrupted == true {
@@ -316,7 +338,7 @@ extension FileOperationsController {
             again = activity.failedSources.isEmpty ? activity.sources : activity.failedSources
         }
         activities.removeAll { $0 === activity }
-        run(activity.kind, again, to: activity.destination, window: window)
+        run(activity.kind, again, to: activity.destination, window: window, completedTransfers: activity.job?.completedTransfers ?? [:])
     }
 
     /// Removes the jobs that ended from the list (they stay in the history).

@@ -4,6 +4,34 @@ import PorpoiseCore
 // MARK: Trash origins ("Restore to Former Location")
 
 extension FileOperationsController {
+    /// Called by a worker after atomic publication. Trash receives a readable original basename, while
+    /// failures restore the displaced staging path so FileJob can swap the old target back.
+    func configureReplacementDisposal(_ job: FileJob) {
+        guard !Settings.isTesting else { return }
+        job.disposeReplacedItem = { [weak self] staged, original in
+            let fm = FileManager.default
+            let holding = staged.deletingLastPathComponent().appendingPathComponent(".porpoise-replaced-" + UUID().uuidString)
+            try fm.createDirectory(at: holding, withIntermediateDirectories: false)
+            let named = holding.appendingPathComponent(original.lastPathComponent)
+            do { try fm.moveItem(at: staged, to: named) } catch { try? fm.removeItem(at: holding); throw error }
+            var trashed: NSURL?
+            do { try fm.trashItem(at: named, resultingItemURL: &trashed) } catch {
+                try? fm.moveItem(at: named, to: staged)
+                try? fm.removeItem(at: holding)
+                throw error
+            }
+            try? fm.removeItem(at: holding)
+            if let trashed = trashed as URL? {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    var origins = self.trashOrigins
+                    origins[trashed.path] = original.path
+                    self.trashOrigins = origins
+                }
+            }
+        }
+    }
+
     /// Original locations of items this app moved to the Trash (macOS has no public "Put Back" API).
     private var trashOrigins: [String: String] {
         get { Settings.store.dictionary(forKey: "trashOrigins") as? [String: String] ?? [:] }
