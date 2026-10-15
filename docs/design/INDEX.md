@@ -142,16 +142,20 @@ thread. Indexed filename typing uses a 15 ms debounce; fallback/content typing r
 
 ## Crawl scheduling under load
 
-Small trees are read on the calling worker. The crawler starts parallel readers only after 2,000 entries and when
-several folders are pending, and never starts more readers than pending folders. This avoids reserving a group of
-threads waiting on a condition for each tiny root while parallel tests or other background jobs occupy the worker
-pools. The crawl remains off the main thread; large trees retain parallel bulk reads.
+Initial roots are submitted to one process-wide crawl queue (at most four active roots). The serial index control
+queue returns immediately and receives completion through `DispatchGroup.notify`; it never waits for another
+worker. Reconfiguration invalidates queued/active older generations without waiting for their crawls. Small trees
+are read on the crawl worker; after 2,000 entries, large trees retain parallel bulk readers capped by pending folders.
 
-A controlled combined SwiftPM runner with coverage and the original 10-second startup deadline reproduced three
-startup failures with the bulk crawler, all after successful watcher startup (`Index crawling`). With the small-tree
-change alone, every index test passed under that same deadline. The normal tests keep generous waits for busy
-machines. Startup failures include the complete index status and phase, distinguishing queued work, snapshot loading,
-watcher startup, crawling and watcher unavailability.
+FSEvents remain active throughout the initial walk. Changes are buffered on the control queue, coalesced by path,
+and applied before the snapshot becomes queryable or its event cursor is saved. Beyond 1,024 buffered paths, the
+buffer collapses to a root rescan. Startup diagnostics include the current phase and buffered-path count.
+
+The GitHub watchdog captured serial index queues blocked in `waitUntilAllOperationsAreFinished`, while their crawl
+operations could not acquire worker threads. Faster small-tree walks alone reduced timing failures but did not
+remove that deadlock. The regression configures 40 two-root indexes against one suspended crawl worker, reconfigures
+all 40 before releasing it, then checks every completed snapshot. Another regression receives a real FSEvent while
+the worker is suspended and checks that no partial snapshot or advanced cursor is published.
 
 ## Verification and limits
 

@@ -25,6 +25,7 @@ public final class SearchIndex: @unchecked Sendable {
         public var building = false
         public var message = "Index off"
         public var warning: String?
+        public var pendingChanges = 0
     }
     private struct Chunk {
         var path: String
@@ -52,7 +53,23 @@ public final class SearchIndex: @unchecked Sendable {
         var holes: [String]
     }
     private struct PatchFile: Codable { var path: String; var file: String; var shadowed: Int }
+    private struct PendingBuild {
+        var generation: Int
+        var paths = Set<String>()
+        var event: UInt64 = 0
+        var rescan = false
+    }
+    // A process-wide limit, rather than one pool per SearchIndex. Control queues never wait for these jobs.
+    private static let crawlers: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "app.porpoise.index-crawls"
+        queue.qualityOfService = .utility
+        queue.maxConcurrentOperationCount = min(4, max(1, ProcessInfo.processInfo.activeProcessorCount))
+        return queue
+    }()
     private let queue = DispatchQueue(label: "app.porpoise.index", qos: .utility)
+    private let crawlQueue: OperationQueue
+    private var pendingBuild: PendingBuild?
     private let lock = NSLock()
     private var current = IndexConfiguration()
     private var state = Status()
@@ -63,7 +80,11 @@ public final class SearchIndex: @unchecked Sendable {
     private let directory: URL
     private let storagePath: String
     private let defaults: UserDefaults
-    public init(directory: URL? = nil, defaults: UserDefaults = .standard) {
+    public convenience init(directory: URL? = nil, defaults: UserDefaults = .standard) {
+        self.init(directory: directory, defaults: defaults, crawlQueue: Self.crawlers)
+    }
+    init(directory: URL?, defaults: UserDefaults, crawlQueue: OperationQueue) {
+        self.crawlQueue = crawlQueue
         self.defaults = defaults
         self.directory =
             directory
@@ -108,7 +129,9 @@ public final class SearchIndex: @unchecked Sendable {
         if let data = try? JSONEncoder().encode(config) { defaults.set(data, forKey: "searchIndex.configuration") }
         let selected = config
         queue.async { [self] in
+            guard valid(generation) else { return }
             events = nil
+            pendingBuild = nil
             guard selected.enabled, !selected.roots.isEmpty, valid(generation) else { notify(); return }
             startupMessage("Index loading snapshot", generation: generation)
             if !rebuild,
@@ -132,19 +155,31 @@ public final class SearchIndex: @unchecked Sendable {
             startupMessage("Index starting watcher", generation: generation)
             guard watch(selected, generation: generation) else { return }  // Start before crawling so changes during the walk are replayed.
             startupMessage("Index crawling", generation: generation)
+            pendingBuild = PendingBuild(generation: generation)
             var built: [Root] = []
-            let crawlLock = NSLock(), workers = OperationQueue()
-            workers.maxConcurrentOperationCount = min(4, ProcessInfo.processInfo.processorCount)
+            let crawlLock = NSLock(), group = DispatchGroup()
             for path in selected.roots {
-                workers.addOperation { [self] in
+                group.enter()
+                crawlQueue.addOperation { [self] in
+                    defer { group.leave() }
+                    guard valid(generation) else { return }
                     let result = crawl(path, config: selected, generation: generation)
                     if result.table.count > 0 { crawlLock.withLock { built.append(Root(path: path, base: result.table, holes: result.holes)) } }
                 }
             }
-            workers.waitUntilAllOperationsAreFinished()
-            built.sort { $0.path < $1.path }
-            guard publish(built, updated: Date(), generation: generation) else { return }
-            persist(selected, snapshot: built); notify()
+            group.notify(queue: queue) { [self] in
+                guard valid(generation), let pending = pendingBuild, pending.generation == generation else { return }
+                pendingBuild = nil
+                let snapshot = crawlLock.withLock { built.sorted { $0.path < $1.path } }
+                // Keep fallback active until changes received during the crawl have also been applied.
+                guard publish(snapshot, updated: Date(), generation: generation, building: !pending.paths.isEmpty) else { return }
+                if pending.paths.isEmpty {
+                    eventID = max(eventID, pending.event)
+                    persist(selected, snapshot: snapshot); notify()
+                } else {
+                    refresh(Array(pending.paths), event: pending.event, rescan: pending.rescan, config: selected, generation: generation)
+                }
+            }
         }
         notify()
     }
@@ -153,10 +188,11 @@ public final class SearchIndex: @unchecked Sendable {
             if revision == generation { state.message = message }
         }
     }
-    private func publish(_ snapshot: [Root], updated: Date, generation: Int) -> Bool {
+    private func publish(_ snapshot: [Root], updated: Date, generation: Int, building: Bool = false) -> Bool {
         lock.withLock {
             guard revision == generation else { return false }
-            roots = snapshot; state.building = false; state.updated = updated
+            roots = snapshot; state.building = building; state.updated = updated
+            if !building { state.pendingChanges = 0 }
             state.count = snapshot.reduce(0) { $0 + $1.base.count + $1.patches.reduce(0) { $0 + $1.table.count - $1.shadowed } }
             state.warning = snapshot.contains { !$0.holes.isEmpty } ? "Some folders unreadable; regular search used for those scopes" : nil
             return true
@@ -190,6 +226,7 @@ public final class SearchIndex: @unchecked Sendable {
         }
         guard events?.available == true else {
             lock.withLock {
+                guard revision == generation else { return }
                 roots = []; state = Status(); state.message = "Index watcher unavailable; using regular search"
             }
             notify(); return false
@@ -200,6 +237,18 @@ public final class SearchIndex: @unchecked Sendable {
         guard valid(generation) else { return }
         // Our manifest and snapshot writes must never feed back into the index.
         let paths = paths.map(IndexPath.entry).filter { rescan || !excluded($0, config: config) }
+        if var pending = pendingBuild, pending.generation == generation {
+            pending.event = max(pending.event, event)
+            pending.rescan = pending.rescan || rescan
+            if !pending.rescan {
+                pending.paths.formUnion(paths)
+                if pending.paths.count > 1024 { pending.rescan = true }
+            }
+            if pending.rescan { pending.paths = Set(config.roots) }
+            pendingBuild = pending
+            lock.withLock { if revision == generation { state.pendingChanges = pending.paths.count } }
+            return
+        }
         guard !paths.isEmpty else { eventID = max(eventID, event); return }
         var copy = lock.withLock { roots }
         for r in copy.indices {
