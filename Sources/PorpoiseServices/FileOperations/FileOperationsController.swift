@@ -24,6 +24,15 @@ public final class FileOperationsController {
     var redoStack: [UndoRecord] = []
     private var cutChangeCount = -1
     public private(set) var cutURLs: Set<URL> = []
+    /// Every job of this session, queued, running or ended (the Activity window), oldest first.
+    public internal(set) var activities: [Activity] = []
+    /// Where unfinished jobs are written down, to be resumed after a relaunch.
+    public var journals = JournalStore(folder: JournalStore.defaultFolder)
+    public var history = OperationHistory.shared
+    /// Cancelling a remote transfer (by activity).
+    var remoteCancel: [UUID: () -> Void] = [:]
+    /// Tests: adjusts each local job before it's queued (no clones, slower chunks…).
+    var prepareJob: ((FileJob) -> Void)?
 
     public init() {}
 
@@ -78,7 +87,7 @@ public final class FileOperationsController {
     /// `sound` plays once the job has done something (Finder's trash sounds).
     public func run(
         _ kind: FileOperationKind, _ urls: [URL], to folder: URL? = nil, window: AnyObject?, sound: FinderSound? = nil,
-        allowDeleteFallback: Bool = true, done: (([URL]) -> Void)? = nil
+        allowDeleteFallback: Bool = true, resumePoints: [URL: ResumePoint] = [:], done: (([URL]) -> Void)? = nil
     ) {
         guard !urls.isEmpty else { return }
         if urls.contains(where: { !$0.isFileURL }) || (folder.map { !$0.isFileURL } ?? false) {
@@ -86,13 +95,36 @@ public final class FileOperationsController {
             return
         }
         let job = FileJob(kind: kind, sources: urls, destinationFolder: folder)
-        ui?.jobStarted(job)
-        job.onProgress = { [weak self, weak job] p in
-            DispatchQueue.main.async { if let job { self?.ui?.jobProgressed(job, p) } }
+        job.resumePoints = resumePoints
+        prepareJob?(job)
+        let activity = Activity(kind: kind, sources: urls, destination: folder, job: job)
+        activity.start = { [weak self, weak activity] in
+            guard let self, let activity, activity.state == .queued else { return }
+            self.start(activity, job: job, window: window, sound: sound, allowDeleteFallback: allowDeleteFallback, done: done)
         }
-        job.resolveConflict = { [weak self] info in
+        enqueue(activity)
+    }
+
+    /// Runs a queued job.
+    private func start(_ activity: Activity, job: FileJob, window: AnyObject?, sound: FinderSound?, allowDeleteFallback: Bool, done: (([URL]) -> Void)?) {
+        let kind = activity.kind, urls = activity.sources, folder = activity.destination
+        began(activity)
+        ui?.jobStarted(job)
+        job.onProgress = { [weak self, weak job, weak activity] p in
+            DispatchQueue.main.async {
+                if let job { self?.ui?.jobProgressed(job, p) }
+                if let activity { self?.progressed(activity, p) }
+            }
+        }
+        job.resolveConflict = { [weak self, weak activity] info in
             var answer = ConflictAnswer(.cancel)
-            DispatchQueue.main.sync { answer = self?.ui?.resolveConflict(info, kind: kind) ?? ConflictAnswer(.cancel) }
+            DispatchQueue.main.sync {
+                activity?.state = .waiting
+                self?.activityDidChange()
+                answer = self?.ui?.resolveConflict(info, kind: kind) ?? ConflictAnswer(.cancel)
+                if activity?.state == .waiting { activity?.state = job.isPaused ? .paused : .running }
+                self?.activityDidChange()
+            }
             return answer
         }
         DispatchQueue.global(qos: .userInitiated).async {
@@ -103,10 +135,13 @@ public final class FileOperationsController {
                 Self.notifyChanged(urls + (folder.map { [$0] } ?? []) + job.results)
                 self.ui?.jobFinished(job)
                 if let r = record { self.pushUndo(r); self.recordTrash(r) }
+                let errs = job.errors + (fatal.map { [($0 as? LocalizedError)?.errorDescription ?? $0.localizedDescription] } ?? [])
+                self.ended(activity, errors: errs)
+                // Quitting: nothing more to say or do now; the journal resumes it next time.
+                if job.isInterrupted { return }
                 // One sound per action: now, or once the items needing authentication are done too.
                 let deniedLeft = !job.denied.isEmpty && !job.isCancelled
                 if record != nil && !deniedLeft { sound?.play() }
-                let errs = job.errors + (fatal.map { [($0 as? LocalizedError)?.errorDescription ?? $0.localizedDescription] } ?? [])
                 if !errs.isEmpty && !job.isCancelled { self.showErrors(errs, window: window) }
                 if !job.untrashable.isEmpty && !job.isCancelled {
                     if allowDeleteFallback {

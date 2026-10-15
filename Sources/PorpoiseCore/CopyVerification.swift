@@ -6,6 +6,10 @@ public enum CopyVerification {
         /// Path inside the copied item ("" for the item itself).
         public var path: String
         public var reason: String
+        public init(path: String, reason: String) {
+            self.path = path
+            self.reason = reason
+        }
     }
 
     public struct Result: Equatable, Sendable {
@@ -13,6 +17,7 @@ public enum CopyVerification {
         public var bytes: Int64 = 0
         public var mismatches: [Mismatch] = []
         public var ok: Bool { mismatches.isEmpty }
+        public init() {}
 
         /// "Verified 12 files (3.4 MB): identical." or what differs.
         public var summary: String {

@@ -8,6 +8,20 @@ extension FileOperationsController {
     /// whose name already exists at the destination is reported and left alone, never overwritten.
     func runRemote(_ kind: FileOperationKind, _ urls: [URL], to folder: URL?, window: AnyObject?, done: (([URL]) -> Void)?) {
         let job = FileJob(kind: kind, sources: urls, destinationFolder: folder)  // used for the progress row only
+        let activity = Activity(
+            kind: kind, sources: urls, destination: folder, job: nil,
+            pauseUnavailable: "Remote transfers can't pause: cancelled, an item is copied again from its start.")
+        remoteCancel[activity.id] = { job.cancel() }
+        activity.start = { [weak self, weak activity] in
+            guard let self, let activity, activity.state == .queued else { return }
+            self.startRemote(activity, job: job, window: window, done: done)
+        }
+        enqueue(activity)
+    }
+
+    private func startRemote(_ activity: Activity, job: FileJob, window: AnyObject?, done: (([URL]) -> Void)?) {
+        let kind = activity.kind, urls = activity.sources, folder = activity.destination
+        began(activity)
         ui?.jobStarted(job)
         DispatchQueue.global(qos: .userInitiated).async {
             var errors: [String] = []
@@ -16,11 +30,11 @@ extension FileOperationsController {
             for (i, src) in urls.enumerated() {
                 if job.isCancelled { break }
                 DispatchQueue.main.async {
-                    self.ui?.jobProgressed(
-                        job,
-                        JobProgress(
-                            kind: kind, totalBytes: 0, doneBytes: 0, totalItems: urls.count,
-                            doneItems: i, currentName: src.lastPathComponent, destination: folder))
+                    let p = JobProgress(
+                        kind: kind, totalBytes: 0, doneBytes: 0, totalItems: urls.count,
+                        doneItems: i, currentName: src.lastPathComponent, destination: folder)
+                    self.ui?.jobProgressed(job, p)
+                    self.progressed(activity, p)
                 }
                 do {
                     switch kind {
@@ -46,6 +60,8 @@ extension FileOperationsController {
             }
             DispatchQueue.main.async {
                 self.ui?.jobFinished(job)
+                self.remoteCancel[activity.id] = nil
+                self.ended(activity, errors: errors)
                 Self.notifyChanged(urls + (folder.map { [$0] } ?? []) + results)
                 if !errors.isEmpty { self.showErrors(errors, window: window) }
                 done?(results)

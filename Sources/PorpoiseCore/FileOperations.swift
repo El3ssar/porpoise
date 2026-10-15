@@ -147,6 +147,8 @@ public final class FileJob: @unchecked Sendable {
     /// Files at least this large are copied in chunks that can resume where they stopped.
     public var resumableSize: Int64 = 8 << 20
     static let chunkSize = 4 << 20
+    /// Tests: a wait after each chunk, so a copy lasts long enough to be paused or interrupted.
+    public var chunkDelay: TimeInterval = 0
 
     public private(set) var errors: [String] = []
     /// Items that failed only for lack of permission (the app may retry them with authorization).
@@ -236,8 +238,13 @@ public final class FileJob: @unchecked Sendable {
             currentName: sources.first?.lastPathComponent ?? "", destination: destinationFolder)
     }
 
+    /// `run()` has returned.
+    public var hasEnded: Bool { lock.lock(); defer { lock.unlock() }; return _ended }
+    private var _ended = false
+
     /// Runs synchronously. Returns the undo record (nil if nothing happened).
     public func run() throws -> UndoRecord? {
+        defer { lock.lock(); _ended = true; lock.unlock() }
         if kind == .copy || kind == .move {
             progress.totalBytes = sources.reduce(0) { $0 + size(of: $1) }
         }
@@ -576,6 +583,7 @@ public final class FileJob: @unchecked Sendable {
             progress.doneBytes += Int64(n)
             publish()
             if Date().timeIntervalSince(lastReport) > 1 { reportPoint() }
+            if chunkDelay > 0 { Thread.sleep(forTimeInterval: chunkDelay) }
         }
         // Permissions, dates, extended attributes and ACLs, as copyfile() would have copied them.
         copyfile(src.path, dest.path, nil, copyfile_flags_t(COPYFILE_METADATA | COPYFILE_STAT))

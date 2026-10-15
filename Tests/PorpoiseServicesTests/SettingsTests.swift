@@ -266,7 +266,7 @@ import Testing
                 "renameInline", "toolTips", "autoExpand", "dblClickBg2", "dynamicView", "browseArchives", "allExtensions",
                 "hideBackup", "sorting", "folderDepth", "folderSize", "dateStyle", "permStyle", "elideMiddle", "labelWidth",
                 "maxLines", "compactMax", "clickRow", "labelFont", "labelFontSize", "expandable", "entireRow", "infoPreview",
-                "infoHover", "infoAutoPlay", "infoCondensed", "foldersHome", "foldersHidden", "termFollow", "placesIcon",
+                "infoHover", "infoAutoPlay", "infoCondensed", "foldersHome", "foldersHidden", "termFollow", "placesIcon", "jobsConcurrency", "verifyCopies",
             ])
     }
 }
