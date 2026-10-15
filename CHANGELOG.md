@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - **Opt-in instant search.** Settings › Search can index selected folders and volumes, with exclusions, rebuild and live status. Filename searches support AND terms and extension, path, size, date, type and regex operators. FSEvents keeps results current across restarts; unindexed locations keep fd/ripgrep/Spotlight search.
 - Optional content trigram filters reduce candidate reads while verifying current file contents and preserving content snippets.
