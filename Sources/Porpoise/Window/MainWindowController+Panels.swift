@@ -9,6 +9,9 @@ extension MainWindowController {
     private static let minPanelDividerPosition: CGFloat = 150
     /// Share of the sidebar height Places gets when Folders is shown below it.
     private static let placesShareOfSidebar: CGFloat = 0.55
+    /// Share of the sidebar height the Shelf gets below Places or Folders, and its least height.
+    private static let shelfShareOfSidebar: CGFloat = 0.4
+    private static let minShelfHeight: CGFloat = 200
 
     private var sidebarVisible: Bool { showPlaces || showFolders || showShelf }
 
@@ -59,7 +62,13 @@ extension MainWindowController {
             let h = vSplit.bounds.height, d = vSplit.dividerThickness
             vSplit.setPosition(h - PanelSize.terminalHeight.fitted(in: h, divider: d) - d, ofDividerAt: 0)
         }
-        if showPlaces && showFolders { leftStack.setPosition(leftStack.bounds.height * Self.placesShareOfSidebar, ofDividerAt: 0) }
+        // The Shelf, under the others, gets a good part of the sidebar (at least room for a few items).
+        let sidebarHeight = leftStack.bounds.height, d = leftStack.dividerThickness
+        let shelfHeight = showShelf && leftStack.arrangedSubviews.count > 1 ? max(Self.minShelfHeight, sidebarHeight * Self.shelfShareOfSidebar) : 0
+        if showShelf && leftStack.arrangedSubviews.count > 1 {
+            leftStack.setPosition(sidebarHeight - shelfHeight - d, ofDividerAt: leftStack.arrangedSubviews.count - 2)
+        }
+        if showPlaces && showFolders { leftStack.setPosition((sidebarHeight - shelfHeight) * Self.placesShareOfSidebar, ofDividerAt: 0) }
         for t in tabs { t.navigators.forEach { $0.showPlacesButton = !showPlaces } }
         if tabs.indices.contains(current) {
             if showFolders { folders.currentURL = view.url }
