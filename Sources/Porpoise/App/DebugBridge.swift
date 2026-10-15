@@ -46,7 +46,7 @@ final class DebugBridge: NSObject {
             // zoomframes <folder> <size> <count> <ms>: an animated zoom (Cmd+=) to <size>, the main window captured every
             // <ms> milliseconds from its start, as 00.png, 01.png… (00 is before it).
             let a = arg.split(separator: " ").map(String.init)
-            guard a.count == 4, let size = Double(a[1]), let n = Int(a[2]), let ms = Int(a[3]), let list = wc?.view.list else { return }
+            guard a.count == 4, let size = Double(a[1]), let n = Int(a[2]), let ms = Int(a[3]), let list = wc?.view.zoomView else { return }
             try? FileManager.default.createDirectory(atPath: a[0], withIntermediateDirectories: true)
             // Kept in memory while the zoom runs (writing a PNG takes longer than a frame), written after the last.
             // Beside each frame, <k>.txt: when it was taken, the icon size and how far a glide has come.
@@ -55,7 +55,7 @@ final class DebugBridge: NSObject {
             func capture() {
                 let info = String(
                     format: "t=%.0fms size=%.1f glide=%@", (CACurrentMediaTime() - t0) * 1000, list.iconSize,
-                    list.transition.map { String(format: "%.2f", $0.progress) } ?? "-")
+                    list.glideProgress.map { String(format: "%.2f", $0) } ?? "-")
                 shots.append((windowServerImage("", nominal: true), info))
                 guard shots.count == max(2, n) else { return }
                 for (k, s) in shots.enumerated() {
@@ -435,11 +435,12 @@ final class DebugBridge: NSObject {
     /// CGWindowListCreateImage is hidden from Swift in newer SDKs; capturing one's own windows needs no permission.
     /// Frame costs, timed in the app and written to <file>:
     /// `perfbench <file> resize <w0> <w1> <steps>`: the main window resized step by step, each step laid out and drawn.
-    /// `perfbench <file> zoom <size0> <size1> <steps>`: the view zoomed step by step (as a pinch or the animation does).
+    /// `perfbench <file> zoom <size0> <size1> <steps>`: the view (or the app library) zoomed step by step (as a pinch or the
+    /// animation does).
     /// `perfbench <file> zoomanim <size>`: an animated zoom (Cmd+=), counting the frames it showed.
     private func perfBench(_ arg: String) {
         let a = arg.split(separator: " ").map(String.init)
-        guard a.count >= 3, let win = wc?.window, let list = wc?.view.list else { return }
+        guard a.count >= 3, let win = wc?.window, let list = wc?.view.zoomView else { return }
         let n = a.dropFirst(2).compactMap { Double($0) }
         func report(_ times: [Double], extra: String = "") {
             let ms = times.map { $0 * 1000 }.sorted()
@@ -473,7 +474,7 @@ final class DebugBridge: NSObject {
             report(
                 (0..<steps).map { k in
                     let s = n[0] + (n[1] - n[0]) * Double(k) / Double(max(1, steps - 1))
-                    return timed { list.previewZoom(CGFloat(s), commitAfter: nil) }
+                    return timed { list.previewZoom(CGFloat(s), anchor: nil, commitAfter: nil) }
                 })
             list.commitZoom()
         case "zoomanim" where n.count == 1:
