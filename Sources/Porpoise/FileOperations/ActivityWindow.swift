@@ -56,7 +56,7 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
         tabs.selectedSegment = 0
         tabs.target = self
         tabs.action = #selector(tabChanged)
-        concurrency.addItems(withTitles: (1...6).map { $0 == 1 ? "1 at a time" : "\($0) at a time" })
+        concurrency.addItems(withTitles: (1...8).map { $0 == 1 ? "1 at a time" : "\($0) at a time" })
         concurrency.target = self
         concurrency.action = #selector(concurrencyChanged)
         concurrency.toolTip = "How many copies and moves run at once; the others wait in the queue. Trashing and deleting never wait."
@@ -64,7 +64,7 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
         verify.action = #selector(verifyChanged)
         verify.toolTip = "After copying, compare every copied file with its original."
         let clear = ClosureButton(title: "Clear Finished") { [weak self] _ in self?.controller.clearEnded() }
-        let header = NSStackView(views: [NSTextField(labelWithString: "Copies and moves:"), concurrency, verify, NSView(), clear])
+        let header = NSStackView(views: [NSTextField(labelWithString: "Copies and moves:"), concurrency, NSView(), clear])
         header.spacing = 8
         let activityScroll = scroll(activityTable)
         activityTable.headerView = nil
@@ -73,10 +73,10 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
         activityTable.dataSource = self
         activityTable.delegate = self
         activityTable.style = .plain
-        activityTable.usesAlternatingRowBackgroundColors = true
-        empty.textColor = .secondaryLabelColor
+        activityTable.usesAlternatingRowBackgroundColors = false
+        empty.textColor = Theme.viewTextInactive
         empty.alignment = .center
-        stack(activityPane, [header, activityScroll], fill: activityScroll)
+        stack(activityPane, [header, verify, activityScroll], fill: activityScroll)
         activityPane.addSubview(empty)
         empty.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -122,7 +122,18 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
             ])
         }
         historyPane.isHidden = true
+        Theme.whenChanged(self) { [weak self] in self?.applyTheme() }
+        applyTheme()
         syncSettings()
+    }
+
+    private func applyTheme() {
+        window?.backgroundColor = Theme.windowBackground
+        for table in [activityTable, historyTable] {
+            table.backgroundColor = Theme.viewBackground
+            table.enclosingScrollView?.backgroundColor = Theme.viewBackground
+        }
+        empty.textColor = Theme.viewTextInactive
     }
 
     private func scroll(_ table: NSTableView) -> NSScrollView {
@@ -151,7 +162,7 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
     // MARK: Settings
 
     private func syncSettings() {
-        concurrency.selectItem(at: min(5, controller.concurrency - 1))
+        concurrency.selectItem(at: min(7, controller.concurrency - 1))
         verify.state = Settings.shared.verifyCopies ? .on : .off
     }
 
@@ -313,8 +324,10 @@ final class ActivityRowView: NSView {
             a.state == .failed || (a.state == .completed && (!a.errors.isEmpty || a.verification?.ok == false))
             ? Theme.negativeText : .secondaryLabelColor
         bar.isHidden = !(a.state.isActive || a.state == .queued)
-        bar.isIndeterminate = a.state == .queued || (a.progress?.totalBytes ?? 0) == 0 && (a.progress?.totalItems ?? 0) == 0
-        bar.doubleValue = a.progress?.fraction ?? 0
+        bar.isIndeterminate =
+            a.state == .queued
+            || (a.planProgress == nil && (a.progress?.totalBytes ?? 0) == 0 && (a.progress?.totalItems ?? 0) == 0)
+        bar.doubleValue = a.fraction
         setButtons(for: a)
     }
 
