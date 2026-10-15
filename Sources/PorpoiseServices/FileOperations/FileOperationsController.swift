@@ -99,6 +99,8 @@ public final class FileOperationsController {
         }
         let job = FileJob(kind: kind, sources: urls, destinationFolder: folder)
         job.resumePoints = resumePoints
+        job.conflictRule = Settings.shared.transferConflictRule
+        job.comparisonOptions = SyncCompareOptions(method: Settings.shared.transferCompareMethod)
         prepareJob?(job)
         let activity = Activity(kind: kind, sources: urls, destination: folder, job: job)
         activity.start = { [weak self, weak activity] in
@@ -127,6 +129,7 @@ public final class FileOperationsController {
                 activity?.state = .waiting
                 self?.activityDidChange()
                 answer = self?.ui?.resolveConflict(info, kind: kind) ?? ConflictAnswer(.cancel)
+                activity?.rate.reset()
                 if activity?.state == .waiting { activity?.state = job.isPaused ? .paused : .running }
                 self?.activityDidChange()
             }

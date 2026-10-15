@@ -128,6 +128,8 @@ public final class Settings {
     @Pref("jobsConcurrency") public var jobsConcurrency: Int = 2
     /// After copying, compare the copies with the originals (size and SHA-256).
     @Pref("verifyCopies") public var verifyCopies: Bool = false
+    @Pref("transferConflictRule") public var transferConflictRule: TransferConflictRule = .ask
+    @Pref("transferCompareMethod") public var transferCompareMethod: SyncCompareMethod = .sizeAndDate
 
     public func contextMenuShows(_ e: ContextMenuEntry) -> Bool { get("ctx." + e.rawValue, e.defaultOn) }
     public func setContextMenu(_ e: ContextMenuEntry, _ on: Bool) { set("ctx." + e.rawValue, on) }

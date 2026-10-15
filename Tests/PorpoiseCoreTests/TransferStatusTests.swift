@@ -19,7 +19,7 @@ struct TransferStatusTests {
         r.reset()
         #expect(r.bytesPerSecond == 0)
         #expect(TransferRate.leftText(3) == "A few seconds left")
-        #expect(TransferRate.leftText(42) == "42 seconds left")
+        #expect(TransferRate.leftText(42) == "About 40 seconds left")
         #expect(TransferRate.leftText(70) == "About a minute left")
         #expect(TransferRate.leftText(600) == "About 10 minutes left")
         #expect(TransferRate.leftText(3600) == "About 1 h left")

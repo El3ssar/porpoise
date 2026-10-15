@@ -1,46 +1,66 @@
 import Foundation
 
-/// The speed of a transfer from its progress samples (smoothed over the last few seconds), and the time left.
+/// A time-based EWMA (four-second time constant), independent of progress callback frequency.
 public struct TransferRate: Sendable {
     private var lastTime: TimeInterval?
     private var lastBytes: Int64 = 0
-    /// Bytes per second, smoothed.
+    private var expectedRemaining: Int64?
+    private var eta: TimeInterval?
     public private(set) var bytesPerSecond: Double = 0
-    /// How much a new second counts against the smoothed speed.
-    private let smoothing = 0.3
+    private let timeConstant: TimeInterval = 4
 
     public init() {}
 
-    /// Takes the bytes done so far at `time` (seconds, any monotonic origin). A pause shows as no progress.
-    public mutating func add(bytes: Int64, at time: TimeInterval) {
+    /// Samples use a monotonic clock. Supply totalBytes to also smooth the displayed time-left estimate.
+    public mutating func add(bytes: Int64, at time: TimeInterval, totalBytes: Int64? = nil) {
+        guard time.isFinite else { return }
         guard let t0 = lastTime else {
             lastTime = time
-            lastBytes = bytes
+            lastBytes = max(0, bytes)
             return
         }
         let dt = time - t0
-        guard dt >= 0.25 else { return }  // too close together to say much
-        let instant = Double(max(0, bytes - lastBytes)) / dt
-        bytesPerSecond = bytesPerSecond == 0 ? instant : bytesPerSecond + min(1, smoothing * dt) * (instant - bytesPerSecond)
+        guard dt >= 0.25 else { return }
+        guard bytes >= lastBytes else { reset(); lastTime = time; lastBytes = max(0, bytes); return }
+        let instant = Double(bytes - lastBytes) / dt
+        let alpha = 1 - exp(-dt / timeConstant)
+        bytesPerSecond = bytesPerSecond == 0 ? instant : bytesPerSecond + alpha * (instant - bytesPerSecond)
         lastTime = time
         lastBytes = bytes
+        if let totalBytes, totalBytes > 0 {
+            let remaining = max(0, totalBytes - bytes)
+            expectedRemaining = remaining
+            if remaining == 0 {
+                eta = 0
+            } else if bytesPerSecond > 1 {
+                let raw = Double(remaining) / bytesPerSecond
+                if let previous = eta {
+                    let countdown = max(0, previous - dt)
+                    // Trend toward the fresh estimate without jumping by minutes on a single stalled sample.
+                    let adjustment = alpha * (raw - countdown)
+                    eta = max(0, countdown + max(-2 * dt, min(3 * dt, adjustment)))
+                } else {
+                    eta = raw
+                }
+            }
+        }
     }
 
-    /// Forgets the speed (after a pause, so the estimate doesn't count the wait).
+    /// Call after a pause or conflict question: waiting time is not part of transfer speed.
     public mutating func reset() { self = TransferRate() }
 
-    /// Seconds left for `remaining` bytes at the current speed; nil until there is a speed.
     public func secondsLeft(_ remaining: Int64) -> TimeInterval? {
-        bytesPerSecond > 1 ? Double(max(0, remaining)) / bytesPerSecond : nil
+        guard bytesPerSecond > 1 else { return nil }
+        if expectedRemaining == max(0, remaining), let eta { return eta }
+        return Double(max(0, remaining)) / bytesPerSecond
     }
 
-    /// "12.3 MB/s"
-    public var speedText: String { FileFormat.size(Int64(bytesPerSecond)) + "/s" }
+    public var speedText: String { FileFormat.size(Int64(min(Double(Int64.max / 2), max(0, bytesPerSecond)))) + "/s" }
 
-    /// "About 3 minutes left", "Less than a minute left".
     public static func leftText(_ seconds: TimeInterval) -> String {
-        let s = Int(seconds.rounded())
-        if s < 60 { return s < 5 ? "A few seconds left" : "\(s) seconds left" }
+        guard seconds.isFinite else { return "Estimating time left…" }
+        let s = Int(min(Double(Int.max / 2), max(0, seconds.rounded())))
+        if s < 60 { return s < 5 ? "A few seconds left" : "About \(max(5, ((s + 2) / 5) * 5)) seconds left" }
         if s < 3600 {
             let m = (s + 30) / 60
             return m == 1 ? "About a minute left" : "About \(m) minutes left"

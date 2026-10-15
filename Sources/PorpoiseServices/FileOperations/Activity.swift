@@ -79,7 +79,11 @@ public final class Activity: Identifiable {
         case .waiting: return "Waiting for your answer"
         case .verifying: return "Verifying the copies…"
         case .running:
+            if let p, p.phase == .preparing {
+                return "Preparing… \(p.totalFiles) files · \(p.totalFolders) folders · \(FileFormat.size(p.totalBytes))"
+            }
             var parts: [String] = []
+            if let p, p.totalFiles > 0 { parts.append("\(p.doneFiles) of \(p.totalFiles) files") }
             if let p, !p.currentName.isEmpty { parts.append(p.currentName) }
             if !amounts.isEmpty { parts.append(amounts) }
             if rate.bytesPerSecond > 0 { parts.append(rate.speedText) }
@@ -87,7 +91,10 @@ public final class Activity: Identifiable {
             return parts.joined(separator: " — ")
         case .completed:
             let base = errors.isEmpty ? "Done" : "Done, with \(errors.count) \(errors.count == 1 ? "error" : "errors")"
-            return [base, verification?.summary].compactMap { $0 }.joined(separator: ". ")
+            var summary: [String] = []
+            if let p, p.replacedItems > 0 { summary.append("Replaced \(p.replacedItems)") }
+            if let p, p.skippedIdenticalItems > 0 { summary.append("Skipped \(p.skippedIdenticalItems) identical") }
+            return [([base] + summary).joined(separator: " · "), verification?.summary].compactMap { $0 }.joined(separator: ". ")
         case .failed: return errors.first ?? "Failed"
         case .cancelled: return "Cancelled"
         case .interrupted: return "Interrupted: it can be resumed next time Porpoise starts"
@@ -171,7 +178,7 @@ extension FileOperationsController {
 
     func progressed(_ activity: Activity, _ p: JobProgress) {
         activity.progress = p
-        if activity.state == .running { activity.rate.add(bytes: p.doneBytes, at: ProcessInfo.processInfo.systemUptime) }
+        if activity.state == .running { activity.rate.add(bytes: p.doneBytes, at: ProcessInfo.processInfo.systemUptime, totalBytes: p.totalBytes) }
         activityDidChange()
     }
 

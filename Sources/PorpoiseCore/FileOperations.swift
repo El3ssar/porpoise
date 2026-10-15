@@ -21,6 +21,9 @@ public enum ConflictResolution: Sendable, Equatable {
     case skip
     case overwrite
     case overwriteIfOlder
+    case overwriteIfDifferent
+    case overwriteIfLarger
+    case keepBoth
     case rename(String)
     case writeInto  // merge folders
     case cancel
@@ -30,6 +33,14 @@ public struct ConflictInfo: Sendable {
     public let source: FileItem
     public let destination: FileItem
     public let suggestedName: String
+    /// Remaining known name clashes, including this one; nil when a remote listing cannot establish it.
+    public let remainingConflicts: Int?
+    public init(source: FileItem, destination: FileItem, suggestedName: String, remainingConflicts: Int? = nil) {
+        self.source = source
+        self.destination = destination
+        self.suggestedName = suggestedName
+        self.remainingConflicts = remainingConflicts
+    }
 }
 
 public struct ConflictAnswer: Sendable {
@@ -63,6 +74,14 @@ public enum UndoRecord: Sendable {
 
 /// Progress snapshot published by a running job.
 public struct JobProgress: Sendable {
+    public enum Phase: String, Sendable { case preparing, transferring }
+    public var phase: Phase = .transferring
+    public var totalFiles: Int = 0
+    public var totalFolders: Int = 0
+    public var doneFiles: Int = 0
+    public var replacedItems: Int = 0
+    public var skippedIdenticalItems: Int = 0
+
     public var kind: FileOperationKind
     public var totalBytes: Int64
     public var doneBytes: Int64
@@ -110,7 +129,7 @@ public struct ResumePoint: Codable, Equatable, Sendable {
 
 /// What a job reports about each of its top-level items as it goes (for the journal that lets an interrupted job
 /// be resumed after a relaunch). Called on the job's thread.
-public enum JobEvent: Sendable, Equatable {
+public enum JobEvent: Codable, Sendable, Equatable {
     /// Started; `staging` is the hidden item the copy is written to before it takes its name.
     case started(index: Int, staging: URL?)
     /// A resumable copy (a large file) has this many good bytes in its staging file.
@@ -144,6 +163,9 @@ public final class FileJob: @unchecked Sendable {
     public var resumePoints: [URL: ResumePoint] = [:]
     /// Clone files where the volume can (APFS). Off in tests that need real byte copies on one volume.
     public var allowsClone = true
+    /// Upfront name-clash policy; nil asks through resolveConflict.
+    public var conflictRule: TransferConflictRule = .ask
+    public var comparisonOptions = SyncCompareOptions()
     /// Files at least this large are copied in chunks that can resume where they stopped.
     public var resumableSize: Int64 = 8 << 20
     static let chunkSize = 4 << 20
@@ -178,6 +200,7 @@ public final class FileJob: @unchecked Sendable {
     private var created: [URL] = []
     /// The top-level item being processed (for events), and how deep in a folder merge the job is.
     private var currentIndex = 0
+    private var knownConflicts: Set<URL> = []
     private var depth = 0
     private var moved: [(URL, URL)] = []
     private var trashed: [(URL, URL)] = []
@@ -245,14 +268,23 @@ public final class FileJob: @unchecked Sendable {
     /// Runs synchronously. Returns the undo record (nil if nothing happened).
     public func run() throws -> UndoRecord? {
         defer { lock.lock(); _ended = true; lock.unlock() }
+        progress.phase = .preparing
+        publish(force: true)
         if kind == .copy || kind == .move {
-            progress.totalBytes = sources.reduce(0) { $0 + size(of: $1) }
+            for source in sources {
+                do { _ = try inventory(source, target: destinationFolder?.appendingPathComponent(source.lastPathComponent)) } catch FileOperationError
+                    .cancelled
+                { return nil } catch FileOperationError.interrupted { return nil } catch
+                { /* The actual operation reports unreadable/missing sources. */  }
+            }
         }
+        progress.phase = .transferring
         publish(force: true)
         for (index, src) in sources.enumerated() {
             if (try? checkpoint()) == nil { break }
             progress.currentName = src.lastPathComponent
             currentIndex = index
+            let filesBefore = progress.doneFiles
             let errorsBefore = errors.count + denied.count
             let resultsBefore = results.count
             do {
@@ -270,6 +302,8 @@ public final class FileJob: @unchecked Sendable {
             let skipped = !failed && (kind == .copy || kind == .move || kind == .link) && results.count == resultsBefore
             onEvent(.finished(index: index, outcome: failed ? .failed : skipped ? .skipped : .done))
             progress.doneItems += 1
+            if !failed { progress.doneFiles = max(progress.doneFiles, filesBefore + (fileCounts[src] ?? 1)) }
+            knownConflicts = knownConflicts.filter { !Self.isSameOrInside($0, src) }
             publish()
         }
         publish(force: true)
@@ -391,6 +425,9 @@ public final class FileJob: @unchecked Sendable {
             // A link to a folder is transferred as the link: there is nothing in it to merge.
             let srcIsFolder = (srcItem?.isBrowsableFolder ?? false) && !(srcItem?.isSymlink ?? false)
             let bothDirs = srcIsFolder && (dstItem?.isBrowsableFolder ?? false)
+            let physicalFolders =
+                srcItem?.isDirectory == true && srcItem?.isSymlink == false
+                && dstItem?.isDirectory == true && dstItem?.isSymlink == false
             // Only worked out when needed: listing the folder for every conflict of a big merge is quadratic.
             let suggestion = { FileFormat.suggestedName(for: src.lastPathComponent, existing: self.names(in: folder)) }
             let answer = conflictAnswer(srcItem, dstItem, bothDirs: bothDirs, suggestion: suggestion)
@@ -400,16 +437,23 @@ public final class FileJob: @unchecked Sendable {
                 throw FileOperationError.cancelled
             case .skip:
                 return skipped(src)
+            case .keepBoth:
+                target = folder.appendingPathComponent(suggestion())
             case .rename(let name):
                 guard FileActions.isValidName(name) else { throw FileOperationError.failed("“\(name)” is not a valid name.") }
                 target = folder.appendingPathComponent(name)  // loop: the new name may exist too
             case .writeInto:
                 return bothDirs ? (target, .merge) : skipped(src)
-            case .overwriteIfOlder where !bothDirs:
-                let sd = srcItem?.modificationDate ?? .distantPast
-                let dd = dstItem?.modificationDate ?? .distantPast
-                return sd > dd ? try replaceable(target, by: src) : skipped(src)
-            case .overwrite, .overwriteIfOlder:
+            case .overwriteIfOlder, .overwriteIfDifferent, .overwriteIfLarger:
+                guard !physicalFolders else { return (target, .merge) }
+                guard let source = srcItem, let destination = dstItem else { return skipped(src) }
+                if answer == .overwriteIfDifferent {
+                    if try identical(source, destination) { return skipped(src, identical: true) }
+                    return try replaceable(target, by: src)
+                }
+                return answer.shouldReplace(source: source, destination: destination, options: comparisonOptions)
+                    ? try replaceable(target, by: src) : skipped(src)
+            case .overwrite:
                 return bothDirs ? (target, .merge) : try replaceable(target, by: src)
             }
         }
@@ -417,18 +461,23 @@ public final class FileJob: @unchecked Sendable {
     }
 
     private func conflictAnswer(_ src: FileItem?, _ dst: FileItem?, bothDirs: Bool, suggestion: () -> String) -> ConflictResolution {
+        defer { if let src { knownConflicts.remove(src.url) } }
         // "Apply to All" answers stick, except Write Into, which only means something for two folders.
-        if let s = sticky, !(s == .writeInto && !bothDirs) {
+        if let s = sticky ?? conflictRule.resolution, !(s == .writeInto && !bothDirs) {
             if case .rename = s { return .rename(suggestion()) }
             return s
         }
         guard let s = src, let d = dst else { return .skip }
-        let a = resolveConflict(ConflictInfo(source: s, destination: d, suggestedName: suggestion()))
+        let a = resolveConflict(
+            ConflictInfo(
+                source: s, destination: d, suggestedName: suggestion(), remainingConflicts: max(1, knownConflicts.count)))
+        knownConflicts.remove(s.url)
         if a.applyToAll { sticky = a.resolution }
         return a.resolution
     }
 
-    private func skipped(_ src: URL) -> (URL, Placement)? {
+    private func skipped(_ src: URL, identical: Bool = false) -> (URL, Placement)? {
+        if identical { progress.skippedIdenticalItems += fileCounts[src] ?? 1 }
         progress.doneBytes += size(of: src)
         return nil
     }
@@ -494,6 +543,7 @@ public final class FileJob: @unchecked Sendable {
                     userInfo: [NSLocalizedDescriptionKey: "Could not copy “\(src.lastPathComponent)”: \(String(cString: strerror(code)))"])
             }
         }
+        if replacing { progress.replacedItems += fileCounts[src] ?? 1 }
         if top { onEvent(.placed(index: currentIndex, target: target)) }
         if kind == .move {
             // Cross-volume: the copy is complete, so the original can go now.
@@ -675,7 +725,7 @@ public final class FileJob: @unchecked Sendable {
         publish()
     }
 
-    fileprivate func fileFinished() { currentFileCopied = 0 }
+    fileprivate func fileFinished() { currentFileCopied = 0; progress.doneFiles += 1 }
 
     // MARK: Helpers
 
@@ -730,6 +780,62 @@ public final class FileJob: @unchecked Sendable {
         let kb = try? b.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier as? NSObject
         guard let x = ka, let y = kb else { return false }
         return x.isEqual(y)
+    }
+
+    private func identical(_ source: FileItem, _ destination: FileItem) throws -> Bool {
+        var left = TransferComparison.entry(source), right = TransferComparison.entry(destination)
+        if comparisonOptions.method == .content, left.kind == .file, right.kind == .file, left.size == right.size {
+            left.hash = try digest(source.url)
+            right.hash = try digest(destination.url)
+        }
+        return SyncComparator.statusOf(left, right, options: comparisonOptions) == .same
+    }
+
+    private func digest(_ url: URL) throws -> String {
+        try checkpoint()
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        var before = stat(), after = stat()
+        guard fstat(file.fileDescriptor, &before) == 0 else { throw FileOperationError.failed("Could not read “\(url.lastPathComponent)”.") }
+        var hasher = ChecksumHasher(.sha256)
+        while true {
+            try checkpoint()
+            guard let data = try file.read(upToCount: 1 << 20), !data.isEmpty else { break }
+            hasher.update(data)
+        }
+        guard fstat(file.fileDescriptor, &after) == 0, before.st_ino == after.st_ino, before.st_size == after.st_size,
+            before.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec, before.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec
+        else { throw FileOperationError.failed("“\(url.lastPathComponent)” changed while comparing; try again.") }
+        return hasher.finalize()
+    }
+
+    private var fileCounts: [URL: Int] = [:]
+
+    /// Inventory without following directory symlinks. Cancellation/pause remains responsive while counting.
+    @discardableResult
+    private func inventory(_ url: URL, target: URL?) throws -> Int64 {
+        try checkpoint()
+        var st = stat()
+        guard lstat(url.path, &st) == 0 else { return 0 }
+        if let target, Self.itemExists(at: target), !Self.isSame(url, target) { knownConflicts.insert(url) }
+        let directory = st.st_mode & S_IFMT == S_IFDIR
+        var bytes: Int64 = directory || st.st_mode & S_IFMT == S_IFLNK ? 0 : Int64(st.st_size)
+        var files = directory ? 0 : 1
+        if directory {
+            progress.totalFolders += 1
+            for child in try fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
+                bytes += try inventory(child, target: target?.appendingPathComponent(child.lastPathComponent))
+                files += fileCounts[child] ?? 0
+            }
+        } else {
+            progress.totalFiles += 1
+            progress.totalBytes += bytes
+        }
+        progress.currentName = url.lastPathComponent
+        sizes[url] = bytes
+        fileCounts[url] = files
+        publish()
+        return bytes
     }
 
     private func size(of url: URL) -> Int64 {
