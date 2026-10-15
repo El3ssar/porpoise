@@ -44,6 +44,7 @@ final class SettingsWindowController: NSWindowController {
             item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
             tabs.addTabViewItem(item)
         }
+        page("Shortcuts", "keyboard", ShortcutSettingsPage.build)
         page("Search", "magnifyingglass", IndexSettingsPage.build)
         let s = Settings.shared
 

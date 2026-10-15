@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         followLook()
         NSApp.mainMenu = buildMainMenu()
+        MenuCommandRegistry.shared.start()
         NSApp.registerServicesMenuSendTypes([.fileURL], returnTypes: [])
         VideoPreview.shared.cleanUp()
         // Test hook only in test launches (never in normal use).
