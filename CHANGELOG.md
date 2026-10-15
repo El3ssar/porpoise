@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.3
 
 - **Zoom in the Applications library.** The zoom slider, ⌘+/⌘−, ⌘0, a pinch and ⌘-scroll now size the app library's
   icons (16 to 256 pt, the Icons view's steps), with names, spacing and shadows following. When the number of columns
