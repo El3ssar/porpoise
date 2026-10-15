@@ -816,7 +816,8 @@ public final class FileJob: @unchecked Sendable {
             return COPYFILE_CONTINUE
         }
         copyfile_state_set(state, UInt32(COPYFILE_STATE_STATUS_CB), unsafeBitCast(cb, to: UnsafeRawPointer.self))
-        let flags = copyfile_flags_t(COPYFILE_ALL | COPYFILE_RECURSIVE | COPYFILE_NOFOLLOW_SRC | COPYFILE_CLONE | COPYFILE_EXCL)
+        let flags = copyfile_flags_t(
+            COPYFILE_ALL | COPYFILE_RECURSIVE | COPYFILE_NOFOLLOW_SRC | COPYFILE_EXCL | (allowsClone ? COPYFILE_CLONE : 0))
         currentFileBase = progress.doneBytes
         currentFileCopied = 0
         copyFailure = nil
