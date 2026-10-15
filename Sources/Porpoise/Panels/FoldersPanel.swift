@@ -151,6 +151,9 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         var chain: [URL] = []
         // The tree holds real folders: /tmp/x is shown as /private/tmp/x (symlinks are not folders here).
         var u = Self.realFolder(target)
+        // Only inside the root: a symlink out of Home (~/code → /Volumes/x/code) resolves to a path that never
+        // reaches it, and the chain would invent a node for a folder that isn't there.
+        guard u.path.hasPrefix(root.url.path == "/" ? "/" : root.url.path + "/") || u.path == root.url.path else { return }
         while u.path.count >= root.url.path.count && u.path != root.url.path {
             chain.insert(u, at: 0)
             u = u.deletingLastPathComponent()

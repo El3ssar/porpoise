@@ -163,7 +163,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         observe(.hoverChanged) { me, n in
             guard let c = n.object as? ViewContainer, me.allContainers.contains(where: { $0 === c }) else { return }
             if me.showInformation && Settings.shared.infoShowHovered {
-                me.information.show(hovered: n.userInfo?["url"] as? URL, container: me.view)
+                // While hovering, the hovered view's model holds the item (remote items can't be read again from
+                // disk); after that the panel goes back to the active view's selection.
+                let hovered = n.userInfo?["url"] as? URL
+                me.information.show(hovered: hovered, container: hovered == nil ? me.view : c)
             }
         }
     }

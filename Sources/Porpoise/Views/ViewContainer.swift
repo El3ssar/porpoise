@@ -329,13 +329,15 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     // MARK: Navigation
 
-    func setURL(_ newURL: URL, addToHistory: Bool = true, selecting: URL? = nil) {
+    /// `restoring`: where the view was in `newURL` (Back/Forward). Set before loading: some locations (network:,
+    /// recent:) load synchronously, and the position would otherwise wait for (and jump at) their next reload.
+    func setURL(_ newURL: URL, addToHistory: Bool = true, selecting: URL? = nil, restoring position: ViewPosition? = nil) {
         // smb://, afp://, nfs://, webdav:// → let macOS mount the share, then browse the mount point.
         if NetworkMounts.needsMount(newURL) {
             statusBar.showMessage("Connecting to \(newURL.host ?? newURL.absoluteString)…")
             NetworkMounts.mount(newURL) { [weak self] result in
                 switch result {
-                case .success(let local): self?.setURL(local, addToHistory: addToHistory, selecting: selecting)
+                case .success(let local): self?.setURL(local, addToHistory: addToHistory, selecting: selecting, restoring: position)
                 case .failure(let e): self?.messageBar.show(e.localizedDescription, error: true); self?.needsLayout = true
                 }
             }
@@ -352,11 +354,12 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             if viewPositions.count > 200 { viewPositions.removeAll() }
             pendingPosition = nil
         }
+        if let position { pendingPosition = position }
         pendingSelect = selecting
         // The app library has its own search, which starts empty; elsewhere the filter bar's text applies.
         model.filter = AppLibrary.isActive(for: u) ? NameFilter() : filterBar.filter
+        list.scroll(.zero)  // first: a location that loads synchronously restores its position inside setLocation
         model.setLocation(u)
-        list.scroll(.zero)
         if AppLibrary.isActive(for: u) { apps?.prepareForDisplay() }
         RecentLocations.shared.visit(u)
         needsLayout = true
@@ -366,20 +369,19 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     func goBack(_ steps: Int = 1) {
         let from = url
         guard let u = history.goBack(steps) else { return }
-        setURL(u, addToHistory: false, selecting: from.deletingLastPathComponent() == u ? from : nil)
-        pendingPosition = viewPositions[u]
+        setURL(u, addToHistory: false, selecting: from.deletingLastPathComponent() == u ? from : nil, restoring: viewPositions[u])
     }
 
     func goForward(_ steps: Int = 1) {
         guard let u = history.goForward(steps) else { return }
-        setURL(u, addToHistory: false)
-        pendingPosition = viewPositions[u]
+        setURL(u, addToHistory: false, restoring: viewPositions[u])
     }
 
     /// Scroll position and current item per visited folder (Dolphin restores both on Back/Forward).
-    private var viewPositions: [URL: (origin: CGPoint, current: URL?)] = [:]
+    typealias ViewPosition = (origin: CGPoint, current: URL?)
+    private var viewPositions: [URL: ViewPosition] = [:]
     /// Restored once the folder Back/Forward went to has loaded.
-    private var pendingPosition: (origin: CGPoint, current: URL?)?
+    private var pendingPosition: ViewPosition?
 
     /// Up works in local folders and on remote servers (sftp/ftp/adb) below their root; virtual lists have no parent.
     var canGoUp: Bool {
