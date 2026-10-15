@@ -199,7 +199,9 @@ extension FileOperationsController {
                 let r = CopyVerification.verify(src, copy)
                 total.files += r.files
                 total.bytes += r.bytes
-                total.mismatches += r.mismatches.map { .init(path: copy.lastPathComponent + ($0.path.isEmpty ? "" : "/" + $0.path), reason: $0.reason) }
+                total.mismatches += r.mismatches.map {
+                    .init(path: copy.lastPathComponent + ($0.path.isEmpty ? "" : "/" + $0.path), reason: $0.reason)
+                }
             }
             DispatchQueue.main.async {
                 activity.verification = total

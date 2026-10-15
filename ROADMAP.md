@@ -85,16 +85,28 @@ symlinks, excluded files and a connection lost halfway through a run. A rerun mu
 
 - **Activity window:** queued, running, waiting, failed and completed jobs; reorder pending jobs, set concurrency,
   retry failures, and see speed, remaining bytes and an estimate of time left.
+  *Unreleased: Window › Activity (⌥⌘J) has all of this; copies and moves queue (1–6 at once), trashing and
+  deleting never wait.*
 - **Pause and resume:** where the provider supports it, including large remote files. Otherwise say that a
   restart is needed. Do not display a pause button that only cancels the job.
+  *Unreleased: local jobs pause between chunks or items; files of 8 MB and more are copied in chunks that resume at
+  their offset. Remote transfers show no pause button and say that a stopped item starts over.*
 - **Recovery:** persist job state and offer recovery after a quit, crash, sleep or network interruption.
   Check that source and destination still match the saved state before resuming.
+  *Unreleased: a versioned JSON journal per job (Application Support/Porpoise/Jobs); at launch Porpoise offers to
+  resume, after checking each item's size, date and inode and that partial copies are its own. Sleep and network
+  drops aren't detected separately yet.*
 - **Transfer rules:** bandwidth limits, retry/backoff settings, exclusions and remembered conflict choices
   scoped to the current task. Optional verification after copying, with a readable result.
+  *Unreleased: verification (size and SHA-256) is in; bandwidth limits, retry/backoff and exclusions are not yet.*
 - **Safe replacement:** stage incomplete downloads, preserve metadata where supported, and only remove a source
   after the destination is complete. Make provider limitations visible.
+  *Unreleased: local copies are written under a hidden name and renamed into place when complete (metadata copied);
+  a move removes its source only after that.*
 - **History:** a searchable operation log, exportable for troubleshooting. Recover or undo only when it is
   actually possible; passwords, tokens and sensitive command output never belong in the log.
+  *Unreleased: the Activity window's History tab: searchable, exported as CSV; remote locations are written without
+  user, password or query.*
 
 **Done when:** interrupted and resumed transfers produce the same bytes as uninterrupted ones; relaunching
 doesn't silently repeat deletions or destroy a destination changed by another app.

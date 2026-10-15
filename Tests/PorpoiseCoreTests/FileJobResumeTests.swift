@@ -61,9 +61,10 @@ struct FileJobResumeTests {
         done.wait()
         // Nothing at the target; a partial copy under a hidden name, reported with the good bytes.
         #expect(!FileManager.default.fileExists(atPath: dst.appendingPathComponent("big.bin").path))
-        let point = try #require(lock.withLock { events }.compactMap { e -> ResumePoint? in
-            if case .copied(_, let p) = e { return p } else { return nil }
-        }.last)
+        let point = try #require(
+            lock.withLock { events }.compactMap { e -> ResumePoint? in
+                if case .copied(_, let p) = e { return p } else { return nil }
+            }.last)
         #expect(point.offset >= 12 << 20 && point.offset < 40 << 20)
         #expect(FileManager.default.fileExists(atPath: point.staging.path))
         #expect(!lock.withLock { events }.contains { if case .finished = $0 { return true } else { return false } })
@@ -111,10 +112,13 @@ struct FileJobResumeTests {
         var latest: Int64 = 0
         let lock = NSLock()
         let paused = DispatchSemaphore(value: 0)
-        let done = runInBackground(j, at: { p in
-            lock.withLock { latest = p.doneBytes }
-            return p.doneBytes > 8 << 20
-        }) {
+        let done = runInBackground(
+            j,
+            at: { p in
+                lock.withLock { latest = p.doneBytes }
+                return p.doneBytes > 8 << 20
+            }
+        ) {
             j.pause()
             paused.signal()
         }

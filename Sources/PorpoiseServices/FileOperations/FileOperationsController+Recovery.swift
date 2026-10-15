@@ -72,7 +72,8 @@ extension FileOperationsController {
                 let current = JobJournal.Fingerprint(staging)
                 let ours = item.stagingFingerprint.map { $0.inode == current?.inode } ?? true
                 guard ours else {
-                    plan.notes.append("The partial copy of “\(name)” was changed meanwhile: it's copied again from the start (the changed file is kept).")
+                    plan.notes.append(
+                        "The partial copy of “\(name)” was changed meanwhile: it's copied again from the start (the changed file is kept).")
                     continue
                 }
                 let unchanged = item.fingerprint == now
@@ -105,7 +106,9 @@ extension FileOperationsController {
         for (source, target) in plan.unfinishedMoves {
             let check = CopyVerification.verify(source, target)
             if check.ok {
-                do { try FileManager.default.removeItem(at: source) } catch { errors.append((error as? LocalizedError)?.errorDescription ?? error.localizedDescription) }
+                do { try FileManager.default.removeItem(at: source) } catch {
+                    errors.append((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+                }
             } else {
                 errors.append("“\(source.lastPathComponent)” wasn't removed: its moved copy differs (\(check.summary))")
             }

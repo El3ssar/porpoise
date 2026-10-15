@@ -112,7 +112,8 @@ public final class OperationHistory: @unchecked Sendable {
     /// CSV (RFC 4180) with a header row, for a spreadsheet or a bug report.
     public static func csv(_ entries: [HistoryEntry]) -> String {
         func field(_ s: String) -> String {
-            s.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" || $0 == "\r" }) ? "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\"" : s
+            s.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" || $0 == "\r" })
+                ? "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\"" : s
         }
         let iso = ISO8601DateFormatter()
         var out = "Date,Operation,Items,Sources,Destination,Bytes,Seconds,Outcome,Errors,Verification\r\n"

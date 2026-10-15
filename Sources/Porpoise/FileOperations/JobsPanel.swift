@@ -8,7 +8,10 @@ final class JobRowView: NSView {
     let detail = NSTextField(labelWithString: "")
     let bar = NSProgressIndicator()
     let cancel = FlatButton(icon: "process-stop", tooltip: "Cancel")
+    /// Pause/Resume, for jobs that can (local ones); remote transfers have none rather than one that cancels.
+    let pause = NSButton(title: "", target: nil, action: nil)
     weak var job: FileJob?
+    private var activity: Activity? { FileOperationsController.shared.activities.first { $0.job === job } }
 
     init(job: FileJob) {
         self.job = job
@@ -23,7 +26,12 @@ final class JobRowView: NSView {
         bar.minValue = 0
         bar.maxValue = 1
         cancel.onClick = { [weak self] in self?.job?.cancel() }
-        for v in [title, detail, bar, cancel] as [NSView] { addSubview(v) }
+        pause.bezelStyle = .accessoryBarAction
+        pause.isBordered = false
+        pause.imagePosition = .imageOnly
+        pause.target = self
+        pause.action = #selector(togglePause)
+        for v in [title, detail, bar, cancel, pause] as [NSView] { addSubview(v) }
         title.stringValue = job.kind.verb
     }
 
@@ -32,23 +40,46 @@ final class JobRowView: NSView {
     func update(_ p: JobProgress) {
         let dest = p.destination.map { " to \($0.lastPathComponent)" } ?? ""
         title.stringValue = "\(p.kind.verb) \(p.totalItems == 1 ? "1 item" : "\(p.totalItems) items")\(dest)"
-        var d = p.currentName
-        if p.totalBytes > 0 { d += " — \(FileFormat.size(p.doneBytes)) of \(FileFormat.size(p.totalBytes))" }
-        detail.stringValue = d
+        if let a = activity {
+            // Speed and time left, or "Paused".
+            detail.stringValue = a.statusText
+        } else {
+            var d = p.currentName
+            if p.totalBytes > 0 { d += " — \(FileFormat.size(p.doneBytes)) of \(FileFormat.size(p.totalBytes))" }
+            detail.stringValue = d
+        }
         bar.doubleValue = p.fraction
+        updatePause()
+    }
+
+    func updatePause() {
+        let a = activity
+        pause.isHidden = !(a?.canPause ?? false)
+        let paused = a?.state == .paused
+        pause.image = NSImage(systemSymbolName: paused ? "play.fill" : "pause.fill", accessibilityDescription: paused ? "Resume" : "Pause")
+        pause.toolTip = paused ? "Resume" : "Pause (resumes from where it stopped)"
+    }
+
+    @objc private func togglePause() {
+        guard let a = activity else { return }
+        let c = FileOperationsController.shared
+        if a.state == .paused { c.resume(a) } else { c.pause(a) }
+        detail.stringValue = a.statusText
+        updatePause()
     }
 
     override func layout() {
         super.layout()
         let w = bounds.width
-        title.frame = CGRect(x: 12, y: 40, width: w - 52, height: 18)
-        detail.frame = CGRect(x: 12, y: 22, width: w - 52, height: 16)
-        bar.frame = CGRect(x: 12, y: 6, width: w - 52, height: 12)
+        title.frame = CGRect(x: 12, y: 40, width: w - 80, height: 18)
+        detail.frame = CGRect(x: 12, y: 22, width: w - 80, height: 16)
+        bar.frame = CGRect(x: 12, y: 6, width: w - 80, height: 12)
+        pause.frame = CGRect(x: w - 64, y: 18, width: 28, height: 28)
         cancel.frame = CGRect(x: w - 36, y: 18, width: 28, height: 28)
     }
 }
 
-final class JobsPanel {
+final class JobsPanel: NSObject {
     /// Like KDE, progress only shows for jobs that take a moment.
     private static let showDelay: TimeInterval = 0.6
     private static let width: CGFloat = 380
@@ -78,6 +109,8 @@ final class JobsPanel {
 
     private func row(of job: FileJob) -> JobRowView? { rows.first { $0.job === job } }
 
+    @objc private func showAll() { ActivityWindowController.shared.show() }
+
     private func relayout() {
         guard !rows.isEmpty else { return }
         if panel == nil {
@@ -87,6 +120,16 @@ final class JobsPanel {
                 backing: .buffered, defer: false)
             p.title = "File Operations"
             p.isFloatingPanel = true
+            // The full list, with the queue and the history.
+            let all = NSButton(title: "Show All", target: self, action: #selector(showAll))
+            all.bezelStyle = .accessoryBarAction
+            all.controlSize = .small
+            all.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            let accessory = NSTitlebarAccessoryViewController()
+            accessory.view = all
+            accessory.layoutAttribute = .trailing
+            all.sizeToFit()
+            p.addTitlebarAccessoryViewController(accessory)
             p.hidesOnDeactivate = false
             p.titlebarAppearsTransparent = true
             p.backgroundColor = Theme.windowBackground
