@@ -83,16 +83,45 @@ public struct JobProgress: Sendable {
 
 public enum FileOperationError: Error, LocalizedError {
     case cancelled
+    /// Stopped where it was, its partial copy kept for resuming later (the app quitting).
+    case interrupted
     case intoItself(String)
     case failed(String)
 
     public var errorDescription: String? {
         switch self {
         case .cancelled: return "The operation was cancelled."
+        case .interrupted: return "The operation was interrupted."
         case .intoItself(let n): return "The folder “\(n)” cannot be copied or moved into itself."
         case .failed(let m): return m
         }
     }
+}
+
+/// Where an interrupted copy of one file stopped: its partial copy and how many bytes of it are good.
+public struct ResumePoint: Codable, Equatable, Sendable {
+    public var staging: URL
+    public var offset: Int64
+    public init(staging: URL, offset: Int64) {
+        self.staging = staging
+        self.offset = offset
+    }
+}
+
+/// What a job reports about each of its top-level items as it goes (for the journal that lets an interrupted job
+/// be resumed after a relaunch). Called on the job's thread.
+public enum JobEvent: Sendable, Equatable {
+    /// Started; `staging` is the hidden item the copy is written to before it takes its name.
+    case started(index: Int, staging: URL?)
+    /// A resumable copy (a large file) has this many good bytes in its staging file.
+    case copied(index: Int, point: ResumePoint)
+    /// The item is complete at `target`; a move still removes its source after this.
+    case placed(index: Int, target: URL)
+    case finished(index: Int, outcome: ItemOutcome)
+}
+
+public enum ItemOutcome: String, Codable, Sendable {
+    case done, skipped, failed, cancelled
 }
 
 // MARK: - FileJob
@@ -109,6 +138,15 @@ public final class FileJob: @unchecked Sendable {
     /// Called on a background thread; must return the user's answer (UI blocks it with a dialog).
     public var resolveConflict: (ConflictInfo) -> ConflictAnswer = { _ in ConflictAnswer(.skip) }
     public var onProgress: (JobProgress) -> Void = { _ in }
+    /// Each top-level item's start, resumable progress, placement and end (see `JobEvent`).
+    public var onEvent: (JobEvent) -> Void = { _ in }
+    /// Partial copies to continue instead of starting over, by source (from a journal, after a relaunch).
+    public var resumePoints: [URL: ResumePoint] = [:]
+    /// Clone files where the volume can (APFS). Off in tests that need real byte copies on one volume.
+    public var allowsClone = true
+    /// Files at least this large are copied in chunks that can resume where they stopped.
+    public var resumableSize: Int64 = 8 << 20
+    static let chunkSize = 4 << 20
 
     public private(set) var errors: [String] = []
     /// Items that failed only for lack of permission (the app may retry them with authorization).
@@ -121,6 +159,8 @@ public final class FileJob: @unchecked Sendable {
     /// Items that could not go to the Trash because their volume has none (network shares, some
     /// external disks). Finder offers to delete these immediately instead.
     public private(set) var untrashable: [URL] = []
+    /// Top-level sources that failed (for Retry).
+    public private(set) var failedSources: [URL] = []
 
     /// Minimum interval between progress callbacks.
     private static let publishInterval: TimeInterval = 0.05
@@ -134,6 +174,9 @@ public final class FileJob: @unchecked Sendable {
     private var lastPublish = Date.distantPast
     private var sticky: ConflictResolution?
     private var created: [URL] = []
+    /// The top-level item being processed (for events), and how deep in a folder merge the job is.
+    private var currentIndex = 0
+    private var depth = 0
     private var moved: [(URL, URL)] = []
     private var trashed: [(URL, URL)] = []
     /// Byte counters for the file copyfile() is working on.
@@ -142,8 +185,47 @@ public final class FileJob: @unchecked Sendable {
     /// First error copyfile() reported through its callback during a recursive copy.
     fileprivate var copyFailure: (code: Int32, path: String?)?
 
-    public var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return _cancelled }
-    public func cancel() { lock.lock(); _cancelled = true; lock.unlock() }
+    public var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return _cancelled || _interrupted }
+    public func cancel() {
+        lock.lock(); _cancelled = true; lock.unlock()
+        pauseCondition.lock(); pauseCondition.broadcast(); pauseCondition.unlock()
+    }
+
+    // MARK: Pause and interruption
+
+    private let pauseCondition = NSCondition()
+    private var _paused = false
+    private var _interrupted = false
+
+    /// Stopped between two chunks (or two items) until `resume()`; nothing is lost or started over.
+    public var isPaused: Bool { pauseCondition.lock(); defer { pauseCondition.unlock() }; return _paused }
+    public func pause() { pauseCondition.lock(); _paused = true; pauseCondition.unlock() }
+    public func resume() { pauseCondition.lock(); _paused = false; pauseCondition.broadcast(); pauseCondition.unlock() }
+
+    /// Stops as soon as it can, keeping partial copies and reporting nothing as done (quitting the app: the journal
+    /// resumes the job next time). A paused job stops too.
+    public func interrupt() {
+        lock.lock(); _interrupted = true; lock.unlock()
+        pauseCondition.lock(); pauseCondition.broadcast(); pauseCondition.unlock()
+    }
+
+    public var isInterrupted: Bool { lock.lock(); defer { lock.unlock() }; return _interrupted }
+
+    /// Waits while paused (inside copyfile(), between its chunks).
+    fileprivate func waitWhilePaused() {
+        pauseCondition.lock()
+        while _paused && !isCancelled { pauseCondition.wait() }
+        pauseCondition.unlock()
+    }
+
+    /// Waits while paused; throws once cancelled or interrupted.
+    func checkpoint() throws {
+        pauseCondition.lock()
+        while _paused && !isCancelled { pauseCondition.wait() }
+        pauseCondition.unlock()
+        if isInterrupted { throw FileOperationError.interrupted }
+        if isCancelled { throw FileOperationError.cancelled }
+    }
 
     public init(kind: FileOperationKind, sources: [URL], destinationFolder: URL? = nil) {
         self.kind = kind
@@ -160,16 +242,26 @@ public final class FileJob: @unchecked Sendable {
             progress.totalBytes = sources.reduce(0) { $0 + size(of: $1) }
         }
         publish(force: true)
-        for src in sources {
-            if isCancelled { break }
+        for (index, src) in sources.enumerated() {
+            if (try? checkpoint()) == nil { break }
             progress.currentName = src.lastPathComponent
+            currentIndex = index
+            let errorsBefore = errors.count + denied.count
+            let resultsBefore = results.count
             do {
                 try process(src)
+            } catch FileOperationError.interrupted {
+                break
             } catch FileOperationError.cancelled {
+                onEvent(.finished(index: index, outcome: .cancelled))
                 break
             } catch {
                 record(error, for: src, target: nil)
             }
+            let failed = errors.count + denied.count > errorsBefore
+            if failed { failedSources.append(src) }
+            let skipped = !failed && (kind == .copy || kind == .move || kind == .link) && results.count == resultsBefore
+            onEvent(.finished(index: index, outcome: failed ? .failed : skipped ? .skipped : .done))
             progress.doneItems += 1
             publish()
         }
@@ -256,7 +348,7 @@ public final class FileJob: @unchecked Sendable {
     /// Copies/moves/links one item into `folder`, asking about conflicts. Returns the resulting URL
     /// (nil when skipped or denied).
     private func transfer(_ src: URL, into folder: URL) throws -> URL? {
-        if isCancelled { throw FileOperationError.cancelled }
+        try checkpoint()
         // Moving an item to the folder it is already in: nothing to do, but it is still the result.
         if kind == .move && Self.isSame(folder.appendingPathComponent(src.lastPathComponent), src) {
             return src
@@ -270,6 +362,8 @@ public final class FileJob: @unchecked Sendable {
             return try place(src, at: target, replacing: placement == .replace)
         } catch FileOperationError.cancelled {
             throw FileOperationError.cancelled
+        } catch FileOperationError.interrupted {
+            throw FileOperationError.interrupted
         } catch  where Self.isPermissionError(error) {
             record(error, for: src, target: target)
             return nil
@@ -340,20 +434,38 @@ public final class FileJob: @unchecked Sendable {
         return (target, .replace)
     }
 
-    /// Writes `src` to `target`. When replacing, the new item is staged next to the target and renamed into place
-    /// only once complete, so a failed copy never costs the existing file.
+    /// Writes `src` to `target`. A copy is written under a hidden name next to the target and takes the target's
+    /// name only once complete, so neither a failed nor an interrupted copy ever sits at the target (and a replaced
+    /// item is removed only then). Links and moves within a volume are a single step.
     private func place(_ src: URL, at target: URL, replacing: Bool) throws -> URL {
-        let dest = replacing ? Self.stagingURL(for: target) : target
+        let sameVolumeMove = kind == .move && Self.sameVolume(src, target.deletingLastPathComponent())
+        let copying = kind != .link && !sameVolumeMove
+        let top = depth == 0
+        // A path too long for a hidden name next to it is written in place, as before.
+        var dest = replacing ? Self.stagingURL(for: target) : copying ? Self.copyStagingURL(for: target, of: src) ?? target : target
+        var resumeFrom: Int64 = 0
+        if copying, top, let point = resumePoints[src], Self.itemExists(at: point.staging) {
+            dest = point.staging
+            resumeFrom = point.offset
+        }
+        if top { onEvent(.started(index: currentIndex, staging: copying ? dest : nil)) }
         var renamed = false
         switch kind {
         case .link:
             try fm.createSymbolicLink(at: dest, withDestinationURL: src)
-        case .move where Self.sameVolume(src, target.deletingLastPathComponent()):
+        case .move where sameVolumeMove:
             try fm.moveItem(at: src, to: dest)
             renamed = true
             progress.doneBytes += size(of: src)  // what was there before the rename
         default:
-            try copyRecursively(src, to: dest)
+            do {
+                try copyItem(src, to: dest, resumeFrom: resumeFrom, report: top)
+            } catch FileOperationError.interrupted {
+                throw FileOperationError.interrupted  // the partial copy stays, to be resumed
+            } catch {
+                try? fm.removeItem(at: dest)
+                throw error
+            }
         }
         if replacing {
             // The new item is complete: now the old one may go, and the staged one takes its name
@@ -365,7 +477,17 @@ public final class FileJob: @unchecked Sendable {
                 if renamed { try? fm.moveItem(at: dest, to: src) } else { try? fm.removeItem(at: dest) }
                 throw error
             }
+        } else if dest != target {
+            // Never over an item that appeared meanwhile (another job pasting the same name): that one stays.
+            if renamex_np(dest.path, target.path, UInt32(RENAME_EXCL)) != 0 {
+                let code = errno
+                try? fm.removeItem(at: dest)
+                throw NSError(
+                    domain: NSPOSIXErrorDomain, code: Int(code),
+                    userInfo: [NSLocalizedDescriptionKey: "Could not copy “\(src.lastPathComponent)”: \(String(cString: strerror(code)))"])
+            }
         }
+        if top { onEvent(.placed(index: currentIndex, target: target)) }
         if kind == .move {
             // Cross-volume: the copy is complete, so the original can go now.
             if !renamed { try fm.removeItem(at: src) }
@@ -376,14 +498,102 @@ public final class FileJob: @unchecked Sendable {
         return target
     }
 
+    /// Copies one item to `dest`. Large files are cloned where the volume can, else copied in chunks that can
+    /// pause and resume (`resumeFrom` bytes already there); everything else goes through copyfile().
+    private func copyItem(_ src: URL, to dest: URL, resumeFrom: Int64, report: Bool) throws {
+        var st = stat()
+        guard lstat(src.path, &st) == 0 else { return try copyRecursively(src, to: dest) }
+        let size = Int64(st.st_size)
+        guard st.st_mode & S_IFMT == S_IFREG, size >= resumableSize else { return try copyRecursively(src, to: dest) }
+        if resumeFrom == 0, allowsClone, clonefile(src.path, dest.path, UInt32(CLONE_NOFOLLOW)) == 0 {
+            progress.doneBytes += size
+            publish()
+            return
+        }
+        try copyInChunks(src, to: dest, from: resumeFrom, report: report)
+    }
+
+    /// A regular file copied a chunk at a time, stopping between chunks while paused. Interrupted, the bytes
+    /// written so far stay (flushed, and reported with `.copied`) for a later job to continue from.
+    private func copyInChunks(_ src: URL, to dest: URL, from start: Int64, report: Bool) throws {
+        func posix(_ what: String) -> NSError {
+            let code = errno
+            return NSError(
+                domain: NSPOSIXErrorDomain, code: Int(code),
+                userInfo: [NSLocalizedDescriptionKey: "Could not copy “\(src.lastPathComponent)”: \(String(cString: strerror(code)))"])
+        }
+        let input = open(src.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        guard input >= 0 else { throw posix("open") }
+        defer { close(input) }
+        var offset: Int64 = 0
+        let output: Int32
+        if start > 0 {
+            output = open(dest.path, O_WRONLY | O_NOFOLLOW | O_CLOEXEC)
+            guard output >= 0 else { throw posix("open") }
+            var ds = stat()
+            fstat(output, &ds)
+            // Only what was written before (and flushed) counts.
+            offset = min(start, Int64(ds.st_size))
+            guard ftruncate(output, off_t(offset)) == 0, lseek(input, off_t(offset), SEEK_SET) == off_t(offset),
+                lseek(output, off_t(offset), SEEK_SET) == off_t(offset)
+            else {
+                close(output)
+                throw posix("seek")
+            }
+        } else {
+            output = open(dest.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+            guard output >= 0 else { throw posix("create") }
+        }
+        defer { close(output) }
+        progress.doneBytes += offset
+        publish()
+        let buffer = UnsafeMutableRawPointer.allocate(byteCount: Self.chunkSize, alignment: 16)
+        defer { buffer.deallocate() }
+        var lastReport = Date()
+        func reportPoint() {
+            guard report else { return }
+            fsync(output)
+            onEvent(.copied(index: currentIndex, point: ResumePoint(staging: dest, offset: offset)))
+            lastReport = Date()
+        }
+        while true {
+            do {
+                try checkpoint()
+            } catch FileOperationError.interrupted {
+                reportPoint()
+                throw FileOperationError.interrupted
+            }
+            let n = read(input, buffer, Self.chunkSize)
+            if n < 0 { throw posix("read") }
+            if n == 0 { break }
+            var written = 0
+            while written < n {
+                let w = write(output, buffer + written, n - written)
+                if w < 0 { throw posix("write") }
+                written += w
+            }
+            offset += Int64(n)
+            progress.doneBytes += Int64(n)
+            publish()
+            if Date().timeIntervalSince(lastReport) > 1 { reportPoint() }
+        }
+        // Permissions, dates, extended attributes and ACLs, as copyfile() would have copied them.
+        copyfile(src.path, dest.path, nil, copyfile_flags_t(COPYFILE_METADATA | COPYFILE_STAT))
+    }
+
     /// "Write Into": transfers the children one by one; a failing child doesn't stop the others.
     private func merge(_ src: URL, into target: URL) throws {
+        depth += 1
+        defer { depth -= 1 }
         let children = try fm.contentsOfDirectory(at: src, includingPropertiesForKeys: nil)
         for child in children {
+            try checkpoint()
             do {
                 _ = try transfer(child, into: target)
             } catch FileOperationError.cancelled {
                 throw FileOperationError.cancelled
+            } catch FileOperationError.interrupted {
+                throw FileOperationError.interrupted
             } catch {
                 errors.append(Self.describe(error))
             }
@@ -402,6 +612,7 @@ public final class FileJob: @unchecked Sendable {
         let cb: copyfile_callback_t = { what, stage, state, src, _, ctx in
             guard let ctx else { return COPYFILE_CONTINUE }
             let job = Unmanaged<FileJob>.fromOpaque(ctx).takeUnretainedValue()
+            if stage == COPYFILE_PROGRESS { job.waitWhilePaused() }
             if job.isCancelled { return COPYFILE_QUIT }
             if stage == COPYFILE_ERR {
                 // In recursive mode errors arrive here. Continuing after a content error would silently
@@ -436,6 +647,7 @@ public final class FileJob: @unchecked Sendable {
             // "Already exists" at the top: someone else's item (another job pasting the same name) — never remove it.
             let topExists = code == EEXIST && (copyFailure?.path == nil || copyFailure?.path == src.path)
             if !topExists { try? fm.removeItem(at: dst) }
+            if isInterrupted { throw FileOperationError.interrupted }
             if isCancelled { throw FileOperationError.cancelled }
             throw NSError(
                 domain: NSPOSIXErrorDomain, code: Int(code),
@@ -467,6 +679,22 @@ public final class FileJob: @unchecked Sendable {
     public static func itemExists(at url: URL) -> Bool {
         var st = stat()
         return lstat(url.path, &st) == 0
+    }
+
+    /// Hidden sibling a new copy is written to, within the limits on names and paths (nil when the folder's path
+    /// leaves no room).
+    static func copyStagingURL(for target: URL, of src: URL) -> URL? {
+        var name = Substring(target.lastPathComponent)
+        while name.utf8.count > 200 { name = name.dropLast() }
+        let url = target.deletingLastPathComponent().appendingPathComponent(".\(name).porpoise-\(UUID().uuidString.prefix(8))")
+        // A folder's insides get longer paths under the hidden name: its deepest one must still fit.
+        var inside = 0
+        var st = stat()
+        if lstat(src.path, &st) == 0, st.st_mode & S_IFMT == S_IFDIR {
+            let e = FileManager.default.enumerator(atPath: src.path)
+            while let rel = e?.nextObject() as? String { inside = max(inside, rel.utf8.count + 1) }
+        }
+        return url.path.utf8.count + inside < Int(PATH_MAX) - 1 ? url : nil
     }
 
     /// Hidden sibling used while an overwrite is in progress.
