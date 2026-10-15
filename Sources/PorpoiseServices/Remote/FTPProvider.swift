@@ -136,12 +136,24 @@ final class FTPProvider: RemoteProvider {
     }
 
     func upload(_ local: URL, into remoteFolder: URL) throws {
+        var above: Set<String> = []
+        try upload(local, into: remoteFolder, above: &above)
+    }
+
+    /// `above`: the real paths of the folders being uploaded around `local`. Links to folders are followed, but
+    /// not into one of those: a "link -> .." inside would recurse until the path is too long.
+    private func upload(_ local: URL, into remoteFolder: URL, above: inout Set<String>) throws {
         var isDir: ObjCBool = false
         FileManager.default.fileExists(atPath: local.path, isDirectory: &isDir)
         let target = remoteFolder.appendingPathComponent(local.lastPathComponent)
         if isDir.boolValue {
+            let real = local.resolvingSymlinksInPath().path
+            guard above.insert(real).inserted else { return }
+            defer { above.remove(real) }
             try makeFolder(target)
-            for c in try FileManager.default.contentsOfDirectory(at: local, includingPropertiesForKeys: nil) { try upload(c, into: target) }
+            for c in try FileManager.default.contentsOfDirectory(at: local, includingPropertiesForKeys: nil) {
+                try upload(c, into: target, above: &above)
+            }
         } else {
             try curlRun(["--ftp-create-dirs", "-T", local.path, base(target.path)])
         }
