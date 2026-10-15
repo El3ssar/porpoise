@@ -12,6 +12,8 @@ public final class SearchRunner: NSObject {
     private let everywhere: Bool
     private var indexObserver: NSObjectProtocol?
     private var indexWork: DispatchWorkItem?
+    private var indexRefreshPending = false
+    private var indexedItems: [URL: FileItem]?
     var index = SearchIndex.shared
     var usesIndex = true
     private var usedIndex = false
@@ -71,28 +73,41 @@ public final class SearchRunner: NSObject {
     public func start() {
         if usesIndex && indexObserver == nil {
             indexObserver = NotificationCenter.default.addObserver(forName: SearchIndex.changed, object: index, queue: .main) { [weak self] _ in
-                guard let self else { return }
-                self.stop()
-                self.start()
+                self?.refreshIndex()
             }
         }
         guard usesIndex else { startFallback(); return }
+        refreshIndex()
+    }
+
+    /// Keep the current rows while checking a new snapshot. An index event can concern another folder or a file
+    /// that does not match; restarting used to replay the first 50 hits and shrink the list on every such event.
+    private func refreshIndex() {
+        guard indexWork == nil else { indexRefreshPending = true; return }
         let work = DispatchWorkItem {}
         indexWork = work
+        let firstSearch = !usedIndex
         loadQueue.async { [weak self] in
             guard let self, !work.isCancelled else { return }
             guard let result = self.index.search(self.text, scope: self.scope, contents: self.contents, cancelled: { work.isCancelled }) else {
-                DispatchQueue.main.async { [weak self] in if !work.isCancelled { self?.startFallback() } }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, !work.isCancelled else { return }
+                    // An uncovered scope keeps its existing fd/rg/Spotlight search rather than restarting it.
+                    if self.usedIndex { self.stopFallback() }
+                    if self.folderSearch == nil && self.spotlight == nil && self.fallbackWork == nil { self.startFallback() }
+                    self.finishIndexRefresh()
+                }
                 return
             }
             var items: [FileItem] = []
             for (i, path) in result.paths.enumerated() {
                 if work.isCancelled { return }
                 if let item = FileItem.load(URL(fileURLWithPath: path)), !(self.contents && item.isBrowsableFolder) { items.append(item) }
-                if i == 49 && result.paths.count > 50 {
+                if firstSearch && i == 49 && result.paths.count > 50 {
                     let first = items
                     DispatchQueue.main.async { [weak self] in
                         guard let self, !work.isCancelled else { return }
+                        self.stopFallback()
                         self.usedIndex = true
                         self.queryError = result.error
                         self.snippets = Dictionary(uniqueKeysWithValues: result.snippets.map { (URL(fileURLWithPath: $0.key), $0.value) })
@@ -103,16 +118,32 @@ public final class SearchRunner: NSObject {
             let complete = items
             DispatchQueue.main.async { [weak self] in
                 guard let self, !work.isCancelled else { return }
+                self.stopFallback()
+                let byURL = Dictionary(uniqueKeysWithValues: complete.map { ($0.url, $0) })
+                let snippets = Dictionary(uniqueKeysWithValues: result.snippets.map { (URL(fileURLWithPath: $0.key), $0.value) })
+                let changed = self.indexedItems != byURL || self.snippets != snippets || self.queryError != result.error
                 self.usedIndex = true
                 self.queryError = result.error
-                self.snippets = Dictionary(uniqueKeysWithValues: result.snippets.map { (URL(fileURLWithPath: $0.key), $0.value) })
-                self.update(complete, true)
+                self.snippets = snippets
+                self.indexedItems = byURL
+                if changed { self.update(complete, true) }
+                self.finishIndexRefresh()
             }
+        }
+    }
+
+    private func finishIndexRefresh() {
+        indexWork = nil
+        // Coalesce events received while loading instead of repeatedly cancelling a large query before it finishes.
+        if indexRefreshPending {
+            indexRefreshPending = false
+            refreshIndex()
         }
     }
 
     private func startFallback() {
         usedIndex = false
+        indexedItems = nil
         queryError = nil
         guard usesSpotlight, everywhere else { searchFolders(); return }
         let q = SpotlightQuery(
@@ -243,12 +274,20 @@ public final class SearchRunner: NSObject {
         if let indexObserver { NotificationCenter.default.removeObserver(indexObserver); self.indexObserver = nil }
         indexWork?.cancel()
         indexWork = nil
+        indexRefreshPending = false
+        indexedItems = nil
+        usedIndex = false
+        stopFallback()
+    }
+
+    private func stopFallback() {
         spotlight?.stop()
         spotlight = nil
         folderSearch?.stop()
         folderSearch = nil
         generation += 1
         fallbackWork?.cancel()
+        fallbackWork = nil
         loadQueue.async { [weak self] in self?.loaded = [:] }
     }
 }

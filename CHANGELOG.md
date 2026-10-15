@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Search results stay settled when unrelated indexed files change. Live updates preserve the full list, scroll position
+  and selection, and refresh changed file metadata without replaying the initial batch.
+
 ## 0.6.0
 
 0.4.0 and 0.5.0 were tagged but never published (their builds failed); their changes ship here.
