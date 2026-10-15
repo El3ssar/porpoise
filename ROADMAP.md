@@ -128,8 +128,9 @@ intact, and hostile archives cannot write outside the chosen destination.
 
 - **Named workspaces:** save tabs, paths, pane layout, panels, filters and view settings. Optional three/four-pane
   layouts and horizontal splitting; the usual two-pane Dolphin layout remains one key away.
-- **Command palette:** find actions, locations, connections, rename presets and sync tasks from the keyboard.
-  Customise the toolbar and shortcuts in the app, with conflict detection and import/export.
+- **Command palette (core implemented):** actions, Places/bookmarks, recent locations, open tabs and connections
+  are searchable from the keyboard. Shortcuts have conflict detection and JSON import/export; toolbar actions are
+  customisable with the native macOS palette. Direct rename-preset and sync-task entries remain future extensions.
 - **Search builder:** combine name, content, dates, size, tags and metadata; save and edit searches. Keep
   compatibility with Finder Smart Folders where possible. Search multiple roots and supported remotes, with
   explicit scope and optional archive content; don't download a cloud library without asking.

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Command palette.** Press ⌘⇧P or ⌃⌥I to fuzzy-find menu actions, Places/bookmarks, recent folders, open tabs and
+  saved or visited connections. Commands show their shortcut and availability and run in the originating window.
+- **Your shortcuts and toolbar.** Settings › Shortcuts records bindings, blocks conflicts (including alternate keys),
+  resets defaults and imports/exports JSON. Bindings apply live and at launch. View › Customise Toolbar opens the
+  macOS customisation palette; its saved action order previews in every window while preserving split breadcrumbs.
+
 ## 0.5.0
 
 - **Batch rename with a preview.** Select multiple local items and press F2 to combine find/replace (including regex
