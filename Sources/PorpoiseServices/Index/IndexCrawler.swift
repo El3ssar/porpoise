@@ -99,10 +99,26 @@ public enum IndexCrawler {
             self.skip = skip
         }
 
+        /// Entries read on the calling thread before others help: small trees never wait on a thread pool.
+        static let inlineEntries = 2000
+
         func run(_ top: Listing, threads: Int = min(12, max(4, ProcessInfo.processInfo.activeProcessorCount))) {
             queue = [top]
-            // Returns once every reader is done and has let go of the closures (the caller's aren't escaping).
-            DispatchQueue.concurrentPerform(iterations: threads) { _ in work() }
+            let buffer = UnsafeMutableRawPointer.allocate(byteCount: 128 * 1024, alignment: 16)
+            var entries = 0
+            while entries < Self.inlineEntries || queue.count < 2, !queue.isEmpty, !cancelled() {
+                let next = queue.removeFirst()  // breadth-first: the queue fills up if the tree is big
+                if !self.read(next, buffer: buffer) { unreadable.append(next.path) }
+                queue.append(contentsOf: next.subfolders)
+                entries += next.entries.count
+            }
+            buffer.deallocate()
+            guard !queue.isEmpty, !cancelled() else { return }
+            // A big tree: readers on several threads. Returns once every reader is done and has let go of the
+            // closures (the caller's aren't escaping).
+            let readers = min(threads, queue.count)
+            if readers == 1 { return work() }
+            DispatchQueue.concurrentPerform(iterations: readers) { _ in work() }
         }
 
         private func work() {
