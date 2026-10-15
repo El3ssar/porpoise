@@ -46,6 +46,15 @@ import Testing
         #expect(s.foreground.map { [$0.0, $0.1, $0.2] } == [4, 5, 6])
     }
 
+    @Test func windowsLineEndingsAreRead() {
+        // "\r\n" is one Character: split(separator: "\n") left the whole file as one line, and nothing was read.
+        var text = "[General]\r\n"
+        for i in 0..<8 { text += "[Color\(i)]\r\nColor=\(i),0,0\r\n[Color\(i)Intense]\r\nColor=\(100 + i),0,0\r\n" }
+        let s = KonsoleScheme.parse(text + "[Background]\r\nColor=1,2,3\r\n")
+        #expect(s.palette.map { $0.0 } == Array(0..<8) + Array(100..<108))
+        #expect(s.background.map { [$0.0, $0.1, $0.2] } == [1, 2, 3])
+    }
+
     @Test func anIncompleteSchemeKeepsTheBuiltInPalette() {
         let s = KonsoleScheme.parse("[Color0]\nColor=9,9,9\n[Color1]\nColor=1,2\n[Background]\nColor=x,y,z\n")
         #expect(s.palette.map { [$0.0, $0.1, $0.2] } == KonsoleScheme.builtInDesertPalette.map { [$0.0, $0.1, $0.2] })
