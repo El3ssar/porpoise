@@ -43,6 +43,9 @@ with *Porpoise › Check for Updates…*.
   type-ahead, inline rename, rubber-band and selection mode, filter bar.
 - **Search:** fast search of names and contents with the bundled fd and ripgrep (results stream in, content matches
   show the line they were found in), or everywhere with Spotlight. Items glide into place as results come and go.
+  Turn on the file index (Settings › Search) for Everything-style instant search: a million names in a few
+  milliseconds as you type, with `ext:`, `size:`, `dm:`, `path:`, `folder:`, `regex:`, kept current by FSEvents, and an
+  optional content index for text files.
 - **Looks:** ten themes (Breeze Light/Dark, Nord, Dracula, Solarized Light/Dark, Gruvbox, Catppuccin, Tokyo Night,
   High Contrast), system light/dark pairing, live colour editor, and import/export. Choose native or freedesktop icons,
   folder colours, fonts and density in Settings › Appearance; icons glide when the window or a pane is resized.
