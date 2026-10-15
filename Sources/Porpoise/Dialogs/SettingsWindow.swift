@@ -209,6 +209,14 @@ final class SettingsWindowController: NSWindowController {
         }
 
         page("Confirmations", "checkmark.shield") { f in
+            f.section("Copying and moving")
+            let rules: [TransferConflictRule] = [.ask, .different, .newer, .keepBoth, .skip]
+            f.popup("When names clash:", rules.map(\.title), rules.firstIndex(of: s.transferConflictRule) ?? 0) { s.transferConflictRule = rules[$0] }
+            let methods: [SyncCompareMethod] = [.sizeAndDate, .sizeOnly, .content]
+            f.popup(
+                "Compare using:", ["Size & date (2 second tolerance)", "Size only", "Contents"], methods.firstIndex(of: s.transferCompareMethod) ?? 0
+            ) { s.transferCompareMethod = methods[$0] }
+            f.note("Copy, move, paste and drop use the same comparison as folder sync.")
             f.section("Ask for confirmation when")
             f.check("Moving files or folders to the Trash", s.confirmTrash) { s.confirmTrash = $0 }
             f.check("Deleting files or folders", s.confirmDelete) { s.confirmDelete = $0 }
