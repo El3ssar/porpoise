@@ -125,12 +125,13 @@ extension MainWindowController {
         syncToActiveView()
     }
 
-    /// Tags follow `panelToggles`: Places, Information, Folders, Terminal.
+    /// Tags follow `panelToggles`: Places, Information, Folders, Terminal, Shelf.
     @objc func togglePanel(_ sender: NSMenuItem) {
         switch sender.tag {
         case 0: animatePanel(.sidebar, show: !showPlaces) { self.showPlaces.toggle() }
         case 1: animatePanel(.information, show: !showInformation) { self.showInformation.toggle() }
         case 2: animatePanel(.sidebar, show: !showFolders) { self.showFolders.toggle() }
+        case 4: animatePanel(.sidebar, show: !showShelf) { self.showShelf.toggle() }
         default:
             let show = !showTerminal
             animatePanel(.terminal, show: show) { self.showTerminal.toggle() }

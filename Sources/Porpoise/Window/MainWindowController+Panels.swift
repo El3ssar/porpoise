@@ -10,7 +10,7 @@ extension MainWindowController {
     /// Share of the sidebar height Places gets when Folders is shown below it.
     private static let placesShareOfSidebar: CGFloat = 0.55
 
-    private var sidebarVisible: Bool { showPlaces || showFolders }
+    private var sidebarVisible: Bool { showPlaces || showFolders || showShelf }
 
     /// Re-arranges the panel split views according to which panels are visible.
     func rebuildPanels() {
@@ -24,6 +24,7 @@ extension MainWindowController {
         }
         if showPlaces { leftStack.addArrangedSubview(placesScroll) }
         if showFolders { leftStack.addArrangedSubview(folders) }
+        if showShelf { leftStack.addArrangedSubview(shelf) }
         if sidebarVisible {
             outer.addArrangedSubview(sidebar)
             sidebarMaterial.frame = sidebar.bounds
@@ -69,6 +70,7 @@ extension MainWindowController {
         Settings.store.set(showFolders, forKey: "panel.folders")
         Settings.store.set(showInformation, forKey: "panel.info")
         Settings.store.set(showTerminal, forKey: "panel.terminal")
+        Settings.store.set(showShelf, forKey: "panel.shelf")
         alignNavigators()
     }
 

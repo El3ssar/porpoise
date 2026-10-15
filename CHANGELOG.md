@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Collect files on a shelf.** Panels › Shelf (F8) holds references gathered from any folder, search or server: drag
+  them in or choose Add to Shelf (⌥⌘S, also in the context menu and the command palette). Copy or move the collection
+  to the folder shown, batch-rename, share, run a Service, open or show items in their folder, while the originals
+  stay where they are. Shelves are named and saved across launches; renamed or moved files are found again, and
+  missing items or disconnected disks stay on the shelf, marked, never dropped silently.
 - **Command palette.** Press ⌘⇧P or ⌃⌥I to fuzzy-find menu actions, Places/bookmarks, recent folders, open tabs and
   saved or visited connections. Commands show their shortcut and availability and run in the originating window.
 - **Your shortcuts and toolbar.** Settings › Shortcuts records bindings, blocks conflicts (including alternate keys),

@@ -48,6 +48,9 @@ Each phase can ship in small, focused changes. Do not wait for the whole roadmap
 - **Collect files:** a shelf for references gathered from several folders, searches and servers. Copy, move,
   rename, share or run a Service on the collection. Keep the originals where they are until an operation runs;
   show missing or disconnected items instead of silently dropping them.
+  *Unreleased: Panels › Shelf (F8) and Add to Shelf (⌥⌘S, context menu, drag in); named shelves saved across
+  launches, items followed through renames by bookmarks; Copy/Move Here, Rename, Share, Services, Open, Show in
+  Folder; missing and disconnected items stay on the shelf, marked.*
 - **Disk use and duplicates:** cancellable folder-size calculation, a map of where space goes, exact duplicate
   detection by content, and a review screen before moving duplicates to Trash. Similar images are a separate,
   optional tool, never a reason to delete automatically.

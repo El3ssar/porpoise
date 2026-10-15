@@ -9,6 +9,7 @@ extension MainWindowController {
     /// The panels in the order of `togglePanel(_:)`'s tags: title, function key, icon.
     static let panelToggles: [(title: String, fkey: Int, icon: String)] = [
         ("Places", 9, "compass"), ("Information", 10, "documentinfo"), ("Folders", 7, "folder"), ("Terminal", 4, "dialog-scripts"),
+        ("Shelf", 8, "bookmarks"),
     ]
 
     func item(
