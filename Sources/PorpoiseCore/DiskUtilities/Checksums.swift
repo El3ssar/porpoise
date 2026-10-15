@@ -68,7 +68,8 @@ public enum ChecksumManifest {
         public let line: Int
         public let reason: String
         public init(line: Int, reason: String) { self.line = line; self.reason = reason }
-        public var errorDescription: String? { "Manifest line \(line): \(reason)" }
+        /// Line 0: not about a line of a manifest (a path, where to save).
+        public var errorDescription: String? { line > 0 ? "Manifest line \(line): \(reason)" : reason.prefix(1).uppercased() + reason.dropFirst() }
     }
     public static func parse(_ text: String) throws -> [ChecksumEntry] {
         var entries: [ChecksumEntry] = []

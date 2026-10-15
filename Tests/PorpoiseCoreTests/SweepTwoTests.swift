@@ -76,5 +76,38 @@ struct SweepTwoCoreTests {
         #expect(first("trash", ["Moves to Trashcan", "Empty Trash"]) == "Empty Trash")
         #expect(first("open", ["Reopen", "Options enabled"]) == "Reopen")
     }
+
+    func duplicate(_ path: String, inode: UInt64, date: Double = 0, clone: UInt64? = nil) -> DuplicateFile {
+        DuplicateFile(
+            entry: DiskEntry(
+                url: URL(fileURLWithPath: path), identity: DiskIdentity(device: 1, inode: inode), directory: false, size: 10, allocated: 4096,
+                modified: Date(timeIntervalSince1970: date)), cloneID: clone)
+    }
+
+    @Test func keepInFolderLeavesGroupsWithNoCopyThere() {
+        let elsewhere = DuplicateGroup(digest: "a", files: [duplicate("/a/x", inode: 1), duplicate("/b/x", inode: 2)])
+        let here = DuplicateGroup(digest: "b", files: [duplicate("/keep/y", inode: 3), duplicate("/c/y", inode: 4)])
+        let keep = URL(fileURLWithPath: "/keep")
+        #expect(DuplicateKeepRule.inFolder.keeper(in: elsewhere, preferredFolder: keep) == nil)
+        #expect(DuplicateKeepRule.inFolder.marked(in: [elsewhere, here], preferredFolder: keep) == [URL(fileURLWithPath: "/c/y")])
+    }
+
+    @Test func markingThousandsOfCopiesIsLinear() {
+        let files = (0..<20_000).map { duplicate("/d/\($0)/LICENSE", inode: UInt64($0), date: Double($0), clone: $0 % 2 == 0 ? 7 : nil) }
+        let group = DuplicateGroup(digest: "x", files: files)
+        let start = Date()
+        let marked = DuplicateKeepRule.newest.marked(in: [group])
+        let clones = group.clones
+        #expect(Date().timeIntervalSince(start) < 2)
+        #expect(marked.count == 19_999 && !marked.contains(URL(fileURLWithPath: "/d/19999/LICENSE")))
+        #expect(clones.filter { $0 }.count == 10_000)
+        let few = DuplicateGroup(digest: "y", files: Array(files.prefix(5)))
+        #expect(few.clones == few.files.map { few.isClone($0) })
+    }
+
+    @Test func manifestMessagesWithoutALineSayNoLine() {
+        #expect(ChecksumManifest.Invalid(line: 0, reason: "path escapes manifest folder").errorDescription == "Path escapes manifest folder")
+        #expect(ChecksumManifest.Invalid(line: 3, reason: "bad").errorDescription == "Manifest line 3: bad")
+    }
 }
 

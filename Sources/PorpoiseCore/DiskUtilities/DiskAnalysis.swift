@@ -86,6 +86,19 @@ public struct DuplicateGroup: Sendable {
             $0.entry.identity != file.entry.identity && $0.entry.identity.device == file.entry.identity.device && $0.cloneID == clone
         }
     }
+
+    /// `isClone` for every file at once (one pass, for showing thousands of copies).
+    public var clones: [Bool] {
+        var families: [String: Set<UInt64>] = [:]  // "device:clone" → inodes
+        for f in files {
+            guard let c = f.cloneID, c != 0 else { continue }
+            families["\(f.entry.identity.device):\(c)", default: []].insert(f.entry.identity.inode)
+        }
+        return files.map { f in
+            guard let c = f.cloneID, c != 0 else { return false }
+            return (families["\(f.entry.identity.device):\(c)"]?.count ?? 0) > 1
+        }
+    }
 }
 public enum DuplicateKeepRule: String, CaseIterable, Sendable {
     case newest, oldest, shortestPath, inFolder
@@ -97,8 +110,14 @@ public enum DuplicateKeepRule: String, CaseIterable, Sendable {
         case .inFolder: return "In chosen folder"
         }
     }
+    /// The copy to keep; for "in chosen folder", nil when no copy is there (the group is left alone).
     public func keeper(in group: DuplicateGroup, preferredFolder: URL? = nil) -> URL? {
-        group.files.sorted { a, b in
+        if self == .inFolder, let folder = preferredFolder,
+            !group.files.contains(where: { NameIndex.contains(path: $0.entry.url.path, in: folder.path) })
+        {
+            return nil
+        }
+        return group.files.min { a, b in
             let x = a.entry, y = b.entry
             switch self {
             case .newest: if x.modified != y.modified { return x.modified > y.modified }
@@ -111,7 +130,17 @@ public enum DuplicateKeepRule: String, CaseIterable, Sendable {
                 }
             }
             return x.url.path < y.url.path
-        }.first?.entry.url
+        }?.entry.url
+    }
+
+    /// Every copy but each group's keeper (one keeper per group, however many copies it has).
+    public func marked(in groups: [DuplicateGroup], preferredFolder: URL? = nil) -> Set<URL> {
+        var out = Set<URL>()
+        for g in groups {
+            guard let keep = keeper(in: g, preferredFolder: preferredFolder) else { continue }
+            for f in g.files where f.entry.url != keep { out.insert(f.entry.url) }
+        }
+        return out
     }
 }
 

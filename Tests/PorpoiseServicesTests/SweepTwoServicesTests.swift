@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseServices
@@ -52,6 +53,25 @@ struct SweepTwoServicesTests {
         #expect(Settings.shared.toolbarCommands == [.reload, .location])
         Settings.store.set(try JSONEncoder().encode(["reload", "search"]), forKey: "toolbarCommands")
         #expect(Settings.shared.toolbarCommands == [.reload, .search, .location])
+    }
+
+    @Test func aSymlinkedFolderIsMeasuredAsTheFolder() throws {
+        let s = try Scratch("sweep2size")
+        try s.file("dir/file", "hello")
+        try s.symlink("link", to: s.path("dir").path)
+        #expect(FolderUsageCache().size(s.path("link"), depth: 10) == 5)
+    }
+
+    @Test func theSameFolderNamedTwiceIsScannedOnce() throws {
+        let s = try Scratch("sweep2roots")
+        try s.file("Root/a.txt", "a")
+        try s.file("Root/sub/b.txt", "b")
+        let upper = URL(fileURLWithPath: s.url.path + "/ROOT")
+        // Only meaningful where names ignore case (the usual APFS).
+        guard FileManager.default.fileExists(atPath: upper.path) else { return }
+        let scan = PhysicalTreeScanner.scan([s.path("Root"), upper])
+        #expect(UsageTree(scan).hardLinkAliases == 0)
+        #expect(scan.entries.filter { !$0.directory }.count == 2)
     }
 }
 
