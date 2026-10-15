@@ -1,7 +1,7 @@
 import Foundation
 
 /// A Konsole `.colorscheme`: 16 ANSI colors plus background and foreground.
-public struct KonsoleScheme {
+public struct KonsoleScheme: Sendable {
     public typealias RGB = (Int, Int, Int)
     public var palette: [RGB]
     public var background: RGB?
@@ -33,12 +33,13 @@ public struct KonsoleScheme {
         (85, 97, 128), (208, 135, 112), (98, 194, 162), (240, 216, 160), (114, 159, 207), (199, 166, 199), (110, 170, 210), (255, 255, 255),
     ]
 
-    /// Reads `[ColorN]` / `[ColorNIntense]` / `[Background]` / `[Foreground]` sections; missing colors use the built-in palette.
+    /// Reads `[ColorN]` / `[ColorNIntense]` / `[Background]` / `[Foreground]` sections; without all 16 colors, the built-in palette.
     public static func parse(_ text: String) -> KonsoleScheme {
         var colors: [Int: RGB] = [:]
         var scheme = KonsoleScheme(palette: builtInDesertPalette)
         var section = ""
-        for line in text.split(separator: "\n") {
+        // isNewline: "\r\n" is one Character, which split(separator: "\n") never splits at.
+        for line in text.split(whereSeparator: \.isNewline) {
             let l = line.trimmingCharacters(in: .whitespaces)
             if l.hasPrefix("[") { section = l; continue }
             guard l.hasPrefix("Color=") else { continue }
@@ -56,6 +57,7 @@ public struct KonsoleScheme {
                 scheme.foreground = rgb
             }
         }
+        // All 16 or none: a scheme with only some of them would mix with colors it wasn't designed against.
         if colors.count == 16 { scheme.palette = (0..<16).map { colors[$0]! } }
         return scheme
     }

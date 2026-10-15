@@ -90,12 +90,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func restoreSession() -> Bool {
         guard let session = Settings.store.array(forKey: Self.sessionKey) as? [[[String: String]]] else { return false }
         for w in session {
-            // Tab and split URLs stay paired when a vanished folder is dropped.
-            let tabs = w.compactMap { t -> (url: URL, split: URL?)? in
-                guard let u = t["url"].flatMap(URL.init(string:)),
-                    !u.isFileURL || FileManager.default.fileExists(atPath: u.path)
-                else { return nil }
-                return (u, t["split"].flatMap(URL.init(string:)))
+            func exists(_ u: URL) -> Bool { !u.isFileURL || FileManager.default.fileExists(atPath: u.path) }
+            // Tab and split URLs stay paired when a vanished folder is dropped; `index` is the tab's saved position.
+            let tabs = w.enumerated().compactMap { i, t -> (index: Int, url: URL, split: URL?)? in
+                guard let u = t["url"].flatMap(URL.init(string:)), exists(u) else { return nil }
+                return (i, u, t["split"].flatMap(URL.init(string:)).flatMap { exists($0) ? $0 : nil })
             }
             guard !tabs.isEmpty else { continue }
             newWindow(urls: tabs.map(\.url), split: tabs.map(\.split))
@@ -104,7 +103,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let f = info["frame"].map(NSRectFromString), NSScreen.screens.contains(where: { $0.visibleFrame.intersects(f) }) {
                 wc.window?.setFrame(f, display: false)
             }
-            if let a = info["active"].flatMap(Int.init), wc.tabs.indices.contains(a) { wc.showTab(a) }
+            // The saved index counts dropped tabs too: the active one is the last kept tab at or before it.
+            if let a = info["active"].flatMap(Int.init), let shown = tabs.lastIndex(where: { $0.index <= a }) { wc.showTab(shown) }
         }
         return !windows.isEmpty
     }

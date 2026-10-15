@@ -207,9 +207,8 @@ final class TerminalPanel: NSView, LocalProcessTerminalViewDelegate {
         }
         lastSentTarget = url.path
         lastSentCd = Date()
-        let escaped = url.path.replacingOccurrences(of: "'", with: "'\\''")
         // Ctrl+E Ctrl+U clears the input line; the leading space keeps it out of history.
-        terminalView.send(txt: "\u{05}\u{15} cd '\(escaped)'\r")
+        terminalView.send(txt: "\u{05}\u{15} cd \(RemoteParsing.quote(url.path))\r")
     }
 
     // MARK: Terminal → view

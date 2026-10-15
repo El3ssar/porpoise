@@ -106,7 +106,8 @@ public enum TerminalCommandTemplate {
         guard quoteMode == nil, replacements == template.components(separatedBy: "{dir}").count - 1 else { throw AppearanceError.invalidTemplate }
         return template.replacingOccurrences(of: "{dir}", with: quote(directory))
     }
-    public static func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+    /// By code point (`RemoteParsing.quote`): a Character-based replace misses a quote followed by a combining mark.
+    public static func quote(_ value: String) -> String { RemoteParsing.quote(value) }
 }
 
 public enum ViewDensity: String, Codable, CaseIterable, Sendable {

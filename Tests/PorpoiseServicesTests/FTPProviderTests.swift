@@ -78,6 +78,18 @@ import Testing
         #expect(call.args.suffix(3) == ["-T", file.path, "ftp://h.invalid/in/report%5B1%5D%20%7Ba,b%7D.txt"])
     }
 
+    @Test func uploadingAFolderDoesNotFollowALinkBackIntoIt() throws {
+        let local = try Scratch()
+        let top = try local.folder("top")
+        try local.file("top/a.txt", "x")
+        try FileManager.default.createSymbolicLink(atPath: top.appendingPathComponent("loop").path, withDestinationPath: ".")
+        try curl.reply("")
+        // "loop" is top itself: followed, it recursed until the path was too long.
+        try provider("ftp://h.invalid/").upload(top, into: URL(string: "ftp://h.invalid/in/")!)
+        let uploads = curl.calls.filter { $0.args.contains("-T") }
+        #expect(uploads.count == 1 && uploads.first?.args.last == "ftp://h.invalid/in/top/a.txt")
+    }
+
     @Test func downloadsAFileAfterCheckingItIsNotAFolder() throws {
         let local = try Scratch()
         try curl.reply(Self.listing, call: 0)
@@ -163,5 +175,10 @@ import Testing
         try curl.reply("")
         _ = try provider("ftp://me@h.invalid/").list(URL(string: "ftp://h.invalid/")!)
         #expect(curl.calls.first?.stdin == "user = \"me:from keychain\"\n")
+    }
+
+    @Test func loginEscapingWorksByCodePoint() {
+        // "\"\u{301}" is one Character: a Character-based replace left the quote bare, ending curl's string early.
+        #expect(FTPProvider.configEscaped("me:p\"\u{301}w\\\n") == "me:p\\\"\u{301}w\\\\\\n")
     }
 }

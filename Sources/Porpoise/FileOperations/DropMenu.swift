@@ -58,7 +58,8 @@ extension FileOperationsController {
     }
 }
 
-private var dropTargetKey = 0
+// Only its address is used, as the associated-object key.
+nonisolated(unsafe) private var dropTargetKey = 0
 
 private final class DropMenuTarget: NSObject {
     let handler: (FileOperationKind) -> Void

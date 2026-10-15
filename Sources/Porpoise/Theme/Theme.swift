@@ -58,7 +58,6 @@ enum Theme {
     static let windowBackground = paletteColor(.windowBackground)
     static let windowText = paletteColor(.text)
     static let windowTextInactive = paletteColor(.secondaryText)
-    static let linkText = paletteColor(.accent)
     static let activeText = paletteColor(.accent)
     static let negativeText = color(dark: NSColor(rgb: 191, 97, 106), light: NSColor(rgb: 192, 57, 68))
     static let neutralText = paletteColor(.accent)
@@ -128,6 +127,8 @@ enum Theme {
     /// (`cgColor`), which don't follow by themselves. Kept for as long as `owner` lives.
     static func whenChanged(_ owner: AnyObject, _ apply: @escaping () -> Void) {
         let ref = { [weak owner] in owner }
+        // Pruned here too: owners that come and go (every conflict dialog) would pile up until the next change.
+        observers.removeAll { $0.owner() == nil }
         observers.append((ref, apply))
         NSApp.effectiveAppearance.performAsCurrentDrawingAppearance(apply)
     }
@@ -139,8 +140,7 @@ enum Theme {
             for o in observers { o.apply() }
             for window in NSApp.windows {
                 window.backgroundColor = Theme.windowBackground.usingColorSpace(.sRGB) ?? Theme.windowBackground
-                func redraw(_ view: NSView) { view.needsDisplay = true; view.subviews.forEach(redraw) }
-                if let content = window.contentView { redraw(content) }
+                window.contentView?.redrawAll()
             }
         }
     }
@@ -157,7 +157,7 @@ enum Theme {
     static var smallFont: NSFont { NSFontManager.shared.convert(font, toSize: max(8, fontSize - 2)) }
 
     /// Terminal panel font: Hack (KDE's default monospace font), preferring its Nerd Font build for prompt symbols.
-    static func terminalFont(size: CGFloat = 13) -> NSFont {
+    static func terminalFont() -> NSFont {
         let preferences = Settings.shared.appearancePreferences
         let size = CGFloat(preferences.terminalFontSize)
         if let custom = NSFont(name: preferences.terminalFontName, size: size) { return custom }
@@ -213,5 +213,13 @@ enum Theme {
             .ColorScheme-Contrast { color:\(windowText.hexString); }
             .ColorScheme-Accent { color:\(selection.hexString); }
             """
+    }
+}
+
+extension NSView {
+    /// Marks this view and everything inside it for redrawing.
+    func redrawAll() {
+        needsDisplay = true
+        subviews.forEach { $0.redrawAll() }
     }
 }

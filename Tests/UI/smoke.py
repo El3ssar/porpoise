@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end UI smoke test: drives the real app with input events (scripts/ui.swift) and checks its
 state through the debug bridge. Works only inside build/testdata, never touches other files."""
-import json, os, subprocess, sys, time, shutil
+import atexit, json, os, subprocess, sys, time, shutil
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 B = os.path.join(ROOT, "build")
@@ -39,6 +39,8 @@ subprocess.run(["defaults", "delete", "app.porpoise.uitest"], capture_output=Tru
 shutil.rmtree("/private/tmp/porpoise-test", ignore_errors=True)
 env = dict(os.environ, PORPOISE_DEFAULTS_SUITE="app.porpoise.uitest", PORPOISE_DEBUG="1")
 APP = subprocess.Popen([os.path.join(B, "Porpoise.app/Contents/MacOS/Porpoise"), TD], env=env, stdout=open(os.path.join(B, "app.log"), "w"), stderr=subprocess.STDOUT)
+# A check that throws (state() is {} when the bridge doesn't answer) must not leave this instance running.
+atexit.register(lambda: APP.poll() is None and APP.terminate())
 time.sleep(2.5)
 ui("focus")
 s = state()

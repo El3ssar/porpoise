@@ -82,7 +82,7 @@ public enum BatchRename {
                 guard !find.isEmpty else { continue }
                 let replacement = try tokens(replacement, entry: entry, stem: stem, ext: ext, timeZone: timeZone, regexReplacement: regex)
                 if regex {
-                    let expression = try NSRegularExpression(pattern: find, options: caseSensitive ? [] : [.caseInsensitive])
+                    let expression = try Self.expression(find, options: caseSensitive ? [] : [.caseInsensitive])
                     name = expression.stringByReplacingMatches(in: name, range: NSRange(name.startIndex..., in: name), withTemplate: replacement)
                 } else {
                     name = name.replacingOccurrences(of: find, with: replacement, options: caseSensitive ? [] : [.caseInsensitive])
@@ -129,6 +129,21 @@ public enum BatchRename {
         return String(name[..<i]) + text + String(name[i...])
     }
 
+    /// Compiled once per pattern, not once per file: a preview renames the whole selection on each keystroke.
+    /// Bounded, since each keystroke of a pattern being typed is a pattern of its own.
+    nonisolated(unsafe) private static var expressions: [String: NSRegularExpression] = [:]
+    private static let expressionsLock = NSLock()
+    private static func expression(_ pattern: String, options: NSRegularExpression.Options) throws -> NSRegularExpression {
+        let key = "\(options.rawValue)|\(pattern)"
+        if let e = expressionsLock.withLock({ expressions[key] }) { return e }
+        let e = try NSRegularExpression(pattern: pattern, options: options)
+        expressionsLock.withLock {
+            if expressions.count >= 64 { expressions.removeAll() }
+            expressions[key] = e
+        }
+        return e
+    }
+
     private static let tokenExpression = try! NSRegularExpression(
         pattern: #"\{(name|ext|created|modified|exif|width|height|artist|album|title)(?::([^{}]+))?\}"#)
 
@@ -149,10 +164,10 @@ public enum BatchRename {
                 let date = key == "created" ? entry.created : key == "modified" ? entry.modified : entry.exifDate
                 guard let date else { throw BatchRenameError.invalid("\(key) date is unavailable for “\(entry.url.lastPathComponent)”.") }
                 let format = match.range(at: 2).location == NSNotFound ? "yyyy-MM-dd" : (text as NSString).substring(with: match.range(at: 2))
-                let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX");
-                formatter.calendar = Calendar(identifier: .gregorian)
-                formatter.timeZone = timeZone; formatter.dateFormat = format
-                value = formatter.string(from: date)
+                var calendar = Calendar(identifier: .gregorian)
+                calendar.locale = Locale(identifier: "en_US_POSIX")
+                calendar.timeZone = timeZone
+                value = FileFormat.formatter(format, calendar: calendar).string(from: date)
             } else {
                 guard let metadata = entry.metadata[key] else {
                     throw BatchRenameError.invalid("\(key) metadata is unavailable for “\(entry.url.lastPathComponent)”.")

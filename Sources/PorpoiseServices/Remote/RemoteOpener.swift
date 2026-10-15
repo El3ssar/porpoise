@@ -7,9 +7,10 @@ public enum RemoteOpener {
     /// Opens a downloaded copy in its application (set by the app).
     nonisolated(unsafe) public static var openFile: (URL) -> Void = { _ in }
 
-    private static var watchers: [String: DispatchSourceFileSystemObject] = [:]
+    /// Only on the main queue.
+    nonisolated(unsafe) private static var watchers: [String: DispatchSourceFileSystemObject] = [:]
     /// Local copies with saved changes not yet uploaded (the upload failed or hasn't run): only on the main queue.
-    private static var unsynced: Set<String> = []
+    nonisolated(unsafe) private static var unsynced: Set<String> = []
 
     /// Upload is delayed this long after the last change, so a burst of writes from one save uploads once.
     private static let uploadDelay: TimeInterval = 0.6
@@ -36,6 +37,9 @@ public enum RemoteOpener {
             StatusCenter.post("Opened your copy of “\(item.name)”: its latest changes haven't been uploaded yet.")
             return
         }
+        // The copy from an earlier open is deleted below: its watch would take that for a save, mark the copy as not
+        // uploaded (and, once the download is in place, upload it straight back).
+        unwatch(cached)
         StatusCenter.post("Downloading “\(item.name)”…")
         DispatchQueue.global(qos: .userInitiated).async {
             do {

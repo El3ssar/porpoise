@@ -233,6 +233,10 @@ public final class SearchRunner: NSObject {
     deinit {
         if let indexObserver { NotificationCenter.default.removeObserver(indexObserver) }
         indexWork?.cancel()
+        // A closed tab's search: fd and rg would otherwise run on to the end of a big tree (their readers hold them).
+        spotlight?.stop()
+        folderSearch?.stop()
+        fallbackWork?.cancel()
     }
 
     public func stop() {

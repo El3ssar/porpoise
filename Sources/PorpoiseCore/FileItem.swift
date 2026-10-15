@@ -69,8 +69,22 @@ public struct FileItem: Hashable, Sendable {
     /// Human readable type, e.g. "PDF document", "Folder".
     public var typeDescription: String {
         if isBrowsableFolder { return "Folder" }
-        if let t = utType, let d = t.localizedDescription { return d.prefix(1).uppercased() + d.dropFirst() }
+        if let c = contentType, let d = Self.typeDescriptions.description(of: c) { return d }
         return fileExtension.isEmpty ? "File" : "\(fileExtension.uppercased()) file"
+    }
+
+    /// Descriptions by content type: a LaunchServices lookup each time made sorting by Type slow (two per
+    /// comparison) and redid it for every row drawn in the Type column.
+    private static let typeDescriptions = TypeDescriptions()
+    private final class TypeDescriptions: @unchecked Sendable {
+        private let lock = NSLock()
+        private var known: [String: String?] = [:]
+        func description(of type: String) -> String? {
+            if let d = lock.withLock({ known[type] }) { return d }
+            let d = UTType(type)?.localizedDescription.map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            lock.withLock { known[type] = d }
+            return d
+        }
     }
 
     static let resourceKeys: [URLResourceKey] = [

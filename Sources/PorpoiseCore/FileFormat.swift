@@ -121,13 +121,21 @@ public enum FileFormat {
 
     private static func join(_ base: String, _ ext: String) -> String { ext.isEmpty ? base : base + "." + ext }
 
+    /// Names taken in a folder, ignoring case: on a case-insensitive volume (the default) "Report (1).txt" is taken
+    /// by "report (1).txt", and suggesting it again and again would never find a free name.
+    private static func taken(_ existing: Set<String>) -> (String) -> Bool {
+        let folded = Set(existing.map { $0.lowercased() })
+        return { folded.contains($0.lowercased()) }
+    }
+
     /// Name for a duplicate: "name copy.ext", "name copy 2.ext"…
     public static func duplicateName(for name: String, existing: Set<String>) -> String {
         let (base, ext) = splitExtension(name)
+        let isTaken = taken(existing)
         var n = 1
         while true {
             let candidate = join(base + (n == 1 ? " copy" : " copy \(n)"), ext)
-            if !existing.contains(candidate) { return candidate }
+            if !isTaken(candidate) { return candidate }
             n += 1
         }
     }
@@ -143,9 +151,10 @@ public enum FileFormat {
             n = num + 1
             base.removeSubrange(r)
         }
+        let isTaken = taken(existing)
         while true {
             let candidate = join("\(base) (\(n))", ext)
-            if !existing.contains(candidate) { return candidate }
+            if !isTaken(candidate) { return candidate }
             n += 1
         }
     }

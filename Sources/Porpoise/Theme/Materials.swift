@@ -43,38 +43,6 @@ final class TintedMaterialView: NSVisualEffectView {
     }
 }
 
-/// Small frosted "pill" used for floating overlays (status text, zoom slider).
-final class PillMaterialView: NSVisualEffectView {
-    init() {
-        super.init(frame: .zero)
-        material = .hudWindow
-        blendingMode = .withinWindow
-        state = .active
-        wantsLayer = true
-        layer?.cornerRadius = 9
-        layer?.cornerCurve = .continuous
-        layer?.masksToBounds = true
-        layer?.borderWidth = 0.5
-        Theme.whenChanged(self) { [weak self] in
-            self?.layer?.borderColor = (Theme.isDark ? NSColor.white.withAlphaComponent(0.10) : NSColor.black.withAlphaComponent(0.08)).cgColor
-        }
-    }
-
-    required init?(coder: NSCoder) { fatalError() }
-}
-
-extension NSView {
-    /// Soft drop shadow for floating elements.
-    func applyFloatingShadow() {
-        wantsLayer = true
-        shadow = NSShadow()
-        layer?.shadowColor = NSColor.black.cgColor
-        layer?.shadowOpacity = 0.35
-        layer?.shadowRadius = 8
-        layer?.shadowOffset = CGSize(width: 0, height: -2)
-    }
-}
-
 /// Simple per-frame animator (a 120 Hz timer in the common run loop modes, so it keeps running during
 /// event tracking such as live resize), used for custom-drawn transitions.
 final class Animator: NSObject {

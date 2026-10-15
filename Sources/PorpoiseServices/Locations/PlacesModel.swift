@@ -25,6 +25,7 @@ public final class PlacesModel {
     static let recentLocationsURL = URL(string: "recent:/locations")!
     /// How often Android phones are polled while adb is installed.
     private static let adbPollInterval: TimeInterval = 4
+    private static let adbPollTimeout: TimeInterval = 30
 
     public private(set) var userEntries: [PlaceEntry] = []
     private(set) var devices: [PlaceEntry] = []
@@ -286,7 +287,9 @@ public final class PlacesModel {
         adbPollInFlight = true
         let tool = adbTool
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let phones = tool().map { ADBProvider.devices(adb: $0) } ?? []
+            // Bounded: one `adb devices` that never returns would keep adbPollInFlight set, and phones would never
+            // be looked for again. Generous, since the first call may start adb's server.
+            let phones = tool().map { ADBProvider.devices(timeout: Self.adbPollTimeout, adb: $0) } ?? []
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.adbPollInFlight = false

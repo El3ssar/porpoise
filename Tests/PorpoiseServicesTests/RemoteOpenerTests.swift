@@ -134,6 +134,24 @@ final class RemoteOpenerTests {
         #expect(read(opened[2]) == "changed on the server")
     }
 
+    @Test func reopeningASyncedCopyDownloadsItWithoutUploadingBack() async throws {
+        let (item, onServer) = try remoteFile("synced.txt", "v1")
+        RemoteOpener.open(item)
+        try await waitUntil("opened") { opened.count == 1 }
+        // Opened again with nothing to upload: the earlier watch took the old copy's deletion for a save.
+        try Data("v2".utf8).write(to: onServer)
+        RemoteOpener.open(item)
+        try await waitUntil("opened again") { opened.count == 2 }
+        #expect(read(opened[1]) == "v2")
+        try await Task.sleep(for: .seconds(1.5))  // longer than the upload delay
+        #expect(!messages.contains("Uploaded changes to “synced.txt”."))
+        // Still in sync: a third open downloads the server's newer version instead of reopening the copy.
+        try Data("v3".utf8).write(to: onServer)
+        RemoteOpener.open(item)
+        try await waitUntil("opened a third time") { opened.count == 3 }
+        #expect(read(opened[2]) == "v3")
+    }
+
     @Test func cacheFolderStaysInsideTheCache() {
         let folder = RemoteOpener.cacheFolder(for: URL(string: "sftp://h.invalid/../../../etc/x/../passwd")!)
         #expect(folder.path.hasPrefix(RemoteFS.cacheRoot.path + "/"))

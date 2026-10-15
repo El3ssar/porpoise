@@ -108,17 +108,21 @@ final class FolderSearch: @unchecked Sendable {
         while let chunk = try? handle.read(upToCount: 64 * 1024), !chunk.isEmpty {
             rest.append(chunk)
             var paths: [(path: String, line: String?)] = []
-            while let nul = rest.firstIndex(of: 0) {
-                let path = String(decoding: rest[rest.startIndex..<nul], as: UTF8.self)
+            // Records are read through a cursor and dropped once per chunk: removing each from the front of the
+            // buffer moved the rest of it every time (quadratic in the records per chunk).
+            var start = rest.startIndex
+            while let nul = rest[start...].firstIndex(of: 0) {
+                let path = String(decoding: rest[start..<nul], as: UTF8.self)
                 guard withLines else {
                     paths.append((path, nil))
-                    rest.removeSubrange(rest.startIndex...nul)
+                    start = rest.index(after: nul)
                     continue
                 }
                 guard let lf = rest[nul...].firstIndex(of: 10) else { break }  // the line isn't all here yet
                 paths.append((path, String(decoding: rest[rest.index(after: nul)..<lf], as: UTF8.self)))
-                rest.removeSubrange(rest.startIndex...lf)
+                start = rest.index(after: lf)
             }
+            rest.removeSubrange(rest.startIndex..<start)
             add(paths)
             if lock.withLock({ stopped }) { break }
         }

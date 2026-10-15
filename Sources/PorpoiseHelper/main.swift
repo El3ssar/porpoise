@@ -28,9 +28,12 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
         c.setCodeSigningRequirement(req)
         c.exportedInterface = NSXPCInterface(with: PorpoiseHelperProtocol.self)
         c.exportedObject = self
-        DispatchQueue.main.async {
+        // Counted before accepting (sync): a quit already queued on main would otherwise run first, see no
+        // connection, and exit with this one's request unanswered.
+        let opened = {
             self.connections += 1; self.quit?.cancel()
         }
+        if Thread.isMainThread { opened() } else { DispatchQueue.main.sync(execute: opened) }
         c.invalidationHandler = { [weak self] in
             DispatchQueue.main.async {
                 guard let self else { return }

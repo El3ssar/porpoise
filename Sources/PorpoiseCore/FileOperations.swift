@@ -129,6 +129,8 @@ public final class FileJob: @unchecked Sendable {
     private let lock = NSLock()
     private var _cancelled = false
     private var progress: JobProgress
+    /// Tree sizes by item, walked once: the total, a skip, a same-volume move and a copy's end all need them.
+    private var sizes: [URL: Int64] = [:]
     private var lastPublish = Date.distantPast
     private var sticky: ConflictResolution?
     private var created: [URL] = []
@@ -155,7 +157,7 @@ public final class FileJob: @unchecked Sendable {
     /// Runs synchronously. Returns the undo record (nil if nothing happened).
     public func run() throws -> UndoRecord? {
         if kind == .copy || kind == .move {
-            progress.totalBytes = sources.reduce(0) { $0 + Self.diskSize($1) }
+            progress.totalBytes = sources.reduce(0) { $0 + size(of: $1) }
         }
         publish(force: true)
         for src in sources {
@@ -282,12 +284,14 @@ public final class FileJob: @unchecked Sendable {
             target = folder.appendingPathComponent(FileFormat.duplicateName(for: src.lastPathComponent, existing: names(in: folder)))
         }
         while Self.itemExists(at: target) {
+            if isCancelled { throw FileOperationError.cancelled }
             let srcItem = FileItem.load(src)
             let dstItem = FileItem.load(target)
             // A link to a folder is transferred as the link: there is nothing in it to merge.
             let srcIsFolder = (srcItem?.isBrowsableFolder ?? false) && !(srcItem?.isSymlink ?? false)
             let bothDirs = srcIsFolder && (dstItem?.isBrowsableFolder ?? false)
-            let suggestion = FileFormat.suggestedName(for: src.lastPathComponent, existing: names(in: folder))
+            // Only worked out when needed: listing the folder for every conflict of a big merge is quadratic.
+            let suggestion = { FileFormat.suggestedName(for: src.lastPathComponent, existing: self.names(in: folder)) }
             let answer = conflictAnswer(srcItem, dstItem, bothDirs: bothDirs, suggestion: suggestion)
             switch answer {
             case .cancel:
@@ -311,20 +315,20 @@ public final class FileJob: @unchecked Sendable {
         return (target, .new)
     }
 
-    private func conflictAnswer(_ src: FileItem?, _ dst: FileItem?, bothDirs: Bool, suggestion: String) -> ConflictResolution {
+    private func conflictAnswer(_ src: FileItem?, _ dst: FileItem?, bothDirs: Bool, suggestion: () -> String) -> ConflictResolution {
         // "Apply to All" answers stick, except Write Into, which only means something for two folders.
         if let s = sticky, !(s == .writeInto && !bothDirs) {
-            if case .rename = s { return .rename(suggestion) }
+            if case .rename = s { return .rename(suggestion()) }
             return s
         }
         guard let s = src, let d = dst else { return .skip }
-        let a = resolveConflict(ConflictInfo(source: s, destination: d, suggestedName: suggestion))
+        let a = resolveConflict(ConflictInfo(source: s, destination: d, suggestedName: suggestion()))
         if a.applyToAll { sticky = a.resolution }
         return a.resolution
     }
 
     private func skipped(_ src: URL) -> (URL, Placement)? {
-        progress.doneBytes += Self.diskSize(src)
+        progress.doneBytes += size(of: src)
         return nil
     }
 
@@ -347,7 +351,7 @@ public final class FileJob: @unchecked Sendable {
         case .move where Self.sameVolume(src, target.deletingLastPathComponent()):
             try fm.moveItem(at: src, to: dest)
             renamed = true
-            progress.doneBytes += Self.diskSize(dest)
+            progress.doneBytes += size(of: src)  // what was there before the rename
         default:
             try copyRecursively(src, to: dest)
         }
@@ -440,7 +444,7 @@ public final class FileJob: @unchecked Sendable {
                 ])
         }
         // Clones report no data progress; account for the bytes anyway.
-        let expected = Self.diskSize(src)
+        let expected = size(of: src)
         if progress.doneBytes < currentFileBase + expected { progress.doneBytes = currentFileBase + expected }
         publish()
     }
@@ -490,6 +494,13 @@ public final class FileJob: @unchecked Sendable {
         let kb = try? b.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier as? NSObject
         guard let x = ka, let y = kb else { return false }
         return x.isEqual(y)
+    }
+
+    private func size(of url: URL) -> Int64 {
+        if let s = sizes[url] { return s }
+        let s = Self.diskSize(url)
+        sizes[url] = s
+        return s
     }
 
     /// Total size of a file or folder tree (logical sizes). Symlinks count as themselves, not their
@@ -548,9 +559,7 @@ public enum FileActions {
     }
 
     /// A single path component: not empty, no "/", not "." or "..".
-    public static func isValidName(_ name: String) -> Bool {
-        !name.isEmpty && !name.containsScalar("/") && name != "." && name != ".." && !name.containsScalar("\0")
-    }
+    public static func isValidName(_ name: String) -> Bool { RemoteParsing.isSafeName(name) }
 
     /// Validation message for a new name (KIO's folder dialog), nil when fine.
     public static func validateName(_ name: String, in folder: URL, allowSlash: Bool) -> (message: String, isError: Bool)? {

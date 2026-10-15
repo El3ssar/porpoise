@@ -579,7 +579,8 @@ public final class DirectoryModel {
         let all = recountFolders
         recountFolders = false
         // Counting everything again supersedes the counts still under way: they were made with the old settings.
-        if all { countGeneration += 1; FolderUsageCache.shared.invalidate(below: location) }
+        // Their folders stop being pending too, or one no longer shown (in a collapsed folder) would never be counted.
+        if all { countGeneration += 1; pendingCounts = []; FolderUsageCache.shared.invalidate(below: location) }
         let need = rows.map(\.item).filter { $0.isBrowsableFolder && (all || (folderCounts[$0.url] == nil && !pendingCounts.contains($0.url))) }
         guard !need.isEmpty else { return }
         let generation = countGeneration
@@ -720,7 +721,10 @@ public final class DirectoryModel {
         return rowIndexByPath?[url.standardizedFileURL.path]
     }
 
-    public var selectedItems: [FileItem] { rows.map(\.item).filter { selection.contains($0.url) } }
+    /// In row order. Without copying every row's item first: the status bar asks on every selection change.
+    public var selectedItems: [FileItem] {
+        selection.isEmpty ? [] : rows.compactMap { selection.contains($0.item.url) ? $0.item : nil }
+    }
 
     public var visibleCounts: (folders: Int, files: Int, bytes: Int64) {
         var f = 0, n = 0; var b: Int64 = 0
@@ -732,8 +736,9 @@ public final class DirectoryModel {
 
     public var selectedCounts: (folders: Int, files: Int, bytes: Int64) {
         var f = 0, n = 0; var b: Int64 = 0
-        for it in selectedItems {
-            if it.isBrowsableFolder { f += 1 } else { n += 1; b += it.size }
+        guard !selection.isEmpty else { return (0, 0, 0) }
+        for r in rows where selection.contains(r.item.url) {
+            if r.item.isBrowsableFolder { f += 1 } else { n += 1; b += r.item.size }
         }
         return (f, n, b)
     }

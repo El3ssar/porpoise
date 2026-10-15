@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseServices
@@ -70,18 +71,11 @@ func eventually(_ timeout: TimeInterval = 10, _ condition: () -> Bool) async -> 
 /// Runs a command line tool and fails the test if it fails.
 @discardableResult
 func run(_ tool: String, _ args: [String], in dir: URL? = nil) throws -> String {
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: tool)
-    p.arguments = args
-    p.currentDirectoryURL = dir
-    let out = Pipe()
-    p.standardOutput = out
-    p.standardError = Pipe()
-    try p.run()
-    let data = out.fileHandleForReading.readDataToEndOfFile()
-    p.waitUntilExit()
-    guard p.terminationStatus == 0 else {
-        throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "\(tool) \(args.joined(separator: " ")) failed"])
+    // runTool drains stderr too: an unread stderr pipe blocks a tool that writes more than the pipe holds.
+    let r = try runTool(tool, args, cwd: dir)
+    guard r.status == 0 else {
+        let why = String(decoding: r.err, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "\(tool) \(args.joined(separator: " ")) failed: \(why)"])
     }
-    return String(decoding: data, as: UTF8.self)
+    return String(decoding: r.out, as: UTF8.self)
 }

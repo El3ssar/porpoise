@@ -106,10 +106,15 @@ import Testing
 
     @Test func recognizesArchives() throws {
         func item(_ name: String, dir: Bool = false) -> FileItem { FileItem(url: URL(fileURLWithPath: "/x/" + name), name: name, isDirectory: dir) }
-        for n in ["a.zip", "a.ZIP", "a.tar", "a.tar.gz", "a.tgz", "a.tar.xz", "a.7z", "a.rar", "a.iso", "a.jar"] {
+        for n in [
+            "a.zip", "a.ZIP", "a.tar", "a.tar.gz", "a.TAR.GZ", "a.tgz", "a.tar.xz", "a.tar.bz2", "a.tar.zst", "a.7z", "a.rar", "a.iso", "a.jar",
+        ] {
             #expect(ArchiveBrowser.isArchive(item(n)), "\(n)")
         }
-        #expect(!ArchiveBrowser.isArchive(item("a.txt")))
+        // A single compressed file isn't a tar archive: tar fails on it, so it opens normally.
+        for n in ["a.txt", "log.txt.gz", "dump.sql.xz", "a.bz2", "x.zst", "tar.gz"] {
+            #expect(!ArchiveBrowser.isArchive(item(n)), "\(n)")
+        }
         #expect(!ArchiveBrowser.isArchive(item("folder.zip", dir: true)))
     }
 
