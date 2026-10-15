@@ -140,6 +140,19 @@ bound. Filename timings include scope/path filtering and result-id creation, but
 metadata reads. SearchRunner publishes an initial batch after 50 materialized hits, then completes off the main
 thread. Indexed filename typing uses a 15 ms debounce; fallback/content typing retains 300 ms.
 
+## Crawl scheduling under load
+
+Small trees are read on the calling worker. The crawler starts parallel readers only after 2,000 entries and when
+several folders are pending, and never starts more readers than pending folders. This avoids reserving a group of
+threads waiting on a condition for each tiny root while parallel tests or other background jobs occupy the worker
+pools. The crawl remains off the main thread; large trees retain parallel bulk reads.
+
+A controlled combined SwiftPM runner with coverage and the original 10-second startup deadline reproduced three
+startup failures with the bulk crawler, all after successful watcher startup (`Index crawling`). With the small-tree
+change alone, every index test passed under that same deadline. The normal tests keep generous waits for busy
+machines. Startup failures include the complete index status and phase, distinguishing queued work, snapshot loading,
+watcher startup, crawling and watcher unavailability.
+
 ## Verification and limits
 
 Core tests cover term/phrase folding, operators, dates, invalid syntax, scope boundaries, subtree counts, cancellation, hits split across parallel parts (order and limit), paths across slashes and roots, POSIX/ICU regex parity, extensions as `pathExtension`, posting-list intersection and copy-on-write, operator hints, round-trip persistence and malformed or truncated files. Crawler tests cover depth-first contiguous subtrees, packages, content indexing limits, unreadable folders and cancellation. Service tests use actual scratch files and FSEvents for create/rename/delete, bursts, offline resume from an initial saved cursor, snapshot reload, unreadable-subtree fallback, package/self-storage exclusion, bounded special-file reads, disabled-index fallback, and refreshing/stopping an open SearchRunner. The unchanged bundled-tool tests verify fd/ripgrep behavior too.
