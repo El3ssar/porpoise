@@ -159,7 +159,7 @@ public final class FileOperationsController {
     }
 
     /// Finder: items on a volume without a Trash can only be deleted right away, after asking.
-    private func offerDelete(_ urls: [URL], window: AnyObject?) {
+    func offerDelete(_ urls: [URL], window: AnyObject?) {
         let q = Confirmation(
             message: urls.count == 1
                 ? "“\(urls[0].lastPathComponent)” can't be moved to the Trash. Do you want to delete it immediately?"
@@ -185,9 +185,12 @@ public final class FileOperationsController {
     }
 
     /// Empties the Trash of the home folder and of every mounted volume, as Finder does.
-    public func emptyTrash(window: AnyObject?) {
+    public func emptyTrash(window: AnyObject?) { emptyTrash(Self.allTrashFolders(), window: window) }
+
+    /// Empties these Trash folders (tests pass their own, never the user's Trash).
+    func emptyTrash(_ folders: [URL], window: AnyObject?) {
         let fm = FileManager.default
-        let items = Self.allTrashFolders().flatMap { (try? fm.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? [] }
+        let items = folders.flatMap { (try? fm.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? [] }
         if items.isEmpty { return }
         if Settings.shared.confirmEmptyTrash {
             let q = Confirmation(
