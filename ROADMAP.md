@@ -56,7 +56,11 @@ Each phase can ship in small, focused changes. Do not wait for the whole roadmap
   optional tool, never a reason to delete automatically.
 - **App cleanup:** offer related support files when trashing an app. Explain each match and let the user select
   what goes; never remove another app's shared data just because a name matches.
+  *Unreleased: native review with sizes/reasons and unchecked related files; whole bundle IDs and exact names,
+  verified exclusive app-group entitlements, shared-owner exclusions, changed-file revalidation, Trash and Undo.*
 - **Create New:** extend templates with variables and previews; allow importing and exporting personal templates.
+  *Unreleased: Create New › From Template, editable source and resolved previews, date/time/user/name/counters,
+  personal template editing in Application Support, ordinary-file imports and versioned archive import/export.*
 
 **Done when:** batch changes and undo are checked on real files, duplicate detection ignores false matches,
 and a collected selection works across folders without losing the original locations.

@@ -78,7 +78,7 @@ public final class FileOperationsController {
     /// `sound` plays once the job has done something (Finder's trash sounds).
     public func run(
         _ kind: FileOperationKind, _ urls: [URL], to folder: URL? = nil, window: AnyObject?, sound: FinderSound? = nil,
-        done: (([URL]) -> Void)? = nil
+        allowDeleteFallback: Bool = true, done: (([URL]) -> Void)? = nil
     ) {
         guard !urls.isEmpty else { return }
         if urls.contains(where: { !$0.isFileURL }) || (folder.map { !$0.isFileURL } ?? false) {
@@ -108,7 +108,14 @@ public final class FileOperationsController {
                 if record != nil && !deniedLeft { sound?.play() }
                 let errs = job.errors + (fatal.map { [($0 as? LocalizedError)?.errorDescription ?? $0.localizedDescription] } ?? [])
                 if !errs.isEmpty && !job.isCancelled { self.showErrors(errs, window: window) }
-                if !job.untrashable.isEmpty && !job.isCancelled { self.offerDelete(job.untrashable, window: window) }
+                if !job.untrashable.isEmpty && !job.isCancelled {
+                    if allowDeleteFallback {
+                        self.offerDelete(job.untrashable, window: window)
+                    } else {
+                        self.showErrors(
+                            ["These items could not be moved to Trash: " + job.untrashable.map(\.path).joined(separator: ", ")], window: window)
+                    }
+                }
                 if !job.denied.isEmpty && !job.isCancelled {
                     self.retryDenied(kind, job.denied, targets: job.deniedTargets, to: folder, window: window) { more in
                         if record != nil || !more.isEmpty { sound?.play() }
@@ -147,7 +154,19 @@ public final class FileOperationsController {
         }
         let local = urls.filter { $0.isFileURL && !AppLibrary.isBuiltIn($0) }
         guard !local.isEmpty else { return }
-        if Settings.shared.confirmTrash {
+        let applications = local.filter { $0.pathExtension.lowercased() == "app" }
+        if !applications.isEmpty, let ui, ui.reviewsAppCleanup {
+            ui.reviewAppCleanup(local, window: window) { related in
+                guard let related else { return }
+                self.trashLocal(Array(Set(local + related)), window: window, sound: sound, allowDeleteFallback: false, confirmed: true)
+            }
+            return
+        }
+        trashLocal(local, window: window, sound: sound, allowDeleteFallback: true)
+    }
+
+    private func trashLocal(_ local: [URL], window: AnyObject?, sound: FinderSound, allowDeleteFallback: Bool, confirmed: Bool = false) {
+        if !confirmed && Settings.shared.confirmTrash {
             let q = Confirmation(
                 message: local.count == 1
                     ? "Do you really want to move “\(local[0].lastPathComponent)” to the Trash?"
@@ -155,7 +174,7 @@ public final class FileOperationsController {
                 confirmTitle: "Move to Trash", suppressible: true)
             guard confirm(q, window: window, dontAskAgain: { Settings.shared.confirmTrash = false }) else { return }
         }
-        run(.trash, local, window: window, sound: sound)
+        run(.trash, local, window: window, sound: sound, allowDeleteFallback: allowDeleteFallback)
     }
 
     /// Finder: items on a volume without a Trash can only be deleted right away, after asking.

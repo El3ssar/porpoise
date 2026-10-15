@@ -58,6 +58,16 @@ extension MainWindowController {
 
     @objc func createFolder(_ sender: Any?) { createItem(.folder) }
 
+    @objc func createFromTemplate(_ sender: Any?) {
+        guard writable, view.url.isFileURL else { return }
+        TemplateWindow(folder: view.url) { [weak self] url in
+            FileOperationsController.shared.pushUndo(.created([url]))
+            FileOperationsController.notifyChanged([url])
+            guard let self, self.view.url.standardizedFileURL == url.deletingLastPathComponent().standardizedFileURL else { return }
+            self.view.pendingSelect = url; self.view.reload()
+        }.present()
+    }
+
     @objc func createFile(_ sender: NSMenuItem) {
         guard let kind = NewItemKind(rawValue: sender.tag) else { return }
         createItem(kind)

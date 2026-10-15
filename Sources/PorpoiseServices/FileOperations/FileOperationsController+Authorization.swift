@@ -30,6 +30,7 @@ extension FileOperationsController {
         let ok = authorize(verb: Self.permissionVerb(kind), items: remaining, commands: plan.commands, window: window)
         // Remember where they came from, so "Restore" can put them back.
         if ok && !plan.trashed.isEmpty {
+            pushUndo(.trashed(plan.trashed))
             recordTrash(.trashed(plan.trashed))
             // Yours from now on: emptying the Trash won't need the helper for them.
             PrivilegedHelper.takeOwnership(of: plan.trashed.map(\.inTrash.path))

@@ -5,6 +5,19 @@ import PorpoiseServices
 /// The file operations' dialogs and progress panel (`FileOperationsController.ui`).
 final class FileOperationsDialogs: FileOperationsUI {
     private let jobsPanel = JobsPanel()
+    var reviewsAppCleanup: Bool { true }
+
+    func reviewAppCleanup(_ items: [URL], window: AnyObject?, completion: @escaping ([URL]?) -> Void) {
+        let applications = items.filter { $0.pathExtension.lowercased() == "app" }
+        let env = ProcessInfo.processInfo.environment
+        let libraries = Settings.isTesting ? env["PORPOISE_CLEANUP_LIBRARY"].map { [URL(fileURLWithPath: $0)] } : nil
+        let roots = Settings.isTesting ? env["PORPOISE_CLEANUP_APPS"].map { [URL(fileURLWithPath: $0)] } : nil
+        AppCleanupWindow(
+            applications: applications, originals: items, libraries: libraries ?? AppCleanupScanner.libraries,
+            catalogRoots: roots ?? (AppLibrary.roots + [URL(fileURLWithPath: "/System/Library/CoreServices")]),
+            completion: completion
+        ).present()
+    }
 
     func confirm(_ q: Confirmation, window: AnyObject?) -> (confirmed: Bool, dontAskAgain: Bool) {
         let a = NSAlert()

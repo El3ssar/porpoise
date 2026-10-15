@@ -118,6 +118,8 @@ extension MainWindowController {
         for k in NewItemKind.allCases where k != .folder {
             m.addItem(.make(k.menuTitle, #selector(createFile(_:)), icon: k.icon, tag: k.rawValue))
         }
+        m.addItem(.separator())
+        m.addItem(.make("From Template…", #selector(createFromTemplate(_:)), icon: "document-new"))
         return m
     }
 

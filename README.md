@@ -91,6 +91,17 @@ for removal automatically: apply a keep rule (newest, oldest, shortest path, or 
 copies, then move them to Trash. At least one copy must remain; files and keepers are revalidated before the move.
 Use **Edit › Undo** to restore them.
 
+## Application cleanup and templates
+
+Move an app to Trash to review related Library files, with sizes and matching reasons. Related files start unchecked;
+shared app groups, ambiguous names and files claimed by other installed apps are kept. The selected app and reviewed
+files move to Trash with Undo; this cleanup never offers permanent deletion.
+
+Choose **Create New › From Template…** for an editable template and a resolved filename/content preview. Use
+`{date}`, `{time}`, `{user}`, `{name}`, `{counter}` or padded counters such as `{counter:03}`. Counters choose an unused
+filename; existing files are never overwritten. Save/edit personal templates, import ordinary files or template
+archives, export portable archives, and open the template folder in Application Support.
+
 ## Appearance and terminals
 
 Settings › Appearance previews colour changes in open windows. Import KDE `.colors` files or Porpoise theme JSON,

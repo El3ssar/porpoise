@@ -15,6 +15,14 @@ public protocol FileOperationsUI: AnyObject {
     func jobFinished(_ job: FileJob)
     /// Running commands as administrator failed (through the helper or the password prompt).
     func showAuthorizationError(_ message: String)
+    /// Selected items include applications. nil cancels Trash; empty keeps every support file.
+    func reviewAppCleanup(_ items: [URL], window: AnyObject?, completion: @escaping ([URL]?) -> Void)
+    var reviewsAppCleanup: Bool { get }
+}
+
+public extension FileOperationsUI {
+    var reviewsAppCleanup: Bool { false }
+    func reviewAppCleanup(_ items: [URL], window: AnyObject?, completion: @escaping ([URL]?) -> Void) { completion([]) }
 }
 
 /// A question before an operation, or a notice when `confirmTitle` is nil (just "OK").

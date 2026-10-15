@@ -53,6 +53,8 @@ extension MainWindowController: NSMenuItemValidation {
         case #selector(extractHere(_:)):
             return view.model.selectedItems.first.map { $0.url.isFileURL && Self.extractableExtensions.contains($0.fileExtension.lowercased()) }
                 ?? false
+        case #selector(createFromTemplate(_:)):
+            return writable && view.url.isFileURL
         case #selector(createFolder(_:)), #selector(createFile(_:)):
             return writable
         case #selector(addToPlaces(_:)):
