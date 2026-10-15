@@ -10,7 +10,7 @@
   import ordinary files or portable template archives, export archives, and open the Application Support template folder.
 - **Appearance polish.** Theme preview cards, grouped settings and colour grids; folder colours now cover fixed-colour
   artwork, special folders, sidebar icons and native folders at every size, preserving shading for very dark and pale colours.
-  Added trimmed Papirus, Breeze, Fluent, WhiteSur and Colloid icon themes (about 3.1 MB of artwork and licences).
+  Added trimmed Papirus, Breeze, Fluent, WhiteSur and Colloid icon themes (about 3.2 MB of artwork and licences).
 
 - **Collect files on a shelf.** Panels › Shelf (F8) holds references gathered from any folder, search or server: drag
   them in or choose Add to Shelf (⌥⌘S, also in the context menu and the command palette). Copy or move the collection

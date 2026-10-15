@@ -3,6 +3,7 @@
 
 Supports size/context and context/size trees, and N x N Papirus directories.
 Records a self-contained freedesktop index, so these subsets work with normal theme lookup.
+An optional fourth argument strips upstream filename prefixes (Fluent uses default-).
 """
 import pathlib
 import re
@@ -20,8 +21,11 @@ for p in pathlib.Path("Sources").rglob("*.swift"):
 names.update("folder unknown text-x-generic user-home user-desktop user-trash user-trash-full".split())
 contexts = {"places", "mimetypes", "devices", "actions", "status", "emblems"}
 candidates = {}
+prefix = sys.argv[4] if len(sys.argv) > 4 else ""
 for p in sorted(source.rglob("*")):
-    if p.suffix.lower() not in {".svg", ".png", ".pdf"} or p.stem not in names or not p.is_file():
+    name = p.stem.removeprefix(prefix) if prefix else p.stem
+    name = {"folder-video": "folder-videos", "folder-publicshare": "folder-public"}.get(name, name)
+    if p.suffix.lower() not in {".svg", ".png", ".pdf"} or name not in names or not p.is_file():
         continue
     parts = p.relative_to(source).parts
     context = next((part for part in parts[:-1] if part in contexts), None)
@@ -29,7 +33,7 @@ for p in sorted(source.rglob("*")):
         continue
     size = next((part for part in parts[:-1] if re.fullmatch(r"\d+(?:x\d+)?", part)), "scalable")
     n = int(size.split("x")[0]) if size != "scalable" else 64
-    candidates.setdefault((context, p.stem), []).append((n, p))
+    candidates.setdefault((context, name), []).append((n, p))
 dirs = set()
 for (context, name), choices in sorted(candidates.items()):
     for target, pixels in [("16", 16), ("22", 22), ("scalable", 64)]:

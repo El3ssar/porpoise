@@ -4,3 +4,5 @@ Revision: c8a244f571ef8fb47812bdc9dbce76546cedce69
 Licence: GPL-3.0 (see LICENSE.txt)
 Trimmed subset, symlinks resolved by scripts/import-icons.py.
 Artwork is recoloured at runtime by Porpoise.
+Import: scripts/import-icons.sh build/vendor/fluent/src DEST build/vendor/fluent/COPYING default-
+The upstream default- prefix is stripped to expose full-colour scalable folder artwork.
