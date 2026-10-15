@@ -111,7 +111,13 @@ final class BatchRenameDialog: NSWindowController, NSTableViewDataSource, NSTabl
 
     private func reloadPresets() {
         presetMenu.removeAllItems(); presetMenu.addItem(withTitle: "Saved presets…")
-        presetMenu.addItems(withTitles: Settings.shared.batchRenamePresets.map(\.name))
+        // Items of their own (addItems(withTitles:) merges equal titles, so a preset named "Saved presets…" would
+        // shift every other one), each carrying its preset's name.
+        for name in Settings.shared.batchRenamePresets.map(\.name) {
+            let item = NSMenuItem(title: name, action: nil, keyEquivalent: "")
+            item.representedObject = name
+            presetMenu.menu?.addItem(item)
+        }
     }
     private func preset() throws -> BatchRenamePreset {
         let mode: RenameExtension
@@ -178,9 +184,10 @@ final class BatchRenameDialog: NSWindowController, NSTableViewDataSource, NSTabl
     @objc private func extensionChanged() { extensionText.isEnabled = extensionMenu.indexOfSelectedItem == 2; updatePreview() }
     func controlTextDidChange(_ obj: Notification) { updatePreview() }
     @objc private func loadPreset() {
-        let presets = Settings.shared.batchRenamePresets, index = presetMenu.indexOfSelectedItem - 1
-        guard presets.indices.contains(index) else { return }
-        let preset = presets[index]; presetName.stringValue = preset.name
+        guard let name = presetMenu.selectedItem?.representedObject as? String,
+            let preset = Settings.shared.batchRenamePresets.first(where: { $0.name == name })
+        else { return }
+        presetName.stringValue = preset.name
         rows = []
         switch preset.extensionMode {
         case .keep: extensionMenu.selectItem(at: 0)
@@ -196,12 +203,13 @@ final class BatchRenameDialog: NSWindowController, NSTableViewDataSource, NSTabl
             guard !preset.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 status.stringValue = "Enter a name for the preset."; return
             }
-            Settings.shared.saveBatchRenamePreset(preset); reloadPresets(); presetMenu.selectItem(withTitle: preset.name)
+            Settings.shared.saveBatchRenamePreset(preset); reloadPresets()
+            presetMenu.select(presetMenu.itemArray.first { $0.representedObject as? String == preset.name })
             status.stringValue = "Preset saved."
         } catch { status.stringValue = error.localizedDescription }
     }
     private func deletePreset() {
-        guard presetMenu.indexOfSelectedItem > 0, let name = presetMenu.titleOfSelectedItem else { return }
+        guard let name = presetMenu.selectedItem?.representedObject as? String else { return }
         Settings.shared.batchRenamePresets.removeAll { $0.name == name }; reloadPresets()
     }
     @objc private func cancelRename() { guard !busy else { return }; finish() }

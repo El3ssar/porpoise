@@ -3,13 +3,14 @@ import Foundation
 import PorpoiseCore
 
 public enum FileChecksumError: Error, LocalizedError {
-    case changed(String), notRegular(String), unsafeReview, noKeeper
+    case changed(String), notRegular(String), unsafeReview, noKeeper, notDownloaded(String)
     public var errorDescription: String? {
         switch self {
         case .changed(let p): return "File changed while reading: \(p)";
         case .notRegular(let p): return "Not a physical regular file: \(p)";
         case .unsafeReview: return "Duplicate files changed since scanning. Scan again before moving them to the Trash.";
         case .noKeeper: return "Keep at least one file in every duplicate group."
+        case .notDownloaded(let p): return "Not downloaded (stored only in the cloud), so not read: \(p)"
         }
     }
 }
@@ -26,6 +27,9 @@ public enum FileChecksums {
         defer { try? handle.close() }
         var before = stat()
         guard fstat(fd, &before) == 0, before.st_mode & S_IFMT == S_IFREG else { throw FileChecksumError.notRegular(url.path) }
+        // iCloud and File Provider files kept only in the cloud (SF_DATALESS): reading would download them, gigabytes
+        // for a duplicate search over a cloud folder.
+        if before.st_flags & 0x4000_0000 != 0 { throw FileChecksumError.notDownloaded(url.path) }
         if let expected {
             guard expected.identity == DiskIdentity(device: before.st_dev, inode: UInt64(before.st_ino)), expected.size == before.st_size,
                 abs(expected.modified.timeIntervalSince1970 - (Double(before.st_mtimespec.tv_sec) + Double(before.st_mtimespec.tv_nsec) / 1e9))

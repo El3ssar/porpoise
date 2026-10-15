@@ -145,10 +145,44 @@ public struct AppearancePreferences: Codable, Equatable, Sendable {
     public var externalCommand = "open -a Terminal {dir}"
     public var appearance = "system"
     public init() {}
+    /// Fields missing from older files (or saved settings) keep their defaults: adding a field must not make every
+    /// stored appearance unreadable (the synthesized decoder requires every key).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(type(of: version).self, forKey: .version) ?? version
+        themeName = try c.decodeIfPresent(type(of: themeName).self, forKey: .themeName) ?? themeName
+        customTheme = try c.decodeIfPresent(type(of: customTheme).self, forKey: .customTheme) ?? nil
+        lightThemeName = try c.decodeIfPresent(type(of: lightThemeName).self, forKey: .lightThemeName) ?? lightThemeName
+        darkThemeName = try c.decodeIfPresent(type(of: darkThemeName).self, forKey: .darkThemeName) ?? darkThemeName
+        iconTheme = try c.decodeIfPresent(type(of: iconTheme).self, forKey: .iconTheme) ?? iconTheme
+        folderVariant = try c.decodeIfPresent(type(of: folderVariant).self, forKey: .folderVariant) ?? folderVariant
+        uiFontName = try c.decodeIfPresent(type(of: uiFontName).self, forKey: .uiFontName) ?? uiFontName
+        uiFontSize = try c.decodeIfPresent(type(of: uiFontSize).self, forKey: .uiFontSize) ?? uiFontSize
+        fileFontName = try c.decodeIfPresent(type(of: fileFontName).self, forKey: .fileFontName) ?? fileFontName
+        fileFontSize = try c.decodeIfPresent(type(of: fileFontSize).self, forKey: .fileFontSize) ?? fileFontSize
+        density = try c.decodeIfPresent(type(of: density).self, forKey: .density) ?? density
+        iconsSize = try c.decodeIfPresent(type(of: iconsSize).self, forKey: .iconsSize) ?? iconsSize
+        compactSize = try c.decodeIfPresent(type(of: compactSize).self, forKey: .compactSize) ?? compactSize
+        detailsSize = try c.decodeIfPresent(type(of: detailsSize).self, forKey: .detailsSize) ?? detailsSize
+        shell = try c.decodeIfPresent(type(of: shell).self, forKey: .shell) ?? shell
+        customShell = try c.decodeIfPresent(type(of: customShell).self, forKey: .customShell) ?? customShell
+        shellArguments = try c.decodeIfPresent(type(of: shellArguments).self, forKey: .shellArguments) ?? shellArguments
+        terminalFontName = try c.decodeIfPresent(type(of: terminalFontName).self, forKey: .terminalFontName) ?? terminalFontName
+        terminalFontSize = try c.decodeIfPresent(type(of: terminalFontSize).self, forKey: .terminalFontSize) ?? terminalFontSize
+        terminalScheme = try c.decodeIfPresent(type(of: terminalScheme).self, forKey: .terminalScheme) ?? terminalScheme
+        customTerminalPalette = try c.decodeIfPresent(type(of: customTerminalPalette).self, forKey: .customTerminalPalette) ?? nil
+        cursor = try c.decodeIfPresent(type(of: cursor).self, forKey: .cursor) ?? cursor
+        scrollback = try c.decodeIfPresent(type(of: scrollback).self, forKey: .scrollback) ?? scrollback
+        externalTerminal = try c.decodeIfPresent(type(of: externalTerminal).self, forKey: .externalTerminal) ?? externalTerminal
+        externalCommand = try c.decodeIfPresent(type(of: externalCommand).self, forKey: .externalCommand) ?? externalCommand
+        appearance = try c.decodeIfPresent(type(of: appearance).self, forKey: .appearance) ?? appearance
+    }
     public func validate() throws {
         guard version == 1, [uiFontSize, fileFontSize, terminalFontSize].allSatisfy({ $0.isFinite && (6...72).contains($0) }),
             [iconsSize, compactSize, detailsSize].allSatisfy({ (8...512).contains($0) }), (0...1_000_000).contains(scrollback),
-            ["block", "bar", "underline"].contains(cursor), ["system", "light", "dark"].contains(appearance)
+            ["block", "bar", "underline"].contains(cursor), ["system", "light", "dark"].contains(appearance),
+            // Becomes part of an icon's file name: a plain name only.
+            !folderVariant.isEmpty, folderVariant.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_" })
         else { throw AppearanceError.invalidTheme }
         try customTheme?.validate()
         if let p = customTerminalPalette, p.colors.count != 16 { throw AppearanceError.invalidTerminalScheme }

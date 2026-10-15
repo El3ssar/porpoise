@@ -64,7 +64,16 @@ import Testing
     // MARK: Allowlist
 
     @Test func allowsExactlyTheListedTools() {
-        for tool in PorpoiseHelperInfo.allowedTools { #expect(HelperRequests.refusal([tool, "x"]) == nil, "\(tool)") }
+        // Each tool in a form Porpoise sends.
+        let sent: [[String]] = [
+            ["/bin/mv", "--", "/Users/me/a", "/Users/me/.Trash/a"], ["/bin/mv", "-n", "--", "/Applications/A.app", "/Applications/B.app"],
+            ["/bin/cp", "-pR", "--", "/Users/me/a", "/Library/Fonts/a"], ["/bin/cp", "--", "/tmp/x", "/Applications/new.txt"],
+            ["/bin/ln", "-s", "--", "../relative target", "/usr/local/bin/tool"], ["/bin/mkdir", "--", "/Library/Application Support/X"],
+            ["/bin/chmod", "-h", "--", "755", "/Applications/A.app"], ["/bin/rm", "-rf", "--", "/Applications/A.app"],
+            ["/usr/bin/chflags", "-R", "nouchg,noschg", "/Library/Old/thing"],
+        ]
+        for args in sent { #expect(HelperRequests.refusal(args) == nil, "\(args)") }
+        #expect(Set(sent.map { $0[0] }) == PorpoiseHelperInfo.allowedTools)
         #expect(PorpoiseHelperInfo.allowedTools.allSatisfy { $0.hasPrefix("/") })
         #expect(
             !PorpoiseHelperInfo.allowedTools.contains { $0.hasSuffix("/sh") || $0.hasSuffix("bash") || $0.hasSuffix("zsh") || $0.hasSuffix("chown") })
@@ -83,6 +92,32 @@ import Testing
             #expect(r?.hasPrefix("Porpoise's helper doesn't run") == true)
         }
         #expect(HelperRequests.refusal([]) == "Porpoise's helper doesn't run nothing.")
+    }
+
+    /// The tools only in the shapes Porpoise uses: no other flags, no setuid, nothing written into the system's
+    /// own folders, no volume or system root removed, no relative paths or "..".
+    @Test func refusesOtherArgumentsOfTheAllowedTools() throws {
+        let s = try Scratch()
+        try s.symlink("toEtc", to: "/private/etc")
+        let bad: [[String]] = [
+            ["/bin/rm", "-rf", "/"], ["/bin/rm", "-rf", "--", "/"], ["/bin/rm", "-rf", "--", "/Users"], ["/bin/rm", "-rf", "--", "/Volumes/Disk"],
+            ["/bin/rm", "-rf", "--", "/System/Library"], ["/bin/rm", "-rf", "--", "/usr/bin/true"], ["/bin/rm", "-f", "--", "/x/y"],
+            ["/bin/rm", "-rf", "--", "relative/x"], ["/bin/rm", "-rf", "--", "/x/../etc/y"], ["/bin/rm", "-rf", "--", "/a/b", "/c/d"],
+            ["/bin/cp", "--", "/tmp/x", "/etc/sudoers"], ["/bin/cp", "--", "/tmp/x", "/private/etc/sudoers"],
+            ["/bin/cp", "-pR", "--", "/tmp/x", "/Library/LaunchDaemons/evil.plist"], ["/bin/cp", "-f", "--", "/tmp/x", "/Users/me/y"],
+            ["/bin/mv", "--", "/tmp/x", "/LIBRARY/launchdaemons/evil.plist"], ["/bin/mv", "-f", "/a/b", "/c/d"],
+            ["/bin/mv", "--", "/tmp/x", s.path("toEtc").path + "/sudoers"],  // a link on the way into /private/etc
+            ["/bin/ln", "-s", "--", "/tmp/evil", "/Library/LaunchAgents/x.plist"], ["/bin/ln", "--", "/a", "/b/c"],
+            ["/bin/ln", "-s", "--", "", "/b/c"],
+            ["/bin/chmod", "4755", "/Applications/A.app"], ["/bin/chmod", "--", "755", "/Applications/A.app"],
+            ["/bin/chmod", "-h", "--", "4755", "/Applications/A.app"], ["/bin/chmod", "-h", "--", "2755", "/x/y"],
+            ["/bin/chmod", "-h", "--", "u+s", "/x/y"], ["/bin/chmod", "-h", "--", "666", "/private/etc/periodic/daily/x"],
+            ["/bin/mkdir", "-p", "/x/y"], ["/bin/mkdir", "--", "/usr/libexec/x"], ["/usr/bin/chflags", "uchg", "/x/y"],
+            ["/usr/bin/chflags", "-R", "nouchg,noschg", "/"],
+        ]
+        for args in bad {
+            #expect(HelperRequests.refusal(args)?.hasSuffix("like this.") == true, "\(args)")
+        }
     }
 
     // MARK: Running the tools (as the current user, in a scratch folder)
@@ -192,6 +227,17 @@ import Testing
         ] {
             #expect(HelperRequests.ownershipTarget(path: p, uid: getuid(), home: home) == nil, "\(p)")
         }
+    }
+
+    /// A `.Trash` that is a symlink (to /private/etc, say) is not the user's Trash.
+    @Test func noOwnershipThroughASymlinkedTrash() throws {
+        let s = try Scratch()
+        try s.file("outside/secret", "s")
+        try s.folder("home")
+        try s.symlink("home/.Trash", to: s.path("outside").path)
+        let home = s.path("home").path
+        #expect(HelperRequests.ownershipTarget(path: s.path("home/.Trash/secret").path, uid: getuid(), home: home) == nil)
+        #expect(HelperRequests.takeOwnership(path: s.path("home/.Trash/secret").path, uid: getuid(), gid: getgid(), home: home) != nil)
     }
 
     @Test func aTrashReachedThroughASymlinkedHomeStillCounts() throws {

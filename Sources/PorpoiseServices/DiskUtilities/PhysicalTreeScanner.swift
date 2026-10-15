@@ -54,8 +54,11 @@ public enum PhysicalTreeScanner {
         let entries = roots.compactMap { url -> DiskEntry? in
             do { return try entry(url) } catch let err { error(url.path, err.localizedDescription); return nil }
         }
-        let unique = entries.filter { child in
-            !entries.contains { ancestor in
+        // The same folder named twice (another case, a firmlinked path): once, or its files would count as hard links.
+        var identities = Set<DiskIdentity>()
+        let distinct = entries.filter { identities.insert($0.identity).inserted }
+        let unique = distinct.filter { child in
+            !distinct.contains { ancestor in
                 ancestor.directory && ancestor.url != child.url && (crossVolumes || ancestor.identity.device == child.identity.device)
                     && NameIndex.contains(path: child.url.path, in: ancestor.url.path)
             }

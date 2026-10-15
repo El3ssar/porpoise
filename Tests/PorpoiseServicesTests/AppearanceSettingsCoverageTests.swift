@@ -99,7 +99,7 @@ import Testing
             #expect(throws: (any Error).self) { try s.importAppearance(data) }
         }
         var badCommand = AppearancePreferences(); badCommand.externalTerminal = .custom; badCommand.externalCommand = "x '{dir}'"
-        #expect(throws: AppearanceError.self) { try s.importAppearance(JSONEncoder().encode(badCommand)) }
+        #expect(throws: AppearanceError.self) { try s.importAppearance(JSONEncoder().encode(badCommand), includingCommands: true) }
         #expect(s.appearancePreferences.themeName == "Nord" && s.labelFontName == "Monaco")
         var good = AppearancePreferences(); good.appearance = "light"; good.fileFontName = "Courier"; good.fileFontSize = 20
         try s.importAppearance(JSONEncoder().encode(good))

@@ -43,10 +43,16 @@ final class DuplicateWindow: DiskUtilityWindow {
             })
     }
     private func reload() {
+        // Clone families once per group, not once per file (thousands of copies of one file).
+        let clones = groups.map(\.clones)
+        var position: [Int: Int] = [:]
         rows = files.map { group, file in
-            [
+            let i = position[group, default: 0]
+            position[group] = i + 1
+            let clone = clones[group].indices.contains(i) && groups[group].files[i] == file ? clones[group][i] : groups[group].isClone(file)
+            return [
                 marked.contains(file.entry.url) ? "✓" : "", "\(group + 1)", file.entry.url.path, FileFormat.size(file.entry.size),
-                groups[group].isClone(file) ? "APFS clone family" : (file.cloneID == nil ? "Sharing unknown" : "Separate clone family"),
+                clone ? "APFS clone family" : (file.cloneID == nil ? "Sharing unknown" : "Separate clone family"),
             ]
         }
         table.reloadData()
@@ -77,8 +83,7 @@ final class DuplicateWindow: DiskUtilityWindow {
         guard !busy else { return }
         let rule = DuplicateKeepRule.allCases[rules.indexOfSelectedItem]
         if rule == .inFolder && preferredFolder == nil { status.stringValue = "Choose a keep folder first."; return }
-        marked = Set(
-            groups.flatMap { group in group.files.map(\.entry.url).filter { $0 != rule.keeper(in: group, preferredFolder: preferredFolder) } })
+        marked = rule.marked(in: groups, preferredFolder: preferredFolder)
         reload(); status.stringValue = "Marked copies: \(marked.count). Review the list before moving to Trash."
     }
     private func reveal() {

@@ -183,10 +183,26 @@ final class InformationPanel: NSView {
         hoveredURL = Settings.shared.infoShowHovered ? hovered : nil
         let urls: [URL]
         if let h = hoveredURL { urls = [h] } else if !c.model.selection.isEmpty { urls = c.model.selectedItems.map(\.url) } else { urls = [c.url] }
+        hoverWork?.cancel()
         guard urls != shownURLs else { return }
-        shownURLs = urls
-        update(urls)
+        // Moving across rows: only the row the pointer rests on is read (each reads the disk and Spotlight).
+        guard hoveredURL != nil else {
+            shownURLs = urls
+            update(urls)
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.shownURLs != urls else { return }
+            self.shownURLs = urls
+            self.update(urls)
+        }
+        hoverWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hoverDelay, execute: work)
     }
+
+    private var hoverWork: DispatchWorkItem?
+    /// How long the pointer rests on a row before the panel shows it.
+    private static let hoverDelay: TimeInterval = 0.08
 
     /// The item for a URL: read from disk for local files; remote items come from the view's listing.
     private func item(for u: URL) -> FileItem? {

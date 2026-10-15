@@ -81,9 +81,13 @@ public final class FolderUsageCache: @unchecked Sendable {
     private var values: [String: Cached] = [:]
     public init() {}
     public func invalidate(below url: URL) {
-        lock.withLock { values = values.filter { !NameIndex.contains(path: $0.key.components(separatedBy: "\0")[0], in: url.path) } }
+        // Keys are real paths (see `size`): so is the folder compared with them.
+        let base = IndexPath.canonical(url.path)
+        lock.withLock { values = values.filter { !NameIndex.contains(path: $0.key.components(separatedBy: "\0")[0], in: base) } }
     }
-    public func size(_ url: URL, depth: Int, cancellation: DiskCancellation = DiskCancellation()) -> Int64 {
+    public func size(_ given: URL, depth: Int, cancellation: DiskCancellation = DiskCancellation()) -> Int64 {
+        // A symlink to a folder (shown as a folder) is measured as that folder, not as a link of 0 bytes.
+        let url = URL(fileURLWithPath: IndexPath.canonical(given.path))
         let key = url.path + "\0" + String(depth)
         let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
         if let hit = lock.withLock({ values[key] }), hit.modified == modified && Date().timeIntervalSince(hit.date) < 3 { return hit.size }

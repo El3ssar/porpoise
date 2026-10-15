@@ -3,12 +3,80 @@ import Foundation
 /// What the privileged helper does with a request, apart from XPC and finding out who asked: checking it and running
 /// the tool. Kept here so it can be tested in-process, without root or launchd.
 public enum HelperRequests {
-    /// Why the helper won't run `arguments` (the tool first), or nil when it's one of `PorpoiseHelperInfo.allowedTools`.
+    /// Why the helper won't run `arguments` (the tool first), or nil when it is one of `PorpoiseHelperInfo.allowedTools`
+    /// in exactly a form Porpoise sends (`administratorCommands`, `renameCommands`, New Item, Properties): fixed
+    /// options, then absolute paths. A process that got into Porpoise can't make it run anything else as root:
+    /// no other flags, no `chmod` to setuid, nothing written into the system's own folders.
     public static func refusal(_ arguments: [String]) -> String? {
         guard let tool = arguments.first, PorpoiseHelperInfo.allowedTools.contains(tool) else {
             return "Porpoise's helper doesn't run \(arguments.first ?? "nothing")."
         }
-        return nil
+        let a = Array(arguments.dropFirst())
+        let ok: Bool
+        switch tool {
+        case "/bin/mv":
+            ok =
+                (a.count == 3 && a[0] == "--" || a.count == 4 && a[0] == "-n" && a[1] == "--")
+                && removable(a[a.count - 2]) && writable(a[a.count - 1])
+        case "/bin/cp":
+            ok =
+                (a.count == 3 && a[0] == "--" || a.count == 4 && a[0] == "-pR" && a[1] == "--")
+                && isPath(a[a.count - 2]) && writable(a[a.count - 1])
+        case "/bin/ln":
+            // The link's target is only text stored in the link: any, but not empty.
+            ok = a.count == 4 && a[0] == "-s" && a[1] == "--" && !a[2].isEmpty && !a[2].contains("\0") && writable(a[3])
+        case "/bin/mkdir":
+            ok = a.count == 2 && a[0] == "--" && writable(a[1])
+        case "/bin/chmod":
+            // -h: a symlink's own mode, never its target's. No setuid, setgid or sticky bits.
+            ok =
+                a.count == 4 && a[0] == "-h" && a[1] == "--" && a[2].count <= 4 && a[2].allSatisfy { ("0"..."7").contains($0) }
+                && (Int(a[2], radix: 8) ?? 0o7000) & 0o7000 == 0 && writable(a[3])
+        case "/bin/rm":
+            ok = a.count == 3 && a[0] == "-rf" && a[1] == "--" && removable(a[2])
+        case "/usr/bin/chflags":
+            ok = a.count == 3 && a[0] == "-R" && a[1] == "nouchg,noschg" && removable(a[2])
+        default:
+            ok = false
+        }
+        return ok ? nil : "Porpoise's helper doesn't run \(tool) like this."
+    }
+
+    /// Where nothing may be created, replaced or have its permissions changed (as their real paths, lower case:
+    /// volumes are usually case-insensitive).
+    static let protectedFolders = [
+        "/system", "/usr", "/bin", "/sbin", "/private/etc", "/private/var/root", "/library/launchdaemons", "/library/launchagents",
+        "/library/privilegedhelpertools", "/library/startupitems", "/library/security", "/private/var/db",
+    ]
+
+    /// An absolute path without "..": the helper never resolves a path relative to anything.
+    static func isPath(_ p: String) -> Bool {
+        p.hasPrefix("/") && p != "/" && !p.contains("\0") && !p.split(separator: "/").contains("..")
+    }
+
+    /// `p` with the folders leading to it resolved (a symlink on the way can't lead into a protected folder unseen).
+    static func resolvedParent(_ p: String) -> String {
+        let parent = (p as NSString).deletingLastPathComponent
+        return (realPath(parent) ?? parent) + "/" + (p as NSString).lastPathComponent
+    }
+
+    static func isProtected(_ p: String) -> Bool {
+        let r = resolvedParent(p).lowercased()
+        if r.hasPrefix("/usr/local/") { return false }  // the administrator's own tools
+        return protectedFolders.contains { r == $0 || r.hasPrefix($0 + "/") }
+    }
+
+    /// A path that may be written to (created, replaced, re-moded).
+    static func writable(_ p: String) -> Bool { isPath(p) && !isProtected(p) }
+
+    /// A path that may be moved away or removed: anything but a volume's root and the top folders of the system.
+    static func removable(_ p: String) -> Bool {
+        guard isPath(p) else { return false }
+        let r = resolvedParent(p).lowercased()
+        let parts = r.split(separator: "/")
+        if parts.count == 1 { return false }  // "/Applications", "/Users", "/private"…
+        if parts.count == 2 && parts[0] == "volumes" { return false }
+        return !["/system", "/usr", "/bin", "/sbin"].contains { r == $0 || r.hasPrefix($0 + "/") }
     }
 
     static let ownershipRefused = "Only items in your own Trash can be handed over."
@@ -18,6 +86,7 @@ public enum HelperRequests {
     public static func ownershipTarget(path: String, uid: UInt32, home: String) -> String? {
         let item = URL(fileURLWithPath: path)
         let parent = item.deletingLastPathComponent().resolvingSymlinksInPath().path
+        guard trashIsAFolder(home) else { return nil }
         let homeTrash = URL(fileURLWithPath: home).appendingPathComponent(".Trash").resolvingSymlinksInPath().path
         // The item itself, named exactly: "link/" or "link//" would make lstat (and resolving) follow a symlink.
         let target = parent + "/" + (path as NSString).lastPathComponent
@@ -42,12 +111,19 @@ public enum HelperRequests {
         // What was opened, not what the path named a moment ago: a folder on the way, swapped for a symlink, would
         // have led somewhere else. realpath, unlike resolvingSymlinksInPath, keeps "/private" as F_GETPATH does.
         let homeTrash = realPath(home + "/.Trash") ?? home + "/.Trash"
-        guard let opened = pathOf(dir),
+        guard trashIsAFolder(home), let opened = pathOf(dir),
             PorpoiseHelperInfo.isInUsersTrash(path: opened + "/" + name, resolvedParent: opened, uid: uid, resolvedHomeTrash: homeTrash)
         else { return ownershipRefused }
         var walk = OwnershipWalk(uid: uid, gid: gid)
         walk.change(name, in: dir, isTop: true)
         return walk.problem
+    }
+
+    /// The home folder may be reached through a link, but its Trash must be a folder: a `.Trash` symlinked elsewhere
+    /// (/private/etc) would make "the user's Trash" any folder they like.
+    static func trashIsAFolder(_ home: String) -> Bool {
+        var st = stat()
+        return lstat((realPath(home) ?? home) + "/.Trash", &st) == 0 && st.st_mode & S_IFMT == S_IFDIR
     }
 
     private static func pathOf(_ fd: Int32) -> String? {

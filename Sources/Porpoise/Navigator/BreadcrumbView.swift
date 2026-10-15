@@ -408,6 +408,8 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
 
     // MARK: Menus
 
+    private var subfolderRequest = 0
+
     private func subfolders(of u: URL) -> [URL] {
         if let p = RemoteFS.provider(for: u) {
             return ((try? p.list(u)) ?? []).filter { $0.isDirectory && !$0.isHidden }.map(\.url)
@@ -425,12 +427,14 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
 
     private func showSubfolderMenu(of u: URL, at r: CGRect) {
         let next = url.path.hasPrefix(u.path == "/" ? "/" : u.path + "/") ? url.pathComponents.dropFirst(u.pathComponents.count).first : nil
-        guard !u.isFileURL else { showMenu(subfolders(of: u).map { ($0, $0.lastPathComponent) }, at: r, bold: next); return }
-        // A remote folder is listed over the network: never on the main thread; the menu opens when it's there.
+        // Listed off the main thread, local folders too (a big folder, a disk on the network under /Volumes); the menu
+        // opens when the list is there, unless another one was asked for meanwhile.
+        subfolderRequest += 1
+        let request = subfolderRequest
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let folders = self?.subfolders(of: u) else { return }
             DispatchQueue.main.async {
-                guard let self, self.window != nil else { return }
+                guard let self, self.window != nil, self.subfolderRequest == request else { return }
                 self.showMenu(folders.map { ($0, $0.lastPathComponent) }, at: r, bold: next)
             }
         }

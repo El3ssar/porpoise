@@ -31,14 +31,7 @@ extension PlacesPanel {
     }
 
     /// Re-lists the Trash only when its modification date changes (this runs while drawing).
-    private func trashIsFull() -> Bool {
-        let path = TrashInfo.folder.path
-        guard let modified = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date else { return false }
-        if let s = trashState, s.modified == modified { return s.full }
-        let full = ((try? FileManager.default.contentsOfDirectory(atPath: path)) ?? []).contains { $0 != ".DS_Store" }
-        trashState = (modified, full)
-        return full
-    }
+    private func trashIsFull() -> Bool { !TrashInfo.isEmpty }
 
     // MARK: Drawing
 

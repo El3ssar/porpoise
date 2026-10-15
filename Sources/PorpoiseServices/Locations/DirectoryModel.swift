@@ -141,7 +141,14 @@ public final class DirectoryModel {
     /// Re-count every shown folder on the next rebuild (a reload: their contents may have changed meanwhile).
     private var recountFolders = false
     /// Counts from an earlier request (made with other settings) are dropped when they arrive late.
-    private var countGeneration = 0
+    /// Bumped when counts in flight no longer apply; their folder scans are cancelled with it.
+    private var countGeneration = 0 {
+        didSet {
+            countCancellation.cancel()
+            countCancellation = DiskCancellation()
+        }
+    }
+    private var countCancellation = DiskCancellation()
 
     public var selection: Set<URL> = [] { didSet { if selection != oldValue { onSelectionChanged?() } } }
     public var currentURL: URL?
@@ -589,11 +596,12 @@ public final class DirectoryModel {
         let hidden = props.showHidden
         let mode = Settings.shared.folderSizeMode
         let depth = Settings.shared.folderSizeDepth  // read here: Settings is main-thread only
+        let cancellation = countCancellation
         DispatchQueue.global(qos: .utility).async { [weak self] in
             var res: [URL: Int] = [:]
-            for u in urls {
+            for u in urls where !cancellation.isCancelled {
                 if mode == .contentSize {
-                    res[u] = Int(Self.contentSize(u, maxDepth: depth))
+                    res[u] = Int(Self.contentSize(u, maxDepth: depth, cancellation: cancellation))
                 } else {
                     res[u] = DirectoryLister.childCount(u, includeHidden: hidden) ?? -1
                 }
@@ -607,8 +615,8 @@ public final class DirectoryModel {
     }
 
     /// Size of a folder's contents, limited to `maxDepth` levels (Dolphin's "up to N levels deep").
-    static func contentSize(_ url: URL, maxDepth: Int) -> Int64 {
-        FolderUsageCache.shared.size(url, depth: maxDepth)
+    static func contentSize(_ url: URL, maxDepth: Int, cancellation: DiskCancellation = DiskCancellation()) -> Int64 {
+        FolderUsageCache.shared.size(url, depth: maxDepth, cancellation: cancellation)
     }
 
     /// Dolphin's "Use icons view mode for locations which mostly contain media files".

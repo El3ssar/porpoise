@@ -19,10 +19,12 @@ extension Settings {
     }
     public var toolbarCommands: [ToolbarCommand] {
         get {
-            guard let data = Settings.store.data(forKey: "toolbarCommands"),
-                let commands = try? JSONDecoder().decode([ToolbarCommand].self, from: data),
-                (try? ToolbarCommand.validate(commands)) != nil
+            // One by one: an item this version doesn't have (after a downgrade) is left out, not the whole layout.
+            guard let data = Settings.store.data(forKey: "toolbarCommands"), let names = try? JSONDecoder().decode([String].self, from: data)
             else { return ToolbarCommand.defaults }
+            var commands: [ToolbarCommand] = []
+            for c in names.compactMap(ToolbarCommand.init(rawValue:)) where !commands.contains(c) { commands.append(c) }
+            if !commands.contains(.location) { commands.insert(.location, at: min(4, commands.count)) }
             return commands
         }
         set {

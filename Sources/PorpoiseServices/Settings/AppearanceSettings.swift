@@ -40,8 +40,35 @@ extension Settings {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try encoder.encode(value)
     }
-    public func importAppearance(_ data: Data) throws {
-        let value = try JSONDecoder().decode(AppearancePreferences.self, from: data); try value.validate()
+    /// What a shared appearance file would have terminals run, when that differs from now: its shell, the shell's
+    /// arguments, the external terminal and its command (one line each). Empty when it changes nothing of that.
+    public func appearanceCommands(in data: Data) throws -> [String] {
+        let value = try JSONDecoder().decode(AppearancePreferences.self, from: data), now = appearancePreferences
+        var out: [String] = []
+        let shell = value.shell == .custom ? value.customShell : value.shell.rawValue
+        if value.shell != now.shell || value.customShell != now.customShell || value.shellArguments != now.shellArguments {
+            out.append("Shell: " + ([shell] + value.shellArguments).joined(separator: " "))
+        }
+        if value.externalTerminal != now.externalTerminal || value.externalCommand != now.externalCommand {
+            out.append("Terminal: " + (value.externalTerminal == .custom ? value.externalCommand : value.externalTerminal.rawValue))
+        }
+        return out
+    }
+
+    /// Takes the appearance in a shared file. What terminals run (shell, arguments, external terminal and command) comes
+    /// along only with `includingCommands` (after asking: a file from someone else could otherwise run any command the
+    /// next time a terminal opens); else those stay as they are.
+    public func importAppearance(_ data: Data, includingCommands: Bool = false) throws {
+        var value = try JSONDecoder().decode(AppearancePreferences.self, from: data)
+        if !includingCommands {
+            let current = appearancePreferences
+            value.shell = current.shell
+            value.customShell = current.customShell
+            value.shellArguments = current.shellArguments
+            value.externalTerminal = current.externalTerminal
+            value.externalCommand = current.externalCommand
+        }
+        try value.validate()
         appearancePreferences = value
         appearance = AppearanceChoice(rawValue: value.appearance) ?? .system
         labelFontName = value.fileFontName; labelFontSize = value.fileFontSize

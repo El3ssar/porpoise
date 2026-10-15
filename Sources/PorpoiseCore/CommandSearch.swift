@@ -26,7 +26,22 @@ public enum CommandSearch {
         guard needle.count <= haystack.count else { return nil }
         if needle == haystack { return 100_000 }
         if haystack.starts(with: needle) { return 90_000 - haystack.count }
-        if String(haystack).contains(String(needle)) { return 80_000 - haystack.count }
+        let text = String(haystack), word = String(needle)
+        // Starting a word inside the text ("trash" in "Empty Trash").
+        var inWord = false
+        var search = text.startIndex..<text.endIndex
+        while let r = text.range(of: word, range: search) {
+            if r.lowerBound == text.startIndex
+                || !(text[text.index(before: r.lowerBound)].isLetter || text[text.index(before: r.lowerBound)].isNumber)
+            {
+                return 80_000 - haystack.count
+            }
+            inWord = true
+            search = text.index(after: r.lowerBound)..<text.endIndex
+        }
+        // The words' initials ("nf" for "New Folder") rank above a match inside a word ("nf" in "Information").
+        if isInitials(needle, of: haystack) { return 70_000 - haystack.count }
+        if inWord { return 50_000 - haystack.count }
         let impossible = Int.min / 4
         var previous = Array(repeating: impossible, count: haystack.count)
         for (i, character) in needle.enumerated() {
@@ -48,6 +63,16 @@ public enum CommandSearch {
         guard let score = previous.max(), score > impossible else { return nil }
         return 10_000 + score - haystack.count
     }
+    /// Whether `needle` is, in order, the first letters of some of the words of `haystack`.
+    private static func isInitials(_ needle: [Character], of haystack: [Character]) -> Bool {
+        var i = 0
+        for (j, c) in haystack.enumerated() where i < needle.count {
+            let starts = j == 0 || !(haystack[j - 1].isLetter || haystack[j - 1].isNumber)
+            if starts && c == needle[i] { i += 1 }
+        }
+        return i == needle.count && needle.count > 1
+    }
+
     public static func rank(_ query: String, candidates: [CommandCandidate], limit: Int = 200) -> [CommandMatch] {
         let terms = query.split(whereSeparator: \.isWhitespace).map(String.init)
         return candidates.compactMap { candidate -> CommandMatch? in

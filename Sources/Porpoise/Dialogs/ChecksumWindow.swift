@@ -81,7 +81,7 @@ final class ChecksumWindow: DiskUtilityWindow {
                 },
                 done: { [weak self] values in
                     guard let self else { return }
-                    self.errors = values.compactMap { $0.error }
+                    self.errors = values.compactMap { v in v.error.map { "\(v.entry.path): \($0)" } }
                     self.results = values.map { item in
                         var actual = item.entry; actual.digest = item.actual ?? ""
                         return (
@@ -99,7 +99,12 @@ final class ChecksumWindow: DiskUtilityWindow {
         guard results.allSatisfy({ $0.entry.algorithm.accepts($0.entry.digest) }) else {
             status.stringValue = "Some files could not be read. Calculate again before exporting."; return
         }
-        let panel = NSSavePanel(); panel.nameFieldStringValue = "CHECKSUMS.sha256";
+        // shasum and friends read one algorithm per file, named after it.
+        let algorithms = Set(results.map(\.entry.algorithm))
+        guard let algorithm = algorithms.first, algorithms.count == 1 else {
+            status.stringValue = "These checksums use different algorithms. Calculate them with one algorithm before exporting."; return
+        }
+        let panel = NSSavePanel(); panel.nameFieldStringValue = "CHECKSUMS." + algorithm.rawValue
         panel.directoryURL = MainWindowController.commonFolder(of: results.map(\.url))
         panel.beginSheetModal(for: window!) { [weak self] response in
             guard let self, response == .OK, let url = panel.url else { return }

@@ -13,8 +13,9 @@ public enum PrivilegedHelper {
     private static var bundledPlist: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/app.porpoise.helper.plist") }
 
     /// Whether the user Porpoise runs as may use the helper (administrators only; it refuses everyone else).
-    /// Standard users get macOS's administrator prompt for each action instead.
-    public static let isForThisUser = PorpoiseHelperInfo.isAdministrator(getuid())
+    /// Standard users get macOS's administrator prompt for each action instead. Asked each time (one directory
+    /// lookup): someone removed from the admin group meanwhile gets the prompt, not the helper's refusal.
+    public static var isForThisUser: Bool { PorpoiseHelperInfo.isAdministrator(getuid()) }
 
     /// Installed, and the same binary as the one in this app.
     public static var isEnabled: Bool {

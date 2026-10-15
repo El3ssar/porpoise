@@ -19,10 +19,30 @@ public enum TrashInfo {
     /// Nothing in the Trash (or it can't be read without Full Disk Access).
     public static var isEmpty: Bool { isEmpty(folder) }
 
+    /// Read again only when the folder's date changes (menus ask on every check), and only until a first entry.
     static func isEmpty(_ trash: URL) -> Bool {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: trash.path)) ?? []
-        return names.allSatisfy { $0 == ".DS_Store" }
+        var st = stat()
+        guard stat(trash.path, &st) == 0 else { return true }
+        let modified = st.st_mtimespec
+        if let c = cacheLock.withLock({ emptyCache[trash.path] }), c.sec == modified.tv_sec, c.nsec == modified.tv_nsec { return c.empty }
+        var empty = true
+        if let d = opendir(trash.path) {
+            while let e = readdir(d) {
+                let name = withUnsafeBytes(of: e.pointee.d_name) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
+                if name != "." && name != ".." && name != ".DS_Store" {
+                    empty = false
+                    break
+                }
+            }
+            closedir(d)
+        }
+        cacheLock.withLock { emptyCache[trash.path] = (modified.tv_sec, modified.tv_nsec, empty) }
+        return empty
     }
+
+    /// Guarded by `cacheLock`.
+    nonisolated(unsafe) private static var emptyCache: [String: (sec: Int, nsec: Int, empty: Bool)] = [:]
+    private static let cacheLock = NSLock()
 
     public static var autoEmpty: Bool {
         get { CFPreferencesCopyAppValue("FXRemoveOldTrashItems" as CFString, "com.apple.finder" as CFString) as? Bool ?? false }
