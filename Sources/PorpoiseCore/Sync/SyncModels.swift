@@ -55,6 +55,7 @@ public struct SyncDifference: Equatable, Sendable {
 }
 public struct SyncComparison: Sendable {
     public var rows: [SyncDifference]
+    public var caseSensitive: Bool
     public var complete: Bool
     public var options: SyncCompareOptions
     /// Immediate aligned children; the scanner can separately populate a depth-limited subtree on demand.
@@ -64,7 +65,7 @@ public struct SyncComparison: Sendable {
 }
 public enum SyncMode: String, Codable, Sendable { case backup, mirror, twoWay }
 public enum SyncAction: String, Codable, Sendable { case copy, replace, trash, mkdir, conflict }
-public enum SyncOverride: String, Codable, Sendable { case skip, keepLeft, keepRight }
+public enum SyncOverride: String, Codable, Sendable { case skip, keepLeft, keepRight, keepBoth }
 public struct SyncStep: Codable, Equatable, Identifiable, Sendable {
     public var id: String { "\(action.rawValue):\(target.rawValue):\(path)" }
     public var path: String
@@ -72,6 +73,8 @@ public struct SyncStep: Codable, Equatable, Identifiable, Sendable {
     public var source: SyncSide?
     public var target: SyncSide
     public var action: SyncAction
+    public var timestampTolerance: TimeInterval = 2
+    public var dependsOn: [String] = []
     public var method: SyncCompareMethod = .sizeAndDate
     public var expectedSource: SyncEntry?
     public var expectedTarget: SyncEntry?

@@ -97,3 +97,32 @@ struct SyncEngineTests {
         #expect(result.rows.allSatisfy { $0.status == .same })
     }
 }
+
+extension SyncEngineTests {
+    @Test func keepBothPreservesBothVersionsBeforeReplacement() {
+        let comparison = SyncComparator.compare(
+            .init(entries: [file("a.txt")]),
+            .init(entries: [file("a.txt", size: 2), file("a (right).txt")]))
+        let result = SyncPlanner.plan(comparison, mode: .twoWay, overrides: ["a.txt": .keepBoth])
+        #expect(result.conflicts.isEmpty)
+        let replacement = result.steps.first { $0.action == .replace }
+        #expect(replacement?.dependsOn.count == 2)
+        #expect(result.steps.last?.action == .replace)
+        #expect(result.steps.contains { $0.path == "a (right 2).txt" && $0.target == .left })
+        #expect(result.steps.contains { $0.path == "a (right 2).txt" && $0.target == .right })
+    }
+}
+
+extension SyncEngineTests {
+    @Test func caseInsensitiveParentSpellingAndPreviousStateAreAligned() {
+        let l = SyncSnapshot(entries: [.init(path: "Folder", kind: .directory), file("Folder/new")])
+        let r = SyncSnapshot(entries: [.init(path: "folder", kind: .directory)], caseSensitive: false)
+        let result = SyncPlanner.plan(SyncComparator.compare(l, r), mode: .backup)
+        #expect(result.steps.first?.path == "folder/new")
+        #expect(result.steps.first?.sourcePath == "Folder/new")
+        let old = SyncState(left: .init(entries: [file("A")]), right: .init(entries: [file("a")], caseSensitive: false))
+        let deleted = SyncPlanner.plan(
+            SyncComparator.compare(.init(entries: []), .init(entries: [file("A")], caseSensitive: false)), mode: .twoWay, previous: old)
+        #expect(deleted.steps.first?.action == .trash)
+    }
+}
