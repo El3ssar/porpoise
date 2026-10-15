@@ -52,7 +52,8 @@ with *Porpoise › Check for Updates…*.
 - **Panels:** Places (foldable, reorderable sections; devices with capacity bars and eject; tags; network), Folders
   tree, Information (big preview, metadata, inline video/audio player) and a **Terminal** (F4) running your own
   shell that follows the view, and the view follows it.
-- **Files:** copy/move/link/trash with progress and undo, Dolphin's drop menu, conflict dialog, Create New,
+- **Files:** previewed batch rename (F2) with ordered rules, regex captures, numbering, dates/media tokens, presets and
+  one-step undo; copy/move/link/trash with progress and undo, Dolphin's drop menu, conflict dialog, Create New,
   Duplicate, Compress/Extract, Properties (permissions, Open with + Change All, tags, comments, locked), Restore
   from Trash, admin authentication for protected items.
 - **Finder parity:** Quick Look (Space), tags with colours, aliases, Get Info, Go to Folder and Finder's keyboard
@@ -83,6 +84,23 @@ command. Settings marks unavailable apps. Automatic preserves the preference for
 A custom command must contain bare `{dir}` outside quotes, for example `kitty --directory {dir}`; Porpoise quotes the
 path. Run script appends the quoted script path. Custom icon themes and shell/terminal applications need to be installed
 on each Mac; exporting preferences does not bundle them. [Format and integration details](docs/design/THEMING.md).
+
+## Batch rename
+
+Select multiple local files or folders and press **F2** (or File › Rename). Add rules in execution order and review
+Current name / New name / Status before applying. Find/replace supports regular expressions with `$1`, `$2` capture
+references. Numbering lets you choose start, step, padding and character position. Insert/remove positions count visible
+characters from zero; −1 inserts at the end. Keep, lowercase or replace extensions independently of the name rules.
+
+Name templates and inserted text accept `{name}`, `{ext}`, `{created:yyyy-MM-dd}`, `{modified:yyyy-MM-dd}`,
+`{exif:yyyy-MM-dd}`, `{width}`, `{height}`, `{artist}`, `{album}` and `{title}`. Image dates/dimensions come from file
+headers; available audio tags come from Spotlight. Missing metadata blocks the affected row. Presets save the whole
+pipeline and extension mode. The preview blocks collisions with other selected or unselected items, including
+Unicode-equivalent names and case-insensitive matches on the destination volume.
+
+The batch uses temporary names for swaps and cycles, rechecks source identity and destination names before execution,
+and never overwrites existing items. **Undo: Batch Rename** restores the entire operation in one step. These transaction
+guarantees apply to local files; remote items retain individual rename. [Implementation and recovery](docs/design/BATCH_RENAME.md).
 
 ## Keyboard shortcuts
 
