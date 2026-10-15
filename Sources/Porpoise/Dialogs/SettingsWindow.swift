@@ -152,7 +152,7 @@ final class SettingsWindowController: NSWindowController {
             f.popup("Label width:", ["Small", "Medium", "Large", "Huge"], s.iconsLabelWidthIndex) { s.iconsLabelWidthIndex = $0 }
             f.popup("Maximum lines:", ["Unlimited", "1", "2", "3", "4", "5"], max(0, s.iconsMaxLines)) { s.iconsMaxLines = $0 }
             f.section("Compact")
-            f.popup("Maximum width:", ["Unlimited", "Small", "Medium", "Large", "Huge"], [0, 10, 20, 30, 45].firstIndex(of: s.compactMaxWidth) ?? 0) {
+            f.popup("Maximum width:", ["Automatic", "Small", "Medium", "Large", "Huge"], [0, 10, 20, 30, 45].firstIndex(of: s.compactMaxWidth) ?? 0) {
                 s.compactMaxWidth = [0, 10, 20, 30, 45][$0]
             }
             f.section("Details")

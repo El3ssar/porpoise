@@ -82,7 +82,7 @@ extension ItemListView {
         return NSSize(width: width, height: max(visibleHeight, y + margin))
     }
 
-    /// Compact: columns as tall as the view, each as wide as its longest (capped) text. Grouped, each group starts a
+    /// Compact: columns as tall as the view, all as wide as each other (CompactColumns). Grouped, each group starts a
     /// new column under its header (Dolphin's horizontal group layout).
     private func layoutCompact(width: CGFloat) -> NSSize {
         let rows = model.rows
@@ -93,9 +93,16 @@ extension ItemListView {
         let top = margin + groupH
         let availH = max(h, visibleHeight - top - margin - scroller)
         rowsPerColumn = max(1, Int(availH / h))
-        let minTextW = 5 * lineHeight
-        let maxChars = Settings.shared.compactMaxWidth
-        let cap: CGFloat = maxChars == 0 ? 600 : CGFloat(maxChars) * textWidth("x")
+        var widest: CGFloat = 0
+        for r in rows {
+            // As drawn: the shown name, and the roles in the label font.
+            widest = max(widest, textWidth(model.displayName(for: r.item)))
+            for role in roles { widest = max(widest, textWidth(model.text(for: role, of: r.item))) }
+        }
+        let text = CompactColumns.textWidth(
+            widest: widest, iconSize: iconSize, charWidth: textWidth("x"), maxChars: Settings.shared.compactMaxWidth,
+            minimum: 5 * lineHeight)
+        let colW = ceil(4 * pad + iconSize + 6 + text + 10)
         let headerFont = NSFont.systemFont(ofSize: Theme.fontSize, weight: .semibold)
         var x = margin
         var i = 0
@@ -106,14 +113,6 @@ extension ItemListView {
             let groupX = x
             while i < groupEnd {
                 let end = min(groupEnd, i + rowsPerColumn)
-                var maxText = minTextW
-                for j in i..<end {
-                    // As drawn: the shown name, and the roles in the label font.
-                    var tw = textWidth(model.displayName(for: rows[j].item))
-                    for role in roles { tw = max(tw, textWidth(model.text(for: role, of: rows[j].item))) }
-                    maxText = max(maxText, min(tw, cap))
-                }
-                let colW = ceil(4 * pad + iconSize + 6 + maxText + 10)
                 for j in i..<end {
                     frames[j] = CGRect(x: x, y: top + CGFloat(j - i) * h, width: colW, height: h)
                 }

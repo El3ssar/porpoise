@@ -51,8 +51,16 @@ extension ItemListView {
                 "\(it.name)\n\(it.typeDescription)\n" + (it.isBrowsableFolder ? model.folderSizeText(it) : FileFormat.size(it.size))
                 + (line.map { "\n\n" + $0 } ?? "")
         } else {
-            toolTip = line  // the whole line of a content match, which the row may cut short
+            // The whole line of a content match, which the row may cut short; else a name elided in its column.
+            toolTip = line ?? hoverIndex.flatMap(elidedName)
         }
+    }
+
+    /// The name of row `i` when its one-line label (Compact, Details) cuts it short.
+    private func elidedName(_ i: Int) -> String? {
+        guard mode != .icons, i < model.rows.count else { return nil }
+        let name = model.displayName(for: model.rows[i].item)
+        return textWidth(name) > nameTextRect(i).width ? name : nil
     }
 
     /// Hover highlight fades (Breeze animates hover; ~120 ms in, ~200 ms out).
