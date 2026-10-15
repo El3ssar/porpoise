@@ -33,4 +33,17 @@ struct SweepTwoServicesTests {
         Settings.shared.saveBatchRenamePreset(BatchRenamePreset(name: "New"))
         #expect(Settings.shared.batchRenamePresets.map(\.name) == ["Good", "New"])
     }
+
+    /// What the app sends its helper passes the helper's own check of arguments.
+    @Test func everythingTheAppSendsTheHelperIsAccepted() {
+        let items = [URL(fileURLWithPath: "/Applications/Old App.app"), URL(fileURLWithPath: "/Library/Something/-rf")]
+        for kind in [FileOperationKind.delete, .trash, .move, .copy, .link] {
+            let plan = FileOperationsController.administratorCommands(kind, items, targets: [:], to: URL(fileURLWithPath: "/Users/Shared/dest"))
+            for c in plan.commands { #expect(HelperRequests.refusal(c) == nil, "\(c)") }
+        }
+        let renames =
+            FileOperationsController.renameCommands(URL(fileURLWithPath: "/Applications/a.app"), to: URL(fileURLWithPath: "/Applications/A.app"))
+            + FileOperationsController.renameCommands(URL(fileURLWithPath: "/Applications/a.app"), to: URL(fileURLWithPath: "/Applications/b.app"))
+        for c in renames { #expect(HelperRequests.refusal(c) == nil, "\(c)") }
+    }
 }

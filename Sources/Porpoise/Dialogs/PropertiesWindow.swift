@@ -371,7 +371,7 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
         do { try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: urls[0].path) } catch {
             FileOperationsController.shared.authorize(
                 verb: "change the permissions of", items: [urls[0]],
-                commands: [["/bin/chmod", "--", String(mode & 0o7777, radix: 8), urls[0].path]], window: window)
+                commands: [["/bin/chmod", "-h", "--", String(mode & 0o777, radix: 8), urls[0].path]], window: window)
         }
         refreshPermissions()
         FileOperationsController.notifyChanged(urls)
