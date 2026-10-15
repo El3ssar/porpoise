@@ -25,8 +25,7 @@ public enum PhysicalTreeScanner {
         _ urls: [URL], crossVolumes: Bool = false, maxDepth: Int = .max,
         cancellation: DiskCancellation = DiskCancellation(), progress: @escaping (DiskProgress) -> Void = { _ in }
     ) -> DiskScan {
-        let lock = NSLock(), work = OperationQueue()
-        work.maxConcurrentOperationCount = min(4, ProcessInfo.processInfo.processorCount)
+        let lock = NSLock()
         var result = DiskScan(), seen: Set<DiskIdentity> = [], last = Date.distantPast, bytes: Int64 = 0
         let roots = Array(Set(urls.filter(\.isFileURL).map { URL(fileURLWithPath: IndexPath.entry($0.path)) })).sorted { $0.path < $1.path }
         func error(_ path: String, _ message: String) { lock.withLock { result.errors.append("\(path): \(message)") } }
@@ -71,12 +70,12 @@ public enum PhysicalTreeScanner {
                 do {
                     let children = try children(root.url, cancellation: cancellation)
                     let partitions = min(4, children.count)
-                    for partition in 0..<partitions {
-                        work.addOperation {
-                            for i in stride(from: partition, to: children.count, by: partitions) {
-                                if cancellation.isCancelled { return }
-                                walk(children[i], device: root.identity.device, depth: 1)
-                            }
+                    // The calling thread reads a share itself: a scan finishes even when no other thread is free
+                    // (waiting on a queue for helpers that never came hung CI's 3-core runner).
+                    DispatchQueue.concurrentPerform(iterations: partitions) { partition in
+                        for i in stride(from: partition, to: children.count, by: partitions) {
+                            if cancellation.isCancelled { return }
+                            walk(children[i], device: root.identity.device, depth: 1)
                         }
                     }
                 } catch let err { error(root.url.path, err.localizedDescription) }
@@ -84,7 +83,6 @@ public enum PhysicalTreeScanner {
                 walk(root, device: root.identity.device, depth: 0)
             }
         }
-        work.waitUntilAllOperationsAreFinished()
         result.cancelled = cancellation.isCancelled
         result.entries.sort { $0.url.path < $1.url.path }
         progress(DiskProgress(files: result.entries.count, bytes: bytes, path: ""))
