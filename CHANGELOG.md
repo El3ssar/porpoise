@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Opt-in instant search.** Settings › Search can index selected folders and volumes, with exclusions, rebuild and live status. Filename searches support AND terms and extension, path, size, date, type and regex operators. FSEvents keeps results current across restarts; unindexed locations keep fd/ripgrep/Spotlight search.
+- Optional content trigram filters reduce candidate reads while verifying current file contents and preserving content snippets.
+
 ## 0.3.0
 
 - **Make it yours.** Settings › Appearance now has ten colour themes, system light/dark pairing, live colour wells,
@@ -8,6 +13,7 @@
   and file-list fonts, density, and icon sizes for each view.
 - Configure the F4 terminal shell, font, ANSI colours, cursor and scrollback. Import Konsole or iTerm2 schemes,
   and choose an installed external terminal or a custom command for Open Terminal Here and Run script.
+
 
 ## 0.2.14
 

@@ -15,6 +15,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "PorpoiseCore"),
+        .executableTarget(name: "IndexBenchmark", dependencies: ["PorpoiseCore", "PorpoiseServices"], path: "Benchmarks/IndexBenchmark"),
         // Everything the app does that isn't drawing on screen: no AppKit or SwiftUI here.
         .target(name: "PorpoiseServices", dependencies: ["PorpoiseCore"]),
         .executableTarget(
