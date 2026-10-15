@@ -142,8 +142,14 @@ final class Icons {
     /// Image for a file item: real app icons for .app bundles (Mac), otherwise the Tela icon.
     func image(for item: FileItem, size: CGFloat, selected: Bool = false) -> NSImage {
         if Settings.shared.appearancePreferences.iconTheme == "Native macOS" {
+            // Cached like app icons: asked for on every draw (hover fades redraw at 90 Hz), and a new image each
+            // time also defeated CloudBadge's per-image cache.
+            let key = "native|\(item.url.path)|\(Int(size))" as NSString
+            if let img = cache.object(forKey: key) { return img }
             let image = NSWorkspace.shared.icon(forFile: item.url.path)
-            image.size = NSSize(width: size, height: size); return image
+            image.size = NSSize(width: size, height: size)
+            cache.setObject(image, forKey: key)
+            return image
         }
         // Finder aliases look like their original (the view adds the link emblem).
         if item.isAliasFile, let t = aliasTarget(of: item), !t.isAliasFile { return image(for: t, size: size, selected: selected) }

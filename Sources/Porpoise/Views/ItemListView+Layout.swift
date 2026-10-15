@@ -161,6 +161,9 @@ extension ItemListView {
 
     /// Backward pass: does a later sibling exist at each level (KItemListSiblingsInformation)?
     private func computeTreeLines() {
+        // Only drawn with expanders: without them, an array per row (100k in a big folder) on every layout,
+        // each column-resize drag event included, for nothing.
+        guard expanderWidth > 0 else { treeLines = []; return }
         let rows = model.rows
         treeLines = Array(repeating: [], count: rows.count)
         var seen: [Bool] = []

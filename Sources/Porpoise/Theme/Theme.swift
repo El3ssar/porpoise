@@ -128,6 +128,8 @@ enum Theme {
     /// (`cgColor`), which don't follow by themselves. Kept for as long as `owner` lives.
     static func whenChanged(_ owner: AnyObject, _ apply: @escaping () -> Void) {
         let ref = { [weak owner] in owner }
+        // Pruned here too: owners that come and go (every conflict dialog) would pile up until the next change.
+        observers.removeAll { $0.owner() == nil }
         observers.append((ref, apply))
         NSApp.effectiveAppearance.performAsCurrentDrawingAppearance(apply)
     }
@@ -139,8 +141,7 @@ enum Theme {
             for o in observers { o.apply() }
             for window in NSApp.windows {
                 window.backgroundColor = Theme.windowBackground.usingColorSpace(.sRGB) ?? Theme.windowBackground
-                func redraw(_ view: NSView) { view.needsDisplay = true; view.subviews.forEach(redraw) }
-                if let content = window.contentView { redraw(content) }
+                window.contentView?.redrawAll()
             }
         }
     }
@@ -213,5 +214,13 @@ enum Theme {
             .ColorScheme-Contrast { color:\(windowText.hexString); }
             .ColorScheme-Accent { color:\(selection.hexString); }
             """
+    }
+}
+
+extension NSView {
+    /// Marks this view and everything inside it for redrawing.
+    func redrawAll() {
+        needsDisplay = true
+        subviews.forEach { $0.redrawAll() }
     }
 }

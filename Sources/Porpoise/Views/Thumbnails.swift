@@ -155,7 +155,6 @@ final class Thumbnails {
         let found = Array(
             names.prefix(80).compactMap { FileItem.load(folder.url.appendingPathComponent($0)) }
                 .filter { !$0.isDirectory && Self.wantsPreview($0) }.prefix(8))
-        if folderCandidates.count > 2000 { folderCandidates = [:] }
         if folderCandidates.count > Self.maxRemembered / 10 { folderCandidates.removeAll() }
         folderCandidates[version] = found
         return found
@@ -213,7 +212,7 @@ final class Thumbnails {
                     } else {
                         try? FileManager.default.removeItem(at: dir)
                         self.pending.remove(k)
-                        self.failed.insert(k)
+                        self.remember(failed: k)
                         NotificationCenter.default.post(name: Thumbnails.ready, object: item.url)
                     }
                 }

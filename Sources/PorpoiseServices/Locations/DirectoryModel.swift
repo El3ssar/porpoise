@@ -721,7 +721,10 @@ public final class DirectoryModel {
         return rowIndexByPath?[url.standardizedFileURL.path]
     }
 
-    public var selectedItems: [FileItem] { rows.map(\.item).filter { selection.contains($0.url) } }
+    /// In row order. Without copying every row's item first: the status bar asks on every selection change.
+    public var selectedItems: [FileItem] {
+        selection.isEmpty ? [] : rows.compactMap { selection.contains($0.item.url) ? $0.item : nil }
+    }
 
     public var visibleCounts: (folders: Int, files: Int, bytes: Int64) {
         var f = 0, n = 0; var b: Int64 = 0
@@ -733,8 +736,9 @@ public final class DirectoryModel {
 
     public var selectedCounts: (folders: Int, files: Int, bytes: Int64) {
         var f = 0, n = 0; var b: Int64 = 0
-        for it in selectedItems {
-            if it.isBrowsableFolder { f += 1 } else { n += 1; b += it.size }
+        guard !selection.isEmpty else { return (0, 0, 0) }
+        for r in rows where selection.contains(r.item.url) {
+            if r.item.isBrowsableFolder { f += 1 } else { n += 1; b += r.item.size }
         }
         return (f, n, b)
     }
