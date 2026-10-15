@@ -61,9 +61,10 @@ import Testing
 }
 
 /// Asking AVFoundation whether a file plays needs no free cooperative thread: synchronous work may hold them all
-/// (a preview waited 49s to start in a loaded run). Not on the main actor: the answer comes there while this test's
-/// own thread, like the others, is held.
-@Suite struct BusyCooperativePoolTests {
+/// (a preview waited 49s to start in a loaded run). In VideoPreviewStreamTests' serialized suite, which owns the
+/// preview's test ffmpeg; not on the main actor: the answer comes there while this test's thread, like the others,
+/// is held.
+extension VideoPreviewStreamTests {
     @Test func aVideoPreviewAnswersWhileEveryCooperativeThreadIsTaken() throws {
         let s = try Scratch()
         let file = try s.file("not a video.mkv", "plain text")
