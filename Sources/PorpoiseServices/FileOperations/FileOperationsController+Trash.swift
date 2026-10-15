@@ -16,9 +16,9 @@ extension FileOperationsController {
             do { try fm.moveItem(at: staged, to: named) } catch { _ = rmdir(holding.path); throw error }
             var trashed: NSURL?
             do { try fm.trashItem(at: named, resultingItemURL: &trashed) } catch {
-                do { try fm.moveItem(at: named, to: staged) }
-                catch let restoreError {
-                    throw FileOperationError.failed("The previous item is kept at “\(named.path)”. It could not be returned to staging: \(restoreError.localizedDescription)")
+                do { try fm.moveItem(at: named, to: staged) } catch let restoreError {
+                    throw FileOperationError.failed(
+                        "The previous item is kept at “\(named.path)”. It could not be returned to staging: \(restoreError.localizedDescription)")
                 }
                 _ = rmdir(holding.path)
                 throw error

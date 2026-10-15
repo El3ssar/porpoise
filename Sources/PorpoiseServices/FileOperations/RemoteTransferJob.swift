@@ -82,9 +82,10 @@ final class RemoteTransferJob {
                     failedSources.append(source)
                     errors.append("\(source.lastPathComponent): \(error.localizedDescription)")
                 }
-                publish(force: true)
+                publish()
             }
         }
+        publish(force: true)
         control.finishExternal()
     }
 
@@ -148,7 +149,12 @@ final class RemoteTransferJob {
             if let selected = sticky ?? rule.resolution, selected != .writeInto || bothFolders {
                 choice = selected
             } else {
-                let answer = resolve(.init(source: incoming, destination: old, suggestedName: suggestion, comparisonOptions: options))
+                let answer = resolve(
+                    .init(
+                        source: incoming, destination: old, suggestedName: suggestion, comparisonOptions: options,
+                        sourceFolder: bothFolders
+                            ? (try? children(source)).map { TransferFolderSummary(itemCount: $0.count, bytes: totals[source]?.bytes) } : nil,
+                        destinationFolder: bothFolders ? (try? children(target)).map { TransferFolderSummary(itemCount: $0.count) } : nil))
                 if let method = answer.comparisonMethod { options.method = method }
                 if answer.applyToAll { sticky = answer.resolution }
                 choice = answer.resolution
@@ -191,6 +197,7 @@ final class RemoteTransferJob {
             } else {
                 try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
             }
+            if totals[source]?.files == 0 { progressLock.withLock { progress.copiedItems += 1 } }
             return try merge(source, into: target)
         }
         guard !incoming.isSymlink else { throw RemoteError.unsupported("Remote link transfers are not supported by this provider.") }
@@ -339,7 +346,9 @@ final class RemoteTransferJob {
                 } catch {
                     guard renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 else {
                         removeStage = false
-                        throw RemoteError.failed("The previous item could not be restored automatically. Its staging folder is kept at “\(stageFolder.path)”. \(error.localizedDescription)")
+                        throw RemoteError.failed(
+                            "The previous item could not be restored automatically. Its staging folder is kept at “\(stageFolder.path)”. \(error.localizedDescription)"
+                        )
                     }
                     throw error
                 }
@@ -357,15 +366,16 @@ final class RemoteTransferJob {
     private func legCount(_ source: URL) -> Int64 {
         (!source.isFileURL && destination?.isFileURL == false) ? 2 : 1
     }
-    private func finishProgress(_ source: URL) {
+    private func finishProgress(_ source: URL, copied: Bool = false) {
         progressLock.withLock {
             progress.doneFiles += totals[source]?.files ?? 1
+            if copied { progress.copiedItems += totals[source]?.files ?? 1 }
             committedBytes += totals[source]?.bytes ?? 0
             activeBytes = 0
             activeLimit = 0
             progress.doneBytes = min(progress.totalBytes, committedBytes)
         }
-        publish(force: true)
+        publish()
     }
     private func advance(bytes: Int64) {
         progressLock.withLock {

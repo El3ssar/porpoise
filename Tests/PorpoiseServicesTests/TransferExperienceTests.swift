@@ -155,6 +155,7 @@ struct TransferExperienceTests {
         _ = await c.perform(.copy, [src], to: s.path("dst"))
         #expect(s.read("dst/report") == "new!")
         #expect(c.activities.last?.progress?.replacedItems == 1)
+        #expect(c.activities.last?.progress?.copiedItems == 1)
     }
 
     @Test func identicalFolderMetadataDoesNotSkipChangedChildren() async throws {

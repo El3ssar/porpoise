@@ -189,6 +189,34 @@ struct FileJobResumeTests {
         #expect(try Data(contentsOf: scratch.path("src/folder/z.bin")) == Data(contentsOf: scratch.path("dst/folder/z.bin")))
     }
 
+    @Test func fastCopiesDoNotFloodIncomingItemNotifications() throws {
+        let files = try (0..<500).map { try scratch.file("src/file-\($0)", "tiny") }
+        let job = FileJob(kind: .copy, sources: files, destinationFolder: try scratch.folder("dst"))
+        var events = 0
+        job.onIncoming = { _, _ in events += 1 }
+        let started = ProcessInfo.processInfo.systemUptime
+        _ = try job.run()
+        let seconds = ProcessInfo.processInfo.systemUptime - started
+        #expect(job.errors.isEmpty)
+        #expect(events <= 2 + 8 * Int(ceil(seconds)))
+    }
+
+    @Test func slowIncomingItemUsesItsLogicalTargetAndByteBaseline() throws {
+        let first = try scratch.file("src/first", "x")
+        let large = try randomFile("src/large", size: 32 << 20)
+        let destination = try scratch.folder("dst")
+        let job = FileJob(kind: .copy, sources: [first, large], destinationFolder: destination)
+        job.allowsClone = false; job.chunkDelay = 0.1
+        var events: [(FileItem?, Int64)] = []
+        job.onIncoming = { events.append(($0, $1)) }
+        _ = try job.run()
+        let showing = events.compactMap { $0.0 }
+        #expect(showing.map(\.url) == [destination.appendingPathComponent("large")])
+        #expect(showing.first?.size == 32 << 20)
+        #expect(events.first?.1 == 1)
+        #expect(events.last?.0 == nil && events.count == 2)
+    }
+
     @Test func eventsForEachItem() throws {
         let a = try scratch.file("src/a.txt", "a")
         let b = try scratch.file("src/b.txt", "b")

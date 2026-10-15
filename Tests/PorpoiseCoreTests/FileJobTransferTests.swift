@@ -268,6 +268,7 @@ import Testing
         let big = s.path("big.bin")
         try Data(repeating: 7, count: 24 << 20).write(to: big)
         let job = FileJob(kind: .move, sources: [big], destinationFolder: disk.volume)
+        job.publishInterval = 0  // deterministic cancellation on the first data chunk
         job.onProgress = { [unowned job] p in
             // The first report comes before any data; waiting past the reporting interval lets the next one,
             // with the copy under way, through at once.

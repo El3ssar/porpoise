@@ -16,11 +16,10 @@ extension FileOperationsController {
         activity.originWindow = window
         activity.controlJob = control
         activity.remoteRemaining = urls
-        runtime.onIncoming = { [weak self, weak activity] item in
+        runtime.onIncoming = { [weak activity] item in
             DispatchQueue.main.async {
                 activity?.incomingItem = item
                 activity?.incomingStartBytes = activity?.progress?.doneBytes ?? 0
-                self?.activityDidChange()
             }
         }
         runtime.onNoSpace = { [weak self, weak activity] bytes in

@@ -184,11 +184,11 @@ extension FileOperationsController {
         activity.state = .running
         activity.startedAt = Date()
         guard let job = activity.job else { return }
-        job.onIncoming = { [weak self, weak activity] item in
+        job.onIncoming = { [weak activity] item, startBytes in
             DispatchQueue.main.async {
                 activity?.incomingItem = item
-                activity?.incomingStartBytes = activity?.progress?.doneBytes ?? 0
-                self?.activityDidChange()
+                activity?.incomingStartBytes = startBytes
+                // The following coalesced progress notification publishes this metadata too.
             }
         }
         let store = journals

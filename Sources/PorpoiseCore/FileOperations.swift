@@ -29,8 +29,17 @@ public enum ConflictResolution: Sendable, Equatable {
     case cancel
 }
 
+/// Folder contents known before asking; bytes is nil when only a listing is available.
+public struct TransferFolderSummary: Sendable {
+    public let itemCount: Int
+    public let bytes: Int64?
+    public init(itemCount: Int, bytes: Int64? = nil) { self.itemCount = itemCount; self.bytes = bytes }
+}
+
 public struct ConflictInfo: Sendable {
     public let source: FileItem
+    public let sourceFolder: TransferFolderSummary?
+    public let destinationFolder: TransferFolderSummary?
     public let destination: FileItem
     public let suggestedName: String
     /// Remaining known name clashes, including this one; nil when a remote listing cannot establish it.
@@ -43,9 +52,11 @@ public struct ConflictInfo: Sendable {
     public init(
         source: FileItem, destination: FileItem, suggestedName: String, remainingConflicts: Int? = nil,
         comparisonOptions: SyncCompareOptions = .init(), replacedItems: Int = 0, skippedIdenticalItems: Int = 0,
-        differentItems: Int? = nil, identicalItems: Int? = nil
+        differentItems: Int? = nil, identicalItems: Int? = nil,
+        sourceFolder: TransferFolderSummary? = nil, destinationFolder: TransferFolderSummary? = nil
     ) {
         self.source = source
+        self.sourceFolder = sourceFolder; self.destinationFolder = destinationFolder
         self.destination = destination
         self.suggestedName = suggestedName
         self.remainingConflicts = remainingConflicts
@@ -95,6 +106,7 @@ public struct JobProgress: Sendable {
     public var totalFiles: Int = 0
     public var totalFolders: Int = 0
     public var doneFiles: Int = 0
+    public var copiedItems: Int = 0
     public var replacedItems: Int = 0
     public var skippedIdenticalItems: Int = 0
 
@@ -174,7 +186,7 @@ public final class FileJob: @unchecked Sendable {
     public var resolveConflict: (ConflictInfo) -> ConflictAnswer = { _ in ConflictAnswer(.skip) }
     public var onProgress: (JobProgress) -> Void = { _ in }
     /// Logical destination metadata, loaded on the worker, never a hidden staging path.
-    public var onIncoming: (FileItem?) -> Void = { _ in }
+    public var onIncoming: ((FileItem?, Int64) -> Void)?
     /// Called off main after a full-disk failure cleans its partial file. True retries this item.
     public var onNoSpace: ((Int64) -> Bool)?
     /// Published leaves in merged folders, retained by an in-session Stop → Resume.
@@ -218,7 +230,7 @@ public final class FileJob: @unchecked Sendable {
     public func checkCancellation() throws { try checkpoint() }
 
     /// Minimum interval between progress callbacks (tests set 0 to see every chunk).
-    var publishInterval: TimeInterval = 0.05
+    var publishInterval: TimeInterval = 0.25
 
     private let fm = FileManager.default
     private let lock = NSLock()
@@ -231,8 +243,10 @@ public final class FileJob: @unchecked Sendable {
     private var created: [URL] = []
     /// The top-level item being processed (for events), and how deep in a folder merge the job is.
     private var currentIndex = 0
+    private var pendingIncoming: (source: URL, target: URL, began: Date, base: Int64, emitted: Bool)?
     private var knownConflicts: Set<URL> = []
     private var inventoryMethod: SyncCompareMethod = .sizeAndDate
+    private var childCounts: [URL: Int] = [:]
     private var differentItems = 0
     private var identicalItems = 0
     private var directorySources: Set<URL> = []
@@ -427,6 +441,18 @@ public final class FileJob: @unchecked Sendable {
         let now = Date()
         if force || now.timeIntervalSince(lastPublish) > publishInterval {
             lastPublish = now
+            // Fast files should neither load display metadata nor enqueue a flash of a placeholder each.
+            if let incoming = pendingIncoming, !incoming.emitted, now.timeIntervalSince(incoming.began) >= 0.1,
+                let onIncoming, let item = FileItem.load(incoming.source)
+            {
+                pendingIncoming?.emitted = true
+                onIncoming(
+                    FileItem(
+                        url: incoming.target, name: incoming.target.lastPathComponent, isDirectory: item.isDirectory,
+                        isSymlink: item.isSymlink, isHidden: incoming.target.lastPathComponent.hasPrefix("."),
+                        isPackage: item.isPackage, isApplication: item.isApplication, size: size(of: incoming.source),
+                        modificationDate: item.modificationDate, contentType: item.contentType), incoming.base)
+            }
             onProgress(progress)
         }
     }
@@ -450,6 +476,15 @@ public final class FileJob: @unchecked Sendable {
             return src
         }
         guard let (target, placement) = try resolveTarget(for: src, in: folder) else { return nil }
+        let tracksIncoming = depth == 0 && onIncoming != nil && (kind == .copy || kind == .move)
+        if tracksIncoming { pendingIncoming = (src, target, Date(), progress.doneBytes, false) }
+        defer {
+            if tracksIncoming {
+                let incoming = pendingIncoming
+                pendingIncoming = nil
+                if incoming?.emitted == true { onIncoming?(nil, incoming?.base ?? 0) }
+            }
+        }
         do {
             if placement == .merge {
                 try merge(src, into: target)
@@ -531,7 +566,10 @@ public final class FileJob: @unchecked Sendable {
                 comparisonOptions: comparisonOptions,
                 replacedItems: progress.replacedItems, skippedIdenticalItems: progress.skippedIdenticalItems,
                 differentItems: inventoryMethod == comparisonOptions.method && inventoryMethod != .content ? differentItems : nil,
-                identicalItems: inventoryMethod == comparisonOptions.method && inventoryMethod != .content ? identicalItems : nil))
+                identicalItems: inventoryMethod == comparisonOptions.method && inventoryMethod != .content ? identicalItems : nil,
+                sourceFolder: bothDirs ? childCounts[s.url].map { TransferFolderSummary(itemCount: $0, bytes: sizes[s.url]) } : nil,
+                destinationFolder: bothDirs
+                    ? (try? fm.contentsOfDirectory(atPath: d.url.path)).map { TransferFolderSummary(itemCount: $0.count) } : nil))
         if let method = a.comparisonMethod { comparisonOptions.method = method }
         knownConflicts.remove(s.url)
         if a.applyToAll { sticky = a.resolution }
@@ -556,13 +594,6 @@ public final class FileJob: @unchecked Sendable {
     /// name only once complete, so neither a failed nor an interrupted copy ever sits at the target (and a replaced
     /// item is removed only then). Links and moves within a volume are a single step.
     private func place(_ src: URL, at target: URL, replacing: Bool) throws -> URL {
-        if depth == 0, kind == .copy || kind == .move, let item = FileItem.load(src) {
-            onIncoming(
-                FileItem(
-                    url: target, name: target.lastPathComponent, isDirectory: item.isDirectory,
-                    isSymlink: item.isSymlink, size: size(of: src), modificationDate: item.modificationDate, contentType: item.contentType))
-        }
-        defer { if depth == 0 { onIncoming(nil) } }
         let sameVolumeMove = kind == .move && Self.sameVolume(src, target.deletingLastPathComponent())
         let copying = kind != .link && !sameVolumeMove
         let top = depth == 0
@@ -615,7 +646,9 @@ public final class FileJob: @unchecked Sendable {
                 if swapped, renamex_np(dest.path, target.path, UInt32(RENAME_SWAP)) != 0 {
                     // Another process may have moved the published target. Never clean up the complete old
                     // item when rollback failed: both generations must remain recoverable.
-                    throw FileOperationError.failed("Could not restore the previous item from “\(dest.path)”. The completed replacement may have moved. \(error.localizedDescription)")
+                    throw FileOperationError.failed(
+                        "Could not restore the previous item from “\(dest.path)”. The completed replacement may have moved. \(error.localizedDescription)"
+                    )
                 }
                 if renamed { try? fm.moveItem(at: dest, to: src) } else { try? fm.removeItem(at: dest) }
                 throw error
@@ -630,6 +663,7 @@ public final class FileJob: @unchecked Sendable {
                     userInfo: [NSLocalizedDescriptionKey: "Could not copy “\(src.lastPathComponent)”: \(String(cString: strerror(code)))"])
             }
         }
+        progress.copiedItems += max(1, fileCounts[src] ?? 1)
         if replacing { progress.replacedItems += fileCounts[src] ?? 1 }
         if top { onEvent(.placed(index: currentIndex, target: target)) }
         if kind == .move {
@@ -919,7 +953,9 @@ public final class FileJob: @unchecked Sendable {
         if directory {
             directorySources.insert(url)
             progress.totalFolders += 1
-            for child in try fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
+            let children = try fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
+            childCounts[url] = children.count
+            for child in children {
                 bytes += try inventory(child, target: target?.appendingPathComponent(child.lastPathComponent))
                 files += fileCounts[child] ?? 0
             }
