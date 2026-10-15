@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - **Make it yours.** Settings › Appearance now has ten colour themes, system light/dark pairing, live colour wells,
   KDE `.colors` and Porpoise JSON import/export, and a single file for sharing all appearance preferences.
