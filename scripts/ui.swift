@@ -81,7 +81,9 @@ let script = CommandLine.arguments.dropFirst().joined(separator: " ")
 for raw in script.split(separator: ";") {
     let parts = raw.trimmingCharacters(in: .whitespaces).split(separator: " ", maxSplits: 3).map(String.init)
     guard let cmd = parts.first else { continue }
-    func pt() -> CGPoint { CGPoint(x: origin.x + (Double(parts[1]) ?? 0), y: origin.y + (Double(parts[2]) ?? 0)) }
+    // A missing argument reads as "", so "wait" alone waits the default instead of trapping.
+    func arg(_ i: Int) -> String { i < parts.count ? parts[i] : "" }
+    func pt() -> CGPoint { CGPoint(x: origin.x + (Double(arg(1)) ?? 0), y: origin.y + (Double(arg(2)) ?? 0)) }
     switch cmd {
     case "click", "cmdclick", "shiftclick":
         let fl: CGEventFlags = cmd == "cmdclick" ? .maskCommand : (cmd == "shiftclick" ? .maskShift : [])
@@ -96,12 +98,12 @@ for raw in script.split(separator: ";") {
     case "drag":
         // drag x1 y1 x2,y2[,cmd|opt]
         let a = pt()
-        let spec = parts[3].split(separator: ",")
+        let spec = arg(3).split(separator: ",")
         let to = spec.prefix(2).map { Double($0) ?? 0 }
         var fl: CGEventFlags = []
         if spec.contains("cmd") { fl.insert(.maskCommand) }
         if spec.contains("opt") { fl.insert(.maskAlternate) }
-        let b = CGPoint(x: origin.x + to[0], y: origin.y + to[1])
+        let b = CGPoint(x: origin.x + (to.first ?? 0), y: origin.y + (to.dropFirst().first ?? 0))
         mouse(.mouseMoved, a); mouse(.leftMouseDown, a)
         for i in 1...20 {
             let t = Double(i) / 20
@@ -114,7 +116,7 @@ for raw in script.split(separator: ";") {
         usleep(300000)
         mouse(.leftMouseUp, b, flags: fl)
         if !fl.isEmpty { let k = CGEvent(keyboardEventSource: src, virtualKey: fl.contains(.maskCommand) ? 55 : 58, keyDown: false); k?.flags = []; post(k) }
-    case "key": key(parts[1])
+    case "key": key(arg(1))
     case "esc": key("esc")
     case "type": type(raw.trimmingCharacters(in: .whitespaces).dropFirst(5).description)
     case "wid":
@@ -127,7 +129,7 @@ for raw in script.split(separator: ";") {
         for w in list where (w[kCGWindowOwnerName as String] as? String) == "Porpoise" {
             print(w[kCGWindowLayer as String] ?? "", w[kCGWindowBounds as String] ?? "", w[kCGWindowName as String] ?? "")
         }
-    case "wait": usleep(UInt32((Double(parts[1]) ?? 0.3) * 1_000_000))
+    case "wait": usleep(UInt32((Double(arg(1)) ?? 0.3) * 1_000_000))
     case "focus":
         NSRunningApplication.runningApplications(withBundleIdentifier: "app.porpoise.Porpoise").first?.activate()
         for a in NSWorkspace.shared.runningApplications where a.executableURL?.path.hasSuffix("MacOS/Porpoise") == true { a.activate() }

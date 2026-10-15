@@ -21,8 +21,9 @@ switch args.dropFirst().first {
 case "generate" where args.count == 3:
     guard !FileManager.default.fileExists(atPath: args[2]) else { fail("\(args[2]) exists; not overwriting a key") }
     let key = Curve25519.Signing.PrivateKey()
-    FileManager.default.createFile(atPath: args[2], contents: Data(key.rawRepresentation.base64EncodedString().utf8),
-                                   attributes: [.posixPermissions: 0o600])
+    // A public key whose private key wasn't saved could never sign an update: fail instead of printing it.
+    guard FileManager.default.createFile(atPath: args[2], contents: Data(key.rawRepresentation.base64EncodedString().utf8),
+                                         attributes: [.posixPermissions: 0o600]) else { fail("can't write \(args[2])") }
     print(key.publicKey.rawRepresentation.base64EncodedString())
 case "public" where args.count == 3:
     print(readKey(args[2]).publicKey.rawRepresentation.base64EncodedString())

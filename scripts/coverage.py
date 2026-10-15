@@ -33,7 +33,7 @@ def main() -> None:
     files = json.loads(export.stdout)["data"][0]["files"]
     rows = []
     for f in files:
-        name = f["filename"].split("/Sources/", 1)[-1]
+        name = f["filename"].rsplit("/Sources/", 1)[-1]  # the last one: the checkout may sit under a Sources folder
         if name.startswith(LAYERS):
             lines = f["summary"]["lines"]
             rows.append((name, lines["count"], lines["covered"]))

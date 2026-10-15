@@ -4,11 +4,16 @@
 # the same one: back up .signing/ (it is git-ignored) — losing it means users re-grant access after updating.
 # .signing/porpoise-identity.p12 (password in .signing/p12-password) is the backup and the release CI's secret.
 set -euo pipefail
+umask 077  # the private key and the .p12 password are written here
 cd "$(dirname "$0")/.."
 DIR=.signing
 KC=$PWD/$DIR/porpoise.keychain-db
 PW=porpoise-local
-[ -f "$KC" ] && { echo "signing identity already set up"; exit 0; }
+if [ -f "$KC" ]; then
+  security find-identity -p codesigning "$KC" | grep -q "Porpoise Signing" && { echo "signing identity already set up"; exit 0; }
+  # A run that stopped after creating the keychain: say so, rather than leaving make-app.sh with no identity.
+  echo "$KC exists without the signing identity (an earlier run failed): move it away and run again" >&2; exit 1
+fi
 mkdir -p $DIR && cd $DIR
 cat > cert.cnf <<CNF
 [req]
