@@ -203,7 +203,10 @@ public final class SearchIndex: @unchecked Sendable {
         guard !paths.isEmpty else { eventID = max(eventID, event); return }
         var copy = lock.withLock { roots }
         for r in copy.indices {
-            var touched = Set(paths.filter { NameIndex.contains(path: $0, in: copy[r].path) || NameIndex.contains(path: copy[r].path, in: $0) })
+            let root = copy[r].path
+            var touched = Set(
+                paths.filter { NameIndex.contains(path: $0, in: root) || NameIndex.contains(path: root, in: $0) }
+                    .map { Self.outsidePackages($0, root: root) })
             if touched.isEmpty { continue }
             if touched.count > 64 {
                 touched = Set(
@@ -235,6 +238,18 @@ public final class SearchIndex: @unchecked Sendable {
         guard publish(copy, updated: Date(), generation: generation) else { return }
         eventID = max(eventID, event)
         persist(config, snapshot: copy); notify()
+    }
+    /// A change inside a package is a change of the folder holding it: walked from there, the package stays one
+    /// entry, as in a full crawl (a walk starting inside it would index its contents).
+    private static func outsidePackages(_ path: String, root: String) -> String {
+        guard path != root, NameIndex.contains(path: path, in: root) else { return path }
+        var folder = root
+        for name in path.dropFirst(root.count).split(separator: "/") {
+            let next = (folder as NSString).appendingPathComponent(String(name))
+            if (try? URL(fileURLWithPath: next).resourceValues(forKeys: [.isPackageKey]).isPackage) == true { return folder }
+            folder = next
+        }
+        return path
     }
     private func persist(_ config: IndexConfiguration, snapshot: [Root]) {
         do {
