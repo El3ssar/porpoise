@@ -224,6 +224,24 @@ private func stallSpotlight() -> () -> Void {
             #expect(log.events.count == after)  // stopped: nothing more
         }
 
+        /// A live query reports its results again when Spotlight says they changed (only after gathering).
+        @Test func aLiveQueryReportsUpdates() async throws {
+            let log = Log()
+            let q = SpotlightQuery(
+                predicate: NSPredicate(format: "kMDItemFSName == %@", "Calculator.app"), scopes: [systemApps], limit: 10, live: true,
+                timeout: 20, handler: record(log))
+            q.start()
+            defer { q.stop() }
+            #expect(await eventually(30) { finished(log) })
+            guard log.events.last == "gathered" else { return }  // Spotlight is off here: no updates to report
+            // What NSMetadataQuery posts on its queue when an item changes.
+            SpotlightQuery.queue.addOperation {
+                NotificationCenter.default.post(
+                    name: .NSMetadataQueryDidUpdate, object: q.query, userInfo: [NSMetadataQueryUpdateChangedItemsKey: []])
+            }
+            #expect(await eventually(10) { log.events.last == "updated" })
+        }
+
         /// Recent Files: when Spotlight doesn't answer, the list is shown empty (after the default wait).
         @Test func recentFilesAreEmptyWhenSpotlightNeverAnswers() async throws {
             let resume = stallSpotlight()
