@@ -212,6 +212,22 @@ struct ActivityTests {
         #expect(try Data(contentsOf: dst.appendingPathComponent("p.bin")) == Data(contentsOf: src))
     }
 
+    @Test func quittingDoesNotStartTheNextQueuedCopy() async throws {
+        c.concurrency = 1
+        let big = try randomFile("src/shutdown.bin", size: 32 << 20)
+        let waiting = try s.file("src/waiting.txt", "leave queued")
+        let dst = try s.folder("dst")
+        c.run(.copy, [big], to: dst, window: nil)
+        c.run(.copy, [waiting], to: dst, window: nil)
+        let first = c.activities[0], second = c.activities[1]
+        #expect(await waitUntil { (first.progress?.doneBytes ?? 0) > 0 })
+        c.interruptAll()
+        #expect(await waitUntil { first.state == .interrupted })
+        #expect(second.state == .queued)
+        #expect(!FileManager.default.fileExists(atPath: dst.appendingPathComponent("waiting.txt").path))
+        #expect(c.journals.all().count == 2)
+    }
+
     @Test func retryRunsTheFailedItemsAgain() async throws {
         let ok = try s.file("src/ok.txt", "ok")
         let missing = s.path("src/later.txt")

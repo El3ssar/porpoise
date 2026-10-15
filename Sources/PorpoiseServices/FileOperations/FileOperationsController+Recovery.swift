@@ -101,6 +101,7 @@ extension FileOperationsController {
     /// Resumes a plan: finishes interrupted moves (removing an original only once its copy is checked to be
     /// identical), removes partial copies that can't be continued, then runs the rest as a new job.
     public func recover(_ plan: RecoveryPlan, window: AnyObject?, done: (([URL]) -> Void)? = nil) {
+        isInterrupting = false
         journals.remove(plan.id)
         var errors: [String] = []
         for (source, target) in plan.unfinishedMoves {

@@ -11,7 +11,7 @@ public final class Activity: Identifiable {
         public var isEnded: Bool { self == .completed || self == .failed || self == .cancelled || self == .interrupted }
     }
 
-    public let id = UUID()
+    public let id: UUID
     public let kind: FileOperationKind
     public let sources: [URL]
     public let destination: URL?
@@ -29,6 +29,11 @@ public final class Activity: Identifiable {
     public let pauseUnavailable: String?
     /// The job doing the work (nil for remote transfers, which have their own loop).
     public internal(set) var job: FileJob?
+    public internal(set) var planJob: PlanJob?
+    public internal(set) var planProgress: PlanProgress?
+    var retryPlan: (() -> Void)?
+
+    public var fraction: Double { planProgress?.fraction ?? progress?.fraction ?? 0 }
     /// Starts it (queued jobs wait for a free slot).
     var start: (() -> Void)?
     /// The journal kept while it runs, for resuming after a relaunch (local jobs).
@@ -38,7 +43,8 @@ public final class Activity: Identifiable {
     /// Copies and moves wait their turn; trashing, deleting and links start at once.
     public var isQueued: Bool { kind == .copy || kind == .move }
 
-    init(kind: FileOperationKind, sources: [URL], destination: URL?, job: FileJob?, pauseUnavailable: String? = nil) {
+    init(kind: FileOperationKind, sources: [URL], destination: URL?, job: FileJob?, pauseUnavailable: String? = nil, id: UUID = UUID()) {
+        self.id = id
         self.kind = kind
         self.sources = sources
         self.destination = destination
@@ -49,10 +55,11 @@ public final class Activity: Identifiable {
             destination: destination)
     }
 
-    public var canPause: Bool { pauseUnavailable == nil && job != nil && (state == .running || state == .paused) }
+    public var canPause: Bool { pauseUnavailable == nil && (job != nil || planJob != nil) && (state == .running || state == .paused) }
 
     /// "Copying 3 items to Backup"
     public var title: String {
+        if let planJob { return planJob.title }
         let n = sources.count == 1 ? "“\(sources[0].lastPathComponent)”" : "\(sources.count) items"
         let dest = destination.map { " to \($0.lastPathComponent)" } ?? ""
         return "\(kind.verb) \(n)\(dest)"
@@ -60,6 +67,10 @@ public final class Activity: Identifiable {
 
     /// One line: speed, amounts and time left while running; the outcome once ended.
     public var statusText: String {
+        if let planProgress, state == .running || state == .paused {
+            let prefix = state == .paused ? "Paused — " : ""
+            return "\(prefix)\(planProgress.completedSteps) of \(planProgress.totalSteps) steps — \(planProgress.currentTitle)"
+        }
         let p = progress
         let amounts = p.map { $0.totalBytes > 0 ? "\(FileFormat.size($0.doneBytes)) of \(FileFormat.size($0.totalBytes))" : "" } ?? ""
         switch state {
@@ -125,7 +136,7 @@ extension FileOperationsController {
             activity.journal = journal
             journals.save(journal)
         }
-        if !activity.isQueued || runningQueued < concurrency {
+        if !isInterrupting && (!activity.isQueued || runningQueued < concurrency) {
             activity.start?()
         }
         activityDidChange()
@@ -135,6 +146,7 @@ extension FileOperationsController {
 
     /// Starts queued jobs while there are free slots, in the order of the list.
     func startQueued() {
+        guard !isInterrupting else { return }
         for a in activities where a.state == .queued && runningQueued < concurrency { a.start?() }
         activityDidChange()
     }
@@ -168,12 +180,13 @@ extension FileOperationsController {
         let job = activity.job
         activity.errors = errors
         activity.failedSources = job?.failedSources ?? []
-        if job?.isInterrupted == true {
+        if job?.isInterrupted == true || activity.planJob?.isInterrupted == true {
             activity.state = .interrupted  // the journal stays, for next time
         } else {
             activity.journal.map { journals.remove($0.id) }
-            if job?.isCancelled == true {
+            if job?.isCancelled == true || activity.planJob?.isCancelled == true {
                 activity.state = .cancelled
+                if let plan = activity.planJob { try? plan.store.remove(activity.id) }
             } else if !errors.isEmpty && (job?.results.isEmpty ?? true) && activity.kind != .delete && activity.kind != .trash {
                 activity.state = .failed
             } else {
@@ -224,7 +237,8 @@ extension FileOperationsController {
         let seconds = (activity.finishedAt ?? Date()).timeIntervalSince(activity.startedAt ?? activity.queuedAt)
         history.append(
             HistoryEntry(
-                date: activity.finishedAt ?? Date(), operation: activity.kind.verb, items: activity.sources.count,
+                date: activity.finishedAt ?? Date(), operation: activity.planJob == nil ? activity.kind.verb : activity.title,
+                items: activity.planProgress?.totalSteps ?? activity.sources.count,
                 sources: activity.sources.prefix(5).map(OperationHistory.describe), destination: activity.destination.map(OperationHistory.describe),
                 bytes: activity.progress?.doneBytes ?? 0, seconds: seconds, outcome: activity.outcomeText, errors: Array(activity.errors.prefix(5)),
                 verification: activity.verification?.summary))
@@ -234,15 +248,17 @@ extension FileOperationsController {
     // MARK: What the Activity window does
 
     public func pause(_ activity: Activity) {
-        guard activity.canPause, let job = activity.job else { return }
-        job.pause()
+        guard activity.canPause else { return }
+        activity.job?.pause()
+        activity.planJob?.pause()
         activity.state = .paused
         activityDidChange()
     }
 
     public func resume(_ activity: Activity) {
-        guard activity.state == .paused, let job = activity.job else { return }
-        job.resume()
+        guard activity.state == .paused else { return }
+        activity.job?.resume()
+        activity.planJob?.resume()
         activity.rate.reset()  // the pause isn't part of the speed
         activity.state = .running
         activityDidChange()
@@ -252,10 +268,12 @@ extension FileOperationsController {
         switch activity.state {
         case .queued:
             activities.removeAll { $0 === activity }
+            if let plan = activity.planJob { try? plan.store.remove(activity.id) }
             activity.journal.map { journals.remove($0.id) }
             activityDidChange()
         default:
             activity.job?.cancel()
+            activity.planJob?.cancel()
             remoteCancel[activity.id]?()
         }
     }
@@ -273,6 +291,7 @@ extension FileOperationsController {
 
     /// Runs the failed items again.
     public func retry(_ activity: Activity, window: AnyObject?) {
+        if let retry = activity.retryPlan { retry(); return }
         let again = activity.failedSources.isEmpty ? activity.sources : activity.failedSources
         activities.removeAll { $0 === activity }
         run(activity.kind, again, to: activity.destination, window: window)
@@ -287,10 +306,14 @@ extension FileOperationsController {
     /// The app is quitting: running jobs stop where they are, keeping partial copies and journals so they can be
     /// resumed next time; queued ones keep their journals. Waits up to `timeout` for the jobs to stop.
     public func interruptAll(timeout: TimeInterval = 3) {
+        isInterrupting = true
         let running = activities.filter { $0.state.isActive }
-        for a in running { a.job?.interrupt() }
+        for a in running {
+            if let job = a.job, !job.hasEnded { job.interrupt() }
+            if let plan = a.planJob, !plan.hasEnded { plan.interrupt() }
+        }
         let end = Date().addingTimeInterval(timeout)
-        while running.contains(where: { $0.job.map { !$0.hasEnded } ?? false }) && Date() < end {
+        while running.contains(where: { ($0.job.map { !$0.hasEnded } ?? false) || ($0.planJob.map { !$0.hasEnded } ?? false) }) && Date() < end {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
     }

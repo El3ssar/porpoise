@@ -29,8 +29,11 @@ public final class FileOperationsController {
     /// Where unfinished jobs are written down, to be resumed after a relaunch.
     public var journals = JournalStore(folder: JournalStore.defaultFolder)
     public var history = OperationHistory.shared
+    public var planJournals = PlanJournalStore(folder: JournalStore.defaultFolder.appendingPathComponent("Plans"))
     /// Cancelling a remote transfer (by activity).
     var remoteCancel: [UUID: () -> Void] = [:]
+    /// Once shutdown starts, finishing a worker must not start another queued operation.
+    var isInterrupting = false
     /// Tests: adjusts each local job before it's queued (no clones, slower chunks…).
     var prepareJob: ((FileJob) -> Void)?
 
@@ -106,7 +109,9 @@ public final class FileOperationsController {
     }
 
     /// Runs a queued job.
-    private func start(_ activity: Activity, job: FileJob, window: AnyObject?, sound: FinderSound?, allowDeleteFallback: Bool, done: (([URL]) -> Void)?) {
+    private func start(
+        _ activity: Activity, job: FileJob, window: AnyObject?, sound: FinderSound?, allowDeleteFallback: Bool, done: (([URL]) -> Void)?
+    ) {
         let kind = activity.kind, urls = activity.sources, folder = activity.destination
         began(activity)
         ui?.jobStarted(job)
