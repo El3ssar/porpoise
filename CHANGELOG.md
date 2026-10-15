@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Application cleanup.** Trashing an app opens a review of related Library files with sizes and matching reasons.
+  Related items start unchecked; shared app groups, ambiguous names, symlinks and data claimed by another installed
+  app are kept. Selected items move to Trash with Undo; cleanup never falls back to permanent deletion.
+- **Create New from templates.** Edit filename/content patterns with date, time, user, name and padded counters,
+  preview their resolved values, and create without overwriting existing files. Save and edit personal templates,
+  import ordinary files or portable template archives, export archives, and open the Application Support template folder.
 - **Collect files on a shelf.** Panels › Shelf (F8) holds references gathered from any folder, search or server: drag
   them in or choose Add to Shelf (⌥⌘S, also in the context menu and the command palette). Copy or move the collection
   to the folder shown, batch-rename, share, run a Service, open or show items in their folder, while the originals
