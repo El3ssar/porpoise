@@ -37,7 +37,7 @@ extension ConflictResolution {
         case .overwrite: return true
         case .overwriteIfOlder:
             guard let sourceDate = source.modificationDate, let destinationDate = destination.modificationDate else { return false }
-            return sourceDate > destinationDate
+            return sourceDate.timeIntervalSince(destinationDate) > options.timestampTolerance
         case .overwriteIfDifferent:
             return SyncComparator.statusOf(TransferComparison.entry(source), TransferComparison.entry(destination), options: options) != .same
         case .overwriteIfLarger: return source.size > destination.size

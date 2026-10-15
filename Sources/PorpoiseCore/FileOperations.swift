@@ -166,6 +166,8 @@ public final class FileJob: @unchecked Sendable {
     /// Upfront name-clash policy; nil asks through resolveConflict.
     public var conflictRule: TransferConflictRule = .ask
     public var comparisonOptions = SyncCompareOptions()
+    /// App moves the displaced complete item to Trash; tests may inject an isolated disposal.
+    public var disposeReplacedItem: ((URL) throws -> Void)?
     /// Files at least this large are copied in chunks that can resume where they stopped.
     public var resumableSize: Int64 = 8 << 20
     static let chunkSize = 4 << 20
@@ -206,6 +208,7 @@ public final class FileJob: @unchecked Sendable {
     /// The top-level item being processed (for events), and how deep in a folder merge the job is.
     private var currentIndex = 0
     private var knownConflicts: Set<URL> = []
+    private var directorySources: Set<URL> = []
     private var depth = 0
     private var moved: [(URL, URL)] = []
     private var trashed: [(URL, URL)] = []
@@ -309,7 +312,12 @@ public final class FileJob: @unchecked Sendable {
             onEvent(.finished(index: index, outcome: failed ? .failed : skipped ? .skipped : .done))
             progress.doneItems += 1
             if !failed { progress.doneFiles = max(progress.doneFiles, filesBefore + (fileCounts[src] ?? 1)) }
-            knownConflicts = knownConflicts.filter { !Self.isSameOrInside($0, src) }
+            if directorySources.contains(src), !knownConflicts.isEmpty {
+                let prefix = src.standardizedFileURL.path + "/"
+                knownConflicts = knownConflicts.filter { $0 != src && !$0.standardizedFileURL.path.hasPrefix(prefix) }
+            } else {
+                knownConflicts.remove(src)
+            }
             publish()
         }
         publish(force: true)
@@ -530,12 +538,17 @@ public final class FileJob: @unchecked Sendable {
             }
         }
         if replacing {
-            // The new item is complete: now the old one may go, and the staged one takes its name
-            // (a rename within one folder). replaceItemAt is avoided: it fails for items without read permission.
+            // Swap publishes atomically and leaves the displaced item at our staging path. If archiving it
+            // fails, swap back before reporting the error: the old target must never disappear on failure.
+            var swapped = false
             do {
-                try fm.removeItem(at: target)
-                try fm.moveItem(at: dest, to: target)
+                guard renamex_np(dest.path, target.path, UInt32(RENAME_SWAP)) == 0 else {
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
+                swapped = true
+                if let disposeReplacedItem { try disposeReplacedItem(dest) } else { try fm.removeItem(at: dest) }
             } catch {
+                if swapped { _ = renamex_np(dest.path, target.path, UInt32(RENAME_SWAP)) }
                 if renamed { try? fm.moveItem(at: dest, to: src) } else { try? fm.removeItem(at: dest) }
                 throw error
             }
@@ -828,6 +841,7 @@ public final class FileJob: @unchecked Sendable {
         var bytes: Int64 = directory || st.st_mode & S_IFMT == S_IFLNK ? 0 : Int64(st.st_size)
         var files = directory ? 0 : 1
         if directory {
+            directorySources.insert(url)
             progress.totalFolders += 1
             for child in try fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
                 bytes += try inventory(child, target: target?.appendingPathComponent(child.lastPathComponent))
