@@ -113,6 +113,10 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         settingsObserver = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
             // Rebuilding collapses the tree, so only for the panel's own settings.
             if Self.settingKeys.contains(n.object as? String) { self?.resetRoot() }
+            if n.object as? String == "appearancePreferences" || n.object as? String == "appearance" {
+                // Refresh existing cells after the icon cache clears; keep the expanded tree intact.
+                DispatchQueue.main.async { [weak self] in self?.outline.reloadData() }
+            }
         }
         resetRoot()
     }

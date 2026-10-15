@@ -173,6 +173,7 @@ final class PlacesPanel: NSView {
         // Only the icon size (or a full reset) changes this panel.
         let key = n.object as? String
         if key == nil || key == "placesIcon" { reload() }
+        if key == "appearancePreferences" || key == "appearance" { needsDisplay = true }
     }
 
     /// The frame height must cover every row, or rows past it draw but can't be clicked. Size it whenever the
