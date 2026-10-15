@@ -197,3 +197,16 @@ final class FTPProvider: RemoteProvider {
         for r in remote { try upload(try download(r, into: tmp), into: folder) }
     }
 }
+
+extension FTPProvider: SyncRemotePublishing {
+    public func publishSyncFile(_ staged: URL, to target: URL, modified: Date?) throws {
+        if let modified {
+            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0); formatter.dateFormat = "yyyyMMddHHmmss"
+            // MFMT is optional in FTP: failure leaves the existing target intact. Content mode needs no MFMT.
+            try command("MFMT \(formatter.string(from: modified)) \(try rel(staged))")
+        }
+        // RNTO replaces a file atomically on supporting servers; otherwise fail without a delete fallback.
+        try command("RNFR \(try rel(staged))", "RNTO \(try rel(target))")
+    }
+}
