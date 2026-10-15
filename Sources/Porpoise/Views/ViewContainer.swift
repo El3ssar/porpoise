@@ -181,7 +181,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 self.needsLayout = true
                 switch n.object as? String {
                 // Restore Defaults (no key), common vs. per-folder style, media folders: show the style that now applies.
-                case nil, "perFolder", "dynamicView": self.model.reloadProps()
+                case nil, "perFolder", "dynamicView", "appearanceIconSizes": self.model.reloadProps()
                 case "appLibraryView":
                     if self.url.standardizedFileURL == AppLibrary.location {
                         self.model.filter =

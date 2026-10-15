@@ -96,19 +96,24 @@ final class TerminalPanel: NSView, LocalProcessTerminalViewDelegate {
 
     /// Desert-Konsole.colorscheme (from the Desert theme pack) mapped onto the terminal, or its light counterpart.
     private func applyKonsoleColors(_ t: TerminalView) {
-        let scheme = Theme.isDark ? KonsoleScheme.desert : KonsoleScheme.light
-        func c(_ rgb: KonsoleScheme.RGB) -> SwiftTerm.Color {
-            SwiftTerm.Color(red: UInt16(rgb.0 * 257), green: UInt16(rgb.1 * 257), blue: UInt16(rgb.2 * 257))
-        }
-        // Konsole's Desert scheme: the terminal background is the window color (measured in Dolphin).
-        let bg = scheme.background.map { NSColor(rgb: $0.0, $0.1, $0.2) } ?? Theme.windowBackground
-        let fg = scheme.foreground.map { NSColor(rgb: $0.0, $0.1, $0.2) } ?? Theme.viewText
+        let preferences = Settings.shared.appearancePreferences
+        let theme = preferences.theme(dark: Theme.isDark)
+        let scheme =
+            preferences.terminalScheme == "Custom"
+            ? preferences.customTerminalPalette : TerminalPalette.builtIns.first { $0.name == preferences.terminalScheme }
+        let background = scheme?.background ?? theme[.windowBackground]
+        let foreground = scheme?.foreground ?? theme[.text]
+        let colors = scheme?.colors ?? theme.terminalPalette
+        let bg = NSColor(rgb: background.red, background.green, background.blue)
         t.nativeBackgroundColor = bg
-        t.nativeForegroundColor = fg
+        t.nativeForegroundColor = NSColor(rgb: foreground.red, foreground.green, foreground.blue)
         layer?.backgroundColor = bg.cgColor
         t.caretColor = Theme.selectionAlternate
         t.selectedTextBackgroundColor = Theme.selection
-        t.installColors(scheme.palette.map(c))
+        t.font = Theme.terminalFont()
+        t.changeScrollback(preferences.scrollback)
+        t.getTerminal().setCursorStyle(preferences.cursor == "bar" ? .steadyBar : preferences.cursor == "underline" ? .steadyUnderline : .steadyBlock)
+        t.installColors(colors.map { SwiftTerm.Color(red: UInt16($0.red * 257), green: UInt16($0.green * 257), blue: UInt16($0.blue * 257)) })
     }
 
     private func contextMenu(for t: TerminalView) -> NSMenu {
@@ -135,14 +140,21 @@ final class TerminalPanel: NSView, LocalProcessTerminalViewDelegate {
         t.frame = terminalFrame
         t.autoresizingMask = []
         addSubview(t, positioned: .below, relativeTo: hairline)
-        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let preferences = Settings.shared.appearancePreferences
+        var shellEnvironment = ProcessInfo.processInfo.environment
+        if let account = getpwuid(getuid()), let loginShell = account.pointee.pw_shell {
+            shellEnvironment["SHELL"] = String(cString: loginShell)
+        }
+        let shell = preferences.shell.executable(custom: preferences.customShell, environment: shellEnvironment)
+        let args = preferences.shell == .custom ? preferences.shellArguments : preferences.shell.arguments
         var env = ProcessInfo.processInfo.environment
+        env["SHELL"] = shell
         env["TERM"] = "xterm-256color"
         env["COLORTERM"] = "truecolor"
         env["TERM_PROGRAM"] = "Porpoise"
         env["PWD"] = dir.path
         t.startProcess(
-            executable: shell, args: ["-l"], environment: env.map { "\($0.key)=\($0.value)" },
+            executable: shell, args: args, environment: env.map { "\($0.key)=\($0.value)" },
             execName: "-" + (shell as NSString).lastPathComponent, currentDirectory: dir.path)
         lastSyncedDir = Self.realPath(dir.path)
         wanted = dir

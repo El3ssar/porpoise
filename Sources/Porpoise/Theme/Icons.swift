@@ -26,7 +26,10 @@ final class Icons {
         init(_ item: FileItem?) { self.item = item }
     }
 
-    private init() {}
+    private init() {
+        NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] _ in self?.cache.removeAllObjects()
+        }
+    }
 
     /// Icon image by freedesktop name. `selected` uses highlighted-text colors (like KDE's selected state). It draws
     /// in the colors of the look it's drawn in (light or dark), so menus and buttons holding it follow a change.
@@ -34,7 +37,12 @@ final class Icons {
         let px = Int(size)
         let key = "\(name)|\(px)|\(selected)" as NSString
         if let img = cache.object(forKey: key) { return img }
-        guard let url = IconTheme.shared.file(name, size: px), let svg = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        guard let url = IconTheme.shared.file(name, size: px) else { return nil }
+        if url.pathExtension != "svg" {
+            guard let image = NSImage(contentsOf: url) else { return nil }
+            image.size = NSSize(width: size, height: size); cache.setObject(image, forKey: key); return image
+        }
+        guard let svg = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         // Icons without the color-scheme stylesheet look the same in both: one picture.
         guard svg.contains("current-color-scheme") else {
             guard let img = NSImage(data: Data(svg.utf8)) else { return nil }
@@ -43,7 +51,9 @@ final class Icons {
             return img
         }
         func render(dark: Bool) -> NSImage? {
-            NSImage(data: Data(Self.recolor(svg, stylesheet: Theme.iconStylesheet(selected: selected, dark: dark)).utf8))
+            NSImage(
+                data: Data(Self.recolor(svg, stylesheet: Theme.iconStylesheet(selected: selected, dark: dark, folder: name.hasPrefix("folder"))).utf8)
+            )
         }
         guard let darkImg = render(dark: true), let lightImg = render(dark: false) else { return nil }
         let img = NSImage(size: NSSize(width: size, height: size), flipped: false) { r in
@@ -131,6 +141,10 @@ final class Icons {
 
     /// Image for a file item: real app icons for .app bundles (Mac), otherwise the Tela icon.
     func image(for item: FileItem, size: CGFloat, selected: Bool = false) -> NSImage {
+        if Settings.shared.appearancePreferences.iconTheme == "Native macOS" {
+            let image = NSWorkspace.shared.icon(forFile: item.url.path)
+            image.size = NSSize(width: size, height: size); return image
+        }
         // Finder aliases look like their original (the view adds the link emblem).
         if item.isAliasFile, let t = aliasTarget(of: item), !t.isAliasFile { return image(for: t, size: size, selected: selected) }
         if item.isApplication || (item.isPackage && !item.isBrowsableFolder && item.fileExtension.lowercased() == "app") {

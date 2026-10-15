@@ -2,40 +2,55 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
-/// Opens an external terminal app at a folder (Dolphin's "Open Terminal Here"). Prefers kitty if installed.
+/// Launches the selected terminal using explicit argv, preserving spaces and shell metacharacters in paths.
 enum ExternalTerminal {
-    private static let kittyID = "net.kovidgoyal.kitty"
+    static var installed: [ExternalTerminalChoice] {
+        ExternalTerminalChoice.installed { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil }
+    }
+    static func run(_ file: URL) { launch(at: file.deletingLastPathComponent(), script: file) }
+    static func open(at dir: URL) { launch(at: dir, script: nil) }
 
-    /// Runs an executable in a terminal window (Dolphin's "Run script").
-    static func run(_ file: URL) {
-        let ws = NSWorkspace.shared
-        if let kitty = ws.urlForApplication(withBundleIdentifier: kittyID),
-            launchKitty(kitty, ["--single-instance", "--hold", "--directory", file.deletingLastPathComponent().path, file.path])
-        {
+    private static func launch(at dir: URL, script: URL?) {
+        let preferences = Settings.shared.appearancePreferences
+        if preferences.externalTerminal == .custom {
+            do {
+                var command = try TerminalCommandTemplate.expand(preferences.externalCommand, directory: dir.path)
+                if let script { command += " " + TerminalCommandTemplate.quote(script.path) }
+                try process("/bin/sh", ["-c", command])
+            } catch { NSAlert(error: error).runModal() }
             return
         }
-        if let term = ws.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
-            ws.open([file], withApplicationAt: term, configuration: NSWorkspace.OpenConfiguration())
-        }
-    }
-
-    static func open(at dir: URL) {
-        let ws = NSWorkspace.shared
-        let candidates = [kittyID, "com.mitchellh.ghostty", "com.googlecode.iterm2", "com.github.wez.wezterm", "com.apple.Terminal"]
-        let preferred = Settings.store.string(forKey: "terminalApp")
-        for id in [preferred].compactMap({ $0 }) + candidates {
-            guard let app = ws.urlForApplication(withBundleIdentifier: id) else { continue }
-            if id == kittyID, launchKitty(app, ["--single-instance", "--directory", dir.path]) { return }
-            ws.open([dir], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+        let choices: [ExternalTerminalChoice] =
+            preferences.externalTerminal == .automatic
+            ? [.kitty, .ghostty, .iTerm, .wezTerm, .terminal] : [preferences.externalTerminal]
+        for choice in choices {
+            guard let id = choice.bundleID, let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { continue }
+            let path = dir.path
+            var executable: String?, arguments: [String] = []
+            switch choice {
+            case .kitty:
+                executable = "kitty"; arguments = ["--single-instance", "--directory", path] + (script.map { ["--hold", $0.path] } ?? [])
+            case .wezTerm:
+                executable = "wezterm"; arguments = ["start", "--cwd", path] + (script.map { ["--", $0.path] } ?? [])
+            case .ghostty:
+                executable = "ghostty"; arguments = ["--working-directory=" + path] + (script.map { ["-e", $0.path] } ?? [])
+            case .alacritty:
+                executable = "alacritty"; arguments = ["--working-directory", path] + (script.map { ["-e", $0.path] } ?? [])
+            default: break
+            }
+            if let executable {
+                do { try process(app.appendingPathComponent("Contents/MacOS/" + executable).path, arguments) } catch {
+                    NSAlert(error: error).runModal()
+                }
+            } else {
+                NSWorkspace.shared.open([script ?? dir], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+            }
             return
         }
+        let alert = NSAlert(); alert.messageText = "The selected terminal is not installed"
+        alert.informativeText = "Choose an installed terminal in Settings › Appearance."; alert.runModal()
     }
-
-    /// kitty opens folders as a working directory only through its command line.
-    private static func launchKitty(_ app: URL, _ args: [String]) -> Bool {
-        let p = Process()
-        p.executableURL = app.appendingPathComponent("Contents/MacOS/kitty")
-        p.arguments = args
-        return (try? p.run()) != nil
+    private static func process(_ executable: String, _ arguments: [String]) throws {
+        let p = Process(); p.executableURL = URL(fileURLWithPath: executable); p.arguments = arguments; try p.run()
     }
 }

@@ -19,7 +19,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     let leftStack = ThinSplitView()  // [places, folders]
     /// Sidebar host: translucent Desert-tinted material behind Places/Folders (Finder-style).
     let sidebar = NSView()
-    let sidebarMaterial = TintedMaterialView(material: .sidebar, alpha: 0.70)
+    let sidebarMaterial = TintedMaterialView(material: .sidebar, tint: Theme.sidebarBackground, alpha: 0.70)
     let placesScroll = NSScrollView()
     let places = PlacesPanel()
     lazy var folders = FoldersPanel()
