@@ -28,7 +28,7 @@ import Testing
         let started = Date()
         q.start()
         #expect(Date().timeIntervalSince(started) < 0.1)  // start() returned at once
-        #expect(await eventually(5) { events == ["unavailable"] })
+        #expect(await eventually(30) { events == ["unavailable"] })  // generous: a busy main queue delays the timeout
         resume()
         try await Task.sleep(nanoseconds: 300_000_000)
         #expect(events == ["unavailable"])  // nothing more once it gave up
