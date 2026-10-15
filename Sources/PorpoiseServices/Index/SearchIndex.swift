@@ -78,6 +78,15 @@ public final class SearchIndex: @unchecked Sendable {
         guard let updated = s.updated else { return s.message }
         return "Index: \(s.count.formatted()) items, updated \(max(0, Int(Date().timeIntervalSince(updated))))s ago" + (s.warning.map { " · " + $0 } ?? "")
     }
+    /// Cheap UI hint: no filesystem calls. The worker search performs canonical/device coverage checks.
+    public func hasReadySnapshot(for scope: URL) -> Bool {
+        lock.withLock {
+            let path = scope.path
+            return current.enabled && !state.building && !excluded(path, config: current)
+                && roots.contains { NameIndex.contains(path: path, in: $0.path) }
+                && !roots.flatMap(\.holes).contains { NameIndex.contains(path: $0, in: path) || NameIndex.contains(path: path, in: $0) }
+        }
+    }
     public func start() { configure(configuration, rebuild: false) }
     public func configure(_ proposed: IndexConfiguration, rebuild: Bool = false) {
         var config = proposed
@@ -167,7 +176,7 @@ public final class SearchIndex: @unchecked Sendable {
     private func refresh(_ paths: [String], event: UInt64, rescan: Bool, config: IndexConfiguration, generation: Int) {
         guard valid(generation) else { return }
         // Our manifest and snapshot writes must never feed back into the index.
-        let paths = paths.map(IndexPath.canonical).filter { rescan || !excluded($0, config: config) }
+        let paths = paths.map(IndexPath.entry).filter { rescan || !excluded($0, config: config) }
         guard !paths.isEmpty else { eventID = max(eventID, event); return }
         var copy = lock.withLock { roots }
         for r in copy.indices {

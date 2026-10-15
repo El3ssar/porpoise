@@ -177,7 +177,7 @@ public struct NameIndex: @unchecked Sendable {
         records = data.withUnsafeBytes { bytes in
             (0..<Int(count)).map { bytes.loadUnaligned(fromByteOffset: 24 + $0 * MemoryLayout<Record>.stride, as: Record.self) }
         }
-        arena = data[end..<data.count]
+        arena = data[(data.startIndex + end)..<data.endIndex]
         for (i, r) in records.enumerated() {
             guard (r.parent == Self.noParent || Int(r.parent) < i),
                 UInt64(r.nameOffset) + UInt64(r.nameLength) <= size,

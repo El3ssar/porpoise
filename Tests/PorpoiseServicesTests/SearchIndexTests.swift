@@ -159,6 +159,19 @@ import PorpoiseTestSupport
         for name in ["large", "binary", "link", "pipe", "absent"] { #expect(IndexFileText.read(s.path(name).path, limit: 65536) == nil) }
     }
 
+
+    @Test func symlinkEventsIndexTheLinkWithoutFollowingItsTarget() async throws {
+        let s = try Scratch(); try s.folder("root"); try s.file("outside.txt", "outside content")
+        let index = setup(s)
+        defer { index.configure(IndexConfiguration()) }
+        try await waitReady(index)
+        try s.symlink("root/new-link", to: s.path("outside.txt").path)
+        try #require(await eventually(5) { index.search("new-link", scope: s.path("root"))?.paths.count == 1 })
+        #expect(index.search("outside.txt", scope: s.path("root"))?.paths.isEmpty == true)
+        try FileManager.default.removeItem(at: s.path("root/new-link"))
+        try #require(await eventually(5) { index.search("new-link", scope: s.path("root"))?.paths.isEmpty == true })
+    }
+
     @Test func fallbackRunnerStillFindsFilesWithIndexOff() async throws {
         let s = try Scratch(); try s.file("fallback-name.txt")
         var result: [FileItem]?

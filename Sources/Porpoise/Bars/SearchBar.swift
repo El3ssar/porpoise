@@ -94,7 +94,9 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
 
     func controlTextDidChange(_ obj: Notification) {
         debounce?.invalidate()
-        debounce = Timer.scheduledTimer(withTimeInterval: (!contents && SearchIndex.shared.status.updated != nil ? 0.015 : Self.debounceDelay), repeats: false) { [weak self] _ in self?.fire() }
+        let scope = everywhere ? FileManager.default.homeDirectoryForCurrentUser : scopeFolder
+        let ready = scope.map { SearchIndex.shared.hasReadySnapshot(for: $0) } ?? false
+        debounce = Timer.scheduledTimer(withTimeInterval: (!contents && ready ? 0.015 : Self.debounceDelay), repeats: false) { [weak self] _ in self?.fire() }
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
