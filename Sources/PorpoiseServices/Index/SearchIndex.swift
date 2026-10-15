@@ -154,7 +154,7 @@ public final class SearchIndex: @unchecked Sendable {
             eventID = IndexEvents.currentEventID
             startupMessage("Index starting watcher", generation: generation)
             guard watch(selected, generation: generation) else { return }  // Start before crawling so changes during the walk are replayed.
-            startupMessage("Index crawling", generation: generation)
+            startupMessage("Index queued for crawl", generation: generation)
             pendingBuild = PendingBuild(generation: generation)
             var built: [Root] = []
             let crawlLock = NSLock(), group = DispatchGroup()
@@ -163,6 +163,7 @@ public final class SearchIndex: @unchecked Sendable {
                 crawlQueue.addOperation { [self] in
                     defer { group.leave() }
                     guard valid(generation) else { return }
+                    startupMessage("Index crawling", generation: generation)
                     let result = crawl(path, config: selected, generation: generation)
                     if result.table.count > 0 { crawlLock.withLock { built.append(Root(path: path, base: result.table, holes: result.holes)) } }
                 }
