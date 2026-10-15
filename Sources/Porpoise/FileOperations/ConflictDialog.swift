@@ -264,7 +264,7 @@ final class ConflictDialog: NSObject {
     }
 }
 
-private final class ConflictActionButton: NSButton {
+class ConflictActionButton: NSButton {
     var primary = false
     var drawsBackground = true
     var titleTint: NSColor?
@@ -307,6 +307,6 @@ private final class ConflictBadge: NSView {
     }
 }
 
-private final class ConflictBackdropView: NSView {
+final class ConflictBackdropView: NSView {
     override func draw(_ dirtyRect: NSRect) { Theme.windowBackground.setFill(); bounds.fill() }
 }
