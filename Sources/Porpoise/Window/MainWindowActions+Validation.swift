@@ -40,7 +40,8 @@ extension MainWindowController: NSMenuItemValidation {
             return !hasSelection || selectionIsManageable
         case #selector(copy(_:)), #selector(copyLocation(_:)):
             return true
-        case #selector(properties(_:)), #selector(revealInFinder(_:)):
+        case #selector(showChecksums(_:)), #selector(showDiskUsage(_:)), #selector(showDuplicates(_:)),
+            #selector(properties(_:)), #selector(revealInFinder(_:)):
             return actionTargets.allSatisfy(\.isFileURL)
         case #selector(duplicateItem(_:)):
             return !hasSelection ? writable : selectionIsLocal

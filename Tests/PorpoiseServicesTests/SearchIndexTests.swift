@@ -20,7 +20,9 @@ import Testing
         return service
     }
     private func waitReady(_ index: SearchIndex) async throws {
-        try #require(await eventually(Self.liveWait) { !index.status.building && index.status.updated != nil })
+        let ready = await eventually(Self.liveWait) { !index.status.building && index.status.updated != nil }
+        let status = index.status
+        try #require(ready, "Index startup: \(status)")
     }
     @Test func crawlerSkipsSymlinksAndExcludedTrees() throws {
         let s = try Scratch()

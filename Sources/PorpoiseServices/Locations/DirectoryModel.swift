@@ -579,7 +579,7 @@ public final class DirectoryModel {
         let all = recountFolders
         recountFolders = false
         // Counting everything again supersedes the counts still under way: they were made with the old settings.
-        if all { countGeneration += 1 }
+        if all { countGeneration += 1; FolderUsageCache.shared.invalidate(below: location) }
         let need = rows.map(\.item).filter { $0.isBrowsableFolder && (all || (folderCounts[$0.url] == nil && !pendingCounts.contains($0.url))) }
         guard !need.isEmpty else { return }
         let generation = countGeneration
@@ -607,13 +607,7 @@ public final class DirectoryModel {
 
     /// Size of a folder's contents, limited to `maxDepth` levels (Dolphin's "up to N levels deep").
     static func contentSize(_ url: URL, maxDepth: Int) -> Int64 {
-        var total: Int64 = 0
-        guard let e = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey]) else { return 0 }
-        for case let u as URL in e {
-            if e.level > maxDepth { e.skipDescendants(); continue }
-            total += Int64((try? u.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-        }
-        return total
+        FolderUsageCache.shared.size(url, depth: maxDepth)
     }
 
     /// Dolphin's "Use icons view mode for locations which mostly contain media files".

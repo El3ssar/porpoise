@@ -7,6 +7,9 @@
 - **Your shortcuts and toolbar.** Settings › Shortcuts records bindings, blocks conflicts (including alternate keys),
   resets defaults and imports/exports JSON. Bindings apply live and at launch. View › Customise Toolbar opens the
   macOS customisation palette; its saved action order previews in every window while preserving split breadcrumbs.
+- **File utilities in Tools.** Compute SHA-256/512 (and legacy MD5/SHA-1), compare pasted hashes, verify GNU/BSD manifests and export checksums, with progress and cancellation.
+- **Disk Usage.** A sortable list and drill-down treemap show logical and allocated sizes, count hard links once, and offer Reveal and undoable Trash. Details content sizes reuse the bulk scanner and a bounded cache.
+- **Duplicate Finder.** Size, first/last-chunk and full SHA-256 checks identify copies, ignore empty files/symlinks/hard-link aliases, and report APFS clone families. Review keep rules and explicitly move marked copies to Trash; changed files and removing every keeper are rejected.
 
 ## 0.5.0
 
@@ -15,6 +18,7 @@
   The side-by-side preview blocks invalid names and collisions. Swaps, cycles and case-only renames use temporary names,
   and the whole batch is one Undo/Redo action; failed operations restore staged files without overwriting other items.
 - Fixed: an edited remote file replaced twice in quick succession could miss its upload.
+
 
 ## 0.4.0
 

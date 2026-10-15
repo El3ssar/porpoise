@@ -52,8 +52,10 @@ with *Porpoise › Check for Updates…*.
 - **Panels:** Places (foldable, reorderable sections; devices with capacity bars and eject; tags; network), Folders
   tree, Information (big preview, metadata, inline video/audio player) and a **Terminal** (F4) running your own
   shell that follows the view, and the view follows it.
+- **File utilities:** SHA-256/512 checksums, legacy MD5/SHA-1, GNU/BSD manifest verification and export; a drill-down disk-usage map and duplicate review with APFS clone-family reporting and undoable Trash.
 - **Files:** previewed batch rename (F2) with ordered rules, regex captures, numbering, dates/media tokens, presets and
   one-step undo; copy/move/link/trash with progress and undo, Dolphin's drop menu, conflict dialog, Create New,
+
   Duplicate, Compress/Extract, Properties (permissions, Open with + Change All, tags, comments, locked), Restore
   from Trash, admin authentication for protected items.
 - **Finder parity:** Quick Look (Space), tags with colours, aliases, Get Info, Go to Folder and Finder's keyboard
@@ -64,6 +66,27 @@ with *Porpoise › Check for Updates…*.
   phones over USB, archives browsed as folders.
 - **Accessibility:** VoiceOver reads and drives the file view, Places, tabs, the path bar and the app library; toolbar
   buttons are reachable with Tab under Full Keyboard Access; Reduce Motion and Increase Contrast are respected.
+
+## Checksums, disk usage and duplicates
+
+Select files/folders, then choose **Tools › Checksums…**, **Disk Usage…**, or **Find Duplicates…**. With no selection,
+the current folder is used. Each utility runs in the background and has Cancel.
+
+Checksums supports SHA-256 and SHA-512, plus MD5 and SHA-1 clearly labelled as legacy. Compare a pasted value,
+verify GNU/BSD `.sha256`, `.sha512`, `.md5` or SHASUMS manifests, and export a manifest beneath a common folder.
+Manifest paths stay inside the manifest's folder; symlinks escaping it are rejected.
+
+The disk map switches between logical and allocated bytes, with sortable columns, directory drill-down, Reveal and
+undoable Trash. Hard links count once; APFS clones can share allocated space, so the map does not promise exact
+reclaimable bytes. Enable **Settings › View › Folder size › Show size of contents** to use the same scanner and cache
+in the Details Size column, with your chosen depth limit. Scans include hidden files, skip symlink targets and stay
+on selected volumes.
+
+Duplicate Finder first groups sizes, then checks the first/last 64 KiB and full SHA-256. Empty files, symlink targets
+and aliases to the same inode are ignored. APFS clone families are identified when supported. Nothing is selected
+for removal automatically: apply a keep rule (newest, oldest, shortest path, or preferred folder), review the marked
+copies, then move them to Trash. At least one copy must remain; files and keepers are revalidated before the move.
+Use **Edit › Undo** to restore them.
 
 ## Appearance and terminals
 
