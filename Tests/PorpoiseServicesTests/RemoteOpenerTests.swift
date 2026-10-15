@@ -22,7 +22,7 @@ final class RemoteOpenerTests {
         RemoteFS.cacheParent = cache.url
         RemoteFS.use(server.provider(), for: server.url("/"))
         RemoteOpener.openFile = { [unowned self] in opened.append($0) }
-        observer = NotificationCenter.default.addObserver(forName: StatusCenter.message, object: nil, queue: nil) { [unowned self] n in
+        observer = NotificationCenter.default.addObserver(forName: StatusCenter.message, object: nil, queue: .main) { [unowned self] n in
             // Posted on the main queue.
             MainActor.assumeIsolated { messages.append(n.object as? String ?? "") }
         }
