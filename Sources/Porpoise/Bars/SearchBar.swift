@@ -5,6 +5,8 @@ import PorpoiseServices
 protocol SearchBarDelegate: AnyObject {
     func searchBar(_ bar: SearchBar, search text: String, everywhere: Bool, contents: Bool)
     func searchBarClosed(_ bar: SearchBar)
+    /// How to use the operator being typed (ext:, size:…), or what's wrong with it; nil when there's nothing to say.
+    func searchBar(_ bar: SearchBar, hint: String?)
 }
 
 /// Dolphin's search bar (Ctrl+F): field, Here / Everywhere, Names / + Contents (always in view), close.
@@ -17,17 +19,32 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
     private let contentsButton = FlatButton(icon: "document-preview", title: "+ Contents")
     private let closeButton = FlatButton(icon: "dialog-close", tooltip: "Quit Searching")
     /// The whole home folder (Spotlight), or the folder shown.
-    var everywhere = false { didSet { if everywhere != oldValue { updateButtons(); fire() } } }
+    var everywhere = false { didSet { if everywhere != oldValue { updateButtons(); updatePlaceholder(); fire() } } }
     /// Names and contents (+ Contents), or names only.
     var contents = false {
         didSet {
             guard contents != oldValue else { return }
-            field.placeholderString = contents ? "Search names and contents…" : "Search…"
+            updatePlaceholder()
             updateButtons()
             fire()
         }
     }
-    var scopeFolder: URL? { didSet { hereButton.toolTip = "Limit the search to “\(scopeFolder?.lastPathComponent ?? "")” and its subfolders" } }
+    var scopeFolder: URL? {
+        didSet {
+            hereButton.toolTip = "Limit the search to “\(scopeFolder?.lastPathComponent ?? "")” and its subfolders"
+            updatePlaceholder()
+        }
+    }
+    private var indexObserver: NSObjectProtocol?
+
+    /// Where the index covers the scope, the field says so and suggests its syntax.
+    private func updatePlaceholder() {
+        let scope = everywhere ? FileManager.default.homeDirectoryForCurrentUser : scopeFolder
+        let indexed = !contents && (scope.map { SearchIndex.shared.hasReadySnapshot(for: $0) } ?? false)
+        field.placeholderString = contents ? "Search names and contents…" : indexed ? "Search the index — try ext:pdf size:>10mb dm:today" : "Search…"
+        field.toolTip =
+            indexed ? SearchIndex.shared.statusText + "\nOperators: " + IndexQuery.operators.joined(separator: " ") + " · ⌥⎋ completes them" : nil
+    }
     private var debounce: Timer?
     /// Typing waits this long before searching.
     private static let debounceDelay: TimeInterval = 0.3
@@ -46,12 +63,17 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
         namesButton.toolTip = "Find names. Indexed search supports ext:pdf, path:work, size:>10mb, dm:today, folder:, file:, regex:pattern"
         contentsButton.onClick = { [weak self] in self.map { $0.contents.toggle() } }
         contentsButton.toolTip = "Also find files by the text inside them (shown as Content matches)"
+        indexObserver = NotificationCenter.default.addObserver(forName: SearchIndex.changed, object: nil, queue: .main) { [weak self] _ in
+            self?.updatePlaceholder()
+        }
         closeButton.onClick = { [weak self] in self.map { $0.delegate?.searchBarClosed($0) } }
         for v in [field, hereButton, everywhereButton, namesButton, contentsButton, closeButton] as [NSView] { addSubview(v) }
         updateButtons()
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    deinit { indexObserver.map(NotificationCenter.default.removeObserver) }
 
     override var isFlipped: Bool { true }
 
@@ -93,12 +115,22 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
     }
 
     func controlTextDidChange(_ obj: Notification) {
+        delegate?.searchBar(self, hint: contents ? nil : IndexQuery.hint(for: field.stringValue))
         debounce?.invalidate()
         let scope = everywhere ? FileManager.default.homeDirectoryForCurrentUser : scopeFolder
         let ready = scope.map { SearchIndex.shared.hasReadySnapshot(for: $0) } ?? false
         debounce = Timer.scheduledTimer(withTimeInterval: (!contents && ready ? 0.015 : Self.debounceDelay), repeats: false) { [weak self] _ in
             self?.fire()
         }
+    }
+
+    /// ⌥Esc (or F5) on a word: the operators it can start.
+    func control(
+        _ control: NSControl, textView: NSTextView, completions words: [String], forPartialWordRange range: NSRange,
+        indexOfSelectedItem index: UnsafeMutablePointer<Int>
+    ) -> [String] {
+        let partial = (textView.string as NSString).substring(with: range)
+        return IndexQuery.completions(for: partial) + words.filter { !$0.hasSuffix(":") }
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {

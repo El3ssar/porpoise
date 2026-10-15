@@ -596,6 +596,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         searchQuery?.start()
     }
 
+    func searchBar(_ bar: SearchBar, hint: String?) {
+        if let hint { statusBar.showMessage(hint) }
+    }
+
     func searchBarClosed(_ bar: SearchBar) {
         closeSearch()
         window?.makeFirstResponder(list)

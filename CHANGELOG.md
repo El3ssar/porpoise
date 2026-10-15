@@ -10,6 +10,13 @@
 - **File utilities in Tools.** Compute SHA-256/512 (and legacy MD5/SHA-1), compare pasted hashes, verify GNU/BSD manifests and export checksums, with progress and cancellation.
 - **Disk Usage.** A sortable list and drill-down treemap show logical and allocated sizes, count hard links once, and offer Reveal and undoable Trash. Details content sizes reuse the bulk scanner and a bounded cache.
 - **Duplicate Finder.** Size, first/last-chunk and full SHA-256 checks identify copies, ignore empty files/symlinks/hard-link aliases, and report APFS clone families. Review keep rules and explicitly move marked copies to Trash; changed files and removing every keeper are rejected.
+- **Faster, smaller file index.** Filename searches run on every core over a columnar index: a million names in
+  about 2.5 ms (was 12 ms), five million under 20 ms, in less than half the memory (50 MiB per million entries, was
+  120). Indexing reads whole folders at once on several threads (200,000 files in 0.12 s, was 0.49 s).
+- Content indexing keeps which files hold which three-letter sequences (posting lists instead of a 256-bit filter that
+  filled up), covers text files up to 1 MB (was 64 KB) and builds four times faster.
+- The search bar explains the operator you're typing (`size:`, `dm:`, `ext:`…) or what's wrong with it, ⌥Esc
+  completes operator names, and the field says when the index covers the folder.
 
 ## 0.5.0
 

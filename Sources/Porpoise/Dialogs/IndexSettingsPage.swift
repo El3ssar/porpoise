@@ -35,7 +35,7 @@ enum IndexSettingsPage {
         f.check("Exclude node_modules", index.configuration.excludeNodeModules) { value in change { $0.excludeNodeModules = value } }
         f.check("Accelerate content searches (uses more storage)", index.configuration.content) { value in change { $0.content = value } }
         f.note(
-            "Content filters cover UTF-8 text up to 64 KB; candidates are checked against the current file. Other files up to 5 MB are searched directly. Content searches treat the query as literal text."
+            "The content index covers UTF-8 text files up to 1 MB (which files hold which three-letter sequences); candidates are checked against the current file. Other files up to 5 MB are searched directly. Content searches treat the query as literal text."
         )
         f.section("Filename query syntax")
         f.note(
