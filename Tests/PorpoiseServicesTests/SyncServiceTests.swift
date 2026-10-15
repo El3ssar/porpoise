@@ -37,6 +37,7 @@ struct SyncServiceTests {
         let lazy = try SyncScanner.scan(root, maxDepth: 1)
         #expect(!lazy.complete); #expect(lazy.entries.count == 2)
         #expect(throws: (any Error).self) { try SyncScanner.scan(scratch.path("missing")) }
+        #expect(throws: (any Error).self) { try SyncScanner.scan(URL(string: "https://example.test/")!) }
         #expect(throws: (any Error).self) { try SyncScanner.scan(scratch.path("root/d/a")) }
     }
     @Test func stalePreviewTraversalAndSymlinkAncestorsRefused() throws {

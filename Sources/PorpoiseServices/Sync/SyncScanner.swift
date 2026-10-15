@@ -41,6 +41,7 @@ public enum SyncScanner {
         caseSensitive: Bool? = nil, cancellation: DiskCancellation = DiskCancellation()
     ) throws -> SyncSnapshot {
         let provider = RemoteFS.provider(for: root)
+        guard root.isFileURL || provider != nil else { throw SyncEngineError.unsupported("Unsupported sync location: \(root.scheme ?? "unknown")") }
         var rootIdentity: String?
         if provider == nil {
             let entry = try localEntry(root, path: "root", content: false, cancellation: cancellation)

@@ -86,6 +86,9 @@ public enum SyncExecutor {
             let l = leftPath.isEmpty ? "/" : leftPath, r = rightPath.isEmpty ? "/" : rightPath
             return l == r || l == "/" || r == "/" || (l + "/").hasPrefix(r + "/") || (r + "/").hasPrefix(l + "/")
         }
+        guard (left.isFileURL || RemoteFS.isRemote(left)), (right.isFileURL || RemoteFS.isRemote(right)) else {
+            throw SyncEngineError.unsupported("Choose local folders or supported remote locations.")
+        }
         guard left.password == nil, right.password == nil else {
             throw SyncEngineError.unsupported("Store connection passwords in Keychain, not sync URLs.")
         }
