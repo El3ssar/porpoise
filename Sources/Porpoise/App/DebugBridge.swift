@@ -59,6 +59,7 @@ final class DebugBridge: NSObject {
                     try? info.write(toFile: a[0] + String(format: "/%02d.txt", k), atomically: true, encoding: .utf8)
                 }
             }
+        case "perfbench": perfBench(arg)
         case "animprobe":
             // animprobe <file>: runs a 0.3 s animation and writes how many frames it got (the display's ticks).
             var ticks = 0
@@ -406,6 +407,70 @@ final class DebugBridge: NSObject {
 
     /// Real composited capture of our own window (materials, glass) via the window server.
     /// CGWindowListCreateImage is hidden from Swift in newer SDKs; capturing one's own windows needs no permission.
+    /// Frame costs, timed in the app and written to <file>:
+    /// `perfbench <file> resize <w0> <w1> <steps>`: the main window resized step by step, each step laid out and drawn.
+    /// `perfbench <file> zoom <size0> <size1> <steps>`: the view zoomed step by step (as a pinch or the animation does).
+    /// `perfbench <file> zoomanim <size>`: an animated zoom (Cmd+=), counting the frames it showed.
+    private func perfBench(_ arg: String) {
+        let a = arg.split(separator: " ").map(String.init)
+        guard a.count >= 3, let win = wc?.window, let list = wc?.view.list else { return }
+        let n = a.dropFirst(2).compactMap { Double($0) }
+        func report(_ times: [Double], extra: String = "") {
+            let ms = times.map { $0 * 1000 }.sorted()
+            let mean = ms.reduce(0, +) / Double(max(1, ms.count))
+            let line = String(
+                format: "%@ n=%d mean=%.2fms p50=%.2fms p90=%.2fms max=%.2fms%@", a[1], ms.count, mean,
+                ms.isEmpty ? 0 : ms[ms.count / 2], ms.isEmpty ? 0 : ms[ms.count * 9 / 10], ms.last ?? 0, extra)
+            try? line.write(toFile: a[0], atomically: true, encoding: .utf8)
+        }
+        // Layer-backed views draw when Core Animation commits: flushed here, so the time includes the drawing.
+        func timed(_ body: () -> Void) -> Double {
+            let t = CACurrentMediaTime()
+            body()
+            win.displayIfNeeded()
+            CATransaction.flush()
+            return CACurrentMediaTime() - t
+        }
+        switch a[1] {
+        case "resize" where n.count == 3:
+            var f = win.frame
+            let steps = Int(n[2])
+            report(
+                (0..<steps).map { k in
+                    // There and back, like a hand dragging the window's edge.
+                    let t = Double(k) / Double(max(1, steps - 1)) * 2
+                    f.size.width = n[0] + (n[1] - n[0]) * (t <= 1 ? t : 2 - t)
+                    return timed { win.setFrame(f, display: true) }
+                })
+        case "zoom" where n.count == 3:
+            let steps = Int(n[2])
+            report(
+                (0..<steps).map { k in
+                    let s = n[0] + (n[1] - n[0]) * Double(k) / Double(max(1, steps - 1))
+                    return timed { list.previewZoom(CGFloat(s), commitAfter: nil) }
+                })
+            list.commitZoom()
+        case "zoomanim" where n.count == 1:
+            // Sizes the view showed while the animation ran, seen from a timer: one per frame drawn.
+            var sizes: [CGFloat] = [list.iconSize], gaps: [Double] = []
+            var last = CACurrentMediaTime()
+            let end = last + 0.8
+            list.animateZoom(to: CGFloat(n[0]))
+            let t = Timer(timeInterval: 0.002, repeats: true) { t in
+                let now = CACurrentMediaTime()
+                gaps.append(now - last)
+                last = now
+                if list.iconSize != sizes.last { sizes.append(list.iconSize) }
+                if now > end {
+                    t.invalidate()
+                    report(gaps.filter { $0 > 0.004 }, extra: " frames=\(sizes.count - 1) sizes=\(sizes.map { Int($0) })")
+                }
+            }
+            RunLoop.main.add(t, forMode: .common)
+        default: return
+        }
+    }
+
     private func windowServerSnapshot(to arg: String) {
         // "wsnapshot <png>" = main window; "wsnapshot <png>|<title prefix>" = another window (Settings, Properties…).
         let parts = arg.components(separatedBy: "|")

@@ -102,6 +102,11 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bo
         #expect(ZoomLevels.continuousLevel(for: 40) == 2.5)
         #expect(ZoomLevels.step(from: 40, by: 1) == 48)
         #expect(ZoomLevels.step(from: 40, by: -1) == 32)
+        // Mid-zoom icons come from a handful of step sizes, never smaller than drawn.
+        #expect(ZoomLevels.liveRenderSize(for: 48) == 48 && ZoomLevels.liveRenderSize(for: 48.6) == 48)
+        #expect(ZoomLevels.liveRenderSize(for: 49) == 64 && ZoomLevels.liveRenderSize(for: 113) == 128)
+        #expect(ZoomLevels.liveRenderSize(for: 10) == 16 && ZoomLevels.liveRenderSize(for: 300) == 256)
+        #expect(Set((40...200).map { ZoomLevels.liveRenderSize(for: CGFloat($0)) }).count == 11)
         var p = ViewProperties(); p.setIconSize(40, for: .icons)
         #expect(p.iconSize(for: .icons) == 40 && p.zoomLevel(for: .icons) == 2 || p.zoomLevel(for: .icons) == 3)
         let old = #"{"mode":"details","zoom":{"details.preview":3}}"#.data(using: .utf8)!

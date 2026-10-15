@@ -280,4 +280,10 @@ public enum ZoomLevels {
         if delta > 0 { return iconSize(for: (min...max).first { iconSize(for: $0) > size + 0.5 } ?? max) }
         return iconSize(for: (min...max).last { iconSize(for: $0) < size - 0.5 } ?? min)
     }
+
+    /// The size icons are rendered at while a zoom runs: the Dolphin step at or above `size`, drawn scaled down. A zoom
+    /// passes through a new size every frame, and rendering every icon afresh at each one made frames too slow to show.
+    public static func liveRenderSize(for size: CGFloat) -> CGFloat {
+        iconSize(for: (min...max).first { iconSize(for: $0) >= size.rounded(.down) } ?? max)
+    }
 }

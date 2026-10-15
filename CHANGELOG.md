@@ -4,6 +4,14 @@
 
 - Search results stay settled when unrelated indexed files change. Live updates preserve the full list, scroll position
   and selection, and refresh changed file metadata without replaying the initial batch.
+- **Smooth zoom again.** Zooming (⌘+/⌘−, the slider, a pinch) animates its 0.16 s again instead of jumping: since
+  folder colours were mapped per pixel, every frame re-rendered each visible icon at a new size (about 100 ms a frame).
+  Mid-zoom icons now come from a few cached sizes, scaled.
+- **Faster resizing in Applications.** The app library renders each app icon (with its shadow) once instead of on every
+  frame: resizing the window costs about 6 ms a frame instead of 30.
+- **Even Compact columns.** In Compact view every column is as wide as the others, set by the zoom level (or Settings ›
+  View Modes › Compact › Maximum width, whose "Unlimited" is now "Automatic"); a long name is elided instead of widening its
+  column, and shows in full when hovered.
 
 ## 0.6.0
 

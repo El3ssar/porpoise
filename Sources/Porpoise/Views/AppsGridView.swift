@@ -17,7 +17,10 @@ final class AppsGridView: NSView, NSDraggingSource {
     private var mouseDownIndex: Int?
     private var running: Set<String> = []
     private var icons: [URL: NSImage] = [:]
-    private var names: [URL: String] = [:]
+    /// Each app's icon as drawn (its shadow included), rendered once for the screen's scale and colours: drawing the
+    /// icon file itself on every frame of a resize resampled and colour-matched its 1024 px picture each time.
+    private var tiles: [URL: NSImage] = [:]
+    private var names: [URL: (text: String, width: CGFloat)] = [:]
     private var observers: [NSObjectProtocol] = []
 
     /// Where each shown app's cell is, after the last layout (an animation moves the drawing toward these).
@@ -64,9 +67,16 @@ final class AppsGridView: NSView, NSDraggingSource {
 
     override func resignFirstResponder() -> Bool { needsDisplay = true; return true }
 
+    /// Another screen (another scale or colour space): the icons are rendered again for it.
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        tiles = [:]
+    }
+
     /// Out of the window (tab closed mid-animation): the animation stops.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        tiles = [:]
         guard window == nil else { return }
         animator.stop()
         transition = nil
@@ -208,6 +218,41 @@ final class AppsGridView: NSView, NSDraggingSource {
         return i
     }
 
+    private static let shadowBlur: CGFloat = 7
+    private static let shadowOffset: CGFloat = 3
+    /// Room around a tile's icon for its shadow.
+    private static let tilePad = shadowBlur + shadowOffset
+
+    /// The icon with its shadow (a soft one, like the Dock's), in pixels for this screen.
+    private func tile(for item: FileItem) -> NSImage {
+        if let t = tiles[item.url] { return t }
+        let scale = window?.backingScaleFactor ?? 2
+        let side = Self.iconSize + 2 * Self.tilePad
+        let px = Int(ceil(side * scale))
+        let space = window?.colorSpace?.cgColorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        guard
+            let ctx = CGContext(
+                data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return icon(for: item) }
+        ctx.scaleBy(x: scale, y: scale)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.28)
+        shadow.shadowBlurRadius = Self.shadowBlur
+        shadow.shadowOffset = NSSize(width: 0, height: -Self.shadowOffset)
+        shadow.set()
+        icon(for: item).draw(
+            in: CGRect(x: Self.tilePad, y: Self.tilePad, width: Self.iconSize, height: Self.iconSize), from: .zero,
+            operation: .sourceOver, fraction: 1, respectFlipped: false, hints: [.interpolation: NSImageInterpolation.high])
+        NSGraphicsContext.restoreGraphicsState()
+        guard let cg = ctx.makeImage() else { return icon(for: item) }
+        let t = NSImage(cgImage: cg, size: NSSize(width: side, height: side))
+        tiles[item.url] = t
+        return t
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         let focused = window?.firstResponder === self && window?.isKeyWindow == true
         let p = progress
@@ -252,29 +297,25 @@ final class AppsGridView: NSView, NSDraggingSource {
                 bg.stroke()
             }
         }
-        // A soft shadow under the icon, like the Dock.
-        NSGraphicsContext.saveGraphicsState()
-        let iconShadow = NSShadow()
-        iconShadow.shadowColor = NSColor.black.withAlphaComponent(0.28)
-        iconShadow.shadowBlurRadius = 7
-        iconShadow.shadowOffset = NSSize(width: 0, height: -3)
-        iconShadow.set()
-        icon(for: item).draw(
-            in: ir, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
-        NSGraphicsContext.restoreGraphicsState()
+        tile(for: item).draw(
+            in: ir.insetBy(dx: -Self.tilePad, dy: -Self.tilePad), from: .zero, operation: .sourceOver, fraction: 1,
+            respectFlipped: true, hints: nil)
 
         // The name, on the selection colour when selected.
-        let name =
+        let (name, nameW) =
             names[item.url]
             ?? {
-                let n = AppLibrary.displayName(item.url); names[item.url] = n; return n
+                let n = AppLibrary.displayName(item.url)
+                let w = ceil((n as NSString).size(withAttributes: [.font: Self.nameFont]).width)
+                names[item.url] = (n, w)
+                return (n, w)
             }()
         let attrs: [NSAttributedString.Key: Any] = [
             .font: Self.nameFont, .paragraphStyle: Self.namePara,
             .foregroundColor: selected && focused ? Theme.selectionText : Theme.viewText,
         ]
         let maxW = cell.width - 14
-        let textW = min(maxW, ceil((name as NSString).size(withAttributes: [.font: Self.nameFont]).width))
+        let textW = min(maxW, nameW)
         let textRect = CGRect(x: cell.midX - maxW / 2, y: ir.maxY + 12, width: maxW, height: 17)
         if selected {
             let capsule = CGRect(x: cell.midX - textW / 2 - 7, y: textRect.minY - 1, width: textW + 14, height: 19)
