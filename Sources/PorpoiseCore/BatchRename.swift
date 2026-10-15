@@ -73,7 +73,8 @@ public enum BatchRename {
     public static func name(_ entry: BatchRenameEntry, index: Int, preset: BatchRenamePreset, timeZone: TimeZone = .current) throws -> String {
         let original = entry.url.lastPathComponent
         let ext = entry.isDirectory ? "" : (original as NSString).pathExtension
-        let stem = ext.isEmpty ? original : String(original.dropLast(ext.count + 1))
+        // NSString's own split: counting Characters would be off when a combining mark follows the dot.
+        let stem = ext.isEmpty ? original : (original as NSString).deletingPathExtension
         var name = preset.extensionMode == .includeInRules ? original : stem
         for rule in preset.rules {
             switch rule {
@@ -117,7 +118,10 @@ public enum BatchRename {
         switch preset.extensionMode {
         case .keep: return name + (ext.isEmpty ? "" : "." + ext)
         case .lowercase: return name + (ext.isEmpty ? "" : "." + ext.lowercased())
-        case .change(let new): return name + (new.isEmpty ? "" : "." + new)
+        case .change(let typed):
+            // "jpg" or ".jpg", as people type it.
+            let new = typed.drop { $0 == "." }
+            return name + (new.isEmpty ? "" : "." + new)
         case .includeInRules: return name
         }
     }

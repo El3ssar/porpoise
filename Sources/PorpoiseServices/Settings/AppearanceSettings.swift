@@ -40,8 +40,18 @@ extension Settings {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try encoder.encode(value)
     }
+    /// Takes everything about looks from a shared file, but not what it would run: the terminal's shell, its
+    /// arguments and the external terminal command stay as they are (a file from someone else could otherwise run
+    /// any command the next time a terminal opens).
     public func importAppearance(_ data: Data) throws {
-        let value = try JSONDecoder().decode(AppearancePreferences.self, from: data); try value.validate()
+        var value = try JSONDecoder().decode(AppearancePreferences.self, from: data)
+        let current = appearancePreferences
+        value.shell = current.shell
+        value.customShell = current.customShell
+        value.shellArguments = current.shellArguments
+        value.externalTerminal = current.externalTerminal
+        value.externalCommand = current.externalCommand
+        try value.validate()
         appearancePreferences = value
         appearance = AppearanceChoice(rawValue: value.appearance) ?? .system
         labelFontName = value.fileFontName; labelFontSize = value.fileFontSize
