@@ -2,7 +2,10 @@
 
 Phase 2 of the roadmap: compare two folders, sync them once, keep them in sync, browse them together, and compare
 two files. This is the specification the app work is built and reviewed against. Mockups (light and dark, every
-screen below): `artifacts/p2/mockups/mockups.html` in the team folder.
+screen below): `artifacts/p2/mockups/mockups.html` in the team folder; `?mode=light|dark|both&only=<screen id>`
+links to one screen, and `png/` holds a capture of each. Mockup screens: 1 compare · 2 progress · 3 identical ·
+4 chooser · 5 popover · 6 sync-mirror · 7 sync-twoway · 8 running · 9 keep · 10 linked · 11 files-text ·
+12 files-image · 13 files-info · 14 tokens.
 
 **Principle: one object, three verbs.** A *pair* is two folders. You **Compare** a pair (look), **Sync** it (make it
 agree once), or **Keep it in Sync** (make it agree from now on). Everything else is disclosed on demand. No new
@@ -177,7 +180,10 @@ toggle and also the legend:
 - On: wash of its colour at 16 % (dark 20 %), glyph and count in the colour, label `text`. Off: no fill, 1 pt
   `frame` stroke, everything 55 %.
 - **Defaults: the three difference pills on, Same off.** That's "show me differences" with no extra control.
-- Folder names label the pills. When both folders have the same name, they read "Only on Left" / "Only on Right".
+- Side names label the pills (and every other place a side is named: sheet, popover, notifications). A side's name
+  is its folder name; when both folders have the same name, the side on another volume or server takes that
+  volume or host name instead ("Projects" vs "Backup", "Projects" vs "nas.local"). If that still doesn't separate
+  them, use the nearest ancestor whose names differ.
 - Pills with a zero count are disabled (not hidden), so the layout never jumps.
 - Folders stay visible while anything inside them matches the filter. With Same off, a folder whose contents are
   all the same is hidden.
@@ -309,8 +315,8 @@ From  📁 Projects  ⇄  📁 Backup                     (direction row; hidden
   - Ignore: preset chips (§6.4).
   - Deletions: **Move to Trash** (default) / Delete permanently (local), Move to `.porpoise-trash` (remote).
   - Compare by: Size & date / Size only / Contents (mirrors the footer menu).
-- **Footer:** "Keep in sync automatically" checkbox at left. When checked, a name field (default "Projects →
-  Backup", "Projects ⇄ Backup" for two-way) and the line "Porpoise syncs changes while it's open. You'll only hear
+- **Footer:** "Keep in sync automatically" checkbox at left. When checked, a name field (default "Projects", with the
+  description "Projects ⇄ Backup" beside it) and the line "Porpoise syncs changes while it's open. You'll only hear
   about conflicts and errors." slide in (160 ms). Saving without keep-in-sync uses the gear menu ⌄ next to Cancel:
   **Save Sync…**. Buttons: **Cancel** (Esc), **Sync** (Return, default). Sync is disabled while the plan is being
   computed: "Planning…" with a small spinner in the summary line.
@@ -357,12 +363,12 @@ header shows a + on hover ("New Sync…", which opens split + chooser). Rows use
 | Part | Spec |
 |---|---|
 | Icon (16 pt, `accent`) | Kept in sync: two circular arrows. Saved, manual: ⇄ arrows. |
-| Name | SF 13, e.g. "Projects ⇄ Backup". Renamable inline (F2). |
-| Status (trailing, 8 pt from the edge, SF 11, right-aligned, max 64 wide) | **In sync:** small ✓ `compareOnly` + relative time "2 m" `secondaryText`. **Syncing:** 12 pt progress ring (accent). **Conflicts:** ⚠ + "2" `compareChanged`. **Failed:** ! `compareDanger`. **Paused:** ⏸ secondary. **Folder missing** (disk ejected, server offline): name and icon at 50 %, ⏏ secondary; tooltip "Backup isn't available. Porpoise will sync when it's back." |
+| Name | SF 13. Defaults to the source folder's name ("Projects"; for two-way, the left one); when two pairs would share a name, the other side is appended ("Projects → NAS"). Renamable inline (F2). The full description ("Projects ⇄ Backup · kept in sync · last synced 2 minutes ago") is the tooltip. The 160 pt default sidebar fits a name plus status; never two lines. |
+| Status (trailing, 8 pt from the edge, SF 11, right-aligned, max 64 wide) | **In sync:** small ✓ `compareOnly` + compact relative time "2m", "Mon" `secondaryText`. **Syncing:** 12 pt progress ring (accent). **Conflicts:** ⚠ + "2" `compareChanged`. **Failed:** ! `compareDanger`. **Paused:** ⏸ secondary. **Folder missing** (disk ejected, server offline): name and icon at 50 %, ⏏ secondary; tooltip "Backup isn't available. Porpoise will sync when it's back." |
 | Click | Opens the pair compared in the current tab (⌘-click: new tab). |
 | Context menu | Sync Now · Compare · ——— · Pause Keeping in Sync / Resume · Edit Sync… · Rename · ——— · Show in Activity · ——— · Remove Sync… |
 
-Remove asks: "Remove “Projects ⇄ Backup”? Your files aren't touched; Porpoise stops syncing this pair and forgets
+Remove asks: "Remove the “Projects” sync? Your files aren't touched; Porpoise stops syncing this pair and forgets
 its history." [Cancel] [Remove].
 
 ### 6.2 Behaviour, quietly
@@ -382,8 +388,8 @@ per event, grouped by pair (`threadIdentifier` = pair id).
 
 | Event | Title | Body | Action |
 |---|---|---|---|
-| Conflicts | Projects ⇄ Backup needs you | 2 files changed on both sides. | **Review** (opens compare + sheet at Conflicts) |
-| Failed | Couldn't sync Projects → NAS | NAS is full. 18 items are waiting. | **Show** |
+| Conflicts | Photos → NAS needs you (titles use the pair description) | 2 files changed on both sides. | **Review** (opens compare + sheet at Conflicts) |
+| Failed | Couldn't sync Website | server.local is full. 18 items are waiting. | **Show** |
 | Large deletion paused | Sync paused | 340 items would be moved to the Trash in Backup. | **Review** |
 
 A missing disk or offline server is **not** a notification: it's the ⏏ status only.
@@ -424,9 +430,12 @@ A separate window (it's a document-like view; several can be open). 1000 × 680 
 chrome as the browser: full-height toolbar 52, glass capsules, no sidebar.
 
 **Toolbar:** left file capsule (icon + name + folder in secondary, like a breadcrumb) | seam capsule:
-‹ previous / › next difference | right file capsule | trailing: segmented **Text | Image | Info** (only the views
-that apply are enabled; the best one is preselected) and an **Open With ⌄** button listing installed compare apps
-(FileMerge, Kaleidoscope, Beyond Compare, BBEdit, VS Code), last used first. "Choose Default App…" at the bottom.
+‹ previous / › next difference (on the pane seam) | right file capsule | trailing **Open With ⌄** listing installed
+compare apps (FileMerge, Kaleidoscope, Beyond Compare, BBEdit, VS Code), last used first, "Choose Default App…" at
+the bottom. The file capsules get the width, so both paths stay readable.
+
+**Footer (32 tall, status bar style):** segmented **Text | Image | Info** at the left (only the views that apply are
+enabled; the best one is preselected; ⌘1 ⌘2 ⌘3), then the view's own controls and facts.
 
 ### 8.1 Text
 
@@ -439,12 +448,12 @@ that apply are enabled; the best one is preselected) and an **Open With ⌄** bu
   this change to the right, **←** to the left. The file is written on save (⌘S) or by closing the window (asks
   "Save changes to index.html?"). Undo works per change.
 - Overview ruler: 8 wide at the window's right edge, one tick per change in its colour; click jumps.
-- Footer (28, status bar style): "3 changes · UTF-8 · LF" left; "Ignore whitespace" checkbox right.
+- Footer: "3 changes · UTF-8 · LF" after the view switch; "Ignore whitespace" checkbox right.
 - Identical text: centred "**The files are identical**" with ✓, plus "Metadata differs: modified date" if so.
 
 ### 8.2 Image
 
-- Segmented sub-mode in the footer: **Side by Side** | **Onion Skin** | **Difference**.
+- Segmented sub-mode in the footer, after the view switch: **Side by Side** | **Onion Skin** | **Difference**.
 - Side by side: both images fit, zoom and pan linked (pinch, ⌘+/−, ⌘0).
 - Onion skin: single canvas, slider 0–100 % (left ↔ right), default 50. Space toggles 0/100.
 - Difference: per-pixel |L−R| shown over black, with "Changed pixels: 3.2 %".
