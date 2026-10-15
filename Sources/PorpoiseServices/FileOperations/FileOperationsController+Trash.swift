@@ -13,14 +13,17 @@ extension FileOperationsController {
             let holding = staged.deletingLastPathComponent().appendingPathComponent(".porpoise-replaced-" + UUID().uuidString)
             try fm.createDirectory(at: holding, withIntermediateDirectories: false)
             let named = holding.appendingPathComponent(original.lastPathComponent)
-            do { try fm.moveItem(at: staged, to: named) } catch { try? fm.removeItem(at: holding); throw error }
+            do { try fm.moveItem(at: staged, to: named) } catch { _ = rmdir(holding.path); throw error }
             var trashed: NSURL?
             do { try fm.trashItem(at: named, resultingItemURL: &trashed) } catch {
-                try? fm.moveItem(at: named, to: staged)
-                try? fm.removeItem(at: holding)
+                do { try fm.moveItem(at: named, to: staged) }
+                catch let restoreError {
+                    throw FileOperationError.failed("The previous item is kept at “\(named.path)”. It could not be returned to staging: \(restoreError.localizedDescription)")
+                }
+                _ = rmdir(holding.path)
                 throw error
             }
-            try? fm.removeItem(at: holding)
+            _ = rmdir(holding.path)
             if let trashed = trashed as URL? {
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }

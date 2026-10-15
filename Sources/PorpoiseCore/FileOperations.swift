@@ -612,7 +612,11 @@ public final class FileJob: @unchecked Sendable {
                 swapped = true
                 if let disposeReplacedItem { try disposeReplacedItem(dest, target) } else { try fm.removeItem(at: dest) }
             } catch {
-                if swapped { _ = renamex_np(dest.path, target.path, UInt32(RENAME_SWAP)) }
+                if swapped, renamex_np(dest.path, target.path, UInt32(RENAME_SWAP)) != 0 {
+                    // Another process may have moved the published target. Never clean up the complete old
+                    // item when rollback failed: both generations must remain recoverable.
+                    throw FileOperationError.failed("Could not restore the previous item from “\(dest.path)”. The completed replacement may have moved. \(error.localizedDescription)")
+                }
                 if renamed { try? fm.moveItem(at: dest, to: src) } else { try? fm.removeItem(at: dest) }
                 throw error
             }

@@ -305,7 +305,8 @@ final class RemoteTransferJob {
             guard target.isFileURL else { throw RemoteError.unsupported("Unsupported destination.") }
             let stageFolder = target.deletingLastPathComponent().appendingPathComponent(".porpoise-transfer-" + UUID().uuidString)
             try FileManager.default.createDirectory(at: stageFolder, withIntermediateDirectories: false)
-            defer { try? FileManager.default.removeItem(at: stageFolder) }
+            var removeStage = true
+            defer { if removeStage { try? FileManager.default.removeItem(at: stageFolder) } }
             let staged = stageFolder.appendingPathComponent(downloaded.lastPathComponent)
             let copy = FileJob(kind: .copy, sources: [downloaded], destinationFolder: stageFolder)
             var previous: Int64 = 0
@@ -336,7 +337,10 @@ final class RemoteTransferJob {
                         try FileManager.default.removeItem(at: staged)
                     }
                 } catch {
-                    _ = renamex_np(staged.path, target.path, UInt32(RENAME_SWAP))
+                    guard renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 else {
+                        removeStage = false
+                        throw RemoteError.failed("The previous item could not be restored automatically. Its staging folder is kept at “\(stageFolder.path)”. \(error.localizedDescription)")
+                    }
                     throw error
                 }
             } else {

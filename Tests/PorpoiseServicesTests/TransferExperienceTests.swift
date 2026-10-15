@@ -67,6 +67,29 @@ struct TransferExperienceTests {
         #expect(!job.errors.isEmpty || !job.denied.isEmpty)
     }
 
+    @Test(arguments: [FileOperationKind.copy, .move])
+    func failedRollbackKeepsThePreviousCompleteItem(kind: FileOperationKind) throws {
+        let s = try Scratch("rollback-race")
+        let source = try s.file("src/report", "incoming")
+        try s.file("dst/report", "previous")
+        let movedPublication = s.path("published-elsewhere")
+        var displaced: URL?
+        let job = FileJob(kind: kind, sources: [source], destinationFolder: s.path("dst"))
+        job.conflictRule = .replace
+        job.disposeReplacedItem = { staged, target in
+            displaced = staged
+            // A concurrent rename removes the publication while archiving fails. Rollback must not
+            // delete the displaced complete original just because its target name is now absent.
+            try FileManager.default.moveItem(at: target, to: movedPublication)
+            throw CocoaError(.fileWriteUnknown)
+        }
+        _ = try job.run()
+        let old = try #require(displaced)
+        #expect(try String(contentsOf: old, encoding: .utf8) == "previous")
+        #expect(try String(contentsOf: movedPublication, encoding: .utf8) == "incoming")
+        #expect(!job.errors.isEmpty)
+    }
+
     @Test(arguments: [TransferConflictRule.newer, .different, .larger])
     func conditionalRulesApplyIndependentlyToEveryRemainingConflict(_ rule: TransferConflictRule) async throws {
         let s = try Scratch("conditional-conflicts")
