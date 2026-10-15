@@ -28,6 +28,7 @@ on:
 
 permissions:
   contents: write
+  actions: read   # to find this commit's CI run
 
 concurrency:
   group: release
@@ -72,14 +73,29 @@ jobs:
         if: steps.ffmpeg.outputs.cache-hit != 'true'
         run: scripts/build-ffmpeg.sh
 
-      # The same checks as CI: what is released passed lint and the whole suite, search tests included.
+      # What is released must have passed lint and the whole suite. When CI already passed on this exact commit,
+      # that run is the proof and the checks aren't repeated; otherwise (a manual run on another commit) they run here.
+      - name: Did CI pass on this commit?
+        id: ci
+        run: |
+          SHA=$(git rev-parse HEAD)
+          # A tag pushed right after its commit: wait for that commit's CI run rather than repeating it.
+          RUNNING=$(gh run list --workflow CI --commit "$SHA" --limit 1 --json databaseId,status \
+            --jq '.[] | select(.status != "completed") | .databaseId')
+          if [ -n "$RUNNING" ]; then gh run watch "$RUNNING" --interval 30 >/dev/null || true; fi
+          OK=$(gh run list --workflow CI --commit "$SHA" --status success --limit 1 --json databaseId --jq 'length')
+          if [ "$OK" = "1" ]; then echo "CI passed on $SHA: not repeating it"; echo "passed=true" >> "$GITHUB_OUTPUT"
+          else echo "No successful CI run on $SHA: running the checks here"; echo "passed=false" >> "$GITHUB_OUTPUT"; fi
+
       - name: Format
+        if: steps.ci.outputs.passed != 'true'
         run: swift format lint --strict -r Sources/PorpoiseCore Sources/PorpoiseServices Sources/Porpoise Sources/PorpoiseHelper Tests
 
       - name: Fetch fd and ripgrep
         run: scripts/fetch-search-tools.sh
 
       - name: Unit tests
+        if: steps.ci.outputs.passed != 'true'
         run: scripts/test-with-watchdog.sh
 
       # Every release must be signed with the same identity, or users have to grant Full Disk Access again

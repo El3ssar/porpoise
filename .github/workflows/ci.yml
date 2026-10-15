@@ -3,12 +3,28 @@ on:
   push:
     branches: [main]
   pull_request:
+# A newer push to the same branch or pull request makes an older run pointless: cancel it instead of queueing.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build-and-test:
     runs-on: macos-26
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # full history, so file times can be restored for incremental builds
+      # A fresh checkout stamps every file "now", which makes SwiftPM rebuild everything. Set each file's time to its
+      # last commit, then restore the previous run's .build: only what changed since is compiled again.
+      - name: Restore file times
+        uses: chetan/git-restore-mtime-action@v2
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ github.sha }}
+          restore-keys: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-
       - name: Format
         run: swift format lint --strict -r Sources/PorpoiseCore Sources/PorpoiseServices Sources/Porpoise Sources/PorpoiseHelper Tests
       - name: Build

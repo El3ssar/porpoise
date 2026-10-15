@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  actions: read   # release.yml checks the commit's CI run
 
 jobs:
   next-version:
