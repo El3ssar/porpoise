@@ -3,12 +3,12 @@ import Foundation
 /// Android support needs Google's `adb`. Google's licence doesn't allow shipping it inside Porpoise, so Porpoise
 /// downloads the official platform-tools from Google on request, into its own Application Support folder.
 public enum AndroidTools {
-    static let downloadURL = URL(string: "https://dl.google.com/android/repository/platform-tools-latest-darwin.zip")!
+    /// Where platform-tools come from and Porpoise's own folder (tests use a local server and a scratch folder).
+    nonisolated(unsafe) static var downloadURL = URL(string: "https://dl.google.com/android/repository/platform-tools-latest-darwin.zip")!
+    nonisolated(unsafe) static var supportFolder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Porpoise", isDirectory: true)
 
-    static var installDir: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Porpoise/platform-tools", isDirectory: true)
-    }
+    static var installDir: URL { supportFolder.appendingPathComponent("platform-tools", isDirectory: true) }
 
     /// Porpoise's own copy first, then one installed elsewhere (Homebrew, Android Studio).
     static var adbPath: String? {
@@ -24,7 +24,7 @@ public enum AndroidTools {
     /// stops it on quit; one that was already running (Android Studio, a terminal) is left alone.
     private static let lock = NSLock()
     nonisolated(unsafe) private static var checked = false
-    nonisolated(unsafe) private static var startedServer = false
+    nonisolated(unsafe) static var startedServer = false
 
     /// Call before running adb.
     static func willUseServer() {

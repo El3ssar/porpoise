@@ -7,14 +7,7 @@ public enum NetworkMounts {
 
     /// Returns the local mount point (asynchronously), or an error message.
     public static func mount(_ url: URL, completion: @escaping (Result<URL, Error>) -> Void) {
-        var u = url
-        // WebDAV variants → http(s) as NetFS expects.
-        if let s = url.scheme?.lowercased(), ["webdav", "dav", "webdavs", "davs"].contains(s) {
-            var c = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            c?.scheme = s.hasSuffix("s") ? "https" : "http"
-            u = c?.url ?? url
-        }
-        if url.scheme?.lowercased() == "cifs" { u = URL(string: url.absoluteString.replacingOccurrences(of: "cifs://", with: "smb://")) ?? url }
+        let u = mountURL(url)
         // Already mounted?
         if let existing = mountedVolume(for: u) { completion(.success(existing)); return }
         let openOptions = NSMutableDictionary()
@@ -42,19 +35,36 @@ public enum NetworkMounts {
         }
     }
 
-    private static func mountedVolume(for url: URL) -> URL? {
+    /// The URL NetFS is given: WebDAV variants become http(s), as NetFS expects, and cifs becomes smb.
+    static func mountURL(_ url: URL) -> URL {
+        var u = url
+        if let s = url.scheme?.lowercased(), ["webdav", "dav", "webdavs", "davs"].contains(s) {
+            var c = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            c?.scheme = s.hasSuffix("s") ? "https" : "http"
+            u = c?.url ?? url
+        }
+        if url.scheme?.lowercased() == "cifs" { u = URL(string: url.absoluteString.replacingOccurrences(of: "cifs://", with: "smb://")) ?? url }
+        return u
+    }
+
+    static func mountedVolume(for url: URL) -> URL? {
         let vols = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: [.volumeURLForRemountingKey], options: []) ?? []
         for v in vols {
             guard let remount = try? v.resourceValues(forKeys: [.volumeURLForRemountingKey]).volumeURLForRemounting,
-                remount.host?.lowercased() == url.host?.lowercased(), remount.scheme?.lowercased() == url.scheme?.lowercased()
+                let dest = path(of: url, onVolume: v, mountedFrom: remount)
             else { continue }
-            let share = url.pathComponents.dropFirst().first
-            if share == nil || remount.pathComponents.dropFirst().first == share {
-                var dest = v
-                for p in url.pathComponents.filter({ $0 != "/" }).dropFirst() { dest.appendPathComponent(p) }
-                return dest
-            }
+            return dest
         }
         return nil
+    }
+
+    /// Where `url` is on volume `v`, mounted from `remount`: same scheme, host and share (or no share asked for).
+    static func path(of url: URL, onVolume v: URL, mountedFrom remount: URL) -> URL? {
+        guard remount.host?.lowercased() == url.host?.lowercased(), remount.scheme?.lowercased() == url.scheme?.lowercased() else { return nil }
+        let share = url.pathComponents.dropFirst().first
+        guard share == nil || remount.pathComponents.dropFirst().first == share else { return nil }
+        var dest = v
+        for p in url.pathComponents.filter({ $0 != "/" }).dropFirst() { dest.appendPathComponent(p) }
+        return dest
     }
 }
