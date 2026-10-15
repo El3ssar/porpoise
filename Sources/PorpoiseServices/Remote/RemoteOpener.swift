@@ -37,6 +37,9 @@ public enum RemoteOpener {
             StatusCenter.post("Opened your copy of “\(item.name)”: its latest changes haven't been uploaded yet.")
             return
         }
+        // The copy from an earlier open is deleted below: its watch would take that for a save, mark the copy as not
+        // uploaded (and, once the download is in place, upload it straight back).
+        unwatch(cached)
         StatusCenter.post("Downloading “\(item.name)”…")
         DispatchQueue.global(qos: .userInitiated).async {
             do {
