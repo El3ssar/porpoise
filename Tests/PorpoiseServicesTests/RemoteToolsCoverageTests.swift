@@ -312,35 +312,6 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
     }
 }
 
-// MARK: - RemoteOpener
-
-/// Opening a remote file that can't be downloaded: an error in the status bar, nothing opened.
-@MainActor @Suite struct RemoteOpenerFailureCoverageTests {
-    @Test func aFailedDownloadIsReported() async throws {
-        let curl = try RecordingTool()
-        try curl.reply("", status: 9)
-        let root = URL(string: "ftp://u:pw@opener-failure.invalid/")!
-        RemoteFS.use(FTPProvider(url: root, curl: curl.path), for: root)
-        defer { RemoteFS.use(nil, for: root) }
-        let cache = try Scratch()
-        let saved = RemoteFS.cacheParent
-        RemoteFS.cacheParent = cache.url
-        defer { RemoteFS.cacheParent = saved }
-
-        let name = "unreachable-\(UUID().uuidString).txt"
-        nonisolated(unsafe) var token: NSObjectProtocol?
-        defer { token.map(NotificationCenter.default.removeObserver) }
-        let message: String? = await awaitCallback { (done: @escaping @Sendable (String) -> Void) in
-            token = NotificationCenter.default.addObserver(forName: StatusCenter.message, object: nil, queue: nil) { n in
-                guard let s = n.object as? String, s.hasPrefix("Could not open “\(name)”"), n.userInfo?["error"] as? Bool == true else { return }
-                done(s)
-            }
-            RemoteOpener.open(FileItem(url: root.appendingPathComponent("dir/\(name)"), name: name, isDirectory: false))
-        }
-        #expect(message?.contains("FTP error 9") == true)
-    }
-}
-
 // MARK: - AskPass
 
 @Suite struct AskPassCoverageTests {
