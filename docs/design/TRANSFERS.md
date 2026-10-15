@@ -46,7 +46,7 @@ several). Right: Pause/Resume and Stop as plain 14 pt glyphs in 24 pt hit boxes 
 | **Waiting** | Empty track | "Waiting for another copy to finish" (concurrency limit) |
 | **Needs you** | Bar frozen, ⚠ `compareChanged` before the text | "Waiting for your answer: 3 names clash" + **Resolve…** button (opens §3 on its window) |
 | **Stopped** | Bar at 40 % | "Stopped · 412 of 1,204 copied" + **Resume** (continues; finished files aren't copied again) |
-| **Done** | Hidden | "✓ Copied 1,204 items · 3.4 GB · 1 min 12 s" (✓ and verb in `compareOnly`, the rest secondary) |
+| **Done** | Hidden | "✓ Copied 1,162 · replaced 30 · skipped 12 identical · 3.4 GB · 1 min 12 s" (✓ and verb in `compareOnly`, the rest secondary; parts with zero are left out) |
 | **Done with failures** | Hidden | "! 4 of 1,204 couldn't be copied" (`compareDanger`) + **Show** (§5) |
 
 Title wording: "Copying “report.pdf” to Backup" (one item), "Copying 1,204 items to Backup", "Moving …",
@@ -73,6 +73,9 @@ The job keeps going with items that don't clash while the sheet waits; other cla
 │ │ Oct 2, 2026 at 9:14 AM     │       │ Today at 11:19 AM Newer           ││
 │ │ PDF document               │       │ PDF document                      ││
 │ └────────────────────────────┘       └───────────────────────────────────┘│
+│ ┌ ⇄ Replace if different, skip if identical ─────────── [Apply to All 42] ┐│
+│ │   30 different · 12 identical so far · by size & date ⌄                 ││
+│ └─────────────────────────────────────────────────────────────────────────┘│
 │ ☐ Do this for the other 41 conflicts                                      │
 │                                [Stop Copying]   [Skip] [Keep Both] [Replace ⌄]│
 └──────────────────────────────────────────────────────────────────────────┘
@@ -90,13 +93,23 @@ The job keeps going with items that don't clash while the sheet waits; other cla
   **larger** a "Larger" badge: SF 10 semibold caps-free, `compareChanged`, 16 tall capsule with 14 % wash. The
   differing values themselves are `compareChanged`. Clicking a thumbnail opens Quick Look on that file. A
   **Compare** link under the cards opens Compare Files (SYNC.md §8) for the two.
+- **The headline rule: Replace if different, skip if identical** (operator, #497). A strip under the cards
+  (r 8, `accent` 8 % wash, 1 pt `accent` 25 % stroke, padding 10 × 12): ⇄ glyph, "**Replace if different, skip if
+  identical**" SF 13, and under it SF 11 secondary "30 different · 12 identical so far · by size & date ⌄" (counts
+  across all clashes known so far; the method is a pull-down with the same three methods as Compare, SYNC.md §4.5,
+  so copy and sync agree on "identical"). Trailing **Apply to All 42** (push button, accent text): resolves every
+  remaining clash with the rule, including ones found later, and closes the sheet. The strip shows from the first
+  clash on, even when it's the only one ("Apply"). Identical uses the engine's `SyncComparator` with the pair's
+  options (size & date with 2 s tolerance by default); folders count as identical only when their whole contents
+  are (full roll-up), never by the folder entry alone.
 - **Buttons** (right-aligned, big 28 tall): **Skip** · **Keep Both** · **Replace ⌄**, and **Stop Copying** at the left
   (Esc). Replace is a split button: the arrow opens
   - Replace if Newer
-  - Replace if Different (size or date)
   - Replace if Larger
   Each conditional choice applies to this item now (replace or skip) and, with the checkbox, to the rest.
-- **Default button** (Return) is **Replace** when the incoming item is newer or identical, **Skip** when it is older.
+- **Identical items** (same by the current method): hint "They’re identical by size and date."; **Skip** is the
+  default button and the cards show no badges.
+- **Default button** (Return) is **Replace** when the incoming item is newer, **Skip** when it is older or identical.
   When older, Replace reads **Replace with Older** (so nobody replaces new work by accident with Return).
 - **Keep Both** names the incoming item the Finder way: "report 2.pdf" (then 3, 4…). The name shows as the
   button's tooltip and under the incoming card on hover: "Will be saved as “report 2.pdf”". ⌥-click Keep Both
@@ -114,9 +127,13 @@ The job keeps going with items that don't clash while the sheet waits; other cla
 ### Choosing up front
 
 - **Settings ▸ Confirmations ▸ When names clash** (new popup row on the existing page): Ask (default) ·
-  Replace if Newer · Keep Both · Skip. Applies to copy, move, paste and drop.
-- **Edit ▸ Paste Special** submenu (also in the context menu and the palette): Paste and Replace · Paste,
-  Replacing Older Items · Paste, Keeping Both · Paste, Skipping Existing Items. Same for "Copy to Other View"
+  **Replace if different, skip if identical** · Replace if newer · Keep both · Skip; with the comparison method
+  below it (Size & date / Size only / Contents). Applies to copy, move, paste and drop. Ask stays the default
+  because the others replace without a question; the headline rule is listed first and is one click away in the
+  sheet.
+- **Edit ▸ Paste Special** submenu (also in the context menu and the palette): **Paste, Replacing Different
+  Items** (skips identical ones) · Paste, Replacing Older Items · Paste, Keeping Both · Paste, Skipping Existing
+  Items · Paste and Replace All. Same for "Copy to Other View"
   (⇧F5) through **Copy to Other View Special**.
 - **Drag and drop:** holding **⌥⇧** while dropping shows the drop menu (Copy Here / Move Here, then the same four
   clash choices). Plain drops follow the Settings choice.
@@ -150,7 +167,8 @@ Rules for `TransferRate` (porpoise-jobs has one; these are the display contract,
   wide): title "4 items couldn’t be copied", a list (24 pt rows: icon, relative path, reason in SF 11 secondary:
   "Permission denied", "Name too long for this disk", "File is locked", "Lost connection"), then
   **Skip** (dismiss, keep the result) · **Try Again** (default: retries just these, same job). Per row: Reveal.
-- **Done summary:** the status bar shows a temporary message for 4 s: "Copied 1,204 items to Backup". If Porpoise
+- **Done summary:** the status bar shows a temporary message for 4 s: "Copied 1,162 items to Backup · replaced
+  30 · skipped 12 identical (by size & date)". The method is named whenever anything was skipped as identical. If Porpoise
   isn't frontmost and the job took longer than 10 s, a notification: title "Copy finished", body "1,204 items to
   Backup · 3.4 GB", action **Show** (reveals the items). Failures always notify when not frontmost.
 - Undo stays as today (Edit ▸ Undo Copy), one step for the whole job.
@@ -170,6 +188,7 @@ Rules for `TransferRate` (porpoise-jobs has one; these are the display contract,
 
 1. Toolbar ring + popover with a copy in Preparing, Copying (speed + time left) and Paused; light and dark.
 2. Details view with incoming items in place.
-3. Conflict sheet: file newer, file older (Replace with Older, Skip default), folder (Merge), split-button menu open.
+3. Conflict sheet: file newer, file older (Replace with Older, Skip default), identical, folder (Merge),
+   split-button menu open; the headline strip with live counts and its method pull-down; Apply to All.
 4. Failure sheet and the done message.
 5. `swift test` covers the §4 rules: buckets, hysteresis, stall, items-vs-bytes.
