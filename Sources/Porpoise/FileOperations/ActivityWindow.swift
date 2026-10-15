@@ -451,7 +451,7 @@ final class ActivityRowView: NSView {
         if failed {
             text = (a.state == .failed ? "Failed: " : "") + text
         } else if a.state == .completed {
-            var details = ["✓ Done"]
+            var details = ["✓ " + a.statusText]
             if let bytes = a.progress?.doneBytes, bytes > 0 { details.append(FileFormat.size(bytes)) }
             if let date = a.finishedAt { details.append(date.formatted(date: .omitted, time: .shortened)) }
             text = details.joined(separator: " · ")
@@ -490,8 +490,10 @@ final class ActivityRowView: NSView {
         case .running: want = (a.canPause ? ["pause"] : []) + ["cancel"]
         case .paused: want = ["resume", "cancel"]
         case .waiting, .verifying: want = ["cancel"]
-        case .failed: want = ["retry"]
-        case .completed: want = (a.failedSources.isEmpty ? [] : ["retry"]) + (a.destination?.isFileURL == true ? ["reveal"] : [])
+        case .failed: want = ["show", "retry"]
+        case .completed:
+            want =
+                (a.errors.isEmpty ? [] : ["show"]) + (a.failedSources.isEmpty ? [] : ["retry"]) + (a.destination?.isFileURL == true ? ["reveal"] : [])
         case .cancelled: want = ["resume"] + (a.destination?.isFileURL == true ? ["reveal"] : [])
         case .interrupted: want = a.destination?.isFileURL == true ? ["reveal"] : []
         }
@@ -507,6 +509,7 @@ final class ActivityRowView: NSView {
             case "cancel": (symbol, tip) = ("stop.fill", "Stop")
             case "up": (symbol, tip) = ("arrow.up", "Start earlier")
             case "down": (symbol, tip) = ("arrow.down", "Start later")
+            case "show": (symbol, tip) = ("exclamationmark.bubble", "Show failures")
             case "retry": (symbol, tip) = ("arrow.clockwise", "Try the failed items again")
             default: (symbol, tip) = ("folder", "Show the destination")
             }
@@ -518,6 +521,7 @@ final class ActivityRowView: NSView {
                 case "cancel": c.cancel(a)
                 case "up": c.move(a, by: -1)
                 case "down": c.move(a, by: 1)
+                case "show": c.ui?.showTransferErrors(a, window: self?.parentWindow)
                 case "retry": c.retry(a, window: self?.parentWindow)
                 default: if let d = a.destination { (NSApp.delegate as? AppDelegate)?.newWindow(at: d) }
                 }
@@ -625,7 +629,7 @@ private final class ActivityFooterView: NSView {
     }
 }
 
-private final class ActivityProgressView: NSView {
+final class ActivityProgressView: NSView {
     var fraction: Double = 0 { didSet { needsLayout = true } }
     var isIndeterminate = false {
         didSet {
@@ -645,7 +649,7 @@ private final class ActivityProgressView: NSView {
     required init?(coder: NSCoder) { fatalError() }
     override func layout() {
         super.layout()
-        layer?.backgroundColor = Theme.activeText.withAlphaComponent(0.16).cgColor
+        layer?.backgroundColor = Theme.windowText.withAlphaComponent(0.14).cgColor
         fill.layer?.backgroundColor = Theme.activeText.cgColor
         if isIndeterminate {
             let width = bounds.width * 0.3

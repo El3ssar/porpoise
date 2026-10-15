@@ -8,6 +8,7 @@ import SwiftTerm
 /// via distributed notifications. Used by scripts/uitest.sh. Inert unless someone posts to it.
 final class DebugBridge: NSObject {
     static let shared = DebugBridge()
+    private var transferPreviewJob: FileJob?
     /// The channel; PORPOISE_BRIDGE gives a test instance its own, so parallel test runs don't hear each other.
     static let request = Notification.Name("app.porpoise.Porpoise.debug." + (ProcessInfo.processInfo.environment["PORPOISE_BRIDGE"] ?? "test"))
 
@@ -380,6 +381,61 @@ final class DebugBridge: NSObject {
             let list = NSApp.windows.filter(\.isVisible).map { "\($0.title)|\(type(of: $0.windowController as Any))|key=\($0.isKeyWindow)" }
             try? list.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
         case "navigate": wc?.view.setURL(arg.hasPrefix("/") ? URL(fileURLWithPath: arg) : (URL(string: arg) ?? URL(fileURLWithPath: arg)))
+        case "reviewfront":
+            guard Settings.isTesting, let window = wc?.window else { return }
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            window.level = .floating
+            window.orderFrontRegardless()
+            NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            window.makeKeyAndOrderFront(nil)
+        case "transferdialog":
+            guard Settings.isTesting, let owner = wc?.window else { return }
+            let folder = arg == "folder"
+            let source = FileItem(
+                url: URL(fileURLWithPath: "/tmp/Incoming/Report.pdf"), name: folder ? "Project" : "Report.pdf", isDirectory: folder,
+                size: arg == "identical" ? 3_100_000 : 4_300_000,
+                modificationDate: Date(timeIntervalSince1970: arg == "older" ? 1_700_000_000 : 1_700_100_000), contentType: "com.adobe.pdf")
+            let target = FileItem(
+                url: URL(fileURLWithPath: "/tmp/Backup/Report.pdf"), name: folder ? "Project" : "Report.pdf", isDirectory: folder,
+                size: 3_100_000, modificationDate: Date(timeIntervalSince1970: arg == "identical" ? 1_700_100_000 : 1_700_050_000),
+                contentType: "com.adobe.pdf")
+            let job = FileJob(kind: .copy, sources: [source.url], destinationFolder: target.url.deletingLastPathComponent())
+            transferPreviewJob = job
+            let began = CACurrentMediaTime()
+            FileOperationsController.shared.ui?.resolveConflict(
+                ConflictInfo(
+                    source: source, destination: target, suggestedName: "Report 2.pdf", remainingConflicts: 42, differentItems: 30,
+                    identicalItems: 12,
+                    sourceFolder: folder ? TransferFolderSummary(itemCount: 13, bytes: 4_300_000) : nil,
+                    destinationFolder: folder ? TransferFolderSummary(itemCount: 14, bytes: 3_100_000) : nil
+                ), kind: .copy, window: owner,
+                job: job
+            ) { _ in }
+            try? String(format: "%.3f ms", (CACurrentMediaTime() - began) * 1000).write(
+                toFile: NSTemporaryDirectory() + "porpoise-conflict-present.txt", atomically: true, encoding: .utf8)
+        case "transferdialogcancel":
+            if let job = transferPreviewJob { FileOperationsController.shared.ui?.cancelConflict(for: job) }
+            transferPreviewJob = nil
+        case "transferstate":
+            guard Settings.isTesting else { return }
+            let rows = FileOperationsController.shared.activities.map { activity -> [String: Any] in
+                [
+                    "state": activity.state.rawValue, "phase": activity.progress?.phase.rawValue ?? "", "fraction": activity.fraction,
+                    "title": activity.title, "status": activity.statusText, "hasWindow": activity.originWindow != nil,
+                ]
+            }
+            if let data = try? JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: URL(fileURLWithPath: arg))
+            }
+        case "transfercopy":
+            guard Settings.isTesting else { return }
+            let paths = arg.components(separatedBy: "|")
+            if paths.count == 2 {
+                FileOperationsController.shared.run(.copy, [URL(fileURLWithPath: paths[0])], to: URL(fileURLWithPath: paths[1]), window: wc?.window)
+            }
+        case "transferpopover":
+            guard Settings.isTesting else { return }
+            wc?.toolbar.transfers.showTransfers()
         case "activitypreview": activityPreview(arg)
         case "activitycontrol":
             let controller = FileOperationsController.shared
@@ -556,10 +612,16 @@ final class DebugBridge: NSObject {
     private func windowServerImage(_ arg: String, nominal: Bool = false) -> CGImage? {
         let parts = arg.components(separatedBy: "|")
         // The Settings window is titled after its page: "Settings" finds it whatever page is shown.
-        let w: NSWindow? =
-            parts.count > 1
-            ? (parts[1] == "Settings" ? settingsWindow : NSApp.windows.first { $0.isVisible && $0.title.hasPrefix(parts[1]) })
-            : NSApp.orderedWindows.first(where: { $0.windowController is MainWindowController })
+        let w: NSWindow?
+        if parts.count > 1 {
+            switch parts[1] {
+            case "Settings": w = settingsWindow
+            case "Sheet": w = NSApp.windows.first { $0.isVisible && $0.isSheet }
+            default: w = NSApp.windows.first { $0.isVisible && $0.title.hasPrefix(parts[1]) }
+            }
+        } else {
+            w = NSApp.orderedWindows.first { $0.windowController is MainWindowController }
+        }
         guard let w else { return nil }
         typealias Fn = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
         guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return nil }
@@ -633,6 +695,8 @@ final class DebugBridge: NSObject {
             "windowFrame": w.window.map { [$0.frame.minX, $0.frame.minY, $0.frame.width, $0.frame.height] } ?? [],
             "screenHeight": NSScreen.screens.first?.frame.height ?? 0,
             "isKey": w.window?.isKeyWindow ?? false,
+            "appActive": NSApp.isActive,
+            "activationPolicy": NSApp.activationPolicy().rawValue,
             "places": PlacesModel.shared.userEntries.map(\.title),
             "detailsRoles": v.list.detailsRoles.map(\.rawValue),
             "columnWidths": Dictionary(uniqueKeysWithValues: v.list.columnWidths.map { ($0.key.rawValue, Double($0.value)) }),

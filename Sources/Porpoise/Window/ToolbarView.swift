@@ -19,6 +19,8 @@ final class ToolbarView: NSView {
     private let navGroup = GlassGroup()
     private let modeGroup = GlassGroup()
     private let actionGroup = GlassGroup()
+    private let transferGroup = GlassGroup()
+    let transfers = TransferToolbarButton()
     private let fieldGroups = [GlassGroup(cornerRadius: 17), GlassGroup(cornerRadius: 17)]
     /// Space left of the first capsule (room for the traffic lights when there is no sidebar).
     var leftInset: CGFloat = 84 { didSet { needsLayout = true } }
@@ -53,6 +55,9 @@ final class ToolbarView: NSView {
         navGroup.content.addSubview(forward)
         navGroup.content.addSubview(up)
         modeGroup.content.addSubview(viewMode)
+        transfers.visibilityChanged = { [weak self] in self?.needsLayout = true }
+        transferGroup.content.addSubview(transfers)
+        addSubview(transferGroup)
         for b in [split, search, hamburger] { actionGroup.content.addSubview(b) }
         for v in [navGroup, modeGroup, fieldGroups[0], fieldGroups[1], actionGroup, hairline] as [NSView] { addSubview(v) }
         for command in ToolbarCommand.allCases where ![.back, .forward, .up, .viewMode, .location, .split, .search, .menu].contains(command) {
@@ -125,7 +130,11 @@ final class ToolbarView: NSView {
         search.frame = CGRect(x: split.frame.maxX, y: by, width: bw, height: bh)
         hamburger.frame = CGRect(x: search.frame.maxX, y: by, width: bw, height: bh)
 
-        layoutFields(from: fieldMinX, to: actionGroup.frame.minX - Self.fieldTrailingGap, y: gy, height: gh)
+        transferGroup.isHidden = transfers.isHidden
+        transferGroup.frame = CGRect(x: actionGroup.frame.minX - 42, y: gy, width: 34, height: gh)
+        transfers.frame = CGRect(origin: .zero, size: transferGroup.frame.size)
+        layoutFields(
+            from: fieldMinX, to: (transfers.isHidden ? actionGroup.frame.minX : transferGroup.frame.minX) - Self.fieldTrailingGap, y: gy, height: gh)
     }
 
     private func button(for command: ToolbarCommand) -> FlatButton? {
@@ -171,7 +180,10 @@ final class ToolbarView: NSView {
         var commands = Settings.shared.toolbarCommands
         let gh = Self.capsuleHeight, gy = (bounds.height - gh) / 2
         let gap: CGFloat = 6
-        let available = max(0, bounds.width - leftInset - Self.trailingMargin)
+        transferGroup.isHidden = transfers.isHidden
+        transferGroup.frame = CGRect(x: bounds.width - Self.trailingMargin - 34, y: gy, width: 34, height: gh)
+        transfers.frame = CGRect(origin: .zero, size: transferGroup.frame.size)
+        let available = max(0, bounds.width - leftInset - Self.trailingMargin - (transfers.isHidden ? 0 : 42))
         let capacity = max(1, Int((available - 80) / 36))
         if commands.filter({ $0 != .location }).count > capacity {
             let visible = Set(commands.filter { $0 != .location && $0 != .menu }.prefix(max(0, capacity - 1)))

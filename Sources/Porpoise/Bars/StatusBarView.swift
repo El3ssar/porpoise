@@ -93,10 +93,10 @@ final class StatusBarView: NSView {
         onZoomCommit?()
     }
 
-    func showMessage(_ s: String) {
+    func showMessage(_ s: String, duration: TimeInterval = messageDuration) {
         temporaryText = s
         tempTimer?.invalidate()
-        tempTimer = Timer.scheduledTimer(withTimeInterval: Self.messageDuration, repeats: false) { [weak self] _ in self?.temporaryText = nil }
+        tempTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in self?.temporaryText = nil }
     }
 
     var displayText: String { temporaryText ?? text }

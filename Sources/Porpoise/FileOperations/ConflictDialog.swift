@@ -1,149 +1,312 @@
 import AppKit
 import PorpoiseCore
 import PorpoiseServices
+import QuickLookThumbnailing
 
-/// KIO's RenameDialog: what to do with an item whose name exists at the destination.
-final class ConflictDialog: NSObject, NSTextFieldDelegate {
+/// A window-owned question. No nested modal run loop is used by running transfers.
+final class ConflictDialog: NSObject {
     let info: ConflictInfo
     let kind: FileOperationKind
-    private var result = ConflictAnswer(.cancel)
-    private let window: NSWindow
-    private let nameField = NSTextField()
-    private let applyAll = NSButton(checkboxWithTitle: "Apply to All", target: nil, action: nil)
-    private var renameButton: NSButton!
+    let window: NSWindow
+    private let applyAll = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private let method = NSPopUpButton()
+    private let counts = NSTextField(labelWithString: "")
+    private var completion: ((ConflictAnswer) -> Void)?
+    private var retainedSelf: ConflictDialog?
+    private let methods: [SyncCompareMethod] = [.sizeAndDate, .sizeOnly, .content]
 
     init(info: ConflictInfo, kind: FileOperationKind) {
         self.info = info
         self.kind = kind
-        window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 620, height: 330), styleMask: [.titled], backing: .buffered, defer: false)
+        window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 620, height: 374), styleMask: [.titled], backing: .buffered, defer: false)
         super.init()
+        window.contentView = ConflictBackdropView(frame: CGRect(x: 0, y: 0, width: 620, height: 374))
         build()
     }
 
+    private func label(_ text: String, _ rect: CGRect, size: CGFloat = 12, weight: NSFont.Weight = .regular, secondary: Bool = false) -> NSTextField {
+        let field = NSTextField(wrappingLabelWithString: text)
+        field.font = .systemFont(ofSize: size, weight: weight)
+        field.textColor = secondary ? Theme.windowTextInactive : Theme.windowText
+        field.frame = rect
+        window.contentView!.addSubview(field)
+        return field
+    }
+
     private func build() {
-        let bothDirs = info.source.isBrowsableFolder && info.destination.isBrowsableFolder
-        window.title = bothDirs ? "Folder Already Exists" : "File Already Exists"
+        let bothFolders = info.source.isBrowsableFolder && info.destination.isBrowsableFolder
+        let delta = (info.source.modificationDate?.timeIntervalSince1970 ?? 0) - (info.destination.modificationDate?.timeIntervalSince1970 ?? 0)
+        let newer = delta > info.comparisonOptions.timestampTolerance
+        let older = delta < -info.comparisonOptions.timestampTolerance
+        window.title = "Names Clash"
         window.backgroundColor = Theme.windowBackground
-        let v = window.contentView!
-        let header = NSTextField(
-            wrappingLabelWithString: bothDirs
-                ? "Would you like to merge the contents of “\(info.source.name)” into “\(info.destination.url.deletingLastPathComponent().lastPathComponent)”?"
-                : "This action will overwrite the destination.")
-        header.font = Theme.boldFont
-        header.frame = CGRect(x: 20, y: 286, width: 580, height: 34)
-        v.addSubview(header)
-
-        func pane(_ item: FileItem, title: String, x: CGFloat) {
-            let box = NSView(frame: CGRect(x: x, y: 130, width: 280, height: 150))
-            box.wantsLayer = true
-            box.layer?.cornerRadius = 5
-            Theme.whenChanged(box) { [weak box] in
-                box?.layer?.backgroundColor = Theme.viewBackground.cgColor
-                box?.layer?.borderColor = Theme.frame.cgColor
-            }
-            box.layer?.borderWidth = 1
-            let t = NSTextField(labelWithString: title); t.font = Theme.boldFont; t.frame = CGRect(x: 10, y: 122, width: 260, height: 18)
-            let img = NSImageView(frame: CGRect(x: 10, y: 40, width: 72, height: 72))
-            img.image = Thumbnails.shared.thumbnail(for: item, size: 72) ?? Icons.shared.image(for: item, size: 72)
-            let lines = [
-                item.url.path,
-                item.isBrowsableFolder ? "Folder" : FileFormat.size(item.size),
-                item.modificationDate.map { "Modified: " + FileFormat.relativeDate($0) } ?? "",
-            ]
-            for (i, l) in lines.enumerated() {
-                let f = NSTextField(labelWithString: l)
-                f.font = i == 0 ? Theme.smallFont : Theme.font
-                f.lineBreakMode = .byTruncatingMiddle
-                f.frame = CGRect(x: 90, y: 92 - CGFloat(i) * 22, width: 180, height: 18)
-                box.addSubview(f)
-            }
-            box.addSubview(t)
-            box.addSubview(img)
-            v.addSubview(box)
-        }
-        pane(info.source, title: "Source", x: 20)
-        pane(info.destination, title: "Destination", x: 320)
-
-        // Comparison hint (KIO: "The source is more recent", "smaller by …", "identical").
-        var hints: [String] = []
-        if let s = info.source.modificationDate, let d = info.destination.modificationDate {
-            if s > d { hints.append("The source is more recent.") } else if s < d { hints.append("The destination is more recent.") }
-        }
-        if !bothDirs {
-            let diff = info.source.size - info.destination.size
-            if diff > 0 {
-                hints.append("The source is bigger by \(FileFormat.size(diff)).")
-            } else if diff < 0 {
-                hints.append("The source is smaller by \(FileFormat.size(-diff)).")
-            } else if info.source.modificationDate == info.destination.modificationDate {
-                hints.append("The files are identical.")
-            }
-        }
-        let hint = NSTextField(labelWithString: hints.joined(separator: " "))
-        hint.textColor = Theme.windowTextInactive
-        hint.frame = CGRect(x: 20, y: 104, width: 580, height: 18)
-        v.addSubview(hint)
-
-        let renameLabel = NSTextField(labelWithString: "Rename:")
-        renameLabel.frame = CGRect(x: 20, y: 72, width: 60, height: 20)
-        nameField.stringValue = info.destination.name
-        nameField.frame = CGRect(x: 84, y: 70, width: 340, height: 24)
-        nameField.delegate = self
-        let suggest = NSButton(title: "Suggest New Name", target: self, action: #selector(suggest))
-        suggest.frame = CGRect(x: 430, y: 66, width: 170, height: 30)
-        [renameLabel, nameField, suggest].forEach(v.addSubview)
-
-        applyAll.frame = CGRect(x: 20, y: 22, width: 120, height: 20)
-        v.addSubview(applyAll)
-
-        var x: CGFloat = 600
-        func button(_ title: String, _ sel: Selector, key: String = "") -> NSButton {
-            let b = NSButton(title: title, target: self, action: sel)
-            b.keyEquivalent = key
-            b.sizeToFit()
-            b.frame.size.width += 12
-            x -= b.frame.width + 6
-            b.frame.origin = CGPoint(x: x, y: 16)
-            v.addSubview(b)
-            return b
-        }
-        _ = button("Cancel", #selector(cancel), key: "\u{1b}")
-        _ = button("Skip", #selector(skip))
-        if bothDirs {
-            _ = button("Write Into", #selector(writeInto), key: "\r")
+        let sizeDelta = info.source.size - info.destination.size
+        let sizeHint = !bothFolders && sizeDelta != 0 ? " and \(FileFormat.size(abs(sizeDelta))) \(sizeDelta > 0 ? "larger" : "smaller")" : ""
+        let hint: String
+        if bothFolders {
+            hint = "Merge adds items to the existing folder. Names that clash inside will ask again."
+        } else if info.source.isDirectory != info.destination.isDirectory {
+            hint = "A \(info.source.isDirectory ? "folder" : "file") will replace the existing \(info.destination.isDirectory ? "folder" : "file")."
+        } else if newer {
+            hint = "The item you’re \(kind == .move ? "moving" : "copying") is newer" + sizeHint + "."
+        } else if older {
+            hint = "The incoming item is older" + sizeHint + ". Skip keeps the newer version."
+        } else if info.source.size == info.destination.size {
+            hint = "They look identical: same size and date. Compare contents to check every byte."
         } else {
-            _ = button("Overwrite Older", #selector(overwriteOlder))
-            _ = button("Overwrite", #selector(overwrite), key: "\r")
+            hint = "The items have different sizes."
         }
-        renameButton = button("Rename", #selector(rename))
-        renameButton.isEnabled = false
+        let hintHeight = ceil(
+            (hint as NSString).boundingRect(
+                with: CGSize(width: 580, height: 40), options: .usesLineFragmentOrigin, attributes: [.font: NSFont.systemFont(ofSize: 12)]
+            ).height)
+        let height = max(16, hintHeight)
+        window.setContentSize(CGSize(width: 620, height: 358 + height))
+        _ = label(
+            (bothFolders ? "A folder named “\(info.source.name)”" : "“\(info.source.name)”")
+                + " already exists in \(info.destination.url.deletingLastPathComponent().lastPathComponent)",
+            CGRect(x: 20, y: 324 + height, width: 450, height: 18), size: 13, weight: .semibold)
+        _ = label(hint, CGRect(x: 20, y: 321, width: 580, height: height), secondary: true)
+        card(
+            info.destination, heading: "In \(info.destination.url.deletingLastPathComponent().lastPathComponent)", x: 20, newer: older,
+            larger: bothFolders
+                ? ((info.destinationFolder?.bytes ?? 0) > (info.sourceFolder?.bytes ?? .max)) : info.destination.size > info.source.size,
+            summary: info.destinationFolder)
+        card(
+            info.source, heading: kind.verb, x: 326, newer: newer,
+            larger: bothFolders
+                ? ((info.sourceFolder?.bytes ?? 0) > (info.destinationFolder?.bytes ?? .max)) : info.source.size > info.destination.size,
+            summary: info.sourceFolder)
+        _ = label("→", CGRect(x: 300, y: 229, width: 22, height: 24), size: 17, secondary: true)
+
+        let strip = NSView(frame: CGRect(x: 20, y: 95, width: 580, height: 66))
+        strip.wantsLayer = true
+        strip.layer?.cornerRadius = 8
+        strip.layer?.borderWidth = 1
+        Theme.whenChanged(strip) { [weak strip] in
+            strip?.layer?.backgroundColor = Theme.activeText.withAlphaComponent(0.08).cgColor
+            strip?.layer?.borderColor = Theme.activeText.withAlphaComponent(0.25).cgColor
+        }
+        window.contentView!.addSubview(strip)
+        _ = label("⇄  Replace if different, skip if identical", CGRect(x: 32, y: 133, width: 388, height: 18), size: 12, weight: .semibold)
+        method.addItems(withTitles: ["By size & date · 2 s tolerance", "By size only", "By contents"])
+        method.selectItem(at: methods.firstIndex(of: info.comparisonOptions.method) ?? 0)
+        method.font = .systemFont(ofSize: 11)
+        method.controlSize = .small
+        method.frame = CGRect(x: 238, y: 103, width: 234, height: 24)
+        method.removeAllItems(); method.addItems(withTitles: ["Size & date · 2 s", "Size only", "Contents"])
+        method.selectItem(at: methods.firstIndex(of: info.comparisonOptions.method) ?? 0)
+        method.target = self; method.action = #selector(methodChanged)
+        counts.frame = CGRect(x: 32, y: 107, width: 202, height: 16)
+        counts.font = .systemFont(ofSize: 11); counts.textColor = Theme.windowTextInactive
+        window.contentView!.addSubview(counts)
+        methodChanged()
+        method.toolTip = "The same comparison method used by folder sync. Size & date compares metadata; Contents reads every byte."
+        window.contentView!.addSubview(method)
+        let total = info.remainingConflicts ?? 1
+        let rule = ConflictActionButton(title: total > 1 ? "Apply to All \(total)" : "Apply", target: self, action: #selector(different))
+        rule.font = .systemFont(ofSize: 11)
+        rule.bezelStyle = .rounded
+        rule.titleTint = Theme.activeText
+        rule.frame = CGRect(x: 482, y: 115, width: 108, height: 28)
+        window.contentView!.addSubview(rule)
+        applyAll.title = total > 1 ? "Do this for the other \(total - 1) conflicts" : "Do this for later conflicts in this transfer"
+        if total > 1 { _ = label("Conflict 1 of \(total)", CGRect(x: 470, y: 325 + height, width: 130, height: 18), size: 11, secondary: true) }
+        applyAll.font = .systemFont(ofSize: 11)
+        applyAll.frame = CGRect(x: 20, y: 63, width: 386, height: 22)
+        window.contentView!.addSubview(applyAll)
+        func button(_ title: String, x: CGFloat, width: CGFloat, action: Selector, key: String = "") -> NSButton {
+            let button = ConflictActionButton(title: title, target: self, action: action)
+            button.bezelStyle = .rounded
+            button.frame = CGRect(x: x, y: 19, width: width, height: 30)
+            button.keyEquivalent = key
+            button.primary = key == "\r"
+            window.contentView!.addSubview(button)
+            return button
+        }
+        _ = button(kind == .move ? "Stop Moving" : "Stop Copying", x: 16, width: 114, action: #selector(cancel), key: "\u{1b}")
+        _ = button("Skip", x: 274, width: 64, action: #selector(skip), key: !newer && !bothFolders ? "\r" : "")
+        let keep = button("Keep Both", x: 344, width: 94, action: #selector(keepBoth), key: "d")
+        keep.keyEquivalentModifierMask = .command
+        keep.toolTip = "Save as “\(info.suggestedName)”"
+        let title =
+            bothFolders
+            ? "Merge"
+            : older
+                ? "Replace with Older"
+                : info.destination.isDirectory != info.source.isDirectory
+                    ? (info.destination.isDirectory ? "Replace Folder" : "Replace File") : "Replace"
+        let split = ConflictSplitView(frame: CGRect(x: 446, y: 19, width: 154, height: 30))
+        split.primary = newer || bothFolders
+        split.showsDivider = !bothFolders
+        window.contentView!.addSubview(split)
+        let replace = ConflictActionButton(title: title, target: self, action: #selector(replace))
+        replace.drawsBackground = false; replace.primary = split.primary
+        replace.font = .systemFont(ofSize: 12)
+        replace.keyEquivalent = split.primary ? "\r" : ""
+        replace.frame = CGRect(x: 0, y: 0, width: bothFolders ? 154 : 128, height: 30)
+        split.addSubview(replace)
+        let arrow = ConflictActionButton(title: "⌄", target: self, action: #selector(choices))
+        arrow.drawsBackground = false; arrow.primary = split.primary
+        arrow.frame = CGRect(x: 129, y: 0, width: 25, height: 30)
+        arrow.toolTip = "Conditional replacement rules"
+        arrow.isHidden = bothFolders
+        split.addSubview(arrow)
     }
 
-    func controlTextDidChange(_ obj: Notification) {
-        renameButton.isEnabled = FileActions.isValidName(nameField.stringValue) && nameField.stringValue != info.destination.name
+    private func card(_ item: FileItem, heading: String, x: CGFloat, newer: Bool, larger: Bool, summary: TransferFolderSummary? = nil) {
+        let box = NSView(frame: CGRect(x: x, y: 173, width: 274, height: 136))
+        box.wantsLayer = true; box.layer?.cornerRadius = 8; box.layer?.borderWidth = 1
+        Theme.whenChanged(box) { [weak box] in
+            box?.layer?.backgroundColor = Theme.viewBackground.cgColor
+            box?.layer?.borderColor = Theme.frame.cgColor
+        }
+        window.contentView!.addSubview(box)
+        _ = label(heading, CGRect(x: x + 12, y: 285, width: 250, height: 16), size: 11, weight: .semibold, secondary: true)
+        let image = NSImageView(frame: CGRect(x: x + 12, y: 207, width: 64, height: 64))
+        image.image = Icons.shared.image(for: item, size: 64)
+        if item.url.isFileURL {
+            let request = QLThumbnailGenerator.Request(fileAt: item.url, size: CGSize(width: 64, height: 64), scale: 2, representationTypes: .all)
+            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { [weak image] thumbnail, _ in
+                guard let thumbnail, thumbnail.type != .icon else { return }
+                DispatchQueue.main.async {
+                    image?.image = thumbnail.nsImage; image?.contentTintColor = nil
+                }
+            }
+        }
+        image.toolTip = item.url.absoluteString
+        window.contentView!.addSubview(image)
+        let name = label(item.name, CGRect(x: x + 86, y: 253, width: 176, height: 19), size: 13, weight: .medium)
+        name.lineBreakMode = .byTruncatingMiddle
+        let sizeText: String
+        if item.isBrowsableFolder {
+            sizeText =
+                summary.map { FileFormat.itemCount($0.itemCount) + ($0.bytes.map { ", " + FileFormat.size($0) } ?? "") } ?? "Contents not counted"
+        } else {
+            sizeText = FileFormat.size(item.size)
+        }
+        let size = label(sizeText, CGRect(x: x + 86, y: 235, width: 176, height: 18))
+        if larger { size.textColor = Theme.compareChanged }
+        let formatter = DateFormatter()
+        formatter.locale = .current; formatter.dateFormat = "d MMM yyyy, HH:mm"
+        let dateText = item.modificationDate.map { formatter.string(from: $0) } ?? "Date unavailable"
+        let date = label(dateText, CGRect(x: x + 86, y: 217, width: newer ? 124 : 176, height: 16), size: 10.5, secondary: !newer)
+        date.lineBreakMode = .byTruncatingTail; date.toolTip = dateText
+        if newer { date.textColor = Theme.compareChanged }
+        for (text, value, y, fontSize, shown) in [("Newer", dateText, 217.0, 10.5, newer), ("Larger", sizeText, 235.0, 12.0, larger)] where shown {
+            let width = (value as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: fontSize)]).width
+            let badge = ConflictBadge(text: text)
+            badge.frame = CGRect(x: x + 86 + min(124, ceil(width)) + 6, y: y, width: 46, height: 16)
+            window.contentView!.addSubview(badge)
+        }
+        let badges = [newer ? "Newer" : nil, larger ? "Larger" : nil].compactMap { $0 }.joined(separator: " · ")
+        _ = label(
+            item.isDirectory
+                ? "Folder" : (item.contentType == nil && item.url.pathExtension.lowercased() == "pdf" ? "PDF document" : item.typeDescription),
+            CGRect(x: x + 86, y: 199, width: 176, height: 16), size: 11, secondary: true)
+        box.setAccessibilityElement(true)
+        box.setAccessibilityLabel("\(heading): \(item.name), \(FileFormat.size(item.size)), \(badges)")
     }
 
-    @objc private func suggest() {
-        nameField.stringValue = info.suggestedName
-        controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
+    @objc private func methodChanged() {
+        if methods[method.indexOfSelectedItem] == info.comparisonOptions.method, let different = info.differentItems,
+            let identical = info.identicalItems
+        {
+            counts.stringValue = "\(different) different · \(identical) identical so far"
+        } else {
+            counts.stringValue = "\(info.replacedItems) replaced · \(info.skippedIdenticalItems) identical so far"
+        }
+        counts.toolTip = "File comparisons by the selected method; folders are compared through their contents. Counts exclude folders."
     }
 
-    private func finish(_ r: ConflictResolution) {
-        result = ConflictAnswer(r, applyToAll: applyAll.state == .on)
-        NSApp.stopModal()
+    @objc private func choices(_ sender: NSButton) {
+        let menu = NSMenu()
+        for (title, action) in [
+            ("Replace if Newer", #selector(newer)), ("Replace if Larger", #selector(larger)), ("Replace if Different", #selector(differentOnce)),
+        ] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: ""); item.target = self; menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: sender.bounds.maxY), in: sender)
+    }
+
+    private func finish(_ resolution: ConflictResolution, all: Bool = false) {
+        guard let completion else { return }
+        self.completion = nil
+        let answer = ConflictAnswer(resolution, applyToAll: all || applyAll.state == .on, comparisonMethod: methods[method.indexOfSelectedItem])
+        if let parent = window.sheetParent { parent.endSheet(window) }
         window.orderOut(nil)
+        completion(answer)
+        retainedSelf = nil
     }
-
-    @objc private func cancel() { finish(.cancel) }
+    @objc func cancel() { finish(.cancel) }
     @objc private func skip() { finish(.skip) }
-    @objc private func overwrite() { finish(.overwrite) }
-    @objc private func overwriteOlder() { finish(.overwriteIfOlder) }
-    @objc private func writeInto() { finish(.writeInto) }
-    @objc private func rename() { finish(.rename(nameField.stringValue)) }
+    @objc private func keepBoth() { finish(.keepBoth) }
+    @objc private func newer() { finish(.overwriteIfOlder) }
+    @objc private func larger() { finish(.overwriteIfLarger) }
+    @objc private func differentOnce() { finish(.overwriteIfDifferent) }
+    @objc private func different() { finish(.overwriteIfDifferent, all: true) }
+    @objc private func replace() { finish(info.source.isBrowsableFolder && info.destination.isBrowsableFolder ? .writeInto : .overwrite) }
 
-    func run() -> ConflictAnswer {
-        window.center()
-        NSApp.runModal(for: window)
-        return result
+    func present(on owner: NSWindow?, completion: @escaping (ConflictAnswer) -> Void) {
+        self.completion = completion
+        retainedSelf = self
+        if let owner, owner.isVisible { owner.beginSheet(window) } else { window.center(); window.makeKeyAndOrderFront(nil) }
     }
+
+    /// Legacy adapter for callers that aren't transfer workers.
+    func run() -> ConflictAnswer {
+        var answer = ConflictAnswer(.cancel)
+        present(on: nil) {
+            answer = $0; NSApp.stopModal()
+        }
+        NSApp.runModal(for: window)
+        return answer
+    }
+}
+
+private final class ConflictActionButton: NSButton {
+    var primary = false
+    var drawsBackground = true
+    var titleTint: NSColor?
+    override func draw(_ dirtyRect: NSRect) {
+        if drawsBackground { ConflictSplitView.paint(bounds.insetBy(dx: 1, dy: 1), primary: primary, highlighted: isHighlighted) }
+        let text = title as NSString
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font ?? NSFont.systemFont(ofSize: 12), .foregroundColor: titleTint ?? (primary ? NSColor.white : Theme.windowText),
+        ]
+        let size = text.size(withAttributes: attributes)
+        text.draw(at: CGPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2), withAttributes: attributes)
+    }
+}
+private final class ConflictSplitView: NSView {
+    var primary = false
+    var showsDivider = true
+    static func paint(_ rect: CGRect, primary: Bool, highlighted: Bool = false) {
+        (primary ? Theme.activeText : Theme.viewBackground).withAlphaComponent(highlighted ? 0.7 : 1).setFill()
+        let path = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6); path.fill()
+        (primary ? Theme.activeText : Theme.frame).setStroke(); path.lineWidth = 1; path.stroke()
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        Self.paint(bounds.insetBy(dx: 1, dy: 1), primary: primary)
+        if showsDivider {
+            (primary ? NSColor.white.withAlphaComponent(0.3) : Theme.frame).setFill()
+            CGRect(x: 128, y: 4, width: 1, height: bounds.height - 8).fill()
+        }
+    }
+}
+private final class ConflictBadge: NSView {
+    let text: String
+    init(text: String) { self.text = text; super.init(frame: .zero) }
+    required init?(coder: NSCoder) { fatalError() }
+    override func draw(_ dirtyRect: NSRect) {
+        Theme.compareChanged.withAlphaComponent(0.14).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10, weight: .semibold), .foregroundColor: Theme.compareChanged]
+        let size = (text as NSString).size(withAttributes: attrs)
+        (text as NSString).draw(at: CGPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2), withAttributes: attrs)
+    }
+}
+
+private final class ConflictBackdropView: NSView {
+    override func draw(_ dirtyRect: NSRect) { Theme.windowBackground.setFill(); bounds.fill() }
 }
