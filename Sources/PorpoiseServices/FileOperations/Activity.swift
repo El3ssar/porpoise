@@ -96,6 +96,8 @@ public final class Activity: Identifiable {
 
 extension FileOperationsController {
     public static let activityChanged = Notification.Name("PorpoiseActivityChanged")
+    /// Ended jobs kept in the list.
+    static let endedKept = 200
 
     /// How many copies and moves run at once (Settings › Activity), at least one.
     public var concurrency: Int {
@@ -179,6 +181,12 @@ extension FileOperationsController {
             }
         }
         activity.finishedAt = Date()
+        // The list keeps the latest ended jobs; the history keeps them all.
+        let ended = activities.filter(\.state.isEnded)
+        if ended.count > Self.endedKept {
+            let drop = Set(ended.prefix(ended.count - Self.endedKept).map(\.id))
+            activities.removeAll { drop.contains($0.id) }
+        }
         if activity.state == .completed, activity.kind == .copy, Settings.shared.verifyCopies, !activity.placed.isEmpty,
             activity.sources.allSatisfy(\.isFileURL)
         {
