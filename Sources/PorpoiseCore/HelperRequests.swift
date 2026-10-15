@@ -15,10 +15,12 @@ public enum HelperRequests {
         let ok: Bool
         switch tool {
         case "/bin/mv":
-            ok = (a.count == 3 && a[0] == "--" || a.count == 4 && a[0] == "-n" && a[1] == "--")
+            ok =
+                (a.count == 3 && a[0] == "--" || a.count == 4 && a[0] == "-n" && a[1] == "--")
                 && removable(a[a.count - 2]) && writable(a[a.count - 1])
         case "/bin/cp":
-            ok = (a.count == 3 && a[0] == "--" || a.count == 4 && a[0] == "-pR" && a[1] == "--")
+            ok =
+                (a.count == 3 && a[0] == "--" || a.count == 4 && a[0] == "-pR" && a[1] == "--")
                 && isPath(a[a.count - 2]) && writable(a[a.count - 1])
         case "/bin/ln":
             // The link's target is only text stored in the link: any, but not empty.
@@ -27,7 +29,8 @@ public enum HelperRequests {
             ok = a.count == 2 && a[0] == "--" && writable(a[1])
         case "/bin/chmod":
             // -h: a symlink's own mode, never its target's. No setuid, setgid or sticky bits.
-            ok = a.count == 4 && a[0] == "-h" && a[1] == "--" && a[2].count <= 4 && a[2].allSatisfy { ("0"..."7").contains($0) }
+            ok =
+                a.count == 4 && a[0] == "-h" && a[1] == "--" && a[2].count <= 4 && a[2].allSatisfy { ("0"..."7").contains($0) }
                 && (Int(a[2], radix: 8) ?? 0o7000) & 0o7000 == 0 && writable(a[3])
         case "/bin/rm":
             ok = a.count == 3 && a[0] == "-rf" && a[1] == "--" && removable(a[2])

@@ -31,7 +31,9 @@ public enum CommandSearch {
         var inWord = false
         var search = text.startIndex..<text.endIndex
         while let r = text.range(of: word, range: search) {
-            if r.lowerBound == text.startIndex || !(text[text.index(before: r.lowerBound)].isLetter || text[text.index(before: r.lowerBound)].isNumber) {
+            if r.lowerBound == text.startIndex
+                || !(text[text.index(before: r.lowerBound)].isLetter || text[text.index(before: r.lowerBound)].isNumber)
+            {
                 return 80_000 - haystack.count
             }
             inWord = true

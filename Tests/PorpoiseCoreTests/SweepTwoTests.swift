@@ -48,7 +48,10 @@ struct SweepTwoCoreTests {
         #expect(prefs.conflicts(actions: actions).isEmpty)
         // A binding of the user's own onto a taken key is still a clash.
         prefs.overrides["palette"] = KeyboardShortcut(key: "l", modifiers: [.command, .shift])
-        #expect(prefs.conflicts(actions: actions) == [ShortcutConflict(first: "goLibrary", second: "palette", shortcut: KeyboardShortcut(key: "l", modifiers: [.command, .shift]))])
+        #expect(
+            prefs.conflicts(actions: actions) == [
+                ShortcutConflict(first: "goLibrary", second: "palette", shortcut: KeyboardShortcut(key: "l", modifiers: [.command, .shift]))
+            ])
     }
 
     @Test func shortcutsNeedAModifierUnlessFunctionOrNavigationKeys() throws {
@@ -69,7 +72,8 @@ struct SweepTwoCoreTests {
 
     @Test func initialsRankAboveAMatchInsideAWord() {
         func first(_ q: String, _ titles: [String]) -> String? {
-            CommandSearch.rank(q, candidates: titles.enumerated().map { CommandCandidate(id: "\($0.offset)", title: $0.element) }).first?.candidate.title
+            CommandSearch.rank(q, candidates: titles.enumerated().map { CommandCandidate(id: "\($0.offset)", title: $0.element) }).first?.candidate
+                .title
         }
         #expect(first("nf", ["Information", "New Folder"]) == "New Folder")
         #expect(first("et", ["Delete", "Empty Trash"]) == "Empty Trash")
@@ -110,4 +114,3 @@ struct SweepTwoCoreTests {
         #expect(ChecksumManifest.Invalid(line: 3, reason: "bad").errorDescription == "Manifest line 3: bad")
     }
 }
-

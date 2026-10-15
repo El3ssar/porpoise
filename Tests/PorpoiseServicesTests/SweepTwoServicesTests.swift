@@ -74,4 +74,3 @@ struct SweepTwoServicesTests {
         #expect(scan.entries.filter { !$0.directory }.count == 2)
     }
 }
-

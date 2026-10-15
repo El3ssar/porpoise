@@ -107,7 +107,8 @@ import Testing
             ["/bin/cp", "-pR", "--", "/tmp/x", "/Library/LaunchDaemons/evil.plist"], ["/bin/cp", "-f", "--", "/tmp/x", "/Users/me/y"],
             ["/bin/mv", "--", "/tmp/x", "/LIBRARY/launchdaemons/evil.plist"], ["/bin/mv", "-f", "/a/b", "/c/d"],
             ["/bin/mv", "--", "/tmp/x", s.path("toEtc").path + "/sudoers"],  // a link on the way into /private/etc
-            ["/bin/ln", "-s", "--", "/tmp/evil", "/Library/LaunchAgents/x.plist"], ["/bin/ln", "--", "/a", "/b/c"], ["/bin/ln", "-s", "--", "", "/b/c"],
+            ["/bin/ln", "-s", "--", "/tmp/evil", "/Library/LaunchAgents/x.plist"], ["/bin/ln", "--", "/a", "/b/c"],
+            ["/bin/ln", "-s", "--", "", "/b/c"],
             ["/bin/chmod", "4755", "/Applications/A.app"], ["/bin/chmod", "--", "755", "/Applications/A.app"],
             ["/bin/chmod", "-h", "--", "4755", "/Applications/A.app"], ["/bin/chmod", "-h", "--", "2755", "/x/y"],
             ["/bin/chmod", "-h", "--", "u+s", "/x/y"], ["/bin/chmod", "-h", "--", "666", "/private/etc/periodic/daily/x"],
