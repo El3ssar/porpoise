@@ -43,7 +43,9 @@ public enum SyncComparator {
             let parent = (rows[index].path as NSString).deletingLastPathComponent
             if let p = indices[key(parent)], rows[p].status == .same { rows[p].status = .changed(.unknown) }
         }
-        return .init(rows: rows, caseSensitive: sensitive, complete: left.complete && right.complete, options: options)
+        return .init(
+            rows: rows, caseSensitive: sensitive, leftRootIdentity: left.rootIdentity, rightRootIdentity: right.rootIdentity,
+            complete: left.complete && right.complete, options: options)
     }
     public static func statusOf(_ left: SyncEntry, _ right: SyncEntry, options: SyncCompareOptions) -> SyncStatus {
         guard left.kind == right.kind else { return .changed(.unknown) }

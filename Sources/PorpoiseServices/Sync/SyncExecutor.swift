@@ -24,6 +24,13 @@ public enum SyncExecutor {
     ) throws {
         try cancellation.check()
         try validateRoots(leftRoot, rightRoot)
+        for (root, identity) in [(leftRoot, step.leftRootIdentity), (rightRoot, step.rightRootIdentity)] {
+            if let identity, root.isFileURL {
+                guard try SyncScanner.localEntry(root, path: "root", content: false).identity == identity else {
+                    throw SyncEngineError.stale(root.path)
+                }
+            }
+        }
         guard step.action != .conflict else { throw SyncEngineError.conflicts }
         let root = step.target == .left ? leftRoot : rightRoot
         let target = try resolve(step.path, root: root)

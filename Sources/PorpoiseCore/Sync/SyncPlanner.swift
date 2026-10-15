@@ -8,6 +8,16 @@ public enum SyncPlanner {
         guard comparison.complete, previous == nil || (previous!.version == 1 && previous!.left.complete && previous!.right.complete) else {
             return .init(steps: [.init(path: "", target: .right, action: .conflict, reason: "Finish scanning both folders before syncing.")])
         }
+        if let previous,
+            (previous.left.rootIdentity != nil && previous.left.rootIdentity != comparison.leftRootIdentity)
+                || (previous.right.rootIdentity != nil && previous.right.rootIdentity != comparison.rightRootIdentity)
+        {
+            return .init(steps: [
+                .init(
+                    path: "", target: .right, action: .conflict,
+                    reason: "A folder or mounted volume changed identity. Reconnect it and compare again.")
+            ])
+        }
         func key(_ path: String) -> String { comparison.caseSensitive ? path : path.precomposedStringWithCanonicalMapping.lowercased() }
         let oldLeft = Dictionary(previous?.left.entries.map { (key($0.path), $0) } ?? [], uniquingKeysWith: { first, _ in first })
         let oldRight = Dictionary(previous?.right.entries.map { (key($0.path), $0) } ?? [], uniquingKeysWith: { first, _ in first })
@@ -80,6 +90,10 @@ public enum SyncPlanner {
                 if step.action == .conflict { blocked.append(row.path) }
             }
         }
+        for index in steps.indices {
+            steps[index].leftRootIdentity = comparison.leftRootIdentity
+            steps[index].rightRootIdentity = comparison.rightRootIdentity
+        }
         // Preserve the destination's spelling for aligned case-insensitive parent folders.
         let leftPaths = Dictionary(comparison.rows.compactMap { $0.left }.map { (key($0.path), $0.path) }, uniquingKeysWith: { a, _ in a })
         let rightPaths = Dictionary(comparison.rows.compactMap { $0.right }.map { (key($0.path), $0.path) }, uniquingKeysWith: { a, _ in a })
@@ -150,7 +164,7 @@ public enum SyncPlanner {
         return current.size != old.size || current.modified != old.modified || current.identity != old.identity
     }
     private static func transfer(_ row: SyncDifference, from source: SyncSide) -> SyncStep? {
-        guard let entry = source == .left ? row.left : row.right else { return nil }
+        guard row.status != .same, let entry = source == .left ? row.left : row.right else { return nil }
         let target = source == .left ? row.right : row.left
         if target?.kind == .directory && entry.kind == .directory { return nil }
         return .init(

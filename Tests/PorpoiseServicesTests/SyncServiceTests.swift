@@ -144,3 +144,32 @@ extension SyncServiceTests {
         #expect(Set(scan.entries.filter { ["A", "a"].contains($0.path) }.map(\.path)) == ["A", "a"])
     }
 }
+
+extension SyncServiceTests {
+    @Test func replacedRootIsNeverInterpretedAsDeletedContents() throws {
+        let scratch = try Scratch(), left = try scratch.folder("left"), right = try scratch.folder("right")
+        try scratch.file("left/a", "keep"); try scratch.file("right/a", "keep")
+        let before = try SyncScanner.compare(left, right)
+        let previous = SyncState(left: before.left, right: before.right)
+        try FileManager.default.moveItem(at: left, to: scratch.path("detached"))
+        try FileManager.default.createDirectory(at: left, withIntermediateDirectories: false)
+        let missingVolume = try SyncScanner.compare(left, right)
+        #expect(SyncPlanner.plan(missingVolume.comparison, mode: .twoWay, previous: previous).conflicts.count == 1)
+        // Preview an ordinary Mirror deletion, then swap the source root before execution.
+        let plan = SyncPlanner.plan(missingVolume.comparison, mode: .mirror)
+        try FileManager.default.moveItem(at: left, to: scratch.path("detached2"))
+        try FileManager.default.createDirectory(at: left, withIntermediateDirectories: false)
+        #expect(throws: (any Error).self) { try SyncExecutor.execute(plan, leftRoot: left, rightRoot: right) }
+        #expect(scratch.read("right/a") == "keep")
+    }
+    @Test func executorUsesConfiguredTimestampTolerance() throws {
+        let scratch = try Scratch(), left = try scratch.folder("left"), right = try scratch.folder("right")
+        try scratch.file("left/a", "new"); try scratch.file("right/a", "old")
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 100)], ofItemAtPath: scratch.path("left/a").path)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 101)], ofItemAtPath: scratch.path("right/a").path)
+        let plan = SyncPlanner.plan(try SyncScanner.compare(left, right, options: .init(timestampTolerance: 0)).comparison, mode: .backup)
+        #expect(plan.steps.count == 1)
+        try SyncExecutor.execute(plan, leftRoot: left, rightRoot: right)
+        #expect(scratch.read("right/a") == "new")
+    }
+}

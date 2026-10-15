@@ -32,8 +32,9 @@ public struct SyncSnapshot: Codable, Equatable, Sendable {
     public var caseSensitive: Bool
     /// A depth-limited listing is suitable for browsing, never for destructive planning.
     public var complete: Bool
-    public init(entries: [SyncEntry], caseSensitive: Bool = true, complete: Bool = true) {
-        self.entries = entries; self.caseSensitive = caseSensitive; self.complete = complete
+    public var rootIdentity: String?
+    public init(entries: [SyncEntry], caseSensitive: Bool = true, complete: Bool = true, rootIdentity: String? = nil) {
+        self.entries = entries; self.caseSensitive = caseSensitive; self.complete = complete; self.rootIdentity = rootIdentity
     }
 }
 public enum SyncCompareMethod: String, Codable, Sendable { case sizeAndDate, sizeOnly, content }
@@ -56,6 +57,8 @@ public struct SyncDifference: Equatable, Sendable {
 public struct SyncComparison: Sendable {
     public var rows: [SyncDifference]
     public var caseSensitive: Bool
+    public var leftRootIdentity: String?
+    public var rightRootIdentity: String?
     public var complete: Bool
     public var options: SyncCompareOptions
     /// Immediate aligned children; the scanner can separately populate a depth-limited subtree on demand.
@@ -73,6 +76,8 @@ public struct SyncStep: Codable, Equatable, Identifiable, Sendable {
     public var source: SyncSide?
     public var target: SyncSide
     public var action: SyncAction
+    public var leftRootIdentity: String?
+    public var rightRootIdentity: String?
     public var timestampTolerance: TimeInterval = 2
     public var dependsOn: [String] = []
     public var method: SyncCompareMethod = .sizeAndDate

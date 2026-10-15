@@ -41,8 +41,10 @@ public enum SyncScanner {
         caseSensitive: Bool? = nil, cancellation: DiskCancellation = DiskCancellation()
     ) throws -> SyncSnapshot {
         let provider = RemoteFS.provider(for: root)
+        var rootIdentity: String?
         if provider == nil {
             let entry = try localEntry(root, path: "root", content: false, cancellation: cancellation)
+            rootIdentity = entry.identity
             guard entry.kind == .directory else { throw SyncEngineError.unsupported("Choose a physical folder as the sync root.") }
         }
         let sensitive =
@@ -94,7 +96,7 @@ public enum SyncScanner {
                 if entry.kind == .directory { pending.append((url, path, depth + 1)) }
             }
         }
-        return .init(entries: entries, caseSensitive: sensitive, complete: maxDepth == nil)
+        return .init(entries: entries, caseSensitive: sensitive, complete: maxDepth == nil, rootIdentity: rootIdentity)
     }
     static func localEntry(_ url: URL, path: String, content: Bool, cancellation: DiskCancellation = DiskCancellation()) throws -> SyncEntry {
         var info = stat()
