@@ -43,3 +43,9 @@ and Undo integration test uses an isolated mounted disk image, never the user's 
 time zones, literal braces, counters/collisions, traversal rejection, binary data, save/edit identity, bounded imports,
 version rejection and import/export round trips. Visual checks use an isolated defaults suite, fake Library tree and
 template store; no user support files are moved by visual verification.
+
+Validation on 2026-10-15: `swift build` and the exact CI strict-format command pass. The combined native SwiftPM
+runner with coverage passes 771 tests in 118 suites; LLVM reports 93.15% of 11,932 Core/Services lines (92% gate).
+Visual verification covers resolved source/preview, creating the scratch note, advancing the counter, preserving a
+personal template ID on save, unchecked cleanup rows, marking a row and cancelling without moving fixture data.
+Import/export round trips are verified at the service layer; native file-panel submission is not part of the visual check.
