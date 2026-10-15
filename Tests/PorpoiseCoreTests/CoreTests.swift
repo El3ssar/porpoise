@@ -150,6 +150,30 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bo
         #expect(!FileManager.default.fileExists(atPath: dst.appendingPathComponent("a (1).bin").path))
     }
 
+    @Test func renameSuggestionSkipsNamesTakenInAnotherCase() throws {
+        #expect(FileFormat.suggestedName(for: "Report.txt", existing: ["Report.txt", "report (1).txt"]) == "Report (2).txt")
+        #expect(FileFormat.duplicateName(for: "a.txt", existing: ["a.txt", "A Copy.txt"]) == "a copy 2.txt")
+        // On a case-insensitive volume "Report (1).txt" exists as "report (1).txt": suggested again and again,
+        // the conflict never went away (an Apply to All rename looped forever).
+        let root = scratch.url
+        let src = root.appendingPathComponent("case-src"), dst = root.appendingPathComponent("case-dst")
+        try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dst, withIntermediateDirectories: true)
+        for (folder, name) in [(src, "Report.txt"), (dst, "Report.txt"), (dst, "report (1).txt")] {
+            try Data(name.utf8).write(to: folder.appendingPathComponent(name))
+        }
+        try #require(FileJob.itemExists(at: dst.appendingPathComponent("Report (1).txt")), "needs a case-insensitive volume")
+        let job = FileJob(kind: .copy, sources: [src.appendingPathComponent("Report.txt")], destinationFolder: dst)
+        var asked = 0
+        job.resolveConflict = { info in
+            asked += 1
+            return asked > 3 ? ConflictAnswer(.cancel) : ConflictAnswer(.rename(info.suggestedName))
+        }
+        _ = try job.run()
+        #expect(asked == 1)
+        #expect(FileManager.default.fileExists(atPath: dst.appendingPathComponent("Report (2).txt").path))
+    }
+
     @Test func moveAndUndoMove() throws {
         let root = scratch.url
         let a = root.appendingPathComponent("a"), b = root.appendingPathComponent("b")

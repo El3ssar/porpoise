@@ -282,12 +282,14 @@ public final class FileJob: @unchecked Sendable {
             target = folder.appendingPathComponent(FileFormat.duplicateName(for: src.lastPathComponent, existing: names(in: folder)))
         }
         while Self.itemExists(at: target) {
+            if isCancelled { throw FileOperationError.cancelled }
             let srcItem = FileItem.load(src)
             let dstItem = FileItem.load(target)
             // A link to a folder is transferred as the link: there is nothing in it to merge.
             let srcIsFolder = (srcItem?.isBrowsableFolder ?? false) && !(srcItem?.isSymlink ?? false)
             let bothDirs = srcIsFolder && (dstItem?.isBrowsableFolder ?? false)
-            let suggestion = FileFormat.suggestedName(for: src.lastPathComponent, existing: names(in: folder))
+            // Only worked out when needed: listing the folder for every conflict of a big merge is quadratic.
+            let suggestion = { FileFormat.suggestedName(for: src.lastPathComponent, existing: self.names(in: folder)) }
             let answer = conflictAnswer(srcItem, dstItem, bothDirs: bothDirs, suggestion: suggestion)
             switch answer {
             case .cancel:
@@ -311,14 +313,14 @@ public final class FileJob: @unchecked Sendable {
         return (target, .new)
     }
 
-    private func conflictAnswer(_ src: FileItem?, _ dst: FileItem?, bothDirs: Bool, suggestion: String) -> ConflictResolution {
+    private func conflictAnswer(_ src: FileItem?, _ dst: FileItem?, bothDirs: Bool, suggestion: () -> String) -> ConflictResolution {
         // "Apply to All" answers stick, except Write Into, which only means something for two folders.
         if let s = sticky, !(s == .writeInto && !bothDirs) {
-            if case .rename = s { return .rename(suggestion) }
+            if case .rename = s { return .rename(suggestion()) }
             return s
         }
         guard let s = src, let d = dst else { return .skip }
-        let a = resolveConflict(ConflictInfo(source: s, destination: d, suggestedName: suggestion))
+        let a = resolveConflict(ConflictInfo(source: s, destination: d, suggestedName: suggestion()))
         if a.applyToAll { sticky = a.resolution }
         return a.resolution
     }
