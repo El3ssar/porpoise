@@ -174,7 +174,8 @@ final class VideoPreviewStreamTests {
         await withCheckedContinuation { c in
             let once = Once()
             p.playableURL(for: url, owner: owner) { u in if once.claim() { c.resume(returning: u) } }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 30) { if once.claim() { c.resume(returning: nil) } }
+            // Beyond the preview's own worst case: probe, then copy, then convert, 10s each.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 60) { if once.claim() { c.resume(returning: nil) } }
         }
     }
 
