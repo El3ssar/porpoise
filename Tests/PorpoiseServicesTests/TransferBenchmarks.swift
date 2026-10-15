@@ -18,6 +18,8 @@ struct TransferBenchmarks {
         var bytes: Int64
         var files: Int
         var error: String?
+        var extraEntries: [String] = []
+        var missingEntries: [String] = []
     }
 
     @Test func copyMatrix() async throws {
@@ -51,7 +53,8 @@ struct TransferBenchmarks {
         for (fixture, bytes, count) in [(small, Int64(40_960_000), 10_000), (large, Int64(10_000_000_000), 1)] {
             let sources = try fm.contentsOfDirectory(at: fixture, includingPropertiesForKeys: nil).sorted { $0.path < $1.path }
             for (location, parent) in [("same-volume", s.url), ("disk-image", image.volume)] {
-                for tool in ["Porpoise", "Porpoise (stream)", "cp", "Finder"] {
+                let requestedTools = ProcessInfo.processInfo.environment["TRANSFER_BENCH_TOOLS"]?.components(separatedBy: ",")
+                for tool in requestedTools ?? ["Porpoise", "Porpoise (stream)", "cp", "Finder"] {
                     let destination = parent.appendingPathComponent("out-" + UUID().uuidString)
                     try fm.createDirectory(at: destination, withIntermediateDirectories: false)
                     let started = ProcessInfo.processInfo.systemUptime
@@ -88,8 +91,17 @@ struct TransferBenchmarks {
                         }
                     } catch { failure = error.localizedDescription }
                     let elapsed = ProcessInfo.processInfo.systemUptime - started
+                    var extras: [String] = [], missing: [String] = []
                     if failure == nil {
-                        #expect(try fm.contentsOfDirectory(atPath: destination.path).count == count)
+                        let expected = Set(sources.map(\.lastPathComponent))
+                        let actual = Set(try fm.contentsOfDirectory(atPath: destination.path))
+                        extras = actual.subtracting(expected).sorted()
+                        missing = expected.subtracting(actual).sorted()
+                        let unexpected = extras.filter { $0 != ".DS_Store" }
+                        if !missing.isEmpty || !unexpected.isEmpty {
+                            failure = "File verification failed: missing \(missing.count), unexpected \(unexpected.count)"
+                        }
+                        #expect(missing.isEmpty && unexpected.isEmpty)
                         if count == 1 {
                             let copied = destination.appendingPathComponent(largeFile.lastPathComponent)
                             #expect((try fm.attributesOfItem(atPath: copied.path)[.size] as? NSNumber)?.int64Value == bytes)
@@ -108,7 +120,7 @@ struct TransferBenchmarks {
                 }
             }
         }
-        if let server = SSHServer.current {
+        if ProcessInfo.processInfo.environment["TRANSFER_BENCH_TOOLS"] == nil, let server = SSHServer.current {
             let destination = try server.folder()
             let provider = server.provider()
             RemoteFS.use(provider, for: server.url("/"))
