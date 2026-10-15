@@ -7,6 +7,19 @@ import Testing
 
 @MainActor @Suite(.isolatedSettings, .serialized)
 struct TransferExperienceTests {
+    @Test func preparationTimeDoesNotPrimeTheTransferEstimate() {
+        let activity = Activity(kind: .copy, sources: [URL(fileURLWithPath: "/fixture/file")], destination: nil, job: nil)
+        activity.state = .running
+        activity.rate.add(bytes: 0, at: 0)
+        activity.rate.add(bytes: 100, at: 2)
+        #expect(activity.rate.hasSpeedEstimate)
+        var progress = JobProgress(kind: .copy, totalBytes: 1_000, doneBytes: 0, totalItems: 1, doneItems: 0, currentName: "file", destination: nil)
+        progress.phase = .preparing
+        makeController(ScriptedUI()).progressed(activity, progress)
+        #expect(!activity.rate.hasSpeedEstimate)
+        #expect(activity.rate.timeLeftText == "Estimating time…")
+    }
+
     @Test func anOpenConflictKeepsTheMainQueueResponsive() async throws {
         let s = try Scratch("async-conflict")
         let source = try s.file("src/report", "incoming")

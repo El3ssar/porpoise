@@ -195,6 +195,8 @@ public final class FileJob: @unchecked Sendable {
     static let chunkSize = 4 << 20
     /// Tests: a wait after each chunk, so a copy lasts long enough to be paused or interrupted.
     public var chunkDelay: TimeInterval = 0
+    /// Test instrumentation for an observable preparation phase; production leaves this at zero.
+    public var inventoryDelay: TimeInterval = 0
 
     public private(set) var errors: [String] = []
     /// Items that failed only for lack of permission (the app may retry them with authorization).
@@ -896,6 +898,7 @@ public final class FileJob: @unchecked Sendable {
     @discardableResult
     private func inventory(_ url: URL, target: URL?) throws -> Int64 {
         try checkpoint()
+        if inventoryDelay > 0 { Thread.sleep(forTimeInterval: inventoryDelay) }
         var st = stat()
         guard lstat(url.path, &st) == 0 else { return 0 }
         if let target, Self.itemExists(at: target), !Self.isSame(url, target) {

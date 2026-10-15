@@ -93,7 +93,8 @@ public final class Activity: Identifiable {
         case .verifying: return "Verifying the copies…"
         case .running:
             if let p, p.phase == .preparing {
-                return "Preparing… \(p.totalFiles) files · \(p.totalFolders) folders · \(FileFormat.size(p.totalBytes))"
+                return
+                    "Preparing… \(p.totalFiles) \(p.totalFiles == 1 ? "file" : "files") · \(p.totalFolders) \(p.totalFolders == 1 ? "folder" : "folders") · \(FileFormat.size(p.totalBytes))"
             }
             var parts: [String] = []
             if let p, p.totalFiles > 0 { parts.append("\(p.doneFiles) of \(p.totalFiles) files") }
@@ -200,7 +201,8 @@ extension FileOperationsController {
 
     func progressed(_ activity: Activity, _ p: JobProgress) {
         activity.progress = p
-        if activity.state == .running {
+        if activity.state == .running && p.phase == .preparing { activity.rate.reset() }
+        if activity.state == .running && p.phase == .transferring {
             activity.rate.add(
                 bytes: p.doneBytes, at: ProcessInfo.processInfo.systemUptime, totalBytes: p.totalBytes, items: p.doneFiles, totalItems: p.totalFiles)
         }
