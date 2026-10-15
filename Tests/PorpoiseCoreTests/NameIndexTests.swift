@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import PorpoiseCore
 
 struct NameIndexTests {
@@ -46,7 +47,7 @@ struct NameIndexTests {
         #expect(try NameIndex(encoded: wrapped[2...]).path(3) == original.path(3))
         for n in [0, 7, 23, 25, valid.count - 1] { #expect(throws: NameIndex.Corrupt.self) { try NameIndex(encoded: valid.prefix(n)) } }
         var corrupt = valid
-        corrupt[24] = 0; corrupt[25] = 0; corrupt[26] = 0; corrupt[27] = 0 // A root cannot parent itself.
+        corrupt[24] = 0; corrupt[25] = 0; corrupt[26] = 0; corrupt[27] = 0  // A root cannot parent itself.
         #expect(throws: NameIndex.Corrupt.self) { try NameIndex(encoded: corrupt) }
     }
     @Test func subtreeRangesAndRootNames() throws {

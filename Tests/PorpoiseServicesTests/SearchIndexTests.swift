@@ -1,11 +1,15 @@
-import Foundation
 import Darwin
-import Testing
+import Foundation
 import PorpoiseCore
 import PorpoiseTestSupport
+import Testing
+
 @testable import PorpoiseServices
 
 @MainActor struct SearchIndexTests {
+    /// Crawls and FSEvents can take seconds on a busy machine (a full parallel run): waits are generous, and end as
+    /// soon as their condition holds.
+    static let liveWait: TimeInterval = 30
     private func setup(_ scratch: Scratch, content: Bool = false) -> SearchIndex {
         let defaults = UserDefaults(suiteName: "PorpoiseIndexTests.\(UUID())")!
         let service = SearchIndex(directory: scratch.path("store"), defaults: defaults)
@@ -16,7 +20,7 @@ import PorpoiseTestSupport
         return service
     }
     private func waitReady(_ index: SearchIndex) async throws {
-        try #require(await eventually(10) { !index.status.building && index.status.updated != nil })
+        try #require(await eventually(Self.liveWait) { !index.status.building && index.status.updated != nil })
     }
     @Test func crawlerSkipsSymlinksAndExcludedTrees() throws {
         let s = try Scratch()
@@ -39,7 +43,9 @@ import PorpoiseTestSupport
         try await waitReady(index)
         let root = s.path("root")
         #expect(index.search("report ext:txt", scope: root)?.paths == [IndexPath.canonical(s.path("root/report.txt").path)])
-        #expect(index.search("unusual", scope: root, contents: true)?.snippets[IndexPath.canonical(s.path("root/report.txt").path)] == "a very unusual phrase")
+        #expect(
+            index.search("unusual", scope: root, contents: true)?.snippets[IndexPath.canonical(s.path("root/report.txt").path)]
+                == "a very unusual phrase")
         #expect(index.search("ignored", scope: root)?.paths.isEmpty == true)
         #expect(index.search("secret", scope: s.path("root/private")) == nil)
         #expect(index.search("report", scope: s.url) == nil)
@@ -55,14 +61,18 @@ import PorpoiseTestSupport
         try await waitReady(index)
         let started = Date()
         try s.file("root/new-needle.txt", "hello")
-        try #require(await eventually(5) { index.search("needle", scope: s.path("root"))?.paths.count == 1 })
+        try #require(await eventually(Self.liveWait) { index.search("needle", scope: s.path("root"))?.paths.count == 1 })
         print("Index live-create latency: \(Date().timeIntervalSince(started)) seconds")
         try FileManager.default.moveItem(at: s.path("root/new-needle.txt"), to: s.path("root/renamed.txt"))
-        try #require(await eventually(5) { index.search("needle", scope: s.path("root"))?.paths.isEmpty == true && index.search("renamed", scope: s.path("root"))?.paths.count == 1 })
+        try #require(
+            await eventually(Self.liveWait) {
+                index.search("needle", scope: s.path("root"))?.paths.isEmpty == true
+                    && index.search("renamed", scope: s.path("root"))?.paths.count == 1
+            })
         try FileManager.default.removeItem(at: s.path("root/renamed.txt"))
-        try #require(await eventually(5) { index.search("renamed", scope: s.path("root"))?.paths.isEmpty == true })
+        try #require(await eventually(Self.liveWait) { index.search("renamed", scope: s.path("root"))?.paths.isEmpty == true })
         // A new service loads the on-disk snapshot, including tombstones.
-        try #require(await eventually(5) { FileManager.default.fileExists(atPath: s.path("store/manifest.json").path) })
+        try #require(await eventually(Self.liveWait) { FileManager.default.fileExists(atPath: s.path("store/manifest.json").path) })
         let restored = SearchIndex(directory: s.path("store"), defaults: UserDefaults(suiteName: "PorpoiseIndexTests.\(UUID())")!)
         restored.configure(index.configuration)
         defer { restored.configure(IndexConfiguration()) }
@@ -81,17 +91,16 @@ import PorpoiseTestSupport
         }
         runner.index = index; runner.start()
         defer { runner.stop() }
-        try #require(await eventually(5) { !updates.isEmpty })
+        try #require(await eventually(Self.liveWait) { !updates.isEmpty })
         try s.file("root/visible.txt")
-        try #require(await eventually(5) { updates.last == ["visible.txt"] })
+        try #require(await eventually(Self.liveWait) { updates.last == ["visible.txt"] })
         runner.stop()
         let count = updates.count
         try s.file("root/visible2.txt")
-        try #require(await eventually(5) { index.search("visible", scope: s.path("root"))?.paths.count == 2 })
+        try #require(await eventually(Self.liveWait) { index.search("visible", scope: s.path("root"))?.paths.count == 2 })
         #expect(updates.count == count)
-        #expect(index.status.count == 3) // Root and two files, with patches counted once.
+        #expect(index.status.count == 3)  // Root and two files, with patches counted once.
     }
-
 
     @Test func packagesAndIndexStorageAreNotRecursivelyIndexed() async throws {
         let s = try Scratch()
@@ -103,12 +112,12 @@ import PorpoiseTestSupport
         defer { index.configure(IndexConfiguration()) }
         try await waitReady(index)
         #expect(index.search("hidden-name", scope: s.path("root"))?.paths.isEmpty == true)
-        try #require(await eventually(5) { FileManager.default.fileExists(atPath: s.path("root/index-store/manifest.json").path) })
+        try #require(await eventually(Self.liveWait) { FileManager.default.fileExists(atPath: s.path("root/index-store/manifest.json").path) })
         try s.file("root/after.txt")
-        try #require(await eventually(5) { index.search("after", scope: s.path("root"))?.paths.count == 1 })
+        try #require(await eventually(Self.liveWait) { index.search("after", scope: s.path("root"))?.paths.count == 1 })
         try await Task.sleep(for: .milliseconds(300))
         #expect(index.search("idx", scope: s.path("root"))?.paths.isEmpty == true)
-        #expect(index.status.count == 4) // Root, package, visible and after.
+        #expect(index.status.count == 4)  // Root, package, visible and after.
     }
     @Test func permissionHolesUseFallbackUntilReadableAgain() async throws {
         let s = try Scratch(); try s.file("root/denied/hidden.txt"); try s.file("root/allowed/visible.txt")
@@ -121,13 +130,13 @@ import PorpoiseTestSupport
         #expect(index.search("hidden", scope: s.path("root")) == nil)
         #expect(index.search("visible", scope: s.path("root/allowed"))?.paths.count == 1)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path)
-        try #require(await eventually(5) { index.search("hidden", scope: s.path("root"))?.paths.count == 1 })
+        try #require(await eventually(Self.liveWait) { index.search("hidden", scope: s.path("root"))?.paths.count == 1 })
     }
     @Test func offlineChangesReplayFromInitialSavedCursor() async throws {
         let s = try Scratch(); try s.file("root/original.txt")
         let index = setup(s)
         try await waitReady(index)
-        try #require(await eventually(5) { FileManager.default.fileExists(atPath: s.path("store/manifest.json").path) })
+        try #require(await eventually(Self.liveWait) { FileManager.default.fileExists(atPath: s.path("store/manifest.json").path) })
         let configuration = index.configuration
         index.configure(IndexConfiguration())
         try s.file("root/offline-file.txt")
@@ -135,7 +144,7 @@ import PorpoiseTestSupport
         restored.configure(configuration)
         defer { restored.configure(IndexConfiguration()) }
         try await waitReady(restored)
-        try #require(await eventually(5) { restored.search("offline-file", scope: s.path("root"))?.paths.count == 1 })
+        try #require(await eventually(Self.liveWait) { restored.search("offline-file", scope: s.path("root"))?.paths.count == 1 })
     }
     @Test func eventBurstsConvergeWithoutDuplicateResults() async throws {
         let s = try Scratch(); try s.folder("root")
@@ -143,10 +152,9 @@ import PorpoiseTestSupport
         defer { index.configure(IndexConfiguration()) }
         try await waitReady(index)
         for n in 0..<128 { try s.file("root/burst-\(n).txt") }
-        try #require(await eventually(5) { index.search("burst-", scope: s.path("root"))?.paths.count == 128 })
+        try #require(await eventually(Self.liveWait) { index.search("burst-", scope: s.path("root"))?.paths.count == 128 })
         #expect(index.status.count == 129)
     }
-
 
     @Test func boundedContentReadsRejectSpecialAndOversizedFiles() throws {
         let s = try Scratch()
@@ -159,17 +167,16 @@ import PorpoiseTestSupport
         for name in ["large", "binary", "link", "pipe", "absent"] { #expect(IndexFileText.read(s.path(name).path, limit: 65536) == nil) }
     }
 
-
     @Test func symlinkEventsIndexTheLinkWithoutFollowingItsTarget() async throws {
         let s = try Scratch(); try s.folder("root"); try s.file("outside.txt", "outside content")
         let index = setup(s)
         defer { index.configure(IndexConfiguration()) }
         try await waitReady(index)
         try s.symlink("root/new-link", to: s.path("outside.txt").path)
-        try #require(await eventually(5) { index.search("new-link", scope: s.path("root"))?.paths.count == 1 })
+        try #require(await eventually(Self.liveWait) { index.search("new-link", scope: s.path("root"))?.paths.count == 1 })
         #expect(index.search("outside.txt", scope: s.path("root"))?.paths.isEmpty == true)
         try FileManager.default.removeItem(at: s.path("root/new-link"))
-        try #require(await eventually(5) { index.search("new-link", scope: s.path("root"))?.paths.isEmpty == true })
+        try #require(await eventually(Self.liveWait) { index.search("new-link", scope: s.path("root"))?.paths.isEmpty == true })
     }
 
     @Test func fallbackRunnerStillFindsFilesWithIndexOff() async throws {
@@ -179,7 +186,7 @@ import PorpoiseTestSupport
         runner.usesSpotlight = false; runner.folderTools = nil
         runner.index = SearchIndex(directory: s.path("index"), defaults: UserDefaults(suiteName: "PorpoiseIndexTests.\(UUID())")!)
         runner.start(); defer { runner.stop() }
-        try #require(await eventually(5) { result != nil })
+        try #require(await eventually(Self.liveWait) { result != nil })
         #expect(result?.map(\.name) == ["fallback-name.txt"])
     }
 }

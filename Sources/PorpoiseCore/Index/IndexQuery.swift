@@ -26,11 +26,17 @@ public struct IndexQuery: @unchecked Sendable {
     public init(_ text: String, now: Date = Date(), calendar: Calendar = .current) throws {
         var tokens: [String] = [], token = "", quoted = false, escaped = false
         for c in text {
-            if escaped { token.append(c); escaped = false }
-            else if c == "\\" && quoted { escaped = true }
-            else if c == "\"" { quoted.toggle() }
-            else if c.isWhitespace && !quoted { if !token.isEmpty { tokens.append(token); token = "" } }
-            else { token.append(c) }
+            if escaped {
+                token.append(c); escaped = false
+            } else if c == "\\" && quoted {
+                escaped = true
+            } else if c == "\"" {
+                quoted.toggle()
+            } else if c.isWhitespace && !quoted {
+                if !token.isEmpty { tokens.append(token); token = "" }
+            } else {
+                token.append(c)
+            }
         }
         guard !quoted && !escaped else { throw Invalid.syntax("unclosed quote") }
         if !token.isEmpty { tokens.append(token) }
@@ -39,7 +45,9 @@ public struct IndexQuery: @unchecked Sendable {
             let key = token[..<colon].lowercased(), value = String(token[token.index(after: colon)...])
             switch key {
             case "ext":
-                let values = value.split(whereSeparator: { $0 == ";" || $0 == "," }).map { Self.fold(String($0)).trimmingCharacters(in: CharacterSet(charactersIn: ".")) }
+                let values = value.split(whereSeparator: { $0 == ";" || $0 == "," }).map {
+                    Self.fold(String($0)).trimmingCharacters(in: CharacterSet(charactersIn: "."))
+                }
                 guard !values.isEmpty else { throw Invalid.syntax(token) }
                 extensions.formUnion(values)
             case "path": guard !value.isEmpty else { throw Invalid.syntax(token) }; paths.append(Self.fold(value))
@@ -66,8 +74,9 @@ public struct IndexQuery: @unchecked Sendable {
             case "dm":
                 let (op, date) = Self.comparison(value)
                 let start: Date
-                if date.lowercased() == "today" { start = calendar.startOfDay(for: now) }
-                else {
+                if date.lowercased() == "today" {
+                    start = calendar.startOfDay(for: now)
+                } else {
                     let formatter = DateFormatter(); formatter.calendar = calendar
                     formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.timeZone = calendar.timeZone
                     formatter.dateFormat = "yyyy-MM-dd"; formatter.isLenient = false
@@ -82,7 +91,7 @@ public struct IndexQuery: @unchecked Sendable {
                 case "<=": before = end
                 default: after = start.timeIntervalSince1970; before = end
                 }
-            default: terms.append(Self.fold(token)) // A colon in a filename remains literal.
+            default: terms.append(Self.fold(token))  // A colon in a filename remains literal.
             }
         }
     }

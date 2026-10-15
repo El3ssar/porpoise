@@ -5,8 +5,10 @@ import PorpoiseCore
 public struct IndexConfiguration: Codable, Equatable, Sendable {
     public var enabled = false
     public var roots: [String] = []
-    public var exclusions = [FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches").path,
-                             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs").path]
+    public var exclusions = [
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches").path,
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs").path,
+    ]
     public var excludeGitObjects = true
     public var excludeNodeModules = true
     public var content = false
@@ -63,7 +65,9 @@ public final class SearchIndex: @unchecked Sendable {
     private let defaults: UserDefaults
     public init(directory: URL? = nil, defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        self.directory =
+            directory
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Porpoise/SearchIndex", isDirectory: true)
         storagePath = IndexPath.canonical(self.directory.path)
         if let data = defaults.data(forKey: "searchIndex.configuration"), let c = try? JSONDecoder().decode(IndexConfiguration.self, from: data) {
@@ -76,7 +80,8 @@ public final class SearchIndex: @unchecked Sendable {
         let s = status
         if s.building { return "Index building…" }
         guard let updated = s.updated else { return s.message }
-        return "Index: \(s.count.formatted()) items, updated \(max(0, Int(Date().timeIntervalSince(updated))))s ago" + (s.warning.map { " · " + $0 } ?? "")
+        return "Index: \(s.count.formatted()) items, updated \(max(0, Int(Date().timeIntervalSince(updated))))s ago"
+            + (s.warning.map { " · " + $0 } ?? "")
     }
     /// Cheap UI hint: no filesystem calls. The worker search performs canonical/device coverage checks.
     public func hasReadySnapshot(for scope: URL) -> Bool {
@@ -92,7 +97,8 @@ public final class SearchIndex: @unchecked Sendable {
         var config = proposed
         config.roots = Array(Set(config.roots.map { IndexPath.canonical($0) })).sorted()
         // Nested roots would duplicate hits and could cross otherwise disabled volumes.
-        config.roots = config.roots.filter { p in !config.roots.contains { $0 != p && NameIndex.contains(path: p, in: $0) && Self.sameVolume(p, $0) } }
+        config.roots = config.roots.filter { p in !config.roots.contains { $0 != p && NameIndex.contains(path: p, in: $0) && Self.sameVolume(p, $0) }
+        }
         config.exclusions = config.exclusions.map { IndexPath.canonical($0) }
         let generation = lock.withLock { () -> Int in
             current = config; revision += 1; roots = []; state = Status(); state.building = config.enabled && !config.roots.isEmpty
@@ -104,19 +110,25 @@ public final class SearchIndex: @unchecked Sendable {
         queue.async { [self] in
             events = nil
             guard selected.enabled, !selected.roots.isEmpty, valid(generation) else { notify(); return }
-            if !rebuild, let manifest = try? JSONDecoder().decode(Manifest.self, from: Data(contentsOf: directory.appendingPathComponent("manifest.json"))), manifest.configuration == selected {
+            if !rebuild,
+                let manifest = try? JSONDecoder().decode(Manifest.self, from: Data(contentsOf: directory.appendingPathComponent("manifest.json"))),
+                manifest.configuration == selected
+            {
                 do {
                     let loaded = try manifest.roots.map { root in
-                        Root(path: root.path, base: try read(root.base), patches: try root.patches.map { Chunk(path: $0.path, table: try read($0.file), shadowed: $0.shadowed, file: $0.file) }, holes: root.holes, file: root.base)
+                        Root(
+                            path: root.path, base: try read(root.base),
+                            patches: try root.patches.map { Chunk(path: $0.path, table: try read($0.file), shadowed: $0.shadowed, file: $0.file) },
+                            holes: root.holes, file: root.base)
                     }
                     guard publish(loaded, updated: manifest.updated, generation: generation) else { return }
                     eventID = manifest.eventID
                     guard watch(selected, generation: generation) else { return }
                     notify(); return
-                } catch { /* Corrupt/obsolete snapshots are rebuilt; the search fallback stays available. */ }
+                } catch { /* Corrupt/obsolete snapshots are rebuilt; the search fallback stays available. */  }
             }
             eventID = IndexEvents.currentEventID
-            guard watch(selected, generation: generation) else { return } // Start before crawling so changes during the walk are replayed.
+            guard watch(selected, generation: generation) else { return }  // Start before crawling so changes during the walk are replayed.
             var built: [Root] = []
             let crawlLock = NSLock(), workers = OperationQueue()
             workers.maxConcurrentOperationCount = min(4, ProcessInfo.processInfo.processorCount)
@@ -153,14 +165,15 @@ public final class SearchIndex: @unchecked Sendable {
     }
     private func excluded(_ path: String, config: IndexConfiguration) -> Bool {
         NameIndex.contains(path: path, in: storagePath) || config.exclusions.contains { NameIndex.contains(path: path, in: $0) }
-        || (config.excludeGitObjects && (path.hasSuffix("/.git/objects") || path.contains("/.git/objects/")))
-        || (config.excludeNodeModules && path.split(separator: "/").contains("node_modules"))
+            || (config.excludeGitObjects && (path.hasSuffix("/.git/objects") || path.contains("/.git/objects/")))
+            || (config.excludeNodeModules && path.split(separator: "/").contains("node_modules"))
     }
     private func crawl(_ path: String, config: IndexConfiguration, generation: Int) -> (table: NameIndex, holes: [String]) {
         guard !excluded(path, config: config) else { return (NameIndex(), []) }
         var holes: [String] = []
-        let table = IndexCrawler.crawl(path, exclusions: config.exclusions, content: config.content, cancelled: { !self.valid(generation) },
-                                       unreadable: { holes.append($0) }, skip: { self.excluded($0, config: config) })
+        let table = IndexCrawler.crawl(
+            path, exclusions: config.exclusions, content: config.content, cancelled: { !self.valid(generation) },
+            unreadable: { holes.append($0) }, skip: { self.excluded($0, config: config) })
         return (table, holes)
     }
     private func watch(_ config: IndexConfiguration, generation: Int) -> Bool {
@@ -168,7 +181,9 @@ public final class SearchIndex: @unchecked Sendable {
             self?.queue.async { [weak self] in self?.refresh(paths, event: id, rescan: rescan, config: config, generation: generation) }
         }
         guard events?.available == true else {
-            lock.withLock { roots = []; state = Status(); state.message = "Index watcher unavailable; using regular search" }
+            lock.withLock {
+                roots = []; state = Status(); state.message = "Index watcher unavailable; using regular search"
+            }
             notify(); return false
         }
         return true
@@ -183,9 +198,10 @@ public final class SearchIndex: @unchecked Sendable {
             var touched = Set(paths.filter { NameIndex.contains(path: $0, in: copy[r].path) || NameIndex.contains(path: copy[r].path, in: $0) })
             if touched.isEmpty { continue }
             if touched.count > 64 {
-                touched = Set(touched.map { p in
-                    p == copy[r].path ? p : (p as NSString).deletingLastPathComponent
-                })
+                touched = Set(
+                    touched.map { p in
+                        p == copy[r].path ? p : (p as NSString).deletingLastPathComponent
+                    })
             }
             if rescan || touched.contains(copy[r].path) {
                 let result = crawl(copy[r].path, config: config, generation: generation)
@@ -200,7 +216,8 @@ public final class SearchIndex: @unchecked Sendable {
                 copy[r].holes.removeAll { NameIndex.contains(path: $0, in: path) }
                 copy[r].holes.append(contentsOf: result.holes)
                 copy[r].patches.removeAll { NameIndex.contains(path: $0.path, in: path) }
-                copy[r].patches.append(Chunk(path: path, table: result.table, shadowed: copy[r].base.countUnderPath(path))) // Empty table is a deletion tombstone.
+                // Empty table is a deletion tombstone.
+                copy[r].patches.append(Chunk(path: path, table: result.table, shadowed: copy[r].base.countUnderPath(path)))
             }
             if copy[r].patches.count >= 1024 {
                 let result = crawl(copy[r].path, config: config, generation: generation)
@@ -240,15 +257,18 @@ public final class SearchIndex: @unchecked Sendable {
     private func notify() { DispatchQueue.main.async { NotificationCenter.default.post(name: Self.changed, object: self) } }
 
     /// nil means uncovered/not ready: caller must retain fd/ripgrep/Spotlight fallback.
-    public func search(_ text: String, scope: URL, contents: Bool = false, limit: Int = 5000,
-                       cancelled: () -> Bool = { false }) -> (paths: [String], snippets: [String: String], error: String?)? {
+    public func search(
+        _ text: String, scope: URL, contents: Bool = false, limit: Int = 5000,
+        cancelled: () -> Bool = { false }
+    ) -> (paths: [String], snippets: [String: String], error: String?)? {
         let (config, snapshot, building) = lock.withLock { (current, roots, state.building) }
         let scope = IndexPath.canonical(scope.path)
         let hasHoles = snapshot.flatMap(\.holes).contains { NameIndex.contains(path: $0, in: scope) || NameIndex.contains(path: scope, in: $0) }
-        guard config.enabled, !building, !hasHoles, !excluded(scope, config: config), snapshot.contains(where: { NameIndex.contains(path: scope, in: $0.path) && Self.sameVolume(scope, $0.path) }), !contents || config.content else { return nil }
+        guard config.enabled, !building, !hasHoles, !excluded(scope, config: config),
+            snapshot.contains(where: { NameIndex.contains(path: scope, in: $0.path) && Self.sameVolume(scope, $0.path) }), !contents || config.content
+        else { return nil }
         let query: IndexQuery
-        do { query = try contents ? IndexQuery(literal: text) : IndexQuery(text) }
-        catch { return ([], [:], error.localizedDescription) }
+        do { query = try contents ? IndexQuery(literal: text) : IndexQuery(text) } catch { return ([], [:], error.localizedDescription) }
         var found: [String] = [], snippets: [String: String] = [:]
         for root in snapshot where NameIndex.contains(path: scope, in: root.path) || NameIndex.contains(path: root.path, in: scope) {
             let excludedPaths = root.patches.map(\.path)
@@ -264,7 +284,10 @@ public final class SearchIndex: @unchecked Sendable {
                         let p = chunk.table.path(id)
                         guard !exclusions.contains(where: { NameIndex.contains(path: p, in: $0) }), !found.contains(p),
                             let value = IndexFileText.read(p, limit: 5_000_000),
-                            let line = value.split(separator: "\n", omittingEmptySubsequences: false).first(where: { IndexQuery.fold(String($0)).contains(IndexQuery.fold(text)) }) else { continue }
+                            let line = value.split(separator: "\n", omittingEmptySubsequences: false).first(where: {
+                                IndexQuery.fold(String($0)).contains(IndexQuery.fold(text))
+                            })
+                        else { continue }
                         found.append(p); snippets[p] = FolderSearch.snippet(String(line), around: text)
                         if found.count >= limit { break }
                     }

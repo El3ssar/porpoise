@@ -11,7 +11,9 @@ enum IndexSettingsPage {
         }
         f.section("Instant search")
         f.check("Enable persistent filename index", index.configuration.enabled) { value in change { $0.enabled = value } }
-        f.note("Only selected folders and volumes are indexed. Other locations keep using the regular folder and Spotlight search. The index stays on this Mac.")
+        f.note(
+            "Only selected folders and volumes are indexed. Other locations keep using the regular folder and Spotlight search. The index stays on this Mac."
+        )
         f.status("Index:", { (index.status.updated != nil, index.statusText) }, button: { "Rebuild" }) { refresh in
             index.configure(index.configuration, rebuild: true); refresh()
         }
@@ -32,8 +34,12 @@ enum IndexSettingsPage {
         f.check("Exclude .git objects", index.configuration.excludeGitObjects) { value in change { $0.excludeGitObjects = value } }
         f.check("Exclude node_modules", index.configuration.excludeNodeModules) { value in change { $0.excludeNodeModules = value } }
         f.check("Accelerate content searches (uses more storage)", index.configuration.content) { value in change { $0.content = value } }
-        f.note("Content filters cover UTF-8 text up to 64 KB; candidates are checked against the current file. Other files up to 5 MB are searched directly. Content searches treat the query as literal text.")
+        f.note(
+            "Content filters cover UTF-8 text up to 64 KB; candidates are checked against the current file. Other files up to 5 MB are searched directly. Content searches treat the query as literal text."
+        )
         f.section("Filename query syntax")
-        f.note("Terms are combined with AND. Use quotes for phrases: \"annual report\" ext:pdf. Operators: ext:pdf;txt, path:Documents, size:>10mb, dm:today, dm:>=2026-01-01, folder:, file:, regex:^report. Matching ignores case and accents.")
+        f.note(
+            "Terms are combined with AND. Use quotes for phrases: \"annual report\" ext:pdf. Operators: ext:pdf;txt, path:Documents, size:>10mb, dm:today, dm:>=2026-01-01, folder:, file:, regex:^report. Matching ignores case and accents."
+        )
     }
 }

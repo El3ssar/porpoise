@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 
 public enum IndexPath {
     /// FSEvents names an entry, including a symlink. Resolve ancestors, but never follow the leaf.

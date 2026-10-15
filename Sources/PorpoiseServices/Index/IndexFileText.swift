@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 
 /// Bounded reads of physical regular files. A concurrently replaced symlink/FIFO or growing file cannot
 /// make the indexer follow an unselected tree, block waiting for a writer, or allocate an unbounded buffer.
