@@ -444,7 +444,7 @@ final class ActivityRowView: NSView {
         if let progress = a.planProgress, a.state == .running || a.state == .paused {
             let current = min(progress.totalSteps, progress.completedSteps + 1)
             text = "\(progress.currentTitle) · step \(current) of \(progress.totalSteps)"
-            if progress.stepFraction > 0 { text += " · \(Int(progress.stepFraction * 100)) %" }
+            if progress.stepFraction > 0 { text += " · " + progress.stepFraction.formatted(.percent.precision(.fractionLength(0))) }
             if a.state == .paused { text = "Paused · " + text }
         }
         let failed = a.state == .failed || (a.state == .completed && (!a.errors.isEmpty || a.verification?.ok == false))
@@ -472,6 +472,7 @@ final class ActivityRowView: NSView {
         status.toolTip = ([a.statusText] + a.errors.prefix(10)).joined(separator: "\n")
         title.toolTip = a.title
         bar.isHidden = !(a.state.isActive || a.state == .queued)
+        bar.alphaValue = a.state == .paused ? 0.4 : 1
         bar.fraction = a.fraction
         bar.isIndeterminate = a.fraction <= 0 && a.state.isActive || a.state == .queued
         setButtons(for: a)
