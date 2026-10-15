@@ -36,6 +36,8 @@ concurrency:
 jobs:
   release:
     runs-on: macos-26
+    # A hung step would otherwise hold the release concurrency group for GitHub's 6-hour default.
+    timeout-minutes: 60
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -70,8 +72,15 @@ jobs:
         if: steps.ffmpeg.outputs.cache-hit != 'true'
         run: scripts/build-ffmpeg.sh
 
+      # The same checks as CI: what is released passed lint and the whole suite, search tests included.
+      - name: Format
+        run: swift format lint --strict -r Sources/PorpoiseCore Sources/PorpoiseServices Sources/Porpoise Sources/PorpoiseHelper Tests
+
+      - name: Fetch fd and ripgrep
+        run: scripts/fetch-search-tools.sh
+
       - name: Unit tests
-        run: swift test
+        run: scripts/test-with-watchdog.sh
 
       # Every release must be signed with the same identity, or users have to grant Full Disk Access again
       # after updating. The identity comes from secrets and goes into the keychain make-app.sh expects.

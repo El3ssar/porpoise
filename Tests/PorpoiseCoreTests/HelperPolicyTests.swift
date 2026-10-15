@@ -131,11 +131,10 @@ import Testing
         let (s, home, trash) = try home()
         try s.file("home/.Trash/Game.app/Contents/x")
         try s.file("home/.Trash/a b; $(id)")
-        let cmd = HelperRequests.ownershipCommand(path: trash.appendingPathComponent("Game.app").path, uid: 501, gid: 20, home: home)
-        #expect(cmd == ["/usr/sbin/chown", "-R", "-P", "501:20", trash.appendingPathComponent("Game.app").path])
-        let odd = HelperRequests.ownershipCommand(path: trash.appendingPathComponent("a b; $(id)").path, uid: 7, gid: 8, home: home)
-        #expect(odd?.last == trash.appendingPathComponent("a b; $(id)").path)
-        #expect(odd?.count == 5)
+        let app = HelperRequests.ownershipTarget(path: trash.appendingPathComponent("Game.app").path, uid: 501, home: home)
+        #expect(app == trash.appendingPathComponent("Game.app").path)
+        let odd = HelperRequests.ownershipTarget(path: trash.appendingPathComponent("a b; $(id)").path, uid: 7, home: home)
+        #expect(odd == trash.appendingPathComponent("a b; $(id)").path)
     }
 
     @Test func noOwnershipOutsideTheTrashOrForMissingItems() throws {
@@ -147,7 +146,7 @@ import Testing
             trash.appendingPathComponent("missing").path, trash.path, trash.path + "/.", trash.path + "/..",
             trash.appendingPathComponent("../Documents/doc").path, "/etc/sudoers", "",
         ] {
-            #expect(HelperRequests.ownershipCommand(path: p, uid: getuid(), gid: getgid(), home: home) == nil, "\(p)")
+            #expect(HelperRequests.ownershipTarget(path: p, uid: getuid(), home: home) == nil, "\(p)")
         }
     }
 
@@ -167,7 +166,7 @@ import Testing
             trash.appendingPathComponent("toDir").path + "/.", trash.appendingPathComponent("toDir/secret").path,
             s.path("home/FakeTrash/item").path,
         ] {
-            #expect(HelperRequests.ownershipCommand(path: p, uid: getuid(), gid: getgid(), home: home) == nil, "\(p)")
+            #expect(HelperRequests.ownershipTarget(path: p, uid: getuid(), home: home) == nil, "\(p)")
         }
     }
 
@@ -175,8 +174,62 @@ import Testing
         let s = try Scratch()
         try s.file("real/.Trash/item", "x")
         try s.symlink("linkedHome", to: s.path("real").path)
-        let cmd = HelperRequests.ownershipCommand(path: s.path("linkedHome/.Trash/item").path, uid: 501, gid: 20, home: s.path("linkedHome").path)
-        // The command names the real item, never a path through a link.
-        #expect(cmd?.last == s.path("real/.Trash/item").path)
+        let target = HelperRequests.ownershipTarget(path: s.path("linkedHome/.Trash/item").path, uid: 501, home: s.path("linkedHome").path)
+        // The real item, never a path through a link.
+        #expect(target == s.path("real/.Trash/item").path)
+    }
+
+    // MARK: Handing over, for real (to the current user, with another of its groups: no root needed)
+
+    /// A group the current user is in besides `except`, or nil.
+    static func otherGroup(than except: gid_t) -> gid_t? {
+        var groups = [gid_t](repeating: 0, count: Int(NGROUPS_MAX))
+        let n = getgroups(Int32(groups.count), &groups)
+        return n > 0 ? groups.prefix(Int(n)).first { $0 != except } : nil
+    }
+
+    private func group(_ url: URL) -> gid_t {
+        var st = stat()
+        lstat(url.path, &st)
+        return st.st_gid
+    }
+
+    @Test func handsOverAFolderAndEverythingInIt() throws {
+        let (s, home, trash) = try home()
+        let inner = try s.file("home/.Trash/Game.app/Contents/MacOS/game", "g")
+        let before = group(inner)
+        let other = try #require(Self.otherGroup(than: before), "needs a user in two groups")
+        #expect(HelperRequests.takeOwnership(path: trash.appendingPathComponent("Game.app").path, uid: getuid(), gid: other, home: home) == nil)
+        for u in [trash.appendingPathComponent("Game.app"), s.path("home/.Trash/Game.app/Contents/MacOS"), inner] {
+            #expect(group(u) == other, "\(u.path)")
+        }
+    }
+
+    /// A hard link planted in the Trash is another name for a file anywhere on the volume (`ln /etc/sudoers
+    /// ~/.Trash/x`): chown -R changed that file. Symlinks inside are changed themselves, never their targets.
+    @Test func leavesHardLinksAndSymlinkTargetsAlone() throws {
+        let (s, home, trash) = try home()
+        let secret = s.path("outside/secret")
+        let before = group(secret)
+        let other = try #require(Self.otherGroup(than: before), "needs a user in two groups")
+        let plain = try s.file("home/.Trash/dir/plain", "p")
+        try FileManager.default.linkItem(at: secret, to: trash.appendingPathComponent("dir/hard"))
+        let soft = try s.symlink("home/.Trash/dir/soft", to: secret.path)
+        let problem = HelperRequests.takeOwnership(path: trash.appendingPathComponent("dir").path, uid: getuid(), gid: other, home: home)
+        #expect(problem?.contains("more than one name") == true)
+        #expect(group(plain) == other && group(soft) == other && group(trash.appendingPathComponent("dir")) == other)
+        #expect(group(secret) == before)
+        // Directly in the Trash, too.
+        try FileManager.default.linkItem(at: secret, to: trash.appendingPathComponent("top"))
+        #expect(HelperRequests.takeOwnership(path: trash.appendingPathComponent("top").path, uid: getuid(), gid: other, home: home) != nil)
+        #expect(group(secret) == before)
+    }
+
+    @Test func refusesWhatOwnershipTargetRefuses() throws {
+        let (s, home, trash) = try home()
+        try s.symlink("home/.Trash/toFile", to: s.path("outside/secret").path)
+        for p in [trash.appendingPathComponent("toFile").path, s.path("outside/secret").path, trash.appendingPathComponent("missing").path] {
+            #expect(HelperRequests.takeOwnership(path: p, uid: getuid(), gid: getgid(), home: home) == HelperRequests.ownershipRefused, "\(p)")
+        }
     }
 }
