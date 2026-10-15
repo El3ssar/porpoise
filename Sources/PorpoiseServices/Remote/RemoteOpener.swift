@@ -53,16 +53,19 @@ public enum RemoteOpener {
         }
     }
 
-    private static func watch(_ local: URL, remote: URL, provider: RemoteProvider) {
+    /// `uploading`: the file (inode) an upload is about to read; if another file has replaced it by the time the
+    /// watch starts, that save would go unnoticed, so it's uploaded too.
+    private static func watch(_ local: URL, remote: URL, provider: RemoteProvider, uploading: ino_t? = nil) {
         watchers[local.path]?.cancel()
         let fd = Darwin.open(local.path, O_EVTONLY)
         guard fd >= 0 else { return }
-        let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: .global())
+        // One serial queue for the source's events and the catch-up below, so `pending` is only touched there.
+        let events = DispatchQueue(label: "porpoise.remote-watch")
+        let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: events)
         var pending: DispatchWorkItem?
-        src.setEventHandler {
+        func changed(replaced: Bool) {
             DispatchQueue.main.async { unsynced.insert(local.path) }
             pending?.cancel()
-            let replaced = src.data.contains(.rename) || src.data.contains(.delete)
             let work = DispatchWorkItem {
                 guard FileManager.default.fileExists(atPath: local.path) else {
                     // Deleted for good: nothing left to upload (unless the file was opened again meanwhile).
@@ -71,7 +74,10 @@ public enum RemoteOpener {
                 }
                 // Editors often save by replacing the file: watch the new one before uploading, so a
                 // save made while the upload runs is not missed.
-                if replaced { DispatchQueue.main.async { watch(local, remote: remote, provider: provider) } }
+                if replaced {
+                    let file = inode(of: local.path)
+                    DispatchQueue.main.async { watch(local, remote: remote, provider: provider, uploading: file) }
+                }
                 var failure: Error?
                 do { try provider.upload(local, into: remote.deletingLastPathComponent()) } catch { failure = error }
                 DispatchQueue.main.async {
@@ -87,9 +93,17 @@ public enum RemoteOpener {
             pending = work
             uploadQueue.asyncAfter(deadline: .now() + uploadDelay, execute: work)
         }
+        src.setEventHandler { changed(replaced: src.data.contains(.rename) || src.data.contains(.delete)) }
         src.setCancelHandler { close(fd) }
         src.resume()
         watchers[local.path] = src
+        var st = stat()
+        if let uploading, fstat(fd, &st) == 0, st.st_ino != uploading { events.async { changed(replaced: false) } }
+    }
+
+    private static func inode(of path: String) -> ino_t? {
+        var st = stat()
+        return stat(path, &st) == 0 ? st.st_ino : nil
     }
 
     private static func unwatch(_ local: URL) {

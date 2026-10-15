@@ -253,9 +253,15 @@ public final class PlacesModel {
         post()
     }
 
+    /// Where File Provider apps keep their folders, and the adb that lists phones (tests use their own).
+    var cloudStorageRoot: URL?
+    var adbTool: () -> String? = { ADBProvider.adbPath }
+
     /// Cloud storage folders, and Android phones (polled while adb is installed; adb runs off the main thread).
     public func refreshDetected() {
-        let cloud = CloudStorage.locations().map { PlaceEntry(title: $0.title, url: $0.url, icon: $0.icon, section: .remote) }
+        let cloud = (cloudStorageRoot.map { CloudStorage.locations(in: $0) } ?? CloudStorage.locations()).map {
+            PlaceEntry(title: $0.title, url: $0.url, icon: $0.icon, section: .remote)
+        }
         if cloud != cloudEntries { cloudEntries = cloud; post() }
         pollsPhones = isActive
     }
@@ -269,7 +275,7 @@ public final class PlacesModel {
         didSet {
             adbTimer?.invalidate()
             adbTimer = nil
-            guard pollsPhones, ADBProvider.adbPath != nil else { return }
+            guard pollsPhones, adbTool() != nil else { return }
             pollPhones()
             adbTimer = Timer.scheduledTimer(withTimeInterval: Self.adbPollInterval, repeats: true) { [weak self] _ in self?.pollPhones() }
         }
@@ -278,8 +284,9 @@ public final class PlacesModel {
     private func pollPhones() {
         guard !adbPollInFlight else { return }
         adbPollInFlight = true
+        let tool = adbTool
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let phones = ADBProvider.devices()
+            let phones = tool().map { ADBProvider.devices(adb: $0) } ?? []
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.adbPollInFlight = false

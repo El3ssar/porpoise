@@ -139,14 +139,7 @@ extension MainWindowController {
     }
 
     /// Deepest folder containing all `urls` (their shared parent in the usual case).
-    static func commonFolder(of urls: [URL]) -> URL {
-        var parts = urls[0].deletingLastPathComponent().standardizedFileURL.pathComponents
-        for u in urls.dropFirst() {
-            let other = u.deletingLastPathComponent().standardizedFileURL.pathComponents
-            parts = Array(zip(parts, other).prefix { $0 == $1 }.map(\.0))
-        }
-        return URL(fileURLWithPath: NSString.path(withComponents: parts.isEmpty ? ["/"] : parts), isDirectory: true)
-    }
+    static func commonFolder(of urls: [URL]) -> URL { PathMath.commonFolder(of: urls) }
 
     /// Runs an archiver in the background, then reloads the view (and reports failures).
     private func runTool(_ p: Process, failure: String, select: URL?, onFailure: (() -> Void)? = nil) {

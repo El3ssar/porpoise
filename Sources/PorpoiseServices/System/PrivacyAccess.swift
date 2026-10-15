@@ -14,6 +14,9 @@ public enum PrivacyAccess {
     /// (A variable so tests can point it at a database of their own.)
     nonisolated(unsafe) static var tccDatabase = "/Library/Application Support/com.apple.TCC/TCC.db"
 
+    /// Where `checkAppManagement` looks for another app. (A variable so tests can use a folder of their own.)
+    nonisolated(unsafe) static var applicationsFolder = "/Applications"
+
     /// TCC's own database is readable only with Full Disk Access.
     public static var hasFullDiskAccess: Bool {
         let fd = open(tccDatabase, O_RDONLY)
@@ -58,7 +61,7 @@ public enum PrivacyAccess {
     /// kept for `appManagementState`), or nil if there is no app to check against.
     public static func checkAppManagement() -> AccessState? {
         let fm = FileManager.default
-        let apps = (try? fm.contentsOfDirectory(at: URL(fileURLWithPath: "/Applications"), includingPropertiesForKeys: nil)) ?? []
+        let apps = (try? fm.contentsOfDirectory(at: URL(fileURLWithPath: applicationsFolder), includingPropertiesForKeys: nil)) ?? []
         let mine = Bundle.main.bundleURL.standardizedFileURL
         // App Management protects signed apps only, so check against one with a developer signature.
         guard

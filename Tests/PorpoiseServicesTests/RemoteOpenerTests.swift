@@ -75,6 +75,33 @@ final class RemoteOpenerTests {
         #expect(messages.contains("Uploaded changes to “notes it's.txt”."))
     }
 
+    /// After a save that replaces the file, the new file is watched from the main queue. A second replacement made
+    /// before that happens (the main queue busy) must still be uploaded.
+    @Test func aReplacementWhileTheMainQueueIsBusyIsUploaded() async throws {
+        let (item, onServer) = try remoteFile("busy.txt", "v1")
+        RemoteOpener.open(item)
+        try await waitUntil("opened") { opened.count == 1 }
+        let local = opened[0]
+        try Data("v2".utf8).write(to: local, options: .atomic)
+        // Blocks the main queue until the first upload is done, then replaces the file again.
+        #expect(PorpoiseTestSupport.waitUntil(30) { read(onServer) == "v2" })
+        try Data("v3".utf8).write(to: local, options: .atomic)
+        try await waitUntil("upload of the replacement made while the main queue was busy") { read(onServer) == "v3" }
+    }
+
+    /// A file that can't be downloaded: an error in the status bar, nothing opened.
+    @Test func aFailedDownloadIsReported() async throws {
+        let curl = try RecordingTool()
+        try curl.reply("", status: 9)
+        let root = URL(string: "ftp://u:pw@opener-failure.invalid/")!
+        RemoteFS.use(FTPProvider(url: root, curl: curl.path), for: root)
+        defer { RemoteFS.use(nil, for: root) }
+        RemoteOpener.open(FileItem(url: root.appendingPathComponent("dir/unreachable.txt"), name: "unreachable.txt", isDirectory: false))
+        try await waitUntil("error") { messages.contains { $0.hasPrefix("Could not open “unreachable.txt”") } }
+        #expect(messages.contains { $0.hasPrefix("Could not open “unreachable.txt”") && $0.contains("FTP error 9") })
+        #expect(opened.isEmpty)
+    }
+
     @Test func reopeningKeepsEditsThatWereNotUploaded() async throws {
         let (item, onServer) = try remoteFile("draft.txt", "server")
         let folder = onServer.deletingLastPathComponent()
