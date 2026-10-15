@@ -6,7 +6,6 @@ import UniformTypeIdentifiers
 /// Standing in for Finder: default file browser (folders + "Show in Finder" requests) and privacy permissions.
 enum SystemIntegration {
     static var bundleID: String { Bundle.main.bundleIdentifier ?? "app.porpoise.Porpoise" }
-    private static let finderID = "com.apple.finder"
 
     // MARK: Default file browser
 

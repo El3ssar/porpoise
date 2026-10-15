@@ -58,7 +58,6 @@ enum Theme {
     static let windowBackground = paletteColor(.windowBackground)
     static let windowText = paletteColor(.text)
     static let windowTextInactive = paletteColor(.secondaryText)
-    static let linkText = paletteColor(.accent)
     static let activeText = paletteColor(.accent)
     static let negativeText = color(dark: NSColor(rgb: 191, 97, 106), light: NSColor(rgb: 192, 57, 68))
     static let neutralText = paletteColor(.accent)
@@ -158,7 +157,7 @@ enum Theme {
     static var smallFont: NSFont { NSFontManager.shared.convert(font, toSize: max(8, fontSize - 2)) }
 
     /// Terminal panel font: Hack (KDE's default monospace font), preferring its Nerd Font build for prompt symbols.
-    static func terminalFont(size: CGFloat = 13) -> NSFont {
+    static func terminalFont() -> NSFont {
         let preferences = Settings.shared.appearancePreferences
         let size = CGFloat(preferences.terminalFontSize)
         if let custom = NSFont(name: preferences.terminalFontName, size: size) { return custom }
