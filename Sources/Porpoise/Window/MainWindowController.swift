@@ -16,7 +16,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     let mainColumn = MainColumnView()
     let vSplit = ThinSplitView()  // [hSplit, terminal]  (inside the main column)
     let hSplit = ThinSplitView()  // [tab host, information]
-    let leftStack = ThinSplitView()  // [places, folders]
+    let leftStack = ThinSplitView()  // [places, folders, shelf]
     /// Sidebar host: translucent Desert-tinted material behind Places/Folders (Finder-style).
     let sidebar = NSView()
     let sidebarMaterial = TintedMaterialView(material: .sidebar, tint: Theme.sidebarBackground, alpha: 0.70)
@@ -25,6 +25,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     lazy var folders = FoldersPanel()
     lazy var information = InformationPanel()
     lazy var terminal = TerminalPanel()
+    lazy var shelf: ShelfPanel = {
+        let p = ShelfPanel()
+        p.currentFolder = { [weak self] in self.map { $0.view.url } }
+        p.openFolder = { [weak self] u in self?.view.setURL(u) }
+        return p
+    }()
 
     // Changed only by the tab functions (MainWindowController+Tabs).
     var tabs: [PorpoiseTab] = []
@@ -41,6 +47,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     var showFolders = Settings.store.bool(forKey: "panel.folders")
     var showInformation = Settings.store.bool(forKey: "panel.info")
     var showTerminal = Settings.store.bool(forKey: "panel.terminal")
+    var showShelf = Settings.store.bool(forKey: "panel.shelf")
 
     // Panel layout state (see MainWindowController+Panels).
     var rebuildingPanels = false

@@ -53,6 +53,17 @@ extension MainWindowController {
 
     @objc func emptyTrash(_ sender: Any?) { FileOperationsController.shared.emptyTrash(window: window) }
 
+    /// Edit › Add to Shelf (⌥⌘S): the selection (or the folder shown) goes on the shelf, which opens if hidden.
+    @objc func addToShelf(_ sender: Any?) {
+        let store = ShelfStore.shared
+        let added = store.add(actionTargets)
+        if !showShelf { animatePanel(.sidebar, show: true) { self.showShelf = true } }
+        view.statusBar.showMessage(
+            added == 0
+                ? "Already on the shelf."
+                : "Added \(added) \(added == 1 ? "item" : "items") to “\(store.current.name)”.")
+    }
+
     @objc func shareItems(_ sender: Any?) {
         let urls = selectedURLs.filter(\.isFileURL)
         guard let first = urls.first else { return }

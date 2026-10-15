@@ -154,6 +154,7 @@ extension MainWindowController {
         m.addItem(self.item("Cut", "edit-cut", #selector(cut(_:))))
         m.addItem(self.item("Copy", "edit-copy", #selector(copy(_:))))
         m.addItem(self.item("Copy Location", "edit-copy-path", #selector(copyLocation(_:))))
+        m.addItem(self.item("Add to Shelf", "bookmarks", #selector(addToShelf(_:))))
         if single && item.isBrowsableFolder {
             m.addItem(self.item("Paste Into Folder", "edit-paste", #selector(paste(_:)), obj: Self.pasteIntoFolder))
         }

@@ -98,7 +98,9 @@ public final class ShelfStore {
 
     public init(file: URL) {
         self.file = file
-        if let d = try? Data(contentsOf: file), let s = try? JSONDecoder().decode(Saved.self, from: d), s.version == Self.fileVersion, !s.shelves.isEmpty {
+        if let d = try? Data(contentsOf: file), let s = try? JSONDecoder().decode(Saved.self, from: d), s.version == Self.fileVersion,
+            !s.shelves.isEmpty
+        {
             shelves = s.shelves
             currentIndex = min(max(0, s.current), s.shelves.count - 1)
         } else {
@@ -110,7 +112,9 @@ public final class ShelfStore {
         try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         let enc = JSONEncoder()
         enc.outputFormatting = [.sortedKeys]
-        if let d = try? enc.encode(Saved(version: Self.fileVersion, current: currentIndex, shelves: shelves)) { try? d.write(to: file, options: .atomic) }
+        if let d = try? enc.encode(Saved(version: Self.fileVersion, current: currentIndex, shelves: shelves)) {
+            try? d.write(to: file, options: .atomic)
+        }
         NotificationCenter.default.post(name: Self.changed, object: self)
     }
 

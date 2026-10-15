@@ -91,6 +91,7 @@ extension AppDelegate {
         edit.addItem(mi("Cut", #selector(W.cut(_:)), "x", icon: "edit-cut"))
         edit.addItem(mi("Copy", #selector(W.copy(_:)), "c", icon: "edit-copy"))
         edit.addItem(mi("Copy Location", #selector(W.copyLocation(_:)), "c", [.command, .option], icon: "edit-copy-path"))
+        edit.addItem(mi("Add to Shelf", #selector(W.addToShelf(_:)), "s", [.command, .option], icon: "bookmarks"))
         edit.addItem(mi("Paste", #selector(W.paste(_:)), "v", icon: "edit-paste"))
         edit.addItem(sep())
         edit.addItem(mi("Filter…", #selector(W.showFilterBar(_:)), "i", icon: "view-filter"))

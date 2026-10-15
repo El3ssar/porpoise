@@ -88,7 +88,7 @@ final class DebugBridge: NSObject {
             }
         case "panel":
             if let w = wc {
-                let tag = ["places": 0, "info": 1, "folders": 2, "terminal": 3][arg] ?? 3
+                let tag = ["places": 0, "info": 1, "folders": 2, "terminal": 3, "shelf": 4][arg] ?? 3
                 let it = NSMenuItem(); it.tag = tag
                 w.togglePanel(it)
             }
@@ -449,7 +449,9 @@ final class DebugBridge: NSObject {
             "filterVisible": !v.filterBar.isHidden,
             "searchVisible": !v.searchBar.isHidden,
             "status": v.statusBar.displayText,
-            "panels": ["places": w.showPlaces, "folders": w.showFolders, "info": w.showInformation, "terminal": w.showTerminal],
+            "panels": [
+                "places": w.showPlaces, "folders": w.showFolders, "info": w.showInformation, "terminal": w.showTerminal, "shelf": w.showShelf,
+            ],
             "terminalCwd": w.showTerminal ? (w.terminal.currentDirectory ?? "") : "",
             "terminalAlpha": w.terminal.terminalView.alphaValue,
             "ffmpegPath": VideoPreview.ffmpeg ?? "",
