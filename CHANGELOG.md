@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Zoom in the Applications library.** The zoom slider, ⌘+/⌘−, ⌘0, a pinch and ⌘-scroll now size the app library's
+  icons (16 to 256 pt, the Icons view's steps), with names, spacing and shadows following. When the number of columns
+  changes, apps glide to their new places as on a resize, keeping the app under the pointer in place. The size is kept
+  (for the library, apart from the Icons view's). Mid-zoom, icons are drawn from a few cached sizes; a new size renders
+  over a few frames instead of holding one up.
+
 ## 0.6.2
 
 - **Zooming reflows smoothly.** When zooming (⌘+/⌘−, the slider, a pinch) changes how many items fit in a row (Icons) or

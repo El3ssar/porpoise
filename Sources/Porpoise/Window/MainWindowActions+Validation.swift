@@ -105,8 +105,8 @@ extension MainWindowController: NSMenuItemValidation {
             item.state = p.roles(for: p.mode).contains { $0.rawValue == item.representedObject as? String } ? .on : .off
         case #selector(togglePanel(_:)):
             item.state = [showPlaces, showInformation, showFolders, showTerminal, showShelf][safe: item.tag] == true ? .on : .off
-        case #selector(zoomIn(_:)): return p.zoomLevel(for: p.mode) < ZoomLevels.max
-        case #selector(zoomOut(_:)): return p.zoomLevel(for: p.mode) > ZoomLevels.min
+        case #selector(zoomIn(_:)): return view.zoomLevel < ZoomLevels.max
+        case #selector(zoomOut(_:)): return view.zoomLevel > ZoomLevels.min
 
         // Go / Tabs
         case #selector(goBack(_:)): return view.history.canGoBack

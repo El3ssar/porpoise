@@ -33,6 +33,8 @@ public final class Settings {
     @Pref("fullPathTitle") public var showFullPathInTitle: Bool = false
     /// Applications as an app library (big icons, search) instead of a regular folder view.
     @Pref("appLibraryView") public var appLibraryView: Bool = true
+    /// The app library's icon size (points), set by zooming it.
+    @Pref("appLibraryIconSize") public var appLibraryIconSize: Double = 80
     @Pref("filterBar") public var showFilterBarOnStartup: Bool = false
     @Pref("alwaysTabBar") public var alwaysShowTabBar: Bool = false
     @Pref("tabClose") public var closeButtonsOnTabs: Bool = true

@@ -60,6 +60,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     /// The Applications folder as an app library (created the first time it's shown).
     private(set) var apps: AppsView?
     var showsApps: Bool { AppLibrary.isActive(for: url) && !model.isSearching }
+    /// What the zoom (slider, Cmd+= / Cmd+-, the View menu) acts on: the app library when it shows, else the list.
+    var zoomView: ZoomableView { showsApps ? apps?.grid ?? list : list }
 
     init(url: URL) {
         model = DirectoryModel(location: url)
@@ -87,9 +89,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         messageBar.isHidden = true
         messageBar.onDismiss = { [weak self] in self?.needsLayout = true }
         statusBar.onZoom = { [weak self] level in
-            self?.list.previewZoom(ZoomLevels.size(forContinuousLevel: level), commitAfter: 0.6)
+            self?.zoomView.previewZoom(ZoomLevels.size(forContinuousLevel: level), anchor: nil, commitAfter: 0.6)
         }
-        statusBar.onZoomCommit = { [weak self] in self?.list.commitZoom() }
+        statusBar.onZoomCommit = { [weak self] in self?.zoomView.commitZoom() }
         statusBar.onDiskClick = {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.settings.Storage")!)
         }
@@ -179,7 +181,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 guard let self else { return }
                 self.statusBar.mode = Settings.shared.statusBarMode
                 self.needsLayout = true
+                // The library zoomed (here or in another window): only the libraries follow.
+                if n.object == nil || n.object as? String == "appLibraryIconSize" { self.apps?.grid.savedSizeChanged() }
                 switch n.object as? String {
+                case "appLibraryIconSize": return
                 // Restore Defaults (no key), common vs. per-folder style, media folders: show the style that now applies.
                 case nil, "perFolder", "dynamicView", "appearanceIconSizes": self.model.reloadProps()
                 case "appLibraryView":
@@ -277,6 +282,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             if apps == nil {
                 let a = AppsView(model: model)
                 a.host = self
+                a.grid.onZoomPreview = { [weak self] size in self?.statusBar.zoomLevel = ZoomLevels.continuousLevel(for: size) }
                 addSubview(a, positioned: .above, relativeTo: scroll)
                 apps = a
             }
@@ -435,7 +441,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 model.isLoading && model.rows.isEmpty
                 ? "Loading folder…" : FileFormat.summary(folders: c.folders, files: c.files, bytes: c.bytes, selected: false)
         }
-        statusBar.zoomLevel = ZoomLevels.continuousLevel(for: list.iconSize)
+        statusBar.zoomLevel = ZoomLevels.continuousLevel(for: zoomView.iconSize)
         if Settings.shared.statusBarMode == .fullWidth, let (free, total) = freeSpace() {
             statusBar.freeSpaceText = "\(FileFormat.size(free)) free"
             statusBar.usedFraction = 1 - Double(free) / Double(total)
@@ -476,10 +482,13 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     // MARK: Zoom / view mode
 
-    func setZoom(_ level: Int) { list.animateZoom(to: ZoomLevels.iconSize(for: level)) }
+    func setZoom(_ level: Int) { zoomView.animateZoom(to: ZoomLevels.iconSize(for: level)) }
 
     /// Cmd+= / Cmd+-: animate to Dolphin's next zoom step.
-    func zoom(by delta: Int) { list.animateZoom(to: ZoomLevels.step(from: list.iconSize, by: delta)) }
+    func zoom(by delta: Int) { zoomView.animateZoom(to: ZoomLevels.step(from: zoomView.iconSize, by: delta)) }
+
+    /// The zoom level shown in menus (the app library's own size when it shows).
+    var zoomLevel: Int { showsApps ? ZoomLevels.nearestLevel(for: zoomView.iconSize) : model.props.zoomLevel(for: model.props.mode) }
 
     func setMode(_ m: ViewMode) {
         var p = model.props
@@ -640,6 +649,21 @@ extension Notification.Name {
 }
 
 // MARK: - App library
+
+/// A view that zooms like the Icons view: a size shown live, then saved.
+protocol ZoomableView: AnyObject {
+    var iconSize: CGFloat { get }
+    func previewZoom(_ size: CGFloat, anchor: CGPoint?, commitAfter delay: TimeInterval?)
+    func animateZoom(to size: CGFloat)
+    func commitZoom()
+    /// How far a reflow glide has come, while one runs (for the debug bridge).
+    var glideProgress: CGFloat? { get }
+}
+
+extension ItemListView: ZoomableView {
+    var glideProgress: CGFloat? { transition?.progress }
+}
+extension AppsGridView: ZoomableView {}
 
 extension ViewContainer: AppsViewHost {
     func appsViewDidBecomeActive(_ v: AppsView) { delegate?.containerDidBecomeActive(self) }

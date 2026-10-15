@@ -258,7 +258,7 @@ import Testing
         let keys = Mirror(reflecting: Settings.shared).children.compactMap { ($0.value as? PrefKey)?.key }
         #expect(
             keys == [
-                "startup", "homeURL", "fullPathTitle", "appLibraryView", "filterBar", "alwaysTabBar", "tabClose", "tabStyle",
+                "startup", "homeURL", "fullPathTitle", "appLibraryView", "appLibraryIconSize", "filterBar", "alwaysTabBar", "tabClose", "tabStyle",
                 "tabsAtEnd", "closeSplit", "splitStartup", "singleWindow", "pvImages", "pvVideos", "pvDocs", "pvText", "pvFonts",
                 "pvFolders", "pvMax", "pvRemote", "statusBar2", "zoomSlider2", "editableUrl", "fullPathUrl", "confirmTrash",
                 "confirmDelete", "confirmEmptyTrash", "confirmCloseTabs", "confirmTerminal", "confirmOpenMany",
