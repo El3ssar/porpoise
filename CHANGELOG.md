@@ -22,6 +22,9 @@
   filled up), covers text files up to 1 MB (was 64 KB) and builds four times faster.
 - The search bar explains the operator you're typing (`size:`, `dm:`, `ext:`…) or what's wrong with it, ⌥Esc
   completes operator names, and the field says when the index covers the folder.
+- **Helper for administrators only.** Porpoise's helper now serves only members of the admin group; standard users
+  get macOS's administrator prompt for system-owned items instead. Handing trashed items back to you no longer
+  follows hard links or paths that change meanwhile (see SECURITY.md). Installed helpers are updated once.
 
 ## 0.5.0
 

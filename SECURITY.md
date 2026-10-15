@@ -27,9 +27,17 @@ rules each follows. Reports that break any of them are very welcome.
   What it can't rule out is a program running as you that swaps a framework, starts Porpoise and puts the original
   back before Porpoise asks the helper for something: that needs code already running in your account, which can also
   wait for you to type your password anywhere. Test instances of Porpoise (`PORPOISE_DEFAULTS_SUITE`) never use the helper.
+- **Administrators only.** Every request is checked against the user the connecting Porpoise runs as (the XPC
+  connection's effective user id): only members of the `admin` group, as directory services report them, are served;
+  anyone else gets "Porpoise's helper works only for administrators of this Mac." and nothing runs. So on a Mac with
+  standard accounts, installing the helper gives those accounts nothing: Porpoise doesn't use it for them, and asks
+  macOS for an administrator's name and password for each such action instead, as Finder does.
 - **What it will do.** Run one of `mv`, `cp`, `ln`, `mkdir`, `chmod`, `rm`, `chflags` directly (no shell, absolute paths
-  only, arguments never re-parsed), or hand an item inside the requesting user's own Trash to that user
-  (`chown -R -P`, never through a symlink, never outside `~/.Trash` or `/Volumes/<volume>/.Trashes/<uid>`).
+  only, arguments never re-parsed), or hand an item inside the requesting user's own Trash to that user, never outside
+  `~/.Trash` or `/Volumes/<volume>/.Trashes/<uid>`. That is done in the helper itself, not by `chown` on a path the user
+  could redirect meanwhile: the Trash folder is opened without following a symlink and checked again as opened, and
+  every item in it is opened (a symlink as itself, never its target) and changed through that open file. Files with
+  more than one name (hard links, whose other name could be anywhere on the volume) are left as they are.
   Nothing else.
 - **Why it needs Full Disk Access.** The Trash and other private folders are protected by macOS even from root; the
   helper gets its own switch in System Settings, next to Porpoise's.

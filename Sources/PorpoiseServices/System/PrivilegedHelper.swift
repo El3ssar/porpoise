@@ -12,6 +12,10 @@ public enum PrivilegedHelper {
     private static var bundled: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/Porpoise Helper.app") }
     private static var bundledPlist: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/app.porpoise.helper.plist") }
 
+    /// Whether the user Porpoise runs as may use the helper (administrators only; it refuses everyone else).
+    /// Standard users get macOS's administrator prompt for each action instead.
+    public static let isForThisUser = PorpoiseHelperInfo.isAdministrator(getuid())
+
     /// Installed, and the same binary as the one in this app.
     public static var isEnabled: Bool {
         guard FileManager.default.fileExists(atPath: PorpoiseHelperInfo.installedPlist),
@@ -24,7 +28,7 @@ public enum PrivilegedHelper {
     /// helper answers.
     @discardableResult
     public static func enable() -> Bool {
-        guard !Settings.isTesting, FileManager.default.fileExists(atPath: bundled.path),
+        guard !Settings.isTesting, isForThisUser, FileManager.default.fileExists(atPath: bundled.path),
             FileManager.default.fileExists(atPath: bundledPlist.path)
         else { return false }
         guard
@@ -208,7 +212,7 @@ public enum PrivilegedHelper {
 
     /// Hands items Porpoise moved into the Trash to the user, so emptying it needs no administrator rights (best effort).
     static func takeOwnership(of paths: [String]) {
-        guard !paths.isEmpty, isEnabled, !Settings.isTesting, let c = connection() else { return }
+        guard !paths.isEmpty, isForThisUser, isEnabled, !Settings.isTesting, let c = connection() else { return }
         defer { c.invalidate() }
         let proxy = c.synchronousRemoteObjectProxyWithErrorHandler { NSLog("helper: \($0)") } as? PorpoiseHelperProtocol
         for p in paths { proxy?.takeOwnership(ofTrashed: p) { if let e = $0 { NSLog("take ownership of \(p): \(e)") } } }

@@ -130,7 +130,9 @@ extension FileOperationsController {
     @discardableResult
     public func authorize(verb: String, items: [URL], commands: [[String]], window: AnyObject?) -> Bool {
         guard !commands.isEmpty else { return false }
-        if !Settings.isTesting {
+        // Standard users never use the helper (it's for administrators): macOS's prompt below, for an administrator's
+        // name and password.
+        if !Settings.isTesting && PrivilegedHelper.isForThisUser {
             // Porpoise's helper does it at once, without asking. Not installed yet (or a new version of it): it's
             // installed once, with macOS's administrator dialog, and the action continues.
             guard PrivilegedHelper.ensureOn() else { return false }
@@ -145,14 +147,14 @@ extension FileOperationsController {
                 return false
             }
         }
-        // Test instances never get root through the helper: the standard macOS prompt, after explaining.
+        // Test instances and standard users never get root through the helper: the standard macOS prompt, after explaining.
         let q = Confirmation(
             message: items.count == 1
                 ? "Porpoise needs your permission to \(verb) “\(items[0].lastPathComponent)”."
                 : "Porpoise needs your permission to \(verb) \(items.count) items.",
             detail: (items.count > 1 ? items.prefix(6).map { "“\($0.lastPathComponent)”" }.joined(separator: ", ") + "\n\n" : "")
-                + "These items belong to another user or the system. Authenticate as an administrator to continue, "
-                + "or turn on Porpoise's helper in Porpoise › Permissions… to never be asked again.",
+                + "These items belong to another user or the system. Authenticate as an administrator to continue"
+                + (PrivilegedHelper.isForThisUser ? ", or turn on Porpoise's helper in Porpoise › Permissions… to never be asked again." : "."),
             confirmTitle: "Authenticate")
         guard confirm(q, window: window) else { return false }
         var err: NSDictionary?
