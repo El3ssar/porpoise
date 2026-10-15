@@ -217,6 +217,9 @@ public struct NameIndex: @unchecked Sendable {
 
     // MARK: Content
 
+    /// Gets the content index ready for queries (after a crawl, off the query path).
+    public func prepareContent() { content.prepare() }
+
     /// Files (not folders or links) in `scope` that may contain `text`: those whose indexed text has all its
     /// trigrams, and every file whose text isn't indexed (it must be read to know).
     public func contentCandidates(_ text: String, scope: String, cancelled: () -> Bool = { false }) -> [Int] {

@@ -49,6 +49,9 @@ public final class ContentIndex: @unchecked Sendable {
         }
     }
 
+    /// Encodes what was added, so the first query doesn't pay for it.
+    public func prepare() { lock.withLock { freeze() } }
+
     /// Ids of files that may contain the folded `needle`; nil when it is too short to say (under three bytes).
     public func candidates(_ needle: [UInt8]) -> [UInt32]? {
         let grams = needle.withUnsafeBufferPointer { Self.trigrams($0) }
