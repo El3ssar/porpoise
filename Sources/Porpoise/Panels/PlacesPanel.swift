@@ -141,7 +141,6 @@ final class PlacesPanel: NSView {
     var capacityQueryPending = false
     static let capacityQueue = DispatchQueue(label: "porpoise.places.capacity", qos: .utility)
 
-    var trashState: (modified: Date, full: Bool)?
     var ejecting: Set<URL> = []
 
     /// Header under the pointer (for its fold chevron).
