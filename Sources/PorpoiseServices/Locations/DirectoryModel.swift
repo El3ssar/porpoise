@@ -74,7 +74,7 @@ public final class DirectoryModel {
             // A search's next batch adds to the last: only the new results are sorted, then merged in, so thousands
             // of results don't make each batch stall the window.
             if let new = searchResults, let old = oldValue, !old.isEmpty, new.count > old.count,
-                old.indices.allSatisfy({ new[$0].url == old[$0].url })
+                old.indices.allSatisfy({ new[$0] == old[$0] })
             {
                 rebuild(adding: Array(new[old.count...]))
             } else {
@@ -97,7 +97,7 @@ public final class DirectoryModel {
         let g = searchSortGeneration
         // Growing results (the same search's next batch): only what's new is sorted, then merged in.
         let old = searchResults ?? [], kept = sortedTop
-        let grows = !old.isEmpty && kept != nil && items.count >= old.count && old.indices.allSatisfy { items[$0].url == old[$0].url }
+        let grows = !old.isEmpty && kept != nil && items.count >= old.count && old.indices.allSatisfy { items[$0] == old[$0] }
         let shown = visible(grows ? Array(items[old.count...]) : items, filtered: false)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let top =

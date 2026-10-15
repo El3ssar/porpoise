@@ -4,7 +4,7 @@ import PorpoiseServices
 extension AppDelegate {
     /// Gives the services what only the app can do (dialogs, opening files), before anything uses them.
     func connectServices() {
-        if !Settings.isTesting { SearchIndex.shared.start() }
+        if !Settings.isTesting || ProcessInfo.processInfo.environment["PORPOISE_TEST_INDEX_DIRECTORY"] != nil { SearchIndex.shared.start() }
         RemoteFS.askLogin = FTPLoginPrompt.ask
         FileOperationsController.shared.ui = FileOperationsDialogs()
         FileOperationsController.shared.clipboard = SystemClipboard()
