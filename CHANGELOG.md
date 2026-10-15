@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1
 
 - Search results stay settled when unrelated indexed files change. Live updates preserve the full list, scroll position
   and selection, and refresh changed file metadata without replaying the initial batch.
