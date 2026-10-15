@@ -23,8 +23,9 @@ public enum FolderColor {
         let base = min(0.72, max(0.32, lightness))
         let delta = ((high + low) / 2 - 0.55) * (monochrome ? 0.3 : 0.65)
         let mapped = min(0.88, max(0.18, base + delta))
-        // Shift all channels together: preserve hue and cap saturation only when the gamut requires it.
-        let scale = lightness > 0 && lightness < 1 ? min(mapped / lightness, (1 - mapped) / (1 - lightness)) : 0
+        // Preserve HSL saturation as lightness changes. Scaling by mapped / lightness washed pale saturated
+        // choices into grey, most noticeably on small symbolic icons. Chroma is proportional to min(L, 1-L).
+        let scale = lightness > 0 && lightness < 1 ? min(mapped, 1 - mapped) / min(lightness, 1 - lightness) : 0
         let out = rgb.map { min(255, max(0, Int(((($0 - lightness) * scale + mapped) * 255).rounded()))) }
         return ThemeColor(out[0], out[1], out[2])
     }

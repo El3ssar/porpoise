@@ -23,10 +23,24 @@ struct FolderColorTests {
             #expect(FolderColor.map(c, to: ThemeColor(255, 0, 0), monochrome: true) != c)
         }
     }
+    @Test func paleSaturatedChoicesKeepTheirChromaOnSymbolicFolders() {
+        for source in [ThemeColor(35, 38, 41), ThemeColor(222, 222, 222)] {
+            let pink = FolderColor.map(source, to: ThemeColor(255, 187, 221), monochrome: true)
+            func saturation(_ color: ThemeColor) -> Double {
+                let high = max(color.red, color.green, color.blue), low = min(color.red, color.green, color.blue)
+                return Double(high - low) / Double(255 - abs(high + low - 255))
+            }
+            #expect(saturation(pink) > 0.95)
+            #expect(pink.blue > pink.green && pink.red > pink.blue)
+            let green = FolderColor.map(source, to: ThemeColor(204, 255, 204), monochrome: true)
+            #expect(saturation(green) > 0.95)
+            #expect(green.red == green.blue)
+        }
+    }
     @Test func darkShadowsGainTheFolderHue() {
         let mapped = FolderColor.map(ThemeColor(0, 0, 0), to: ThemeColor(255, 80, 80))
         #expect(mapped.red > mapped.green && mapped.red > mapped.blue)
-        #expect(mapped.red < 150)
+        #expect(mapped.red < 180)
     }
     @Test func presetsAndCustomColoursShareOneMapping() {
         let custom = ThemeColor(24, 78, 132)
