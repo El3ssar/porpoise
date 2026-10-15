@@ -46,12 +46,7 @@ extension ItemListView {
     private static let maxAnimatedRows = 3000
 
     /// The same file however it's spelled: searches report /private/tmp/… for what the folder lists as /tmp/….
-    static func transitionKey(_ url: URL) -> String {
-        guard url.isFileURL else { return url.absoluteString }
-        // Items' URLs are already standard (made from paths); standardizing thousands of them each change would cost.
-        let p = url.path
-        return p.hasPrefix("/private/") ? String(p.dropFirst(8)) : p
-    }
+    static func transitionKey(_ url: URL) -> String { PathMath.sameFileKey(url) }
 
     func key(ofRow i: Int) -> String { Self.transitionKey(model.rows[i].item.url) }
 

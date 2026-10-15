@@ -2,6 +2,12 @@ import Foundation
 
 /// Text formatting the way KDE does it (KFormat): binary sizes with IEC units, relative dates.
 public enum FileFormat {
+    /// A media position: "m:ss", or "h:mm:ss" from an hour on (seconds rounded down).
+    public static func playbackTime(_ t: Double) -> String {
+        let s = Int(t.rounded(.down))
+        return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
+    }
+
     /// "0 B", "512 B", "1.5 KiB", "12.3 MiB"…
     public static func size(_ bytes: Int64) -> String {
         if bytes < 1024 { return "\(bytes) B" }

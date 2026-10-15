@@ -1,5 +1,6 @@
 import AVFoundation
 import AppKit
+import PorpoiseCore
 import PorpoiseServices
 
 /// Porpoise's own playback controls for the Information panel: play/pause, a time bar and the times. AVKit's
@@ -144,8 +145,5 @@ final class MediaControls: NSView {
         playButton.setAccessibilityLabel(playing ? "Pause" : "Play")
     }
 
-    static func format(_ t: Double) -> String {
-        let s = Int(t.rounded(.down))
-        return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
-    }
+    static func format(_ t: Double) -> String { FileFormat.playbackTime(t) }
 }
