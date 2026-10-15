@@ -6,9 +6,10 @@ import Testing
 
 @testable import PorpoiseServices
 
-private final class SyncTestRemote: SyncRemotePublishing {
+private final class SyncTestRemote: SyncRemotePublishing, SyncRemoteMetadata {
     let backing: URL
     let remote: URL
+    var coarseListingDates = false
     var uploads = 0
     var failUpload: Int?
     var failPublish = false
@@ -23,8 +24,14 @@ private final class SyncTestRemote: SyncRemotePublishing {
         return try DirectoryLister.list(dir).map {
             FileItem(
                 url: folder.appendingPathComponent($0.name), name: $0.name, isDirectory: $0.isDirectory,
-                isSymlink: $0.isSymlink, size: $0.size, modificationDate: $0.modificationDate, linkDestination: $0.linkDestination)
+                isSymlink: $0.isSymlink, size: $0.size,
+                modificationDate: coarseListingDates
+                    ? $0.modificationDate.map { Date(timeIntervalSince1970: floor($0.timeIntervalSince1970 / 60) * 60) } : $0.modificationDate,
+                linkDestination: $0.linkDestination)
         }
+    }
+    func syncModificationDate(_ remote: URL) throws -> Date {
+        try local(remote).resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate!
     }
     func download(_ remote: URL, into folder: URL) throws -> URL {
         let target = folder.appendingPathComponent(remote.lastPathComponent)
@@ -63,6 +70,7 @@ struct SyncRemoteTests {
         func plan() throws -> SyncPlan {
             SyncPlanner.plan(SyncComparator.compare(try SyncScanner.scan(left), try SyncScanner.scan(provider.remote)), mode: .backup)
         }
+        provider.coarseListingDates = true
         provider.failUpload = 2
         var completed: [String] = []
         #expect(throws: (any Error).self) {

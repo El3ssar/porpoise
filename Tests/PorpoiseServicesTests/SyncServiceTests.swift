@@ -46,6 +46,9 @@ struct SyncServiceTests {
         try scratch.file("left/a", "different")
         #expect(throws: (any Error).self) { try SyncExecutor.execute(plan, leftRoot: left, rightRoot: right) }
         #expect(!FileManager.default.fileExists(atPath: scratch.path("right/a").path))
+        #expect(throws: (any Error).self) {
+            try SyncExecutor.execute(SyncPlan(steps: []), leftRoot: URL(fileURLWithPath: "/"), rightRoot: left)
+        }
         try scratch.symlink("right/redirect", to: left.path)
         #expect(throws: (any Error).self) { try SyncExecutor.resolve("redirect/a", root: right) }
         #expect(throws: (any Error).self) { try SyncExecutor.resolve("../escape", root: right) }

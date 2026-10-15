@@ -11,11 +11,19 @@ public protocol SyncRemotePublishing: RemoteProvider {
 
 extension SSHProvider: SyncRemotePublishing {
     public func publishSyncFile(_ staged: URL, to target: URL, modified: Date?) throws {
+        let source = shellPath(staged), destination = shellPath(target)
+        var script = "if [ ! -f \(source) ] || [ -L \(source) ] || [ -d \(destination) ]; then exit 1; fi; "
         if let modified {
             let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
             formatter.timeZone = TimeZone(secondsFromGMT: 0); formatter.dateFormat = "yyyyMMddHHmm.ss"
-            try exec("TZ=UTC touch -m -t \(RemoteParsing.quote(formatter.string(from: modified))) \(shellPath(staged))")
+            // -c is essential: a missing staging file must never be recreated as an empty replacement.
+            script += "TZ=UTC touch -c -m -t \(RemoteParsing.quote(formatter.string(from: modified))) \(source) && "
         }
-        try exec("mv -f -- \(shellPath(staged)) \(shellPath(target))")
+        try exec(script + "mv -f -- \(source) \(destination)")
     }
+}
+
+/// Human-readable FTP listings lose seconds; size/date sync needs authoritative per-file timestamps.
+public protocol SyncRemoteMetadata: RemoteProvider {
+    func syncModificationDate(_ remote: URL) throws -> Date
 }

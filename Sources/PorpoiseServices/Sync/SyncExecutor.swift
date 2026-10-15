@@ -34,7 +34,9 @@ public enum SyncExecutor {
         guard step.action != .conflict else { throw SyncEngineError.conflicts }
         let root = step.target == .left ? leftRoot : rightRoot
         let target = try resolve(step.path, root: root)
-        let targetNow = try entry(target, path: step.path, content: step.expectedTarget?.hash != nil || step.expectedSource?.hash != nil)
+        let targetNow = try entry(
+            target, path: step.path, content: step.expectedTarget?.hash != nil || step.expectedSource?.hash != nil,
+            preciseDate: step.method == .sizeAndDate)
         if applied(step, target: targetNow) { return }
         try validate(targetNow, expected: step.expectedTarget, path: step.path)
         switch step.action {
@@ -59,8 +61,12 @@ public enum SyncExecutor {
                 throw SyncEngineError.unsafePath(step.path)
             }
             let source = try resolve(path, root: side == .left ? leftRoot : rightRoot)
-            try validate(try entry(source, path: path, content: expected.hash != nil), expected: expected, path: path)
-            try copy(source, to: target, targetRoot: root, expected: expected, preserveDate: step.method == .sizeAndDate, cancellation: cancellation)
+            try validate(
+                try entry(source, path: path, content: expected.hash != nil, preciseDate: step.method == .sizeAndDate), expected: expected, path: path
+            )
+            try copy(
+                source, to: target, expected: expected, preserveDate: step.method == .sizeAndDate, timestampTolerance: step.timestampTolerance,
+                cancellation: cancellation)
         }
     }
     /// Safe crash-window reconciliation: only a verified postcondition skips a previously running step.
@@ -76,6 +82,10 @@ public enum SyncExecutor {
         }
     }
     private static func validateRoots(_ left: URL, _ right: URL) throws {
+        func overlaps(_ leftPath: String, _ rightPath: String) -> Bool {
+            let l = leftPath.isEmpty ? "/" : leftPath, r = rightPath.isEmpty ? "/" : rightPath
+            return l == r || l == "/" || r == "/" || (l + "/").hasPrefix(r + "/") || (r + "/").hasPrefix(l + "/")
+        }
         guard left.password == nil, right.password == nil else {
             throw SyncEngineError.unsupported("Store connection passwords in Keychain, not sync URLs.")
         }
@@ -83,12 +93,12 @@ public enum SyncExecutor {
         if left.isFileURL && right.isFileURL {
             let l = left.resolvingSymlinksInPath().standardizedFileURL.path
             let r = right.resolvingSymlinksInPath().standardizedFileURL.path
-            guard l != r, !(l + "/").hasPrefix(r + "/"), !(r + "/").hasPrefix(l + "/") else {
+            guard !overlaps(l, r) else {
                 throw SyncEngineError.unsupported("Sync folders cannot contain one another.")
             }
         } else if left.scheme == right.scheme && left.host == right.host && left.user == right.user && left.port == right.port {
             let l = left.standardized.path, r = right.standardized.path
-            guard l != r, !(l + "/").hasPrefix(r + "/"), !(r + "/").hasPrefix(l + "/") else {
+            guard !overlaps(l, r) else {
                 throw SyncEngineError.unsupported("Sync folders cannot contain one another.")
             }
         }
@@ -110,7 +120,7 @@ public enum SyncExecutor {
         }
         return current
     }
-    private static func entry(_ url: URL, path: String, content: Bool) throws -> SyncEntry? {
+    private static func entry(_ url: URL, path: String, content: Bool, preciseDate: Bool = false) throws -> SyncEntry? {
         if let provider = RemoteFS.provider(for: url) {
             guard let item = try provider.list(url.deletingLastPathComponent()).first(where: { $0.name == url.lastPathComponent }) else { return nil }
             let kind: SyncEntryKind = item.isSymlink ? .symlink : (item.isDirectory ? .directory : .file)
@@ -119,7 +129,10 @@ public enum SyncExecutor {
                 let scratch = try SyncScanner.temporaryFolder(); defer { try? FileManager.default.removeItem(at: scratch) }
                 hash = try FileChecksums.digest(provider.download(url, into: scratch))
             }
-            return .init(path: path, kind: kind, size: item.size, modified: item.modificationDate, hash: hash, linkTarget: item.linkDestination)
+            let modified =
+                preciseDate && kind == .file
+                ? try (provider as? SyncRemoteMetadata)?.syncModificationDate(url) ?? item.modificationDate : item.modificationDate
+            return .init(path: path, kind: kind, size: item.size, modified: modified, hash: hash, linkTarget: item.linkDestination)
         }
         do { return try SyncScanner.localEntry(url, path: path, content: content) } catch let error as POSIXError where error.code == .ENOENT {
             return nil
@@ -135,7 +148,9 @@ public enum SyncExecutor {
             expected.hash == nil || current.hash == expected.hash
         else { throw SyncEngineError.stale(path) }
     }
-    private static func copy(_ source: URL, to target: URL, targetRoot: URL, expected: SyncEntry, preserveDate: Bool, cancellation: DiskCancellation)
+    private static func copy(
+        _ source: URL, to target: URL, expected: SyncEntry, preserveDate: Bool, timestampTolerance: TimeInterval, cancellation: DiskCancellation
+    )
         throws
     {
         let scratch = try SyncScanner.temporaryFolder(); defer { try? FileManager.default.removeItem(at: scratch) }
@@ -156,6 +171,13 @@ public enum SyncExecutor {
             guard let publisher = provider as? SyncRemotePublishing else {
                 throw SyncEngineError.unsupported("This remote provider cannot safely publish staged sync files.")
             }
+            if preserveDate, let modified = expected.modified {
+                let seconds = modified.timeIntervalSince1970
+                guard seconds - floor(seconds) <= timestampTolerance else {
+                    throw SyncEngineError.unsupported(
+                        "This server preserves whole-second timestamps. Increase date tolerance or choose Content comparison.")
+                }
+            }
             let stagedName = ".porpoise-sync-\(UUID().uuidString)"
             let stagedLocal = scratch.appendingPathComponent(stagedName)
             try FileManager.default.copyItem(at: local, to: stagedLocal)
@@ -164,7 +186,7 @@ public enum SyncExecutor {
             let stagedRemote = parent.appendingPathComponent(stagedName)
             try publisher.publishSyncFile(stagedRemote, to: target, modified: preserveDate ? expected.modified : nil)
         } else {
-            // FileJob stages local replacements atomically and copies links with NOFOLLOW_SRC.
+            // FileJob copies bytes/links into a private sibling; rename publishes only the complete result.
             // Its basename API needs a staging source when aligned rows have different case spellings.
             let namedFolder = scratch.appendingPathComponent("named")
             try FileManager.default.createDirectory(at: namedFolder, withIntermediateDirectories: false)
@@ -175,7 +197,11 @@ public enum SyncExecutor {
             defer { try? FileManager.default.removeItem(at: staging) }
             let job = FileJob(kind: .copy, sources: [named], destinationFolder: staging)
             job.resolveConflict = { _ in ConflictAnswer(.overwrite) }
+            job.onProgress = { [weak job] _ in
+                do { try cancellation.check() } catch { job?.cancel() }
+            }
             _ = try job.run()
+            try cancellation.check()
             if let error = job.errors.first { throw SyncEngineError.unsupported(error) }
             guard let placed = job.results.first else { throw SyncEngineError.stale(target.path) }
             try cancellation.check()

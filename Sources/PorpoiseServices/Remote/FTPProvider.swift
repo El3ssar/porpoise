@@ -210,3 +210,17 @@ extension FTPProvider: SyncRemotePublishing {
         try command("RNFR \(try rel(staged))", "RNTO \(try rel(target))")
     }
 }
+
+extension FTPProvider: SyncRemoteMetadata {
+    public func syncModificationDate(_ remote: URL) throws -> Date {
+        let headers = String(decoding: try curlRun(["--head", base(remote.path)]), as: UTF8.self)
+        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .gmt; formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        for line in headers.components(separatedBy: "\n") where line.lowercased().hasPrefix("last-modified:") {
+            if let date = formatter.date(from: String(line.dropFirst("Last-Modified:".count)).trimmingCharacters(in: .whitespacesAndNewlines)) {
+                return date
+            }
+        }
+        throw SyncEngineError.unsupported("This FTP server does not provide precise modification dates. Choose Content or Size comparison.")
+    }
+}

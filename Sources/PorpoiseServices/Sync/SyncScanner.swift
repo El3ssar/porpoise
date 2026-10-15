@@ -81,8 +81,11 @@ public enum SyncScanner {
                         let downloaded = try provider.download(url, into: scratch)
                         hash = try FileChecksums.digest(downloaded, cancellation: cancellation)
                     }
+                    let modified =
+                        options.method == .sizeAndDate && kind == .file
+                        ? try (provider as? SyncRemoteMetadata)?.syncModificationDate(url) ?? item.modificationDate : item.modificationDate
                     entry = .init(
-                        path: path, kind: kind, size: item.size, modified: item.modificationDate, hash: hash, linkTarget: item.linkDestination)
+                        path: path, kind: kind, size: item.size, modified: modified, hash: hash, linkTarget: item.linkDestination)
                 } else if let disk, !disk.symlink {
                     entry = .init(
                         path: path, kind: disk.directory ? .directory : .file, size: disk.size, modified: disk.modified,
