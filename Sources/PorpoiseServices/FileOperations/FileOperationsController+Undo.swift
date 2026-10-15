@@ -16,6 +16,7 @@ extension FileOperationsController {
         case .moved(let p): return p.flatMap { [$0.from, $0.to] }
         case .trashed(let p): return p.flatMap { [$0.original, $0.inTrash] }
         case .renamed(let a, let b): return [a, b]
+        case .batchRenamed(let steps): return steps.flatMap { [$0.from, $0.to] }
         }
     }
 

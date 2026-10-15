@@ -7,6 +7,11 @@
 
 ## 0.3.0
 
+- **Batch rename with a preview.** Select multiple local items and press F2 to combine find/replace (including regex
+  captures), numbering, case changes, insert/remove, name/date/media tokens, and extension rules. Save reusable presets.
+  The side-by-side preview blocks invalid names and collisions. Swaps, cycles and case-only renames use temporary names,
+  and the whole batch is one Undo/Redo action; failed operations restore staged files without overwriting other items.
+
 - **Make it yours.** Settings › Appearance now has ten colour themes, system light/dark pairing, live colour wells,
   KDE `.colors` and Porpoise JSON import/export, and a single file for sharing all appearance preferences.
 - Choose Tela-circle, native macOS icons, or installed freedesktop icon themes; change folder colours, interface

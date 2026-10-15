@@ -47,6 +47,8 @@ public enum UndoRecord: Sendable {
     case moved([(from: URL, to: URL)])  // undo: move back
     case trashed([(original: URL, inTrash: URL)])
     case renamed(from: URL, to: URL)
+    /// Physical moves in execution order, including temporary staging paths.
+    case batchRenamed([RenameMove])
 
     public var label: String {
         switch self {
@@ -54,6 +56,7 @@ public enum UndoRecord: Sendable {
         case .moved: return "Move"
         case .trashed: return "Move to Trash"
         case .renamed: return "Rename"
+        case .batchRenamed: return "Batch Rename"
         }
     }
 }
@@ -585,6 +588,10 @@ public enum FileActions {
         case .renamed(let from, let to):
             try FileManager.default.moveItem(at: to, to: from)
             return .renamed(from: to, to: from)
+        case .batchRenamed(let steps):
+            let inverse = steps.reversed().map { RenameMove(from: $0.to, to: $0.from) }
+            try moveAll(inverse.map { ($0.from, $0.to) })
+            return .batchRenamed(inverse)
         }
     }
 

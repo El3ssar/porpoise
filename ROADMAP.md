@@ -28,7 +28,8 @@ These foundations need extending, not rebuilding. In particular:
   archive filesystem; changes to the extracted copy must not be mistaken for changes to the original.
 - **Cloud drives:** browsing installed providers and iCloud status is not direct access to a cloud account.
 - **Jobs:** progress and cancel exist. A persistent, reorderable queue with pause and recovery is separate work.
-- **Renaming:** individual rename exists. A previewed batch transformation tool is separate work.
+- **Renaming:** individual rename and previewed local batch transformations are implemented, with presets and
+  whole-batch undo. Remote batch transactions remain separate work.
 - **Sessions:** reopening tabs is not the same as named, reusable workspaces.
 
 ---
@@ -39,7 +40,7 @@ Each phase can ship in small, focused changes. Do not wait for the whole roadmap
 
 ### Phase 1: organise files without leaving the window
 
-- **Batch rename:** combine text replacement, regular expressions, numbering, case changes, dates and metadata.
+- **Batch rename (implemented for local files):** combine text replacement, regular expressions, numbering, case changes, dates and metadata.
   Show old and new names side by side, highlight collisions, save presets, and undo the completed batch.
   Handle swaps, case-only changes, Unicode names and mixed extensions without overwriting another item.
 - **Checksums:** calculate and compare SHA-256 and SHA-512, verify checksum files, and export a manifest for a

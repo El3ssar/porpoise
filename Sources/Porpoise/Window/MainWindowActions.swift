@@ -124,55 +124,32 @@ extension MainWindowController {
     @objc func renameItem(_ sender: Any?) {
         let items = view.model.selectedItems
         guard !items.isEmpty else { enterSelectionMode(prompt: "Select the file or folder that should be renamed."); return }
-        if items.count == 1 && Settings.shared.renameInline { view.list.beginRename(items[0].url) } else { renameDialog(items) }
-    }
-
-    /// Rename dialog: one item, or several with "#" replaced by 1, 2, 3… (Dolphin's batch rename).
-    private func renameDialog(_ items: [FileItem]) {
-        let a = NSAlert()
-        a.messageText = items.count == 1 ? "Rename Item" : "Rename Items"
-        a.informativeText =
-            items.count == 1
-            ? "Rename the item “\(items[0].name)” to:"
-            : "Rename the \(items.count) selected items to:\n(# is replaced by ascending numbers)"
-        let f = NSTextField(string: items.count == 1 ? items[0].name : "New name #")
-        f.frame = CGRect(x: 0, y: 0, width: 300, height: 24)
-        a.accessoryView = f
-        a.addButton(withTitle: "Rename")
-        a.addButton(withTitle: "Cancel")
-        a.window.initialFirstResponder = f
-        let c = view
-        a.runSheet(for: window) { [weak self] r in
-            guard let self, r == .alertFirstButtonReturn, !f.stringValue.isEmpty else { return }
-            if items.count == 1 { self.rename(items[0], to: f.stringValue, in: c); return }
-            self.batchRename(items, pattern: f.stringValue, in: c)
-        }
-    }
-
-    private func batchRename(_ items: [FileItem], pattern raw: String, in c: ViewContainer) {
-        let pattern = raw.contains("#") ? raw : raw + " #"
-        var denied: [(URL, URL)] = []
-        var failed: [String] = []
-        for (i, it) in items.enumerated() {
-            var name = pattern.replacingOccurrences(of: "#", with: String(i + 1))
-            if !it.fileExtension.isEmpty { name += "." + it.fileExtension }
-            if !it.url.isFileURL { rename(it, to: name, in: c); continue }  // remote: renamed in the background
-            do {
-                let new = try FileActions.rename(it.url, to: name)
-                FileOperationsController.shared.pushUndo(.renamed(from: it.url, to: new))
-            } catch  where FileJob.isPermissionError(error) {
-                denied.append((it.url, it.url.deletingLastPathComponent().appendingPathComponent(name)))
-            } catch {
-                failed.append("“\(it.name)”: \(error.localizedDescription)")
+        if items.count > 1 {
+            let container = view
+            BatchRenameDialog.run(items.map(\.url), window: window) { [weak container] urls in
+                container?.pendingSelect = urls.first; container?.reload()
             }
+        } else if Settings.shared.renameInline {
+            view.list.beginRename(items[0].url)
+        } else {
+            renameDialog(items[0])
         }
-        if !denied.isEmpty {
-            FileOperationsController.shared.authorize(
-                verb: "rename", items: denied.map(\.0),
-                commands: denied.flatMap { FileOperationsController.renameCommands($0.0, to: $0.1) }, window: window)
+    }
+
+    private func renameDialog(_ item: FileItem) {
+        let alert = NSAlert()
+        alert.messageText = "Rename Item"
+        alert.informativeText = "Rename the item “\(item.name)” to:"
+        let field = NSTextField(string: item.name)
+        field.frame = CGRect(x: 0, y: 0, width: 300, height: 24)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Rename"); alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        let container = view
+        alert.runSheet(for: window) { [weak self] result in
+            guard result == .alertFirstButtonReturn, !field.stringValue.isEmpty else { return }
+            self?.rename(item, to: field.stringValue, in: container)
         }
-        if !failed.isEmpty { reportError("Could not rename " + failed.joined(separator: "; "), in: c) }
-        c.reload()
     }
 
     @objc func duplicateItem(_ sender: Any?) {
