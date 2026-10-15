@@ -46,4 +46,12 @@ struct SweepTwoServicesTests {
             + FileOperationsController.renameCommands(URL(fileURLWithPath: "/Applications/a.app"), to: URL(fileURLWithPath: "/Applications/b.app"))
         for c in renames { #expect(HelperRequests.refusal(c) == nil, "\(c)") }
     }
+
+    @Test func anUnknownToolbarItemKeepsTheRestOfTheLayout() throws {
+        Settings.store.set(try JSONEncoder().encode(["reload", "location", "bogus", "reload"]), forKey: "toolbarCommands")
+        #expect(Settings.shared.toolbarCommands == [.reload, .location])
+        Settings.store.set(try JSONEncoder().encode(["reload", "search"]), forKey: "toolbarCommands")
+        #expect(Settings.shared.toolbarCommands == [.reload, .search, .location])
+    }
 }
+

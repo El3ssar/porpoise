@@ -10,7 +10,9 @@ extension MainWindowController: NSMenuItemValidation {
         guard tabs.indices.contains(current) else { return false }
         // Shortcuts without ⌘ (⌫, ⌥←, ⌥1…) must not steal keys while typing in a field or the terminal.
         // Only key presses are affected: the same items stay usable from an open menu.
-        if NSApp.currentEvent?.type == .keyDown, isTypingFocus, !item.keyEquivalent.isEmpty,
+        // Only for the key actually pressed: the command palette asks about every item while ⌘⇧P is the event.
+        if let event = NSApp.currentEvent, event.type == .keyDown, isTypingFocus, !item.keyEquivalent.isEmpty,
+            event.charactersIgnoringModifiers?.lowercased() == item.keyEquivalent.lowercased(),
             !item.keyEquivalentModifierMask.contains(.command), !KeyEquivalent.isFunctionKey(item.keyEquivalent)
         {
             return false

@@ -58,8 +58,12 @@ final class MenuCommandRegistry {
             }
             menu.update()
             for item in menu.items where !item.isSeparatorItem {
-                if let submenu = item.submenu { walk(submenu, path: path + [item.title]); continue }
-                guard item.action != nil else { continue }
+                // The Services menu is the system's (its items share one action and carry other apps' shortcuts).
+                if let submenu = item.submenu {
+                    if submenu !== NSApp.servicesMenu { walk(submenu, path: path + [item.title]) }
+                    continue
+                }
+                guard item.action != nil, !Self.isAppKits(item) else { continue }
                 let id = Self.id(item)
                 if grouped[id] == nil { order.append(id) }
                 grouped[id, default: []].append((item, (path + [item.title]).joined(separator: " › ")))
@@ -76,10 +80,19 @@ final class MenuCommandRegistry {
         }
         apply()
     }
+    /// Items AppKit adds and manages itself: private actions, the window list, and the fn-key window items (Fill,
+    /// Center…), whose modifiers can't be stored here and must keep their own keys.
+    static func isAppKits(_ item: NSMenuItem) -> Bool {
+        guard let action = item.action else { return false }
+        return NSStringFromSelector(action).hasPrefix("_") || action == #selector(NSWindow.makeKeyAndOrderFront(_:))
+            || item.keyEquivalentModifierMask.contains(.function)
+    }
+
     func apply() {
         let preferences = Settings.shared.keyboardShortcuts
-        guard preferences.conflicts(actions: commands.map(\.definition)).isEmpty else { return }
-        for command in commands {
+        // A clash leaves the actions involved as they are; every other binding still applies.
+        let clashing = Set(preferences.conflicts(actions: commands.map(\.definition)).flatMap { [$0.first, $0.second] })
+        for command in commands where !clashing.contains(command.id) {
             let items = [command.item] + command.aliases
             if let override = preferences.overrides[command.id] {
                 for (index, item) in items.enumerated() {
@@ -100,7 +113,7 @@ final class MenuCommandRegistry {
         func walk(_ menu: NSMenu) {
             for item in menu.items {
                 if let submenu = item.submenu { walk(submenu) }
-                guard item.action != nil else { continue }
+                guard item.action != nil, !Self.isAppKits(item) else { continue }
                 let identity = ObjectIdentifier(item)
                 if originals[identity] == nil { originals[identity] = Original(item) }
                 if let shortcut = preferences.overrides[Self.id(item)] {

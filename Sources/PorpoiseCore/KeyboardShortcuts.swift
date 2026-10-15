@@ -12,6 +12,11 @@ public struct KeyboardShortcut: Codable, Sendable, Hashable {
     public var key: String
     public var modifiers: ShortcutModifiers
     public init(key: String = "", modifiers: ShortcutModifiers = []) { self.key = key; self.modifiers = modifiers }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        key = try c.decodeIfPresent(String.self, forKey: .key) ?? ""
+        modifiers = try c.decodeIfPresent(ShortcutModifiers.self, forKey: .modifiers) ?? []
+    }
     public var isEmpty: Bool { key.isEmpty }
     /// AppKit infers Shift for uppercase letters and shifted ASCII symbols in default key equivalents.
     public var normalized: Self {
@@ -29,6 +34,16 @@ public struct KeyboardShortcut: Codable, Sendable, Hashable {
         guard (key.isEmpty || key.unicodeScalars.count == 1), !key.contains("\0"), modifiers.rawValue >= 0, modifiers.rawValue & ~15 == 0 else {
             throw ShortcutError.invalid("A shortcut must contain one key and valid modifiers.")
         }
+        // A plain letter (or Return, Tab…) would fire while typing anywhere.
+        guard key.isEmpty || !modifiers.intersection([.command, .control, .option]).isEmpty || isFunctionOrNavigationKey else {
+            throw ShortcutError.invalid("A shortcut needs ⌘, ⌃ or ⌥, unless it is a function or navigation key.")
+        }
+    }
+
+    /// F1–F35, arrows, Home, End, Page Up/Down, Forward Delete.
+    public var isFunctionOrNavigationKey: Bool {
+        guard let v = key.unicodeScalars.first?.value, key.unicodeScalars.count == 1 else { return false }
+        return (0xf700...0xf726).contains(v) || (0xf728...0xf72d).contains(v)
     }
     public var display: String {
         guard !key.isEmpty else { return "—" }
@@ -66,6 +81,12 @@ public struct ShortcutPreferences: Codable, Sendable, Equatable {
     /// An empty shortcut disables all default equivalents (including hidden aliases) for that action.
     public var overrides: [String: KeyboardShortcut] = [:]
     public init() {}
+    /// Hand-written files may leave out the version or a shortcut's modifiers.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        overrides = try c.decodeIfPresent([String: KeyboardShortcut].self, forKey: .overrides) ?? [:]
+    }
     public func validate() throws {
         guard version == 1, overrides.keys.allSatisfy({ !$0.isEmpty && $0.count <= 2048 }) else {
             throw ShortcutError.invalid("Unsupported shortcut file or invalid action identifier.")
@@ -78,6 +99,8 @@ public struct ShortcutPreferences: Codable, Sendable, Equatable {
     public func encoded() throws -> Data {
         try validate(); let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys]; return try e.encode(self)
     }
+    /// Clashes the user's own bindings cause. Two built-in defaults sharing a key (menus the system fills in) are
+    /// not the user's to resolve, and never block their changes.
     public func conflicts(actions: [ShortcutAction]) -> [ShortcutConflict] {
         var used: [KeyboardShortcut: String] = [:], conflicts: [ShortcutConflict] = []
         for action in actions.sorted(by: { $0.id < $1.id }) {
@@ -85,6 +108,7 @@ public struct ShortcutPreferences: Codable, Sendable, Equatable {
             for shortcut in shortcuts where !shortcut.isEmpty {
                 let normalized = shortcut.normalized
                 if let owner = used[normalized], owner != action.id {
+                    guard overrides[owner] != nil || overrides[action.id] != nil else { continue }
                     conflicts.append(ShortcutConflict(first: owner, second: action.id, shortcut: normalized))
                 } else {
                     used[normalized] = action.id
