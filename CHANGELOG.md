@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.2
 
 - **Zooming reflows smoothly.** When zooming (⌘+/⌘−, the slider, a pinch) changes how many items fit in a row (Icons) or
   a column (Compact), items now glide to their new places, as they do when the window is resized, instead of jumping
