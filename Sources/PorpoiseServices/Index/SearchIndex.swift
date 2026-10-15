@@ -102,7 +102,7 @@ public final class SearchIndex: @unchecked Sendable {
         config.exclusions = config.exclusions.map { IndexPath.canonical($0) }
         let generation = lock.withLock { () -> Int in
             current = config; revision += 1; roots = []; state = Status(); state.building = config.enabled && !config.roots.isEmpty
-            state.message = config.enabled ? "Select folders to index" : "Index off"
+            state.message = state.building ? "Index queued" : (config.enabled ? "Select folders to index" : "Index off")
             return revision
         }
         if let data = try? JSONEncoder().encode(config) { defaults.set(data, forKey: "searchIndex.configuration") }
@@ -110,6 +110,7 @@ public final class SearchIndex: @unchecked Sendable {
         queue.async { [self] in
             events = nil
             guard selected.enabled, !selected.roots.isEmpty, valid(generation) else { notify(); return }
+            startupMessage("Index loading snapshot", generation: generation)
             if !rebuild,
                 let manifest = try? JSONDecoder().decode(Manifest.self, from: Data(contentsOf: directory.appendingPathComponent("manifest.json"))),
                 manifest.configuration == selected
@@ -128,7 +129,9 @@ public final class SearchIndex: @unchecked Sendable {
                 } catch { /* Corrupt/obsolete snapshots are rebuilt; the search fallback stays available. */  }
             }
             eventID = IndexEvents.currentEventID
+            startupMessage("Index starting watcher", generation: generation)
             guard watch(selected, generation: generation) else { return }  // Start before crawling so changes during the walk are replayed.
+            startupMessage("Index crawling", generation: generation)
             var built: [Root] = []
             let crawlLock = NSLock(), workers = OperationQueue()
             workers.maxConcurrentOperationCount = min(4, ProcessInfo.processInfo.processorCount)
@@ -144,6 +147,11 @@ public final class SearchIndex: @unchecked Sendable {
             persist(selected, snapshot: built); notify()
         }
         notify()
+    }
+    private func startupMessage(_ message: String, generation: Int) {
+        lock.withLock {
+            if revision == generation { state.message = message }
+        }
     }
     private func publish(_ snapshot: [Root], updated: Date, generation: Int) -> Bool {
         lock.withLock {
