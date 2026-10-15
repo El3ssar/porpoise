@@ -46,6 +46,8 @@ final class SettingsWindowController: NSWindowController {
         }
         let s = Settings.shared
 
+        page("Appearance", "paintpalette") { f in AppearancePage.build(f) }
+
         page("Folders & Tabs", "folder") { f in
             f.section("Show on startup")
             f.radio(["Folders, tabs, and window state from last time", "Home location"], s.startup == .lastSession ? 0 : 1) {

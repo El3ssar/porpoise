@@ -46,8 +46,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async { Theme.lookChanged() }
         }
         NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { n in
-            guard n.object == nil || n.object as? String == "appearance" else { return }
-            MainActor.assumeIsolated { NSApp.appearance = Theme.appearance }
+            guard n.object == nil || ["appearance", "appearancePreferences"].contains(n.object as? String ?? "") else { return }
+            MainActor.assumeIsolated {
+                NSApp.appearance = Theme.appearance; Theme.lookChanged()
+            }
         }
     }
 

@@ -87,7 +87,7 @@ final class ItemListView: NSView {
 
     // MARK: Metrics
 
-    static let pad: CGFloat = 2
+    static var pad: CGFloat { CGFloat(Settings.shared.appearancePreferences.density.padding) }
     static let sidePadding: CGFloat = 20
     static let headerHeight: CGFloat = 26
     /// Margin around the items in Icons and Compact modes.

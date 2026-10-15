@@ -1,4 +1,5 @@
 import AppKit
+import PorpoiseCore
 import PorpoiseServices
 
 extension NSAppearance {
@@ -30,9 +31,8 @@ extension NSColor {
     }
 }
 
-/// Porpoise's two looks, following macOS's Light/Dark setting (or the one chosen in Settings): the Desert-Dark color
-/// scheme (L4ki/Desert-Plasma-Themes, DesertDarkColor.colors) and a light scheme made to match it, as KDE's palette
-/// groups. Every color is dynamic: drawn, it takes the value for the appearance it's drawn in.
+/// The app's semantic palette. Dynamic colours resolve the selected portable theme at drawing time;
+/// layer colours are refreshed by `lookChanged` when either the theme or system appearance changes.
 enum Theme {
     /// A color with a value for each look.
     static func color(dark: NSColor, light: NSColor) -> NSColor {
@@ -48,29 +48,34 @@ enum Theme {
         }
     }
 
-    // [Colors:Window]
-    static let windowBackground = color(dark: NSColor(rgb: 29, 33, 47), light: NSColor(rgb: 238, 240, 245))
-    static let windowText = color(dark: NSColor(rgb: 214, 219, 241), light: NSColor(rgb: 34, 38, 52))
-    static let windowTextInactive = color(dark: NSColor(rgb: 180, 188, 218), light: NSColor(rgb: 98, 105, 128))
-    static let linkText = color(dark: NSColor(rgb: 65, 129, 194), light: NSColor(rgb: 36, 112, 186))
-    static let activeText = color(dark: NSColor(rgb: 68, 137, 206), light: NSColor(rgb: 45, 118, 196))
+    static func paletteColor(_ role: ThemeRole) -> NSColor {
+        NSColor(name: nil) { appearance in
+            let c = Settings.shared.appearancePreferences.theme(dark: appearance.isDark)[role]
+            return NSColor(rgb: c.red, c.green, c.blue)
+        }
+    }
+
+    static let windowBackground = paletteColor(.windowBackground)
+    static let windowText = paletteColor(.text)
+    static let windowTextInactive = paletteColor(.secondaryText)
+    static let linkText = paletteColor(.accent)
+    static let activeText = paletteColor(.accent)
     static let negativeText = color(dark: NSColor(rgb: 191, 97, 106), light: NSColor(rgb: 192, 57, 68))
-    static let neutralText = color(dark: NSColor(rgb: 58, 129, 179), light: NSColor(rgb: 36, 106, 160))
-    static let positiveText = color(dark: NSColor(rgb: 0, 106, 128), light: NSColor(rgb: 0, 122, 96))
-    // [Colors:View]
-    static let viewBackground = color(dark: NSColor(rgb: 24, 28, 39), light: NSColor(rgb: 252, 252, 254))
-    static let viewAlternate = color(dark: NSColor(rgb: 29, 33, 47), light: NSColor(rgb: 244, 245, 249))
-    static let viewText = color(dark: NSColor(rgb: 214, 219, 241), light: NSColor(rgb: 34, 38, 52))
-    static let viewTextInactive = color(dark: NSColor(rgb: 180, 188, 218), light: NSColor(rgb: 98, 105, 128))
-    // [Colors:Selection]
-    static let selection = color(dark: NSColor(rgb: 71, 99, 130), light: NSColor(rgb: 66, 132, 210))
-    static let selectionAlternate = color(dark: NSColor(rgb: 29, 153, 243), light: NSColor(rgb: 29, 133, 223))
-    static let selectionText = color(dark: NSColor(rgb: 214, 219, 241), light: NSColor(rgb: 26, 30, 44))
-    // Decorations
-    static let focus = color(dark: NSColor(rgb: 74, 103, 136), light: NSColor(rgb: 66, 132, 210))
-    /// Highlights and "done" marks in Porpoise's own windows (setup, settings).
-    static let accent = activeText
-    static let success = NSColor.systemGreen
+    static let neutralText = paletteColor(.accent)
+    static let positiveText = color(dark: NSColor(rgb: 0, 160, 128), light: NSColor(rgb: 0, 122, 96))
+    static let viewBackground = paletteColor(.viewBackground)
+    static let viewAlternate = paletteColor(.alternateRow)
+    static let viewText = paletteColor(.text)
+    static let viewTextInactive = paletteColor(.secondaryText)
+    static let selection = paletteColor(.selection)
+    static let selectionAlternate = paletteColor(.accent)
+    static let selectionText = paletteColor(.selectionText)
+    static let focus = paletteColor(.accent)
+    static let accent = paletteColor(.accent)
+    static let success = positiveText
+    static let panelBackground = paletteColor(.panel)
+    static let sidebarBackground = paletteColor(.sidebar)
+    static let folderTint = paletteColor(.folderTint)
 
     /// Breeze frame/separator color: text blended into the background at 20% (Breeze's "frameOutlineColor").
     static let frame = derived { windowText.mixed(with: windowBackground, 0.80) }
@@ -88,8 +93,11 @@ enum Theme {
     static var itemSelectedFill: NSColor { selection.withAlphaComponent(increasedContrast ? 0.75 : 0.32) }
     static var itemSelectedHoverFill: NSColor { selection.withAlphaComponent(increasedContrast ? 0.85 : 0.45) }
     static var itemSelectedOutline: NSColor { increasedContrast ? windowText : selection.withAlphaComponent(0.55) }
-    static var increasedContrast: Bool { NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast }
-    static let itemHoverFill = derived { windowText.withAlphaComponent(0.06) }
+    static var increasedContrast: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+            || Settings.shared.appearancePreferences.theme(dark: isDark).name == "High Contrast"
+    }
+    static let itemHoverFill = derived { paletteColor(.hover).withAlphaComponent(0.06) }
     static let itemHoverOutline = NSColor.clear
     /// Places panel current entry: Selection at ~23% over the window color, no outline (measured).
     static let placesSelectedFill = derived { selection.withAlphaComponent(0.23) }
@@ -100,10 +108,14 @@ enum Theme {
 
     /// The look chosen in Settings: macOS's (nil), or always light or dark.
     static var appearance: NSAppearance? {
+        let preferences = Settings.shared.appearancePreferences
+        if preferences.themeName != "Follow system" {
+            return NSAppearance(named: preferences.theme(dark: isDark).isDark ? .darkAqua : .aqua)
+        }
         switch Settings.shared.appearance {
-        case .system: nil
-        case .light: NSAppearance(named: .aqua)
-        case .dark: NSAppearance(named: .darkAqua)
+        case .system: return nil
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
         }
     }
 
@@ -125,6 +137,11 @@ enum Theme {
         observers.removeAll { $0.owner() == nil }
         NSApp.effectiveAppearance.performAsCurrentDrawingAppearance {
             for o in observers { o.apply() }
+            for window in NSApp.windows {
+                window.backgroundColor = Theme.windowBackground.usingColorSpace(.sRGB) ?? Theme.windowBackground
+                func redraw(_ view: NSView) { view.needsDisplay = true; view.subviews.forEach(redraw) }
+                if let content = window.contentView { redraw(content) }
+            }
         }
     }
 
@@ -134,13 +151,16 @@ enum Theme {
     static let toolbarHeight: CGFloat = 52
 
     // Fonts: the Mac system font (agreed), sized like KDE's 10pt Noto Sans at 96 dpi (≈13 px).
-    static let fontSize: CGFloat = 13
-    static var font: NSFont { .systemFont(ofSize: fontSize) }
-    static var boldFont: NSFont { .systemFont(ofSize: fontSize, weight: .semibold) }
-    static var smallFont: NSFont { .systemFont(ofSize: 11) }
+    static var fontSize: CGFloat { CGFloat(Settings.shared.appearancePreferences.uiFontSize) }
+    static var font: NSFont { NSFont(name: Settings.shared.appearancePreferences.uiFontName, size: fontSize) ?? .systemFont(ofSize: fontSize) }
+    static var boldFont: NSFont { NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) }
+    static var smallFont: NSFont { NSFontManager.shared.convert(font, toSize: max(8, fontSize - 2)) }
 
     /// Terminal panel font: Hack (KDE's default monospace font), preferring its Nerd Font build for prompt symbols.
     static func terminalFont(size: CGFloat = 13) -> NSFont {
+        let preferences = Settings.shared.appearancePreferences
+        let size = CGFloat(preferences.terminalFontSize)
+        if let custom = NSFont(name: preferences.terminalFontName, size: size) { return custom }
         let families = ["Hack Nerd Font Mono", "Hack Nerd Font", "Hack", "JetBrainsMono Nerd Font Mono", "MesloLGS NF", "Menlo"]
         // Weight 5 is NSFontManager's "regular".
         let font =
@@ -172,18 +192,18 @@ enum Theme {
     }
 
     /// KIconLoader's color-scheme stylesheet, injected into SVG icons (normal state), for the dark or light look.
-    static func iconStylesheet(selected: Bool = false, dark: Bool) -> String {
+    static func iconStylesheet(selected: Bool = false, dark: Bool, folder: Bool = false) -> String {
         var sheet = ""
-        NSAppearance(named: dark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance { sheet = stylesheet(selected: selected) }
+        NSAppearance(named: dark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance { sheet = stylesheet(selected: selected, folder: folder) }
         return sheet
     }
 
-    private static func stylesheet(selected: Bool) -> String {
+    private static func stylesheet(selected: Bool, folder: Bool) -> String {
         let text = selected ? selectionText : windowText
         return """
             .ColorScheme-Text { color:\(text.hexString); }
             .ColorScheme-Background { color:\(windowBackground.hexString); }
-            .ColorScheme-Highlight { color:\(selection.hexString); }
+            .ColorScheme-Highlight { color:\((folder ? folderTint : selection).hexString); }
             .ColorScheme-HighlightedText { color:\(selectionText.hexString); }
             .ColorScheme-PositiveText { color:\(positiveText.hexString); }
             .ColorScheme-NeutralText { color:\(neutralText.hexString); }

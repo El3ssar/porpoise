@@ -52,3 +52,12 @@ final class ClosureTextField: NSTextField {
         handler?(self)
     }
 }
+
+final class ClosureColorWell: NSColorWell {
+    var handler: ((NSColor) -> Void)?
+    convenience init(color: NSColor, handler: @escaping (NSColor) -> Void) {
+        self.init(frame: NSRect(x: 0, y: 0, width: 60, height: 24))
+        self.color = color; self.handler = handler; target = self; action = #selector(fire)
+    }
+    @objc private func fire() { handler?(color) }
+}
