@@ -59,15 +59,8 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
         guard let uid = NSXPCConnection.current()?.effectiveUserIdentifier, uid != 0, let pw = getpwuid(uid) else {
             reply("Unknown user."); return
         }
-        guard
-            let command = HelperRequests.ownershipCommand(
-                path: path, uid: uid, gid: pw.pointee.pw_gid,
-                home: String(cString: pw.pointee.pw_dir))
-        else {
-            reply("Only items in your own Trash can be handed over."); return
-        }
-        // Built by the helper itself, so it isn't held to the app's list of tools.
-        reply(HelperRequests.run(command))
+        // Done in-process, through file descriptors: a chown of a path could be redirected by the user meanwhile.
+        reply(HelperRequests.takeOwnership(path: path, uid: uid, gid: pw.pointee.pw_gid, home: String(cString: pw.pointee.pw_dir)))
     }
 
     func run(_ arguments: [String], reply: @escaping (String?) -> Void) {
