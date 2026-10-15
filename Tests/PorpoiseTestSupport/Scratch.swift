@@ -14,6 +14,10 @@ public final class Scratch {
     }
 
     deinit {
+        // Ordinary fixtures need no subprocesses. This also keeps hundreds of synchronous process waits off
+        // the main actor during a full parallel run; locked/read-only leftovers still use the recovery below.
+        do { try fm.removeItem(at: url); return } catch {}
+        guard fm.fileExists(atPath: url.path) else { return }
         // Locked or read-only leftovers must not survive the test either.
         _ = try? Process.run(URL(fileURLWithPath: "/usr/bin/chflags"), arguments: ["-R", "nouchg", url.path]).waitUntilExit()
         _ = try? Process.run(URL(fileURLWithPath: "/bin/chmod"), arguments: ["-R", "u+rwx", url.path]).waitUntilExit()
