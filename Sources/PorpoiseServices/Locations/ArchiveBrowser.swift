@@ -4,11 +4,16 @@ import PorpoiseCore
 
 /// "Browse compressed files as folders": archives open as a read-only extracted copy in the cache.
 public enum ArchiveBrowser {
-    static let extensions: Set<String> = ["zip", "tar", "tgz", "gz", "bz2", "tbz", "xz", "txz", "7z", "rar", "iso", "jar", "cpio", "xar", "zst"]
+    static let extensions: Set<String> = ["zip", "tar", "tgz", "tbz", "txz", "7z", "rar", "iso", "jar", "cpio", "xar"]
+    /// Compressors: an archive only as "x.tar.gz" and the like. "log.txt.gz" is one compressed file, which tar can't
+    /// extract ("Missing type keyword in mtree specification"): it opens in its application instead.
+    static let compressed: Set<String> = ["gz", "bz2", "xz", "zst"]
 
     public static func isArchive(_ item: FileItem) -> Bool {
+        guard !item.isBrowsableFolder else { return false }
+        let ext = item.fileExtension.lowercased()
         let n = item.name.lowercased()
-        return !item.isBrowsableFolder && (extensions.contains(item.fileExtension.lowercased()) || n.hasSuffix(".tar.gz") || n.hasSuffix(".tar.xz"))
+        return extensions.contains(ext) || (compressed.contains(ext) && n.dropLast(ext.count + 1).hasSuffix(".tar"))
     }
 
     /// Extracts once per archive version into the cache. The folder name is a stable digest of the path
