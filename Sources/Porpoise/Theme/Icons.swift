@@ -27,7 +27,9 @@ final class Icons {
     }
 
     private init() {
-        NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] _ in self?.cache.removeAllObjects()
+        NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] _ in
+            self?.cache.removeAllObjects()
+            self?.flattened.removeAllObjects()
         }
     }
 
@@ -59,6 +61,39 @@ final class Icons {
         }
         cache.setObject(img, forKey: key)
         return img
+    }
+
+    /// Icons drawn at another size on every frame (mid-zoom), as plain bitmaps per look: drawn as they are, an icon
+    /// that follows light and dark renders itself again for each new size it's drawn at.
+    private let flattened: NSCache<NSImage, Flattened> = {
+        let c = NSCache<NSImage, Flattened>()
+        c.countLimit = 1000
+        return c
+    }()
+    private final class Flattened {
+        var images: [String: NSImage] = [:]
+    }
+
+    /// `image` as a bitmap of `scale` pixels per point, in the look it's drawn in now (cached).
+    func flattened(_ image: NSImage, scale: CGFloat) -> NSImage {
+        let look = "\(NSAppearance.currentDrawing().isDark)|\(scale)"
+        let box = flattened.object(forKey: image) ?? Flattened()
+        if let hit = box.images[look] { return hit }
+        let px = max(1, Int(ceil(image.size.width * scale))), py = max(1, Int(ceil(image.size.height * scale)))
+        guard
+            let ctx = CGContext(
+                data: nil, width: px, height: py, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return image }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+        image.draw(in: CGRect(x: 0, y: 0, width: px, height: py))
+        NSGraphicsContext.restoreGraphicsState()
+        guard let cg = ctx.makeImage() else { return image }
+        let flat = NSImage(cgImage: cg, size: image.size)
+        box.images[look] = flat
+        flattened.setObject(box, forKey: image)
+        return flat
     }
 
     private func folderImage(_ source: NSImage, size: CGFloat, dark: Bool) -> NSImage {

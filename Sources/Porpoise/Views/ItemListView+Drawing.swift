@@ -198,7 +198,12 @@ extension ItemListView {
                 return (fp, ir)
             }
         }
-        let img = Icons.shared.image(for: item, size: iconSize)
+        // Mid-zoom: one of the few step sizes, already rendered, as a bitmap scaled into the cell (see liveRenderSize).
+        let img =
+            liveIconSize.map { live in
+                let step = Icons.shared.image(for: item, size: ZoomLevels.liveRenderSize(for: live))
+                return Icons.shared.flattened(step, scale: window?.backingScaleFactor ?? 2)
+            } ?? Icons.shared.image(for: item, size: iconSize)
         img.draw(in: ir, from: .zero, operation: .sourceOver, fraction: alpha, respectFlipped: true, hints: nil)
         return (img, ir)
     }
