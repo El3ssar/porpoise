@@ -110,7 +110,9 @@ public final class VideoPreview {
         let session = StreamSession(dir: dir)
         self.session = session
         streamDuration = nil
-        DispatchQueue.global(qos: .userInitiated).async {
+        // Probing and waiting for ffmpeg's first part block a thread for seconds: on a queue of its own, which always
+        // gets one (the shared pool may have none to give while every core is busy).
+        DispatchQueue(label: "app.porpoise.video-start", qos: .userInitiated).async {
             let info = Self.probe(url)
             let playlist = dir.appendingPathComponent(Self.playlistName)
             /// Runs ffmpeg; true once the stream has its first part.
