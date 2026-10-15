@@ -41,7 +41,7 @@ public enum PhysicalTreeScanner {
             add(item)
             guard item.directory, depth < maxDepth, lock.withLock({ seen.insert(item.identity).inserted }) else { return }
             do {
-                for child in try children(item.url) {
+                for child in try children(item.url, cancellation: cancellation) {
                     if cancellation.isCancelled { return }
                     walk(child, device: device, depth: depth + 1)
                 }
@@ -58,8 +58,15 @@ public enum PhysicalTreeScanner {
                 add(root)
                 lock.withLock { _ = seen.insert(root.identity) }
                 do {
-                    for child in try children(root.url) {
-                        work.addOperation { walk(child, device: root.identity.device, depth: 1) }
+                    let children = try children(root.url, cancellation: cancellation)
+                    let partitions = min(4, children.count)
+                    for partition in 0..<partitions {
+                        work.addOperation {
+                            for i in stride(from: partition, to: children.count, by: partitions) {
+                                if cancellation.isCancelled { return }
+                                walk(children[i], device: root.identity.device, depth: 1)
+                            }
+                        }
                     }
                 } catch let err { error(root.url.path, err.localizedDescription) }
             } else { walk(root, device: root.identity.device, depth: 0) }
@@ -71,7 +78,7 @@ public enum PhysicalTreeScanner {
         return result
     }
 
-    private static func children(_ folder: URL) throws -> [DiskEntry] {
+    private static func children(_ folder: URL, cancellation: DiskCancellation) throws -> [DiskEntry] {
         let fd = open(folder.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { close(fd) }
@@ -81,9 +88,10 @@ public enum PhysicalTreeScanner {
         attrs.fileattr = attrgroup_t(ATTR_FILE_ALLOCSIZE | ATTR_FILE_DATALENGTH)
         var buffer = [UInt8](repeating: 0, count: 64 * 1024), items: [DiskEntry] = []
         while true {
+            try cancellation.check()
             let count = buffer.withUnsafeMutableBytes { getattrlistbulk(fd, &attrs, $0.baseAddress!, $0.count, 0) }
             if count == 0 { return items }
-            if count < 0 { return try posixChildren(folder) }
+            if count < 0 { return try posixChildren(folder, cancellation: cancellation) }
             do {
                 try buffer.withUnsafeBytes { raw in
                     var offset = 0
@@ -122,14 +130,15 @@ public enum PhysicalTreeScanner {
                         offset += length
                     }
                 }
-            } catch { return try posixChildren(folder) }
+            } catch { return try posixChildren(folder, cancellation: cancellation) }
         }
     }
-    private static func posixChildren(_ folder: URL) throws -> [DiskEntry] {
+    private static func posixChildren(_ folder: URL, cancellation: DiskCancellation) throws -> [DiskEntry] {
         guard let dir = opendir(folder.path) else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { closedir(dir) }
         var items: [DiskEntry] = []
         while let ent = readdir(dir) {
+            try cancellation.check()
             let name = withUnsafePointer(to: &ent.pointee.d_name) { $0.withMemoryRebound(to: CChar.self, capacity: Int(ent.pointee.d_namlen) + 1) { String(cString: $0) } }
             if name == "." || name == ".." { continue }
             let url = folder.appendingPathComponent(name)

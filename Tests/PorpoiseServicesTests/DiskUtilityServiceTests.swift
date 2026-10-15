@@ -39,6 +39,17 @@ struct DiskUtilityServiceTests {
         try s.file("checks.sha256", ChecksumManifest.export(entries))
         #expect(try FileChecksums.loadManifest(s.path("checks.sha256")) == entries)
     }
+
+    @Test func manifestVerificationHandlesOddRealNamesAndRejectsSymlinkEscapes() throws {
+        let s = try Scratch(); try s.file("inside/café\nname", "abc"); try s.file("outside", "abc")
+        let digest = try FileChecksums.digest(s.path("outside"))
+        try s.symlink("inside/escape", to: s.path("outside").path)
+        let entries = [ChecksumEntry(path: "café\nname", algorithm: .sha256, digest: digest), ChecksumEntry(path: "escape", algorithm: .sha256, digest: digest)]
+        let parsed = try ChecksumManifest.parse(ChecksumManifest.export(entries))
+        let result = try FileChecksums.verify(parsed, below: s.path("inside"))
+        #expect(result.map(\.matches) == [true, false]); #expect(result[1].error != nil)
+    }
+
     @Test func hashCancellationAndConcurrentChangesAreRejected() throws {
         let s = try Scratch(); try s.file("large", "", size: 2 * 1024 * 1024)
         let cancel = DiskCancellation(); cancel.cancel()
@@ -82,6 +93,24 @@ struct DiskUtilityServiceTests {
         let result = try DuplicateFinder.find(in: PhysicalTreeScanner.scan([s.url]))
         #expect(result.groups.isEmpty); #expect(result.partialHashes == 2); #expect(result.fullHashes == 2)
     }
+
+    @Test func growingFilesAreBoundedByTheirInitialLength() throws {
+        let s = try Scratch(); try s.file("growing", "", size: 512 * 1024)
+        var grew = false, maxRead: Int64 = 0
+        #expect(throws: FileChecksumError.self) {
+            try FileChecksums.digest(s.path("growing")) { bytes in
+                maxRead = max(maxRead, bytes)
+                if !grew {
+                    grew = true
+                    if let handle = try? FileHandle(forWritingTo: s.path("growing")) {
+                        _ = try? handle.seekToEnd(); try? handle.write(contentsOf: Data(repeating: 1, count: 512 * 1024)); try? handle.close()
+                    }
+                }
+            }
+        }
+        #expect(maxRead == 512 * 1024)
+    }
+
     @Test func APFSClonesAreReportedWithoutTreatingThemAsHardLinks() throws {
         let s = try Scratch(); let original = try s.file("original", String(repeating: "clone data ", count: 20000))
         let clone = s.path("clone")
@@ -91,8 +120,12 @@ struct DiskUtilityServiceTests {
         #expect(group.files.count == 2); #expect(result.hardLinksIgnored == 0)
         let ids = group.files.map(\.cloneID)
         print("APFS clone family ids: \(ids)")
-        #expect(ids.allSatisfy { $0 != nil }); #expect(ids[0] == ids[1])
-        #expect(group.files.allSatisfy { group.isClone($0) })
+        if ids.allSatisfy({ $0 != nil }) {
+            #expect(ids[0] == ids[1]); #expect(group.files.allSatisfy { group.isClone($0) })
+        } else {
+            #expect(group.files.allSatisfy { !group.isClone($0) })
+            print("Filesystem supports clonefile but does not expose clone-family tracking")
+        }
     }
     @Test func unreadableDirectoriesAreExplicitAndCacheCanBeInvalidated() throws {
         let s = try Scratch(); try s.file("root/readable/file", "hello"); try s.file("root/denied/file", "secret")

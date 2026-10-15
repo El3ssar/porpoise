@@ -30,11 +30,20 @@ public enum FileChecksums {
             hash.update(data); total += Int64(data.count); progress(total)
             return data.count
         }
+        func readExactly(_ count: Int64) throws {
+            var remaining = count
+            while remaining > 0 {
+                let n = try read(Int(min(256 * 1024, remaining)))
+                guard n > 0 else { throw FileChecksumError.changed(url.path) }
+                remaining -= Int64(n)
+            }
+        }
         if partial && before.st_size > 128 * 1024 {
-            _ = try read(64 * 1024)
-            try handle.seek(toOffset: UInt64(before.st_size - 64 * 1024)); _ = try read(64 * 1024)
+            try readExactly(64 * 1024)
+            try handle.seek(toOffset: UInt64(before.st_size - 64 * 1024)); try readExactly(64 * 1024)
         } else {
-            while try read(256 * 1024) != 0 {}
+            // Read the initial length only: a continuously growing file must not turn this into an endless job.
+            try readExactly(Int64(before.st_size))
         }
         var after = stat()
         guard fstat(fd, &after) == 0, before.st_ino == after.st_ino, before.st_dev == after.st_dev, before.st_size == after.st_size,
