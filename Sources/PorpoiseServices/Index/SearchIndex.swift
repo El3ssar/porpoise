@@ -60,11 +60,14 @@ public final class SearchIndex: @unchecked Sendable {
         var rescan = false
     }
     // A process-wide limit, rather than one pool per SearchIndex. Control queues never wait for these jobs.
+    // One crawl at a time, on a serial queue of its own: such a queue always gets a thread. On the shared pool, utility
+    // work got none while other work kept every core busy, and crawls stayed queued (CI's 3-core runner). Each crawl
+    // reads folders on several threads itself, the calling one included.
     private static let crawlers: OperationQueue = {
         let queue = OperationQueue()
         queue.name = "app.porpoise.index-crawls"
-        queue.qualityOfService = .utility
-        queue.maxConcurrentOperationCount = min(4, max(1, ProcessInfo.processInfo.activeProcessorCount))
+        queue.maxConcurrentOperationCount = 1
+        queue.underlyingQueue = DispatchQueue(label: "app.porpoise.index-crawls", qos: .utility)
         return queue
     }()
     private let queue = DispatchQueue(label: "app.porpoise.index", qos: .utility)
