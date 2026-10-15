@@ -332,7 +332,11 @@ final class LookupCache: @unchecked Sendable {
     private var known: [String: Int?] = [:]
     private let lock = NSLock()
     func get(_ path: String) -> Int?? { lock.withLock { known[path] } }
-    func set(_ path: String, _ id: Int?) { lock.withLock { if known.count > 4096 { known = [:] }; known[path] = id } }
+    func set(_ path: String, _ id: Int?) {
+        lock.withLock {
+            if known.count > 4096 { known = [:] }; known[path] = id
+        }
+    }
     func clear() { lock.withLock { known = [:] } }
 }
 

@@ -19,7 +19,11 @@ public final class ContentIndex: @unchecked Sendable {
     /// Whether anything was added.
     public var isEmpty: Bool { lock.withLock { building.isEmpty && keys.isEmpty } }
 
-    public var storageBytes: Int { lock.withLock { freeze(); return keys.count * 8 + postings.count } }
+    public var storageBytes: Int {
+        lock.withLock {
+            freeze(); return keys.count * 8 + postings.count
+        }
+    }
 
     /// The distinct trigrams of folded text (sorted).
     public static func trigrams(_ folded: UnsafeBufferPointer<UInt8>) -> [UInt32] {

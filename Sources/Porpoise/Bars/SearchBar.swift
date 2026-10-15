@@ -42,7 +42,8 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
         let scope = everywhere ? FileManager.default.homeDirectoryForCurrentUser : scopeFolder
         let indexed = !contents && (scope.map { SearchIndex.shared.hasReadySnapshot(for: $0) } ?? false)
         field.placeholderString = contents ? "Search names and contents…" : indexed ? "Search the index — try ext:pdf size:>10mb dm:today" : "Search…"
-        field.toolTip = indexed ? SearchIndex.shared.statusText + "\nOperators: " + IndexQuery.operators.joined(separator: " ") + " · ⌥⎋ completes them" : nil
+        field.toolTip =
+            indexed ? SearchIndex.shared.statusText + "\nOperators: " + IndexQuery.operators.joined(separator: " ") + " · ⌥⎋ completes them" : nil
     }
     private var debounce: Timer?
     /// Typing waits this long before searching.

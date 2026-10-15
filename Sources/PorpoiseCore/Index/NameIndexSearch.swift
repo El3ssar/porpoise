@@ -263,7 +263,9 @@ struct SearchScratch {
             for i in hits { m[i] = 1 }
         }
         for (r, path) in roots where path.count >= needle.count {
-            if path.withUnsafeBufferPointer({ p in needle.withUnsafeBufferPointer { memmem(p.baseAddress!, p.count, $0.baseAddress!, $0.count) != nil } }) {
+            if path.withUnsafeBufferPointer({ p in
+                needle.withUnsafeBufferPointer { memmem(p.baseAddress!, p.count, $0.baseAddress!, $0.count) != nil }
+            }) {
                 m[r] = 1
             }
         }
@@ -292,7 +294,9 @@ struct SearchScratch {
             tail = part + (part.last == UInt8(ascii: "/") ? [] : [UInt8(ascii: "/")]) + tail
         }
         return tail.count >= needle.count
-            && tail.withUnsafeBufferPointer { t in needle.withUnsafeBufferPointer { memmem(t.baseAddress!, t.count, $0.baseAddress!, $0.count) != nil } }
+            && tail.withUnsafeBufferPointer { t in
+                needle.withUnsafeBufferPointer { memmem(t.baseAddress!, t.count, $0.baseAddress!, $0.count) != nil }
+            }
     }
 
     /// 1 for entries whose folded name matches `re`: POSIX regexec on the name's bytes where the pattern allows (no
