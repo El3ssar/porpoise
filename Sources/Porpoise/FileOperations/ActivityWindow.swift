@@ -492,7 +492,8 @@ final class ActivityRowView: NSView {
         case .waiting, .verifying: want = ["cancel"]
         case .failed: want = ["retry"]
         case .completed: want = (a.failedSources.isEmpty ? [] : ["retry"]) + (a.destination?.isFileURL == true ? ["reveal"] : [])
-        case .cancelled, .interrupted: want = a.destination?.isFileURL == true ? ["reveal"] : []
+        case .cancelled: want = ["resume"] + (a.destination?.isFileURL == true ? ["reveal"] : [])
+        case .interrupted: want = a.destination?.isFileURL == true ? ["reveal"] : []
         }
         guard want != shownButtons else { return }
         shownButtons = want

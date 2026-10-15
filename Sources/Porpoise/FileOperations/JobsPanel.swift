@@ -11,7 +11,7 @@ final class JobRowView: NSView {
     /// Pause/Resume, for jobs that can (local ones); remote transfers have none rather than one that cancels.
     let pause = NSButton(title: "", target: nil, action: nil)
     weak var job: FileJob?
-    private var activity: Activity? { FileOperationsController.shared.activities.first { $0.job === job } }
+    private var activity: Activity? { FileOperationsController.shared.activities.first { $0.job === job || $0.controlJob === job } }
 
     init(job: FileJob) {
         self.job = job

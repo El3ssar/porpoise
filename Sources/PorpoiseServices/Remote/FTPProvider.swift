@@ -176,6 +176,8 @@ final class FTPProvider: RemoteProvider {
 
     func makeFolder(_ remote: URL) throws { try command("MKD \(try rel(remote))") }
 
+    func removeEmptyFolder(_ remote: URL) throws { try command("RMD \(try rel(remote))") }
+
     /// Most servers let RNTO replace an existing file, so the target is checked first.
     func rename(_ remote: URL, to newName: String) throws {
         try RemoteFS.checkName(newName)

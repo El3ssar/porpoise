@@ -89,6 +89,7 @@ public struct JobJournal: Codable, Equatable, Sendable {
 public final class JournalStore: @unchecked Sendable {
     public let folder: URL
     private let lock = NSLock()
+    private var handles: [UUID: FileHandle] = [:]
 
     public init(folder: URL) { self.folder = folder }
 
@@ -98,17 +99,65 @@ public final class JournalStore: @unchecked Sendable {
     }
 
     private func url(_ id: UUID) -> URL { folder.appendingPathComponent(id.uuidString + ".json") }
+    private func eventsURL(_ id: UUID) -> URL { folder.appendingPathComponent(id.uuidString + ".events.jsonl") }
+
+    private struct Update: Codable {
+        let event: JobEvent
+        let stagingFingerprint: JobJournal.Fingerprint?
+    }
+
+    deinit { for handle in handles.values { try? handle.close() } }
+
+    /// Append small checkpoints instead of re-encoding the entire source list for every completed file.
+    /// The baseline remains compatible with existing version-1 journals; replay occurs under the same lock.
+    public func record(_ event: JobEvent, id: UUID) {
+        lock.withLock {
+            guard FileManager.default.fileExists(atPath: url(id).path) else { return }
+            let fingerprint: JobJournal.Fingerprint?
+            if case .copied(_, let point) = event { fingerprint = JobJournal.Fingerprint(point.staging) } else { fingerprint = nil }
+            guard let data = try? JSONEncoder().encode(Update(event: event, stagingFingerprint: fingerprint)) else { return }
+            let path = eventsURL(id)
+            if handles[id] == nil {
+                if !FileManager.default.fileExists(atPath: path.path) { FileManager.default.createFile(atPath: path.path, contents: nil) }
+                handles[id] = try? FileHandle(forWritingTo: path)
+                _ = try? handles[id]?.seekToEnd()
+            }
+            try? handles[id]?.write(contentsOf: data + Data([10]))
+        }
+    }
+
+    private func replay(_ journal: JobJournal) -> JobJournal {
+        var journal = journal
+        guard let data = try? Data(contentsOf: eventsURL(journal.id)) else { return journal }
+        for line in data.split(separator: 10) {
+            // A torn trailing write is not a checkpoint. Earlier complete records still apply.
+            guard let update = try? JSONDecoder().decode(Update.self, from: Data(line)) else { break }
+            journal.apply(update.event)
+            if case .copied(let index, _) = update.event, journal.items.indices.contains(index) {
+                journal.items[index].stagingFingerprint = update.stagingFingerprint
+            }
+        }
+        return journal
+    }
 
     public func save(_ journal: JobJournal) {
         lock.withLock {
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             let enc = JSONEncoder()
             enc.outputFormatting = [.sortedKeys]
+            try? handles.removeValue(forKey: journal.id)?.close()
             try? enc.encode(journal).write(to: url(journal.id), options: .atomic)
+            try? FileManager.default.removeItem(at: eventsURL(journal.id))
         }
     }
 
-    public func remove(_ id: UUID) { lock.withLock { try? FileManager.default.removeItem(at: url(id)) } }
+    public func remove(_ id: UUID) {
+        lock.withLock {
+            try? handles.removeValue(forKey: id)?.close()
+            try? FileManager.default.removeItem(at: url(id))
+            try? FileManager.default.removeItem(at: eventsURL(id))
+        }
+    }
 
     /// Every journal that can be read (newer versions and damaged files are left alone).
     public func all() -> [JobJournal] {
@@ -118,7 +167,7 @@ public final class JournalStore: @unchecked Sendable {
                 guard let d = try? Data(contentsOf: u), let j = try? JSONDecoder().decode(JobJournal.self, from: d),
                     j.version == JobJournal.currentVersion
                 else { return nil }
-                return j
+                return replay(j)
             }.sorted { $0.created < $1.created }
         }
     }

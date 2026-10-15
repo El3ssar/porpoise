@@ -20,10 +20,10 @@ struct TransferStatusTests {
         #expect(r.bytesPerSecond == 0)
         #expect(TransferRate.leftText(3) == "A few seconds left")
         #expect(TransferRate.leftText(42) == "About 40 seconds left")
-        #expect(TransferRate.leftText(70) == "About a minute left")
+        #expect(TransferRate.leftText(70) == "About 1 minute left")
         #expect(TransferRate.leftText(600) == "About 10 minutes left")
-        #expect(TransferRate.leftText(3600) == "About 1 h left")
-        #expect(TransferRate.leftText(5400) == "About 1 h 30 min left")
+        #expect(TransferRate.leftText(3600) == "About 60 minutes left")
+        #expect(TransferRate.leftText(5400) == "About 1 hour 30 minutes left")
     }
 
     @Test func verification() throws {

@@ -15,7 +15,7 @@ struct TransferRateSmoothingTests {
         for step in 1...16 { frequent.add(bytes: 1_000, at: 1 + Double(step) / 4) }
         sparse.add(bytes: 1_000, at: 5)
         #expect(abs(frequent.bytesPerSecond - sparse.bytesPerSecond) < 0.0001)
-        #expect(abs(sparse.bytesPerSecond - 1_000 * exp(-1)) < 0.0001)
+        #expect(abs(sparse.bytesPerSecond - 1_000 * exp(-4.0 / 3)) < 0.0001)
     }
 
     @Test func aStallCannotMakeEtaJumpByMinutes() throws {

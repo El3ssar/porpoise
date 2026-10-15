@@ -11,6 +11,8 @@ public protocol RemoteProvider: AnyObject {
     func upload(_ local: URL, into remoteFolder: URL) throws
     func delete(_ remote: [URL]) throws
     func makeFolder(_ remote: URL) throws
+    /// rmdir semantics: a newly arrived or skipped child must never be recursively removed.
+    func removeEmptyFolder(_ remote: URL) throws
     /// Fails if `newName` exists.
     func rename(_ remote: URL, to newName: String) throws
     /// Moves/copies within the same remote host.
@@ -18,6 +20,12 @@ public protocol RemoteProvider: AnyObject {
     func copy(_ remote: [URL], into folder: URL) throws
     /// Shown in breadcrumbs/titles for the root.
     func rootTitle(_ url: URL) -> String
+}
+
+extension RemoteProvider {
+    public func removeEmptyFolder(_ remote: URL) throws {
+        throw RemoteError.unsupported("This provider cannot remove an empty moved folder safely.")
+    }
 }
 
 enum RemoteError: LocalizedError {

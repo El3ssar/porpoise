@@ -185,6 +185,11 @@ public final class FileJob: @unchecked Sendable {
     public private(set) var untrashable: [URL] = []
     /// Top-level sources that failed (for Retry).
     public private(set) var failedSources: [URL] = []
+    public private(set) var completedSources: Set<URL> = []
+    public var remainingSources: [URL] { sources.filter { !completedSources.contains($0) } }
+    /// A remote transport uses the same thread-safe controls without running this local FileJob.
+    public func finishExternal() { lock.withLock { _ended = true } }
+    public func checkCancellation() throws { try checkpoint() }
 
     /// Minimum interval between progress callbacks (tests set 0 to see every chunk).
     var publishInterval: TimeInterval = 0.05
@@ -300,6 +305,7 @@ public final class FileJob: @unchecked Sendable {
             let failed = errors.count + denied.count > errorsBefore
             if failed { failedSources.append(src) }
             let skipped = !failed && (kind == .copy || kind == .move || kind == .link) && results.count == resultsBefore
+            if !failed { completedSources.insert(src) }
             onEvent(.finished(index: index, outcome: failed ? .failed : skipped ? .skipped : .done))
             progress.doneItems += 1
             if !failed { progress.doneFiles = max(progress.doneFiles, filesBefore + (fileCounts[src] ?? 1)) }

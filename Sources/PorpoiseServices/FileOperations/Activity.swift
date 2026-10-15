@@ -29,6 +29,10 @@ public final class Activity: Identifiable {
     public let pauseUnavailable: String?
     /// The job doing the work (nil for remote transfers, which have their own loop).
     public internal(set) var job: FileJob?
+    /// Controls a remote transport; its work loop is owned by Services rather than FileJob.run().
+    public internal(set) var controlJob: FileJob?
+    var remoteRemaining: [URL] = []
+    var remoteResults: [URL] = []
     public internal(set) var planJob: PlanJob?
     public internal(set) var planProgress: PlanProgress?
     var retryPlan: (() -> Void)?
@@ -55,7 +59,9 @@ public final class Activity: Identifiable {
             destination: destination)
     }
 
-    public var canPause: Bool { pauseUnavailable == nil && (job != nil || planJob != nil) && (state == .running || state == .paused) }
+    public var canPause: Bool {
+        pauseUnavailable == nil && (job != nil || controlJob != nil || planJob != nil) && (state == .running || state == .paused)
+    }
 
     /// "Copying 3 items to Backup"
     public var title: String {
@@ -86,8 +92,8 @@ public final class Activity: Identifiable {
             if let p, p.totalFiles > 0 { parts.append("\(p.doneFiles) of \(p.totalFiles) files") }
             if let p, !p.currentName.isEmpty { parts.append(p.currentName) }
             if !amounts.isEmpty { parts.append(amounts) }
-            if rate.bytesPerSecond > 0 { parts.append(rate.speedText) }
-            if let p, let left = rate.secondsLeft(p.totalBytes - p.doneBytes), p.totalBytes > 0 { parts.append(TransferRate.leftText(left)) }
+            if rate.hasSpeedEstimate { parts.append(rate.speedText) }
+            if let p, p.totalBytes > 0 || p.totalFiles > 0 { parts.append(rate.timeLeftText) }
             return parts.joined(separator: " — ")
         case .completed:
             let base = errors.isEmpty ? "Done" : "Done, with \(errors.count) \(errors.count == 1 ? "error" : "errors")"
@@ -164,21 +170,19 @@ extension FileOperationsController {
         activity.startedAt = Date()
         guard let job = activity.job else { return }
         let store = journals
-        let lock = NSLock()
-        var journal = activity.journal
+        let id = activity.id
         job.onEvent = { [weak activity] e in
-            let snapshot: JobJournal? = lock.withLock {
-                journal?.apply(e)
-                return journal
-            }
-            if let snapshot { store.save(snapshot) }
+            store.record(e, id: id)
             if case .placed(let i, let target) = e { DispatchQueue.main.async { activity?.placed[i] = target } }
         }
     }
 
     func progressed(_ activity: Activity, _ p: JobProgress) {
         activity.progress = p
-        if activity.state == .running { activity.rate.add(bytes: p.doneBytes, at: ProcessInfo.processInfo.systemUptime, totalBytes: p.totalBytes) }
+        if activity.state == .running {
+            activity.rate.add(
+                bytes: p.doneBytes, at: ProcessInfo.processInfo.systemUptime, totalBytes: p.totalBytes, items: p.doneFiles, totalItems: p.totalFiles)
+        }
         activityDidChange()
     }
 
@@ -186,15 +190,17 @@ extension FileOperationsController {
     func ended(_ activity: Activity, errors: [String]) {
         let job = activity.job
         activity.errors = errors
-        activity.failedSources = job?.failedSources ?? []
-        if job?.isInterrupted == true || activity.planJob?.isInterrupted == true {
+        if let job { activity.failedSources = job.failedSources }
+        if job?.isInterrupted == true || activity.controlJob?.isInterrupted == true || activity.planJob?.isInterrupted == true {
             activity.state = .interrupted  // the journal stays, for next time
         } else {
             activity.journal.map { journals.remove($0.id) }
-            if job?.isCancelled == true || activity.planJob?.isCancelled == true {
+            if job?.isCancelled == true || activity.controlJob?.isCancelled == true || activity.planJob?.isCancelled == true {
                 activity.state = .cancelled
                 if let plan = activity.planJob { try? plan.store.remove(activity.id) }
-            } else if !errors.isEmpty && (job?.results.isEmpty ?? true) && activity.kind != .delete && activity.kind != .trash {
+            } else if !errors.isEmpty && (job?.results.isEmpty ?? activity.remoteResults.isEmpty) && activity.kind != .delete
+                && activity.kind != .trash
+            {
                 activity.state = .failed
             } else {
                 activity.state = .completed
@@ -257,14 +263,17 @@ extension FileOperationsController {
     public func pause(_ activity: Activity) {
         guard activity.canPause else { return }
         activity.job?.pause()
+        activity.controlJob?.pause()
         activity.planJob?.pause()
         activity.state = .paused
         activityDidChange()
     }
 
     public func resume(_ activity: Activity) {
+        if activity.state == .cancelled { retry(activity, window: nil); return }
         guard activity.state == .paused else { return }
         activity.job?.resume()
+        activity.controlJob?.resume()
         activity.planJob?.resume()
         activity.rate.reset()  // the pause isn't part of the speed
         activity.state = .running
@@ -280,6 +289,7 @@ extension FileOperationsController {
             activityDidChange()
         default:
             activity.job?.cancel()
+            activity.controlJob?.cancel()
             activity.planJob?.cancel()
             remoteCancel[activity.id]?()
         }
@@ -299,7 +309,12 @@ extension FileOperationsController {
     /// Runs the failed items again.
     public func retry(_ activity: Activity, window: AnyObject?) {
         if let retry = activity.retryPlan { retry(); return }
-        let again = activity.failedSources.isEmpty ? activity.sources : activity.failedSources
+        let again: [URL]
+        if activity.state == .cancelled || activity.state == .interrupted {
+            again = activity.job?.remainingSources ?? activity.remoteRemaining
+        } else {
+            again = activity.failedSources.isEmpty ? activity.sources : activity.failedSources
+        }
         activities.removeAll { $0 === activity }
         run(activity.kind, again, to: activity.destination, window: window)
     }
@@ -318,9 +333,12 @@ extension FileOperationsController {
         for a in running {
             if let job = a.job, !job.hasEnded { job.interrupt() }
             if let plan = a.planJob, !plan.hasEnded { plan.interrupt() }
+            if let remote = a.controlJob, !remote.hasEnded { remote.interrupt() }
         }
         let end = Date().addingTimeInterval(timeout)
-        while running.contains(where: { ($0.job.map { !$0.hasEnded } ?? false) || ($0.planJob.map { !$0.hasEnded } ?? false) }) && Date() < end {
+        while running.contains(where: {
+            ($0.job.map { !$0.hasEnded } ?? false) || ($0.controlJob.map { !$0.hasEnded } ?? false) || ($0.planJob.map { !$0.hasEnded } ?? false)
+        }) && Date() < end {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
     }

@@ -81,6 +81,8 @@ final class ADBProvider: RemoteProvider {
 
     func makeFolder(_ remote: URL) throws { try shell("mkdir -p \(q(remote))") }
 
+    func removeEmptyFolder(_ remote: URL) throws { try shell("rmdir \(q(remote))") }
+
     func rename(_ remote: URL, to newName: String) throws {
         try RemoteFS.checkName(newName)
         let dst = q(remote.deletingLastPathComponent().appendingPathComponent(newName))

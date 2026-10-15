@@ -1,6 +1,44 @@
 import Foundation
+import PorpoiseCore
 
 public enum Shell {
+    /// Scoped to one synchronous transfer thread: every nested tool inherits pause/cancel controls.
+    public final class TransferControl: @unchecked Sendable {
+        public var isPaused: () -> Bool
+        public var isCancelled: () -> Bool
+        public var isInterrupted: () -> Bool
+        /// Bytes traversing a file-backed stdin/stdout of the tool (archive overhead may be included).
+        public var onBytes: (Int64) -> Void
+        public init(
+            isPaused: @escaping () -> Bool, isCancelled: @escaping () -> Bool,
+            isInterrupted: @escaping () -> Bool = { false }, onBytes: @escaping (Int64) -> Void = { _ in }
+        ) {
+            self.isPaused = isPaused; self.isCancelled = isCancelled; self.isInterrupted = isInterrupted; self.onBytes = onBytes
+        }
+        func check() throws {
+            while isPaused() && !isCancelled() { Thread.sleep(forTimeInterval: 0.02) }
+            if isInterrupted() { throw FileOperationError.interrupted }
+            if isCancelled() { throw FileOperationError.cancelled }
+        }
+    }
+    private static let transferKey = "Porpoise.Shell.transferControl"
+    public static func withTransferControl<T>(_ control: TransferControl, _ body: () throws -> T) rethrows -> T {
+        let dictionary = Thread.current.threadDictionary
+        let previous = dictionary[transferKey]
+        dictionary[transferKey] = control
+        defer { dictionary[transferKey] = previous }
+        return try body()
+    }
+
+    /// Best-effort staging cleanup still runs after the transfer's cancellation flag is set.
+    static func withoutTransferControl<T>(_ body: () throws -> T) rethrows -> T {
+        let dictionary = Thread.current.threadDictionary
+        let previous = dictionary[transferKey]
+        dictionary.removeObject(forKey: transferKey)
+        defer { dictionary[transferKey] = previous }
+        return try body()
+    }
+
     public struct Result { public var status: Int32; public var out: Data; public var err: String }
 
     /// Grace period between SIGTERM and SIGKILL when a timeout expires.
@@ -19,6 +57,8 @@ public enum Shell {
         _ tool: String, _ args: [String], env: [String: String] = [:], stdin: Data? = nil,
         stdoutFile: URL? = nil, stdinFile: URL? = nil, timeout: TimeInterval = 0
     ) throws -> Result {
+        let control = Thread.current.threadDictionary[transferKey] as? TransferControl
+        try control?.check()
         let p = Process()
         p.executableURL = URL(fileURLWithPath: tool)
         p.arguments = args
@@ -26,6 +66,7 @@ public enum Shell {
 
         // Handles we open are ours to close (Process doesn't), or every download would leak a descriptor.
         var opened: [FileHandle] = []
+        var inputHandle: FileHandle?
         defer { opened.forEach { try? $0.close() } }
         let outPipe = Pipe(), errPipe = Pipe()
         if let f = stdoutFile {
@@ -44,12 +85,15 @@ public enum Shell {
             let h = try FileHandle(forReadingFrom: f)
             opened.append(h)
             p.standardInput = h
+            inputHandle = h
         } else if stdin != nil {
             inPipe = Pipe()
             p.standardInput = inPipe
         } else {
             p.standardInput = FileHandle.nullDevice
         }
+        let processEnded = DispatchSemaphore(value: 0)
+        if control != nil { p.terminationHandler = { _ in processEnded.signal() } }
         try p.run()
 
         let io = DispatchGroup()
@@ -66,6 +110,38 @@ public enum Shell {
                 try? w.close()
             }
         }
+        let monitor = DispatchGroup()
+        if let control {
+            let input = inputHandle
+            Self.ioQueue().async(group: monitor) {
+                var suspended = false
+                var previousBytes: Int64 = 0
+                while p.isRunning {
+                    if control.isCancelled() {
+                        if suspended { _ = p.resume() }
+                        p.terminate()
+                        Self.ioQueue().asyncAfter(deadline: .now() + killGrace) {
+                            if p.isRunning { kill(p.processIdentifier, SIGKILL) }
+                        }
+                        break
+                    }
+                    if control.isPaused() && !suspended { suspended = p.suspend() }
+                    if !control.isPaused() && suspended { _ = p.resume(); suspended = false }
+                    if !suspended {
+                        let bytes: Int64
+                        if let stdoutFile {
+                            bytes = (try? FileManager.default.attributesOfItem(atPath: stdoutFile.path)[.size] as? NSNumber)?.int64Value ?? 0
+                        } else if let input {
+                            bytes = max(0, Int64(lseek(input.fileDescriptor, 0, SEEK_CUR)))
+                        } else {
+                            bytes = 0
+                        }
+                        if bytes > previousBytes { control.onBytes(bytes - previousBytes); previousBytes = bytes }
+                    }
+                    _ = processEnded.wait(timeout: .now() + 0.05)
+                }
+            }
+        }
         let watchdog =
             timeout > 0
             ? DispatchWorkItem {
@@ -79,7 +155,9 @@ public enum Shell {
         if let w = watchdog { Self.ioQueue().asyncAfter(deadline: .now() + timeout, execute: w) }
         p.waitUntilExit()
         watchdog?.cancel()
+        monitor.wait()
         io.wait()
+        try control?.check()
         if box.timedOut {
             throw RemoteError.failed("“\((tool as NSString).lastPathComponent)” did not finish within \(Int(timeout)) seconds.")
         }
