@@ -158,14 +158,16 @@ extension MainWindowController {
         guard !urls.isEmpty else { return }
         // Copies go next to their originals, which may sit in expanded subfolders or search results.
         let groups = Dictionary(grouping: urls) { $0.deletingLastPathComponent() }
+        // The view that asked, even if another tab or pane is active when the copy ends.
+        let c = view
         for (folder, group) in groups {
-            FileOperationsController.shared.run(.copy, group, to: folder, window: window) { [weak self] results in
-                guard let self, let first = results.first else { return }
-                if groups.count == 1 { self.view.model.selection = Set(results) }
-                self.view.pendingSelect = first
-                self.view.reload()
+            FileOperationsController.shared.run(.copy, group, to: folder, window: window) { [weak c] results in
+                guard let c, let first = results.first else { return }
+                if groups.count == 1 { c.model.selection = Set(results) }
+                c.pendingSelect = first
+                c.reload()
                 if urls.count == 1 && results.count == 1 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { self.view.list.beginRename(first) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { c.list.beginRename(first) }
                 }
             }
         }

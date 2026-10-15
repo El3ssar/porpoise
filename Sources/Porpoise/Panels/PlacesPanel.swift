@@ -242,6 +242,8 @@ final class PlacesPanel: NSView {
     }
 
     func rect(of i: Int) -> CGRect {
+        // VoiceOver keeps the elements it was given: after a fold or an eject, one may ask for a row that's gone.
+        guard rows.indices.contains(i) else { return .zero }
         let offset = i < foldStartOffset.count ? foldStartOffset[i] * (1 - foldProgress) : 0
         return CGRect(x: 0, y: rows[i].y + offset, width: bounds.width, height: rows[i].height)
     }

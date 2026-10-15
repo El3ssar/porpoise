@@ -302,14 +302,17 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         }
         pressed = i
         needsDisplay = true
-        switch segments[i].kind {
-        case .placesButton: showPlacesMenu(at: segments[i].rect)
-        case .rootArrow: showRootMenu(at: segments[i].rect)
-        case .arrow(let u): showSubfolderMenu(of: u, at: segments[i].rect)
-        case .more(let urls): showMenu(urls.map { ($0, $0.lastPathComponent) }, at: segments[i].rect)
-        case .crumb: break
+        // Read once: a menu item chosen during popUp navigates, which rebuilds (and can shrink) `segments`.
+        let (kind, rect) = (segments[i].kind, segments[i].rect)
+        switch kind {
+        case .placesButton: showPlacesMenu(at: rect)
+        case .rootArrow: showRootMenu(at: rect)
+        case .arrow(let u): showSubfolderMenu(of: u, at: rect)
+        case .more(let urls): showMenu(urls.map { ($0, $0.lastPathComponent) }, at: rect)
+        case .crumb: return
         }
-        if case .crumb = segments[i].kind {} else { pressed = nil; needsDisplay = true }
+        pressed = nil
+        needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {

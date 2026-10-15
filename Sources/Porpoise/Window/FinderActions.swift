@@ -142,11 +142,13 @@ extension MainWindowController {
         do { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false) } catch {
             reportError(error.localizedDescription); return
         }
-        FileOperationsController.shared.run(.move, items.map(\.url), to: folder, window: window) { [weak self] _ in
-            guard let self else { return }
-            self.view.pendingSelect = folder
-            self.view.reload()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.view.list.beginRename(folder) }
+        // The view that asked, even if another tab or pane is active when the move ends.
+        let c = view
+        FileOperationsController.shared.run(.move, items.map(\.url), to: folder, window: window) { [weak c] _ in
+            guard let c else { return }
+            c.pendingSelect = folder
+            c.reload()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { c.list.beginRename(folder) }
         }
     }
 

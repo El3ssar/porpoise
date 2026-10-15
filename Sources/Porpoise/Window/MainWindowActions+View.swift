@@ -93,7 +93,8 @@ extension MainWindowController {
     @objc func splitToTabs(_ sender: Any?) {
         guard let s = tab.secondary else { return }
         let u = s.url
-        tab.closeSplit(closeActive: false)
+        // The right view goes to the new tab, so it's the one closed here, whichever view is active.
+        tab.closeSplit(closeActive: tab.activeIsSecondary)
         tab.setActive(secondary: false)
         addTab(url: u)
     }
