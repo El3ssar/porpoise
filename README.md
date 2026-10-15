@@ -43,8 +43,9 @@ with *Porpoise › Check for Updates…*.
   type-ahead, inline rename, rubber-band and selection mode, filter bar.
 - **Search:** fast search of names and contents with the bundled fd and ripgrep (results stream in, content matches
   show the line they were found in), or everywhere with Spotlight. Items glide into place as results come and go.
-- **Looks:** light and dark, switching with macOS (or fixed in Settings); icons glide when the window or a pane is
-  resized.
+- **Looks:** ten themes (Breeze Light/Dark, Nord, Dracula, Solarized Light/Dark, Gruvbox, Catppuccin, Tokyo Night,
+  High Contrast), system light/dark pairing, live colour editor, and import/export. Choose native or freedesktop icons,
+  folder colours, fonts and density in Settings › Appearance; icons glide when the window or a pane is resized.
 - **Applications:** an app library instead of a plain folder: every app (including Apple's own) as big icons, a
   search field you can type into right away, with the results animating into place. Delete apps with ⌘⌫ or by
   dragging them to the Trash in the Dock, with Finder's sounds; drop an app from a disk image to install it.
@@ -62,6 +63,26 @@ with *Porpoise › Check for Updates…*.
   phones over USB, archives browsed as folders.
 - **Accessibility:** VoiceOver reads and drives the file view, Places, tabs, the path bar and the app library; toolbar
   buttons are reachable with Tab under Full Keyboard Access; Reduce Motion and Increase Contrast are respected.
+
+## Appearance and terminals
+
+Settings › Appearance previews colour changes in open windows. Import KDE `.colors` files or Porpoise theme JSON,
+edit the semantic colours and 16 ANSI colours, then export a theme. **Export Appearance** also includes fonts, density,
+icon choices, shell and terminal settings; **Import Appearance** validates the complete file before applying it.
+
+Install freedesktop icon themes as `~/Library/Application Support/Porpoise/icons/<theme>/index.theme` with the theme's
+icon directories alongside it, then reopen Settings. SVG, PNG and PDF icons and installed parent themes are supported;
+missing icons fall back to bundled Tela-circle. Native macOS uses NSWorkspace file icons.
+
+The F4 panel supports the login shell, zsh, bash, fish, nu, or a custom executable with arguments entered as a JSON
+array (for example `["-l"]`). Shell changes apply to new sessions; colours, font, cursor and scrollback update live.
+Import terminal schemes from Konsole `.colorscheme` or iTerm2 `.itermcolors` files.
+
+For Open Terminal Here and Run script, choose Terminal, iTerm2, kitty, WezTerm, Ghostty, Alacritty, Warp or a custom
+command. Settings marks unavailable apps. Automatic preserves the preference for kitty, then other installed terminals.
+A custom command must contain bare `{dir}` outside quotes, for example `kitty --directory {dir}`; Porpoise quotes the
+path. Run script appends the quoted script path. Custom icon themes and shell/terminal applications need to be installed
+on each Mac; exporting preferences does not bundle them. [Format and integration details](docs/design/THEMING.md).
 
 ## Keyboard shortcuts
 

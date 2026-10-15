@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Make it yours.** Settings › Appearance now has ten colour themes, system light/dark pairing, live colour wells,
+  KDE `.colors` and Porpoise JSON import/export, and a single file for sharing all appearance preferences.
+- Choose Tela-circle, native macOS icons, or installed freedesktop icon themes; change folder colours, interface
+  and file-list fonts, density, and icon sizes for each view.
+- Configure the F4 terminal shell, font, ANSI colours, cursor and scrollback. Import Konsole or iTerm2 schemes,
+  and choose an installed external terminal or a custom command for Open Terminal Here and Run script.
+
 ## 0.2.14
 
 - **Disks open in Porpoise.** "Make Porpoise Default" (Settings › System) now also asks macOS to open disks with
