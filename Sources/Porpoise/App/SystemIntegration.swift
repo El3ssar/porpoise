@@ -114,6 +114,9 @@ enum SystemIntegration {
         Permission(
             title: "Administrator Actions", anchor: "",
             status: {
+                guard PrivilegedHelper.isForThisUser else {
+                    return (nil, "For administrators only. Porpoise asks for an administrator's name and password when an action needs it.")
+                }
                 guard PrivilegedHelper.isEnabled else {
                     return (false, "Not set up. Click Allow… to install Porpoise Helper (your administrator password, once).")
                 }

@@ -32,6 +32,30 @@ import Testing
     }
 }
 
+/// The helper is for administrators of this Mac only (the operator's decision).
+@Suite struct HelperCallerTests {
+    @Test func onlyAdministratorsAreServed() {
+        var asked: [uid_t] = []
+        let refusal = PorpoiseHelperInfo.callerRefusal(501) {
+            asked.append($0); return false
+        }
+        #expect(refusal == PorpoiseHelperInfo.administratorsOnly)
+        #expect(asked == [501])
+        #expect(PorpoiseHelperInfo.callerRefusal(502) { _ in true } == nil)
+    }
+
+    @Test func membershipIsWhatTheSystemSays() throws {
+        // `id -Gn` asks the same directory services.
+        let r = try runTool("/usr/bin/id", ["-Gn"])
+        let names = String(decoding: r.out, as: UTF8.self).split(whereSeparator: \.isWhitespace)
+        #expect(PorpoiseHelperInfo.isAdministrator(getuid()) == names.contains("admin"))
+        #expect(PorpoiseHelperInfo.isAdministrator(0))  // root is in admin
+        #expect(!PorpoiseHelperInfo.isAdministrator(uid_t(bitPattern: -2)))  // nobody
+        #expect(!PorpoiseHelperInfo.isAdministrator(987_654))  // no such user
+        #expect(PorpoiseHelperInfo.callerRefusal(uid_t(bitPattern: -2)) == PorpoiseHelperInfo.administratorsOnly)
+    }
+}
+
 /// What the helper runs, decided in-process: only the listed tools, exactly; ownership only for real items directly in
 /// the user's own Trash. The tools themselves run here as the current user, on throwaway files.
 @Suite struct HelperRequestTests {

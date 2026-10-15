@@ -380,7 +380,11 @@ extension OnboardingWindowController.Step {
                     "Done. In the next step you switch it on, next to Porpoise.",
                 ],
                 button: "Install Helper", waiting: "Waiting for the helper to be installed…",
-                granted: { PrivilegedHelper.isEnabled }, grantedText: "Administrator actions are allowed.",
+                // Standard users can't use the helper: nothing to set up, actions ask for an administrator's password.
+                granted: { !PrivilegedHelper.isForThisUser || PrivilegedHelper.isEnabled },
+                grantedText: PrivilegedHelper.isForThisUser
+                    ? "Administrator actions are allowed."
+                    : "The helper is for administrators: Porpoise asks for an administrator's password when needed.",
                 request: { HelperSetup.install() })
         case .network:
             return .init(

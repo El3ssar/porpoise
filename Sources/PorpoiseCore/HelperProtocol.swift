@@ -45,3 +45,30 @@ public enum PorpoiseHelperInfo {
             && parts[3] == ".Trashes" && parts[4] == Substring(String(uid))
     }
 }
+
+/// Who may use the helper: administrators of this Mac only (the operator's decision). Standard users go through
+/// macOS's own administrator prompt for each action instead, so the helper never gives them root.
+extension PorpoiseHelperInfo {
+    public static let administratorsOnly = "Porpoise's helper works only for administrators of this Mac."
+
+    /// Whether user `uid` is in the "admin" group, as macOS's directory services see it (getgrouplist asks
+    /// opendirectoryd, which includes groups nested in admin).
+    public static func isAdministrator(_ uid: uid_t) -> Bool {
+        guard let admin = getgrnam("admin")?.pointee.gr_gid, let pw = getpwuid(uid) else { return false }
+        var capacity: Int32 = 64
+        while capacity <= 1 << 16 {
+            var list = [Int32](repeating: 0, count: Int(capacity))
+            var count = capacity
+            if getgrouplist(pw.pointee.pw_name, Int32(bitPattern: pw.pointee.pw_gid), &list, &count) != -1 {
+                return list.prefix(Int(count)).contains(Int32(bitPattern: admin))
+            }
+            capacity *= 4
+        }
+        return false
+    }
+
+    /// Why the helper refuses the user `uid` who connected, or nil. `isAdministrator` is a seam for tests.
+    public static func callerRefusal(_ uid: uid_t, isAdministrator: (uid_t) -> Bool = isAdministrator) -> String? {
+        isAdministrator(uid) ? nil : administratorsOnly
+    }
+}

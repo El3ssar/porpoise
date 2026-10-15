@@ -47,24 +47,31 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
 
     func version(reply: @escaping (String) -> Void) { reply("5") }
 
+    /// The user who asked (Porpoise runs as them; its signature was checked when it connected), if they may use the
+    /// helper: administrators only. Checked on every request, so a user removed from admin is refused at once.
+    private func caller() -> (uid: uid_t, refusal: String?) {
+        guard let uid = NSXPCConnection.current()?.effectiveUserIdentifier else { return (0, "Unknown user.") }
+        return (uid, PorpoiseHelperInfo.callerRefusal(uid))
+    }
+
     func checkFullDiskAccess(reply: @escaping (Bool) -> Void) {
-        guard let uid = NSXPCConnection.current()?.effectiveUserIdentifier, let pw = getpwuid(uid) else { reply(false); return }
+        let (uid, refusal) = caller()
+        guard refusal == nil, let pw = getpwuid(uid) else { reply(false); return }
         // The Trash is one of the folders macOS keeps private without Full Disk Access.
         let trash = String(cString: pw.pointee.pw_dir) + "/.Trash"
         reply((try? FileManager.default.contentsOfDirectory(atPath: trash)) != nil)
     }
 
     func takeOwnership(ofTrashed path: String, reply: @escaping (String?) -> Void) {
-        // Who asked: the user Porpoise runs as (its signature was checked when it connected).
-        guard let uid = NSXPCConnection.current()?.effectiveUserIdentifier, uid != 0, let pw = getpwuid(uid) else {
-            reply("Unknown user."); return
-        }
+        let (uid, refusal) = caller()
+        if let refusal { reply(refusal); return }
+        guard uid != 0, let pw = getpwuid(uid) else { reply("Unknown user."); return }
         // Done in-process, through file descriptors: a chown of a path could be redirected by the user meanwhile.
         reply(HelperRequests.takeOwnership(path: path, uid: uid, gid: pw.pointee.pw_gid, home: String(cString: pw.pointee.pw_dir)))
     }
 
     func run(_ arguments: [String], reply: @escaping (String?) -> Void) {
-        reply(HelperRequests.refusal(arguments) ?? HelperRequests.run(arguments))
+        reply(caller().refusal ?? HelperRequests.refusal(arguments) ?? HelperRequests.run(arguments))
     }
 }
 
