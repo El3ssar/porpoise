@@ -140,6 +140,32 @@ extension ItemListView {
         runTransition(duration: 0.3)
     }
 
+    /// Runs `change` (a zoom step: a layout at another icon size, maybe scrolled to keep the anchor in place). When it
+    /// reflows the items (another number of columns in Icons, of rows per column in Compact), they glide to their new
+    /// cells as in `resized()`, starting from where they were on screen; a running glide carries on, kept on screen
+    /// across the scroll.
+    func reflowing(_ change: () -> Void) {
+        guard mode != .details, layoutWidthOverride == nil, animates, frames.count == model.rows.count, !frames.isEmpty else {
+            return change()
+        }
+        let vr = visibleRect
+        let before = Dictionary(
+            transitionIndexes(in: vr.insetBy(dx: -40, dy: -40)).map { (key(ofRow: $0), shownFrame($0)) }, uniquingKeysWith: { a, _ in a })
+        let shape = (columns, rowsPerColumn), count = frames.count
+        change()
+        // Where the view scrolled to: what was on screen stays there.
+        let dx = visibleRect.minX - vr.minX, dy = visibleRect.minY - vr.minY
+        let reflowed = mode == .icons ? columns != shape.0 : rowsPerColumn != shape.1
+        if reflowed, !before.isEmpty, frames.count == count {
+            transition = ItemTransition(from: before.mapValues { $0.offsetBy(dx: dx, dy: dy) }, leaving: [])
+            runTransition(duration: 0.3)
+        } else if var t = transition, dx != 0 || dy != 0 {
+            t.from = t.from.mapValues { $0.offsetBy(dx: dx, dy: dy) }
+            t.leaving = t.leaving.map { ($0.rect.offsetBy(dx: dx, dy: dy), $0.image) }
+            transition = t
+        }
+    }
+
     /// Lets the visible items come in where they are (a view that just got its items), except `except` (keys).
     func animateAppearing(except: Set<String> = [], duration: TimeInterval = ItemListView.transitionDuration) {
         guard animates else { return }
