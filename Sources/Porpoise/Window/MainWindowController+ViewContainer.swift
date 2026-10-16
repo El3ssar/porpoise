@@ -16,6 +16,7 @@ extension MainWindowController {
     }
 
     func containerDidChangeURL(_ c: ViewContainer) {
+        comparisonNavigationChanged(c)
         AppDelegate.shared.sessionChanged()
         if c === view || tab.containers.contains(where: { $0 === c }) {
             syncToActiveView()

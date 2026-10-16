@@ -19,6 +19,7 @@ extension AppDelegate {
         }
         // Increase Contrast and the like change how the theme draws: redraw everything at once.
         nc.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { _ in
+            Theme.lookChanged()
             for w in NSApp.windows { w.contentView?.redrawAll() }
         }
     }

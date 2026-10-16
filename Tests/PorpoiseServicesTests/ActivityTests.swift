@@ -47,6 +47,20 @@ struct ActivityTests {
         let src = try randomFile("src/big.bin", size: 48 << 20)
         let small = try s.file("src/small.txt", "small")
         let dst = try s.folder("dst")
+        // Hold the worker at an observable byte boundary. A loaded main queue can otherwise
+        // receive the first progress callback only after this short copy has already finished.
+        ui.onJobStarted = { job in
+            let record = job.onEvent
+            job.onEvent = { [weak job] event in
+                record(event)
+                guard case .started(index: 1, staging: _) = event, let job else { return }
+                let report = job.onProgress
+                job.onProgress = { [weak job] progress in
+                    report(progress)
+                    if progress.doneBytes > 16 << 20 { job?.pause() }
+                }
+            }
+        }
         c.run(.copy, [small, src], to: dst, window: nil)
         let a = try #require(c.activities.last)
         #expect(await waitUntil { (a.progress?.doneBytes ?? 0) > 16 << 20 })

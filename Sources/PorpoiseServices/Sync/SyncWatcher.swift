@@ -8,6 +8,7 @@ public final class SyncWatcher: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     private var pending: DispatchWorkItem?
     private var paused = false
+    private var stopped = false
     private let debounce: TimeInterval
     private let onChange: @Sendable () -> Void
     public init(
@@ -34,11 +35,18 @@ public final class SyncWatcher: @unchecked Sendable {
             if !value { self.schedule() }
         }
     }
+    /// Explicit teardown stays on the watcher queue, including stopping the filesystem stream.
+    public func stop() {
+        queue.async { [self] in
+            stopped = true; pending?.cancel(); pending = nil
+            timer?.cancel(); timer = nil; events = nil
+        }
+    }
     private func schedule() {
-        guard !paused else { return }
+        guard !paused, !stopped else { return }
         pending?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self, !self.paused else { return }
+            guard let self, !self.paused, !self.stopped else { return }
             self.pending = nil; self.onChange()
         }
         pending = work; queue.asyncAfter(deadline: .now() + debounce, execute: work)

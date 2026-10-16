@@ -16,6 +16,9 @@ final class TransferToolbarButton: NSButton {
     private var failed = false
     private var dismissedFailure: Set<UUID> = []
     private var didShowAttention: Set<UUID> = []
+    private var lastRefresh = Date.distantPast
+    private var shownStates = ""
+    private var shownProgress = ""
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -36,6 +39,9 @@ final class TransferToolbarButton: NSButton {
         guard let window else { return }
         let now = Date()
         let all = FileOperationsController.shared.activities.filter { $0.originWindow === window }
+        let states = all.map { $0.id.uuidString + $0.state.rawValue }.joined(separator: "|")
+        guard states != shownStates || now.timeIntervalSince(lastRefresh) >= 0.25 else { return }
+        shownStates = states; lastRefresh = now
         jobs = all.filter { a in
             if a.state.isActive || a.state == .queued { return true }
             if !a.errors.isEmpty && !dismissedFailure.contains(a.id) { return true }
@@ -52,8 +58,11 @@ final class TransferToolbarButton: NSButton {
             ? Double(active.reduce(Int64(0)) { $0 + ($1.progress?.doneBytes ?? 0) }) / Double(total)
             : active.isEmpty ? 1 : active.reduce(0) { $0 + $1.fraction } / Double(active.count)
         let estimate = active.first?.rate.timeLeftText ?? (failed ? "Needs attention" : "Finished")
-        setAccessibilityLabel("File operations, \(Int(fraction * 100)) percent, \(estimate)")
-        needsDisplay = true
+        let label = "File operations, \(Int(fraction * 100)) percent, \(estimate)"
+        let progress = "\(Int(fraction * 1000))|\(ended)|\(failed)|\(jobs.allSatisfy { $0.state == .paused })|\(label)"
+        if progress != shownProgress {
+            shownProgress = progress; setAccessibilityLabel(label); needsDisplay = true
+        }
         if popover.isShown { updatePopover() }
         if let attention = jobs.first(where: { ($0.state == .waiting || !$0.errors.isEmpty) && !didShowAttention.contains($0.id) }), visible,
             window.isKeyWindow, window.attachedSheet == nil
@@ -156,13 +165,17 @@ private final class TransferPopoverRow: NSView {
         self.activity = activity
         if let item = activity.incomingItem {
             icon.image = Icons.shared.image(for: item, size: 32)
+        } else if activity.planJob != nil {
+            icon.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: "Sync")
         } else {
             icon.image = NSImage(systemSymbolName: activity.sources.count > 1 ? "square.stack.3d.up" : "doc", accessibilityDescription: nil)
         }
         icon.imageScaling = .scaleProportionallyUpOrDown
         title.stringValue = activity.title
         var line = (activity.state == .completed ? TransferSummary.text(activity) : activity.statusText).replacingOccurrences(of: " — ", with: " · ")
-        if let progress = activity.progress, progress.phase == .transferring, activity.state == .running || activity.state == .paused {
+        if activity.planJob == nil, let progress = activity.progress, progress.phase == .transferring,
+            activity.state == .running || activity.state == .paused
+        {
             var parts: [String] = []
             if activity.state == .paused { parts.append("Paused") }
             if progress.totalFiles > 1 { parts.append("\(progress.doneFiles) of \(progress.totalFiles)") }
@@ -175,10 +188,10 @@ private final class TransferPopoverRow: NSView {
         }
         detail.stringValue = line
         percent.stringValue = "\(Int(activity.fraction * 100))%"
-        percent.isHidden = activity.state.isEnded || activity.progress?.phase == .preparing
-        toolTip = activity.progress?.currentName
+        percent.isHidden = activity.state.isEnded || (activity.planJob == nil && activity.progress?.phase == .preparing)
+        toolTip = activity.planProgress?.currentTitle ?? activity.progress?.currentName
         bar.fraction = activity.fraction
-        bar.isIndeterminate = activity.progress?.phase == .preparing || activity.state == .queued
+        bar.isIndeterminate = (activity.planJob == nil && activity.progress?.phase == .preparing) || activity.state == .queued
         bar.alphaValue = activity.state == .paused ? 0.4 : 1
         bar.isHidden = activity.state.isEnded
         pause.isHidden = !(activity.canPause || activity.state == .cancelled || !activity.errors.isEmpty)
@@ -277,7 +290,9 @@ private final class TransferPopoverContent: NSVisualEffectView {
 /// One result sentence shared by the toolbar popover and the originating window's status bar.
 enum TransferSummary {
     static func text(_ activity: Activity) -> String {
-        guard activity.state == .completed, activity.kind == .copy || activity.kind == .move, let progress = activity.progress else {
+        guard activity.planJob == nil, activity.state == .completed, activity.kind == .copy || activity.kind == .move,
+            let progress = activity.progress
+        else {
             return activity.statusText
         }
         let count = progress.copiedItems

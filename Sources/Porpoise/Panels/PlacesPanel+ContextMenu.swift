@@ -14,6 +14,21 @@ extension PlacesPanel {
             it.representedObject = obj
             if let icon { it.image = Icons.shared.menuIcon(icon) }
         }
+        if let entry = entry(at: i), let pair = SyncCoordinator.shared.pair(for: entry.url) {
+            func syncItem(_ title: String, _ action: Selector, key: String = "", modifiers: NSEvent.ModifierFlags = []) {
+                let item = m.addItem(withTitle: title, action: action, keyEquivalent: key)
+                item.keyEquivalentModifierMask = modifiers
+                item.target = self; item.representedObject = pair.id.uuidString
+            }
+            syncItem("Sync Now", #selector(syncNow(_:)))
+            syncItem("Compare", #selector(compareSync(_:)), key: "c", modifiers: [.control, .command]); m.addItem(.separator())
+            if pair.automatic { syncItem(pair.paused ? "Resume Keeping in Sync" : "Pause Keeping in Sync", #selector(pauseSync(_:))) }
+            syncItem("Edit Sync…", #selector(editSync(_:)))
+            syncItem("Rename", #selector(renameSync(_:)), key: String(UnicodeScalar(NSF2FunctionKey)!)); m.addItem(.separator())
+            syncItem("Show in Activity", #selector(syncActivity)); m.addItem(.separator())
+            syncItem("Remove Sync…", #selector(removeSync(_:)))
+            return m
+        }
         if let e = entry(at: i) {
             add("Open in New Tab", "tab-new", #selector(openNewTab(_:)), e.url)
             add("Open in New Window", "window-new", #selector(openNewWindow(_:)), e.url)
@@ -194,5 +209,80 @@ extension PlacesPanel {
                 if let w = self.window { a.beginSheetModal(for: w) } else { a.runModal() }
             }
         }
+    }
+}
+
+extension PlacesPanel {
+    private func savedSync(_ sender: NSMenuItem) -> SavedSync? {
+        guard let value = sender.representedObject as? String, let id = UUID(uuidString: value) else { return nil }
+        return SyncCoordinator.shared.pairs.first { $0.id == id }
+    }
+    @objc private func syncNow(_ sender: NSMenuItem) {
+        guard let pair = savedSync(sender), let window else { return }
+        SyncSheetController(pair: pair, owner: window).present()
+    }
+    @objc private func compareSync(_ sender: NSMenuItem) {
+        if let pair = savedSync(sender) { SyncCoordinator.shared.open(pair, window: window) }
+    }
+    @objc private func pauseSync(_ sender: NSMenuItem) {
+        if let pair = savedSync(sender) { SyncCoordinator.shared.setPaused(pair, paused: !pair.paused) }
+    }
+    @objc private func editSync(_ sender: NSMenuItem) {
+        if let pair = savedSync(sender) { SyncCoordinator.shared.review(pair.id, window: window, editing: true) }
+    }
+    @objc private func removeSync(_ sender: NSMenuItem) {
+        if let pair = savedSync(sender) { SyncCoordinator.shared.remove(pair, window: window) }
+    }
+    @objc private func renameSync(_ sender: NSMenuItem) {
+        if let pair = savedSync(sender) { renameSavedSync(pair) }
+    }
+    func renameSavedSync(_ pair: SavedSync) {
+        guard let window, let index = rows.indices.first(where: { entry(at: $0).flatMap { SyncCoordinator.shared.pair(for: $0.url) }?.id == pair.id })
+        else { return }
+        let field = SyncInlineNameField(frame: .zero); field.stringValue = pair.name
+        field.frame = CGRect(x: 40, y: rect(of: index).midY - 12, width: max(60, bounds.width - 48), height: 24)
+        field.font = .systemFont(ofSize: 13)
+        field.committed = { name in
+            var next = pair; next.name = name; SyncCoordinator.shared.save(next)
+        }
+        addSubview(field); window.makeFirstResponder(field); field.selectText(nil)
+    }
+    @objc private func syncActivity() { ActivityWindowController.shared.show() }
+}
+
+private final class SyncInlineNameField: NSTextField, NSTextFieldDelegate {
+    var committed: ((String) -> Void)?
+    private var finished = false
+    override init(frame: NSRect) { super.init(frame: frame); delegate = self; target = self; action = #selector(commit) }
+    required init?(coder: NSCoder) { fatalError() }
+    @objc private func commit() {
+        guard !finished else { return }; finished = true
+        let name = stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty { committed?(name) }
+        removeFromSuperview()
+    }
+    func controlTextDidEndEditing(_ obj: Notification) { commit() }
+    override func cancelOperation(_ sender: Any?) { finished = true; removeFromSuperview() }
+}
+
+extension PlacesPanel {
+    func reviewSyncContextMenu(capture: @escaping () -> Void) {
+        guard Settings.isTesting, let window,
+            let row = rows.first(where: {
+                if case .entry(let entry) = $0.kind { return entry.section == .sync }; return false
+            })
+        else { return }
+        let point = NSPoint(x: 40, y: row.y + row.height / 2)
+        guard
+            let event = NSEvent.mouseEvent(
+                with: .rightMouseDown, location: convert(point, to: nil), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1),
+            let menu = menu(for: event)
+        else { return }
+        let timer = Timer(timeInterval: 0.4, repeats: false) { _ in
+            capture(); menu.cancelTracking()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        menu.popUp(positioning: nil, at: point, in: self)
     }
 }

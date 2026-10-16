@@ -1,0 +1,153 @@
+import AppKit
+import PorpoiseCore
+import PorpoiseServices
+
+/// Deterministic UI fixtures are restricted to explicit test launches.
+enum SyncDebugBridge {
+    static var root: URL {
+        URL(fileURLWithPath: ProcessInfo.processInfo.environment["PORPOISE_SYNC_FIXTURE"] ?? NSTemporaryDirectory() + "porpoise-sync-fixture")
+    }
+    static func present(_ argument: String, window: NSWindow) {
+        dismiss()
+        let pieces = argument.components(separatedBy: "|")
+        let mode: SyncMode = pieces[0] == "mirror" ? .mirror : pieces[0] == "twoway" ? .twoWay : .backup
+        let left = pieces.count > 1 ? URL(fileURLWithPath: pieces[1]) : root.appendingPathComponent("Home/Projects")
+        let right = pieces.count > 2 ? URL(fileURLWithPath: pieces[2]) : root.appendingPathComponent("Backup/Projects")
+        var newPair = SavedSync(left: left, right: right); newPair.visibleInSidebar = false
+        var pair = SyncCoordinator.shared.pair(left: left, right: right) ?? newPair
+        if pieces[0] != "edit" { pair.mode = mode }
+        let sheet = SyncSheetController(pair: pair, owner: window, editing: pieces[0] == "edit")
+        if pieces[0] == "planning" { sheet.reviewPlanningDelay = 5 }
+        sheet.present()
+    }
+    static func sidebar(_ argument: String) {
+        dismiss()
+        if argument == "remove", let pair = SyncCoordinator.shared.pairs.first,
+            let window = NSApp.windows.first(where: { $0.windowController is MainWindowController })
+        {
+            SyncCoordinator.shared.remove(pair, window: window); return
+        }
+        if argument == "states" {
+            SyncCoordinator.shared.installReviewSidebarStates(
+                left: root.appendingPathComponent("Home/Projects"), right: root.appendingPathComponent("Backup/Projects"));
+            return
+        }
+        // Only saved definitions are synthesized; actual watcher statuses come from real filesystem state.
+        let left = root.appendingPathComponent("Home/Projects"), right = root.appendingPathComponent("Backup/Projects")
+        var pair = SyncCoordinator.shared.pair(left: left, right: right) ?? SavedSync(left: left, right: right)
+        pair.name = argument.isEmpty ? "Projects" : argument; pair.visibleInSidebar = true
+        pair.lastSynced = Date().addingTimeInterval(-120)
+        SyncCoordinator.shared.save(pair)
+    }
+    static func control(command: String, argument: String) {
+        guard
+            let sheet = NSApp.windows.first(where: { $0.isVisible && $0.windowController is SyncSheetController })?.windowController
+                as? SyncSheetController
+        else { return }
+        let parts = argument.components(separatedBy: "|")
+        if command == "syncinclude", parts.count == 2 { sheet.reviewInclude(parts[0], enabled: parts[1] != "off") }
+        if command == "syncresolve", parts.count == 2, let choice = SyncOverride(rawValue: parts[1]) { sheet.reviewResolve(parts[0], choice: choice) }
+        if command == "syncautomatic" { sheet.reviewAutomatically(argument == "on") }
+        if command == "syncsize" {
+            let sizes = argument.split(separator: " ").compactMap { Double($0) }
+            if sizes.count == 2 { sheet.window?.setContentSize(CGSize(width: sizes[0], height: sizes[1])) }
+        }
+    }
+    static func remote(_ argument: String, window: NSWindow) {
+        dismiss()
+        let local = root.appendingPathComponent("Remote/Home/Projects")
+        Task { @MainActor in
+            do {
+                try await Task.detached(priority: .utility) {
+                    try FileManager.default.createDirectory(at: local, withIntermediateDirectories: true)
+                    try Data("Review-only local file".utf8).write(to: local.appendingPathComponent("new.txt"))
+                }.value
+                let remote = URL(string: "sftp://nas.local/Backup")!
+                guard RemoteFS.installTestingProvider(SyncReviewRemoteProvider(recoverable: argument != "blocked"), for: remote) else { return }
+                let pair = SavedSync(left: local, right: remote, mode: .mirror)
+                SyncSheetController(pair: pair, owner: window).present()
+            } catch { SyncCoordinator.shared.showError(error.localizedDescription, window: window) }
+        }
+    }
+    private static func dismiss() {
+        guard Settings.isTesting else { return }
+        for window in NSApp.windows {
+            if let sheet = window.windowController as? SyncSheetController {
+                sheet.reviewDismiss()
+            } else if let parent = window.sheetParent {
+                parent.endSheet(window, returnCode: .cancel); window.orderOut(nil)
+            }
+        }
+    }
+    static func notifications(_ path: String) {
+        let pair = SavedSync(
+            id: UUID(uuidString: "77777777-7777-4777-8777-777777777777")!, name: "Website", left: URL(fileURLWithPath: "/Home/Photos"),
+            right: URL(string: "sftp://nas.local/NAS")!)
+        let payloads = [
+            SyncNotificationPayload(pair: pair, event: .conflicts(2)),
+            SyncNotificationPayload(pair: pair, event: .failure(reason: "server.local is full.", waiting: 18)),
+            SyncNotificationPayload(pair: pair, event: .deletionReview(count: 340, destination: "Backup")),
+        ]
+        DispatchQueue.global(qos: .utility).async {
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try? encoder.encode(payloads).write(to: URL(fileURLWithPath: path), options: .atomic)
+        }
+    }
+    static func state(_ path: String) {
+        let coordinator = SyncCoordinator.shared
+        let rows: [[String: Any]] = coordinator.pairs.map { pair in
+            [
+                "id": pair.id.uuidString, "name": pair.name, "automatic": pair.automatic, "paused": pair.paused,
+                "left": pair.left.path, "right": pair.right.path, "activity": coordinator.activities[pair.id]?.state.rawValue ?? "none",
+                "tooltip": coordinator.tooltip(pair),
+            ]
+        }
+        if let data = try? JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys]) {
+            DispatchQueue.global(qos: .utility).async { try? data.write(to: URL(fileURLWithPath: path)) }
+        }
+    }
+    /// Logical view pixels for visual review when Stage Manager exposes only a WindowServer thumbnail.
+    /// This deliberately does not claim onscreen visibility, compositor timing or native-input evidence.
+    static func image(_ argument: String) {
+        guard Settings.isTesting,
+            let view = NSApp.windows.first(where: { $0.isVisible && $0.windowController is SyncSheetController })?.contentView
+        else { return }
+        let parts = argument.components(separatedBy: "|")
+        view.layoutSubtreeIfNeeded(); view.displayIfNeeded()
+        let height = parts.count > 1 ? min(view.bounds.height, Double(parts[1]) ?? view.bounds.height) : view.bounds.height
+        let rect = CGRect(x: 0, y: view.bounds.maxY - height, width: view.bounds.width, height: height)
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: rect) else { return }
+        view.cacheDisplay(in: rect, to: bitmap)
+        try? bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: parts[0]))
+        let metadata: [String: Any] = [
+            "source": "NSView.cacheDisplay", "rect": NSStringFromRect(rect), "pixelWidth": bitmap.pixelsWide,
+            "pixelHeight": bitmap.pixelsHigh, "onscreenVisibilityVerified": false,
+        ]
+        try? JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys]).write(
+            to: URL(fileURLWithPath: parts[0] + ".metadata.json"))
+    }
+}
+
+/// A read-only, non-networked provider for explicit isolated UI launches.
+private final class SyncReviewRemoteProvider: RemoteProvider {
+    let recoverable: Bool
+    init(recoverable: Bool) { self.recoverable = recoverable }
+    func canRecoverSyncDeletions(in root: URL) throws -> Bool { recoverable }
+    func list(_ folder: URL) throws -> [FileItem] {
+        guard folder.path == "/Backup" else { return [] }
+        return ["old-one.txt", "old-two.txt"].map {
+            FileItem(
+                url: folder.appendingPathComponent($0), name: $0, isDirectory: false, size: 200, modificationDate: Date(timeIntervalSince1970: 100),
+                contentType: "public.plain-text")
+        }
+    }
+    private var error: SyncEngineError { .unsupported("This read-only review provider does not execute file operations.") }
+    func download(_ remote: URL, into localFolder: URL) throws -> URL { throw error }
+    func upload(_ local: URL, into remoteFolder: URL) throws { throw error }
+    func delete(_ remote: [URL]) throws { throw error }
+    func makeFolder(_ remote: URL) throws { throw error }
+    func rename(_ remote: URL, to newName: String) throws { throw error }
+    func move(_ remote: [URL], into folder: URL) throws { throw error }
+    func copy(_ remote: [URL], into folder: URL) throws { throw error }
+    func rootTitle(_ url: URL) -> String { "nas.local" }
+}

@@ -5,6 +5,9 @@ import PorpoiseServices
 /// Dolphin's default toolbar (Back, Forward, View settings, location, Split, Search, menu), presented like a
 /// macOS 26 unified toolbar: glass capsules over a translucent bar that sits right of the full-height sidebar.
 final class ToolbarView: NSView {
+    let compareFolders = PairToolbarButton(icon: nil, tooltip: "Compare Folders (⌃⌘C)")
+    let linkFolders = PairToolbarButton(icon: nil, tooltip: "Linked Browsing (⌃⌘L)")
+    private let pairGroup = GlassGroup()
     let back = FlatButton(icon: "go-previous", tooltip: "Back")
     let forward = FlatButton(icon: "go-next", tooltip: "Forward")
     let up = FlatButton(icon: "go-up", tooltip: "Up (⌘↑)")
@@ -51,6 +54,12 @@ final class ToolbarView: NSView {
         hairline.wantsLayer = true
         Theme.whenChanged(hairline) { [weak hairline] in hairline?.layer?.backgroundColor = Theme.hairline.cgColor }
         addSubview(background)
+        addSubview(pairGroup)
+        pairGroup.content.addSubview(linkFolders); pairGroup.content.addSubview(compareFolders)
+        linkFolders.iconName = "insert-link"
+        compareFolders.iconName = "edit-copy"
+        linkFolders.identifier = .init("Porpoise.toolbar.link"); compareFolders.identifier = .init("Porpoise.toolbar.compare")
+
         navGroup.content.addSubview(back)
         navGroup.content.addSubview(forward)
         navGroup.content.addSubview(up)
@@ -158,6 +167,8 @@ final class ToolbarView: NSView {
         case .terminal:
             let item = NSMenuItem(); item.tag = 3; controller.togglePanel(item)
         case .commandPalette: AppDelegate.shared.showCommandPalette(nil)
+        case .compare: controller.toggleCompare(nil)
+        case .link: controller.toggleLinkedBrowsing(nil)
         default: break
         }
     }
@@ -218,14 +229,22 @@ final class ToolbarView: NSView {
     /// Location field(s) between `minX` and `maxX`: capped in width so the toolbar keeps free space to grab the
     /// window; in a split, one field per pane, the second starting where the right pane starts (Dolphin).
     private func layoutFields(from minX: CGFloat, to maxX: CGFloat, y: CGFloat, height: CGFloat) {
-        let gap = Self.fieldSpacing
+        let seam = paneRanges.count == 2 ? convert(CGPoint(x: paneRanges[1].lowerBound, y: 0), from: nil).x : (minX + maxX) / 2
+        let hasPair = navigatorViews.count == 2 && seam - 40 - minX >= 160 && maxX - seam - 40 >= 160
+        pairGroup.isHidden = !hasPair
+        let gap: CGFloat = hasPair ? 40 : Self.fieldSpacing
         let available = max(0, maxX - minX)
         if navigatorViews.count == 2, paneRanges.count == 2 {
             // Each field at least minFieldWidth while there is room for both; never over the buttons on the right.
-            let minW = min(Self.minFieldWidth, max(0, (available - gap) / 2))
             let splitX = convert(CGPoint(x: paneRanges[1].lowerBound, y: 0), from: nil).x
-            let rightX = min(max(splitX + gap, minX + minW + gap), minX + available - minW)
-            let leftW = max(minW, min(splitX - gap, rightX - gap) - minX)
+            let minW = min(Self.minFieldWidth, max(0, (available - gap) / 2), max(0, splitX - gap - minX))
+            if hasPair {
+                pairGroup.frame = CGRect(x: splitX - 34, y: y + (height - 34) / 2, width: 68, height: 34)
+                linkFolders.frame = CGRect(x: 4, y: 3, width: 28, height: 28)
+                compareFolders.frame = CGRect(x: 36, y: 3, width: 28, height: 28)
+            }
+            let rightX = hasPair ? min(max(splitX + gap, minX + minW + gap), minX + available - minW) : minX + (available + gap) / 2
+            let leftW = hasPair ? max(minW, min(splitX - gap, rightX - gap) - minX) : (available - gap) / 2
             fieldGroups[0].frame = CGRect(x: minX, y: y, width: leftW, height: height)
             fieldGroups[1].frame = CGRect(x: rightX, y: y, width: max(0, minX + available - rightX), height: height)
         } else {
@@ -255,7 +274,56 @@ private extension ToolbarCommand {
         case .newTab: return "tab-new"
         case .terminal: return "utilities-terminal"
         case .commandPalette: return "system-search"
+        case .compare: return "edit-copy"
+        case .link: return "insert-link"
         default: return "application-menu"
         }
     }
+}
+
+/// Seam controls share the parent glass capsule; each toggles a circular accent fill, never a square bezel.
+final class PairToolbarButton: FlatButton {
+    private let symbol = PairToolbarSymbolView()
+    private var shownSymbol = ""
+    override init(frame: CGRect) {
+        super.init(frame: frame); addSubview(symbol); symbol.imageScaling = .scaleProportionallyUpOrDown; symbol.setAccessibilityElement(false)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func layout() { super.layout(); symbol.frame = bounds.insetBy(dx: 5, dy: 5) }
+    override func draw(_ dirty: NSRect) {
+        if isToggled {
+            (iconName == "edit-unlink" ? Theme.compareChanged.withAlphaComponent(0.16) : Theme.selection.withAlphaComponent(0.32)).setFill()
+            NSBezierPath(ovalIn: bounds).fill()
+        }
+        let name = iconName == "edit-copy" ? "compare-pages" : "link"
+        if shownSymbol != name {
+            symbol.image = name == "compare-pages" ? Self.pages : NSImage(systemSymbolName: name, accessibilityDescription: nil)
+            shownSymbol = name
+        }
+        symbol.contentTintColor = iconName == "edit-unlink" ? Theme.compareChanged : (isToggled ? Theme.accent : Theme.windowText)
+        symbol.alphaValue = isEnabled ? 1 : 0.35
+        if iconName == "edit-unlink" {
+            Theme.compareChanged.setStroke(); let slash = NSBezierPath(); slash.move(to: CGPoint(x: 5, y: 5)); slash.line(to: CGPoint(x: 23, y: 23));
+            slash.lineWidth = 1.5; slash.stroke()
+        }
+    }
+    private static let pages: NSImage = {
+        let image = NSImage(size: CGSize(width: 18, height: 18), flipped: false) { _ in
+            NSColor.black.setStroke()
+            for x: CGFloat in [1.5, 10.5] {
+                let page = NSBezierPath(roundedRect: CGRect(x: x, y: 2.5, width: 6, height: 13), xRadius: 0.75, yRadius: 0.75)
+                page.lineWidth = 1.25; page.stroke()
+                for y: CGFloat in [11, 8] {
+                    let line = NSBezierPath(); line.move(to: CGPoint(x: x + 1.5, y: y)); line.line(to: CGPoint(x: x + 4.5, y: y))
+                    line.lineWidth = 1; line.stroke()
+                }
+            }
+            return true
+        }
+        image.isTemplate = true; return image
+    }()
+}
+
+private final class PairToolbarSymbolView: NSImageView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

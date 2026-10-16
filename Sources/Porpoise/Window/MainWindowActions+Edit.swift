@@ -95,6 +95,11 @@ extension MainWindowController {
     }
 
     @objc func copyToOtherView(_ sender: Any?) {
+        if let compare = tab.compareView, let path = compare.document.selectedPath,
+            let row = compare.model.rows.first(where: { $0.path == path })
+        {
+            copyComparisonRow(row, from: compare.document.activeSide); return
+        }
         guard let other = tab.inactive else { return }
         guard hasSelection else { enterSelectionMode(prompt: "Select the files and folders that should be copied to the other view."); return }
         FileOperationsController.shared.run(.copy, selectedURLs, to: other.url, window: window)

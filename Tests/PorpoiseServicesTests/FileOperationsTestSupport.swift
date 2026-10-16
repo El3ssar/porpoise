@@ -11,6 +11,7 @@ final class ScriptedUI: FileOperationsUI {
     var conflictAnswers: [ConflictAnswer]
     var asyncConflict: ((ConflictInfo, FileJob, @escaping (ConflictAnswer) -> Void) -> Void)?
     var didCancelConflict = false
+    var onJobStarted: ((FileJob) -> Void)?
     var confirms: Bool
 
     private(set) var questions: [PorpoiseServices.Confirmation] = []
@@ -48,7 +49,7 @@ final class ScriptedUI: FileOperationsUI {
         if let asyncConflict { asyncConflict(info, job, completion) } else { completion(resolveConflict(info, kind: kind)) }
     }
     func cancelConflict(for job: FileJob) { didCancelConflict = true }
-    func jobStarted(_ job: FileJob) {}
+    func jobStarted(_ job: FileJob) { onJobStarted?(job) }
     func jobProgressed(_ job: FileJob, _ progress: JobProgress) {}
 
     func jobFinished(_ job: FileJob) {

@@ -145,6 +145,25 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     }
 
     private func observeNotifications() {
+        observe(Notification.Name("PorpoiseCompareOpenRequested")) { me, note in
+            guard note.object == nil || (note.object as? NSWindow) === me.window,
+                let left = note.userInfo?["left"] as? URL, let right = note.userInfo?["right"] as? URL
+            else { return }
+            if note.userInfo?["newTab"] as? Bool == true { me.addTab(url: left) }
+            me.startComparing(left: left, right: right, options: note.userInfo?["options"] as? SyncCompareOptions ?? CompareModel.defaultOptions)
+        }
+        observe(Notification.Name("PorpoiseSyncActivityChanged")) { me, note in
+            guard (note.object as? NSWindow) === me.window, let activity = note.userInfo?["activity"] as? Activity,
+                let left = note.userInfo?["left"] as? URL, let right = note.userInfo?["right"] as? URL
+            else { return }
+            for compare in me.tabs.compactMap(\.compareView) {
+                let model = compare.model
+                guard (model.leftRoot == left && model.rightRoot == right) || (model.leftRoot == right && model.rightRoot == left) else { continue }
+                compare.document.finishedPaths = Set(note.userInfo?["completedPaths"] as? [String] ?? [])
+                compare.document.failedPaths = Set(note.userInfo?["failedPaths"] as? [String] ?? [])
+                compare.show(activity: activity, metadata: note.userInfo ?? [:])
+            }
+        }
         observe(Settings.changed) { me, note in me.settingsChanged(key: note.object as? String) }
         observe(PlacesModel.changed) { me, _ in me.placesChanged() }
         observe(.terminalExited) { me, n in
@@ -182,6 +201,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     var allContainers: [ViewContainer] { tabs.flatMap(\.containers) }
 
     private func wireToolbar() {
+        toolbar.compareFolders.onClick = { [weak self] in self?.toggleCompare(nil) }
+        toolbar.linkFolders.onClick = { [weak self] in self?.toggleLinkedBrowsing(nil) }
         toolbar.back.onClick = { [weak self] in self?.view.goBack() }
         toolbar.forward.onClick = { [weak self] in self?.view.goForward() }
         toolbar.up.onClick = { [weak self] in self?.goUp(nil) }
@@ -306,7 +327,25 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         toolbar.forward.isEnabled = v.history.canGoForward
         // Same rule as goUp(_:) and its menu item.
         toolbar.up.isEnabled = v.canGoUp
-        toolbar.viewMode.iconName = v.model.props.mode.iconName
+        toolbar.viewMode.iconName = t.compareView == nil ? v.model.props.mode.iconName : "view-list-details"
+        toolbar.viewMode.isEnabled = t.compareView == nil
+        toolbar.viewMode.toolTip = t.compareView == nil ? "Change View Mode" : "Comparing uses Details"
+        toolbar.compareFolders.isToggled = t.compareView != nil || t.compareChooser != nil
+        toolbar.linkFolders.isToggled = t.linkedRoots != nil && t.compareChooser == nil
+        for (index, navigator) in t.navigators.enumerated() {
+            navigator.placeholderText = index == 1 && t.compareChooser != nil ? "Choose a folder…" : nil
+            navigator.onPlaceholderClick = { [weak self] in self?.chooseCompareFolder() }
+            navigator.missingTail = t.missingCounterpart != nil && (index == 1) == t.missingOnRight
+            if let roots = t.linkedRoots {
+                let names = CompareOutline.sideNames(roots.left, roots.right)
+                navigator.preferredAncestorName = index == 1 && names.1 != roots.right.lastPathComponent ? names.1 : nil
+            } else if let model = t.compareView?.model {
+                navigator.preferredAncestorName = index == 1 && model.names.1 != model.rightRoot.lastPathComponent ? model.names.1 : nil
+            } else {
+                navigator.preferredAncestorName = nil
+            }
+        }
+        toolbar.linkFolders.iconName = t.missingCounterpart == nil ? "insert-link" : "edit-unlink"
         updateSplitButton(for: t)
         toolbar.search.isToggled = !v.searchBar.isHidden
         toolbar.needsLayout = true

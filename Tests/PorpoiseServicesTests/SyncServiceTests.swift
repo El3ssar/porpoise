@@ -77,12 +77,13 @@ struct SyncServiceTests {
         let counter = Counter()
         let watcher = SyncWatcher(roots: [], debounce: 0.03, pollInterval: 100) { counter.increment() }
         for _ in 0..<20 { watcher.requestScan() }
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(counter.count == 1)
+        #expect(await eventually(3) { counter.count == 1 })
         watcher.setPaused(true); watcher.requestScan()
         try await Task.sleep(for: .milliseconds(100))
         #expect(counter.count == 1)
         watcher.setPaused(false)
+        #expect(await eventually(3) { counter.count == 2 })
+        watcher.stop(); watcher.requestScan()
         try await Task.sleep(for: .milliseconds(100))
         #expect(counter.count == 2)
     }

@@ -52,6 +52,7 @@ public enum SyncScanner {
             try caseSensitive
             ?? (provider == nil
                 ? (try root.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]).volumeSupportsCaseSensitiveNames ?? true) : true)
+        var excludedPaths: [String] = []
         var entries: [SyncEntry] = [], pending: [(URL, String, Int)] = [(root, "", 0)]
         while let (folder, prefix, depth) = pending.popLast() {
             try cancellation.check()
@@ -70,6 +71,7 @@ public enum SyncScanner {
                 let path = prefix.isEmpty ? name : prefix + "/" + name
                 // Internal recovery/trash data never enters the user's pair.
                 if name == ".porpoise-trash" || name.hasPrefix(".porpoise-sync-") || SyncComparator.excluded(path, patterns: options.exclusions) {
+                    excludedPaths.append(path)
                     continue
                 }
                 let entry: SyncEntry
@@ -100,7 +102,7 @@ public enum SyncScanner {
                 if entry.kind == .directory { pending.append((url, path, depth + 1)) }
             }
         }
-        return .init(entries: entries, caseSensitive: sensitive, complete: maxDepth == nil, rootIdentity: rootIdentity)
+        return .init(entries: entries, caseSensitive: sensitive, complete: maxDepth == nil, rootIdentity: rootIdentity, excludedPaths: excludedPaths)
     }
     static func localEntry(_ url: URL, path: String, content: Bool, cancellation: DiskCancellation = DiskCancellation()) throws -> SyncEntry {
         var info = stat()
