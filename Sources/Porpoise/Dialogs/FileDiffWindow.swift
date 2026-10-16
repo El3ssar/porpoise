@@ -479,6 +479,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         token.cancel(); observers.forEach(NotificationCenter.default.removeObserver); Self.open.removeAll { $0 === self }
     }
     func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.appearance = window?.effectiveAppearance
         menu.removeAllItems(); menu.addItem(withTitle: "Open With ⌄", action: nil, keyEquivalent: "")
         for tool in FileDiffExternalTools.installed {
             let item = NSMenuItem(title: tool.name, action: #selector(openExternal(_:)), keyEquivalent: ""); item.target = self;
