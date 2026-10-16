@@ -48,7 +48,8 @@ public enum CloudEditMark: Equatable, Sendable {
 public struct CloudEditEntry: Equatable, Sendable {
     public let id: UUID
     public let account: UUID
-    public let fileID: String
+    /// The Drive file the copy's saves go to (after Keep Both, the new one next to the original).
+    public var fileID: String
     public var name: String
     /// The copy the other app edits.
     public var localURL: URL
@@ -321,11 +322,17 @@ public final class DriveEditing {
         Task { @MainActor [weak self] in
             do {
                 try await action(client)
+                let session = await client.edits.session(id)
                 guard let self else { return }
                 self.set(id) {
                     $0.mark = .saved
                     $0.conflictURL = nil
                     $0.lastSaved = Date()
+                    // Keep Both: the other app's saves now go to the new file.
+                    if let file = session?.file {
+                        $0.fileID = file.id
+                        $0.name = file.name
+                    }
                 }
                 self.post("\(done) “\(entry.name)” in Google Drive.", false)
                 FileOperationsController.notifyChanged([entry.location])

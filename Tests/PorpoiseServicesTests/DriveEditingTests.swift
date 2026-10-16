@@ -97,10 +97,13 @@ import Testing
         editing.openBoth(entry.id)
         #expect(opened.suffix(2) == [entry.localURL, try #require(conflicted.conflictURL)])
         editing.keepBoth(entry.id)
-        try await wait { editing.mark(for: item.url) == .saved }
-        #expect(editing.mark(for: item.url) == .saved && editing.entry(for: item.url)?.conflictURL == nil)
+        try await wait { editing.entries.first?.mark == .saved }
+        #expect(editing.entries.first?.conflictURL == nil)
         #expect(try await client.download(client.file("binary-a")).data == Data("remote edit".utf8))
         #expect(posts.contains { $0.0.hasPrefix("Kept both versions of") })
+        // The other app's saves now go to the new file, which carries the mark.
+        let kept = try #require(editing.entries.first)
+        #expect(kept.fileID != "binary-a" && kept.name.contains("Edited on Mac") && editing.mark(for: item.url) == nil)
     }
 
     @Test func replaceWithMineAndUnsentEditsAfterARelaunch() async throws {
