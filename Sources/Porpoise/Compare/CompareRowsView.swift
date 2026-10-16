@@ -4,6 +4,14 @@ import PorpoiseServices
 
 enum CompareSymbols {
     static let onlyLeft = "◧", onlyRight = "◨"
+    static func drawOnly(_ side: SyncSide, centeredAt center: CGPoint, color: NSColor) {
+        let rect = CGRect(x: center.x - 7, y: center.y - 4.5, width: 14, height: 9)
+        let box = NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3)
+        NSGraphicsContext.saveGraphicsState(); box.addClip(); color.setFill()
+        CGRect(x: side == .left ? rect.minX : rect.midX, y: rect.minY, width: 7, height: 9).fill()
+        NSGraphicsContext.restoreGraphicsState()
+        color.setStroke(); box.lineWidth = 1.25; box.stroke()
+    }
 }
 
 /// Both Details panes and their seam share a single virtualized clip/document, so scrolling cannot drift.
@@ -167,10 +175,17 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
             arc.appendArc(withCenter: CGPoint(x: seam.midX, y: y + rowHeight / 2), radius: 4, startAngle: angle, endAngle: angle + 270)
             Theme.windowTextInactive.setStroke(); arc.stroke()
         } else {
-            let only = row.status == .onlyLeft || row.status == .onlyRight
-            text(
-                glyph(row), CGRect(x: seam.minX + 2, y: y + (rowHeight - 20) / 2, width: max(0, seam.width - 4), height: 20), size: only ? 12 : 16,
-                color: color(row), align: .center, weight: only ? .medium : .regular)
+            let symbol = glyph(row), center = CGPoint(x: seam.midX, y: y + rowHeight / 2)
+            if symbol == CompareSymbols.onlyLeft || symbol == CompareSymbols.onlyRight {
+                CompareSymbols.drawOnly(symbol == CompareSymbols.onlyLeft ? .left : .right, centeredAt: center, color: color(row))
+            } else if symbol == "○" {
+                color(row).setStroke(); let ring = NSBezierPath(ovalIn: CGRect(x: center.x - 4.5, y: center.y - 4.5, width: 9, height: 9))
+                ring.lineWidth = 1.75; ring.stroke()
+            } else {
+                text(
+                    symbol, CGRect(x: seam.minX + 2, y: y + (rowHeight - 20) / 2, width: max(0, seam.width - 4), height: 20), size: 16,
+                    color: color(row), align: .center)
+            }
         }
         if case .changed(let newer) = row.status, newer != .unknown {
             color(row).setFill();
@@ -219,15 +234,23 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         } else if entry.kind == .symlink, row.left?.linkTarget != row.right?.linkTarget {
             caption = "Link targets differ"
         }
-        if let l = row.left?.path, let r = row.right?.path, l != r { caption = "Name differs in case" }
+        if let l = row.left?.path, let r = row.right?.path, l != r { caption = side == .left ? "Name differs in case" : nil }
         if let caption {
             let nameWidth = (name as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width
             let remaining = nameRect.width - nameWidth - 8
             if remaining > 35 {
-                text(caption, CGRect(x: nameRect.minX + nameWidth + 8, y: rect.midY - 7, width: remaining, height: 16), size: 11, color: color(row))
+                let style = NSMutableParagraphStyle(); style.lineBreakMode = .byTruncatingTail
+                let run = NSMutableAttributedString(
+                    string: caption,
+                    attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: Theme.windowTextInactive, .paragraphStyle: style])
+                if let prefix = caption.split(separator: " ").first, Int(prefix) != nil {
+                    run.addAttribute(.foregroundColor, value: color(row), range: NSRange(location: 0, length: prefix.utf16.count))
+                }
+                run.draw(in: CGRect(x: nameRect.minX + nameWidth + 8, y: rect.midY - 7, width: remaining, height: 16))
             }
         }
-        let changed = row.status != .same
+        let changed: Bool
+        if case .changed = row.status { changed = entry.kind != .directory } else { changed = false }
         if sizeWidth > 0 {
             let count = model.outline?.childCounts[side]?[row.path] ?? 0
             let size =

@@ -5,8 +5,8 @@ import PorpoiseServices
 /// Dolphin's default toolbar (Back, Forward, View settings, location, Split, Search, menu), presented like a
 /// macOS 26 unified toolbar: glass capsules over a translucent bar that sits right of the full-height sidebar.
 final class ToolbarView: NSView {
-    let compareFolders = FlatButton(icon: nil, tooltip: "Compare Folders (⌃⌘C)")
-    let linkFolders = FlatButton(icon: nil, tooltip: "Linked Browsing (⌃⌘L)")
+    let compareFolders = PairToolbarButton(icon: nil, tooltip: "Compare Folders (⌃⌘C)")
+    let linkFolders = PairToolbarButton(icon: nil, tooltip: "Linked Browsing (⌃⌘L)")
     private let pairGroup = GlassGroup()
     let back = FlatButton(icon: "go-previous", tooltip: "Back")
     let forward = FlatButton(icon: "go-next", tooltip: "Forward")
@@ -238,9 +238,9 @@ final class ToolbarView: NSView {
             let minW = min(Self.minFieldWidth, max(0, (available - gap) / 2))
             let splitX = convert(CGPoint(x: paneRanges[1].lowerBound, y: 0), from: nil).x
             if hasPair {
-                pairGroup.frame = CGRect(x: splitX - 34, y: y, width: 68, height: height)
-                linkFolders.frame = CGRect(x: 3, y: 3, width: 31, height: 28)
-                compareFolders.frame = CGRect(x: 34, y: 3, width: 31, height: 28)
+                pairGroup.frame = CGRect(x: splitX - 34, y: y + (height - 34) / 2, width: 68, height: 34)
+                linkFolders.frame = CGRect(x: 4, y: 3, width: 28, height: 28)
+                compareFolders.frame = CGRect(x: 36, y: 3, width: 28, height: 28)
             }
             let rightX = min(max(splitX + gap, minX + minW + gap), minX + available - minW)
             let leftW = max(minW, min(splitX - gap, rightX - gap) - minX)
@@ -278,4 +278,33 @@ private extension ToolbarCommand {
         default: return "application-menu"
         }
     }
+}
+
+/// Seam controls share the parent glass capsule; each toggles a circular accent fill, never a square bezel.
+final class PairToolbarButton: FlatButton {
+    private let symbol = PairToolbarSymbolView()
+    private var shownSymbol = ""
+    override init(frame: CGRect) {
+        super.init(frame: frame); addSubview(symbol); symbol.imageScaling = .scaleProportionallyUpOrDown; symbol.setAccessibilityElement(false)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func layout() { super.layout(); symbol.frame = bounds.insetBy(dx: 5, dy: 5) }
+    override func draw(_ dirty: NSRect) {
+        if isToggled {
+            Theme.selection.withAlphaComponent(0.32).setFill()
+            NSBezierPath(ovalIn: bounds).fill()
+        }
+        let name = iconName == "edit-copy" ? "book" : "link"
+        if shownSymbol != name { symbol.image = NSImage(systemSymbolName: name, accessibilityDescription: nil); shownSymbol = name }
+        symbol.contentTintColor = isToggled ? Theme.accent : Theme.windowText
+        symbol.alphaValue = isEnabled ? 1 : 0.35
+        if iconName == "edit-unlink" {
+            Theme.accent.setStroke(); let slash = NSBezierPath(); slash.move(to: CGPoint(x: 5, y: 5)); slash.line(to: CGPoint(x: 23, y: 23));
+            slash.lineWidth = 1.5; slash.stroke()
+        }
+    }
+}
+
+private final class PairToolbarSymbolView: NSImageView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
