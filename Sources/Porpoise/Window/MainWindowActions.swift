@@ -198,7 +198,7 @@ extension MainWindowController {
         FileOperationsController.shared.delete(selectedURLs, window: window)
     }
 
-    @objc func properties(_ sender: Any?) { PropertiesWindow.show(urls: actionTargets) }
+    @objc func properties(_ sender: Any?) { PropertiesWindow.show(urls: actionTargets, items: view.model.selectedItems) }
 
     @objc func restoreFromTrash(_ sender: Any?) {
         let unknown = FileOperationsController.shared.restore(selectedURLs, window: window)

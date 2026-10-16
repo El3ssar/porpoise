@@ -82,7 +82,7 @@ extension PlacesPanel {
             add("Show All Sections", nil, #selector(showSections))
         }
         add("Reset to Defaults", nil, #selector(resetPlaces))
-        if let e = entry(at: i), e.url.isFileURL {
+        if let e = entry(at: i), e.url.isFileURL || PlacesModel.isCloud(e.url) {
             m.addItem(.separator())
             add("Properties", "document-properties", #selector(properties(_:)), e.url)
         }

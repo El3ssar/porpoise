@@ -54,6 +54,11 @@ extension DebugBridge {
                 sharedWithNames: [], anyoneWithLink: f[5].isEmpty ? nil : f[5], modifiedBy: f[6], sharedBy: f[7].isEmpty ? nil : f[7],
                 webLink: URL(string: f[8]), isWebDocument: f[9].hasPrefix("Google"), kind: f[9])
         case "shot": shot(rest)
+        case "select":
+            // select <name>: the row with that name (cloud items are ids in their URLs).
+            if let v = AppDelegate.shared.windows.first?.view, let row = v.model.rows.first(where: { $0.item.name == rest }) {
+                v.list.select(row.item.url)
+            }
         default: break
         }
     }
