@@ -244,7 +244,9 @@ Compare follows the panes. Any of these compares again:
 
 - either pane's location changing, by any navigation path (§7), including path edits;
 - a file operation in either pane (copy, move, rename, delete, drop, Copy to Other View);
-- an external change seen by a pane's folder watcher, the same one Details uses to refresh;
+- an external change seen by a pane's folder watcher, the same one Details uses to refresh. Local folders rely on
+  FSEvents only. Timed polling is for remote or unmounted roots, and a poll that finds nothing changed does nothing
+  visible;
 - a method or Ignore change.
 
 Timing: 150 ms after the last trigger, so ⌘↓ ⌘↓ ⌘↓ produces one compare of where you end up. External changes wait
