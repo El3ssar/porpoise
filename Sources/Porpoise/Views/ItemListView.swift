@@ -30,6 +30,7 @@ final class ItemListView: NSView {
     /// Compare uses the real Details rows and interactions, with gaps for absent counterparts.
     var comparisonSlots: [Int]?
     var comparisonSlotCount = 0
+    var comparisonHasNestedRows = false
     var comparisonPaneWidth: CGFloat?
     var comparisonRowHeight: CGFloat?
     var comparisonZoom: ((CGFloat) -> Void)?

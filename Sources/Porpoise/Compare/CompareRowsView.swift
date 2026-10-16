@@ -204,6 +204,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
             container.comparisonMissingSideLabel = index == 0 ? model.names.0 : model.names.1
             container.model.presentComparisonRows(details.rows, counts: details.counts, folderCounts: details.folderCounts)
             container.list.comparisonSlots = details.slots; container.list.comparisonSlotCount = rows.count
+            container.list.comparisonHasNestedRows = details.hasNestedRows
         }
         layoutDetails()
         for container in detailsContainers { container.comparisonRowsDidLoad() }

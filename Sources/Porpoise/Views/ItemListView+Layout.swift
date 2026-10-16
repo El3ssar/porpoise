@@ -143,6 +143,15 @@ extension ItemListView {
         }
         columnWidths[.name] = saved[ItemRole.name.rawValue] ?? max(220, width - 2 * side - fixed)
         let total = detailsRoles.reduce(0) { $0 + (columnWidths[$1] ?? 0) }
+        // Compare already prepared its aligned slots off the main thread. Geometry needs only those
+        // integers, rather than copying every rich FileItem while walking a large flat folder.
+        if let comparisonSlots {
+            for (index, slot) in comparisonSlots.enumerated() {
+                frames[index] = CGRect(x: side, y: CGFloat(slot) * h, width: total, height: h)
+            }
+            if comparisonHasNestedRows { computeTreeLines() } else { treeLines = [] }
+            return NSSize(width: max(width, total + 2 * side), height: max(visibleHeight, CGFloat(comparisonSlotCount) * h + 4))
+        }
         var y: CGFloat = 0
         var lastGroup = -2
         for (i, r) in model.rows.enumerated() {
