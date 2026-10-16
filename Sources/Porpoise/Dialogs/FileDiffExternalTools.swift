@@ -10,6 +10,18 @@ enum FileDiffExternalTools {
             ("Beyond Compare", "com.scootersoftware.BeyondCompare"), ("BBEdit", "com.barebones.bbedit"), ("VS Code", "com.microsoft.VSCode"),
         ]
         var values = ids.compactMap { name, id in NSWorkspace.shared.urlForApplication(withBundleIdentifier: id).map { Tool(name: name, url: $0) } }
+        // Versioned bundle IDs change; normal installations remain discoverable by their app name.
+        let appNames = [
+            ("Kaleidoscope", "Kaleidoscope"), ("Beyond Compare", "Beyond Compare"), ("BBEdit", "BBEdit"), ("VS Code", "Visual Studio Code"),
+        ]
+        let folders = FileManager.default.urls(for: .applicationDirectory, in: [.localDomainMask, .userDomainMask])
+        for (name, filename) in appNames where !values.contains(where: { $0.name == name }) {
+            if let url = folders.map({ $0.appendingPathComponent(filename + ".app") }).first(where: {
+                FileManager.default.fileExists(atPath: $0.path)
+            }) {
+                values.append(Tool(name: name, url: url))
+            }
+        }
         if !values.contains(where: { $0.name == "FileMerge" }),
             FileManager.default.fileExists(atPath: "/Applications/Xcode.app/Contents/Applications/FileMerge.app")
         {
@@ -56,9 +68,12 @@ enum FileDiffExternalTools {
             }
             do { try process.run() } catch let failure { error(failure) }
         } else if name.contains("visual studio code") {
+            // NSWorkspace only delivers command-line arguments to a new instance.
+            config.createsNewApplicationInstance = true
             config.arguments = ["--diff", left.path, right.path]
             NSWorkspace.shared.openApplication(at: app, configuration: config) { _, e in if let e { DispatchQueue.main.async { error(e) } } }
         } else if name.contains("filemerge") || name.contains("beyond compare") {
+            config.createsNewApplicationInstance = true
             config.arguments = name.contains("filemerge") ? ["-left", left.path, "-right", right.path] : [left.path, right.path]
             NSWorkspace.shared.openApplication(at: app, configuration: config) { _, e in if let e { DispatchQueue.main.async { error(e) } } }
         } else {
