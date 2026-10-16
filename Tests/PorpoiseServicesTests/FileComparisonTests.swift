@@ -6,6 +6,21 @@ import Testing
 @testable import PorpoiseServices
 
 struct FileComparisonTests {
+    @Test func textReadReportsBytesAndSupportsCancellation() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".txt")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let data = Data(repeating: 65, count: 2 * 1024 * 1024 + 17)
+        try data.write(to: url)
+        var updates: [(UInt64, UInt64)] = []
+        let file = try ComparedFile(url: url, readText: true, progress: { updates.append(($0, $1)) })
+        #expect(file.text?.utf8.count == data.count)
+        #expect(updates.last?.0 == UInt64(data.count))
+        #expect(updates.allSatisfy { $0.0 <= $0.1 && $0.1 == UInt64(data.count) })
+        let token = DiskCancellation()
+        #expect(throws: CancellationError.self) {
+            try ComparedFile(url: url, readText: true, cancellation: token, progress: { bytes, _ in if bytes > 0 { token.cancel() } })
+        }
+    }
     @Test func streamingByteOffsetsAndMetadata() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

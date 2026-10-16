@@ -13,7 +13,9 @@ public struct ComparedFile: Sendable {
     public let attributes: [String]
     public let text: String?
 
-    public init(url: URL, readText: Bool) throws {
+    public init(url: URL, readText: Bool, cancellation: DiskCancellation = DiskCancellation(), progress: (UInt64, UInt64) -> Void = { _, _ in })
+        throws
+    {
         let a = try FileManager.default.attributesOfItem(atPath: url.path)
         guard a[.type] as? FileAttributeType == .typeRegular else { throw CocoaError(.fileReadUnsupportedScheme) }
         self.url = url; size = (a[.size] as? NSNumber)?.uint64Value ?? 0
@@ -41,7 +43,15 @@ public struct ComparedFile: Sendable {
         }
         // Bounded full decoding. Larger inputs remain usable through streaming byte comparison and Info.
         if readText && size <= 128 * 1024 * 1024 {
-            let data = try Data(contentsOf: url, options: .mappedIfSafe)
+            let handle = try FileHandle(forReadingFrom: url); defer { try? handle.close() }
+            var data = Data(); data.reserveCapacity(Int(size)); progress(0, size)
+            while true {
+                try cancellation.check()
+                let chunk = try handle.read(upToCount: 1 << 20) ?? Data()
+                if chunk.isEmpty { break }
+                guard data.count + chunk.count <= 128 * 1024 * 1024 else { throw CocoaError(.fileReadTooLarge) }
+                data.append(chunk); progress(UInt64(data.count), size)
+            }
             if data.prefix(8192).contains(0) { text = nil } else { text = String(data: data, encoding: .utf8) }
         } else {
             text = nil
