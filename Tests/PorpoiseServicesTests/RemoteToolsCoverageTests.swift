@@ -150,7 +150,8 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         _ = try scratch.folder("support/platform-tools")
         _ = try script(
             scratch, "support/platform-tools/adb",
-            "echo \"$@\" >> \(RemoteParsing.quote(log.path))\necho done > \(RemoteParsing.quote(acknowledgement.path))")
+            "if [ \"$1\" = kill-server ]; then\necho \"$@\" >> \(RemoteParsing.quote(log.path))\necho done > \(RemoteParsing.quote(acknowledgement.path))\nfi"
+        )
         let fd = open(acknowledgement.path, O_RDWR | O_NONBLOCK)
         try #require(fd >= 0)
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: DispatchQueue(label: "porpoise.adb-test-ack"))

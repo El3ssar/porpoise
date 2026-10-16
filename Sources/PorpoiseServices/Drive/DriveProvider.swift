@@ -21,16 +21,29 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
     public func cachedListing(_ folder: URL) -> [FileItem]? {
         guard let location = try? location(folder) else { return nil }
         return cacheLock.withLock {
-            guard let listing = listings[location.collection] else { return nil }
+            guard let listing = listings[location.collection] else {
+                return client?.metadataCache.snapshot(location)?.files.map { file in
+                    file.fileItem(
+                        accountID: accountID, shortcutTarget: file.shortcutDetails.flatMap { client?.metadataCache.file($0.targetId) },
+                        parent: location)
+                }
+            }
             if listing.parent == folder { return listing.items }
             return listing.files.map { $0.0.fileItem(accountID: accountID, shortcutTarget: $0.1, parent: location) }
         }
     }
 
+    /// Disk snapshots stay visible while revalidation is pending or the account is offline.
+    public func isListingStale(_ folder: URL) -> Bool {
+        guard let location = try? location(folder) else { return true }
+        return cacheLock.withLock { listings[location.collection] == nil || client?.isOffline == true }
+    }
+
     /// M2 mutations can invalidate one folder; reconnect/disconnect invalidate the whole account.
-    public func invalidate(folder: URL? = nil) {
+    public func invalidate(folder: URL? = nil, preserveDisk: Bool = false) {
         cacheLock.withLock {
             generation += 1
+            if !preserveDisk { client?.metadataCache.invalidate(folder.flatMap(DriveLocation.init(url:))) }
             if let folder, let location = try? location(folder) {
                 func matches(_ collection: DriveLocation.Collection) -> Bool {
                     if case .folder(let id, _) = collection, case .folder(let other, _) = location.collection { return id == other }
@@ -78,7 +91,14 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
         var token: String?
         var seen: Set<String> = []
         repeat {
-            let page = try await client.listPage(location, pageToken: token)
+            let page: DrivePage
+            do { page = try await client.listPage(location, pageToken: token) } catch {
+                if client.isOffline, let cached = cachedListing(folder) {
+                    await onPage(cached, true)
+                    return cached
+                }
+                throw error
+            }
             files += try await resolved(page.files, client: client)
             try Task.checkCancellation()
             token = page.nextPageToken
@@ -91,6 +111,7 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
         cacheLock.withLock {
             guard generation == epoch else { return }
             listings[location.collection] = Listing(files: files, parent: folder, items: items)
+            client.metadataCache.store(files.map { $0.0 }, at: location)
             cacheOrder.removeAll { $0 == location.collection }
             cacheOrder.append(location.collection)
             while cacheOrder.count > 128 { listings[cacheOrder.removeFirst()] = nil }

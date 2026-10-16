@@ -8,6 +8,7 @@ extension DriveClient {
     ) async throws -> (
         Data, HTTPURLResponse
     ) {
+        if isOffline { throw DriveError.offline }
         var request = URLRequest(url: url)
         request.httpMethod = method; request.httpBody = body; request.timeoutInterval = 60
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
@@ -118,10 +119,12 @@ extension DriveClient {
     }
 
     public func createFolder(name: String, parentID: String, operationID: UUID = UUID()) async throws -> DriveFile {
-        try await createOrCopy(sourceID: nil, name: name, parentID: parentID, operationID: operationID)
+        if isOffline { throw DriveError.offline }
+        return try await createOrCopy(sourceID: nil, name: name, parentID: parentID, operationID: operationID)
     }
 
     public func copy(_ id: String, to parentID: String, name: String? = nil, operationID: UUID = UUID()) async throws -> DriveFile {
+        if isOffline { throw DriveError.offline }
         let source = try await file(id)
         guard source.operations.canCopy, !source.isFolder else { throw DriveError.permissionDenied }
         return try await createOrCopy(sourceID: id, name: name ?? source.name, parentID: parentID, operationID: operationID)
@@ -202,6 +205,7 @@ extension DriveClient {
     }
 
     public func rename(_ id: String, to name: String, operationID: UUID = UUID()) async throws -> DriveFile {
+        if isOffline { throw DriveError.offline }
         try RemoteFS.checkName(name)
         return try await patchJournaled(
             id, kind: "rename", body: ["name": name], operationID: operationID,
@@ -209,12 +213,14 @@ extension DriveClient {
     }
 
     public func setTrashed(_ id: String, trashed: Bool, operationID: UUID = UUID()) async throws -> DriveFile {
-        try await patchJournaled(
+        if isOffline { throw DriveError.offline }
+        return try await patchJournaled(
             id, kind: trashed ? "trash" : "untrash", body: ["trashed": trashed], operationID: operationID,
             allow: { trashed ? $0.operations.canTrash : $0.operations.canUntrash }, satisfied: { ($0.trashed ?? false) == trashed })
     }
 
     public func move(_ id: String, to parentID: String, operationID: UUID = UUID(), name: String? = nil) async throws -> DriveFile {
+        if isOffline { throw DriveError.offline }
         let parent = try await writableParent(parentID)
         let current = try await file(id, includeTrashed: true)
         let destinationID = parent.id

@@ -10,8 +10,7 @@ public actor DriveMediaCache {
     public init(accountID: UUID, directory: URL? = nil, byteLimit: Int = 200 << 20) {
         self.directory =
             directory
-            ?? FileManager.default.temporaryDirectory
-            .appendingPathComponent("porpoise-drive-media/\(accountID.uuidString)", isDirectory: true)
+            ?? DriveMetadataCache.root.appendingPathComponent(accountID.uuidString).appendingPathComponent("Previews", isDirectory: true)
         self.byteLimit = byteLimit
     }
 

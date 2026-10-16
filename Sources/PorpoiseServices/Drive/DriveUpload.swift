@@ -7,6 +7,7 @@ extension DriveClient {
         _ local: URL, parentID: String, name: String? = nil, operationID: UUID = UUID(), context: DriveTransferContext = .init(),
         replacingID: String? = nil, expectedVersion: String? = nil
     ) async throws -> DriveFile {
+        if isOffline { throw DriveError.offline }
         let name = name ?? local.lastPathComponent
         try RemoteFS.checkName(name)
         if replacingID == nil { _ = try await writableParent(parentID) } else { try await tokens.requireWriteScope() }

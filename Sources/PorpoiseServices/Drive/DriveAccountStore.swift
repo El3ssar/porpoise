@@ -99,6 +99,7 @@ public final class DriveAccountStore: ObservableObject {
             }
         }
         states[account.id] = .connected
+        client.startPolling()
         writeAccess[account.id] = nil
         Task { @MainActor [weak self] in
             let allowed = (try? await manager.requireWriteScope()) != nil
@@ -176,6 +177,7 @@ public final class DriveAccountStore: ObservableObject {
 
     public func disconnect(_ account: DriveAccount) async throws {
         guard let manager = managers[account.id] else { return }
+        if let client = clients[account.id], !(await client.edits.pending()).isEmpty { throw DriveMutationError.conflict }
         var failure: Error?
         do { try await manager.revoke() } catch let error as DriveError {
             if case .keychain = error { lastError = error.localizedDescription; throw error }

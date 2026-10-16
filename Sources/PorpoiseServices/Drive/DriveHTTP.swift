@@ -3,11 +3,13 @@ import Foundation
 public enum DriveError: LocalizedError, Equatable {
     case configuration, reconnect, permissionDenied, notFound, quota, invalidResponse, invalidLocation
     case oauthCancelled, oauthState, oauthTimeout, shortcutCycle, readOnly, unsupportedExport
-    case needsWriteAccess, rateLimited, offline, exportTooLarge
+    case needsWriteAccess, rateLimited, offline, exportTooLarge, safeUpdateUnavailable
     case http(Int), keychain(Int32)
 
     public var errorDescription: String? {
         switch self {
+        case .safeUpdateUnavailable:
+            return "Automatic saving to Google Drive is not available for this connection yet. Your changes are saved on this Mac."
         case .needsWriteAccess: return "Allow Porpoise to make changes to this Google Drive account."
         case .rateLimited: return "Google Drive is slowing requests. Retrying shortly."
         case .offline: return "Google Drive is offline. Your originals have been kept."
