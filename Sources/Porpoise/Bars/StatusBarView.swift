@@ -114,6 +114,7 @@ final class StatusBarView: NSView {
 
     private func update() {
         setAccessibilityValue(displayText)
+        toolTip = temporaryText
         superview?.needsLayout = true
         needsDisplay = true
         canvas.needsDisplay = true
@@ -174,19 +175,28 @@ final class StatusBarView: NSView {
             let p = NSBezierPath(roundedRect: box, xRadius: Theme.frameRadius, yRadius: Theme.frameRadius)
             Theme.windowBackground.setFill(); p.fill()
             Theme.frame.setStroke(); p.lineWidth = 1; p.stroke()
-            let s = (displayText as NSString).size(withAttributes: [.font: Theme.font])
-            (displayText as NSString).draw(
+            let message = fittedMessage(width: r.width - 16, font: Theme.font)
+            let s = (message as NSString).size(withAttributes: [.font: Theme.font])
+            (message as NSString).draw(
                 in: CGRect(x: 8, y: (r.height - s.height) / 2, width: r.width - 16, height: s.height + 2),
                 withAttributes: [.font: Theme.font, .foregroundColor: Theme.windowText])
             return
         }
         let attrs = textAttrs
-        let s = (displayText as NSString).size(withAttributes: attrs)
         let tx: CGFloat = progress != nil ? 32 : 12
-        (displayText as NSString).draw(
+        let message = fittedMessage(width: max(0, leftContentEnd - tx), font: .systemFont(ofSize: 12))
+        let s = (message as NSString).size(withAttributes: attrs)
+        (message as NSString).draw(
             in: CGRect(x: tx, y: (r.height - s.height) / 2, width: max(0, leftContentEnd - tx), height: s.height + 2),
             withAttributes: attrs)
         if diskRect != .zero { drawDisk() }
+    }
+
+    private func fittedMessage(width: CGFloat, font: NSFont) -> String {
+        guard temporaryText != nil else { return displayText }
+        return FileFormat.fittingStatusMessage(displayText) {
+            ($0 as NSString).size(withAttributes: [.font: font]).width <= width
+        }
     }
 
     /// "786 GiB free" + a slim capsule showing used space (blue → amber → red as the disk fills).

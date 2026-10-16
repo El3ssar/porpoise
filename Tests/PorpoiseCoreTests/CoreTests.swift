@@ -256,3 +256,15 @@ struct CountFormattingTests {
         #expect(FileFormat.summary(folders: 20_041, files: 0, bytes: 0, selected: false) == FileFormat.count(20_041) + " folders")
     }
 }
+
+struct StatusMessageFormattingTests {
+    @Test func narrowMessagesKeepDestinationWordsWhole() {
+        let message = "Copied 1 item to Website · replaced 1"
+        #expect(FileFormat.fittingStatusMessage(message) { $0.count <= 100 } == message)
+        #expect(FileFormat.fittingStatusMessage(message) { $0.count <= 28 } == "Copied 1 item to Website")
+        #expect(FileFormat.fittingStatusMessage(message) { $0.count <= 15 } == "Copied 1 item")
+        #expect(FileFormat.fittingStatusMessage(message) { $0.count <= 8 } == "Copied…")
+        #expect(FileFormat.fittingStatusMessage(message) { $0.isEmpty } == "")
+        #expect(FileFormat.fittingStatusMessage("Finished") { $0.count <= 2 } == "…")
+    }
+}
