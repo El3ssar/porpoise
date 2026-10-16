@@ -6,6 +6,7 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
     public let accountID: UUID
     public let client: DriveClient?
     private let accountName: String
+    private let accountEmail: String?
     private struct Listing {
         let files: [(DriveFile, DriveFile?)]
         let parent: URL
@@ -31,8 +32,12 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
         cacheLock.withLock {
             generation += 1
             if let folder, let location = try? location(folder) {
-                listings[location.collection] = nil
-                cacheOrder.removeAll { $0 == location.collection }
+                func matches(_ collection: DriveLocation.Collection) -> Bool {
+                    if case .folder(let id, _) = collection, case .folder(let other, _) = location.collection { return id == other }
+                    return collection == location.collection
+                }
+                for key in listings.keys.filter(matches) { listings[key] = nil }
+                cacheOrder.removeAll(where: matches)
             } else {
                 listings.removeAll(); cacheOrder.removeAll()
             }
@@ -67,6 +72,7 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
     ) async throws -> [FileItem] {
         let location = try location(folder)
         guard let client else { throw DriveError.reconnect }
+        if case .myDrive = location.collection { _ = try? await client.file("root") }
         let epoch = cacheLock.withLock { generation }
         var files: [(DriveFile, DriveFile?)] = []
         var token: String?
@@ -105,8 +111,8 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
         }
     }
 
-    public init(accountID: UUID, client: DriveClient?, accountName: String = "Google Drive") {
-        self.accountID = accountID; self.client = client; self.accountName = accountName
+    public init(accountID: UUID, client: DriveClient?, accountName: String = "Google Drive", accountEmail: String? = nil) {
+        self.accountID = accountID; self.client = client; self.accountName = accountName; self.accountEmail = accountEmail
     }
 
     private func location(_ url: URL) throws -> DriveLocation {
@@ -145,30 +151,164 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
     }
 
     public func download(_ remote: URL, into localFolder: URL) throws -> URL {
+        try download(remote, into: localFolder, operationID: UUID())
+    }
+
+    func download(_ remote: URL, into localFolder: URL, operationID: UUID) throws -> URL {
         let location = try location(remote)
         guard let client else { throw DriveError.reconnect }
         guard case .folder(let id, _) = location.collection else { throw DriveError.invalidLocation }
         let preset = DriveExportPreset(rawValue: Settings.store.string(forKey: "googleDriveExportPreset") ?? "") ?? .office
+        let context = transferContext()
         let result = try Self.wait {
-            try await client.download(client.file(id, resourceKey: location.resourceKey), preset: preset)
+            try await client.downloadToStaging(
+                client.file(id, resourceKey: location.resourceKey), preset: preset, operationID: operationID, context: context)
         }
         return try RemoteFS.downloadStaged(result.name, into: localFolder) { staging in
-            try result.data.write(to: staging.appendingPathComponent(result.name), options: .withoutOverwriting)
+            // The private recovery partial is 0600. A published download gets normal creation permissions,
+            // honoring the process umask without changing that process-global setting.
+            let target = staging.appendingPathComponent(result.name)
+            let descriptor = open(target.path, O_WRONLY | O_CREAT | O_EXCL, 0o666)
+            guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            let output = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+            let input = try FileHandle(forReadingFrom: result.url)
+            defer { try? input.close(); try? output.close() }
+            while let data = try input.read(upToCount: 256 * 1024), !data.isEmpty {
+                try Shell.currentTransferControl?.check()
+                try output.write(contentsOf: data)
+            }
+            try output.synchronize()
         }
     }
 
-    public func upload(_ local: URL, into remoteFolder: URL) throws { throw DriveError.readOnly }
-    public func delete(_ remote: [URL]) throws { throw DriveError.readOnly }
-    public func makeFolder(_ remote: URL) throws { throw DriveError.readOnly }
-    public func removeEmptyFolder(_ remote: URL) throws { throw DriveError.readOnly }
-    public func rename(_ remote: URL, to newName: String) throws { throw DriveError.readOnly }
-    public func move(_ remote: [URL], into folder: URL) throws { throw DriveError.readOnly }
-    public func copy(_ remote: [URL], into folder: URL) throws { throw DriveError.readOnly }
+    public func capabilities(for url: URL) -> DriveItemCapabilities? {
+        guard let location = try? location(url) else { return nil }
+        switch location.collection {
+        case .sharedWithMe, .sharedDrives: return DriveFile(id: "virtual", name: "", mimeType: "application/vnd.google-apps.folder").operations
+        case .myDrive: return client?.cachedFile(for: DriveLocation(accountID: accountID, collection: .folder("root")).url)?.operations
+        case .folder:
+            guard let file = metadata(for: url) else { return nil }
+            var capabilities = file.operations
+            if let email = accountEmail?.lowercased() {
+                capabilities.role =
+                    file.owners?.contains { $0.emailAddress?.lowercased() == email } == true
+                    ? "owner"
+                    : file.permissions?.first { $0.emailAddress?.lowercased() == email }?.role
+            }
+            return capabilities
+        }
+    }
+
+    public func parentID(_ folder: URL) throws -> String {
+        switch try location(folder).collection {
+        case .myDrive: return "root"
+        case .folder(let id, _): return id
+        default: throw DriveError.permissionDenied
+        }
+    }
+
+    private func itemID(_ url: URL) throws -> String {
+        guard case .folder(let id, _) = try location(url).collection else { throw DriveError.invalidLocation }
+        return id
+    }
+
+    public func createFolder(named name: String, in folder: URL) async throws -> FileItem {
+        guard let client else { throw DriveError.reconnect }
+        let result = try await client.createFolder(name: name, parentID: parentID(folder))
+        return result.fileItem(accountID: accountID, parent: try location(folder))
+    }
+
+    public func rename(_ url: URL, to name: String) async throws -> FileItem {
+        guard let client else { throw DriveError.reconnect }
+        let result = try await client.rename(itemID(url), to: name)
+        return result.fileItem(accountID: accountID, parent: DriveLocation(url: url.deletingLastPathComponent()))
+    }
+
+    public struct TrashResult: Sendable {
+        public var trashed: [URL] = []
+        public var failures: [URL: String] = [:]
+    }
+    public func trash(_ urls: [URL]) async -> TrashResult {
+        var result = TrashResult()
+        for url in urls {
+            do {
+                guard let client else { throw DriveError.reconnect }
+                _ = try await client.setTrashed(itemID(url), trashed: true)
+                result.trashed.append(url)
+            } catch { result.failures[url] = error.localizedDescription }
+        }
+        return result
+    }
+    public func untrash(_ urls: [URL]) async throws {
+        guard let client else { throw DriveError.reconnect }
+        for url in urls { _ = try await client.setTrashed(itemID(url), trashed: false) }
+    }
+
+    public func upload(_ local: URL, into remoteFolder: URL) throws {
+        guard let client else { throw DriveError.reconnect }
+        let parent = try parentID(remoteFolder)
+        let context = transferContext()
+        _ = try Self.wait { try await client.upload(local, parentID: parent, context: context) }
+    }
+    public func delete(_ remote: [URL]) throws {
+        guard let client else { throw DriveError.reconnect }
+        for url in remote {
+            let id = try itemID(url)
+            _ = try Self.wait { try await client.setTrashed(id, trashed: true) }
+        }
+    }
+    public func makeFolder(_ remote: URL) throws {
+        _ = try Self.wait { try await self.createFolder(named: remote.lastPathComponent, in: remote.deletingLastPathComponent()) }
+    }
+    public func removeEmptyFolder(_ remote: URL) throws {
+        guard try list(remote).isEmpty else { throw DriveMutationError.conflict }
+        try delete([remote])
+    }
+    public func rename(_ remote: URL, to newName: String) throws {
+        let _: FileItem = try Self.wait { try await self.rename(remote, to: newName) }
+    }
+    public func move(_ remote: [URL], into folder: URL) throws {
+        guard let client else { throw DriveError.reconnect }
+        let parent = try parentID(folder)
+        for url in remote {
+            let id = try itemID(url)
+            _ = try Self.wait { try await client.move(id, to: parent) }
+        }
+    }
+    public func copy(_ remote: [URL], into folder: URL) throws {
+        guard let client else { throw DriveError.reconnect }
+        let parent = try parentID(folder)
+        for url in remote {
+            let id = try itemID(url)
+            _ = try Self.wait { try await client.copy(id, to: parent) }
+        }
+    }
+
+    func transferContext() -> DriveTransferContext {
+        let control = Shell.currentTransferControl
+        let box = ByteCounter()
+        return DriveTransferContext(
+            checkpoint: {
+                while control?.isPaused() == true && control?.isCancelled() != true && control?.isInterrupted() != true {
+                    try await Task.sleep(nanoseconds: 20_000_000)
+                }
+                if control?.isInterrupted() == true { throw FileOperationError.interrupted }
+                if control?.isCancelled() == true { throw FileOperationError.cancelled }
+                try Task.checkCancellation()
+            },
+            progress: { done, _ in
+                let delta = box.lock.withLock {
+                    let delta = max(0, done - box.value); box.value = done; return delta
+                }
+                control?.onBytes(delta)
+            }, status: { control?.onStatus($0) })
+    }
+    private final class ByteCounter: @unchecked Sendable { let lock = NSLock(); var value: Int64 = 0 }
 
     private final class ResultBox<T>: @unchecked Sendable {
         var value: Result<T, Error>?
     }
-    private static func wait<T>(_ work: @escaping @Sendable () async throws -> T) throws -> T {
+    static func wait<T>(_ work: @escaping @Sendable () async throws -> T) throws -> T {
         let semaphore = DispatchSemaphore(value: 0)
         let box = ResultBox<T>()
         Task.detached {

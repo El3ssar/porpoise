@@ -189,3 +189,29 @@ final class RemoteTransferCoverageTests {
         #expect(fm.fileExists(atPath: server.home.path))
     }
 }
+
+extension RemoteTransferCoverageTests {
+    @Test func driveAndSFTPTransfersBothDirectionsVerifyBeforeSourceRemoval() async throws {
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/mutations.json")
+        let driveServer = try FakeDriveServer(fixture: fixture)
+        let client = try DriveMutationTests().client(driveServer, folder: local.folder("drive-journal"))
+        let provider = DriveProvider(accountID: client.accountID, client: client)
+        RemoteFS.registerDrive(provider, accountID: client.accountID)
+        defer { RemoteFS.unregisterDrive(accountID: client.accountID) }
+        let root = DriveLocation(accountID: client.accountID).url
+        let folder = try server.folder()
+        let source = folder.appendingPathComponent("ssh-to-drive.txt")
+        try write("bytes survive both moves", source)
+        let upload = await run(.move, [remote(source)], to: root)
+        #expect(upload.errors.isEmpty && upload.results.count == 1)
+        #expect(!fm.fileExists(atPath: source.path))
+        let remoteItem = try #require(upload.results.first)
+        let destination = try server.folder()
+        let download = await run(.move, [remoteItem], to: remoteFolder(destination))
+        #expect(download.errors.isEmpty && download.results.count == 1)
+        #expect(read(destination.appendingPathComponent("ssh-to-drive.txt")) == "bytes survive both moves")
+        let location = try #require(DriveLocation(url: remoteItem))
+        guard case .folder(let id, _) = location.collection else { Issue.record("Expected Drive item identity"); return }
+        #expect(try await client.file(id, includeTrashed: true).trashed == true)
+    }
+}

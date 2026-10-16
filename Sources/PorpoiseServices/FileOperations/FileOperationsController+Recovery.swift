@@ -9,6 +9,8 @@ public struct RecoveryPlan: Identifiable, Sendable {
     public let destination: URL?
     /// Items to process again; large files with a good partial copy continue from it.
     public var sources: [URL] = []
+    var cloudBatchID: UUID?
+    var cloudOperations: [URL: UUID] = [:]
     public var resumePoints: [URL: ResumePoint] = [:]
     /// Moves whose copy was complete when the job stopped, but whose original wasn't removed yet.
     public var unfinishedMoves: [(source: URL, target: URL)] = []
@@ -34,7 +36,21 @@ extension FileOperationsController {
     /// Unfinished jobs from earlier runs (not the ones running now), checked against the disk.
     public func recoveryPlans() -> [RecoveryPlan] {
         let live = Set(activities.filter { !$0.state.isEnded }.map(\.id))
-        return journals.all().filter { !live.contains($0.id) }.compactMap(Self.plan)
+        let local = journals.all().filter { !live.contains($0.id) }.compactMap(Self.plan)
+        let cloud = ((try? driveJournals.all()) ?? []).compactMap { record -> RecoveryPlan? in
+            guard record.topLevel == true, record.phase != .done, !live.contains(record.batchID ?? record.operationID),
+                let source = record.localSource, let destination = record.destinationFolder,
+                record.kind == "transferMove" || record.kind == "transferCopy"
+            else { return nil }
+            var plan = RecoveryPlan(id: record.operationID, kind: record.kind == "transferMove" ? .move : .copy, destination: destination)
+            plan.cloudBatchID = record.batchID
+            plan.sources = [source]; plan.cloudOperations = [source: record.operationID]
+            if record.phase == .sourceRemovalPending {
+                plan.notes = ["Source removal was interrupted. Review the source before retrying; it will not be removed automatically."]
+            }
+            return plan
+        }
+        return local + cloud
     }
 
     /// What can be resumed of `journal`. Items in progress are continued only if their source is unchanged (size,
@@ -102,6 +118,12 @@ extension FileOperationsController {
     /// identical), removes partial copies that can't be continued, then runs the rest as a new job.
     public func recover(_ plan: RecoveryPlan, window: AnyObject?, done: (([URL]) -> Void)? = nil) {
         isInterrupting = false
+        if !plan.cloudOperations.isEmpty {
+            runRemote(
+                plan.kind, plan.sources, to: plan.destination, window: window, done: done, cloudOperations: plan.cloudOperations,
+                cloudBatchID: plan.cloudBatchID)
+            return
+        }
         journals.remove(plan.id)
         var errors: [String] = []
         for (source, target) in plan.unfinishedMoves {
@@ -123,6 +145,12 @@ extension FileOperationsController {
 
     /// Forgets a plan, removing the partial copies it made (only those: the items it finished stay).
     public func discard(_ plan: RecoveryPlan) {
+        for id in plan.cloudOperations.values {
+            if var record = try? driveJournals.load(id) {
+                record.phase = .done
+                try? driveJournals.save(record)
+            }
+        }
         for p in plan.partials { try? FileManager.default.removeItem(at: p) }
         for point in plan.resumePoints.values { try? FileManager.default.removeItem(at: point.staging) }
         journals.remove(plan.id)

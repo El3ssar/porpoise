@@ -9,11 +9,14 @@ public enum Shell {
         public var isInterrupted: () -> Bool
         /// Bytes traversing a file-backed stdin/stdout of the tool (archive overhead may be included).
         public var onBytes: (Int64) -> Void
+        public var onStatus: (String?) -> Void
         public init(
             isPaused: @escaping () -> Bool, isCancelled: @escaping () -> Bool,
-            isInterrupted: @escaping () -> Bool = { false }, onBytes: @escaping (Int64) -> Void = { _ in }
+            isInterrupted: @escaping () -> Bool = { false }, onBytes: @escaping (Int64) -> Void = { _ in },
+            onStatus: @escaping (String?) -> Void = { _ in }
         ) {
-            self.isPaused = isPaused; self.isCancelled = isCancelled; self.isInterrupted = isInterrupted; self.onBytes = onBytes
+            self.isPaused = isPaused; self.isCancelled = isCancelled; self.isInterrupted = isInterrupted; self.onBytes = onBytes;
+            self.onStatus = onStatus
         }
         func check() throws {
             while isPaused() && !isCancelled() { Thread.sleep(forTimeInterval: 0.02) }
@@ -21,6 +24,7 @@ public enum Shell {
             if isCancelled() { throw FileOperationError.cancelled }
         }
     }
+    static var currentTransferControl: TransferControl? { Thread.current.threadDictionary[transferKey] as? TransferControl }
     private static let transferKey = "Porpoise.Shell.transferControl"
     public static func withTransferControl<T>(_ control: TransferControl, _ body: () throws -> T) rethrows -> T {
         let dictionary = Thread.current.threadDictionary

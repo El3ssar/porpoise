@@ -3,10 +3,15 @@ import Foundation
 public enum DriveError: LocalizedError, Equatable {
     case configuration, reconnect, permissionDenied, notFound, quota, invalidResponse, invalidLocation
     case oauthCancelled, oauthState, oauthTimeout, shortcutCycle, readOnly, unsupportedExport
+    case needsWriteAccess, rateLimited, offline, exportTooLarge
     case http(Int), keychain(Int32)
 
     public var errorDescription: String? {
         switch self {
+        case .needsWriteAccess: return "Allow Porpoise to make changes to this Google Drive account."
+        case .rateLimited: return "Google Drive is slowing requests. Retrying shortly."
+        case .offline: return "Google Drive is offline. Your originals have been kept."
+        case .exportTooLarge: return "This Google document is too large to export. Open it in your browser."
         case .configuration: return "Set a Google Desktop OAuth client ID in Settings → Accounts to connect Google Drive."
         case .reconnect: return "Your Google Drive session expired or was revoked. Reconnect this account."
         case .permissionDenied: return "Google Drive denied access. Check the item's sharing and download permissions."
@@ -20,7 +25,7 @@ public enum DriveError: LocalizedError, Equatable {
         case .shortcutCycle: return "This Drive shortcut is cyclic or too deeply nested."
         case .readOnly: return "Google Drive is read-only in this version of Porpoise."
         case .unsupportedExport:
-            return "This Google document cannot be exported in the selected format. Try another preset or open it in your browser."
+            return "This Google document cannot be exported in this format. Open it in your browser."
         case .http(let code): return "Google Drive request failed (HTTP \(code)). Try again."
         case .keychain(let code): return "Porpoise could not access the account's Keychain credential (\(code))."
         }

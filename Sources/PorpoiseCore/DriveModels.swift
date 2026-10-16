@@ -143,16 +143,26 @@ public enum DriveExportPreset: String, Codable, CaseIterable, Sendable {
     }
 }
 
-/// Explicit operation availability; M1 never advertises mutation or automatic write-back.
+/// Explicit per-item operation availability. Missing mutation grants are denied.
 public struct DriveCapabilities: Equatable, Sendable {
     public let canBrowse: Bool
     public let canDownload: Bool
     public let canExport: Bool
     public let canOpenInBrowser: Bool
-    public var canWrite: Bool { false }
-    public var canRename: Bool { false }
-    public var canTrash: Bool { false }
+    public var canWrite: Bool = false
+    public var canRename: Bool = false
+    public var canTrash: Bool = false
+    public var canUntrash: Bool = false
+    public var canAddChildren: Bool = false
+    public var canMove: Bool = false
+    public var canCopy: Bool = false
+    public var canEdit: Bool { canWrite }
+    public var canMoveItemWithinDrive: Bool { canMove }
+    public var role: String? = nil
+    public var isOwner: Bool { role == "owner" }
 }
+
+public typealias DriveItemCapabilities = DriveCapabilities
 
 public struct DrivePerson: Codable, Hashable, Sendable {
     public var displayName: String?
@@ -165,6 +175,14 @@ public struct DriveFile: Codable, Hashable, Sendable {
     public struct Access: Codable, Hashable, Sendable {
         public var canDownload: Bool?
         public var canListChildren: Bool?
+        public var canEdit: Bool?
+        public var canRename: Bool?
+        public var canTrash: Bool?
+        public var canUntrash: Bool?
+        public var canAddChildren: Bool?
+        public var canMoveItemWithinDrive: Bool?
+        public var canMoveItemOutOfDrive: Bool?
+        public var canCopy: Bool?
     }
     public struct Shortcut: Codable, Hashable, Sendable {
         public var targetId: String
@@ -177,6 +195,11 @@ public struct DriveFile: Codable, Hashable, Sendable {
     public var driveId: String?
     public var resourceKey: String?
     public var size: String?
+    public var parents: [String]?
+    public var headRevisionId: String?
+    public var version: String?
+    public var md5Checksum: String?
+    public var appProperties: [String: String]?
     public var modifiedTime: String?
     public var thumbnailLink: URL?
     public var hasThumbnail: Bool?
@@ -213,7 +236,14 @@ public struct DriveFile: Codable, Hashable, Sendable {
             canBrowse: isFolder && capabilities?.canListChildren != false,
             canDownload: !isFolder && !isGoogleDocument && !isShortcut && capabilities?.canDownload != false,
             canExport: isGoogleDocument && capabilities?.canDownload != false,
-            canOpenInBrowser: webViewLink != nil)
+            canOpenInBrowser: webViewLink != nil,
+            canWrite: capabilities?.canEdit == true,
+            canRename: capabilities?.canRename == true,
+            canTrash: capabilities?.canTrash == true,
+            canUntrash: capabilities?.canUntrash == true,
+            canAddChildren: isFolder && capabilities?.canAddChildren == true,
+            canMove: capabilities?.canMoveItemWithinDrive == true,
+            canCopy: capabilities?.canCopy == true)
     }
 
     /// Native Google identities stay distinct from their downloadable export formats.
@@ -242,6 +272,7 @@ public struct DriveFile: Codable, Hashable, Sendable {
             owner: owners?.first?.displayName ?? owners?.first?.emailAddress,
             linkDestination: shortcutDetails?.targetId,
             isReadable: target.isFolder ? target.operations.canBrowse : (target.operations.canDownload || target.operations.canExport),
-            isWritable: false, sharedDate: sharedWithMeTime.flatMap { ISO8601DateFormatter().date(from: $0) })
+            isWritable: target.operations.canWrite || target.operations.canAddChildren,
+            sharedDate: sharedWithMeTime.flatMap { ISO8601DateFormatter().date(from: $0) })
     }
 }

@@ -13,22 +13,25 @@ final class RemoteTransferJob {
     var options: TransferCompareOptions
     var resolve: (ConflictInfo) -> ConflictAnswer = { _ in .init(.cancel) }
     var onProgress: (JobProgress) -> Void = { _ in }
+    var onNotice: (String?) -> Void = { _ in }
     var onIncoming: (FileItem?) -> Void = { _ in }
     var onNoSpace: ((Int64) -> Bool)?
+    var cloudBatchID = UUID()
+    var cloudOperations: [URL: UUID] = [:]
     var completed: [URL: URL]
     var results: [URL] = []
     var errors: [String] = []
     var failedSources: [URL] = []
-    private var sticky: ConflictResolution?
-    private var totals: [URL: (bytes: Int64, files: Int)] = [:]
-    private var progress: JobProgress
-    private let progressLock = NSLock()
-    private var committedBytes: Int64 = 0
-    private var activeBytes: Int64 = 0
-    private var activeLimit: Int64 = 0
-    private var activeLegs: Int64 = 1
-    private var listings: [URL: [FileItem]] = [:]
-    private var lastPublish = Date.distantPast
+    var sticky: ConflictResolution?
+    var totals: [URL: (bytes: Int64, files: Int)] = [:]
+    var progress: JobProgress
+    let progressLock = NSLock()
+    var committedBytes: Int64 = 0
+    var activeBytes: Int64 = 0
+    var activeLimit: Int64 = 0
+    var activeLegs: Int64 = 1
+    var listings: [URL: [FileItem]] = [:]
+    var lastPublish = Date.distantPast
 
     init(
         kind: FileOperationKind, sources: [URL], destination: URL?, control: FileJob,
@@ -45,9 +48,10 @@ final class RemoteTransferJob {
     var remaining: [URL] { sources.filter { completed[$0] == nil } }
 
     func run() {
+        defer { onNotice(nil) }
         let transport = Shell.TransferControl(
             isPaused: { self.control.isPaused }, isCancelled: { self.control.isCancelled },
-            isInterrupted: { self.control.isInterrupted }, onBytes: { self.advance(bytes: $0) })
+            isInterrupted: { self.control.isInterrupted }, onBytes: { self.advance(bytes: $0) }, onStatus: { self.onNotice($0) })
         Shell.withTransferControl(transport) {
             do {
                 for source in sources {
@@ -80,22 +84,33 @@ final class RemoteTransferJob {
                 } catch {
                     if control.isCancelled { break }
                     failedSources.append(source)
-                    errors.append("\(source.lastPathComponent): \(error.localizedDescription)")
+                    let name = RemoteFS.displayName(for: source)
+                    errors.append("\(name): \(error.localizedDescription)")
                 }
                 publish()
+            }
+        }
+        if control.isCancelled {
+            let clients = (sources + (destination.map { [$0] } ?? [])).compactMap { (RemoteFS.provider(for: $0) as? DriveProvider)?.client }
+            for client in clients {
+                for record in (try? client.mutationJournal.all(accountID: client.accountID)) ?? [] where record.batchID == cloudBatchID {
+                    for operation in [record.childOperationID, record.downloadOperationID].compactMap({ $0 }) {
+                        try? DriveProvider.wait { try await client.cancelTransfer(operation) }
+                    }
+                }
             }
         }
         publish(force: true)
         control.finishExternal()
     }
 
-    private static func temporaryFolder() throws -> URL {
+    static func temporaryFolder() throws -> URL {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-transfer-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
     }
 
-    private func children(_ folder: URL, fresh: Bool = false) throws -> [FileItem] {
+    func children(_ folder: URL, fresh: Bool = false) throws -> [FileItem] {
         try control.checkCancellation()
         if !fresh, let cached = listings[folder] { return cached }
         let items: [FileItem]
@@ -111,12 +126,18 @@ final class RemoteTransferJob {
         return items
     }
 
-    private func item(_ url: URL) throws -> FileItem? {
+    func item(_ url: URL) throws -> FileItem? {
         if url.isFileURL { return FileItem.load(url) }
+        if let provider = RemoteFS.provider(for: url) as? DriveProvider, let client = provider.client,
+            let location = DriveLocation(url: url), case .folder(let id, _) = location.collection
+        {
+            let file = try DriveProvider.wait { try await client.file(id) }
+            return file.fileItem(accountID: provider.accountID, parent: DriveLocation(url: url.deletingLastPathComponent()))
+        }
         return try children(url.deletingLastPathComponent()).first { $0.name == url.lastPathComponent }
     }
 
-    private func inventory(_ url: URL) throws -> (bytes: Int64, files: Int) {
+    func inventory(_ url: URL) throws -> (bytes: Int64, files: Int) {
         try control.checkCancellation()
         guard let item = try item(url) else { return (0, 0) }
         var count = (bytes: item.isSymlink || item.isDirectory ? Int64(0) : item.size, files: item.isDirectory && !item.isSymlink ? 0 : 1)
@@ -134,7 +155,8 @@ final class RemoteTransferJob {
         return count
     }
 
-    private func transfer(_ source: URL, into folder: URL) throws -> URL? {
+    func transfer(_ source: URL, into folder: URL) throws -> URL? {
+        if source.scheme == "gdrive" || folder.scheme == "gdrive" { return try transferDrive(source, into: folder) }
         try control.checkCancellation()
         guard source.isFileURL || RemoteFS.provider(for: source) != nil else {
             throw RemoteError.unsupported("Unsupported source: \(source.scheme ?? "unknown")")
@@ -234,14 +256,14 @@ final class RemoteTransferJob {
         return target
     }
 
-    private func publishIncoming(_ source: URL, item: FileItem, target: URL) {
+    func publishIncoming(_ source: URL, item: FileItem, target: URL) {
         onIncoming(
             FileItem(
                 url: target, name: target.lastPathComponent, isDirectory: item.isDirectory, size: totals[source]?.bytes ?? item.size,
                 modificationDate: item.modificationDate))
     }
 
-    private func merge(_ source: URL, into target: URL) throws -> URL {
+    func merge(_ source: URL, into target: URL) throws -> URL {
         if sources.contains(source), let incoming = try item(source) { publishIncoming(source, item: incoming, target: target) }
         var firstFailure: Error?
         for child in try children(source) {
@@ -263,7 +285,15 @@ final class RemoteTransferJob {
         return target
     }
 
-    private func identical(_ source: URL, _ incoming: FileItem, _ target: URL, _ old: FileItem) throws -> Bool {
+    func identical(_ source: URL, _ incoming: FileItem, _ target: URL, _ old: FileItem) throws -> Bool {
+        if incoming.isWebDocument || old.isWebDocument { return false }
+        let driveLeft = (RemoteFS.provider(for: source) as? DriveProvider)?.metadata(for: source)
+        let driveRight = (RemoteFS.provider(for: target) as? DriveProvider)?.metadata(for: target)
+        if let checksum = driveLeft?.md5Checksum, let other = driveRight?.md5Checksum {
+            return checksum == other && driveLeft?.size == driveRight?.size
+        }
+        if let checksum = driveLeft?.md5Checksum, target.isFileURL { return try DriveClient.md5(target) == checksum }
+        if let checksum = driveRight?.md5Checksum, source.isFileURL { return try DriveClient.md5(source) == checksum }
         var left = TransferComparison.entry(incoming), right = TransferComparison.entry(old)
         if options.method == .sizeAndDate {
             if let provider = RemoteFS.provider(for: source) as? RemoteTransferMetadata {
@@ -280,17 +310,25 @@ final class RemoteTransferJob {
         return TransferComparator.statusOf(left, right, options: options) == .same
     }
 
-    private func digest(_ url: URL) throws -> String {
+    func digest(_ url: URL) throws -> String {
         let scratch = try Self.temporaryFolder()
         defer { try? FileManager.default.removeItem(at: scratch) }
         let local = try RemoteFS.provider(for: url)?.download(url, into: scratch) ?? url
         return try FileChecksums.digest(local, cancellation: DiskCancellation(checkpoint: { try self.control.checkCancellation() }))
     }
 
-    private func stagedFile(_ source: URL, to target: URL, replacing: Bool, modified: Date?) throws {
+    func stagedFile(
+        _ source: URL, to target: URL, replacing: Bool, modified: Date?, beforeSourceRemoval: (() throws -> Void)? = nil,
+        sourceDownloadOperationID: UUID? = nil
+    ) throws {
         let scratch = try Self.temporaryFolder()
         defer { try? FileManager.default.removeItem(at: scratch) }
-        let downloaded = try RemoteFS.provider(for: source)?.download(source, into: scratch) ?? source
+        let downloaded: URL
+        if let drive = RemoteFS.provider(for: source) as? DriveProvider, let operationID = sourceDownloadOperationID {
+            downloaded = try drive.download(source, into: scratch, operationID: operationID)
+        } else {
+            downloaded = try RemoteFS.provider(for: source)?.download(source, into: scratch) ?? source
+        }
         if let provider = RemoteFS.provider(for: target) {
             let stageFolder = target.deletingLastPathComponent().appendingPathComponent(".porpoise-transfer-" + UUID().uuidString)
             try provider.makeFolder(stageFolder)
@@ -316,6 +354,7 @@ final class RemoteTransferJob {
                     }
                     try provider.move([staged], into: target.deletingLastPathComponent())
                 }
+                try beforeSourceRemoval?()
                 if kind == .move { try removeOriginal(source) }
             }
         } else {
@@ -365,18 +404,19 @@ final class RemoteTransferJob {
             } else {
                 guard renamex_np(staged.path, target.path, UInt32(RENAME_EXCL)) == 0 else { throw RemoteError.exists(target.lastPathComponent) }
             }
+            try beforeSourceRemoval?()
             if kind == .move { try Shell.withoutTransferControl { try removeOriginal(source) } }
         }
     }
 
-    private func removeOriginal(_ source: URL) throws {
+    func removeOriginal(_ source: URL) throws {
         if let provider = RemoteFS.provider(for: source) { try provider.delete([source]) } else { try FileManager.default.removeItem(at: source) }
     }
 
-    private func legCount(_ source: URL) -> Int64 {
+    func legCount(_ source: URL) -> Int64 {
         (!source.isFileURL && destination?.isFileURL == false) ? 2 : 1
     }
-    private func finishProgress(_ source: URL, copied: Bool = false) {
+    func finishProgress(_ source: URL, copied: Bool = false) {
         progressLock.withLock {
             progress.doneFiles += totals[source]?.files ?? 1
             if copied { progress.copiedItems += totals[source]?.files ?? 1 }
@@ -387,7 +427,7 @@ final class RemoteTransferJob {
         }
         publish()
     }
-    private func advance(bytes: Int64) {
+    func advance(bytes: Int64) {
         progressLock.withLock {
             guard activeLimit > 0 else { return }
             activeBytes = min(activeLimit, activeBytes + max(0, bytes) / activeLegs)
@@ -395,7 +435,7 @@ final class RemoteTransferJob {
         }
         publish()
     }
-    private func publish(force: Bool = false) {
+    func publish(force: Bool = false) {
         let snapshot: JobProgress? = progressLock.withLock {
             guard force || Date().timeIntervalSince(lastPublish) >= 0.25 else { return nil }
             lastPublish = Date()
