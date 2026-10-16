@@ -79,6 +79,7 @@ public actor SavedSyncStore {
         for pair in pairs {
             guard !pair.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                 pair.left.password == nil, pair.right.password == nil,
+                pair.left.query == nil, pair.right.query == nil, pair.left.fragment == nil, pair.right.fragment == nil,
                 pair.left != pair.right,
                 pair.left.isFileURL || RemoteFS.provider(for: pair.left) != nil,
                 pair.right.isFileURL || RemoteFS.provider(for: pair.right) != nil
@@ -132,6 +133,14 @@ public enum SyncPreparation {
         var next = preview
         next.pair = pair
         next.hasSkippedItems = overrides.values.contains(.skip)
+        guard preview.comparison.options == pair.options else {
+            next.plan = .init(steps: [
+                .init(
+                    path: "", target: .right, action: .conflict,
+                    reason: "Comparison options changed. Scan both folders again before syncing.")
+            ])
+            return next
+        }
         next.plan = SyncPlanner.plan(preview.comparison, mode: pair.mode, previous: previous, overrides: overrides, keepBothLabel: pair.rightTitle)
         next.firstTwoWay = pair.mode == .twoWay && previous == nil
         return next

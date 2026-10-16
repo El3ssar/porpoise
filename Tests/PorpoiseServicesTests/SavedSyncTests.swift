@@ -15,6 +15,8 @@ import Testing
         #expect(try await store.load() == [pair])
         pair.right = URL(string: "sftp://person:secret@example.test/backup")!
         await #expect(throws: SyncEngineError.self) { try await store.save([pair]) }
+        pair.right = URL(string: "sftp://example.test/backup?token=sample-secret")!
+        await #expect(throws: SyncEngineError.self) { try await store.save([pair]) }
         let text = try String(contentsOf: scratch.path("settings/syncs.json"), encoding: .utf8)
         #expect(!text.contains("secret"))
         #expect(try await store.load().first?.right == scratch.path("right"))
@@ -70,6 +72,9 @@ import Testing
         let skipped = SyncPreparation.replan(preview, pair: pair, previous: state, overrides: ["new.txt": .skip])
         #expect(skipped.hasSkippedItems)
         #expect(!skipped.plan.steps.contains { $0.path == "new.txt" })
+        var contentPair = pair; contentPair.method = .content
+        let staleMethod = SyncPreparation.replan(preview, pair: contentPair, previous: state, overrides: [:])
+        #expect(staleMethod.plan.conflicts.count == 1 && staleMethod.executable.steps.isEmpty)
     }
     @Test func largeDeletionThresholdUsesEachDestinationAndBothStrictBounds() {
         let entries = (0..<100).map { SyncEntry(path: "\($0)") }
@@ -176,6 +181,7 @@ private final class LockedCounter: @unchecked Sendable {
         try Data("edited on right".utf8).write(to: right.appendingPathComponent("report.txt"))
         let comparison = try SyncScanner.compare(left, right).comparison
         #expect(SyncPlanner.plan(comparison, mode: .twoWay, previous: state).conflicts.count == 1)
+        #expect(SyncPlanner.plan(comparison, mode: .twoWay, previous: state, overrides: ["report.txt": .keepLeft]).conflicts.count == 1)
         let plan = SyncPlanner.plan(comparison, mode: .twoWay, previous: state, overrides: ["report.txt": .trash])
         #expect(plan.steps.count == 1 && plan.steps[0].action == .trash && plan.steps[0].target == .right)
         // A nonexistent baseline cannot authorize turning a first-run file into a deletion.

@@ -15,7 +15,9 @@ public actor SyncStateStore {
             .appendingPathComponent("Porpoise/SyncState", isDirectory: true)
     }
     public func load(pairID: UUID, leftRoot: URL, rightRoot: URL) throws -> SyncState? {
-        guard leftRoot.password == nil, rightRoot.password == nil else { throw SyncEngineError.invalidState }
+        guard leftRoot.password == nil, rightRoot.password == nil, leftRoot.query == nil, rightRoot.query == nil, leftRoot.fragment == nil,
+            rightRoot.fragment == nil
+        else { throw SyncEngineError.invalidState }
         let file = folder.appendingPathComponent(pairID.uuidString + ".json")
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
         let record = try JSONDecoder().decode(Record.self, from: Data(contentsOf: file))
@@ -29,7 +31,9 @@ public actor SyncStateStore {
         if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
     }
     public func save(_ state: SyncState, pairID: UUID, leftRoot: URL, rightRoot: URL) throws {
-        guard leftRoot.password == nil, rightRoot.password == nil, state.version == 1, state.left.complete, state.right.complete else {
+        guard leftRoot.password == nil, rightRoot.password == nil, leftRoot.query == nil, rightRoot.query == nil, leftRoot.fragment == nil,
+            rightRoot.fragment == nil, state.version == 1, state.left.complete, state.right.complete
+        else {
             throw SyncEngineError.invalidState
         }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

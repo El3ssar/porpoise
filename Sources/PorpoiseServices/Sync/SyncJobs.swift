@@ -11,7 +11,9 @@ public enum SyncJobs {
     }
     public static func journal(_ plan: SyncPlan, title: String, leftRoot: URL, rightRoot: URL, id: UUID = UUID()) throws -> PlanJournal {
         guard plan.conflicts.isEmpty else { throw SyncEngineError.conflicts }
-        guard leftRoot.password == nil, rightRoot.password == nil else { throw SyncEngineError.invalidState }
+        guard leftRoot.password == nil, rightRoot.password == nil, leftRoot.query == nil, rightRoot.query == nil, leftRoot.fragment == nil,
+            rightRoot.fragment == nil
+        else { throw SyncEngineError.invalidState }
         let encoder = JSONEncoder()
         let steps = try plan.steps.map { step in
             let payload = Payload(leftRoot: leftRoot, rightRoot: rightRoot, step: step)
@@ -24,7 +26,9 @@ public enum SyncJobs {
         guard journal.version == 1, let first = journal.steps.first else { throw SyncEngineError.invalidState }
         let decoder = JSONDecoder()
         let head = try decoder.decode(Payload.self, from: first.operation.payload)
-        guard head.version == 1, head.leftRoot.password == nil, head.rightRoot.password == nil else { throw SyncEngineError.invalidState }
+        guard head.version == 1, head.leftRoot.password == nil, head.rightRoot.password == nil, head.leftRoot.query == nil,
+            head.rightRoot.query == nil, head.leftRoot.fragment == nil, head.rightRoot.fragment == nil
+        else { throw SyncEngineError.invalidState }
         let steps = try journal.steps.map { record -> SyncStep in
             let payload = try decoder.decode(Payload.self, from: record.operation.payload)
             guard payload.version == 1, payload.leftRoot == head.leftRoot, payload.rightRoot == head.rightRoot,

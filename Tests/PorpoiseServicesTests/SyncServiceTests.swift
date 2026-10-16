@@ -83,6 +83,9 @@ struct SyncServiceTests {
         #expect(counter.count == 1)
         watcher.setPaused(false)
         #expect(await eventually(3) { counter.count == 2 })
+        watcher.stop(); watcher.requestScan()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(counter.count == 2)
     }
     @Test func actualFSEventRequestsScan() async throws {
         let scratch = try Scratch()

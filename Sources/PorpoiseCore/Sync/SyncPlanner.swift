@@ -73,9 +73,13 @@ public enum SyncPlanner {
                 step = transfer(row, from: .left)
                 step?.dependsOn = copies.map(\.id)
             } else if choice == .keepLeft {
-                step = transfer(row, from: .left)
+                step =
+                    row.left == nil
+                    ? conflict(row, "The selected side no longer has this item. Choose Keep or Move to Trash.") : transfer(row, from: .left)
             } else if choice == .keepRight {
-                step = transfer(row, from: .right)
+                step =
+                    row.right == nil
+                    ? conflict(row, "The selected side no longer has this item. Choose Keep or Move to Trash.") : transfer(row, from: .right)
             } else if mode == .twoWay {
                 step = twoWay(
                     row, oldLeft: oldLeft[key(row.left?.path ?? row.path)], oldRight: oldRight[key(row.right?.path ?? row.path)],
