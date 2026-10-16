@@ -204,6 +204,11 @@ public final class CloudAccounts {
 
     public var accounts: [CloudAccount] { backend?.accounts ?? [] }
 
+    /// Where changes record their Undo (tests use their own controller).
+    public var operations = FileOperationsController.shared {
+        didSet { operations.cloud = self }
+    }
+
     public func account(_ id: String) -> CloudAccount? { accounts.first { $0.id == id } }
 
     /// The account a location belongs to.

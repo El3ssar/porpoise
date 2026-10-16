@@ -172,7 +172,7 @@ extension CloudAccounts {
         guard let backend else { done(.failure(CloudEditError.notSupported)); return }
         backend.createFolder(named: name, in: folder) { result in
             if case .success(let item) = result {
-                FileOperationsController.shared.pushUndo(.cloud(CloudChange(.appeared, [item.url], label: "New Folder")))
+                self.operations.pushUndo(.cloud(CloudChange(.appeared, [item.url], label: "New Folder")))
             }
             done(result)
         }
@@ -183,7 +183,7 @@ extension CloudAccounts {
         guard let backend else { done(.failure(CloudEditError.notSupported)); return }
         backend.rename(url, to: name) { result in
             if case .success = result {
-                FileOperationsController.shared.pushUndo(.cloud(CloudChange(.renamed(from: old, to: name), [url], label: "Rename")))
+                self.operations.pushUndo(.cloud(CloudChange(.renamed(from: old, to: name), [url], label: "Rename")))
             }
             done(result)
         }
@@ -195,7 +195,7 @@ extension CloudAccounts {
         guard let backend else { done([], CloudEditError.notSupported); return }
         backend.trash(urls) { trashed, error in
             if !trashed.isEmpty {
-                FileOperationsController.shared.pushUndo(.cloud(CloudChange(.trashed, trashed, label: "Move to Trash")))
+                self.operations.pushUndo(.cloud(CloudChange(.trashed, trashed, label: "Move to Trash")))
             }
             done(trashed, error)
         }
@@ -220,7 +220,7 @@ extension CloudAccounts {
     /// Restores items from the service's trash (the message bar's Undo, which also takes the record off the Undo stack).
     public func untrash(_ urls: [URL], done: @escaping (_ restored: [URL], _ error: Error?) -> Void) {
         guard let backend else { done([], CloudEditError.notSupported); return }
-        FileOperationsController.shared.dropCloudUndo(CloudChange(.trashed, urls, label: "Move to Trash"))
+        operations.dropCloudUndo(CloudChange(.trashed, urls, label: "Move to Trash"))
         backend.untrash(urls, done: done)
     }
 }

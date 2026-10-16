@@ -65,18 +65,18 @@ extension ViewContainer {
             "Allow Porpoise to make changes to \(accounts.title(id)) (\(account.email)) to create, rename and move items here.", error: false,
             action: "Allow Changes…",
             handler: { [weak self] in
-            self?.messageBar.show("Continue in your browser to allow changes…", error: false)
-            _ = accounts.requestWriteAccess(id, openBrowser: ConnectSheet.openBrowser) { result in
-                switch result {
-                case .success:
-                    self?.messageBar.show("Porpoise can now make changes to \(accounts.title(id)).", error: false)
-                    self?.reload()
-                case .failure(.failed(let message)): self?.messageBar.show(message, error: true)
-                case .failure: self?.showWriteAccessBanner()
+                self?.messageBar.show("Continue in your browser to allow changes…", error: false)
+                _ = accounts.requestWriteAccess(id, openBrowser: ConnectSheet.openBrowser) { result in
+                    switch result {
+                    case .success:
+                        self?.messageBar.show("Porpoise can now make changes to \(accounts.title(id)).", error: false)
+                        self?.reload()
+                    case .failure(.failed(let message)): self?.messageBar.show(message, error: true)
+                    case .failure: self?.showWriteAccessBanner()
+                    }
+                    self?.needsLayout = true
                 }
-                self?.needsLayout = true
-            }
-        })
+            })
         messageBar.closeHandler = { Self.writeBannerDismissed.insert(id) }
         needsLayout = true
     }

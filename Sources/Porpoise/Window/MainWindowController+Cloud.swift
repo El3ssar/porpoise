@@ -101,7 +101,9 @@ extension MainWindowController {
 
     /// Into Google Drive's Trash: the rows go at once, the message bar offers Undo. Never a "delete permanently" question.
     func trashCloud(_ urls: [URL]) {
-        let c = view.model.rows.contains { urls.contains($0.item.url) } ? view : (allContainers.first { $0.model.rows.contains { urls.contains($0.item.url) } } ?? view)
+        let c =
+            view.model.rows.contains { urls.contains($0.item.url) }
+            ? view : (allContainers.first { $0.model.rows.contains { urls.contains($0.item.url) } } ?? view)
         if let why = CloudAccounts.shared.denial(.trash, items: urls) { cloudDenied(why, in: c); return }
         let originals = CloudEdit.items(urls)
         let names = Dictionary(originals.map { ($0.url, $0.name) }, uniquingKeysWith: { a, _ in a })
@@ -114,7 +116,8 @@ extension MainWindowController {
             let kept = originals.filter { !trashed.contains($0.url) }
             if !kept.isEmpty { CloudEdit.apply(ListingEdit(folder: folder, added: kept)) }
             if let error, trashed.isEmpty {
-                let what = urls.count == 1 ? "Couldn’t move “\(names[urls[0]] ?? "the item")” to the Trash." : "Couldn’t move these items to the Trash."
+                let what =
+                    urls.count == 1 ? "Couldn’t move “\(names[urls[0]] ?? "the item")” to the Trash." : "Couldn’t move these items to the Trash."
                 self?.cloudFailed(what, error, in: c)
                 return
             }
@@ -135,7 +138,9 @@ extension MainWindowController {
             edit.end(rollback: false)
             let missing = items.filter { !restored.contains($0.url) }
             if !missing.isEmpty { CloudEdit.apply(ListingEdit(folder: folder, removed: Set(missing.map(\.url)))) }
-            if let error { self?.cloudFailed("Couldn’t put back \(missing.count == 1 ? "“\(missing[0].name)”" : "\(missing.count) items").", error, in: c) }
+            if let error {
+                self?.cloudFailed("Couldn’t put back \(missing.count == 1 ? "“\(missing[0].name)”" : "\(missing.count) items").", error, in: c)
+            }
             if restored.count == items.count { c.list.select(urls[0]); c.model.selection = Set(urls) }
         }
     }

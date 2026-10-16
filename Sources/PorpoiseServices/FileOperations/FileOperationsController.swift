@@ -19,6 +19,8 @@ public final class FileOperationsController {
     /// Dialogs and progress (set by the app; without it nothing is confirmed and conflicts cancel).
     public var ui: FileOperationsUI?
     public var clipboard: FileClipboard = LocalClipboard()
+    /// Undoes cloud changes (tests pair a controller with their own accounts model).
+    public weak var cloud: CloudAccounts?
 
     var undoStack: [UndoRecord] = []
     var redoStack: [UndoRecord] = []

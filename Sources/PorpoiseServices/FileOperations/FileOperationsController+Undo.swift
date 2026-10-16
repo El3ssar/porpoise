@@ -68,7 +68,7 @@ extension FileOperationsController {
         _ change: CloudChange, window: AnyObject?, back: @escaping (UndoRecord) -> Void, inverse: @escaping (UndoRecord) -> Void
     ) {
         stacksChanged()
-        CloudAccounts.shared.revert(change) { [weak self] error in
+        (cloud ?? CloudAccounts.shared).revert(change) { [weak self] error in
             if let error {
                 back(.cloud(change))
                 self?.showErrors([error.localizedDescription], window: window)
