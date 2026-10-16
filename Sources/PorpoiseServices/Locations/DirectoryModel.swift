@@ -9,6 +9,9 @@ public struct Row {
     public var isExpanded: Bool
     /// Index into `groups`, -1 when not grouping.
     public var group: Int
+    public init(item: FileItem, depth: Int, isExpanded: Bool, group: Int = -1) {
+        self.item = item; self.depth = depth; self.isExpanded = isExpanded; self.group = group
+    }
 }
 
 /// What a search looked for: with `contents`, results are grouped into name and content matches.
@@ -537,7 +540,10 @@ public final class DirectoryModel {
     /// Compare renders its own aligned rows. Defer browse sorting/grouping while it owns the surface, then
     /// rebuild once when ordinary browsing returns. Raw listing/state and load errors continue updating.
     public var defersPresentation = false {
-        didSet { if !defersPresentation && presentationNeedsRebuild { presentationNeedsRebuild = false; rebuild() } }
+        didSet {
+            if !defersPresentation { comparisonCounts = nil }
+            if !defersPresentation && presentationNeedsRebuild { presentationNeedsRebuild = false; rebuild() }
+        }
     }
     private var presentationNeedsRebuild = false
 
@@ -707,7 +713,17 @@ public final class DirectoryModel {
         rebuild()
     }
 
+    public var onComparisonExpansion: ((URL, Bool) -> Void)?
+    private var comparisonCounts: (folders: Int, files: Int, bytes: Int64)?
+    public func presentComparisonRows(_ next: [Row], counts: (folders: Int, files: Int, bytes: Int64)? = nil) {
+        guard defersPresentation else { return }
+        let previous = (rows, rowIndex, rowIndexByPath)
+        groups = []; rows = next; comparisonCounts = counts; presentationNeedsRebuild = true
+        // The scanner owns these rows. Browse reloads keep updating raw items without replacing them.
+        DispatchQueue.global(qos: .utility).async { withExtendedLifetime(previous) {} }
+    }
     public func setExpanded(_ url: URL, _ on: Bool) {
+        if let onComparisonExpansion { onComparisonExpansion(url, on); return }
         if on {
             expanded.insert(url)
             if children[url] == nil { loadChildren(of: url) }
@@ -767,6 +783,7 @@ public final class DirectoryModel {
     }
 
     public var visibleCounts: (folders: Int, files: Int, bytes: Int64) {
+        if let comparisonCounts { return comparisonCounts }
         var f = 0, n = 0; var b: Int64 = 0
         for r in rows where r.depth == 0 {
             if r.item.isBrowsableFolder { f += 1 } else { n += 1; b += r.item.size }
@@ -823,7 +840,7 @@ public final class DirectoryModel {
 
     /// Saves the shown properties as the folder's (or the common) style, minus the temporary overrides.
     public func saveProps() {
-        guard !isVirtual else { return }
+        guard !isVirtual, !defersPresentation else { return }
         let p = dynamicOverride.stored(searchOverride.stored(props))
         Settings.shared.save(p, for: location)
     }

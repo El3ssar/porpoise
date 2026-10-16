@@ -5,20 +5,29 @@ import PorpoiseServices
 extension MainWindowController {
     @objc func toggleCompare(_ sender: Any?) {
         if tab.compareView != nil || tab.compareChooser != nil { stopComparing(); return }
-        if let secondary = tab.secondary, tab.primary.url != secondary.url {
+        if let secondary = tab.secondary {
             startComparing(left: tab.primary.url, right: secondary.url)
         } else {
-            showCompareChooser()
+            let partner = tab.lastComparePartner ?? tab.primary.history.backList.first ?? tab.primary.url.deletingLastPathComponent()
+            startComparing(left: tab.primary.url, right: partner)
         }
     }
     func startComparing(left: URL, right: URL, options: SyncCompareOptions = CompareModel.defaultOptions, preserveLinkRoots: Bool = false) {
         var previous = CACurrentMediaTime(), phases: [String: Double] = [:]
         func phase(_ name: String) { let now = CACurrentMediaTime(); phases[name] = (now - previous) * 1000; previous = now }
         let tab = tab
+        if tab.comparisonSnapshots.isEmpty {
+            tab.comparisonWasSecondary = tab.activeIsSecondary
+            tab.comparisonPreviousLinks = tab.linkedRoots
+            tab.comparisonSnapshots = tab.containers.map { ($0, $0.comparisonSnapshot()) }
+        }
         tab.linkUpdating = true
         if !tab.isSplit { tab.openSplit(url: right, animated: false) }
         phase("split")
         tab.secondary?.delegate = self
+        if let secondary = tab.secondary, !tab.comparisonSnapshots.contains(where: { $0.0 === secondary }) {
+            tab.comparisonSnapshots.append((secondary, secondary.comparisonSnapshot()))
+        }
         tab.containers.forEach { $0.suspendForComparison(true) }
         if tab.primary.url != left { tab.primary.setURL(left) }
         if tab.secondary?.url != right { tab.secondary?.setURL(right) }
@@ -29,7 +38,6 @@ extension MainWindowController {
         tab.containers.forEach { $0.preservesMissingLocation = tab.linkedRoots != nil }
         tab.linkUpdating = false
         phase("locations")
-        if left == right { showCompareChooser(); return }
         if left.password == nil && right.password == nil {
             var recents = Settings.store.dictionary(forKey: "compare.recents") as? [String: [String]] ?? [:]
             let previous = recents[left.absoluteString] ?? []
@@ -37,6 +45,9 @@ extension MainWindowController {
             Settings.store.set(recents, forKey: "compare.recents")
         }
         let model = CompareModel(left: left, right: right, options: options)
+        model.sortRole = tab.active.model.props.sortRole
+        model.sortAscending = tab.active.model.props.sortOrder == .ascending
+        model.sortSide = tab.activeIsSecondary ? .right : .left
         phase("recentsAndModel")
         let comparison = tab.comparisonView(model: model)
         comparison.document.activeSide = tab.activeIsSecondary ? .right : .left
@@ -85,14 +96,17 @@ extension MainWindowController {
     }
     func stopComparing(keepLinked: Bool = false) {
         let selectedTab = tab
-        if let comparison = selectedTab.compareView {
-            comparison.animateOut { [weak self, weak selectedTab, weak comparison] in
-                guard let self, let selectedTab, selectedTab.compareView === comparison else { return }
-                selectedTab.installComparison(nil); self.syncToActiveView(); self.window?.makeFirstResponder(self.view.list)
-            }
-        }
-        tab.compareChooser?.removeFromSuperview(); tab.compareChooser = nil
-        if !keepLinked { tab.linkedRoots = nil; tab.missingCounterpart?.removeFromSuperview(); tab.missingCounterpart = nil }
+        // Remove immediately: an animated exit must not race a second toggle or a queued navigation refresh.
+        selectedTab.installComparison(nil)
+        selectedTab.compareChooser?.removeFromSuperview(); selectedTab.compareChooser = nil
+        selectedTab.missingCounterpart?.removeFromSuperview(); selectedTab.missingCounterpart = nil
+        selectedTab.linkGeneration += 1; selectedTab.linkUpdating = true
+        for (container, snapshot) in selectedTab.comparisonSnapshots { container.restoreComparison(snapshot) }
+        selectedTab.comparisonSnapshots = []
+        selectedTab.setActive(secondary: selectedTab.comparisonWasSecondary)
+        if !keepLinked { selectedTab.linkedRoots = selectedTab.comparisonPreviousLinks }
+        selectedTab.containers.forEach { $0.preservesMissingLocation = selectedTab.linkedRoots != nil }
+        selectedTab.linkUpdating = false
         syncToActiveView(); window?.makeFirstResponder(view.list)
     }
     private func showCompareChooser() {
@@ -137,7 +151,6 @@ extension MainWindowController {
         if tab.linkedRoots != nil {
             tab.linkedRoots = nil; tab.missingCounterpart?.removeFromSuperview(); tab.missingCounterpart = nil
             tab.containers.forEach { $0.preservesMissingLocation = false }
-            if tab.compareView != nil { stopComparing() }
         } else {
             if !tab.isSplit { tab.openSplit(); tab.secondary?.delegate = self }
             if let secondary = tab.secondary { tab.linkedRoots = (tab.primary.url, secondary.url) }
@@ -147,49 +160,61 @@ extension MainWindowController {
     }
     func comparisonNavigationChanged(_ container: ViewContainer) {
         guard let tab = tabs.first(where: { $0.containers.contains(where: { $0 === container }) }), !tab.linkUpdating,
-            let roots = tab.linkedRoots, let other = container === tab.primary ? tab.secondary : tab.primary
+            let other = container === tab.primary ? tab.secondary : tab.primary
         else { return }
-        let sourceRoot = container === tab.primary ? roots.left : roots.right
-        let targetRoot = container === tab.primary ? roots.right : roots.left
-        guard let relative = LinkedBrowsing.relativePath(container.url, below: sourceRoot) else {
-            tab.linkedRoots = nil; tab.installComparison(nil); tab.missingCounterpart?.removeFromSuperview(); tab.missingCounterpart = nil
-            tab.containers.forEach { $0.preservesMissingLocation = false }
-            container.statusBar.showMessage("Linked browsing off: left the linked folders"); return
+        tab.linkGeneration += 1
+        let generation = tab.linkGeneration
+        if let roots = tab.linkedRoots {
+            let sourceRoot = container === tab.primary ? roots.left : roots.right
+            let targetRoot = container === tab.primary ? roots.right : roots.left
+            if let target = LinkedBrowsing.counterpart(container.url, sourceRoot: sourceRoot, targetRoot: targetRoot) {
+                // Widen anchors on Up so Back/Forward and re-entering the old root stay paired.
+                if LinkedBrowsing.relativePath(container.url, below: sourceRoot) == nil {
+                    tab.linkedRoots = container === tab.primary ? (container.url, target) : (target, container.url)
+                }
+                if other.url != target {
+                    tab.linkUpdating = true
+                    if container.historyTraversal < 0, let index = other.history.backList.firstIndex(of: target) {
+                        other.goBack(index + 1)
+                    } else if container.historyTraversal > 0, let index = other.history.forwardList.firstIndex(of: target) {
+                        other.goForward(index + 1)
+                    } else {
+                        other.setURL(target)
+                    }
+                    tab.linkUpdating = false
+                }
+            } else {
+                // An unrelated path edit starts a new pair at the two visible locations.
+                tab.linkedRoots = (tab.primary.url, tab.secondary!.url)
+            }
         }
-        let target = relative.isEmpty ? targetRoot : targetRoot.appendingPathComponent(relative)
-        guard other.url != target else { return }
-        let wasComparing = tab.compareView != nil, options = tab.compareView?.model.options ?? .init()
-        tab.linkGeneration += 1; let generation = tab.linkGeneration
-        tab.linkUpdating = true; other.setURL(target); tab.linkUpdating = false
+        if let comparison = tab.compareView {
+            comparison.model.navigate(left: tab.primary.url, right: tab.secondary!.url)
+            comparison.scroll.contentView.scroll(to: .zero)
+        }
+        tab.missingCounterpart?.removeFromSuperview(); tab.missingCounterpart = nil
+        guard tab.linkedRoots != nil, tab.compareView == nil else { return }
+        let target = other.url
         DispatchQueue.global(qos: .utility).async { [weak self, weak tab, weak other] in
             let exists: Bool
             if let provider = RemoteFS.provider(for: target) {
                 exists = (try? provider.list(target)) != nil
             } else {
-                var isDirectory: ObjCBool = false;
-                exists = FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory) && isDirectory.boolValue
+                var directory: ObjCBool = false
+                exists = FileManager.default.fileExists(atPath: target.path, isDirectory: &directory) && directory.boolValue
             }
             DispatchQueue.main.async {
-                guard let self, let tab, let other, tab.linkGeneration == generation, tab.linkedRoots != nil else { return }
-                tab.missingCounterpart?.removeFromSuperview(); tab.missingCounterpart = nil
-                if exists {
-                    if wasComparing, tab === self.tab {
-                        self.startComparing(left: tab.primary.url, right: tab.secondary!.url, options: options, preserveLinkRoots: true)
-                    }
-                } else {
-                    tab.installComparison(nil)
-                    let placeholder = ComparePanePlaceholder()
-                    let name = target.lastPathComponent, sideName = CompareOutline.sideNames(roots.left, roots.right)
-                    placeholder.content.configure(
-                        symbol: "folder.badge.questionmark", title: "No “\(name)” in \(other === tab.secondary ? sideName.1 : sideName.0)",
-                        detail: "Linked browsing will follow again when you open a folder that exists on both sides.", button: "Create “\(name)”"
-                    ) { [weak self] in self?.createLinkedCounterpart(target) }
-                    placeholder.unlink.isHidden = false; placeholder.unlink.clicked = { [weak self] in self?.toggleLinkedBrowsing(nil) }
-                    placeholder.statusText = "Not in \(other === tab.secondary ? sideName.1 : sideName.0)"
-                    tab.missingCounterpart = placeholder; tab.missingOnRight = other === tab.secondary; tab.addSubview(placeholder);
-                    tab.needsLayout = true
+                guard let self, let tab, let other, tab.linkGeneration == generation, tab.linkedRoots != nil, tab.compareView == nil, !exists else {
+                    return
                 }
-                self.syncToActiveView()
+                let placeholder = ComparePanePlaceholder()
+                placeholder.content.configure(
+                    symbol: "folder.badge.questionmark", title: "No “\(target.lastPathComponent)” on this side",
+                    detail: "Go back or up to continue browsing both folders.", button: "Create Folder"
+                ) { [weak self] in self?.createLinkedCounterpart(target) }
+                placeholder.unlink.isHidden = false; placeholder.unlink.clicked = { [weak self] in self?.toggleLinkedBrowsing(nil) }
+                tab.missingCounterpart = placeholder; tab.missingOnRight = other === tab.secondary
+                tab.addSubview(placeholder); tab.needsLayout = true; self.syncToActiveView()
             }
         }
     }
@@ -218,7 +243,8 @@ extension MainWindowController {
     private func openComparisonRow(_ row: SyncDifference) {
         guard let compare = tab.compareView else { return }
         if (row.left ?? row.right)?.kind == .directory {
-            let side: SyncSide = row.left != nil ? .left : .right
+            let preferred = compare.document.activeSide
+            let side: SyncSide = (preferred == .left ? row.left : row.right) != nil ? preferred : preferred.opposite
             let container = side == .left ? tab.primary : tab.secondary!
             container.setURL(
                 (side == .left ? compare.model.leftRoot : compare.model.rightRoot).appendingPathComponent(

@@ -26,7 +26,16 @@ final class ItemListView: NSView {
     var cutURLs: Set<URL> = FileOperationsController.shared.cutURLs
     /// Dolphin's selection mode: plain clicks toggle items instead of replacing the selection.
     var selectionModeActive = false
-    var mode: ViewMode { model.props.mode }
+    var mode: ViewMode { comparisonSlots == nil ? model.props.mode : .details }
+    /// Compare uses the real Details rows and interactions, with gaps for absent counterparts.
+    var comparisonSlots: [Int]?
+    var comparisonSlotCount = 0
+    var comparisonPaneWidth: CGFloat?
+    var comparisonRowHeight: CGFloat?
+    var comparisonZoom: ((CGFloat) -> Void)?
+    var comparisonGhostClick: ((CGPoint) -> Bool)?
+    var comparisonDrawTiming: ((Double) -> Void)?
+    var drawComparisonBackground: ((CGRect) -> Void)?
 
     // MARK: Layout output (+Layout)
 
@@ -99,7 +108,7 @@ final class ItemListView: NSView {
     private(set) var font: NSFont
     private(set) var lineHeight: CGFloat
     /// Icon size; `liveIconSize` overrides it during pinch / slider / animated zoom (committed when done).
-    var iconSize: CGFloat { liveIconSize ?? model.props.iconSize(for: model.props.mode) }
+    var iconSize: CGFloat { liveIconSize ?? model.props.iconSize(for: mode) }
     private(set) var liveIconSize: CGFloat?
     /// True while a zoom is being saved (the container then keeps the scroll position).
     private(set) var committingZoom = false
@@ -198,6 +207,7 @@ final class ItemListView: NSView {
 
     /// Shows a new icon size immediately, keeping the item under `anchor` (or the current one) in place.
     func previewZoom(_ size: CGFloat, anchor: CGPoint? = nil, commitAfter delay: TimeInterval? = 0.35) {
+        if let comparisonZoom { comparisonZoom(size); return }
         let s = min(ZoomLevels.maxSize, max(ZoomLevels.minSize, size))
         let vr = visibleRect
         // Anchor: the item under the pointer (or the current item), kept at the same spot on screen.

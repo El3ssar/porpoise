@@ -5,10 +5,10 @@ import PorpoiseServices
 enum CompareSymbols {
     static let onlyLeft = "◧", onlyRight = "◨"
     static func drawOnly(_ side: SyncSide, centeredAt center: CGPoint, color: NSColor) {
-        let rect = CGRect(x: center.x - 7, y: center.y - 4.5, width: 14, height: 9)
-        let box = NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3)
+        let rect = CGRect(x: center.x - 6, y: center.y - 6, width: 12, height: 12)
+        let box = NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2)
         NSGraphicsContext.saveGraphicsState(); box.addClip(); color.setFill()
-        CGRect(x: side == .left ? rect.minX : rect.midX, y: rect.minY, width: 7, height: 9).fill()
+        CGRect(x: side == .left ? rect.minX : rect.midX, y: rect.minY, width: 6, height: 12).fill()
         NSGraphicsContext.restoreGraphicsState()
         color.setStroke(); box.lineWidth = 1.25; box.stroke()
     }
@@ -26,11 +26,6 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
     var hoverIndex: Int?
     var gutterWidth: CGFloat = 28
     var rowHeight: CGFloat = 28
-    var dateWidths: [SyncSide: CGFloat] = [:]
-    var sizeWidths: [SyncSide: CGFloat] = [:]
-    func widths(_ side: SyncSide, paneWidth: CGFloat) -> (date: CGFloat, size: CGFloat) {
-        (paneWidth > 350 ? min(paneWidth - 180, dateWidths[side] ?? 114) : 0, paneWidth > 240 ? sizeWidths[side] ?? 60 : 0)
-    }
     var onOpen: ((SyncDifference) -> Void)?
     var onCopy: ((SyncDifference, SyncSide) -> Void)?
     var onSelection: ((SyncDifference, SyncSide) -> Void)?
@@ -46,10 +41,188 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
     var filterMilliseconds: Double = 0
     var drawMilliseconds: [Double] = []
     var drawSampleTimes: [Double] = []
+    var detailsDrawMilliseconds: [SyncSide: [Double]] = [:]
     init(model: CompareModel) {
         self.model = model; super.init(frame: .zero); wantsLayer = true
         setAccessibilityLabel("Folder comparison"); setAccessibilityRole(.outline)
         setAccessibilityCustomRotors([NSAccessibilityCustomRotor(label: "Differences", itemSearchDelegate: self)])
+    }
+    private(set) var detailsContainers: [ViewContainer] = []
+    private var lastDetailsVersion = -1
+    private var updatingDetailsProperties = false
+    private var scrollObservers: [NSObjectProtocol] = []
+    private var syncingScroll = false
+    private var detailsLayouts: [ObjectIdentifier: (CGSize, CGFloat, Int)] = [:]
+    private func synchronizeScroll(from clip: NSClipView) {
+        guard !syncingScroll else { return }
+        syncingScroll = true
+        for scroll in detailsContainers.map(\.scroll) + [enclosingScrollView].compactMap({ $0 }) where scroll.contentView !== clip {
+            scroll.contentView.scroll(to: CGPoint(x: scroll.contentView.bounds.minX, y: clip.bounds.minY))
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
+        syncingScroll = false
+    }
+    func observeScrolls() {
+        scrollObservers.forEach(NotificationCenter.default.removeObserver); scrollObservers = []
+        for scroll in detailsContainers.map(\.scroll) + [enclosingScrollView].compactMap({ $0 }) {
+            scroll.contentView.postsBoundsChangedNotifications = true
+            scrollObservers.append(
+                NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scroll.contentView, queue: .main) {
+                    [weak self, weak scroll] _ in
+                    if let clip = scroll?.contentView { self?.synchronizeScroll(from: clip) }
+                })
+        }
+    }
+    func attachDetails(_ containers: [ViewContainer]) {
+        detachDetails()
+        detailsContainers = containers
+        let size = (containers.first(where: { $0.isActive }) ?? containers.first)?.model.props.iconSize(for: .details) ?? 22
+        rowHeight = 2 * ItemListView.pad + max(size, containers.first?.list.lineHeight ?? 16) + 2
+        for (index, container) in containers.enumerated() {
+            let list = container.list
+            var props = container.model.props; props.mode = .details; props.setIconSize(size, for: .details)
+            props.sortRole = model.sortRole; props.sortOrder = model.sortAscending ? .ascending : .descending
+            container.model.props = props
+            list.comparisonZoom = { [weak self] size in self?.setDetailsZoom(size) }
+            list.comparisonSlots = []; list.comparisonSlotCount = 0
+            list.comparisonRowHeight = rowHeight
+            let side: SyncSide = index == 0 ? .left : .right
+            container.model.onComparisonExpansion = { [weak self] url, on in
+                guard let self, let path = LinkedBrowsing.relativePath(url, below: side == .left ? self.model.leftRoot : self.model.rightRoot) else {
+                    return
+                }
+                let canonical = (side == .left ? self.model.leftDetails : self.model.rightDetails).pathAliases[path] ?? path
+                if self.model.expanded.contains(canonical) != on { self.model.expand(canonical) }
+            }
+            container.comparisonPropsChanged = { [weak self, weak container] in
+                guard let self, let container, !self.updatingDetailsProperties else { return }
+                let props = container.model.props
+                if self.model.sortRole != props.sortRole || self.model.sortAscending != (props.sortOrder == .ascending) {
+                    self.model.sortRole = props.sortRole; self.model.sortAscending = props.sortOrder == .ascending
+                    self.model.sortSide = side; self.model.invalidateSort()
+                }
+                self.updatingDetailsProperties = true
+                for other in self.detailsContainers where other !== container {
+                    var shared = other.model.props; shared.sortRole = props.sortRole; shared.sortOrder = props.sortOrder; other.model.props = shared
+                    other.header.needsDisplay = true
+                }
+                self.updatingDetailsProperties = false
+                self.detailsLayouts = [:]; self.layoutDetails()
+            }
+            container.comparisonSelectionChanged = { [weak self, weak container] in
+                guard let self, let container else { return }
+                self.activeSide = side
+                let url = container.model.selection.first ?? container.model.currentURL
+                self.selectedPath = url.flatMap { LinkedBrowsing.relativePath($0, below: side == .left ? self.model.leftRoot : self.model.rightRoot) }
+                if let path = self.selectedPath {
+                    self.selectedPath = (side == .left ? self.model.leftDetails : self.model.rightDetails).pathAliases[path] ?? path
+                }
+                if let path = self.selectedPath, let slot = self.model.rowIndices[path] { self.onSelection?(self.rows[slot], side) }
+                self.needsDisplay = true
+                self.detailsContainers.forEach { $0.list.needsDisplay = true }
+            }
+            list.comparisonGhostClick = { [weak self] point in
+                guard let self else { return false }
+                let slot = Int(point.y / self.rowHeight)
+                guard self.rows.indices.contains(slot), (side == .left ? self.rows[slot].left : self.rows[slot].right) == nil else { return false }
+                self.activeSide = side.opposite; self.select(slot); return true
+            }
+            list.comparisonDrawTiming = { [weak self] milliseconds in
+                self?.detailsDrawMilliseconds[side, default: []].append(milliseconds)
+                if let count = self?.detailsDrawMilliseconds[side]?.count, count > 240 {
+                    self?.detailsDrawMilliseconds[side]?.removeFirst(count - 240)
+                }
+            }
+            list.drawComparisonBackground = { [weak self, weak list] dirty in
+                guard let self, let list else { return }
+                self.drawDetailsBackground(side: side, in: list, dirty: dirty)
+            }
+        }
+        lastDetailsVersion = -1; observeScrolls(); updateDetails()
+    }
+    func detachDetails() {
+        scrollObservers.forEach(NotificationCenter.default.removeObserver); scrollObservers = []
+        for container in detailsContainers {
+            let list = container.list
+            list.comparisonSlots = nil; list.comparisonPaneWidth = nil
+            list.comparisonRowHeight = nil; list.drawComparisonBackground = nil; list.comparisonZoom = nil; list.comparisonGhostClick = nil;
+            list.comparisonDrawTiming = nil
+            container.comparisonPropsChanged = nil; container.comparisonSelectionChanged = nil
+            container.model.onComparisonExpansion = nil; container.comparisonMissingName = nil; container.statusBar.toolTip = nil
+            container.addSubview(container.scroll); container.addSubview(container.header)
+            container.addSubview(container.statusBar); container.needsLayout = true
+        }
+        detailsContainers = []; lastDetailsVersion = -1; detailsLayouts = [:]
+    }
+    func updateDetails() {
+        guard lastDetailsVersion != model.detailsVersion else { return }
+        lastDetailsVersion = model.detailsVersion
+        for (index, container) in detailsContainers.enumerated() {
+            let details = index == 0 ? model.leftDetails : model.rightDetails
+            let root = index == 0 ? model.leftRoot : model.rightRoot
+            let identity = index == 0 ? model.comparison?.leftRootIdentity : model.comparison?.rightRootIdentity
+            container.comparisonMissingName =
+                root.isFileURL && model.comparison != nil && identity == nil && !model.loading ? root.lastPathComponent : nil
+            container.model.presentComparisonRows(details.rows, counts: details.counts)
+            container.list.comparisonSlots = details.slots; container.list.comparisonSlotCount = rows.count
+        }
+        layoutDetails()
+        for container in detailsContainers { container.comparisonRowsDidLoad() }
+    }
+    func setDetailsZoom(_ size: CGFloat) {
+        let size = min(256, max(16, size))
+        updatingDetailsProperties = true
+        for container in detailsContainers {
+            var props = container.model.props; props.setIconSize(size, for: .details); container.model.props = props
+            container.statusBar.zoomLevel = ZoomLevels.continuousLevel(for: size)
+        }
+        updatingDetailsProperties = false
+        rowHeight = 2 * ItemListView.pad + max(size, detailsContainers.first?.list.lineHeight ?? 16) + 2
+        frame.size.height = max(enclosingScrollView?.contentSize.height ?? 0, CGFloat(rows.count) * rowHeight)
+        layoutDetails(); needsDisplay = true
+    }
+    func layoutDetails() {
+        for container in detailsContainers {
+            let list = container.list
+            let key = ObjectIdentifier(list), size = container.scroll.contentSize
+            if let previous = detailsLayouts[key], previous.0 == size, previous.1 == rowHeight, previous.2 == model.detailsVersion { continue }
+            detailsLayouts[key] = (size, rowHeight, model.detailsVersion)
+            list.comparisonPaneWidth = nil; list.comparisonRowHeight = rowHeight
+            list.relayout()
+        }
+    }
+    private func drawDetailsBackground(side: SyncSide, in list: ItemListView, dirty: CGRect) {
+        let first = max(0, Int(dirty.minY / rowHeight)), last = min(rows.count, Int(dirty.maxY / rowHeight) + 1)
+        if rows.isEmpty, !model.loading, model.comparison?.complete == true {
+            let counts = model.outline?.counts ?? [:]
+            let matches = [CompareFilter.onlyLeft, .onlyRight, .changed].allSatisfy { (counts[$0.rawValue] ?? 0) == 0 }
+            let message = matches ? "No differences · Show Same to see matching items" : "No items match these filters"
+            text(
+                message, CGRect(x: list.visibleRect.minX + 12, y: list.visibleRect.midY - 30, width: list.visibleRect.width - 24, height: 24),
+                size: 15, color: Theme.viewTextInactive, align: .center)
+        }
+        guard first < last else { return }
+        for index in first..<last {
+            let row = rows[index], entry = side == .left ? row.left : row.right
+            let rect = CGRect(x: 0, y: CGFloat(index) * rowHeight, width: list.bounds.width, height: rowHeight)
+            if !index.isMultiple(of: 2) { Theme.viewAlternate.setFill(); rect.fill() }
+            let opposite = detailsContainers[side == .left ? 1 : 0]
+            if let counterpart = side == .left ? row.right : row.left {
+                let root = side == .left ? model.rightRoot : model.leftRoot
+                if opposite.model.selection.contains(root.appendingPathComponent(counterpart.path)) {
+                    let outline = NSBezierPath(
+                        roundedRect: rect.insetBy(dx: ItemListView.sidePadding, dy: 1), xRadius: Theme.itemRadius, yRadius: Theme.itemRadius)
+                    Theme.itemSelectedOutline.setStroke(); outline.stroke()
+                }
+            }
+            if entry == nil {
+                let ghost = NSBezierPath(
+                    roundedRect: rect.insetBy(dx: ItemListView.sidePadding, dy: 3), xRadius: Theme.itemRadius, yRadius: Theme.itemRadius)
+                Theme.viewTextInactive.withAlphaComponent(0.2).setStroke(); ghost.setLineDash([3, 3], count: 2, phase: 0); ghost.stroke()
+            } else if row.status != .same {
+                color(row).withAlphaComponent(Theme.increasedContrast ? 0.18 : 0.08).setFill(); rect.fill()
+            }
+        }
     }
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
@@ -77,7 +250,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         leaving = old.compactMap { row in indices[row.path] == nil ? from[row.path].map { (row, $0.minY) } : nil }
         frame.size.height = max(enclosingScrollView?.contentSize.height ?? 0, CGFloat(rows.count) * rowHeight)
         if let selectedPath, indices[selectedPath] == nil { self.selectedPath = nil }
-        let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || next.count > 3000
+        let reduce = !detailsContainers.isEmpty || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || next.count > 3000
         transition = ItemTransition(from: reduce ? [:] : from, leaving: [], progress: 0)
         if reduce { leaving = [] }
         animator.run(
@@ -146,38 +319,6 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
     private func drawRow(_ row: SyncDifference, index: Int, y: CGFloat, alpha: CGFloat, dirty: NSRect) {
         NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current?.cgContext.setAlpha(alpha)
         defer { NSGraphicsContext.restoreGraphicsState() }
-        for side in [SyncSide.left, .right] {
-            let rect = pane(side, y: y), entry = side == .left ? row.left : row.right
-            guard rect.intersects(dirty) else { continue }
-            let selected = selectedPath == row.path
-            (index.isMultiple(of: 2) ? Theme.viewBackground : Theme.viewBackground.mixed(with: Theme.windowBackground, 0.5)).setFill(); rect.fill()
-            if entry != nil && row.status != .same && (entry?.kind != .directory || row.status == .onlyLeft || row.status == .onlyRight) {
-                color(row).withAlphaComponent(
-                    Theme.increasedContrast ? 0.18 : (effectiveAppearance.isDark ? 0.11 : 0.08)
-                ).setFill(); rect.fill()
-            }
-            if selected {
-                let box = NSBezierPath(roundedRect: rect.insetBy(dx: 3, dy: 1), xRadius: 6, yRadius: 6)
-                if activeSide == side { Theme.selection.withAlphaComponent(0.32).setFill(); box.fill() }
-                Theme.selection.withAlphaComponent(0.75).setStroke(); box.lineWidth = 1; box.stroke()
-            }
-            guard let entry else {
-                let box = NSBezierPath(roundedRect: rect.insetBy(dx: 8, dy: 3), xRadius: 6, yRadius: 6)
-                Theme.windowText.withAlphaComponent(Theme.increasedContrast ? 0.4 : 0.2).setStroke()
-                if !Theme.increasedContrast { box.setLineDash([3, 3], count: 2, phase: 0) }
-                box.stroke()
-                if hoverIndex == index {
-                    text(
-                        "Not in \(side == .left ? model.names.0 : model.names.1)", rect.insetBy(dx: 20, dy: 6), size: 11,
-                        color: Theme.windowTextInactive, align: .center)
-                }
-                continue
-            }
-            if Theme.increasedContrast && row.status != .same {
-                color(row).setFill(); CGRect(x: side == .left ? rect.maxX - 2 : rect.minX, y: y, width: 2, height: rowHeight).fill()
-            }
-            drawEntry(entry, row: row, side: side, rect: rect)
-        }
         guard seam.intersects(dirty) else { return }
         if model.loading && model.comparison?.complete == false && row.left?.kind == .directory && row.right?.kind == .directory {
             let arc = NSBezierPath(); arc.lineWidth = 1.5
@@ -189,8 +330,9 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
             if symbol == CompareSymbols.onlyLeft || symbol == CompareSymbols.onlyRight {
                 CompareSymbols.drawOnly(symbol == CompareSymbols.onlyLeft ? .left : .right, centeredAt: center, color: color(row))
             } else if symbol == "○" {
-                color(row).setStroke(); let ring = NSBezierPath(ovalIn: CGRect(x: center.x - 4.5, y: center.y - 4.5, width: 9, height: 9))
-                ring.lineWidth = 1.75; ring.stroke()
+                color(row).setStroke(); let ring = NSBezierPath(ovalIn: CGRect(x: center.x - 4, y: center.y - 4, width: 8, height: 8))
+                ring.lineWidth = 1.5; ring.stroke()
+                color(row).setFill(); NSBezierPath(ovalIn: CGRect(x: center.x - 1.5, y: center.y - 1.5, width: 3, height: 3)).fill()
             } else {
                 text(
                     symbol, CGRect(x: seam.minX + 2, y: y + (rowHeight - 20) / 2, width: max(0, seam.width - 4), height: 20), size: 16,
@@ -202,93 +344,6 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
             NSBezierPath(ovalIn: CGRect(x: seam.midX + (newer == .newerLeft ? -10 : 6), y: y + rowHeight / 2 - 2, width: 4, height: 4)).fill()
         }
     }
-    private func drawEntry(_ entry: SyncEntry, row: SyncDifference, side: SyncSide, rect: CGRect) {
-        let depth = entry.path.split(separator: "/").count - 1
-        let x = rect.minX + 12 + CGFloat(depth) * 14
-        if entry.kind == .directory {
-            let arrow = model.expanded.contains(row.path) ? "go-down" : "go-next"
-            Icons.shared.image(arrow, size: 16, selected: selectedPath == row.path && activeSide == side)?
-                .draw(
-                    in: CGRect(x: x - 10, y: rect.midY - 8, width: 16, height: 16), from: .zero, operation: .sourceOver, fraction: 0.85,
-                    respectFlipped: true, hints: nil)
-        }
-        let ext = (entry.path as NSString).pathExtension.lowercased()
-        let iconName =
-            entry.kind == .directory
-            ? "folder"
-            : [
-                "html": "text-html", "jpg": "image-jpeg", "png": "image-png", "pdf": "application-pdf", "txt": "text-plain",
-                "numbers": "x-office-spreadsheet", "zip": "application-zip",
-            ][ext] ?? "application-octet-stream"
-        let iconSize = max(16, rowHeight - 6)
-        let icon =
-            Icons.shared.image(iconName, size: iconSize, folder: entry.kind == .directory)
-            ?? Icons.shared.image(entry.kind == .directory ? "folder" : "text-x-generic", size: iconSize)
-        let iconRect = CGRect(x: x + 7, y: rect.midY - iconSize / 2, width: iconSize, height: iconSize)
-        icon?.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-        let columns = widths(side, paneWidth: rect.width), dateWidth = columns.date, sizeWidth = columns.size
-        let nameRect = CGRect(
-            x: x + iconSize + 14, y: rect.midY - 9, width: max(30, rect.maxX - dateWidth - sizeWidth - x - iconSize - 26), height: 19)
-        let name = (entry.path as NSString).lastPathComponent
-        text(name, nameRect, size: 13, color: Theme.windowText)
-        var caption: String?
-        if entry.kind == .directory, row.status != .same {
-            let count = model.outline?.children[row.path]?.count ?? 0
-            if count > 0 {
-                let differences = model.outline?.differenceCounts[row.path] ?? 0
-                caption =
-                    row.status == .onlyLeft || row.status == .onlyRight
-                    ? "\(count) only here" : "\(differences) \(differences == 1 ? "difference" : "differences")"
-            }
-            if model.loading && model.comparison?.complete == false { caption = nil }
-        } else if entry.kind == .symlink, row.left?.linkTarget != row.right?.linkTarget {
-            caption = "Link targets differ"
-        }
-        if let l = row.left?.path, let r = row.right?.path, l != r { caption = side == .left ? "Name differs in case" : nil }
-        if let caption {
-            let nameWidth = (name as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width
-            let remaining = nameRect.width - nameWidth - 8
-            if remaining > 35 {
-                let style = NSMutableParagraphStyle(); style.lineBreakMode = .byTruncatingTail
-                let run = NSMutableAttributedString(
-                    string: caption,
-                    attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: Theme.windowTextInactive, .paragraphStyle: style])
-                if let prefix = caption.split(separator: " ").first, Int(prefix) != nil {
-                    run.addAttribute(.foregroundColor, value: color(row), range: NSRange(location: 0, length: prefix.utf16.count))
-                }
-                run.draw(in: CGRect(x: nameRect.minX + nameWidth + 8, y: rect.midY - 7, width: remaining, height: 16))
-            }
-        }
-        let changed: Bool
-        if case .changed = row.status { changed = entry.kind != .directory } else { changed = false }
-        if sizeWidth > 0 {
-            let count = model.outline?.childCounts[side]?[row.path] ?? 0
-            let size =
-                entry.kind == .directory
-                ? (model.comparison?.complete == true ? "\(count.formatted()) \(count == 1 ? "item" : "items")" : "") : FileFormat.size(entry.size)
-            let differs = row.left?.size != row.right?.size
-            text(
-                size, CGRect(x: rect.maxX - dateWidth - sizeWidth - 10, y: rect.midY - 8, width: sizeWidth, height: 18), size: 11,
-                color: changed && differs ? color(row) : Theme.windowTextInactive, align: .right)
-        }
-        if dateWidth > 0 {
-            let date =
-                entry.modified.map { date -> String in
-                    if Calendar.current.isDateInToday(date) { return "Today " + Self.times.string(from: date) }
-                    if Calendar.current.isDateInYesterday(date) { return "Yesterday " + Self.times.string(from: date) }
-                    return Self.dates.string(from: date)
-                } ?? "Unknown"
-            text(
-                date, CGRect(x: rect.maxX - dateWidth, y: rect.midY - 8, width: dateWidth - 10, height: 18), size: 11,
-                color: changed && row.left?.modified != row.right?.modified ? color(row) : Theme.windowTextInactive, align: .right)
-        }
-    }
-    private static let dates: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "d MMM yyyy"; return f
-    }()
-    private static let times: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "HH:mm"; return f
-    }()
     func text(_ string: String, _ rect: CGRect, size: CGFloat, color: NSColor, align: NSTextAlignment = .left, weight: NSFont.Weight = .regular) {
         let style = NSMutableParagraphStyle(); style.lineBreakMode = .byTruncatingMiddle; style.alignment = align
         (string as NSString).draw(
@@ -332,6 +387,10 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         NSAccessibility.post(element: self, notification: .selectedChildrenChanged)
     }
     override func keyDown(with event: NSEvent) {
+        if !detailsContainers.isEmpty {
+            let list = detailsContainers[activeSide == .left ? 0 : 1].list
+            window?.makeFirstResponder(list); list.keyDown(with: event); return
+        }
         let index = selectedPath.flatMap { indices[$0] } ?? -1
         switch event.keyCode {
         case 53: onExit?()
@@ -352,6 +411,13 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
     }
     func select(_ index: Int) {
         guard rows.indices.contains(index) else { return }
+        if !detailsContainers.isEmpty {
+            let container = detailsContainers[activeSide == .left ? 0 : 1]
+            if let entry = activeSide == .left ? rows[index].left : rows[index].right {
+                container.list.select((activeSide == .left ? model.leftRoot : model.rightRoot).appendingPathComponent(entry.path))
+                window?.makeFirstResponder(container.list)
+            }
+        }
         selectedPath = rows[index].path; onSelection?(rows[index], activeSide); needsDisplay = true
         scrollToVisible(CGRect(x: 0, y: CGFloat(index) * rowHeight, width: bounds.width, height: rowHeight))
     }

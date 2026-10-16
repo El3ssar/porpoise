@@ -6,7 +6,7 @@ import PorpoiseServices
 
 extension ItemListView {
     var visibleHeight: CGFloat { enclosingScrollView?.contentView.bounds.height ?? bounds.height }
-    var visibleWidth: CGFloat { enclosingScrollView?.contentView.bounds.width ?? bounds.width }
+    var visibleWidth: CGFloat { comparisonPaneWidth ?? enclosingScrollView?.contentView.bounds.width ?? bounds.width }
 
     func relayout() {
         computeLayout()
@@ -132,7 +132,7 @@ extension ItemListView {
     /// Details: one row per item; Name takes the width the other columns leave, unless the user sized it.
     private func layoutDetails(width: CGFloat) -> NSSize {
         detailsRoles = [.name] + model.props.roles(for: .details)
-        let h = 2 * Self.pad + max(iconSize, lineHeight) + 2
+        let h = comparisonRowHeight ?? (2 * Self.pad + max(iconSize, lineHeight) + 2)
         let side = Self.sidePadding, groupH = groupHeaderHeight
         let saved = Self.savedColumnWidths
         var fixed: CGFloat = 0
@@ -151,9 +151,11 @@ extension ItemListView {
                 y += groupH
                 lastGroup = r.group
             }
+            if let comparisonSlots, comparisonSlots.indices.contains(i) { y = CGFloat(comparisonSlots[i]) * h }
             frames[i] = CGRect(x: side, y: y, width: total, height: h)
             y += h
         }
+        if comparisonSlots != nil { y = CGFloat(comparisonSlotCount) * h }
         computeTreeLines()
         return NSSize(width: max(width, total + 2 * side), height: max(visibleHeight, y + 4))
     }
@@ -162,8 +164,9 @@ extension ItemListView {
     private func computeTreeLines() {
         // Only drawn with expanders: without them, an array per row (100k in a big folder) on every layout,
         // each column-resize drag event included, for nothing.
-        guard expanderWidth > 0 else { treeLines = []; return }
         let rows = model.rows
+        // Root rows have no branch lines. Avoid an allocation per row in large, flat Details folders.
+        guard expanderWidth > 0, rows.contains(where: { $0.depth > 0 }) else { treeLines = []; return }
         treeLines = Array(repeating: [], count: rows.count)
         var seen: [Bool] = []
         for i in stride(from: rows.count - 1, through: 0, by: -1) {

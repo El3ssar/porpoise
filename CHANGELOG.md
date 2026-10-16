@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Compare follows your browsing.** Compare starts on the open split panes, updates as you navigate, and uses
+  Porpoise's own Details rows, columns, menus, Quick Look and file interactions. Missing linked folders keep Compare
+  open; stopping restores both panes' starting locations, style, selection and scroll position.
+
 - **Compare files.** File › Compare Files (⌥⌘Y) opens text, image and metadata comparisons in their own windows.
   Browse word changes side by side or inline, copy a change left or right with Undo, and save when ready. Compare
   images side by side, with an onion-skin slider or a difference overlay; inspect exact sizes, dates, permissions,

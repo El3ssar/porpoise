@@ -29,7 +29,45 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     let messageBar = MessageBar()
     let selectionTop = SelectionTopBar()
     let selectionBottom = SelectionBottomBar()
+    struct ComparisonSnapshot {
+        let url: URL
+        let props: ViewProperties
+        let selection: Set<URL>
+        let current: URL?
+        let anchor: URL?
+        let origin: CGPoint
+        let history: NavigationHistory
+        let positions: [URL: ViewPosition]
+        let expanded: Set<URL>
+        let contentHeight: CGFloat
+    }
+    func comparisonSnapshot() -> ComparisonSnapshot {
+        .init(
+            url: url, props: model.props, selection: model.selection, current: model.currentURL,
+            anchor: model.anchorURL, origin: list.visibleRect.origin, history: history, positions: viewPositions,
+            expanded: model.expanded, contentHeight: list.frame.height)
+    }
+    private var comparisonRestore: ComparisonSnapshot?
+    private var comparisonPositionRestore: ComparisonSnapshot?
+    private func restoreComparisonPositionIfReady() {
+        guard let snapshot = comparisonPositionRestore, !model.isLoading,
+            list.frame.height >= min(snapshot.contentHeight, snapshot.origin.y + scroll.contentSize.height),
+            snapshot.current.map { model.index(of: $0) != nil } ?? true
+        else { return }
+        comparisonPositionRestore = nil
+        model.selection = snapshot.selection; model.currentURL = snapshot.current; model.anchorURL = snapshot.anchor
+        list.scroll(snapshot.origin)
+    }
+    func restoreComparison(_ snapshot: ComparisonSnapshot) {
+        comparisonRestore = snapshot
+        setURL(snapshot.url, addToHistory: false)
+        history = snapshot.history; viewPositions = snapshot.positions
+        model.props = snapshot.props
+    }
     var preservesMissingLocation = false
+    var comparisonPropsChanged: (() -> Void)?
+    var comparisonSelectionChanged: (() -> Void)?
+    var comparisonMissingName: String?
     private var comparisonSuspended = false
     private var comparisonNeedsRefresh = false
     func suspendForComparison(_ value: Bool) {
@@ -46,6 +84,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             needsLayout = true
         }
     }
+    private(set) var historyTraversal = 0
     var history: NavigationHistory
     var isActive = true {
         didSet {
@@ -133,11 +172,12 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             self.apps?.grid.needsDisplay = true
             self.updateStatus()
             self.selectionBottom.enabled = !self.model.selection.isEmpty
+            self.comparisonSelectionChanged?()
             self.delegate?.containerSelectionChanged(self)
         }
         model.onPropsChanged = { [weak self] in
             guard let self else { return }
-            if self.comparisonSuspended { self.comparisonNeedsRefresh = true; return }
+            if self.comparisonSuspended { self.comparisonNeedsRefresh = true; self.comparisonPropsChanged?(); return }
             self.layoutSubtreeIfNeeded()
             self.layout()  // now: the Details header comes or goes, which resizes the scroll view
             self.list.relayout()
@@ -174,6 +214,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                     self.messageBar.show(e, error: true)
                 }
             }
+            if self.comparisonSuspended { return }
             if let pos = self.pendingPosition {
                 self.pendingPosition = nil
                 self.list.scroll(pos.origin)
@@ -183,6 +224,15 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 self.list.select(self.model.rows[i].item.url)
             }
             self.pendingSelect = nil
+            if let snapshot = self.comparisonRestore, self.url == snapshot.url {
+                self.comparisonRestore = nil
+                self.model.props = snapshot.props
+                self.model.selection = snapshot.selection
+                self.model.currentURL = snapshot.current; self.model.anchorURL = snapshot.anchor
+                self.comparisonPositionRestore = snapshot
+                for url in snapshot.expanded.sorted(by: { $0.pathComponents.count < $1.pathComponents.count }) { self.model.setExpanded(url, true) }
+                self.list.relayout(); self.restoreComparisonPositionIfReady()
+            }
         }
         let center = NotificationCenter.default
         observers.append(
@@ -360,6 +410,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             return
         }
         let u = newURL.isFileURL ? newURL.standardizedFileURL : newURL
+        comparisonPositionRestore = nil
         if !filterBar.isLocked { filterBar.clear(); if !Settings.shared.showFilterBarOnStartup { filterBar.isHidden = true } }
         if !searchBar.isHidden { closeSearch() }
         messageBar.isHidden = true
@@ -376,6 +427,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         model.filter = AppLibrary.isActive(for: u) ? NameFilter() : filterBar.filter
         list.scroll(.zero)  // first: a location that loads synchronously restores its position inside setLocation
         model.setLocation(u)
+        if comparisonSuspended { var props = model.props; props.mode = .details; model.props = props }
         if AppLibrary.isActive(for: u) { apps?.prepareForDisplay() }
         RecentLocations.shared.visit(u)
         needsLayout = true
@@ -385,11 +437,15 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     func goBack(_ steps: Int = 1) {
         let from = url
         guard let u = history.goBack(steps) else { return }
+        historyTraversal = -steps
+        defer { historyTraversal = 0 }
         setURL(u, addToHistory: false, selecting: from.deletingLastPathComponent() == u ? from : nil, restoring: viewPositions[u])
     }
 
     func goForward(_ steps: Int = 1) {
         guard let u = history.goForward(steps) else { return }
+        historyTraversal = steps
+        defer { historyTraversal = 0 }
         setURL(u, addToHistory: false, restoring: viewPositions[u])
     }
 
@@ -411,6 +467,17 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         setURL(url.deletingLastPathComponent(), selecting: url)
     }
 
+    func comparisonRowsDidLoad() {
+        if let position = pendingPosition {
+            pendingPosition = nil
+            list.scroll(position.origin); model.currentURL = position.current
+        }
+        if let target = pendingSelect, let index = model.index(of: target) {
+            pendingSelect = nil; list.select(model.rows[index].item.url)
+        }
+        updateStatus()
+    }
+
     func reload() { model.reload() }
 
     // MARK: Status
@@ -428,12 +495,18 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         if comparisonSuspended { comparisonNeedsRefresh = true; return }
         if showsApps { apps?.reload() }
         list.relayout()
+        restoreComparisonPositionIfReady()
         list.refreshHover()
         updateStatus()
         needsLayout = true
     }
 
     func updateStatus() {
+        if let name = comparisonMissingName {
+            statusBar.text = "No “\(name)” here · Go back or up"
+            statusBar.toolTip = statusBar.text
+            return
+        }
         if showsApps {
             // Apps, not files and bytes (bundle sizes would need a scan of every app).
             let n = model.rows.count, sel = model.selection.count
