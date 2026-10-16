@@ -395,6 +395,24 @@ final class DebugBridge: NSObject {
         case "windows":
             let list = NSApp.windows.filter(\.isVisible).map { "\($0.title)|\(type(of: $0.windowController as Any))|key=\($0.isKeyWindow)" }
             try? list.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
+        case "drivefixture":
+            // Loopback-only visual fixture. Exercise real OAuth without opening the operator's browser.
+            guard Settings.isTesting, let raw = ProcessInfo.processInfo.environment["PORPOISE_DRIVE_FAKE"],
+                let fake = URL(string: raw), fake.scheme == "http", fake.host == "127.0.0.1"
+            else { return }
+            Task { @MainActor in
+                do {
+                    let store = DriveAccountStore.shared
+                    let account: DriveAccount
+                    if let existing = store.accounts.first {
+                        account = existing
+                    } else {
+                        account = try await store.connect { url in Task { _ = try? await URLSession.shared.data(from: url) } }
+                    }
+                    self.wc?.view.setURL(DriveLocation(accountID: account.id).url)
+                    self.writeState(to: arg)
+                } catch { try? error.localizedDescription.write(toFile: arg, atomically: true, encoding: .utf8) }
+            }
         case "navigate": wc?.view.setURL(arg.hasPrefix("/") ? URL(fileURLWithPath: arg) : (URL(string: arg) ?? URL(fileURLWithPath: arg)))
         case "reviewfront":
             guard Settings.isTesting,
@@ -588,6 +606,26 @@ final class DebugBridge: NSObject {
             return CACurrentMediaTime() - t
         }
         switch a[1] {
+        case "drivecache" where n.count == 1:
+            guard Settings.isTesting, let model = wc?.view.model, model.location.scheme == "gdrive" else { return }
+            report(
+                (0..<max(1, min(20, Int(n[0])))).map { _ in
+                    timed {
+                        model.reload()
+                    }
+                })
+        case "driveexpand" where n.count == 1:
+            guard Settings.isTesting, let model = wc?.view.model, model.location.scheme == "gdrive",
+                let folder = model.items.first(where: \.isBrowsableFolder)
+            else { return }
+            model.props.mode = .details
+            report(
+                (0..<max(1, min(20, Int(n[0])))).map { _ in
+                    model.setExpanded(folder.url, false)
+                    return timed {
+                        model.setExpanded(folder.url, true)
+                    }
+                })
         case "resize" where n.count == 3:
             var f = win.frame
             let steps = Int(n[2])
