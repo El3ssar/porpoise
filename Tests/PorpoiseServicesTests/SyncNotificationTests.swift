@@ -11,7 +11,7 @@ struct SyncNotificationTests {
         let paused = SyncNotificationPayload(pair: pair, event: .deletionReview(count: 340, destination: "Backup"))
         #expect(conflict.title == pair.description + " needs you")
         #expect(conflict.body == "2 files changed on both sides.")
-        #expect(failed.title == "Couldn't sync Website")
+        #expect(failed.title == "Couldn’t sync Website")
         #expect(failed.body == "server.local is full. 18 items are waiting.")
         #expect(paused.title == "Sync paused")
         #expect(paused.body == "340 items would be moved to the Trash in Backup.")

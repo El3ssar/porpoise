@@ -107,7 +107,7 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
     func remove(_ pair: SavedSync, window: NSWindow?, onRemoved: (() -> Void)? = nil) {
         let alert = NSAlert()
         alert.messageText = "Remove the “\(pair.name)” sync?"
-        alert.informativeText = "Your files aren't touched; Porpoise stops syncing this pair and forgets its history."
+        alert.informativeText = "Your files aren’t touched; Porpoise stops syncing this pair and forgets its history."
         alert.addButton(withTitle: "Remove"); alert.addButton(withTitle: "Cancel")
         func finish(_ answer: NSApplication.ModalResponse) {
             guard answer == .alertFirstButtonReturn else { return }
@@ -522,7 +522,7 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
     func tooltip(_ pair: SavedSync) -> String {
         let suffix: String
         switch statuses[pair.id] ?? .idle {
-        case .missing: suffix = "\(pair.right.lastPathComponent) isn't available. Porpoise will sync when it's back."
+        case .missing: suffix = "\(pair.right.lastPathComponent) isn’t available. Porpoise will sync when it’s back."
         case .failed(let reason): suffix = reason
         case .conflicts(let count): suffix = "\(count) conflicts need review"
         case .review(let count): suffix = "Sync paused: \(count) items would be moved to the Trash."
@@ -532,7 +532,7 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
         return pair.description + " · " + suffix + synced
     }
     func showError(_ text: String, window: NSWindow?) {
-        let alert = NSAlert(); alert.messageText = "Couldn't sync"; alert.informativeText = text; alert.addButton(withTitle: "OK")
+        let alert = NSAlert(); alert.messageText = "Couldn’t sync"; alert.informativeText = text; alert.addButton(withTitle: "OK")
         if let window = window ?? AppDelegate.shared.windows.first?.window {
             alert.beginSheetModal(for: window)
         } else {

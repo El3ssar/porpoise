@@ -22,7 +22,7 @@ public struct SyncNotificationPayload: Codable, Equatable, Sendable {
             body = "\(count) \(count == 1 ? "file" : "files") changed on both sides."
             action = "Review"
         case .failure(let reason, let waiting):
-            title = "Couldn't sync " + pair.name
+            title = "Couldn’t sync " + pair.name
             let message = reason.trimmingCharacters(in: .whitespacesAndNewlines)
             let suffix = waiting.map { " \($0) \($0 == 1 ? "item is" : "items are") waiting." } ?? ""
             body = message + (message.hasSuffix(".") || message.isEmpty ? "" : ".") + suffix

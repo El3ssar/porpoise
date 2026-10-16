@@ -35,7 +35,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
     private var keepExpansion: CGFloat = 0
     private let keepAnimator = Animator()
     private let swapAnimator = Animator()
-    private let explanation = NSTextField(labelWithString: "Porpoise syncs changes while it's open. You'll only hear about conflicts and errors.")
+    private let explanation = NSTextField(labelWithString: "Porpoise syncs changes while it’s open. You’ll only hear about conflicts and errors.")
     private let method = NSPopUpButton()
     private let custom = NSTextField(labelWithString: "")
     private let customButton = SyncClosureButton(title: "Custom…")
@@ -264,7 +264,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         pairDescription.lineBreakMode = .byTruncatingMiddle
         explanation.stringValue =
             automatic.state == .on
-            ? "Porpoise syncs changes while it's open. You'll only hear about conflicts and errors."
+            ? "Porpoise syncs changes while it’s open. You’ll only hear about conflicts and errors."
             : "Save this sync to run it again from the sidebar."
         explanation.frame = CGRect(x: 22, y: height - 62, width: width - 44, height: 16)
         (root as? SyncSheetBackdrop)?.footerY = height - 56 - keepExpansion * 24
@@ -287,7 +287,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             cancelButton.frame.origin.y = footerRow; syncButton.frame.origin.y = footerRow
         }
         syncButton.isEnabled = !planning
-        syncButton.title = editing || savingTask ? "Save" : (preview?.executable.steps.isEmpty == true ? "Done" : "Sync")
+        syncButton.title = editing || savingTask ? "Save" : (preview?.executable.steps.isEmpty == true && displaySteps.isEmpty ? "Done" : "Sync")
         if editing {
             saveButton.frame.origin.x = 20; saveButton.titleTint = Theme.compareDanger; saveButton.drawsBackground = false
             automatic.title = "Keep in sync automatically"
@@ -454,7 +454,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                 (side == .left ? pair.left : pair.right).host ?? (side == .left ? pair.leftTitle : pair.rightTitle)
             }.sorted().joined(separator: " and ")
             callout.text =
-                "\(names) can't keep deleted items, so \(leftInPlace == 1 ? "this item will" : "these \(leftInPlace) items will") be left in place."
+                "\(names) can’t keep deleted items, so \(leftInPlace == 1 ? "this item will" : "these \(leftInPlace) items will") be left in place."
             callout.danger = true
         } else if deletions > 0 {
             callout.text =

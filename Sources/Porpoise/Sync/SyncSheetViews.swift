@@ -164,7 +164,7 @@ final class SyncPlanRow: NSView {
         include.state = checked && !unavailable ? .on : .off; include.target = self; include.action = #selector(toggled)
         include.setAccessibilityLabel("Include \(step.path)")
         if step.sourcePath != nil, step.path != difference?.left?.path, step.path != difference?.right?.path {
-            include.isEnabled = false; include.toolTip = "Both versions are kept together. Change the original item's choice to skip this group."
+            include.isEnabled = false; include.toolTip = "Both versions are kept together. Change the original item’s choice to skip this group."
         }
         let folder = isFolder || (step.expectedSource ?? step.expectedTarget)?.kind == .directory
         let file = FileItem(
