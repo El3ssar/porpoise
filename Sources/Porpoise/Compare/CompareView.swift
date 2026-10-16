@@ -464,6 +464,6 @@ final class CompareSyncButton: NSButton {
         let style = NSMutableParagraphStyle(); style.alignment = .center
         (title as NSString).draw(
             in: CGRect(x: 2, y: (bounds.height - 16) / 2, width: bounds.width - 4, height: 18),
-            withAttributes: [.font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: NSColor.white, .paragraphStyle: style])
+            withAttributes: [.font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: Theme.selectionText, .paragraphStyle: style])
     }
 }

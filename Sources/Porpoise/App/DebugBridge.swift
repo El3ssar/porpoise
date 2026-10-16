@@ -742,12 +742,14 @@ final class DebugBridge: NSObject {
     /// onscreen windows are captured, so another app's content cannot enter a design review artifact.
     private func windowServerMenuSnapshot(to path: String) {
         let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
-        let ids = info.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(getpid()) }
-            .compactMap { $0[kCGWindowNumber as String] as? NSNumber }
+        var ids: [UnsafeRawPointer?] = info.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(getpid()) }
+            .compactMap { ($0[kCGWindowNumber as String] as? NSNumber).flatMap { UnsafeRawPointer(bitPattern: $0.uintValue) } }
         typealias Fn = @convention(c) (CGRect, CFArray, UInt32) -> Unmanaged<CGImage>?
         guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImageFromArray") else { return }
         let fn = unsafeBitCast(sym, to: Fn.self)
-        if let image = fn(.null, ids as CFArray, 1)?.takeRetainedValue() { writePNG(image, to: path) }
+        let count = ids.count
+        let windows = ids.withUnsafeMutableBufferPointer { buffer in CFArrayCreate(nil, buffer.baseAddress, count, nil) }
+        if let windows, let image = fn(.null, windows, 1)?.takeRetainedValue() { writePNG(image, to: path) }
     }
 
     /// `nominal`: at 1x, much quicker to take (frames of an animation).
