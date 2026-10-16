@@ -77,7 +77,7 @@ public final class Activity: Identifiable {
     }
 
     /// Cloud items have ids in their URLs: their names come from the listing ("Q3", "My Drive").
-    static func name(_ url: URL) -> String {
+    public static func name(_ url: URL) -> String {
         url.scheme == "gdrive" ? RemoteFS.displayName(for: url) : url.lastPathComponent
     }
 

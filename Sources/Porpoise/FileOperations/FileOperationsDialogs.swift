@@ -92,9 +92,9 @@ final class FileOperationsDialogs: FileOperationsUI {
     func resolveDiskFull(destination: URL?, neededBytes: Int64, window: AnyObject?, job: FileJob, completion: @escaping (Bool) -> Void) {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "\(destination?.lastPathComponent ?? "The destination") is full."
+        alert.messageText = "\(destination.map(Activity.name) ?? "The destination") is full."
         alert.informativeText =
-            "Free space for “\(job.sources.first?.lastPathComponent ?? "this item")” (up to \(FileFormat.size(neededBytes))), then try again. Finished files stay in place."
+            "Free space for “\(job.sources.first.map(Activity.name) ?? "this item")” (up to \(FileFormat.size(neededBytes))), then try again. Finished files stay in place."
         alert.addButton(withTitle: "Try Again"); alert.addButton(withTitle: "Stop")
         let key = ObjectIdentifier(job)
         diskFullAlerts[key] = alert
@@ -141,7 +141,7 @@ final class FileOperationsDialogs: FileOperationsUI {
             icon.image = NSImage(systemSymbolName: "doc", accessibilityDescription: "Couldn't copy")
             icon.contentTintColor = Theme.transferDanger
             document.addSubview(icon)
-            let path = NSTextField(labelWithString: source?.lastPathComponent ?? "Item \(index + 1)")
+            let path = NSTextField(labelWithString: source.map(Activity.name) ?? "Item \(index + 1)")
             path.font = .systemFont(ofSize: 11); path.lineBreakMode = .byTruncatingMiddle
             path.frame = CGRect(x: 32, y: y + 6, width: 150, height: 16); path.toolTip = source?.absoluteString
             document.addSubview(path)
