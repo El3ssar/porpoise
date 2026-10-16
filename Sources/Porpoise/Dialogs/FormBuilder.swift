@@ -127,21 +127,32 @@ final class FormBuilder: NSObject {
         _ names: [String], selected: @escaping () -> String, theme: @escaping (Int) -> AppearanceTheme,
         set: @escaping (Int) -> Void
     ) {
-        let grid = NSGridView()
-        grid.columnSpacing = 8; grid.rowSpacing = 8
+        // Let each row own its three equal columns. Constraining every NSGridView cell to a fraction of
+        // the grid width competes with AppKit's generated column constraints during page attachment.
+        let grid = NSStackView()
+        grid.orientation = .vertical
+        grid.alignment = .leading
+        grid.spacing = 8
         for start in stride(from: 0, to: names.count, by: 3) {
-            let buttons: [NSView] = (start..<min(start + 3, names.count)).map { i in
+            let row = NSStackView()
+            row.distribution = .fillEqually
+            row.spacing = 8
+            for i in start..<min(start + 3, names.count) {
                 let b = ThemePreviewButton(title: names[i], theme: { theme(i) }) { set(i) }
                 b.heightAnchor.constraint(equalToConstant: 62).isActive = true
                 track(b, enabled: nil) { [weak b] in
                     b?.state = selected() == names[i] ? .on : .off; b?.needsDisplay = true
                 }
-                return b
+                row.addArrangedSubview(b)
             }
-            grid.addRow(with: buttons)
-            for button in buttons {
-                button.widthAnchor.constraint(equalTo: grid.widthAnchor, multiplier: 1.0 / 3, constant: -16.0 / 3).isActive = true
+            // Keep a partial final row aligned with the full rows.
+            while row.arrangedSubviews.count < 3 {
+                let placeholder = NSView()
+                placeholder.heightAnchor.constraint(equalToConstant: 62).isActive = true
+                row.addArrangedSubview(placeholder)
             }
+            grid.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: grid.widthAnchor).isActive = true
         }
         contentStack.addArrangedSubview(grid)
         grid.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -32).isActive = true
