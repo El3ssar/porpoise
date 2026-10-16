@@ -31,14 +31,39 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
     }
     var scopeFolder: URL? {
         didSet {
-            hereButton.toolTip = "Limit the search to “\(scopeFolder?.lastPathComponent ?? "")” and its subfolders"
+            updateTooltips()
             updatePlaceholder()
         }
     }
     private var indexObserver: NSObjectProtocol?
+    /// The cloud service searched instead of this Mac ("Google Drive"), when the folder is in one: its own search runs,
+    /// names (or names and contents) in the folder or everywhere in the account.
+    var cloudService: String? {
+        didSet {
+            guard cloudService != oldValue else { return }
+            updateTooltips()
+            updatePlaceholder()
+        }
+    }
+
+    private func updateTooltips() {
+        if let service = cloudService {
+            hereButton.toolTip = "Search the items in “\(scopeFolder.map(\.folderName) ?? "this folder")” (\(service) doesn’t search subfolders)"
+            everywhereButton.toolTip = "Search all of \(service)"
+            namesButton.toolTip = "Find names in \(service)"
+            contentsButton.toolTip = "Also find files by the text inside them (\(service) searches their contents)"
+            return
+        }
+        hereButton.toolTip = "Limit the search to “\(scopeFolder?.lastPathComponent ?? "")” and its subfolders"
+    }
 
     /// Where the index covers the scope, the field says so and suggests its syntax.
     private func updatePlaceholder() {
+        if let service = cloudService {
+            field.placeholderString = contents ? "Search names and contents in \(service)…" : "Search \(service)…"
+            field.toolTip = nil
+            return
+        }
         let scope = everywhere ? FileManager.default.homeDirectoryForCurrentUser : scopeFolder
         let indexed = !contents && (scope.map { SearchIndex.shared.hasReadySnapshot(for: $0) } ?? false)
         field.placeholderString = contents ? "Search names and contents…" : indexed ? "Search the index — try ext:pdf size:>10mb dm:today" : "Search…"
@@ -69,6 +94,7 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
         closeButton.onClick = { [weak self] in self.map { $0.delegate?.searchBarClosed($0) } }
         for v in [field, hereButton, everywhereButton, namesButton, contentsButton, closeButton] as [NSView] { addSubview(v) }
         updateButtons()
+        updateTooltips()
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -115,10 +141,10 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
     }
 
     func controlTextDidChange(_ obj: Notification) {
-        delegate?.searchBar(self, hint: contents ? nil : IndexQuery.hint(for: field.stringValue))
+        delegate?.searchBar(self, hint: contents || cloudService != nil ? nil : IndexQuery.hint(for: field.stringValue))
         debounce?.invalidate()
         let scope = everywhere ? FileManager.default.homeDirectoryForCurrentUser : scopeFolder
-        let ready = scope.map { SearchIndex.shared.hasReadySnapshot(for: $0) } ?? false
+        let ready = cloudService == nil && (scope.map { SearchIndex.shared.hasReadySnapshot(for: $0) } ?? false)
         debounce = Timer.scheduledTimer(withTimeInterval: (!contents && ready ? 0.015 : Self.debounceDelay), repeats: false) { [weak self] _ in
             self?.fire()
         }

@@ -31,6 +31,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     var cloudTrashNotice: Set<URL> = []
     /// The account whose offline message shows (it goes, and the folder is read again, when the account is back).
     var offlineNotice: String?
+    /// The cloud service's search running for the search bar (in a cloud folder).
+    private(set) var cloudSearch: CloudSearch?
     /// A saved listing shows while the service is asked again, for long enough to say so ("Updating…"): a quick
     /// answer changes nothing in the status bar.
     private var showsUpdating = false
@@ -618,12 +620,14 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     func showSearch() {
         if showsApps, let a = apps { window?.makeFirstResponder(a.field); return }
-        guard url.isFileURL else {
-            messageBar.show("Searching is available in local folders and mounted shares.", error: false)
+        let cloud = PlacesModel.isCloud(url)
+        guard url.isFileURL || cloud else {
+            messageBar.show("Searching is available in local folders, mounted shares and Google Drive.", error: false)
             needsLayout = true
             return
         }
         searchBar.isHidden = false
+        searchBar.cloudService = cloud ? CloudAccounts.shared.providerTitle(for: url) : nil
         searchBar.scopeFolder = url
         delegate?.containerSearchVisibilityChanged(self)
         needsLayout = true
@@ -634,6 +638,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     func closeSearch() {
         searchQuery?.stop()
         searchQuery = nil
+        cloudSearch?.stop()
+        cloudSearch = nil
+        statusBar.progress = nil
         searchBar.isHidden = true
         searchBar.clear()
         animatingItems(searchStyle: true) {
@@ -647,7 +654,11 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     func searchBar(_ bar: SearchBar, search text: String, everywhere: Bool, contents: Bool) {
         searchQuery?.stop()
+        cloudSearch?.stop()
+        cloudSearch = nil
+        if bar.cloudService != nil, !text.isEmpty { return searchCloud(text, everywhere: everywhere, contents: contents) }
         guard !text.isEmpty else {
+            statusBar.progress = nil
             animatingItems(searchStyle: true) {
                 model.searchMatches = nil
                 model.searchResults = nil
@@ -687,6 +698,43 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             }
         }
         searchQuery?.start()
+    }
+
+    /// The cloud service's own search: "Searching Google Drive…" while its pages come in, the results growing as
+    /// they do (what's shown stays until the first ones), then how many were found there.
+    private func searchCloud(_ text: String, everywhere: Bool, contents: Bool) {
+        let run = CloudSearch(text, in: url, everywhere: everywhere, contents: contents)
+        cloudSearch = run
+        statusBar.progress = 0.1
+        statusBar.showMessage("Searching \(run.serviceTitle)…", duration: 600)
+        run.onResults = { [weak self] items, done in
+            guard let self, self.cloudSearch === run else { return }
+            if done {
+                self.statusBar.progress = nil
+                self.statusBar.showMessage(run.summary)
+                if run.error != nil, items.isEmpty, (run.error as? CloudEditError) != .notSupported {
+                    self.messageBar.show(run.summary, error: true)
+                    self.needsLayout = true
+                }
+            } else {
+                self.statusBar.progress = 0.5
+            }
+            guard done || !items.isEmpty else { return }
+            let matches = SearchMatches(text: text, contents: contents)
+            self.model.sortSearchResults(items) { [weak self] apply in
+                guard let self, self.cloudSearch === run else { return }
+                let old = self.model.searchResults ?? []
+                let adding =
+                    self.model.isSearching && !old.isEmpty && items.count >= old.count
+                    && old.indices.allSatisfy { items[$0].url == old[$0].url }
+                self.animatingItems(searchStyle: true, onlyAdding: adding) {
+                    if !self.model.isSearching { self.model.showSearchView() }
+                    self.model.searchMatches = matches
+                    apply()
+                }
+            }
+        }
+        run.start()
     }
 
     func searchBar(_ bar: SearchBar, hint: String?) {

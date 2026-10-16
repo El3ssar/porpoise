@@ -191,6 +191,12 @@ public protocol CloudBackend: AnyObject {
     // Freshness (CloudFreshness.swift has the defaults: nothing is saved).
     /// When the listing of a folder that can be shown without the network was last read from the service.
     func savedAt(for folder: URL) -> Date?
+    /// One page of the service's own search: in `folder` (its items, not its subfolders'), or `everywhere` in the
+    /// account (My Drive, or the shared drive `folder` is in); `contents` looks inside files too. Returns a cancel function.
+    func search(
+        _ text: String, in folder: URL, everywhere: Bool, contents: Bool, pageToken: String?,
+        done: @escaping (Result<CloudSearchPage, Error>) -> Void
+    ) -> () -> Void
 }
 
 /// Connected cloud accounts as the app shows them: labels, which rows each shows in the sidebar, avatars, and the
