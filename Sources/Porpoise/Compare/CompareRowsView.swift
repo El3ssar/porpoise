@@ -5,10 +5,10 @@ import PorpoiseServices
 enum CompareSymbols {
     static let onlyLeft = "◧", onlyRight = "◨"
     static func drawOnly(_ side: SyncSide, centeredAt center: CGPoint, color: NSColor) {
-        let rect = CGRect(x: center.x - 7, y: center.y - 4.5, width: 14, height: 9)
-        let box = NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3)
+        let rect = CGRect(x: center.x - 6, y: center.y - 6, width: 12, height: 12)
+        let box = NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2)
         NSGraphicsContext.saveGraphicsState(); box.addClip(); color.setFill()
-        CGRect(x: side == .left ? rect.minX : rect.midX, y: rect.minY, width: 7, height: 9).fill()
+        CGRect(x: side == .left ? rect.minX : rect.midX, y: rect.minY, width: 6, height: 12).fill()
         NSGraphicsContext.restoreGraphicsState()
         color.setStroke(); box.lineWidth = 1.25; box.stroke()
     }
@@ -41,6 +41,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
     var filterMilliseconds: Double = 0
     var drawMilliseconds: [Double] = []
     var drawSampleTimes: [Double] = []
+    var detailsDrawMilliseconds: [SyncSide: [Double]] = [:]
     init(model: CompareModel) {
         self.model = model; super.init(frame: .zero); wantsLayer = true
         setAccessibilityLabel("Folder comparison"); setAccessibilityRole(.outline)
@@ -79,7 +80,9 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         rowHeight = 2 * ItemListView.pad + max(size, containers.first?.list.lineHeight ?? 16) + 2
         for (index, container) in containers.enumerated() {
             let list = container.list
-            var props = container.model.props; props.mode = .details; props.setIconSize(size, for: .details); container.model.props = props
+            var props = container.model.props; props.mode = .details; props.setIconSize(size, for: .details)
+            props.sortRole = model.sortRole; props.sortOrder = model.sortAscending ? .ascending : .descending
+            container.model.props = props
             list.comparisonZoom = { [weak self] size in self?.setDetailsZoom(size) }
             list.comparisonSlots = []; list.comparisonSlotCount = 0
             list.comparisonRowHeight = rowHeight
@@ -88,7 +91,8 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
                 guard let self, let path = LinkedBrowsing.relativePath(url, below: side == .left ? self.model.leftRoot : self.model.rightRoot) else {
                     return
                 }
-                if self.model.expanded.contains(path) != on { self.model.expand(path) }
+                let canonical = (side == .left ? self.model.leftDetails : self.model.rightDetails).pathAliases[path] ?? path
+                if self.model.expanded.contains(canonical) != on { self.model.expand(canonical) }
             }
             container.comparisonPropsChanged = { [weak self, weak container] in
                 guard let self, let container, !self.updatingDetailsProperties else { return }
@@ -97,6 +101,12 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
                     self.model.sortRole = props.sortRole; self.model.sortAscending = props.sortOrder == .ascending
                     self.model.sortSide = side; self.model.invalidateSort()
                 }
+                self.updatingDetailsProperties = true
+                for other in self.detailsContainers where other !== container {
+                    var shared = other.model.props; shared.sortRole = props.sortRole; shared.sortOrder = props.sortOrder; other.model.props = shared
+                    other.header.needsDisplay = true
+                }
+                self.updatingDetailsProperties = false
                 self.detailsLayouts = [:]; self.layoutDetails()
             }
             container.comparisonSelectionChanged = { [weak self, weak container] in
@@ -104,6 +114,9 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
                 self.activeSide = side
                 let url = container.model.selection.first ?? container.model.currentURL
                 self.selectedPath = url.flatMap { LinkedBrowsing.relativePath($0, below: side == .left ? self.model.leftRoot : self.model.rightRoot) }
+                if let path = self.selectedPath {
+                    self.selectedPath = (side == .left ? self.model.leftDetails : self.model.rightDetails).pathAliases[path] ?? path
+                }
                 if let path = self.selectedPath, let slot = self.model.rowIndices[path] { self.onSelection?(self.rows[slot], side) }
                 self.needsDisplay = true
                 self.detailsContainers.forEach { $0.list.needsDisplay = true }
@@ -113,6 +126,12 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
                 let slot = Int(point.y / self.rowHeight)
                 guard self.rows.indices.contains(slot), (side == .left ? self.rows[slot].left : self.rows[slot].right) == nil else { return false }
                 self.activeSide = side.opposite; self.select(slot); return true
+            }
+            list.comparisonDrawTiming = { [weak self] milliseconds in
+                self?.detailsDrawMilliseconds[side, default: []].append(milliseconds)
+                if let count = self?.detailsDrawMilliseconds[side]?.count, count > 240 {
+                    self?.detailsDrawMilliseconds[side]?.removeFirst(count - 240)
+                }
             }
             list.drawComparisonBackground = { [weak self, weak list] dirty in
                 guard let self, let list else { return }
@@ -126,7 +145,8 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         for container in detailsContainers {
             let list = container.list
             list.comparisonSlots = nil; list.comparisonPaneWidth = nil
-            list.comparisonRowHeight = nil; list.drawComparisonBackground = nil; list.comparisonZoom = nil; list.comparisonGhostClick = nil
+            list.comparisonRowHeight = nil; list.drawComparisonBackground = nil; list.comparisonZoom = nil; list.comparisonGhostClick = nil;
+            list.comparisonDrawTiming = nil
             container.comparisonPropsChanged = nil; container.comparisonSelectionChanged = nil
             container.model.onComparisonExpansion = nil; container.comparisonMissingName = nil; container.statusBar.toolTip = nil
             container.addSubview(container.scroll); container.addSubview(container.header)
@@ -143,7 +163,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
             let identity = index == 0 ? model.comparison?.leftRootIdentity : model.comparison?.rightRootIdentity
             container.comparisonMissingName =
                 root.isFileURL && model.comparison != nil && identity == nil && !model.loading ? root.lastPathComponent : nil
-            container.model.presentComparisonRows(details.rows)
+            container.model.presentComparisonRows(details.rows, counts: details.counts)
             container.list.comparisonSlots = details.slots; container.list.comparisonSlotCount = rows.count
         }
         layoutDetails()
@@ -230,7 +250,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         leaving = old.compactMap { row in indices[row.path] == nil ? from[row.path].map { (row, $0.minY) } : nil }
         frame.size.height = max(enclosingScrollView?.contentSize.height ?? 0, CGFloat(rows.count) * rowHeight)
         if let selectedPath, indices[selectedPath] == nil { self.selectedPath = nil }
-        let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || next.count > 3000
+        let reduce = !detailsContainers.isEmpty || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || next.count > 3000
         transition = ItemTransition(from: reduce ? [:] : from, leaving: [], progress: 0)
         if reduce { leaving = [] }
         animator.run(
@@ -310,8 +330,9 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
             if symbol == CompareSymbols.onlyLeft || symbol == CompareSymbols.onlyRight {
                 CompareSymbols.drawOnly(symbol == CompareSymbols.onlyLeft ? .left : .right, centeredAt: center, color: color(row))
             } else if symbol == "○" {
-                color(row).setStroke(); let ring = NSBezierPath(ovalIn: CGRect(x: center.x - 4.5, y: center.y - 4.5, width: 9, height: 9))
-                ring.lineWidth = 1.75; ring.stroke()
+                color(row).setStroke(); let ring = NSBezierPath(ovalIn: CGRect(x: center.x - 4, y: center.y - 4, width: 8, height: 8))
+                ring.lineWidth = 1.5; ring.stroke()
+                color(row).setFill(); NSBezierPath(ovalIn: CGRect(x: center.x - 1.5, y: center.y - 1.5, width: 3, height: 3)).fill()
             } else {
                 text(
                     symbol, CGRect(x: seam.minX + 2, y: y + (rowHeight - 20) / 2, width: max(0, seam.width - 4), height: 20), size: 16,

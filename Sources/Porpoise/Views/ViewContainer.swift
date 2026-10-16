@@ -38,13 +38,26 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         let origin: CGPoint
         let history: NavigationHistory
         let positions: [URL: ViewPosition]
+        let expanded: Set<URL>
+        let contentHeight: CGFloat
     }
     func comparisonSnapshot() -> ComparisonSnapshot {
         .init(
             url: url, props: model.props, selection: model.selection, current: model.currentURL,
-            anchor: model.anchorURL, origin: list.visibleRect.origin, history: history, positions: viewPositions)
+            anchor: model.anchorURL, origin: list.visibleRect.origin, history: history, positions: viewPositions,
+            expanded: model.expanded, contentHeight: list.frame.height)
     }
     private var comparisonRestore: ComparisonSnapshot?
+    private var comparisonPositionRestore: ComparisonSnapshot?
+    private func restoreComparisonPositionIfReady() {
+        guard let snapshot = comparisonPositionRestore, !model.isLoading,
+            list.frame.height >= min(snapshot.contentHeight, snapshot.origin.y + scroll.contentSize.height),
+            snapshot.current.map { model.index(of: $0) != nil } ?? true
+        else { return }
+        comparisonPositionRestore = nil
+        model.selection = snapshot.selection; model.currentURL = snapshot.current; model.anchorURL = snapshot.anchor
+        list.scroll(snapshot.origin)
+    }
     func restoreComparison(_ snapshot: ComparisonSnapshot) {
         comparisonRestore = snapshot
         setURL(snapshot.url, addToHistory: false)
@@ -216,7 +229,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 self.model.props = snapshot.props
                 self.model.selection = snapshot.selection
                 self.model.currentURL = snapshot.current; self.model.anchorURL = snapshot.anchor
-                self.list.relayout(); self.list.scroll(snapshot.origin)
+                self.comparisonPositionRestore = snapshot
+                for url in snapshot.expanded.sorted(by: { $0.pathComponents.count < $1.pathComponents.count }) { self.model.setExpanded(url, true) }
+                self.list.relayout(); self.restoreComparisonPositionIfReady()
             }
         }
         let center = NotificationCenter.default
@@ -395,6 +410,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             return
         }
         let u = newURL.isFileURL ? newURL.standardizedFileURL : newURL
+        comparisonPositionRestore = nil
         if !filterBar.isLocked { filterBar.clear(); if !Settings.shared.showFilterBarOnStartup { filterBar.isHidden = true } }
         if !searchBar.isHidden { closeSearch() }
         messageBar.isHidden = true
@@ -479,6 +495,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         if comparisonSuspended { comparisonNeedsRefresh = true; return }
         if showsApps { apps?.reload() }
         list.relayout()
+        restoreComparisonPositionIfReady()
         list.refreshHover()
         updateStatus()
         needsLayout = true

@@ -45,6 +45,9 @@ extension MainWindowController {
             Settings.store.set(recents, forKey: "compare.recents")
         }
         let model = CompareModel(left: left, right: right, options: options)
+        model.sortRole = tab.active.model.props.sortRole
+        model.sortAscending = tab.active.model.props.sortOrder == .ascending
+        model.sortSide = tab.activeIsSecondary ? .right : .left
         phase("recentsAndModel")
         let comparison = tab.comparisonView(model: model)
         comparison.document.activeSide = tab.activeIsSecondary ? .right : .left

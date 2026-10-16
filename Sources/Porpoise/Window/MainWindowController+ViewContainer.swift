@@ -123,7 +123,9 @@ extension MainWindowController {
                 keyEquivalent: "")
             copy.target = self; menu.insertItem(copy, at: 0)
             if let path = LinkedBrowsing.relativePath(item.url, below: side == .left ? compare.model.leftRoot : compare.model.rightRoot),
-                let index = compare.model.rowIndices[path], compare.model.rows[index].left?.kind == .file,
+                let index = compare.model.rowIndices[
+                    (side == .left ? compare.model.leftDetails : compare.model.rightDetails).pathAliases[path] ?? path],
+                compare.model.rows[index].left?.kind == .file,
                 compare.model.rows[index].right?.kind == .file
             {
                 let files = NSMenuItem(title: "Compare Files", action: #selector(compareFiles(_:)), keyEquivalent: "")

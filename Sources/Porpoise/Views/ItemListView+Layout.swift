@@ -164,8 +164,9 @@ extension ItemListView {
     private func computeTreeLines() {
         // Only drawn with expanders: without them, an array per row (100k in a big folder) on every layout,
         // each column-resize drag event included, for nothing.
-        guard expanderWidth > 0 else { treeLines = []; return }
         let rows = model.rows
+        // Root rows have no branch lines. Avoid an allocation per row in large, flat Details folders.
+        guard expanderWidth > 0, rows.contains(where: { $0.depth > 0 }) else { treeLines = []; return }
         treeLines = Array(repeating: [], count: rows.count)
         var seen: [Bool] = []
         for i in stride(from: rows.count - 1, through: 0, by: -1) {

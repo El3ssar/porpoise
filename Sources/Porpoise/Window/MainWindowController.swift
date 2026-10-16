@@ -344,9 +344,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
             navigator.missingTail = t.missingCounterpart != nil && (index == 1) == t.missingOnRight
             if let roots = t.linkedRoots {
                 let names = CompareOutline.sideNames(roots.left, roots.right)
-                navigator.preferredAncestorName = index == 1 && names.1 != roots.right.lastPathComponent ? names.1 : nil
+                let label = index == 0 ? names.0 : names.1, root = index == 0 ? roots.left : roots.right
+                navigator.preferredAncestorName = label != root.lastPathComponent ? label.components(separatedBy: " › ").first : nil
             } else if let model = t.compareView?.model {
-                navigator.preferredAncestorName = index == 1 && model.names.1 != model.rightRoot.lastPathComponent ? model.names.1 : nil
+                let label = index == 0 ? model.names.0 : model.names.1, root = index == 0 ? model.leftRoot : model.rightRoot
+                navigator.preferredAncestorName = label != root.lastPathComponent ? label.components(separatedBy: " › ").first : nil
             } else {
                 navigator.preferredAncestorName = nil
             }
