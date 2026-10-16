@@ -196,6 +196,38 @@ import Testing
         let file = DriveFile(id: "binary-a", name: "safe.txt", mimeType: "text/plain")
         await #expect(throws: DriveError.safeUpdateUnavailable) { try await client.saveEdit(scratch.url, baseline: file) }
     }
+    @Test func conditionalProbeIsOptInAndUsesOnlyItsDisposableFixtureFile() async throws {
+        let server = try DriveMutationTests().server(), scratch = try Scratch()
+        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        func run(enabled: Bool) async throws -> (Int32, Data) {
+            let process = Process(), output = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+            process.arguments = [repo.appendingPathComponent("scripts/drive-conditional-probe.py").path]
+            var env = ProcessInfo.processInfo.environment
+            env["PORPOISE_DRIVE_LIVE_PROBE"] = enabled ? "1" : nil
+            env["PORPOISE_DRIVE_PROBE_TOKEN"] = "fixture-access"
+            env["PORPOISE_DRIVE_PROBE_BASE_URL"] = server.base.appendingPathComponent("drive/v3").absoluteString
+            process.environment = env
+            process.standardOutput = output; process.standardError = FileHandle.nullDevice
+            try process.run()
+            let status: Int32 = await withCheckedContinuation { continuation in
+                Thread {
+                    process.waitUntilExit(); continuation.resume(returning: process.terminationStatus)
+                }.start()
+            }
+            return (status, output.fileHandleForReading.readDataToEndOfFile())
+        }
+        #expect(try await run(enabled: false).0 == 2)
+        let result = try await run(enabled: true)
+        #expect(result.0 == 0)
+        let report = try #require(try JSONSerialization.jsonObject(with: result.1) as? [String: Any])
+        #expect(report["etagReturned"] as? Bool == true && report["mismatchRejected"] as? Bool == true)
+        #expect(report["trashed"] as? Bool == true)
+        let client = try make(server, scratch.url)
+        #expect(try await client.file("binary-a").name == "report.txt")
+        #expect(
+            try await client.list(DriveLocation(accountID: client.accountID)).allSatisfy { !$0.name.hasPrefix("Porpoise conditional-save probe") })
+    }
     @Test func searchIsPagedEscapedScopedAndSupportsFullText() async throws {
         let server = try DriveMutationTests().server(), scratch = try Scratch()
         let client = try make(server, scratch.url)
