@@ -112,7 +112,7 @@ Details, it works the same way in Compare. If it can't, Compare is wrong.
 | Situation | Result |
 |---|---|
 | Split view, two different folders | Compares left with right right away. No chooser, sheet or confirmation. |
-| Split view, same folder on both sides | The right pane goes to this folder's **last partner**, then the compare starts. If there's no last partner, the chooser appears in the right pane (§4.10). |
+| Split view, same folder on both sides | Compares right away, like any other pair. The result is the Identical state worded "Both sides show “Projects”" with "Navigate either side to compare it with another folder." Navigating either side compares the new pair (§4.6). |
 | Not split | Opens split view (280 ms glide) with the right pane at the left folder's last partner, then compares. If there's no last partner, the chooser appears in the right pane. |
 | Folder › Compare with Other View | Left is that folder, right is the other pane's folder. |
 | Two folders selected › Compare | Opens split view with the first folder on the left and the second on the right. |
@@ -273,12 +273,10 @@ overlay, and no control is disabled. You can scroll, select, Quick Look, rename 
 
 ✕, Esc (§4.4), ⌃⌘C, the seam button, or choosing another view mode.
 
-- **If you didn't navigate while comparing,** both panes go back exactly as they were: location, view mode, zoom,
-  sort, expanded folders, scroll position and selection. Rows glide from their aligned positions back to their browse
-  positions.
-- **If you navigated,** each pane stays in the folder it's showing, because navigating while comparing is real
-  browsing and is in the history. It takes back its own view mode, zoom and sort, keeps its selection, and scrolls the
-  selection into view. Back returns through the folders you visited. Nothing jumps to another location.
+- **Both panes go back exactly as they were before Compare started:** location, Back/Forward history, view mode,
+  zoom, sort, expanded folders, scroll position and selection. This holds even if you navigated while comparing
+  (operator rule 3). Rows glide from their aligned positions back to their browse positions when the location is
+  unchanged; otherwise it's the instant swap of a normal navigation.
 - Linked browsing stays on if it was on before Compare. Otherwise it turns off with Compare.
 - Nothing about the panes is lost or reset by comparing: column widths, filters, panels and the split position all
   stay.
