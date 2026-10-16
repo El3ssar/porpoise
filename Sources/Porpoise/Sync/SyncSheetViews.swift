@@ -268,7 +268,7 @@ final class SyncPlanRow: NSView {
             let hasCompare = compareButton.superview != nil
             let choiceWidth: CGFloat = choices?.segmentCount == 1 ? 64 : (hasCompare ? 208 : 232)
             choices?.frame = CGRect(x: max(130, width - choiceWidth - (hasCompare ? 80 : 8)), y: 1, width: choiceWidth, height: 22)
-            compareButton.frame = CGRect(x: width - 74, y: 1, width: 70, height: 30)
+            compareButton.frame = CGRect(x: width - 74, y: 1, width: 70, height: 22)
             size.isHidden = true
         } else {
             size.frame = CGRect(x: width - 220, y: 4, width: 68, height: 16)
