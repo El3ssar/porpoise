@@ -233,15 +233,7 @@ final class SyncPlanRow: NSView {
 
         setAccessibilityElement(true); setAccessibilityRole(.row)
         setAccessibilityLabel("\(step.path), \(detail.stringValue)" + (step.action == .conflict ? "" : ", " + size.stringValue))
-        if step.action == .conflict {
-            compareButton.setAccessibilityLabel("Compare " + step.path)
-            var controls: [Any] = []
-            if let choices { controls.append(choices) }
-            if compareButton.superview != nil { controls.append(compareButton) }
-            setAccessibilityChildren(controls)
-        } else {
-            setAccessibilityChildren([include])
-        }
+        if step.action == .conflict { compareButton.setAccessibilityLabel("Compare " + step.path) }
     }
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
