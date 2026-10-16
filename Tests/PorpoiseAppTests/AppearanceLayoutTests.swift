@@ -62,7 +62,7 @@ import Testing
             window.contentView?.layoutSubtreeIfNeeded()
             for button in buttons {
                 #expect(button.frame.width > 100)
-                #expect(abs(button.frame.width - buttons[0].frame.width) < 1)
+                #expect(abs(button.frame.width - buttons[0].frame.width) <= 1)  // whole-pixel columns at 1x differ by up to 1 pt
                 #expect(abs(button.frame.height - 62) < 1)
                 #expect(!button.hasAmbiguousLayout)
             }
