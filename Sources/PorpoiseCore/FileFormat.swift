@@ -27,7 +27,7 @@ public enum FileFormat {
 
     public static func itemCount(_ n: Int) -> String { n == 1 ? "1 item" : "\(count(n)) items" }
 
-    /// Keep transfer status words and destination names whole when a pane gets narrow.
+    /// Keep status words and destination names whole when a pane gets narrow.
     public static func fittingStatusMessage(_ text: String, fits: (String) -> Bool) -> String {
         if fits(text) { return text }
         var parts = text.components(separatedBy: " · ")
@@ -39,6 +39,11 @@ public enum FileFormat {
         var candidate = parts[0]
         if let destination = candidate.range(of: " to ", options: .backwards) {
             candidate = String(candidate[..<destination.lowerBound])
+            if fits(candidate) { return candidate }
+        }
+        let sizeSuffixes = [" B)", " KiB)", " MiB)", " GiB)", " TiB)", " PiB)", " EiB)"]
+        if sizeSuffixes.contains(where: candidate.hasSuffix), let size = candidate.range(of: " (", options: .backwards) {
+            candidate = String(candidate[..<size.lowerBound])
             if fits(candidate) { return candidate }
         }
         var words = candidate.split(separator: " ").map(String.init)

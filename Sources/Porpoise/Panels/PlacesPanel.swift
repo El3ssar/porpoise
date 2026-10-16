@@ -28,6 +28,7 @@ final class PlacesPanel: NSView {
     enum Metrics {
         static let topInset: CGFloat = 4
         static let headerHeight: CGFloat = 26
+        static let syncBadgeWidth: CGFloat = 68
         static let sectionGap: CGFloat = 8
         /// Device rows are taller to fit the capacity bar.
         static let volumeExtraHeight: CGFloat = 8

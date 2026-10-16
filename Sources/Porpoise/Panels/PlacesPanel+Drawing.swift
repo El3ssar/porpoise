@@ -211,7 +211,7 @@ extension PlacesPanel {
         }
         let trailing = NSMutableParagraphStyle(); trailing.alignment = .right
         (text as NSString).draw(
-            in: CGRect(x: rect.width - 68, y: rect.midY - 8, width: 60, height: 16),
+            in: CGRect(x: rect.width - Metrics.syncBadgeWidth, y: rect.midY - 8, width: Metrics.syncBadgeWidth - 8, height: 16),
             withAttributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: color, .paragraphStyle: trailing])
     }
 

@@ -266,5 +266,7 @@ struct StatusMessageFormattingTests {
         #expect(FileFormat.fittingStatusMessage(message) { $0.count <= 8 } == "Copied…")
         #expect(FileFormat.fittingStatusMessage(message) { $0.isEmpty } == "")
         #expect(FileFormat.fittingStatusMessage("Finished") { $0.count <= 2 } == "…")
+        #expect(FileFormat.fittingStatusMessage("1 file selected (134.1 KiB)") { $0.count <= 18 } == "1 file selected")
+        #expect(FileFormat.fittingStatusMessage("1 file selected (134.1 KiB)") { $0.count <= 10 } == "1 file…")
     }
 }
