@@ -141,10 +141,22 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         #expect(scratch.read("not a folder") == "x")
     }
 
-    @Test func stopsOnlyAServerItStarted() throws {
+    @Test func stopsOnlyAServerItStarted() async throws {
         let log = scratch.path("adb.log")
+        // The quit path has a bounded wait. Observe the fixture's acknowledgement after its log write,
+        // rather than assuming that returning from quit means that write has finished under load.
+        let acknowledgement = scratch.path("adb-finished")
+        try #require(mkfifo(acknowledgement.path, 0o600) == 0)
         _ = try scratch.folder("support/platform-tools")
-        _ = try script(scratch, "support/platform-tools/adb", "echo \"$@\" >> \(RemoteParsing.quote(log.path))")
+        _ = try script(
+            scratch, "support/platform-tools/adb",
+            "echo \"$@\" >> \(RemoteParsing.quote(log.path))\necho done > \(RemoteParsing.quote(acknowledgement.path))")
+        let fd = open(acknowledgement.path, O_RDWR | O_NONBLOCK)
+        try #require(fd >= 0)
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: DispatchQueue(label: "porpoise.adb-test-ack"))
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        defer { source.cancel() }
         AndroidTools.willUseServer()  // the first check is done, so it can't change `startedServer` below
         let saved = AndroidTools.startedServer
         defer { AndroidTools.startedServer = saved }
@@ -154,8 +166,16 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         #expect(scratch.read("adb.log") == nil)
 
         AndroidTools.startedServer = true
-        AndroidTools.stopServerIfOurs()
-        #expect(scratch.read("adb.log") == "kill-server\n")
+        let acknowledged: Bool? = await awaitCallback { done in
+            source.setEventHandler {
+                var byte: UInt8 = 0
+                if read(fd, &byte, 1) == 1 { done(true) }
+            }
+            AndroidTools.stopServerIfOurs()
+        }
+        #expect(acknowledged == true)
+        let contents = scratch.read("adb.log")
+        #expect(contents == "kill-server\n", "adb.log: \(String(reflecting: contents))")
     }
 
     @Test func quittingDoesNotWaitForAHangingADB() throws {
