@@ -31,7 +31,8 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
     private override init() {
         let base =
             Settings.isTesting
-            ? FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-sync-review-\(getpid())")
+            ? ProcessInfo.processInfo.environment["PORPOISE_SYNC_STORE_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+                ?? FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-sync-review-\(getpid())")
             : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise")
         store = SavedSyncStore(file: base.appendingPathComponent("syncs.json"))
         stateStore = SyncStateStore(folder: base.appendingPathComponent("SyncState"))

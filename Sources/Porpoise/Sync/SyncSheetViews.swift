@@ -124,7 +124,7 @@ final class SyncPlanRow: NSView {
     private var choices: NSSegmentedControl?
     init(
         step: SyncStep, pair: SavedSync, checked: Bool, choice: SyncOverride?, difference: SyncDifference? = nil, hasState: Bool = false,
-        displayPath: String? = nil, isFolder: Bool = false, displayBytes: Int64? = nil
+        displayPath: String? = nil, isFolder: Bool = false, folderCount: Int? = nil, displayBytes: Int64? = nil
     ) {
         self.step = step; self.pair = pair; self.difference = difference; super.init(frame: .zero)
         include.contentTintColor = Theme.activeText
@@ -149,6 +149,7 @@ final class SyncPlanRow: NSView {
                 ? "new"
                 : step.action == .mkdir
                     ? "new folder" : step.action == .trash ? "only in \(step.target == .left ? pair.leftTitle : pair.rightTitle)" : "changed")
+        if let folderCount { detail.stringValue = "\(folderCount) \(folderCount == 1 ? "item" : "items")" }
         detail.font = .systemFont(ofSize: 11); detail.textColor = Theme.windowTextInactive; detail.lineBreakMode = .byTruncatingTail
         [include, icon, path, detail, size].forEach(addSubview)
         if step.action == .conflict {

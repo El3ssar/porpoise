@@ -16,6 +16,17 @@ struct SyncEngineTests {
             SyncComparator.compare(.init(entries: left), .init(entries: right), options: options),
             mode: mode, previous: previous, overrides: overrides)
     }
+    @Test func deletionSummaryCountsFolderContentsAndExcludesUncheckedItems() {
+        let folder = SyncEntry(path: "Archive 2024", kind: .directory)
+        let children = (1...48).map { file("Archive 2024/item-\($0).txt") }
+        let right = [folder] + children + [file("old-logo.zip")]
+        let all = plan([], right, mode: .mirror)
+        let unchecked = plan([], right, mode: .mirror, overrides: ["old-logo.zip": .skip])
+        #expect(all.itemCount(for: .trash) == 49)
+        #expect(unchecked.itemCount(for: .trash) == 48)
+        #expect(!unchecked.steps.contains { $0.path == "old-logo.zip" })
+        #expect(plan([], [folder], mode: .mirror).itemCount(for: .trash) == 1)
+    }
     @Test func timestampToleranceAndMethods() {
         let left = SyncSnapshot(entries: [file()])
         #expect(SyncComparator.compare(left, .init(entries: [file(time: 102)])).rows[0].status == .same)

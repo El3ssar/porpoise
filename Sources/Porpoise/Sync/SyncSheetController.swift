@@ -219,7 +219,10 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         scroll.frame = listFrame.bounds.insetBy(dx: 1, dy: 1)
         outline.tableColumns[0].width = max(200, scroll.contentSize.width)
         options.title =
-            "\(optionsOpen ? "▾" : "▸") Options   \(pair.presets.contains(.system) ? "Ignore system files · " : "")Trash · \(method.titleOfSelectedItem ?? "Size & date")"
+            "Options   \(pair.presets.contains(.system) ? "Ignore system files · " : "")Trash · \(method.titleOfSelectedItem ?? "Size & date")"
+        options.image = NSImage(systemSymbolName: optionsOpen ? "chevron.down" : "chevron.right", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
+        options.imagePosition = .imageLeading
         options.frame = CGRect(x: 20, y: bottom + 5, width: width - 40, height: 24)
         let optionsY = bottom + 34
         presets.frame = CGRect(x: 22, y: optionsY, width: width - 44, height: 22)
@@ -232,7 +235,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         custom.frame = CGRect(x: 22, y: optionsY + 60, width: width - 144, height: 20)
         customButton.frame = CGRect(x: width - 122, y: optionsY + 56, width: 100, height: 26)
         [presets, deletion, method, custom, customButton].forEach { $0.isHidden = !optionsOpen }
-        automatic.frame = CGRect(x: 20, y: height - 58 - keepExpansion * 66, width: 300, height: 24)
+        automatic.frame = CGRect(x: 20, y: height - 36 - keepExpansion * 94, width: min(300, width - 360), height: 28)
         name.isHidden = keepExpansion == 0; explanation.isHidden = name.isHidden; pairDescription.isHidden = name.isHidden
         name.alphaValue = keepExpansion; explanation.alphaValue = keepExpansion; pairDescription.alphaValue = keepExpansion
         name.frame = CGRect(x: 22, y: height - 94, width: 200, height: 24)
@@ -336,7 +339,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             (SyncAction.copy, "to copy", Theme.compareOnly), (.replace, "to replace", Theme.compareChanged),
             (.trash, "to the Trash", Theme.compareDanger),
         ] {
-            let count = plan.steps.filter { $0.action == action }.count
+            let count = plan.itemCount(for: action)
             if count > 0 {
                 if attributed.length > 0 { attributed.append(NSAttributedString(string: " · ")) }
                 attributed.append(
@@ -373,9 +376,10 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             attributed.append(NSAttributedString(string: " · " + FileFormat.size(bytes), attributes: [.foregroundColor: Theme.windowTextInactive]))
         }
         summary.attributedStringValue = attributed
-        if preview.deletionCount > 0 {
+        let deletions = plan.itemCount(for: .trash)
+        if deletions > 0 {
             callout.text =
-                "⚠ \(preview.deletionCount) \(preview.deletionCount == 1 ? "item" : "items") in \(pair.rightTitle) \(preview.deletionCount == 1 ? "isn’t" : "aren’t") in \(pair.leftTitle). \(preview.deletionCount == 1 ? "It’ll" : "They’ll") be moved to \(pair.right.isFileURL ? "the Trash" : ".porpoise-trash")."
+                "⚠ \(deletions) \(deletions == 1 ? "item" : "items") in \(pair.rightTitle) \(deletions == 1 ? "isn’t" : "aren’t") in \(pair.leftTitle). \(deletions == 1 ? "It’ll" : "They’ll") be moved to \(pair.right.isFileURL ? "the Trash" : ".porpoise-trash")."
             callout.danger = true
         } else if preview.firstTwoWay {
             callout.text = "ⓘ First two-way sync. Nothing will be deleted this time. Porpoise remembers both sides for next time."
@@ -494,7 +498,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         let node = item as! SyncPlanNode
         guard let step = node.step else {
             return SyncGroupRow(
-                title: node.title + " (\(node.allSteps.filter { includedStepIDs.contains($0.id) && $0.action == node.action }.count))",
+                title: node.title + " (\(SyncPlan(steps: node.allSteps.filter { includedStepIDs.contains($0.id) }).itemCount(for: node.action)))",
                 action: node.action, color: node.color)
         }
         let difference = differences[step.path] ?? step.sourcePath.flatMap { differences[$0] }
@@ -503,11 +507,8 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         let row = SyncPlanRow(
             step: step, pair: pair, checked: overrides[key] != .skip && included, choice: overrides[key],
             difference: difference, hasState: previous != nil,
-            displayPath: node.children.isEmpty
-                ? (step.path as NSString).lastPathComponent
-                : (step.path as NSString).lastPathComponent
-                    + " — \(node.allSteps.filter { $0.path != step.path }.count) \(node.allSteps.filter { $0.path != step.path }.count == 1 ? "item" : "items")",
-            isFolder: !node.children.isEmpty,
+            displayPath: node.children.isEmpty ? step.path : (step.path as NSString).lastPathComponent,
+            isFolder: !node.children.isEmpty, folderCount: node.children.isEmpty ? nil : node.allSteps.filter { $0.path != step.path }.count,
             displayBytes: node.children.isEmpty
                 ? nil : node.allSteps.reduce(Int64(0)) { $0 + ($1.expectedSource?.size ?? $1.expectedTarget?.size ?? 0) })
         row.onInclude = { [weak self] include in
@@ -569,7 +570,14 @@ private final class SyncPlanNode: NSObject {
                 node.allSteps += node.children.flatMap(\.allSteps)
             }
         }
-        finish(&roots); return roots
+        func flattenSingles(_ nodes: inout [SyncPlanNode]) {
+            nodes = nodes.flatMap { node -> [SyncPlanNode] in
+                flattenSingles(&node.children)
+                if node.children.count == 1 && node.allSteps.count == 1 { return node.children }
+                return [node]
+            }
+        }
+        finish(&roots); flattenSingles(&roots); return roots
     }
     var color: NSColor {
         action == .trash || action == .conflict ? Theme.compareDanger : action == .replace ? Theme.compareChanged : Theme.compareOnly
