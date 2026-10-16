@@ -34,9 +34,12 @@ final class ConflictDialog: NSObject {
     }
 
     private func build() {
-        let destinationName = LinkedBrowsing.sideNames(
-            info.source.url.deletingLastPathComponent(), info.destination.url.deletingLastPathComponent()
-        ).1
+        let destinationFolder = info.destination.url.deletingLastPathComponent()
+        // Google Drive folders are ids in their URLs: their names come from the listing ("My Drive").
+        let destinationName =
+            PlacesModel.isCloud(destinationFolder)
+            ? Activity.name(destinationFolder)
+            : LinkedBrowsing.sideNames(info.source.url.deletingLastPathComponent(), destinationFolder).1
         let bothFolders = info.source.isBrowsableFolder && info.destination.isBrowsableFolder
         let delta = (info.source.modificationDate?.timeIntervalSince1970 ?? 0) - (info.destination.modificationDate?.timeIntervalSince1970 ?? 0)
         let newer = delta > info.comparisonOptions.timestampTolerance
