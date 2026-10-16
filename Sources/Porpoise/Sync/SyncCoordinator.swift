@@ -107,8 +107,9 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
     func remove(_ pair: SavedSync, window: NSWindow?, onRemoved: (() -> Void)? = nil) {
         let alert = NSAlert()
         alert.messageText = "Remove the “\(pair.name)” sync?"
-        alert.informativeText = "Your files aren’t touched; Porpoise stops syncing this pair and forgets its history."
+        alert.informativeText = "Your files aren’t touched. Porpoise stops syncing this pair and forgets its history."
         alert.addButton(withTitle: "Remove"); alert.addButton(withTitle: "Cancel")
+        alert.buttons[0].hasDestructiveAction = true
         func finish(_ answer: NSApplication.ModalResponse) {
             guard answer == .alertFirstButtonReturn else { return }
             if let activity = self.activities[pair.id] { FileOperationsController.shared.cancel(activity) }
@@ -522,13 +523,25 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
     func tooltip(_ pair: SavedSync) -> String {
         let suffix: String
         switch statuses[pair.id] ?? .idle {
-        case .missing: suffix = "\(pair.rightTitle) isn’t available. Porpoise will sync when it’s back."
+        case .missing: return pair.description + " · \(pair.rightTitle) isn’t available. Porpoise will sync when it’s back."
+        case .syncing: suffix = "syncing, \(Int((activities[pair.id]?.fraction ?? 0) * 100)) %"
+        case .paused: suffix = "paused"
         case .failed(let reason): suffix = reason
         case .conflicts(let count): suffix = "\(count) conflicts need review"
-        case .review(let count): suffix = "Sync paused: \(count) items would be moved to the Trash."
+        case .review(let count): suffix = "sync paused: \(count) items would be moved to the Trash."
         default: suffix = pair.paused ? "paused" : pair.automatic ? "kept in sync" : "saved sync"
         }
-        let synced = pair.lastSynced.map { " · Last synced " + $0.formatted(date: .abbreviated, time: .shortened) } ?? ""
+        let synced =
+            pair.lastSynced.map { date in
+                let formatter = RelativeDateTimeFormatter(); formatter.unitsStyle = .full
+                let age = Date().timeIntervalSince(date)
+                let text =
+                    age < 60
+                    ? "just now"
+                    : age < 7 * 86400
+                        ? formatter.localizedString(for: date, relativeTo: Date()) : date.formatted(date: .abbreviated, time: .shortened)
+                return " · last synced " + text
+            } ?? ""
         return pair.description + " · " + suffix + synced
     }
     func showError(_ text: String, window: NSWindow?) {

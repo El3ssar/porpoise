@@ -24,7 +24,7 @@ extension PlacesPanel {
             syncItem("Compare", #selector(compareSync(_:)), key: "c", modifiers: [.control, .command]); m.addItem(.separator())
             if pair.automatic { syncItem(pair.paused ? "Resume Keeping in Sync" : "Pause Keeping in Sync", #selector(pauseSync(_:))) }
             syncItem("Edit Sync…", #selector(editSync(_:)))
-            syncItem("Rename…", #selector(renameSync(_:)), key: String(UnicodeScalar(NSF2FunctionKey)!)); m.addItem(.separator())
+            syncItem("Rename", #selector(renameSync(_:)), key: String(UnicodeScalar(NSF2FunctionKey)!)); m.addItem(.separator())
             syncItem("Show in Activity", #selector(syncActivity)); m.addItem(.separator())
             syncItem("Remove Sync…", #selector(removeSync(_:)))
             return m
