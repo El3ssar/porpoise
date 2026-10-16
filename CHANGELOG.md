@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Faster large syncs.** Sync writes its plan once and appends small recovery checkpoints instead of rewriting
+  every file's payload at each step. Interrupted syncs retain completed steps and safely reconcile the running one.
+
 - **Compare follows your browsing.** Compare starts on the open split panes, updates as you navigate, and uses
   Porpoise's own Details rows, columns, menus, Quick Look and file interactions. Missing linked folders keep Compare
   open; stopping restores both panes' starting locations, style, selection and scroll position.

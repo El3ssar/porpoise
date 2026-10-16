@@ -40,10 +40,10 @@ public struct PlanJournal: Codable, Equatable, Sendable, Identifiable {
 public final class PlanJournalStore: @unchecked Sendable {
     public let folder: URL
     private let lock = NSLock()
-    /// The engine payloads are immutable for one run. A new generation makes a leftover progress log harmless
-    /// if the process dies between replacing this baseline and truncating the old log.
+    /// Publish a baseline only after its generation-specific log exists. Recovery never treats an unreadable
+    /// or missing progress log as an empty one, which could repeat completed operations.
     private struct Baseline: Codable {
-        var formatVersion = 2
+        var formatVersion = 3
         let generation: UUID
         let journal: PlanJournal
     }
@@ -66,17 +66,31 @@ public final class PlanJournalStore: @unchecked Sendable {
         self.folder = folder; self.appendEvent = appendEvent
     }
     private func url(_ id: UUID) -> URL { folder.appendingPathComponent(id.uuidString + ".json") }
-    private func eventsURL(_ id: UUID) -> URL { folder.appendingPathComponent(id.uuidString + ".events") }
+    private func eventsURL(_ id: UUID, _ generation: UUID) -> URL {
+        folder.appendingPathComponent(id.uuidString + "." + generation.uuidString + ".events")
+    }
+    private func eventFiles(_ id: UUID) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil).filter {
+            $0.lastPathComponent.hasPrefix(id.uuidString + ".") && $0.pathExtension == "events"
+        }
+    }
 
     public func save(_ journal: PlanJournal) throws {
         try lock.withLock {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             let baseline = Baseline(generation: UUID(), journal: journal)
-            try JSONEncoder().encode(baseline).write(to: url(journal.id), options: .atomic)
-            if let previous = openJournals.removeValue(forKey: journal.id) { close(previous.descriptor) }
-            let descriptor = open(eventsURL(journal.id).path, O_WRONLY | O_CREAT | O_TRUNC | O_APPEND | O_CLOEXEC, 0o600)
+            let log = eventsURL(journal.id, baseline.generation)
+            let descriptor = open(log.path, O_WRONLY | O_CREAT | O_EXCL | O_APPEND | O_CLOEXEC, 0o600)
             guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            do { try JSONEncoder().encode(baseline).write(to: url(journal.id), options: .atomic) } catch {
+                close(descriptor); try? FileManager.default.removeItem(at: log); throw error
+            }
+            if let previous = openJournals.removeValue(forKey: journal.id) { close(previous.descriptor) }
             openJournals[journal.id] = OpenJournal(generation: baseline.generation, descriptor: descriptor, count: journal.steps.count)
+            // The new baseline already points at its own log. Orphans left by a prior crash are harmless.
+            for previous in (try? eventFiles(journal.id)) ?? [] where previous.lastPathComponent != log.lastPathComponent {
+                try? FileManager.default.removeItem(at: previous)
+            }
         }
     }
     /// Appends only the current step. A partial final write is ignored during replay, leaving the last durable
@@ -88,7 +102,11 @@ public final class PlanJournalStore: @unchecked Sendable {
             }
             let event = Event(generation: journal.generation, index: index, state: state, checkpoint: checkpoint)
             var data = try JSONEncoder().encode(event); data.append(10)
-            try appendEvent(journal.descriptor, data)
+            do { try appendEvent(journal.descriptor, data) } catch {
+                // Never append behind a possibly torn record. A new run must first replay and compact it.
+                openJournals.removeValue(forKey: id); close(journal.descriptor)
+                throw error
+            }
         }
     }
     private static func appendAll(_ descriptor: Int32, _ data: Data) throws {
@@ -108,7 +126,9 @@ public final class PlanJournalStore: @unchecked Sendable {
             // Remove the baseline first. An orphan log is ignored; a baseline without its completed log could
             // otherwise resurrect already completed operations after a crash between these two unlinks.
             if FileManager.default.fileExists(atPath: url(id).path) { try FileManager.default.removeItem(at: url(id)) }
-            if FileManager.default.fileExists(atPath: eventsURL(id).path) { try FileManager.default.removeItem(at: eventsURL(id)) }
+            if FileManager.default.fileExists(atPath: folder.path) {
+                for log in try eventFiles(id) { try FileManager.default.removeItem(at: log) }
+            }
         }
     }
     /// Unknown or damaged journals are retained on disk and never executed automatically. Version-one whole
@@ -124,9 +144,12 @@ public final class PlanJournalStore: @unchecked Sendable {
                         guard let legacy = try? decoder.decode(PlanJournal.self, from: data), legacy.version == 1 else { return nil }
                         return legacy
                     }
-                    guard baseline.formatVersion == 2, baseline.journal.version == 1 else { return nil }
+                    guard [2, 3].contains(baseline.formatVersion), baseline.journal.version == 1 else { return nil }
                     var journal = baseline.journal
-                    guard let events = try? Data(contentsOf: eventsURL(journal.id)) else { return journal }
+                    let log =
+                        baseline.formatVersion == 2
+                        ? folder.appendingPathComponent(journal.id.uuidString + ".events") : eventsURL(journal.id, baseline.generation)
+                    guard let events = try? Data(contentsOf: log) else { return nil }
                     // Both an empty final slice (normal newline) and an incomplete final slice are excluded.
                     for line in events.split(separator: 10, omittingEmptySubsequences: false).dropLast() {
                         guard let event = try? decoder.decode(Event.self, from: Data(line)) else { return nil }

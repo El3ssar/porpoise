@@ -15,7 +15,12 @@ struct PlanJournalStoreTests {
             })
     }
     private func path(_ store: PlanJournalStore, _ journal: PlanJournal, _ ext: String) -> URL {
-        store.folder.appendingPathComponent(journal.id.uuidString + "." + ext)
+        if ext == "events" {
+            let files = (try? FileManager.default.contentsOfDirectory(at: store.folder, includingPropertiesForKeys: nil)) ?? []
+            return files.first { $0.lastPathComponent.hasPrefix(journal.id.uuidString + ".") && $0.pathExtension == "events" }
+                ?? store.folder.appendingPathComponent(journal.id.uuidString + ".missing.events")
+        }
+        return store.folder.appendingPathComponent(journal.id.uuidString + "." + ext)
     }
     private func append(_ data: Data, to url: URL) throws {
         let handle = try FileHandle(forWritingTo: url); defer { try? handle.close() }
@@ -69,7 +74,7 @@ struct PlanJournalStoreTests {
         let stale = try Data(contentsOf: path(store, original, "events"))
         let replacement = journal(count: 3, id: original.id)
         try store.save(replacement)
-        // Simulate a crash after replacing the baseline but before truncating its old sidecar.
+        // A stale generation copied over the new sidecar must not mark the replacement plan completed.
         try stale.write(to: path(store, original, "events"))
         #expect(try store.all().first?.steps.allSatisfy { $0.state == .pending } == true)
         try store.saveStep(original.id, index: 0, state: .running, checkpoint: Data("new".utf8))
@@ -84,6 +89,10 @@ struct PlanJournalStoreTests {
         try append(Data("not-json\n".utf8), to: path(store, original, "events"))
         #expect(try store.all().isEmpty)
         #expect(FileManager.default.fileExists(atPath: path(store, original, "json").path))
+        try store.save(original)
+        try FileManager.default.removeItem(at: path(store, original, "events"))
+        #expect(try store.all().isEmpty)  // A missing log is not an empty log; never replay the pending baseline.
+
         try store.save(original)
         try store.saveStep(original.id, index: 0, state: .running, checkpoint: nil)
         let data = try Data(contentsOf: path(store, original, "events"))
@@ -113,6 +122,25 @@ struct PlanJournalStoreTests {
         try Data("broken".utf8).write(to: folder.appendingPathComponent("damaged.json"))
         #expect(try store.all().isEmpty)
     }
+    @Test func previousAppendLogFormatAndOrphanCleanupRemainCompatible() throws {
+        let scratch = try Scratch(), store = PlanJournalStore(folder: scratch.path("plans")), original = journal()
+        try store.save(original)
+        try store.saveStep(original.id, index: 0, state: .running, checkpoint: Data("old log".utf8))
+        let current = path(store, original, "events"), legacy = store.folder.appendingPathComponent(original.id.uuidString + ".events")
+        try FileManager.default.moveItem(at: current, to: legacy)
+        var envelope = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: path(store, original, "json"))) as? [String: Any])
+        envelope["formatVersion"] = 2
+        try JSONSerialization.data(withJSONObject: envelope).write(to: path(store, original, "json"))
+        let recovered = try #require(PlanJournalStore(folder: store.folder).all().first)
+        #expect(recovered.steps[0].state == .running); #expect(recovered.steps[0].checkpoint == Data("old log".utf8))
+        let orphan = store.folder.appendingPathComponent(original.id.uuidString + ".orphan.events")
+        try Data("old".utf8).write(to: orphan)
+        try store.save(recovered)
+        #expect(!FileManager.default.fileExists(atPath: orphan.path)); #expect(!FileManager.default.fileExists(atPath: legacy.path))
+        #expect(try store.all().first?.steps[0].state == .running)
+        try store.remove(original.id)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: store.folder.path).isEmpty)
+    }
     @Test func appendFailureStopsBeforeExecutionOrCheckpointAcknowledgement() throws {
         let scratch = try Scratch()
         let blocked = PlanJournalStore(folder: scratch.path("blocked")) { _, _ in throw POSIXError(.ENOSPC) }
@@ -137,6 +165,7 @@ struct PlanJournalStoreTests {
             }
         }
         #expect(!ran); #expect(job.journal.steps[0].checkpoint == nil)
+        #expect(throws: FileOperationError.self) { try partial.saveStep(job.journal.id, index: 0, state: .running, checkpoint: nil) }
         let saved = try #require(PlanJournalStore(folder: partial.folder).all().first)
         #expect(saved.steps[0].state == .running); #expect(saved.steps[0].checkpoint == nil)
     }
