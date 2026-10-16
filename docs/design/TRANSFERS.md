@@ -1,8 +1,7 @@
 # Copy & move: design spec
 
-How Porpoise shows a copy or move while it runs, what it asks when names clash, and how it reports the end. W-29
-(porpoise-jobs) implements this; sync runs (SYNC.md §5.3) reuse the same progress parts. Tokens, metrics and copy
-style are those of SYNC.md §1, §2 and §9. Mockups: screens 15–18 in `artifacts/p2/mockups/mockups.html`.
+How Porpoise shows a copy or move while it runs, what it asks when names clash, and how it reports the end.
+Uses the app's native typography, spacing and theme colors.
 
 **Principle: progress lives where you are looking.** Today a floating panel appears in the screen's corner. It goes.
 Progress shows in the window that started the job, on the items themselves, and in the Dock; the Activity
@@ -14,7 +13,7 @@ window keeps the full list and history.
 
 | Place | What | When |
 |---|---|---|
-| **Toolbar activity button** | 28 pt circular progress ring in its own glass capsule (34 × 34), left of the trailing action group. Ring: 2.5 pt track `text` 14 %, fill `accent`, aggregate fraction of this window's running jobs. | Appears (scale 0.8 → 1 + fade, 200 ms) when a job started from this window runs longer than 0.6 s (the current panel's delay). Stays 3 s after the last job ends, showing ✓ (`compareOnly`) or ! (`compareDanger`), then leaves (fade, 200 ms), unless something failed: then it stays until clicked. |
+| **Toolbar activity button** | 28 pt circular progress ring in its own glass capsule (34 × 34), left of the trailing action group. Ring: 2.5 pt track `text` 14 %, fill `accent`, aggregate fraction of this window's running jobs. | Appears (scale 0.8 → 1 + fade, 200 ms) when a job started from this window runs longer than 0.6 s (the current panel's delay). Stays 3 s after the last job ends, showing ✓ (`transferPositive`) or ! (`transferDanger`), then leaves (fade, 200 ms), unless something failed: then it stays until clicked. |
 | **Transfers popover** | Clicking the button. 360 wide, one 64 pt row per job of this window (§2), then "Show All in Activity" (borderless, accent). | Also opens by itself once when a job needs attention (conflict waiting in the background, failure). |
 | **Incoming items in place** | In the destination folder, items appear as soon as they're created: name and icon at 50 % opacity, a 3 pt progress capsule under the name (Icons/Compact) or in place of the size (Details: 60 wide bar, then "38 %"). Folders show the fraction of their bytes. | While copying. On completion the item fades to 100 % (160 ms) and the bar goes. Items still queued don't appear yet. |
 | **Dock tile** | `NSDockTile` progress bar along the icon's bottom (aggregate of all jobs). | While any job runs and the job is longer than 2 s. |
@@ -28,7 +27,7 @@ removed.
 ## 2. A job row (popover and Activity share it)
 
 52 pt in Activity, 64 pt in the popover (more room for the bar). Left: 32 pt icon (the item, or a stack icon for
-several). Right: Pause/Resume and Stop as plain 14 pt glyphs in 24 pt hit boxes (SYNC.md review rules).
+several). Right: Pause/Resume and Stop as plain 14 pt glyphs in 24 pt hit boxes.
 
 ```
 [icon]  Copying 1,204 items to Backup                                   ⏸  ■
@@ -44,10 +43,10 @@ several). Right: Pause/Resume and Stop as plain 14 pt glyphs in 24 pt hit boxes 
 | **Pausing** | Bar frozen | "Pausing…" until the engine confirms (current chunk finishes) |
 | **Paused** | Bar at 40 % alpha | "Paused · 412 of 1,204". If the provider must restart the current file: "Paused · “video.mov” will start over" |
 | **Waiting** | Empty track | "Waiting for another copy to finish" (concurrency limit) |
-| **Needs you** | Bar frozen, ⚠ `compareChanged` before the text | "Waiting for your answer: 3 names clash" + **Resolve…** button (opens §3 on its window) |
+| **Needs you** | Bar frozen, ⚠ `transferChanged` before the text | "Waiting for your answer: 3 names clash" + **Resolve…** button (opens §3 on its window) |
 | **Stopped** | Bar at 40 % | "Stopped · 412 of 1,204 copied" + **Resume** (continues; finished files aren't copied again) |
-| **Done** | Hidden | "✓ Copied 1,162 · replaced 30 · skipped 12 identical · 3.4 GB · 1 min 12 s" (✓ and verb in `compareOnly`, the rest secondary; parts with zero are left out) |
-| **Done with failures** | Hidden | "! 4 of 1,204 couldn't be copied" (`compareDanger`) + **Show** (§5) |
+| **Done** | Hidden | "✓ Copied 1,162 · replaced 30 · skipped 12 identical · 3.4 GB · 1 min 12 s" (✓ and verb in `transferPositive`, the rest secondary; parts with zero are left out) |
+| **Done with failures** | Hidden | "! 4 of 1,204 couldn't be copied" (`transferDanger`) + **Show** (§5) |
 
 Title wording: "Copying “report.pdf” to Backup" (one item), "Copying 1,204 items to Backup", "Moving …",
 "Duplicating …", "Moving 12 items to the Trash", "Uploading … to nas.local", "Downloading … from nas.local".
@@ -90,16 +89,16 @@ The job keeps going with items that don't clash while the sheet waits; other cla
   the right** with a 16 pt → between them (the direction of the copy). Heading SF 11 semibold secondary: "In Backup" /
   "Copying" ("Moving", "Uploading"). 64 pt thumbnail (QuickLook; icon fallback), name SF 13 (middle-truncated),
   then size, modified date (full format), kind (SF 12). The side that is **newer** gets a "Newer" badge, the
-  **larger** a "Larger" badge: SF 10 semibold caps-free, `compareChanged`, 16 tall capsule with 14 % wash. The
-  differing values themselves are `compareChanged`. Clicking a thumbnail opens Quick Look on that file. A
-  **Compare** link under the cards opens Compare Files (SYNC.md §8) for the two.
+  **larger** a "Larger" badge: SF 10 semibold caps-free, `transferChanged`, 16 tall capsule with 14 % wash. The
+  differing values themselves are `transferChanged`. Clicking a thumbnail opens Quick Look on that file. A
+  **Compare** link under the cards opens Compare Files for the two.
 - **The headline rule: Replace if different, skip if identical** (operator, #497). A strip under the cards
   (r 8, `accent` 8 % wash, 1 pt `accent` 25 % stroke, padding 10 × 12): ⇄ glyph, "**Replace if different, skip if
   identical**" SF 13, and under it SF 11 secondary "30 different · 12 identical so far · by size & date ⌄" (counts
-  across all clashes known so far; the method is a pull-down with the same three methods as Compare, SYNC.md §4.5,
-  so copy and sync agree on "identical"). Trailing **Apply to All 42** (push button, accent text): resolves every
+  across all clashes known so far; the method is a pull-down with Size & date, Size only and Contents methods,
+  for a consistent definition of "identical"). Trailing **Apply to All 42** (push button, accent text): resolves every
   remaining clash with the rule, including ones found later, and closes the sheet. The strip shows from the first
-  clash on, even when it's the only one ("Apply"). Identical uses the engine's `SyncComparator` with the pair's
+  clash on, even when it's the only one ("Apply"). Identical uses the engine's `TransferComparator` with the copy's
   options (size & date with 2 s tolerance by default); folders count as identical only when their whole contents
   are (full roll-up), never by the folder entry alone.
 - **Buttons** (right-aligned, big 28 tall): **Skip** · **Keep Both** · **Replace ⌄**, and **Stop Copying** at the left

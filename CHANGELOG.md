@@ -5,16 +5,8 @@
 - **More reliable Settings and hiding.** Appearance theme cards use stable equal-width columns, avoiding a
   layout-engine crash. Hiding after a cancelled drag no longer lets a temporary window quit the browser.
 
-- **Faster large syncs.** Sync writes its plan once and appends small recovery checkpoints instead of rewriting
-  every file's payload at each step. Interrupted syncs retain completed steps and safely reconcile the running one.
-
-- **Compare follows your browsing.** Compare starts on the open split panes, updates as you navigate, and uses
-  Porpoise's own Details rows, columns, menus, Quick Look and file interactions. Missing linked folders keep Compare
-  open; stopping restores both panes' starting locations, style, selection and scroll position.
-
-- **Safer folder sync.** Backup skips newer destination files until you explicitly include them. Case-only name
-  differences can be reviewed and synced, Options keeps the plan visible, and conflict details name both sides.
-  Transfer controls keep their toolbar space and saved sync times update while visible.
+- **Linked browsing.** The chain toggle in split view follows corresponding folders in both panes, including
+  Back, Forward and Up. Missing counterparts offer Create Folder, Choose Folder or Unlink.
 
 - **Compare files.** File › Compare Files (⌥⌘Y) opens text, image and metadata comparisons in their own windows.
   Browse word changes side by side or inline, copy a change left or right with Undo, and save when ready. Compare
@@ -27,6 +19,9 @@
   offers to finish interrupted jobs once it has checked nothing changed meanwhile, and never repeats a deletion
   without asking. Copies are written under a hidden name until complete, can be verified (size and SHA-256), and
   every operation goes in a searchable history you can export as CSV.
+
+- **Copy conflict rules.** Replace if different, skip identical files, replace if newer, and apply rules to all
+  clashes; choose defaults in Settings. Transfers show smoothed speed and ETA, failures and toolbar progress.
 
 ## 0.6.3
 

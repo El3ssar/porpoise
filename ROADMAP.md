@@ -65,21 +65,14 @@ Each phase can ship in small, focused changes. Do not wait for the whole roadmap
 **Done when:** batch changes and undo are checked on real files, duplicate detection ignores false matches,
 and a collected selection works across folders without losing the original locations.
 
-### Phase 2: compare and synchronise
+### Phase 2: linked browsing and file comparison
 
-- **Folder comparison:** show only-left, only-right, changed and matching items in linked panes. Compare by
-  size/date or content; explain which method was used and allow exclusions.
-- **One-way and two-way sync:** preview every copy, replacement and deletion before starting. Two-way sync
-  keeps a previous-state record so deletion is distinguishable from a newly created file. Conflicts stay
-  explicit; a mirror that deletes destination items requires a clear summary.
-- **Saved sync tasks:** local folders and supported remote providers, reusable filters, manual runs first,
-  optional schedules later. Show the last result and missed or failed runs.
+- **Dropped:** folder comparison and folder sync were removed: their complexity and cost outweighed their value.
 - **Linked browsing:** move through corresponding folder trees together; explain when a counterpart is absent.
 - **File comparison:** built-in text and image comparison, with optional external compare/merge apps. Binary
   equality and metadata differences are visible even when a visual comparison is unavailable.
 
-**Done when:** tests cover edits on both sides, deletions, timestamp differences, case-sensitive volumes,
-symlinks, excluded files and a connection lost halfway through a run. A rerun must not duplicate completed work.
+**Done when:** linked navigation and text, image and metadata file comparisons work independently.
 
 ### Phase 3: transfers that survive interruptions
 
@@ -149,7 +142,7 @@ intact, and hostile archives cannot write outside the chosen destination.
   layouts and horizontal splitting; the usual two-pane Dolphin layout remains one key away.
 - **Command palette (core implemented):** actions, Places/bookmarks, recent locations, open tabs and connections
   are searchable from the keyboard. Shortcuts have conflict detection and JSON import/export; toolbar actions are
-  customisable with the native macOS palette. Direct rename-preset and sync-task entries remain future extensions.
+  customisable with the native macOS palette. Direct rename-preset entries remain future extensions.
 - **Search builder:** combine name, content, dates, size, tags and metadata; save and edit searches. Keep
   compatibility with Finder Smart Folders where possible. Search multiple roots and supported remotes, with
   explicit scope and optional archive content; don't download a cloud library without asking.
@@ -192,7 +185,7 @@ claim a complete replacement of private macOS services that a third-party app ca
   another independent operations engine for each tool.
 - **Capabilities:** locations say what they support (write, rename, seek, resume, metadata, checksums and
   server-side copy). The UI explains a missing capability instead of pretending every backend is a local disk.
-- **Preview first:** bulk rename, sync, archive rewrites and cleanup produce an inspectable plan before running.
+- **Preview first:** bulk rename, archive rewrites and cleanup produce an inspectable plan before running.
 - **Real checks:** scratch folders, APFS images, private servers and isolated settings; provider test accounts
   where required. Include interruptions, Unicode, very large files and directories, permissions and symlinks.
 - **Performance:** record listing/search latency, memory, cancellation delay and transfer throughput against
@@ -203,7 +196,7 @@ claim a complete replacement of private macOS services that a third-party app ca
 ## What makes this more than feature parity
 
 The advantage is that the tools work together: collect search results from several locations, preview a
-metadata-based rename, compare the result with a server, run a verified sync, and recover an interrupted
+metadata-based rename, compare the result with a server, copy with verification, and recover an interrupted
 transfer inside a saved workspace. The same selection, provider capabilities and operation history carry
 through the workflow.
 
