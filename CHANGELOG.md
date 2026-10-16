@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 
 - **Clearer Properties.** Long locations stay within their column, folder sizes grow live while counting, and
   Recalculate refreshes changed sizes. Escape ends text editing before closing; ⌘W and ⌘. also close the window.
