@@ -563,12 +563,28 @@ final class DebugBridge: NSObject {
         case "reviewfront":
             guard Settings.isTesting, let window = wc?.window else { return }
             NSApp.unhide(nil)
-            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
             window.level = .floating
             window.orderFrontRegardless()
             NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
+        case "reviewlaunch":
+            guard Settings.isTesting else { break }
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true; configuration.createsNewApplicationInstance = false
+            configuration.arguments = Array(CommandLine.arguments.dropFirst())
+            configuration.environment = ProcessInfo.processInfo.environment.filter { $0.key.hasPrefix("PORPOISE_") }
+            NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { application, error in
+                let result: [String: Any] = [
+                    "pid": application?.processIdentifier ?? 0, "samePID": application?.processIdentifier == getpid(),
+                    "error": error?.localizedDescription ?? "",
+                ]
+                try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: arg))
+                DispatchQueue.main.async {
+                    if let application, application.processIdentifier != getpid() { NSApp.terminate(nil) }
+                }
+            }
         case "comparejob": wc?.tab.compareView?.previewJob(arg)
         case "reviewcapture":
             // Keep activation, capture and its key-state evidence in one app-side transaction.
