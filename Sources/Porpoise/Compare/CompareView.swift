@@ -3,7 +3,7 @@ import PorpoiseCore
 import PorpoiseServices
 
 final class CompareView: NSView {
-    let model: CompareModel
+    private(set) var model: CompareModel
     let document: CompareRowsView
     let scroll = NSScrollView()
     let bar = TintedMaterialView(material: .titlebar, alpha: 0.82)
@@ -92,6 +92,18 @@ final class CompareView: NSView {
         update()
     }
     required init?(coder: NSCoder) { fatalError() }
+    /// Reuse native controls prepared during idle time; pair data and callbacks never carry over.
+    func reset(model: CompareModel) {
+        self.model.onChange = nil; self.model.stop()
+        onClose = nil; onSync = nil; onChoose = nil; onIgnore = nil; onCompareFiles = nil
+        document.onOpen = nil; document.onCopy = nil; document.onSelection = nil
+        popover?.close(); popover = nil; currentActivity = nil; completedActivity = nil
+        self.model = model; document.model = model
+        document.selectedPath = nil; document.finishedPaths = []; document.hoverIndex = nil
+        document.replaceRows([], indices: [:]); lastRowsVersion = -1
+        scroll.contentView.scroll(to: .zero)
+        model.onChange = { [weak self] in self?.update() }; update()
+    }
     deinit { progressTicker?.invalidate() }
     override var isFlipped: Bool { true }
     override func layout() {
