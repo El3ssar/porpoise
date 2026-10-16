@@ -28,7 +28,7 @@ final class SyncCalloutView: NSView {
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
         color.withAlphaComponent(Theme.increasedContrast ? 0.18 : 0.08).setFill(); path.fill()
         color.withAlphaComponent(0.4).setStroke(); path.lineWidth = 1; path.stroke()
-        let content = text.hasPrefix("⚠ ") ? String(text.dropFirst(2)) : text
+        let content = (text.hasPrefix("⚠ ") || text.hasPrefix("ⓘ ")) ? String(text.dropFirst(2)) : text
         let attributed = NSMutableAttributedString(
             string: content, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: Theme.windowText])
         if let end = content.firstIndex(of: ".") {
@@ -97,10 +97,16 @@ final class SyncModeCard: NSButton {
         color.withAlphaComponent(0.6).setStroke()
         for x: CGFloat in [12, 44] { NSBezierPath(roundedRect: CGRect(x: x, y: 10, width: 14, height: 12), xRadius: 2, yRadius: 2).stroke() }
         let arrows = NSBezierPath(); arrows.lineWidth = 1.5
-        arrows.move(to: CGPoint(x: 28, y: 16)); arrows.line(to: CGPoint(x: 41, y: 16))
-        arrows.move(to: CGPoint(x: 36, y: 11)); arrows.line(to: CGPoint(x: 41, y: 16)); arrows.line(to: CGPoint(x: 36, y: 21))
         if mode == .twoWay {
-            arrows.move(to: CGPoint(x: 33, y: 11)); arrows.line(to: CGPoint(x: 28, y: 16)); arrows.line(to: CGPoint(x: 33, y: 21))
+            arrows.move(to: CGPoint(x: 28, y: 13)); arrows.line(to: CGPoint(x: 41, y: 13)); arrows.line(to: CGPoint(x: 37, y: 9))
+            arrows.move(to: CGPoint(x: 41, y: 19)); arrows.line(to: CGPoint(x: 28, y: 19)); arrows.line(to: CGPoint(x: 32, y: 23))
+        } else if mode == .mirror {
+            arrows.move(to: CGPoint(x: 28, y: 13)); arrows.line(to: CGPoint(x: 38, y: 13))
+            arrows.move(to: CGPoint(x: 28, y: 19)); arrows.line(to: CGPoint(x: 38, y: 19))
+            arrows.move(to: CGPoint(x: 36, y: 10)); arrows.line(to: CGPoint(x: 42, y: 16)); arrows.line(to: CGPoint(x: 36, y: 22))
+        } else {
+            arrows.move(to: CGPoint(x: 28, y: 16)); arrows.line(to: CGPoint(x: 41, y: 16))
+            arrows.move(to: CGPoint(x: 36, y: 11)); arrows.line(to: CGPoint(x: 41, y: 16)); arrows.line(to: CGPoint(x: 36, y: 21))
         }
         arrows.stroke()
         let hint = mode == .backup ? "⌘1" : mode == .mirror ? "⌘2" : "⌘3"
@@ -209,7 +215,7 @@ final class SyncPlanRow: NSView {
             if let choice, let index = choiceValues.firstIndex(of: choice) {
                 choices.selectedSegment = index; choices.font = .systemFont(ofSize: 11, weight: .semibold)
             }
-            choices.setAccessibilityLabel("Keep version from for \(step.path)")
+            choices.setAccessibilityLabel("Choose version for \(step.path)")
             self.choices = choices; addSubview(choices)
             if difference?.left?.kind == .file && difference?.right?.kind == .file {
                 compareButton.perform = { [weak self] in self?.compare() }; addSubview(compareButton)
@@ -217,7 +223,7 @@ final class SyncPlanRow: NSView {
         }
 
         setAccessibilityElement(true); setAccessibilityRole(.row)
-        setAccessibilityLabel("\(step.path), \(detail.stringValue), \(size.stringValue)")
+        setAccessibilityLabel("\(step.path), \(detail.stringValue)" + (step.action == .conflict ? "" : ", " + size.stringValue))
     }
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
@@ -290,7 +296,7 @@ final class SyncMenuItem: NSMenuItem {
 }
 
 final class SyncDirectionView: NSView {
-    var twoWay = false
+    var twoWay = false { didSet { updateAccessibility() } }
     var breadcrumb = ""
     var swappingTitles: [String]?
     var swapProgress: CGFloat = 0
@@ -305,7 +311,8 @@ final class SyncDirectionView: NSView {
         min(160, (title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width + 40)
     }
     private var sourceWidth: CGFloat { chipWidth(swappingTitles?.first ?? source) }
-    var swapRect: CGRect { CGRect(x: 44 + sourceWidth + 8, y: 0, width: 28, height: 28) }
+    private var leading: CGFloat { twoWay ? 0 : 44 }
+    var swapRect: CGRect { CGRect(x: leading + sourceWidth + 8, y: 0, width: 28, height: 28) }
     override func draw(_ dirtyRect: NSRect) {
         if !twoWay {
             ("From" as NSString).draw(
@@ -315,7 +322,7 @@ final class SyncDirectionView: NSView {
                 at: CGPoint(x: swapRect.minX + 6, y: 3),
                 withAttributes: [.font: NSFont.systemFont(ofSize: 16), .foregroundColor: Theme.windowTextInactive])
         }
-        let breadcrumbX = 88 + sourceWidth + chipWidth(destination) + 12
+        let breadcrumbX = leading + 44 + sourceWidth + chipWidth(destination) + 12
         let breadcrumbStyle = NSMutableParagraphStyle(); breadcrumbStyle.lineBreakMode = .byTruncatingMiddle
         (breadcrumb as NSString).draw(
             in: CGRect(x: breadcrumbX, y: 6, width: max(0, bounds.width - breadcrumbX), height: 18),
@@ -323,7 +330,7 @@ final class SyncDirectionView: NSView {
         for (index, title) in (swappingTitles ?? [source, destination]).enumerated() {
             let crossing = swappingTitles != nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             let position = CGFloat(index) + (crossing ? (index == 0 ? swapProgress : -swapProgress) : 0)
-            let box = CGRect(x: 44 + position * (sourceWidth + 44), y: 0, width: chipWidth(title), height: 28)
+            let box = CGRect(x: leading + position * (sourceWidth + 44), y: 0, width: chipWidth(title), height: 28)
             let shape = NSBezierPath(roundedRect: box.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
             Theme.viewBackground.setFill(); shape.fill(); Theme.frame.setStroke(); shape.lineWidth = 1; shape.stroke()
             Icons.shared.image("folder", size: 16)?.draw(
@@ -374,7 +381,7 @@ final class SyncGroupRow: NSView {
     }
     override func layout() {
         super.layout(); icon.frame = CGRect(x: 0, y: 4, width: 14, height: 14)
-        var x = bounds.width - 4
+        var x = bounds.width - 40
         for link in links.reversed() {
             let width = (link.title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11)]).width + 12
             x -= width; link.frame = CGRect(x: x, y: 1, width: width, height: 22); x -= 4

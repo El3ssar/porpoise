@@ -225,7 +225,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         let bottom = height - 100 - keepExpansion * 24 - (optionsOpen ? 94 : 0)
         let contentHeight = outline.numberOfRows == 0 ? 80 : outline.rect(ofRow: outline.numberOfRows - 1).maxY + 2
         listFrame.frame = CGRect(x: 20, y: top, width: width - 40, height: min(max(40, bottom - top), contentHeight))
-        let optionsBase = listFrame.frame.maxY
+        let optionsBase = height - 86 - keepExpansion * 24 - (optionsOpen ? 94 : 0)
         scroll.frame = listFrame.bounds.insetBy(dx: 1, dy: 1)
         outline.tableColumns[0].width = max(200, scroll.contentSize.width)
         options.title =
@@ -265,19 +265,19 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         (root as? SyncSheetBackdrop)?.footerY = height - 56 - keepExpansion * 24
         root.needsDisplay = true
         let y = height - 43
-        cancelButton.frame = CGRect(x: width - 214, y: y, width: 90, height: 30)
-        syncButton.frame = CGRect(x: width - 114, y: y, width: 94, height: 30)
-        saveButton.frame = CGRect(x: editing ? width - 330 : width - 254, y: y, width: editing ? 106 : 30, height: 30)
+        cancelButton.frame = CGRect(x: width - 190, y: y, width: 80, height: 30)
+        syncButton.frame = CGRect(x: width - 100, y: y, width: 80, height: 30)
+        saveButton.frame = CGRect(x: editing ? width - 330 : width - 230, y: y, width: editing ? 106 : 30, height: 30)
         saveButton.title = editing ? "Remove…" : "⚙︎"
-        saveButton.isHidden = savingTask || (keepExpansion > 0 && !editing)
+        saveButton.isHidden = savingTask
         if !editing {
-            let expanded = keepExpansion > 0
             let footerRow = height - 43 - keepExpansion * 24
-            automatic.title = expanded ? "Keep in sync" : "Keep in sync automatically"
-            automatic.frame = CGRect(x: 20, y: footerRow, width: expanded ? 114 : min(300, width - 360), height: 28)
+            automatic.title = "Keep in sync automatically"
+            let autoWidth = (automatic.title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width + 22
+            automatic.frame = CGRect(x: 20, y: footerRow, width: autoWidth, height: 28)
             name.isBezeled = true; name.bezelStyle = .roundedBezel
-            name.frame = CGRect(x: 140, y: footerRow + 2, width: 120, height: 24)
-            pairDescription.frame = CGRect(x: 268, y: footerRow + 5, width: max(0, width - 502), height: 20)
+            name.frame = CGRect(x: 28 + autoWidth, y: footerRow + 2, width: 108, height: 24)
+            pairDescription.frame = CGRect(x: 144 + autoWidth, y: footerRow + 5, width: max(0, width - 382 - autoWidth), height: 20)
             explanation.frame = CGRect(x: 22, y: height - 25, width: width - 44, height: 16)
             cancelButton.frame.origin.y = footerRow; syncButton.frame.origin.y = footerRow
         }
@@ -285,9 +285,11 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         syncButton.title = editing || savingTask ? "Save" : (preview?.executable.steps.isEmpty == true ? "Done" : "Sync")
         if editing {
             saveButton.frame.origin.x = 20; saveButton.titleTint = Theme.compareDanger; saveButton.drawsBackground = false
-            automatic.title = "Keep in sync"; automatic.frame = CGRect(x: 20, y: height - 110, width: 114, height: 28)
-            name.bezelStyle = .roundedBezel; name.frame = CGRect(x: 140, y: height - 108, width: 120, height: 24)
-            pairDescription.frame = CGRect(x: 268, y: height - 105, width: width - 290, height: 20)
+            automatic.title = "Keep in sync automatically"
+            let autoWidth = (automatic.title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width + 22
+            automatic.frame = CGRect(x: 20, y: height - 110, width: autoWidth, height: 28)
+            name.bezelStyle = .roundedBezel; name.frame = CGRect(x: 28 + autoWidth, y: height - 108, width: 108, height: 24)
+            pairDescription.frame = CGRect(x: 144 + autoWidth, y: height - 105, width: width - 166 - autoWidth, height: 20)
             explanation.frame = CGRect(x: 22, y: height - 76, width: width - 44, height: 16)
         }
         let empty = !planning && displaySteps.isEmpty && preview?.plan.steps.isEmpty == true
