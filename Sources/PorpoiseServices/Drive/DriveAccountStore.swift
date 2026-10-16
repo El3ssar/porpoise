@@ -36,7 +36,8 @@ public final class DriveAccountStore: ObservableObject {
     private var managers: [UUID: DriveTokenManager] = [:]
 
     public init(
-        defaults: UserDefaults = Settings.store, credentials: any DriveCredentialStore = DriveKeychainCredentials(),
+        defaults: UserDefaults = Settings.store,
+        credentials: any DriveCredentialStore = Settings.isTesting ? DriveTestingCredentials() : DriveKeychainCredentials(),
         http: DriveHTTP = DriveHTTP(), configuration: DriveOAuthConfiguration? = nil,
         baseURL: URL = URL(string: "https://www.googleapis.com/drive/v3/")!
     ) {

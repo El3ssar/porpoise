@@ -31,6 +31,7 @@ import Testing
         #expect(result == .success(personal))
         #expect(PlacesModel.shared.accounts.map(\.id) == ["a1"])
         #expect(PlacesModel.shared.sections().map(\.0).contains(.account("a1")))
+        #expect(PlacesModel.shared.accounts.first?.title == "Google Drive")
     }
 
     @Test func closingTheBrowserLeavesNothingBehind() {
@@ -71,6 +72,8 @@ import Testing
         let (both, _) = model([personal, work])
         #expect(both.title("a1") == "Google Drive · daniel")
         #expect(both.title("a2") == "Google Drive · studio.com")
+        // Headers carry the provider's mark: with several accounts they show only the names.
+        #expect(both.sections().map(\.title) == ["daniel", "studio.com"])
         both.setLabel("a2", "  work ")
         #expect(both.title("a2") == "Google Drive · work")
         both.setLabel("a2", "")
@@ -216,5 +219,19 @@ import Testing
         #expect(PlaceSection(stored: "account:x")?.accountID == "x")
         #expect(PlaceSection(stored: "Sync") == nil)
         #expect(PlaceSection.places.accountID == nil)
+    }
+}
+
+/// Test instances keep the fake server's token out of the login Keychain.
+@Suite(.isolatedSettings) struct DriveTestingCredentialsTests {
+    @Test func tokensLiveInTheInstancesDefaults() throws {
+        let store = DriveTestingCredentials()
+        let id = UUID()
+        #expect(try store.read(clientID: "porpoise-fixture", accountID: id) == nil)
+        try store.save("synthetic", clientID: "porpoise-fixture", accountID: id)
+        #expect(try store.read(clientID: "porpoise-fixture", accountID: id) == "synthetic")
+        #expect(try store.read(clientID: "other", accountID: id) == nil)
+        try store.remove(clientID: "porpoise-fixture", accountID: id)
+        #expect(try store.read(clientID: "porpoise-fixture", accountID: id) == nil)
     }
 }
