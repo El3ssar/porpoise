@@ -55,6 +55,11 @@ final class CompareView: NSView {
     private var lastRowsVersion = -1
     private var popover: NSPopover?
     private var currentActivity: Activity?
+    private var activityPaintTimer: Timer?
+    private var lastActivityPaint: CFTimeInterval = 0
+    private var lastActivityState: Activity.State?
+    private var laidOutActivityState: Activity.State?
+    private(set) var activityNotificationCount = 0, activityPaintCount = 0
     private var jobMetadata: [AnyHashable: Any] = [:]
     private var reviewJob: CompareJobBarState?
     private let jobWash = NSView(), jobSymbol = NSImageView()
@@ -155,13 +160,15 @@ final class CompareView: NSView {
         onClose = nil; onSync = nil; onChoose = nil; onIgnore = nil; onCompareFiles = nil
         document.onOpen = nil; document.onCopy = nil; document.onSelection = nil
         popover?.close(); popover = nil; currentActivity = nil; completedActivity = nil; jobMetadata = [:]; reviewJob = nil
+        activityPaintTimer?.invalidate(); activityPaintTimer = nil; lastActivityPaint = 0; lastActivityState = nil; laidOutActivityState = nil
+        activityNotificationCount = 0; activityPaintCount = 0
         self.model = model; document.model = model
         document.selectedPath = nil; document.finishedPaths = []; document.failedPaths = []; document.hoverIndex = nil
         document.replaceRows([], indices: [:]); lastRowsVersion = -1
         scroll.contentView.scroll(to: .zero)
         model.onChange = { [weak self] in self?.update() }; update()
     }
-    deinit { progressTicker?.invalidate() }
+    deinit { progressTicker?.invalidate(); activityPaintTimer?.invalidate() }
     override var isFlipped: Bool { true }
     override func layout() {
         super.layout()
@@ -329,6 +336,7 @@ final class CompareView: NSView {
     }
     @objc private func showJobPressed() { ActivityWindowController.shared.show() }
     func show(activity: Activity, metadata: [AnyHashable: Any] = [:]) {
+        activityNotificationCount += 1
         jobMetadata = metadata
         currentActivity = activity
         model.suppressWatchUpdates = !activity.state.isEnded
@@ -339,7 +347,23 @@ final class CompareView: NSView {
                 self?.currentActivity = nil; self?.document.finishedPaths = []; self?.update()
             }
         }
-        renderActivity(activity)
+        let now = CACurrentMediaTime()
+        if activity.state != lastActivityState || now - lastActivityPaint >= 0.25 {
+            paintActivity()
+        } else if activityPaintTimer == nil {
+            let timer = Timer(timeInterval: max(0.001, 0.25 - (now - lastActivityPaint)), repeats: false) { [weak self] _ in
+                self?.paintActivity()
+            }
+            activityPaintTimer = timer; RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+    private func paintActivity() {
+        activityPaintTimer?.invalidate(); activityPaintTimer = nil
+        guard let currentActivity else { return }
+        lastActivityPaint = CACurrentMediaTime(); lastActivityState = currentActivity.state
+        activityPaintCount += 1
+        renderActivity(currentActivity)
+        document.setNeedsDisplay(currentActivity.state == .failed ? document.visibleRect : document.seam.intersection(document.visibleRect))
     }
     private func renderActivity(_ activity: Activity) {
         renderJob(
@@ -421,7 +445,7 @@ final class CompareView: NSView {
         jobLine.isHidden = job.state.isEnded; jobLine.doubleValue = job.fraction
         jobLine.alphaValue = paused ? 0.4 : 1
         if job.state.isEnded { jobLine.stopAnimation(nil) } else { jobLine.startAnimation(nil) }
-        needsLayout = true
+        if laidOutActivityState != job.state { laidOutActivityState = job.state; needsLayout = true }
     }
     @objc private func zoomChanged() {
         document.rowHeight = CGFloat(zoom.doubleValue) + 6
