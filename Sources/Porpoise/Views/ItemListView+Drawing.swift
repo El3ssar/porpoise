@@ -352,7 +352,7 @@ extension ItemListView {
                     attributes: [
                         .font: NSFont.systemFont(ofSize: 11), .foregroundColor: Theme.viewTextInactive, .paragraphStyle: Self.leftColumnParagraph,
                     ])
-                if let prefix = caption.text.split(separator: " ").first, Int(prefix) != nil {
+                if let prefix = caption.text.split(separator: " ").first, prefix.first?.isNumber == true {
                     run.addAttribute(.foregroundColor, value: caption.color, range: NSRange(location: 0, length: prefix.utf16.count))
                 }
                 run.draw(in: CGRect(x: end + 8, y: y + 1, width: tr.maxX - end - 8, height: lineHeight))

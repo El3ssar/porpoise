@@ -120,7 +120,8 @@ final class CompareView: NSView {
         method.isBordered = false; method.font = .systemFont(ofSize: 12); method.target = self; method.action = #selector(methodPressed)
         summary.font = .systemFont(ofSize: 11); summary.textColor = Theme.windowTextInactive; summary.lineBreakMode = .byTruncatingTail
         sizes.font = .systemFont(ofSize: 11); sizes.textColor = Theme.windowTextInactive; sizes.alignment = .right
-        progressLabel.font = .systemFont(ofSize: 12); progressLabel.textColor = Theme.windowTextInactive
+        progressLabel.font = .systemFont(ofSize: 12); progressLabel.textColor = Theme.windowTextInactive;
+        progressLabel.lineBreakMode = .byTruncatingTail
         pause.bezelStyle = .rounded; pause.font = .systemFont(ofSize: 12); pause.target = self; pause.action = #selector(pausePressed);
         pause.isPrimary = false; stop.isPrimary = false
         pause.isHidden = true
@@ -464,7 +465,7 @@ final class CompareView: NSView {
             color = Theme.compareOnly
         } else if stopped {
             title = job.state == .cancelled ? "Stopped" : "Interrupted"
-            detail = "\(job.completed) of \(job.total) completed · Finished files kept"
+            detail = "\(FileFormat.count(job.completed)) of \(FileFormat.count(job.total)) completed · Finished files kept"
             symbol = "stop.circle"; color = Theme.windowTextInactive
         } else if paused {
             title = "Paused"; detail = "\(FileFormat.count(job.completed)) of \(FileFormat.count(job.total)) done"; symbol = "pause.fill";
@@ -484,7 +485,7 @@ final class CompareView: NSView {
         let run = NSMutableAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: Theme.windowText])
         run.addAttribute(
             .font, value: NSFont.systemFont(ofSize: 12, weight: .semibold), range: NSRange(location: 0, length: (title as NSString).length))
-        progressLabel.attributedStringValue = run
+        progressLabel.attributedStringValue = run; progressLabel.toolTip = text
         jobSymbol.isHidden = symbol == nil; jobSymbol.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }
         jobSymbol.contentTintColor = color; jobWash.layer?.backgroundColor = failed ? Theme.compareDanger.withAlphaComponent(0.1).cgColor : nil
         if !progress.isHidden { progress.startAnimation(nil) } else { progress.stopAnimation(nil) }

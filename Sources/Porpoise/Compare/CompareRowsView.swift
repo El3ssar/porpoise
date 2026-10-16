@@ -151,10 +151,10 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
                 } else if entry?.kind == .directory, row.status != .same, !(self.model.loading && self.model.comparison?.complete == false) {
                     if row.status == .onlyLeft || row.status == .onlyRight {
                         let count = self.model.outline?.childCounts[side]?[row.path] ?? 0
-                        caption = "\(count) only here"
+                        caption = "\(FileFormat.count(count)) only here"
                     } else {
                         let count = self.model.outline?.differenceCounts[row.path] ?? 0
-                        caption = "\(count) \(count == 1 ? "difference" : "differences")"
+                        caption = "\(FileFormat.count(count)) \(count == 1 ? "difference" : "differences")"
                     }
                 } else {
                     return nil
