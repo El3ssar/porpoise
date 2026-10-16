@@ -247,3 +247,12 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bo
         #expect(job.errors.isEmpty)
     }
 }
+
+struct CountFormattingTests {
+    @Test func countsUseOneFormatterAndExplicitLocale() {
+        #expect(FileFormat.count(20_041, locale: Locale(identifier: "en_US")) == "20,041")
+        #expect(FileFormat.count(20_041, locale: Locale(identifier: "de_DE")) == "20.041")
+        #expect(FileFormat.itemCount(20_041) == FileFormat.count(20_041) + " items")
+        #expect(FileFormat.summary(folders: 20_041, files: 0, bytes: 0, selected: false) == FileFormat.count(20_041) + " folders")
+    }
+}

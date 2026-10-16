@@ -19,7 +19,13 @@ public enum FileFormat {
         return String(format: "%.1f %@", v, units[i])
     }
 
-    public static func itemCount(_ n: Int) -> String { n == 1 ? "1 item" : "\(n) items" }
+    /// Counts follow the app's preferred language locale, consistently across browse, Compare and Sync.
+    /// Locale.current can carry a separate region override that differs from the UI language.
+    public static func count(_ n: Int, locale: Locale? = nil) -> String {
+        n.formatted(.number.locale(locale ?? Locale(identifier: Locale.preferredLanguages.first ?? Locale.current.identifier)))
+    }
+
+    public static func itemCount(_ n: Int) -> String { n == 1 ? "1 item" : "\(count(n)) items" }
 
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -91,7 +97,7 @@ public enum FileFormat {
 
     /// Status bar summary: "3 folders, 12 files (4.2 MiB)" — Dolphin's wording (KIO::itemsSummaryString).
     public static func summary(folders: Int, files: Int, bytes: Int64, selected: Bool) -> String {
-        func plural(_ n: Int, _ one: String, _ many: String) -> String { n == 1 ? "1 \(one)" : "\(n) \(many)" }
+        func plural(_ n: Int, _ one: String, _ many: String) -> String { n == 1 ? "1 \(one)" : "\(count(n)) \(many)" }
         var parts: [String] = []
         if selected {
             if folders > 0 { parts.append(plural(folders, "folder selected", "folders selected")) }

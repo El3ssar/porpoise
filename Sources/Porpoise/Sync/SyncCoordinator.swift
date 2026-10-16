@@ -249,7 +249,8 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
                         let copied = preview.executable.itemCount(for: .copy) + preview.executable.itemCount(for: .replace)
                         let trashed = preview.executable.itemCount(for: .trash)
                         activity.completionSummary =
-                            "Synced" + (copied > 0 ? " · \(copied) copied" : "") + (trashed > 0 ? " · \(trashed) moved to the Trash" : "")
+                            "Synced" + (copied > 0 ? " · \(FileFormat.count(copied)) copied" : "")
+                            + (trashed > 0 ? " · \(FileFormat.count(trashed)) moved to the Trash" : "")
                             + " · just now"
                         self.activities[pair.id] = activity; self.runs[pair.id] = preview
                         self.runPaths[pair.id] = Dictionary(uniqueKeysWithValues: preview.plan.steps.map { ($0.id, $0.path) })
@@ -528,8 +529,8 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
         case .syncing: suffix = "syncing, \(Int((activities[pair.id]?.fraction ?? 0) * 100)) %"
         case .paused: suffix = "paused"
         case .failed(let reason): suffix = reason
-        case .conflicts(let count): suffix = "\(count) conflicts need review"
-        case .review(let count): suffix = "sync paused: \(count) items would be moved to the Trash."
+        case .conflicts(let count): suffix = "\(FileFormat.count(count)) conflicts need review"
+        case .review(let count): suffix = "sync paused: \(FileFormat.count(count)) items would be moved to the Trash."
         default: suffix = pair.paused ? "paused" : pair.automatic ? "kept in sync" : "saved sync"
         }
         let synced =

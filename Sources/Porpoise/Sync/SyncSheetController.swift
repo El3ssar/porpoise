@@ -276,7 +276,9 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         methodLabel.frame = CGRect(x: 20, y: optionsY + 64, width: 68, height: 18)
         method.frame = CGRect(x: fieldX, y: optionsY + 60, width: 190, height: 24)
         let ignored = (preview?.left.excludedPaths?.count ?? 0) + (preview?.right.excludedPaths?.count ?? 0)
-        custom.stringValue = "Ignores \(ignored) items" + (pair.customExclusions.isEmpty ? "" : " · \(pair.customExclusions.count) custom patterns")
+        custom.stringValue =
+            "Ignores \(FileFormat.count(ignored)) items"
+            + (pair.customExclusions.isEmpty ? "" : " · \(FileFormat.count(pair.customExclusions.count)) custom patterns")
         custom.toolTip = pair.customExclusions.joined(separator: "\n")
         customButton.font = .systemFont(ofSize: 11)
         customButton.frame = CGRect(x: fieldX + chipWidth + 6, y: optionsY, width: 68, height: 24)
@@ -448,7 +450,8 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                 if attributed.length > 0 { attributed.append(NSAttributedString(string: " · ")) }
                 attributed.append(
                     NSAttributedString(
-                        string: "\(count)", attributes: [.foregroundColor: color, .font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
+                        string: "\(FileFormat.count(count))",
+                        attributes: [.foregroundColor: color, .font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
                 attributed.append(NSAttributedString(string: " " + word, attributes: [.foregroundColor: Theme.windowText]))
             }
         }
@@ -458,7 +461,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             attributed.append(
                 NSAttributedString(
                     string:
-                        "\(newerSkipped) newer \(newerSkipped == 1 ? "file" : "files") in \(pair.rightTitle) \(newerSkipped == 1 ? "is" : "are") skipped",
+                        "\(FileFormat.count(newerSkipped)) newer \(newerSkipped == 1 ? "file" : "files") in \(pair.rightTitle) \(newerSkipped == 1 ? "is" : "are") skipped",
                     attributes: [.foregroundColor: Theme.compareDanger]))
         }
         let otherConflicts = preview.skippedConflicts - newerSkipped
@@ -466,7 +469,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             if attributed.length > 0 { attributed.append(NSAttributedString(string: " · ")) }
             attributed.append(
                 NSAttributedString(
-                    string: "\(otherConflicts) \(otherConflicts == 1 ? "conflict" : "conflicts") will be skipped",
+                    string: "\(FileFormat.count(otherConflicts)) \(otherConflicts == 1 ? "conflict" : "conflicts") will be skipped",
                     attributes: [.foregroundColor: Theme.compareDanger]))
         }
         if attributed.length == 0 {
@@ -489,12 +492,15 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         if unchecked > 0 {
             attributed.append(
                 NSAttributedString(
-                    string: " · \(unchecked) \(unchecked == 1 ? "item" : "items") unchecked", attributes: [.foregroundColor: Theme.windowTextInactive]
+                    string: " · \(FileFormat.count(unchecked)) \(unchecked == 1 ? "item" : "items") unchecked",
+                    attributes: [.foregroundColor: Theme.windowTextInactive]
                 ))
         }
         let leftInPlace = SyncPlan(steps: preview.blockedSteps).itemCount(for: .trash)
         if leftInPlace > 0 {
-            attributed.append(NSAttributedString(string: " · \(leftInPlace) left in place", attributes: [.foregroundColor: Theme.windowTextInactive]))
+            attributed.append(
+                NSAttributedString(
+                    string: " · \(FileFormat.count(leftInPlace)) left in place", attributes: [.foregroundColor: Theme.windowTextInactive]))
         }
         summary.attributedStringValue = attributed
         let deletions = plan.itemCount(for: .trash)
@@ -504,11 +510,11 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                 (side == .left ? pair.left : pair.right).host ?? (side == .left ? pair.leftTitle : pair.rightTitle)
             }.sorted().joined(separator: " and ")
             callout.text =
-                "\(names) can’t keep deleted items. \(leftInPlace == 1 ? "This item will" : "These \(leftInPlace) items will") be left in place."
+                "\(names) can’t keep deleted items. \(leftInPlace == 1 ? "This item will" : "These \(FileFormat.count(leftInPlace)) items will") be left in place."
             callout.danger = false; callout.warning = true
         } else if deletions > 0 {
             callout.text =
-                "⚠ \(deletions) \(deletions == 1 ? "item" : "items") in \(pair.rightTitle) \(deletions == 1 ? "isn’t" : "aren’t") in \(pair.leftTitle). \(deletions == 1 ? "It’ll" : "They’ll") be moved to \(pair.right.isFileURL ? "the Trash" : ".porpoise-trash on " + (pair.right.host ?? pair.rightTitle))."
+                "⚠ \(FileFormat.count(deletions)) \(deletions == 1 ? "item" : "items") in \(pair.rightTitle) \(deletions == 1 ? "isn’t" : "aren’t") in \(pair.leftTitle). \(deletions == 1 ? "It’ll" : "They’ll") be moved to \(pair.right.isFileURL ? "the Trash" : ".porpoise-trash on " + (pair.right.host ?? pair.rightTitle))."
             callout.danger = true
         } else if preview.firstTwoWay {
             callout.text = "ⓘ First two-way sync. Nothing will be deleted this time. Porpoise remembers both sides for next time."

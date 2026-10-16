@@ -192,7 +192,7 @@ final class SyncPlanRow: NSView {
             detail.stringValue =
                 change == .newerLeft ? "newer in " + pair.leftTitle : change == .newerRight ? "newer in " + pair.rightTitle : "changed"
         }
-        if let folderCount { size.stringValue = "\(folderCount) \(folderCount == 1 ? "item" : "items")" }
+        if let folderCount { size.stringValue = "\(FileFormat.count(folderCount)) \(folderCount == 1 ? "item" : "items")" }
         detail.font = .systemFont(ofSize: 11)
         detail.textColor =
             step.action == .replace && pair.mode != .twoWay && difference?.status == .changed(.newerRight)
@@ -392,7 +392,7 @@ final class SyncGroupRow: NSView {
         }
         icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil); icon.contentTintColor = color
         addSubview(icon); addSubview(label)
-        countLabel.stringValue = String(count); countLabel.font = .systemFont(ofSize: 12); countLabel.textColor = Theme.windowTextInactive;
+        countLabel.stringValue = FileFormat.count(count); countLabel.font = .systemFont(ofSize: 12); countLabel.textColor = Theme.windowTextInactive;
         addSubview(countLabel)
         updateGlyph = action == .replace; icon.isHidden = updateGlyph
         setAccessibilityElement(true); setAccessibilityRole(.group); setAccessibilityLabel(title + ", " + String(count))

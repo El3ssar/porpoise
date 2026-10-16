@@ -246,13 +246,13 @@ final class CompareView: NSView {
             pill.count = model.outline?.counts[pill.filter.rawValue] ?? 0
             pill.label = labels[index]; pill.isOn = model.filter.contains(pill.filter)
             pill.isEnabled = pill.count > 0; pill.isHidden = false; pill.needsDisplay = true
-            pill.toolTip = "\(pill.label), \(pill.count) items"
-            pill.setAccessibilityLabel("\(pill.label), \(pill.count) items, \(pill.isOn ? "showing" : "hidden")")
+            pill.toolTip = "\(pill.label), \(FileFormat.count(pill.count)) items"
+            pill.setAccessibilityLabel("\(pill.label), \(FileFormat.count(pill.count)) items, \(pill.isOn ? "showing" : "hidden")")
         }
         progress.isHidden = !model.showProgress; progressLabel.isHidden = true; stop.isHidden = true
         if model.showProgress {
             progress.startAnimation(nil)
-            let count = (model.comparison?.rows.count ?? 0).formatted(), text = "Comparing… \(count) items"
+            let count = FileFormat.count(model.comparison?.rows.count ?? 0), text = "Comparing… \(count) items"
             let run = NSMutableAttributedString(
                 string: text, attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: Theme.windowTextInactive])
             run.addAttribute(.font, value: NSFont.systemFont(ofSize: 12, weight: .semibold), range: (text as NSString).range(of: count))
@@ -287,16 +287,17 @@ final class CompareView: NSView {
         let counts = model.outline?.counts ?? [:]
         let differences = [CompareFilter.onlyLeft, .onlyRight, .changed].reduce(0) { $0 + (counts[$1.rawValue] ?? 0) }
         let elapsed = model.elapsed < 0.1 ? "<0.1 s" : String(format: "%.1f s", model.elapsed)
-        let differenceSummary = differences == 0 ? "no differences" : "\(differences.formatted()) differences"
+        let differenceSummary = differences == 0 ? "no differences" : "\(FileFormat.count(differences)) differences"
         summary.stringValue =
             model.error
-            ?? "\((model.comparison?.rows.count ?? 0).formatted()) items · \(differenceSummary) · \(elapsed)"
+            ?? "\(FileFormat.count(model.comparison?.rows.count ?? 0)) items · \(differenceSummary) · \(elapsed)"
         if model.loading {
             summary.stringValue =
-                "Reading \(model.options.method == .content ? "contents" : "folders")… \((model.comparison?.rows.count ?? 0).formatted()) items"
+                "Reading \(model.options.method == .content ? "contents" : "folders")… \(FileFormat.count(model.comparison?.rows.count ?? 0)) items"
         }
         summary.textColor = model.error == nil ? Theme.windowTextInactive : Theme.compareDanger
         summary.toolTip = "Compared by \(Self.methodTitle(model.options.method).lowercased()) · \(summary.stringValue)"
+        sizes.isHidden = model.loading || model.comparison == nil
         sizes.stringValue =
             "\(model.names.0) \(FileFormat.size(model.outline?.totalBytes[.left] ?? 0)) · \(model.names.1) \(FileFormat.size(model.outline?.totalBytes[.right] ?? 0))"
         let identical = differences == 0 && model.comparison?.complete == true
@@ -308,7 +309,7 @@ final class CompareView: NSView {
                 : (identical ? "\(model.names.0) and \(model.names.1) are identical" : "No items match these filters."),
             detail: model.error
                 ?? (identical
-                    ? "\((model.comparison?.rows.count ?? 0).formatted()) items match by \(Self.methodTitle(model.options.method).lowercased().replacingOccurrences(of: "&", with: "and"))."
+                    ? "\(FileFormat.count(model.comparison?.rows.count ?? 0)) items match by \(Self.methodTitle(model.options.method).lowercased().replacingOccurrences(of: "&", with: "and"))."
                     : "Choose which differences to show above."),
             button: model.error != nil ? "Try Again" : (identical && model.options.method != .content ? "Compare Contents" : "Show All")
         ) { [weak self] in
@@ -430,16 +431,21 @@ final class CompareView: NSView {
             title = "Lost connection to \(job.destination)."; detail = "Finished items are kept."; symbol = "exclamationmark.triangle.fill";
             color = Theme.compareChanged
         } else if failed {
-            title = "\(max(1, job.errors)) \(job.errors == 1 ? "item couldn’t" : "items couldn’t") be copied."
+            title = "\(FileFormat.count(max(1, job.errors))) \(job.errors == 1 ? "item couldn’t" : "items couldn’t") be copied."
             detail = job.reason; symbol = "exclamationmark.circle.fill"; color = Theme.compareDanger
         } else if done {
-            title = "Synced"; detail = "\(job.copied) copied · \(job.trashed) moved to the Trash · just now"; symbol = "checkmark";
+            title = "Synced"
+            var parts: [String] = []
+            if job.copied > 0 { parts.append("\(FileFormat.count(job.copied)) copied") }
+            if job.trashed > 0 { parts.append("\(FileFormat.count(job.trashed)) moved to the Trash") }
+            parts.append("just now"); detail = parts.joined(separator: " · "); symbol = "checkmark";
             color = Theme.compareOnly
         } else if paused {
-            title = "Paused"; detail = "\(job.completed) of \(job.total) done"; symbol = "pause.fill"; color = Theme.windowTextInactive
+            title = "Paused"; detail = "\(FileFormat.count(job.completed)) of \(FileFormat.count(job.total)) done"; symbol = "pause.fill";
+            color = Theme.windowTextInactive
         } else {
             title = job.state == .waiting ? "Waiting for your answer" : "Syncing to \(job.destination)"
-            detail = "\(job.completed) of \(job.total)"; symbol = nil; color = Theme.accent
+            detail = "\(FileFormat.count(job.completed)) of \(FileFormat.count(job.total))"; symbol = nil; color = Theme.accent
         }
         var text = title + (detail.isEmpty ? "" : (failed || job.lostConnection ? " " : " · ") + detail)
         if !job.state.isEnded, !job.amounts.isEmpty { text += " · " + job.amounts }
@@ -573,7 +579,7 @@ final class ComparePill: NSButton {
     required init?(coder: NSCoder) { fatalError() }
     override var intrinsicContentSize: NSSize {
         let font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        let countWidth = (count.formatted() as NSString).size(withAttributes: [.font: font]).width
+        let countWidth = (FileFormat.count(count) as NSString).size(withAttributes: [.font: font]).width
         let labelWidth = compact ? 0 : 8 + (label as NSString).size(withAttributes: [.font: font]).width
         return CGSize(width: ceil(40 + countWidth + labelWidth), height: 24)
     }
@@ -600,7 +606,7 @@ final class ComparePill: NSButton {
             (glyph as NSString).draw(
                 at: CGPoint(x: 10, y: 3), withAttributes: [.font: NSFont.systemFont(ofSize: 14, weight: .medium), .foregroundColor: color])
         }
-        let count = count.formatted() as NSString, attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let count = FileFormat.count(count) as NSString, attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
         count.draw(at: CGPoint(x: 30, y: 4), withAttributes: attributes)
         if !compact {
             (label as NSString).draw(
