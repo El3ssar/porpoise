@@ -41,6 +41,7 @@ extension ItemListView {
             setNeedsDisplay(highlightRect(i).insetBy(dx: -30, dy: -4))
         }
         let item = hoverIndex.flatMap { $0 < model.rows.count ? model.rows[$0].item : nil }
+        model.prefetch(item)
         hoveredURL = item?.url
         if let item, hoverAlpha[item.url] == nil { hoverAlpha[item.url] = 0.01 }
         startHoverAnimation()
