@@ -154,6 +154,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             a.addButton(withTitle: "Cancel")
             if a.runModal() != .alertFirstButtonReturn { return .terminateCancel }
         }
+        if FileDiffWindow.confirmQuitIfNeeded({ [weak self] approved in
+            if approved { self?.saveSession() }
+            NSApp.reply(toApplicationShouldTerminate: approved)
+        }) {
+            return .terminateLater
+        }
         saveSession()
         return .terminateNow
     }

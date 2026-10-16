@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Compare files.** File › Compare Files (⌥⌘Y) opens text, image and metadata comparisons in their own windows.
+  Browse word changes side by side or inline, copy a change left or right with Undo, and save when ready. Compare
+  images side by side, with an onion-skin slider or a difference overlay; inspect exact sizes, dates, permissions,
+  tags and SHA-256. Open the pair in an installed comparison app or choose a default in Settings › System.
+
 - **Transfers that survive interruptions.** Window › Activity (⌥⌘J) lists queued, running, paused and finished
   copies with speed, amounts and time left; reorder the queue, choose how many run at once, pause and resume, cancel,
   and retry failed items. Large files resume from where they stopped, even after quitting: next launch Porpoise

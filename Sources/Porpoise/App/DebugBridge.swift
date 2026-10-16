@@ -209,6 +209,18 @@ final class DebugBridge: NSObject {
             try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: arg))
         case "link":
             if let wc, (wc.tab.linkedRoots != nil) != (arg == "on") { wc.toggleLinkedBrowsing(nil) }
+        case "filediff":
+            let pair = arg.components(separatedBy: "|")
+            if pair.count == 2 { FileDiffWindow.present(left: URL(fileURLWithPath: pair[0]), right: URL(fileURLWithPath: pair[1])) }
+        case "filediffmode": FileDiffWindow.current?.debug(arg)
+        case "filediffmenucapture":
+            // A second distributed notification waits until menu tracking ends; a common-mode timer does not.
+            let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self] _ in
+                self?.fileDiffMenuSnapshot(to: arg)
+                FileDiffWindow.current?.endToolMenu()
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            FileDiffWindow.current?.debug("openwith")
         case "snapshot": snapshot(to: arg)
         case "lsnapshot": layerSnapshot(to: arg)
         case "wsnapshot": windowServerSnapshot(to: arg)
@@ -834,6 +846,32 @@ final class DebugBridge: NSObject {
         }
     }
 
+    /// A native popup menu is a separate WindowServer window; capture its own ID.
+    private func fileDiffMenuSnapshot(to path: String) {
+        let candidates = NSApp.windows.filter { $0.isVisible && $0.level.rawValue > NSWindow.Level.normal.rawValue }
+        guard
+            let popup = candidates.first(where: { String(describing: type(of: $0)).contains("PopupMenuWindow") })
+                ?? candidates.sorted(by: { $0.level.rawValue > $1.level.rawValue }).first
+        else { return }
+        if let screen = popup.screen ?? NSScreen.main {
+            popup.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - popup.frame.width / 2, y: screen.visibleFrame.midY - popup.frame.height / 2))
+            popup.displayIfNeeded()
+        }
+        typealias Capture = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return }
+        let capture = unsafeBitCast(symbol, to: Capture.self)
+        if let image = capture(.null, 8, UInt32(popup.windowNumber), 1)?.takeRetainedValue() {
+            writePNG(image, to: path)
+            let metadata: [String: Any] = [
+                "window": popup.windowNumber, "class": String(describing: type(of: popup)), "frame": NSStringFromRect(popup.frame),
+                "pixels": "\(image.width) × \(image.height)",
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: metadata, options: .prettyPrinted) {
+                try? data.write(to: URL(fileURLWithPath: path + ".json"))
+            }
+        }
+    }
+
     private func windowServerSnapshot(to arg: String) {
         // "wsnapshot <png>" = main window; "wsnapshot <png>|<title prefix>" = another window (Settings, Properties…).
         guard let img = windowServerImage(arg) else { return }
@@ -888,6 +926,7 @@ final class DebugBridge: NSObject {
         let w: NSWindow?
         if parts.count > 1 {
             switch parts[1] {
+            case "FileDiff": w = FileDiffWindow.current?.window
             case "Settings": w = settingsWindow
             case "Sheet": w = NSApp.windows.first { $0.isVisible && $0.isSheet }
             default: w = NSApp.windows.first { $0.isVisible && $0.title.hasPrefix(parts[1]) }

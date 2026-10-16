@@ -264,6 +264,20 @@ final class SettingsWindowController: NSWindowController {
                 enabled: { u.isAvailable && u.automaticallyChecks }
             ) { u.automaticallyInstalls = $0 }
             f.button("Check Now") { u.checkForUpdates(nil) }
+            f.section("Compare files")
+            f.status(
+                "Default compare app:",
+                {
+                    let path = Settings.store.string(forKey: "fileDiff.defaultApp")
+                    return (nil, path.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent } ?? "Porpoise")
+                }, button: { "Choose App…" }
+            ) { refresh in
+                FileDiffExternalTools.chooseDefault(window: SettingsWindowController.window, done: refresh)
+            }
+            f.button("Use Porpoise for File Comparison") {
+                Settings.store.removeObject(forKey: "fileDiff.defaultApp")
+                NotificationCenter.default.post(name: Settings.changed, object: "fileDiff.defaultApp")
+            }
             f.section("Default file browser")
             f.note(
                 "Open Porpoise instead of Finder when other apps show a file (“Show in Finder”, “Reveal in Finder”, a download’s magnifying glass). macOS keeps the desktop, and opening folders from the Dock, with Finder."

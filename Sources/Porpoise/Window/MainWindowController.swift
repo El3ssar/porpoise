@@ -164,6 +164,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
                 compare.show(activity: activity, metadata: note.userInfo ?? [:])
             }
         }
+        observe(Notification.Name("PorpoiseCompareFilesRequested")) { me, note in
+            guard note.object as? NSWindow === me.window,
+                let left = note.userInfo?["left"] as? URL, let right = note.userInfo?["right"] as? URL
+            else { return }
+            FileDiffWindow.present(left: left, right: right)
+        }
         observe(Settings.changed) { me, note in me.settingsChanged(key: note.object as? String) }
         observe(PlacesModel.changed) { me, _ in me.placesChanged() }
         observe(.terminalExited) { me, n in

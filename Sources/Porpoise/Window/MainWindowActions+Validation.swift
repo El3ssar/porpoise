@@ -29,6 +29,9 @@ extension MainWindowController: NSMenuItemValidation {
         case #selector(nextComparisonDifference(_:)), #selector(previousComparisonDifference(_:)):
             return tab.compareView != nil
         // File / Edit
+        case #selector(compareFiles(_:)):
+            return view.url.isFileURL && view.model.selectedItems.count <= 2
+                && view.model.selectedItems.allSatisfy { !$0.isBrowsableFolder && $0.url.isFileURL }
         case #selector(undoFileOperation(_:)):
             if let text = typingUndoManager { item.title = text.undoMenuItemTitle; return text.canUndo }
             if isTypingFocus { item.title = "Undo"; return false }
