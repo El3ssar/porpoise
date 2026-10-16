@@ -110,9 +110,11 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         for index in candidates.sorted() {
             let position = y(index)
             guard CGRect(x: 0, y: position, width: bounds.width, height: rowHeight).intersects(dirty) else { continue }
-            drawRow(rows[index], index: index, y: position, alpha: transition?.from[rows[index].path] == nil ? transition?.progress ?? 1 : 1)
+            drawRow(
+                rows[index], index: index, y: position, alpha: transition?.from[rows[index].path] == nil ? transition?.progress ?? 1 : 1, dirty: dirty
+            )
         }
-        if let transition { for (row, position) in leaving { drawRow(row, index: 0, y: position, alpha: 1 - transition.progress) } }
+        if let transition { for (row, position) in leaving { drawRow(row, index: 0, y: position, alpha: 1 - transition.progress, dirty: dirty) } }
         drawMilliseconds.append((CACurrentMediaTime() - started) * 1000)
         if drawMilliseconds.count > 240 { drawMilliseconds.removeFirst(drawMilliseconds.count - 240) }
     }
@@ -138,11 +140,12 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         default: return "≠"
         }
     }
-    private func drawRow(_ row: SyncDifference, index: Int, y: CGFloat, alpha: CGFloat) {
+    private func drawRow(_ row: SyncDifference, index: Int, y: CGFloat, alpha: CGFloat, dirty: NSRect) {
         NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current?.cgContext.setAlpha(alpha)
         defer { NSGraphicsContext.restoreGraphicsState() }
         for side in [SyncSide.left, .right] {
             let rect = pane(side, y: y), entry = side == .left ? row.left : row.right
+            guard rect.intersects(dirty) else { continue }
             let selected = selectedPath == row.path
             (index.isMultiple(of: 2) ? Theme.viewBackground : Theme.viewBackground.mixed(with: Theme.windowBackground, 0.5)).setFill(); rect.fill()
             if entry != nil && row.status != .same && (entry?.kind != .directory || row.status == .onlyLeft || row.status == .onlyRight) {
@@ -172,6 +175,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
             }
             drawEntry(entry, row: row, side: side, rect: rect)
         }
+        guard seam.intersects(dirty) else { return }
         if model.loading && model.comparison?.complete == false && row.left?.kind == .directory && row.right?.kind == .directory {
             let arc = NSBezierPath(); arc.lineWidth = 1.5
             let angle = CGFloat(CACurrentMediaTime().truncatingRemainder(dividingBy: 1.2) / 1.2 * 360)
