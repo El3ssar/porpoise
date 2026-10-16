@@ -1,0 +1,268 @@
+{
+  "files": [
+    {
+      "id": "folder-a",
+      "name": "Project Atlas",
+      "mimeType": "application/vnd.google-apps.folder",
+      "capabilities": {
+        "canDownload": true,
+        "canListChildren": true,
+        "canEdit": true,
+        "canRename": true,
+        "canTrash": true,
+        "canUntrash": true,
+        "canAddChildren": true,
+        "canMoveItemWithinDrive": true,
+        "canCopy": true,
+        "canMoveItemOutOfDrive": true
+      },
+      "owners": [
+        {
+          "displayName": "Alex Example",
+          "emailAddress": "alex@example.invalid"
+        }
+      ],
+      "shared": true,
+      "parents": [
+        "root"
+      ],
+      "version": "1"
+    },
+    {
+      "id": "binary-a",
+      "name": "report.txt",
+      "mimeType": "text/plain",
+      "size": "13",
+      "modifiedTime": "2026-10-16T10:00:00Z",
+      "webViewLink": "https://drive.google.com/file/d/binary-a/view",
+      "capabilities": {
+        "canDownload": true,
+        "canListChildren": true,
+        "canEdit": true,
+        "canRename": true,
+        "canTrash": true,
+        "canUntrash": true,
+        "canAddChildren": true,
+        "canMoveItemWithinDrive": true,
+        "canCopy": true,
+        "canMoveItemOutOfDrive": true
+      },
+      "parents": [
+        "root"
+      ],
+      "version": "1",
+      "headRevisionId": "revision-binary-a",
+      "md5Checksum": "6e16e5a4960748b3b386b95310db0c5c"
+    },
+    {
+      "id": "binary-b",
+      "name": "report.txt",
+      "mimeType": "text/plain",
+      "size": "13",
+      "capabilities": {
+        "canDownload": true,
+        "canCopy": true
+      },
+      "parents": [
+        "root"
+      ],
+      "version": "1",
+      "headRevisionId": "revision-binary-b",
+      "md5Checksum": "6e16e5a4960748b3b386b95310db0c5c"
+    },
+    {
+      "id": "doc-a",
+      "name": "Meeting notes",
+      "mimeType": "application/vnd.google-apps.document",
+      "webViewLink": "https://docs.google.com/document/d/doc-a/edit",
+      "capabilities": {
+        "canDownload": true,
+        "canListChildren": true,
+        "canEdit": true,
+        "canRename": true,
+        "canTrash": true,
+        "canUntrash": true,
+        "canAddChildren": true,
+        "canMoveItemWithinDrive": true,
+        "canCopy": true,
+        "canMoveItemOutOfDrive": true
+      },
+      "owners": [
+        {
+          "displayName": "Alex Example",
+          "emailAddress": "alex@example.invalid"
+        }
+      ],
+      "permissions": [
+        {
+          "id": "owner-a",
+          "type": "user",
+          "role": "owner",
+          "displayName": "Alex Example",
+          "emailAddress": "alex@example.invalid"
+        },
+        {
+          "type": "anyone",
+          "role": "reader"
+        }
+      ],
+      "sharingUser": {
+        "displayName": "Sam Example",
+        "emailAddress": "sam@example.invalid"
+      },
+      "lastModifyingUser": {
+        "displayName": "Alex Example"
+      },
+      "parents": [
+        "root"
+      ],
+      "version": "1"
+    },
+    {
+      "id": "shortcut-a",
+      "name": "Atlas shortcut",
+      "mimeType": "application/vnd.google-apps.shortcut",
+      "shortcutDetails": {
+        "targetId": "folder-a",
+        "targetMimeType": "application/vnd.google-apps.folder",
+        "targetResourceKey": "resource-a"
+      },
+      "capabilities": {
+        "canDownload": true,
+        "canListChildren": true,
+        "canEdit": true,
+        "canRename": true,
+        "canTrash": true,
+        "canUntrash": true,
+        "canAddChildren": true,
+        "canMoveItemWithinDrive": true,
+        "canCopy": true,
+        "canMoveItemOutOfDrive": true
+      },
+      "parents": [
+        "root"
+      ],
+      "version": "1"
+    },
+    {
+      "id": "denied",
+      "name": "Restricted.pdf",
+      "mimeType": "application/pdf",
+      "capabilities": {
+        "canDownload": false
+      },
+      "headRevisionId": "revision-denied",
+      "md5Checksum": "6e16e5a4960748b3b386b95310db0c5c"
+    },
+    {
+      "id": "cycle-a",
+      "name": "Cycle A",
+      "mimeType": "application/vnd.google-apps.shortcut",
+      "shortcutDetails": {
+        "targetId": "cycle-b"
+      },
+      "capabilities": {
+        "canDownload": true,
+        "canListChildren": true,
+        "canEdit": true,
+        "canRename": true,
+        "canTrash": true,
+        "canUntrash": true,
+        "canAddChildren": true,
+        "canMoveItemWithinDrive": true,
+        "canCopy": true,
+        "canMoveItemOutOfDrive": true
+      },
+      "parents": [
+        "root"
+      ],
+      "version": "1"
+    },
+    {
+      "id": "cycle-b",
+      "name": "Cycle B",
+      "mimeType": "application/vnd.google-apps.shortcut",
+      "shortcutDetails": {
+        "targetId": "cycle-a"
+      },
+      "capabilities": {
+        "canDownload": true,
+        "canListChildren": true,
+        "canEdit": true,
+        "canRename": true,
+        "canTrash": true,
+        "canUntrash": true,
+        "canAddChildren": true,
+        "canMoveItemWithinDrive": true,
+        "canCopy": true,
+        "canMoveItemOutOfDrive": true
+      },
+      "parents": [
+        "root"
+      ],
+      "version": "1"
+    },
+    {
+      "id": "shared-drive-a",
+      "name": "External studio",
+      "mimeType": "application/vnd.google-apps.folder",
+      "driveId": "shared-drive-a",
+      "capabilities": {
+        "canDownload": true,
+        "canListChildren": true,
+        "canEdit": true,
+        "canRename": true,
+        "canTrash": true,
+        "canUntrash": true,
+        "canAddChildren": true,
+        "canMoveItemWithinDrive": true,
+        "canCopy": true,
+        "canMoveItemOutOfDrive": true
+      },
+      "parents": [
+        "root"
+      ],
+      "version": "1"
+    },
+    {
+      "id": "native-unsupported",
+      "name": "Form",
+      "mimeType": "application/vnd.google-apps.form",
+      "capabilities": {
+        "canDownload": true,
+        "canListChildren": true,
+        "canEdit": true,
+        "canRename": true,
+        "canTrash": true,
+        "canUntrash": true,
+        "canAddChildren": true,
+        "canMoveItemWithinDrive": true,
+        "canCopy": true,
+        "canMoveItemOutOfDrive": true
+      },
+      "parents": [
+        "root"
+      ],
+      "version": "1"
+    },
+    {
+      "id": "bad-name",
+      "name": "../escape",
+      "mimeType": "text/plain",
+      "headRevisionId": "revision-bad-name",
+      "md5Checksum": "6e16e5a4960748b3b386b95310db0c5c"
+    }
+  ],
+  "profile": {
+    "sub": "fixture-user",
+    "email": "alex@example.invalid",
+    "name": "Alex Example"
+  },
+  "drives": [
+    {
+      "id": "shared-drive-a",
+      "name": "External studio"
+    }
+  ],
+  "mutationFixture": true
+}

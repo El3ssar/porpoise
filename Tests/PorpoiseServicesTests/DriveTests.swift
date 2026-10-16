@@ -37,7 +37,24 @@ final class FakeDriveServer {
         }
         base = URL(string: "http://127.0.0.1:\(port)")!
     }
-    deinit { if process.isRunning { process.terminate(); process.waitUntilExit() } }
+    /// Foundation waitUntilExit can wait forever after its process monitor already reaped the fixture.
+    /// waitpid provides bounded teardown and never touches a process that is no longer our child.
+    func stop() {
+        guard process.isRunning else { return }
+        let pid = process.processIdentifier
+        var status: Int32 = 0
+        if waitpid(pid, &status, WNOHANG) != 0 { return }
+        process.terminate()
+        for _ in 0..<200 {
+            if waitpid(pid, &status, WNOHANG) != 0 { return }
+            usleep(10_000)
+        }
+        if waitpid(pid, &status, WNOHANG) == 0 {
+            kill(pid, SIGKILL)
+            _ = waitpid(pid, &status, 0)
+        }
+    }
+    deinit { stop() }
     var config: DriveOAuthConfiguration {
         DriveOAuthConfiguration(
             clientID: "fixture-client", authorizationURL: base.appendingPathComponent("auth"), tokenURL: base.appendingPathComponent("token"),
@@ -91,7 +108,7 @@ final class FakeDriveServer {
         await #expect(throws: DriveError.invalidLocation) { try await client.list(DriveLocation(accountID: UUID())) }
     }
 
-    @Test func providerUsesIDAncestryRefusesWritesAndStagesDownloads() async throws {
+    @Test func providerUsesIDAncestryRejectsMissingWriteCapabilitiesAndStagesDownloads() async throws {
         let server = try FakeDriveServer()
         let (client, _, _) = try server.client()
         let root = DriveLocation(accountID: client.accountID)
@@ -110,13 +127,13 @@ final class FakeDriveServer {
         let output = try provider.download(binary.url, into: local.url)
         #expect(try Data(contentsOf: output) == Data("fixture bytes".utf8))
         #expect(throws: (any Error).self) { try provider.download(binary.url, into: local.url) }
-        #expect(throws: DriveError.readOnly) { try provider.upload(output, into: root.url) }
-        #expect(throws: DriveError.readOnly) { try provider.delete([binary.url]) }
-        #expect(throws: DriveError.readOnly) { try provider.makeFolder(root.url) }
-        #expect(throws: DriveError.readOnly) { try provider.removeEmptyFolder(root.url) }
-        #expect(throws: DriveError.readOnly) { try provider.rename(binary.url, to: "new") }
-        #expect(throws: DriveError.readOnly) { try provider.move([binary.url], into: root.url) }
-        #expect(throws: DriveError.readOnly) { try provider.copy([binary.url], into: root.url) }
+        #expect(throws: DriveError.notFound) { try provider.upload(output, into: root.url) }
+        #expect(throws: DriveError.permissionDenied) { try provider.delete([binary.url]) }
+        #expect(throws: DriveError.invalidLocation) { try provider.makeFolder(root.url) }
+        #expect(throws: DriveMutationError.conflict) { try provider.removeEmptyFolder(root.url) }
+        #expect(throws: DriveError.permissionDenied) { try provider.rename(binary.url, to: "new") }
+        #expect(throws: DriveError.notFound) { try provider.move([binary.url], into: root.url) }
+        #expect(throws: DriveError.permissionDenied) { try provider.copy([binary.url], into: root.url) }
         #expect(throws: DriveError.invalidLocation) { try provider.list(DriveLocation(accountID: UUID()).url) }
         let bad = try await client.file("bad-name")
         #expect(throws: (any Error).self) { try provider.download(bad.location(accountID: client.accountID).url, into: local.url) }
