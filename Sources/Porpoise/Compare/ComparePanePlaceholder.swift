@@ -21,6 +21,14 @@ final class ComparePanePlaceholder: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 36 {
+            if let recent = recentButtons.first { recent.performClick(nil) } else { content.performPrimaryAction() }
+        } else {
+            super.keyDown(with: event)
+        }
+    }
     override func draw(_ dirty: NSRect) { Theme.viewBackground.setFill(); bounds.fill() }
     override func layout() {
         super.layout()

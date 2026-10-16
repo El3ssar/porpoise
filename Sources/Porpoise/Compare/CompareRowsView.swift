@@ -298,6 +298,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         case 123, 124:
             if event.modifierFlags.contains(.option) {
                 activeSide = event.keyCode == 123 ? .left : .right; needsDisplay = true
+                if rows.indices.contains(index) { onSelection?(rows[index], activeSide) }
             } else if rows.indices.contains(index) {
                 model.expand(rows[index].path)
             }

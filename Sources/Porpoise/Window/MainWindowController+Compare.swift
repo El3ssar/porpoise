@@ -71,11 +71,6 @@ extension MainWindowController {
         }
         tab.installComparison(comparison)
         comparison.animateIn()
-        comparison.alphaValue = 0
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.12 : 0.2
-            comparison.animator().alphaValue = 1
-        }
         syncToActiveView(); window?.makeFirstResponder(comparison.document); model.start()
     }
     func stopComparing(keepLinked: Bool = false) {
@@ -107,6 +102,7 @@ extension MainWindowController {
         chooser.content.onDrop = { [weak self] url in self?.startComparing(left: self?.tab.primary.url ?? url, right: url) }
         tab.compareChooser?.removeFromSuperview(); tab.compareChooser = chooser; tab.addSubview(chooser); tab.needsLayout = true
         syncToActiveView()
+        window?.makeFirstResponder(chooser)
     }
     private func chooseCompareFolder() {
         let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true
@@ -148,6 +144,7 @@ extension MainWindowController {
         let targetRoot = container === tab.primary ? roots.right : roots.left
         guard let relative = LinkedBrowsing.relativePath(container.url, below: sourceRoot) else {
             tab.linkedRoots = nil; tab.installComparison(nil); tab.missingCounterpart?.removeFromSuperview(); tab.missingCounterpart = nil
+            tab.containers.forEach { $0.preservesMissingLocation = false }
             container.statusBar.showMessage("Linked browsing off: left the linked folders"); return
         }
         let target = relative.isEmpty ? targetRoot : targetRoot.appendingPathComponent(relative)

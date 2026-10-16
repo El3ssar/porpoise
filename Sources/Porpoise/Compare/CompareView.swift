@@ -209,7 +209,13 @@ final class CompareView: NSView {
     @objc private func syncPressed() { onSync?() }
     @objc private func closePressed() { onClose?() }
     @objc private func stopPressed() {
-        if let currentActivity, !currentActivity.state.isEnded { FileOperationsController.shared.cancel(currentActivity) } else { model.stop() }
+        if let currentActivity, !currentActivity.state.isEnded {
+            FileOperationsController.shared.cancel(currentActivity)
+        } else if model.error != nil {
+            model.start()
+        } else {
+            model.stop()
+        }
     }
     @objc private func pausePressed() {
         guard let currentActivity else { return }
@@ -247,7 +253,8 @@ final class CompareView: NSView {
         document.frame.size.height = max(scroll.contentSize.height, CGFloat(document.rows.count) * document.rowHeight)
         document.needsDisplay = true
     }
-    @objc func methodPressed() {
+    @objc func methodPressed() { showMethodMenu() }
+    func showMethodMenu(capture: (() -> Void)? = nil) {
         let menu = NSMenu()
         for value in [SyncCompareMethod.sizeAndDate, .sizeOnly, .content] {
             let item = NSMenuItem(title: Self.methodTitle(value), action: #selector(chooseMethod(_:)), keyEquivalent: "")
@@ -260,6 +267,12 @@ final class CompareView: NSView {
         }
         menu.addItem(.separator())
         let ignore = NSMenuItem(title: "Ignore…", action: #selector(ignorePressed), keyEquivalent: ""); ignore.target = self; menu.addItem(ignore)
+        if let capture {
+            let timer = Timer(timeInterval: 0.4, repeats: false) { _ in
+                capture(); menu.cancelTracking()
+            }
+            RunLoop.main.add(timer, forMode: .common)
+        }
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: method.bounds.height), in: method)
     }
     @objc private func chooseMethod(_ sender: NSMenuItem) {
@@ -350,6 +363,7 @@ final class ComparePlaceholder: NSView {
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
     var onDrop: ((URL) -> Void)?
+    func performPrimaryAction() { button.performClick(nil) }
     func configure(symbol: String, title: String, detail: String, button: String, action: @escaping () -> Void) {
         image.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         heading.stringValue = title; self.detail.stringValue = detail; self.button.title = button; self.button.clicked = action; needsLayout = true
