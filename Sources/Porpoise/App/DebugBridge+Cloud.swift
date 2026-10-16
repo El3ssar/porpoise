@@ -122,7 +122,9 @@ extension DebugBridge {
             try? Data(f[1].utf8).write(to: e.localURL)
         case "edits":
             // edits <file>: what Activity lists about files being edited, and the files opened.
-            let lines = DriveEditing.shared.entries.map { "\($0.name) | \($0.mark) | \($0.title) | \($0.detail)" } + DebugBridge.openedFiles.map { "opened \($0)" }
+            let lines =
+                DriveEditing.shared.entries.map { "\($0.name) | \($0.mark) | \($0.title) | \($0.detail)" }
+                + DebugBridge.openedFiles.map { "opened \($0)" }
             try? lines.joined(separator: "\n").write(toFile: rest, atomically: true, encoding: .utf8)
         case "editresolve":
             // editresolve <name>|keep|open|replace|send: Activity's buttons for a file being edited.
