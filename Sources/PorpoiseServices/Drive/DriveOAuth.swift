@@ -29,6 +29,18 @@ public protocol DriveCredentialStore: Sendable {
     func remove(clientID: String, accountID: UUID) throws
 }
 
+/// Test instances (PORPOISE_DEFAULTS_SUITE) against the fake Drive server: the synthetic fixture token is kept in the
+/// instance's throwaway defaults, never in the login Keychain, where every rebuilt (ad-hoc signed) binary would make
+/// macOS ask the user for access.
+public struct DriveTestingCredentials: DriveCredentialStore, @unchecked Sendable {
+    private let defaults: UserDefaults
+    public init(defaults: UserDefaults = Settings.store) { self.defaults = defaults }
+    private func key(_ clientID: String, _ accountID: UUID) -> String { "testing.driveCredential.\(clientID).\(accountID.uuidString)" }
+    public func read(clientID: String, accountID: UUID) throws -> String? { defaults.string(forKey: key(clientID, accountID)) }
+    public func save(_ token: String, clientID: String, accountID: UUID) throws { defaults.set(token, forKey: key(clientID, accountID)) }
+    public func remove(clientID: String, accountID: UUID) throws { defaults.removeObject(forKey: key(clientID, accountID)) }
+}
+
 public struct DriveKeychainCredentials: DriveCredentialStore, @unchecked Sendable {
     private let keychain: SecKeychain?
     public init() { keychain = nil }
@@ -86,11 +98,14 @@ public struct DriveOAuthTransaction: Sendable {
     public let state: String
     public let redirectURL: URL
     public let configuration: DriveOAuthConfiguration
+    /// Signing in again: the account's email, so Google offers that account straight away.
+    public let loginHint: String?
 
-    public init(configuration: DriveOAuthConfiguration, redirectURL: URL) throws {
+    public init(configuration: DriveOAuthConfiguration, redirectURL: URL, loginHint: String? = nil) throws {
         guard !configuration.clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw DriveError.configuration }
         self.configuration = configuration
         self.redirectURL = redirectURL
+        self.loginHint = loginHint
         verifier = try Self.random()
         state = try Self.random()
     }
@@ -120,6 +135,7 @@ public struct DriveOAuthTransaction: Sendable {
             URLQueryItem(name: "code_challenge", value: Self.base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
         ]
+        if let loginHint { c.queryItems?.append(URLQueryItem(name: "login_hint", value: loginHint)) }
         return c.url!
     }
 

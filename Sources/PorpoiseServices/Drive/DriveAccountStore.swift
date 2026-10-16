@@ -36,7 +36,8 @@ public final class DriveAccountStore: ObservableObject {
     private var managers: [UUID: DriveTokenManager] = [:]
 
     public init(
-        defaults: UserDefaults = Settings.store, credentials: any DriveCredentialStore = DriveKeychainCredentials(),
+        defaults: UserDefaults = Settings.store,
+        credentials: any DriveCredentialStore = Settings.isTesting ? DriveTestingCredentials() : DriveKeychainCredentials(),
         http: DriveHTTP = DriveHTTP(), configuration: DriveOAuthConfiguration? = nil,
         baseURL: URL = URL(string: "https://www.googleapis.com/drive/v3/")!
     ) {
@@ -127,7 +128,7 @@ public final class DriveAccountStore: ObservableObject {
             guard !config.clientID.isEmpty else { throw DriveError.configuration }
             let listener = try DriveLoopback()
             defer { listener.cancel() }
-            let transaction = try DriveOAuthTransaction(configuration: config, redirectURL: listener.redirectURL)
+            let transaction = try DriveOAuthTransaction(configuration: config, redirectURL: listener.redirectURL, loginHint: expected?.email)
             openBrowser(transaction.authorizationURL)
             let callback = try await listener.callback()
             let token = try await transaction.exchange(callback, http: http)

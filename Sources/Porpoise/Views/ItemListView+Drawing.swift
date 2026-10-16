@@ -135,7 +135,7 @@ extension ItemListView {
         let (image, imageRect) = drawIcon(i)
         let cloud = model.shownCloud(for: item).state
         drawCloudBadge(cloud, row: i, image: image, imageRect: imageRect, selected: selected)
-        if item.isSymlink || item.isAliasFile { drawLinkEmblem(i, besideCloudBadge: cloud != .local) }
+        if item.isSymlink || item.isAliasFile || item.isWebDocument { drawLinkEmblem(i, besideCloudBadge: cloud != .local) }
 
         // Selection marker (Dolphin's +/- toggle on hover)
         if hoverIndex == i && Settings.shared.showSelectionMarker && rubberBand == nil && renamingItem == nil {

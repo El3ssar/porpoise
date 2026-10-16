@@ -158,7 +158,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 self.messageBar.show("“\(gone.lastPathComponent)” was moved or deleted.", error: false)
                 return
             }
-            if let e = self.model.loadError {
+            if PlacesModel.isCloud(self.model.location) {
+                self.showCloudState()
+            } else if let e = self.model.loadError {
                 if self.model.blockedByPrivacy {
                     self.messageBar.show(e, error: false, action: "Open Privacy Settings…") {
                         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
@@ -437,7 +439,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 hoverItem.map { AppLibrary.displayName($0.url) }
                 ?? (sel > 0 ? "\(apps(sel)) selected" : (model.isLoading && n == 0 ? "Loading apps…" : apps(n)))
         } else if let h = hoverItem {
-            statusBar.text = "\(h.name) (\(h.typeDescription))"
+            statusBar.text = "\(h.name) (\(h.typeDescription))" + (h.isWebDocument ? " · opens in your browser" : "")
         } else if !model.selection.isEmpty {
             let c = model.selectedCounts
             statusBar.text = FileFormat.summary(folders: c.folders, files: c.files, bytes: c.bytes, selected: true)
@@ -448,7 +450,18 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 ? "Loading folder…" : FileFormat.summary(folders: c.folders, files: c.files, bytes: c.bytes, selected: false)
         }
         statusBar.zoomLevel = ZoomLevels.continuousLevel(for: zoomView.iconSize)
-        if Settings.shared.statusBarMode == .fullWidth, let (free, total) = freeSpace() {
+        if PlacesModel.isCloud(url) {
+            // Read-only for now, and the account's storage instead of a disk.
+            if !(hoverItem?.isWebDocument ?? false) { statusBar.text = statusBar.text.isEmpty ? "View only" : statusBar.text + " · View only" }
+            let account = CloudAccounts.shared.account(for: url)
+            if Settings.shared.statusBarMode == .fullWidth, let used = account?.quotaUsed, let total = account?.quotaTotal, total > 0 {
+                statusBar.freeSpaceText = QuotaBar.text(used: used, total: total)
+                statusBar.usedFraction = Double(used) / Double(total)
+            } else {
+                statusBar.freeSpaceText = ""
+            }
+            statusBar.toolTip = "You can view this folder. Writing to Google Drive is coming in a later version."
+        } else if Settings.shared.statusBarMode == .fullWidth, let (free, total) = freeSpace() {
             statusBar.freeSpaceText = "\(FileFormat.size(free)) free"
             statusBar.usedFraction = 1 - Double(free) / Double(total)
             statusBar.toolTip = "\(FileFormat.size(free)) free out of \(FileFormat.size(Int64(total))) (\(Int(statusBar.usedFraction * 100))% used)"

@@ -187,6 +187,8 @@ public final class DirectoryModel {
     /// Temporary display changes, shown but not saved (see `ViewOverride`): Icons for media folders, Details for search.
     private var dynamicOverride = ViewOverride()
     private var searchOverride = ViewOverride()
+    /// Cloud folders show who owns what (and Shared with me, newest shared first); never saved as anyone's style.
+    private var cloudOverride = ViewOverride()
     /// The media-folder check runs once per visit, after the first listing: a later reload (a file changed) must not
     /// undo a view mode the user picked in the meantime.
     private var dynamicViewPending = true
@@ -194,6 +196,7 @@ public final class DirectoryModel {
     public init(location: URL) {
         self.location = location
         self.props = Self.storedProps(for: location)
+        applyCloudView()
         transferObserver = NotificationCenter.default.addObserver(forName: FileOperationsController.activityChanged, object: nil, queue: .main) {
             [weak self] _ in self?.updateIncoming()
         }
@@ -219,7 +222,9 @@ public final class DirectoryModel {
         dynamicOverride = ViewOverride()
         searchOverride = ViewOverride()
         dynamicViewPending = true
+        cloudOverride = ViewOverride()
         props = Self.storedProps(for: location)
+        applyCloudView()
         if !isLoading { applyDynamicView() }
         if isSearching { showSearchView() }
     }
@@ -260,7 +265,9 @@ public final class DirectoryModel {
             dynamicOverride = ViewOverride()
             searchOverride = ViewOverride()
             dynamicViewPending = true
+            cloudOverride = ViewOverride()
             props = Self.storedProps(for: url)
+            applyCloudView()
             // Stop watching the old folder now: virtual and remote locations don't use FSEvents.
             updateWatcher()
         }
@@ -683,6 +690,26 @@ public final class DirectoryModel {
         FolderUsageCache.shared.size(url, depth: maxDepth, cancellation: cancellation)
     }
 
+    /// Cloud folders: an Owner column in Details; Shared with me, a list of what others shared, newest first, with
+    /// who and when.
+    private func applyCloudView() {
+        guard PlacesModel.isCloud(location) else { return }
+        let sharedWithMe = location.pathComponents.filter { $0 != "/" } == ["shared-with-me"]
+        var p = props
+        cloudOverride.apply(to: &p) { p in
+            var roles = p.roles(for: .details).filter { $0 != .owner && $0 != .sharedTime }
+            roles.insert(contentsOf: sharedWithMe ? [.owner, .sharedTime] : [.owner], at: 0)
+            p.setRoles(roles, for: .details)
+            if sharedWithMe {
+                p.mode = .details
+                p.sortRole = .sharedTime
+                p.sortOrder = .descending
+                p.foldersFirst = false
+            }
+        }
+        props = p
+    }
+
     /// Dolphin's "Use icons view mode for locations which mostly contain media files".
     /// Shown, never saved as the folder's or the common style (`dynamicOverride`); checked once per visit.
     private func applyDynamicView() {
@@ -829,10 +856,11 @@ public final class DirectoryModel {
         case .size:
             if item.isBrowsableFolder { return folderSizeText(item) }
             // Apps and other bundles are folders inside: no meaningful byte count here (Finder shows "--" too).
+            // Google Docs and the like take no storage: Drive has no size for them.
+            if item.isWebDocument { return "—" }
             return item.isDirectory ? "--" : FileFormat.size(item.size)
-        case .modificationTime, .creationTime, .accessTime:
-            let d = role == .modificationTime ? item.modificationDate : (role == .creationTime ? item.creationDate : item.accessDate)
-            guard let d else { return "" }
+        case .modificationTime, .creationTime, .accessTime, .sharedTime:
+            guard let d = item.date(for: role) else { return "" }
             return s.dateStyle == .relative ? FileFormat.relativeDate(d) : FileFormat.longDate(d)
         case .type: return item.typeDescription
         case .path: return item.url.deletingLastPathComponent().path
@@ -856,7 +884,7 @@ public final class DirectoryModel {
     /// Saves the shown properties as the folder's (or the common) style, minus the temporary overrides.
     public func saveProps() {
         guard !isVirtual else { return }
-        let p = dynamicOverride.stored(searchOverride.stored(props))
+        let p = cloudOverride.stored(dynamicOverride.stored(searchOverride.stored(props)))
         Settings.shared.save(p, for: location)
     }
 }

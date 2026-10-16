@@ -7,15 +7,23 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
     private static var open: [PropertiesWindow] = []
     private let urls: [URL]
     private var nameField: NSTextField?
-    private let sizeLabel = NSTextField(labelWithString: "Calculating…")
+    let sizeLabel = NSTextField(labelWithString: "Calculating…")
     private var closeObserver: NSObjectProtocol?
     /// Set when the window closes, so the background size count stops early.
-    private var sizeCount = DiskCancellation()
-    private let sizeQueue = DispatchQueue(label: "app.porpoise.properties-size", qos: .userInitiated)
-    private lazy var recalculateButton = NSButton(title: "Recalculate", target: self, action: #selector(recalculate(_:)))
+    var sizeCount = DiskCancellation()
+    let sizeQueue = DispatchQueue(label: "app.porpoise.properties-size", qos: .userInitiated)
+    lazy var recalculateButton = NSButton(title: "Recalculate", target: self, action: #selector(recalculate(_:)))
 
-    /// Local files only: remote and virtual locations (sftp://, recent:/…) have no local path to inspect.
-    static func show(urls: [URL]) {
+    /// Local files, and one cloud item (Google Drive: its sharing instead of permissions). Other remote and virtual
+    /// locations (sftp://, recent:/…) have no local path to inspect. `items`: what the view knows about them.
+    static func show(urls: [URL], items: [FileItem] = []) {
+        if let cloud = urls.first(where: PlacesModel.isCloud) {
+            let w = PropertiesWindow(cloud: cloud, item: items.first { $0.url == cloud })
+            open.append(w)
+            w.showWindow(nil)
+            w.window?.makeKeyAndOrderFront(nil)
+            return
+        }
         let urls = urls.filter(\.isFileURL)
         guard !urls.isEmpty else { NSSound.beep(); return }
         let w = PropertiesWindow(urls: urls)
@@ -24,21 +32,28 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
         w.window?.makeKeyAndOrderFront(nil)
     }
 
-    init(urls: [URL]) {
+    /// The cloud item shown (nil: local items).
+    let cloudItem: (url: URL, item: FileItem?)?
+
+    convenience init(cloud url: URL, item: FileItem?) { self.init(urls: [url], cloud: (url, item)) }
+
+    init(urls: [URL], cloud: (url: URL, item: FileItem?)? = nil) {
         self.urls = urls
+        cloudItem = cloud
         let w = PropertiesPanel(
             contentRect: CGRect(x: 0, y: 0, width: 440, height: 660), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         w.contentMinSize = NSSize(width: 440, height: 660)
         w.backgroundColor = Theme.windowBackground
         w.isReleasedWhenClosed = false
         super.init(window: w)
-        w.title = urls.count == 1 ? "Properties for \(urls[0].lastPathComponent)" : "Properties for \(urls.count) items"
+        let name = cloud.map { $0.item?.name ?? $0.url.folderName } ?? urls[0].lastPathComponent
+        w.title = urls.count == 1 ? "Properties for \(name)" : "Properties for \(urls.count) items"
         build()
         w.center()
         closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
             guard let self else { return }
             self.sizeCount.cancel()
-            self.commitName()
+            if self.cloudItem == nil { self.commitName() }
             if let o = self.closeObserver { NotificationCenter.default.removeObserver(o) }
             PropertiesWindow.open.removeAll { $0 === self }
         }
@@ -50,9 +65,11 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
 
     private func build() {
         guard let content = window?.contentView else { return }
-        pages = [generalView()] + (urls.count == 1 ? [permissionsView()] : [])
+        // Cloud items: one General page; Unix permissions mean nothing there, sharing is shown instead.
+        let single = urls.count == 1 && cloudItem == nil
+        pages = cloudItem.map { [cloudGeneralView($0.url, item: $0.item)] } ?? ([generalView()] + (single ? [permissionsView()] : []))
         let seg = NSSegmentedControl(
-            labels: urls.count == 1 ? ["General", "Permissions"] : ["General"], trackingMode: .selectOne,
+            labels: single ? ["General", "Permissions"] : ["General"], trackingMode: .selectOne,
             target: self, action: #selector(switchPage(_:)))
         seg.selectedSegment = 0
         seg.sizeToFit()
@@ -71,7 +88,7 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
         for (i, p) in pages.enumerated() { p.isHidden = i != s.selectedSegment }
     }
 
-    private func row(_ k: String, _ v: NSView, y: inout CGFloat, in view: NSView) {
+    func row(_ k: String, _ v: NSView, y: inout CGFloat, in view: NSView) {
         let l = NSTextField(labelWithString: k)
         l.alignment = .right
         l.textColor = Theme.windowTextInactive
@@ -102,7 +119,7 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
         y -= h + 8
     }
 
-    private func label(_ s: String) -> NSTextField {
+    func label(_ s: String) -> NSTextField {
         let f = NSTextField(wrappingLabelWithString: s)
         f.isSelectable = true
         f.textColor = Theme.windowText
@@ -235,7 +252,9 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
         return v
     }
 
-    @objc private func recalculate(_ sender: Any?) { countSize() }
+    @objc private func recalculate(_ sender: Any?) {
+        if let c = cloudItem { countCloudSize(c.url) } else { countSize() }
+    }
 
     /// A private queue keeps filesystem work off both the main thread and GCD's shared worker pool.
     private func countSize() {

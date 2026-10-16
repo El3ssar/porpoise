@@ -125,9 +125,12 @@ extension MainWindowController {
 
     @objc func addToPlaces(_ sender: Any?) {
         if let f = view.model.selectedItems.first(where: \.isBrowsableFolder) {
-            PlacesModel.shared.add(f.url)
+            // Cloud folders are named by their ids in the URL: the place takes the folder's name.
+            PlacesModel.shared.add(f.url, title: PlacesModel.isCloud(f.url) ? f.name : nil)
         } else if view.url.isFileURL {
             PlacesModel.shared.add(view.url)
+        } else if PlacesModel.isCloud(view.url) {
+            PlacesModel.shared.add(view.url, title: view.url.folderName)
         }
     }
 
@@ -195,7 +198,7 @@ extension MainWindowController {
         FileOperationsController.shared.delete(selectedURLs, window: window)
     }
 
-    @objc func properties(_ sender: Any?) { PropertiesWindow.show(urls: actionTargets) }
+    @objc func properties(_ sender: Any?) { PropertiesWindow.show(urls: actionTargets, items: view.model.selectedItems) }
 
     @objc func restoreFromTrash(_ sender: Any?) {
         let unknown = FileOperationsController.shared.restore(selectedURLs, window: window)
@@ -224,7 +227,7 @@ extension MainWindowController {
     @objc func goForward(_ sender: Any?) { view.goForward() }
     @objc func goHome(_ sender: Any?) { view.setURL(Settings.shared.homeURL) }
     @objc func goNetwork(_ sender: Any?) { view.setURL(NetworkBrowser.url) }
-    @objc func connectToServer(_ sender: Any?) { AddNetworkFolderDialog.run(window: window) }
+    @objc func connectToServer(_ sender: Any?) { ConnectSheet.run(window: window) { [weak self] in self?.view.setURL($0) } }
     @objc func goToPlace(_ sender: NSMenuItem) {
         if let s = sender.representedObject as? String, let u = URL(string: s) { view.setURL(u) }
     }

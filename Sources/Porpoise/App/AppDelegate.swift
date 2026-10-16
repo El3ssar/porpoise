@@ -296,6 +296,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settingsWindow?.window?.makeKeyAndOrderFront(nil)
     }
 
+    /// Settings, on the page with this title.
+    func showSettings(page: String) {
+        showSettings(nil)
+        guard let tabs = settingsWindow?.window?.contentViewController as? NSTabViewController,
+            let i = tabs.tabViewItems.firstIndex(where: { $0.label == page })
+        else { return }
+        tabs.selectedTabViewItemIndex = i
+    }
+
     @objc func configureShortcuts(_ sender: Any?) {
         // macOS manages keyboard shortcuts for app menus centrally.
         if let u = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension?Shortcuts") { NSWorkspace.shared.open(u) }

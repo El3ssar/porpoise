@@ -148,6 +148,11 @@ final class FakeDriveServer {
             query.first { $0.name == "code_challenge" }?.value
                 == DriveOAuthTransaction.base64URL(Data(SHA256.hash(data: Data(transaction.verifier.utf8)))))
         #expect(query.first { $0.name == "code_challenge_method" }?.value == "S256")
+        #expect(!query.contains { $0.name == "login_hint" })
+        let again = try DriveOAuthTransaction(configuration: config, redirectURL: listener.redirectURL, loginHint: "a@example.invalid")
+        #expect(
+            URLComponents(url: again.authorizationURL, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "login_hint" }?.value
+                == "a@example.invalid")
         let callback = URL(string: "\(listener.redirectURL)?state=\(transaction.state)&code=auth-code")!
         #expect(try transaction.code(from: callback) == "auth-code")
         #expect(throws: DriveError.oauthState) { try transaction.code(from: URL(string: "\(listener.redirectURL)?state=wrong&code=x")!) }

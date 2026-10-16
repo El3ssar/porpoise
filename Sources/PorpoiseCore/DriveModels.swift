@@ -196,6 +196,8 @@ public struct DriveFile: Codable, Hashable, Sendable {
     public var permissions: [Permission]?
     public var sharingUser: DrivePerson?
     public var lastModifyingUser: DrivePerson?
+    /// When it was shared with the user (Shared with me's newest-first order and its "Shared" column).
+    public var sharedWithMeTime: String?
 
     public init(id: String, name: String, mimeType: String, driveId: String? = nil) {
         self.id = id; self.name = name; self.mimeType = mimeType; self.driveId = driveId
@@ -238,6 +240,6 @@ public struct DriveFile: Codable, Hashable, Sendable {
             owner: owners?.first?.displayName ?? owners?.first?.emailAddress,
             linkDestination: shortcutDetails?.targetId,
             isReadable: target.isFolder ? target.operations.canBrowse : (target.operations.canDownload || target.operations.canExport),
-            isWritable: false)
+            isWritable: false, sharedDate: sharedWithMeTime.flatMap { ISO8601DateFormatter().date(from: $0) })
     }
 }

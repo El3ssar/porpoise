@@ -33,6 +33,12 @@ extension PlacesPanel {
         }
         // Devices, tags and detected places can't be reordered (and are already listed).
         if sender.draggingPasteboard.types?.contains(.placeEntry) == true { return setDrop(nil, insert: nil) }
+        if !Self.cloudFolders(sender.draggingPasteboard).isEmpty {
+            // Cloud folders can become places, nothing can be dropped into them (read-only for now).
+            guard !PlacesModel.shared.isLocked else { return setDrop(nil, insert: nil) }
+            setDrop(nil, insert: insertion)
+            return .link
+        }
         let allFolders = draggedURLsAreFolders(sender)
         if let i, let e = entry(at: i), e.url.isFileURL {
             // Near the row edges with folders: insert as new place; in the middle: drop onto the place.
@@ -63,7 +69,7 @@ extension PlacesPanel {
     }
 
     private func draggedSection(_ pb: NSPasteboard) -> PlaceSection? {
-        pb.string(forType: .placeSection).flatMap(PlaceSection.init(rawValue:))
+        pb.string(forType: .placeSection).flatMap(PlaceSection.init(stored:))
     }
 
     @discardableResult
@@ -93,6 +99,17 @@ extension PlacesPanel {
         if let moving = draggedPlace(pb) {
             guard let ins = dropInsertBefore, let d = reorderDestination(insertBefore: ins, section: moving.section) else { return false }
             PlacesModel.shared.move(moving, before: d.target, endOf: d.section)
+            return true
+        }
+        let clouds = Self.cloudFolders(pb)
+        if !clouds.isEmpty, let ins = dropInsertBefore, !PlacesModel.shared.isLocked {
+            let d = reorderDestination(insertBefore: ins, section: .places)
+            for (u, name) in clouds {
+                PlacesModel.shared.add(u, title: name)
+                if let d, let added = PlacesModel.shared.userEntries.last(where: { $0.url == u }) {
+                    PlacesModel.shared.move(added, before: d.target, endOf: d.section)
+                }
+            }
             return true
         }
         let urls = Self.fileURLs(pb)
@@ -132,6 +149,16 @@ extension PlacesPanel {
 
     private static func fileURLs(_ pb: NSPasteboard) -> [URL] {
         (pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+    }
+
+    /// Dragged cloud folders (Google Drive) with their names; empty when anything else is dragged along.
+    static func cloudFolders(_ pb: NSPasteboard) -> [(URL, String)] {
+        let urls = (pb.readObjects(forClasses: [NSURL.self]) as? [URL]) ?? []
+        let folders = urls.compactMap { u -> (URL, String)? in
+            guard PlacesModel.isCloud(u), let info = CloudAccounts.shared.info(for: u), info.isFolder else { return nil }
+            return (u, info.name ?? u.folderName)
+        }
+        return folders.count == urls.count ? folders : []
     }
 
     private func draggedURLsAreFolders(_ sender: NSDraggingInfo) -> Bool {

@@ -134,6 +134,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             }
             return [(url, title)]
         }
+        if PlacesModel.isCloud(url) { return cloudCrumbs() }
         var c = URLComponents(url: url, resolvingAgainstBaseURL: false) ?? URLComponents()
         c.path = "/"
         let rootURL = c.url ?? url
@@ -150,6 +151,31 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             crumbs.append((acc, comp == "~" ? "Home" : comp))
         }
         return crumbs
+    }
+
+    /// Cloud folders: the account, then its row (My Drive, Shared with me…), then each folder by name. Every path
+    /// component after the account is an item id, so each ancestor is the location one component up.
+    private func cloudCrumbs() -> [(url: URL, title: String)] {
+        let account = CloudAccounts.shared.account(for: url)
+        let accountTitle = account.map { CloudAccounts.shared.title($0.id) } ?? "Google Drive"
+        let parts = url.pathComponents.filter { $0 != "/" }
+        guard let first = parts.first else { return [(url, accountTitle)] }
+        var c = URLComponents(url: url, resolvingAgainstBaseURL: false) ?? URLComponents()
+        c.query = nil
+        var crumbs: [(url: URL, title: String)] = []
+        var path = ""
+        for (i, part) in parts.enumerated() {
+            path += "/" + part
+            // A pasted link's "folder" prefix isn't a place to go: its folder is the first crumb after the account.
+            if i == 0 && first == "folder" { continue }
+            c.path = path + "/"
+            // The folder itself keeps its query (resource key, shared drive).
+            let u = i == parts.count - 1 ? url : (c.url ?? url)
+            crumbs.append((u, u.folderName))
+        }
+        // The account's crumb opens its first row.
+        let root = account.flatMap { a in CloudAccounts.shared.url(a.id, root: CloudAccounts.shared.availableRows(a.id).first ?? .myDrive) }
+        return [(root ?? crumbs.first?.url ?? url, accountTitle)] + crumbs
     }
 
     private func volumeName(for u: URL) -> String {
@@ -244,7 +270,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         let textColor = isActive ? Theme.windowText : Theme.windowTextInactive.withAlphaComponent(0.7)
 
         if bounds.width < 200 {
-            let title = preferredAncestorName.map { "\($0) › \(url.lastPathComponent)" } ?? url.lastPathComponent
+            let title = preferredAncestorName.map { "\($0) › \(url.folderName)" } ?? url.folderName
             let style = NSMutableParagraphStyle(); style.lineBreakMode = .byTruncatingTail
             let font = NSFont.systemFont(ofSize: preferredAncestorName == nil ? Theme.fontSize : 11, weight: .medium)
             (title as NSString).draw(
@@ -342,7 +368,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         case .placesButton: showPlacesMenu(at: rect)
         case .rootArrow: showRootMenu(at: rect)
         case .arrow(let u): showSubfolderMenu(of: u, at: rect)
-        case .more(let urls): showMenu(urls.map { ($0, $0.lastPathComponent) }, at: rect)
+        case .more(let urls): showMenu(urls.map { ($0, $0.folderName) }, at: rect)
         case .crumb: return
         }
         pressed = nil
@@ -393,7 +419,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         m.addItem(withTitle: "Paste Location", action: #selector(pasteLocation), keyEquivalent: "")
         m.addItem(.separator())
         let nt = m.addItem(
-            withTitle: "Open “\(target.lastPathComponent.isEmpty ? "/" : target.lastPathComponent)” in New Tab", action: #selector(openInNewTab(_:)),
+            withTitle: "Open “\(target.folderName.isEmpty ? "/" : target.folderName)” in New Tab", action: #selector(openInNewTab(_:)),
             keyEquivalent: "")
         nt.representedObject = target
         m.addItem(.separator())
@@ -447,7 +473,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     private func subfolders(of u: URL) -> [URL] {
         if let p = RemoteFS.provider(for: u) {
             return ((try? p.list(u)) ?? []).filter { $0.isDirectory && !$0.isHidden }.map(\.url)
-                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+                .sorted { $0.folderName.localizedStandardCompare($1.folderName) == .orderedAscending }
         }
         let names = (try? FileManager.default.contentsOfDirectory(atPath: u.path)) ?? []
         return names.filter { !$0.hasPrefix(".") }.sorted { $0.localizedStandardCompare($1) == .orderedAscending }.compactMap {
@@ -469,7 +495,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             guard let folders = self?.subfolders(of: u) else { return }
             DispatchQueue.main.async {
                 guard let self, self.window != nil, self.subfolderRequest == request else { return }
-                self.showMenu(folders.map { ($0, $0.lastPathComponent) }, at: r, bold: next)
+                self.showMenu(folders.map { ($0, $0.folderName) }, at: r, bold: next)
             }
         }
     }

@@ -92,6 +92,7 @@ extension MainWindowController {
         let m = NSMenu()
         let inTrash = c.url.isFileURL && c.url.standardizedFileURL == TrashInfo.folder.standardizedFileURL
         let sel = c.model.selectedItems
+        if PlacesModel.isCloud(c.url) { return cloudContextMenu(for: item, selection: sel, in: c) }
         guard let item else {
             // Empty area
             if inTrash {
@@ -202,6 +203,59 @@ extension MainWindowController {
         m.addItem(.separator())
         m.addItem(self.item("Properties", "document-properties", #selector(properties(_:))))
         return m
+    }
+
+    /// Google Drive (read-only for now): opening, Add to Places, links, copying out, Quick Look and Properties.
+    private func cloudContextMenu(for item: FileItem?, selection sel: [FileItem], in c: ViewContainer) -> NSMenu {
+        let m = NSMenu()
+        let single = sel.count <= 1
+        guard let item else {
+            if c.url.pathComponents.count > 2, !PlacesModel.shared.contains(c.url) {
+                m.addItem(self.item("Add to Places", "bookmark-new", #selector(addToPlaces(_:))))
+            }
+            if CloudAccounts.shared.info(for: c.url)?.webLink != nil {
+                m.addItem(self.item("Open in Browser", "internet-web-browser", #selector(openInBrowser(_:)), obj: c.url))
+            }
+            m.addItem(.separator())
+            m.addItem(sub("Sort By", "view-sort", sortMenu()))
+            m.addItem(sub("View Mode", "view-list-icons", Self.viewModeMenu()))
+            m.addItem(.separator())
+            m.addItem(self.item("Properties", "document-properties", #selector(properties(_:))))
+            return m
+        }
+        if single && item.isBrowsableFolder {
+            m.addItem(self.item("Open in New Tab", "tab-new", #selector(ctxOpenInNewTab(_:)), obj: item.url))
+            m.addItem(self.item("Open in New Window", "window-new", #selector(ctxOpenInNewWindow(_:)), obj: item.url))
+            m.addItem(self.item("Open in Split View", "view-split-left-right", #selector(ctxOpenInSplit(_:)), obj: item.url))
+            m.addItem(.separator())
+        }
+        let info = single ? CloudAccounts.shared.info(for: item.url) : nil
+        if info?.webLink != nil {
+            m.addItem(self.item("Open in Browser", "internet-web-browser", #selector(openInBrowser(_:)), obj: item.url))
+        }
+        if single && item.isBrowsableFolder && !PlacesModel.shared.contains(item.url) {
+            m.addItem(self.item("Add to Places", "bookmark-new", #selector(addToPlaces(_:))))
+        }
+        m.addItem(.separator())
+        if !sel.contains(where: \.isBrowsableFolder) { m.addItem(self.item("Copy", "edit-copy", #selector(copy(_:)))) }
+        if info?.webLink != nil { m.addItem(self.item("Copy Link", "edit-copy-path", #selector(copyCloudLink(_:)), obj: item.url)) }
+        m.addItem(.separator())
+        m.addItem(self.item("Quick Look", "document-preview", #selector(quickLook(_:))))
+        m.addItem(self.item("Properties", "document-properties", #selector(properties(_:))))
+        return m
+    }
+
+    @objc func openInBrowser(_ sender: NSMenuItem) {
+        guard let u = sender.representedObject as? URL, let link = CloudAccounts.shared.info(for: u)?.webLink else { return }
+        NSWorkspace.shared.open(AccountActions.webLink(link, account: CloudAccounts.shared.account(for: u)))
+    }
+
+    @objc func copyCloudLink(_ sender: NSMenuItem) {
+        guard let u = sender.representedObject as? URL, let link = CloudAccounts.shared.info(for: u)?.webLink else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.writeObjects([link as NSURL])
+        pb.setString(link.absoluteString, forType: .string)
     }
 
     /// Cloud items (iCloud Drive, Google Drive…): Finder's Download Now / Remove Download, right under Open.

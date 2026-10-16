@@ -8,6 +8,10 @@ extension MainWindowController {
     func breadcrumb(_ b: BreadcrumbView, navigateTo url: URL, newTab: Bool) {
         let target: ViewContainer = (b === tab.navigators[1] ? tab.secondary : tab.primary) ?? view
         var isDir: ObjCBool = false
+        if CloudAccounts.looksLikeLink(url.absoluteString) {
+            openCloudLink(url, in: target, newTab: newTab)
+            return
+        }
         if !url.isFileURL && !RemoteFS.isRemote(url) && !NetworkMounts.needsMount(url) && !Self.virtualSchemes.contains(url.scheme ?? "") {
             target.messageBar.show("Porpoise can't open “\(url.scheme ?? "")://” locations.", error: true)
             target.needsLayout = true
@@ -21,6 +25,43 @@ extension MainWindowController {
         }
         if newTab { addTab(url: url, select: false) } else { target.setURL(url) }
         window?.makeFirstResponder(target.list)
+    }
+
+    /// A pasted Google Drive link: opened with the connected account that can see it. A folder is browsed like any
+    /// other, with Add to Places offered; a file opens (Google Docs in the browser); nobody can see it: Connect….
+    func openCloudLink(_ link: URL, in target: ViewContainer, newTab: Bool) {
+        target.statusBar.showMessage("Opening the Google Drive link…")
+        CloudAccounts.shared.resolveLink(link.absoluteString) { [weak self, weak target] result in
+            guard let self, let target else { return }
+            switch result {
+            case .folder(let u):
+                if newTab { self.addTab(url: u, select: true) } else { target.setURL(u) }
+                target.onNextLoad = { [weak target] in
+                    guard let target, !PlacesModel.shared.contains(u), target.model.loadError == nil else { return }
+                    target.messageBar.show("Opened a folder from a link.", error: false, action: "Add to Places") { [weak target] in
+                        PlacesModel.shared.add(u, title: u.folderName)
+                        target?.messageBar.dismiss()
+                    }
+                    target.needsLayout = true
+                }
+            case .file(let u):
+                if u.scheme == "https" {
+                    NSWorkspace.shared.open(AccountActions.webLink(u, account: CloudAccounts.shared.account(for: u)))
+                } else {
+                    // A file without a web page: a copy opens, as from the folder.
+                    RemoteOpener.open(FileItem(url: u, name: CloudAccounts.shared.info(for: u)?.name ?? u.folderName, isDirectory: false))
+                }
+            case .noAccess:
+                target.messageBar.show("None of your accounts can open this folder.", error: false, action: "Connect…") {
+                    [weak self, weak target] in
+                    ConnectSheet.run(window: self?.window) { target?.setURL($0) }
+                }
+                target.needsLayout = true
+            case .notALink:
+                target.messageBar.show("That isn’t a Google Drive link Porpoise can open.", error: true)
+                target.needsLayout = true
+            }
+        }
     }
 
     /// Locations the app lists itself rather than a file system (Network, Recent, Tags, Smart Folders).

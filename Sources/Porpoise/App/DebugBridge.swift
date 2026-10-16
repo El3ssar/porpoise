@@ -162,6 +162,7 @@ final class DebugBridge: NSObject {
             try? "\(OnboardingWindowController.debugStep) windows=\(AppDelegate.shared.windows.count)".write(
                 toFile: arg, atomically: true, encoding: .utf8)
         case "rtest": remoteTest(arg)
+        case "cloud": cloudDemo(arg)
         case "menus": if let m = NSApp.mainMenu { dumpMenu(m, to: arg) }
         case "hamburger":
             // hamburger <file>: the toolbar's hamburger menu, like `menus`.
@@ -245,7 +246,7 @@ final class DebugBridge: NSObject {
         case "sectionmove":
             // sectionmove <section>|<before section or empty>
             let p = arg.components(separatedBy: "|")
-            if p.count == 2, let s = PlaceSection(rawValue: p[0]) { PlacesModel.shared.moveSection(s, before: PlaceSection(rawValue: p[1])) }
+            if p.count == 2, let s = PlaceSection(stored: p[0]) { PlacesModel.shared.moveSection(s, before: PlaceSection(stored: p[1])) }
         case "placeslock": PlacesModel.shared.isLocked = arg == "on"
         case "placesclick":
             // placesclick <title>[|eject]: clicks a Places row (or its eject button) with synthesized events.
@@ -299,7 +300,7 @@ final class DebugBridge: NSObject {
             // placesmove <title>|<before title or empty>|<section raw>
             let p = arg.components(separatedBy: "|")
             let all = PlacesModel.shared.allEntries
-            guard p.count == 3, let e = all.first(where: { $0.title == p[0] }), let sec = PlaceSection(rawValue: p[2]) else { return }
+            guard p.count == 3, let e = all.first(where: { $0.title == p[0] }), let sec = PlaceSection(stored: p[2]) else { return }
             PlacesModel.shared.move(e, before: all.first { $0.title == p[1] }, endOf: sec)
         case "places":
             let lines = PlacesModel.shared.sections().map { "\($0.0.rawValue): " + $0.1.map(\.title).joined(separator: ", ") }

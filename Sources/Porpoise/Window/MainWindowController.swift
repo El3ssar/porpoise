@@ -419,7 +419,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         let m = NSMenu()
         let list = back ? view.history.backList : view.history.forwardList
         for (i, u) in list.prefix(15).enumerated() {
-            let title = PlacesModel.shared.title(for: u) ?? (u.path == "/" ? "/" : u.lastPathComponent)
+            let title = PlacesModel.shared.title(for: u) ?? u.folderName
             let it = m.addItem(withTitle: title, action: #selector(historyJump(_:)), keyEquivalent: "")
             it.target = self
             it.tag = back ? -(i + 1) : (i + 1)

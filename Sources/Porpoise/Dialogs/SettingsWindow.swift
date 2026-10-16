@@ -46,6 +46,7 @@ final class SettingsWindowController: NSWindowController {
         }
         page("Shortcuts", "keyboard", ShortcutSettingsPage.build)
         page("Search", "magnifyingglass", IndexSettingsPage.build)
+        page("Accounts", "person.crop.circle", AccountsSettingsPage.build)
         let s = Settings.shared
 
         page("Appearance", "paintpalette") { f in AppearancePage.build(f) }

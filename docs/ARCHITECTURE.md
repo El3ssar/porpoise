@@ -28,6 +28,8 @@ never AppKit or SwiftUI.
 | `FileOperations` | `FileOperationsController`: jobs, undo/redo, Trash origins and Put Back, clipboard bookkeeping, remote transfers, the administrator retry; `FileOperationsUI` and `FileClipboard` |
 | `Locations` | `DirectoryModel` (what a view shows), `PlacesModel`, recent locations, search (bundled fd/ripgrep in folders, Spotlight everywhere) and queries, tags, comments, cloud state, archives, the app library, Trash info, icon names (`IconTheme`), path completion |
 | `Remote` | `RemoteFS` and the SSH/FTP/ADB providers, Keychain, Android tools, network mounts and browsing, `RemoteOpener` |
+| `Cloud` | `CloudAccounts` (connected cloud accounts as the app shows them: labels, sidebar rows, pictures, sections) over a `CloudBackend`: `DriveCloudBackend` for Google Drive, `DemoCloudBackend` for tests and test instances (`PORPOISE_CLOUD_DEMO`) |
+| `Drive` | Google Drive: OAuth (PKCE, loopback), the Drive v3 client, `DriveAccountStore` and the read-only `DriveProvider` |
 | `Media` | `VideoPreview` (ffmpeg to HLS) and its local HTTP server |
 | `System` | `Shell`, `PrivilegedHelper` (install, XPC, ownership), `PrivacyAccess` (TCC), Local Network access, `StatusCenter`, Finder sounds |
 

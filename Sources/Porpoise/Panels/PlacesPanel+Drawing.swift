@@ -7,13 +7,19 @@ extension PlacesPanel {
 
     func refreshCapacities() {
         guard !capacityQueryRunning else { capacityQueryPending = true; return }
-        let volumes = rows.compactMap { row -> URL? in
-            if case .entry(let e) = row.kind, e.isVolume { return e.url } else { return nil }
+        // Cloud accounts report their quota themselves (no file system to ask).
+        var quotas: [URL: VolumeCapacity] = [:]
+        for a in PlacesModel.shared.accounts {
+            guard let used = a.quotaUsed, let total = a.quotaTotal, total > 0, let first = a.entries.first else { continue }
+            quotas[first.url] = VolumeCapacity(free: max(0, total - used), total: total)
         }
-        guard !volumes.isEmpty else { capacities = [:]; return }
+        let volumes = rows.compactMap { row -> URL? in
+            if case .entry(let e) = row.kind, e.isVolume, e.url.isFileURL { return e.url } else { return nil }
+        }
+        guard !volumes.isEmpty else { capacities = quotas; return }
         capacityQueryRunning = true
         Self.capacityQueue.async { [weak self] in
-            var result: [URL: VolumeCapacity] = [:]
+            var result = quotas
             for u in volumes {
                 guard let v = try? u.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]),
                     let total = v.volumeTotalCapacity, let free = v.volumeAvailableCapacityForImportantUsage
@@ -80,7 +86,11 @@ extension PlacesPanel {
             .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
             .foregroundColor: Theme.windowTextInactive.withAlphaComponent(hovered ? 0.85 : 0.62),
         ]
-        (sec.rawValue as NSString).draw(at: CGPoint(x: Metrics.iconX, y: r.minY + 9), withAttributes: attrs)
+        if let account = PlacesModel.shared.account(for: sec) {
+            drawAccountHeader(account, in: r, attrs: attrs)
+        } else {
+            (sec.rawValue as NSString).draw(at: CGPoint(x: Metrics.iconX, y: r.minY + 9), withAttributes: attrs)
+        }
         // Fold chevron (Finder shows it on hover; folded sections always show theirs).
         let collapsed = PlacesModel.shared.collapsedSections.contains(sec)
         let turning = foldSection?.sec == sec && foldProgress < 1
@@ -101,6 +111,46 @@ extension PlacesPanel {
             in: CGRect(x: -c.size.width / 2, y: -c.size.height / 2, width: c.size.width, height: c.size.height), from: .zero,
             operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// A cloud account's header: provider mark, name and picture, and a glyph only when something's wrong.
+    private func drawAccountHeader(_ a: AccountSection, in r: CGRect, attrs: [NSAttributedString.Key: Any]) {
+        let mark: CGFloat = 12
+        BrandMarks.image(a.brand, size: mark)?.draw(
+            in: CGRect(x: Metrics.iconX, y: r.minY + 8, width: mark, height: mark), from: .zero, operation: .sourceOver, fraction: 1,
+            respectFlipped: true, hints: nil)
+        let avatar: CGFloat = 15
+        let glyph = Self.statusGlyph(a.status)
+        let tx = Metrics.iconX + mark + 6
+        // Room for the picture, the glyph and the fold chevron on the right.
+        let reserve: CGFloat = 26 + avatar + 6 + (glyph == nil ? 0 : 18)
+        let p = NSMutableParagraphStyle()
+        p.lineBreakMode = .byTruncatingTail
+        var a2 = attrs
+        a2[.paragraphStyle] = p
+        let title = a.title as NSString
+        let width = min(ceil(title.size(withAttributes: a2).width), max(0, r.maxX - reserve - tx))
+        title.draw(in: CGRect(x: tx, y: r.minY + 9, width: width, height: 15), withAttributes: a2)
+        var x = tx + width + 6
+        BrandMarks.avatar(a.avatar, name: a.displayName, email: a.email, size: avatar).draw(
+            in: CGRect(x: x, y: r.minY + 7, width: avatar, height: avatar), from: .zero, operation: .sourceOver, fraction: 1,
+            respectFlipped: true, hints: nil)
+        x += avatar + 5
+        glyph?.draw(
+            in: CGRect(x: x, y: r.minY + 8, width: 13, height: 13), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
+            hints: nil)
+    }
+
+    /// Trouble only: offline (cloud with a slash) or the sign-in needs renewing (yellow triangle). Nothing when healthy.
+    static func statusGlyph(_ s: AccountSection.Status) -> NSImage? {
+        let (name, color): (String, NSColor)
+        switch s {
+        case .ok: return nil
+        case .offline: (name, color) = ("icloud.slash", Theme.windowTextInactive)
+        case .signInNeeded: (name, color) = ("exclamationmark.triangle.fill", .systemYellow)
+        }
+        let conf = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium).applying(.init(paletteColors: [color]))
+        return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(conf)
     }
 
     private func drawEntry(_ e: PlaceEntry, index i: Int, in r: CGRect) {
