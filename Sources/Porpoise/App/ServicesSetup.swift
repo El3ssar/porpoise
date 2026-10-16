@@ -12,6 +12,8 @@ extension AppDelegate {
         // Test instances can show made-up cloud accounts (no network, no browser).
         if Settings.isTesting, ProcessInfo.processInfo.environment["PORPOISE_CLOUD_DEMO"] != nil {
             CloudAccounts.shared.backend = DemoCloudBackend()
+        } else {
+            CloudAccounts.shared.backend = MainActor.assumeIsolated { DriveCloudBackend(store: .shared) }
         }
         let nc = NSWorkspace.shared.notificationCenter
         for n in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {

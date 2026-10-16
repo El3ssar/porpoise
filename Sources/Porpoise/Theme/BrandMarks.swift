@@ -68,3 +68,13 @@ enum BrandMarks {
         return palette[sum % palette.count]
     }
 }
+
+extension URL {
+    /// A folder's name as shown in titles, breadcrumbs and menus: cloud items are ids in the URL, named by their
+    /// provider; a remote server's root is its title.
+    var folderName: String {
+        if isFileURL { return path == "/" ? "/" : lastPathComponent }
+        if RemoteFS.isRemote(self) { return RemoteFS.displayName(for: self) }
+        return lastPathComponent
+    }
+}

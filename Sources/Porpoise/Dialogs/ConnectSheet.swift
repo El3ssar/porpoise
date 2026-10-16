@@ -258,7 +258,7 @@ final class ConnectSheet: NSWindowController {
             provider,
             openBrowser: { [weak self] url in
                 self?.signInURL = url
-                NSWorkspace.shared.open(url)
+                Self.openBrowser(url)
             },
             done: { [weak self] result in
                 guard let self, case .waiting = self.page else { return }
@@ -274,7 +274,7 @@ final class ConnectSheet: NSWindowController {
     }
 
     @objc private func openAgain(_ sender: Any?) {
-        if let u = signInURL { NSWorkspace.shared.open(u) }
+        if let u = signInURL { Self.openBrowser(u) }
     }
 
     @objc private func cancelWaiting(_ sender: Any?) {
@@ -324,6 +324,16 @@ final class ConnectSheet: NSWindowController {
         guard let sheet = window else { return }
         if let parent = sheet.sheetParent { parent.endSheet(sheet) } else { sheet.orderOut(nil) }
         if Self.current === self { Self.current = nil }
+    }
+
+    /// The sign-in page, in the user's browser. Test instances against the fake Drive server can have it fetched
+    /// instead (PORPOISE_CLOUD_BROWSER=fetch), which follows the same redirect back without opening a browser tab.
+    static func openBrowser(_ url: URL) {
+        if Settings.isTesting, ProcessInfo.processInfo.environment["PORPOISE_CLOUD_BROWSER"] == "fetch" {
+            URLSession.shared.dataTask(with: url) { _, _, _ in }.resume()
+        } else {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     // MARK: Building blocks
