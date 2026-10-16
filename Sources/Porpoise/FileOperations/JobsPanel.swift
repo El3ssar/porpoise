@@ -162,7 +162,9 @@ private final class TransferPopoverRow: NSView {
         icon.imageScaling = .scaleProportionallyUpOrDown
         title.stringValue = activity.title
         var line = (activity.state == .completed ? TransferSummary.text(activity) : activity.statusText).replacingOccurrences(of: " — ", with: " · ")
-        if let progress = activity.progress, progress.phase == .transferring, activity.state == .running || activity.state == .paused {
+        if activity.planJob == nil, let progress = activity.progress, progress.phase == .transferring,
+            activity.state == .running || activity.state == .paused
+        {
             var parts: [String] = []
             if activity.state == .paused { parts.append("Paused") }
             if progress.totalFiles > 1 { parts.append("\(progress.doneFiles) of \(progress.totalFiles)") }
@@ -175,10 +177,10 @@ private final class TransferPopoverRow: NSView {
         }
         detail.stringValue = line
         percent.stringValue = "\(Int(activity.fraction * 100))%"
-        percent.isHidden = activity.state.isEnded || activity.progress?.phase == .preparing
+        percent.isHidden = activity.state.isEnded || (activity.planJob == nil && activity.progress?.phase == .preparing)
         toolTip = activity.progress?.currentName
         bar.fraction = activity.fraction
-        bar.isIndeterminate = activity.progress?.phase == .preparing || activity.state == .queued
+        bar.isIndeterminate = (activity.planJob == nil && activity.progress?.phase == .preparing) || activity.state == .queued
         bar.alphaValue = activity.state == .paused ? 0.4 : 1
         bar.isHidden = activity.state.isEnded
         pause.isHidden = !(activity.canPause || activity.state == .cancelled || !activity.errors.isEmpty)
@@ -277,7 +279,9 @@ private final class TransferPopoverContent: NSVisualEffectView {
 /// One result sentence shared by the toolbar popover and the originating window's status bar.
 enum TransferSummary {
     static func text(_ activity: Activity) -> String {
-        guard activity.state == .completed, activity.kind == .copy || activity.kind == .move, let progress = activity.progress else {
+        guard activity.planJob == nil, activity.state == .completed, activity.kind == .copy || activity.kind == .move,
+            let progress = activity.progress
+        else {
             return activity.statusText
         }
         let count = progress.copiedItems

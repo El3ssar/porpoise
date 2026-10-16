@@ -95,13 +95,26 @@ import Testing
         #expect(m.userEntries == before)
     }
 
+    @Test func syncSectionAppearsOnlyForSavedPairsBetweenPlacesAndRemote() throws {
+        let model = PlacesModel(storeURL: nil)
+        #expect(!model.sections().map(\.0).contains(.sync))
+        let pair = SavedSync(name: "Projects", left: URL(fileURLWithPath: "/left"), right: URL(fileURLWithPath: "/right"))
+        model.setSyncEntries([pair])
+        let sections = model.sections().map(\.0)
+        let syncIndex = try #require(sections.firstIndex(of: .sync))
+        #expect(sections[syncIndex - 1] == .places && sections[syncIndex + 1] == .remote)
+        #expect(model.sections().first { $0.0 == .sync }?.1.first?.url.host?.lowercased() == pair.id.uuidString.lowercased())
+        model.setSyncEntries([])
+        #expect(!model.sections().map(\.0).contains(.sync))
+    }
+
     @Test func sectionsFoldHideLockAndReorder() throws {
         let s = try Scratch()
         let store = s.path("places.json")
         let m = PlacesModel(storeURL: store)
 
         #expect(!m.canMoveSection(.tags, before: .tags))
-        #expect(!m.canMoveSection(.places, before: .remote))  // already there
+        #expect(!m.canMoveSection(.places, before: .sync))  // already there
         m.moveSection(.tags, before: .places)
         #expect(m.sections().map(\.0).prefix(2) == [.tags, .places])
         m.moveSection(.tags, before: nil)

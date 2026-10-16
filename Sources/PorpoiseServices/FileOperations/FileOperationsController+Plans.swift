@@ -20,7 +20,8 @@ extension FileOperationsController {
 
     /// Saves the baseline off main before exposing an executable Activity. Completion runs on main.
     public func enqueuePlanAsync(
-        _ journal: PlanJournal, window: AnyObject? = nil, execute: @escaping (PlanStep, PlanStepContext) throws -> Void,
+        _ journal: PlanJournal, window: AnyObject? = nil, shouldEnqueue: @escaping () -> Bool = { true },
+        execute: @escaping (PlanStep, PlanStepContext) throws -> Void,
         completion: @escaping (Result<Activity, Error>) -> Void
     ) {
         guard !pendingPlans.contains(journal.id), !activities.contains(where: { $0.id == journal.id && !$0.state.isEnded }),
@@ -31,15 +32,28 @@ extension FileOperationsController {
         DispatchQueue.global(qos: .userInitiated).async {
             let saved = Result { try store.save(journal) }
             DispatchQueue.main.async {
-                self.pendingPlans.remove(journal.id)
                 switch saved {
-                case .failure(let error): completion(.failure(error))
+                case .failure(let error): self.pendingPlans.remove(journal.id); completion(.failure(error))
                 case .success:
                     // The persisted baseline remains recoverable, but a quit during preparation never starts IO.
-                    guard !self.isInterrupting else { completion(.failure(FileOperationError.interrupted)); return }
+                    guard !self.isInterrupting else {
+                        self.pendingPlans.remove(journal.id); completion(.failure(FileOperationError.interrupted)); return
+                    }
+                    guard shouldEnqueue() else {
+                        DispatchQueue.global(qos: .utility).async {
+                            try? store.remove(journal.id)
+                            DispatchQueue.main.async {
+                                self.pendingPlans.remove(journal.id)
+                                completion(.failure(FileOperationError.cancelled))
+                            }
+                        }
+                        return
+                    }
                     guard !self.activities.contains(where: { $0.id == journal.id && !$0.state.isEnded }) else {
+                        self.pendingPlans.remove(journal.id)
                         completion(.failure(FileOperationError.failed("This plan is already running."))); return
                     }
+                    self.pendingPlans.remove(journal.id)
                     let activity = self.enqueueSavedPlan(journal, asynchronousPersistence: true, execute: execute)
                     activity.originWindow = window
                     completion(.success(activity))

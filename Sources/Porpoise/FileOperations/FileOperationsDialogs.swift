@@ -135,7 +135,7 @@ final class FileOperationsDialogs: FileOperationsUI {
             icon.image = NSImage(systemSymbolName: "doc", accessibilityDescription: "Couldn't copy")
             icon.contentTintColor = Theme.compareDanger
             document.addSubview(icon)
-            let path = NSTextField(labelWithString: source?.lastPathComponent ?? "Item \(index + 1)")
+            let path = NSTextField(labelWithString: source?.lastPathComponent ?? activity.planProgress?.currentTitle ?? "Item \(index + 1)")
             path.font = .systemFont(ofSize: 11); path.lineBreakMode = .byTruncatingMiddle
             path.frame = CGRect(x: 32, y: y + 6, width: 150, height: 16); path.toolTip = source?.absoluteString
             document.addSubview(path)

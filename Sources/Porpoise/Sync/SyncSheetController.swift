@@ -1,0 +1,441 @@
+import AppKit
+import PorpoiseCore
+import PorpoiseServices
+
+final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutlineViewDataSource, NSOutlineViewDelegate {
+    var pair: SavedSync
+    private weak var parentWindow: NSWindow?
+    private let editing: Bool
+    private let originalPairID: UUID
+    private var retainedSelf: SyncSheetController?
+    private var preview: SyncPreview?
+    private var previous: SyncState?
+    private var overrides: [String: SyncOverride] = [:]
+    private var generation = 0
+    private var cancellation = DiskCancellation()
+    private var planning = true
+    private var providedComparison: SyncComparison?
+    private var differences: [String: SyncDifference] = [:]
+    private var savingTask = false
+    private var displaySteps: [SyncStep] = []
+    private var onStarted: ((Activity) -> Void)?
+    private var onFinished: (() -> Void)?
+    private let heading = NSTextField(labelWithString: "")
+    private let summary = NSTextField(labelWithString: "Planning…")
+    private let direction = SyncDirectionView()
+    private let callout = SyncCalloutView()
+    private let spinner = NSProgressIndicator()
+    private let options = NSButton(title: "Options", target: nil, action: nil)
+    private let automatic = NSButton(checkboxWithTitle: "Keep in sync automatically", target: nil, action: nil)
+    private let name = NSTextField()
+    private let pairDescription = NSTextField(labelWithString: "")
+    private var keepExpansion: CGFloat = 0
+    private let keepAnimator = Animator()
+    private let explanation = NSTextField(labelWithString: "Porpoise syncs changes while it's open. You'll only hear about conflicts and errors.")
+    private let method = NSPopUpButton()
+    private let custom = NSTextField()
+    private let presets = NSStackView()
+    private let deletion = NSTextField(labelWithString: "Deletions: Move to Trash")
+    private var optionsOpen = false
+    private var cards: [SyncModeCard] = []
+    private var presetButtons: [NSButton] = []
+    private let outline = NSOutlineView()
+    private let scroll = NSScrollView()
+    private let listFrame = SyncListBackdrop()
+    private let cancelButton = SyncClosureButton(title: "Cancel")
+    private let syncButton = SyncClosureButton(title: "Sync")
+    private let saveButton = SyncClosureButton(title: "Save Sync…")
+    private let swapButton = SyncClosureButton(title: "⇄")
+    private let newerButton = SyncClosureButton(title: "Keep All Newer")
+    private let leftButton = SyncClosureButton(title: "")
+    private let rightButton = SyncClosureButton(title: "")
+    private var nodes: [SyncPlanNode] = []
+
+    init(
+        pair: SavedSync, owner: NSWindow, editing: Bool = false, comparison: SyncComparison? = nil,
+        onStarted: ((Activity) -> Void)? = nil, onFinished: (() -> Void)? = nil
+    ) {
+        self.pair = pair; self.originalPairID = pair.id; self.parentWindow = owner; self.editing = editing; providedComparison = comparison
+        self.onStarted = onStarted; self.onFinished = onFinished
+        keepExpansion = pair.automatic || editing ? 1 : 0
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 680, height: 600),
+            styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.title = "Sync Folders"; window.minSize = CGSize(width: 600, height: 480); window.maxSize = CGSize(width: 900, height: 900)
+        window.isReleasedWhenClosed = false
+        super.init(window: window)
+        window.delegate = self
+        let root = SyncSheetBackdrop(); root.onLayout = { [weak self] in self?.layout() }
+        window.contentView = root
+        build()
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    func present() {
+        retainedSelf = self
+        if let parentWindow { parentWindow.beginSheet(window!) } else { window?.center(); showWindow(nil) }
+        prepare(useProvided: true)
+    }
+    private func closeSheet() {
+        generation += 1; cancellation.cancel()
+        if let window { window.sheetParent?.endSheet(window); window.orderOut(nil) }
+        retainedSelf = nil
+    }
+    private func add(_ view: NSView) { window!.contentView!.addSubview(view) }
+    private func build() {
+        heading.font = .systemFont(ofSize: 15, weight: .semibold)
+        summary.font = .systemFont(ofSize: 13); summary.lineBreakMode = .byTruncatingTail
+        [heading, summary, explanation, pairDescription, deletion].forEach {
+            $0.textColor = Theme.windowText; add($0)
+        }
+        pairDescription.font = .systemFont(ofSize: 11); pairDescription.textColor = Theme.windowTextInactive
+        explanation.font = .systemFont(ofSize: 11); explanation.textColor = Theme.windowTextInactive
+        add(callout); add(direction)
+        for (index, mode) in [SyncMode.backup, .mirror, .twoWay].enumerated() {
+            let card = SyncModeCard(mode: mode)
+            card.keyEquivalent = String(index + 1); card.keyEquivalentModifierMask = .command
+            card.perform = { [weak self] in
+                self?.pair.mode = mode; self?.replan()
+            }
+            cards.append(card); add(card)
+        }
+        spinner.style = .spinning; spinner.controlSize = .small; spinner.isDisplayedWhenStopped = false; add(spinner)
+        options.isBordered = false; options.font = .systemFont(ofSize: 11)
+        options.target = self; options.action = #selector(toggleOptions); options.setAccessibilityLabel("Options"); add(options)
+        automatic.state = pair.automatic ? .on : .off
+        automatic.target = self; automatic.action = #selector(automaticChanged); add(automatic)
+        name.stringValue = pair.name; name.placeholderString = "Sync name"; add(name)
+        method.addItems(withTitles: ["Size & date", "Size only", "Contents"])
+        method.selectItem(at: [.sizeAndDate, .sizeOnly, .content].firstIndex(of: pair.method) ?? 0)
+        method.target = self; method.action = #selector(optionsChanged); add(method)
+        custom.placeholderString = "Custom patterns, separated by commas"
+        custom.stringValue = pair.customExclusions.joined(separator: ", ")
+        custom.target = self; custom.action = #selector(optionsChanged); add(custom)
+        presets.orientation = .horizontal; presets.spacing = 8; add(presets)
+        for (index, title) in ["System files", "Hidden files", "Build folders", "Version control"].enumerated() {
+            let button = NSButton(checkboxWithTitle: title, target: self, action: #selector(optionsChanged))
+            button.font = .systemFont(ofSize: 11); button.tag = index
+            button.state = pair.presets.contains(SyncExclusionPreset.allCases[index]) ? .on : .off
+            presetButtons.append(button); presets.addArrangedSubview(button)
+        }
+        outline.headerView = nil; outline.rowHeight = 24; outline.intercellSpacing = .zero
+        outline.usesAlternatingRowBackgroundColors = true; outline.backgroundColor = Theme.viewBackground
+        outline.selectionHighlightStyle = .regular
+        outline.addTableColumn(NSTableColumn(identifier: .init("plan")))
+        outline.outlineTableColumn = outline.tableColumns[0]
+        outline.dataSource = self; outline.delegate = self
+        outline.setAccessibilityLabel("Sync plan")
+        scroll.documentView = outline; scroll.hasVerticalScroller = true; scroll.drawsBackground = false
+        listFrame.addSubview(scroll); add(listFrame)
+        cancelButton.keyEquivalent = "\u{1b}"; cancelButton.perform = { [weak self] in self?.closeSheet() }
+        syncButton.keyEquivalent = "\r"; syncButton.primary = true; syncButton.perform = { [weak self] in self?.approve() }
+        saveButton.perform = { [weak self] in
+            guard let self else { return }
+            if self.editing {
+                SyncCoordinator.shared.remove(self.pair, window: self.window) { [weak self] in self?.closeSheet() }
+            } else {
+                self.savingTask = true; self.animateFooter()
+            }
+        }
+        swapButton.perform = { [weak self] in
+            guard let self else { return }
+            swap(&pair.left, &pair.right)
+            pair.id = UUID(); previous = nil; overrides = [:]; providedComparison = nil; prepare()
+        }
+        newerButton.perform = { [weak self] in self?.bulk(nil) }
+        leftButton.perform = { [weak self] in self?.bulk(.keepLeft) }
+        rightButton.perform = { [weak self] in self?.bulk(.keepRight) }
+        [cancelButton, syncButton, saveButton, swapButton, newerButton, leftButton, rightButton].forEach {
+            $0.bezelStyle = .rounded; add($0)
+        }
+        layout()
+    }
+    private func layout() {
+        guard let root = window?.contentView else { return }
+        let width = root.bounds.width, height = root.bounds.height
+        heading.frame = CGRect(x: 20, y: 16, width: width - 40, height: 22)
+        heading.stringValue = editing ? "Edit “\(pair.name)”" : "Sync \(pair.leftTitle) and \(pair.rightTitle)"
+        let cardWidth = (width - 56) / 3
+        for (index, card) in cards.enumerated() {
+            card.frame = CGRect(x: 20 + CGFloat(index) * (cardWidth + 8), y: 50, width: cardWidth, height: 84)
+            card.leftName = pair.leftTitle; card.rightName = pair.rightTitle
+            card.chosen = pair.mode == card.mode; card.needsDisplay = true
+        }
+        direction.source = pair.leftTitle; direction.destination = pair.rightTitle
+        direction.toolTip = pair.left.path + " → " + pair.right.path
+        direction.frame = CGRect(x: 20, y: 141, width: width - 40, height: 28)
+        direction.isHidden = pair.mode == .twoWay; direction.needsDisplay = true
+        swapButton.frame = direction.swapRect.offsetBy(dx: 20, dy: 141); swapButton.isHidden = pair.mode == .twoWay
+        summary.frame = CGRect(x: planning ? 44 : 20, y: 180, width: width - 64, height: 22)
+        spinner.frame = CGRect(x: 20, y: 181, width: 16, height: 16)
+        callout.frame = CGRect(x: 20, y: 210, width: width - 40, height: 44)
+        let showCallout = !callout.text.isEmpty
+        callout.isHidden = !showCallout
+        let conflicts = (preview?.skippedConflicts ?? 0) > 0
+        let bulkY: CGFloat = showCallout ? 260 : 210
+        newerButton.frame = CGRect(x: 20, y: bulkY, width: 132, height: 24)
+        leftButton.title = "Keep All from \(pair.leftTitle)"
+        rightButton.title = "Keep All from \(pair.rightTitle)"
+        leftButton.frame = CGRect(x: 160, y: bulkY, width: (width - 196) / 2, height: 24)
+        rightButton.frame = CGRect(x: leftButton.frame.maxX + 8, y: bulkY, width: (width - 196) / 2, height: 24)
+        [newerButton, leftButton, rightButton].forEach { $0.isHidden = !conflicts }
+        let top = bulkY + (conflicts ? 32 : 0)
+        let bottom = height - 100 - keepExpansion * 66 - (optionsOpen ? 94 : 0)
+        listFrame.frame = CGRect(x: 20, y: top, width: width - 40, height: max(40, bottom - top))
+        scroll.frame = listFrame.bounds.insetBy(dx: 1, dy: 1)
+        outline.tableColumns[0].width = max(200, scroll.contentSize.width)
+        options.title =
+            "Options: \(pair.presets.contains(.system) ? "Ignore system files · " : "")Trash · \(method.titleOfSelectedItem ?? "Size & date")"
+        options.frame = CGRect(x: 20, y: bottom + 5, width: width - 40, height: 24)
+        let optionsY = bottom + 34
+        presets.frame = CGRect(x: 22, y: optionsY, width: width - 44, height: 22)
+        deletion.frame = CGRect(x: 22, y: optionsY + 30, width: 235, height: 22)
+        deletion.stringValue = pair.right.isFileURL ? "Deletions: Move to Trash" : "Deletions: Move to .porpoise-trash"
+        method.frame = CGRect(x: width - 180, y: optionsY + 26, width: 158, height: 26)
+        custom.frame = CGRect(x: 22, y: optionsY + 58, width: width - 44, height: 24)
+        [presets, deletion, method, custom].forEach { $0.isHidden = !optionsOpen }
+        automatic.frame = CGRect(x: 20, y: height - 58 - keepExpansion * 66, width: 300, height: 24)
+        name.isHidden = keepExpansion == 0; explanation.isHidden = name.isHidden; pairDescription.isHidden = name.isHidden
+        name.alphaValue = keepExpansion; explanation.alphaValue = keepExpansion; pairDescription.alphaValue = keepExpansion
+        name.frame = CGRect(x: 22, y: height - 94, width: 200, height: 24)
+        pairDescription.stringValue = pair.description
+        pairDescription.frame = CGRect(x: 234, y: height - 91, width: width - 256, height: 20)
+        pairDescription.lineBreakMode = .byTruncatingMiddle
+        explanation.stringValue =
+            automatic.state == .on
+            ? "Porpoise syncs changes while it's open. You'll only hear about conflicts and errors."
+            : "Save this sync to run it again from the sidebar."
+        explanation.frame = CGRect(x: 22, y: height - 62, width: width - 44, height: 16)
+        let y = height - 34
+        cancelButton.frame = CGRect(x: width - 214, y: y, width: 90, height: 28)
+        syncButton.frame = CGRect(x: width - 114, y: y, width: 94, height: 28)
+        saveButton.frame = CGRect(x: width - 330, y: y, width: 106, height: 28)
+        saveButton.title = editing ? "Remove…" : "Save Sync…"
+        saveButton.isHidden = savingTask
+        syncButton.isEnabled = !planning
+        syncButton.title = editing || savingTask ? "Save" : (preview?.executable.steps.isEmpty == true ? "Done" : "Sync")
+    }
+    private func prepare(useProvided: Bool = false) {
+        generation += 1; let version = generation
+        cancellation.cancel(); cancellation = DiskCancellation(); let cancellation = cancellation
+        planning = true; summary.stringValue = "Planning…"; spinner.startAnimation(nil); layout()
+        let pair = pair, initial = useProvided ? providedComparison : nil
+        let stateStore = SyncCoordinator.shared.stateStore
+        Task { @MainActor [weak self] in
+            do {
+                let previous = try await stateStore.load(pairID: pair.id, leftRoot: pair.left, rightRoot: pair.right)
+                let result = try await Task.detached(priority: .userInitiated) {
+                    if let initial, initial.complete, initial.options == pair.options {
+                        let left = SyncSnapshot(
+                            entries: initial.rows.compactMap(\.left), caseSensitive: initial.caseSensitive, rootIdentity: initial.leftRootIdentity,
+                            excludedPaths: initial.leftExcludedPaths)
+                        let right = SyncSnapshot(
+                            entries: initial.rows.compactMap(\.right), caseSensitive: initial.caseSensitive, rootIdentity: initial.rightRootIdentity,
+                            excludedPaths: initial.rightExcludedPaths)
+                        return SyncPreview(
+                            pair: pair, left: left, right: right, comparison: initial,
+                            plan: SyncPlanner.plan(initial, mode: pair.mode, previous: previous), firstTwoWay: pair.mode == .twoWay && previous == nil
+                        )
+                    }
+                    return try SyncPreparation.preview(pair, previous: previous, cancellation: cancellation)
+                }.value
+                let index = await Task.detached(priority: .userInitiated) {
+                    var index: [String: SyncDifference] = [:]
+                    for row in result.comparison.rows {
+                        index[row.path] = row
+                        if let path = row.left?.path { index[path] = row }
+                        if let path = row.right?.path { index[path] = row }
+                    }
+                    return index
+                }.value
+                guard let self, version == generation else { return }
+                differences = index
+                self.previous = previous; preview = result; displaySteps = result.plan.steps; publish()
+            } catch {
+                guard let self, version == generation else { return }
+                planning = true; spinner.stopAnimation(nil); summary.stringValue = error.localizedDescription;
+                summary.textColor = Theme.compareDanger; layout()
+            }
+        }
+    }
+    private func replan() {
+        guard let preview else { prepare(); return }
+        generation += 1; let version = generation
+        planning = true; spinner.startAnimation(nil); layout()
+        let pair = pair, previous = previous, overrides = overrides
+        Task { @MainActor [weak self] in
+            let result = await Task.detached(priority: .userInitiated) {
+                let next = SyncPreparation.replan(preview, pair: pair, previous: previous, overrides: overrides)
+                let display = SyncPlanner.plan(
+                    preview.comparison, mode: pair.mode, previous: previous,
+                    overrides: overrides.filter { $0.value != .skip }
+                ).steps
+                return (next, display)
+            }.value
+            guard let self, version == generation else { return }
+            self.preview = result.0; displaySteps = result.1; publish()
+        }
+    }
+    private func publish() {
+        planning = false; spinner.stopAnimation(nil)
+        guard let preview else { return }
+        let plan = preview.plan
+        let attributed = NSMutableAttributedString()
+        for (action, word, color) in [
+            (SyncAction.copy, "to copy", Theme.compareOnly), (.replace, "to replace", Theme.compareChanged),
+            (.trash, "to the Trash", Theme.compareDanger),
+        ] {
+            let count = plan.steps.filter { $0.action == action }.count
+            if count > 0 {
+                if attributed.length > 0 { attributed.append(NSAttributedString(string: " · ")) }
+                attributed.append(
+                    NSAttributedString(
+                        string: "\(count) \(word)", attributes: [.foregroundColor: color, .font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
+            }
+        }
+        if preview.skippedConflicts > 0 {
+            if attributed.length > 0 { attributed.append(NSAttributedString(string: " · ")) }
+            attributed.append(
+                NSAttributedString(
+                    string: "\(preview.skippedConflicts) \(preview.skippedConflicts == 1 ? "conflict" : "conflicts") will be skipped",
+                    attributes: [.foregroundColor: Theme.compareDanger]))
+        }
+        if attributed.length == 0 {
+            attributed.append(
+                NSAttributedString(
+                    string: displaySteps.isEmpty
+                        ? "Nothing to do. \(pair.leftTitle) and \(pair.rightTitle) already match."
+                        : "No items selected for this sync."))
+        }
+        let bytes = plan.steps.filter { $0.action == .copy || $0.action == .replace }.reduce(Int64(0)) { $0 + ($1.expectedSource?.size ?? 0) }
+        if bytes > 0 {
+            attributed.append(NSAttributedString(string: " · " + FileFormat.size(bytes), attributes: [.foregroundColor: Theme.windowTextInactive]))
+        }
+        summary.attributedStringValue = attributed
+        if preview.deletionCount > 0 {
+            callout.text =
+                "⚠ \(preview.deletionCount) \(preview.deletionCount == 1 ? "item" : "items") in \(pair.rightTitle) \(preview.deletionCount == 1 ? "isn’t" : "aren’t") in \(pair.leftTitle). \(preview.deletionCount == 1 ? "It’ll" : "They’ll") be moved to \(pair.right.isFileURL ? "the Trash" : ".porpoise-trash")."
+            callout.danger = true
+        } else if preview.firstTwoWay {
+            callout.text = "ⓘ First two-way sync. Nothing will be deleted this time. Porpoise remembers both sides for next time."
+            callout.danger = false
+        } else {
+            callout.text = ""
+        }
+        callout.needsDisplay = true
+        let collapsed = Set(nodes.filter { !outline.isItemExpanded($0) }.map(\.title))
+        nodes = [SyncAction.conflict, .trash, .copy, .replace, .mkdir].flatMap { action -> [SyncPlanNode] in
+            let all = displaySteps.filter { $0.action == action }
+            if action == .conflict { return all.isEmpty ? [] : [SyncPlanNode(action: action, steps: all, title: "Conflicts")] }
+            return [SyncSide.left, .right].compactMap { side in
+                let steps = all.filter { $0.target == side }
+                let destination = side == .left ? pair.leftTitle : pair.rightTitle
+                let verb =
+                    action == .trash ? "Moved to the Trash in" : action == .copy ? "Copy to" : action == .replace ? "Replace in" : "Create folder in"
+                return steps.isEmpty ? nil : SyncPlanNode(action: action, steps: steps, title: verb + " " + destination)
+            }
+        }
+        outline.reloadData()
+        for node in nodes where !collapsed.contains(node.title) { outline.expandItem(node) }
+        layout()
+    }
+    @objc private func toggleOptions() { optionsOpen.toggle(); layout() }
+    @objc private func automaticChanged() { animateFooter() }
+    private func animateFooter() {
+        let start = keepExpansion, end: CGFloat = automatic.state == .on || savingTask || editing ? 1 : 0
+        keepAnimator.run(
+            duration: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.12 : 0.16,
+            step: { [weak self] progress in
+                self?.keepExpansion = start + (end - start) * CGFloat(progress); self?.layout()
+            })
+    }
+    @objc private func optionsChanged() {
+        pair.method = [SyncCompareMethod.sizeAndDate, .sizeOnly, .content][max(0, method.indexOfSelectedItem)]
+        pair.presets = Set(presetButtons.enumerated().compactMap { $0.element.state == .on ? SyncExclusionPreset.allCases[$0.offset] : nil })
+        pair.customExclusions = custom.stringValue.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter {
+            !$0.isEmpty
+        }
+        prepare()
+    }
+    private func editedPair() -> SavedSync {
+        var next = pair; next.automatic = automatic.state == .on
+        if next.automatic { next.visibleInSidebar = true }
+        next.name = name.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if next.name.isEmpty { next.name = pair.leftTitle }
+        return next
+    }
+    private func saveOnly() {
+        var next = editedPair(); next.visibleInSidebar = true
+        SyncCoordinator.shared.save(next, replacing: editing ? originalPairID : nil)
+        if next.automatic { SyncCoordinator.shared.enableNotifications() }
+        closeSheet()
+    }
+    private func approve() {
+        guard !planning, var preview else { return }
+        pair = editedPair(); preview.pair = pair
+        if editing || savingTask { saveOnly(); return }
+        if pair.automatic { SyncCoordinator.shared.save(pair); SyncCoordinator.shared.enableNotifications() }
+        let owner = parentWindow, onStarted = onStarted, onFinished = onFinished
+        closeSheet()
+        if preview.executable.steps.isEmpty { SyncCoordinator.shared.recordReviewedEmpty(preview); return }
+        SyncCoordinator.shared.run(preview, window: owner, onStarted: onStarted, onFinished: onFinished)
+    }
+    private func bulk(_ choice: SyncOverride?) {
+        guard let preview else { return }
+        for step in preview.plan.conflicts {
+            if let choice {
+                overrides[step.path] = choice
+            } else if let row = preview.comparison.rows.first(where: { $0.path == step.path }) {
+                if row.status == .changed(.newerLeft) { overrides[step.path] = .keepLeft }
+                if row.status == .changed(.newerRight) { overrides[step.path] = .keepRight }
+            }
+        }
+        replan()
+    }
+    func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
+        (item as? SyncPlanNode)?.children.count ?? nodes.count
+    }
+    func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
+        (item as? SyncPlanNode)?.children[index] ?? nodes[index]
+    }
+    func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool { !(item as! SyncPlanNode).children.isEmpty }
+    func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
+        (item as? SyncPlanNode)?.step?.action == .conflict ? 44 : 24
+    }
+    func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
+        let node = item as! SyncPlanNode
+        guard let step = node.step else {
+            return SyncGroupRow(title: node.title + " (\(node.children.count))", action: node.action, color: node.color)
+        }
+        let difference = differences[step.path] ?? step.sourcePath.flatMap { differences[$0] }
+        let key = difference?.path ?? step.path
+        let row = SyncPlanRow(
+            step: step, pair: pair, checked: overrides[key] != .skip, choice: overrides[key],
+            difference: difference, hasState: previous != nil)
+        row.onInclude = { [weak self] include in
+            self?.overrides[key] = include ? nil : .skip; self?.replan()
+        }
+        row.onChoice = { [weak self] choice in
+            self?.overrides[key] = choice; self?.replan()
+        }
+        row.onExclude = { [weak self] in
+            guard let self else { return }
+            self.pair.customExclusions.append(key); self.custom.stringValue = self.pair.customExclusions.joined(separator: ", ")
+            self.prepare()
+        }
+        return row
+    }
+}
+
+private final class SyncPlanNode: NSObject {
+    let step: SyncStep?
+    let action: SyncAction
+    let title: String
+    var children: [SyncPlanNode] = []
+    init(action: SyncAction, steps: [SyncStep], title: String) {
+        self.action = action; self.title = title; step = nil; super.init(); children = steps.map(SyncPlanNode.init)
+    }
+    init(step: SyncStep) { self.step = step; action = step.action; title = step.path }
+    var color: NSColor {
+        action == .trash || action == .conflict ? Theme.compareDanger : action == .replace ? Theme.compareChanged : Theme.compareOnly
+    }
+}

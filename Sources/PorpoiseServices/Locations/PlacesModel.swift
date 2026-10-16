@@ -2,7 +2,7 @@ import Foundation
 import PorpoiseCore
 
 public enum PlaceSection: String, Codable, CaseIterable {
-    case places = "Places", remote = "Remote", recent = "Recent", tags = "Tags", devices = "Devices", removable = "Removable Devices"
+    case places = "Places", sync = "Sync", remote = "Remote", recent = "Recent", tags = "Tags", devices = "Devices", removable = "Removable Devices"
 }
 
 public struct PlaceEntry: Codable, Equatable {
@@ -30,6 +30,7 @@ public final class PlacesModel {
     public private(set) var userEntries: [PlaceEntry] = []
     private(set) var devices: [PlaceEntry] = []
     /// Cloud storage folders (Google Drive, OneDrive…); those also bookmarked are left out by `detected`.
+    private var syncEntries: [PlaceEntry] = []
     private var cloudEntries: [PlaceEntry] = []
     /// Android phones seen by `adb devices`.
     private var phoneEntries: [PlaceEntry] = []
@@ -76,7 +77,9 @@ public final class PlacesModel {
 
     private static func normalizedOrder(_ stored: [PlaceSection]?) -> [PlaceSection] {
         var order = (stored ?? []).reduce(into: [PlaceSection]()) { if !$0.contains($1) { $0.append($1) } }
-        for s in PlaceSection.allCases where !order.contains(s) { order.append(s) }  // sections added in later versions
+        for s in PlaceSection.allCases where !order.contains(s) {
+            if s == .sync, let index = order.firstIndex(of: .places) { order.insert(s, at: index + 1) } else { order.append(s) }
+        }  // sections added in later versions
         return order
     }
     public var showHidden = false { didSet { post() } }
@@ -115,7 +118,16 @@ public final class PlacesModel {
         let bookmarked = Set(userEntries.map(\.url.standardizedFileURL))
         return cloudEntries.filter { !bookmarked.contains($0.url.standardizedFileURL) } + phoneEntries
     }
-    public var allEntries: [PlaceEntry] { userEntries + detected + tagEntries + devices }
+    public var allEntries: [PlaceEntry] { userEntries + syncEntries + detected + tagEntries + devices }
+
+    public func setSyncEntries(_ pairs: [SavedSync]) {
+        syncEntries = pairs.filter(\.visibleInSidebar).map {
+            PlaceEntry(
+                title: $0.name, url: URL(string: "porpoise-sync://" + $0.id.uuidString)!,
+                icon: $0.automatic ? "view-refresh" : "go-next", section: .sync)
+        }
+        post()
+    }
 
     /// Entries grouped by section, honoring hidden flags.
     public func sections() -> [(PlaceSection, [PlaceEntry])] {

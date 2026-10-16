@@ -13,7 +13,17 @@ protocol PlacesPanelDelegate: AnyObject {
 /// Dolphin's Places panel, custom-drawn (section headers, icon rows, capacity bars for devices).
 final class PlacesPanel: NSView {
     weak var delegate: PlacesPanelDelegate?
-    var currentURL: URL? { didSet { needsDisplay = true } }
+    var currentURL: URL? {
+        didSet {
+            if let id = currentSyncID, let pair = SyncCoordinator.shared.pairs.first(where: { $0.id == id }),
+                currentURL != pair.left, currentURL != pair.right
+            {
+                currentSyncID = nil
+            }
+            needsDisplay = true
+        }
+    }
+    var currentSyncID: UUID?
 
     enum Metrics {
         static let topInset: CGFloat = 4
@@ -44,6 +54,7 @@ final class PlacesPanel: NSView {
     struct VolumeCapacity { let free: Int64; let total: Int64 }
 
     var rows: [Row] = []
+    private var syncTick: Timer?
 
     // Fold/unfold animation (macOS style): rows glide to their new places, folding rows slide into their header and
     // fade, unfolding ones come out of it; the chevron turns.
@@ -160,12 +171,26 @@ final class PlacesPanel: NSView {
         registerForDraggedTypes([.fileURL, .placeEntry, .placeSection])
         NotificationCenter.default.addObserver(self, selector: #selector(reload), name: PlacesModel.changed, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged(_:)), name: Settings.changed, object: nil)
+        _ = SyncCoordinator.shared
+        syncTick = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            if SyncCoordinator.shared.statuses.values.contains(where: { value in
+                switch value {
+                case .syncing, .planning: return true;
+                default: return false
+                }
+            }) {
+                self.needsDisplay = true
+            }
+        }
+        NotificationCenter.default.addObserver(self, selector: #selector(reload), name: SyncCoordinator.changed, object: nil)
         reload()
         setAccessibilityRole(.list)
         setAccessibilityLabel("Places")
     }
 
     required init?(coder: NSCoder) { fatalError() }
+    deinit { syncTick?.invalidate() }
 
     var rowHeight: CGFloat { max(Metrics.minRowHeight, CGFloat(Settings.shared.placesIconSize) + 12) }
 
@@ -263,6 +288,7 @@ final class PlacesPanel: NSView {
     var entryIndices: [Int] { rows.indices.filter { entry(at: $0) != nil } }
 
     func isCurrent(_ e: PlaceEntry) -> Bool {
+        if let pair = SyncCoordinator.shared.pair(for: e.url) { return currentSyncID == pair.id }
         guard let c = currentURL else { return false }
         return e.url.standardizedFileURL == c.standardizedFileURL
     }

@@ -81,6 +81,11 @@ extension PlacesPanel {
             .foregroundColor: Theme.windowTextInactive.withAlphaComponent(hovered ? 0.85 : 0.62),
         ]
         (sec.rawValue as NSString).draw(at: CGPoint(x: Metrics.iconX, y: r.minY + 9), withAttributes: attrs)
+        if sec == .sync, hovered {
+            ("+" as NSString).draw(
+                at: CGPoint(x: r.maxX - 47, y: r.minY + 6),
+                withAttributes: [.font: NSFont.systemFont(ofSize: 15), .foregroundColor: Theme.windowTextInactive])
+        }
         // Fold chevron (Finder shows it on hover; folded sections always show theirs).
         let collapsed = PlacesModel.shared.collapsedSections.contains(sec)
         let turning = foldSection?.sec == sec && foldProgress < 1
@@ -104,6 +109,7 @@ extension PlacesPanel {
     }
 
     private func drawEntry(_ e: PlaceEntry, index i: Int, in r: CGRect) {
+        if let pair = SyncCoordinator.shared.pair(for: e.url) { drawSyncEntry(pair, index: i, in: r); return }
         let current = isCurrent(e)
         drawBackground(current: current, index: i, in: r)
         let iconSize = CGFloat(Settings.shared.placesIconSize)
@@ -140,6 +146,59 @@ extension PlacesPanel {
                 in: CGRect(x: r.maxX - Metrics.ejectIconRightOffset, y: r.minY + (rowHeight - s) / 2, width: s, height: s),
                 from: .zero, operation: .sourceOver, fraction: hover == i ? 1 : 0.55, respectFlipped: true, hints: nil)
         }
+    }
+
+    private func drawSyncEntry(_ pair: SavedSync, index: Int, in rect: CGRect) {
+        drawBackground(current: currentSyncID == pair.id, index: index, in: rect)
+        let status = SyncCoordinator.shared.statuses[pair.id] ?? .idle
+        var text = "", color = Theme.windowTextInactive, alpha: CGFloat = 1
+        switch status {
+        case .paused: text = "⏸"
+        case .missing: text = "⏏"; alpha = 0.5
+        case .conflicts(let count): text = "⚠ \(count)"; color = Theme.compareChanged
+        case .review: text = "⚠"; color = Theme.compareChanged
+        case .failed: text = "!"; color = Theme.compareDanger
+        case .planning, .syncing: text = ""; color = Theme.activeText
+        case .idle:
+            if let date = pair.lastSynced {
+                let minutes = max(0, Int(Date().timeIntervalSince(date) / 60))
+                text = minutes < 60 ? "✓ \(minutes)m" : minutes < 1440 ? "✓ \(minutes / 60)h" : "✓ \(minutes / 1440)d"
+                color = Theme.compareOnly
+            } else if pair.paused {
+                text = "⏸"
+            }
+        }
+        switch status {
+        case .planning, .syncing:
+            let center = CGPoint(x: rect.maxX - 18, y: rect.midY)
+            let track = NSBezierPath(ovalIn: CGRect(x: center.x - 6, y: center.y - 6, width: 12, height: 12))
+            Theme.activeText.withAlphaComponent(0.16).setStroke(); track.lineWidth = 1.5; track.stroke()
+            let fraction = SyncCoordinator.shared.activities[pair.id]?.fraction
+            let phase = CGFloat(ProcessInfo.processInfo.systemUptime.truncatingRemainder(dividingBy: 1.2) / 1.2) * 360
+            let start: CGFloat = fraction == nil ? phase : -90
+            let arc = NSBezierPath();
+            arc.appendArc(
+                withCenter: center, radius: 6, startAngle: start,
+                endAngle: start + CGFloat(fraction ?? 0.3) * 360)
+            Theme.activeText.setStroke(); arc.lineWidth = 1.5; arc.stroke()
+        default: break
+        }
+        let symbol = pair.automatic ? "arrow.triangle.2.circlepath" : "arrow.left.arrow.right"
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular).applying(.init(paletteColors: [Theme.activeText]))
+        NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config)?
+            .draw(
+                in: CGRect(x: 18, y: rect.midY - 8, width: 16, height: 16), from: .zero, operation: .sourceOver, fraction: alpha,
+                respectFlipped: true, hints: nil)
+        let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byTruncatingTail
+        (pair.name as NSString).draw(
+            in: CGRect(x: 42, y: rect.midY - 9, width: max(30, rect.width - 108), height: 18),
+            withAttributes: [
+                .font: NSFont.systemFont(ofSize: 13), .foregroundColor: Theme.windowText.withAlphaComponent(alpha), .paragraphStyle: paragraph,
+            ])
+        let trailing = NSMutableParagraphStyle(); trailing.alignment = .right
+        (text as NSString).draw(
+            in: CGRect(x: rect.width - 68, y: rect.midY - 8, width: 60, height: 16),
+            withAttributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: color, .paragraphStyle: trailing])
     }
 
     /// Rounded, inset highlight like a Mac sidebar: current place, drop target or hover.

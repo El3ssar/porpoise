@@ -381,6 +381,15 @@ final class DebugBridge: NSObject {
             let list = NSApp.windows.filter(\.isVisible).map { "\($0.title)|\(type(of: $0.windowController as Any))|key=\($0.isKeyWindow)" }
             try? list.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
         case "navigate": wc?.view.setURL(arg.hasPrefix("/") ? URL(fileURLWithPath: arg) : (URL(string: arg) ?? URL(fileURLWithPath: arg)))
+        case "syncsheet":
+            guard Settings.isTesting, let window = wc?.window else { return }
+            SyncDebugBridge.present(arg, window: window)
+        case "syncsidebar":
+            guard Settings.isTesting else { return }
+            SyncDebugBridge.sidebar(arg)
+        case "syncstate":
+            guard Settings.isTesting else { return }
+            SyncDebugBridge.state(arg)
         case "reviewfront":
             guard Settings.isTesting, let window = wc?.window else { return }
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]

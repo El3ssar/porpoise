@@ -122,6 +122,20 @@ struct AsyncPlanEnqueueTests {
         #expect(executed.value == 0)
         #expect(try controller.planJournals.all().map(\.id) == [journal.id])
     }
+    @Test func removedPairCannotStartWhileItsJournalIsBeingPrepared() async throws {
+        let scratch = try Scratch("async-plan-removed")
+        let controller = makeController(ScriptedUI())
+        controller.planJournals = PlanJournalStore(folder: scratch.path("plans"))
+        let journal = PlanJournal(title: "Removed pair", steps: [.init(id: "1", title: "copy", payload: Data())])
+        let executed = LockedCounter(); var completed = false
+        controller.enqueuePlanAsync(journal, shouldEnqueue: { false }, execute: { _, _ in executed.increment() }) { result in
+            if case .success = result { Issue.record("Removed pair started an operation") }
+            completed = true
+        }
+        #expect(await eventually(5) { completed })
+        #expect(executed.value == 0)
+        #expect(await eventually(5) { (try? controller.planJournals.all().isEmpty) == true })
+    }
     @Test func duplicatePendingIDIsRejectedBeforeItsJournalCanBeOverwritten() async throws {
         let scratch = try Scratch("async-plan-duplicate")
         let controller = makeController(ScriptedUI())
