@@ -1,0 +1,193 @@
+import Foundation
+import PorpoiseCore
+import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseServices
+
+/// Drive files edited in other apps, as the rows and Activity follow them: saves go back to the same file, a conflict
+/// keeps both versions until a choice, unsent saves are kept and listed after a relaunch.
+@MainActor @Suite(.serialized, .isolatedSettings) struct DriveEditingTests {
+    private func setup() async throws -> (FakeDriveServer, DriveClient, DriveEditing, FileItem, Scratch) {
+        let server = try DriveMutationTests().server(), scratch = try Scratch()
+        let credentials = MemoryDriveCredentials()
+        let id = UUID()
+        try credentials.save("fixture-refresh", clientID: server.config.clientID, accountID: id)
+        let tokens = DriveTokenManager(configuration: server.config, accountID: id, credentials: credentials)
+        let client = DriveClient(
+            accountID: id, tokens: tokens, baseURL: server.base.appendingPathComponent("drive/v3/"),
+            mutationJournal: .init(folder: scratch.url.appendingPathComponent("Journal")), metadataDirectory: scratch.url)
+        let provider = DriveProvider(accountID: id, client: client)
+        RemoteFS.registerDrive(provider, accountID: id)
+        let rows = try await provider.refresh(DriveLocation(accountID: id).url)
+        let editing = DriveEditing()
+        editing.client = { $0 == id ? client : nil }
+        editing.saveDelay = 0.05
+        editing.savedShownFor = 0.2
+        let item = try #require(rows.first { $0.url.lastPathComponent == "binary-a" })
+        return (server, client, editing, item, scratch)
+    }
+
+    private func wait(_ sourceLocation: SourceLocation = #_sourceLocation, _ condition: () -> Bool) async throws {
+        for _ in 0..<200 where !condition() { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(condition(), sourceLocation: sourceLocation)
+    }
+
+    @Test func savesGoBackToTheSameFileAndTheRowFollows() async throws {
+        let (server, client, editing, item, _) = try await setup()
+        defer {
+            server.stop()
+            RemoteFS.unregisterDrive(accountID: client.accountID)
+        }
+        var opened: [URL] = []
+        var posts: [(String, Bool)] = []
+        editing.openFile = { opened.append($0) }
+        editing.post = { posts.append(($0, $1)) }
+        #expect(editing.canEdit(item))
+        var result: Bool?
+        editing.open(item) { result = $0 }
+        try await wait { result != nil }
+        #expect(result == true && opened.count == 1)
+        let entry = try #require(editing.entry(for: item.url))
+        #expect(entry.mark == .editing && entry.title == "Editing “\(entry.name)”" && opened[0] == entry.localURL)
+        #expect(entry.detail == "Changes you save in the other app go to Google Drive")
+
+        // The other app saves: sent once the writes settle, "Saved", then back to "Editing".
+        try Data("edited in another app".utf8).write(to: entry.localURL)
+        try await wait { editing.mark(for: item.url) == .saved }
+        #expect(editing.mark(for: item.url) == .saved)
+        #expect(posts.contains { $0.0.hasPrefix("Saved “") && !$0.1 })
+        let saved = try await client.file("binary-a")
+        #expect(try await client.download(saved).data == Data("edited in another app".utf8))
+        try await wait { editing.mark(for: item.url) == .editing }
+        #expect(editing.entry(for: item.url)?.detail.hasPrefix("Changes save to Google Drive · last saved ") == true)
+
+        // Opened again: the same copy, no second session.
+        editing.open(item)
+        #expect(opened.count == 2 && opened[1] == entry.localURL && editing.entries.count == 1)
+        editing.dismiss(entry.id)
+        #expect(editing.entries.isEmpty && editing.mark(for: item.url) == nil)
+    }
+
+    @Test func aConflictKeepsBothUntilTheUserChooses() async throws {
+        let (server, client, editing, item, _) = try await setup()
+        defer {
+            server.stop()
+            RemoteFS.unregisterDrive(accountID: client.accountID)
+        }
+        var opened: [URL] = []
+        var posts: [(String, Bool)] = []
+        editing.openFile = { opened.append($0) }
+        editing.post = { posts.append(($0, $1)) }
+        editing.open(item)
+        try await wait { editing.entry(for: item.url) != nil }
+        let entry = try #require(editing.entry(for: item.url))
+        try await DriveMutationTests().control(server, ["conflictOnSave": true])
+        try Data("mine".utf8).write(to: entry.localURL)
+        try await wait { editing.mark(for: item.url) == .conflict }
+        let conflicted = try #require(editing.entry(for: item.url))
+        #expect(conflicted.mark == .conflict && conflicted.mark.needsAttention && conflicted.conflictURL != nil)
+        #expect(conflicted.title.hasSuffix("changed in Google Drive while you edited it"))
+        #expect(posts.contains { $0.0.contains("Both versions are kept") && $0.1 })
+        #expect(try await client.download(client.file("binary-a")).data == Data("remote edit".utf8))
+
+        // Saving again while it waits sends nothing; Open Both shows the two; Keep Both adds mine next to it.
+        editing.save(entry.id)
+        #expect(editing.mark(for: item.url) == .conflict)
+        editing.openBoth(entry.id)
+        #expect(opened.suffix(2) == [entry.localURL, try #require(conflicted.conflictURL)])
+        editing.keepBoth(entry.id)
+        try await wait { editing.entries.first?.mark == .saved }
+        #expect(editing.entries.first?.conflictURL == nil)
+        #expect(try await client.download(client.file("binary-a")).data == Data("remote edit".utf8))
+        #expect(posts.contains { $0.0.hasPrefix("Kept both versions of") })
+        // The other app's saves now go to the new file, which carries the mark.
+        let kept = try #require(editing.entries.first)
+        #expect(kept.fileID != "binary-a" && kept.name.hasSuffix("(edited on Mac).txt") && editing.mark(for: item.url) == nil)
+    }
+
+    @Test func replaceWithMineAndUnsentEditsAfterARelaunch() async throws {
+        let (server, client, editing, item, _) = try await setup()
+        defer {
+            server.stop()
+            RemoteFS.unregisterDrive(accountID: client.accountID)
+        }
+        editing.open(item)
+        try await wait { editing.entry(for: item.url) != nil }
+        let entry = try #require(editing.entry(for: item.url))
+        try await DriveMutationTests().control(server, ["conflictOnSave": true])
+        try Data("mine wins".utf8).write(to: entry.localURL)
+        try await wait { editing.mark(for: item.url) == .conflict }
+        editing.replaceWithMine(entry.id)
+        try await wait { editing.mark(for: item.url) == .saved }
+        #expect(try await client.download(client.file("binary-a")).data == Data("mine wins".utf8))
+
+        // Offline: kept, listed as unsent, sent when the connection is back.
+        try await wait { editing.mark(for: item.url) == .editing }
+        client.setOffline(true)
+        try Data("written offline".utf8).write(to: entry.localURL)
+        try await wait {
+            if case .unsent = editing.mark(for: item.url) { return true }
+            return false
+        }
+        let unsent = try #require(editing.entry(for: item.url))
+        #expect(unsent.title == "1 unsent edit to “\(unsent.name)”" && unsent.detail.hasPrefix("You’re offline."))
+        #expect(unsent.mark.note("Google Drive") == "Not in Google Drive yet · kept on this Mac")
+        client.setOffline(false)
+        editing.retryUnsent()
+        try await wait { editing.mark(for: item.url) == .saved }
+        #expect(try await client.download(client.file("binary-a")).data == Data("written offline".utf8))
+
+        // A save that never went (the app quit first) is listed after a relaunch and sent.
+        try Data("before the quit".utf8).write(to: entry.localURL)
+        let relaunched = DriveEditing()
+        relaunched.client = editing.client
+        relaunched.restore(accounts: [client.accountID])
+        try await wait { relaunched.entry(for: item.url) != nil }
+        #expect(relaunched.entries.count == 1)
+        try await wait { relaunched.mark(for: item.url) == .saved }
+        #expect(try await client.download(client.file("binary-a")).data == Data("before the quit".utf8))
+    }
+
+    @Test func whereDriveCantTakeVersionsSavesWaitForACopy() async throws {
+        let (server, client, editing, item, _) = try await setup()
+        defer {
+            server.stop()
+            RemoteFS.unregisterDrive(accountID: client.accountID)
+        }
+        editing.savesVersions = { _ in false }
+        var posts: [(String, Bool)] = []
+        editing.post = { posts.append(($0, $1)) }
+        #expect(editing.canEdit(item))
+        editing.open(item)
+        try await wait { editing.entry(for: item.url) != nil }
+        #expect(posts.contains { $0.0.hasSuffix("you can keep your changes as a copy in Google Drive.") })
+        let entry = try #require(editing.entry(for: item.url))
+        try Data("kept here".utf8).write(to: entry.localURL)
+        try await wait { editing.mark(for: item.url) == .needsCopy }
+        let waiting = try #require(editing.entry(for: item.url))
+        #expect(waiting.title == "Your changes to “\(waiting.name)” are on this Mac" && waiting.mark.needsAttention)
+        #expect(posts.contains { $0.0.contains("Save them as a copy in Google Drive") && $0.1 })
+        // Nothing went to Drive; the copy goes next to the original, which stays as it was.
+        let original = try await client.download(client.file("binary-a")).data
+        #expect(original != Data("kept here".utf8))
+        editing.keepBoth(entry.id)
+        try await wait { editing.entries.first?.mark == .saved }
+        let copy = try #require(editing.entries.first)
+        #expect(copy.name.hasSuffix("(edited on Mac).txt"))
+        #expect(try await client.download(client.file(copy.fileID)).data == Data("kept here".utf8))
+        #expect(try await client.download(client.file("binary-a")).data == original)
+    }
+
+    @Test func marksSayWhatsGoingOn() {
+        #expect(FileFormat.noted("Report.pdf", "edited on Mac") == "Report (edited on Mac).pdf")
+        #expect(FileFormat.noted("backup.tar.gz", "x") == "backup (x).tar.gz" && FileFormat.noted("Notes", "x") == "Notes (x)")
+        let all: [CloudEditMark] = [.editing, .saving, .saved, .unsent("x"), .conflict, .needsCopy]
+        #expect(Set(all.map(\.symbol)).count == 6)
+        #expect(all.filter(\.needsAttention) == [.unsent("x"), .conflict, .needsCopy])
+        #expect(CloudEditMark.saving.note("Google Drive") == "Saving to Google Drive…")
+        #expect(DriveEditing.mark(.saved) == .saved && DriveEditing.mark(.saved, fresh: true) == .editing)
+        #expect(DriveEditing.mark(.unsent("Later.")) == .unsent("Later.") && DriveEditing.mark(.saving) == .saving)
+        #expect(DriveEditing().mark(for: URL(string: "https://example.com")!) == nil)
+    }
+}

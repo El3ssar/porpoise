@@ -13,6 +13,16 @@ public final class DemoCloudBackend: CloudBackend {
     public var avatars: [String: Data] = [:]
     public var infos: [URL: CloudItemInfo] = [:]
     public var links: [String: CloudLinkResult] = [:]
+    /// When each folder's listing was last read (the offline message's time).
+    public var savedDates: [URL: Date] = [:]
+    /// What a search answers, page by page (nil: searching isn't supported); `searchError` fails the next page asked for.
+    public var searchPages: [[FileItem]]?
+    public var searchError: Error?
+    /// Searches asked for: text, folder, everywhere, contents and the page token.
+    public private(set) var searches: [(text: String, folder: URL, everywhere: Bool, contents: Bool, page: String?)] = []
+    /// Holds pages back until `answerSearch` (a slow service); otherwise they answer at once.
+    public var holdsSearches = false
+    private var heldSearch: (() -> Void)?
     /// Browser addresses handed out (tests check them; nothing is opened).
     public private(set) var browserRequests: [URL] = []
 
@@ -176,5 +186,37 @@ public final class DemoCloudBackend: CloudBackend {
             trashed.subtract(urls)
             done(urls, nil)
         }
+    }
+}
+
+extension DemoCloudBackend {
+    public func savedAt(for folder: URL) -> Date? { savedDates[folder] }
+
+    public func search(
+        _ text: String, in folder: URL, everywhere: Bool, contents: Bool, pageToken: String?,
+        done: @escaping (Result<CloudSearchPage, Error>) -> Void
+    ) -> () -> Void {
+        searches.append((text, folder, everywhere, contents, pageToken))
+        var cancelled = false
+        let answer = { [weak self] in
+            guard let self, !cancelled else { return }
+            if let error = self.searchError {
+                self.searchError = nil
+                return done(.failure(error))
+            }
+            guard let pages = self.searchPages else { return done(.failure(CloudEditError.notSupported)) }
+            let index = pageToken.flatMap(Int.init) ?? 0
+            let items = index < pages.count ? pages[index] : []
+            done(.success(CloudSearchPage(items: items, nextPageToken: index + 1 < pages.count ? String(index + 1) : nil)))
+        }
+        if holdsSearches { heldSearch = answer } else { answer() }
+        return { cancelled = true }
+    }
+
+    /// Answers the page held back (`holdsSearches`).
+    public func answerSearch() {
+        let held = heldSearch
+        heldSearch = nil
+        held?()
     }
 }

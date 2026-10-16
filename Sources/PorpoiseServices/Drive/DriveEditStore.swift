@@ -117,7 +117,8 @@ public actor DriveEditStore {
         let current = try await client.file(session.file.id)
         let source = session.localURL
         let md5 = try DriveClient.md5(source)
-        let result = try await client.upload(source, parentID: current.parents?.first ?? "root", name: "Edited on Mac - " + current.name)
+        let result = try await client.upload(
+            source, parentID: current.parents?.first ?? "root", name: FileFormat.noted(current.name, "edited on Mac"))
         session.file = result; session.sentMD5 = md5; session.state = .saved; session.conflictURL = nil
         try update(session)
         return result

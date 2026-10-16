@@ -2,6 +2,9 @@ import AppKit
 import PorpoiseServices
 
 extension DebugBridge {
+    /// Files a test instance "opened in their app" (`cloud nolaunch`).
+    nonisolated(unsafe) static var openedFiles: [String] = []
+
     /// cloud <command>: drives the demo cloud backend (PORPOISE_CLOUD_DEMO) and the Connect sheet.
     /// - `add <id>|<email>|<name>|<shared drives>|<used bytes>|<total bytes>`: an account, as if connected earlier
     /// - `finish <same fields>` / `cancel`: ends the browser sign-in in progress; `fail <message>`
@@ -78,6 +81,19 @@ extension DebugBridge {
             let r = w.view.messageBar.convert(f, to: nil)
             try? "\(Int(r.midX)) \(Int(win.frame.height - r.midY))".write(toFile: rest, atomically: true, encoding: .utf8)
         case "menushot": menuShot(rest)
+        case "glideshot":
+            // glideshot <png>|<ms>: the main window <ms> after the next Drive change starts gliding in (no activation).
+            let f = rest.components(separatedBy: "|")
+            guard Settings.isTesting, f.count == 2, let ms = Double(f[1]), let w = AppDelegate.shared.windows.first, let window = w.window else {
+                return
+            }
+            let previous = w.view.model.onRemoteUpdate
+            w.view.model.onRemoteUpdate = { apply in
+                previous?(apply)
+                w.view.model.onRemoteUpdate = previous
+                let timer = Timer(timeInterval: ms / 1000, repeats: false) { _ in Self.capture([window.windowNumber], to: f[0]) }
+                RunLoop.main.add(timer, forMode: .common)
+            }
         case "barclick":
             // barclick: the message bar's action button (Undo, Allow Changes…), as a click does.
             AppDelegate.shared.windows.first?.view.messageBar.performAction()
@@ -91,6 +107,40 @@ extension DebugBridge {
         case "newfolder":
             // newfolder <name>: what the New Folder dialog's Create does.
             AppDelegate.shared.windows.first?.createCloudFolder(named: rest)
+        case "nolaunch":
+            // nolaunch: files "opened in their app" are only recorded (no other app starts in a test instance).
+            RemoteOpener.openFile = { DebugBridge.openedFiles.append($0.path) }
+        case "open":
+            // open <name>: the row with that name, as a double-click opens it.
+            if let w = AppDelegate.shared.windows.first, let row = w.view.model.rows.first(where: { $0.item.name == rest }) {
+                RemoteOpener.open(row.item)
+            }
+        case "editwrite":
+            // editwrite <name>|<text>: another app saves the file being edited.
+            let f = rest.components(separatedBy: "|")
+            guard f.count == 2, let e = DriveEditing.shared.entries.first(where: { $0.name == f[0] }) else { return }
+            try? Data(f[1].utf8).write(to: e.localURL)
+        case "edits":
+            // edits <file>: what Activity lists about files being edited, and the files opened.
+            let lines =
+                DriveEditing.shared.entries.map { "\($0.name) | \($0.mark) | \($0.title) | \($0.detail)" }
+                + DebugBridge.openedFiles.map { "opened \($0)" }
+            try? lines.joined(separator: "\n").write(toFile: rest, atomically: true, encoding: .utf8)
+        case "editresolve":
+            // editresolve <name>|keep|copy|open|replace|send: Activity's buttons for a file being edited.
+            let f = rest.components(separatedBy: "|")
+            guard f.count == 2, let e = DriveEditing.shared.entries.first(where: { $0.name == f[0] }) else { return }
+            switch f[1] {
+            case "keep", "copy": DriveEditing.shared.keepBoth(e.id)
+            case "open": DriveEditing.shared.openBoth(e.id)
+            case "replace": DriveEditing.shared.replaceWithMine(e.id)
+            default: DriveEditing.shared.save(e.id)
+            }
+        case "copyonly":
+            // copyonly on|off: as on real Drive until conditional saves are verified (saves wait for Save as a Copy).
+            DriveEditing.shared.savesVersions = rest == "on" ? { _ in false } : { $0.canSaveEdits }
+        case "poll": CloudAccounts.shared.checkForChanges()
+        case "activity": ActivityWindowController.shared.show()
         case "select":
             // select <name>: the row with that name (cloud items are ids in their URLs).
             if let v = AppDelegate.shared.windows.first?.view, let row = v.model.rows.first(where: { $0.item.name == rest }) {

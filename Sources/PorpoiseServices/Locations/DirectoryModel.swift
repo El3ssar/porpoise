@@ -237,6 +237,17 @@ public final class DirectoryModel {
     public var onSelectionChanged: (() -> Void)?
     public var onPropsChanged: (() -> Void)?
     public var onLoaded: (() -> Void)?
+    /// A listing changed under a view that already showed it (Drive's answer after the saved listing painted, a change
+    /// made in the browser or on another device): the view runs `apply` inside an animation, so rows appear, rename
+    /// or vanish in place. Unset: applied at once.
+    public var onRemoteUpdate: ((_ apply: () -> Void) -> Void)?
+    /// A cloud folder shown from its saved listing while Drive is asked again (the status bar says "Updating…").
+    public private(set) var isRefreshing = false
+
+    /// Runs a change to a listing that was already shown through `onRemoteUpdate`.
+    private func remoteUpdate(_ apply: () -> Void) {
+        if let onRemoteUpdate { onRemoteUpdate(apply) } else { apply() }
+    }
 
     /// Re-lists the folder (and expanded subfolders) when any of them changes; reloads don't flicker.
     private lazy var watcher = FolderWatcher { [weak self] _ in
@@ -483,12 +494,26 @@ public final class DirectoryModel {
         if let provider = RemoteFS.provider(for: url) as? DriveProvider {
             let cached = provider.cachedListing(url)
             if let cached {
-                items = withEdits(cached, in: url)
+                let listed = withEdits(cached, in: url)
+                // The same folder again (a change came in): what's different glides in; a new folder paints at once.
+                let shown = !items.isEmpty && lastLoaded == url
+                if shown, items != listed {
+                    remoteUpdate {
+                        items = listed
+                        if keepSelection { selection.formIntersection(Set(allLoadedURLs())) }
+                        rebuild()
+                    }
+                } else if !shown {
+                    items = listed
+                    rebuild()
+                }
                 isLoading = false
-                rebuild()
+                isRefreshing = true
+                lastLoaded = url
                 onLoaded?()
             } else {
                 isLoading = true
+                isRefreshing = false
             }
             driveListing = Task { @MainActor [weak self] in
                 do {
@@ -498,6 +523,8 @@ public final class DirectoryModel {
                     try Task.checkCancellation()
                     guard let self, token == self.loadToken else { return }
                     self.isLoading = false
+                    self.isRefreshing = false
+                    self.lastLoaded = url
                     for expandedURL in self.expanded { self.loadChildren(of: expandedURL) }
                     self.onLoaded?()
                     let folders = self.rows.filter { $0.depth == 0 && $0.item.isBrowsableFolder }.map { $0.item.url }
@@ -507,6 +534,7 @@ public final class DirectoryModel {
                 } catch {
                     guard let self, token == self.loadToken else { return }
                     self.isLoading = false
+                    self.isRefreshing = false
                     if cached == nil { self.loadError = error.localizedDescription }
                     self.onLoaded?()
                 }
@@ -620,11 +648,14 @@ public final class DirectoryModel {
         // A refresh never temporarily removes later pages or resets expanded rows.
         if complete { listingArrived(token) }
         let listed = withEdits(listed, in: location)
-        if items != listed {
-            items = listed
-            if complete && keepSelection { selection.formIntersection(Set(allLoadedURLs())) }
-            rebuild()
+        guard items != listed else { return }
+        let change = {
+            self.items = listed
+            if complete && keepSelection { self.selection.formIntersection(Set(self.allLoadedURLs())) }
+            self.rebuild()
         }
+        // Drive's answer to a folder painted from its saved listing: the differences glide in.
+        if hasCache { remoteUpdate(change) } else { change() }
     }
 
     /// Everything listed, search results included (a reload during a search keeps their selection).

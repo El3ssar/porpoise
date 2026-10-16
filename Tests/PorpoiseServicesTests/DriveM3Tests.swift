@@ -94,7 +94,7 @@ import Testing
         let reopened = try await client.edits.open(file)
         #expect(reopened.id == session.id)
         let kept = try await client.edits.keepBoth(session.id)
-        #expect(kept.id != file.id && kept.name.contains("Edited on Mac"))
+        #expect(kept.id != file.id && kept.name.hasSuffix("(edited on Mac).txt"))
         #expect(try await client.download(kept).data == Data("my second edit".utf8))
         #expect(try await client.download(client.file(file.id)).data == Data("remote edit".utf8))
     }

@@ -29,6 +29,27 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     let messageBar = MessageBar()
     /// Items the message bar says went to a cloud Trash (its Undo); Edit › Undo of them clears the message.
     var cloudTrashNotice: Set<URL> = []
+    /// The account whose offline message shows (it goes, and the folder is read again, when the account is back).
+    var offlineNotice: String?
+    /// The cloud service's search running for the search bar (in a cloud folder).
+    private(set) var cloudSearch: CloudSearch?
+    var driveReloadPending = false
+    /// A saved listing shows while the service is asked again, for long enough to say so ("Updating…"): a quick
+    /// answer changes nothing in the status bar.
+    private var showsUpdating = false
+    private var refreshCheck: DispatchWorkItem?
+
+    private func noteRefreshing() {
+        refreshCheck?.cancel()
+        guard model.isRefreshing else { showsUpdating = false; return }
+        let check = DispatchWorkItem { [weak self] in
+            guard let self, self.model.isRefreshing else { return }
+            self.showsUpdating = true
+            self.updateStatus()
+        }
+        refreshCheck = check
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: check)
+    }
     let selectionTop = SelectionTopBar()
     let selectionBottom = SelectionBottomBar()
     var preservesMissingLocation = false
@@ -117,6 +138,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         ]
 
         model.onChange = { [weak self] in self?.modelChanged() }
+        model.onRemoteUpdate = { [weak self] apply in
+            guard let self else { return apply() }
+            self.animatingRemoteChange(apply)
+        }
         model.onMetadataLoaded = { [weak self] in
             guard let self else { return }
             // A Tags column or label sizes itself to the tags just read.
@@ -148,6 +173,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
         model.onLoaded = { [weak self] in
             guard let self else { return }
+            self.noteRefreshing()
             self.updateStatus()
             if let once = self.onNextLoad {
                 self.onNextLoad = nil
@@ -218,6 +244,19 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         observers.append(
             center.addObserver(forName: NetworkBrowser.changed, object: nil, queue: .main) { [weak self] _ in
                 if self?.url.scheme == "network" { self?.model.reload() }
+            })
+        observers.append(
+            center.addObserver(forName: CloudAccounts.changed, object: nil, queue: .main) { [weak self] _ in self?.cloudAccountsChanged() })
+        observers.append(
+            center.addObserver(forName: DriveEditing.changed, object: nil, queue: .main) { [weak self] _ in
+                guard let self, PlacesModel.isCloud(self.model.location) || self.model.isSearching else { return }
+                self.list.needsDisplay = true
+                self.updateStatus()
+            })
+        observers.append(
+            center.addObserver(forName: DriveClient.changed, object: nil, queue: .main) { [weak self] n in
+                guard let self, let id = n.object as? UUID else { return }
+                self.driveChanged(account: id)
             })
         observers.append(
             center.addObserver(forName: CloudAccounts.changeReverted, object: nil, queue: .main) { [weak self] n in
@@ -369,6 +408,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         if !filterBar.isLocked { filterBar.clear(); if !Settings.shared.showFilterBarOnStartup { filterBar.isHidden = true } }
         if !searchBar.isHidden { closeSearch() }
         messageBar.isHidden = true
+        offlineNotice = nil
         if addToHistory { history.visit(u) }
         // Remember where the view was in the folder we leave, for Back/Forward.
         if u != url {
@@ -465,8 +505,18 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         if PlacesModel.isCloud(url) {
             // The folder's sharing role decides whether it can be changed, and the account's storage replaces a disk's.
             let readOnly = CloudAccounts.shared.denial(.addItems, folder: url)
+            // A file open in another app says how its saves are doing.
+            let pointed = hoverItem ?? (model.selection.count == 1 ? model.selectedItems.first : nil)
+            if let pointed, let edit = list.editMark(pointed) {
+                statusBar.text = "\(pointed.name) · " + edit.note(CloudAccounts.shared.providerTitle(for: url))
+            }
+            if showsUpdating, model.isRefreshing, hoverItem == nil, model.selection.isEmpty {
+                statusBar.text = statusBar.text.isEmpty ? "Updating…" : statusBar.text + " · Updating…"
+            }
             if readOnly != nil, !(hoverItem?.isWebDocument ?? false) {
-                statusBar.text = statusBar.text.isEmpty ? "View only" : statusBar.text + " · View only"
+                // Offline is a passing state, not the folder's sharing role.
+                let what = CloudAccounts.shared.account(for: url)?.status == .offline ? "Offline" : "View only"
+                statusBar.text = statusBar.text.isEmpty ? what : statusBar.text + " · " + what
             }
             let account = CloudAccounts.shared.account(for: url)
             if Settings.shared.statusBarMode == .fullWidth, let used = account?.quotaUsed, let total = account?.quotaTotal, total > 0 {
@@ -558,6 +608,25 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
     }
 
+    /// A change made elsewhere (in the browser, on another device): rows appear, rename or vanish in place, quietly.
+    /// The selection stays, and so does what's on screen: the first item in view keeps its place when rows come or go
+    /// above it.
+    func animatingRemoteChange(_ change: () -> Void) {
+        guard !showsApps else { return change() }
+        let list = self.list
+        let top = list.visibleRect.minY > 1 ? list.candidateIndexes(in: list.visibleRect).min() : nil
+        let anchor = top.map { (key: list.key(ofRow: $0), offset: list.frames[$0].minY - list.visibleRect.minY) }
+        let start = list.snapshotForTransition()
+        change()
+        list.computeLayout()
+        if let anchor, let i = list.row(forKey: anchor.key) {
+            let y = list.frames[i].minY - anchor.offset
+            if abs(y - list.visibleRect.minY) > 0.5 { list.scroll(CGPoint(x: list.visibleRect.minX, y: max(0, y))) }
+        }
+        guard let start else { return }
+        list.animateLayoutChange(from: start, duration: 0.35)
+    }
+
     func filterBarClosed(_ bar: FilterBar) {
         bar.clear()
         bar.isHidden = true
@@ -570,12 +639,14 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     func showSearch() {
         if showsApps, let a = apps { window?.makeFirstResponder(a.field); return }
-        guard url.isFileURL else {
-            messageBar.show("Searching is available in local folders and mounted shares.", error: false)
+        let cloud = PlacesModel.isCloud(url)
+        guard url.isFileURL || cloud else {
+            messageBar.show("Searching is available in local folders, mounted shares and Google Drive.", error: false)
             needsLayout = true
             return
         }
         searchBar.isHidden = false
+        searchBar.cloudService = cloud ? CloudAccounts.shared.providerTitle(for: url) : nil
         searchBar.scopeFolder = url
         delegate?.containerSearchVisibilityChanged(self)
         needsLayout = true
@@ -586,6 +657,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     func closeSearch() {
         searchQuery?.stop()
         searchQuery = nil
+        cloudSearch?.stop()
+        cloudSearch = nil
+        statusBar.progress = nil
         searchBar.isHidden = true
         searchBar.clear()
         animatingItems(searchStyle: true) {
@@ -599,7 +673,11 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     func searchBar(_ bar: SearchBar, search text: String, everywhere: Bool, contents: Bool) {
         searchQuery?.stop()
+        cloudSearch?.stop()
+        cloudSearch = nil
+        if bar.cloudService != nil, !text.isEmpty { return searchCloud(text, everywhere: everywhere, contents: contents) }
         guard !text.isEmpty else {
+            statusBar.progress = nil
             animatingItems(searchStyle: true) {
                 model.searchMatches = nil
                 model.searchResults = nil
@@ -639,6 +717,43 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             }
         }
         searchQuery?.start()
+    }
+
+    /// The cloud service's own search: "Searching Google Drive…" while its pages come in, the results growing as
+    /// they do (what's shown stays until the first ones), then how many were found there.
+    private func searchCloud(_ text: String, everywhere: Bool, contents: Bool) {
+        let run = CloudSearch(text, in: url, everywhere: everywhere, contents: contents)
+        cloudSearch = run
+        statusBar.progress = 0.1
+        statusBar.showMessage("Searching \(run.serviceTitle)…", duration: 600)
+        run.onResults = { [weak self] items, done in
+            guard let self, self.cloudSearch === run else { return }
+            if done {
+                self.statusBar.progress = nil
+                self.statusBar.showMessage(run.summary)
+                if run.error != nil, items.isEmpty, (run.error as? CloudEditError) != .notSupported {
+                    self.messageBar.show(run.summary, error: true)
+                    self.needsLayout = true
+                }
+            } else {
+                self.statusBar.progress = 0.5
+            }
+            guard done || !items.isEmpty else { return }
+            let matches = SearchMatches(text: text, contents: contents)
+            self.model.sortSearchResults(items) { [weak self] apply in
+                guard let self, self.cloudSearch === run else { return }
+                let old = self.model.searchResults ?? []
+                let adding =
+                    self.model.isSearching && !old.isEmpty && items.count >= old.count
+                    && old.indices.allSatisfy { items[$0].url == old[$0].url }
+                self.animatingItems(searchStyle: true, onlyAdding: adding) {
+                    if !self.model.isSearching { self.model.showSearchView() }
+                    self.model.searchMatches = matches
+                    apply()
+                }
+            }
+        }
+        run.start()
     }
 
     func searchBar(_ bar: SearchBar, hint: String?) {
