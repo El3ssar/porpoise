@@ -513,7 +513,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         row.onInclude = { [weak self] include in
             guard let self else { return }
             for child in node.allSteps {
-                self.overrides[differences[child.path]?.path ?? child.sourcePath.flatMap { differences[$0]?.path } ?? child.path] =
+                self.overrides[self.differences[child.path]?.path ?? child.sourcePath.flatMap { self.differences[$0]?.path } ?? child.path] =
                     include ? nil : .skip
             }
             self.replan()
