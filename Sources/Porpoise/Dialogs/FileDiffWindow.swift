@@ -271,6 +271,12 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
                 ]
                 let throttle = NSLock(); var lastProgress = Date.distantPast
                 func progress(_ name: String, _ bytes: UInt64, _ total: UInt64) {
+                    // Visual-review hook only; the responsiveness probe runs without this variable.
+                    if Settings.isTesting, let value = ProcessInfo.processInfo.environment["PORPOISE_FILEDIFF_READ_DELAY_MS"],
+                        let milliseconds = Double(value), milliseconds > 0
+                    {
+                        Thread.sleep(forTimeInterval: min(milliseconds, 100) / 1000)
+                    }
                     guard
                         throttle.withLock({
                             if Date().timeIntervalSince(lastProgress) < 0.08 && bytes < total { return false }; lastProgress = Date(); return true
@@ -280,6 +286,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
                         guard let self, !token.isCancelled, self.busy else { return }
                         self.loading.isIndeterminate = false; self.loading.maxValue = Double(max(1, total)); self.loading.doubleValue = Double(bytes)
                         self.progressText.stringValue = "Reading \(name)… \(FileFormat.size(Int64(bytes))) of \(FileFormat.size(Int64(total)))"
+                        self.facts.stringValue = self.progressText.stringValue
                     }
                 }
                 let
@@ -315,7 +322,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         guard ready else { return }
         generation += 1; let version = generation
         guard let a = leftText, let b = rightText else { busy = false; updateVisibility(); return }
-        busy = true; facts.stringValue = "Comparing…"; progressText.stringValue = "Comparing \(leftURL.lastPathComponent)…";
+        busy = true; facts.stringValue = "Comparing…"; progressText.stringValue = "Comparing…";
         loading.isIndeterminate = true; loading.startAnimation(nil); updateVisibility()
         let whitespace = ignore.state == .on, inline = textMode.selectedSegment == 1
         Self.queue.async { [weak self] in
@@ -387,7 +394,9 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
     func focus(_ change: Int) {
         guard let p = textCanvas.presentation, p.starts.indices.contains(change) else { return }
         focused = change; textCanvas.focused = change; textCanvas.updateCopyButtons()
-        textCanvas.scrollToVisible(NSRect(x: 0, y: max(0, CGFloat(p.starts[change]) * 18 - 80), width: 1, height: 180));
+        let viewport = textScroll.contentView
+        let y = max(0, min(CGFloat(p.starts[change]) * 18 + 10 - viewport.bounds.height / 3, textCanvas.bounds.height - viewport.bounds.height))
+        viewport.scroll(to: NSPoint(x: 0, y: y)); textScroll.reflectScrolledClipView(viewport)
         textCanvas.needsDisplay = true
         let c = p.difference.changes[change]
         let speech =
@@ -539,6 +548,10 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
     func handleKey(_ event: NSEvent) -> Bool {
         if event.keyCode == 53 && busy { window?.performClose(nil); return true }
         guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) else { return false }
+        if event.modifierFlags.contains(.control) {
+            if event.keyCode == 125 { move(1); return true }
+            if event.keyCode == 126 { move(-1); return true }
+        }
         switch event.charactersIgnoringModifiers {
         case "1", "2", "3":
             let m = Int(event.charactersIgnoringModifiers!)! - 1;

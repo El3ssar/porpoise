@@ -848,15 +848,28 @@ final class DebugBridge: NSObject {
 
     /// A native popup menu is a separate WindowServer window; capture its own ID.
     private func fileDiffMenuSnapshot(to path: String) {
+        let candidates = NSApp.windows.filter { $0.isVisible && $0.level.rawValue > NSWindow.Level.normal.rawValue }
         guard
-            let popup = NSApp.windows.filter({ $0.isVisible && $0.level.rawValue > NSWindow.Level.normal.rawValue }).sorted(by: {
-                $0.level.rawValue > $1.level.rawValue
-            }).first
+            let popup = candidates.first(where: { String(describing: type(of: $0)).contains("PopupMenuWindow") })
+                ?? candidates.sorted(by: { $0.level.rawValue > $1.level.rawValue }).first
         else { return }
+        if let screen = popup.screen ?? NSScreen.main {
+            popup.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - popup.frame.width / 2, y: screen.visibleFrame.midY - popup.frame.height / 2))
+            popup.displayIfNeeded()
+        }
         typealias Capture = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
         guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return }
         let capture = unsafeBitCast(symbol, to: Capture.self)
-        if let image = capture(.null, 8, UInt32(popup.windowNumber), 1)?.takeRetainedValue() { writePNG(image, to: path) }
+        if let image = capture(.null, 8, UInt32(popup.windowNumber), 1)?.takeRetainedValue() {
+            writePNG(image, to: path)
+            let metadata: [String: Any] = [
+                "window": popup.windowNumber, "class": String(describing: type(of: popup)), "frame": NSStringFromRect(popup.frame),
+                "pixels": "\(image.width) × \(image.height)",
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: metadata, options: .prettyPrinted) {
+                try? data.write(to: URL(fileURLWithPath: path + ".json"))
+            }
+        }
     }
 
     private func windowServerSnapshot(to arg: String) {
