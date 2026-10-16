@@ -48,8 +48,11 @@ extension MainWindowController: NSMenuItemValidation {
             return !hasSelection || selectionIsManageable
         case #selector(copy(_:)), #selector(copyLocation(_:)):
             return true
+        case #selector(properties(_:)):
+            // Google Drive items have their own Properties (owner, sharing, your access).
+            return actionTargets.allSatisfy { $0.isFileURL || PlacesModel.isCloud($0) }
         case #selector(showChecksums(_:)), #selector(showDiskUsage(_:)), #selector(showDuplicates(_:)),
-            #selector(properties(_:)), #selector(revealInFinder(_:)):
+            #selector(revealInFinder(_:)):
             return actionTargets.allSatisfy(\.isFileURL)
         case #selector(duplicateItem(_:)):
             return !hasSelection ? writable : selectionIsLocal
