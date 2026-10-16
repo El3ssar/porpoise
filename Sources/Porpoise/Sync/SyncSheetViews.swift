@@ -73,7 +73,7 @@ final class SyncModeCard: NSButton {
             mode == .backup
             ? "Copy new and changed files to \(rightName). Never deletes."
             : mode == .mirror
-                ? "Match \(leftName). Extras in \(rightName) → Trash." : "Bring both sides up to date. Asks when both changed."
+                ? "Make \(rightName) match \(leftName). Extra items go to the Trash." : "Bring both sides up to date. Asks when both changed."
         let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byWordWrapping
         (detail as NSString).draw(
             in: CGRect(x: 12, y: 47, width: bounds.width - 24, height: 30),

@@ -37,15 +37,8 @@ public struct SavedSync: Codable, Equatable, Identifiable, Sendable {
             method: method, timestampTolerance: timestampTolerance,
             exclusions: SyncExclusionPreset.allCases.filter { presets.contains($0) }.flatMap(\.patterns) + customExclusions)
     }
-    public var leftTitle: String { title(left, other: right) }
-    public var rightTitle: String { title(right, other: left) }
-    private func title(_ root: URL, other: URL) -> String {
-        guard root.lastPathComponent == other.lastPathComponent else { return root.lastPathComponent }
-        if root.host != other.host { return root.lastPathComponent + " · " + (root.host ?? "This Mac") }
-        let parent = root.deletingLastPathComponent().lastPathComponent
-        let otherParent = other.deletingLastPathComponent().lastPathComponent
-        return parent != otherParent ? root.lastPathComponent + " · " + parent : root.path
-    }
+    public var leftTitle: String { CompareOutline.sideNames(left, right).0 }
+    public var rightTitle: String { CompareOutline.sideNames(left, right).1 }
     public var description: String { leftTitle + (mode == .twoWay ? " ⇄ " : " → ") + rightTitle }
 }
 
