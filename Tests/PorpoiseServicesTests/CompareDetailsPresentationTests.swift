@@ -17,22 +17,33 @@ struct CompareDetailsPresentationTests {
         let r = CompareDetailsPresentation(rows, root: root, side: .right, expanded: ["tree"])
         #expect(l.rows.map(\.item.name) == ["tree", "a.txt", "left.txt"])
         #expect(r.rows.map(\.item.name) == ["Tree", "a.txt", "right.txt"])
+        #expect(l.counts.folders == 1); #expect(l.counts.files == 1)
         #expect(l.slots == [0, 1, 2]); #expect(r.slots == [0, 1, 3])
         #expect(l.rows[0].isExpanded); #expect(l.rows[1].depth == 1)
         #expect(l.rows[1].item.contentType == "public.plain-text")
         #expect(r.rows[1].item.url.path == "/Projects/Tree/a.txt")
+        #expect(r.pathAliases["Tree"] == "tree"); #expect(r.pathAliases["Tree/a.txt"] == "tree/a.txt")
+        #expect(l.pathAliases.isEmpty)
     }
     @Test func realRowsRemainAuthoritativeAcrossBrowseReloadAndResume() async throws {
         let scratch = try Scratch(); try scratch.file("before.txt")
         let model = DirectoryModel(location: scratch.url); model.reload()
         #expect(await eventually(5) { !model.isLoading && model.rows.count == 1 })
         model.defersPresentation = true
-        let rows = CompareOutline(SyncComparator.compare(.init(entries: [.init(path: "nested/file.txt", size: 8)]), .init(entries: [])))
-            .visible(filter: .all, expanded: [])
+        let rows = CompareOutline(
+            SyncComparator.compare(
+                .init(entries: [.init(path: "nested", kind: .directory), .init(path: "nested/file.txt", size: 8)]), .init(entries: []))
+        )
+        .visible(filter: .all, expanded: ["nested"])
         // Expanded nested entries also flow through ordinary selectedItems, menus and Quick Look.
-        let projection = CompareDetailsPresentation(rows, root: scratch.url, side: .left, expanded: [])
-        model.presentComparisonRows(projection.rows)
-        if let item = projection.rows.first?.item { model.selection = [item.url]; #expect(model.selectedItems == [item]) }
+        let projection = CompareDetailsPresentation(rows, root: scratch.url, side: .left, expanded: ["nested"])
+        model.presentComparisonRows(projection.rows, counts: projection.counts)
+        let item = try #require(projection.rows.last?.item)
+        #expect(item.url.path.hasSuffix("nested/file.txt"))
+        model.selection = [item.url]; #expect(model.selectedItems == [item])
+        #expect(model.visibleCounts.folders == projection.counts.folders)
+        #expect(model.visibleCounts.files == projection.counts.files)
+        #expect(model.visibleCounts.bytes == projection.counts.bytes)
         try scratch.file("after.txt"); model.reload()
         #expect(await eventually(5) { !model.isLoading && model.items.count == 2 })
         #expect(model.rows.map(\.item.url) == projection.rows.map(\.item.url))

@@ -119,19 +119,24 @@ public struct CompareOutline: Sendable {
         let order = left.localizedStandardCompare(right)
         return order == .orderedSame ? left < right : order == .orderedAscending
     }
+    /// Short, symmetric labels with enough ancestry to distinguish equal leaf names.
     public static func sideNames(_ left: URL, _ right: URL) -> (String, String) {
-        var l = left.lastPathComponent, r = right.lastPathComponent
-        if l == r {
-            if left.host != right.host {
-                if let host = left.host { l = host }; if let host = right.host { r = host }
-            } else {
-                for ancestor in right.pathComponents.dropLast().reversed() where ancestor != l && ancestor != "/" && !ancestor.isEmpty {
-                    r = ancestor; break
-                }
-                if l == r && left != right { r = right.path }
-            }
+        let l = left.lastPathComponent.isEmpty ? "/" : left.lastPathComponent
+        let r = right.lastPathComponent.isEmpty ? "/" : right.lastPathComponent
+        guard l == r else { return (l, r) }
+        if left.scheme == right.scheme, left.host == right.host, left.user == right.user, left.port == right.port,
+            left.standardized.path == right.standardized.path
+        {
+            return (l + " (left)", r + " (right)")
         }
-        return (l.isEmpty ? "/" : l, r.isEmpty ? "/" : r)
+        if left.host != right.host { return (left.host.map { $0 + " › " + l } ?? l, right.host.map { $0 + " › " + r } ?? r) }
+        let lc = left.standardized.pathComponents.filter { $0 != "/" }
+        let rc = right.standardized.pathComponents.filter { $0 != "/" }
+        for depth in 2...max(2, max(lc.count, rc.count)) {
+            let a = lc.suffix(depth).joined(separator: " › "), b = rc.suffix(depth).joined(separator: " › ")
+            if a != b { return (a.isEmpty ? "/" : a, b.isEmpty ? "/" : b) }
+        }
+        return (l + " (left)", r + " (right)")
     }
 }
 

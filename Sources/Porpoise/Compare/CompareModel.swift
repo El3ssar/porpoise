@@ -39,39 +39,38 @@ final class CompareModel {
     private var startingWatcher = false
     private var active = true
     var overrides: [String: SyncOverride] = [:]
-    private var cancellation = DiskCancellation()
-    private var generation = 0
+    private let refresh = ComparisonRefresh()
     let names: (String, String)
     init(left: URL, right: URL, options: SyncCompareOptions = CompareModel.defaultOptions) {
         leftRoot = left; rightRoot = right; self.options = options
-        names = left == right ? (left.lastPathComponent + " (left)", right.lastPathComponent + " (right)") : CompareOutline.sideNames(left, right)
+        names = CompareOutline.sideNames(left, right)
+        refresh.onStart = { [weak self] request in self?.beginScan(request) }
     }
-    private var navigationRefresh: DispatchWorkItem?
     private let scanQueue = DispatchQueue(label: "porpoise.compare.scan", qos: .utility)
     func navigate(left: URL, right: URL) {
         guard left != leftRoot || right != rightRoot else { return }
-        cancellation.cancel(); generation += 1; presentationGeneration += 1
+        refresh.stop(); presentationGeneration += 1
         leftRoot = left; rightRoot = right
         watcher?.stop(); watcher = nil; startingWatcher = false
         expanded = []; overrides = [:]
         // Old rows belong to another location; same-location watcher refreshes keep their selection and scroll.
         releaseComparisonValuesLater((comparison, outline))
         comparison = nil; outline = nil
-        navigationRefresh?.cancel()
-        let refresh = DispatchWorkItem { [weak self] in self?.start() }
-        navigationRefresh = refresh
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: refresh)
+        refresh.schedule(left: left, right: right)
+        onChange?()
     }
     func start() {
-        active = true
-        cancellation.cancel(); cancellation = DiskCancellation(); generation += 1
-        let token = cancellation, ticket = generation, start = CACurrentMediaTime(), options = options
+        active = true; presentationGeneration += 1
+        refresh.schedule(left: leftRoot, right: rightRoot, delay: 0)
+    }
+    private func beginScan(_ request: ComparisonRefresh.Request) {
+        let token = request.cancellation, start = CACurrentMediaTime(), options = options
         loading = true; showProgress = false; error = nil; onChange?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            guard let self, self.generation == ticket, self.loading else { return }
+            guard let self, self.refresh.accepts(request), self.loading else { return }
             self.showProgress = true; self.onChange?()
         }
-        let left = leftRoot, right = rightRoot
+        let left = request.left, right = request.right
         scanQueue.async { [weak self] in
             // Top-level rows arrive first, with directory subtrees explicitly incomplete until the full pass.
             let top = Result { () throws -> (SyncComparison, CompareOutline) in
@@ -82,7 +81,7 @@ final class CompareModel {
             }
             if case .success(let (c, outline)) = top, !c.complete {
                 DispatchQueue.main.async { [weak self] in
-                    guard let self, self.generation == ticket, !token.isCancelled else { return }
+                    guard let self, self.refresh.accepts(request), !token.isCancelled else { return }
                     releaseComparisonValuesLater((self.comparison, self.outline))
                     self.comparison = c; self.outline = outline; self.rebuild()
                 }
@@ -97,7 +96,7 @@ final class CompareModel {
                 return (c, CompareOutline(c))
             }
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.generation == ticket, !token.isCancelled else { return }
+                guard let self, self.refresh.accepts(request), !token.isCancelled else { return }
                 self.loading = false; self.showProgress = false; self.elapsed = CACurrentMediaTime() - start
                 switch result {
                 case .success(let (c, outline)):
@@ -111,7 +110,7 @@ final class CompareModel {
         if watcher == nil && !startingWatcher {
             startingWatcher = true
             DispatchQueue.global(qos: .utility).async { [weak self] in
-                let watcher = SyncWatcher(roots: [left, right]) { [weak self] in
+                let watcher = SyncWatcher(roots: [left, right], debounce: 0.5) { [weak self] in
                     DispatchQueue.main.async {
                         if let self, self.active, self.leftRoot == left, self.rightRoot == right, !self.suppressWatchUpdates { self.start() }
                     }
@@ -164,11 +163,11 @@ final class CompareModel {
     func toggle(_ flag: CompareFilter) { filter.formSymmetricDifference(flag); rebuild() }
     func expand(_ path: String) { if expanded.contains(path) { expanded.remove(path) } else { expanded.insert(path) }; rebuild() }
     func stop() {
-        active = false; watcher?.stop(); watcher = nil; startingWatcher = false; navigationRefresh?.cancel(); cancellation.cancel(); generation += 1;
+        active = false; watcher?.stop(); watcher = nil; startingWatcher = false; refresh.stop()
         presentationGeneration += 1; loading = false; showProgress = false; onChange?()
     }
     deinit {
-        cancellation.cancel()
+        refresh.stop()
         // Replacing a large Compare surface must not destroy its trees and dictionaries in an
         // animation frame. These are value data; AppKit views still tear down on the main thread.
         releaseComparisonValuesLater((comparison, outline, rows, rowIndices, rowPaths, watcher))

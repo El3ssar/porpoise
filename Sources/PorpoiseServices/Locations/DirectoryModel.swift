@@ -540,7 +540,10 @@ public final class DirectoryModel {
     /// Compare renders its own aligned rows. Defer browse sorting/grouping while it owns the surface, then
     /// rebuild once when ordinary browsing returns. Raw listing/state and load errors continue updating.
     public var defersPresentation = false {
-        didSet { if !defersPresentation && presentationNeedsRebuild { presentationNeedsRebuild = false; rebuild() } }
+        didSet {
+            if !defersPresentation { comparisonCounts = nil }
+            if !defersPresentation && presentationNeedsRebuild { presentationNeedsRebuild = false; rebuild() }
+        }
     }
     private var presentationNeedsRebuild = false
 
@@ -711,10 +714,11 @@ public final class DirectoryModel {
     }
 
     public var onComparisonExpansion: ((URL, Bool) -> Void)?
-    public func presentComparisonRows(_ next: [Row]) {
+    private var comparisonCounts: (folders: Int, files: Int, bytes: Int64)?
+    public func presentComparisonRows(_ next: [Row], counts: (folders: Int, files: Int, bytes: Int64)? = nil) {
         guard defersPresentation else { return }
-        let previous = rows
-        groups = []; rows = next; presentationNeedsRebuild = true
+        let previous = (rows, rowIndex, rowIndexByPath)
+        groups = []; rows = next; comparisonCounts = counts; presentationNeedsRebuild = true
         // The scanner owns these rows. Browse reloads keep updating raw items without replacing them.
         DispatchQueue.global(qos: .utility).async { withExtendedLifetime(previous) {} }
     }
@@ -779,6 +783,7 @@ public final class DirectoryModel {
     }
 
     public var visibleCounts: (folders: Int, files: Int, bytes: Int64) {
+        if let comparisonCounts { return comparisonCounts }
         var f = 0, n = 0; var b: Int64 = 0
         for r in rows where r.depth == 0 {
             if r.item.isBrowsableFolder { f += 1 } else { n += 1; b += r.item.size }
