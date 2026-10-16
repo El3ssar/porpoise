@@ -135,7 +135,7 @@ public enum WordDifference {
         guard a.count + b.count < 4096 else {
             return ([NSRange(location: 0, length: left.utf16.count)], [NSRange(location: 0, length: right.utf16.count)])
         }
-        let d = TextDifference(left: a.joined(separator: "\n"), right: b.joined(separator: "\n"))
+        let d = TextDifference(left: a.map { $0 + "\n" }.joined(), right: b.map { $0 + "\n" }.joined())
         let ac = a.reduce(into: [0]) { $0.append($0.last! + $1.utf16.count) }
         let bc = b.reduce(into: [0]) { $0.append($0.last! + $1.utf16.count) }
         return (

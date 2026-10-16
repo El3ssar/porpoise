@@ -35,6 +35,11 @@ struct TextDifferenceTests {
         #expect(("hello 🌍 old world" as NSString).substring(with: spans.left[0]) == "old")
         #expect(("hello 🌍 new world" as NSString).substring(with: spans.right[0]) == "new")
     }
+    @Test func wordInsertionAtEndPreservesCommonWord() {
+        let spans = WordDifference.ranges("hello", "hello world")
+        #expect(spans.left.allSatisfy { $0.length == 0 })
+        #expect(spans.right.map { ("hello world" as NSString).substring(with: $0) }.joined() == " world")
+    }
     @Test func copyOneChange() {
         let d = TextDifference(left: "a\nold\nz\n", right: "a\nnew\nz\n")
         #expect(d.copying(0, toRight: true) == "a\nold\nz\n")

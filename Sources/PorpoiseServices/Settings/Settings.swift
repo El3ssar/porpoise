@@ -175,7 +175,8 @@ public final class Settings {
         let prefKeys = Mirror(reflecting: self).children.compactMap { ($0.value as? PrefKey)?.key }
         let keys =
             prefKeys + ContextMenuEntry.allCases.map { "ctx." + $0.rawValue } + [
-                "viewProps", "appearancePreferences", "batchRenamePresets", "keyboardShortcuts", "toolbarCommands",
+                "viewProps", "appearancePreferences", "batchRenamePresets", "keyboardShortcuts", "toolbarCommands", "fileDiff.defaultApp",
+                "fileDiff.lastApp",
             ]
         keys.forEach(d.removeObject(forKey:))
         NotificationCenter.default.post(name: Settings.changed, object: nil)

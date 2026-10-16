@@ -75,6 +75,7 @@ extension AppDelegate {
         file.addItem(mi("New Folder with Selection", #selector(W.newFolderWithSelection(_:)), "n", [.command, .control], icon: "folder-new"))
         file.addItem(mi("Eject", #selector(W.ejectVolume(_:)), "e", icon: "media-eject"))
         file.addItem(sep())
+        file.addItem(mi("Compare Files…", #selector(W.compareFiles(_:)), "y", [.command, .option], icon: "document-preview"))
         file.addItem(mi("Quick Look", #selector(W.quickLook(_:)), "y", icon: "document-preview"))
         file.addItem(mi("Share…", #selector(W.shareItems(_:)), icon: "document-share"))
         file.addItem(mi("Properties", #selector(W.properties(_:)), "\r", .option, icon: "document-properties"))

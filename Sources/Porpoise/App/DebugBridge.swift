@@ -209,6 +209,10 @@ final class DebugBridge: NSObject {
             try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: arg))
         case "link":
             if let wc, (wc.tab.linkedRoots != nil) != (arg == "on") { wc.toggleLinkedBrowsing(nil) }
+        case "filediff":
+            let pair = arg.components(separatedBy: "|")
+            if pair.count == 2 { FileDiffWindow.present(left: URL(fileURLWithPath: pair[0]), right: URL(fileURLWithPath: pair[1])) }
+        case "filediffmode": FileDiffWindow.current?.debug(arg)
         case "snapshot": snapshot(to: arg)
         case "lsnapshot": layerSnapshot(to: arg)
         case "wsnapshot": windowServerSnapshot(to: arg)
@@ -888,6 +892,7 @@ final class DebugBridge: NSObject {
         let w: NSWindow?
         if parts.count > 1 {
             switch parts[1] {
+            case "FileDiff": w = FileDiffWindow.current?.window
             case "Settings": w = settingsWindow
             case "Sheet": w = NSApp.windows.first { $0.isVisible && $0.isSheet }
             default: w = NSApp.windows.first { $0.isVisible && $0.title.hasPrefix(parts[1]) }

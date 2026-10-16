@@ -161,6 +161,9 @@ extension MainWindowController {
         if single && item.isBrowsableFolder {
             m.addItem(self.item("Paste Into Folder", "edit-paste", #selector(paste(_:)), obj: Self.pasteIntoFolder))
         }
+        if fileComparisonSelection.count == 2 {
+            m.addItem(self.item("Compare Files…", "document-preview", #selector(compareFiles(_:))))
+        }
         m.addItem(self.item("Duplicate Here", "edit-duplicate", #selector(duplicateItem(_:))))
         m.addItem(self.item("Make Alias", "insert-link", #selector(makeAlias(_:))))
         m.addItem(self.item("Rename…", "edit-rename", #selector(renameItem(_:))))
