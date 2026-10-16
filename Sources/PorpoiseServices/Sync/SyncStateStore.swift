@@ -24,6 +24,10 @@ public actor SyncStateStore {
         else { throw SyncEngineError.invalidState }
         return record.state
     }
+    public func remove(pairID: UUID) throws {
+        let file = folder.appendingPathComponent(pairID.uuidString + ".json")
+        if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
+    }
     public func save(_ state: SyncState, pairID: UUID, leftRoot: URL, rightRoot: URL) throws {
         guard leftRoot.password == nil, rightRoot.password == nil, state.version == 1, state.left.complete, state.right.complete else {
             throw SyncEngineError.invalidState

@@ -44,6 +44,9 @@ public final class Activity: Identifiable {
     public internal(set) var planProgress: PlanProgress?
     var retryPlan: (() -> Void)?
 
+    /// Presentation supplied by an owning engine; configure on main before the plan ends.
+    public var completionSummary: String?
+
     public var fraction: Double { planProgress?.fraction ?? progress?.fraction ?? 0 }
     /// Starts it (queued jobs wait for a free slot).
     var start: (() -> Void)?
@@ -104,6 +107,7 @@ public final class Activity: Identifiable {
             if let p, p.totalBytes > 0 || p.totalFiles > 0 { parts.append(rate.timeLeftText) }
             return parts.joined(separator: " — ")
         case .completed:
+            if errors.isEmpty, let completionSummary { return completionSummary }
             let base = errors.isEmpty ? "Done" : "Done, with \(errors.count) \(errors.count == 1 ? "error" : "errors")"
             var summary: [String] = []
             if let p, p.replacedItems > 0 { summary.append("Replaced \(p.replacedItems)") }

@@ -27,6 +27,8 @@ import Testing
         let store = SavedSyncStore(file: file)
         await #expect(throws: SyncEngineError.self) { try await store.load() }
         #expect(try Data(contentsOf: file) == data)
+        await #expect(throws: SyncEngineError.self) { try await store.save([]) }
+        #expect(try Data(contentsOf: file) == data)
     }
     @Test func firstTwoWayCopiesBothSidesAndNeverDeletes() throws {
         let scratch = try Scratch("saved-sync-first")
@@ -105,6 +107,21 @@ struct AsyncPlanEnqueueTests {
         #expect(executed.value == 0)
         #expect(controller.activities.isEmpty)
     }
+    @Test func quittingDuringPreparationRetainsJournalWithoutStartingPhysicalWork() async throws {
+        let scratch = try Scratch("async-plan-quit")
+        let controller = makeController(ScriptedUI())
+        controller.planJournals = PlanJournalStore(folder: scratch.path("plans"))
+        let journal = PlanJournal(title: "Queued before quit", steps: [.init(id: "1", title: "copy", payload: Data())])
+        let executed = LockedCounter(); var completed = false
+        controller.enqueuePlanAsync(journal, execute: { _, _ in executed.increment() }) { result in
+            if case .success = result { Issue.record("Quit raced into physical execution") }
+            completed = true
+        }
+        controller.interruptAll()
+        #expect(await eventually(5) { completed })
+        #expect(executed.value == 0)
+        #expect(try controller.planJournals.all().map(\.id) == [journal.id])
+    }
     @Test func duplicatePendingIDIsRejectedBeforeItsJournalCanBeOverwritten() async throws {
         let scratch = try Scratch("async-plan-duplicate")
         let controller = makeController(ScriptedUI())
@@ -129,4 +146,77 @@ private final class LockedCounter: @unchecked Sendable {
     private var count = 0
     func increment() { lock.withLock { count += 1 } }
     var value: Int { lock.withLock { count } }
+}
+
+@Suite struct SyncReviewedOverrideTests {
+    @Test func reviewedDeleteVersusEditTrashesOnlyThePresentLeaf() throws {
+        let scratch = try Scratch("sync-reviewed-trash")
+        let left = scratch.path("left"), right = scratch.path("right")
+        for root in [left, right] {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            try Data("original".utf8).write(to: root.appendingPathComponent("report.txt"))
+        }
+        let before = try SyncScanner.compare(left, right)
+        let state = SyncState(left: before.left, right: before.right)
+        try FileManager.default.removeItem(at: left.appendingPathComponent("report.txt"))
+        try Data("edited on right".utf8).write(to: right.appendingPathComponent("report.txt"))
+        let comparison = try SyncScanner.compare(left, right).comparison
+        #expect(SyncPlanner.plan(comparison, mode: .twoWay, previous: state).conflicts.count == 1)
+        let plan = SyncPlanner.plan(comparison, mode: .twoWay, previous: state, overrides: ["report.txt": .trash])
+        #expect(plan.steps.count == 1 && plan.steps[0].action == .trash && plan.steps[0].target == .right)
+        // A nonexistent baseline cannot authorize turning a first-run file into a deletion.
+        #expect(SyncPlanner.plan(comparison, mode: .twoWay, overrides: ["report.txt": .trash]).conflicts.count == 1)
+        #expect(SyncPlanner.plan(comparison, mode: .backup, previous: state, overrides: ["report.txt": .trash]).conflicts.count == 1)
+    }
+    @Test func reviewedTrashCannotBypassFolderOrRootIdentityGuards() {
+        let old = SyncSnapshot(entries: [.init(path: "Folder", kind: .directory)], rootIdentity: "old")
+        let empty = SyncSnapshot(entries: [], rootIdentity: "left")
+        let current = SyncSnapshot(entries: [.init(path: "Folder", kind: .directory)], rootIdentity: "new")
+        let comparison = SyncComparator.compare(empty, current)
+        let plan = SyncPlanner.plan(comparison, mode: .twoWay, previous: .init(left: old, right: old), overrides: ["Folder": .trash])
+        #expect(plan.conflicts.count == 1)
+        #expect(!plan.steps.contains { $0.action == .trash })
+    }
+    @Test func keepBothUsesReviewedSideLabelAndDoesNotAllowPathInjection() {
+        let left = SyncSnapshot(entries: [.init(path: "report.txt", size: 1)])
+        let right = SyncSnapshot(entries: [.init(path: "report.txt", size: 2)])
+        let comparison = SyncComparator.compare(left, right)
+        let plan = SyncPlanner.plan(comparison, mode: .twoWay, overrides: ["report.txt": .keepBoth], keepBothLabel: "Backup")
+        #expect(plan.steps.filter { $0.path == "report (Backup).txt" }.count == 2)
+        let hostile = SyncPlanner.plan(comparison, mode: .twoWay, overrides: ["report.txt": .keepBoth], keepBothLabel: "../other")
+        #expect(hostile.steps.allSatisfy { SyncEntry.isSafePath($0.path) && !$0.path.contains("/") })
+    }
+}
+
+@Suite struct SyncPreviewSafetyTests {
+    @Test func mirrorCanTrashAnExtraFolderOnlyWhenItsExclusionInventoryIsKnownAndClear() throws {
+        let scratch = try Scratch("sync-exclusion-provenance")
+        let left = scratch.path("left"), right = scratch.path("right")
+        try FileManager.default.createDirectory(at: left, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: right.appendingPathComponent("Archive"), withIntermediateDirectories: true)
+        try Data("old".utf8).write(to: right.appendingPathComponent("Archive/old.txt"))
+        let pair = SavedSync(left: left, right: right, mode: .mirror)
+        let safe = try SyncPreparation.preview(pair)
+        #expect(safe.plan.conflicts.isEmpty)
+        #expect(safe.plan.steps.filter { $0.action == .trash }.map(\.path) == ["Archive/old.txt", "Archive"])
+        // An ignored descendant must survive even when all visible children would otherwise be removed.
+        try Data("keep".utf8).write(to: right.appendingPathComponent("Archive/.DS_Store"))
+        let protected = try SyncPreparation.preview(pair)
+        #expect(protected.right.excludedPaths == ["Archive/.DS_Store"])
+        #expect(protected.plan.conflicts.first?.path == "Archive")
+        #expect(!protected.plan.steps.contains { $0.action == .trash && $0.path == "Archive" })
+        let unknown = SyncSnapshot(entries: safe.right.entries)
+        let comparison = SyncComparator.compare(safe.left, unknown, options: pair.options)
+        #expect(SyncPlanner.plan(comparison, mode: .mirror).conflicts.first?.path == "Archive")
+    }
+    @Test func engineJournalRestoresOnlyMatchingVersionedRootAndStepEnvelopes() throws {
+        let left = URL(fileURLWithPath: "/left"), right = URL(fileURLWithPath: "/right")
+        let plan = SyncPlan(steps: [.init(path: "report.txt", sourcePath: "report.txt", source: .left, target: .right, action: .copy)])
+        let journal = try SyncJobs.journal(plan, title: "Backup", leftRoot: left, rightRoot: right)
+        let decoded = try SyncJobs.restore(journal)
+        #expect(decoded.leftRoot == left && decoded.rightRoot == right)
+        #expect(decoded.plan.steps == plan.steps)
+        let unknown = PlanJournal(title: "Different engine", steps: [.init(id: "unrelated", title: "do something", payload: Data("{}".utf8))])
+        #expect(throws: (any Error).self) { try SyncJobs.restore(unknown) }
+    }
 }

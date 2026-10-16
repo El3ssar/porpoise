@@ -35,6 +35,8 @@ extension FileOperationsController {
                 switch saved {
                 case .failure(let error): completion(.failure(error))
                 case .success:
+                    // The persisted baseline remains recoverable, but a quit during preparation never starts IO.
+                    guard !self.isInterrupting else { completion(.failure(FileOperationError.interrupted)); return }
                     guard !self.activities.contains(where: { $0.id == journal.id && !$0.state.isEnded }) else {
                         completion(.failure(FileOperationError.failed("This plan is already running."))); return
                     }

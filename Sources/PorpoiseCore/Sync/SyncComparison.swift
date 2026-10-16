@@ -45,7 +45,8 @@ public enum SyncComparator {
         }
         return .init(
             rows: rows, caseSensitive: sensitive, leftRootIdentity: left.rootIdentity, rightRootIdentity: right.rootIdentity,
-            complete: left.complete && right.complete, options: options)
+            complete: left.complete && right.complete, options: options, leftExcludedPaths: left.excludedPaths,
+            rightExcludedPaths: right.excludedPaths)
     }
     public static func statusOf(_ left: SyncEntry, _ right: SyncEntry, options: SyncCompareOptions) -> SyncStatus {
         guard left.kind == right.kind else { return .changed(.unknown) }

@@ -24,6 +24,7 @@ public struct SavedSync: Codable, Equatable, Identifiable, Sendable {
     public var timestampTolerance: TimeInterval = 2
     public var presets: Set<SyncExclusionPreset> = [.system]
     public var customExclusions: [String] = []
+    public var visibleInSidebar = true
     public var automatic = false
     public var paused = false
     public var lastSynced: Date?
@@ -36,21 +37,37 @@ public struct SavedSync: Codable, Equatable, Identifiable, Sendable {
             method: method, timestampTolerance: timestampTolerance,
             exclusions: SyncExclusionPreset.allCases.filter { presets.contains($0) }.flatMap(\.patterns) + customExclusions)
     }
-    public var description: String { left.lastPathComponent + (mode == .twoWay ? " ⇄ " : " → ") + right.lastPathComponent }
+    public var leftTitle: String { title(left, other: right) }
+    public var rightTitle: String { title(right, other: left) }
+    private func title(_ root: URL, other: URL) -> String {
+        guard root.lastPathComponent == other.lastPathComponent else { return root.lastPathComponent }
+        if root.host != other.host { return root.lastPathComponent + " · " + (root.host ?? "This Mac") }
+        let parent = root.deletingLastPathComponent().lastPathComponent
+        let otherParent = other.deletingLastPathComponent().lastPathComponent
+        return parent != otherParent ? root.lastPathComponent + " · " + parent : root.path
+    }
+    public var description: String { leftTitle + (mode == .twoWay ? " ⇄ " : " → ") + rightTitle }
 }
 
 public actor SavedSyncStore {
     private let file: URL
+    private var didReadExisting = false
+    private var unsafeToOverwrite = false
     private struct Envelope: Codable { var version = 1; var pairs: [SavedSync] }
     public init(file: URL) { self.file = file }
     public func load() throws -> [SavedSync] {
+        didReadExisting = true
         guard FileManager.default.fileExists(atPath: file.path) else { return [] }
-        let envelope = try JSONDecoder().decode(Envelope.self, from: Data(contentsOf: file))
-        guard envelope.version == 1 else { throw SyncEngineError.invalidState }
-        try validate(envelope.pairs)
-        return envelope.pairs
+        do {
+            let envelope = try JSONDecoder().decode(Envelope.self, from: Data(contentsOf: file))
+            guard envelope.version == 1 else { throw SyncEngineError.invalidState }
+            try validate(envelope.pairs)
+            return envelope.pairs
+        } catch { unsafeToOverwrite = true; throw error }
     }
     public func save(_ pairs: [SavedSync]) throws {
+        if !didReadExisting { _ = try load() }
+        guard !unsafeToOverwrite else { throw SyncEngineError.invalidState }
         try validate(pairs)
         try FileManager.default.createDirectory(
             at: file.deletingLastPathComponent(), withIntermediateDirectories: true,
@@ -107,7 +124,7 @@ public enum SyncPreparation {
         let result = try SyncScanner.compare(pair.left, pair.right, options: pair.options, cancellation: cancellation)
         return .init(
             pair: pair, left: result.left, right: result.right, comparison: result.comparison,
-            plan: SyncPlanner.plan(result.comparison, mode: pair.mode, previous: previous, overrides: overrides),
+            plan: SyncPlanner.plan(result.comparison, mode: pair.mode, previous: previous, overrides: overrides, keepBothLabel: pair.rightTitle),
             hasSkippedItems: overrides.values.contains(.skip), firstTwoWay: pair.mode == .twoWay && previous == nil)
     }
     /// Replanning uses immutable scanned metadata, and does no filesystem IO.
@@ -115,7 +132,7 @@ public enum SyncPreparation {
         var next = preview
         next.pair = pair
         next.hasSkippedItems = overrides.values.contains(.skip)
-        next.plan = SyncPlanner.plan(preview.comparison, mode: pair.mode, previous: previous, overrides: overrides)
+        next.plan = SyncPlanner.plan(preview.comparison, mode: pair.mode, previous: previous, overrides: overrides, keepBothLabel: pair.rightTitle)
         next.firstTwoWay = pair.mode == .twoWay && previous == nil
         return next
     }

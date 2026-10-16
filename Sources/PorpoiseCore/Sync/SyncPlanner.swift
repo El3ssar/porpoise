@@ -3,7 +3,7 @@ import Foundation
 public enum SyncPlanner {
     public static func plan(
         _ comparison: SyncComparison, mode: SyncMode, previous: SyncState? = nil,
-        overrides: [String: SyncOverride] = [:]
+        overrides: [String: SyncOverride] = [:], keepBothLabel: String = "right"
     ) -> SyncPlan {
         guard comparison.complete, previous == nil || (previous!.version == 1 && previous!.left.complete && previous!.right.complete) else {
             return .init(steps: [.init(path: "", target: .right, action: .conflict, reason: "Finish scanning both folders before syncing.")])
@@ -18,6 +18,8 @@ public enum SyncPlanner {
                     reason: "A folder or mounted volume changed identity. Reconnect it and compare again.")
             ])
         }
+        let label = keepBothLabel.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: "\0", with: "")
+        let safeLabel = label.isEmpty || label == "." || label == ".." ? "right" : label
         func key(_ path: String) -> String { comparison.caseSensitive ? path : path.precomposedStringWithCanonicalMapping.lowercased() }
         let oldLeft = Dictionary(previous?.left.entries.map { (key($0.path), $0) } ?? [], uniquingKeysWith: { first, _ in first })
         let oldRight = Dictionary(previous?.right.entries.map { (key($0.path), $0) } ?? [], uniquingKeysWith: { first, _ in first })
@@ -34,13 +36,23 @@ public enum SyncPlanner {
                 step = conflict(row, "Names collide on a case-insensitive destination.")
             } else if let l = row.left, let r = row.right, l.kind != r.kind {
                 step = conflict(row, "A folder, file, or link occupies the other side; resolve the type conflict first.")
+            } else if choice == .trash {
+                // Explicitly reviewed delete-versus-edit choice: only a single present leaf may be trashed.
+                // A missing source never silently turns Keep Left/Right into a deletion.
+                if mode == .twoWay, oldLeft[key(row.path)] != nil, oldRight[key(row.path)] != nil, (row.left == nil) != (row.right == nil),
+                    let present = row.left ?? row.right, present.kind != .directory
+                {
+                    step = trash(row, side: row.left == nil ? .right : .left)
+                } else {
+                    step = conflict(row, "Review this folder or type conflict separately before deleting.")
+                }
             } else if choice == .keepBoth, let left = row.left, let right = row.right, left.kind != .directory {
                 if row.status == .same { continue }
                 let base = (right.path as NSString).deletingPathExtension
                 let ext = (right.path as NSString).pathExtension
                 var number = 1, name = ""
                 repeat {
-                    name = base + " (right" + (number == 1 ? "" : " \(number)") + ")" + (ext.isEmpty ? "" : "." + ext)
+                    name = base + " (" + safeLabel + (number == 1 ? "" : " \(number)") + ")" + (ext.isEmpty ? "" : "." + ext)
                     number += 1
                     if let existing = knownEntries[name.lowercased()], !existing.isEmpty,
                         existing.allSatisfy({ SyncComparator.statusOf($0, right, options: comparison.options) == .same })
@@ -79,10 +91,12 @@ public enum SyncPlanner {
                 }
             }
             if var step {
-                if step.action == .trash, (step.target == .left ? row.left : row.right)?.kind == .directory,
-                    !comparison.options.exclusions.isEmpty
-                {
-                    step = conflict(row, "Folder deletion could contain excluded items; review it separately.")
+                if step.action == .trash, (step.target == .left ? row.left : row.right)?.kind == .directory {
+                    let excluded = step.target == .left ? comparison.leftExcludedPaths : comparison.rightExcludedPaths
+                    let containsExcluded =
+                        excluded?.contains { key($0) == key(row.path) || key($0).hasPrefix(key(row.path) + "/") } ?? !comparison.options.exclusions
+                        .isEmpty
+                    if containsExcluded { step = conflict(row, "Folder deletion could contain excluded items; review it separately.") }
                 }
                 step.method = comparison.options.method
                 step.timestampTolerance = comparison.options.timestampTolerance

@@ -33,8 +33,12 @@ public struct SyncSnapshot: Codable, Equatable, Sendable {
     /// A depth-limited listing is suitable for browsing, never for destructive planning.
     public var complete: Bool
     public var rootIdentity: String?
-    public init(entries: [SyncEntry], caseSensitive: Bool = true, complete: Bool = true, rootIdentity: String? = nil) {
-        self.entries = entries; self.caseSensitive = caseSensitive; self.complete = complete; self.rootIdentity = rootIdentity
+    /// Excluded subtree roots observed during scanning. Nil means the provenance is unknown.
+    public var excludedPaths: [String]?
+    public init(entries: [SyncEntry], caseSensitive: Bool = true, complete: Bool = true, rootIdentity: String? = nil, excludedPaths: [String]? = nil)
+    {
+        self.entries = entries; self.caseSensitive = caseSensitive; self.complete = complete; self.rootIdentity = rootIdentity;
+        self.excludedPaths = excludedPaths
     }
 }
 public enum SyncCompareMethod: String, Codable, Sendable { case sizeAndDate, sizeOnly, content }
@@ -61,6 +65,8 @@ public struct SyncComparison: Sendable {
     public var rightRootIdentity: String?
     public var complete: Bool
     public var options: SyncCompareOptions
+    public var leftExcludedPaths: [String]? = nil
+    public var rightExcludedPaths: [String]? = nil
     /// Immediate aligned children; the scanner can separately populate a depth-limited subtree on demand.
     public func children(of path: String = "") -> [SyncDifference] {
         rows.filter { ($0.path as NSString).deletingLastPathComponent == path }
@@ -68,7 +74,7 @@ public struct SyncComparison: Sendable {
 }
 public enum SyncMode: String, Codable, Sendable { case backup, mirror, twoWay }
 public enum SyncAction: String, Codable, Sendable { case copy, replace, trash, mkdir, conflict }
-public enum SyncOverride: String, Codable, Sendable { case skip, keepLeft, keepRight, keepBoth }
+public enum SyncOverride: String, Codable, Sendable { case skip, keepLeft, keepRight, keepBoth, trash }
 public struct SyncStep: Codable, Equatable, Identifiable, Sendable {
     public var id: String { "\(action.rawValue):\(target.rawValue):\(path)" }
     public var path: String

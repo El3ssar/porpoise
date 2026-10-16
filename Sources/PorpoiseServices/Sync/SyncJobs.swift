@@ -19,6 +19,21 @@ public enum SyncJobs {
         }
         return PlanJournal(id: id, title: title, steps: steps)
     }
+    /// Identifies only this engine's versioned journals; unknown engine envelopes remain untouched.
+    public static func restore(_ journal: PlanJournal) throws -> (plan: SyncPlan, leftRoot: URL, rightRoot: URL) {
+        guard journal.version == 1, let first = journal.steps.first else { throw SyncEngineError.invalidState }
+        let decoder = JSONDecoder()
+        let head = try decoder.decode(Payload.self, from: first.operation.payload)
+        guard head.version == 1, head.leftRoot.password == nil, head.rightRoot.password == nil else { throw SyncEngineError.invalidState }
+        let steps = try journal.steps.map { record -> SyncStep in
+            let payload = try decoder.decode(Payload.self, from: record.operation.payload)
+            guard payload.version == 1, payload.leftRoot == head.leftRoot, payload.rightRoot == head.rightRoot,
+                payload.step.id == record.operation.id, payload.step.action != .conflict
+            else { throw SyncEngineError.invalidState }
+            return payload.step
+        }
+        return (.init(steps: steps), head.leftRoot, head.rightRoot)
+    }
     /// Pass this directly to FileOperationsController.enqueuePlan or PlanJob.run.
     /// Physical postconditions reconcile an operation that ran before the completion checkpoint was saved.
     public static func execute(_ step: PlanStep, context: PlanStepContext) throws {
@@ -27,6 +42,5 @@ public enum SyncJobs {
         try context.checkCancellation()
         let cancellation = DiskCancellation(checkpoint: { try context.checkCancellation() })
         try SyncExecutor.execute(payload.step, leftRoot: payload.leftRoot, rightRoot: payload.rightRoot, cancellation: cancellation)
-        context.report(fraction: 1)
     }
 }

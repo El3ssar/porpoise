@@ -77,6 +77,7 @@ public struct PlanProgress: Sendable {
     public let totalSteps: Int
     public let currentTitle: String
     public let stepFraction: Double
+    public var completedStepIDs: [String] = []
     public var fraction: Double { totalSteps == 0 ? 1 : (Double(completedSteps) + stepFraction) / Double(totalSteps) }
 }
 
@@ -115,6 +116,8 @@ public final class PlanJob: @unchecked Sendable {
     public let store: PlanJournalStore
     public private(set) var journal: PlanJournal
     public var onProgress: (PlanProgress) -> Void = { _ in }
+    public var progressInterval: TimeInterval = 0.25
+    private var lastProgress: TimeInterval = -.infinity
     private let condition = NSCondition()
     private var paused = false
     private var cancelled = false
@@ -163,10 +166,18 @@ public final class PlanJob: @unchecked Sendable {
     }
 
     fileprivate func report(index: Int, fraction: Double) {
+        publish(index: index, fraction: fraction, force: true)
+    }
+
+    private func publish(index: Int, fraction: Double, force: Bool = false) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard force || now - lastProgress >= progressInterval else { return }
+        lastProgress = now
         onProgress(
             PlanProgress(
                 completedSteps: journal.steps.filter { $0.state == .completed }.count, totalSteps: journal.steps.count,
-                currentTitle: journal.steps[index].operation.title, stepFraction: fraction.isFinite ? max(0, min(1, fraction)) : 0))
+                currentTitle: journal.steps[index].operation.title, stepFraction: fraction.isFinite ? max(0, min(1, fraction)) : 0,
+                completedStepIDs: journal.steps.filter { $0.state == .completed }.map { $0.operation.id }))
     }
 
     /// A crash between the physical operation and saving completion leaves a running step. The executor must
@@ -183,16 +194,14 @@ public final class PlanJob: @unchecked Sendable {
                 job: self, index: index, wasRunning: journal.steps[index].state == .running, checkpoint: journal.steps[index].checkpoint)
             journal.steps[index].state = .running
             try store.save(journal)
-            report(index: index, fraction: 0)
+            publish(index: index, fraction: 0)
             try execute(journal.steps[index].operation, context)
             // An executor that returns successfully has finished the step, even if interruption arrived meanwhile.
             journal.steps[index].state = .completed
             journal.steps[index].checkpoint = nil
             try store.save(journal)
-            onProgress(
-                PlanProgress(
-                    completedSteps: journal.steps.filter { $0.state == .completed }.count, totalSteps: journal.steps.count,
-                    currentTitle: journal.steps[index].operation.title, stepFraction: 0))
+            publish(index: index, fraction: 0, force: index == journal.steps.count - 1)
+
         }
         try store.remove(journal.id)
     }
