@@ -94,6 +94,8 @@ final class DebugBridge: NSObject {
             compare.bar.forcesOpaque = arg == "on"; compare.footer.forcesOpaque = arg == "on"
         case "comparescrollbench":
             if let compare = wc?.tab.compareView {
+                let activity = ProcessInfo.processInfo.beginActivity(
+                    options: [.userInitiated, .latencyCritical], reason: "Isolated Compare display probe")
                 let probe = Animator(); var intervals: [Double] = [], previous = CACurrentMediaTime()
                 compare.document.drawMilliseconds = []
                 let start = compare.scroll.contentView.bounds.minY
@@ -105,10 +107,13 @@ final class DebugBridge: NSObject {
                         compare.scroll.reflectScrolledClipView(compare.scroll.contentView)
                     })
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.3) {
+                    defer { ProcessInfo.processInfo.endActivity(activity) }
                     _ = probe
                     let data: [String: Any] = [
                         "rows": compare.model.rows.count, "frameIntervalsMS": Array(intervals.dropFirst()),
                         "drawMS": compare.document.drawMilliseconds,
+                        "activityHeld": true, "windowVisible": compare.window?.occlusionState.contains(.visible) ?? false,
+                        "appActive": NSApp.isActive, "isKey": compare.window?.isKeyWindow ?? false,
                     ]
                     try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: arg))
                 }
@@ -116,12 +121,17 @@ final class DebugBridge: NSObject {
         case "compareentrybench":
             let args = arg.components(separatedBy: "|")
             if args.count == 3, let wc {
+                let activity = ProcessInfo.processInfo.beginActivity(
+                    options: [.userInitiated, .latencyCritical], reason: "Isolated Compare entry probe")
                 let probe = Animator(); var intervals: [Double] = [], previous: CFTimeInterval?
+                var callbackTimes: [Double] = []
                 var setup = 0.0, ticks = 0
+                let origin = CACurrentMediaTime()
                 probe.run(
                     duration: 1.8,
                     step: { _ in
                         let now = CACurrentMediaTime()
+                        callbackTimes.append((now - origin) * 1000)
                         if let previous { intervals.append((now - previous) * 1000) }
                         previous = now; ticks += 1
                         // Warm the display link before measuring entry: registration-to-first-callback
@@ -130,15 +140,22 @@ final class DebugBridge: NSObject {
                             let begin = CACurrentMediaTime()
                             wc.startComparing(left: URL(fileURLWithPath: args[1]), right: URL(fileURLWithPath: args[2]))
                             setup = (CACurrentMediaTime() - begin) * 1000
+                            wc.tab.compareView?.document.drawMilliseconds = []
+                            wc.tab.compareView?.document.drawSampleTimes = []
                         }
                     })
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.1) {
+                    defer { ProcessInfo.processInfo.endActivity(activity) }
                     _ = probe
                     let compare = wc.tab.compareView
                     let data: [String: Any] = [
                         "entrySetupMS": setup, "rows": compare?.model.rows.count ?? 0,
                         "phasesMS": self.compareEntryPhases,
                         "frameIntervalsMS": intervals, "drawMS": compare?.document.drawMilliseconds ?? [],
+                        "drawStartMS": compare?.document.drawSampleTimes.map { ($0 - origin) * 1000 } ?? [],
+                        "frameCallbackMS": callbackTimes, "activityHeld": true,
+                        "windowVisible": compare?.window?.occlusionState.contains(.visible) ?? false,
+                        "appActive": NSApp.isActive, "isKey": compare?.window?.isKeyWindow ?? false,
                     ]
                     try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: args[0]))
                 }
@@ -568,6 +585,7 @@ final class DebugBridge: NSObject {
             guard Settings.isTesting,
                 let window = arg.isEmpty ? wc?.window : NSApp.windows.first(where: { $0.title.hasPrefix(arg) })
             else { return }
+            NSApp.unhide(nil)
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             window.level = .floating
             window.orderFrontRegardless()
@@ -962,6 +980,9 @@ final class DebugBridge: NSObject {
             "windowFrame": w.window.map { [$0.frame.minX, $0.frame.minY, $0.frame.width, $0.frame.height] } ?? [],
             "screenHeight": NSScreen.screens.first?.frame.height ?? 0,
             "isKey": w.window?.isKeyWindow ?? false,
+            "appHidden": NSApp.isHidden,
+            "windowVisible": w.window?.isVisible ?? false, "windowMiniaturized": w.window?.isMiniaturized ?? false,
+            "windowOccluded": w.window.map { !$0.occlusionState.contains(.visible) } ?? true,
             "appActive": NSApp.isActive,
             "activationPolicy": NSApp.activationPolicy().rawValue,
             "places": PlacesModel.shared.userEntries.map(\.title),

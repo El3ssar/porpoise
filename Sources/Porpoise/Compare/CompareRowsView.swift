@@ -45,6 +45,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
     private var hoverTicket = 0
     var filterMilliseconds: Double = 0
     var drawMilliseconds: [Double] = []
+    var drawSampleTimes: [Double] = []
     init(model: CompareModel) {
         self.model = model; super.init(frame: .zero); wantsLayer = true
         setAccessibilityLabel("Folder comparison"); setAccessibilityRole(.outline)
@@ -116,7 +117,9 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         }
         if let transition { for (row, position) in leaving { drawRow(row, index: 0, y: position, alpha: 1 - transition.progress, dirty: dirty) } }
         drawMilliseconds.append((CACurrentMediaTime() - started) * 1000)
+        drawSampleTimes.append(started)
         if drawMilliseconds.count > 240 { drawMilliseconds.removeFirst(drawMilliseconds.count - 240) }
+        if drawSampleTimes.count > 240 { drawSampleTimes.removeFirst(drawSampleTimes.count - 240) }
     }
     func color(_ row: SyncDifference) -> NSColor {
         if failedPaths.contains(row.path) { return Theme.compareDanger }
