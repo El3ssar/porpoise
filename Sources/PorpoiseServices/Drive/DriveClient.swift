@@ -47,7 +47,7 @@ public final class DriveClient: @unchecked Sendable {
         baseURL: URL = URL(string: "https://www.googleapis.com/drive/v3/")!, mutationJournal: DriveMutationJournal = .shared,
         metadataDirectory: URL? = nil, report: @escaping @Sendable (Error?) -> Void = { _ in }
     ) {
-        self.mediaCache = DriveMediaCache(accountID: accountID)
+        self.mediaCache = DriveMediaCache(accountID: accountID, directory: metadataDirectory?.appendingPathComponent("Previews"))
         self.metadataCache = DriveMetadataCache(accountID: accountID, directory: metadataDirectory)
         self.mutationJournal = mutationJournal
         self.accountID = accountID; self.tokens = tokens; self.http = http; self.baseURL = baseURL; self.report = report
@@ -164,7 +164,10 @@ public final class DriveClient: @unchecked Sendable {
         file.resourceKey = file.resourceKey ?? resourceKey
         guard (file.id == id || id == "root"), DriveLink.isValidID(file.id), includeTrashed || file.trashed != true else { throw DriveError.notFound }
         remember([file])
-        if id == "root" { lock.withLock { cache["root"] = file } }
+        if id == "root" {
+            lock.withLock { cache["root"] = file }
+            metadataCache.rememberRoot(file)
+        }
         return file
     }
 

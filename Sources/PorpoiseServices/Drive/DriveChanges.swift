@@ -66,7 +66,7 @@ extension DriveClient {
                     let removed = changes.filter { $0.removed == true || $0.file?.trashed == true }.compactMap(\.fileId)
                     metadataCache.apply(files, removed: removed)
                     lock.withLock {
-                        for id in removed { cache[id] = nil }; for file in files { cache[file.id] = file }
+                        for id in removed { cache[id] = nil }; for file in files where !removed.contains(file.id) { cache[file.id] = file }
                     }
                     (RemoteFS.provider(for: DriveLocation(accountID: accountID).url) as? DriveProvider)?.invalidate(preserveDisk: true)
                     NotificationCenter.default.post(name: Self.changed, object: accountID)

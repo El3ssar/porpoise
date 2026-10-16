@@ -159,7 +159,24 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlsplit(self.path)
         if parsed.path == "/__control":
-            self.server.fixtures.update(json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0")))))
+            values = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+            with self.server.mutation_lock:
+                for change in values.pop("remoteChanges", []):
+                    patch = change.get("file", {})
+                    item_id = change.get("fileId", patch.get("id"))
+                    item = next((f for f in self.server.fixtures["files"] if f["id"] == item_id), None)
+                    if change.get("removed"):
+                        if item:
+                            self.server.fixtures["files"].remove(item)
+                        self.server.changes.append({"fileId": item_id, "removed": True})
+                    else:
+                        if item:
+                            item.update(patch)
+                        else:
+                            item = patch
+                            self.server.fixtures["files"].append(item)
+                        self.changed(item)
+                self.server.fixtures.update(values)
             if self.server.fixtures.pop("expireSessions", False):
                 self.server.sessions.clear()
             return self.reply({})

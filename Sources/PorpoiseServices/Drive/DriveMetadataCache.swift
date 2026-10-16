@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import PorpoiseCore
 
@@ -28,6 +29,11 @@ public final class DriveMetadataCache: @unchecked Sendable {
         }
     }
     static var root: URL {
+        if Settings.isTesting {
+            let suite = ProcessInfo.processInfo.environment["PORPOISE_DEFAULTS_SUITE"] ?? String(getpid())
+            let hash = SHA256.hash(data: Data(suite.utf8)).map { String(format: "%02x", $0) }.joined()
+            return FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-drive-tests/" + hash)
+        }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return base.appendingPathComponent("Porpoise/Drive")
     }
@@ -45,6 +51,11 @@ public final class DriveMetadataCache: @unchecked Sendable {
         lock.withLock {
             for file in files { state.files[file.id] = file }
             persist()
+        }
+    }
+    func rememberRoot(_ file: DriveFile) {
+        lock.withLock {
+            state.files["root"] = file; persist()
         }
     }
     func store(_ files: [DriveFile], at location: DriveLocation) {
@@ -67,11 +78,11 @@ public final class DriveMetadataCache: @unchecked Sendable {
             persist()
         }
     }
-    /// Invalidate every collection on a feed event: moves/deletions can affect old parents and virtual collections.
+    /// Patch cached folders, including old parents of moved items, while retaining browsable offline snapshots.
     func apply(_ files: [DriveFile], removed: [String]) {
         lock.withLock {
             for id in removed { state.files[id] = nil }
-            for file in files { state.files[file.id] = file }
+            for file in files where !removed.contains(file.id) { state.files[file.id] = file }
             for key in state.listings.keys {
                 guard var snapshot = state.listings[key] else { continue }
                 snapshot.files.removeAll { removed.contains($0.id) }

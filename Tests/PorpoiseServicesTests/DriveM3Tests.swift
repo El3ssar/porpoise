@@ -47,7 +47,7 @@ import Testing
         _ = try await provider.refresh(root.url)
         try await client.pollChanges()
         let other = try make(server, scratch.url.appendingPathComponent("Other"))
-        _ = try await other.rename("binary-a", to: "Changed on phone.txt")
+        try await DriveMutationTests().control(server, ["remoteChanges": [["file": ["id": "binary-a", "name": "Changed on phone.txt"]]]])
         try await client.pollChanges()
         #expect(provider.cachedListing(root.url)?.contains { $0.name == "Changed on phone.txt" } == true)
         let relaunched = try make(server, scratch.url, id: client.accountID)
@@ -142,11 +142,54 @@ import Testing
         #expect(try await restored.edits.save(session.id).id == "binary-a")
         #expect(await restored.edits.pending().isEmpty)
     }
+    @Test func offlineOpensOnlyPreviouslyCachedPreviewOrEditBytes() async throws {
+        let server = try DriveMutationTests().server(), scratch = try Scratch()
+        let client = try make(server, scratch.url)
+        let file = try await client.file("binary-a")
+        let preview = try await client.preview(file)
+        let session = try await client.edits.open(file)
+        client.setOffline(true)
+        #expect(try await client.preview(file) == preview)
+        #expect(try await client.edits.open(file).id == session.id)
+        let unknown = try await client.file("binary-b")
+        client.setOffline(true)
+        await #expect(throws: DriveError.offline) { try await client.preview(unknown) }
+        await client.mediaCache.clear()
+        #expect(FileManager.default.fileExists(atPath: session.localURL.path))
+        await #expect(throws: DriveError.offline) { try await client.preview(file) }
+    }
+    @Test func sharedDriveCursorExpiredCursorAndBackoffRecovery() async throws {
+        let server = try DriveMutationTests().server(), scratch = try Scratch()
+        let client = try make(server, scratch.url)
+        let shared = DriveLocation(accountID: client.accountID, collection: .sharedDrives)
+        _ = try await client.listPage(shared)
+        try await client.pollChanges()
+        #expect(client.metadataCache.cursor("shared-drive-a") != nil)
+        try await DriveMutationTests().control(server, ["changeFaults": [503, 0]])
+        try await client.pollChanges()
+        try await DriveMutationTests().control(server, ["changeFaults": [410]])
+        try await client.pollChanges()
+        #expect(client.metadataCache.cursor("user") == nil)
+        try await client.pollChanges()
+        #expect(client.metadataCache.cursor("user") != nil)
+        client.startPolling(interval: 30)
+        client.stopPolling()
+    }
+    @Test func retainedEditStoreFailsCleanlyAfterClientIsReleased() async throws {
+        let server = try DriveMutationTests().server(), scratch = try Scratch()
+        var client: DriveClient? = try make(server, scratch.url)
+        let file = try await #require(client).file("binary-a")
+        let edits = try #require(client).edits
+        client = nil
+        await #expect(throws: DriveError.reconnect) { try await edits.open(file) }
+    }
     @Test func searchIsPagedEscapedScopedAndSupportsFullText() async throws {
         let server = try DriveMutationTests().server(), scratch = try Scratch()
         let client = try make(server, scratch.url)
         let root = DriveLocation(accountID: client.accountID)
         try await DriveMutationTests().control(server, ["searchPageSize": 1])
+        try await DriveMutationTests().control(server, ["remoteChanges": [["file": ["id": "binary-a", "description": "a fulltext needle"]]]])
+        #expect(try await client.search("fulltext needle", in: root, fullText: true).files.first?.id == "binary-a")
         let page = try await client.search("report", in: root)
         #expect(page.files.count == 1 && page.nextPageToken != nil)
         #expect(try await client.search("report", in: root, pageToken: page.nextPageToken).files.count == 1)

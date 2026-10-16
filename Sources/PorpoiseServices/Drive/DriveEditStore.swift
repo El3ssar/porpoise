@@ -17,7 +17,7 @@ public struct DriveEditSession: Codable, Sendable, Identifiable {
 /// Durable editable bytes never enter the disposable media LRU. Hash comparison discovers saves after a crash.
 public actor DriveEditStore {
     public static let changed = Notification.Name("PorpoiseDriveEditChanged")
-    private unowned let client: DriveClient
+    private weak var client: DriveClient?
     private let directory: URL
     private var sessions: [UUID: DriveEditSession] = [:]
     private var saving: Set<UUID> = []
@@ -42,6 +42,7 @@ public actor DriveEditStore {
         sessions.values.filter { (try? DriveClient.md5($0.localURL)) != $0.sentMD5 }.sorted { $0.id.uuidString < $1.id.uuidString }
     }
     public func open(_ file: DriveFile) async throws -> DriveEditSession {
+        guard let client else { throw DriveError.reconnect }
         if let pending = pending().first(where: { $0.file.id == file.id }) { return pending }
         if client.isOffline {
             guard let existing = sessions.values.first(where: { $0.file.id == file.id }),
@@ -70,6 +71,7 @@ public actor DriveEditStore {
         return session
     }
     public func save(_ id: UUID) async throws -> DriveFile {
+        guard let client else { throw DriveError.reconnect }
         guard var session = sessions[id], saving.insert(id).inserted else { throw DriveMutationError.conflict }
         defer { saving.remove(id) }
         guard !client.isOffline else {
@@ -109,6 +111,7 @@ public actor DriveEditStore {
         }
     }
     public func keepBoth(_ id: UUID) async throws -> DriveFile {
+        guard let client else { throw DriveError.reconnect }
         guard var session = sessions[id], saving.insert(id).inserted else { throw DriveMutationError.conflict }
         defer { saving.remove(id) }
         let current = try await client.file(session.file.id)
@@ -120,6 +123,7 @@ public actor DriveEditStore {
         return result
     }
     public func replaceWithMine(_ id: UUID) async throws -> DriveFile {
+        guard let client else { throw DriveError.reconnect }
         guard var session = sessions[id], !saving.contains(id) else { throw DriveMutationError.conflict }
         let current = try await client.file(session.file.id)
         guard let revision = current.headRevisionId, DriveLink.isValidID(revision) else { throw DriveMutationError.conflict }
