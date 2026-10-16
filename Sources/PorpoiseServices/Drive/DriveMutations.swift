@@ -200,8 +200,10 @@ extension DriveClient {
         let current = try await file(id, includeTrashed: true)
         let destinationID = parent.id
         if current.driveId != parent.driveId { return try await crossDriveMove(current, parentID: destinationID, operationID: operationID) }
+        var body: [String: Any] = [:]
+        if let name { try RemoteFS.checkName(name); body["name"] = name }
         return try await patchJournaled(
-            id, kind: "move", body: [:],
+            id, kind: "move", body: body,
             query: [
                 URLQueryItem(name: "addParents", value: destinationID),
                 URLQueryItem(name: "removeParents", value: (current.parents ?? []).joined(separator: ",")),
