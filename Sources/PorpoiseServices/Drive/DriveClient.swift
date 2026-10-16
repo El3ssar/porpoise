@@ -22,7 +22,7 @@ public final class DriveClient: @unchecked Sendable {
     private let lock = NSLock()
     private var cache: [String: DriveFile] = [:]
     static let fields =
-        "id,name,mimeType,driveId,resourceKey,size,modifiedTime,webViewLink,owners(displayName,emailAddress,photoLink),shared,capabilities(canDownload,canListChildren),shortcutDetails,exportLinks,trashed,permissions(id,type,role,displayName,emailAddress,photoLink),sharingUser(displayName,emailAddress,photoLink),lastModifyingUser(displayName,emailAddress,photoLink)"
+        "id,name,mimeType,driveId,resourceKey,size,modifiedTime,webViewLink,owners(displayName,emailAddress,photoLink),shared,capabilities(canDownload,canListChildren),shortcutDetails,exportLinks,trashed,permissions(id,type,role,displayName,emailAddress,photoLink),sharingUser(displayName,emailAddress,photoLink),lastModifyingUser(displayName,emailAddress,photoLink),sharedWithMeTime"
 
     public init(
         accountID: UUID, tokens: DriveTokenManager, http: DriveHTTP = DriveHTTP(),

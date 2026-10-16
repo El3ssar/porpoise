@@ -176,6 +176,13 @@ final class Icons {
         let has = IconTheme.shared.has
         if item.isBrowsableFolder { return IconTheme.folderIconName(item.url) }
         if item.fileExtension == "savedSearch" { return "folder-saved-search" }
+        if item.isWebDocument, let kind = item.contentType?.split(separator: ".").last {
+            // Google Docs and the like: the office icon of their kind (the view adds the link emblem: a web document).
+            if has("application-vnd.google-apps.\(kind)") { return "application-vnd.google-apps.\(kind)" }
+            let names = ["document": "x-office-document", "spreadsheet": "x-office-spreadsheet", "presentation": "x-office-presentation"]
+            if let n = names[String(kind)], has(n) { return n }
+            return has("x-office-drawing") && kind == "drawing" ? "x-office-drawing" : "text-html"
+        }
         if let mime = item.mimeType {
             let direct = mime.replacingOccurrences(of: "/", with: "-")
             if has(direct) { return direct }

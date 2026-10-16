@@ -39,7 +39,7 @@ public enum ViewMode: String, Codable, CaseIterable, Sendable {
 /// Roles = columns / sort keys / group keys / additional information (Dolphin's "roles").
 public enum ItemRole: String, Codable, CaseIterable, Sendable {
     case name, size, modificationTime, creationTime, accessTime, type, path, extension_, permissions, owner, group,
-        linkDestination, tags
+        linkDestination, tags, sharedTime
 
     public var title: String {
         switch self {
@@ -56,6 +56,7 @@ public enum ItemRole: String, Codable, CaseIterable, Sendable {
         case .group: return "User Group"
         case .linkDestination: return "Link Destination"
         case .tags: return "Tags"
+        case .sharedTime: return "Shared"
         }
     }
 
@@ -65,7 +66,7 @@ public enum ItemRole: String, Codable, CaseIterable, Sendable {
     }
 
     public static var otherRoles: [ItemRole] {
-        [.path, .extension_, .linkDestination, .permissions, .owner, .group]
+        [.path, .extension_, .linkDestination, .permissions, .owner, .group, .sharedTime]
     }
 
     /// Ascending / descending labels in the Sort By menu, as Dolphin words them.
@@ -73,7 +74,7 @@ public enum ItemRole: String, Codable, CaseIterable, Sendable {
         switch self {
         case .name: return ("A-Z", "Z-A")
         case .size: return ("Smallest First", "Largest First")
-        case .modificationTime, .creationTime, .accessTime: return ("Oldest First", "Newest First")
+        case .modificationTime, .creationTime, .accessTime, .sharedTime: return ("Oldest First", "Newest First")
         default: return ("Ascending", "Descending")
         }
     }
@@ -83,7 +84,7 @@ public enum ItemRole: String, Codable, CaseIterable, Sendable {
         switch self {
         case .name: return 320
         case .size: return 90
-        case .modificationTime, .creationTime, .accessTime: return 170
+        case .modificationTime, .creationTime, .accessTime, .sharedTime: return 170
         case .type: return 160
         case .path, .linkDestination: return 240
         case .permissions: return 110
@@ -198,10 +199,16 @@ public struct ViewOverride: Sendable {
     private var mode: (shown: ViewMode, original: ViewMode)?
     private var previews: (shown: Bool, original: Bool)?
     private var detailsRoles: (shown: [ItemRole]?, original: [ItemRole]?)?
+    private struct Sort: Equatable {
+        var role: ItemRole, order: SortOrder, foldersFirst: Bool
+        init(_ p: ViewProperties) { (role, order, foldersFirst) = (p.sortRole, p.sortOrder, p.foldersFirst) }
+        func put(into p: inout ViewProperties) { (p.sortRole, p.sortOrder, p.foldersFirst) = (role, order, foldersFirst) }
+    }
+    private var sort: (shown: Sort, original: Sort)?
 
     public init() {}
 
-    public var isEmpty: Bool { mode == nil && previews == nil && detailsRoles == nil }
+    public var isEmpty: Bool { mode == nil && previews == nil && detailsRoles == nil && sort == nil }
 
     /// Applies `change` to `props` as a temporary change. Applying again keeps the first original values.
     public mutating func apply(to props: inout ViewProperties, _ change: (inout ViewProperties) -> Void) {
@@ -213,6 +220,7 @@ public struct ViewOverride: Sendable {
         if p.extraRoles[key] != props.extraRoles[key] {
             detailsRoles = (p.extraRoles[key], detailsRoles.map { $0.original } ?? props.extraRoles[key])
         }
+        if Sort(p) != Sort(props) { sort = (Sort(p), sort?.original ?? Sort(props)) }
         props = p
     }
 
@@ -225,6 +233,7 @@ public struct ViewOverride: Sendable {
         if let r = detailsRoles {
             if p.extraRoles[key] == r.shown { p.extraRoles[key] = r.original } else { detailsRoles = nil }
         }
+        if let s = sort { if Sort(p) == s.shown { s.original.put(into: &p) } else { sort = nil } }
         return p
     }
 

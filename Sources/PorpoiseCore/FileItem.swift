@@ -21,6 +21,8 @@ public struct FileItem: Hashable, Sendable {
     public let linkDestination: String?
     public let isReadable: Bool
     public let isWritable: Bool
+    /// When it was shared with the user (cloud items in "Shared with me").
+    public let sharedDate: Date?
 
     public init(
         url: URL, name: String, isDirectory: Bool, isSymlink: Bool = false, isHidden: Bool = false,
@@ -28,7 +30,7 @@ public struct FileItem: Hashable, Sendable {
         modificationDate: Date? = nil, creationDate: Date? = nil, accessDate: Date? = nil,
         contentType: String? = nil, posixPermissions: Int = 0o644, owner: String? = nil,
         group: String? = nil, linkDestination: String? = nil, isReadable: Bool = true,
-        isWritable: Bool = true
+        isWritable: Bool = true, sharedDate: Date? = nil
     ) {
         self.url = url
         self.name = name
@@ -48,7 +50,22 @@ public struct FileItem: Hashable, Sendable {
         self.linkDestination = linkDestination
         self.isReadable = isReadable
         self.isWritable = isWritable
+        self.sharedDate = sharedDate
     }
+
+    /// The date a date role shows (nil for other roles).
+    public func date(for role: ItemRole) -> Date? {
+        switch role {
+        case .modificationTime: return modificationDate
+        case .creationTime: return creationDate
+        case .accessTime: return accessDate
+        case .sharedTime: return sharedDate
+        default: return nil
+        }
+    }
+
+    /// A Google Doc, Sheet, Slides…: a web document, opened in the browser, with no size of its own.
+    public var isWebDocument: Bool { contentType?.hasPrefix("com.google.apps.") == true && !isDirectory }
 
     /// Folders the user browses into. Packages (.app, .bundle…) behave like files, as in Finder.
     public var isBrowsableFolder: Bool { isDirectory && !isPackage }
