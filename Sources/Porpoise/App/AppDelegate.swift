@@ -37,6 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         Updates.shared.start()
         PrivilegedHelper.migrateFromLoginItems()
+        // After the windows are up, so the question has something behind it.
+        if !Settings.isTesting { DispatchQueue.main.async { [weak self] in self?.offerRecovery() } }
     }
 
     /// Light or dark as chosen in Settings (as macOS is, by default), and the switch when either changes: what's drawn
@@ -139,6 +141,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             a.addButton(withTitle: "Cancel")
             if a.runModal() != .alertFirstButtonReturn { return .terminateCancel }
         }
+        // Copies still running stop where they are and can be resumed next time.
+        let running = FileOperationsController.shared.activities.filter { $0.state.isActive || $0.state == .queued }
+        if !running.isEmpty {
+            let a = NSAlert()
+            a.messageText =
+                running.count == 1
+                ? "A file operation is still running. Quit anyway?" : "\(running.count) file operations are still running. Quit anyway?"
+            a.informativeText =
+                "Copies and moves stop where they are; Porpoise offers to resume them next time it starts. Deleting is never resumed without asking."
+            a.addButton(withTitle: "Quit")
+            a.addButton(withTitle: "Cancel")
+            if a.runModal() != .alertFirstButtonReturn { return .terminateCancel }
+        }
         saveSession()
         return .terminateNow
     }
@@ -146,6 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
     func applicationWillTerminate(_ notification: Notification) {
+        FileOperationsController.shared.interruptAll()
         VideoPreview.shared.cleanUp()
         RemoteFS.disconnectAll()
         AndroidTools.stopServerIfOurs()
@@ -225,6 +241,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func showPermissions(_ sender: Any?) { OnboardingWindowController.show(at: OnboardingWindowController.firstMissing) }
     @objc func checkForUpdates(_ sender: Any?) { Updates.shared.checkForUpdates(sender) }
     @objc func supportPorpoise(_ sender: Any?) { if let u = URL(string: AppInfo.sponsorPage) { NSWorkspace.shared.open(u) } }
+
+    @objc func showActivity(_ sender: Any?) { ActivityWindowController.shared.show() }
+
+    /// Jobs left unfinished last time (a quit, a crash, a power cut): offers to resume each, after checking that
+    /// its items haven't changed. Deleting is never resumed without asking.
+    func offerRecovery() {
+        let c = FileOperationsController.shared
+        for plan in c.recoveryPlans() {
+            let a = NSAlert()
+            a.messageText = plan.isEmpty ? "\(plan.kind.verb) was interrupted last time" : plan.summary
+            var info = plan.notes
+            if plan.isDestructive && !plan.isEmpty {
+                a.alertStyle = .warning
+                info.append(
+                    "Resuming deletes the remaining items: \(plan.sources.prefix(3).map(\.lastPathComponent).joined(separator: ", "))\(plan.sources.count > 3 ? "…" : "")."
+                )
+            } else if !plan.isEmpty {
+                info.append("Items already finished are not done again; a large file continues from where it stopped.")
+            }
+            a.informativeText = info.joined(separator: "\n")
+            if plan.isEmpty {
+                a.addButton(withTitle: "OK")
+                a.runModal()
+                c.discard(plan)
+                continue
+            }
+            a.addButton(withTitle: plan.isDestructive ? "Delete Remaining" : "Resume")
+            a.addButton(withTitle: "Discard")
+            a.addButton(withTitle: "Later")
+            if plan.isDestructive { a.buttons[0].hasDestructiveAction = true }
+            switch a.runModal() {
+            case .alertFirstButtonReturn: c.recover(plan, window: nil)
+            case .alertSecondButtonReturn: c.discard(plan)
+            default: break  // asked again next launch
+            }
+        }
+    }
 
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil { settingsWindow = SettingsWindowController() }

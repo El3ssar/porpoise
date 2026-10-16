@@ -232,6 +232,34 @@ import Testing
 @Suite struct FileJobDiskImageTests {
     let fm = FileManager.default
 
+    @Test func fullDestinationCanBeFreedAndRetriedWithoutPublishingPartialData() throws {
+        let s = try Scratch("space-retry")
+        let disk = try DiskImage(megabytes: 64, in: s)
+        let source = s.path("incoming.bin")
+        try Data(repeating: 73, count: 16 << 20).write(to: source)
+        let filler = disk.volume.appendingPathComponent("filler")
+        fm.createFile(atPath: filler.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: filler)
+        do {
+            for _ in 0..<128 { try handle.write(contentsOf: Data(repeating: 0x8B, count: 1 << 20)) }
+        } catch { #expect(FileJob.isNoSpace(error)) }
+        try handle.close()
+        let job = FileJob(kind: .copy, sources: [source], destinationFolder: disk.volume)
+        job.allowsClone = false; job.resumableSize = 1
+        var prompts = 0
+        job.onNoSpace = { needed in
+            prompts += 1
+            #expect(needed == 16 << 20)
+            #expect(!FileJob.itemExists(at: disk.volume.appendingPathComponent("incoming.bin")))
+            try? self.fm.removeItem(at: filler)
+            return prompts == 1
+        }
+        _ = try job.run()
+        #expect(prompts == 1 && job.errors.isEmpty && !job.isCancelled)
+        #expect(try Data(contentsOf: source) == Data(contentsOf: disk.volume.appendingPathComponent("incoming.bin")))
+        #expect(try fm.contentsOfDirectory(atPath: disk.volume.path).filter { $0.contains("porpoise-") }.isEmpty)
+    }
+
     // MARK: Cancelling
 
     @Test func cancellingMidCopyRemovesThePartialCopyAndKeepsTheSource() throws {
@@ -240,6 +268,7 @@ import Testing
         let big = s.path("big.bin")
         try Data(repeating: 7, count: 24 << 20).write(to: big)
         let job = FileJob(kind: .move, sources: [big], destinationFolder: disk.volume)
+        job.publishInterval = 0  // deterministic cancellation on the first data chunk
         job.onProgress = { [unowned job] p in
             // The first report comes before any data; waiting past the reporting interval lets the next one,
             // with the copy under way, through at once.

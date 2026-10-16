@@ -176,6 +176,8 @@ final class FTPProvider: RemoteProvider {
 
     func makeFolder(_ remote: URL) throws { try command("MKD \(try rel(remote))") }
 
+    func removeEmptyFolder(_ remote: URL) throws { try command("RMD \(try rel(remote))") }
+
     /// Most servers let RNTO replace an existing file, so the target is checked first.
     func rename(_ remote: URL, to newName: String) throws {
         try RemoteFS.checkName(newName)
@@ -195,5 +197,32 @@ final class FTPProvider: RemoteProvider {
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
         for r in remote { try upload(try download(r, into: tmp), into: folder) }
+    }
+}
+
+extension FTPProvider: SyncRemotePublishing {
+    public func publishSyncFile(_ staged: URL, to target: URL, modified: Date?) throws {
+        if let modified {
+            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0); formatter.dateFormat = "yyyyMMddHHmmss"
+            // MFMT is optional in FTP: failure leaves the existing target intact. Content mode needs no MFMT.
+            try command("MFMT \(formatter.string(from: modified)) \(try rel(staged))")
+        }
+        // RNTO replaces a file atomically on supporting servers; otherwise fail without a delete fallback.
+        try command("RNFR \(try rel(staged))", "RNTO \(try rel(target))")
+    }
+}
+
+extension FTPProvider: SyncRemoteMetadata {
+    public func syncModificationDate(_ remote: URL) throws -> Date {
+        let headers = String(decoding: try curlRun(["--head", base(remote.path)]), as: UTF8.self)
+        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .gmt; formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        for line in headers.components(separatedBy: "\n") where line.lowercased().hasPrefix("last-modified:") {
+            if let date = formatter.date(from: String(line.dropFirst("Last-Modified:".count)).trimmingCharacters(in: .whitespacesAndNewlines)) {
+                return date
+            }
+        }
+        throw SyncEngineError.unsupported("This FTP server does not provide precise modification dates. Choose Content or Size comparison.")
     }
 }

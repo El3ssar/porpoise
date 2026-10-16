@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Transfers that survive interruptions.** Window › Activity (⌥⌘J) lists queued, running, paused and finished
+  copies with speed, amounts and time left; reorder the queue, choose how many run at once, pause and resume, cancel,
+  and retry failed items. Large files resume from where they stopped, even after quitting: next launch Porpoise
+  offers to finish interrupted jobs once it has checked nothing changed meanwhile, and never repeats a deletion
+  without asking. Copies are written under a hidden name until complete, can be verified (size and SHA-256), and
+  every operation goes in a searchable history you can export as CSV.
+
 ## 0.6.3
 
 - **Zoom in the Applications library.** The zoom slider, ⌘+/⌘−, ⌘0, a pinch and ⌘-scroll now size the app library's

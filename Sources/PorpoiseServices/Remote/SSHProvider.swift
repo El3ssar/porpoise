@@ -189,6 +189,8 @@ final class SSHProvider: RemoteProvider {
 
     func makeFolder(_ remote: URL) throws { try exec("mkdir -p -- \(shellPath(remote))") }
 
+    func removeEmptyFolder(_ remote: URL) throws { try exec("rmdir -- \(shellPath(remote))") }
+
     func rename(_ remote: URL, to newName: String) throws {
         try RemoteFS.checkName(newName)
         let src = shellPath(remote), dst = shellPath(remote.deletingLastPathComponent().appendingPathComponent(newName))

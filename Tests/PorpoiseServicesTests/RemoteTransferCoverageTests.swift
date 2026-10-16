@@ -42,8 +42,10 @@ final class RemoteTransferCoverageTests {
 
     private func read(_ url: URL) -> String? { try? String(contentsOf: url, encoding: .utf8) }
 
-    private func run(_ kind: FileOperationKind, _ urls: [URL], to folder: URL? = nil) async -> (results: [URL], errors: [String]) {
-        let ui = ScriptedUI()
+    private func run(_ kind: FileOperationKind, _ urls: [URL], to folder: URL? = nil, conflicts: [ConflictAnswer] = []) async -> (
+        results: [URL], errors: [String]
+    ) {
+        let ui = ScriptedUI(conflicts: conflicts)
         let results = await makeController(ui).perform(kind, urls, to: folder)
         return (results, ui.errors)
     }
@@ -79,11 +81,60 @@ final class RemoteTransferCoverageTests {
         #expect(moved.errors.isEmpty)
         #expect(read(dir.appendingPathComponent("b.txt")) == "b" && local.read("b.txt") == nil)
 
-        // The name is taken now: reported, never overwritten.
+        // The name is taken now: the user chooses Skip; the previous bytes remain.
         try local.file("a.txt", "newer")
-        let again = await run(.copy, [a], to: dest)
-        #expect(again.results.isEmpty && again.errors.count == 1)
+        let again = await run(.copy, [a], to: dest, conflicts: [.init(.skip)])
+        #expect(again.results.isEmpty && again.errors.isEmpty)
         #expect(read(dir.appendingPathComponent("a.txt")) == "a")
+    }
+
+    @Test func remoteDifferentReplacesOnlyChangedFiles() async throws {
+        let dir = try server.folder()
+        let same = try local.file("src/same", "same")
+        let changed = try local.file("src/changed", "incoming")
+        try write("same", dir.appendingPathComponent("same"))
+        try write("old", dir.appendingPathComponent("changed"))
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        for url in [same, dir.appendingPathComponent("same")] {
+            try fm.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
+        }
+        let before = JobJournal.Fingerprint(dir.appendingPathComponent("same"))
+        Settings.shared.transferConflictRule = .different
+        let c = makeController(ScriptedUI())
+        _ = await c.perform(.copy, [same, changed], to: remoteFolder(dir))
+        #expect(read(dir.appendingPathComponent("changed")) == "incoming")
+        #expect(JobJournal.Fingerprint(dir.appendingPathComponent("same")) == before)
+        #expect(c.activities.last?.progress?.skippedIdenticalItems == 1)
+        #expect(c.activities.last?.progress?.replacedItems == 1)
+        #expect(try fm.contentsOfDirectory(atPath: dir.path).allSatisfy { !$0.hasPrefix(".porpoise-transfer-") })
+    }
+
+    @Test func stopThenResumeRemoteQueueKeepsFinishedFilesAndCleansStaging() async throws {
+        let dir = try server.folder()
+        let small = try local.file("src/first.txt", "finished")
+        let big = try local.file("src/large.bin", size: 256 << 20)
+        let c = makeController(ScriptedUI())
+        c.run(.copy, [small, big], to: remoteFolder(dir), window: nil)
+        let activity = try #require(c.activities.last)
+        #expect(
+            await eventually(20) {
+                let names = (try? self.fm.contentsOfDirectory(atPath: dir.path)) ?? []
+                return self.fm.fileExists(atPath: dir.appendingPathComponent("first.txt").path)
+                    && names.contains { $0.hasPrefix(".porpoise-transfer-") }
+            })
+        c.pause(activity)
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(activity.state == .paused)
+        let first = JobJournal.Fingerprint(dir.appendingPathComponent("first.txt"))
+        c.cancel(activity)
+        #expect(await eventually(20) { activity.state == .cancelled })
+        #expect(try fm.contentsOfDirectory(atPath: dir.path) == ["first.txt"])
+        c.resume(activity)
+        let resumed = try #require(c.activities.last)
+        #expect(await eventually(30) { resumed.state.isEnded })
+        #expect(resumed.state == .completed)
+        #expect(JobJournal.Fingerprint(dir.appendingPathComponent("first.txt")) == first)
+        #expect(JobJournal.Fingerprint(dir.appendingPathComponent("large.bin"))?.size == 256 << 20)
     }
 
     @Test func copiesAndMovesWithinOneHost() async throws {

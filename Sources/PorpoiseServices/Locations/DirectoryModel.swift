@@ -43,6 +43,20 @@ public struct ItemGroup {
 /// The items one view shows: loading, live updates, sorting, filtering, grouping, expansion and selection.
 /// Main-thread only (Dolphin's KFileItemModel + selection manager).
 public final class DirectoryModel {
+    private var transferObserver: NSObjectProtocol?
+    private var incomingItems: [FileItem] = []
+    public private(set) var incomingProgress: [URL: Double] = [:]
+    private func updateIncoming() {
+        let activities = FileOperationsController.shared.activities.filter { $0.state.isActive }
+        let pairs = activities.compactMap { activity -> (FileItem, Double)? in
+            guard let item = activity.incomingItem, item.url.deletingLastPathComponent().standardized == location.standardized else { return nil }
+            return (item, activity.incomingFraction)
+        }
+        let next = pairs.map { $0.0 }
+        incomingProgress = Dictionary(pairs.map { ($0.0.url, $0.1) }, uniquingKeysWith: max)
+        if incomingItems != next { incomingItems = next; rebuild() } else if !next.isEmpty { onChange?() }
+    }
+    deinit { if let transferObserver { NotificationCenter.default.removeObserver(transferObserver) } }
     public private(set) var location: URL
     public private(set) var items: [FileItem] = []  // top level, unsorted, including hidden
     public private(set) var rows: [Row] = [] { didSet { rowIndex = nil; rowIndexByPath = nil } }
@@ -176,6 +190,9 @@ public final class DirectoryModel {
     public init(location: URL) {
         self.location = location
         self.props = Self.storedProps(for: location)
+        transferObserver = NotificationCenter.default.addObserver(forName: FileOperationsController.activityChanged, object: nil, queue: .main) {
+            [weak self] _ in self?.updateIncoming()
+        }
     }
 
     /// The display style saved for a location; virtual locations (Recent Files, Tags, Smart Folders) have their own.
@@ -224,6 +241,7 @@ public final class DirectoryModel {
         let changed = url.standardizedFileURL != location.standardizedFileURL
         location = url
         if changed {
+            incomingItems = []; incomingProgress = [:]
             expanded = []
             children = [:]
             folderCounts = [:]
@@ -528,7 +546,9 @@ public final class DirectoryModel {
             top = ItemSorter.merge(kept, adding: visible(adding, filtered: false), props: props, choice: choice, folderSizes: folderCounts)
             sortedTop = top
         } else {
-            let all = visible(searchResults ?? items, filtered: false)
+            let incomingURLs = Set(incomingItems.map(\.url))
+            let listing = items.filter { !incomingURLs.contains($0.url) } + incomingItems
+            let all = visible(searchResults ?? listing, filtered: false)
             // Finder tags are read (and cached) only when sorting by them.
             top = ItemSorter.sort(
                 all, props: props, choice: choice, folderSizes: folderCounts,

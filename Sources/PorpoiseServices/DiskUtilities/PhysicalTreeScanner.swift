@@ -89,7 +89,7 @@ public enum PhysicalTreeScanner {
         return result
     }
 
-    private static func children(_ folder: URL, cancellation: DiskCancellation) throws -> [DiskEntry] {
+    static func children(_ folder: URL, cancellation: DiskCancellation, strict: Bool = false) throws -> [DiskEntry] {
         let fd = open(folder.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { close(fd) }
@@ -103,7 +103,7 @@ public enum PhysicalTreeScanner {
             try cancellation.check()
             let count = buffer.withUnsafeMutableBytes { getattrlistbulk(fd, &attrs, $0.baseAddress!, $0.count, 0) }
             if count == 0 { return items }
-            if count < 0 { return try posixChildren(folder, cancellation: cancellation) }
+            if count < 0 { return try posixChildren(folder, cancellation: cancellation, strict: strict) }
             do {
                 try buffer.withUnsafeBytes { raw in
                     var offset = 0
@@ -136,21 +136,23 @@ public enum PhysicalTreeScanner {
                         if returned.fileattr & attrgroup_t(ATTR_FILE_DATALENGTH) != 0 { size = try read(Int64.self) }
                         let url = folder.appendingPathComponent(name)
                         if inode == 0 || device == 0 || kind == 0 {
-                            if let fallback = try? self.entry(url) { items.append(fallback) }
+                            if strict { items.append(try self.entry(url)) } else if let fallback = try? self.entry(url) { items.append(fallback) }
                         } else if kind == 1 || kind == 2 || kind == 5 {
                             items.append(
                                 DiskEntry(
                                     url: url, identity: DiskIdentity(device: device, inode: inode), directory: kind == 2, symlink: kind == 5,
                                     size: max(0, size), allocated: max(0, allocated),
                                     modified: Date(timeIntervalSince1970: Double(modified.tv_sec) + Double(modified.tv_nsec) / 1e9)))
+                        } else if strict {
+                            throw CocoaError(.fileReadUnsupportedScheme)
                         }
                         offset += length
                     }
                 }
-            } catch { return try posixChildren(folder, cancellation: cancellation) }
+            } catch { return try posixChildren(folder, cancellation: cancellation, strict: strict) }
         }
     }
-    private static func posixChildren(_ folder: URL, cancellation: DiskCancellation) throws -> [DiskEntry] {
+    private static func posixChildren(_ folder: URL, cancellation: DiskCancellation, strict: Bool = false) throws -> [DiskEntry] {
         guard let dir = opendir(folder.path) else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { closedir(dir) }
         var items: [DiskEntry] = []
@@ -162,7 +164,7 @@ public enum PhysicalTreeScanner {
             if name == "." || name == ".." { continue }
             let url = folder.appendingPathComponent(name)
             do { items.append(try entry(url)) } catch let err {
-                if (err as? CocoaError)?.code != .fileReadUnsupportedScheme { throw err }
+                if strict || (err as? CocoaError)?.code != .fileReadUnsupportedScheme { throw err }
             }
         }
         return items

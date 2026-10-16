@@ -10,6 +10,12 @@ public protocol FileOperationsUI: AnyObject {
     func showErrors(_ errors: [String], window: AnyObject?)
     /// An item of that name exists at the destination (KIO's rename dialog). Called on the main thread.
     func resolveConflict(_ info: ConflictInfo, kind: FileOperationKind) -> ConflictAnswer
+    /// Presents without blocking the main queue; the worker waits for completion.
+    func resolveConflict(
+        _ info: ConflictInfo, kind: FileOperationKind, window: AnyObject?, job: FileJob, completion: @escaping (ConflictAnswer) -> Void)
+    func cancelConflict(for job: FileJob)
+    func resolveDiskFull(destination: URL?, neededBytes: Int64, window: AnyObject?, job: FileJob, completion: @escaping (Bool) -> Void)
+    func showTransferErrors(_ activity: Activity, window: AnyObject?)
     func jobStarted(_ job: FileJob)
     func jobProgressed(_ job: FileJob, _ progress: JobProgress)
     func jobFinished(_ job: FileJob)
@@ -21,6 +27,16 @@ public protocol FileOperationsUI: AnyObject {
 }
 
 public extension FileOperationsUI {
+    func resolveConflict(
+        _ info: ConflictInfo, kind: FileOperationKind, window: AnyObject?, job: FileJob, completion: @escaping (ConflictAnswer) -> Void
+    ) {
+        completion(resolveConflict(info, kind: kind))
+    }
+    func cancelConflict(for job: FileJob) {}
+    func resolveDiskFull(destination: URL?, neededBytes: Int64, window: AnyObject?, job: FileJob, completion: @escaping (Bool) -> Void) {
+        completion(false)
+    }
+    func showTransferErrors(_ activity: Activity, window: AnyObject?) { showErrors(activity.errors, window: window) }
     var reviewsAppCleanup: Bool { false }
     func reviewAppCleanup(_ items: [URL], window: AnyObject?, completion: @escaping ([URL]?) -> Void) { completion([]) }
 }

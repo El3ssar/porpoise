@@ -122,6 +122,16 @@ extension ItemListView {
                 img.draw(in: er, from: .zero, operation: .sourceOver, fraction: 0.85)
             }
         }
+        let incoming = model.incomingProgress[item.url]
+        NSGraphicsContext.saveGraphicsState()
+        if incoming != nil { NSGraphicsContext.current?.cgContext.setAlpha(0.5) }
+        defer {
+            NSGraphicsContext.restoreGraphicsState()
+            if let incoming, mode != .details {
+                let name = nameTextRect(i)
+                drawIncomingBar(incoming, in: CGRect(x: name.minX, y: name.maxY + 2, width: min(48, name.width), height: 4))
+            }
+        }
         let (image, imageRect) = drawIcon(i)
         let cloud = model.shownCloud(for: item).state
         drawCloudBadge(cloud, row: i, image: image, imageRect: imageRect, selected: selected)
@@ -176,7 +186,7 @@ extension ItemListView {
     private func drawIcon(_ i: Int) -> (NSImage, CGRect) {
         let item = model.rows[i].item
         let ir = iconRect(i)
-        let alpha: CGFloat = (cutURLs.contains(item.url) || item.isHidden) ? 0.5 : 1
+        let alpha: CGFloat = (cutURLs.contains(item.url) || item.isHidden || model.incomingProgress[item.url] != nil) ? 0.5 : 1
         if model.props.previews {
             if Thumbnails.wantsPreview(item), let thumb = Thumbnails.shared.thumbnail(for: item, size: iconSize) {
                 let ts = thumb.size
@@ -338,11 +348,31 @@ extension ItemListView {
         for role in detailsRoles.dropFirst() {
             let w = columnWidths[role] ?? 100
             let p = role.rightAligned ? Self.rightColumnParagraph : Self.leftColumnParagraph
+            if role == .size, let incoming = model.incomingProgress[item.url] {
+                drawIncomingBar(incoming, in: CGRect(x: x + 6, y: y + lineHeight / 2 - 1.5, width: min(48, max(12, w - 50)), height: 4))
+                ("\(Int(incoming * 100))%" as NSString).draw(
+                    in: CGRect(x: x + min(72, max(24, w - 38)), y: y, width: 38, height: lineHeight),
+                    withAttributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Theme.viewTextInactive])
+                x += w; continue
+            }
             (model.text(for: role, of: item) as NSString).draw(
                 in: CGRect(x: x + 6, y: y, width: w - 14, height: lineHeight),
                 withAttributes: [.font: font, .foregroundColor: Theme.viewText, .paragraphStyle: p])
             x += w
         }
+    }
+
+    private func drawIncomingBar(_ fraction: Double, in rect: CGRect) {
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current?.cgContext.setAlpha(1)
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        Theme.viewText.withAlphaComponent(0.14).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 1.5, yRadius: 1.5).fill()
+        Theme.activeText.setFill()
+        NSBezierPath(
+            roundedRect: CGRect(x: rect.minX, y: rect.minY, width: rect.width * max(0, min(1, fraction)), height: rect.height), xRadius: 1.5,
+            yRadius: 1.5
+        ).fill()
     }
 
     /// A content match's line after its name: dimmed, the text searched for in full color.
