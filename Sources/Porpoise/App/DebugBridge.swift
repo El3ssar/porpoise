@@ -570,6 +570,13 @@ final class DebugBridge: NSObject {
                     let footer = CGRect(x: 0, y: CGFloat(image.height) - 28 * scale, width: CGFloat(image.width), height: 28 * scale)
                     if let crop = image.cropping(to: seam) { self.writePNG(crop, to: args[0] + ".seam.png") }
                     if let crop = image.cropping(to: footer) { self.writePNG(crop, to: args[0] + ".footer.png") }
+                    if let bar = self.wc?.tab.compareView?.bar {
+                        let rect = bar.convert(bar.bounds, to: nil)
+                        let pixels = CGRect(
+                            x: rect.minX * scale, y: (window.frame.height - rect.maxY) * scale,
+                            width: rect.width * scale, height: rect.height * scale)
+                        if let crop = image.cropping(to: pixels) { self.writePNG(crop, to: args[0] + ".bar.png") }
+                    }
                 }
             }
         case "transferdialog":
@@ -795,6 +802,24 @@ final class DebugBridge: NSObject {
     /// Includes the native popup menu, which is a separate WindowServer window. Only this process's
     /// onscreen windows are captured, so another app's content cannot enter a design review artifact.
     private func windowServerMenuSnapshot(to path: String) {
+        let native = NSApp.windows.filter(\.isVisible).sorted { $0.level.rawValue > $1.level.rawValue }
+        let metadata = native.map {
+            [
+                "id": $0.windowNumber, "level": $0.level.rawValue, "type": String(describing: type(of: $0)),
+                "title": $0.title, "frame": NSStringFromRect($0.frame),
+            ] as [String: Any]
+        }
+        try? JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys]).write(
+            to: URL(fileURLWithPath: path + ".native.json"))
+        if let popup = native.first(where: { $0 !== wc?.window && $0.frame.height < 500 }) {
+            typealias Single = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+            if let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") {
+                let capture = unsafeBitCast(sym, to: Single.self)
+                if let image = capture(.null, 8, UInt32(popup.windowNumber), 1)?.takeRetainedValue() {
+                    writePNG(image, to: path); return
+                }
+            }
+        }
         let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
         let owned = info.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(getpid()) }
         try? JSONSerialization.data(withJSONObject: owned, options: [.prettyPrinted, .sortedKeys]).write(
