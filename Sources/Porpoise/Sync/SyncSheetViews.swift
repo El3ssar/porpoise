@@ -216,6 +216,8 @@ private final class SyncMenuItem: NSMenuItem {
 }
 
 final class SyncDirectionView: NSView {
+    var swappingTitles: [String]?
+    var swapProgress: CGFloat = 0
     var source = "" { didSet { updateAccessibility() } }
     var destination = "" { didSet { updateAccessibility() } }
     private func updateAccessibility() {
@@ -228,8 +230,10 @@ final class SyncDirectionView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         ("From" as NSString).draw(
             at: CGPoint(x: 0, y: 6), withAttributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: Theme.windowTextInactive])
-        for (index, title) in [source, destination].enumerated() {
-            let box = CGRect(x: 44 + CGFloat(index) * (chipWidth + 44), y: 0, width: chipWidth, height: 28)
+        for (index, title) in (swappingTitles ?? [source, destination]).enumerated() {
+            let crossing = swappingTitles != nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            let position = CGFloat(index) + (crossing ? (index == 0 ? swapProgress : -swapProgress) : 0)
+            let box = CGRect(x: 44 + position * (chipWidth + 44), y: 0, width: chipWidth, height: 28)
             Theme.viewBackground.setFill(); NSBezierPath(roundedRect: box, xRadius: 6, yRadius: 6).fill()
             Icons.shared.image("folder", size: 16)?.draw(
                 in: CGRect(x: box.minX + 8, y: 6, width: 16, height: 16), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,

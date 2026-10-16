@@ -33,6 +33,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
     private let pairDescription = NSTextField(labelWithString: "")
     private var keepExpansion: CGFloat = 0
     private let keepAnimator = Animator()
+    private let swapAnimator = Animator()
     private let explanation = NSTextField(labelWithString: "Porpoise syncs changes while it's open. You'll only hear about conflicts and errors.")
     private let method = NSPopUpButton()
     private let custom = NSTextField(labelWithString: "")
@@ -150,7 +151,18 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         swapButton.setAccessibilityLabel("Swap sync direction"); swapButton.toolTip = "Swap source and destination"
         swapButton.perform = { [weak self] in
             guard let self else { return }
+            let oldSource = pair.leftTitle, oldDestination = pair.rightTitle
             swap(&pair.left, &pair.right)
+            direction.swappingTitles = [oldSource, oldDestination]
+            swapButton.isEnabled = false
+            swapAnimator.run(
+                duration: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.12 : 0.2,
+                step: { [weak self] progress in
+                    self?.direction.swapProgress = CGFloat(progress); self?.direction.needsDisplay = true
+                },
+                completion: { [weak self] in
+                    self?.direction.swappingTitles = nil; self?.direction.needsDisplay = true; self?.swapButton.isEnabled = true
+                })
             pair.id = UUID(); previous = nil; overrides = [:]; providedComparison = nil; prepare()
         }
         newerButton.perform = { [weak self] in self?.bulk(nil) }
@@ -254,7 +266,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             do {
                 let previous = try await stateStore.load(pairID: pair.id, leftRoot: pair.left, rightRoot: pair.right)
                 let result = try await Task.detached(priority: .userInitiated) {
-                    if reviewDelay > 0 { Thread.sleep(forTimeInterval: reviewDelay); try cancellation.check() }
+                    if reviewDelay > 0 { try await Task.sleep(for: .seconds(reviewDelay)); try cancellation.check() }
                     if let initial, initial.complete, initial.options == pair.options {
                         let left = SyncSnapshot(
                             entries: initial.rows.compactMap(\.left), caseSensitive: initial.caseSensitive, rootIdentity: initial.leftRootIdentity,
@@ -358,8 +370,23 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         }
         callout.needsDisplay = true
         let collapsed = Set(nodes.filter { !outline.isItemExpanded($0) }.map(\.title))
+        var populatedFolders: Set<String> = []
+        for step in displaySteps where step.action == .copy || step.action == .replace {
+            var components = step.path.split(separator: "/")
+            while components.count > 1 {
+                components.removeLast()
+                populatedFolders.insert(step.target.rawValue + ":" + components.joined(separator: "/"))
+            }
+        }
         nodes = [SyncAction.conflict, .trash, .copy, .replace, .mkdir].flatMap { action -> [SyncPlanNode] in
-            let all = displaySteps.filter { $0.action == action }
+            let all = displaySteps.filter { step in
+                let populatedFolder =
+                    step.action == .mkdir
+                    && displaySteps.contains {
+                        $0.target == step.target && ($0.action == .copy || $0.action == .replace) && $0.path.hasPrefix(step.path + "/")
+                    }
+                return action == .copy ? step.action == .copy || populatedFolder : step.action == action && !populatedFolder
+            }
             if action == .conflict { return all.isEmpty ? [] : [SyncPlanNode(action: action, steps: all, title: "Conflicts")] }
             return [SyncSide.left, .right].compactMap { side in
                 let steps = all.filter { $0.target == side }

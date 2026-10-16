@@ -495,7 +495,8 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
         case .review(let count): suffix = "Sync paused: \(count) items would be moved to the Trash."
         default: suffix = pair.paused ? "paused" : pair.automatic ? "kept in sync" : "saved sync"
         }
-        return pair.description + " · " + suffix
+        let synced = pair.lastSynced.map { " · Last synced " + $0.formatted(date: .abbreviated, time: .shortened) } ?? ""
+        return pair.description + " · " + suffix + synced
     }
     func showError(_ text: String, window: NSWindow?) {
         let alert = NSAlert(); alert.messageText = "Couldn't sync"; alert.informativeText = text; alert.addButton(withTitle: "OK")
