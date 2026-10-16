@@ -263,3 +263,25 @@ private final class SyncInlineNameField: NSTextField, NSTextFieldDelegate {
     func controlTextDidEndEditing(_ obj: Notification) { commit() }
     override func cancelOperation(_ sender: Any?) { finished = true; removeFromSuperview() }
 }
+
+extension PlacesPanel {
+    func reviewSyncContextMenu(capture: @escaping () -> Void) {
+        guard Settings.isTesting, let window,
+            let row = rows.first(where: {
+                if case .entry(let entry) = $0.kind { return entry.section == .sync }; return false
+            })
+        else { return }
+        let point = NSPoint(x: 40, y: row.y + row.height / 2)
+        guard
+            let event = NSEvent.mouseEvent(
+                with: .rightMouseDown, location: convert(point, to: nil), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1),
+            let menu = menu(for: event)
+        else { return }
+        let timer = Timer(timeInterval: 0.4, repeats: false) { _ in
+            capture(); menu.cancelTracking()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        menu.popUp(positioning: nil, at: point, in: self)
+    }
+}

@@ -191,10 +191,21 @@ extension PlacesPanel {
                 respectFlipped: true, hints: nil)
         let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byTruncatingTail
         (pair.name as NSString).draw(
-            in: CGRect(x: 42, y: rect.midY - 9, width: max(30, rect.width - 108), height: 18),
+            in: CGRect(
+                x: 42, y: rect.midY - 9,
+                width: max(
+                    30, rect.width - 56 - min(64, max(18, (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11)]).width + 8))),
+                height: 18),
             withAttributes: [
                 .font: NSFont.systemFont(ofSize: 13), .foregroundColor: Theme.windowText.withAlphaComponent(alpha), .paragraphStyle: paragraph,
             ])
+        if case .failed = status {
+            Theme.compareDanger.setFill(); NSBezierPath(ovalIn: CGRect(x: rect.maxX - 25, y: rect.midY - 7, width: 14, height: 14)).fill()
+            ("!" as NSString).draw(
+                at: CGPoint(x: rect.maxX - 20, y: rect.midY - 7),
+                withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .bold), .foregroundColor: NSColor.white])
+            return
+        }
         let trailing = NSMutableParagraphStyle(); trailing.alignment = .right
         (text as NSString).draw(
             in: CGRect(x: rect.width - 68, y: rect.midY - 8, width: 60, height: 16),

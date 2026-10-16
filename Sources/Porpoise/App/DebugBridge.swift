@@ -521,6 +521,9 @@ final class DebugBridge: NSObject {
         case "syncinclude", "syncresolve", "syncsize":
             guard Settings.isTesting else { return }
             SyncDebugBridge.control(command: parts.first ?? "", argument: arg)
+        case "syncmenu":
+            guard Settings.isTesting, !arg.isEmpty else { return }
+            wc?.places.reviewSyncContextMenu { self.windowServerMenuSnapshot(to: arg) }
         case "syncstate":
             guard Settings.isTesting else { return }
             SyncDebugBridge.state(arg)
@@ -1054,7 +1057,7 @@ final class DebugBridge: NSObject {
                 windowNumber: w.windowNumber, context: nil, characters: chars,
                 charactersIgnoringModifiers: ignoring, isARepeat: false, keyCode: code)
         else { return }
-        let target = NSApp.keyWindow ?? w
+        let target = NSApp.keyWindow?.attachedSheet ?? NSApp.keyWindow ?? w
         if !flags.intersection([.command, .control]).isEmpty || k.hasPrefix("f") {
             if target.performKeyEquivalent(with: e) { return }
             if NSApp.mainMenu?.performKeyEquivalent(with: e) == true { return }
