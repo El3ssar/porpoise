@@ -6,3 +6,4 @@ Tests/UI/__pycache__/
 .signing*/
 .claude/
 .DS_Store
+.google-oauth.json

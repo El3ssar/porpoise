@@ -72,6 +72,19 @@ cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 VERSION=${PORPOISE_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null | sed "s/^v//" || true)}
 VERSION=${VERSION:-0.1.0}
 BUILD=$VERSION
+# Google Drive sign-in: the Desktop OAuth client from $PORPOISE_GOOGLE_CLIENT_ID/_SECRET, or the git-ignored
+# .google-oauth.json downloaded from the Google Cloud console. Without one, Connect explains Drive isn't set up.
+GOOGLE_ID=${PORPOISE_GOOGLE_CLIENT_ID:-}
+GOOGLE_SECRET=${PORPOISE_GOOGLE_CLIENT_SECRET:-}
+if [ -z "$GOOGLE_ID" ] && [ -f .google-oauth.json ]; then
+  GOOGLE_ID=$(python3 -I -c 'import json,sys;d=json.load(open(sys.argv[1]));print(next(iter(d.values()))["client_id"])' .google-oauth.json)
+  GOOGLE_SECRET=$(python3 -I -c 'import json,sys;d=json.load(open(sys.argv[1]));print(next(iter(d.values())).get("client_secret",""))' .google-oauth.json)
+fi
+GOOGLE_KEYS=""
+if [ -n "$GOOGLE_ID" ]; then
+  GOOGLE_KEYS="<key>GoogleDriveClientID</key><string>${GOOGLE_ID}</string>"
+  [ -n "$GOOGLE_SECRET" ] && GOOGLE_KEYS="$GOOGLE_KEYS<key>GoogleDriveClientSecret</key><string>${GOOGLE_SECRET}</string>"
+fi
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -92,6 +105,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>SUFeedURL</key><string>https://github.com/El3ssar/porpoise/releases/latest/download/appcast.xml</string>
   <key>SUPublicEDKey</key><string>qctcUgleVjfezZBkULIqbQreyx/ft6H2ywz3R8KDLvc=</string>
   <key>SUEnableAutomaticChecks</key><true/>
+  ${GOOGLE_KEYS}
   <key>SUScheduledCheckInterval</key><integer>86400</integer>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHumanReadableCopyright</key><string>Porpoise — a file manager for macOS inspired by KDE Dolphin. GPL-3.0-or-later.</string>
