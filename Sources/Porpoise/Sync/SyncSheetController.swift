@@ -198,11 +198,12 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         for (index, card) in cards.enumerated() {
             card.frame = CGRect(x: 20 + CGFloat(index) * (cardWidth + 8), y: 50, width: cardWidth, height: 84)
             card.leftName = pair.leftTitle; card.rightName = pair.rightTitle
+            card.trashLocation = pair.right.isFileURL ? "the Trash" : ".porpoise-trash"
             card.chosen = pair.mode == card.mode; card.needsDisplay = true
         }
         direction.breadcrumb =
-            pair.left.deletingLastPathComponent().lastPathComponent + " › " + pair.left.lastPathComponent + " → "
-            + pair.right.deletingLastPathComponent().lastPathComponent + " › " + pair.right.lastPathComponent
+            (pair.left.host ?? pair.left.deletingLastPathComponent().lastPathComponent) + " › " + pair.left.lastPathComponent + " → "
+            + (pair.right.host ?? pair.right.deletingLastPathComponent().lastPathComponent) + " › " + pair.right.lastPathComponent
         direction.source = pair.leftTitle; direction.destination = pair.rightTitle
         direction.toolTip = pair.left.path + " → " + pair.right.path
         direction.frame = CGRect(x: 20, y: 141, width: width - 40, height: 28)
@@ -405,7 +406,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         let attributed = NSMutableAttributedString()
         for (action, word, color) in [
             (SyncAction.copy, "to copy", Theme.compareOnly), (.replace, pair.mode == .twoWay ? "to update" : "to replace", Theme.compareChanged),
-            (.trash, "to the Trash", Theme.compareDanger),
+            (.trash, pair.right.isFileURL ? "to the Trash" : "to .porpoise-trash", Theme.compareDanger),
         ] {
             let count = plan.itemCount(for: action)
             if count > 0 {
@@ -449,13 +450,14 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         }
         summary.attributedStringValue = attributed
         let deletions = plan.itemCount(for: .trash)
+        callout.warning = false
         if leftInPlace > 0 {
             let names = preview.unavailableDeletionSides.map { side in
                 (side == .left ? pair.left : pair.right).host ?? (side == .left ? pair.leftTitle : pair.rightTitle)
             }.sorted().joined(separator: " and ")
             callout.text =
-                "\(names) can’t keep deleted items, so \(leftInPlace == 1 ? "this item will" : "these \(leftInPlace) items will") be left in place."
-            callout.danger = true
+                "\(names) can’t keep deleted items. \(leftInPlace == 1 ? "This item will" : "These \(leftInPlace) items will") be left in place."
+            callout.danger = false; callout.warning = true
         } else if deletions > 0 {
             callout.text =
                 "⚠ \(deletions) \(deletions == 1 ? "item" : "items") in \(pair.rightTitle) \(deletions == 1 ? "isn’t" : "aren’t") in \(pair.leftTitle). \(deletions == 1 ? "It’ll" : "They’ll") be moved to \(pair.right.isFileURL ? "the Trash" : ".porpoise-trash on " + (pair.right.host ?? pair.rightTitle))."
@@ -489,7 +491,11 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                     action == .trash
                     ? (preview.unavailableDeletionSides.contains(side) ? "Left in place in" : "Moved to the Trash in")
                     : action == .copy ? "Copy to" : action == .replace ? (pair.mode == .twoWay ? "Update in" : "Replace in") : "Create folder in"
-                return steps.isEmpty ? nil : SyncPlanNode(action: action, steps: steps, title: verb + " " + destination)
+                let root = side == .left ? pair.left : pair.right
+                let title =
+                    action == .trash && !preview.unavailableDeletionSides.contains(side) && !root.isFileURL
+                    ? "Moved to .porpoise-trash on " + (root.host ?? destination) : verb + " " + destination
+                return steps.isEmpty ? nil : SyncPlanNode(action: action, steps: steps, title: title)
             }
         }
         outline.usesAlternatingRowBackgroundColors = false
@@ -598,7 +604,9 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                     ? SyncPlan(steps: node.allSteps).itemCount(for: node.action)
                     : node.action == .conflict
                         ? node.allSteps.count : SyncPlan(steps: node.allSteps.filter { includedStepIDs.contains($0.id) }).itemCount(for: node.action),
-                action: node.action, color: node.color, actions: actions)
+                action: node.action,
+                color: node.allSteps.allSatisfy { blockedStepIDs.contains($0.id) } ? Theme.windowTextInactive : node.color,
+                protected: node.allSteps.allSatisfy { blockedStepIDs.contains($0.id) }, actions: actions)
         }
         let difference = differences[step.path] ?? step.sourcePath.flatMap { differences[$0] }
         let key = difference?.path ?? step.path

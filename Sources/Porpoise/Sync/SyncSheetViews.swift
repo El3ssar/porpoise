@@ -22,20 +22,21 @@ final class SyncListBackdrop: NSView {
 final class SyncCalloutView: NSView {
     var text = "" { didSet { setAccessibilityElement(true); setAccessibilityRole(.staticText); setAccessibilityLabel(text) } }
     var danger = false
+    var warning = false
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
-        let color = danger ? Theme.compareDanger : Theme.activeText
+        let color = warning ? Theme.compareChanged : danger ? Theme.compareDanger : Theme.activeText
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
         color.withAlphaComponent(Theme.increasedContrast ? 0.18 : 0.08).setFill(); path.fill()
         color.withAlphaComponent(0.4).setStroke(); path.lineWidth = 1; path.stroke()
         let content = (text.hasPrefix("⚠ ") || text.hasPrefix("ⓘ ")) ? String(text.dropFirst(2)) : text
         let attributed = NSMutableAttributedString(
             string: content, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: Theme.windowText])
-        if let end = content.firstIndex(of: ".") {
+        if let sentence = content.range(of: ". ") {
             attributed.addAttribute(
-                .font, value: NSFont.systemFont(ofSize: 11, weight: .semibold), range: NSRange(content.startIndex...end, in: content))
+                .font, value: NSFont.systemFont(ofSize: 11, weight: .semibold), range: NSRange(content.startIndex..<sentence.upperBound, in: content))
         }
-        if let image = NSImage(systemSymbolName: danger ? "exclamationmark.triangle.fill" : "info.circle", accessibilityDescription: nil) {
+        if let image = NSImage(systemSymbolName: danger || warning ? "exclamationmark.triangle.fill" : "info.circle", accessibilityDescription: nil) {
             image.isTemplate = true
             let icon = NSImage(size: CGSize(width: 16, height: 16), flipped: false) { rect in
                 color.setFill(); rect.fill(); return true
@@ -76,6 +77,7 @@ final class SyncModeCard: NSButton {
     let mode: SyncMode
     var chosen = false
     var leftName = "", rightName = ""
+    var trashLocation = "the Trash"
     var perform: (() -> Void)?
     var moveSelection: ((Int) -> Void)?
     init(mode: SyncMode) {
@@ -129,7 +131,7 @@ final class SyncModeCard: NSButton {
             mode == .backup
             ? "Copy new and changed files to \(rightName). Never deletes."
             : mode == .mirror
-                ? "Make \(rightName) match \(leftName). Extra items go to the Trash." : "Bring both sides up to date. Asks when both changed."
+                ? "Make \(rightName) match \(leftName). Extra items go to \(trashLocation)." : "Bring both sides up to date. Asks when both changed."
         let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byWordWrapping
         (detail as NSString).draw(
             in: CGRect(x: 12, y: 47, width: bounds.width - 24, height: 30),
@@ -360,13 +362,13 @@ final class SyncGroupRow: NSView {
     private var links: [SyncClosureButton] = []
     private let countLabel = NSTextField(labelWithString: "")
     private var updateGlyph = false
-    init(title: String, count: Int, action: SyncAction, color: NSColor, actions: [(String, () -> Void)] = []) {
+    init(title: String, count: Int, action: SyncAction, color: NSColor, protected: Bool = false, actions: [(String, () -> Void)] = []) {
         super.init(frame: .zero)
         label.stringValue = title; label.font = .systemFont(ofSize: 12, weight: .semibold); label.textColor = color
         let symbol: String
         switch action {
         case .conflict: symbol = "exclamationmark.triangle";
-        case .trash: symbol = "trash";
+        case .trash: symbol = protected ? "minus.circle" : "trash";
         case .copy: symbol = "arrow.right";
         case .replace: symbol = "arrow.triangle.2.circlepath";
         case .mkdir: symbol = "folder.badge.plus"

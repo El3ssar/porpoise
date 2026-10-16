@@ -46,7 +46,7 @@ enum SyncDebugBridge {
         }
     }
     static func remote(_ argument: String, window: NSWindow) {
-        let local = root.appendingPathComponent("Remote/Projects")
+        let local = root.appendingPathComponent("Remote/Home/Projects")
         Task { @MainActor in
             do {
                 try await Task.detached(priority: .utility) {
