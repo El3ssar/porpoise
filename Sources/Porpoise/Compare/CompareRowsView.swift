@@ -2,6 +2,10 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
+enum CompareSymbols {
+    static let onlyLeft = "◧", onlyRight = "◨"
+}
+
 /// Both Details panes and their seam share a single virtualized clip/document, so scrolling cannot drift.
 final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegate {
     private var accessibleRows: [String: CompareAccessibleRow] = [:]
@@ -116,8 +120,8 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         if let choice = model.overrides[row.path] { return choice == .keepRight ? "←" : "→" }
         if (row.left ?? row.right)?.kind == .directory, case .changed = row.status { return "○" }
         switch row.status {
-        case .onlyLeft: return "◧";
-        case .onlyRight: return "◨";
+        case .onlyLeft: return CompareSymbols.onlyLeft;
+        case .onlyRight: return CompareSymbols.onlyRight;
         case .same: return "=";
         case .collision: return "!";
         default: return "≠"
@@ -163,9 +167,10 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
             arc.appendArc(withCenter: CGPoint(x: seam.midX, y: y + rowHeight / 2), radius: 4, startAngle: angle, endAngle: angle + 270)
             Theme.windowTextInactive.setStroke(); arc.stroke()
         } else {
+            let only = row.status == .onlyLeft || row.status == .onlyRight
             text(
-                glyph(row), CGRect(x: seam.minX + 2, y: y + (rowHeight - 20) / 2, width: max(0, seam.width - 4), height: 20), size: 16,
-                color: color(row), align: .center)
+                glyph(row), CGRect(x: seam.minX + 2, y: y + (rowHeight - 20) / 2, width: max(0, seam.width - 4), height: 20), size: only ? 12 : 16,
+                color: color(row), align: .center, weight: only ? .medium : .regular)
         }
         if case .changed(let newer) = row.status, newer != .unknown {
             color(row).setFill();
@@ -176,9 +181,11 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         let depth = entry.path.split(separator: "/").count - 1
         let x = rect.minX + 12 + CGFloat(depth) * 14
         if entry.kind == .directory {
-            text(
-                model.expanded.contains(row.path) ? "▾" : "▸", CGRect(x: x - 8, y: rect.minY + 6, width: 12, height: 18), size: 12,
-                color: Theme.windowTextInactive)
+            let arrow = model.expanded.contains(row.path) ? "go-down" : "go-next"
+            Icons.shared.image(arrow, size: 16, selected: selectedPath == row.path && activeSide == side)?
+                .draw(
+                    in: CGRect(x: x - 10, y: rect.midY - 8, width: 16, height: 16), from: .zero, operation: .sourceOver, fraction: 0.85,
+                    respectFlipped: true, hints: nil)
         }
         let ext = (entry.path as NSString).pathExtension.lowercased()
         let iconName =
@@ -222,7 +229,10 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         }
         let changed = row.status != .same
         if sizeWidth > 0 {
-            let size = entry.kind == .directory ? "—" : FileFormat.size(entry.size)
+            let count = model.outline?.childCounts[side]?[row.path] ?? 0
+            let size =
+                entry.kind == .directory
+                ? (model.comparison?.complete == true ? "\(count.formatted()) \(count == 1 ? "item" : "items")" : "…") : FileFormat.size(entry.size)
             let differs = row.left?.size != row.right?.size
             text(
                 size, CGRect(x: rect.maxX - dateWidth - sizeWidth - 10, y: rect.midY - 8, width: sizeWidth, height: 18), size: 11,
@@ -372,7 +382,7 @@ private final class CompareAccessibleRow: NSAccessibilityElement, NSAccessibilit
     let side: SyncSide
     init(list: CompareRowsView, path: String, side: SyncSide) {
         self.list = list; self.path = path; self.side = side; super.init()
-        setAccessibilityParent(list); setAccessibilityRole(.row)
+        setAccessibilityParent(list); setAccessibilityRole(.row); setAccessibilityEnabled(true)
     }
     override func accessibilityIdentifier() -> String { path + ":" + side.rawValue }
     override func accessibilityPerformPress() -> Bool {
