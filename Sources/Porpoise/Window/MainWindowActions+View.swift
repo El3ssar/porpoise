@@ -10,6 +10,11 @@ extension MainWindowController {
     }
     @objc func zoomOut(_ sender: Any?) { view.zoom(by: -1) }
     @objc func zoomReset(_ sender: Any?) {
+        if let comparison = tab.compareView {
+            var props = view.model.props; props.resetIconSize(for: .details)
+            comparison.document.setDetailsZoom(props.iconSize(for: .details))
+            return
+        }
         if view.showsApps, let g = view.apps?.grid { return g.animateZoom(to: AppsGridView.defaultIconSize) }
         mutateProps { $0.resetIconSize(for: $0.mode) }
     }
