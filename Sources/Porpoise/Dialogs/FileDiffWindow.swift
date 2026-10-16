@@ -35,7 +35,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
     private let dimensions = NSTextField(labelWithString: ""), pixelsChanged = NSTextField(labelWithString: "")
     private let blendLeft = NSTextField(labelWithString: ""), blendRight = NSTextField(labelWithString: "")
     private let facts = NSTextField(labelWithString: "Reading files…")
-    private let loading = NSProgressIndicator()
+    private let loading = FileDiffProgressView()
     private let progressText = NSTextField(labelWithString: "Reading files…")
     private let cancelComparison = ClosureButton(title: "Cancel") { _ in }
     private let textScroll = NSScrollView(), textCanvas = FileDiffTextView(frame: .zero), imageCanvas = FileDiffImageView()
@@ -152,7 +152,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         identicalDetail.font = .systemFont(ofSize: 12); identicalDetail.textColor = Theme.viewTextInactive; identicalDetail.alignment = .center
         message.font = .systemFont(ofSize: 15, weight: .semibold); message.textColor = Theme.viewText; message.alignment = .center;
         message.maximumNumberOfLines = 2
-        loading.style = .bar; loading.controlSize = .small; loading.isIndeterminate = true; loading.startAnimation(nil)
+        loading.isIndeterminate = true; loading.startAnimation(nil)
         progressText.font = .systemFont(ofSize: 12); progressText.textColor = Theme.viewTextInactive; progressText.alignment = .center
         cancelComparison.bezelStyle = .rounded; cancelComparison.keyEquivalent = "\u{1b}"; cancelComparison.keyEquivalentModifierMask = []
         cancelComparison.handler = { [weak self] _ in self?.window?.performClose(nil) }
