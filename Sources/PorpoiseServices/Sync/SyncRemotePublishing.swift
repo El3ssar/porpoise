@@ -10,6 +10,13 @@ public protocol SyncRemotePublishing: RemoteProvider {
 }
 
 extension SSHProvider: SyncRemotePublishing {
+    public func canRecoverSyncDeletions(in root: URL) throws -> Bool {
+        let rootPath = shellPath(root), trash = shellPath(root.appendingPathComponent(".porpoise-trash"))
+        let check =
+            "if [ -e \(trash) ] || [ -L \(trash) ]; then if [ -d \(trash) ] && [ ! -L \(trash) ] && [ -w \(trash) ] && [ -x \(trash) ]; then printf yes; else printf no; fi; else if [ -d \(rootPath) ] && [ -w \(rootPath) ] && [ -x \(rootPath) ]; then printf yes; else printf no; fi; fi"
+        return String(decoding: try exec(check), as: UTF8.self) == "yes"
+    }
+
     public func publishSyncFile(_ staged: URL, to target: URL, modified: Date?) throws {
         let source = shellPath(staged), destination = shellPath(target)
         var script = "if [ ! -f \(source) ] || [ -L \(source) ] || [ -d \(destination) ]; then exit 1; fi; "

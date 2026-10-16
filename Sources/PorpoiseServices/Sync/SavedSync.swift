@@ -88,13 +88,16 @@ public struct SyncPreview: Sendable {
     public var comparison: SyncComparison
     public var plan: SyncPlan
     public var hasSkippedItems = false
+    public var unavailableDeletionSides: Set<SyncSide> = []
+    public var blockedSteps: [SyncStep] = []
+    fileprivate var planBeforeDeletionSupport: SyncPlan?
     public var firstTwoWay: Bool
     public init(
         pair: SavedSync, left: SyncSnapshot, right: SyncSnapshot, comparison: SyncComparison,
         plan: SyncPlan, hasSkippedItems: Bool = false, firstTwoWay: Bool
     ) {
         self.pair = pair; self.left = left; self.right = right; self.comparison = comparison
-        self.plan = plan; self.hasSkippedItems = hasSkippedItems; self.firstTwoWay = firstTwoWay
+        self.plan = plan; self.planBeforeDeletionSupport = plan; self.hasSkippedItems = hasSkippedItems; self.firstTwoWay = firstTwoWay
     }
     public var skippedConflicts: Int { plan.conflicts.count }
     /// Unresolved conflicts are omitted; dependencies and child protection have already been resolved by the planner.
@@ -116,11 +119,51 @@ public enum SyncPreparation {
         cancellation: DiskCancellation = DiskCancellation()
     ) throws -> SyncPreview {
         let result = try SyncScanner.compare(pair.left, pair.right, options: pair.options, cancellation: cancellation)
-        return .init(
-            pair: pair, left: result.left, right: result.right, comparison: result.comparison,
-            plan: SyncPlanner.plan(result.comparison, mode: pair.mode, previous: previous, overrides: overrides, keepBothLabel: pair.rightTitle),
-            hasSkippedItems: overrides.values.contains(.skip), firstTwoWay: pair.mode == .twoWay && previous == nil)
+        return try checkingDeletionSupport(
+            .init(
+                pair: pair, left: result.left, right: result.right, comparison: result.comparison,
+                plan: SyncPlanner.plan(result.comparison, mode: pair.mode, previous: previous, overrides: overrides, keepBothLabel: pair.rightTitle),
+                hasSkippedItems: overrides.values.contains(.skip), firstTwoWay: pair.mode == .twoWay && previous == nil))
     }
+    /// Run off main. A probe never creates a Trash folder or modifies either root.
+    public static func checkingDeletionSupport(
+        _ preview: SyncPreview,
+        available: (URL) throws -> Bool = { root in
+            if let provider = RemoteFS.provider(for: root) { return try provider.canRecoverSyncDeletions(in: root) }
+            return (try? FileManager.default.url(for: .trashDirectory, in: .userDomainMask, appropriateFor: root, create: false)) != nil
+        }
+    ) throws -> SyncPreview {
+        var next = preview
+        next.plan = next.planBeforeDeletionSupport ?? next.plan
+        next.blockedSteps = []
+        next.unavailableDeletionSides = []
+        for (side, root) in [(SyncSide.left, preview.pair.left), (.right, preview.pair.right)] {
+            if try !available(root) { next.unavailableDeletionSides.insert(side) }
+        }
+        return omittingUnavailableDeletions(next)
+    }
+    /// Applies previously probed capabilities to a reviewed/recovered plan without IO.
+    public static func filteringUnavailableDeletions(in plan: SyncPlan, using preview: SyncPreview) -> SyncPreview {
+        var next = preview; next.plan = plan
+        return omittingUnavailableDeletions(next)
+    }
+    private static func omittingUnavailableDeletions(_ preview: SyncPreview) -> SyncPreview {
+        var next = preview
+        next.planBeforeDeletionSupport = next.plan
+        var blocked = Set(next.plan.steps.filter { $0.action == .trash && next.unavailableDeletionSides.contains($0.target) }.map(\.id))
+        var dependents: [String: [String]] = [:]
+        for step in next.plan.steps { for dependency in step.dependsOn { dependents[dependency, default: []].append(step.id) } }
+        var pending = Array(blocked), index = 0
+        while index < pending.count {
+            for child in dependents[pending[index]] ?? [] where blocked.insert(child).inserted { pending.append(child) }
+            index += 1
+        }
+        next.blockedSteps = next.plan.steps.filter { blocked.contains($0.id) }
+        next.plan.steps.removeAll { blocked.contains($0.id) }
+        next.hasSkippedItems = next.hasSkippedItems || !next.blockedSteps.isEmpty
+        return next
+    }
+
     /// Replanning uses immutable scanned metadata, and does no filesystem IO.
     public static func replan(_ preview: SyncPreview, pair: SavedSync, previous: SyncState?, overrides: [String: SyncOverride]) -> SyncPreview {
         var next = preview
@@ -136,6 +179,6 @@ public enum SyncPreparation {
         }
         next.plan = SyncPlanner.plan(preview.comparison, mode: pair.mode, previous: previous, overrides: overrides, keepBothLabel: pair.rightTitle)
         next.firstTwoWay = pair.mode == .twoWay && previous == nil
-        return next
+        return omittingUnavailableDeletions(next)
     }
 }

@@ -27,6 +27,13 @@ struct SyncEngineTests {
         #expect(!unchecked.steps.contains { $0.path == "old-logo.zip" })
         #expect(plan([], [folder], mode: .mirror).itemCount(for: .trash) == 1)
     }
+    @Test func itemCountsExcludePopulatedFolderCreation() {
+        let folder = SyncStep(path: "Invoices", target: .right, action: .mkdir, expectedSource: .init(path: "Invoices", kind: .directory))
+        let child = SyncStep(path: "Invoices/one.txt", source: .left, target: .right, action: .copy, expectedSource: file("Invoices/one.txt"))
+        #expect(SyncPlan(steps: [folder, child]).itemCount(for: .mkdir) == 0)
+        #expect(SyncPlan(steps: [folder, child]).itemCount(for: .copy) == 1)
+        #expect(SyncPlan(steps: [folder]).itemCount(for: .mkdir) == 1)
+    }
     @Test func timestampToleranceAndMethods() {
         let left = SyncSnapshot(entries: [file()])
         #expect(SyncComparator.compare(left, .init(entries: [file(time: 102)])).rows[0].status == .same)

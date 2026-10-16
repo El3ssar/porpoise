@@ -240,3 +240,27 @@ private final class LockedCounter: @unchecked Sendable {
         #expect(throws: (any Error).self) { try SyncJobs.restore(unknown) }
     }
 }
+
+extension SavedSyncTests {
+    @Test func unavailableDeletionSupportKeepsFilesAndSurvivesReplanning() throws {
+        let scratch = try Scratch("sync-no-trash")
+        let left = scratch.path("left"), right = scratch.path("right")
+        try FileManager.default.createDirectory(at: left, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: right, withIntermediateDirectories: true)
+        try Data("copy".utf8).write(to: left.appendingPathComponent("copy.txt"))
+        for name in ["old-one.txt", "old-two.txt"] { try Data("kept".utf8).write(to: right.appendingPathComponent(name)) }
+        let pair = SavedSync(left: left, right: right, mode: .mirror)
+        let original = try SyncPreparation.preview(pair)
+        let protected = try SyncPreparation.checkingDeletionSupport(original) { $0 != right }
+        #expect(protected.plan.itemCount(for: .trash) == 0)
+        #expect(protected.blockedSteps.count == 2)
+        #expect(protected.hasSkippedItems)
+        #expect(protected.unavailableDeletionSides == [.right])
+        let replanned = SyncPreparation.replan(protected, pair: pair, previous: nil, overrides: [:])
+        #expect(replanned.plan.itemCount(for: .trash) == 0)
+        #expect(replanned.blockedSteps.count == 2)
+        try SyncExecutor.execute(replanned.executable, leftRoot: left, rightRoot: right)
+        for name in ["old-one.txt", "old-two.txt"] { #expect(try Data(contentsOf: right.appendingPathComponent(name)) == Data("kept".utf8)) }
+        #expect(try Data(contentsOf: right.appendingPathComponent("copy.txt")) == Data("copy".utf8))
+    }
+}

@@ -112,21 +112,21 @@ public struct SyncState: Codable, Sendable {
 }
 
 extension SyncPlan {
-    /// Counts user items without counting a populated folder again alongside its children.
-    /// Execution steps remain unchanged, including the folder cleanup dependency.
-    public func itemCount(for action: SyncAction) -> Int {
-        let matching = steps.filter { $0.action == action }
+    /// User items, without counting a populated folder again alongside its children.
+    /// Execution steps remain unchanged, including folder creation and cleanup dependencies.
+    public var itemSteps: [SyncStep] {
         var parents: Set<String> = []
-        for step in matching {
+        for step in steps {
             var components = step.path.split(separator: "/")
             while components.count > 1 {
                 components.removeLast()
                 parents.insert(step.target.rawValue + ":" + components.joined(separator: "/"))
             }
         }
-        return matching.filter {
+        return steps.filter {
             let directory = ($0.expectedSource ?? $0.expectedTarget)?.kind == .directory
             return !directory || !parents.contains($0.target.rawValue + ":" + $0.path)
-        }.count
+        }
     }
+    public func itemCount(for action: SyncAction) -> Int { itemSteps.filter { $0.action == action }.count }
 }
