@@ -307,7 +307,7 @@ final class PairToolbarButton: FlatButton {
             slash.lineWidth = 1.5; slash.stroke()
         }
     }
-    private static let pages: NSImage = {
+    static let pages: NSImage = {
         let image = NSImage(size: CGSize(width: 18, height: 18), flipped: false) { _ in
             NSColor.black.setStroke()
             for x: CGFloat in [1.5, 10.5] {
