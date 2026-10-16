@@ -54,6 +54,8 @@ final class MessageBar: NSView {
     }
 
     func dismiss() { isHidden = true; onDismiss?() }
+    /// Where the action button is, in the bar (nil without one).
+    var actionFrame: CGRect? { isHidden || actionButton.isHidden ? nil : actionButton.frame }
     var text: String { label.stringValue }
 
     override func layout() {
