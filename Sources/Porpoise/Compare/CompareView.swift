@@ -10,14 +10,14 @@ final class CompareView: NSView {
     let footer = TintedMaterialView(material: .titlebar, alpha: 0.82)
     let header = CompareHeaderView()
     let sync = CompareSyncButton(title: "Sync…", target: nil, action: nil)
-    let close = NSButton(title: "×", target: nil, action: nil)
-    let method = NSButton(title: "Size & date ⌄", target: nil, action: nil)
+    let close = CompareFocusButton(title: "×", target: nil, action: nil)
+    let method = CompareFocusButton(title: "Size & date ⌄", target: nil, action: nil)
     let summary = NSTextField(labelWithString: "")
     let sizes = NSTextField(labelWithString: "")
     let progress = NSProgressIndicator()
     let progressLabel = NSTextField(labelWithString: "Comparing…")
     let stop = NSButton(title: "Stop", target: nil, action: nil)
-    let zoom = NSSlider(value: 22, minValue: 16, maxValue: 48, target: nil, action: nil)
+    let zoom = CompareFocusSlider(value: 22, minValue: 16, maxValue: 48, target: nil, action: nil)
     private let overlay = ComparePlaceholder()
     private let revealAnimator = Animator()
     private var reveal: CGFloat = 1
@@ -60,7 +60,8 @@ final class CompareView: NSView {
         scroll.autohidesScrollers = true; scroll.scrollerStyle = .overlay
         for child in [scroll, bar, header, footer, overlay] { addSubview(child) }
         let definitions: [(CompareFilter, String, NSColor)] = [
-            (.onlyLeft, "◧", Theme.compareOnly), (.onlyRight, "◨", Theme.compareOnly), (.changed, "≠", Theme.compareChanged),
+            (.onlyLeft, CompareSymbols.onlyLeft, Theme.compareOnly), (.onlyRight, CompareSymbols.onlyRight, Theme.compareOnly),
+            (.changed, "≠", Theme.compareChanged),
             (.same, "=", Theme.windowTextInactive),
         ]
         for (filter, glyph, color) in definitions {
@@ -92,6 +93,26 @@ final class CompareView: NSView {
         update()
     }
     required init?(coder: NSCoder) { fatalError() }
+    func advanceKeyboardFocus(backward: Bool) {
+        guard let window else { return }
+        let controls: [NSView] = pills.filter { $0.isEnabled && !$0.isHidden } + [sync, pause, stop, close].filter { $0.isEnabled && !$0.isHidden }
+        // The shared row surface has two logical focus stops; footer controls remain reachable too.
+        var stops: [(view: NSView, side: SyncSide?)] = controls.map { ($0, nil) }
+        stops += [(document, .left), (document, .right), (method, nil), (zoom, nil)]
+        let current = stops.firstIndex { window.firstResponder === $0.view && ($0.side == nil || $0.side == document.activeSide) }
+        let next = ((current ?? (backward ? 0 : -1)) + (backward ? -1 : 1) + stops.count) % stops.count
+        if let side = stops[next].side { focusSide(side) } else { window.makeFirstResponder(stops[next].view) }
+    }
+    private func focusSide(_ side: SyncSide) {
+        document.activeSide = side; window?.makeFirstResponder(document)
+        let index = document.selectedPath.flatMap { model.rowIndices[$0] }
+        if let index, (side == .left ? model.rows[index].left : model.rows[index].right) != nil {
+            document.select(index)
+        } else if let first = model.rows.firstIndex(where: { (side == .left ? $0.left : $0.right) != nil }) {
+            document.select(first)
+        }
+        document.needsDisplay = true
+    }
     /// Reuse native controls prepared during idle time; pair data and callbacks never carry over.
     func reset(model: CompareModel) {
         self.model.onChange = nil; self.model.stop()
@@ -179,9 +200,10 @@ final class CompareView: NSView {
         header.needsDisplay = true
         let counts = model.outline?.counts ?? [:]
         let differences = [CompareFilter.onlyLeft, .onlyRight, .changed].reduce(0) { $0 + (counts[$1.rawValue] ?? 0) }
+        let elapsed = model.elapsed < 0.1 ? "<0.1 s" : String(format: "%.1f s", model.elapsed)
         summary.stringValue =
             model.error
-            ?? "\((model.comparison?.rows.count ?? 0).formatted()) items · \(differences.formatted()) differences · \(String(format: "%.1f", model.elapsed)) s"
+            ?? "\((model.comparison?.rows.count ?? 0).formatted()) items · \(differences.formatted()) differences · \(elapsed)"
         summary.textColor = model.error == nil ? Theme.windowTextInactive : Theme.compareDanger
         summary.toolTip = "Compared by \(Self.methodTitle(model.options.method).lowercased()) · \(summary.stringValue)"
         sizes.stringValue =
@@ -318,6 +340,7 @@ final class CompareView: NSView {
 }
 
 final class ComparePill: NSButton {
+    override var acceptsFirstResponder: Bool { true }
     let filter: CompareFilter
     let glyph: String
     let color: NSColor
@@ -335,6 +358,9 @@ final class ComparePill: NSButton {
     }
     override func draw(_ dirty: NSRect) {
         let box = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.75, dy: 0.75), xRadius: 12, yRadius: 12)
+        if window?.firstResponder === self {
+            NSGraphicsContext.saveGraphicsState(); NSFocusRingPlacement.only.set(); box.fill(); NSGraphicsContext.restoreGraphicsState()
+        }
         if isOn {
             color.withAlphaComponent(effectiveAppearance.isDark ? 0.2 : 0.16).setFill(); box.fill()
         } else {
@@ -470,12 +496,30 @@ final class CompareHeaderView: NSView {
 }
 
 final class CompareSyncButton: NSButton {
+    override var acceptsFirstResponder: Bool { true }
     override func draw(_ dirty: NSRect) {
+        if window?.firstResponder === self {
+            NSGraphicsContext.saveGraphicsState(); NSFocusRingPlacement.only.set()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 12, yRadius: 12).fill()
+            NSGraphicsContext.restoreGraphicsState()
+        }
         Theme.accent.withAlphaComponent(isEnabled ? 1 : 0.4).setFill()
         NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 12, yRadius: 12).fill()
         let style = NSMutableParagraphStyle(); style.alignment = .center
         (title as NSString).draw(
             in: CGRect(x: 2, y: (bounds.height - 16) / 2, width: bounds.width - 4, height: 18),
-            withAttributes: [.font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: Theme.selectionText, .paragraphStyle: style])
+            withAttributes: [
+                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                .foregroundColor: Theme.increasedContrast ? Theme.selectionText : NSColor.white,
+                .paragraphStyle: style,
+            ])
     }
+}
+
+final class CompareFocusButton: NSButton {
+    override var acceptsFirstResponder: Bool { true }
+}
+
+final class CompareFocusSlider: NSSlider {
+    override var acceptsFirstResponder: Bool { true }
 }
