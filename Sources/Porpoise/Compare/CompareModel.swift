@@ -33,6 +33,7 @@ final class CompareModel {
     var elapsed: TimeInterval = 0
     var onChange: (() -> Void)?
     var watcher: SyncWatcher?
+    private var startingWatcher = false
     var overrides: [String: SyncOverride] = [:]
     private var cancellation = DiskCancellation()
     private var generation = 0
@@ -83,9 +84,15 @@ final class CompareModel {
                 self.rebuild()
             }
         }
-        if watcher == nil {
-            watcher = SyncWatcher(roots: [leftRoot, rightRoot]) { [weak self] in
-                DispatchQueue.main.async { if self?.suppressWatchUpdates == false { self?.start() } }
+        if watcher == nil && !startingWatcher {
+            startingWatcher = true
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let watcher = SyncWatcher(roots: [left, right]) { [weak self] in
+                    DispatchQueue.main.async { if self?.suppressWatchUpdates == false { self?.start() } }
+                }
+                DispatchQueue.main.async { [weak self] in
+                    self?.watcher = watcher; self?.startingWatcher = false
+                }
             }
         }
     }
@@ -128,7 +135,7 @@ final class CompareModel {
         cancellation.cancel()
         // Replacing a large Compare surface must not destroy its trees and dictionaries in an
         // animation frame. These are value data; AppKit views still tear down on the main thread.
-        releaseComparisonValuesLater((comparison, outline, rows, rowIndices, rowPaths))
+        releaseComparisonValuesLater((comparison, outline, rows, rowIndices, rowPaths, watcher))
     }
 }
 

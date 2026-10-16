@@ -8,6 +8,7 @@ import SwiftTerm
 /// via distributed notifications. Used by scripts/uitest.sh. Inert unless someone posts to it.
 final class DebugBridge: NSObject {
     static let shared = DebugBridge()
+    var compareEntryPhases: [String: Double] = [:]
     private var transferPreviewJob: FileJob?
     /// The channel; PORPOISE_BRIDGE gives a test instance its own, so parallel test runs don't hear each other.
     static let request = Notification.Name("app.porpoise.Porpoise.debug." + (ProcessInfo.processInfo.environment["PORPOISE_BRIDGE"] ?? "test"))
@@ -123,6 +124,7 @@ final class DebugBridge: NSObject {
                     let compare = wc.tab.compareView
                     let data: [String: Any] = [
                         "entrySetupMS": setup, "rows": compare?.model.rows.count ?? 0,
+                        "phasesMS": self.compareEntryPhases,
                         "frameIntervalsMS": intervals, "drawMS": compare?.document.drawMilliseconds ?? [],
                     ]
                     try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: args[0]))

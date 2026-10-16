@@ -12,9 +12,12 @@ extension MainWindowController {
         }
     }
     func startComparing(left: URL, right: URL, options: SyncCompareOptions = CompareModel.defaultOptions, preserveLinkRoots: Bool = false) {
+        var previous = CACurrentMediaTime(), phases: [String: Double] = [:]
+        func phase(_ name: String) { let now = CACurrentMediaTime(); phases[name] = (now - previous) * 1000; previous = now }
         let tab = tab
         tab.linkUpdating = true
         if !tab.isSplit { tab.openSplit(url: right, animated: false) }
+        phase("split")
         tab.secondary?.delegate = self
         tab.containers.forEach { $0.suspendForComparison(true) }
         if tab.primary.url != left { tab.primary.setURL(left) }
@@ -25,6 +28,7 @@ extension MainWindowController {
         tab.lastComparePartner = right
         tab.containers.forEach { $0.preservesMissingLocation = tab.linkedRoots != nil }
         tab.linkUpdating = false
+        phase("locations")
         if left == right { showCompareChooser(); return }
         if left.password == nil && right.password == nil {
             var recents = Settings.store.dictionary(forKey: "compare.recents") as? [String: [String]] ?? [:]
@@ -33,7 +37,9 @@ extension MainWindowController {
             Settings.store.set(recents, forKey: "compare.recents")
         }
         let model = CompareModel(left: left, right: right, options: options)
+        phase("recentsAndModel")
         let comparison = CompareView(model: model)
+        phase("viewConstruction")
         comparison.onClose = { [weak self] in self?.stopComparing() }
         comparison.onSync = { [weak self, weak comparison] in
             guard let self, let comparison else { return }
@@ -70,8 +76,11 @@ extension MainWindowController {
             }
         }
         tab.installComparison(comparison)
+        phase("install")
         comparison.animateIn()
         syncToActiveView(); window?.makeFirstResponder(comparison.document); model.start()
+        phase("chromeAndScanStart")
+        DebugBridge.shared.compareEntryPhases = phases
     }
     func stopComparing(keepLinked: Bool = false) {
         let selectedTab = tab
