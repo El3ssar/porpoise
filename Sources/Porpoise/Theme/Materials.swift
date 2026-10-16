@@ -5,17 +5,26 @@ import PorpoiseServices
 /// sidebar and toolbar, while the colors stay those of the Desert-Dark scheme.
 final class TintedMaterialView: NSVisualEffectView {
     private let tintLayer = CALayer()
+    private let tint: NSColor
+    private let tintAlpha: CGFloat
+    /// Isolated review hook; ordinary use follows the workspace accessibility preference.
+    var forcesOpaque = false { didSet { updateTint() } }
+    private func updateTint() {
+        let opaque = forcesOpaque || NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        tintLayer.backgroundColor = tint.withAlphaComponent(opaque ? 1 : tintAlpha).cgColor
+    }
 
     init(
         material: NSVisualEffectView.Material, tint: NSColor = Theme.windowBackground, alpha: CGFloat = 0.72,
         blending: NSVisualEffectView.BlendingMode = .behindWindow
     ) {
+        self.tint = tint; tintAlpha = alpha
         super.init(frame: .zero)
         self.material = material
         blendingMode = blending
         state = .followsWindowActiveState
         wantsLayer = true
-        Theme.whenChanged(self) { [weak self] in self?.tintLayer.backgroundColor = tint.withAlphaComponent(alpha).cgColor }
+        Theme.whenChanged(self) { [weak self] in self?.updateTint() }
         layer?.addSublayer(tintLayer)
     }
 
