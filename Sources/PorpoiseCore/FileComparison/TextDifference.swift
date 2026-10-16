@@ -121,6 +121,10 @@ public struct TextDifference: Sendable {
 /// Word boundaries retain punctuation and spaces; ranges use UTF-16 for AppKit text drawing.
 public enum WordDifference {
     public static func ranges(_ left: String, _ right: String) -> (left: [NSRange], right: [NSRange]) {
+        // Bound tokenization too: minified files can contain a single multi-megabyte word.
+        if left.utf8.count + right.utf8.count > 65_536 {
+            return ([NSRange(location: 0, length: left.utf16.count)], [NSRange(location: 0, length: right.utf16.count)])
+        }
         func tokens(_ text: String) -> [String] {
             var result: [String] = [], word = "", kind: Int?
             for c in text {
