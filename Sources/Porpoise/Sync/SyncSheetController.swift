@@ -36,11 +36,14 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
     private let keepAnimator = Animator()
     private let swapAnimator = Animator()
     private let explanation = NSTextField(labelWithString: "Porpoise syncs changes while it’s open. You’ll only hear about conflicts and errors.")
-    private let method = NSPopUpButton()
+    private let method = SyncOptionsPopup()
+    private let deletionChoice = SyncOptionsPopup()
+    private let ignoreLabel = NSTextField(labelWithString: "Ignore:")
+    private let methodLabel = NSTextField(labelWithString: "Compare by:")
     private let custom = NSTextField(labelWithString: "")
     private let customButton = SyncClosureButton(title: "Custom…")
     private let presets = NSStackView()
-    private let deletion = NSTextField(labelWithString: "Deletions: Move to Trash")
+    private let deletion = NSTextField(labelWithString: "Deletions:")
     private var optionsOpen = false
     private var cards: [SyncModeCard] = []
     private var presetButtons: [NSButton] = []
@@ -131,13 +134,18 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         name.setAccessibilityLabel("Sync name"); name.stringValue = pair.name; name.placeholderString = "Sync name"; add(name)
         method.setAccessibilityLabel("Compare by"); method.addItems(withTitles: ["Size & date", "Size only", "Contents"])
         method.selectItem(at: [.sizeAndDate, .sizeOnly, .content].firstIndex(of: pair.method) ?? 0)
-        method.target = self; method.action = #selector(optionsChanged); add(method)
+        method.onSelect = { [weak self] in self?.optionsChanged() }; add(method)
+        deletionChoice.setAccessibilityLabel("Deletions"); add(deletionChoice)
+        for label in [ignoreLabel, methodLabel, deletion] {
+            label.font = .systemFont(ofSize: 11); label.textColor = Theme.windowTextInactive; label.alignment = .right
+        }
+        add(ignoreLabel); add(methodLabel)
         custom.font = .systemFont(ofSize: 11); custom.textColor = Theme.windowTextInactive
         custom.lineBreakMode = .byTruncatingTail; add(custom)
         customButton.perform = { [weak self] in self?.editCustomExclusions() }; add(customButton)
-        presets.orientation = .horizontal; presets.spacing = 8; add(presets)
-        for (index, title) in ["System files", "Hidden files", "Build folders", "Version control"].enumerated() {
-            let button = NSButton(checkboxWithTitle: title, target: self, action: #selector(optionsChanged))
+        presets.orientation = .horizontal; presets.spacing = 6; add(presets)
+        for (index, title) in ["System files", "Hidden", "Build folders", "Version control"].enumerated() {
+            let button = SyncPresetChip(title: title, target: self, action: #selector(optionsChanged))
             button.font = .systemFont(ofSize: 11); button.tag = index
             button.state = pair.presets.contains(SyncExclusionPreset.allCases[index]) ? .on : .off
             presetButtons.append(button); presets.addArrangedSubview(button)
@@ -255,20 +263,29 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         options.attributedTitle = optionText
         options.frame = CGRect(x: 20, y: optionsBase + 5, width: width - 40, height: 24)
         let optionsY = optionsBase + 34
-        presets.frame = CGRect(x: 22, y: optionsY, width: width - 44, height: 22)
-        deletion.frame = CGRect(x: 22, y: optionsY + 30, width: 235, height: 22)
-        deletion.stringValue =
+        let fieldX: CGFloat = 98
+        let chipWidth = presetButtons.reduce(CGFloat(18)) { $0 + $1.intrinsicContentSize.width }
+        ignoreLabel.frame = CGRect(x: 20, y: optionsY + 4, width: 68, height: 18)
+        presets.frame = CGRect(x: fieldX, y: optionsY, width: chipWidth, height: 24)
+        deletion.frame = CGRect(x: 20, y: optionsY + 34, width: 68, height: 18)
+        let deletionTitle =
             preview?.unavailableDeletionSides.contains(.right) == true
-            ? "Deletions: Leave in place" : pair.right.isFileURL ? "Deletions: Move to Trash" : "Deletions: Move to .porpoise-trash"
-        method.frame = CGRect(x: width - 180, y: optionsY + 26, width: 158, height: 26)
+            ? "Leave in place" : pair.right.isFileURL ? "Move to Trash" : "Move to .porpoise-trash"
+        deletionChoice.addItems(withTitles: [deletionTitle]); deletionChoice.selectItem(at: 0)
+        deletionChoice.frame = CGRect(x: fieldX, y: optionsY + 30, width: 190, height: 24)
+        methodLabel.frame = CGRect(x: 20, y: optionsY + 64, width: 68, height: 18)
+        method.frame = CGRect(x: fieldX, y: optionsY + 60, width: 158, height: 24)
         let ignored = (preview?.left.excludedPaths?.count ?? 0) + (preview?.right.excludedPaths?.count ?? 0)
         custom.stringValue = "Ignores \(ignored) items" + (pair.customExclusions.isEmpty ? "" : " · \(pair.customExclusions.count) custom patterns")
         custom.toolTip = pair.customExclusions.joined(separator: "\n")
-        custom.frame = CGRect(x: 22, y: optionsY + 60, width: width - 144, height: 20)
-        customButton.frame = CGRect(x: width - 122, y: optionsY + 56, width: 100, height: 26)
-        [presets, deletion, method, custom, customButton].forEach { $0.isHidden = !optionsOpen }
+        customButton.font = .systemFont(ofSize: 11)
+        customButton.frame = CGRect(x: fieldX + chipWidth + 6, y: optionsY, width: 68, height: 24)
+        custom.frame = CGRect(x: customButton.frame.maxX + 8, y: optionsY + 4, width: max(40, width - customButton.frame.maxX - 28), height: 18)
+        [presets, deletion, deletionChoice, method, custom, customButton, ignoreLabel, methodLabel].forEach { $0.isHidden = !optionsOpen }
         automatic.frame = CGRect(x: 20, y: height - 36 - keepExpansion * 94, width: min(300, width - 360), height: 28)
         name.isHidden = keepExpansion == 0; explanation.isHidden = name.isHidden; pairDescription.isHidden = name.isHidden
+        name.isEnabled = automatic.state == .on
+        if !name.isEnabled, name.currentEditor() != nil { window?.makeFirstResponder(nil) }
         name.alphaValue = keepExpansion; explanation.alphaValue = keepExpansion; pairDescription.alphaValue = keepExpansion
         name.frame = CGRect(x: 22, y: height - 94, width: 200, height: 24)
         pairDescription.stringValue = pair.description
@@ -297,6 +314,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             pairDescription.frame = CGRect(x: 144 + autoWidth, y: footerRow + 5, width: max(0, width - 382 - autoWidth), height: 20)
             explanation.frame = CGRect(x: 22, y: height - 25, width: width - 44, height: 16)
             cancelButton.frame.origin.y = footerRow; syncButton.frame.origin.y = footerRow
+            saveButton.frame.origin.y = footerRow
         }
         syncButton.isEnabled = !planning
         syncButton.title = editing || savingTask ? "Save" : (preview?.executable.steps.isEmpty == true && displaySteps.isEmpty ? "Done" : "Sync")
@@ -327,7 +345,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         }
         let planControls = rowControls(outline)
         let order: [NSView] =
-            (cards + [swapButton, outline] + planControls + [options] + (optionsOpen ? presetButtons + [method, customButton] : [])
+            (cards + [swapButton, outline] + planControls + [options] + (optionsOpen ? presetButtons + [customButton, deletionChoice, method] : [])
             + [automatic, name, saveButton, cancelButton, syncButton]).filter { !$0.isHiddenOrHasHiddenAncestor }
         for index in order.indices { order[index].nextKeyView = order[(index + 1) % order.count] }
 

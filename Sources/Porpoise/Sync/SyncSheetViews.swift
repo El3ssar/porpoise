@@ -466,3 +466,60 @@ final class SyncPlanningSpinner: NSView {
     func stopAnimation(_ sender: Any?) { timer?.invalidate(); timer = nil; isHidden = true }
     deinit { timer?.invalidate() }
 }
+
+final class SyncPresetChip: NSButton {
+    override init(frame: NSRect) { super.init(frame: frame); setButtonType(.pushOnPushOff); isBordered = false }
+    convenience init(title: String, target: AnyObject?, action: Selector?) {
+        self.init(frame: .zero); self.title = title; self.target = target; self.action = action
+        setAccessibilityRole(.checkBox); setAccessibilityLabel(title)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: (title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11)]).width + 16, height: 24)
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        let chosen = state == .on
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5)
+        (chosen ? Theme.activeText.withAlphaComponent(0.12) : Theme.viewBackground).setFill(); path.fill()
+        (chosen ? Theme.activeText.withAlphaComponent(0.5) : Theme.frame).setStroke(); path.stroke()
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11), .foregroundColor: chosen ? Theme.activeText : Theme.windowText,
+        ]
+        let size = (title as NSString).size(withAttributes: attributes)
+        (title as NSString).draw(at: CGPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2), withAttributes: attributes)
+        setAccessibilityValue(chosen ? 1 : 0)
+    }
+}
+
+final class SyncOptionsPopup: NSButton {
+    var onSelect: (() -> Void)?
+    private var choices: [String] = []
+    private(set) var indexOfSelectedItem = 0
+    var titleOfSelectedItem: String? { choices.indices.contains(indexOfSelectedItem) ? choices[indexOfSelectedItem] : nil }
+    override init(frame: NSRect) {
+        super.init(frame: frame); isBordered = false; target = self; action = #selector(showChoices)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    func addItems(withTitles titles: [String]) { choices = titles; needsDisplay = true }
+    func selectItem(at index: Int) { indexOfSelectedItem = index; needsDisplay = true; setAccessibilityValue(titleOfSelectedItem) }
+    @objc private func showChoices() {
+        let menu = NSMenu()
+        for (index, title) in choices.enumerated() {
+            let item = menu.addItem(withTitle: title, action: #selector(chose(_:)), keyEquivalent: "")
+            item.target = self; item.tag = index; item.state = index == indexOfSelectedItem ? .on : .off
+        }
+        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: bounds.height), in: self)
+    }
+    @objc private func chose(_ item: NSMenuItem) { selectItem(at: item.tag); onSelect?() }
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5)
+        Theme.viewBackground.setFill(); path.fill(); Theme.frame.setStroke(); path.stroke()
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: Theme.windowText]
+        let label = titleOfSelectedItem ?? ""
+        let height = (label as NSString).size(withAttributes: attributes).height
+        (label as NSString).draw(at: CGPoint(x: 8, y: (bounds.height - height) / 2), withAttributes: attributes)
+        NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 9, weight: .regular).applying(.init(paletteColors: [Theme.windowTextInactive])))?
+            .draw(in: CGRect(x: bounds.width - 20, y: (bounds.height - 10) / 2, width: 10, height: 10))
+    }
+}
