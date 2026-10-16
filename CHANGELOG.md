@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **More reliable Settings and hiding.** Appearance theme cards use stable equal-width columns, avoiding a
+  layout-engine crash. Hiding after a cancelled drag no longer lets a temporary window quit the browser.
+
 - **Faster large syncs.** Sync writes its plan once and appends small recovery checkpoints instead of rewriting
   every file's payload at each step. Interrupted syncs retain completed steps and safely reconcile the running one.
 

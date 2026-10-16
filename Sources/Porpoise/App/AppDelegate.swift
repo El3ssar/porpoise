@@ -164,7 +164,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return .terminateNow
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        // AppKit can ask when a drag-image window disappears after hiding. Hidden or ordered-out browser
+        // windows still belong to this session; only closing the last real browser should quit it.
+        !sender.isHidden && windows.isEmpty
+    }
 
     func applicationWillTerminate(_ notification: Notification) {
         FileOperationsController.shared.interruptAll()
