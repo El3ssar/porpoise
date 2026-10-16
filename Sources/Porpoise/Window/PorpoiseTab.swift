@@ -18,6 +18,7 @@ final class PorpoiseTab: NSView {
     var comparisonSnapshots: [(ViewContainer, ViewContainer.ComparisonSnapshot)] = []
     var comparisonWasSecondary = false
     var comparisonPreviousLinks: (left: URL, right: URL)?
+    var comparisonPreviousMissing: (view: ComparePanePlaceholder, right: Bool)?
     private var preparedCompareView: CompareView?
     func comparisonView(model: CompareModel) -> CompareView {
         guard let prepared = preparedCompareView else { return CompareView(model: model) }

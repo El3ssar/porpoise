@@ -9,7 +9,7 @@ extension ItemListView {
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityRole() -> NSAccessibility.Role? { .list }
     override func accessibilityLabel() -> String? {
-        model.location.isFileURL ? FileManager.default.displayName(atPath: model.location.path) : model.location.lastPathComponent
+        model.location.lastPathComponent
     }
 
     override func accessibilityChildren() -> [Any]? { accessibilityRows(in: visibleRect) }
@@ -23,20 +23,30 @@ extension ItemListView {
     func accessibilitySelectionChanged() {
         NSAccessibility.post(element: self, notification: .selectedChildrenChanged)
         if let c = model.currentURL, let i = model.index(of: c), i < frames.count {
-            NSAccessibility.post(element: ItemAccessibilityElement(list: self, index: i), notification: .focusedUIElementChanged)
+            NSAccessibility.post(element: accessibilityElement(at: i), notification: .focusedUIElementChanged)
         }
     }
 
     private func accessibilityRows(in rect: CGRect) -> [ItemAccessibilityElement] {
         if frames.count != model.rows.count { computeLayout() }
-        return frames.indices.filter { frames[$0].intersects(rect) }.map { ItemAccessibilityElement(list: self, index: $0) }
+        return candidateIndexes(in: rect).map { accessibilityElement(at: $0) }
+    }
+    private func accessibilityElement(at index: Int) -> ItemAccessibilityElement {
+        let url = model.rows[index].item.url
+        if accessibleItems.count > 500 {
+            let visible = Set(candidateIndexes(in: visibleRect).map { model.rows[$0].item.url })
+            accessibleItems = accessibleItems.filter { visible.contains($0.key) }
+        }
+        let element = accessibleItems[url] ?? ItemAccessibilityElement(list: self, index: index)
+        element.index = index; accessibleItems[url] = element
+        return element
     }
 }
 
 /// One item of an `ItemListView` for VoiceOver.
-final class ItemAccessibilityElement: NSAccessibilityElement {
+final class ItemAccessibilityElement: NSAccessibilityElement, NSAccessibilityElementProtocol {
     private weak var list: ItemListView?
-    private let index: Int
+    var index: Int
     private let url: URL
 
     init(list: ItemListView, index: Int) {
@@ -45,8 +55,8 @@ final class ItemAccessibilityElement: NSAccessibilityElement {
         url = list.model.rows[index].item.url
         super.init()
         setAccessibilityParent(list)
-        setAccessibilityRole(.staticText)
-        setAccessibilitySubrole(.outlineRow)
+        setAccessibilityRole(.row)
+        setAccessibilitySubrole(.outlineRow); setAccessibilityEnabled(true)
     }
 
     private var item: FileItem? {
@@ -54,10 +64,16 @@ final class ItemAccessibilityElement: NSAccessibilityElement {
         return list.model.rows[index].item
     }
 
-    override func accessibilityLabel() -> String? { item?.name }
+    override func accessibilityIdentifier() -> String { url.absoluteString }
+
+    override func accessibilityLabel() -> String? {
+        guard let list, let item else { return nil }
+        return list.comparisonAccessibilityLabel?(index) ?? item.name
+    }
 
     override func accessibilityValue() -> Any? {
         guard let it = item else { return nil }
+        if list?.comparisonAccessibilityLabel != nil { return nil }
         return it.isBrowsableFolder ? it.typeDescription : "\(it.typeDescription), \(FileFormat.size(it.size))"
     }
 

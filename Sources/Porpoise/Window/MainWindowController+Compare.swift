@@ -16,6 +16,7 @@ extension MainWindowController {
         var previous = CACurrentMediaTime(), phases: [String: Double] = [:]
         func phase(_ name: String) { let now = CACurrentMediaTime(); phases[name] = (now - previous) * 1000; previous = now }
         let tab = tab
+        tab.containers.forEach { $0.list.finishZoomForComparison() }
         let replacingPair = tab.compareView != nil
         if let current = tab.compareView {
             let sameLeft = LinkedBrowsing.relativePath(left, below: current.model.leftRoot) == ""
@@ -28,6 +29,7 @@ extension MainWindowController {
             tab.linkUpdating = true; tab.linkGeneration += 1; tab.installComparison(nil)
         }
         if tab.comparisonSnapshots.isEmpty {
+            tab.comparisonPreviousMissing = tab.missingCounterpart.map { ($0, tab.missingOnRight) }
             tab.comparisonWasSecondary = tab.activeIsSecondary
             tab.comparisonPreviousLinks = tab.linkedRoots
             tab.comparisonSnapshots = tab.containers.map { ($0, $0.comparisonSnapshot()) }
@@ -125,6 +127,7 @@ extension MainWindowController {
     }
     func stopComparing(keepLinked: Bool = false) {
         let selectedTab = tab
+        selectedTab.containers.forEach { $0.list.finishZoomForComparison() }
         // Remove immediately: an animated exit must not race a second toggle or a queued navigation refresh.
         selectedTab.installComparison(nil)
         selectedTab.compareChooser?.removeFromSuperview(); selectedTab.compareChooser = nil
@@ -136,6 +139,12 @@ extension MainWindowController {
         if !keepLinked { selectedTab.linkedRoots = selectedTab.comparisonPreviousLinks }
         selectedTab.containers.forEach { $0.preservesMissingLocation = selectedTab.linkedRoots != nil }
         selectedTab.linkUpdating = false
+        if let previous = selectedTab.comparisonPreviousMissing, selectedTab.linkedRoots != nil {
+            previous.view.showsStatusBar = true
+            selectedTab.missingCounterpart = previous.view; selectedTab.missingOnRight = previous.right
+            selectedTab.addSubview(previous.view); selectedTab.needsLayout = true
+        }
+        selectedTab.comparisonPreviousMissing = nil
         syncToActiveView(); window?.makeFirstResponder(view.list)
     }
     private func showCompareChooser() {

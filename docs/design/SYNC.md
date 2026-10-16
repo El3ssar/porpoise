@@ -164,7 +164,7 @@ on top. Do not build a parallel row view that imitates Details.
 
 These are the only new pixels:
 
-- **Compare bar** (36 tall, full content width, titlebar material at 0.82, hairline under). Left: the filter pills
+- **Compare bar** (36 tall, 68 when narrow actions wrap, full content width, titlebar material at 0.82, hairline under). Left: the filter pills
   (§4.4). Right: the **method** pull-down (§4.5), **Sync…** and ✕. It slides down from under the toolbar.
 - **Gutter** (28 wide) replaces the 1 pt divider while comparing. Background `windowBackground`, 1 pt hairlines on
   both edges. Glyphs centred, 16 pt box. Its header cell is empty. Scrolling either pane scrolls both: one shared
@@ -217,7 +217,7 @@ toggle and the legend:
 - A pill with a zero count is disabled (not hidden), so the layout never jumps.
 - Folders stay visible while anything inside them matches the filter. With Same off, a folder whose contents are all
   the same is hidden.
-- Narrow (under 900 pt): labels drop and pills show glyph + count, with the full label in the tooltip.
+- Narrow: retain the words on all four pills. When the pills plus actions do not fit one row, put method, Sync and Close on a second row (68 pt bar). Very long side names may elide at the end; counts and full tooltips remain.
 - Esc stops comparing when nothing else (rename, filter field, Quick Look) has focus.
 
 ### 4.5 Method

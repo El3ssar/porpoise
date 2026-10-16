@@ -100,11 +100,17 @@ struct SyncServiceTests {
             missing.increment()
         }
         defer { localWatcher.stop(); remoteWatcher.stop(); missingWatcher.stop() }
-        #expect(await eventually(5) { remote.count >= 2 && missing.count >= 2 })
-        #expect(local.count == 0)
+        // Root creation may itself arrive as an FSEvent after subscription. Wait for a real
+        // ready event, then let that batch settle before measuring the quiet poll intervals.
+        try scratch.file("ready", "subscription barrier")
+        #expect(await eventually(5) { local.count > 0 })
+        try await Task.sleep(for: .milliseconds(350))
+        let initialLocal = local.count, initialRemote = remote.count, initialMissing = missing.count
+        #expect(await eventually(5) { remote.count >= initialRemote + 2 && missing.count >= initialMissing + 2 })
+        #expect(local.count == initialLocal)
         // Event-driven local updates still work after multiple quiet poll intervals.
         try scratch.file("changed", "event")
-        #expect(await eventually(5) { local.count > 0 })
+        #expect(await eventually(5) { local.count > initialLocal })
     }
     @Test func actualFSEventRequestsScan() async throws {
         let scratch = try Scratch()

@@ -184,9 +184,15 @@ final class CompareView: NSView {
     override func layout() {
         super.layout()
         let width = bounds.width
-        let barHeight = 36 * reveal
+        let fullPillWidth = pills.reduce(CGFloat(0)) { total, pill in
+            pill.compact = false; return total + pill.intrinsicContentSize.width + 6
+        }
+        let wrapsFilters = !pills.allSatisfy(\.isHidden) && fullPillWidth > width - 290
+        let expandedBarHeight: CGFloat = wrapsFilters ? 68 : 36
+        let controlsY: CGFloat = wrapsFilters ? 38 : 6
+        let barHeight = expandedBarHeight * reveal
         document.gutterWidth = 1 + 27 * reveal; header.gutterWidth = document.gutterWidth
-        bar.frame = CGRect(x: 0, y: barHeight - 36, width: width, height: 36)
+        bar.frame = CGRect(x: 0, y: barHeight - expandedBarHeight, width: width, height: expandedBarHeight)
         header.frame = CGRect(x: 0, y: barHeight, width: width, height: 26)
         footer.frame = CGRect(x: 0, y: max(62, bounds.height - 28), width: width, height: 28)
         scroll.frame = CGRect(x: 0, y: 26 + barHeight, width: width, height: max(0, bounds.height - 54 - barHeight))
@@ -200,15 +206,14 @@ final class CompareView: NSView {
         }
         document.layoutDetails(); header.needsLayout = true; header.layoutSubtreeIfNeeded()
         var x: CGFloat = 10
-        let fullPillWidth = pills.reduce(CGFloat(0)) { total, pill in
-            pill.compact = false; return total + pill.intrinsicContentSize.width + 6
-        }
         for pill in pills {
-            pill.compact = fullPillWidth > width - 290; let desired = pill.intrinsicContentSize.width
-            pill.frame = CGRect(x: x, y: 6, width: desired, height: 24); x += desired + 6
+            let desired = pill.intrinsicContentSize.width
+            let available = max(40, width - 20 - CGFloat(pills.count) * 6)
+            let allocated = wrapsFilters && fullPillWidth > width - 20 ? desired * available / max(1, fullPillWidth - 24) : desired
+            pill.frame = CGRect(x: x, y: 6, width: allocated, height: 24); x += allocated + 6
         }
-        sync.frame = CGRect(x: width - 100, y: 5, width: 62, height: 26)
-        close.frame = CGRect(x: width - 32, y: 5, width: 24, height: 24)
+        sync.frame = CGRect(x: width - 100, y: controlsY - 1, width: 62, height: 26)
+        close.frame = CGRect(x: width - 32, y: controlsY - 1, width: 24, height: 24)
         progress.frame = CGRect(x: width - 269, y: 12, width: 12, height: 12)
         progressLabel.frame = CGRect(x: 32, y: 10, width: max(50, width - 210), height: 18)
         let stopWidth = max(68, stop.intrinsicContentSize.width + 24), pauseWidth = max(80, pause.intrinsicContentSize.width + 24)
@@ -223,7 +228,11 @@ final class CompareView: NSView {
             || (reviewJob?.state.isEnded == true && reviewJob?.state != .failed)
         showJob.frame = CGRect(x: completedJob ? width - 164 : stop.frame.minX - 60, y: 6, width: completedJob ? 130 : 44, height: 24)
         if !showJob.isHidden { progressLabel.frame.size.width = max(50, showJob.frame.minX - 48) }
-        method.frame = CGRect(x: width - 252, y: 6, width: 140, height: 24)
+        method.frame = CGRect(x: wrapsFilters ? 10 : width - 252, y: controlsY, width: 140, height: 24)
+        if wrapsFilters {
+            progress.frame = CGRect(x: 166, y: controlsY + 6, width: 12, height: 12)
+            progressLabel.frame = CGRect(x: 184, y: controlsY + 4, width: max(40, width - 296), height: 18)
+        }
         methodSeparator.frame = CGRect(x: 148, y: 6, width: 1, height: 16)
         summary.frame = CGRect(x: 160, y: 7, width: max(50, width - (width < 780 ? 320 : 515)), height: 17)
         sizes.isHidden = true
@@ -511,13 +520,7 @@ final class CompareView: NSView {
         if laidOutActivityState != job.state { laidOutActivityState = job.state; needsLayout = true }
     }
     @objc private func zoomChanged() {
-        for container in document.detailsContainers {
-            var props = container.model.props; props.setIconSize(CGFloat(zoom.doubleValue), for: .details); container.model.props = props
-        }
-        document.rowHeight = 2 * ItemListView.pad + max(CGFloat(zoom.doubleValue), document.detailsContainers.first?.list.lineHeight ?? 16) + 2
-        document.layoutDetails()
-        document.frame.size.height = max(scroll.contentSize.height, CGFloat(document.rows.count) * document.rowHeight)
-        document.needsDisplay = true
+        document.setDetailsZoom(CGFloat(zoom.doubleValue))
     }
     @objc func methodPressed() { showMethodMenu() }
     func showMethodMenu(capture: (() -> Void)? = nil) {
@@ -639,9 +642,11 @@ final class ComparePill: NSButton {
         let count = FileFormat.count(count) as NSString, attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
         count.draw(at: CGPoint(x: 30, y: 4), withAttributes: attributes)
         if !compact {
+            let x = 38 + count.size(withAttributes: attributes).width
+            let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byTruncatingTail
             (label as NSString).draw(
-                at: CGPoint(x: 38 + count.size(withAttributes: attributes).width, y: 4),
-                withAttributes: [.font: font, .foregroundColor: Theme.windowText])
+                in: CGRect(x: x, y: 4, width: max(0, bounds.width - x - 10), height: 17),
+                withAttributes: [.font: font, .foregroundColor: Theme.windowText, .paragraphStyle: paragraph])
         }
     }
     @objc private func pressed() { onToggle?() }

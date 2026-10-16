@@ -52,6 +52,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
     private var updatingDetailsProperties = false
     private var scrollObservers: [NSObjectProtocol] = []
     private var syncingScroll = false
+    private var detailsIconSize: CGFloat = 22
     private var detailsLayouts: [ObjectIdentifier: (CGSize, CGFloat, Int)] = [:]
     private func synchronizeScroll(from clip: NSClipView) {
         guard !syncingScroll else { return }
@@ -76,7 +77,9 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
     func attachDetails(_ containers: [ViewContainer]) {
         detachDetails()
         detailsContainers = containers
+        containers.forEach { $0.list.finishZoomForComparison() }
         let size = (containers.first(where: { $0.isActive }) ?? containers.first)?.model.props.iconSize(for: .details) ?? 22
+        detailsIconSize = size
         rowHeight = 2 * ItemListView.pad + max(size, containers.first?.list.lineHeight ?? 16) + 2
         for (index, container) in containers.enumerated() {
             let list = container.list
@@ -103,8 +106,9 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
                     self.model.sortSide = side; self.model.invalidateSort()
                 }
                 self.updatingDetailsProperties = true
-                for other in self.detailsContainers where other !== container {
-                    var shared = other.model.props; shared.sortRole = props.sortRole; shared.sortOrder = props.sortOrder; other.model.props = shared
+                for other in self.detailsContainers {
+                    var shared = other.model.props; shared.mode = .details; shared.setIconSize(self.detailsIconSize, for: .details)
+                    shared.sortRole = props.sortRole; shared.sortOrder = props.sortOrder; other.model.props = shared
                     other.header.needsDisplay = true
                 }
                 self.updatingDetailsProperties = false
@@ -127,6 +131,10 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
                 let slot = Int(point.y / self.rowHeight)
                 guard self.rows.indices.contains(slot), (side == .left ? self.rows[slot].left : self.rows[slot].right) == nil else { return false }
                 self.activeSide = side.opposite; self.select(slot); return true
+            }
+            list.comparisonAccessibilityLabel = { [weak self, weak list] index in
+                guard let self, let slot = list?.comparisonSlots?[safe: index], self.rows.indices.contains(slot) else { return "" }
+                return self.model.outline?.accessibilityLabel(for: self.rows[slot], side: side, names: self.model.names) ?? ""
             }
             list.comparisonColumnColor = { [weak self, weak list] index, role in
                 guard let self, let slot = list?.comparisonSlots?[safe: index], self.rows.indices.contains(slot) else { return nil }
@@ -182,7 +190,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
             let list = container.list
             list.comparisonSlots = nil; list.comparisonPaneWidth = nil
             list.comparisonRowHeight = nil; list.drawComparisonBackground = nil; list.comparisonZoom = nil; list.comparisonExit = nil;
-            list.comparisonGhostClick = nil;
+            list.comparisonGhostClick = nil; list.comparisonAccessibilityLabel = nil;
             list.comparisonDrawTiming = nil; list.comparisonColumnColor = nil; list.comparisonCaption = nil
             container.comparisonPropsChanged = nil; container.comparisonSelectionChanged = nil
             container.model.onComparisonExpansion = nil; container.comparisonMissingName = nil; container.comparisonMissingSideLabel = nil;
@@ -212,7 +220,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         for container in detailsContainers { container.comparisonRowsDidLoad() }
     }
     func setDetailsZoom(_ size: CGFloat) {
-        let size = min(256, max(16, size))
+        let size = min(256, max(16, size)); detailsIconSize = size
         updatingDetailsProperties = true
         for container in detailsContainers {
             var props = container.model.props; props.setIconSize(size, for: .details); container.model.props = props
@@ -495,9 +503,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         if accessibleRows.count > 200 { accessibleRows.removeAll() }
         let element = accessibleRows[key] ?? CompareAccessibleRow(list: self, path: row.path, side: side)
         accessibleRows[key] = element
-        element.setAccessibilityLabel(
-            "\(side == .left ? model.names.0 : model.names.1): \((row.path as NSString).lastPathComponent), \(describe(row)), \(row.left?.size ?? 0) bytes versus \(row.right?.size ?? 0) bytes"
-        )
+        element.setAccessibilityLabel(model.outline?.accessibilityLabel(for: row, side: side, names: model.names) ?? describe(row))
         element.setAccessibilitySelected(row.path == selectedPath)
         let rect = pane(side, y: CGFloat(index) * rowHeight)
         element.setAccessibilityFrame(window?.convertToScreen(convert(rect, to: nil)) ?? .zero)
