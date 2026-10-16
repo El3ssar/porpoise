@@ -488,6 +488,10 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         menu.removeAllItems()
         for tool in FileDiffExternalTools.installed {
             let item = NSMenuItem(title: tool.name, action: #selector(openExternal(_:)), keyEquivalent: ""); item.target = self;
+            if let icon = NSWorkspace.shared.icon(forFile: tool.url.path).copy() as? NSImage {
+                icon.size = NSSize(width: 16, height: 16); item.image = icon
+            }
+            item.state = Settings.store.string(forKey: "fileDiff.defaultApp") == tool.url.path ? .on : .off
             item.representedObject = tool.url; menu.addItem(item)
         }
         if menu.items.isEmpty {

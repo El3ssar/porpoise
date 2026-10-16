@@ -5,7 +5,7 @@ final class FileDiffProgressView: NSView {
     var minValue = 0.0
     var maxValue = 100.0
     var doubleValue = 0.0 {
-        didSet { needsDisplay = true; setAccessibilityValue(doubleValue) }
+        didSet { needsDisplay = true; setAccessibilityValue(doubleValue); setAccessibilityValueDescription("\(Int(doubleValue.rounded())) percent") }
     }
     var isIndeterminate = true {
         didSet { needsDisplay = true; if isIndeterminate { setAccessibilityValue("Comparing") } }
