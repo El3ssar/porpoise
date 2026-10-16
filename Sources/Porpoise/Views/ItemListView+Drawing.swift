@@ -433,6 +433,7 @@ extension ItemListView {
         let f = frames[i]
         let info = treeLines[i]
         let depth = model.rows[i].depth
+        guard depth > 0 else { return }
         Theme.viewText.withAlphaComponent(0.28).setFill()
         for level in 0...depth {
             let x = floor(f.minX + CGFloat(level) * Self.indentPerLevel + 8)

@@ -229,7 +229,7 @@ final class ToolbarView: NSView {
     /// Location field(s) between `minX` and `maxX`: capped in width so the toolbar keeps free space to grab the
     /// window; in a split, one field per pane, the second starting where the right pane starts (Dolphin).
     private func layoutFields(from minX: CGFloat, to maxX: CGFloat, y: CGFloat, height: CGFloat) {
-        let hasPair = navigatorViews.count == 2 && bounds.width >= 700
+        let hasPair = navigatorViews.count == 2 && (window?.frame.width ?? bounds.width) >= 760
         pairGroup.isHidden = !hasPair
         let gap: CGFloat = hasPair ? 40 : Self.fieldSpacing
         let available = max(0, maxX - minX)
@@ -291,18 +291,36 @@ final class PairToolbarButton: FlatButton {
     override func layout() { super.layout(); symbol.frame = bounds.insetBy(dx: 5, dy: 5) }
     override func draw(_ dirty: NSRect) {
         if isToggled {
-            Theme.selection.withAlphaComponent(0.32).setFill()
+            (iconName == "edit-unlink" ? Theme.compareChanged.withAlphaComponent(0.16) : Theme.selection.withAlphaComponent(0.32)).setFill()
             NSBezierPath(ovalIn: bounds).fill()
         }
-        let name = iconName == "edit-copy" ? "book" : "link"
-        if shownSymbol != name { symbol.image = NSImage(systemSymbolName: name, accessibilityDescription: nil); shownSymbol = name }
-        symbol.contentTintColor = isToggled ? Theme.accent : Theme.windowText
+        let name = iconName == "edit-copy" ? "compare-pages" : "link"
+        if shownSymbol != name {
+            symbol.image = name == "compare-pages" ? Self.pages : NSImage(systemSymbolName: name, accessibilityDescription: nil)
+            shownSymbol = name
+        }
+        symbol.contentTintColor = iconName == "edit-unlink" ? Theme.compareChanged : (isToggled ? Theme.accent : Theme.windowText)
         symbol.alphaValue = isEnabled ? 1 : 0.35
         if iconName == "edit-unlink" {
-            Theme.accent.setStroke(); let slash = NSBezierPath(); slash.move(to: CGPoint(x: 5, y: 5)); slash.line(to: CGPoint(x: 23, y: 23));
+            Theme.compareChanged.setStroke(); let slash = NSBezierPath(); slash.move(to: CGPoint(x: 5, y: 5)); slash.line(to: CGPoint(x: 23, y: 23));
             slash.lineWidth = 1.5; slash.stroke()
         }
     }
+    private static let pages: NSImage = {
+        let image = NSImage(size: CGSize(width: 18, height: 18), flipped: false) { _ in
+            NSColor.black.setStroke()
+            for x: CGFloat in [1.5, 10.5] {
+                let page = NSBezierPath(roundedRect: CGRect(x: x, y: 2.5, width: 6, height: 13), xRadius: 0.75, yRadius: 0.75)
+                page.lineWidth = 1.25; page.stroke()
+                for y: CGFloat in [11, 8] {
+                    let line = NSBezierPath(); line.move(to: CGPoint(x: x + 1.5, y: y)); line.line(to: CGPoint(x: x + 4.5, y: y))
+                    line.lineWidth = 1; line.stroke()
+                }
+            }
+            return true
+        }
+        image.isTemplate = true; return image
+    }()
 }
 
 private final class PairToolbarSymbolView: NSImageView {

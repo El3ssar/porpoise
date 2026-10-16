@@ -329,8 +329,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         toolbar.viewMode.iconName = t.compareView == nil ? v.model.props.mode.iconName : "view-list-details"
         toolbar.viewMode.isEnabled = t.compareView == nil
         toolbar.viewMode.toolTip = t.compareView == nil ? "Change View Mode" : "Comparing uses Details"
-        toolbar.compareFolders.isToggled = t.compareView != nil
-        toolbar.linkFolders.isToggled = t.linkedRoots != nil
+        toolbar.compareFolders.isToggled = t.compareView != nil || t.compareChooser != nil
+        toolbar.linkFolders.isToggled = t.linkedRoots != nil && t.compareChooser == nil
+        for (index, navigator) in t.navigators.enumerated() {
+            navigator.placeholderText = index == 1 && t.compareChooser != nil ? "Choose a folder…" : nil
+            navigator.onPlaceholderClick = { [weak self] in self?.chooseCompareFolder() }
+            navigator.missingTail = t.missingCounterpart != nil && (index == 1) == t.missingOnRight
+            if let roots = t.linkedRoots {
+                let names = CompareOutline.sideNames(roots.left, roots.right)
+                navigator.preferredAncestorName = index == 0 ? names.0 : names.1
+            } else if let model = t.compareView?.model {
+                navigator.preferredAncestorName = index == 0 ? model.names.0 : model.names.1
+            } else {
+                navigator.preferredAncestorName = nil
+            }
+        }
         toolbar.linkFolders.iconName = t.missingCounterpart == nil ? "insert-link" : "edit-unlink"
         updateSplitButton(for: t)
         toolbar.search.isToggled = !v.searchBar.isHidden

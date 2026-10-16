@@ -14,9 +14,9 @@ final class CompareView: NSView {
     let method = CompareFocusButton(title: "Size & date ⌄", target: nil, action: nil)
     let summary = NSTextField(labelWithString: "")
     let sizes = NSTextField(labelWithString: "")
-    private let methodGlyph = NSImageView(), methodSeparator = NSView()
+    private let methodSeparator = NSView()
     private let smallZoom = ZoomGlyph(large: false), largeZoom = ZoomGlyph(large: true)
-    let progress = NSProgressIndicator()
+    let progress = CompareArcSpinner()
     let progressLabel = NSTextField(labelWithString: "Comparing…")
     let stop = NSButton(title: "Stop", target: nil, action: nil)
     let zoom = CompareFocusSlider(value: 22, minValue: 16, maxValue: 48, target: nil, action: nil)
@@ -46,7 +46,7 @@ final class CompareView: NSView {
     private var completedActivity: UUID?
     private var progressTicker: Timer?
     private let pause = NSButton(title: "Pause", target: nil, action: nil)
-    private let jobLine = NSProgressIndicator()
+    private let jobLine = CompareProgressLine()
 
     var onClose: (() -> Void)?
     var onSync: (() -> Void)?
@@ -72,9 +72,11 @@ final class CompareView: NSView {
             bar.addSubview(pill); pills.append(pill)
         }
         for child in [sync, close, progress, progressLabel, stop, pause, jobLine] { bar.addSubview(child) }
-        for child in [methodGlyph, method, methodSeparator, summary, sizes, smallZoom, zoom, largeZoom] { footer.addSubview(child) }
-        methodGlyph.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: nil);
-        methodGlyph.contentTintColor = Theme.windowTextInactive
+        for child in [method, methodSeparator, summary, sizes, smallZoom, zoom, largeZoom] { footer.addSubview(child) }
+        method.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: nil)?.withSymbolConfiguration(
+            .init(pointSize: 14, weight: .regular))
+        method.imagePosition = .imageLeft; method.imageHugsTitle = true
+        method.contentTintColor = Theme.windowTextInactive
         methodSeparator.wantsLayer = true
         Theme.whenChanged(methodSeparator) { [weak methodSeparator] in methodSeparator?.layer?.backgroundColor = Theme.hairline.cgColor }
         smallZoom.onClick = { [weak self] in
@@ -90,11 +92,11 @@ final class CompareView: NSView {
         method.isBordered = false; method.font = .systemFont(ofSize: 12); method.target = self; method.action = #selector(methodPressed)
         summary.font = .systemFont(ofSize: 11); summary.textColor = Theme.windowTextInactive; summary.lineBreakMode = .byTruncatingTail
         sizes.font = .systemFont(ofSize: 11); sizes.textColor = Theme.windowTextInactive; sizes.alignment = .right
-        progress.style = .spinning; progress.controlSize = .small; progress.isIndeterminate = true
         progressLabel.font = .systemFont(ofSize: 12); progressLabel.textColor = Theme.windowTextInactive
         pause.bezelStyle = .inline; pause.target = self; pause.action = #selector(pausePressed); pause.isHidden = true
-        jobLine.style = .bar; jobLine.isIndeterminate = false; jobLine.minValue = 0; jobLine.maxValue = 1; jobLine.isHidden = true
-        stop.bezelStyle = .inline; stop.target = self; stop.action = #selector(stopPressed)
+        jobLine.isHidden = true
+        jobLine.onFrame = { [weak self] in self?.progress.needsDisplay = true }
+        stop.bezelStyle = .rounded; stop.font = .systemFont(ofSize: 12); stop.target = self; stop.action = #selector(stopPressed)
         zoom.target = self; zoom.action = #selector(zoomChanged); zoom.controlSize = .mini; zoom.setAccessibilityLabel("Compare icon size")
         document.onExit = { [weak self] in self?.onClose?() }
         document.onPopover = { [weak self] row, rect in self?.showDetails(row, at: rect) }
@@ -161,9 +163,8 @@ final class CompareView: NSView {
         progressLabel.frame = CGRect(x: 32, y: 10, width: max(50, width - 210), height: 18)
         stop.frame = CGRect(x: width - 100, y: 7, width: 60, height: 22)
         pause.frame = CGRect(x: width - 172, y: 7, width: 66, height: 22)
-        jobLine.frame = CGRect(x: 0, y: 34, width: width, height: 2)
-        methodGlyph.frame = CGRect(x: 12, y: 7, width: 14, height: 14)
-        method.frame = CGRect(x: 28, y: 2, width: 112, height: 24)
+        jobLine.frame = CGRect(x: 0, y: 0, width: width, height: 2)
+        method.frame = CGRect(x: 6, y: 2, width: 140, height: 24)
         methodSeparator.frame = CGRect(x: 148, y: 6, width: 1, height: 16)
         summary.frame = CGRect(x: 160, y: 7, width: max(50, width - (width < 780 ? 320 : 515)), height: 17)
         sizes.isHidden = width < 780
@@ -192,7 +193,12 @@ final class CompareView: NSView {
         }
         progress.isHidden = !model.showProgress; progressLabel.isHidden = !model.showProgress; stop.isHidden = !model.showProgress
         if model.showProgress {
-            progress.startAnimation(nil); progressLabel.stringValue = "Comparing… \((model.comparison?.rows.count ?? 0).formatted()) items"
+            progress.startAnimation(nil)
+            let count = (model.comparison?.rows.count ?? 0).formatted(), text = "Comparing… \(count) items"
+            let run = NSMutableAttributedString(
+                string: text, attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: Theme.windowTextInactive])
+            run.addAttribute(.font, value: NSFont.systemFont(ofSize: 12, weight: .semibold), range: (text as NSString).range(of: count))
+            progressLabel.attributedStringValue = run
         } else {
             progress.stopAnimation(nil)
         }
@@ -217,13 +223,18 @@ final class CompareView: NSView {
         let counts = model.outline?.counts ?? [:]
         let differences = [CompareFilter.onlyLeft, .onlyRight, .changed].reduce(0) { $0 + (counts[$1.rawValue] ?? 0) }
         let elapsed = model.elapsed < 0.1 ? "<0.1 s" : String(format: "%.1f s", model.elapsed)
+        let differenceSummary = differences == 0 ? "no differences" : "\(differences.formatted()) differences"
         summary.stringValue =
             model.error
-            ?? "\((model.comparison?.rows.count ?? 0).formatted()) items · \(differences.formatted()) differences · \(elapsed)"
+            ?? "\((model.comparison?.rows.count ?? 0).formatted()) items · \(differenceSummary) · \(elapsed)"
+        if model.loading {
+            summary.stringValue =
+                "Reading \(model.options.method == .content ? "contents" : "folders")… \((model.comparison?.rows.count ?? 0).formatted()) items"
+        }
         summary.textColor = model.error == nil ? Theme.windowTextInactive : Theme.compareDanger
         summary.toolTip = "Compared by \(Self.methodTitle(model.options.method).lowercased()) · \(summary.stringValue)"
         sizes.stringValue =
-            "\(model.names.0) \(FileFormat.size(model.visibleLeftBytes)) · \(model.names.1) \(FileFormat.size(model.visibleRightBytes))"
+            "\(model.names.0) \(FileFormat.size(model.outline?.totalBytes[.left] ?? 0)) · \(model.names.1) \(FileFormat.size(model.outline?.totalBytes[.right] ?? 0))"
         let identical = differences == 0 && model.comparison?.complete == true
         overlay.isHidden = !model.rows.isEmpty || model.loading || (model.comparison == nil && model.error == nil)
         overlay.configure(
@@ -233,7 +244,7 @@ final class CompareView: NSView {
                 : (identical ? "\(model.names.0) and \(model.names.1) are identical" : "No items match these filters."),
             detail: model.error
                 ?? (identical
-                    ? "\((model.comparison?.rows.count ?? 0).formatted()) items match by \(Self.methodTitle(model.options.method).lowercased())."
+                    ? "\((model.comparison?.rows.count ?? 0).formatted()) items match by \(Self.methodTitle(model.options.method).lowercased().replacingOccurrences(of: "&", with: "and"))."
                     : "Choose which differences to show above."),
             button: model.error != nil ? "Try Again" : (identical && model.options.method != .content ? "Compare Contents" : "Show All")
         ) { [weak self] in
@@ -297,6 +308,7 @@ final class CompareView: NSView {
         jobLine.isIndeterminate = false
         jobLine.isHidden = activity.state.isEnded; jobLine.doubleValue = activity.fraction
         jobLine.alphaValue = activity.state == .paused ? 0.4 : 1
+        if activity.state.isEnded { jobLine.stopAnimation(nil) } else { jobLine.startAnimation(nil) }
     }
     @objc private func zoomChanged() {
         document.rowHeight = CGFloat(zoom.doubleValue) + 6
@@ -312,7 +324,10 @@ final class CompareView: NSView {
             item.toolTip =
                 value == .sizeAndDate
                 ? "Fast. Times within 2 seconds count as equal."
-                : (value == .content ? "Exact. Reads every file." : "For copies whose dates changed.")
+                : (value == .content
+                    ? "Exact. \(model.leftRoot.isFileURL && model.rightRoot.isFileURL ? "Reads every file" : "Downloads files") that might differ."
+                    : "For copies whose dates changed.")
+            item.subtitle = item.toolTip
             menu.addItem(item)
         }
         menu.addItem(.separator())
@@ -407,7 +422,7 @@ final class ComparePill: NSButton {
     @objc private func pressed() { onToggle?() }
 }
 
-final class CompareActionButton: NSButton {
+class CompareActionButton: NSButton {
     var clicked: (() -> Void)?
     init(title: String, clicked: @escaping () -> Void) {
         self.clicked = clicked; super.init(frame: .zero); self.title = title; bezelStyle = .rounded; target = self;
@@ -418,14 +433,14 @@ final class CompareActionButton: NSButton {
 }
 
 final class ComparePlaceholder: NSView {
-    private let image = NSImageView(), heading = NSTextField(labelWithString: ""), detail = NSTextField(wrappingLabelWithString: "")
-    private let button = CompareActionButton(title: "Choose Folder…", clicked: {})
+    private let image = CompareStateArtwork(), heading = NSTextField(labelWithString: ""), detail = NSTextField(wrappingLabelWithString: "")
+    let button = ComparePrimaryButton(title: "Choose Folder…", clicked: {})
+    var secondaryActionWidth: CGFloat = 0
     override init(frame: CGRect) {
         super.init(frame: frame)
         for view in [image, heading, detail, button] { addSubview(view) }
         heading.font = .systemFont(ofSize: 15, weight: .semibold); heading.alignment = .center
         detail.font = .systemFont(ofSize: 12); detail.textColor = Theme.windowTextInactive; detail.alignment = .center
-        image.contentTintColor = Theme.compareOnly; image.imageScaling = .scaleProportionallyUpOrDown
         registerForDraggedTypes([.fileURL])
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -433,15 +448,17 @@ final class ComparePlaceholder: NSView {
     var onDrop: ((URL) -> Void)?
     func performPrimaryAction() { button.performClick(nil) }
     func configure(symbol: String, title: String, detail: String, button: String, action: @escaping () -> Void) {
-        image.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        image.symbol = symbol; image.needsDisplay = true
         heading.stringValue = title; self.detail.stringValue = detail; self.button.title = button; self.button.clicked = action; needsLayout = true
     }
     override func layout() {
         super.layout()
-        image.frame = CGRect(x: (bounds.width - 48) / 2, y: 0, width: 48, height: 48)
-        heading.frame = CGRect(x: 0, y: 62, width: bounds.width, height: 24)
-        detail.frame = CGRect(x: 5, y: 92, width: bounds.width - 10, height: 44)
-        button.frame = CGRect(x: (bounds.width - 180) / 2, y: 145, width: 180, height: 28)
+        let folder = image.symbol.contains("folder"), size: CGFloat = folder ? 64 : 48
+        image.frame = CGRect(x: (bounds.width - size) / 2, y: 0, width: size, height: size)
+        heading.frame = CGRect(x: 0, y: size + 12, width: bounds.width, height: 24)
+        detail.isHidden = detail.stringValue.isEmpty
+        detail.frame = CGRect(x: 5, y: heading.frame.maxY + 4, width: bounds.width - 10, height: detail.isHidden ? 0 : (folder ? 36 : 18))
+        button.frame = CGRect(x: (bounds.width - 180 - secondaryActionWidth) / 2, y: detail.frame.maxY + 14, width: 180, height: 28)
     }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { onDrop == nil ? [] : .copy }
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -552,4 +569,82 @@ final class CompareFocusButton: NSButton {
 
 final class CompareFocusSlider: NSSlider {
     override var acceptsFirstResponder: Bool { true }
+}
+
+final class ComparePrimaryButton: CompareActionButton {
+    override func draw(_ dirty: NSRect) {
+        Theme.accent.withAlphaComponent(isEnabled ? 1 : 0.4).setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 14, yRadius: 14).fill()
+        let style = NSMutableParagraphStyle(); style.alignment = .center
+        (title as NSString).draw(
+            in: CGRect(x: 4, y: (bounds.height - 16) / 2, width: bounds.width - 8, height: 18),
+            withAttributes: [
+                .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+                .foregroundColor: Theme.increasedContrast ? Theme.selectionText : NSColor.white, .paragraphStyle: style,
+            ])
+    }
+}
+
+private final class CompareStateArtwork: NSView {
+    var symbol = ""
+    override var isFlipped: Bool { true }
+    override func draw(_ dirty: NSRect) {
+        if symbol == "checkmark.circle" {
+            Theme.compareOnly.withAlphaComponent(effectiveAppearance.isDark ? 0.2 : 0.16).setFill(); NSBezierPath(ovalIn: bounds).fill()
+            let check = NSBezierPath(); check.move(to: CGPoint(x: 14, y: 25)); check.line(to: CGPoint(x: 21, y: 32));
+            check.line(to: CGPoint(x: 34, y: 17)); check.lineWidth = 2.5; check.lineCapStyle = .round; check.lineJoinStyle = .round;
+            Theme.compareOnly.setStroke(); check.stroke()
+        } else if symbol.contains("folder") {
+            let folder = NSBezierPath(); folder.move(to: CGPoint(x: 6, y: 15)); folder.line(to: CGPoint(x: 26, y: 15));
+            folder.line(to: CGPoint(x: 33, y: 22)); folder.line(to: CGPoint(x: 58, y: 22)); folder.line(to: CGPoint(x: 58, y: 54));
+            folder.line(to: CGPoint(x: 6, y: 54)); folder.close(); folder.lineWidth = 1.5; folder.lineJoinStyle = .round;
+            folder.setLineDash([4, 3], count: 2, phase: 0); Theme.windowText.withAlphaComponent(Theme.increasedContrast ? 0.6 : 0.25).setStroke();
+            folder.stroke()
+        } else {
+            NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.draw(in: bounds)
+        }
+    }
+}
+
+final class CompareArcSpinner: NSView {
+    override init(frame: CGRect) { super.init(frame: frame); setAccessibilityRole(.progressIndicator); setAccessibilityLabel("Comparing") }
+    required init?(coder: NSCoder) { fatalError() }
+    func startAnimation(_ sender: Any?) { needsDisplay = true }
+    func stopAnimation(_ sender: Any?) { needsDisplay = true }
+    override func draw(_ dirty: NSRect) {
+        let angle =
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            ? 0 : CGFloat(CACurrentMediaTime().truncatingRemainder(dividingBy: 1.2) / 1.2 * 360)
+        let arc = NSBezierPath(); arc.lineWidth = 1.5; arc.lineCapStyle = .round;
+        arc.appendArc(
+            withCenter: CGPoint(x: bounds.midX, y: bounds.midY), radius: max(2, min(bounds.width, bounds.height) / 2 - 1), startAngle: angle,
+            endAngle: angle + 270);
+        Theme.accent.setStroke(); arc.stroke()
+    }
+}
+
+private final class CompareProgressLine: NSView {
+    var isIndeterminate = false { didSet { needsDisplay = true } }
+    var doubleValue = 0.0 { didSet { needsDisplay = true } }
+    var onFrame: (() -> Void)?
+    private var timer: Timer?
+    func startAnimation(_ sender: Any?) {
+        guard timer == nil else { return }
+        let timer = Timer(timeInterval: 1 / 30, repeats: true) { [weak self] _ in
+            self?.needsDisplay = true; self?.onFrame?()
+        }
+        self.timer = timer; RunLoop.main.add(timer, forMode: .common)
+    }
+    func stopAnimation(_ sender: Any?) { timer?.invalidate(); timer = nil }
+    deinit { timer?.invalidate() }
+    override func draw(_ dirty: NSRect) {
+        Theme.accent.setFill()
+        if isIndeterminate {
+            let phase =
+                NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.5 : CACurrentMediaTime().truncatingRemainder(dividingBy: 1.2) / 1.2
+            CGRect(x: CGFloat(phase * 1.3 - 0.3) * bounds.width, y: 0, width: bounds.width * 0.3, height: 2).intersection(bounds).fill()
+        } else {
+            CGRect(x: 0, y: 0, width: bounds.width * min(1, max(0, doubleValue)), height: 2).fill()
+        }
+    }
 }
