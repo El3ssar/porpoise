@@ -146,7 +146,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         for label in [dimensions, pixelsChanged, blendLeft, blendRight] {
             label.font = .systemFont(ofSize: 12); label.textColor = Theme.viewTextInactive
         }
-        pixelsChanged.font = .systemFont(ofSize: 12, weight: .semibold); pixelsChanged.textColor = Theme.compareChanged;
+        pixelsChanged.font = .systemFont(ofSize: 12, weight: .semibold); pixelsChanged.textColor = Theme.transferChanged;
         pixelsChanged.alignment = .right
         blendLeft.alignment = .right; blendRight.alignment = .left
         imageCanvas.onOpacityChange = { [weak self] value in self?.blend.doubleValue = Double(value) }
@@ -661,7 +661,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         addInfoRow(table, height: CGFloat(rows.count + 1) * 30 + 32); root.needsLayout = true
     }
     private func sideNames() -> (String, String) {
-        CompareOutline.sideNames(leftURL.deletingLastPathComponent(), rightURL.deletingLastPathComponent())
+        LinkedBrowsing.sideNames(leftURL.deletingLastPathComponent(), rightURL.deletingLastPathComponent())
     }
     private func capsulePath(for url: URL) -> [String] {
         let own = url.deletingLastPathComponent().pathComponents.filter { $0 != "/" }
@@ -751,7 +751,7 @@ private final class FileDiffInfoRow: NSView {
                 in: NSRect(x: x, y: 7, width: (i == 0 ? label - 20 : col - 12), height: 18),
                 withAttributes: [
                     .font: NSFont.systemFont(ofSize: 12, weight: heading || (different && i > 0) ? .semibold : .regular),
-                    .foregroundColor: i == 0 ? Theme.viewTextInactive : (different ? Theme.compareChanged : Theme.viewText), .paragraphStyle: p,
+                    .foregroundColor: i == 0 ? Theme.viewTextInactive : (different ? Theme.transferChanged : Theme.viewText), .paragraphStyle: p,
                 ])
         }
     }
@@ -781,8 +781,9 @@ private final class FileDiffHashRow: NSView {
 private final class FileDiffSuccessIcon: NSView {
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
-        Theme.compareOnly.withAlphaComponent(effectiveAppearance.isDark ? 0.20 : 0.16).setFill(); NSBezierPath(ovalIn: bounds).fill()
+        Theme.transferPositive.withAlphaComponent(effectiveAppearance.isDark ? 0.20 : 0.16).setFill(); NSBezierPath(ovalIn: bounds).fill()
         ("✓" as NSString).draw(
-            at: NSPoint(x: 14, y: 8), withAttributes: [.font: NSFont.systemFont(ofSize: 25, weight: .medium), .foregroundColor: Theme.compareOnly])
+            at: NSPoint(x: 14, y: 8),
+            withAttributes: [.font: NSFont.systemFont(ofSize: 25, weight: .medium), .foregroundColor: Theme.transferPositive])
     }
 }

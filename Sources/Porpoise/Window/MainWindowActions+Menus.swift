@@ -93,12 +93,8 @@ extension MainWindowController {
 
     func splitMenu() -> NSMenu {
         let m = NSMenu()
-        let compare = item(
-            tab.compareView == nil ? "Compare Folders" : "Stop Comparing", nil, #selector(toggleCompare(_:)), key: "c", mods: [.control, .command])
-        compare.image = PairToolbarButton.pages; m.addItem(compare)
         let link = item("Linked Browsing", nil, #selector(toggleLinkedBrowsing(_:)), key: "l", mods: [.control, .command])
         link.image = NSImage(systemSymbolName: "link", accessibilityDescription: nil); m.addItem(link)
-        m.addItem(item("Sync…", "view-refresh", #selector(syncComparison(_:)), key: "s", mods: [.control, .command]))
         m.addItem(.separator())
         m.addItem(item("Split View to Tabs", "tab-new", #selector(splitToTabs(_:))))
         m.addItem(item(tab.activeIsSecondary ? "Pop out Right View" : "Pop out Left View", "window-new", #selector(popOutSplit(_:))))

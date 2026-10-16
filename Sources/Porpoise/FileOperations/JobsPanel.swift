@@ -84,8 +84,8 @@ final class TransferToolbarButton: NSButton {
             let image = NSImage(
                 systemSymbolName: failed ? "exclamationmark.circle.fill" : "checkmark",
                 accessibilityDescription: failed ? "Needs attention" : "Finished")
-            (failed ? Theme.compareDanger : Theme.compareOnly).set()
-            image?.withSymbolConfiguration(.init(paletteColors: failed ? [.white, Theme.compareDanger] : [Theme.compareOnly]))?.draw(
+            (failed ? Theme.transferDanger : Theme.transferPositive).set()
+            image?.withSymbolConfiguration(.init(paletteColors: failed ? [.white, Theme.transferDanger] : [Theme.transferPositive]))?.draw(
                 in: CGRect(x: center.x - 9, y: center.y - 9, width: 18, height: 18))
         } else {
             let track = NSBezierPath(ovalIn: CGRect(x: center.x - 11, y: center.y - 11, width: 22, height: 22))
@@ -165,15 +165,13 @@ private final class TransferPopoverRow: NSView {
         self.activity = activity
         if let item = activity.incomingItem {
             icon.image = Icons.shared.image(for: item, size: 32)
-        } else if activity.planJob != nil {
-            icon.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: "Sync")
         } else {
             icon.image = NSImage(systemSymbolName: activity.sources.count > 1 ? "square.stack.3d.up" : "doc", accessibilityDescription: nil)
         }
         icon.imageScaling = .scaleProportionallyUpOrDown
         title.stringValue = activity.title
         var line = (activity.state == .completed ? TransferSummary.text(activity) : activity.statusText).replacingOccurrences(of: " — ", with: " · ")
-        if activity.planJob == nil, let progress = activity.progress, progress.phase == .transferring,
+        if let progress = activity.progress, progress.phase == .transferring,
             activity.state == .running || activity.state == .paused
         {
             var parts: [String] = []
@@ -188,10 +186,10 @@ private final class TransferPopoverRow: NSView {
         }
         detail.stringValue = line
         percent.stringValue = "\(Int(activity.fraction * 100))%"
-        percent.isHidden = activity.state.isEnded || (activity.planJob == nil && activity.progress?.phase == .preparing)
-        toolTip = activity.planProgress?.currentTitle ?? activity.progress?.currentName
+        percent.isHidden = activity.state.isEnded || (activity.progress?.phase == .preparing)
+        toolTip = activity.progress?.currentName
         bar.fraction = activity.fraction
-        bar.isIndeterminate = (activity.planJob == nil && activity.progress?.phase == .preparing) || activity.state == .queued
+        bar.isIndeterminate = (activity.progress?.phase == .preparing) || activity.state == .queued
         bar.alphaValue = activity.state == .paused ? 0.4 : 1
         bar.isHidden = activity.state.isEnded
         pause.isHidden = !(activity.canPause || activity.state == .cancelled || !activity.errors.isEmpty)
@@ -288,7 +286,7 @@ private final class TransferPopoverContent: NSVisualEffectView {
 /// One result sentence shared by the toolbar popover and the originating window's status bar.
 enum TransferSummary {
     static func text(_ activity: Activity) -> String {
-        guard activity.planJob == nil, activity.state == .completed, activity.kind == .copy || activity.kind == .move,
+        guard activity.state == .completed, activity.kind == .copy || activity.kind == .move,
             let progress = activity.progress
         else {
             return activity.statusText

@@ -131,7 +131,7 @@ final class FileDiffTextView: NSView {
         }
     }
     private func color(_ row: FileDiffRow) -> NSColor {
-        row.left == nil ? Theme.compareOnly : (row.right == nil ? Theme.compareDanger : Theme.compareChanged)
+        row.left == nil ? Theme.transferPositive : (row.right == nil ? Theme.transferDanger : Theme.transferChanged)
     }
     override func draw(_ dirtyRect: NSRect) {
         Theme.viewBackground.setFill(); dirtyRect.fill()

@@ -13,22 +13,11 @@ protocol PlacesPanelDelegate: AnyObject {
 /// Dolphin's Places panel, custom-drawn (section headers, icon rows, capacity bars for devices).
 final class PlacesPanel: NSView {
     weak var delegate: PlacesPanelDelegate?
-    var currentURL: URL? {
-        didSet {
-            if let id = currentSyncID, let pair = SyncCoordinator.shared.pairs.first(where: { $0.id == id }),
-                currentURL != pair.left, currentURL != pair.right
-            {
-                currentSyncID = nil
-            }
-            needsDisplay = true
-        }
-    }
-    var currentSyncID: UUID?
+    var currentURL: URL? { didSet { needsDisplay = true } }
 
     enum Metrics {
         static let topInset: CGFloat = 4
         static let headerHeight: CGFloat = 26
-        static let syncBadgeWidth: CGFloat = 68
         static let sectionGap: CGFloat = 8
         /// Device rows are taller to fit the capacity bar.
         static let volumeExtraHeight: CGFloat = 8
@@ -55,9 +44,6 @@ final class PlacesPanel: NSView {
     struct VolumeCapacity { let free: Int64; let total: Int64 }
 
     var rows: [Row] = []
-    private var syncTick: Timer?
-    private var shownSyncStatuses: [UUID: SyncCoordinator.Status] = [:]
-    private var syncSecond = -1
 
     // Fold/unfold animation (macOS style): rows glide to their new places, folding rows slide into their header and
     // fade, unfolding ones come out of it; the chevron turns.
@@ -172,54 +158,16 @@ final class PlacesPanel: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         registerForDraggedTypes([.fileURL, .placeEntry, .placeSection])
-        NotificationCenter.default.addObserver(self, selector: #selector(placesChanged(_:)), name: PlacesModel.changed, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(reload), name: PlacesModel.changed, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged(_:)), name: Settings.changed, object: nil)
-        _ = SyncCoordinator.shared
-        syncTick = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            let second = Int(Date().timeIntervalSince1970)
-            let timeChanged = second != self.syncSecond
-            self.syncSecond = second
-            for index in self.rows.indices {
-                guard case .entry(let entry) = self.rows[index].kind,
-                    let pair = SyncCoordinator.shared.pair(for: entry.url)
-                else { continue }
-                let status = SyncCoordinator.shared.statuses[pair.id] ?? .idle
-                if status == .syncing || status == .planning || timeChanged {
-                    let row = self.rect(of: index)
-                    self.setNeedsDisplay(timeChanged ? row : CGRect(x: row.maxX - 32, y: row.minY, width: 32, height: row.height))
-                }
-            }
-        }
-        if let syncTick { RunLoop.main.add(syncTick, forMode: .common) }
-        NotificationCenter.default.addObserver(self, selector: #selector(syncStatusChanged), name: SyncCoordinator.changed, object: nil)
         reload()
         setAccessibilityRole(.list)
         setAccessibilityLabel("Places")
     }
 
     required init?(coder: NSCoder) { fatalError() }
-    deinit { syncTick?.invalidate() }
 
     var rowHeight: CGFloat { max(Metrics.minRowHeight, CGFloat(Settings.shared.placesIconSize) + 12) }
-
-    @objc private func syncStatusChanged() {
-        let statuses = SyncCoordinator.shared.statuses
-        guard shownSyncStatuses != statuses else { return }
-        let previous = shownSyncStatuses; shownSyncStatuses = statuses
-        for index in rows.indices {
-            guard case .entry(let entry) = rows[index].kind, let pair = SyncCoordinator.shared.pair(for: entry.url),
-                previous[pair.id] != statuses[pair.id]
-            else { continue }
-            setNeedsDisplay(rect(of: index))
-        }
-    }
-    @objc private func placesChanged(_ notification: Notification) {
-        if notification.object as? String == "sync", window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            animateNextReload = true
-        }
-        reload()
-    }
 
     @objc private func settingsChanged(_ n: Notification) {
         // Only the icon size (or a full reset) changes this panel.
@@ -315,7 +263,6 @@ final class PlacesPanel: NSView {
     var entryIndices: [Int] { rows.indices.filter { entry(at: $0) != nil } }
 
     func isCurrent(_ e: PlaceEntry) -> Bool {
-        if let pair = SyncCoordinator.shared.pair(for: e.url) { return currentSyncID == pair.id }
         guard let c = currentURL else { return false }
         return e.url.standardizedFileURL == c.standardizedFileURL
     }

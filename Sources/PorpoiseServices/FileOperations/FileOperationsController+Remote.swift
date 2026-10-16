@@ -4,14 +4,14 @@ import PorpoiseCore
 extension FileOperationsController {
     func runRemote(
         _ kind: FileOperationKind, _ urls: [URL], to folder: URL?, window: AnyObject?, done: (([URL]) -> Void)?,
-        completed: [URL: URL] = [:], rule: TransferConflictRule? = nil, options: SyncCompareOptions? = nil
+        completed: [URL: URL] = [:], rule: TransferConflictRule? = nil, options: TransferCompareOptions? = nil
     ) {
         let control = FileJob(kind: kind, sources: urls, destinationFolder: folder)
         configureReplacementDisposal(control)
         let runtime = RemoteTransferJob(
             kind: kind, sources: urls, destination: folder, control: control,
             rule: rule ?? Settings.shared.transferConflictRule,
-            options: options ?? SyncCompareOptions(method: Settings.shared.transferCompareMethod), completed: completed)
+            options: options ?? TransferCompareOptions(method: Settings.shared.transferCompareMethod), completed: completed)
         let activity = Activity(kind: kind, sources: urls, destination: folder, job: nil)
         activity.originWindow = window
         activity.controlJob = control
@@ -34,7 +34,7 @@ extension FileOperationsController {
         runtime.resolve = { [weak self, weak activity] info in
             self?.awaitConflict(info, kind: kind, activity: activity, job: control, window: window) ?? .init(.cancel)
         }
-        activity.retryPlan = { [weak self, weak activity] in
+        activity.retryTransfer = { [weak self, weak activity] in
             guard let self, let activity else { return }
             let remaining = activity.state == .cancelled || activity.state == .interrupted ? runtime.remaining : runtime.failedSources
             self.activities.removeAll { $0 === activity }

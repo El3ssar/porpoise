@@ -127,7 +127,7 @@ struct TransferExperienceTests {
         #expect(s.read("dst/a (1).txt") == "incoming")
     }
 
-    @Test func differentUsesTheSyncToleranceAndReportsIdenticalSkips() async throws {
+    @Test func differentUsesTheTransferToleranceAndReportsIdenticalSkips() async throws {
         let s = try Scratch("identical-summary")
         let src = try s.file("src/report", "same")
         let dst = try s.file("dst/report", "same")

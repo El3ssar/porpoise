@@ -20,8 +20,6 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         }
     }
     var isActive = true { didSet { needsDisplay = true } }
-    var placeholderText: String? { didSet { if placeholderText != oldValue { rebuild() } } }
-    var onPlaceholderClick: (() -> Void)?
     var missingTail = false { didSet { needsDisplay = true } }
     var preferredAncestorName: String? { didSet { if preferredAncestorName != oldValue { rebuild() } } }
     var showPlacesButton = false { didSet { rebuild() } }
@@ -38,13 +36,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
 
     /// VoiceOver: the path's folders, each pressable (the arrows and buttons are reachable through the menus).
     override func accessibilityChildren() -> [Any]? {
-        if let placeholderText {
-            return [
-                AccessibleRegion(
-                    in: self, role: .button, label: placeholderText, frame: { [weak self] in self?.bounds ?? .zero },
-                    press: { [weak self] in self?.onPlaceholderClick?() })
-            ]
-        }
+
         if isEditing { return super.accessibilityChildren() }
         return segments.indices.compactMap { i -> Any? in
             guard case .crumb(let u, let title, _) = segments[i].kind else { return nil }
@@ -250,12 +242,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             frame.fill()
         }
         let textColor = isActive ? Theme.windowText : Theme.windowTextInactive.withAlphaComponent(0.7)
-        if let placeholderText {
-            (placeholderText as NSString).draw(
-                at: CGPoint(x: 14, y: (bounds.height - crumbFont.ascender + crumbFont.descender) / 2),
-                withAttributes: [.font: crumbFont, .foregroundColor: Theme.windowTextInactive])
-            return
-        }
+
         if bounds.width < 200 {
             let title = preferredAncestorName.map { "\($0) › \(url.lastPathComponent)" } ?? url.lastPathComponent
             let style = NSMutableParagraphStyle(); style.lineBreakMode = .byTruncatingTail
@@ -332,7 +319,6 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     override func mouseExited(with event: NSEvent) { hover = nil; fieldHover = false; needsDisplay = true }
 
     override func mouseDown(with event: NSEvent) {
-        if placeholderText != nil { onPlaceholderClick?(); return }
         delegate?.breadcrumbActivated(self)
         guard !isEditing else { return }
         let p = convert(event.locationInWindow, from: nil)

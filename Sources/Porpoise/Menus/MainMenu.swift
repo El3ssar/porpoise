@@ -125,9 +125,7 @@ extension AppDelegate {
         view.addItem(mi("Restore to Defaults", #selector(W.restoreViewDefaults(_:)), icon: "edit-reset"))
         view.addItem(mi("Adjust View Display Style…", #selector(W.adjustViewStyle(_:)), "j", icon: "configure"))
         view.addItem(sep())
-        view.addItem(mi("Compare Folders", #selector(W.toggleCompare(_:)), "c", [.command, .control], icon: "edit-copy"))
         view.addItem(mi("Linked Browsing", #selector(W.toggleLinkedBrowsing(_:)), "l", [.command, .control], icon: "insert-link"))
-        view.addItem(mi("Show Same Items", #selector(W.showSameComparisonItems(_:))))
         view.addItem(mi("Split", #selector(W.toggleSplit(_:)), K.f(3), [], icon: "view-split-left-right"))
         view.addItem(mi("Split View to Tabs", #selector(W.splitToTabs(_:)), K.f(3), [.command, .shift], icon: "tab-new"))
         view.addItem(mi("Pop out Split View", #selector(W.popOutSplit(_:)), K.f(3), .shift, icon: "window-new"))
@@ -156,8 +154,6 @@ extension AppDelegate {
 
         // Go
         let go = NSMenu(title: "Go")
-        go.addItem(mi("Next Difference", #selector(W.nextComparisonDifference(_:)), K.down, [.command, .control]))
-        go.addItem(mi("Previous Difference", #selector(W.previousComparisonDifference(_:)), K.up, [.command, .control]))
         go.addItem(sep())
         go.addItem(mi("Up", #selector(W.goUp(_:)), K.up, .option, icon: "go-up"))
         go.addItem(mi("Up", #selector(W.goUp(_:)), K.up, .command, icon: "go-up").hiddenAlternate())

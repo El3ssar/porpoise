@@ -19,7 +19,7 @@ public enum FileFormat {
         return String(format: "%.1f %@", v, units[i])
     }
 
-    /// Counts follow the app's preferred language locale, consistently across browse, Compare and Sync.
+    /// Counts follow the app's preferred language locale, consistently across file browsing and transfers.
     /// Locale.current can carry a separate region override that differs from the UI language.
     public static func count(_ n: Int, locale: Locale? = nil) -> String {
         n.formatted(.number.locale(locale ?? Locale(identifier: Locale.preferredLanguages.first ?? Locale.current.identifier)))

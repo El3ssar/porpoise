@@ -6,6 +6,10 @@ public enum Migration {
     private static let doneKey = "migratedFromDolphin"
 
     public static func run() {
+        // Saved folder-pair files are intentionally no longer loaded. Retire their presentation preferences.
+        for key in Settings.store.dictionaryRepresentation().keys where key.hasPrefix("sync.") || key.hasPrefix("compare.") {
+            Settings.store.removeObject(forKey: key)
+        }
         guard !Settings.isTesting else { return }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         run(

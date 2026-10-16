@@ -20,14 +20,8 @@ extension MainWindowController: NSMenuItemValidation {
         let p = view.model.props
         let ops = FileOperationsController.shared
         switch item.action {
-        case #selector(toggleCompare(_:)):
-            item.title = tab.compareView == nil ? "Compare Folders" : "Stop Comparing"; return true
         case #selector(toggleLinkedBrowsing(_:)):
             item.state = tab.linkedRoots == nil ? .off : .on; return true
-        case #selector(showSameComparisonItems(_:)):
-            item.state = tab.compareView?.model.filter.contains(.same) == true ? .on : .off; return tab.compareView != nil
-        case #selector(nextComparisonDifference(_:)), #selector(previousComparisonDifference(_:)):
-            return tab.compareView != nil
         // File / Edit
         case #selector(compareFiles(_:)):
             return view.url.isFileURL && view.model.selectedItems.count <= 2

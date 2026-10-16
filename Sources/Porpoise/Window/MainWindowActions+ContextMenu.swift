@@ -126,9 +126,6 @@ extension MainWindowController {
             m.addItem(self.item("Properties", "document-properties", #selector(properties(_:))))
             return m
         }
-        if item.isDirectory {
-            m.addItem(self.item("Compare with Other View", "edit-copy", #selector(compareFolderSelection(_:)))); m.addItem(.separator())
-        }
         let single = sel.count <= 1
         let local = item.url.isFileURL
         if single && item.isBrowsableFolder {

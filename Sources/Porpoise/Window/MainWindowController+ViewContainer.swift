@@ -8,9 +8,6 @@ import Quartz
 extension MainWindowController {
     func containerDidBecomeActive(_ c: ViewContainer) {
         guard tabs.indices.contains(current) else { return }
-        if let comparison = tab.compareView {
-            comparison.document.activeSide = c === tab.secondary ? .right : .left
-        }
         if tab.secondary === c && !tab.activeIsSecondary {
             tab.setActive(secondary: true); syncToActiveView()
         } else if tab.primary === c && tab.activeIsSecondary {
@@ -19,7 +16,7 @@ extension MainWindowController {
     }
 
     func containerDidChangeURL(_ c: ViewContainer) {
-        comparisonNavigationChanged(c)
+        linkedNavigationChanged(c)
         AppDelegate.shared.sessionChanged()
         if c === view || tab.containers.contains(where: { $0 === c }) {
             syncToActiveView()
@@ -113,28 +110,7 @@ extension MainWindowController {
         return t.conforms(to: .shellScript) || t.conforms(to: .unixExecutable) || t.conforms(to: .script)
     }
 
-    func container(_ c: ViewContainer, menuFor item: FileItem?) -> NSMenu? {
-        let menu = contextMenu(for: item, in: c)
-        if let compare = tab.compareView, let item {
-            let side: SyncSide = c === tab.primary ? .left : .right
-            let destination = side == .left ? compare.model.names.1 : compare.model.names.0
-            let copy = NSMenuItem(
-                title: side == .left ? "Copy to \(destination) →" : "← Copy to \(destination)", action: #selector(copyToOtherView(_:)),
-                keyEquivalent: "")
-            copy.target = self; menu.insertItem(copy, at: 0)
-            if let path = LinkedBrowsing.relativePath(item.url, below: side == .left ? compare.model.leftRoot : compare.model.rightRoot),
-                let index = compare.model.rowIndices[
-                    (side == .left ? compare.model.leftDetails : compare.model.rightDetails).pathAliases[path] ?? path],
-                compare.model.rows[index].left?.kind == .file,
-                compare.model.rows[index].right?.kind == .file
-            {
-                let files = NSMenuItem(title: "Compare Files", action: #selector(compareFiles(_:)), keyEquivalent: "")
-                files.target = self; menu.insertItem(files, at: 1)
-            }
-            menu.insertItem(.separator(), at: min(2, menu.items.count))
-        }
-        return menu
-    }
+    func container(_ c: ViewContainer, menuFor item: FileItem?) -> NSMenu? { contextMenu(for: item, in: c) }
 
     func container(_ c: ViewContainer, drop urls: [URL], onto folder: URL, operation: NSDragOperation) {
         FileOperationsController.shared.handleDrop(urls, onto: folder, operation: operation, in: c.list)
