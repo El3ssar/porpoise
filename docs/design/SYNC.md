@@ -5,7 +5,8 @@ two files. This is the specification the app work is built and reviewed against.
 screen below): `artifacts/p2/mockups/mockups.html` in the team folder; `?mode=light|dark|both&only=<screen id>`
 links to one screen, and `png/` holds a capture of each. Mockup screens: 1 compare · 2 progress · 3 identical ·
 4 chooser · 5 popover · 6 sync-mirror · 7 sync-twoway · 8 running · 9 keep · 10 linked · 11 files-text ·
-12 files-image · 13 files-info · 14 tokens.
+12 files-image · 13 files-info · 14 tokens. The refinement round (2026-10-16) rewrote §4 and §7: where a mockup
+disagrees with them (the compare footer, the chooser as a step), the text wins.
 
 **Principle: one object, three verbs.** A *pair* is two folders. You **Compare** a pair (look), **Sync** it (make it
 agree once), or **Keep it in Sync** (make it agree from now on). Everything else is disclosed on demand. No new
@@ -69,10 +70,10 @@ replace = `compareChanged`, delete/conflict = `compareDanger`.
 
 | Command | Menu | Key | Notes |
 |---|---|---|---|
-| Compare Folders / Stop Comparing | View | ⌃⌘C | Opens split first if needed (§4.1). Toggles. |
+| Compare Folders / Stop Comparing | View | ⌃⌘C | Compares the two panes at once; opens split first if needed (§4.1). Toggles. |
 | Linked Browsing | View | ⌃⌘L | Toggle; checkmark in menu. |
 | Sync… | File | ⌃⌘S | Opens the sync sheet for the current pair. Enabled while comparing or on a saved pair. |
-| Compare Files | File | ⌥⌘Y | Two selected files, or the selected row's two sides while comparing. ⌘Y is Quick Look. |
+| Compare Files | File | ⌥⌘Y | Two selected files in one pane; one selected file in each pane of a split view (left vs right); or the selected row's two sides while comparing. The file chooser appears only when none of these applies. ⌘Y is Quick Look. |
 | Next / Previous Difference | Go | ⌃⌘↓ / ⌃⌘↑ | Compare view and Compare Files. |
 | Copy to Other View | (exists) | ⇧F5 | While comparing: "Copy to Backup →" / "← Copy to Projects" for the selected rows. |
 | Show Same Items | View | — | Toggles the `=` filter pill. |
@@ -84,8 +85,7 @@ replace = `compareChanged`, delete/conflict = `compareDanger`.
 **Toolbar: the seam capsule.** In split view a small glass capsule (2 buttons, 34 × 68, r 17) sits centred on the
 pane divider between the two location fields, which give up 74 pt between them:
 
-- **Link** (chain icon): linked browsing. Off: `text` 70 %. On: `accent`. On but the counterpart is missing: broken
-  chain in `compareChanged`.
+- **Link** (chain icon): linked browsing, states in §7.4.
 - **Compare** (two facing pages icon): on = pressed fill `selection` 32 % with `accent` icon.
 
 Both are also `Porpoise.toolbar.compare` / `.link` items for customised toolbars. When either location field would
@@ -100,42 +100,76 @@ Context menus: a folder → **Compare with Other View**; a pair of folders selec
 
 ## 4. Compare
 
-### 4.1 Starting
+Revised in the refinement round (2026-10-16) after the operator used the build by hand. **Compare is a lens on the two
+panes, not a place.** Turning it on adds alignment, a gutter and tints to the panes' own Details view. Navigating
+either pane compares again. Turning it off removes the lens and leaves the panes as they were. If something works in
+Details, it works the same way in Compare. If it can't, Compare is wrong.
 
-- **In split view:** compares left vs right in place.
-- **Not split:** opens split (existing 280 ms glide). The new pane shows the **chooser** (§4.8) instead of a copy of
-  the current folder.
-- **Same folder on both sides:** compare bar shows "Both sides show the same folder." with a Choose Folder… button.
+### 4.1 Starting: instant
 
-### 4.2 Layout
+⌃⌘C, the seam button and View › Compare Folders all do the same thing:
+
+| Situation | Result |
+|---|---|
+| Split view, two different folders | Compares left with right right away. No chooser, sheet or confirmation. |
+| Split view, same folder on both sides | Compares right away, like any other pair. The result is the Identical state worded "Both sides show “Projects”" with "Navigate either side to compare it with another folder." Navigating either side compares the new pair (§4.6). |
+| Not split | Opens split view (280 ms glide) with the right pane at the left folder's last partner, then compares. If there's no last partner, the chooser appears in the right pane. |
+| Folder › Compare with Other View | Left is that folder, right is the other pane's folder. |
+| Two folders selected › Compare | Opens split view with the first folder on the left and the second on the right. |
+| Sidebar sync pair (§6.1) | Split view and Compare with the pair. |
+
+**Last partner:** the folder most recently compared with this one (`compare.recents`). It's skipped when it no longer
+exists or isn't mounted. The chooser is the last resort, never a step.
+
+The first rows appear in the time it takes to open a folder: the top level of both listings, already aligned. Folder
+roll-ups (differences inside) fill in afterwards. The panes never go blank and never wait behind a "Comparing…"
+screen.
+
+### 4.2 Parity with Details
+
+**Each pane is its own Details view** (`ItemListView` in Details mode, with its header, cells, menus and keyboard
+handling). Compare gives it an aligned row list in which a ghost row is a blank row, and draws the additions in §4.3
+on top. Do not build a parallel row view that imitates Details.
+
+| Behaviour | In Compare |
+|---|---|
+| Rows | Details rendering: row height, icons, fonts, colours, alternating rows, hover, selection fill and outline, tags, cloud badges, name truncation. |
+| Size | Rows must line up, so both panes use one zoom. It starts at the active pane's Details zoom. The status bar slider, ⌘+ / ⌘− and pinch change both panes. Stopping restores each pane's own zoom. |
+| Columns and header | Each pane shows its own Details columns, widths and header. Resizing and reordering columns works per pane. Clicking a column header sorts **both** panes by that column, ordered by the clicked side's values (a ghost row on that side sorts by the other side's value). The folders-first setting applies. |
+| Expandable folders | The same disclosure triangles as Details, shown only when the Details setting is on. Expanding a folder on one side expands its counterpart. With the setting off, folders don't expand, and double-click enters them (§7). |
+| Selection | Click, ⇧-click, ⌘-click, drag-select and ⌘A act on the side you use. The counterpart rows get an outline only (no fill), so it's clear which side has focus. Clicking a ghost row selects the real row opposite and moves focus there. |
+| Keyboard | ↑ ↓ PgUp PgDn Home End, ← → collapse and expand, ⌘↓ open, ⌘↑ enclosing folder, rename key, type-select (on the focused side, skipping ghosts), Tab switches sides as in split view, ⌃⌘↓ / ⌃⌘↑ next / previous difference. |
+| Space, ⌘Y | Quick Look the focused side's selection. Arrow keys move through the rows while the panel is open. |
+| Double-click, ⌘↓ | Folder: enters it on both sides (§7). File: opens it in its default app. |
+| Context menu | The normal Details menu for the focused side's selection, with a compare section at the top: **Copy to Backup →** / **← Copy to Projects**, **Compare Files** ⌥⌘Y (when both sides are files). On a ghost row: **Copy Here from Projects**. On empty space: the folder's normal background menu. |
+| Drag and drop | Drag rows out as in Details (to Finder, other apps or the other pane). Dropping on a folder row puts the items in that folder, and dropping on empty space or a ghost row puts them in the pane's current folder. The ⌥ / ⌘ modifiers work as in Details. |
+| Rename | Same triggers and field as Details. Afterwards the row realigns (it may become an only-here pair), and the selection stays on the renamed item. |
+| Filter (⌘F, type-to-filter bar) | Filters both panes' rows together, so they stay aligned. |
+| Status bars | Each pane keeps its own status bar: counts, selection, free space and the zoom slider. |
+| Info and Terminal panels | Unchanged. They follow the focused side. |
+| View mode buttons | Choosing Icons or Compact stops comparing (§4.6), then switches that pane to the mode. They're never disabled. |
+
+### 4.3 What Compare adds
 
 ```
-┌ toolbar 52 ─ [‹ › ^] [▦⌄] [ › Projects        ] (🔗|⧉) [ › Backup › Projects   ] [◫ Close ⌄][⌕][≡] ┐
-├ compare bar 36 ──────────────────────────────────────────────────────────────────────────────────┤
-│ [◧ 3 Only in Projects] [◨ 1 Only in Backup] [≠ 2 Changed] [= 4 Same]           [ Sync… ]   ✕     │
-├ headers 26 ──────────────────────────────┬──┬──────────────────────────────────────────────────┤
-│ Name                        Size  Modif. │  │ Name                         Size  Modified      │
-│ ▸ 📁 Brand   1 only here    2 it  Today… │ ◦│ ▸ 📁 Brand                   1 it  Today…        │
-│ ▸ 📁 Invoices               1 it  Today… │◧ │ ┆ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┆ ghost  │
-│ ┆ ┄ ┄ ┄ ┄ ┄ ghost ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┆ │ ◨│ ▸ 📁 Archive                 1 it  Today…        │
-│   📄 index.html            14 B  11:19 • │≠ │   📄 index.html               5 B  10:02         │
-├ compare footer 28 ───────────────────────┴──┴──────────────────────────────────────────────────┤
-│ ⟳ Size & date ⌄   10 items · 5 differences · 0.2 s        Projects 48.2 MB · Backup 47.9 MB  ◦━━□ │
-└────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ toolbar ─ [‹ › ^] [▦⌄] [ › Projects        ] (🔗|⧉) [ › Backup › Projects   ] [◫ ⌄][⌕][≡] ┐
+├ compare bar 36 ───────────────────────────────────────────────────────────────────────────┤
+│ [◧ 3 Only in Projects] [◨ 1 Only in Backup] [≠ 2 Changed] [= 4 Same]  Size & date ⌄  [Sync…] ✕ │
+├ left pane: its own Details header ───────┬──┬ right pane: its own Details header ──────────┤
+│ ▸ 📁 Brand   1 only here    2 it  Today… │ ◦│ ▸ 📁 Brand                   1 it  Today…    │
+│ ▸ 📁 Invoices               1 it  Today… │◧ │ ┆ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┆ ghost    │
+│   📄 index.html            14 B  11:19 • │≠ │   📄 index.html               5 B  10:02     │
+├ left pane's status bar ──────────────────┴──┴ right pane's status bar ─────────────────────┤
 ```
 
-- **Compare bar** (36 tall, full content width, titlebar material at 0.82 like the status bar, hairline under).
-  Slides down from under the toolbar.
+These are the only new pixels:
+
+- **Compare bar** (36 tall, full content width, titlebar material at 0.82, hairline under). Left: the filter pills
+  (§4.4). Right: the **method** pull-down (§4.5), **Sync…** and ✕. It slides down from under the toolbar.
 - **Gutter** (28 wide) replaces the 1 pt divider while comparing. Background `windowBackground`, 1 pt hairlines on
-  both edges (`Theme.hairline`). Glyphs centred, 16 pt box. The gutter's header cell is empty.
-- **Both panes are Details**, aligned row for row, same row height, same expansion state, same scroll offset
-  (scrolling either scrolls both). View mode buttons are disabled while comparing, with tooltip "Comparing uses
-  Details". The compare view keeps its own zoom: **22 pt icons, 28 pt rows** by default. Density matters here, and
-  the slider still works.
-- **Compare footer** (28 tall) replaces the two status bars with one spanning bar. Left: method button, summary.
-  Right: both sizes, then the zoom slider. Sizes count what's visible, so they change when filters change.
-
-### 4.3 Rows
+  both edges. Glyphs centred, 16 pt box. Its header cell is empty. Scrolling either pane scrolls both: one shared
+  offset.
+- **Status tints, ghost rows, captions and coloured differing columns** on the Details rows:
 
 | Status | Left cell | Gutter | Right cell | Wash |
 |---|---|---|---|---|
@@ -149,21 +183,15 @@ Context menus: a folder → **Compare with Other View**; a pair of folders selec
 | Folder with differences inside | normal + caption | hollow ring in the strongest colour inside | normal + caption | none |
 | Folder still being compared | normal | 10 pt spinner | normal | none |
 
-- **Ghost row:** same height, no icon or text, dashed 1 pt rounded rect (r 6, dash 3/3) inset 3 pt vertically and
-  8 pt at the sides, `ghostStroke`. Hover shows "Not in Backup" centred at 11 pt secondary. Ghost rows can't be
-  selected; clicking one selects the real row opposite.
-- **Captions** (folder roll-ups, special cases): SF 11, after the name with 8 pt gap, `secondaryText`, plus the
-  count in the status colour: "**3** differences", "**1** only here". Truncated before the name is.
-- **Dates and sizes** that differ are drawn in `compareChanged` on both sides (only the differing column), so the
-  eye lands on *why* a row differs.
-- **Symlinks** compare as links (target string), never followed: caption "Link targets differ".
-- **Case-only name differences** (case-insensitive volume): one aligned row, gutter ≠, caption
+- **Ghost row:** same height as the row, no icon or text, dashed 1 pt rounded rect (r 6, dash 3/3) inset 3 pt
+  vertically and 8 pt at the sides, `ghostStroke`. Hover shows "Not in Backup" centred, SF 11 secondary.
+- **Captions** (folder roll-ups, special cases): SF 11, 8 pt after the name, `secondaryText`, with the count in the
+  status colour: "**3** differences", "**1** only here". They truncate before the name does.
+- **Differing dates and sizes** are drawn in `compareChanged` on both sides, in the differing column only.
+- **Symlinks** are compared as links (target string) and never followed. Caption: "Link targets differ".
+- **Case-only name differences** (case-insensitive volume) share one aligned row, with gutter ≠ and the caption
   "Name differs in case: README.md / Readme.md".
-- **Selection mirrors.** Selecting a row selects its counterpart row on the other side with outline only (no fill),
-  so it's clear which side has focus. ⌥← / ⌥→ switch focus between sides and keep the selection.
-- **Expand/collapse** is shared: expanding a folder on either side expands it on both. Double-click on a folder
-  navigates both sides (comparing implies linked browsing).
-- **Hover on the gutter glyph** shows a popover (240 wide), arrow towards the glyph:
+- **Gutter glyph hover** shows a popover (240 wide), with its arrow towards the glyph:
 
   ```
   index.html                                   Changed
@@ -174,30 +202,27 @@ Context menus: a folder → **Compare with Other View**; a pair of folders selec
 
 ### 4.4 Filter pills
 
-Pills sit in the compare bar: 24 tall, r 12, SF 12 medium, 10 pt horizontal padding, 6 apart. Each pill is a
-toggle and also the legend:
+Pills sit in the compare bar: 24 tall, r 12, SF 12 medium, 10 pt horizontal padding, 6 apart. Each pill is both a
+toggle and the legend:
 
 `◧ 12  Only in Projects` · `◨ 3  Only in Backup` · `≠ 22  Changed` · `= 1,247  Same`
 
-- On: wash of its colour at 16 % (dark 20 %), glyph and count in the colour, label `text`. Off: no fill, 1 pt
-  `frame` stroke, everything 55 %.
-- **Defaults: the three difference pills on, Same off.** That's "show me differences" with no extra control.
-- Side names label the pills (and every other place a side is named: sheet, popover, notifications). A side's name
-  is its folder name; when both folders have the same name, the side on another volume or server takes that
-  volume or host name instead ("Projects" vs "Backup", "Projects" vs "nas.local"). If that still doesn't separate
-  them, use the nearest ancestor whose names differ.
-- Pills with a zero count are disabled (not hidden), so the layout never jumps.
-- Folders stay visible while anything inside them matches the filter. With Same off, a folder whose contents are
-  all the same is hidden.
-- Narrow (< 900 pt): labels drop and pills show glyph + count; the full label goes in the tooltip.
-
-Right side of the bar: **Sync…** (push button, accent fill, 24 tall, r 12, SF 12 semibold, white text) and a ✕
-(16 pt, 24 hit box) that stops comparing, as on the Filter and Search bars. Esc also stops comparing when nothing
-else (rename, filter field) has focus.
+- On: its colour as a 16 % wash (dark 20 %), with the glyph and count in the colour and the label in `text`. Off: no
+  fill, 1 pt `frame` stroke, everything at 55 %.
+- **Defaults: the three difference pills are on and Same is off.** That shows the differences with no extra control.
+- Side names label the pills, and every other place a side is named (sheet, popover, notifications). A side's name
+  is its folder name. When both folders have the same name, the side on another volume or server takes that volume or
+  host name instead ("Projects" vs "Backup", "Projects" vs "nas.local"). If that still doesn't tell them apart, use
+  the nearest ancestor whose names differ.
+- A pill with a zero count is disabled (not hidden), so the layout never jumps.
+- Folders stay visible while anything inside them matches the filter. With Same off, a folder whose contents are all
+  the same is hidden.
+- Narrow (under 900 pt): labels drop and pills show glyph + count, with the full label in the tooltip.
+- Esc stops comparing when nothing else (rename, filter field, Quick Look) has focus.
 
 ### 4.5 Method
 
-The footer's left button reads **"Size & date ⌄"** with a small method glyph. Its menu:
+The compare bar's pull-down reads **"Size & date ⌄"** (SF 12, secondary, borderless). Its menu:
 
 - **Size & date** ✓ (default). Subtitle: "Fast. Times within 2 seconds count as equal."
 - **Size only**. Subtitle: "For copies whose dates changed."
@@ -206,52 +231,93 @@ The footer's left button reads **"Size & date ⌄"** with a small method glyph. 
 - ———
 - **Ignore…** opens the exclusion presets (§6.4).
 
-Choosing a method recompares immediately. The footer summary always names the method:
-"Compared by size & date · 1,284 items · 37 differences · 0.8 s". With exclusions: "· 2 rules ignored 41 items".
+Choosing a method compares again straight away (§4.4 live rules, same pair). The pull-down's tooltip states the
+result: "Compared by size & date · 1,284 items · 37 differences · 0.8 s", plus "· 2 rules ignored 41 items" when
+exclusions apply.
 
-Same-size files under Size & date that look different only by date get a footer hint after the compare:
-"22 files differ only by date. **Compare contents**". One click switches the method.
+Under Size & date, when some same-size files differ only by date, a hint follows the pills: "22 differ only by date ·
+**Compare Contents**". One click switches the method.
 
-### 4.6 Progress
+### 4.6 Live
 
-- The scan streams level by level: the top level aligns first, subfolders fill in as they finish. Unfinished
-  folders show the gutter spinner.
-- Compare bar while running: pills replaced by "Comparing… 12,480 items" (SF 12, secondary) + **Stop**. A 2 pt
-  progress line runs along the bar's bottom edge: indeterminate (a travelling 30 % segment, 1.2 s loop) while
-  listing, determinate while hashing (Contents).
-- Under 400 ms, no progress UI appears at all (no flash).
-- Footer during hashing: "Reading contents… 312 of 1,045 files · 1.2 GB of 3.4 GB".
+Compare follows the panes. Any of these compares again:
 
-### 4.7 Result states
+- either pane's location changing, by any navigation path (§7), including path edits;
+- a file operation in either pane (copy, move, rename, delete, drop, Copy to Other View);
+- an external change seen by a pane's folder watcher, the same one Details uses to refresh. Local folders rely on
+  FSEvents only. Timed polling is for remote or unmounted roots, and a poll that finds nothing changed does nothing
+  visible;
+- a method or Ignore change.
+
+Timing: 150 ms after the last trigger, so ⌘↓ ⌘↓ ⌘↓ produces one compare of where you end up. External changes wait
+until things settle (500 ms). A new trigger cancels a compare that's still running.
+
+| What changed | What you see |
+|---|---|
+| **The same pair** (watcher, file operation, method) | Rows update in place. Scroll position and selection stay, matched by path. Changed glyphs cross-fade (160 ms). Rows that leave the filter collapse (180 ms). Nothing jumps to the top. |
+| **A new pair** (navigation) | What Details does on the same navigation: entering a folder starts at the top with nothing selected, ⌘↑ selects the folder you came from, and Back / Forward restore that folder's remembered scroll and selection. |
+
+While comparing again, the previous rows stay until that level's new result is ready. There's no blank pane, no
+overlay, and no control is disabled. You can scroll, select, Quick Look, rename and navigate again.
+
+### 4.7 Progress: inline and quiet
+
+- Under 400 ms nothing appears, so nothing flashes.
+- After that, a 2 pt line runs along the bottom edge of the compare bar. It is indeterminate (a travelling 30 %
+  segment, 1.2 s loop) while listing and determinate while reading contents. Pill counts tick up as results arrive.
+  The method pull-down's glyph becomes a 10 pt spinner, and its tooltip and VoiceOver value say "Comparing… 12,480
+  items".
+- Folders that are still being compared show the 10 pt gutter spinner.
+- Contents method only: "Reading contents… 312 of 1,045 files" appears after the pills, SF 11 secondary.
+- There's no Stop button. Navigating, changing the method, or ✕ cancels the running compare.
+
+### 4.8 Stopping: reversible
+
+✕, Esc (§4.4), ⌃⌘C, the seam button, or choosing another view mode.
+
+- **Both panes go back exactly as they were before Compare started:** location, Back/Forward history, view mode,
+  zoom, sort, expanded folders, scroll position and selection. This holds even if you navigated while comparing
+  (operator rule 3). Rows glide from their aligned positions back to their browse positions when the location is
+  unchanged; otherwise it's the instant swap of a normal navigation.
+- Linked browsing stays on if it was on before Compare. Otherwise it turns off with Compare.
+- Nothing about the panes is lost or reset by comparing: column widths, filters, panels and the split position all
+  stay.
+
+### 4.9 Result states
 
 | State | Presentation |
 |---|---|
-| Differences | Rows as above. |
-| **Identical** | Panes keep headers. A centred overlay spans both panes and the gutter: 48 pt circle with ✓ (`compareOnly`), "**Projects and Backup are identical**" (SF 15 semibold), "1,284 items match by size and date." (SF 12 secondary), then a **Compare Contents** button when the method wasn't Contents. Show Same reveals the rows. |
-| Nothing visible (filters exclude all) | Same overlay without the check: "No items match these filters." + **Show All** link. |
-| Errors | Pill `! 3 Couldn't read` appears (danger colour). Its popover lists the paths with reasons. |
-| Connection lost | Compare bar: "Lost connection to nas.local. **Reconnect**". Results already shown stay, marked stale (40 % alpha gutter). |
-| Disk ejected | Same, "Backup was ejected." |
+| Differences | Rows as in §4.3. |
+| **Identical** | Headers and status bars stay. Centred in the empty list area across both panes and the gutter: a 48 pt circle with ✓ (`compareOnly`), "**Projects and Backup are identical**" (SF 15 semibold), "1,284 items match by size and date." (SF 12 secondary), and a **Compare Contents** button when the method wasn't Contents. Turning on Same shows the rows. Nothing covers rows or blocks input. |
+| Nothing visible (filters exclude all) | The same message without the check: "No items match these filters." with a **Show All** link. |
+| Some items unreadable | An `! 3 Couldn't read` pill appears (danger colour). Its popover lists the paths with reasons. |
+| A whole side unreadable (permission, I/O) | That pane shows Details' own error in place. The other pane shows its rows plainly, with no tints. Bar: "Can't read Backup" (`compareDanger`) instead of the pills. |
+| Counterpart folder missing | The present side shows its rows, all ◧ only here. The other pane shows the missing-counterpart state (§7.3). |
+| A side's folder deleted while comparing | The same as a missing counterpart: the pair stays together, and nothing jumps to a parent folder. |
+| Disk ejected | The rows that were already shown stay, marked stale (gutter at 40 %). Bar: "Backup was ejected." The compare runs again by itself when the disk returns. |
+| Remote side (sftp, smb, WebDAV, adb) | Same behaviour, with listings streaming in. Connection lost: "Lost connection to nas.local. **Reconnect**", and stale rows as for an ejected disk. |
 
-### 4.8 Chooser (the second folder isn't picked yet)
+### 4.10 Chooser (last resort: no partner to compare with)
 
-Shown in the pane that needs a folder: centred stack, 280 wide.
+Shown in the pane that needs a folder: a centred stack, 280 wide.
 
-- 64 pt dashed folder outline (`ghostStroke`, 1.5 pt).
+- A 64 pt dashed folder outline (`ghostStroke`, 1.5 pt).
 - "**Compare Projects with…**" SF 15 semibold.
-- **Choose Folder…** (push button) and a list of up to 5 recent counterparts for this folder ("Backup ›
-  Projects", "NAS › Projects"), 28 tall rows with folder icon and path. Return picks the first one.
-- Dropping a folder onto the pane picks it.
+- **Choose Folder…** (push button), and a list of up to 5 recent counterparts for this folder ("Backup › Projects",
+  "NAS › Projects"), with 28-tall rows showing a folder icon and path. Return picks the first one.
+- Dropping a folder on the pane, or navigating the pane anywhere, picks that folder.
 
-### 4.9 Motion
+### 4.11 Motion
 
-- **Enter:** compare bar slides down 200 ms ease-out. Rows glide from their browse positions to aligned positions
-  with ItemTransition (300 ms, same curve as resize). Ghost rows fade in over 160 ms after a 100 ms delay. The
-  gutter widens from 1 to 28 pt over 200 ms, pushing both panes.
-- **Exit:** the reverse, 240 ms ease-in, ghosts fade first (120 ms).
-- **Filter change:** rows that leave collapse in height (180 ms), rows that enter expand, both sides in lockstep.
-- **Recompare (method change, external edit):** changed glyphs cross-fade (160 ms); no relayout unless rows change.
-- Over `maxAnimatedRows` visible rows, or with **Reduce Motion**: no glides; a single 120 ms cross-fade.
+- **Enter:** the compare bar slides down (200 ms ease-out). Rows glide from their browse positions to their aligned
+  positions with ItemTransition (300 ms). Ghost rows fade in over 160 ms after a 100 ms delay. The gutter widens from
+  1 to 28 pt over 200 ms, pushing both panes.
+- **Exit:** the reverse, 240 ms ease-in, with the ghosts fading first (120 ms).
+- **Filter change:** rows that leave collapse in height (180 ms) and rows that enter expand, both sides in lockstep.
+- **Same-pair update:** changed glyphs cross-fade (160 ms), with no relayout unless rows change.
+- **New pair (navigation):** no glide. It's the same instant swap Details does when you open a folder.
+- Over `maxAnimatedRows` visible rows, or with **Reduce Motion**, there are no glides, only a single 120 ms
+  cross-fade.
 
 ---
 
@@ -300,7 +366,9 @@ From  📁 Projects  ⇄  📁 Backup                     (direction row; hidden
   Chips show folder icon 16 + name, r 6, `viewBackground`, tooltip shows full path. Swapping animates the chips
   crossing (200 ms) and replans.
 - **Summary line:** SF 13. Counts in their colours, bold. Totals in secondary. Zero counts are omitted.
-  "Nothing to do. Projects and Backup already match." when empty; Sync then becomes **Done**.
+  "Nothing to do. Projects and Backup already match." when empty; Sync then becomes **Done**. The footer stays in
+  every state: a pair that already matches is the most common one to keep in sync. With "Keep in sync
+  automatically" checked, **Done** becomes **Save**.
 - **Plan list:** an outline (NSOutlineView look: `viewBackground`, alternating rows, 24 tall, r 5 frame).
   Sections in this order: **Conflicts**, **Moved to the Trash** / **Deleted**, **Copy**, **Replace**, **Create
   folder** (folded into Copy when the folder is new with contents). Section header row: disclosure, glyph, title,
@@ -309,7 +377,9 @@ From  📁 Projects  ⇄  📁 Backup                     (direction row; hidden
   "only in Backup", "larger in Projects"). Unchecking excludes that item from this run only; an unchecked row dims
   to 50 % and leaves every count. A folder collapses to one row ("Archive 2024 · 48 items") only when the whole
   folder is the unit (new, or only on the destination); replacements always list file paths. A replacement whose
-  reason is "newer in Backup" (it overwrites newer work) draws that reason in `compareDanger`. The list fills the
+  reason is "newer in Backup" (it overwrites newer work) draws that reason in `compareDanger` and **starts
+  unchecked** in Backup and Mirror. That holds for automatic runs too, which skip it and report it like a conflict.
+  The summary adds "1 newer file in Backup is skipped". Checking the row is a deliberate act. The list fills the
   sheet's free height with plain background; it never draws empty striped rows.
   Right-click: Reveal in Projects/Backup, Compare Files, Exclude from Future Syncs (adds an exclusion to the pair).
 - **Deletions are summarised first and in red.** The section header is `compareDanger`, and above the list a callout
@@ -321,7 +391,7 @@ From  📁 Projects  ⇄  📁 Backup                     (direction row; hidden
 - **Options** (disclosure, collapsed; the summary line after it lists the current choices):
   - Ignore: preset chips (§6.4).
   - Deletions: **Move to Trash** (default) / Delete permanently (local), Move to `.porpoise-trash` (remote).
-  - Compare by: Size & date / Size only / Contents (mirrors the footer menu).
+  - Compare by: Size & date / Size only / Contents (mirrors the compare bar's method menu).
 - **Footer:** "Keep in sync automatically" checkbox at left. When checked, a name field (default "Projects", with the
   description "Projects ⇄ Backup" beside it) and the line "Porpoise syncs changes while it's open. You'll only hear
   about conflicts and errors." slide in (160 ms). Saving without keep-in-sync uses the gear menu ⌄ next to Cancel:
@@ -357,7 +427,8 @@ forms (pills hidden while running):
 | Done | ✓ `compareOnly` · "Synced · 22 copied · 2 moved to the Trash · just now" · **Show in Activity**. After 4 s the bar returns to the pills. | Recompare runs automatically; usually ends in the Identical overlay. |
 
 Stop asks nothing; finished items stay done (the engine never repeats completed steps). Closing the window or the
-tab doesn't stop the job; Activity keeps it.
+tab doesn't stop the job; Activity keeps it. Zero counts are left out of every summary ("Synced · 22 copied · just
+now"). Job state never adds or removes a toolbar item, because the breadcrumbs must not relayout while a job runs.
 
 ---
 
@@ -366,7 +437,7 @@ tab doesn't stop the job; Activity keeps it.
 ### 6.1 Sidebar section
 
 A **Sync** section in the sidebar, between Places and Remote. It appears once a pair has been saved; the section
-header shows a + on hover ("New Sync…", which opens split + chooser). Rows use the sidebar row metrics (28 tall).
+header shows a + on hover ("New Sync…", which opens split view and compares, §4.1). Rows use the sidebar row metrics (28 tall).
 
 | Part | Spec |
 |---|---|
@@ -417,18 +488,59 @@ Shown as toggle chips in the sheet's Options (and in Edit Sync…), stored per p
 
 ## 7. Linked browsing
 
-- Link toggle on the seam capsule (§3). When on, navigating one side navigates the other to the same relative
-  path below the pair's roots (roots = the two folders when linking started). Selection, scroll and expansion
-  aren't linked; that's compare's job.
-- **Counterpart missing:** the other pane shows a centred empty state (300 wide):
-  - 64 pt dashed folder outline (`ghostStroke`).
-  - "**No “Invoices” in Backup**" SF 15 semibold.
-  - "Linked browsing will follow again when you open a folder that exists on both sides." SF 12 secondary.
-  - **Create “Invoices”** (push button) and **Unlink** (borderless).
-  - Its breadcrumb shows the expected path, with the missing tail segment(s) in `secondaryText` 60 % and a 1 pt
-    dashed underline. The seam link icon turns into a broken chain in `compareChanged`.
-- Going up to a common ancestor restores it with no fuss. Leaving the pair's roots on either side turns linking off,
-  with status bar message "Linked browsing off: left the linked folders".
+Revised in the refinement round. **When it's on, the two panes move together, every way you can move.** It's on
+while comparing and in a normal split view when the seam chain is on (⌃⌘L).
+
+The **pair roots** are the two folders shown when linking starts. Each side's position is a path relative to its
+root, and a link only ever applies that relative path to the other side.
+
+### 7.1 Every navigation path
+
+| You do this on either side | The other side |
+|---|---|
+| Enter a folder (double-click, ⌘↓, Return on a folder in Icons, a folder in Quick Look's ⌘↓) | Enters the folder with the same name. |
+| Go up (⌘↑, Go › Enclosing Folder, the toolbar ^) | Goes up one level. At the pair roots, both go up and the parents become the new roots, as long as both sides have a parent. |
+| Back / Forward (⌘[ ⌘], toolbar arrows and their history menus, mouse buttons 4/5, swipe) | Back / Forward the same number of steps. The two histories move in lockstep, so each side restores its own remembered scroll and selection. |
+| Breadcrumb click on a segment between the root and the current folder | Goes to the same relative folder. |
+| Breadcrumb click above the root | Both go up the same number of levels, and the pair re-roots there. If the other side can't go up that far (volume or server root), the link re-anchors (last row). |
+| Path edit, Go to Folder (⇧⌘G), sidebar place, recent location, or a folder dropped on the location field, **inside the pair** | Goes to the matching relative folder. |
+| Any of those, **to an unrelated place** (outside the pair and not one of its ancestors) | Stays put, and the link **re-anchors**: the new folder and the other side's current folder become the pair. The status bar says "Linked: Website ↔ Site". While comparing, that pair is compared. |
+| Expand a folder (Details disclosure) | Mirrored while comparing, not in plain linked browsing. |
+| Scroll, selection, sort, view mode | Aligned while comparing, independent in plain linked browsing. |
+| New tab, new window, Open in Split View | Not linked: they start on their own. |
+
+### 7.2 Never desync
+
+- The other side's destination is computed from the moving side's **new** location and its root. It never builds on
+  where the other side happens to be, so errors can't accumulate.
+- Both panes change location in the same run-loop turn. Neither side ever shows the old folder under the new
+  breadcrumb or lags a folder behind. A slow side (network, large folder) shows Details' normal loading state.
+- Rapid navigation applies only the latest destination: each move supersedes the one before it.
+- The other side copies the same history operation (visit, Back n, Forward n). Back on either side therefore keeps
+  them paired, even after a re-anchor or a missing counterpart.
+- If the other side can't be opened (permission, offline), it shows Details' error in place. The link stays on and
+  follows again on the next move.
+
+### 7.3 Counterpart missing: explained in place
+
+The other pane stays at the **expected** location and shows a centred empty state (300 wide) instead of rows:
+
+- A 64 pt dashed folder outline (`ghostStroke`).
+- "**No “Invoices” in Backup**" SF 15 semibold. The name is the first missing segment of the expected path.
+- "Linked browsing will follow again when you open a folder that exists on both sides." SF 12 secondary.
+- **Create “Invoices”** (push button). Creates the folder and shows it, and the link carries on.
+- **Choose Folder…** (borderless). Pick the counterpart for this level, which re-anchors the link (for example, when
+  "Website" is called "Site" in Backup). In plain linked browsing an **Unlink** (borderless) button follows.
+- The breadcrumb shows the expected path, with the missing tail segment(s) in `secondaryText` 60 % and a 1 pt dashed
+  underline. The seam chain becomes a broken chain in `compareChanged`.
+- Going deeper on the present side keeps the state and updates the expected path. Going up or Back to a level that
+  exists on both sides restores the pair silently.
+
+### 7.4 The chain
+
+The seam chain (§3) shows the state. Off: `text` 70 %. On: `accent`. On with the counterpart missing: broken chain in
+`compareChanged`. While comparing, it's on and can't be clicked, with the tooltip "Comparing keeps both sides
+together". The tooltip names the pair in every state: "Linked: Projects ↔ Backup (⌃⌘L)".
 
 ---
 
@@ -482,6 +594,11 @@ House style: sentence case for messages, Title Case for buttons and menu items, 
 folder names instead of "source/destination", "the Trash" capitalised, no "successfully", no exclamation marks.
 Counts use the grouping separator. "items" when files and folders are mixed, "files"/"folders" when not.
 
+**Side names: one rule, one helper, every surface.** Pills, popover, missing counterpart, the sync sheet, sync bar
+and notifications, Compare Files headers and the copy conflict dialog ("“notes.txt” already exists in Backup") all
+name a side with the §4.4 rule. Never use a raw `lastPathComponent` of a different ancestor, and never "here" /
+"there". Relative times read "now" under a minute and tick while visible.
+
 Key strings: "Comparing… 12,480 items" · "Compared by size & date · 1,284 items · 37 differences · 0.8 s" ·
 "Projects and Backup are identical" · "Compare Projects with…" · "Sync Projects and Backup" · "Nothing to do.
 Projects and Backup already match." · "2 items in Backup aren't in Projects. They'll be moved to the Trash." ·
@@ -498,7 +615,7 @@ the Trash · just now" · "No “Invoices” in Backup" · "Binary files differ"
   mode". Conflict segmented controls: "Keep version from", value. Progress in the compare bar is a progress
   indicator with value text. Status changes (done, failed) post an announcement.
 - **Rotor:** a custom "Differences" rotor jumps between non-same rows.
-- **Keyboard:** everything reachable: Tab cycles pills → Sync → ✕ → left pane → right pane. Space toggles a pill.
+- **Keyboard:** everything reachable: Tab cycles pills → method → Sync → ✕ → left pane → right pane. Space toggles a pill.
   In the sheet, Tab order: mode cards (arrow keys move between them) → swap → plan list → Options → keep-in-sync →
   buttons.
 - **Increase Contrast:** washes 18 % with a 2 pt status bar at the seam edge of each row; ghost outlines solid;
@@ -506,7 +623,7 @@ the Trash · just now" · "No “Invoices” in Backup" · "Binary files differ"
 - **Colour:** every status has a distinct glyph shape; the palette was checked for red/green confusion: green (only)
   and red (danger) never meet without different glyphs (◧ vs 🗑 / ⚠).
 - **Reduce Motion:** no glides or sliding bars; 120 ms cross-fades. Spinners stay (they're information).
-- **Reduce Transparency:** compare bar and footer use opaque `windowBackground`.
+- **Reduce Transparency:** the compare bar uses opaque `windowBackground`.
 
 ---
 
@@ -521,9 +638,14 @@ their hues, so status never takes the accent colour. High Contrast uses the Incr
 
 ## 12. Implementation notes for the app workers
 
-- **Alignment:** the view models of both panes are driven by one `CompareModel` (rows = aligned pairs). Each
-  `ItemListView` renders its side; ghost rows are rows with `item == nil`. Scroll sync through one shared clip
-  offset, not by observing two scroll views (avoids feedback lag).
+- **Alignment:** one `CompareModel` (rows = aligned pairs) feeds both panes' own `ItemListView`s in Details mode. A
+  ghost row is a row with `item == nil` that draws only its dashed outline. Rendering, hit testing, menus, keyboard,
+  Quick Look, drag and drop and rename stay in `ItemListView`. Compare only supplies the row list and draws its
+  additions (§4.3). Scroll sync uses one shared clip offset, not two observed scroll views (that avoids feedback lag).
+- **Reversible:** on entry, save each pane's browse state (view mode, zoom, sort, expansion, scroll origin,
+  selection, location) and restore it on exit (§4.8). Comparing never writes to the pane's saved view settings.
+- **Linking:** one function maps (moving side, new location, history op) to (other side, location, same history op),
+  tested for every row of §7.1. A generation counter drops stale moves. Re-compare is debounced 150 ms (§4.6).
 - **Gutter:** its own view in place of the divider; draws only visible rows; glyphs as cached images per
   status/appearance.
 - **Performance budget:** entering compare on 10k visible rows ≤ 1 frame drop; filter change ≤ 16 ms; frame time
@@ -535,8 +657,12 @@ their hues, so status never takes the accent colour. High Contrast uses the Incr
 
 ## 13. Review checklist (design sign-off, per screen)
 
-1. Matches the mockup at 1× in light and dark (`wsnapshot`, same fixture).
-2. All copy as in §9; real folder names everywhere.
-3. Keyboard-only path works; VoiceOver reads rows as in §10.
-4. Increase Contrast, Reduce Motion, Reduce Transparency checked.
-5. Narrow window (760 pt) and a 100k-item compare checked for layout and frame time.
+1. **Used by hand first:** real mouse and keyboard events on the isolated app, with the shared fixture and a real
+   folder pair of a few thousand files. DebugBridge is for setup and capture only. Every row of §4.2 and §7.1 is tried
+   on both sides.
+2. Matches the mockup at 1× in light and dark (`wsnapshot`, same fixture), and feels like the Details view next to
+   it.
+3. All copy as in §9; real folder names everywhere.
+4. Keyboard-only path works; VoiceOver reads rows as in §10.
+5. Increase Contrast, Reduce Motion, Reduce Transparency checked.
+6. Narrow window (760 pt) and a 100k-item compare checked for layout and frame time.
