@@ -20,6 +20,10 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         }
     }
     var isActive = true { didSet { needsDisplay = true } }
+    var placeholderText: String? { didSet { if placeholderText != oldValue { rebuild() } } }
+    var onPlaceholderClick: (() -> Void)?
+    var missingTail = false { didSet { needsDisplay = true } }
+    var preferredAncestorName: String? { didSet { if preferredAncestorName != oldValue { rebuild() } } }
     var showPlacesButton = false { didSet { rebuild() } }
     var places: [PlaceEntry] = [] { didSet { rebuild() } }
     private(set) var isEditing = false
@@ -34,6 +38,13 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
 
     /// VoiceOver: the path's folders, each pressable (the arrows and buttons are reachable through the menus).
     override func accessibilityChildren() -> [Any]? {
+        if let placeholderText {
+            return [
+                AccessibleRegion(
+                    in: self, role: .button, label: placeholderText, frame: { [weak self] in self?.bounds ?? .zero },
+                    press: { [weak self] in self?.onPlaceholderClick?() })
+            ]
+        }
         if isEditing { return super.accessibilityChildren() }
         return segments.indices.compactMap { i -> Any? in
             guard case .crumb(let u, let title, _) = segments[i].kind else { return nil }
@@ -175,7 +186,10 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         var total = segs.reduce(CGFloat(6)) { $0 + width(of: $1) }
         var hidden: [URL] = []
         while total > available {
-            guard let i = segs.firstIndex(where: { if case .crumb(_, _, let last) = $0.kind { return !last } else { return false } }),
+            guard
+                let i = segs.firstIndex(where: {
+                    if case .crumb(_, let title, let last) = $0.kind { return !last && title != preferredAncestorName }; return false
+                }),
                 case .crumb(let u, _, _) = segs[i].kind
             else { break }
             hidden.append(u)
@@ -228,6 +242,12 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             frame.fill()
         }
         let textColor = isActive ? Theme.windowText : Theme.windowTextInactive.withAlphaComponent(0.7)
+        if let placeholderText {
+            (placeholderText as NSString).draw(
+                at: CGPoint(x: 14, y: (bounds.height - crumbFont.ascender + crumbFont.descender) / 2),
+                withAttributes: [.font: crumbFont, .foregroundColor: Theme.windowTextInactive])
+            return
+        }
         for (i, s) in segments.enumerated() {
             let r = s.rect
             if hover == i || pressed == i || dropHover == i {
@@ -248,9 +268,19 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             case .more:
                 ("…" as NSString).draw(at: CGPoint(x: r.minX + 6, y: r.midY - 9), withAttributes: [.font: crumbFont, .foregroundColor: textColor])
             case .crumb(_, let title, let last):
-                let attrs: [NSAttributedString.Key: Any] = [.font: last ? crumbBoldFont : crumbFont, .foregroundColor: textColor]
+                let missing = last && missingTail
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: last ? crumbBoldFont : crumbFont,
+                    .foregroundColor: missing ? Theme.windowTextInactive.withAlphaComponent(0.6) : textColor,
+                ]
                 let ts = (title as NSString).size(withAttributes: attrs)
                 (title as NSString).draw(at: CGPoint(x: r.minX + 5, y: r.midY - ts.height / 2), withAttributes: attrs)
+                if missing {
+                    Theme.windowTextInactive.withAlphaComponent(0.6).setStroke()
+                    let underline = NSBezierPath(); underline.move(to: CGPoint(x: r.minX + 5, y: r.midY + ts.height / 2))
+                    underline.line(to: CGPoint(x: r.minX + 5 + ts.width, y: r.midY + ts.height / 2)); underline.lineWidth = 1
+                    underline.setLineDash([2, 2], count: 2, phase: 0); underline.stroke()
+                }
             }
         }
     }
@@ -285,6 +315,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     override func mouseExited(with event: NSEvent) { hover = nil; fieldHover = false; needsDisplay = true }
 
     override func mouseDown(with event: NSEvent) {
+        if placeholderText != nil { onPlaceholderClick?(); return }
         delegate?.breadcrumbActivated(self)
         guard !isEditing else { return }
         let p = convert(event.locationInWindow, from: nil)

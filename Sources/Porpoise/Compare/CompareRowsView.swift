@@ -173,7 +173,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
             let arc = NSBezierPath(); arc.lineWidth = 1.5
             let angle = CGFloat(CACurrentMediaTime().truncatingRemainder(dividingBy: 1.2) / 1.2 * 360)
             arc.appendArc(withCenter: CGPoint(x: seam.midX, y: y + rowHeight / 2), radius: 4, startAngle: angle, endAngle: angle + 270)
-            Theme.windowTextInactive.setStroke(); arc.stroke()
+            Theme.accent.setStroke(); arc.stroke()
         } else {
             let symbol = glyph(row), center = CGPoint(x: seam.midX, y: y + rowHeight / 2)
             if symbol == CompareSymbols.onlyLeft || symbol == CompareSymbols.onlyRight {
@@ -230,7 +230,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
                     row.status == .onlyLeft || row.status == .onlyRight
                     ? "\(count) only here" : "\(differences) \(differences == 1 ? "difference" : "differences")"
             }
-            if model.loading && model.comparison?.complete == false { caption = "Comparing…" }
+            if model.loading && model.comparison?.complete == false { caption = nil }
         } else if entry.kind == .symlink, row.left?.linkTarget != row.right?.linkTarget {
             caption = "Link targets differ"
         }

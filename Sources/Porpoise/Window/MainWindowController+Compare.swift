@@ -102,8 +102,7 @@ extension MainWindowController {
         let chooser = ComparePanePlaceholder()
         chooser.content.configure(
             symbol: "folder.badge.questionmark", title: "Compare \(tab.primary.url.lastPathComponent) with…",
-            detail: tab.primary.url == tab.secondary?.url
-                ? "Choose a second folder to compare side by side." : "Drop a folder here, or choose one to compare.", button: "Choose Folder…"
+            detail: "", button: "Choose Folder…"
         ) { [weak self] in self?.chooseCompareFolder() }
         let recentStrings = (Settings.store.dictionary(forKey: "compare.recents") as? [String: [String]])?[tab.primary.url.absoluteString] ?? []
         chooser.setRecents(recentStrings.compactMap(URL.init(string:))) { [weak self] url in
@@ -114,7 +113,7 @@ extension MainWindowController {
         syncToActiveView()
         window?.makeFirstResponder(chooser)
     }
-    private func chooseCompareFolder() {
+    func chooseCompareFolder() {
         let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true
         panel.prompt = "Compare"; panel.message = "Compare \(tab.primary.url.lastPathComponent) with…"
         panel.directoryURL = tab.lastComparePartner ?? tab.primary.url.deletingLastPathComponent()
@@ -186,6 +185,7 @@ extension MainWindowController {
                         detail: "Linked browsing will follow again when you open a folder that exists on both sides.", button: "Create “\(name)”"
                     ) { [weak self] in self?.createLinkedCounterpart(target) }
                     placeholder.unlink.isHidden = false; placeholder.unlink.clicked = { [weak self] in self?.toggleLinkedBrowsing(nil) }
+                    placeholder.statusText = "Not in \(other === tab.secondary ? sideName.1 : sideName.0)"
                     tab.missingCounterpart = placeholder; tab.missingOnRight = other === tab.secondary; tab.addSubview(placeholder);
                     tab.needsLayout = true
                 }

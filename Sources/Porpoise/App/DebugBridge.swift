@@ -63,7 +63,13 @@ final class DebugBridge: NSObject {
             }
         case "compareprogress":
             if let model = wc?.tab.compareView?.model {
-                model.stop(); model.loading = arg == "on"; model.showProgress = arg == "on"; model.onChange?()
+                if arg == "on", var partial = model.comparison {
+                    model.stop(); partial.complete = false; partial.rows.removeAll { $0.path.contains("/") }
+                    model.comparison = partial; model.outline = CompareOutline(partial); model.expanded = []
+                    model.loading = true; model.showProgress = true; model.rebuild()
+                } else {
+                    model.start()
+                }
             }
         case "comparehover":
             if let compare = wc?.tab.compareView, let index = Int(arg) { compare.document.hoverIndex = index; compare.document.needsDisplay = true }
@@ -550,6 +556,13 @@ final class DebugBridge: NSObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 self.writeState(to: args[0] + ".state.json")
                 self.windowServerSnapshot(to: args[0])
+                if args.count > 2, args[2] == "crops", let image = self.windowServerImage(args[0]) {
+                    let scale = CGFloat(image.width) / window.frame.width
+                    let seam = CGRect(x: CGFloat(image.width) / 2 - 110 * scale, y: 0, width: 220 * scale, height: 130 * scale)
+                    let footer = CGRect(x: 0, y: CGFloat(image.height) - 28 * scale, width: CGFloat(image.width), height: 28 * scale)
+                    if let crop = image.cropping(to: seam) { self.writePNG(crop, to: args[0] + ".seam.png") }
+                    if let crop = image.cropping(to: footer) { self.writePNG(crop, to: args[0] + ".footer.png") }
+                }
             }
         case "transferdialog":
             guard Settings.isTesting, let owner = wc?.window else { return }
