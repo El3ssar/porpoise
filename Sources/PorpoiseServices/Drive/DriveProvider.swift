@@ -165,7 +165,19 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
                 client.file(id, resourceKey: location.resourceKey), preset: preset, operationID: operationID, context: context)
         }
         return try RemoteFS.downloadStaged(result.name, into: localFolder) { staging in
-            try FileManager.default.copyItem(at: result.url, to: staging.appendingPathComponent(result.name))
+            // The private recovery partial is 0600. A published download gets normal creation permissions,
+            // honoring the process umask without changing that process-global setting.
+            let target = staging.appendingPathComponent(result.name)
+            let descriptor = open(target.path, O_WRONLY | O_CREAT | O_EXCL, 0o666)
+            guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            let output = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+            let input = try FileHandle(forReadingFrom: result.url)
+            defer { try? input.close(); try? output.close() }
+            while let data = try input.read(upToCount: 256 * 1024), !data.isEmpty {
+                try Shell.currentTransferControl?.check()
+                try output.write(contentsOf: data)
+            }
+            try output.synchronize()
         }
     }
 

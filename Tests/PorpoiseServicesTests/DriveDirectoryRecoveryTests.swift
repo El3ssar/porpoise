@@ -104,3 +104,32 @@ extension DriveMutationTests {
 private extension DriveLocation {
     var itemIDForTest: String { if case .folder(let id, _) = collection { return id }; return "root" }
 }
+
+extension DriveMutationTests {
+    @Test func publishedDownloadsHonorUmaskAndActivityUsesDisplayNames() async throws {
+        let server = try server(), scratch = try Scratch()
+        let client = try client(server, folder: scratch.url.appendingPathComponent("journal"))
+        let provider = DriveProvider(accountID: client.accountID, client: client)
+        RemoteFS.registerDrive(provider, accountID: client.accountID)
+        defer { RemoteFS.unregisterDrive(accountID: client.accountID) }
+        let output = try scratch.folder("published")
+        let document = try await client.file("doc-a").location(accountID: client.accountID).url
+        let downloaded = try provider.download(document, into: output)
+        let reference = try scratch.file("normal-created-file", "normal")
+        let permissions = try FileManager.default.attributesOfItem(atPath: downloaded.path)[.posixPermissions] as? NSNumber
+        let normal = try FileManager.default.attributesOfItem(atPath: reference.path)[.posixPermissions] as? NSNumber
+        #expect(permissions == normal)
+        let partials = try FileManager.default.contentsOfDirectory(
+            at: client.mutationJournal.folder.appendingPathComponent("Downloads"), includingPropertiesForKeys: nil)
+        #expect(
+            try partials.allSatisfy { (try FileManager.default.attributesOfItem(atPath: $0.path)[.posixPermissions] as? NSNumber)?.intValue == 0o600 }
+        )
+        let form = try await client.file("native-unsupported").location(accountID: client.accountID).url
+        let job = RemoteTransferJob(
+            kind: .copy, sources: [form], destination: output,
+            control: FileJob(kind: .copy, sources: [form], destinationFolder: output), rule: .ask, options: .init())
+        job.run()
+        #expect(job.errors.count == 1 && job.errors[0].hasPrefix("Form:"))
+        #expect(!job.errors[0].contains("native-unsupported:") && !job.errors[0].contains("Try another preset"))
+    }
+}

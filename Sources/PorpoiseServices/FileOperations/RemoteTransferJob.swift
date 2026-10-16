@@ -84,7 +84,8 @@ final class RemoteTransferJob {
                 } catch {
                     if control.isCancelled { break }
                     failedSources.append(source)
-                    errors.append("\(source.lastPathComponent): \(error.localizedDescription)")
+                    let name = RemoteFS.displayName(for: source)
+                    errors.append("\(name): \(error.localizedDescription)")
                 }
                 publish()
             }
