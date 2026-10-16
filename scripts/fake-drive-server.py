@@ -17,6 +17,7 @@ import hashlib
 import re
 import socket
 import uuid
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
@@ -48,6 +49,12 @@ class Handler(BaseHTTPRequestHandler):
                 return True
         return False
 
+    def changed(self, item, removed=False):
+        self.server.changes.append({"fileId": item["id"], "removed": removed, "file": copy.deepcopy(item)})
+
+    def etag(self, item):
+        return '\"' + str(item.get("version", "1")) + '-' + str(item.get("headRevisionId", "")) + '\"'
+
     def do_PATCH(self):
         with self.server.mutation_lock:
             self.patch()
@@ -55,6 +62,27 @@ class Handler(BaseHTTPRequestHandler):
     def patch(self):
         parsed = urlsplit(self.path)
         if parsed.path.startswith("/upload/"):
+            if parse_qs(parsed.query).get("uploadType") == ["media"]:
+                body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                item_id = parsed.path.rsplit("/", 1)[-1]
+                item = next((f for f in self.server.fixtures["files"] if f["id"] == item_id), None)
+                if not item:
+                    return self.reply({}, 404)
+                if self.server.fixtures.pop("conflictOnSave", False):
+                    item["version"] = str(int(item.get("version", "1")) + 1)
+                    item["headRevisionId"] = "remote-conflict"
+                    self.server.fixtures.setdefault("media", {})[item_id] = base64.b64encode(b"remote edit").decode()
+                    self.changed(item)
+                if not self.headers.get("If-Match") or self.headers["If-Match"] != self.etag(item):
+                    return self.reply({}, 412)
+                if self.mutation_fault():
+                    return
+                item.update(size=str(len(body)), md5Checksum=hashlib.md5(body).hexdigest(),
+                            version=str(int(item.get("version", "1")) + 1), headRevisionId="revision-" + uuid.uuid4().hex,
+                            modifiedTime=datetime.now(timezone.utc).isoformat())
+                self.server.fixtures.setdefault("media", {})[item_id] = base64.b64encode(body).decode()
+                self.changed(item)
+                return self.reply(item)
             return self.create(parsed, updating=True)
         if "/revisions/" in parsed.path:
             self.rfile.read(int(self.headers.get("Content-Length", "0")))
@@ -83,6 +111,7 @@ class Handler(BaseHTTPRequestHandler):
             item["parents"] = query["addParents"]
         item.update(body)
         item["version"] = str(int(item.get("version", "1")) + 1)
+        self.changed(item)
         return self.reply(item)
 
     def do_PUT(self):
@@ -116,6 +145,8 @@ class Handler(BaseHTTPRequestHandler):
             item["headRevisionId"] = "revision-" + uuid.uuid4().hex
             self.server.fixtures["files"].append(item)
             self.server.fixtures.setdefault("media", {})[item["id"]] = base64.b64encode(session["data"]).decode()
+            item["modifiedTime"] = datetime.now(timezone.utc).isoformat()
+            self.changed(item)
             session["done"] = item
         if self.server.fixtures.pop("dropUploadResponse", False):
             self.connection.shutdown(socket.SHUT_RDWR)
@@ -179,6 +210,7 @@ class Handler(BaseHTTPRequestHandler):
             item = body
             item.setdefault("id", "created-" + uuid.uuid4().hex)
         item.setdefault("mimeType", "application/octet-stream")
+        item.setdefault("modifiedTime", datetime.now(timezone.utc).isoformat())
         if not updating:
             parent_id = item.get("parents", ["root"])[0]
             parent = next((f for f in files if f["id"] == parent_id), {})
@@ -193,6 +225,7 @@ class Handler(BaseHTTPRequestHandler):
             self.server.sessions[path] = {"item": item, "data": b"", "total": int(self.headers["X-Upload-Content-Length"]), "updating": updating}
             return self.reply({}, headers={"Location": f"http://127.0.0.1:{self.server.server_port}" + path})
         files.append(item)
+        self.changed(item)
         if self.server.fixtures.pop("dropCreateResponse", False):
             self.connection.shutdown(socket.SHUT_RDWR)
             self.connection.close()
@@ -242,11 +275,45 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply({"storageQuota": {"usage": "1024", "limit": "16106127360"}})
         if parsed.path == "/drive/v3/drives":
             return self.reply({"drives": fixtures["drives"]})
+        if fixtures.get("offline"):
+            self.connection.shutdown(socket.SHUT_RDWR)
+            self.connection.close()
+            return
+        if parsed.path == "/drive/v3/changes/startPageToken":
+            return self.reply({"startPageToken": str(len(self.server.changes))})
+        if parsed.path == "/drive/v3/changes":
+            faults = fixtures.get("changeFaults", [])
+            if faults:
+                code = faults.pop(0)
+                if code:
+                    return self.reply({}, code, headers={"Retry-After": "0"})
+            token = int(query.get("pageToken", ["0"])[0])
+            changes = self.server.changes[token:]
+            drive = query.get("driveId", [None])[0]
+            if drive:
+                changes = [c for c in changes if c.get("file", {}).get("driveId") == drive]
+            return self.reply({"changes": changes, "newStartPageToken": str(len(self.server.changes))})
         if parsed.path == "/drive/v3/files/generateIds":
             return self.reply({"ids": ["generated-" + uuid.uuid4().hex]})
         if parsed.path == "/drive/v3/files":
             q = query.get("q", [""])[0]
             files = [f for f in fixtures["files"] if not f.get("trashed")]
+            search = re.search(r"(name|fullText) contains '((?:\\.|[^'])*)'", q)
+            if search:
+                term = re.sub(r"\\(.)", r"\1", search[2]).lower()
+                files = [f for f in files if term in f.get("name", "").lower() or (search[1] == "fullText" and term in f.get("description", "").lower())]
+                parent = re.search(r"'([^']+)' in parents", q)
+                if parent:
+                    aliases = {"root", "fixture-root"} if parent[1] in {"root", "fixture-root"} else {parent[1]}
+                    files = [f for f in files if aliases.intersection(f.get("parents", []))]
+                if query.get("driveId"):
+                    files = [f for f in files if f.get("driveId") == query["driveId"][0]]
+                size = int(fixtures.get("searchPageSize", 200))
+                offset = int(query.get("pageToken", ["0"])[0])
+                result = {"files": files[offset:offset+size]}
+                if offset + size < len(files):
+                    result["nextPageToken"] = str(offset + size)
+                return self.reply(result)
             if "appProperties has" in q:
                 marker = q.split("value='")[1].split("'")[0]
                 return self.reply({"files": [f for f in files if f.get("appProperties", {}).get("porpoiseOperation") == marker]})
@@ -302,7 +369,7 @@ class Handler(BaseHTTPRequestHandler):
                     start, end = map(int, requested.removeprefix("bytes=").split("-"))
                     return self.reply(data[start:end + 1], 206, "application/octet-stream", {"Content-Range": f"bytes {start}-{min(end, len(data)-1)}/{len(data)}"})
                 return self.reply(data, content_type="application/octet-stream")
-            return self.reply(item)
+            return self.reply(item, headers={"ETag": self.etag(item)} if not fixtures.get("omitETag") else {})
         return self.reply({}, 404)
 
 
@@ -318,6 +385,7 @@ def main():
     server.latency_ms = args.latency_ms
     server.requests = []
     server.sessions = {}
+    server.changes = []
     server.revisions = {}
     server.mutation_lock = Lock()
     server.profile_counter = 0

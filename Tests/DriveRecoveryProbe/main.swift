@@ -48,10 +48,17 @@ let http = DriveHTTP { request in
 let manager = DriveTokenManager(configuration: config, accountID: accountID, credentials: credentials, http: http)
 let client = DriveClient(
     accountID: accountID, tokens: manager, http: http, baseURL: base.appendingPathComponent("drive/v3/"),
-    mutationJournal: .init(folder: journalFolder))
+    mutationJournal: .init(folder: journalFolder), metadataDirectory: journalFolder.appendingPathComponent("Metadata"))
 do {
     let result: DriveFile
-    if args[6] == "folder" {
+    if args[6] == "edit" {
+        let session = try await client.edits.open(client.file(args[7]))
+        try Data("durable edit after kill".utf8).write(to: session.localURL, options: .atomic)
+        let handle = try FileHandle(forWritingTo: session.localURL)
+        try handle.synchronize(); try handle.close()
+        kill(getpid(), SIGKILL)
+        _exit(95)
+    } else if args[6] == "folder" {
         result = try await client.createFolder(name: args[7], parentID: "root", operationID: operationID)
     } else {
         result = try await client.upload(URL(fileURLWithPath: args[7]), parentID: "root", operationID: operationID)

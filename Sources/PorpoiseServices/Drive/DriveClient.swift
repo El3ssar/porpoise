@@ -16,22 +16,39 @@ public struct DrivePage: Sendable {
 public final class DriveClient: @unchecked Sendable {
     public let accountID: UUID
     public let mediaCache: DriveMediaCache
+    public let metadataCache: DriveMetadataCache
+    private var editStore: DriveEditStore?
+    public var edits: DriveEditStore {
+        lock.withLock {
+            if let editStore { return editStore }
+            let store = DriveEditStore(client: self)
+            editStore = store
+            return store
+        }
+    }
+    public static let changed = Notification.Name("PorpoiseDriveMetadataChanged")
+    private var offline = false
+    public var isOffline: Bool { lock.withLock { offline } }
+    func setOffline(_ value: Bool) { lock.withLock { offline = value } }
+    var pollingChanges = false
+    var polling: Task<Void, Never>?
     public let mutationJournal: DriveMutationJournal
     let tokens: DriveTokenManager
     let http: DriveHTTP
     let baseURL: URL
     private let report: @Sendable (Error?) -> Void
-    private let lock = NSLock()
-    private var cache: [String: DriveFile] = [:]
+    let lock = NSLock()
+    var cache: [String: DriveFile] = [:]
     static let fields =
         "id,name,mimeType,driveId,resourceKey,size,parents,headRevisionId,version,md5Checksum,appProperties,modifiedTime,thumbnailLink,hasThumbnail,webViewLink,owners(displayName,emailAddress,photoLink),shared,capabilities(canDownload,canListChildren,canEdit,canRename,canTrash,canUntrash,canAddChildren,canMoveItemWithinDrive,canMoveItemOutOfDrive,canCopy),shortcutDetails,exportLinks,trashed,permissions(id,type,role,displayName,emailAddress,photoLink),sharingUser(displayName,emailAddress,photoLink),lastModifyingUser(displayName,emailAddress,photoLink),sharedWithMeTime"
 
     public init(
         accountID: UUID, tokens: DriveTokenManager, http: DriveHTTP = DriveHTTP(),
         baseURL: URL = URL(string: "https://www.googleapis.com/drive/v3/")!, mutationJournal: DriveMutationJournal = .shared,
-        report: @escaping @Sendable (Error?) -> Void = { _ in }
+        metadataDirectory: URL? = nil, report: @escaping @Sendable (Error?) -> Void = { _ in }
     ) {
         self.mediaCache = DriveMediaCache(accountID: accountID)
+        self.metadataCache = DriveMetadataCache(accountID: accountID, directory: metadataDirectory)
         self.mutationJournal = mutationJournal
         self.accountID = accountID; self.tokens = tokens; self.http = http; self.baseURL = baseURL; self.report = report
     }
@@ -52,15 +69,37 @@ public final class DriveClient: @unchecked Sendable {
         guard let location = DriveLocation(url: url), location.accountID == accountID,
             case .folder(let id, _) = location.collection
         else { return nil }
-        return lock.withLock { cache[id] }
+        return lock.withLock { cache[id] } ?? metadataCache.file(id)
     }
 
     func remember(_ files: [DriveFile]) {
         lock.withLock { for file in files { cache[file.id] = file } }
+        metadataCache.remember(files)
     }
 
-    private func request(_ path: String, query: [URLQueryItem] = [], resource: (String, String?)? = nil) async throws -> Data {
-        do { return try await perform(path, query: query, resource: resource) } catch { report(error); throw error }
+    func request(_ path: String, query: [URLQueryItem] = [], resource: (String, String?)? = nil) async throws -> Data {
+        do {
+            for attempt in 0...4 {
+                do {
+                    let data = try await perform(path, query: query, resource: resource)
+                    setOffline(false)
+                    return data
+                } catch {
+                    let retry: Bool
+                    switch error as? DriveError {
+                    case .quota, .rateLimited: retry = true
+                    case .http(let code): retry = (500...599).contains(code)
+                    default: retry = false
+                    }
+                    guard retry, attempt < 4 else { throw error }
+                    try await Task.sleep(nanoseconds: UInt64(pow(2, Double(attempt)) * 1_000_000_000))
+                }
+            }
+            throw DriveError.quota
+        } catch {
+            if let error = error as? URLError, error.code != .cancelled { setOffline(true) }
+            report(error); throw error
+        }
     }
 
     private func perform(_ path: String, query: [URLQueryItem], resource: (String, String?)?) async throws -> Data {
@@ -136,7 +175,12 @@ public final class DriveClient: @unchecked Sendable {
             try Task.checkCancellation()
             guard seen.count < 16, seen.insert(current.id).inserted else { throw DriveError.shortcutCycle }
             guard let shortcut = current.shortcutDetails else { throw DriveError.invalidResponse }
-            current = try await self.file(shortcut.targetId, resourceKey: shortcut.targetResourceKey)
+            if isOffline {
+                guard let cached = metadataCache.file(shortcut.targetId) else { throw DriveError.offline }
+                current = cached
+            } else {
+                current = try await self.file(shortcut.targetId, resourceKey: shortcut.targetResourceKey)
+            }
         }
         return current
     }
@@ -207,6 +251,8 @@ public final class DriveClient: @unchecked Sendable {
     }
 
     public func clearCaches() async {
+        stopPolling()
+        metadataCache.clear()
         lock.withLock { cache.removeAll() }
         await mediaCache.clear()
     }
@@ -215,8 +261,11 @@ public final class DriveClient: @unchecked Sendable {
         let target = try await resolve(file)
         let format = target.isGoogleDocument ? DriveExportPreset.pdf.format(for: target.mimeType) : nil
         let name = format.map { "\(file.name).\($0.fileExtension)" } ?? file.name
-        return try await mediaCache.file(key: "preview|\(target.id)|\(target.modifiedTime ?? "")", name: name) {
-            try await self.download(target, preset: .pdf).data
+        return try await mediaCache.file(
+            key: "preview|\(target.id)|\(target.headRevisionId ?? target.version ?? target.modifiedTime ?? "")", name: name
+        ) {
+            if self.isOffline { throw DriveError.offline }
+            return try await self.download(target, preset: .pdf).data
         }
     }
 
@@ -232,7 +281,11 @@ public final class DriveClient: @unchecked Sendable {
         let google =
             url.scheme == "https" && (host.hasSuffix(".googleusercontent.com") || host.hasSuffix(".googleapis.com") || host == "lh3.google.com")
         guard url.user == nil, url.password == nil, fixture || google else { throw DriveError.invalidResponse }
-        return try await mediaCache.file(key: "thumbnail|\(target.id)|\(target.modifiedTime ?? "")|\(url.absoluteString)", name: "thumbnail.jpg") {
+        return try await mediaCache.file(
+            key: "thumbnail|\(target.id)|\(target.headRevisionId ?? target.version ?? target.modifiedTime ?? "")|\(url.absoluteString)",
+            name: "thumbnail.jpg"
+        ) {
+            if self.isOffline { throw DriveError.offline }
             var request = URLRequest(url: url)
             request.setValue("Bearer \(try await self.tokens.accessToken())", forHTTPHeaderField: "Authorization")
             return try await self.http.data(request)

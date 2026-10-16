@@ -1,0 +1,158 @@
+import Foundation
+import PorpoiseCore
+import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseServices
+
+@Suite(.serialized) struct DriveM3Tests {
+    private func make(_ server: FakeDriveServer, _ folder: URL, id: UUID = UUID(), http: DriveHTTP = .init()) throws -> DriveClient {
+        let credentials = MemoryDriveCredentials()
+        try credentials.save("fixture-refresh", clientID: server.config.clientID, accountID: id)
+        let tokens = DriveTokenManager(configuration: server.config, accountID: id, credentials: credentials)
+        return DriveClient(
+            accountID: id, tokens: tokens, http: http, baseURL: server.base.appendingPathComponent("drive/v3/"),
+            mutationJournal: .init(folder: folder.appendingPathComponent("Journal")), metadataDirectory: folder)
+    }
+    @Test func relaunchFirstPaintUsesDiskWithoutRequestAndCorruptionRebuilds() async throws {
+        let server = try DriveMutationTests().server(), scratch = try Scratch(), id = UUID()
+        let first = try make(server, scratch.url, id: id)
+        let root = DriveLocation(accountID: id).url
+        let rows = try await DriveProvider(accountID: id, client: first).refresh(root)
+        #expect(!rows.isEmpty)
+        let noNetwork = DriveHTTP { _ in
+            Issue.record("First paint must not request HTTP"); throw DriveError.offline
+        }
+        let relaunched = try make(server, scratch.url, id: id, http: noNetwork)
+        let provider = DriveProvider(accountID: id, client: relaunched)
+        #expect(provider.cachedListing(root)?.map(\.url) == rows.map(\.url))
+        #expect(provider.metadata(for: rows[0].url) != nil)
+        // A different account has no matching listing, even when the same item IDs exist remotely.
+        #expect(DriveProvider(accountID: UUID(), client: nil).cachedListing(root) == nil)
+        try Data("broken JSON".utf8).write(to: scratch.url.appendingPathComponent("metadata.json"))
+        let rebuilt = try make(server, scratch.url, id: id)
+        let recovered = DriveProvider(accountID: id, client: rebuilt)
+        #expect(recovered.cachedListing(root) == nil)
+        #expect(try await recovered.refresh(root).count == rows.count)
+        await rebuilt.clearCaches()
+        #expect(rebuilt.metadataCache.snapshot(DriveLocation(accountID: id)) == nil)
+    }
+    @Test func remoteChangesPatchDiskWithinOnePollAndCursorSurvivesRelaunch() async throws {
+        let server = try DriveMutationTests().server(), scratch = try Scratch()
+        let client = try make(server, scratch.url)
+        let root = DriveLocation(accountID: client.accountID)
+        let provider = DriveProvider(accountID: client.accountID, client: client)
+        RemoteFS.registerDrive(provider, accountID: client.accountID)
+        defer { RemoteFS.unregisterDrive(accountID: client.accountID) }
+        _ = try await provider.refresh(root.url)
+        try await client.pollChanges()
+        let other = try make(server, scratch.url.appendingPathComponent("Other"))
+        _ = try await other.rename("binary-a", to: "Changed on phone.txt")
+        try await client.pollChanges()
+        #expect(provider.cachedListing(root.url)?.contains { $0.name == "Changed on phone.txt" } == true)
+        let relaunched = try make(server, scratch.url, id: client.accountID)
+        _ = try await other.createFolder(name: "Browser folder", parentID: "root")
+        try await relaunched.pollChanges()
+        #expect(relaunched.metadataCache.snapshot(root)?.files.contains { $0.name == "Browser folder" } == true)
+        _ = try await other.setTrashed("binary-a", trashed: true)
+        try await relaunched.pollChanges()
+        #expect(relaunched.metadataCache.snapshot(root)?.files.contains { $0.id == "binary-a" } == false)
+    }
+    @Test func offlineBrowsingRefusesMutationsThenRefreshReconnects() async throws {
+        let server = try DriveMutationTests().server(), scratch = try Scratch()
+        let client = try make(server, scratch.url)
+        let root = DriveLocation(accountID: client.accountID).url
+        let provider = DriveProvider(accountID: client.accountID, client: client)
+        let rows = try await provider.refresh(root)
+        try await DriveMutationTests().control(server, ["offline": true])
+        #expect(try await provider.refresh(root).count == rows.count)
+        #expect(client.isOffline)
+        await #expect(throws: DriveError.offline) { try await client.rename("binary-a", to: "Must not send") }
+        try await DriveMutationTests().control(server, ["offline": false])
+        #expect(try await provider.refresh(root).count == rows.count)
+        #expect(!client.isOffline)
+        #expect(try await client.rename("binary-a", to: "Connected.txt").name == "Connected.txt")
+    }
+    @Test func editSaveUsesSameIDAndBothKindsOfConflictPreserveBytes() async throws {
+        let server = try DriveMutationTests().server(), scratch = try Scratch()
+        let client = try make(server, scratch.url)
+        let file = try await client.file("binary-a")
+        let session = try await client.edits.open(file)
+        try Data("my first edit".utf8).write(to: session.localURL)
+        let result = try await client.edits.save(session.id)
+        #expect(result.id == file.id && result.headRevisionId != file.headRevisionId)
+        #expect(try await client.download(result).data == Data("my first edit".utf8))
+        #expect(await client.edits.pending().isEmpty)
+        try Data("my second edit".utf8).write(to: session.localURL)
+        try await DriveMutationTests().control(server, ["conflictOnSave": true])
+        await #expect(throws: DriveMutationError.conflict) { try await client.edits.save(session.id) }
+        #expect(try await client.download(client.file(file.id)).data == Data("remote edit".utf8))
+        #expect(try Data(contentsOf: session.localURL) == Data("my second edit".utf8))
+        let conflict = try #require(await client.edits.session(session.id))
+        #expect(conflict.state == .conflict)
+        #expect(try Data(contentsOf: #require(conflict.conflictURL)) == Data("remote edit".utf8))
+        let reopened = try await client.edits.open(file)
+        #expect(reopened.id == session.id)
+        let kept = try await client.edits.keepBoth(session.id)
+        #expect(kept.id != file.id && kept.name.contains("Edited on Mac"))
+        #expect(try await client.download(kept).data == Data("my second edit".utf8))
+        #expect(try await client.download(client.file(file.id)).data == Data("remote edit".utf8))
+    }
+    @Test func changedBaselineMissingValidatorAndOfflineEditsNeverPublish() async throws {
+        let server = try DriveMutationTests().server(), scratch = try Scratch()
+        let client = try make(server, scratch.url)
+        let session = try await client.edits.open(client.file("binary-a"))
+        try Data("local unsent".utf8).write(to: session.localURL)
+        client.setOffline(true)
+        await #expect(throws: DriveError.offline) { try await client.edits.save(session.id) }
+        #expect(await client.edits.pending().count == 1)
+        #expect(try await client.edits.open(session.file).id == session.id)
+        client.setOffline(false)
+        try await DriveMutationTests().control(server, ["omitETag": true])
+        await #expect(throws: DriveMutationError.conflict) { try await client.edits.save(session.id) }
+        try await DriveMutationTests().control(server, ["omitETag": false])
+        _ = try await client.upload(session.localURL, parentID: "root", replacingID: session.file.id)
+        await #expect(throws: DriveMutationError.conflict) { try await client.edits.save(session.id) }
+        let replaced = try await client.edits.replaceWithMine(session.id)
+        #expect(replaced.id == session.file.id)
+        let store = DriveEditStore(client: client, directory: scratch.url.appendingPathComponent("Edits"))
+        #expect(await store.pending().isEmpty)
+        let doc = try await client.file("doc-a")
+        await #expect(throws: DriveError.permissionDenied) { try await client.edits.open(doc) }
+    }
+    @Test func unsentEditsSurviveActualSIGKILL() async throws {
+        let server = try DriveMutationTests().server(), scratch = try Scratch(), id = UUID()
+        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let process = Process()
+        process.executableURL = repo.appendingPathComponent(".build/debug/DriveRecoveryProbe")
+        process.arguments = [server.base.absoluteString, scratch.url.path, id.uuidString, UUID().uuidString, "kill", "edit", "binary-a"]
+        process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
+        try process.run()
+        let status: Int32 = await withCheckedContinuation { continuation in
+            Thread {
+                process.waitUntilExit(); continuation.resume(returning: process.terminationStatus)
+            }.start()
+        }
+        #expect(status == SIGKILL)
+        let restored = try make(server, scratch.url.appendingPathComponent("Metadata"), id: id)
+        let pending = await restored.edits.pending()
+        #expect(pending.count == 1)
+        let session = try #require(pending.first)
+        #expect(try Data(contentsOf: session.localURL) == Data("durable edit after kill".utf8))
+        #expect(try await restored.edits.save(session.id).id == "binary-a")
+        #expect(await restored.edits.pending().isEmpty)
+    }
+    @Test func searchIsPagedEscapedScopedAndSupportsFullText() async throws {
+        let server = try DriveMutationTests().server(), scratch = try Scratch()
+        let client = try make(server, scratch.url)
+        let root = DriveLocation(accountID: client.accountID)
+        try await DriveMutationTests().control(server, ["searchPageSize": 1])
+        let page = try await client.search("report", in: root)
+        #expect(page.files.count == 1 && page.nextPageToken != nil)
+        #expect(try await client.search("report", in: root, pageToken: page.nextPageToken).files.count == 1)
+        #expect(try await client.search("missing'\\term", in: root, fullText: true).files.isEmpty)
+        let folder = DriveLocation(accountID: client.accountID, collection: .folder("folder-a"))
+        #expect(try await client.search("report", in: folder).files.isEmpty)
+        await #expect(throws: DriveError.invalidLocation) { try await client.search("a", in: DriveLocation(accountID: UUID())) }
+    }
+}
