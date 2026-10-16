@@ -56,10 +56,10 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
 
     init(
         pair: SavedSync, owner: NSWindow, editing: Bool = false, comparison: SyncComparison? = nil,
-        onStarted: ((Activity) -> Void)? = nil, onFinished: (() -> Void)? = nil
+        overrides: [String: SyncOverride] = [:], onStarted: ((Activity) -> Void)? = nil, onFinished: (() -> Void)? = nil
     ) {
         self.pair = pair; self.originalPairID = pair.id; self.parentWindow = owner; self.editing = editing; providedComparison = comparison
-        self.onStarted = onStarted; self.onFinished = onFinished
+        self.onStarted = onStarted; self.onFinished = onFinished; self.overrides = overrides
         keepExpansion = pair.automatic || editing ? 1 : 0
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 680, height: 600),

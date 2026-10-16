@@ -4,7 +4,8 @@ import PorpoiseServices
 
 extension MainWindowController {
     func openSyncForComparison(
-        leftRoot: URL, rightRoot: URL, options: SyncCompareOptions = .init(), comparison: SyncComparison? = nil, keepAutomatically: Bool = false
+        leftRoot: URL, rightRoot: URL, options: SyncCompareOptions = .init(), comparison: SyncComparison? = nil,
+        overrides: [String: SyncOverride] = [:], keepAutomatically: Bool = false
     ) {
         guard let window else { return }
         var newPair = SavedSync(left: leftRoot, right: rightRoot); newPair.visibleInSidebar = false
@@ -19,7 +20,7 @@ extension MainWindowController {
             }
             pair.customExclusions = remaining.sorted()
         }
-        SyncSheetController(pair: pair, owner: window, comparison: comparison).present()
+        SyncSheetController(pair: pair, owner: window, comparison: comparison, overrides: overrides).present()
     }
 }
 

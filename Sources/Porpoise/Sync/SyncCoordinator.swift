@@ -49,6 +49,7 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
                 (window.windowController as? MainWindowController)?.openSyncForComparison(
                     leftRoot: left, rightRoot: right, options: notification.userInfo?["options"] as? SyncCompareOptions ?? .init(),
                     comparison: notification.userInfo?["comparison"] as? SyncComparison,
+                    overrides: notification.userInfo?["overrides"] as? [String: SyncOverride] ?? [:],
                     keepAutomatically: notification.userInfo?["automatic"] as? Bool ?? false)
             })
         if !Settings.isTesting { UNUserNotificationCenter.current().delegate = self; configureNotificationActions() }
