@@ -239,3 +239,21 @@ extension FileOperationsController {
         NotificationCenter.default.post(name: Self.undoChanged, object: nil)
     }
 }
+
+/// Google documents that can't be exported (Forms, Sites, over Google's 10 MB export limit) are skipped, not failures:
+/// a calm line instead of the transfer errors sheet.
+public enum CloudExportSkip {
+    static let unsupported = DriveError.unsupportedExport.errorDescription ?? "\u{0}"
+    static let tooLarge = DriveError.exportTooLarge.errorDescription ?? "\u{0}"
+
+    /// The line for a job whose only failures were such documents (`names` are theirs); nil when anything else failed.
+    public static func notice(errors: [String], names: [String]) -> String? {
+        guard !errors.isEmpty, errors.allSatisfy({ $0.hasSuffix(unsupported) || $0.hasSuffix(tooLarge) }) else { return nil }
+        let large = errors.allSatisfy { $0.hasSuffix(tooLarge) }
+        let what = errors.count == 1 && names.count == 1 ? "“\(names[0])” wasn’t" : "\(errors.count) Google documents weren’t"
+        let them = errors.count == 1 ? "it" : "them"
+        if large { return "\(what) copied: too large for Google to export. Open \(them) in your browser and use File › Download." }
+        let files = errors.count == 1 ? "it as a file" : "them as files"
+        return "\(what) copied: Google can’t export \(files). Open \(them) in your browser instead."
+    }
+}

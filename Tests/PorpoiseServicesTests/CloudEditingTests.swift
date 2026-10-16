@@ -282,3 +282,23 @@ import Testing
         #expect(m.rows.map(\.item.name) == ["alpha.txt", "x"])
     }
 }
+
+@Suite struct CloudExportSkipTests {
+    let unsupported = DriveError.unsupportedExport.errorDescription!
+    let large = DriveError.exportTooLarge.errorDescription!
+
+    @Test func exportSkipsAreACalmLine() {
+        #expect(
+            CloudExportSkip.notice(errors: ["Event signup: " + unsupported], names: ["Event signup"])
+                == "“Event signup” wasn’t copied: Google can’t export it as a file. Open it in your browser instead.")
+        #expect(
+            CloudExportSkip.notice(errors: [large, large], names: ["A", "B"])
+                == "2 Google documents weren’t copied: too large for Google to export. Open them in your browser and use File › Download.")
+        #expect(
+            CloudExportSkip.notice(errors: [large, unsupported], names: ["A", "B"])
+                == "2 Google documents weren’t copied: Google can’t export them as files. Open them in your browser instead.")
+        // Anything else keeps the errors sheet.
+        #expect(CloudExportSkip.notice(errors: [unsupported, "Disk full"], names: ["A", "B"]) == nil)
+        #expect(CloudExportSkip.notice(errors: [], names: []) == nil)
+    }
+}

@@ -108,6 +108,19 @@ final class FileOperationsDialogs: FileOperationsUI {
     }
 
     func showTransferErrors(_ activity: Activity, window: AnyObject?) {
+        // Google Forms and the like can't be copied out: a calm line in the window, not an error sheet.
+        if let notice = CloudExportSkip.notice(errors: activity.errors, names: activity.failedSources.map(Activity.name)),
+            let c = ((window as? NSWindow)?.windowController as? MainWindowController)?.view
+        {
+            let source = activity.failedSources.count == 1 ? activity.failedSources[0] : nil
+            let link = source.flatMap { CloudAccounts.shared.info(for: $0)?.webLink }
+            c.messageBar.show(notice, error: false, action: link == nil ? nil : "Open in Browser") {
+                if let link, let source { NSWorkspace.shared.open(AccountActions.webLink(link, account: CloudAccounts.shared.account(for: source))) }
+                c.messageBar.dismiss()
+            }
+            c.needsLayout = true
+            return
+        }
         let count = max(1, activity.failedSources.count)
         let listHeight = min(196, CGFloat(activity.errors.count) * 28)
         let height = 138 + listHeight
