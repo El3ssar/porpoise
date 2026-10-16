@@ -25,8 +25,17 @@ public struct ComparedFile: Sendable {
         if count > 0 {
             var bytes = [CChar](repeating: 0, count: count)
             let n = listxattr(url.path, &bytes, count, XATTR_NOFOLLOW)
-            attributes =
+            let names =
                 n > 0 ? bytes.prefix(n).split(separator: 0).map { String(decoding: $0.map { UInt8(bitPattern: $0) }, as: UTF8.self) }.sorted() : []
+            attributes = names.map { name in
+                let size = getxattr(url.path, name, nil, 0, 0, XATTR_NOFOLLOW)
+                guard size >= 0, size <= 1 << 20 else { return "\(name) (\(max(0, size)) bytes)" }
+                var value = [UInt8](repeating: 0, count: size)
+                let read = getxattr(url.path, name, &value, size, 0, XATTR_NOFOLLOW)
+                guard read == size else { return name + " (unreadable)" }
+                var hash = ChecksumHasher(.sha256); hash.update(Data(value))
+                return "\(name) · \(size) bytes · \(hash.finalize())"
+            }
         } else {
             attributes = []
         }

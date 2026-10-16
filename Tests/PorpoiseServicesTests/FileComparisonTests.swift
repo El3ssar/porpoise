@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import PorpoiseCore
 import Testing
@@ -20,6 +21,14 @@ struct FileComparisonTests {
         #expect(try ComparedFile(url: a, readText: true).text == "abc")
         try Data([0, 1, 2]).write(to: a)
         #expect(try ComparedFile(url: a, readText: true).text == nil)
+        let attributeName = "com.porpoise.compare-test"
+        let firstValue = Array("left".utf8), secondValue = Array("right".utf8)
+        #expect(setxattr(a.path, attributeName, firstValue, firstValue.count, 0, 0) == 0)
+        #expect(setxattr(b.path, attributeName, secondValue, secondValue.count, 0, 0) == 0)
+        let leftAttributes = try ComparedFile(url: a, readText: false).attributes
+        let rightAttributes = try ComparedFile(url: b, readText: false).attributes
+        #expect(leftAttributes.contains { $0.hasPrefix(attributeName) })
+        #expect(leftAttributes != rightAttributes)
         let token = DiskCancellation(); token.cancel()
         #expect(throws: CancellationError.self) { try FileComparison.firstDifference(a, b, cancellation: token) }
     }
