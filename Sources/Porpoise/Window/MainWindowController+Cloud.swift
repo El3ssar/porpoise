@@ -63,23 +63,28 @@ extension MainWindowController {
         let folder = c.url
         if let why = CloudAccounts.shared.denial(.addItems, folder: folder) { cloudDenied(why, in: c); return }
         NewItemDialog.runCloud(in: folder, title: folder.folderName, names: Set(c.model.items.map(\.name)), window: window) {
-            [weak self] name in
-            // The folder shows at once, selected; the service's answer replaces it with the real one.
-            let temp = FileItem(
-                url: folder.appendingPathComponent("new-\(UUID().uuidString)", isDirectory: true), name: name, isDirectory: true,
-                modificationDate: Date(), contentType: "public.folder", owner: "me")
-            let edit = CloudEdit(ListingEdit(folder: folder, added: [temp]))
-            c.list.select(temp.url)
-            CloudAccounts.shared.createFolder(named: name, in: folder) { result in
-                let selected = c.model.selection.contains(temp.url)
-                edit.end(rollback: true)
-                switch result {
-                case .success(let item):
-                    CloudEdit.apply(ListingEdit(folder: folder, added: [item]))
-                    if selected { c.list.select(item.url) }
-                case .failure(let error):
-                    self?.cloudFailed("Couldn’t create “\(name)”.", error, in: c)
-                }
+            [weak self] name in self?.createCloudFolder(named: name, in: c)
+        }
+    }
+
+    /// The folder shows at once, selected; the service's answer replaces it with the real one, or takes it away.
+    func createCloudFolder(named name: String, in c: ViewContainer? = nil) {
+        let c = c ?? view
+        let folder = c.url
+        let temp = FileItem(
+            url: folder.appendingPathComponent("new-\(UUID().uuidString)", isDirectory: true), name: name, isDirectory: true,
+            modificationDate: Date(), contentType: "public.folder", owner: "me")
+        let edit = CloudEdit(ListingEdit(folder: folder, added: [temp]))
+        c.list.select(temp.url)
+        CloudAccounts.shared.createFolder(named: name, in: folder) { [weak self] result in
+            let selected = c.model.selection.contains(temp.url)
+            edit.end(rollback: true)
+            switch result {
+            case .success(let item):
+                CloudEdit.apply(ListingEdit(folder: folder, added: [item]))
+                if selected { c.list.select(item.url) }
+            case .failure(let error):
+                self?.cloudFailed("Couldn’t create “\(name)”.", error, in: c)
             }
         }
     }
@@ -124,6 +129,7 @@ extension MainWindowController {
             }
             var text = CloudAccounts.shared.trashMessage(trashed, names: names)
             if let error { text += ". \(kept.count) couldn’t be moved: \(error.localizedDescription)" }
+            c.cloudTrashNotice = Set(trashed)
             c.messageBar.show(text, error: false, action: "Undo") { [weak self] in
                 self?.undoCloudTrash(originals.filter { trashed.contains($0.url) }, folder: folder, in: c)
             }
@@ -133,6 +139,7 @@ extension MainWindowController {
 
     private func undoCloudTrash(_ items: [FileItem], folder: URL, in c: ViewContainer) {
         c.messageBar.dismiss()
+        c.cloudTrashNotice = []
         let urls = items.map(\.url)
         let edit = CloudEdit(ListingEdit(folder: folder, added: items))
         CloudAccounts.shared.untrash(urls) { [weak self] restored, error in

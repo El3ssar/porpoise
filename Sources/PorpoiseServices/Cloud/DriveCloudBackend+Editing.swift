@@ -25,9 +25,18 @@ extension DriveCloudBackend {
             name: location.collection == .myDrive ? "My Drive" : file?.name)
     }
 
-    /// The provider's error as the message bar says it; an old read-only grant brings up "Allow Changes…".
+    /// The provider's error as the message bar says it after "Couldn’t rename “Q3”."; an old read-only grant brings up
+    /// "Allow Changes…".
     static func editError(_ error: Error) -> Error {
-        (error as? DriveError) == .needsWriteAccess ? CloudEditError.needsWriteAccess : error
+        switch error as? DriveError {
+        case .needsWriteAccess: return CloudEditError.needsWriteAccess
+        case .permissionDenied: return CloudEditError.denied("Google Drive didn’t allow it: your access to this item may have changed.")
+        case .notFound: return CloudEditError.denied("It’s no longer in Google Drive, or no longer shared with you.")
+        case .offline: return CloudEditError.denied("You’re offline. Nothing was changed.")
+        case .rateLimited, .quota: return CloudEditError.denied("Google Drive is busy. Try again in a moment.")
+        case .reconnect: return CloudEditError.denied("Sign in to Google Drive again to make changes.")
+        default: return error
+        }
     }
 
     private func run<T>(_ url: URL, _ work: @escaping (DriveProvider) async throws -> T, done: @escaping (Result<T, Error>) -> Void) {

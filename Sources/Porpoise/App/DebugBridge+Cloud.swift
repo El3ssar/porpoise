@@ -57,6 +57,16 @@ extension DebugBridge {
         case "shot": shot(rest)
         case "settingsremove": AccountsSettingsPage.current?.removeAccount()
         case "settingsselect": AccountsSettingsPage.current?.select(rest)
+        case "rename":
+            // rename <name>|<new name>: through the inline rename's path.
+            let f = rest.components(separatedBy: "|")
+            guard f.count == 2, let w = AppDelegate.shared.windows.first, let row = w.view.model.rows.first(where: { $0.item.name == f[0] }) else {
+                return
+            }
+            w.rename(row.item, to: f[1], in: w.view)
+        case "newfolder":
+            // newfolder <name>: what the New Folder dialog's Create does.
+            AppDelegate.shared.windows.first?.createCloudFolder(named: rest)
         case "select":
             // select <name>: the row with that name (cloud items are ids in their URLs).
             if let v = AppDelegate.shared.windows.first?.view, let row = v.model.rows.first(where: { $0.item.name == rest }) {

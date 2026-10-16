@@ -123,6 +123,9 @@ extension CloudBackend {
 
 /// Changing cloud locations: permission checks with the reason for the tooltip, the changes themselves with Undo.
 extension CloudAccounts {
+    /// Undo or Redo of a cloud change went through; `object` is its URLs.
+    public static let changeReverted = Notification.Name("PorpoiseCloudChangeReverted")
+
     public func permissions(for url: URL) -> CloudPermissions? { backend?.permissions(for: url) }
 
     /// The account-wide reason nothing can be changed (offline, signed out, connected read-only); nil: changes can be tried.

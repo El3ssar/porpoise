@@ -27,6 +27,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     let filterBar = FilterBar()
     let searchBar = SearchBar()
     let messageBar = MessageBar()
+    /// Items the message bar says went to a cloud Trash (its Undo); Edit › Undo of them clears the message.
+    var cloudTrashNotice: Set<URL> = []
     let selectionTop = SelectionTopBar()
     let selectionBottom = SelectionBottomBar()
     var preservesMissingLocation = false
@@ -216,6 +218,16 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         observers.append(
             center.addObserver(forName: NetworkBrowser.changed, object: nil, queue: .main) { [weak self] _ in
                 if self?.url.scheme == "network" { self?.model.reload() }
+            })
+        observers.append(
+            center.addObserver(forName: CloudAccounts.changeReverted, object: nil, queue: .main) { [weak self] n in
+                guard let self, let urls = n.object as? [URL], !urls.isEmpty else { return }
+                if !self.cloudTrashNotice.isEmpty, self.cloudTrashNotice == Set(urls) {
+                    self.cloudTrashNotice = []
+                    self.messageBar.dismiss()
+                    // Back from the Trash: selected, as Finder does.
+                    if n.userInfo?["kind"] as? String == "trashed" { self.pendingSelect = urls[0]; self.model.selection = Set(urls) }
+                }
             })
         observers.append(
             center.addObserver(forName: FileOperationsController.foldersChanged, object: nil, queue: .main) { [weak self] n in

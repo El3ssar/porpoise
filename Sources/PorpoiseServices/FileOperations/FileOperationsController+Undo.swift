@@ -75,6 +75,7 @@ extension FileOperationsController {
             } else {
                 inverse(.cloud(change.inverse))
                 Self.notifyChanged(change.urls)
+                NotificationCenter.default.post(name: CloudAccounts.changeReverted, object: change.urls, userInfo: ["kind": "\(change.kind)"])
             }
             self?.stacksChanged()
         }
