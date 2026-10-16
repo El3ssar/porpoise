@@ -45,6 +45,31 @@ struct CompareOutlineTests {
 }
 
 extension CompareOutlineTests {
+    @Test func numericNamesUseFinderOrderInBothDirectionsAndKeepFoldersFirst() {
+        let folder = SyncEntry(path: "Folder10", kind: .directory)
+        var outline = CompareOutline(
+            SyncComparator.compare(
+                .init(entries: [file("File10"), folder, file("File1"), file("File2"), file("Folder10/File10"), file("Folder10/File2")]),
+                .init(entries: [])))
+        #expect(
+            outline.visible(filter: .all, expanded: ["Folder10"]).map(\.path)
+                == ["Folder10", "Folder10/File2", "Folder10/File10", "File1", "File2", "File10"])
+        outline.sort(by: .name, side: .left, ascending: false)
+        #expect(
+            outline.visible(filter: .all, expanded: ["Folder10"]).map(\.path)
+                == ["Folder10", "Folder10/File10", "Folder10/File2", "File10", "File2", "File1"])
+    }
+    @Test func changedFilterDoesNotMatchFolderRollupOfOnlyItems() {
+        let a = SyncEntry(path: "Brand", kind: .directory), b = SyncEntry(path: "Website", kind: .directory)
+        let outline = CompareOutline(
+            SyncComparator.compare(
+                .init(entries: [a, b, file("Brand/only", size: 2), file("Website/index", size: 7)]),
+                .init(entries: [a, b, file("Website/index", size: 3)])))
+        #expect(outline.visible(filter: .changed, expanded: []).map(\.path) == ["Website"])
+        #expect(outline.visible(filter: .onlyLeft, expanded: []).map(\.path) == ["Brand"])
+        #expect(outline.totalBytes[.left] == 9)
+        #expect(outline.totalBytes[.right] == 3)
+    }
     @Test func caseOnlyParentSpellingKeepsOneSidedChildrenAndCountsAligned() {
         let outline = CompareOutline(
             SyncComparator.compare(
