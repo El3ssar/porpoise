@@ -386,8 +386,7 @@ struct DriveTransportTests {
 
 struct DriveKeychainTests {
     @Test func refreshCredentialsArePartitionedByClientAndAccount() throws {
-        let test = try TestKeychain()
-        let credentials = DriveKeychainCredentials(in: test.keychain)
+        let credentials = DriveKeychainCredentials(api: MemoryKeychainAPI())
         let account = UUID(), other = UUID()
         #expect(try credentials.read(clientID: "client-one", accountID: account) == nil)
         try credentials.save("first", clientID: "client-one", accountID: account)

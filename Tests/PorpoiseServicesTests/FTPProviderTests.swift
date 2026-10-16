@@ -7,18 +7,18 @@ import Testing
 
 /// FTPProvider drives curl. With no FTP server to test against, curl is replaced by a `RecordingTool`: these tests
 /// check what curl would be given (arguments, the login on stdin) and how its output is read. Logins are looked up
-/// and saved in a throwaway keychain.
+/// and saved in a memory store.
 @Suite(.serialized) struct FTPProviderTests {
     let curl: RecordingTool
-    let keychain: TestKeychain
+    let keychain: MemoryCredentials
 
     init() throws {
         curl = try RecordingTool()
-        keychain = try TestKeychain()
+        keychain = MemoryCredentials()
     }
 
     private func provider(_ url: String) -> FTPProvider {
-        FTPProvider(url: URL(string: url)!, curl: curl.path, keychain: keychain.keychain)
+        FTPProvider(url: URL(string: url)!, curl: curl.path, credentialStore: keychain)
     }
 
     static let listing = """
@@ -161,7 +161,7 @@ import Testing
 
         #expect(asked.count == 1 && asked[0].0 == "h.invalid" && asked[0].1 == "me")
         #expect(curl.calls.map(\.stdin) == ["user = \"me:old\"\n", "user = \"you:n3w\\\"pw\"\n"])
-        #expect(keychain.password(server: "h.invalid", account: "you", protocol: kSecAttrProtocolFTP) == "n3w\"pw")
+        #expect(keychain.password(server: "h.invalid", account: "you", scheme: "ftp") == "n3w\"pw")
     }
 
     @Test func aCancelledLoginPromptStopsAtTheFirstFailure() throws {
@@ -171,7 +171,7 @@ import Testing
     }
 
     @Test func aSavedLoginIsUsedWhenTheURLHasNoPassword() throws {
-        keychain.add(server: "h.invalid", account: "me", password: "from keychain", protocol: kSecAttrProtocolFTP)
+        keychain.add(server: "h.invalid", account: "me", password: "from keychain", scheme: "ftp")
         try curl.reply("")
         _ = try provider("ftp://me@h.invalid/").list(URL(string: "ftp://h.invalid/")!)
         #expect(curl.calls.first?.stdin == "user = \"me:from keychain\"\n")
