@@ -38,6 +38,14 @@ extension PlacesPanel {
             }
             m.addItem(.separator())
         } else if let i, case .header(let sec) = rows[i].kind {
+            if let id = sec.accountID, let a = CloudAccounts.shared.account(id) {
+                if a.status == .signInNeeded { add("Sign In Again…", nil, #selector(accountSignIn(_:)), id) }
+                add("Account Settings…", nil, #selector(accountSettings(_:)), id)
+                add("Rename Account…", "edit-rename", #selector(accountRename(_:)), id)
+                add("Open in Browser", "internet-web-browser", #selector(accountBrowser(_:)), id)
+                add("Sign Out…", nil, #selector(accountSignOut(_:)), id)
+                m.addItem(.separator())
+            }
             let folded = PlacesModel.shared.collapsedSections.contains(sec)
             let name = PlacesModel.shared.title(of: sec)
             add(folded ? "Expand “\(name)”" : "Collapse “\(name)”", nil, #selector(toggleSection(_:)), sec.rawValue)
@@ -117,6 +125,19 @@ extension PlacesPanel {
             guard let self else { return }
             self.delegate?.places(self, open: url, newTab: false, splitView: false)
         }
+    }
+
+    // MARK: Cloud accounts
+
+    private func cloudAccount(_ s: NSMenuItem) -> CloudAccount? { (s.representedObject as? String).flatMap(CloudAccounts.shared.account) }
+    @objc private func accountSignIn(_ s: NSMenuItem) { if let a = cloudAccount(s) { AccountActions.signInAgain(a.id, window: window) } }
+    @objc private func accountRename(_ s: NSMenuItem) { if let a = cloudAccount(s) { AccountActions.rename(a, window: window) } }
+    @objc private func accountBrowser(_ s: NSMenuItem) { if let a = cloudAccount(s) { AccountActions.openInBrowser(a) } }
+    @objc private func accountSignOut(_ s: NSMenuItem) { if let a = cloudAccount(s) { AccountActions.confirmRemove(a, window: window) } }
+    @objc private func accountSettings(_ s: NSMenuItem) {
+        guard let a = cloudAccount(s) else { return }
+        AppDelegate.shared.showSettings(page: "Accounts")
+        AccountsSettingsPage.current?.select(a.id)
     }
 
     @objc private func toggleSection(_ s: NSMenuItem) {

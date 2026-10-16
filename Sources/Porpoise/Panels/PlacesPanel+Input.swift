@@ -64,9 +64,17 @@ extension PlacesPanel {
         if hh != headerHover { headerHover = hh; needsDisplay = true }
         let h = hoverIndex(at: convert(event.locationInWindow, from: nil))
         if h != hover { hover = h; needsDisplay = true }
-        let tip = tooltip(for: entry(at: h))
+        let tip = header(at: hh).flatMap { PlacesModel.shared.account(for: $0) }.map(Self.accountTooltip) ?? tooltip(for: entry(at: h))
         // Re-setting the same tooltip on every move would restart its delay.
         if tip != toolTip { toolTip = tip }
+    }
+
+    static func accountTooltip(_ a: AccountSection) -> String {
+        switch a.status {
+        case .ok: return "\(CloudAccounts.shared.title(a.id)) — \(a.email)"
+        case .offline: return "\(CloudAccounts.shared.title(a.id)) — \(a.email), offline"
+        case .signInNeeded: return "\(CloudAccounts.shared.title(a.id)) — \(a.email): sign in again to continue"
+        }
     }
 
     private func tooltip(for e: PlaceEntry?) -> String? {
@@ -76,6 +84,11 @@ extension PlacesPanel {
             return "\(FileFormat.size(c.free)) free out of \(FileFormat.size(c.total)) (\(usedPct)% used)"
         }
         if e.url.isFileURL { return e.url.path }
+        if let account = CloudAccounts.shared.account(for: e.url) {
+            // "Shared by Ana Ruiz · Google Drive · work", or just the account for its own rows and folders.
+            let where_ = CloudAccounts.shared.title(account.id)
+            return CloudAccounts.shared.info(for: e.url)?.sharedBy.map { "Shared by \($0) · \(where_)" } ?? "\(where_) — \(account.email)"
+        }
         return RemoteFS.isRemote(e.url) || NetworkMounts.needsMount(e.url) ? e.url.absoluteString : nil
     }
 

@@ -99,6 +99,7 @@ extension MainWindowController {
                     continue
                 }
             }
+            if AccountActions.openWebDocument(it.url) { continue }
             if !it.url.isFileURL { RemoteOpener.open(it); continue }
             NSWorkspace.shared.open(it.url)
         }
@@ -121,6 +122,8 @@ extension MainWindowController {
     func container(_ c: ViewContainer, middleClicked item: FileItem) {
         if item.isBrowsableFolder {
             addTab(url: item.url, select: false)
+        } else if AccountActions.openWebDocument(item.url) {
+            return
         } else if !item.url.isFileURL {
             RemoteOpener.open(item)
         } else {

@@ -125,9 +125,12 @@ extension MainWindowController {
 
     @objc func addToPlaces(_ sender: Any?) {
         if let f = view.model.selectedItems.first(where: \.isBrowsableFolder) {
-            PlacesModel.shared.add(f.url)
+            // Cloud folders are named by their ids in the URL: the place takes the folder's name.
+            PlacesModel.shared.add(f.url, title: PlacesModel.isCloud(f.url) ? f.name : nil)
         } else if view.url.isFileURL {
             PlacesModel.shared.add(view.url)
+        } else if PlacesModel.isCloud(view.url) {
+            PlacesModel.shared.add(view.url, title: view.url.folderName)
         }
     }
 

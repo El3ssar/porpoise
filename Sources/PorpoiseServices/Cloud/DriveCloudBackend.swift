@@ -24,6 +24,8 @@ public final class DriveCloudBackend: CloudBackend {
             // Published values change after this fires.
             DispatchQueue.main.async { self?.storeChanged() }
         }
+        // Accounts restored at launch: their quota and shared drives.
+        DispatchQueue.main.async { [weak self] in self?.storeChanged() }
     }
 
     private func storeChanged() {
@@ -167,8 +169,9 @@ public final class DriveCloudBackend: CloudBackend {
             sharedWithCount: file.permissions == nil ? nil : people.count,
             sharedWithNames: people.prefix(3).compactMap { $0.displayName ?? $0.emailAddress },
             anyoneWithLink: anyone.map { "can " + (Self.access($0.role).map(Self.verb) ?? "view") },
-            modifiedBy: file.lastModifyingUser?.displayName, sharedBy: file.sharingUser?.displayName, webLink: file.webViewLink,
-            isWebDocument: file.isGoogleDocument, kind: Self.kind(file.mimeType))
+            modifiedBy: file.lastModifyingUser?.displayName, sharedBy: file.sharingUser?.displayName,
+            webLink: file.webViewLink ?? (file.isFolder ? URL(string: "https://drive.google.com/drive/folders/\(file.id)") : nil),
+            isWebDocument: file.isGoogleDocument, kind: Self.kind(file.mimeType), name: file.name, isFolder: file.isFolder)
     }
 
     static func access(_ role: String?) -> CloudItemInfo.Access? {

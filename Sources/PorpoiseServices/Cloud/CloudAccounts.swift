@@ -106,11 +106,13 @@ public struct CloudItemInfo: Equatable, Sendable {
     public var isWebDocument: Bool
     /// "Google Sheets spreadsheet".
     public var kind: String?
+    public var name: String?
+    public var isFolder: Bool
 
     public init(
         ownerName: String? = nil, ownerEmail: String? = nil, access: Access? = nil, sharedWithCount: Int? = nil,
         sharedWithNames: [String] = [], anyoneWithLink: String? = nil, modifiedBy: String? = nil, sharedBy: String? = nil,
-        webLink: URL? = nil, isWebDocument: Bool = false, kind: String? = nil
+        webLink: URL? = nil, isWebDocument: Bool = false, kind: String? = nil, name: String? = nil, isFolder: Bool = false
     ) {
         self.ownerName = ownerName
         self.ownerEmail = ownerEmail
@@ -123,6 +125,8 @@ public struct CloudItemInfo: Equatable, Sendable {
         self.webLink = webLink
         self.isWebDocument = isWebDocument
         self.kind = kind
+        self.name = name
+        self.isFolder = isFolder
     }
 
     /// "4 people and anyone with the link (can view)".
@@ -349,8 +353,11 @@ public final class CloudAccounts {
             case .offline: status = .offline
             case .signInNeeded: status = .signInNeeded
             }
+            // The header has the provider's mark: with several accounts, their names tell them apart.
+            let several = accounts.filter { $0.provider == a.provider }.count > 1
             return AccountSection(
-                id: a.id, title: title(a.id), email: a.email, displayName: a.displayName, avatar: avatar(a.id), brand: a.provider.brand,
+                id: a.id, title: several ? label(a.id) : a.provider.title, email: a.email, displayName: a.displayName, avatar: avatar(a.id),
+                brand: a.provider.brand,
                 status: status, entries: entries, quotaUsed: a.quotaUsed, quotaTotal: a.quotaTotal)
         }
     }

@@ -113,31 +113,32 @@ extension PlacesPanel {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    /// A cloud account's header: provider mark, name, a glyph only when something's wrong, and the account picture.
+    /// A cloud account's header: provider mark, name and picture, and a glyph only when something's wrong.
     private func drawAccountHeader(_ a: AccountSection, in r: CGRect, attrs: [NSAttributedString.Key: Any]) {
         let mark: CGFloat = 12
         BrandMarks.image(a.brand, size: mark)?.draw(
             in: CGRect(x: Metrics.iconX, y: r.minY + 8, width: mark, height: mark), from: .zero, operation: .sourceOver, fraction: 1,
             respectFlipped: true, hints: nil)
-        let avatar: CGFloat = 16
-        let avatarX = r.maxX - 26 - avatar - 6
-        var right = avatarX - 4
-        if let glyph = Self.statusGlyph(a.status) {
-            right -= 14
-            glyph.draw(
-                in: CGRect(x: right, y: r.minY + 7, width: 13, height: 13), from: .zero, operation: .sourceOver, fraction: 1,
-                respectFlipped: true, hints: nil)
-            right -= 4
-        }
+        let avatar: CGFloat = 15
+        let glyph = Self.statusGlyph(a.status)
         let tx = Metrics.iconX + mark + 6
+        // Room for the picture, the glyph and the fold chevron on the right.
+        let reserve: CGFloat = 26 + avatar + 6 + (glyph == nil ? 0 : 18)
         let p = NSMutableParagraphStyle()
         p.lineBreakMode = .byTruncatingTail
         var a2 = attrs
         a2[.paragraphStyle] = p
-        (a.title as NSString).draw(in: CGRect(x: tx, y: r.minY + 9, width: max(0, right - tx), height: 15), withAttributes: a2)
+        let title = a.title as NSString
+        let width = min(ceil(title.size(withAttributes: a2).width), max(0, r.maxX - reserve - tx))
+        title.draw(in: CGRect(x: tx, y: r.minY + 9, width: width, height: 15), withAttributes: a2)
+        var x = tx + width + 6
         BrandMarks.avatar(a.avatar, name: a.displayName, email: a.email, size: avatar).draw(
-            in: CGRect(x: avatarX, y: r.minY + 5, width: avatar, height: avatar), from: .zero, operation: .sourceOver, fraction: 1,
+            in: CGRect(x: x, y: r.minY + 7, width: avatar, height: avatar), from: .zero, operation: .sourceOver, fraction: 1,
             respectFlipped: true, hints: nil)
+        x += avatar + 5
+        glyph?.draw(
+            in: CGRect(x: x, y: r.minY + 8, width: 13, height: 13), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
+            hints: nil)
     }
 
     /// Trouble only: offline (cloud with a slash) or the sign-in needs renewing (yellow triangle). Nothing when healthy.
