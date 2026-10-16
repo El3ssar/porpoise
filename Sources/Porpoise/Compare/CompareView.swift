@@ -38,7 +38,7 @@ final class CompareView: NSView {
             }, completion: completion)
     }
     private var pills: [ComparePill] = []
-    private var lastPaths: [String] = []
+    private var lastRowsVersion = -1
     private var popover: NSPopover?
     private var currentActivity: Activity?
     private var completedActivity: UUID?
@@ -150,14 +150,20 @@ final class CompareView: NSView {
         pause.isHidden = true
         jobLine.isHidden = !model.showProgress; jobLine.isIndeterminate = model.showProgress
         if model.showProgress { jobLine.startAnimation(nil) } else { jobLine.stopAnimation(nil) }
-        sync.isHidden = model.showProgress; sync.isEnabled = model.comparison?.complete == true && model.error == nil
-        let paths = model.rows.map(\.path)
-        if paths != lastPaths {
-            document.replaceRows(model.rows); lastPaths = paths
+        sync.isHidden = model.showProgress; sync.isEnabled = model.comparison?.complete == true && model.error == nil && !model.loading
+        if model.rowsVersion != lastRowsVersion {
+            document.replaceRows(model.rows, indices: model.rowIndices); lastRowsVersion = model.rowsVersion
         } else {
             document.rows = model.rows; document.needsDisplay = true
         }
         method.title = Self.methodTitle(model.options.method) + " ⌄"
+        if let error = model.error {
+            pills.forEach { $0.isHidden = true }; progress.isHidden = true
+            progressLabel.isHidden = false; progressLabel.stringValue = "Couldn't compare: " + error; progressLabel.textColor = Theme.compareDanger
+            stop.isHidden = false; stop.title = "Try Again"; sync.isHidden = true
+        } else {
+            stop.title = "Stop"; progressLabel.textColor = Theme.windowTextInactive
+        }
         header.needsDisplay = true
         let counts = model.outline?.counts ?? [:]
         let differences = [CompareFilter.onlyLeft, .onlyRight, .changed].reduce(0) { $0 + (counts[$1.rawValue] ?? 0) }
@@ -166,9 +172,8 @@ final class CompareView: NSView {
             ?? "\((model.comparison?.rows.count ?? 0).formatted()) items · \(differences.formatted()) differences · \(String(format: "%.1f", model.elapsed)) s"
         summary.textColor = model.error == nil ? Theme.windowTextInactive : Theme.compareDanger
         summary.toolTip = "Compared by \(Self.methodTitle(model.options.method).lowercased()) · \(summary.stringValue)"
-        let left = model.rows.reduce(Int64(0)) { $0 + ($1.left?.kind == .file ? $1.left?.size ?? 0 : 0) }
-        let right = model.rows.reduce(Int64(0)) { $0 + ($1.right?.kind == .file ? $1.right?.size ?? 0 : 0) }
-        sizes.stringValue = "\(model.names.0) \(FileFormat.size(left)) · \(model.names.1) \(FileFormat.size(right))"
+        sizes.stringValue =
+            "\(model.names.0) \(FileFormat.size(model.visibleLeftBytes)) · \(model.names.1) \(FileFormat.size(model.visibleRightBytes))"
         let identical = differences == 0 && model.comparison?.complete == true
         overlay.isHidden = !model.rows.isEmpty || model.loading || (model.comparison == nil && model.error == nil)
         overlay.configure(

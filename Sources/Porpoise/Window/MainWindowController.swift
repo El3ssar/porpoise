@@ -150,7 +150,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
                 let left = note.userInfo?["left"] as? URL, let right = note.userInfo?["right"] as? URL
             else { return }
             if note.userInfo?["newTab"] as? Bool == true { me.addTab(url: left) }
-            me.startComparing(left: left, right: right, options: note.userInfo?["options"] as? SyncCompareOptions ?? .init())
+            me.startComparing(left: left, right: right, options: note.userInfo?["options"] as? SyncCompareOptions ?? CompareModel.defaultOptions)
         }
         observe(Notification.Name("PorpoiseSyncActivityChanged")) { me, note in
             guard (note.object as? NSWindow) === me.window, let activity = note.userInfo?["activity"] as? Activity,

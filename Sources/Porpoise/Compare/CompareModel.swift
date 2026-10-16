@@ -4,6 +4,9 @@ import PorpoiseServices
 
 /// One comparison drives both sides. All filesystem work and tree preparation stay on a utility queue.
 final class CompareModel {
+    static var defaultOptions: SyncCompareOptions {
+        .init(exclusions: [".DS_Store", "._*", ".Spotlight-V100", ".Trashes", "Thumbs.db", "desktop.ini", ".porpoise-trash"])
+    }
     let leftRoot: URL
     let rightRoot: URL
     var options: SyncCompareOptions
@@ -11,6 +14,12 @@ final class CompareModel {
     var outline: CompareOutline?
     var rows: [SyncDifference] = []
     var lastRebuildMilliseconds: Double = 0
+    var rowsVersion = 0
+    var rowIndices: [String: Int] = [:]
+    var rowPaths: [String] = []
+    var visibleLeftBytes: Int64 = 0
+    var visibleRightBytes: Int64 = 0
+    private var presentationGeneration = 0
     var filter: CompareFilter = .differences
     var sortRole: ItemRole = .name
     var sortAscending = true
@@ -27,9 +36,9 @@ final class CompareModel {
     var overrides: [String: SyncOverride] = [:]
     private var cancellation = DiskCancellation()
     private var generation = 0
-    var names: (String, String) { CompareOutline.sideNames(leftRoot, rightRoot) }
-    init(left: URL, right: URL, options: SyncCompareOptions = .init()) {
-        leftRoot = left; rightRoot = right; self.options = options
+    let names: (String, String)
+    init(left: URL, right: URL, options: SyncCompareOptions = CompareModel.defaultOptions) {
+        leftRoot = left; rightRoot = right; self.options = options; names = CompareOutline.sideNames(left, right)
     }
     func start() {
         cancellation.cancel(); cancellation = DiskCancellation(); generation += 1
@@ -88,8 +97,26 @@ final class CompareModel {
     }
     func rebuild() {
         let start = CACurrentMediaTime()
-        rows = outline?.visible(filter: filter, expanded: expanded) ?? []; onChange?()
-        lastRebuildMilliseconds = (CACurrentMediaTime() - start) * 1000
+        presentationGeneration += 1
+        let ticket = presentationGeneration, outline = outline, filter = filter, expanded = expanded, previousPaths = rowPaths
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let rows = outline?.visible(filter: filter, expanded: expanded) ?? []
+            var indices: [String: Int] = [:], paths: [String] = [], left: Int64 = 0, right: Int64 = 0
+            indices.reserveCapacity(rows.count); paths.reserveCapacity(rows.count)
+            for (index, row) in rows.enumerated() {
+                indices[row.path] = index; paths.append(row.path)
+                if row.left?.kind == .file { left += row.left?.size ?? 0 }
+                if row.right?.kind == .file { right += row.right?.size ?? 0 }
+            }
+            let changedPaths = paths != previousPaths
+            DispatchQueue.main.async {
+                guard let self, self.presentationGeneration == ticket else { return }
+                if changedPaths { self.rowsVersion += 1 }
+                self.rows = rows; self.rowIndices = indices; self.rowPaths = paths
+                self.visibleLeftBytes = left; self.visibleRightBytes = right
+                self.onChange?(); self.lastRebuildMilliseconds = (CACurrentMediaTime() - start) * 1000
+            }
+        }
     }
     func toggle(_ flag: CompareFilter) { filter.formSymmetricDifference(flag); rebuild() }
     func expand(_ path: String) { if expanded.contains(path) { expanded.remove(path) } else { expanded.insert(path) }; rebuild() }

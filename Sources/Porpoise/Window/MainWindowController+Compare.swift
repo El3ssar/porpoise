@@ -11,11 +11,12 @@ extension MainWindowController {
             showCompareChooser()
         }
     }
-    func startComparing(left: URL, right: URL, options: SyncCompareOptions = .init(), preserveLinkRoots: Bool = false) {
+    func startComparing(left: URL, right: URL, options: SyncCompareOptions = CompareModel.defaultOptions, preserveLinkRoots: Bool = false) {
         let tab = tab
         tab.linkUpdating = true
         if !tab.isSplit { tab.openSplit(url: right, animated: false) }
         tab.secondary?.delegate = self
+        tab.containers.forEach { $0.suspendForComparison(true) }
         if tab.primary.url != left { tab.primary.setURL(left) }
         if tab.secondary?.url != right { tab.secondary?.setURL(right) }
         tab.compareChooser?.removeFromSuperview(); tab.compareChooser = nil

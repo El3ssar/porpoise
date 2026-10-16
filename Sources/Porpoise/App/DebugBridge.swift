@@ -66,6 +66,32 @@ final class DebugBridge: NSObject {
             }
         case "comparehover":
             if let compare = wc?.tab.compareView, let index = Int(arg) { compare.document.hoverIndex = index; compare.document.needsDisplay = true }
+        case "comparescroll":
+            if let compare = wc?.tab.compareView, let offset = Double(arg) {
+                compare.scroll.contentView.scroll(to: CGPoint(x: 0, y: offset)); compare.scroll.reflectScrolledClipView(compare.scroll.contentView)
+            }
+        case "compareentrybench":
+            let args = arg.components(separatedBy: "|")
+            if args.count == 3, let wc {
+                let probe = Animator(); var intervals: [Double] = [], previous = CACurrentMediaTime()
+                probe.run(
+                    duration: 1.5,
+                    step: { _ in
+                        let now = CACurrentMediaTime(); intervals.append((now - previous) * 1000); previous = now
+                    })
+                let begin = CACurrentMediaTime()
+                wc.startComparing(left: URL(fileURLWithPath: args[1]), right: URL(fileURLWithPath: args[2]))
+                let setup = (CACurrentMediaTime() - begin) * 1000
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                    _ = probe
+                    let compare = wc.tab.compareView
+                    let data: [String: Any] = [
+                        "entrySetupMS": setup, "rows": compare?.model.rows.count ?? 0,
+                        "frameIntervalsMS": intervals, "drawMS": compare?.document.drawMilliseconds ?? [],
+                    ]
+                    try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: args[0]))
+                }
+            }
         case "comparebench":
             if let compare = wc?.tab.compareView {
                 let probe = Animator(); var intervals: [Double] = [], previous = CACurrentMediaTime()

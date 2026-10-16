@@ -45,7 +45,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         let width = (bounds.width - gutterWidth) / 2
         return CGRect(x: side == .left ? 0 : width + gutterWidth, y: y, width: width, height: rowHeight)
     }
-    func replaceRows(_ next: [SyncDifference]) {
+    func replaceRows(_ next: [SyncDifference], indices nextIndices: [String: Int]) {
         let started = CACurrentMediaTime()
         let visible = visibleRect
         var from: [String: CGRect] = [:]
@@ -57,9 +57,9 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
             from[path] = CGRect(x: 0, y: position, width: bounds.width, height: rowHeight)
         }
         entryOrigins = [:]
-        let old = rows
+        let old = first < last ? Array(rows[first..<last]) : []
         animator.stop(); rows = next
-        indices = Dictionary(rows.enumerated().map { ($0.element.path, $0.offset) }, uniquingKeysWith: { a, _ in a })
+        indices = nextIndices
         leaving = old.compactMap { row in indices[row.path] == nil ? from[row.path].map { (row, $0.minY) } : nil }
         frame.size.height = max(enclosingScrollView?.contentSize.height ?? 0, CGFloat(rows.count) * rowHeight)
         if let selectedPath, indices[selectedPath] == nil { self.selectedPath = nil }

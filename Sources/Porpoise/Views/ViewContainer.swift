@@ -34,6 +34,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     private var comparisonNeedsRefresh = false
     func suspendForComparison(_ value: Bool) {
         comparisonSuspended = value
+        model.defersPresentation = value
         if !value && comparisonNeedsRefresh { comparisonNeedsRefresh = false; modelChanged() }
     }
     var selectionMode = false {
@@ -136,6 +137,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
         model.onPropsChanged = { [weak self] in
             guard let self else { return }
+            if self.comparisonSuspended { self.comparisonNeedsRefresh = true; return }
             self.layoutSubtreeIfNeeded()
             self.layout()  // now: the Details header comes or goes, which resizes the scroll view
             self.list.relayout()
