@@ -179,6 +179,14 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
 
     private func layoutSegments() {
         let h = bounds.height
+        if bounds.width < 200,
+            let last = segments.last(where: {
+                if case .crumb(_, _, true) = $0.kind { return true }; return false
+            })
+        {
+            segments = [last]; segments[0].rect = bounds.insetBy(dx: 5, dy: 5)
+            return
+        }
         var x: CGFloat = 10
         let available = bounds.width - 40
         // Collapse leading crumbs into a "more" menu when the path doesn't fit.
@@ -246,6 +254,15 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             (placeholderText as NSString).draw(
                 at: CGPoint(x: 14, y: (bounds.height - crumbFont.ascender + crumbFont.descender) / 2),
                 withAttributes: [.font: crumbFont, .foregroundColor: Theme.windowTextInactive])
+            return
+        }
+        if bounds.width < 200 {
+            let title = preferredAncestorName.map { "\($0) › \(url.lastPathComponent)" } ?? url.lastPathComponent
+            let style = NSMutableParagraphStyle(); style.lineBreakMode = .byTruncatingTail
+            let font = NSFont.systemFont(ofSize: preferredAncestorName == nil ? Theme.fontSize : 11, weight: .medium)
+            (title as NSString).draw(
+                in: CGRect(x: 5, y: (bounds.height - 16) / 2, width: max(0, bounds.width - 10), height: 18),
+                withAttributes: [.font: font, .foregroundColor: textColor, .paragraphStyle: style])
             return
         }
         for (i, s) in segments.enumerated() {

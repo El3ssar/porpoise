@@ -20,6 +20,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
     var model: CompareModel
     var rows: [SyncDifference] = []
     var finishedPaths = Set<String>()
+    var failedPaths = Set<String>()
     var selectedPath: String?
     var activeSide: SyncSide = .left
     var hoverIndex: Int?
@@ -116,6 +117,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         if drawMilliseconds.count > 240 { drawMilliseconds.removeFirst(drawMilliseconds.count - 240) }
     }
     func color(_ row: SyncDifference) -> NSColor {
+        if failedPaths.contains(row.path) { return Theme.compareDanger }
         switch row.status {
         case .onlyLeft, .onlyRight: return Theme.compareOnly;
         case .same: return Theme.windowTextInactive.withAlphaComponent(0.45)
@@ -124,6 +126,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         }
     }
     func glyph(_ row: SyncDifference) -> String {
+        if failedPaths.contains(row.path) { return "!" }
         if finishedPaths.contains(row.path) { return "✓" }
         if let choice = model.overrides[row.path] { return choice == .keepRight ? "←" : "→" }
         if (row.left ?? row.right)?.kind == .directory, case .changed = row.status { return "○" }
@@ -169,7 +172,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
             }
             drawEntry(entry, row: row, side: side, rect: rect)
         }
-        if model.loading && model.comparison?.complete == false && (row.left ?? row.right)?.kind == .directory {
+        if model.loading && model.comparison?.complete == false && row.left?.kind == .directory && row.right?.kind == .directory {
             let arc = NSBezierPath(); arc.lineWidth = 1.5
             let angle = CGFloat(CACurrentMediaTime().truncatingRemainder(dividingBy: 1.2) / 1.2 * 360)
             arc.appendArc(withCenter: CGPoint(x: seam.midX, y: y + rowHeight / 2), radius: 4, startAngle: angle, endAngle: angle + 270)
@@ -255,7 +258,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
             let count = model.outline?.childCounts[side]?[row.path] ?? 0
             let size =
                 entry.kind == .directory
-                ? (model.comparison?.complete == true ? "\(count.formatted()) \(count == 1 ? "item" : "items")" : "…") : FileFormat.size(entry.size)
+                ? (model.comparison?.complete == true ? "\(count.formatted()) \(count == 1 ? "item" : "items")" : "") : FileFormat.size(entry.size)
             let differs = row.left?.size != row.right?.size
             text(
                 size, CGRect(x: rect.maxX - dateWidth - sizeWidth - 10, y: rect.midY - 8, width: sizeWidth, height: 18), size: 11,

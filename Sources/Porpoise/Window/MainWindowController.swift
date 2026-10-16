@@ -160,7 +160,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
                 let model = compare.model
                 guard (model.leftRoot == left && model.rightRoot == right) || (model.leftRoot == right && model.rightRoot == left) else { continue }
                 compare.document.finishedPaths = Set(note.userInfo?["completedPaths"] as? [String] ?? [])
-                compare.show(activity: activity)
+                compare.document.failedPaths = Set(note.userInfo?["failedPaths"] as? [String] ?? [])
+                compare.show(activity: activity, metadata: note.userInfo ?? [:])
             }
         }
         observe(Settings.changed) { me, note in me.settingsChanged(key: note.object as? String) }
@@ -337,9 +338,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
             navigator.missingTail = t.missingCounterpart != nil && (index == 1) == t.missingOnRight
             if let roots = t.linkedRoots {
                 let names = CompareOutline.sideNames(roots.left, roots.right)
-                navigator.preferredAncestorName = index == 0 ? names.0 : names.1
+                navigator.preferredAncestorName = index == 1 && names.1 != roots.right.lastPathComponent ? names.1 : nil
             } else if let model = t.compareView?.model {
-                navigator.preferredAncestorName = index == 0 ? model.names.0 : model.names.1
+                navigator.preferredAncestorName = index == 1 && model.names.1 != model.rightRoot.lastPathComponent ? model.names.1 : nil
             } else {
                 navigator.preferredAncestorName = nil
             }
