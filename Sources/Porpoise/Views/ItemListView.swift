@@ -39,6 +39,8 @@ final class ItemListView: NSView {
     var comparisonDrawTiming: ((Double) -> Void)?
     var comparisonColumnColor: ((Int, ItemRole) -> NSColor?)?
     var comparisonCaption: ((Int) -> (text: String, color: NSColor)?)?
+    var comparisonAccessibilityLabel: ((Int) -> String)?
+    var accessibleItems: [URL: ItemAccessibilityElement] = [:]
     var drawComparisonBackground: ((CGRect) -> Void)?
 
     // MARK: Layout output (+Layout)
@@ -245,6 +247,10 @@ final class ItemListView: NSView {
             duration: model.rows.count > 4000 ? 0 : 0.16,
             step: { [weak self] p in self?.previewZoom(from + (size - from) * CGFloat(p), commitAfter: nil) },
             completion: { [weak self] in self?.commitZoom() })
+    }
+
+    func finishZoomForComparison() {
+        zoomAnimator.stop(); zoomCommitTimer?.invalidate(); commitZoom()
     }
 
     func commitZoom() {

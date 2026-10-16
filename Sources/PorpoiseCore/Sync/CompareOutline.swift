@@ -25,6 +25,33 @@ public struct CompareOutline: Sendable {
     public private(set) var differenceCounts: [String: Int] = [:]
     public private(set) var childCounts: [SyncSide: [String: Int]] = [:]
     public private(set) var totalBytes: [SyncSide: Int64] = [:]
+    /// A shared spoken description for the aligned surface and its native Details rows.
+    public func accessibilityLabel(for row: SyncDifference, side: SyncSide, names: (String, String)) -> String {
+        let name = side == .left ? names.0 : names.1
+        let entry = side == .left ? row.left : row.right
+        let kind = entry?.kind == .directory ? "folder" : (entry?.kind == .symlink ? "symbolic link" : "file")
+        let status: String
+        switch row.status {
+        case .onlyLeft: status = "only in " + names.0
+        case .onlyRight: status = "only in " + names.1
+        case .collision: status = "name collision"
+        case .changed(let newer):
+            status = "changed" + (newer == .unknown ? "" : ", newer in " + (newer == .newerLeft ? names.0 : names.1))
+        case .same: status = "same"
+        }
+        let detail: String
+        if entry?.kind == .directory {
+            let count = childCounts[side]?[row.path] ?? 0
+            detail = FileFormat.itemCount(count)
+        } else if let left = row.left, let right = row.right, left.kind == .file, right.kind == .file {
+            detail = "\(names.0) \(FileFormat.size(left.size)), \(names.1) \(FileFormat.size(right.size))"
+        } else if let entry, entry.kind == .file {
+            detail = FileFormat.size(entry.size)
+        } else {
+            detail = entry?.linkTarget.map { "links to " + $0 } ?? ""
+        }
+        return "\(name): \((row.path as NSString).lastPathComponent), \(kind), \(status)" + (detail.isEmpty ? "" : ", " + detail)
+    }
     public init(_ comparison: SyncComparison) {
         self.comparison = comparison
         var displayRows = comparison.rows

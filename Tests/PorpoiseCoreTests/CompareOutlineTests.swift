@@ -19,6 +19,21 @@ struct CompareOutlineTests {
         #expect(outline.counts[CompareFilter.onlyLeft.rawValue] == 1)
         #expect(outline.visible(filter: .all, expanded: ["d"]).count == 4)
     }
+    @Test func spokenLabelsDescribeFoldersWithoutInventingAbsentFileSizes() throws {
+        let comparison = SyncComparator.compare(
+            .init(entries: [.init(path: "Brand", kind: .directory), file("Brand/logo.png"), file("only.txt", size: 23), file("both.txt", size: 20)]),
+            .init(entries: [file("both.txt", size: 30)]))
+        let outline = CompareOutline(comparison), rows = outline.visible(filter: .all, expanded: ["Brand"])
+        let folder = try #require(rows.first { $0.path == "Brand" })
+        let folderLabel = outline.accessibilityLabel(for: folder, side: .left, names: ("Home", "Backup"))
+        #expect(folderLabel == "Home: Brand, folder, only in Home, 1 item")
+        #expect(!folderLabel.contains("bytes")); #expect(!folderLabel.contains("versus"))
+        let only = try #require(rows.first { $0.path == "only.txt" })
+        #expect(outline.accessibilityLabel(for: only, side: .left, names: ("Home", "Backup")) == "Home: only.txt, file, only in Home, 23 B")
+        let both = try #require(rows.first { $0.path == "both.txt" })
+        let bothLabel = outline.accessibilityLabel(for: both, side: .right, names: ("Home", "Backup"))
+        #expect(bothLabel.contains("Home 20 B, Backup 30 B"))
+    }
     @Test func linkedNavigationUsesComponentBoundariesAndSameRemoteEndpoint() {
         let root = URL(fileURLWithPath: "/Projects")
         #expect(LinkedBrowsing.relativePath(root, below: root) == "")
