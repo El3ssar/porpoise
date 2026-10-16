@@ -134,15 +134,34 @@ struct FileJobResumeTests {
         #expect(try Data(contentsOf: dst.appendingPathComponent("big.bin")) == Data(contentsOf: src))
     }
 
-    @Test func pausedThenCancelledLeavesNothing() throws {
+    @Test func pausedThenCancelledLeavesNothing() async throws {
         let src = try randomFile("src/big.bin", size: 24 << 20, seed: 4)
         let dst = try scratch.folder("dst")
         let j = job(src, to: dst)
-        let done = runInBackground(j, at: { $0.doneBytes > 4 << 20 }) {
-            j.pause()
-            DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { j.cancel() }
+        let (paused, progress) = AsyncStream<Void>.makeStream()
+        j.onProgress = { p in
+            if p.doneBytes > 4 << 20 && !j.isPaused {
+                j.pause()
+                progress.yield(())
+                progress.finish()
+            }
         }
-        #expect(done.wait(timeout: .now() + 10) == .success)
+        defer { j.cancel() }
+        // A synchronous copy must not occupy a cooperative worker while its controller needs one.
+        let work = Task {
+            try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
+                Thread {
+                    do { _ = try j.run(); done.resume() } catch { done.resume(throwing: error) }
+                    progress.finish()
+                }.start()
+            }
+        }
+        var events = paused.makeAsyncIterator()
+        try #require(await events.next() != nil)
+        #expect(j.isPaused)
+        // Cancel only once the copy has actually paused, without depending on a global-queue timer.
+        j.cancel()
+        try await work.value
         #expect(try FileManager.default.contentsOfDirectory(atPath: dst.path).isEmpty)
     }
 
