@@ -102,7 +102,7 @@ final class StatusBarView: NSView {
     var displayText: String { temporaryText ?? text }
 
     private var textAttrs: [NSAttributedString.Key: Any] {
-        let p = NSMutableParagraphStyle(); p.lineBreakMode = .byTruncatingMiddle
+        let p = NSMutableParagraphStyle(); p.lineBreakMode = .byClipping
         return [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: Theme.windowText.withAlphaComponent(0.88), .paragraphStyle: p]
     }
 
@@ -114,7 +114,7 @@ final class StatusBarView: NSView {
 
     private func update() {
         setAccessibilityValue(displayText)
-        toolTip = temporaryText
+        toolTip = displayText.isEmpty ? nil : displayText
         superview?.needsLayout = true
         needsDisplay = true
         canvas.needsDisplay = true
@@ -193,7 +193,6 @@ final class StatusBarView: NSView {
     }
 
     private func fittedMessage(width: CGFloat, font: NSFont) -> String {
-        guard temporaryText != nil else { return displayText }
         return FileFormat.fittingStatusMessage(displayText) {
             ($0 as NSString).size(withAttributes: [.font: font]).width <= width
         }

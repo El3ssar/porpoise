@@ -170,7 +170,7 @@ extension PlacesPanel {
         guard let e = entry(at: i) else { return }
         if e.isEjectable && p.x > bounds.width - Metrics.ejectHitWidth { eject(e); return }
         openPlace(e, newTab: event.modifierFlags.contains(.command))
-        if let pair = SyncCoordinator.shared.pair(for: e.url), p.x > bounds.width - 56 {
+        if let pair = SyncCoordinator.shared.pair(for: e.url), p.x >= bounds.width - Metrics.syncBadgeWidth {
             switch SyncCoordinator.shared.statuses[pair.id] {
             case .conflicts, .review: SyncCoordinator.shared.review(pair.id, window: window)
             default: break
