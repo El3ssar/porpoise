@@ -16,20 +16,23 @@ public struct DrivePage: Sendable {
 public final class DriveClient: @unchecked Sendable {
     public let accountID: UUID
     public let mediaCache: DriveMediaCache
-    private let tokens: DriveTokenManager
-    private let http: DriveHTTP
-    private let baseURL: URL
+    public let mutationJournal: DriveMutationJournal
+    let tokens: DriveTokenManager
+    let http: DriveHTTP
+    let baseURL: URL
     private let report: @Sendable (Error?) -> Void
     private let lock = NSLock()
     private var cache: [String: DriveFile] = [:]
     static let fields =
-        "id,name,mimeType,driveId,resourceKey,size,modifiedTime,thumbnailLink,hasThumbnail,webViewLink,owners(displayName,emailAddress,photoLink),shared,capabilities(canDownload,canListChildren),shortcutDetails,exportLinks,trashed,permissions(id,type,role,displayName,emailAddress,photoLink),sharingUser(displayName,emailAddress,photoLink),lastModifyingUser(displayName,emailAddress,photoLink),sharedWithMeTime"
+        "id,name,mimeType,driveId,resourceKey,size,parents,version,md5Checksum,appProperties,modifiedTime,thumbnailLink,hasThumbnail,webViewLink,owners(displayName,emailAddress,photoLink),shared,capabilities(canDownload,canListChildren,canEdit,canRename,canTrash,canUntrash,canAddChildren,canMoveItemWithinDrive,canMoveItemOutOfDrive,canCopy),shortcutDetails,exportLinks,trashed,permissions(id,type,role,displayName,emailAddress,photoLink),sharingUser(displayName,emailAddress,photoLink),lastModifyingUser(displayName,emailAddress,photoLink),sharedWithMeTime"
 
     public init(
         accountID: UUID, tokens: DriveTokenManager, http: DriveHTTP = DriveHTTP(),
-        baseURL: URL = URL(string: "https://www.googleapis.com/drive/v3/")!, report: @escaping @Sendable (Error?) -> Void = { _ in }
+        baseURL: URL = URL(string: "https://www.googleapis.com/drive/v3/")!, mutationJournal: DriveMutationJournal = .shared,
+        report: @escaping @Sendable (Error?) -> Void = { _ in }
     ) {
         self.mediaCache = DriveMediaCache(accountID: accountID)
+        self.mutationJournal = mutationJournal
         self.accountID = accountID; self.tokens = tokens; self.http = http; self.baseURL = baseURL; self.report = report
     }
 
@@ -52,7 +55,7 @@ public final class DriveClient: @unchecked Sendable {
         return lock.withLock { cache[id] }
     }
 
-    private func remember(_ files: [DriveFile]) {
+    func remember(_ files: [DriveFile]) {
         lock.withLock { for file in files { cache[file.id] = file } }
     }
 
@@ -99,12 +102,12 @@ public final class DriveClient: @unchecked Sendable {
         let error: APIError
     }
 
-    private func decode<T: Decodable>(_ type: T.Type, _ data: Data) throws -> T {
+    func decode<T: Decodable>(_ type: T.Type, _ data: Data) throws -> T {
         guard let result = try? JSONDecoder().decode(type, from: data) else { throw DriveError.invalidResponse }
         return result
     }
 
-    public func file(_ id: String, resourceKey: String? = nil) async throws -> DriveFile {
+    public func file(_ id: String, resourceKey: String? = nil, includeTrashed: Bool = false) async throws -> DriveFile {
         guard DriveLink.isValidID(id) else { throw DriveError.invalidLocation }
         let data = try await request(
             "files/\(id)",
@@ -113,7 +116,7 @@ public final class DriveClient: @unchecked Sendable {
             ], resource: (id, resourceKey))
         var file = try decode(DriveFile.self, data)
         file.resourceKey = file.resourceKey ?? resourceKey
-        guard file.id == id, file.trashed != true else { throw DriveError.notFound }
+        guard file.id == id, includeTrashed || file.trashed != true else { throw DriveError.notFound }
         remember([file])
         return file
     }

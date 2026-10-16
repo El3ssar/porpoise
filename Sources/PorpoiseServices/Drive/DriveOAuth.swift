@@ -74,6 +74,7 @@ struct DriveTokenResponse: Decodable, Sendable {
     let expires_in: Double
     let refresh_token: String?
     let token_type: String
+    var scope: String? = nil
 }
 
 /// A fresh transaction for each sign-in. Only a matching loopback path, state and one code are accepted.
@@ -112,7 +113,7 @@ public struct DriveOAuthTransaction: Sendable {
             URLQueryItem(name: "client_id", value: configuration.clientID),
             URLQueryItem(name: "redirect_uri", value: redirectURL.absoluteString),
             URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: "openid email profile https://www.googleapis.com/auth/drive.readonly"),
+            URLQueryItem(name: "scope", value: "openid email profile https://www.googleapis.com/auth/drive"),
             URLQueryItem(name: "access_type", value: "offline"),
             URLQueryItem(name: "prompt", value: "consent"),
             URLQueryItem(name: "state", value: state),
@@ -158,6 +159,7 @@ public actor DriveTokenManager {
     private var refreshTask: Task<DriveTokenResponse, Error>?
     private var generation = 0
     private var disconnected = false
+    private var grantedScope: String?
 
     public init(
         configuration: DriveOAuthConfiguration, accountID: UUID, credentials: any DriveCredentialStore = CredentialStores.drive(),
@@ -171,6 +173,7 @@ public actor DriveTokenManager {
         if let refresh = token.refresh_token, !refresh.isEmpty {
             try credentials.save(refresh, clientID: configuration.clientID, accountID: accountID)
         }
+        if let scope = token.scope { grantedScope = scope }
         access = token.access_token
         expiry = Date().addingTimeInterval(token.expires_in)
     }
@@ -198,6 +201,23 @@ public actor DriveTokenManager {
             if generation == epoch { refreshTask = nil; access = nil }
             throw error
         }
+    }
+
+    public func requireWriteScope() async throws {
+        _ = try await accessToken()
+        guard grantedScope?.split(separator: " ").contains("https://www.googleapis.com/auth/drive") == true else { throw DriveError.needsWriteAccess }
+    }
+
+    func session(_ id: UUID) throws -> String? {
+        try credentials.read(clientID: configuration.clientID + ".upload-session", accountID: id)
+    }
+
+    func saveSession(_ value: String, id: UUID) throws {
+        try credentials.save(value, clientID: configuration.clientID + ".upload-session", accountID: id)
+    }
+
+    func removeSession(_ id: UUID) throws {
+        try credentials.remove(clientID: configuration.clientID + ".upload-session", accountID: id)
     }
 
     /// Always forget local credentials, even if Google's revocation endpoint is unavailable.
