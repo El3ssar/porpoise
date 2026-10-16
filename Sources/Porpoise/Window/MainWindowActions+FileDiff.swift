@@ -4,7 +4,16 @@ import PorpoiseServices
 
 extension MainWindowController {
     var fileComparisonSelection: [URL] {
-        view.model.selectedItems.filter { !$0.isBrowsableFolder && $0.url.isFileURL }.map(\.url)
+        func files(_ container: ViewContainer) -> [URL] {
+            container.model.selectedItems.filter { !$0.isBrowsableFolder && $0.url.isFileURL }.map(\.url)
+        }
+        let selected = files(view)
+        if selected.count == 2 { return selected }
+        if let secondary = tab.secondary {
+            let left = files(tab.primary), right = files(secondary)
+            if left.count == 1 && right.count == 1 { return left + right }
+        }
+        return selected
     }
     @objc func compareFiles(_ sender: Any?) {
         if let compare = tab.compareView, let path = compare.document.selectedPath, let index = compare.model.rowIndices[path] {

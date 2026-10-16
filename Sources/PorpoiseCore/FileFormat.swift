@@ -27,6 +27,30 @@ public enum FileFormat {
 
     public static func itemCount(_ n: Int) -> String { n == 1 ? "1 item" : "\(count(n)) items" }
 
+    /// Keep transfer status words and destination names whole when a pane gets narrow.
+    public static func fittingStatusMessage(_ text: String, fits: (String) -> Bool) -> String {
+        if fits(text) { return text }
+        var parts = text.components(separatedBy: " · ")
+        while parts.count > 1 {
+            parts.removeLast()
+            let candidate = parts.joined(separator: " · ")
+            if fits(candidate) { return candidate }
+        }
+        var candidate = parts[0]
+        if let destination = candidate.range(of: " to ", options: .backwards) {
+            candidate = String(candidate[..<destination.lowerBound])
+            if fits(candidate) { return candidate }
+        }
+        var words = candidate.split(separator: " ").map(String.init)
+        while words.count > 1 {
+            words.removeLast()
+            let shortened = words.joined(separator: " ") + "…"
+            if fits(shortened) { return shortened }
+        }
+        let word = (words.first ?? "") + "…"
+        return fits(word) ? word : (fits("…") ? "…" : "")
+    }
+
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .none

@@ -318,8 +318,9 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             cancelButton.frame.origin.y = footerRow; syncButton.frame.origin.y = footerRow
             saveButton.frame.origin.y = footerRow
         }
+        let empty = !planning && displaySteps.isEmpty && preview?.plan.steps.isEmpty == true
         syncButton.isEnabled = !planning
-        syncButton.title = editing || savingTask ? "Save" : (preview?.executable.steps.isEmpty == true && displaySteps.isEmpty ? "Done" : "Sync")
+        syncButton.title = editing || savingTask || (empty && automatic.state == .on) ? "Save" : (empty ? "Done" : "Sync")
         if editing {
             saveButton.frame.origin.x = 20; saveButton.titleTint = Theme.compareDanger; saveButton.drawsBackground = false
             automatic.title = "Keep in sync automatically"
@@ -329,16 +330,12 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             pairDescription.frame = CGRect(x: 144 + autoWidth, y: height - 105, width: width - 166 - autoWidth, height: 20)
             explanation.frame = CGRect(x: 22, y: height - 76, width: width - 44, height: 16)
         }
-        let empty = !planning && displaySteps.isEmpty && preview?.plan.steps.isEmpty == true
         emptyState.isHidden = !empty; listFrame.isHidden = empty; summary.isHidden = empty
-        emptyState.frame = CGRect(x: 20, y: 180, width: width - 40, height: editing ? max(80, bottom - 180) : max(130, height - 270))
+        emptyState.frame = CGRect(x: 20, y: 180, width: width - 40, height: max(80, bottom - 180))
         emptyState.title = (editing ? "Nothing to do. " : "") + pair.leftTitle + " and " + pair.rightTitle + " already match" + (editing ? "." : "")
         emptyState.method = method.titleOfSelectedItem?.lowercased() ?? "size & date"; emptyState.needsDisplay = true
-        if empty && !editing {
-            automatic.isHidden = true; options.isHidden = true; saveButton.isHidden = true; cancelButton.isHidden = true
-        } else {
-            automatic.isHidden = false; options.isHidden = false; cancelButton.isHidden = false
-        }
+        // An already matching pair is the normal starting point for keeping two folders in sync.
+        automatic.isHidden = false; options.isHidden = false; cancelButton.isHidden = false
         func rowControls(_ view: NSView) -> [NSView] {
             view.subviews.flatMap { child -> [NSView] in
                 if child is NSButton || child is NSSegmentedControl { return [child] }

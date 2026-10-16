@@ -55,7 +55,9 @@ extension PlacesPanel {
 
     func openPlace(_ entry: PlaceEntry, newTab: Bool) {
         if let pair = SyncCoordinator.shared.pair(for: entry.url) {
+            currentSyncID = pair.id
             SyncCoordinator.shared.open(pair, window: window, newTab: newTab)
+            needsDisplay = true
         } else {
             delegate?.places(self, open: entry.url, newTab: newTab, splitView: false)
         }
@@ -168,6 +170,12 @@ extension PlacesPanel {
         guard let e = entry(at: i) else { return }
         if e.isEjectable && p.x > bounds.width - Metrics.ejectHitWidth { eject(e); return }
         openPlace(e, newTab: event.modifierFlags.contains(.command))
+        if let pair = SyncCoordinator.shared.pair(for: e.url), p.x > bounds.width - 56 {
+            switch SyncCoordinator.shared.statuses[pair.id] {
+            case .conflicts, .review: SyncCoordinator.shared.review(pair.id, window: window)
+            default: break
+            }
+        }
     }
 
     /// Middle click opens in a new tab; other buttons (mouse back/forward) go up the responder chain.

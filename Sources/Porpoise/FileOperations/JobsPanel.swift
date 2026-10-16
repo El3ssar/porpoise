@@ -252,9 +252,7 @@ final class JobsPanel {
         guard !jobs.isEmpty else {
             timer?.invalidate(); timer = nil; NSApp.dockTile.contentView = nil; NSApp.dockTile.display(); return
         }
-        if jobs.contains(where: { ($0.originWindow as? NSWindow)?.isVisible != true }) && !NSApp.windows.contains(where: \.isVisible) {
-            ActivityWindowController.shared.show()
-        }
+        // Progress updates never open or raise Activity. A pending conflict sheet keeps keyboard/mouse focus.
         guard jobs.contains(where: { Date().timeIntervalSince($0.startedAt ?? Date()) > 2 }) else { return }
         let view = NSApp.dockTile.contentView as? TransferDockView ?? TransferDockView(frame: CGRect(origin: .zero, size: NSApp.dockTile.size))
         let total = jobs.reduce(Int64(0)) { $0 + ($1.progress?.totalBytes ?? 0) }
