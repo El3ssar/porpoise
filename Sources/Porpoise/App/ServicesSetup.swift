@@ -9,6 +9,19 @@ extension AppDelegate {
         FileOperationsController.shared.ui = FileOperationsDialogs()
         FileOperationsController.shared.clipboard = SystemClipboard()
         RemoteOpener.openFile = { NSWorkspace.shared.open($0) }
+        DriveEditing.shared.openFile = { RemoteOpener.openFile($0) }
+        // Something to decide (a conflict, a save refused): a calm line in the front window with the way to Activity.
+        DriveEditing.shared.post = { [weak self] text, attention in
+            guard attention, let w = self?.windows.first(where: { $0.window?.isKeyWindow == true }) ?? self?.windows.first else {
+                return StatusCenter.post(text)
+            }
+            w.view.messageBar.show(text, error: false, action: "Review in Activity…") {
+                w.view.messageBar.dismiss()
+                ActivityWindowController.shared.show()
+            }
+            w.view.needsLayout = true
+        }
+        DriveEditing.shared.restoresAtLaunch = true
         // Test instances can show made-up cloud accounts (no network, no browser).
         if Settings.isTesting, ProcessInfo.processInfo.environment["PORPOISE_CLOUD_DEMO"] != nil {
             CloudAccounts.shared.backend = DemoCloudBackend()
@@ -22,6 +35,10 @@ extension AppDelegate {
         // Phones are polled while Porpoise is in front only.
         for (n, active) in [(NSApplication.didBecomeActiveNotification, true), (NSApplication.didResignActiveNotification, false)] {
             NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { _ in PlacesModel.shared.isActive = active }
+        }
+        // Back in front: changes made meanwhile in the browser or on another device show without a reload.
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            CloudAccounts.shared.checkForChanges()
         }
         // Increase Contrast and the like change how the theme draws: redraw everything at once.
         nc.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { _ in

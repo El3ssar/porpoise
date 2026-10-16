@@ -57,6 +57,28 @@ enum CloudBadge {
         return light
     }
 
+    /// A filled symbol in `tint` on a white disc (reads on any icon): the edit states of Drive files.
+    static func draw(symbol: String, tint: NSColor, in r: CGRect) {
+        guard let base = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) else { return }
+        NSGraphicsContext.saveGraphicsState()
+        let sh = NSShadow()
+        sh.shadowBlurRadius = max(1, r.height * 0.1)
+        sh.shadowOffset = .zero
+        sh.shadowColor = NSColor.black.withAlphaComponent(0.35)
+        sh.set()
+        NSColor.white.setFill()
+        NSBezierPath(ovalIn: r.insetBy(dx: r.width * 0.06, dy: r.height * 0.06)).fill()
+        NSGraphicsContext.restoreGraphicsState()
+        let conf = NSImage.SymbolConfiguration(pointSize: r.height, weight: .semibold).applying(.init(paletteColors: [.white, tint]))
+        let img = base.withSymbolConfiguration(conf) ?? base
+        let s = img.size
+        let sc = min(r.width / max(s.width, 1), r.height / max(s.height, 1))
+        let w = s.width * sc, h = s.height * sc
+        img.draw(
+            in: CGRect(x: r.midX - w / 2, y: r.midY - h / 2, width: w, height: h), from: .zero, operation: .sourceOver, fraction: 1,
+            respectFlipped: true, hints: nil)
+    }
+
     static func draw(_ state: CloudState, in r: CGRect, onLight: Bool) {
         guard let name = state.symbol, let base = NSImage(systemSymbolName: name, accessibilityDescription: state.help) else { return }
         let color: NSColor = onLight ? NSColor(srgbRed: 0.10, green: 0.42, blue: 0.86, alpha: 1) : .white

@@ -9,7 +9,7 @@ import Testing
 /// animation, and offline folders say how old they are.
 @MainActor @Suite(.serialized, .isolatedSettings) struct DriveFreshnessTests {
     @Test func driveAnswerAfterTheSavedListingGoesThroughTheViewsAnimation() async throws {
-        let server = try FakeDriveServer(latencyMS: 150)
+        let server = try FakeDriveServer(latencyMS: 20)
         defer { server.stop() }
         let (client, _, _) = try server.client()
         let provider = DriveProvider(accountID: client.accountID, client: client)
@@ -29,6 +29,7 @@ import Testing
         model.reload()
         #expect(model.items == rows && model.isRefreshing && animated == 0)
         for _ in 0..<100 where model.isRefreshing { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(!model.isRefreshing)
         #expect(!model.isRefreshing && animated == 0)
         let selected = try #require(rows.first { $0.name == "report.txt" }).url
         model.selection = [selected]
@@ -47,12 +48,14 @@ import Testing
         model.reload()
         #expect(model.isRefreshing && animated == 0)
         for _ in 0..<100 where model.isRefreshing { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(!model.isRefreshing)
         #expect(animated == 1 && loaded == 2)
         #expect(model.items.contains { $0.name == "Updated report.txt" } && model.selection == [selected])
 
         // Nothing new: no animation at all.
         model.reload()
         for _ in 0..<100 where model.isRefreshing { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(!model.isRefreshing)
         #expect(animated == 1)
 
         // The patched listing is the saved one (as after a change poll): it glides in at once, without waiting.
@@ -66,6 +69,7 @@ import Testing
         model.reload()
         #expect(animated == 2 && model.items.contains { $0.name == "Final report.txt" })
         for _ in 0..<100 where model.isRefreshing { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(!model.isRefreshing)
     }
 
     @Test func offlineMessageSaysHowOldTheListingIs() throws {

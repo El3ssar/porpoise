@@ -33,20 +33,12 @@ public enum RemoteOpener {
     public static func open(_ item: FileItem) {
         guard let p = RemoteFS.provider(for: item.url), RemoteParsing.isSafeName(item.url.lastPathComponent) else { return }
         if item.url.scheme == "gdrive" {
-            // M1 downloads/exports are independent copies; never attach the legacy save-back watcher.
-            let folder = cacheFolder(for: item.url).appendingPathComponent(item.url.lastPathComponent).appendingPathComponent(UUID().uuidString)
-            StatusCenter.post("Downloading “\(item.name)”…")
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let local = try p.download(item.url, into: folder)
-                    DispatchQueue.main.async {
-                        openFile(local)
-                        StatusCenter.post("Opened a copy of “\(item.name)”. Changes stay on this Mac.")
-                    }
-                } catch {
-                    DispatchQueue.main.async { StatusCenter.error("Could not open “\(item.name)”: \(error.localizedDescription)") }
-                }
+            // A file the account may change: edited in place, its saves go back to Drive as new versions.
+            if DriveEditing.shared.canEdit(item) {
+                DriveEditing.shared.open(item) { opened in if !opened { openCopy(item, provider: p) } }
+                return
             }
+            openCopy(item, provider: p)
             return
         }
         let folder = cacheFolder(for: item.url)
@@ -70,6 +62,23 @@ public enum RemoteOpener {
                     openFile(got)
                     watch(got, remote: item.url, provider: p)
                     StatusCenter.post("Opened “\(item.name)”. Saved changes are uploaded back automatically.")
+                }
+            } catch {
+                DispatchQueue.main.async { StatusCenter.error("Could not open “\(item.name)”: \(error.localizedDescription)") }
+            }
+        }
+    }
+
+    /// A copy that stays on this Mac (read-only items, Google Docs' exports): never sent back.
+    private static func openCopy(_ item: FileItem, provider p: RemoteProvider) {
+        let folder = cacheFolder(for: item.url).appendingPathComponent(item.url.lastPathComponent).appendingPathComponent(UUID().uuidString)
+        StatusCenter.post("Downloading “\(item.name)”…")
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let local = try p.download(item.url, into: folder)
+                DispatchQueue.main.async {
+                    openFile(local)
+                    StatusCenter.post("Opened a copy of “\(item.name)”. Changes stay on this Mac.")
                 }
             } catch {
                 DispatchQueue.main.async { StatusCenter.error("Could not open “\(item.name)”: \(error.localizedDescription)") }

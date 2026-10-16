@@ -4,11 +4,20 @@ import PorpoiseCore
 // Services that keep nothing between launches.
 extension CloudBackend {
     public func savedAt(for folder: URL) -> Date? { nil }
+    public func checkForChanges(_ id: String?) {}
 }
 
 /// How fresh a cloud folder is, in the user's words: what the offline message says.
 extension CloudAccounts {
     public func savedAt(for folder: URL) -> Date? { backend?.savedAt(for: folder) }
+
+    /// Looks for changes made elsewhere (in the browser, on another device) now: for the account `folder` belongs to,
+    /// or every account.
+    public func checkForChanges(in folder: URL? = nil) {
+        let id = folder.flatMap { account(for: $0)?.id }
+        if folder != nil && id == nil { return }
+        backend?.checkForChanges(id)
+    }
 
     /// "You’re offline. Showing Google Drive as it was today at 14:02." (`hasListing`: the folder shows a saved listing;
     /// without one it can only open once the connection is back.)

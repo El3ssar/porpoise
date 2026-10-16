@@ -135,6 +135,7 @@ extension ItemListView {
         let (image, imageRect) = drawIcon(i)
         let cloud = model.shownCloud(for: item).state
         drawCloudBadge(cloud, row: i, image: image, imageRect: imageRect, selected: selected)
+        if let edit = editMark(item) { drawEditBadge(edit, image: image, imageRect: imageRect, selected: selected) }
         if item.isSymlink || item.isAliasFile || item.isWebDocument { drawLinkEmblem(i, besideCloudBadge: cloud != .local) }
 
         // Selection marker (Dolphin's +/- toggle on hover)
@@ -342,6 +343,8 @@ extension ItemListView {
             let end = drawNameWithTags(item, in: CGRect(x: tr.minX, y: y, width: tr.width, height: lineHeight), selected: selected)
             if let line = model.searchSnippet(for: item) {
                 drawSnippet(line, in: CGRect(x: end + 10, y: y, width: tr.maxX - end - 10, height: lineHeight), selected: selected)
+            } else if let edit = editMark(item) {
+                drawEditNote(edit, in: CGRect(x: end + 10, y: y, width: tr.maxX - end - 10, height: lineHeight), selected: selected)
             }
 
         }
@@ -374,6 +377,31 @@ extension ItemListView {
             roundedRect: CGRect(x: rect.minX, y: rect.minY, width: rect.width * max(0, min(1, fraction)), height: rect.height), xRadius: 1.5,
             yRadius: 1.5
         ).fill()
+    }
+
+    /// A Drive file open in another app: how its saves are doing.
+    func editMark(_ item: FileItem) -> CloudEditMark? {
+        item.url.scheme == "gdrive" ? DriveEditing.shared.mark(for: item.url) : nil
+    }
+
+    /// The edit badge on the icon's upper right corner (the cloud badge has the lower right).
+    private func drawEditBadge(_ mark: CloudEditMark, image: NSImage, imageRect: CGRect, selected: Bool) {
+        let b = max(12, min(26, iconSize * 0.36))
+        let over = b * 0.08
+        let br = CGRect(x: imageRect.maxX + over - b, y: imageRect.minY - over, width: b, height: b)
+        let tint: NSColor = mark.needsAttention ? Theme.transferDanger : mark == .saved ? Theme.transferPositive : Theme.activeText
+        CloudBadge.draw(symbol: mark.symbol, tint: tint, in: br)
+    }
+
+    /// After the name in Details: "Editing · changes save to Google Drive", quiet unless it needs attention.
+    private func drawEditNote(_ mark: CloudEditMark, in r: CGRect, selected: Bool) {
+        guard r.width > 60 else { return }
+        let color = selected ? Theme.selectionText : mark.needsAttention ? Theme.transferDanger : roleTextColor(selected: selected)
+        (mark.note("Google Drive") as NSString).draw(
+            in: r,
+            withAttributes: [
+                .font: NSFont.systemFont(ofSize: max(10, font.pointSize - 1)), .foregroundColor: color, .paragraphStyle: Self.tailElidingParagraph,
+            ])
     }
 
     /// A content match's line after its name: dimmed, the text searched for in full color.

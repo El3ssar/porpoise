@@ -197,6 +197,8 @@ public protocol CloudBackend: AnyObject {
         _ text: String, in folder: URL, everywhere: Bool, contents: Bool, pageToken: String?,
         done: @escaping (Result<CloudSearchPage, Error>) -> Void
     ) -> () -> Void
+    /// Looks for changes made elsewhere now, for one account (nil: all); they show by themselves when found.
+    func checkForChanges(_ id: String?)
 }
 
 /// Connected cloud accounts as the app shows them: labels, which rows each shows in the sidebar, avatars, and the

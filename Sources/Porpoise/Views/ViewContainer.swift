@@ -33,6 +33,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     var offlineNotice: String?
     /// The cloud service's search running for the search bar (in a cloud folder).
     private(set) var cloudSearch: CloudSearch?
+    var driveReloadPending = false
     /// A saved listing shows while the service is asked again, for long enough to say so ("Updating…"): a quick
     /// answer changes nothing in the status bar.
     private var showsUpdating = false
@@ -246,6 +247,17 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             })
         observers.append(
             center.addObserver(forName: CloudAccounts.changed, object: nil, queue: .main) { [weak self] _ in self?.cloudAccountsChanged() })
+        observers.append(
+            center.addObserver(forName: DriveEditing.changed, object: nil, queue: .main) { [weak self] _ in
+                guard let self, PlacesModel.isCloud(self.model.location) || self.model.isSearching else { return }
+                self.list.needsDisplay = true
+                self.updateStatus()
+            })
+        observers.append(
+            center.addObserver(forName: DriveClient.changed, object: nil, queue: .main) { [weak self] n in
+                guard let self, let id = n.object as? UUID else { return }
+                self.driveChanged(account: id)
+            })
         observers.append(
             center.addObserver(forName: CloudAccounts.changeReverted, object: nil, queue: .main) { [weak self] n in
                 guard let self, let urls = n.object as? [URL], !urls.isEmpty else { return }
@@ -493,6 +505,11 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         if PlacesModel.isCloud(url) {
             // The folder's sharing role decides whether it can be changed, and the account's storage replaces a disk's.
             let readOnly = CloudAccounts.shared.denial(.addItems, folder: url)
+            // A file open in another app says how its saves are doing.
+            let pointed = hoverItem ?? (model.selection.count == 1 ? model.selectedItems.first : nil)
+            if let pointed, let edit = list.editMark(pointed) {
+                statusBar.text = "\(pointed.name) · " + edit.note(CloudAccounts.shared.providerTitle(for: url))
+            }
             if showsUpdating, model.isRefreshing, hoverItem == nil, model.selection.isEmpty {
                 statusBar.text = statusBar.text.isEmpty ? "Updating…" : statusBar.text + " · Updating…"
             }

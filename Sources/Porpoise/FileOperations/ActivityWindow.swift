@@ -28,6 +28,8 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
     private let footer = ActivityFooterView()
     private var header: ActivityHeaderView?
     private var rows: [Activity] = []
+    /// Drive files edited in other apps, listed above the jobs.
+    private var edits: [CloudEditEntry] = []
     private var history: [HistoryEntry] = []
     private var reloadPending = false
     private var observers: [NSObjectProtocol] = []
@@ -51,6 +53,10 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
         }
         observers.append(
             NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] _ in self?.syncSettings() })
+        observers.append(
+            NotificationCenter.default.addObserver(forName: DriveEditing.changed, object: nil, queue: .main) { [weak self] _ in
+                self?.scheduleReload()
+            })
         reload()
     }
 
@@ -257,14 +263,22 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
     private func reload() {
         guard window?.isVisible == true || rows.isEmpty else { return }
         let next = Self.ordered(controller.activities)
-        if next.map(\.id) == rows.map(\.id) {
+        let nextEdits = DriveEditing.shared.entries
+        if next.map(\.id) == rows.map(\.id), nextEdits.map(\.id) == edits.map(\.id),
+            nextEdits.map({ $0.mark == .conflict }) == edits.map({ $0.mark == .conflict })
+        {
             // Same jobs: update the rows in place (buttons keep working while you click them).
-            for (i, a) in next.enumerated() { (activityTable.view(atColumn: 0, row: i, makeIfNecessary: false) as? ActivityRowView)?.update(a) }
+            edits = nextEdits
+            for (i, e) in edits.enumerated() { (activityTable.view(atColumn: 0, row: i, makeIfNecessary: false) as? EditActivityRowView)?.update(e) }
+            for (i, a) in next.enumerated() {
+                (activityTable.view(atColumn: 0, row: edits.count + i, makeIfNecessary: false) as? ActivityRowView)?.update(a)
+            }
         } else {
             rows = next
+            edits = nextEdits
             activityTable.reloadData()
         }
-        empty.isHidden = !rows.isEmpty
+        empty.isHidden = !rows.isEmpty || !edits.isEmpty
         clear.isEnabled = rows.contains { $0.state.isEnded }
         clear.contentTintColor = clear.isEnabled ? Theme.windowText : Theme.windowTextInactive
         clear.attributedTitle = NSAttributedString(
@@ -278,9 +292,10 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
         let queued = rows.filter { $0.state == .queued }.count
         let finished = rows.filter { $0.state.isEnded }.count
         footer.text =
-            rows.isEmpty
+            rows.isEmpty && edits.isEmpty
             ? ""
             : [
+                edits.isEmpty ? nil : edits.count == 1 ? "1 file being edited" : "\(edits.count) files being edited",
                 active > 0 ? "\(active) running" : nil,
                 paused > 0 ? "\(paused) paused" : nil,
                 queued > 0 ? "\(queued) queued" : nil,
@@ -295,12 +310,22 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
 
     func controlTextDidChange(_ obj: Notification) { reload() }
 
-    func numberOfRows(in tableView: NSTableView) -> Int { tableView === activityTable ? rows.count : history.count }
+    func numberOfRows(in tableView: NSTableView) -> Int { tableView === activityTable ? edits.count + rows.count : history.count }
+
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        guard tableView === activityTable, row < edits.count else { return tableView.rowHeight }
+        return edits[row].mark == .conflict ? EditActivityRowView.conflictHeight : tableView.rowHeight
+    }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         if tableView === activityTable {
+            if row < edits.count {
+                let v = EditActivityRowView(alternate: row % 2 == 1)
+                v.update(edits[row])
+                return v
+            }
             let v = ActivityRowView(window: window, alternate: row % 2 == 1)
-            v.update(rows[row])
+            v.update(rows[row - edits.count])
             return v
         }
         let e = history[row]
@@ -677,5 +702,137 @@ final class ActivityProgressView: NSView {
                 fill.animator().frame = target
             }
         }
+    }
+}
+
+/// A Drive file being edited in another app: how its saves are doing, and the choices when Drive's copy changed
+/// meanwhile (Keep Both, Open Both, Replace with Mine). Nothing is ever lost: both versions stay until one is chosen.
+final class EditActivityRowView: NSView {
+    static let conflictHeight: CGFloat = 92
+    private let title = NSTextField(labelWithString: "")
+    private let detail = NSTextField(wrappingLabelWithString: "")
+    private let icon = NSImageView()
+    private let badge = NSImageView()
+    private let buttons = NSStackView()
+    private let close = NSButton()
+    private var entry: CloudEditEntry?
+    private var shownButtons: [String] = []
+    private let alternate: Bool
+
+    override var isFlipped: Bool { true }
+
+    init(alternate: Bool) {
+        self.alternate = alternate
+        super.init(frame: .zero)
+        title.font = .systemFont(ofSize: 13)
+        title.lineBreakMode = .byTruncatingMiddle
+        detail.font = .systemFont(ofSize: 11)
+        detail.maximumNumberOfLines = 2
+        detail.lineBreakMode = .byTruncatingTail
+        icon.imageScaling = .scaleProportionallyDown
+        buttons.spacing = 8
+        close.isBordered = false
+        close.imagePosition = .imageOnly
+        close.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Remove from the list")
+        close.contentTintColor = Theme.windowTextInactive
+        close.toolTip = "Remove from the list (changes you save later still go to Google Drive while it’s open)"
+        close.target = self
+        close.action = #selector(dismiss)
+        for v in [icon, badge, title, detail, buttons, close] as [NSView] { addSubview(v) }
+        Theme.whenChanged(self) { [weak self] in
+            guard let self, let entry = self.entry else { return }
+            self.update(entry)
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        icon.frame = CGRect(x: 16, y: 10, width: 32, height: 32)
+        badge.frame = CGRect(x: 36, y: 28, width: 16, height: 16)
+        close.frame = CGRect(x: bounds.width - 34, y: 14, width: 22, height: 22)
+        let right = close.isHidden ? bounds.width - 12 : close.frame.minX - 8
+        let conflict = entry?.mark == .conflict
+        title.frame = CGRect(x: 60, y: 9, width: max(0, right - 60), height: 17)
+        detail.frame = CGRect(x: 60, y: 27, width: max(0, (conflict ? bounds.width - 12 : right) - 60), height: conflict ? 30 : 15)
+        let size = buttons.fittingSize
+        buttons.frame =
+            conflict
+            ? CGRect(x: 60, y: 58, width: size.width, height: 26)
+            : CGRect(x: right - size.width, y: 13, width: size.width, height: 26)
+        if !conflict, !buttons.arrangedSubviews.isEmpty {
+            title.frame.size.width = max(0, buttons.frame.minX - 8 - 60)
+            detail.frame.size.width = title.frame.width
+        }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        (alternate ? Theme.viewAlternate : Theme.viewBackground).setFill()
+        bounds.fill()
+    }
+
+    func update(_ e: CloudEditEntry) {
+        if entry?.id != e.id { icon.image = NSWorkspace.shared.icon(forFile: e.localURL.path) }
+        entry = e
+        let attributed = NSMutableAttributedString(
+            string: e.title, attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: Theme.viewText])
+        if let start = e.title.firstIndex(of: "“"), let end = e.title[start...].firstIndex(of: "”") {
+            attributed.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .medium), range: NSRange(start...end, in: e.title))
+        }
+        title.attributedStringValue = attributed
+        title.toolTip = e.title
+        detail.stringValue = e.detail
+        detail.textColor = e.mark.needsAttention ? Theme.transferDanger : e.mark == .saved ? Theme.transferPositive : Theme.viewTextInactive
+        let tint: NSColor = e.mark.needsAttention ? Theme.transferDanger : e.mark == .saved ? Theme.transferPositive : Theme.activeText
+        badge.image = NSImage(systemSymbolName: e.mark.symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold).applying(.init(paletteColors: [.white, tint])))
+        close.isHidden = !(e.mark == .editing || e.mark == .saved)
+        let want: [String]
+        switch e.mark {
+        case .conflict: want = ["keep", "open", "replace"]
+        case .unsent: want = ["send"]
+        default: want = ["show"]
+        }
+        if want != shownButtons {
+            shownButtons = want
+            buttons.arrangedSubviews.forEach { $0.removeFromSuperview() }
+            for w in want {
+                let (label, tip): (String, String)
+                switch w {
+                case "keep": (label, tip) = ("Keep Both", "Add your version next to Drive’s as a separate file")
+                case "open": (label, tip) = ("Open Both", "Open your version and Drive’s side by side to compare them")
+                case "replace": (label, tip) = ("Replace with Mine", "Make your version the current one; Drive’s stays in the file’s version history")
+                case "send": (label, tip) = ("Send Now", "Try sending your saved changes to Google Drive again")
+                default: (label, tip) = ("Show in Folder", "Show the file in its Google Drive folder")
+                }
+                let b = ClosureButton(title: label) { [weak self] _ in self?.run(w) }
+                b.bezelStyle = .rounded
+                b.controlSize = .small
+                b.toolTip = tip
+                b.setAccessibilityLabel(tip)
+                buttons.addArrangedSubview(b)
+            }
+        }
+        needsLayout = true
+        needsDisplay = true
+        setAccessibilityLabel(e.title + ". " + e.detail)
+    }
+
+    private func run(_ action: String) {
+        guard let e = entry else { return }
+        let editing = DriveEditing.shared
+        switch action {
+        case "keep": editing.keepBoth(e.id)
+        case "open": editing.openBoth(e.id)
+        case "replace": editing.replaceWithMine(e.id)
+        case "send": editing.save(e.id)
+        default: (NSApp.delegate as? AppDelegate)?.newWindow(at: e.location.deletingLastPathComponent())
+        }
+    }
+
+    @objc private func dismiss() {
+        guard let e = entry else { return }
+        DriveEditing.shared.dismiss(e.id)
     }
 }

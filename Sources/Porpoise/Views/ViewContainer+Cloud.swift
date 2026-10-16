@@ -71,6 +71,18 @@ extension ViewContainer {
         updateStatus()
     }
 
+    /// Drive found changes made elsewhere in this account: the folder shows them in place (a search keeps its results).
+    func driveChanged(account: UUID) {
+        guard DriveLocation(url: model.location)?.accountID == account, !model.isSearching else { return }
+        // Coalesced: one poll can report several pages of changes.
+        guard !driveReloadPending else { return }
+        driveReloadPending = true
+        DispatchQueue.main.async { [weak self] in
+            self?.driveReloadPending = false
+            self?.reload()
+        }
+    }
+
     /// Accounts whose "Allow changes" banner was closed this session (it then shows again only when a change is tried).
     nonisolated(unsafe) static var writeBannerDismissed: Set<String> = []
 

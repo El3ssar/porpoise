@@ -115,7 +115,11 @@ extension MainWindowController {
         focusPane(secondary: !tab.activeIsSecondary)
     }
 
-    @objc func reloadView(_ sender: Any?) { view.reload() }
+    @objc func reloadView(_ sender: Any?) {
+        // In a cloud folder Reload also asks the service what changed elsewhere (other folders follow by themselves).
+        if PlacesModel.isCloud(view.url) { CloudAccounts.shared.checkForChanges(in: view.url) }
+        view.reload()
+    }
 
     /// ⌥← / ⌥→: move focus to the left / right pane of a split view.
     @objc func focusLeftPane(_ sender: Any?) { focusPane(secondary: false) }
