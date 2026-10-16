@@ -274,7 +274,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         deletionChoice.addItems(withTitles: [deletionTitle]); deletionChoice.selectItem(at: 0)
         deletionChoice.frame = CGRect(x: fieldX, y: optionsY + 30, width: 190, height: 24)
         methodLabel.frame = CGRect(x: 20, y: optionsY + 64, width: 68, height: 18)
-        method.frame = CGRect(x: fieldX, y: optionsY + 60, width: 158, height: 24)
+        method.frame = CGRect(x: fieldX, y: optionsY + 60, width: 190, height: 24)
         let ignored = (preview?.left.excludedPaths?.count ?? 0) + (preview?.right.excludedPaths?.count ?? 0)
         custom.stringValue = "Ignores \(ignored) items" + (pair.customExclusions.isEmpty ? "" : " · \(pair.customExclusions.count) custom patterns")
         custom.toolTip = pair.customExclusions.joined(separator: "\n")
