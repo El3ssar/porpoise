@@ -66,12 +66,13 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         providedComparison = comparison
         self.onStarted = onStarted; self.onFinished = onFinished; self.overrides = overrides
         keepExpansion = pair.automatic || editing ? 1 : 0
-        let window = NSWindow(
+        let window = SyncSheetWindow(
             contentRect: CGRect(x: 0, y: 0, width: 680, height: 600),
             styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         window.title = "Sync Folders"; window.minSize = CGSize(width: 600, height: 480); window.maxSize = CGSize(width: 900, height: 900)
         window.isReleasedWhenClosed = false
         super.init(window: window)
+        window.onCancel = { [weak self] in self?.closeSheet() }
         window.delegate = self
         let root = SyncSheetBackdrop(); root.onLayout = { [weak self] in self?.layout() }
         window.contentView = root
@@ -134,7 +135,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             presetButtons.append(button); presets.addArrangedSubview(button)
         }
         outline.headerView = nil; outline.rowHeight = 24; outline.intercellSpacing = .zero
-        outline.usesAlternatingRowBackgroundColors = true; outline.backgroundColor = Theme.viewBackground
+        outline.usesAlternatingRowBackgroundColors = false; outline.backgroundColor = Theme.viewBackground
         outline.selectionHighlightStyle = .regular
         outline.addTableColumn(NSTableColumn(identifier: .init("plan")))
         outline.outlineTableColumn = outline.tableColumns[0]
@@ -202,7 +203,8 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             card.chosen = pair.mode == card.mode; card.needsDisplay = true
         }
         direction.breadcrumb =
-            (pair.left.host ?? pair.left.deletingLastPathComponent().lastPathComponent) + " › " + pair.left.lastPathComponent + " → "
+            (pair.left.host ?? pair.left.deletingLastPathComponent().lastPathComponent) + " › " + pair.left.lastPathComponent
+            + (pair.mode == .twoWay ? " ⇄ " : " → ")
             + (pair.right.host ?? pair.right.deletingLastPathComponent().lastPathComponent) + " › " + pair.right.lastPathComponent
         direction.source = pair.leftTitle; direction.destination = pair.rightTitle
         direction.toolTip = pair.left.path + " → " + pair.right.path
@@ -691,4 +693,9 @@ private final class SyncPlanNode: NSObject {
     var color: NSColor {
         action == .trash || action == .conflict ? Theme.compareDanger : action == .replace ? Theme.compareChanged : Theme.compareOnly
     }
+}
+
+private final class SyncSheetWindow: NSWindow {
+    var onCancel: (() -> Void)?
+    override func cancelOperation(_ sender: Any?) { onCancel?() }
 }

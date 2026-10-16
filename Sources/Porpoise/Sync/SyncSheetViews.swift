@@ -175,7 +175,7 @@ final class SyncPlanRow: NSView {
         icon.image = Icons.shared.image(Icons.shared.iconName(for: file), size: 16, folder: folder)
         path.stringValue = displayPath ?? (step.path.isEmpty ? "Both folders" : step.path)
         path.font = .systemFont(ofSize: 13); path.lineBreakMode = .byTruncatingMiddle;
-        path.textColor = step.action == .trash ? Theme.compareDanger : Theme.windowText
+        path.textColor = unavailable ? Theme.windowTextInactive : step.action == .trash ? Theme.compareDanger : Theme.windowText
         size.stringValue = FileFormat.size(displayBytes ?? step.expectedSource?.size ?? step.expectedTarget?.size ?? 0)
         size.font = .systemFont(ofSize: 11); size.textColor = Theme.windowTextInactive; size.alignment = .right
         detail.stringValue =
