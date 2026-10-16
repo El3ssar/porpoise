@@ -28,9 +28,9 @@ extension ViewContainer {
                 }
             }
         case .offline:
-            messageBar.show("You’re offline. \(accounts.title(account.id)) opens again when you’re back online.", error: false, action: "Try Again") {
-                [weak self] in self?.reload()
-            }
+            // The saved listing stays browsable; the message goes by itself when the connection is back.
+            messageBar.show(accounts.offlineMessage(for: model.location, hasListing: model.loadError == nil), error: false)
+            offlineNotice = account.id
         case .ok:
             guard let e = model.loadError else {
                 if !account.canWrite, !Self.writeBannerDismissed.contains(account.id), messageBar.isHidden { showWriteAccessBanner() }
@@ -51,6 +51,24 @@ extension ViewContainer {
                 messageBar.show(e, error: true)
             }
         }
+    }
+
+    /// An account's status changed (offline, back online, signed out): the folder's message follows, and a folder shown
+    /// from its saved listing while offline is read again once the connection is back.
+    func cloudAccountsChanged() {
+        guard PlacesModel.isCloud(model.location), let account = CloudAccounts.shared.account(for: model.location) else { return }
+        switch account.status {
+        case .offline:
+            if offlineNotice == nil, messageBar.isHidden || !messageBar.isError { showCloudState(retry: false) }
+        case .ok, .signInNeeded:
+            guard offlineNotice != nil else { return }
+            offlineNotice = nil
+            // Only the offline message goes: another one shown since (an error, Undo) stays.
+            if messageBar.text.hasPrefix("You’re offline") { messageBar.dismiss() }
+            needsLayout = true
+            reload()
+        }
+        updateStatus()
     }
 
     /// Accounts whose "Allow changes" banner was closed this session (it then shows again only when a change is tried).

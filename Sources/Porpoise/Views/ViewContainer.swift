@@ -29,6 +29,24 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     let messageBar = MessageBar()
     /// Items the message bar says went to a cloud Trash (its Undo); Edit › Undo of them clears the message.
     var cloudTrashNotice: Set<URL> = []
+    /// The account whose offline message shows (it goes, and the folder is read again, when the account is back).
+    var offlineNotice: String?
+    /// A saved listing shows while the service is asked again, for long enough to say so ("Updating…"): a quick
+    /// answer changes nothing in the status bar.
+    private var showsUpdating = false
+    private var refreshCheck: DispatchWorkItem?
+
+    private func noteRefreshing() {
+        refreshCheck?.cancel()
+        guard model.isRefreshing else { showsUpdating = false; return }
+        let check = DispatchWorkItem { [weak self] in
+            guard let self, self.model.isRefreshing else { return }
+            self.showsUpdating = true
+            self.updateStatus()
+        }
+        refreshCheck = check
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: check)
+    }
     let selectionTop = SelectionTopBar()
     let selectionBottom = SelectionBottomBar()
     var preservesMissingLocation = false
@@ -117,6 +135,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         ]
 
         model.onChange = { [weak self] in self?.modelChanged() }
+        model.onRemoteUpdate = { [weak self] apply in
+            guard let self else { return apply() }
+            self.animatingRemoteChange(apply)
+        }
         model.onMetadataLoaded = { [weak self] in
             guard let self else { return }
             // A Tags column or label sizes itself to the tags just read.
@@ -148,6 +170,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
         model.onLoaded = { [weak self] in
             guard let self else { return }
+            self.noteRefreshing()
             self.updateStatus()
             if let once = self.onNextLoad {
                 self.onNextLoad = nil
@@ -219,6 +242,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             center.addObserver(forName: NetworkBrowser.changed, object: nil, queue: .main) { [weak self] _ in
                 if self?.url.scheme == "network" { self?.model.reload() }
             })
+        observers.append(
+            center.addObserver(forName: CloudAccounts.changed, object: nil, queue: .main) { [weak self] _ in self?.cloudAccountsChanged() })
         observers.append(
             center.addObserver(forName: CloudAccounts.changeReverted, object: nil, queue: .main) { [weak self] n in
                 guard let self, let urls = n.object as? [URL], !urls.isEmpty else { return }
@@ -369,6 +394,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         if !filterBar.isLocked { filterBar.clear(); if !Settings.shared.showFilterBarOnStartup { filterBar.isHidden = true } }
         if !searchBar.isHidden { closeSearch() }
         messageBar.isHidden = true
+        offlineNotice = nil
         if addToHistory { history.visit(u) }
         // Remember where the view was in the folder we leave, for Back/Forward.
         if u != url {
@@ -465,6 +491,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         if PlacesModel.isCloud(url) {
             // The folder's sharing role decides whether it can be changed, and the account's storage replaces a disk's.
             let readOnly = CloudAccounts.shared.denial(.addItems, folder: url)
+            if showsUpdating, model.isRefreshing, hoverItem == nil, model.selection.isEmpty {
+                statusBar.text = statusBar.text.isEmpty ? "Updating…" : statusBar.text + " · Updating…"
+            }
             if readOnly != nil, !(hoverItem?.isWebDocument ?? false) {
                 statusBar.text = statusBar.text.isEmpty ? "View only" : statusBar.text + " · View only"
             }
@@ -556,6 +585,25 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         } else {
             list.animateLayoutChange(from: start)
         }
+    }
+
+    /// A change made elsewhere (in the browser, on another device): rows appear, rename or vanish in place, quietly.
+    /// The selection stays, and so does what's on screen: the first item in view keeps its place when rows come or go
+    /// above it.
+    func animatingRemoteChange(_ change: () -> Void) {
+        guard !showsApps else { return change() }
+        let list = self.list
+        let top = list.visibleRect.minY > 1 ? list.candidateIndexes(in: list.visibleRect).min() : nil
+        let anchor = top.map { (key: list.key(ofRow: $0), offset: list.frames[$0].minY - list.visibleRect.minY) }
+        let start = list.snapshotForTransition()
+        change()
+        list.computeLayout()
+        if let anchor, let i = list.row(forKey: anchor.key) {
+            let y = list.frames[i].minY - anchor.offset
+            if abs(y - list.visibleRect.minY) > 0.5 { list.scroll(CGPoint(x: list.visibleRect.minX, y: max(0, y))) }
+        }
+        guard let start else { return }
+        list.animateLayoutChange(from: start, duration: 0.35)
     }
 
     func filterBarClosed(_ bar: FilterBar) {

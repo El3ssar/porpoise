@@ -13,6 +13,8 @@ public final class DemoCloudBackend: CloudBackend {
     public var avatars: [String: Data] = [:]
     public var infos: [URL: CloudItemInfo] = [:]
     public var links: [String: CloudLinkResult] = [:]
+    /// When each folder's listing was last read (the offline message's time).
+    public var savedDates: [URL: Date] = [:]
     /// Browser addresses handed out (tests check them; nothing is opened).
     public private(set) var browserRequests: [URL] = []
 
@@ -177,4 +179,8 @@ public final class DemoCloudBackend: CloudBackend {
             done(urls, nil)
         }
     }
+}
+
+extension DemoCloudBackend {
+    public func savedAt(for folder: URL) -> Date? { savedDates[folder] }
 }
