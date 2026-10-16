@@ -38,7 +38,7 @@ public struct SyncSnapshot: Codable, Equatable, Sendable {
     }
 }
 public enum SyncCompareMethod: String, Codable, Sendable { case sizeAndDate, sizeOnly, content }
-public struct SyncCompareOptions: Codable, Sendable {
+public struct SyncCompareOptions: Codable, Equatable, Sendable {
     public var method: SyncCompareMethod
     public var timestampTolerance: TimeInterval
     public var exclusions: [String]

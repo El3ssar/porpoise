@@ -29,6 +29,7 @@ public final class FileOperationsController {
     /// Where unfinished jobs are written down, to be resumed after a relaunch.
     public var journals = JournalStore(folder: JournalStore.defaultFolder)
     public var history = OperationHistory.shared
+    var pendingPlans: Set<UUID> = []
     public var planJournals = PlanJournalStore(folder: JournalStore.defaultFolder.appendingPathComponent("Plans"))
     /// Cancelling a remote transfer (by activity).
     var remoteCancel: [UUID: () -> Void] = [:]

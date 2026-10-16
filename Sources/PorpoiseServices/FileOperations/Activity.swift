@@ -49,6 +49,7 @@ public final class Activity: Identifiable {
     var start: (() -> Void)?
     /// The journal kept while it runs, for resuming after a relaunch (local jobs).
     var journal: JobJournal?
+    var asynchronousPersistence = false
     /// Where each completed top-level item went (for verification).
     var placed: [Int: URL] = [:]
     /// Copies and moves wait their turn; trashing, deleting and links start at once.
@@ -221,7 +222,14 @@ extension FileOperationsController {
             activity.journal.map { journals.remove($0.id) }
             if job?.isCancelled == true || activity.controlJob?.isCancelled == true || activity.planJob?.isCancelled == true {
                 activity.state = .cancelled
-                if let plan = activity.planJob { try? plan.store.remove(activity.id) }
+                if let plan = activity.planJob {
+                    if activity.asynchronousPersistence {
+                        let id = activity.id
+                        DispatchQueue.global(qos: .utility).async { try? plan.store.remove(id) }
+                    } else {
+                        try? plan.store.remove(activity.id)
+                    }
+                }
             } else if !errors.isEmpty && (job?.results.isEmpty ?? activity.remoteResults.isEmpty) && activity.kind != .delete
                 && activity.kind != .trash
             {
@@ -272,13 +280,18 @@ extension FileOperationsController {
 
     private func record(_ activity: Activity) {
         let seconds = (activity.finishedAt ?? Date()).timeIntervalSince(activity.startedAt ?? activity.queuedAt)
-        history.append(
-            HistoryEntry(
-                date: activity.finishedAt ?? Date(), operation: activity.planJob == nil ? activity.kind.verb : activity.title,
-                items: activity.planProgress?.totalSteps ?? activity.sources.count,
-                sources: activity.sources.prefix(5).map(OperationHistory.describe), destination: activity.destination.map(OperationHistory.describe),
-                bytes: activity.progress?.doneBytes ?? 0, seconds: seconds, outcome: activity.outcomeText, errors: Array(activity.errors.prefix(5)),
-                verification: activity.verification?.summary))
+        let entry = HistoryEntry(
+            date: activity.finishedAt ?? Date(), operation: activity.planJob == nil ? activity.kind.verb : activity.title,
+            items: activity.planProgress?.totalSteps ?? activity.sources.count,
+            sources: activity.sources.prefix(5).map(OperationHistory.describe), destination: activity.destination.map(OperationHistory.describe),
+            bytes: activity.progress?.doneBytes ?? 0, seconds: seconds, outcome: activity.outcomeText, errors: Array(activity.errors.prefix(5)),
+            verification: activity.verification?.summary)
+        if activity.asynchronousPersistence {
+            let store = history
+            DispatchQueue.global(qos: .utility).async { store.append(entry) }
+        } else {
+            history.append(entry)
+        }
         activityDidChange()
     }
 
@@ -308,7 +321,14 @@ extension FileOperationsController {
         switch activity.state {
         case .queued:
             activities.removeAll { $0 === activity }
-            if let plan = activity.planJob { try? plan.store.remove(activity.id) }
+            if let plan = activity.planJob {
+                if activity.asynchronousPersistence {
+                    let id = activity.id
+                    DispatchQueue.global(qos: .utility).async { try? plan.store.remove(id) }
+                } else {
+                    try? plan.store.remove(activity.id)
+                }
+            }
             activity.journal.map { journals.remove($0.id) }
             activityDidChange()
         default:
