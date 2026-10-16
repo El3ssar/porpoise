@@ -11,6 +11,7 @@ private struct CompareJobBarState {
     var copied: Int, trashed: Int, errors: Int
     var reason: String
     var lostConnection: Bool
+    var amounts: String = "", timeLeft: String = ""
 }
 
 final class CompareView: NSView {
@@ -181,13 +182,16 @@ final class CompareView: NSView {
         close.frame = CGRect(x: width - 32, y: 5, width: 24, height: 24)
         progress.frame = CGRect(x: 12, y: 12, width: 12, height: 12)
         progressLabel.frame = CGRect(x: 32, y: 10, width: max(50, width - 210), height: 18)
-        let retrying = currentActivity?.state == .failed || reviewJob?.state == .failed
-        stop.frame = CGRect(x: width - (retrying ? 106 : 100), y: 7, width: retrying ? 92 : 60, height: 22)
-        pause.frame = CGRect(x: width - 172, y: 7, width: 66, height: 22)
+        let stopWidth = max(68, stop.intrinsicContentSize.width + 24), pauseWidth = max(80, pause.intrinsicContentSize.width + 24)
+        let trailing: CGFloat = close.isHidden ? 12 : 40
+        stop.frame = CGRect(x: width - trailing - stopWidth, y: 3, width: stopWidth, height: 30)
+        pause.frame = CGRect(x: stop.frame.minX - 8 - pauseWidth, y: 3, width: pauseWidth, height: 30)
+        if !stop.isHidden { progressLabel.frame.size.width = max(50, (pause.isHidden ? stop.frame.minX : pause.frame.minX) - 48) }
         jobLine.frame = CGRect(x: 0, y: 0, width: width, height: 2)
         jobWash.frame = bar.bounds; jobSymbol.frame = CGRect(x: 11, y: 10, width: 16, height: 16)
         let completedJob = currentActivity?.state == .completed || reviewJob?.state == .completed
-        showJob.frame = CGRect(x: width - (completedJob ? 164 : 152), y: 6, width: completedJob ? 130 : 44, height: 24)
+        showJob.frame = CGRect(x: completedJob ? width - 164 : stop.frame.minX - 60, y: 6, width: completedJob ? 130 : 44, height: 24)
+        if !showJob.isHidden { progressLabel.frame.size.width = max(50, showJob.frame.minX - 48) }
         method.frame = CGRect(x: 6, y: 2, width: 140, height: 24)
         methodSeparator.frame = CGRect(x: 148, y: 6, width: 1, height: 16)
         summary.frame = CGRect(x: 160, y: 7, width: max(50, width - (width < 780 ? 320 : 515)), height: 17)
@@ -357,6 +361,7 @@ final class CompareView: NSView {
             state: value, completed: value == .completed ? 24 : 12, total: 24, fraction: 0.5,
             canPause: !value.isEnded, destination: model.names.1, mode: "Mirror", copied: 22, trashed: 2,
             errors: value == .failed ? 3 : 0, reason: "Backup is full.", lostConnection: state == "connection")
+        reviewJob?.amounts = "18.4 of 48.2 MB"; reviewJob?.timeLeft = "about 6 s left"
         if value == .failed, let path = model.rows.first(where: { ($0.left ?? $0.right)?.kind == .file })?.path {
             document.failedPaths = [path]; document.needsDisplay = true
         } else {
@@ -373,7 +378,7 @@ final class CompareView: NSView {
             title = "Lost connection to \(job.destination)."; detail = "Finished items are kept."; symbol = "exclamationmark.triangle.fill";
             color = Theme.compareChanged
         } else if failed {
-            title = "\(max(1, job.errors)) \(job.errors == 1 ? "item couldn't" : "items couldn't") be copied."
+            title = "\(max(1, job.errors)) \(job.errors == 1 ? "item couldn’t" : "items couldn’t") be copied."
             detail = job.reason; symbol = "exclamationmark.circle.fill"; color = Theme.compareDanger
         } else if done {
             title = "Synced"; detail = "\(job.copied) copied · \(job.trashed) moved to the Trash · just now"; symbol = "checkmark";
@@ -384,7 +389,9 @@ final class CompareView: NSView {
             title = job.state == .waiting ? "Waiting for your answer" : "Syncing to \(job.destination)"
             detail = "\(job.completed) of \(job.total)"; symbol = nil; color = Theme.accent
         }
-        var text = title + (detail.isEmpty ? "" : " · " + detail)
+        var text = title + (detail.isEmpty ? "" : (failed || job.lostConnection ? " " : " · ") + detail)
+        if !job.state.isEnded, !job.amounts.isEmpty { text += " · " + job.amounts }
+        if job.state == .running, !job.timeLeft.isEmpty { text += " · " + job.timeLeft }
         if !job.state.isEnded, let totalBytes = jobMetadata["totalBytes"] as? Int64, totalBytes > 0,
             let completedBytes = jobMetadata["completedBytes"] as? Int64
         {
@@ -562,7 +569,7 @@ final class ComparePlaceholder: NSView {
         heading.frame = CGRect(x: 0, y: size + 12, width: bounds.width, height: 24)
         detail.isHidden = detail.stringValue.isEmpty
         detail.frame = CGRect(x: 5, y: heading.frame.maxY + 4, width: bounds.width - 10, height: detail.isHidden ? 0 : (folder ? 36 : 18))
-        button.frame = CGRect(x: (bounds.width - 180 - secondaryActionWidth) / 2, y: detail.frame.maxY + 14, width: 180, height: 28)
+        button.frame = CGRect(x: (bounds.width - 180 - secondaryActionWidth) / 2, y: detail.frame.maxY + 14, width: 180, height: 30)
     }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { onDrop == nil ? [] : .copy }
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -678,15 +685,17 @@ final class CompareFocusSlider: NSSlider {
 final class ComparePrimaryButton: CompareActionButton {
     var isPrimary = true { didSet { needsDisplay = true } }
     override func draw(_ dirty: NSRect) {
-        if !isPrimary { super.draw(dirty); return }
-        Theme.accent.withAlphaComponent(isEnabled ? 1 : 0.4).setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 14, yRadius: 14).fill()
+        (isPrimary ? Theme.accent : Theme.windowText).withAlphaComponent(isEnabled ? (isPrimary ? 1 : 0.08) : 0.04).setFill()
+        let capsule = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: bounds.height / 2, yRadius: bounds.height / 2)
+        capsule.fill()
+        if !isPrimary { Theme.frame.setStroke(); capsule.lineWidth = 1; capsule.stroke() }
         let style = NSMutableParagraphStyle(); style.alignment = .center
         (title as NSString).draw(
             in: CGRect(x: 4, y: (bounds.height - 16) / 2, width: bounds.width - 8, height: 18),
             withAttributes: [
                 .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-                .foregroundColor: Theme.increasedContrast ? Theme.selectionText : NSColor.white, .paragraphStyle: style,
+                .foregroundColor: isPrimary ? (Theme.increasedContrast ? Theme.selectionText : NSColor.white) : Theme.windowText,
+                .paragraphStyle: style,
             ])
     }
 }

@@ -229,7 +229,8 @@ final class ToolbarView: NSView {
     /// Location field(s) between `minX` and `maxX`: capped in width so the toolbar keeps free space to grab the
     /// window; in a split, one field per pane, the second starting where the right pane starts (Dolphin).
     private func layoutFields(from minX: CGFloat, to maxX: CGFloat, y: CGFloat, height: CGFloat) {
-        let hasPair = navigatorViews.count == 2 && (window?.frame.width ?? bounds.width) >= 760
+        let seam = paneRanges.count == 2 ? convert(CGPoint(x: paneRanges[1].lowerBound, y: 0), from: nil).x : (minX + maxX) / 2
+        let hasPair = navigatorViews.count == 2 && seam - 40 - minX >= 160 && maxX - seam - 40 >= 160
         pairGroup.isHidden = !hasPair
         let gap: CGFloat = hasPair ? 40 : Self.fieldSpacing
         let available = max(0, maxX - minX)
@@ -242,8 +243,8 @@ final class ToolbarView: NSView {
                 linkFolders.frame = CGRect(x: 4, y: 3, width: 28, height: 28)
                 compareFolders.frame = CGRect(x: 36, y: 3, width: 28, height: 28)
             }
-            let rightX = min(max(splitX + gap, minX + minW + gap), minX + available - minW)
-            let leftW = max(minW, min(splitX - gap, rightX - gap) - minX)
+            let rightX = hasPair ? min(max(splitX + gap, minX + minW + gap), minX + available - minW) : minX + (available + gap) / 2
+            let leftW = hasPair ? max(minW, min(splitX - gap, rightX - gap) - minX) : (available - gap) / 2
             fieldGroups[0].frame = CGRect(x: minX, y: y, width: leftW, height: height)
             fieldGroups[1].frame = CGRect(x: rightX, y: y, width: max(0, minX + available - rightX), height: height)
         } else {
