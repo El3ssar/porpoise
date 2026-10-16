@@ -661,16 +661,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         addInfoRow(table, height: CGFloat(rows.count + 1) * 30 + 32); root.needsLayout = true
     }
     private func sideNames() -> (String, String) {
-        let left = leftURL.deletingLastPathComponent().pathComponents, right = rightURL.deletingLastPathComponent().pathComponents
-        if left == right && (leftURL.host != rightURL.host) {
-            return (
-                leftURL.host ?? leftURL.deletingLastPathComponent().lastPathComponent,
-                rightURL.host ?? rightURL.deletingLastPathComponent().lastPathComponent
-            )
-        }
-        var count = 1
-        while count < max(left.count, right.count) && left.suffix(count) == right.suffix(count) { count += 1 }
-        return (left.suffix(count).first ?? leftURL.lastPathComponent, right.suffix(count).first ?? rightURL.lastPathComponent)
+        CompareOutline.sideNames(leftURL.deletingLastPathComponent(), rightURL.deletingLastPathComponent())
     }
     private func capsulePath(for url: URL) -> [String] {
         let own = url.deletingLastPathComponent().pathComponents.filter { $0 != "/" }

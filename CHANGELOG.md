@@ -6,6 +6,10 @@
   Porpoise's own Details rows, columns, menus, Quick Look and file interactions. Missing linked folders keep Compare
   open; stopping restores both panes' starting locations, style, selection and scroll position.
 
+- **Safer folder sync.** Backup skips newer destination files until you explicitly include them. Case-only name
+  differences can be reviewed and synced, Options keeps the plan visible, and conflict details name both sides.
+  Transfer controls keep their toolbar space and saved sync times update while visible.
+
 - **Compare files.** File › Compare Files (⌥⌘Y) opens text, image and metadata comparisons in their own windows.
   Browse word changes side by side or inline, copy a change left or right with Undo, and save when ready. Compare
   images side by side, with an onion-skin slider or a difference overlay; inspect exact sizes, dates, permissions,

@@ -143,7 +143,7 @@ final class ToolbarView: NSView {
         transferGroup.frame = CGRect(x: actionGroup.frame.minX - 42, y: gy, width: 34, height: gh)
         transfers.frame = CGRect(origin: .zero, size: transferGroup.frame.size)
         layoutFields(
-            from: fieldMinX, to: (transfers.isHidden ? actionGroup.frame.minX : transferGroup.frame.minX) - Self.fieldTrailingGap, y: gy, height: gh)
+            from: fieldMinX, to: transferGroup.frame.minX - Self.fieldTrailingGap, y: gy, height: gh)
     }
 
     private func button(for command: ToolbarCommand) -> FlatButton? {
@@ -194,7 +194,7 @@ final class ToolbarView: NSView {
         transferGroup.isHidden = transfers.isHidden
         transferGroup.frame = CGRect(x: bounds.width - Self.trailingMargin - 34, y: gy, width: 34, height: gh)
         transfers.frame = CGRect(origin: .zero, size: transferGroup.frame.size)
-        let available = max(0, bounds.width - leftInset - Self.trailingMargin - (transfers.isHidden ? 0 : 42))
+        let available = max(0, bounds.width - leftInset - Self.trailingMargin - 42)
         let capacity = max(1, Int((available - 80) / 36))
         if commands.filter({ $0 != .location }).count > capacity {
             let visible = Set(commands.filter { $0 != .location && $0 != .menu }.prefix(max(0, capacity - 1)))
