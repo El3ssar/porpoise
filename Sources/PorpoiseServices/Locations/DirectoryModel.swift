@@ -158,6 +158,46 @@ public final class DirectoryModel {
         return m.snippets[item.url]
     }
 
+    // MARK: Optimistic changes
+
+    /// Changes made on a remote folder show at once and survive listings that arrive before the service answers.
+    private var edits: [(id: UUID, edit: ListingEdit, originals: [FileItem])] = []
+
+    /// Shows a change now (rows appear, change or vanish, the selection stays); `endEdit` once the service answered.
+    @discardableResult public func applyEdit(_ edit: ListingEdit) -> UUID {
+        let id = UUID()
+        let touched = edit.removed.union(edit.replaced.map(\.url))
+        let originals = (items + children.values.flatMap { $0 }).filter { touched.contains($0.url) }
+        edits.append((id, edit, originals))
+        apply(edit)
+        return id
+    }
+
+    /// The service answered: the change stays (until the next listing confirms it), or `rollback` puts things back.
+    public func endEdit(_ id: UUID, rollback: Bool = false) {
+        guard let i = edits.firstIndex(where: { $0.id == id }) else { return }
+        let (_, edit, originals) = edits.remove(at: i)
+        guard rollback else { return }
+        let back = ListingEdit(
+            folder: edit.folder, removed: Set(edit.added.map(\.url)),
+            replaced: originals.filter { o in edit.replaced.contains { $0.url == o.url } },
+            added: originals.filter { edit.removed.contains($0.url) })
+        apply(back)
+    }
+
+    /// A one-off change (the service's version of an optimistic row).
+    public func apply(_ edit: ListingEdit) {
+        items = edit.apply(to: items, in: location)
+        for (folder, list) in children { children[folder] = edit.apply(to: list, in: folder) }
+        selection.subtract(edit.removed)
+        if let c = currentURL, edit.removed.contains(c) { currentURL = nil }
+        rebuild()
+    }
+
+    private func withEdits(_ listed: [FileItem], in folder: URL) -> [FileItem] {
+        edits.reduce(listed) { $1.edit.apply(to: $0, in: folder) }
+    }
+
     public private(set) var expanded: Set<URL> = []
     private var children: [URL: [FileItem]] = [:]
     private(set) var folderCounts: [URL: Int] = [:]
@@ -428,7 +468,7 @@ public final class DirectoryModel {
         if let provider = RemoteFS.provider(for: url) as? DriveProvider {
             let cached = provider.cachedListing(url)
             if let cached {
-                items = cached
+                items = withEdits(cached, in: url)
                 isLoading = false
                 rebuild()
                 onLoaded?()
@@ -470,7 +510,7 @@ public final class DirectoryModel {
                 for e in expandedNow { kids[e] = (try? provider.list(e)) ?? [] }
                 DispatchQueue.main.async {
                     guard let self, token == self.loadToken else { return }
-                    self.items = listed
+                    self.items = self.withEdits(listed, in: url)
                     self.children = self.keepingExpanded(kids)
                     self.isLoading = false
                     self.loadError = err
@@ -538,7 +578,7 @@ public final class DirectoryModel {
             for e in expandedNow { kids[e] = (try? DirectoryLister.list(e)) ?? [] }
             DispatchQueue.main.async {
                 guard let self, token == self.loadToken else { return }
-                self.items = listed
+                self.items = self.withEdits(listed, in: url)
                 self.children = self.keepingExpanded(kids)
                 self.isLoading = false
                 self.applyDynamicView()
@@ -561,6 +601,7 @@ public final class DirectoryModel {
     @MainActor private func applyDrivePage(_ listed: [FileItem], complete: Bool, hasCache: Bool, token: Int, keepSelection: Bool) {
         guard token == loadToken, !hasCache || complete else { return }
         // A refresh never temporarily removes later pages or resets expanded rows.
+        let listed = withEdits(listed, in: location)
         if items != listed {
             items = listed
             if complete && keepSelection { selection.formIntersection(Set(allLoadedURLs())) }
@@ -814,7 +855,8 @@ public final class DirectoryModel {
                 guard let kids = try? await drive.refresh(url), !Task.isCancelled,
                     let self, token == self.loadToken, self.expanded.contains(url)
                 else { return }
-                if self.children[url] != kids { self.children[url] = kids; self.rebuild() }
+                let edited = self.withEdits(kids, in: url)
+                if self.children[url] != edited { self.children[url] = edited; self.rebuild() }
                 self.driveChildren[url] = nil
             }
             return
@@ -926,5 +968,33 @@ public final class DirectoryModel {
         guard !isVirtual else { return }
         let p = cloudOverride.stored(dynamicOverride.stored(searchOverride.stored(props)))
         Settings.shared.save(p, for: location)
+    }
+}
+
+/// An optimistic change to a folder's listing.
+public struct ListingEdit: Equatable, Sendable {
+    /// Where `added` items go.
+    public var folder: URL
+    public var removed: Set<URL>
+    /// Same URL, new details (a rename).
+    public var replaced: [FileItem]
+    public var added: [FileItem]
+
+    public init(folder: URL, removed: Set<URL> = [], replaced: [FileItem] = [], added: [FileItem] = []) {
+        self.folder = folder
+        self.removed = removed
+        self.replaced = replaced
+        self.added = added
+    }
+
+    /// `list` (the listing of `folder`) with the change.
+    public func apply(to list: [FileItem], in listed: URL) -> [FileItem] {
+        let byURL = Dictionary(replaced.map { ($0.url, $0) }, uniquingKeysWith: { $1 })
+        var out = list.compactMap { removed.contains($0.url) ? nil : byURL[$0.url] ?? $0 }
+        if listed == folder {
+            let have = Set(out.map(\.url))
+            out += added.filter { !have.contains($0.url) }
+        }
+        return out
     }
 }

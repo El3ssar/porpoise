@@ -294,7 +294,7 @@ enum TransferSummary {
         let count = progress.copiedItems
         var parts = [
             "\(activity.kind == .move ? "Moved" : "Copied") \(FileFormat.itemCount(count))"
-                + (activity.destination.map { " to " + $0.lastPathComponent } ?? "")
+                + (activity.destination.map { " to " + Activity.name($0) } ?? "")
         ]
         if !activity.errors.isEmpty { parts.append("\(activity.errors.count) couldn’t be \(activity.kind == .move ? "moved" : "copied")") }
         if progress.replacedItems > 0 { parts.append("replaced \(progress.replacedItems)") }

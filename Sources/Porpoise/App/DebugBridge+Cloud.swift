@@ -57,6 +57,29 @@ extension DebugBridge {
         case "shot": shot(rest)
         case "settingsremove": AccountsSettingsPage.current?.removeAccount()
         case "settingsselect": AccountsSettingsPage.current?.select(rest)
+        case "rename":
+            // rename <name>|<new name>: through the inline rename's path.
+            let f = rest.components(separatedBy: "|")
+            guard f.count == 2, let w = AppDelegate.shared.windows.first, let row = w.view.model.rows.first(where: { $0.item.name == f[0] }) else {
+                return
+            }
+            w.rename(row.item, to: f[1], in: w.view)
+        case "itemrect":
+            // itemrect <name>|<file>: the item's icon centre in window points from the top-left (for real-event drivers).
+            let f = rest.components(separatedBy: "|")
+            guard f.count == 2, let w = AppDelegate.shared.windows.first, let win = w.window,
+                let i = w.view.model.rows.firstIndex(where: { $0.item.name == f[0] })
+            else { return }
+            let r = w.view.list.convert(w.view.list.iconRect(i), to: nil)
+            try? "\(Int(r.midX)) \(Int(win.frame.height - r.midY))".write(toFile: f[1], atomically: true, encoding: .utf8)
+        case "barbutton":
+            // barbutton <file>: the message bar's action button centre, in window points from the top-left.
+            guard let w = AppDelegate.shared.windows.first, let win = w.window, let f = w.view.messageBar.actionFrame else { return }
+            let r = w.view.messageBar.convert(f, to: nil)
+            try? "\(Int(r.midX)) \(Int(win.frame.height - r.midY))".write(toFile: rest, atomically: true, encoding: .utf8)
+        case "newfolder":
+            // newfolder <name>: what the New Folder dialog's Create does.
+            AppDelegate.shared.windows.first?.createCloudFolder(named: rest)
         case "select":
             // select <name>: the row with that name (cloud items are ids in their URLs).
             if let v = AppDelegate.shared.windows.first?.view, let row = v.model.rows.first(where: { $0.item.name == rest }) {
@@ -66,12 +89,12 @@ extension DebugBridge {
         }
     }
 
-    /// `cloud shot <png>|<light|dark>|<main|settings|title prefix>`: brings the instance to the front and captures that
+    /// `cloud shot <png>|<light|dark>|<main|settings|title prefix>[|all]`: brings the instance to the front and captures that
     /// window together with its sheet, through the window server (materials and all). Take the capture lock first.
     private func shot(_ arg: String) {
         guard Settings.isTesting else { return }
         let a = arg.components(separatedBy: "|")
-        guard a.count == 3 else { return }
+        guard a.count >= 3 else { return }
         Settings.store.set(a[1], forKey: "appearance")
         NotificationCenter.default.post(name: Settings.changed, object: "appearance")
         let target: NSWindow?
@@ -86,6 +109,12 @@ extension DebugBridge {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
             var ids: [UnsafeRawPointer?] = ([window.attachedSheet].compactMap { $0 } + [window])
                 .compactMap { UnsafeRawPointer(bitPattern: $0.windowNumber) }
+            // "all": every on-screen window of this process, front to back: open menus and tooltips too.
+            if a.count > 3, a[3] == "all" {
+                let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
+                ids = info.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == getpid() }
+                    .compactMap { ($0[kCGWindowNumber as String] as? Int).flatMap { UnsafeRawPointer(bitPattern: $0) } }
+            }
             typealias Fn = @convention(c) (CGRect, CFArray, UInt32) -> Unmanaged<CGImage>?
             guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImageFromArray") else { return }
             let fn = unsafeBitCast(sym, to: Fn.self)

@@ -39,6 +39,12 @@ final class FileOperationsDialogs: FileOperationsUI {
         return (confirmed, a.suppressionButton?.state == .on)
     }
 
+    func trashCloud(_ urls: [URL], window: AnyObject?) {
+        let w = (window as? NSWindow)?.windowController as? MainWindowController
+        guard let controller = w ?? AppDelegate.shared.windows.first else { return }
+        controller.trashCloud(urls)
+    }
+
     func showErrors(_ errs: [String], window: AnyObject?) {
         let a = NSAlert()
         a.alertStyle = .warning
@@ -86,9 +92,9 @@ final class FileOperationsDialogs: FileOperationsUI {
     func resolveDiskFull(destination: URL?, neededBytes: Int64, window: AnyObject?, job: FileJob, completion: @escaping (Bool) -> Void) {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "\(destination?.lastPathComponent ?? "The destination") is full."
+        alert.messageText = "\(destination.map(Activity.name) ?? "The destination") is full."
         alert.informativeText =
-            "Free space for “\(job.sources.first?.lastPathComponent ?? "this item")” (up to \(FileFormat.size(neededBytes))), then try again. Finished files stay in place."
+            "Free space for “\(job.sources.first.map(Activity.name) ?? "this item")” (up to \(FileFormat.size(neededBytes))), then try again. Finished files stay in place."
         alert.addButton(withTitle: "Try Again"); alert.addButton(withTitle: "Stop")
         let key = ObjectIdentifier(job)
         diskFullAlerts[key] = alert
@@ -102,6 +108,19 @@ final class FileOperationsDialogs: FileOperationsUI {
     }
 
     func showTransferErrors(_ activity: Activity, window: AnyObject?) {
+        // Google Forms and the like can't be copied out: a calm line in the window, not an error sheet.
+        if let notice = CloudExportSkip.notice(errors: activity.errors, names: activity.failedSources.map(Activity.name)),
+            let c = ((window as? NSWindow)?.windowController as? MainWindowController)?.view
+        {
+            let source = activity.failedSources.count == 1 ? activity.failedSources[0] : nil
+            let link = source.flatMap { CloudAccounts.shared.info(for: $0)?.webLink }
+            c.messageBar.show(notice, error: false, action: link == nil ? nil : "Open in Browser") {
+                if let link, let source { NSWorkspace.shared.open(AccountActions.webLink(link, account: CloudAccounts.shared.account(for: source))) }
+                c.messageBar.dismiss()
+            }
+            c.needsLayout = true
+            return
+        }
         let count = max(1, activity.failedSources.count)
         let listHeight = min(196, CGFloat(activity.errors.count) * 28)
         let height = 138 + listHeight
@@ -135,7 +154,7 @@ final class FileOperationsDialogs: FileOperationsUI {
             icon.image = NSImage(systemSymbolName: "doc", accessibilityDescription: "Couldn't copy")
             icon.contentTintColor = Theme.transferDanger
             document.addSubview(icon)
-            let path = NSTextField(labelWithString: source?.lastPathComponent ?? "Item \(index + 1)")
+            let path = NSTextField(labelWithString: source.map(Activity.name) ?? "Item \(index + 1)")
             path.font = .systemFont(ofSize: 11); path.lineBreakMode = .byTruncatingMiddle
             path.frame = CGRect(x: 32, y: y + 6, width: 150, height: 16); path.toolTip = source?.absoluteString
             document.addSubview(path)

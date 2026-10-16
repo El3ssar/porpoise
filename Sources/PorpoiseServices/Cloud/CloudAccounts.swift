@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseCore
 
 /// Cloud storage services Porpoise can connect to. Only Google Drive works so far; the others are shown on the
 /// Connect sheet as coming later.
@@ -63,10 +64,12 @@ public struct CloudAccount: Equatable, Sendable {
     /// Number of shared drives the account can see (the row is offered only when there are some).
     public var sharedDriveCount: Int
     public var status: Status
+    /// The sign-in allows changes (false: an account connected when Porpoise could only read).
+    public var canWrite: Bool
 
     public init(
         id: String, provider: CloudProvider = .googleDrive, email: String, displayName: String, photoURL: URL? = nil,
-        quotaUsed: Int64? = nil, quotaTotal: Int64? = nil, sharedDriveCount: Int = 0, status: Status = .ok
+        quotaUsed: Int64? = nil, quotaTotal: Int64? = nil, sharedDriveCount: Int = 0, status: Status = .ok, canWrite: Bool = true
     ) {
         self.id = id
         self.provider = provider
@@ -77,6 +80,7 @@ public struct CloudAccount: Equatable, Sendable {
         self.quotaTotal = quotaTotal
         self.sharedDriveCount = sharedDriveCount
         self.status = status
+        self.canWrite = canWrite
     }
 }
 
@@ -171,6 +175,18 @@ public protocol CloudBackend: AnyObject {
     func resolveLink(_ text: String, done: @escaping (CloudLinkResult) -> Void)
     /// The account picture's bytes (nil: none).
     func avatar(_ id: String, done: @escaping (Data?) -> Void)
+
+    // Changes (CloudEditing.swift has the defaults: nothing can be changed).
+    /// What can be done with an item or folder; nil: not known yet.
+    func permissions(for url: URL) -> CloudPermissions?
+    /// Only the browser step, asking for permission to make changes.
+    func requestWriteAccess(_ id: String, openBrowser: @escaping (URL) -> Void, done: @escaping (Result<Void, CloudConnectError>) -> Void)
+        -> () -> Void
+    func createFolder(named name: String, in folder: URL, done: @escaping (Result<FileItem, Error>) -> Void)
+    func rename(_ url: URL, to name: String, done: @escaping (Result<FileItem, Error>) -> Void)
+    /// Moves items to the service's own trash, never deleting them; `trashed` are those that went.
+    func trash(_ urls: [URL], done: @escaping (_ trashed: [URL], _ error: Error?) -> Void)
+    func untrash(_ urls: [URL], done: @escaping (_ restored: [URL], _ error: Error?) -> Void)
 }
 
 /// Connected cloud accounts as the app shows them: labels, which rows each shows in the sidebar, avatars, and the
@@ -187,6 +203,11 @@ public final class CloudAccounts {
     }
 
     public var accounts: [CloudAccount] { backend?.accounts ?? [] }
+
+    /// Where changes record their Undo (tests use their own controller).
+    public var operations = FileOperationsController.shared {
+        didSet { operations.cloud = self }
+    }
 
     public func account(_ id: String) -> CloudAccount? { accounts.first { $0.id == id } }
 

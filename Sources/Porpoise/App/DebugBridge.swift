@@ -348,7 +348,8 @@ final class DebugBridge: NSObject {
                     ? "---"
                     : (it.view != nil
                         ? "[view \(type(of: it.view!))]"
-                        : "\(it.title)\(self.isEnabled(it) ? "" : " (disabled)")\(it.isAlternate ? " (alt)" : "")\(it.submenu != nil ? " ▸" : "")")
+                        : "\(it.title)\(self.isEnabled(it) ? "" : " (disabled)")\(it.isAlternate ? " (alt)" : "")\(it.submenu != nil ? " ▸" : "")"
+                            + (it.toolTip.map { " — \($0)" } ?? ""))
             }
             try? lines.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
         case "key": sendKey(arg)

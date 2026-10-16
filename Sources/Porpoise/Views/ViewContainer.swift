@@ -27,6 +27,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     let filterBar = FilterBar()
     let searchBar = SearchBar()
     let messageBar = MessageBar()
+    /// Items the message bar says went to a cloud Trash (its Undo); Edit › Undo of them clears the message.
+    var cloudTrashNotice: Set<URL> = []
     let selectionTop = SelectionTopBar()
     let selectionBottom = SelectionBottomBar()
     var preservesMissingLocation = false
@@ -216,6 +218,16 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         observers.append(
             center.addObserver(forName: NetworkBrowser.changed, object: nil, queue: .main) { [weak self] _ in
                 if self?.url.scheme == "network" { self?.model.reload() }
+            })
+        observers.append(
+            center.addObserver(forName: CloudAccounts.changeReverted, object: nil, queue: .main) { [weak self] n in
+                guard let self, let urls = n.object as? [URL], !urls.isEmpty else { return }
+                if !self.cloudTrashNotice.isEmpty, self.cloudTrashNotice == Set(urls) {
+                    self.cloudTrashNotice = []
+                    self.messageBar.dismiss()
+                    // Back from the Trash: selected, as Finder does.
+                    if n.userInfo?["kind"] as? String == "trashed" { self.pendingSelect = urls[0]; self.model.selection = Set(urls) }
+                }
             })
         observers.append(
             center.addObserver(forName: FileOperationsController.foldersChanged, object: nil, queue: .main) { [weak self] n in
@@ -451,8 +463,11 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
         statusBar.zoomLevel = ZoomLevels.continuousLevel(for: zoomView.iconSize)
         if PlacesModel.isCloud(url) {
-            // Read-only for now, and the account's storage instead of a disk.
-            if !(hoverItem?.isWebDocument ?? false) { statusBar.text = statusBar.text.isEmpty ? "View only" : statusBar.text + " · View only" }
+            // The folder's sharing role decides whether it can be changed, and the account's storage replaces a disk's.
+            let readOnly = CloudAccounts.shared.denial(.addItems, folder: url)
+            if readOnly != nil, !(hoverItem?.isWebDocument ?? false) {
+                statusBar.text = statusBar.text.isEmpty ? "View only" : statusBar.text + " · View only"
+            }
             let account = CloudAccounts.shared.account(for: url)
             if Settings.shared.statusBarMode == .fullWidth, let used = account?.quotaUsed, let total = account?.quotaTotal, total > 0 {
                 statusBar.freeSpaceText = QuotaBar.text(used: used, total: total)
@@ -460,7 +475,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             } else {
                 statusBar.freeSpaceText = ""
             }
-            statusBar.toolTip = "You can view this folder. Writing to Google Drive is coming in a later version."
+            statusBar.toolTip = readOnly
         } else if Settings.shared.statusBarMode == .fullWidth, let (free, total) = freeSpace() {
             statusBar.freeSpaceText = "\(FileFormat.size(free)) free"
             statusBar.usedFraction = 1 - Double(free) / Double(total)

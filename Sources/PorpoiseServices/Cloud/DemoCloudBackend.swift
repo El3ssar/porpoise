@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseCore
 
 /// A cloud backend with made-up accounts and no network, for test instances (PORPOISE_CLOUD_DEMO) and tests. A sign-in
 /// waits until `finishSignIn` is called, as if the user were in the browser.
@@ -91,4 +92,89 @@ public final class DemoCloudBackend: CloudBackend {
     public func resolveLink(_ text: String, done: @escaping (CloudLinkResult) -> Void) { done(links[text] ?? .noAccess) }
 
     public func avatar(_ id: String, done: @escaping (Data?) -> Void) { done(avatars[id]) }
+
+    // MARK: Changes, kept in memory
+
+    /// Permissions by location; unknown locations may be changed.
+    public var permissionsByURL: [URL: CloudPermissions] = [:]
+    /// What has been changed, for tests: trashed items and new names.
+    public private(set) var trashed: Set<URL> = []
+    public private(set) var names: [URL: String] = [:]
+    public private(set) var createdFolders: [URL] = []
+    /// The next change fails with this (once).
+    public var failNext: Error?
+    /// Changes answer only when `finishChanges` is called (to look at the optimistic state in between).
+    public var holdsChanges = false
+    private var held: [() -> Void] = []
+
+    public func finishChanges() {
+        let h = held
+        held = []
+        h.forEach { $0() }
+    }
+
+    private func answer(_ work: @escaping () -> Void) {
+        if holdsChanges { held.append(work) } else { work() }
+    }
+
+    private func failure() -> Error? {
+        defer { failNext = nil }
+        return failNext
+    }
+
+    public func setCanWrite(_ id: String, _ on: Bool) {
+        guard let i = accounts.firstIndex(where: { $0.id == id }) else { return }
+        accounts[i].canWrite = on
+        onChange?()
+    }
+
+    public func permissions(for url: URL) -> CloudPermissions? { permissionsByURL[url] }
+
+    public func requestWriteAccess(_ id: String, openBrowser: @escaping (URL) -> Void, done: @escaping (Result<Void, CloudConnectError>) -> Void)
+        -> () -> Void
+    {
+        browserRequests.append(URL(string: "https://accounts.google.com/o/oauth2/v2/auth?demo=1&scope=drive&login_hint=\(id)")!)
+        pendingAgain = (
+            id,
+            { [weak self] result in
+                if case .success = result { self?.setCanWrite(id, true) }
+                done(result)
+            }
+        )
+        return { [weak self] in self?.pendingAgain = nil }
+    }
+
+    public func createFolder(named name: String, in folder: URL, done: @escaping (Result<FileItem, Error>) -> Void) {
+        answer { [self] in
+            if let e = failure() { done(.failure(e)); return }
+            let u = folder.appendingPathComponent("new\(createdFolders.count + 1)", isDirectory: true)
+            createdFolders.append(u)
+            names[u] = name
+            done(.success(FileItem(url: u, name: name, isDirectory: true, modificationDate: Date())))
+        }
+    }
+
+    public func rename(_ url: URL, to name: String, done: @escaping (Result<FileItem, Error>) -> Void) {
+        answer { [self] in
+            if let e = failure() { done(.failure(e)); return }
+            names[url] = name
+            done(.success(FileItem(url: url, name: name, isDirectory: url.hasDirectoryPath)))
+        }
+    }
+
+    public func trash(_ urls: [URL], done: @escaping (_ trashed: [URL], _ error: Error?) -> Void) {
+        answer { [self] in
+            if let e = failure() { done([], e); return }
+            trashed.formUnion(urls)
+            done(urls, nil)
+        }
+    }
+
+    public func untrash(_ urls: [URL], done: @escaping (_ restored: [URL], _ error: Error?) -> Void) {
+        answer { [self] in
+            if let e = failure() { done([], e); return }
+            trashed.subtract(urls)
+            done(urls, nil)
+        }
+    }
 }

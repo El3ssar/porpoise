@@ -5,6 +5,12 @@ import PorpoiseServices
 /// Window › Activity (⌥⌘J): every file operation of this session (queued, running, paused, ended) with pause,
 /// cancel, reorder and retry, and the history of earlier ones, searchable and exportable.
 final class ActivityWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
+    /// A history entry's item: a path, or a remote location (a Google Drive item's name, not its id).
+    static func name(_ s: String) -> String {
+        if !s.hasPrefix("/"), let u = URL(string: s), u.scheme != nil { return Activity.name(u) }
+        return (s as NSString).lastPathComponent
+    }
+
     static let shared = ActivityWindowController()
 
     private let controller = FileOperationsController.shared
@@ -303,8 +309,8 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
         case "date": text = e.date.formatted(date: .abbreviated, time: .shortened)
         case "operation": text = e.operation
         case "items":
-            let what = e.items == 1 ? (e.sources.first.map { ($0 as NSString).lastPathComponent } ?? "1 item") : "\(e.items) items"
-            text = what + (e.destination.map { " → " + ($0 as NSString).lastPathComponent } ?? "")
+            let what = e.items == 1 ? (e.sources.first.map(Self.name) ?? "1 item") : "\(e.items) items"
+            text = what + (e.destination.map { " → " + Self.name($0) } ?? "")
         default: text = e.outcome
         }
         let label = NSTextField(labelWithString: text)

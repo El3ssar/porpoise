@@ -19,6 +19,8 @@ public final class FileOperationsController {
     /// Dialogs and progress (set by the app; without it nothing is confirmed and conflicts cancel).
     public var ui: FileOperationsUI?
     public var clipboard: FileClipboard = LocalClipboard()
+    /// Undoes cloud changes (tests pair a controller with their own accounts model).
+    public weak var cloud: CloudAccounts?
 
     var undoStack: [UndoRecord] = []
     var redoStack: [UndoRecord] = []
@@ -173,7 +175,9 @@ public final class FileOperationsController {
     /// Moves items to the Trash; `sound` is Finder's: "move to trash", or "drag to trash" for the Dock's Trash.
     public func trash(_ urls: [URL], window: AnyObject?, sound: FinderSound = .moveToTrash) {
         guard !urls.isEmpty else { return }
-        let remote = urls.filter { !$0.isFileURL }
+        let cloud = urls.filter(PlacesModel.isCloud)
+        if !cloud.isEmpty { ui?.trashCloud(cloud, window: window) }
+        let remote = urls.filter { !$0.isFileURL && !PlacesModel.isCloud($0) }
         if !remote.isEmpty {
             // Remote locations have no Trash (Dolphin deletes permanently there, after asking). Local items
             // in the same selection still go to the Trash.
@@ -232,6 +236,10 @@ public final class FileOperationsController {
     }
 
     public func delete(_ urls: [URL], window: AnyObject?) {
+        // Cloud items are never deleted from here: they go to the service's Trash, where they can be restored.
+        let cloud = urls.filter(PlacesModel.isCloud)
+        if !cloud.isEmpty { ui?.trashCloud(cloud, window: window) }
+        let urls = urls.filter { !PlacesModel.isCloud($0) }
         guard !urls.isEmpty else { return }
         if Settings.shared.confirmDelete {
             let q = Confirmation(

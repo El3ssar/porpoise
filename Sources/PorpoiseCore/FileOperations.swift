@@ -80,6 +80,36 @@ public struct ConflictAnswer: Sendable {
 }
 
 /// A reversible record of what a job did, used for Undo/Redo.
+/// A change made on a cloud service, as Undo sees it. Items keep their URLs (ids), so a rename stores the names.
+public struct CloudChange: Sendable, Equatable {
+    public enum Kind: Sendable, Equatable {
+        /// Moved to the service's trash: undone by restoring.
+        case trashed
+        /// Created, or restored from the trash: undone by moving to the trash.
+        case appeared
+        case renamed(from: String, to: String)
+    }
+    public var kind: Kind
+    public var urls: [URL]
+    /// "Move to Trash", "New Folder", "Rename": what Undo/Redo say, the same both ways.
+    public var label: String
+
+    public init(_ kind: Kind, _ urls: [URL], label: String) {
+        self.kind = kind
+        self.urls = urls
+        self.label = label
+    }
+
+    /// The record for Redo once this one is undone.
+    public var inverse: CloudChange {
+        switch kind {
+        case .trashed: return CloudChange(.appeared, urls, label: label)
+        case .appeared: return CloudChange(.trashed, urls, label: label)
+        case .renamed(let from, let to): return CloudChange(.renamed(from: to, to: from), urls, label: label)
+        }
+    }
+}
+
 public enum UndoRecord: Sendable {
     case created([URL])  // undo: trash these (copies, links, new folders/files)
     case moved([(from: URL, to: URL)])  // undo: move back
@@ -87,9 +117,12 @@ public enum UndoRecord: Sendable {
     case renamed(from: URL, to: URL)
     /// Physical moves in execution order, including temporary staging paths.
     case batchRenamed([RenameMove])
+    /// Google Drive and other services: undone through the service, not the file system.
+    case cloud(CloudChange)
 
     public var label: String {
         switch self {
+        case .cloud(let change): return change.label
         case .created: return "Create"
         case .moved: return "Move"
         case .trashed: return "Move to Trash"
@@ -1059,6 +1092,9 @@ public enum FileActions {
     /// already done are rolled back and the error is thrown, so the record stays valid for another try.
     public static func undo(_ record: UndoRecord) throws -> UndoRecord? {
         switch record {
+        case .cloud:
+            // The service undoes these (FileOperationsController asks it), never the file system.
+            throw CocoaError(.featureUnsupported)
         case .created(let urls):
             // Items deleted since then have nothing left to undo.
             let trashed = try trashAll(urls.filter { FileJob.itemExists(at: $0) })
