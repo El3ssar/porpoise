@@ -30,7 +30,7 @@ final class CompareView: NSView {
     private let smallZoom = ZoomGlyph(large: false), largeZoom = ZoomGlyph(large: true)
     let progress = CompareArcSpinner()
     let progressLabel = NSTextField(labelWithString: "Comparing…")
-    let stop = NSButton(title: "Stop", target: nil, action: nil)
+    let stop = ComparePrimaryButton(title: "Stop", clicked: {})
     let zoom = CompareFocusSlider(value: 22, minValue: 16, maxValue: 48, target: nil, action: nil)
     private let overlay = ComparePlaceholder()
     private let revealAnimator = Animator()
@@ -61,7 +61,7 @@ final class CompareView: NSView {
     private let showJob = CompareFocusButton(title: "Show", target: nil, action: nil)
     private var completedActivity: UUID?
     private var progressTicker: Timer?
-    private let pause = NSButton(title: "Pause", target: nil, action: nil)
+    private let pause = ComparePrimaryButton(title: "Pause", clicked: {})
     private let jobLine = CompareProgressLine()
 
     var onClose: (() -> Void)?
@@ -113,6 +113,7 @@ final class CompareView: NSView {
         sizes.font = .systemFont(ofSize: 11); sizes.textColor = Theme.windowTextInactive; sizes.alignment = .right
         progressLabel.font = .systemFont(ofSize: 12); progressLabel.textColor = Theme.windowTextInactive
         pause.bezelStyle = .rounded; pause.font = .systemFont(ofSize: 12); pause.target = self; pause.action = #selector(pausePressed);
+        pause.isPrimary = false; stop.isPrimary = false
         pause.isHidden = true
         jobLine.isHidden = true
         jobLine.onFrame = { [weak self] in self?.progress.needsDisplay = true }
@@ -409,6 +410,7 @@ final class CompareView: NSView {
         pause.image = NSImage(systemSymbolName: paused || job.lostConnection ? "play.fill" : "pause.fill", accessibilityDescription: nil)
         pause.imagePosition = .imageLeft; pause.imageHugsTitle = true;
         pause.contentTintColor = paused || job.lostConnection ? Theme.accent : Theme.windowText
+        pause.isPrimary = paused || job.lostConnection
         stop.isHidden = job.state.isEnded && !failed; stop.title = failed ? "Try Again" : "Stop"
         stop.image = failed ? nil : NSImage(systemSymbolName: "stop.fill", accessibilityDescription: nil)
         stop.imagePosition = .imageLeft; stop.imageHugsTitle = true
@@ -683,18 +685,33 @@ final class CompareFocusSlider: NSSlider {
 }
 
 final class ComparePrimaryButton: CompareActionButton {
+    override var acceptsFirstResponder: Bool { true }
     var isPrimary = true { didSet { needsDisplay = true } }
     override func draw(_ dirty: NSRect) {
         (isPrimary ? Theme.accent : Theme.windowText).withAlphaComponent(isEnabled ? (isPrimary ? 1 : 0.08) : 0.04).setFill()
         let capsule = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: bounds.height / 2, yRadius: bounds.height / 2)
         capsule.fill()
         if !isPrimary { Theme.frame.setStroke(); capsule.lineWidth = 1; capsule.stroke() }
+        if window?.firstResponder === self {
+            NSGraphicsContext.saveGraphicsState(); NSFocusRingPlacement.only.set(); capsule.fill(); NSGraphicsContext.restoreGraphicsState()
+        }
         let style = NSMutableParagraphStyle(); style.alignment = .center
+        let foreground = isPrimary ? (Theme.increasedContrast ? Theme.selectionText : NSColor.white) : Theme.windowText
+        let font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        var labelRect = CGRect(x: 4, y: (bounds.height - 16) / 2, width: bounds.width - 8, height: 18)
+        if let image {
+            let textWidth = (title as NSString).size(withAttributes: [.font: font]).width
+            let start = (bounds.width - textWidth - 18) / 2
+            image.withSymbolConfiguration(.init(paletteColors: [foreground]))?.draw(
+                in: CGRect(x: start, y: (bounds.height - 12) / 2, width: 12, height: 12), from: .zero,
+                operation: .sourceOver, fraction: 1, respectFlipped: isFlipped, hints: nil)
+            labelRect.origin.x = start + 18; labelRect.size.width = textWidth
+        }
         (title as NSString).draw(
-            in: CGRect(x: 4, y: (bounds.height - 16) / 2, width: bounds.width - 8, height: 18),
+            in: labelRect,
             withAttributes: [
-                .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-                .foregroundColor: isPrimary ? (Theme.increasedContrast ? Theme.selectionText : NSColor.white) : Theme.windowText,
+                .font: font,
+                .foregroundColor: foreground,
                 .paragraphStyle: style,
             ])
     }
