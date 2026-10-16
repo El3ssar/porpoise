@@ -157,7 +157,8 @@ final class PlacesPanel: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        registerForDraggedTypes([.fileURL, .placeEntry, .placeSection])
+        // .URL: cloud folders (Google Drive) dragged from the view.
+        registerForDraggedTypes([.fileURL, .URL, .placeEntry, .placeSection])
         NotificationCenter.default.addObserver(self, selector: #selector(reload), name: PlacesModel.changed, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged(_:)), name: Settings.changed, object: nil)
         reload()
