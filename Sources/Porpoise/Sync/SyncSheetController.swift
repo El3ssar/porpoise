@@ -494,7 +494,8 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         let node = item as! SyncPlanNode
         guard let step = node.step else {
             return SyncGroupRow(
-                title: node.title + " (\(node.allSteps.filter { includedStepIDs.contains($0.id) }.count))", action: node.action, color: node.color)
+                title: node.title + " (\(node.allSteps.filter { includedStepIDs.contains($0.id) && $0.action == node.action }.count))",
+                action: node.action, color: node.color)
         }
         let difference = differences[step.path] ?? step.sourcePath.flatMap { differences[$0] }
         let key = difference?.path ?? step.path
@@ -504,13 +505,17 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             difference: difference, hasState: previous != nil,
             displayPath: node.children.isEmpty
                 ? (step.path as NSString).lastPathComponent
-                : (step.path as NSString).lastPathComponent + " — \(node.allSteps.filter { $0.path != step.path }.count) items",
+                : (step.path as NSString).lastPathComponent
+                    + " — \(node.allSteps.filter { $0.path != step.path }.count) \(node.allSteps.filter { $0.path != step.path }.count == 1 ? "item" : "items")",
             isFolder: !node.children.isEmpty,
             displayBytes: node.children.isEmpty
                 ? nil : node.allSteps.reduce(Int64(0)) { $0 + ($1.expectedSource?.size ?? $1.expectedTarget?.size ?? 0) })
         row.onInclude = { [weak self] include in
             guard let self else { return }
-            for child in node.allSteps { self.overrides[differences[child.path]?.path ?? child.path] = include ? nil : .skip }
+            for child in node.allSteps {
+                self.overrides[differences[child.path]?.path ?? child.sourcePath.flatMap { differences[$0]?.path } ?? child.path] =
+                    include ? nil : .skip
+            }
             self.replan()
         }
         row.onChoice = { [weak self] choice in
