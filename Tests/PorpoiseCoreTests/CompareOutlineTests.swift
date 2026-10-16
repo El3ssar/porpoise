@@ -45,6 +45,28 @@ struct CompareOutlineTests {
 }
 
 extension CompareOutlineTests {
+    @Test func caseOnlyParentSpellingKeepsOneSidedChildrenAndCountsAligned() {
+        let outline = CompareOutline(
+            SyncComparator.compare(
+                .init(entries: [.init(path: "Tree", kind: .directory), file("Tree/same")]),
+                .init(entries: [.init(path: "tree", kind: .directory), file("tree/same"), file("tree/right")], caseSensitive: false)))
+        let rows = outline.visible(filter: .onlyRight, expanded: ["Tree"])
+        #expect(rows.map(\.path) == ["Tree", "Tree/right"])
+        #expect(rows.last?.right?.path == "tree/right")
+        #expect(outline.childCounts[.left]?["Tree"] == 1)
+        #expect(outline.childCounts[.right]?["Tree"] == 2)
+    }
+    @Test func folderCountsArePerSideAndCountImmediateChildren() {
+        let folder = SyncEntry(path: "d", kind: .directory), nested = SyncEntry(path: "d/nested", kind: .directory)
+        let outline = CompareOutline(
+            SyncComparator.compare(
+                .init(entries: [folder, nested, file("d/nested/deep"), file("d/left")]),
+                .init(entries: [folder, file("d/right")])))
+        #expect(outline.childCounts[.left]?["d"] == 2)
+        #expect(outline.childCounts[.right]?["d"] == 1)
+        #expect(outline.childCounts[.left]?["d/nested"] == 1)
+        #expect(outline.childCounts[.right]?["d/nested"] == nil)
+    }
     @Test func caseOnlyNamesRemainVisibleAndSiblingSortPreservesTree() {
         let comparison = SyncComparator.compare(
             .init(entries: [file("README", size: 8)]), .init(entries: [file("Readme", size: 8)], caseSensitive: false))
