@@ -47,6 +47,9 @@ public struct ItemGroup {
 /// Main-thread only (Dolphin's KFileItemModel + selection manager).
 public final class DirectoryModel {
     private var driveListing: Task<Void, Never>?
+    private var drivePrefetch: Task<Void, Never>?
+    private var driveHover: Task<Void, Never>?
+    private var driveChildren: [URL: Task<Void, Never>] = [:]
     private var transferObserver: NSObjectProtocol?
     private var incomingItems: [FileItem] = []
     public private(set) var incomingProgress: [URL: Double] = [:]
@@ -60,7 +63,10 @@ public final class DirectoryModel {
         incomingProgress = Dictionary(pairs.map { ($0.0.url, $0.1) }, uniquingKeysWith: max)
         if incomingItems != next { incomingItems = next; rebuild() } else if !next.isEmpty { onChange?() }
     }
-    deinit { driveListing?.cancel(); if let transferObserver { NotificationCenter.default.removeObserver(transferObserver) } }
+    deinit {
+        driveListing?.cancel(); drivePrefetch?.cancel(); driveHover?.cancel(); for task in driveChildren.values { task.cancel() };
+        if let transferObserver { NotificationCenter.default.removeObserver(transferObserver) }
+    }
     public private(set) var location: URL
     public private(set) var items: [FileItem] = []  // top level, unsorted, including hidden
     public private(set) var rows: [Row] = [] { didSet { rowIndex = nil; rowIndexByPath = nil } }
@@ -374,6 +380,10 @@ public final class DirectoryModel {
 
     public func reload(keepSelection: Bool = true) {
         driveListing?.cancel(); driveListing = nil
+        drivePrefetch?.cancel(); drivePrefetch = nil
+        driveHover?.cancel(); driveHover = nil
+        for task in driveChildren.values { task.cancel() }
+        driveChildren = [:]
         loadToken += 1
         let token = loadToken
         let url = location
@@ -416,40 +426,39 @@ public final class DirectoryModel {
             return
         }
         if let provider = RemoteFS.provider(for: url) as? DriveProvider {
-            isLoading = true
+            let cached = provider.cachedListing(url)
+            if let cached {
+                items = cached
+                isLoading = false
+                rebuild()
+                onLoaded?()
+            } else {
+                isLoading = true
+            }
             driveListing = Task { @MainActor [weak self] in
-                var pageToken: String?
-                var seen: Set<String> = []
-                var listed: [FileItem] = []
-                let selected = self?.selection ?? []
                 do {
-                    repeat {
-                        let page = try await provider.listPage(url, pageToken: pageToken)
-                        try Task.checkCancellation()
-                        guard let self, token == self.loadToken else { return }
-                        listed += page.items
-                        self.items = listed
-                        self.children = [:]
-                        if keepSelection { self.selection = selected.intersection(Set(listed.map(\.url))) }
-                        self.rebuild()
-                        pageToken = page.nextPageToken
-                        if let pageToken, !seen.insert(pageToken).inserted { throw DriveError.invalidResponse }
-                    } while pageToken != nil
+                    _ = try await provider.refresh(url) { [weak self] listed, complete in
+                        await self?.applyDrivePage(listed, complete: complete, hasCache: cached != nil, token: token, keepSelection: keepSelection)
+                    }
+                    try Task.checkCancellation()
                     guard let self, token == self.loadToken else { return }
                     self.isLoading = false
                     for expandedURL in self.expanded { self.loadChildren(of: expandedURL) }
                     self.onLoaded?()
+                    let folders = self.rows.filter { $0.depth == 0 && $0.item.isBrowsableFolder }.map { $0.item.url }
+                    self.drivePrefetch = Task(priority: .utility) { await provider.prefetch(folders) }
                 } catch is CancellationError {
                     return
                 } catch {
                     guard let self, token == self.loadToken else { return }
                     self.isLoading = false
-                    self.loadError = error.localizedDescription
+                    if cached == nil { self.loadError = error.localizedDescription }
                     self.onLoaded?()
                 }
             }
             return
         }
+
         if let provider = RemoteFS.provider(for: url) {
             isLoading = true
             let expandedNow = expanded
@@ -546,6 +555,16 @@ public final class DirectoryModel {
                 self.updateWatcher()
                 self.onLoaded?()
             }
+        }
+    }
+
+    @MainActor private func applyDrivePage(_ listed: [FileItem], complete: Bool, hasCache: Bool, token: Int, keepSelection: Bool) {
+        guard token == loadToken, !hasCache || complete else { return }
+        // A refresh never temporarily removes later pages or resets expanded rows.
+        if items != listed {
+            items = listed
+            if complete && keepSelection { selection.formIntersection(Set(allLoadedURLs())) }
+            rebuild()
         }
     }
 
@@ -774,6 +793,7 @@ public final class DirectoryModel {
             // Collapse descendants too, and forget their listings: they are no longer watched, so they would go stale.
             let prefix = url.path + "/"
             let inside = { (u: URL) in u.path.hasPrefix(prefix) }
+            for (child, task) in driveChildren where child == url || inside(child) { task.cancel(); driveChildren[child] = nil }
             expanded = expanded.filter { $0 != url && !inside($0) }
             children = children.filter { $0.key != url && !inside($0.key) }
             selection = selection.filter { !inside($0) }
@@ -786,6 +806,19 @@ public final class DirectoryModel {
 
     /// Lists an expanded folder off the main thread (it may be huge or on a slow mount), then shows its rows.
     private func loadChildren(of url: URL) {
+        if let drive = RemoteFS.provider(for: url) as? DriveProvider {
+            if let cached = drive.cachedListing(url) { children[url] = cached }
+            let token = loadToken
+            driveChildren[url]?.cancel()
+            driveChildren[url] = Task { @MainActor [weak self] in
+                guard let kids = try? await drive.refresh(url), !Task.isCancelled,
+                    let self, token == self.loadToken, self.expanded.contains(url)
+                else { return }
+                if self.children[url] != kids { self.children[url] = kids; self.rebuild() }
+                self.driveChildren[url] = nil
+            }
+            return
+        }
         let token = loadToken
         let provider = RemoteFS.provider(for: url)  // sftp://, ftp://, adb:// folders expand through their provider
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -797,6 +830,13 @@ public final class DirectoryModel {
                 self.rebuild()
             }
         }
+    }
+
+    /// Hover is speculative and must never hold up a disclosure click.
+    public func prefetch(_ item: FileItem?) {
+        driveHover?.cancel()
+        guard let item, item.isBrowsableFolder, let drive = RemoteFS.provider(for: item.url) as? DriveProvider else { return }
+        driveHover = Task(priority: .utility) { await drive.prefetch([item.url]) }
     }
 
     // MARK: Queries

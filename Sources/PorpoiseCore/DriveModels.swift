@@ -178,6 +178,8 @@ public struct DriveFile: Codable, Hashable, Sendable {
     public var resourceKey: String?
     public var size: String?
     public var modifiedTime: String?
+    public var thumbnailLink: URL?
+    public var hasThumbnail: Bool?
     public var webViewLink: URL?
     public var owners: [DrivePerson]?
     public var shared: Bool?
