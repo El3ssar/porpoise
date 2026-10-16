@@ -16,6 +16,9 @@ final class TransferToolbarButton: NSButton {
     private var failed = false
     private var dismissedFailure: Set<UUID> = []
     private var didShowAttention: Set<UUID> = []
+    private var lastRefresh = Date.distantPast
+    private var shownStates = ""
+    private var shownProgress = ""
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -36,6 +39,9 @@ final class TransferToolbarButton: NSButton {
         guard let window else { return }
         let now = Date()
         let all = FileOperationsController.shared.activities.filter { $0.originWindow === window }
+        let states = all.map { $0.id.uuidString + $0.state.rawValue }.joined(separator: "|")
+        guard states != shownStates || now.timeIntervalSince(lastRefresh) >= 0.25 else { return }
+        shownStates = states; lastRefresh = now
         jobs = all.filter { a in
             if a.state.isActive || a.state == .queued { return true }
             if !a.errors.isEmpty && !dismissedFailure.contains(a.id) { return true }
@@ -52,8 +58,11 @@ final class TransferToolbarButton: NSButton {
             ? Double(active.reduce(Int64(0)) { $0 + ($1.progress?.doneBytes ?? 0) }) / Double(total)
             : active.isEmpty ? 1 : active.reduce(0) { $0 + $1.fraction } / Double(active.count)
         let estimate = active.first?.rate.timeLeftText ?? (failed ? "Needs attention" : "Finished")
-        setAccessibilityLabel("File operations, \(Int(fraction * 100)) percent, \(estimate)")
-        needsDisplay = true
+        let label = "File operations, \(Int(fraction * 100)) percent, \(estimate)"
+        let progress = "\(Int(fraction * 1000))|\(ended)|\(failed)|\(jobs.allSatisfy { $0.state == .paused })|\(label)"
+        if progress != shownProgress {
+            shownProgress = progress; setAccessibilityLabel(label); needsDisplay = true
+        }
         if popover.isShown { updatePopover() }
         if let attention = jobs.first(where: { ($0.state == .waiting || !$0.errors.isEmpty) && !didShowAttention.contains($0.id) }), visible,
             window.isKeyWindow, window.attachedSheet == nil

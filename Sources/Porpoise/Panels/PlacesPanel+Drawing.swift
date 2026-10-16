@@ -183,22 +183,25 @@ extension PlacesPanel {
             Theme.activeText.setStroke(); arc.lineWidth = 1.5; arc.stroke()
         default: break
         }
-        let symbol = pair.automatic ? "arrow.triangle.2.circlepath" : "arrow.left.arrow.right"
-        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular).applying(.init(paletteColors: [Theme.activeText]))
-        NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config)?
-            .draw(
-                in: CGRect(x: 18, y: rect.midY - 8, width: 16, height: 16), from: .zero, operation: .sourceOver, fraction: alpha,
-                respectFlipped: true, hints: nil)
-        let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byTruncatingTail
-        (pair.name as NSString).draw(
-            in: CGRect(
-                x: 42, y: rect.midY - 9,
-                width: max(
-                    30, rect.width - 56 - min(64, max(18, (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11)]).width + 8))),
-                height: 18),
-            withAttributes: [
-                .font: NSFont.systemFont(ofSize: 13), .foregroundColor: Theme.windowText.withAlphaComponent(alpha), .paragraphStyle: paragraph,
-            ])
+        if needsToDraw(CGRect(x: rect.minX, y: rect.minY, width: max(0, rect.width - 32), height: rect.height)) {
+            let symbol = pair.automatic ? "arrow.triangle.2.circlepath" : "arrow.left.arrow.right"
+            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular).applying(.init(paletteColors: [Theme.activeText]))
+            NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config)?
+                .draw(
+                    in: CGRect(x: 18, y: rect.midY - 8, width: 16, height: 16), from: .zero, operation: .sourceOver, fraction: alpha,
+                    respectFlipped: true, hints: nil)
+            let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byTruncatingTail
+            (pair.name as NSString).draw(
+                in: CGRect(
+                    x: 42, y: rect.midY - 9,
+                    width: max(
+                        30,
+                        rect.width - 56 - min(64, max(18, (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11)]).width + 8))),
+                    height: 18),
+                withAttributes: [
+                    .font: NSFont.systemFont(ofSize: 13), .foregroundColor: Theme.windowText.withAlphaComponent(alpha), .paragraphStyle: paragraph,
+                ])
+        }
         if case .failed = status {
             Theme.compareDanger.setFill(); NSBezierPath(ovalIn: CGRect(x: rect.maxX - 25, y: rect.midY - 7, width: 14, height: 14)).fill()
             ("!" as NSString).draw(

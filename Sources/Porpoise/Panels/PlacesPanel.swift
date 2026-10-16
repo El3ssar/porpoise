@@ -55,6 +55,8 @@ final class PlacesPanel: NSView {
 
     var rows: [Row] = []
     private var syncTick: Timer?
+    private var shownSyncStatuses: [UUID: SyncCoordinator.Status] = [:]
+    private var syncMinute = -1
 
     // Fold/unfold animation (macOS style): rows glide to their new places, folding rows slide into their header and
     // fade, unfolding ones come out of it; the chevron turns.
@@ -174,13 +176,18 @@ final class PlacesPanel: NSView {
         _ = SyncCoordinator.shared
         syncTick = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             guard let self else { return }
-            if SyncCoordinator.shared.statuses.values.contains(where: { value in
-                switch value {
-                case .syncing, .planning: return true;
-                default: return false
+            let minute = Int(Date().timeIntervalSince1970 / 60)
+            let minuteChanged = minute != self.syncMinute
+            self.syncMinute = minute
+            for index in self.rows.indices {
+                guard case .entry(let entry) = self.rows[index].kind,
+                    let pair = SyncCoordinator.shared.pair(for: entry.url)
+                else { continue }
+                let status = SyncCoordinator.shared.statuses[pair.id] ?? .idle
+                if status == .syncing || status == .planning || minuteChanged {
+                    let row = self.rect(of: index)
+                    self.setNeedsDisplay(minuteChanged ? row : CGRect(x: row.maxX - 32, y: row.minY, width: 32, height: row.height))
                 }
-            }) {
-                self.needsDisplay = true
             }
         }
         NotificationCenter.default.addObserver(self, selector: #selector(syncStatusChanged), name: SyncCoordinator.changed, object: nil)
@@ -194,7 +201,17 @@ final class PlacesPanel: NSView {
 
     var rowHeight: CGFloat { max(Metrics.minRowHeight, CGFloat(Settings.shared.placesIconSize) + 12) }
 
-    @objc private func syncStatusChanged() { needsDisplay = true }
+    @objc private func syncStatusChanged() {
+        let statuses = SyncCoordinator.shared.statuses
+        guard shownSyncStatuses != statuses else { return }
+        let previous = shownSyncStatuses; shownSyncStatuses = statuses
+        for index in rows.indices {
+            guard case .entry(let entry) = rows[index].kind, let pair = SyncCoordinator.shared.pair(for: entry.url),
+                previous[pair.id] != statuses[pair.id]
+            else { continue }
+            setNeedsDisplay(rect(of: index))
+        }
+    }
     @objc private func placesChanged(_ notification: Notification) {
         if notification.object as? String == "sync", window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             animateNextReload = true

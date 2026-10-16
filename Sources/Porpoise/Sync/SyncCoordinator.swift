@@ -8,7 +8,7 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
     static let shared = SyncCoordinator()
     static let changed = Notification.Name("PorpoiseSavedSyncsChanged")
     static let activityChanged = Notification.Name("PorpoiseSyncActivityChanged")
-    enum Status { case idle, planning, syncing, conflicts(Int), failed(String), paused, missing, review(Int) }
+    enum Status: Equatable { case idle, planning, syncing, conflicts(Int), failed(String), paused, missing, review(Int) }
     private(set) var pairs: [SavedSync] = []
     private(set) var statuses: [UUID: Status] = [:]
     private(set) var activities: [UUID: Activity] = [:]
