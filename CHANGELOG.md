@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Google Drive, like a network folder (read-only for now).** Go › Connect to Server… (⌘K) now opens one Connect
+  sheet: pick Google Drive, sign in in your browser, and the account appears in the sidebar with its picture and
+  storage: My Drive, Shared with me and Shared drives, each a normal place. Shared with me lists who shared what and
+  when, newest first. Any Drive folder, including one shared with you, can be added to Places (context menu, dragging
+  it to the sidebar, or pasting its Drive link in the location bar). Google Docs, Sheets and Slides open in your
+  browser as the right account. Properties shows who owns an item, your access and who it is shared with. Offline and
+  expired sign-ins show a calm message with Try Again or Sign In…. Settings › Accounts manages accounts, their sidebar
+  rows and what Google Docs become when copied out. Dropbox, OneDrive, Box and S3 are listed as coming later.
+
 ## 0.7.0
 
 - **Clearer Properties.** Long locations stay within their column, folder sizes grow live while counting, and

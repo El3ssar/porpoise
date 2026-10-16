@@ -273,11 +273,15 @@ public final class CloudAccounts {
     public func avatar(_ id: String) -> Data? {
         if let d = avatars[id] { return d }
         if avatarRequests.insert(id).inserted, let backend {
+            var answered = false
             backend.avatar(id) { [weak self] data in
+                answered = true
                 guard let self, let data else { return }
                 self.avatars[id] = data
-                self.publish()
+                // A cached picture answers at once, while the sidebar is being built: show it in the next pass.
+                DispatchQueue.main.async { self.publish() }
             }
+            if answered { return avatars[id] }
         }
         return nil
     }
