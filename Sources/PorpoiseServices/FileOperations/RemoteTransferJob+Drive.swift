@@ -60,6 +60,12 @@ extension RemoteTransferJob {
         {
             name += "." + format.fileExtension
         }
+        func mergeRecorded(_ target: URL) throws -> URL {
+            record.destinationURL = target; record.phase = .transferring; try journal.save(record)
+            let merged = try merge(source, into: target)
+            record.phase = .done; try journal.save(record)
+            return merged
+        }
         let matches = try children(folder, fresh: true).filter { $0.name == name }
         guard matches.count <= 1 else { throw DriveMutationError.conflict }
         var existing = matches.first
@@ -87,22 +93,22 @@ extension RemoteTransferJob {
                 existing = matches.first
             case .writeInto:
                 guard bothFolders else { throw DriveMutationError.conflict }
-                return try merge(source, into: old.url)
+                return try mergeRecorded(old.url)
             case .overwriteIfDifferent:
-                if bothFolders { return try merge(source, into: old.url) }
+                if bothFolders { return try mergeRecorded(old.url) }
                 if try identical(source, incoming, old.url, old) {
                     progressLock.withLock { progress.skippedIdenticalItems += 1 }
                     completed[source] = old.url; finishProgress(source); return nil
                 }
                 replacing = true
             case .overwriteIfOlder, .overwriteIfLarger:
-                if bothFolders { return try merge(source, into: old.url) }
+                if bothFolders { return try mergeRecorded(old.url) }
                 guard answer.resolution.shouldReplace(source: incoming, destination: old, options: options) else {
                     completed[source] = old.url; finishProgress(source); return nil
                 }
                 replacing = true
             case .overwrite:
-                if bothFolders { return try merge(source, into: old.url) }
+                if bothFolders { return try mergeRecorded(old.url) }
                 replacing = true
             }
             if replacing { break }
@@ -131,11 +137,8 @@ extension RemoteTransferJob {
                     try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
                 }
             }
-            record.destinationURL = target; record.phase = .transferring; try journal.save(record)
             listings[folder] = nil
-            let merged = try merge(source, into: target)
-            record.phase = .done; try journal.save(record)
-            return merged
+            return try mergeRecorded(target)
         }
         progressLock.withLock {
             progress.currentName = incoming.name; activeLimit = totals[source]?.bytes ?? incoming.size
@@ -170,7 +173,7 @@ extension RemoteTransferJob {
             } else if let sourceProvider, sourceProvider.accountID == provider.accountID, let metadata {
                 let destinationParent = try DriveProvider.wait { try await client.file(parent) }
                 if kind == .move && metadata.driveId == destinationParent.driveId {
-                    result = try DriveProvider.wait { try await client.move(metadata.id, to: parent, operationID: child) }
+                    result = try DriveProvider.wait { try await client.move(metadata.id, to: parent, operationID: child, name: finalName) }
                     serverMoved = true
                 } else {
                     if kind == .move, metadata.capabilities?.canMoveItemOutOfDrive != true { throw DriveError.permissionDenied }

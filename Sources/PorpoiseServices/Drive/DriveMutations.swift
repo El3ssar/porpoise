@@ -195,7 +195,7 @@ extension DriveClient {
             allow: { trashed ? $0.operations.canTrash : $0.operations.canUntrash }, satisfied: { ($0.trashed ?? false) == trashed })
     }
 
-    public func move(_ id: String, to parentID: String, operationID: UUID = UUID()) async throws -> DriveFile {
+    public func move(_ id: String, to parentID: String, operationID: UUID = UUID(), name: String? = nil) async throws -> DriveFile {
         let parent = try await writableParent(parentID)
         let current = try await file(id, includeTrashed: true)
         let destinationID = parent.id
@@ -205,7 +205,8 @@ extension DriveClient {
             query: [
                 URLQueryItem(name: "addParents", value: destinationID),
                 URLQueryItem(name: "removeParents", value: (current.parents ?? []).joined(separator: ",")),
-            ], operationID: operationID, allow: { $0.operations.canMove }, satisfied: { $0.parents == [destinationID] })
+            ], operationID: operationID, allow: { $0.operations.canMove && (name == nil || $0.operations.canRename) },
+            satisfied: { $0.parents == [destinationID] && (name == nil || $0.name == name) })
     }
 }
 

@@ -37,7 +37,7 @@ extension FileOperationsController {
     public func recoveryPlans() -> [RecoveryPlan] {
         let live = Set(activities.filter { !$0.state.isEnded }.map(\.id))
         let local = journals.all().filter { !live.contains($0.id) }.compactMap(Self.plan)
-        let cloud = ((try? DriveMutationJournal.shared.all()) ?? []).compactMap { record -> RecoveryPlan? in
+        let cloud = ((try? driveJournals.all()) ?? []).compactMap { record -> RecoveryPlan? in
             guard record.topLevel == true, record.phase != .done, !live.contains(record.batchID ?? record.operationID),
                 let source = record.localSource, let destination = record.destinationFolder,
                 record.kind == "transferMove" || record.kind == "transferCopy"
@@ -146,9 +146,9 @@ extension FileOperationsController {
     /// Forgets a plan, removing the partial copies it made (only those: the items it finished stay).
     public func discard(_ plan: RecoveryPlan) {
         for id in plan.cloudOperations.values {
-            if var record = try? DriveMutationJournal.shared.load(id) {
+            if var record = try? driveJournals.load(id) {
                 record.phase = .done
-                try? DriveMutationJournal.shared.save(record)
+                try? driveJournals.save(record)
             }
         }
         for p in plan.partials { try? FileManager.default.removeItem(at: p) }
