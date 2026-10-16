@@ -148,7 +148,9 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
                     caption = "Name differs in case"
                 } else if entry?.kind == .symlink, row.left?.linkTarget != row.right?.linkTarget {
                     caption = "Link targets differ"
-                } else if entry?.kind == .directory, row.status != .same, !(self.model.loading && self.model.comparison?.complete == false) {
+                } else if entry?.kind == .directory, row.status != .same,
+                    !(self.model.presentsScanProgress && self.model.comparison?.complete == false)
+                {
                     if row.status == .onlyLeft || row.status == .onlyRight {
                         let count = self.model.outline?.childCounts[side]?[row.path] ?? 0
                         caption = "\(FileFormat.count(count)) only here"
@@ -373,7 +375,7 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current?.cgContext.setAlpha(alpha)
         defer { NSGraphicsContext.restoreGraphicsState() }
         guard seam.intersects(dirty) else { return }
-        if model.loading && model.comparison?.complete == false && row.left?.kind == .directory && row.right?.kind == .directory {
+        if model.presentsScanProgress && model.comparison?.complete == false && row.left?.kind == .directory && row.right?.kind == .directory {
             let arc = NSBezierPath(); arc.lineWidth = 1.5
             let angle = CGFloat(CACurrentMediaTime().truncatingRemainder(dividingBy: 1.2) / 1.2 * 360)
             arc.appendArc(withCenter: CGPoint(x: seam.midX, y: y + rowHeight / 2), radius: 4, startAngle: angle, endAngle: angle + 270)

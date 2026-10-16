@@ -239,11 +239,11 @@ final class CompareView: NSView {
         overlay.frame = CGRect(x: max(8, (width - 460) / 2), y: max(80, (bounds.height - 185) / 2), width: min(460, width - 16), height: 185)
     }
     func update() {
-        if model.loading && progressTicker == nil {
+        if model.presentsScanProgress && progressTicker == nil {
             progressTicker = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
                 guard let self else { return }; self.document.setNeedsDisplay(self.document.seam.intersection(self.document.visibleRect))
             }
-        } else if !model.loading {
+        } else if !model.presentsScanProgress {
             progressTicker?.invalidate(); progressTicker = nil
         }
         let started = CACurrentMediaTime()
@@ -271,7 +271,10 @@ final class CompareView: NSView {
         close.isHidden = false; showJob.isHidden = true; jobSymbol.isHidden = true; jobWash.layer?.backgroundColor = nil
         jobLine.isHidden = !model.showProgress; jobLine.isIndeterminate = model.showProgress
         if model.showProgress { jobLine.startAnimation(nil) } else { jobLine.stopAnimation(nil) }
-        sync.isHidden = false; sync.isEnabled = model.comparison?.complete == true && model.error == nil && !model.loading
+        sync.isHidden = false
+        sync.isEnabled =
+            model.comparison?.complete == true && model.error == nil
+            && (model.comparison?.options.isEquivalent(to: model.options) == true) && (!model.loading || model.refreshing)
         if model.rowsVersion != lastRowsVersion {
             document.replaceRows(model.rows, indices: model.rowIndices); lastRowsVersion = model.rowsVersion
         } else {
@@ -280,7 +283,7 @@ final class CompareView: NSView {
         document.updateDetails()
         method.isHidden = false
         method.title = Self.methodTitle(model.options.method) + " ⌄"
-        method.toolTip = model.loading ? "Comparing…" : summary.stringValue
+        method.toolTip = model.presentsScanProgress ? "Comparing…" : summary.stringValue
         if !model.loading, model.comparison?.complete == false, model.error == nil {
             method.toolTip = "A linked folder is missing. Go back or up to continue comparing; Sync is unavailable."
         }
@@ -299,7 +302,7 @@ final class CompareView: NSView {
         summary.stringValue =
             model.error
             ?? "\(FileFormat.count(model.comparison?.rows.count ?? 0)) items · \(differenceSummary) · \(elapsed)"
-        if model.loading {
+        if model.presentsScanProgress {
             summary.stringValue =
                 "Reading \(model.options.method == .content ? "contents" : "folders")… \(FileFormat.count(model.comparison?.rows.count ?? 0)) items"
         }
