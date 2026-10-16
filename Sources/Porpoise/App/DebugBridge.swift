@@ -159,6 +159,23 @@ final class DebugBridge: NSObject {
                 ]
                 try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: arg))
             }
+        case "compareresizebench":
+            guard let compare = wc?.tab.compareView else { break }
+            let original = compare.frame
+            var total: [Double] = [], layout: [Double] = [], drawing: [Double] = []
+            for index in 0..<60 {
+                let phase = Double(index) / 59 * 2, fraction = phase <= 1 ? phase : 2 - phase
+                let started = CACurrentMediaTime()
+                compare.frame.size.width = 600 + CGFloat(fraction) * max(0, original.width - 600)
+                compare.layoutSubtreeIfNeeded()
+                let laidOut = CACurrentMediaTime()
+                compare.displayIfNeeded(); CATransaction.flush()
+                let finished = CACurrentMediaTime()
+                layout.append((laidOut - started) * 1000); drawing.append((finished - laidOut) * 1000); total.append((finished - started) * 1000)
+            }
+            compare.frame = original; compare.layoutSubtreeIfNeeded(); compare.displayIfNeeded()
+            let data: [String: Any] = ["rows": compare.model.rows.count, "totalMS": total, "layoutMS": layout, "drawingMS": drawing]
+            try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: arg))
         case "link":
             if let wc, (wc.tab.linkedRoots != nil) != (arg == "on") { wc.toggleLinkedBrowsing(nil) }
         case "snapshot": snapshot(to: arg)
@@ -537,6 +554,20 @@ final class DebugBridge: NSObject {
             NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
+        case "reviewcapture":
+            // Keep activation, capture and its key-state evidence in one app-side transaction.
+            guard Settings.isTesting, let window = wc?.window else { break }
+            let args = arg.components(separatedBy: "|")
+            if args.count > 1, ["light", "dark"].contains(args[1]) {
+                Settings.store.set(args[1], forKey: "appearance")
+                NotificationCenter.default.post(name: Settings.changed, object: "appearance")
+            }
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]; window.level = .floating
+            window.orderFrontRegardless(); NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self.writeState(to: args[0] + ".state.json")
+                self.windowServerSnapshot(to: args[0])
+            }
         case "transferdialog":
             guard Settings.isTesting, let owner = wc?.window else { return }
             let folder = arg == "folder"

@@ -258,6 +258,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     override func layout() {
         super.layout()
+        if comparisonSuspended { comparisonNeedsRefresh = true; return }
         var y: CGFloat = 0
         var bottom = bounds.height
         if !searchBar.isHidden {
