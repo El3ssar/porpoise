@@ -88,8 +88,10 @@ pane divider between the two location fields, which give up 74 pt between them:
   chain in `compareChanged`.
 - **Compare** (two facing pages icon): on = pressed fill `selection` 32 % with `accent` icon.
 
-Both are also `Porpoise.toolbar.compare` / `.link` items for customised toolbars. Narrower than 760 pt, the
-capsule collapses into the Split menu (⌄), which always lists Compare Folders, Linked Browsing and Sync….
+Both are also `Porpoise.toolbar.compare` / `.link` items for customised toolbars. When either location field would
+drop below 160 pt (about 760 pt windows with the sidebar), the capsule collapses into the Split menu (⌄), which
+always lists Compare Folders, Linked Browsing and Sync…. A truncated breadcrumb keeps the segment that tells the
+sides apart ("Backup › … › Projects"), never only the shared tail.
 
 Context menus: a folder → **Compare with Other View**; a pair of folders selected → **Compare**; two files →
 **Compare Files**.
@@ -304,13 +306,18 @@ From  📁 Projects  ⇄  📁 Backup                     (direction row; hidden
   folder** (folded into Copy when the folder is new with contents). Section header row: disclosure, glyph, title,
   count, SF 12 semibold, colour of the section. Item row: checkbox (include), 16 pt icon, relative path (SF 13,
   middle-truncated), size (right-aligned, secondary), reason (SF 11 secondary: "new", "newer in Projects",
-  "only in Backup", "larger in Projects"). Unchecking excludes that item from this run only.
+  "only in Backup", "larger in Projects"). Unchecking excludes that item from this run only; an unchecked row dims
+  to 50 % and leaves every count. A folder collapses to one row ("Archive 2024 · 48 items") only when the whole
+  folder is the unit (new, or only on the destination); replacements always list file paths. A replacement whose
+  reason is "newer in Backup" (it overwrites newer work) draws that reason in `compareDanger`. The list fills the
+  sheet's free height with plain background; it never draws empty striped rows.
   Right-click: Reveal in Projects/Backup, Compare Files, Exclude from Future Syncs (adds an exclusion to the pair).
 - **Deletions are summarised first and in red.** The section header is `compareDanger`, and above the list a callout
   (r 6, danger wash 10 %, 1 pt danger 40 % stroke, ⚠ 16): "**2 items in Backup aren't in Projects.** They'll be
   moved to the Trash." For remote destinations without a Trash: "…They'll be moved to `.porpoise-trash` on
-  nas.local." When the provider can't do either: "…They'll be **deleted permanently**." Then the default button
-  reads **Sync and Delete**, and a second confirmation alert follows.
+  nas.local." When the provider can't do either, planning says so up front (never a mid-run failure): "nas.local
+  can't keep deleted items, so these 2 items will be left in place." and the deletion section is unchecked and
+  disabled. (Permanent delete is out of Phase 2 scope; lead ruling, board #888.)
 - **Options** (disclosure, collapsed; the summary line after it lists the current choices):
   - Ignore: preset chips (§6.4).
   - Deletions: **Move to Trash** (default) / Delete permanently (local), Move to `.porpoise-trash` (remote).
@@ -520,7 +527,9 @@ their hues, so status never takes the accent colour. High Contrast uses the Incr
 - **Gutter:** its own view in place of the divider; draws only visible rows; glyphs as cached images per
   status/appearance.
 - **Performance budget:** entering compare on 10k visible rows ≤ 1 frame drop; filter change ≤ 16 ms; frame time
-  while syncing ≤ 11 ms (same bar as zoom).
+  while syncing ≤ 11 ms (same bar as zoom). Acceptance (design review): entry = max display-link interval ≤ 16.7 ms
+  in 3 consecutive prepared runs; syncing = scroll the compare view during a running sync, max draw ≤ 11 ms and max
+  interval ≤ 16.7 ms in 3 runs.
 - **DebugBridge:** add `compare <left> <right>`, `comparefilter <pills>`, `syncsheet <mode>`, `link on|off` so every
   state in the mockups can be captured with `wsnapshot` for design review.
 
