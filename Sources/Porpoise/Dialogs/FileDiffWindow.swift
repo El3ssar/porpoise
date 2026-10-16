@@ -23,7 +23,8 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
     private let header = NSView(), footer = NSView(), body = FileDiffBody()
     private let leftCapsule = GlassGroup(), rightCapsule = GlassGroup(), navigation = GlassGroup()
     private let previous = ClosureButton(title: "‹") { _ in }, next = ClosureButton(title: "›") { _ in }
-    private let openWith = NSPopUpButton(frame: .zero, pullsDown: true)
+    private let openWith = ClosureButton(title: "Open With ⌄") { _ in }
+    private let toolMenu = NSMenu()
     private let externalCapsule = GlassGroup()
     private let viewSwitch = NSSegmentedControl(labels: ["Text", "Image", "Info"], trackingMode: .selectOne, target: nil, action: nil)
     private let textMode = NSSegmentedControl(labels: ["Side by Side", "Inline"], trackingMode: .selectOne, target: nil, action: nil)
@@ -108,9 +109,10 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         for b in [previous, next] { b.isBordered = false; b.font = .systemFont(ofSize: 23); navigation.content.addSubview(b) }
         previous.setAccessibilityLabel("Previous Change"); next.setAccessibilityLabel("Next Change")
         previous.handler = { [weak self] _ in self?.move(-1) }; next.handler = { [weak self] _ in self?.move(1) }
-        let menu = NSMenu(); menu.addItem(withTitle: "Open With ⌄", action: nil, keyEquivalent: ""); menu.delegate = self; openWith.menu = menu;
+        toolMenu.delegate = self; toolMenu.minimumWidth = 190
         openWith.isBordered = false; openWith.font = .systemFont(ofSize: 13)
-        (openWith.cell as? NSPopUpButtonCell)?.arrowPosition = .noArrow
+        openWith.handler = { [weak self] _ in self?.showToolMenu() }
+        openWith.setAccessibilityLabel("Open With")
         externalCapsule.content.addSubview(openWith)
         for c in [viewSwitch, textMode, imageMode] {
             c.controlSize = .small; c.target = self; c.action = #selector(controlChanged(_:)); c.selectedSegment = 0
@@ -284,7 +286,10 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
                     else { return }
                     DispatchQueue.main.async { [weak self] in
                         guard let self, !token.isCancelled, self.busy else { return }
-                        self.loading.isIndeterminate = false; self.loading.maxValue = Double(max(1, total)); self.loading.doubleValue = Double(bytes)
+                        self.loading.stopAnimation(nil); self.loading.isIndeterminate = false
+                        self.loading.minValue = 0; self.loading.maxValue = 100
+                        self.loading.doubleValue = Double(bytes) / Double(max(1, total)) * 100
+                        self.loading.needsDisplay = true
                         self.progressText.stringValue = "Reading \(name)… \(FileFormat.size(Int64(bytes))) of \(FileFormat.size(Int64(total)))"
                         self.facts.stringValue = self.progressText.stringValue
                     }
@@ -480,12 +485,12 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
     }
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.appearance = window?.effectiveAppearance
-        menu.removeAllItems(); menu.addItem(withTitle: "Open With ⌄", action: nil, keyEquivalent: "")
+        menu.removeAllItems()
         for tool in FileDiffExternalTools.installed {
             let item = NSMenuItem(title: tool.name, action: #selector(openExternal(_:)), keyEquivalent: ""); item.target = self;
             item.representedObject = tool.url; menu.addItem(item)
         }
-        if menu.items.count == 1 {
+        if menu.items.isEmpty {
             let item = NSMenuItem(title: "No compare apps found", action: nil, keyEquivalent: ""); item.isEnabled = false; menu.addItem(item)
         }
         menu.addItem(.separator()); let choose = NSMenuItem(title: "Choose Default App…", action: #selector(chooseExternal), keyEquivalent: "");
@@ -529,7 +534,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         case "undo": undo.undo()
         case "save": saveDocument(nil)
         case "hash": computeHash(0); computeHash(1)
-        case "openwith": menuNeedsUpdate(openWith.menu!); openWith.performClick(nil)
+        case "openwith": openWith.performClick(nil)
         case "size":
             if parts.count == 3, let w = Double(parts[1]), let h = Double(parts[2]) {
                 window?.setContentSize(NSSize(width: w, height: h)); window?.center()
@@ -668,7 +673,11 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         if relative.isEmpty { return Array(own.suffix(2)) }
         return relative.count > 3 ? [relative.first!, "…", relative.last!] : relative
     }
-    func endToolMenu() { openWith.menu?.cancelTracking() }
+    private func showToolMenu() {
+        menuNeedsUpdate(toolMenu)
+        toolMenu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: openWith)
+    }
+    func endToolMenu() { toolMenu.cancelTracking() }
 
     private func addInfoRow(_ view: NSView, height: CGFloat) {
         view.heightAnchor.constraint(equalToConstant: height).isActive = true; infoStack.addArrangedSubview(view);
