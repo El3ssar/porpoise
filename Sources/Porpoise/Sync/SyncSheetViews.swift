@@ -15,13 +15,13 @@ final class SyncListBackdrop: NSView {
     }
 }
 final class SyncCalloutView: NSView {
-    var text = ""
+    var text = "" { didSet { setAccessibilityElement(true); setAccessibilityRole(.staticText); setAccessibilityLabel(text) } }
     var danger = false
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
         let color = danger ? Theme.compareDanger : Theme.activeText
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
-        color.withAlphaComponent(NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? 0.18 : 0.08).setFill(); path.fill()
+        color.withAlphaComponent(Theme.increasedContrast ? 0.18 : 0.08).setFill(); path.fill()
         color.withAlphaComponent(0.4).setStroke(); path.lineWidth = 1; path.stroke()
         (text as NSString).draw(
             in: bounds.insetBy(dx: 12, dy: 7), withAttributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: Theme.windowText])
@@ -216,7 +216,12 @@ private final class SyncMenuItem: NSMenuItem {
 }
 
 final class SyncDirectionView: NSView {
-    var source = "", destination = ""
+    var source = "" { didSet { updateAccessibility() } }
+    var destination = "" { didSet { updateAccessibility() } }
+    private func updateAccessibility() {
+        setAccessibilityElement(true); setAccessibilityRole(.staticText)
+        setAccessibilityLabel("From \(source) to \(destination)")
+    }
     override var isFlipped: Bool { true }
     private var chipWidth: CGFloat { (bounds.width - 88) / 2 }
     var swapRect: CGRect { CGRect(x: 44 + chipWidth + 8, y: 0, width: 28, height: 28) }

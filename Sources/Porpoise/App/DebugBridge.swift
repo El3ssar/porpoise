@@ -387,11 +387,16 @@ final class DebugBridge: NSObject {
         case "syncsidebar":
             guard Settings.isTesting else { return }
             SyncDebugBridge.sidebar(arg)
+        case "syncinclude", "syncresolve", "syncsize":
+            guard Settings.isTesting else { return }
+            SyncDebugBridge.control(command: parts.first ?? "", argument: arg)
         case "syncstate":
             guard Settings.isTesting else { return }
             SyncDebugBridge.state(arg)
         case "reviewfront":
-            guard Settings.isTesting, let window = wc?.window else { return }
+            guard Settings.isTesting,
+                let window = arg.isEmpty ? wc?.window : NSApp.windows.first(where: { $0.title.hasPrefix(arg) })
+            else { return }
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             window.level = .floating
             window.orderFrontRegardless()

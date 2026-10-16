@@ -121,12 +121,14 @@ public final class PlacesModel {
     public var allEntries: [PlaceEntry] { userEntries + syncEntries + detected + tagEntries + devices }
 
     public func setSyncEntries(_ pairs: [SavedSync]) {
-        syncEntries = pairs.filter(\.visibleInSidebar).map {
+        let next = pairs.filter(\.visibleInSidebar).map {
             PlaceEntry(
                 title: $0.name, url: URL(string: "porpoise-sync://" + $0.id.uuidString)!,
                 icon: $0.automatic ? "view-refresh" : "go-next", section: .sync)
         }
-        post()
+        guard next != syncEntries else { return }
+        syncEntries = next
+        if ready { NotificationCenter.default.post(name: Self.changed, object: "sync") }
     }
 
     /// Entries grouped by section, honoring hidden flags.

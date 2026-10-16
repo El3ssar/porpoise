@@ -156,6 +156,8 @@ private final class TransferPopoverRow: NSView {
         self.activity = activity
         if let item = activity.incomingItem {
             icon.image = Icons.shared.image(for: item, size: 32)
+        } else if activity.planJob != nil {
+            icon.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: "Sync")
         } else {
             icon.image = NSImage(systemSymbolName: activity.sources.count > 1 ? "square.stack.3d.up" : "doc", accessibilityDescription: nil)
         }
@@ -178,7 +180,7 @@ private final class TransferPopoverRow: NSView {
         detail.stringValue = line
         percent.stringValue = "\(Int(activity.fraction * 100))%"
         percent.isHidden = activity.state.isEnded || (activity.planJob == nil && activity.progress?.phase == .preparing)
-        toolTip = activity.progress?.currentName
+        toolTip = activity.planProgress?.currentTitle ?? activity.progress?.currentName
         bar.fraction = activity.fraction
         bar.isIndeterminate = (activity.planJob == nil && activity.progress?.phase == .preparing) || activity.state == .queued
         bar.alphaValue = activity.state == .paused ? 0.4 : 1

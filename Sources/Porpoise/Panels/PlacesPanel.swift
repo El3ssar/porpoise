@@ -169,7 +169,7 @@ final class PlacesPanel: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         registerForDraggedTypes([.fileURL, .placeEntry, .placeSection])
-        NotificationCenter.default.addObserver(self, selector: #selector(reload), name: PlacesModel.changed, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(placesChanged(_:)), name: PlacesModel.changed, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged(_:)), name: Settings.changed, object: nil)
         _ = SyncCoordinator.shared
         syncTick = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -183,7 +183,7 @@ final class PlacesPanel: NSView {
                 self.needsDisplay = true
             }
         }
-        NotificationCenter.default.addObserver(self, selector: #selector(reload), name: SyncCoordinator.changed, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(syncStatusChanged), name: SyncCoordinator.changed, object: nil)
         reload()
         setAccessibilityRole(.list)
         setAccessibilityLabel("Places")
@@ -193,6 +193,14 @@ final class PlacesPanel: NSView {
     deinit { syncTick?.invalidate() }
 
     var rowHeight: CGFloat { max(Metrics.minRowHeight, CGFloat(Settings.shared.placesIconSize) + 12) }
+
+    @objc private func syncStatusChanged() { needsDisplay = true }
+    @objc private func placesChanged(_ notification: Notification) {
+        if notification.object as? String == "sync", window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            animateNextReload = true
+        }
+        reload()
+    }
 
     @objc private func settingsChanged(_ n: Notification) {
         // Only the icon size (or a full reset) changes this panel.

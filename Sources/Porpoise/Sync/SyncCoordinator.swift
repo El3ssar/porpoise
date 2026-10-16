@@ -76,13 +76,13 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
     }
     func save(_ pair: SavedSync, replacing previousID: UUID? = nil) {
         if let previousID, previousID != pair.id {
-            watchers.removeValue(forKey: previousID); pairs.removeAll { $0.id == previousID }
+            watchers.removeValue(forKey: previousID)?.stop(); pairs.removeAll { $0.id == previousID }
             Task { try? await stateStore.remove(pairID: previousID) }
         }
         var previous = pairs.first { $0.id == pair.id }; previous?.lastSynced = pair.lastSynced
         if let index = pairs.firstIndex(where: { $0.id == pair.id }) { pairs[index] = pair } else { pairs.append(pair) }
         let watcherChanged = previous != pair
-        if watcherChanged { watchers.removeValue(forKey: pair.id) }
+        if watcherChanged { watchers.removeValue(forKey: pair.id)?.stop() }
         persist { [weak self] succeeded in
             guard let self, succeeded, watcherChanged, self.pairs.first(where: { $0.id == pair.id }) == pair else { return }
             self.installWatcher(pair)
@@ -112,7 +112,7 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
             if let activity = self.activities[pair.id] { FileOperationsController.shared.cancel(activity) }
             self.dirty.remove(pair.id)
             Task { try? await self.stateStore.remove(pairID: pair.id) }
-            self.watchers.removeValue(forKey: pair.id)
+            self.watchers.removeValue(forKey: pair.id)?.stop()
             self.pairs.removeAll { $0.id == pair.id }
             self.statuses.removeValue(forKey: pair.id)
             self.persist(); self.changed(); onRemoved?()
@@ -130,7 +130,7 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
         changed()
     }
     private func installWatcher(_ pair: SavedSync) {
-        watchers.removeValue(forKey: pair.id)
+        watchers.removeValue(forKey: pair.id)?.stop()
         guard pair.automatic else { return }
         if pair.paused {
             if case .review = statuses[pair.id] {} else { statuses[pair.id] = .paused }
@@ -143,7 +143,7 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
                 watcher.setPaused(pair.paused)
                 return watcher
             }.value
-            guard let self, self.pairs.first(where: { $0.id == pair.id }) == pair else { return }
+            guard let self, self.pairs.first(where: { $0.id == pair.id }) == pair else { watcher.stop(); return }
             self.watchers[pair.id] = watcher
             if !pair.paused { self.requestScan(pair.id) }
         }
@@ -238,6 +238,7 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
                         }
                         self.changed(); self.drain()
                     case .success(let activity):
+                        activity.showsCurrentStepTitle = false
                         let copied = preview.executable.steps.filter { $0.action == .copy || $0.action == .replace }.count
                         let trashed = preview.executable.steps.filter { $0.action == .trash }.count
                         activity.completionSummary =
@@ -463,6 +464,20 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
             guard result == .OK, let right = panel.url else { return }
             SyncSheetController(pair: SavedSync(left: left, right: right), owner: window).present()
         }
+    }
+    /// Representative rendering states only, for isolated design captures. Does not execute or persist pairs.
+    func installReviewSidebarStates(left: URL, right: URL) {
+        guard Settings.isTesting, activities.isEmpty, preparing.isEmpty else { return }
+        for watcher in watchers.values { watcher.stop() }
+        watchers.removeAll(); dirty.removeAll()
+        let names = ["Projects", "Photos", "Website", "Documents", "Work", "Archive"]
+        pairs = names.map { name in
+            var pair = SavedSync(name: name, left: left, right: right)
+            pair.automatic = true; pair.lastSynced = Date().addingTimeInterval(-120); return pair
+        }
+        let values: [Status] = [.idle, .syncing, .conflicts(2), .failed("Permission denied"), .paused, .missing]
+        for (index, pair) in pairs.enumerated() { statuses[pair.id] = values[index] }
+        changed()
     }
     func pair(for url: URL) -> SavedSync? { pairs.first { $0.id.uuidString.caseInsensitiveCompare(url.host ?? "") == .orderedSame } }
     func open(_ pair: SavedSync, window: NSWindow?, newTab: Bool = false) {

@@ -14,16 +14,36 @@ enum SyncDebugBridge {
         let right = pieces.count > 2 ? URL(fileURLWithPath: pieces[2]) : root.appendingPathComponent("Backup/Projects")
         var newPair = SavedSync(left: left, right: right); newPair.visibleInSidebar = false
         var pair = SyncCoordinator.shared.pair(left: left, right: right) ?? newPair
-        pair.mode = mode
-        SyncSheetController(pair: pair, owner: window, editing: pieces[0] == "edit").present()
+        if pieces[0] != "edit" { pair.mode = mode }
+        let sheet = SyncSheetController(pair: pair, owner: window, editing: pieces[0] == "edit")
+        if pieces[0] == "planning" { sheet.reviewPlanningDelay = 3 }
+        sheet.present()
     }
     static func sidebar(_ argument: String) {
+        if argument == "states" {
+            SyncCoordinator.shared.installReviewSidebarStates(
+                left: root.appendingPathComponent("Home/Projects"), right: root.appendingPathComponent("Backup/Projects"));
+            return
+        }
         // Only saved definitions are synthesized; actual watcher statuses come from real filesystem state.
-        var pair = SavedSync(
-            name: argument.isEmpty ? "Projects" : argument,
-            left: root.appendingPathComponent("Home/Projects"), right: root.appendingPathComponent("Backup/Projects"))
+        let left = root.appendingPathComponent("Home/Projects"), right = root.appendingPathComponent("Backup/Projects")
+        var pair = SyncCoordinator.shared.pair(left: left, right: right) ?? SavedSync(left: left, right: right)
+        pair.name = argument.isEmpty ? "Projects" : argument; pair.visibleInSidebar = true
         pair.lastSynced = Date().addingTimeInterval(-120)
         SyncCoordinator.shared.save(pair)
+    }
+    static func control(command: String, argument: String) {
+        guard
+            let sheet = NSApp.windows.first(where: { $0.isVisible && $0.windowController is SyncSheetController })?.windowController
+                as? SyncSheetController
+        else { return }
+        let parts = argument.components(separatedBy: "|")
+        if command == "syncinclude", parts.count == 2 { sheet.reviewInclude(parts[0], enabled: parts[1] != "off") }
+        if command == "syncresolve", parts.count == 2, let choice = SyncOverride(rawValue: parts[1]) { sheet.reviewResolve(parts[0], choice: choice) }
+        if command == "syncsize" {
+            let sizes = argument.split(separator: " ").compactMap { Double($0) }
+            if sizes.count == 2 { sheet.window?.setContentSize(CGSize(width: sizes[0], height: sizes[1])) }
+        }
     }
     static func state(_ path: String) {
         let coordinator = SyncCoordinator.shared

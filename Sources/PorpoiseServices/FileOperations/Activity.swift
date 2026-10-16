@@ -46,6 +46,7 @@ public final class Activity: Identifiable {
 
     /// Presentation supplied by an owning engine; configure on main before the plan ends.
     public var completionSummary: String?
+    public var showsCurrentStepTitle = true
 
     public var fraction: Double { planProgress?.fraction ?? progress?.fraction ?? 0 }
     /// Starts it (queued jobs wait for a free slot).
@@ -86,7 +87,8 @@ public final class Activity: Identifiable {
     public var statusText: String {
         if let planProgress, state == .running || state == .paused {
             let prefix = state == .paused ? "Paused — " : ""
-            return "\(prefix)\(planProgress.completedSteps) of \(planProgress.totalSteps) steps — \(planProgress.currentTitle)"
+            return "\(prefix)\(planProgress.completedSteps) of \(planProgress.totalSteps) steps"
+                + (showsCurrentStepTitle && !planProgress.currentTitle.isEmpty ? " — " + planProgress.currentTitle : "")
         }
         let p = progress
         let amounts = p.map { $0.totalBytes > 0 ? "\(FileFormat.size($0.doneBytes)) of \(FileFormat.size($0.totalBytes))" : "" } ?? ""

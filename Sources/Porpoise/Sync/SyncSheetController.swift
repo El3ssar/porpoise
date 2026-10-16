@@ -14,7 +14,9 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
     private var generation = 0
     private var cancellation = DiskCancellation()
     private var planning = true
+    var reviewPlanningDelay: TimeInterval = 0
     private var providedComparison: SyncComparison?
+    private var includedStepIDs: Set<String> = []
     private var differences: [String: SyncDifference] = [:]
     private var savingTask = false
     private var displaySteps: [SyncStep] = []
@@ -33,7 +35,8 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
     private let keepAnimator = Animator()
     private let explanation = NSTextField(labelWithString: "Porpoise syncs changes while it's open. You'll only hear about conflicts and errors.")
     private let method = NSPopUpButton()
-    private let custom = NSTextField()
+    private let custom = NSTextField(labelWithString: "")
+    private let customButton = SyncClosureButton(title: "Custom…")
     private let presets = NSStackView()
     private let deletion = NSTextField(labelWithString: "Deletions: Move to Trash")
     private var optionsOpen = false
@@ -75,6 +78,14 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         if let parentWindow { parentWindow.beginSheet(window!) } else { window?.center(); showWindow(nil) }
         prepare(useProvided: true)
     }
+    func reviewInclude(_ path: String, enabled: Bool) {
+        guard Settings.isTesting else { return }
+        overrides[path] = enabled ? nil : .skip; replan()
+    }
+    func reviewResolve(_ path: String, choice: SyncOverride) {
+        guard Settings.isTesting else { return }
+        overrides[path] = choice; replan()
+    }
     private func closeSheet() {
         generation += 1; cancellation.cancel()
         if let window { window.sheetParent?.endSheet(window); window.orderOut(nil) }
@@ -103,13 +114,13 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         options.target = self; options.action = #selector(toggleOptions); options.setAccessibilityLabel("Options"); add(options)
         automatic.state = pair.automatic ? .on : .off
         automatic.target = self; automatic.action = #selector(automaticChanged); add(automatic)
-        name.stringValue = pair.name; name.placeholderString = "Sync name"; add(name)
-        method.addItems(withTitles: ["Size & date", "Size only", "Contents"])
+        name.setAccessibilityLabel("Sync name"); name.stringValue = pair.name; name.placeholderString = "Sync name"; add(name)
+        method.setAccessibilityLabel("Compare by"); method.addItems(withTitles: ["Size & date", "Size only", "Contents"])
         method.selectItem(at: [.sizeAndDate, .sizeOnly, .content].firstIndex(of: pair.method) ?? 0)
         method.target = self; method.action = #selector(optionsChanged); add(method)
-        custom.placeholderString = "Custom patterns, separated by commas"
-        custom.stringValue = pair.customExclusions.joined(separator: ", ")
-        custom.target = self; custom.action = #selector(optionsChanged); add(custom)
+        custom.font = .systemFont(ofSize: 11); custom.textColor = Theme.windowTextInactive
+        custom.lineBreakMode = .byTruncatingTail; add(custom)
+        customButton.perform = { [weak self] in self?.editCustomExclusions() }; add(customButton)
         presets.orientation = .horizontal; presets.spacing = 8; add(presets)
         for (index, title) in ["System files", "Hidden files", "Build folders", "Version control"].enumerated() {
             let button = NSButton(checkboxWithTitle: title, target: self, action: #selector(optionsChanged))
@@ -136,6 +147,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                 self.savingTask = true; self.animateFooter()
             }
         }
+        swapButton.setAccessibilityLabel("Swap sync direction"); swapButton.toolTip = "Swap source and destination"
         swapButton.perform = { [weak self] in
             guard let self else { return }
             swap(&pair.left, &pair.right)
@@ -152,6 +164,12 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
     private func layout() {
         guard let root = window?.contentView else { return }
         let width = root.bounds.width, height = root.bounds.height
+        let hasConflicts = (preview?.skippedConflicts ?? 0) > 0
+        let minimumHeight: CGFloat =
+            480 + keepExpansion * 66 + (optionsOpen ? 94 : 0)
+            + (hasConflicts ? 32 : 0) + (callout.text.isEmpty ? 0 : 44)
+        window?.contentMinSize = CGSize(width: 600, height: minimumHeight)
+        if height < minimumHeight { window?.setContentSize(CGSize(width: width, height: minimumHeight)); return }
         heading.frame = CGRect(x: 20, y: 16, width: width - 40, height: 22)
         heading.stringValue = editing ? "Edit “\(pair.name)”" : "Sync \(pair.leftTitle) and \(pair.rightTitle)"
         let cardWidth = (width - 56) / 3
@@ -191,8 +209,12 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         deletion.frame = CGRect(x: 22, y: optionsY + 30, width: 235, height: 22)
         deletion.stringValue = pair.right.isFileURL ? "Deletions: Move to Trash" : "Deletions: Move to .porpoise-trash"
         method.frame = CGRect(x: width - 180, y: optionsY + 26, width: 158, height: 26)
-        custom.frame = CGRect(x: 22, y: optionsY + 58, width: width - 44, height: 24)
-        [presets, deletion, method, custom].forEach { $0.isHidden = !optionsOpen }
+        let ignored = (preview?.left.excludedPaths?.count ?? 0) + (preview?.right.excludedPaths?.count ?? 0)
+        custom.stringValue = "Ignores \(ignored) items" + (pair.customExclusions.isEmpty ? "" : " · \(pair.customExclusions.count) custom patterns")
+        custom.toolTip = pair.customExclusions.joined(separator: "\n")
+        custom.frame = CGRect(x: 22, y: optionsY + 60, width: width - 144, height: 20)
+        customButton.frame = CGRect(x: width - 122, y: optionsY + 56, width: 100, height: 26)
+        [presets, deletion, method, custom, customButton].forEach { $0.isHidden = !optionsOpen }
         automatic.frame = CGRect(x: 20, y: height - 58 - keepExpansion * 66, width: 300, height: 24)
         name.isHidden = keepExpansion == 0; explanation.isHidden = name.isHidden; pairDescription.isHidden = name.isHidden
         name.alphaValue = keepExpansion; explanation.alphaValue = keepExpansion; pairDescription.alphaValue = keepExpansion
@@ -213,17 +235,26 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         saveButton.isHidden = savingTask
         syncButton.isEnabled = !planning
         syncButton.title = editing || savingTask ? "Save" : (preview?.executable.steps.isEmpty == true ? "Done" : "Sync")
+        let order: [NSView] =
+            cards + [swapButton, outline, options] + (optionsOpen ? presetButtons + [method, customButton] : [])
+            + [automatic, name, saveButton, cancelButton, syncButton]
+        for index in order.indices { order[index].nextKeyView = order[(index + 1) % order.count] }
+
     }
     private func prepare(useProvided: Bool = false) {
         generation += 1; let version = generation
         cancellation.cancel(); cancellation = DiskCancellation(); let cancellation = cancellation
-        planning = true; summary.stringValue = "Planning…"; spinner.startAnimation(nil); layout()
-        let pair = pair, initial = useProvided ? providedComparison : nil
+        planning = true; summary.stringValue = "Planning…"; summary.textColor = Theme.windowText
+        preview = nil; displaySteps = []; nodes = []; differences = [:]; includedStepIDs = []
+        outline.reloadData(); spinner.startAnimation(nil); layout()
+        let pair = pair, initial = useProvided ? providedComparison : nil, decisions = overrides
+        let reviewDelay = Settings.isTesting ? min(5, max(0, reviewPlanningDelay)) : 0
         let stateStore = SyncCoordinator.shared.stateStore
         Task { @MainActor [weak self] in
             do {
                 let previous = try await stateStore.load(pairID: pair.id, leftRoot: pair.left, rightRoot: pair.right)
                 let result = try await Task.detached(priority: .userInitiated) {
+                    if reviewDelay > 0 { Thread.sleep(forTimeInterval: reviewDelay); try cancellation.check() }
                     if let initial, initial.complete, initial.options == pair.options {
                         let left = SyncSnapshot(
                             entries: initial.rows.compactMap(\.left), caseSensitive: initial.caseSensitive, rootIdentity: initial.leftRootIdentity,
@@ -233,10 +264,11 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                             excludedPaths: initial.rightExcludedPaths)
                         return SyncPreview(
                             pair: pair, left: left, right: right, comparison: initial,
-                            plan: SyncPlanner.plan(initial, mode: pair.mode, previous: previous), firstTwoWay: pair.mode == .twoWay && previous == nil
+                            plan: SyncPlanner.plan(initial, mode: pair.mode, previous: previous, overrides: decisions),
+                            firstTwoWay: pair.mode == .twoWay && previous == nil
                         )
                     }
-                    return try SyncPreparation.preview(pair, previous: previous, cancellation: cancellation)
+                    return try SyncPreparation.preview(pair, previous: previous, overrides: decisions, cancellation: cancellation)
                 }.value
                 let index = await Task.detached(priority: .userInitiated) {
                     var index: [String: SyncDifference] = [:]
@@ -276,9 +308,10 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         }
     }
     private func publish() {
-        planning = false; spinner.stopAnimation(nil)
+        planning = false; spinner.stopAnimation(nil); summary.textColor = Theme.windowText
         guard let preview else { return }
         let plan = preview.plan
+        includedStepIDs = Set(plan.steps.map(\.id))
         let attributed = NSMutableAttributedString()
         for (action, word, color) in [
             (SyncAction.copy, "to copy", Theme.compareOnly), (.replace, "to replace", Theme.compareChanged),
@@ -303,7 +336,9 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             attributed.append(
                 NSAttributedString(
                     string: displaySteps.isEmpty
-                        ? "Nothing to do. \(pair.leftTitle) and \(pair.rightTitle) already match."
+                        ? (pair.mode == .backup && preview.comparison.rows.contains { $0.status != .same }
+                            ? "Nothing to copy. \(pair.rightTitle) is up to date with \(pair.leftTitle)."
+                            : "Nothing to do. \(pair.leftTitle) and \(pair.rightTitle) already match.")
                         : "No items selected for this sync."))
         }
         let bytes = plan.steps.filter { $0.action == .copy || $0.action == .replace }.reduce(Int64(0)) { $0 + ($1.expectedSource?.size ?? 0) }
@@ -334,6 +369,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                 return steps.isEmpty ? nil : SyncPlanNode(action: action, steps: steps, title: verb + " " + destination)
             }
         }
+        outline.usesAlternatingRowBackgroundColors = !displaySteps.isEmpty
         outline.reloadData()
         for node in nodes where !collapsed.contains(node.title) { outline.expandItem(node) }
         layout()
@@ -351,10 +387,25 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
     @objc private func optionsChanged() {
         pair.method = [SyncCompareMethod.sizeAndDate, .sizeOnly, .content][max(0, method.indexOfSelectedItem)]
         pair.presets = Set(presetButtons.enumerated().compactMap { $0.element.state == .on ? SyncExclusionPreset.allCases[$0.offset] : nil })
-        pair.customExclusions = custom.stringValue.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter {
-            !$0.isEmpty
-        }
         prepare()
+    }
+    private func editCustomExclusions() {
+        guard let window else { return }
+        let alert = NSAlert(); alert.messageText = "Custom exclusions"
+        alert.informativeText = "Enter one glob pattern per line. Folder names also ignore everything inside them."
+        let scroll = NSScrollView(frame: CGRect(x: 0, y: 0, width: 420, height: 140))
+        let editor = NSTextView(frame: scroll.bounds)
+        editor.isRichText = false; editor.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        editor.string = pair.customExclusions.joined(separator: "\n")
+        editor.setAccessibilityLabel("Exclusion patterns, one per line")
+        scroll.documentView = editor; scroll.hasVerticalScroller = true
+        alert.accessoryView = scroll; alert.addButton(withTitle: "Apply"); alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            pair.customExclusions = editor.string.components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+            prepare()
+        }
     }
     private func editedPair() -> SavedSync {
         var next = pair; next.automatic = automatic.state == .on
@@ -408,8 +459,9 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         }
         let difference = differences[step.path] ?? step.sourcePath.flatMap { differences[$0] }
         let key = difference?.path ?? step.path
+        let included = includedStepIDs.contains(step.id)
         let row = SyncPlanRow(
-            step: step, pair: pair, checked: overrides[key] != .skip, choice: overrides[key],
+            step: step, pair: pair, checked: overrides[key] != .skip && included, choice: overrides[key],
             difference: difference, hasState: previous != nil)
         row.onInclude = { [weak self] include in
             self?.overrides[key] = include ? nil : .skip; self?.replan()
