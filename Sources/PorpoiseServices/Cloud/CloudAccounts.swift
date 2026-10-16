@@ -199,6 +199,8 @@ public protocol CloudBackend: AnyObject {
     ) -> () -> Void
     /// Looks for changes made elsewhere now, for one account (nil: all); they show by themselves when found.
     func checkForChanges(_ id: String?)
+    /// The app is in front (changes are looked for every little while) or not (they wait until it comes back).
+    func setActive(_ active: Bool)
 }
 
 /// Connected cloud accounts as the app shows them: labels, which rows each shows in the sidebar, avatars, and the

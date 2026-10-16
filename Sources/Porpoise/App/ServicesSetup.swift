@@ -36,9 +36,10 @@ extension AppDelegate {
         for (n, active) in [(NSApplication.didBecomeActiveNotification, true), (NSApplication.didResignActiveNotification, false)] {
             NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { _ in PlacesModel.shared.isActive = active }
         }
-        // Back in front: changes made meanwhile in the browser or on another device show without a reload.
-        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
-            CloudAccounts.shared.checkForChanges()
+        // Cloud accounts look for changes every little while in front only; back in front, changes made meanwhile in
+        // the browser or on another device show without a reload.
+        for (n, active) in [(NSApplication.didBecomeActiveNotification, true), (NSApplication.didResignActiveNotification, false)] {
+            NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { _ in CloudAccounts.shared.backend?.setActive(active) }
         }
         // Increase Contrast and the like change how the theme draws: redraw everything at once.
         nc.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { _ in

@@ -5,6 +5,7 @@ import PorpoiseCore
 extension CloudBackend {
     public func savedAt(for folder: URL) -> Date? { nil }
     public func checkForChanges(_ id: String?) {}
+    public func setActive(_ active: Bool) {}
 }
 
 /// How fresh a cloud folder is, in the user's words: what the offline message says.

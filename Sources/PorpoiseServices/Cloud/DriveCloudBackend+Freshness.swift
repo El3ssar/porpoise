@@ -47,4 +47,16 @@ extension DriveCloudBackend {
         }
         for client in clients { Task { try? await client.pollChanges() } }
     }
+
+    public func setActive(_ active: Bool) {
+        let clients = MainActor.assumeIsolated { store.accounts.compactMap { store.client(for: $0.id) } }
+        for client in clients {
+            if active {
+                client.startPolling()
+                Task { try? await client.pollChanges() }
+            } else {
+                client.stopPolling()
+            }
+        }
+    }
 }

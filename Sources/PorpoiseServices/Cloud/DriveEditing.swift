@@ -149,9 +149,12 @@ public final class DriveEditing {
     // MARK: Opening
 
     /// Whether `item` can be edited in another app with its saves going back to Drive: a file (not a Google Doc) the
-    /// account may change. Others open as a copy.
+    /// account may change, on a service where a save can't overwrite someone else's (the engine says so). Others open
+    /// as a copy that stays on this Mac.
     public func canEdit(_ item: FileItem) -> Bool {
-        guard let file = (RemoteFS.provider(for: item.url) as? DriveProvider)?.metadata(for: item.url) else { return false }
+        guard let provider = RemoteFS.provider(for: item.url) as? DriveProvider, let file = provider.metadata(for: item.url),
+            client(provider.accountID)?.canSaveEdits == true
+        else { return false }
         return !file.isFolder && !file.isGoogleDocument && file.operations.canWrite && file.operations.canDownload
     }
 
