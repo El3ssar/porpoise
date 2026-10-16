@@ -213,7 +213,14 @@ final class DebugBridge: NSObject {
             let pair = arg.components(separatedBy: "|")
             if pair.count == 2 { FileDiffWindow.present(left: URL(fileURLWithPath: pair[0]), right: URL(fileURLWithPath: pair[1])) }
         case "filediffmode": FileDiffWindow.current?.debug(arg)
-        case "filediffmenucapture": fileDiffMenuSnapshot(to: arg)
+        case "filediffmenucapture":
+            // A second distributed notification waits until menu tracking ends; a common-mode timer does not.
+            let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self] _ in
+                self?.fileDiffMenuSnapshot(to: arg)
+                FileDiffWindow.current?.endToolMenu()
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            FileDiffWindow.current?.debug("openwith")
         case "snapshot": snapshot(to: arg)
         case "lsnapshot": layerSnapshot(to: arg)
         case "wsnapshot": windowServerSnapshot(to: arg)

@@ -192,8 +192,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
                 let nameW = min((labels[0].stringValue as NSString).size(withAttributes: [.font: labels[0].font!]).width + 4, max(20, cap - 65))
                 labels[0].frame = NSRect(x: 38, y: 9, width: max(20, nameW), height: 18)
                 let url = capsule === leftCapsule ? leftURL : rightURL
-                let components = url.deletingLastPathComponent().pathComponents.filter { $0 != "/" }
-                let parts = url.isFileURL ? Array(components.suffix(3)) : [url.host ?? "Remote"] + components.suffix(2)
+                let parts = capsulePath(for: url)
                 let fullPath = parts.joined(separator: " › ")
                 let pathWidth = max(0, cap - 56 - nameW)
                 let fullWidth = (fullPath as NSString).size(withAttributes: [.font: labels[1].font!]).width
@@ -643,6 +642,19 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         while count < max(left.count, right.count) && left.suffix(count) == right.suffix(count) { count += 1 }
         return (left.suffix(count).first ?? leftURL.lastPathComponent, right.suffix(count).first ?? rightURL.lastPathComponent)
     }
+    private func capsulePath(for url: URL) -> [String] {
+        let own = url.deletingLastPathComponent().pathComponents.filter { $0 != "/" }
+        if !url.isFileURL { return [url.host ?? "Remote"] + own.suffix(2) }
+        let otherURL = url == leftURL ? rightURL : leftURL
+        guard otherURL.isFileURL else { return Array(own.suffix(3)) }
+        let other = otherURL.deletingLastPathComponent().pathComponents.filter { $0 != "/" }
+        var common = 0
+        while common < min(own.count, other.count) && own[common] == other[common] { common += 1 }
+        let relative = Array(own.dropFirst(common))
+        if relative.isEmpty { return Array(own.suffix(2)) }
+        return relative.count > 3 ? [relative.first!, "…", relative.last!] : relative
+    }
+    func endToolMenu() { openWith.menu?.cancelTracking() }
 
     private func addInfoRow(_ view: NSView, height: CGFloat) {
         view.heightAnchor.constraint(equalToConstant: height).isActive = true; infoStack.addArrangedSubview(view);
