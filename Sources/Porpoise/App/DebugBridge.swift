@@ -79,6 +79,13 @@ final class DebugBridge: NSObject {
             }
         case "comparemenu":
             if !arg.isEmpty { wc?.tab.compareView?.showMethodMenu { self.windowServerMenuSnapshot(to: arg) } }
+        case "comparesplitmenu":
+            guard Settings.isTesting, let toolbar = wc?.toolbar, let menu = toolbar.split.menuProvider?() else { break }
+            let timer = Timer(timeInterval: 0.5, repeats: false) { _ in
+                self.windowServerMenuSnapshot(to: arg); menu.cancelTracking()
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: toolbar.split.bounds.height), in: toolbar.split)
         case "comparetheme":
             guard Settings.isTesting else { break }
             Settings.shared.updateAppearance { $0.themeName = arg }
@@ -840,11 +847,10 @@ final class DebugBridge: NSObject {
         let owned = info.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(getpid()) }
         try? JSONSerialization.data(withJSONObject: owned, options: [.prettyPrinted, .sortedKeys]).write(
             to: URL(fileURLWithPath: path + ".windows.json"))
-        var ids: [UnsafeRawPointer?] = owned.filter {
-            let bounds = $0[kCGWindowBounds as String] as? [String: Any] ?? [:]
-            return ($0[kCGWindowLayer as String] as? Int) == 0 || (bounds["Height"] as? Double ?? 0) < 500
-        }
-        .compactMap { ($0[kCGWindowNumber as String] as? NSNumber).flatMap { UnsafeRawPointer(bitPattern: $0.uintValue) } }
+        // Direct window IDs work without broad screen-recording access; CGWindowList can be empty.
+        // Native popup windows are present here even though main-window screenshots exclude them.
+        var ids: [UnsafeRawPointer?] = NSApp.windows.filter(\.isVisible).sorted { $0.level.rawValue > $1.level.rawValue }
+            .compactMap { UnsafeRawPointer(bitPattern: $0.windowNumber) }
         typealias Fn = @convention(c) (CGRect, CFArray, UInt32) -> Unmanaged<CGImage>?
         guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImageFromArray") else { return }
         let fn = unsafeBitCast(sym, to: Fn.self)
