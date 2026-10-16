@@ -223,7 +223,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         rightButton.frame = CGRect(x: leftButton.frame.maxX + 8, y: bulkY, width: (width - 196) / 2, height: 24)
         [newerButton, leftButton, rightButton].forEach { $0.isHidden = true }
         let top = bulkY
-        let bottom = height - 100 - keepExpansion * 24 - (optionsOpen ? 94 : 0)
+        let bottom = height - 93 - keepExpansion * 24 - (optionsOpen ? 94 : 0)
         listFrame.frame = CGRect(x: 20, y: top, width: width - 40, height: max(40, bottom - top))
         let optionsBase = height - 86 - keepExpansion * 24 - (optionsOpen ? 94 : 0)
         scroll.frame = listFrame.bounds.insetBy(dx: 1, dy: 1)

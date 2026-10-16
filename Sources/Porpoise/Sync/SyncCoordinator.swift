@@ -522,7 +522,7 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
     func tooltip(_ pair: SavedSync) -> String {
         let suffix: String
         switch statuses[pair.id] ?? .idle {
-        case .missing: suffix = "\(pair.right.lastPathComponent) isn’t available. Porpoise will sync when it’s back."
+        case .missing: suffix = "\(pair.rightTitle) isn’t available. Porpoise will sync when it’s back."
         case .failed(let reason): suffix = reason
         case .conflicts(let count): suffix = "\(count) conflicts need review"
         case .review(let count): suffix = "Sync paused: \(count) items would be moved to the Trash."
