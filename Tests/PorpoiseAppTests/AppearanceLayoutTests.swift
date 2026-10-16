@@ -74,3 +74,37 @@ import Testing
         if count > 1 { #expect(buttons.first?.state == .off) }
     }
 }
+
+extension AppearanceLayoutTests {
+    @Test @MainActor func compareZoomResetKeepsBothNativeRowsAlignedAtTheDefault() throws {
+        let app = NSApplication.shared; app.setActivationPolicy(.prohibited)
+        let suite = "app.porpoise.compare-zoom-test.\(UUID().uuidString)"
+        let store = try #require(UserDefaults(suiteName: suite))
+        let previousStore = Settings.store, previousTesting = Settings.isTesting
+        Settings.store = store; Settings.isTesting = true
+        defer {
+            Settings.store = previousStore; Settings.isTesting = previousTesting
+            store.removePersistentDomain(forName: suite)
+        }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
+        let left = folder.appendingPathComponent("A"), right = folder.appendingPathComponent("B")
+        try FileManager.default.createDirectory(at: left, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: right, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let controller = MainWindowController(urls: [left], split: [right])
+        defer { controller.tab.installComparison(nil); controller.window?.close() }
+        for container in controller.tab.containers {
+            var props = container.model.props; props.mode = .details; props.setIconSize(48, for: .details); container.model.props = props
+        }
+        let comparison = CompareView(model: CompareModel(left: left, right: right))
+        controller.tab.installComparison(comparison)
+        #expect(controller.tab.containers.allSatisfy { $0.list.iconSize == 48 })
+        controller.zoomReset(nil)
+        var defaults = controller.view.model.props; defaults.resetIconSize(for: .details)
+        let expected = defaults.iconSize(for: .details)
+        #expect(expected < 48)
+        #expect(controller.tab.containers.allSatisfy { $0.list.iconSize == expected })
+        #expect(controller.tab.containers.allSatisfy { $0.list.comparisonRowHeight == comparison.document.rowHeight })
+        #expect(comparison.document.rowHeight >= expected + 2 * ItemListView.pad + 2)
+    }
+}
