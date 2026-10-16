@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Faster Google Drive browsing and previews.** Folder revisits and prefetched expansions show cached rows immediately,
+  then refresh in place. Shortcuts resolve concurrently, and Drive images and Google documents now have cached
+  thumbnails, cancellable information previews and local Quick Look copies.
+
 - **Google Drive, like a network folder (read-only for now).** Go › Connect to Server… (⌘K) now opens one Connect
   sheet: pick Google Drive, sign in in your browser, and the account appears in the sidebar with its picture and
   storage: My Drive, Shared with me and Shared drives, each a normal place. Shared with me lists who shared what and

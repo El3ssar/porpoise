@@ -42,7 +42,7 @@ extension MainWindowController {
 
     @objc func quickLook(_ sender: Any?) {
         guard let p = QLPreviewPanel.shared() else { return }
-        if p.isVisible { p.orderOut(nil) } else { p.makeKeyAndOrderFront(nil) }
+        if p.isVisible { p.orderOut(nil) } else { prepareDriveQuickLook(); p.makeKeyAndOrderFront(nil) }
     }
 
     @objc func revealInFinder(_ sender: Any?) {

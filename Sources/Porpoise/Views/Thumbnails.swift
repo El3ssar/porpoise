@@ -11,6 +11,7 @@ final class Thumbnails {
     private let cache = NSCache<NSString, NSImage>()
     private var failed = Set<String>()
     private var pending = Set<String>()
+    private var driveRetryAfter: [String: Date] = [:]
 
     /// Previews are kept up to this many bytes of pixels (they go up to 1024 px, so a count alone isn't a bound).
     private static let cacheBytes = 256 << 20
@@ -67,6 +68,7 @@ final class Thumbnails {
         let isVideo = VideoPreview.isVideoExtension(item.fileExtension) || item.utType?.conforms(to: .movie) == true
         if !isVideo || !item.url.isFileURL, s.previewMaxSizeMiB > 0 && item.size > Int64(s.previewMaxSizeMiB) * 1024 * 1024 { return false }
         if VideoPreview.isVideoExtension(item.fileExtension) { return s.previewVideos }
+        if item.url.scheme == "gdrive", item.contentType?.hasPrefix("com.google.apps.") == true { return s.previewDocuments }
         guard let t = item.utType else { return false }
         if t.conforms(to: .image) { return s.previewImages }
         if t.conforms(to: .movie) || t.conforms(to: .audiovisualContent) { return s.previewVideos }
@@ -193,11 +195,32 @@ final class Thumbnails {
     func thumbnail(for item: FileItem, size: CGFloat, exact: Bool = false) -> NSImage? {
         let k = key(item, size)
         if let img = cache.object(forKey: k as NSString) { return img }
+        if let retry = driveRetryAfter[k] {
+            if retry > Date() { return nil }
+            driveRetryAfter[k] = nil
+        }
         if failed.contains(k) { return nil }
         if pending.contains(k) { return exact ? nil : anyCached(item, near: size) }
         pending.insert(k)
         if item.url.isFileURL {
             generate(k, for: item, file: item.url, size: size)
+        } else if let drive = RemoteFS.provider(for: item.url) as? DriveProvider {
+            Task { [weak self] in
+                let local = try? await drive.preview(item.url, thumbnail: true)
+                guard let self else { return }
+                if let local, let image = NSImage(contentsOf: local) {
+                    self.pending.remove(k)
+                    self.store(image, k)
+                    NotificationCenter.default.post(name: Thumbnails.ready, object: item.url)
+                } else if let local {
+                    self.generate(k, for: item, file: local, size: size)
+                } else {
+                    self.pending.remove(k)
+                    if self.driveRetryAfter.count > Self.maxRemembered { self.driveRetryAfter.removeAll() }
+                    self.driveRetryAfter[k] = Date().addingTimeInterval(5)
+                    NotificationCenter.default.post(name: Thumbnails.ready, object: item.url)
+                }
+            }
         } else {
             // Settings › Previews › remote files: Quick Look needs a local file, so fetch a temporary copy first
             // (one at a time: a folder of photos must not open dozens of connections).
@@ -219,6 +242,15 @@ final class Thumbnails {
             }
         }
         return exact ? nil : anyCached(item, near: size)
+    }
+
+    /// PDF thumbnail generators may return transparent paper, which hides black text in dark mode.
+    static func paperPreview(_ image: NSImage) -> NSImage {
+        NSImage(size: image.size, flipped: false) { rect in
+            NSColor.white.setFill(); rect.fill()
+            image.draw(in: rect)
+            return true
+        }
     }
 
     /// Remote previews download one file at a time.
@@ -250,7 +282,8 @@ final class Thumbnails {
                 guard let self else { return }
                 if let rep {
                     self.pending.remove(k)
-                    self.store(rep.nsImage, k)
+                    let image = item.url.scheme == "gdrive" && file.pathExtension == "pdf" ? Self.paperPreview(rep.nsImage) : rep.nsImage
+                    self.store(image, k)
                     NotificationCenter.default.post(name: Thumbnails.ready, object: item.url)
                 } else if VideoPreview.isVideoExtension(item.fileExtension), item.url.isFileURL, VideoPreview.ffmpeg != nil {
                     // Quick Look can't read MKV/WebM/AVI…: grab a frame with ffmpeg. Still pending meanwhile,

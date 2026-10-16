@@ -2,11 +2,14 @@ import AVKit
 import AppKit
 import PorpoiseCore
 import PorpoiseServices
+import QuickLookThumbnailing
 
 /// Dolphin's Information panel (F10 here): large preview, name and metadata of the hovered item, the selection,
 /// or the current folder.
 final class InformationPanel: NSView {
     private let preview = NSImageView()
+    private let previewSpinner = NSProgressIndicator()
+    private var drivePreview: Task<Void, Never>?
     private let nameLabel = NSTextField(wrappingLabelWithString: "")
     private let grid = NSStackView()
     /// Inspector look: same tinted material as the sidebar.
@@ -51,6 +54,9 @@ final class InformationPanel: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        previewSpinner.style = .spinning
+        previewSpinner.controlSize = .small
+        previewSpinner.isDisplayedWhenStopped = false
         preview.imageScaling = .scaleProportionallyUpOrDown
         nameLabel.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
         nameLabel.textColor = Theme.windowText
@@ -68,6 +74,7 @@ final class InformationPanel: NSView {
         player.addGestureRecognizer(NSClickGestureRecognizer(target: controls, action: #selector(MediaControls.togglePlay)))
         controls.isHidden = true
         [preview, player, controls, nameLabel, grid].forEach(addSubview)
+        addSubview(previewSpinner)
         poster.imageScaling = .scaleProportionallyUpOrDown
         poster.wantsLayer = true
         poster.layer?.backgroundColor = NSColor.black.cgColor
@@ -78,6 +85,7 @@ final class InformationPanel: NSView {
     deinit {
         [thumbnailObserver, windowCloseObserver].compactMap { $0 }.forEach(NotificationCenter.default.removeObserver)
         playerWork?.cancel()
+        drivePreview?.cancel()
     }
 
     override func draw(_ dirty: NSRect) {}
@@ -89,6 +97,7 @@ final class InformationPanel: NSView {
         let side = min(w - 40, Self.maxPreviewSide)
         preview.frame = CGRect(x: (w - side) / 2, y: 16, width: side, height: Settings.shared.infoShowPreview ? side : 0)
         // Decided from the file type (never by loading the media on the main thread).
+        previewSpinner.frame = CGRect(x: preview.frame.midX - 8, y: preview.frame.midY - 8, width: 16, height: 16)
         player.frame = playerIsAudio ? CGRect(x: 12, y: preview.frame.maxY + 6, width: w - 24, height: 32) : preview.frame
         // Songs: the bar is the player. Videos: the bar sits over the bottom of the picture.
         controls.frame =
@@ -158,6 +167,8 @@ final class InformationPanel: NSView {
         DispatchQueue.main.async { [weak self] in
             guard let self, self.window == nil else { return }
             self.stopPlayer()
+            self.drivePreview?.cancel(); self.drivePreview = nil
+            self.previewSpinner.stopAnimation(nil)
             self.shownURLs = []
             self.container = nil
         }
@@ -229,6 +240,8 @@ final class InformationPanel: NSView {
         }
         guard let u = urls.first, let item = item(for: u) else {
             stopPlayer()
+            drivePreview?.cancel(); drivePreview = nil
+            previewSpinner.stopAnimation(nil)
             preview.image = nil
             nameLabel.stringValue = ""
             return
@@ -240,6 +253,8 @@ final class InformationPanel: NSView {
     }
 
     private func showSummary(of urls: [URL]) {
+        drivePreview?.cancel(); drivePreview = nil
+        previewSpinner.stopAnimation(nil)
         preview.image = Icons.shared.image("document-multiple", size: 128) ?? Icons.shared.image("folder", size: 128)
         nameLabel.stringValue = "\(urls.count) items selected"
         // The view already has the items (thousands may be selected; no need to read each from disk again).
@@ -257,9 +272,39 @@ final class InformationPanel: NSView {
     }
 
     private func showPreview(of item: FileItem) {
+        drivePreview?.cancel(); drivePreview = nil
+        previewSpinner.stopAnimation(nil)
         let big = Self.previewSize
         preview.image = Icons.shared.image(for: item, size: big)
         guard Settings.shared.infoShowPreview, Thumbnails.wantsPreview(item) else { return }
+        if let drive = RemoteFS.provider(for: item.url) as? DriveProvider {
+            previewSpinner.startAnimation(nil)
+            drivePreview = Task { @MainActor [weak self] in
+                do {
+                    let local = try await drive.preview(item.url, thumbnail: true)
+                    try Task.checkCancellation()
+                    let image: NSImage?
+                    if let loaded = NSImage(contentsOf: local) {
+                        image = loaded
+                    } else {
+                        let request = QLThumbnailGenerator.Request(
+                            fileAt: local, size: CGSize(width: big, height: big), scale: 2, representationTypes: .thumbnail)
+                        image = await withCheckedContinuation { continuation in
+                            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { rep, _ in
+                                continuation.resume(returning: rep?.nsImage)
+                            }
+                        }
+                    }
+                    guard !Task.isCancelled, let self, self.shownURLs == [item.url] else { return }
+                    if let image { self.preview.image = local.pathExtension == "pdf" ? Thumbnails.paperPreview(image) : image }
+                    self.previewSpinner.stopAnimation(nil)
+                } catch {
+                    guard !Task.isCancelled, let self, self.shownURLs == [item.url] else { return }
+                    self.previewSpinner.stopAnimation(nil)
+                }
+            }
+            return
+        }
         if let t = Thumbnails.shared.thumbnail(for: item, size: big) { preview.image = t } else { observeThumbnail(item) }
     }
 

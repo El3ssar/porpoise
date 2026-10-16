@@ -81,6 +81,7 @@ public final class DriveAccountStore: ObservableObject {
 
     private func install(_ account: DriveAccount, config: DriveOAuthConfiguration, authenticated: DriveTokenManager? = nil) {
         let manager = authenticated ?? DriveTokenManager(configuration: config, accountID: account.id, credentials: credentials, http: http)
+        (RemoteFS.provider(for: DriveLocation(accountID: account.id).url) as? DriveProvider)?.invalidate()
         let client = DriveClient(accountID: account.id, tokens: manager, http: http, baseURL: baseURL) { [weak self] error in
             Task { @MainActor [weak self] in
                 guard let self, self.clients[account.id] != nil else { return }
@@ -150,6 +151,7 @@ public final class DriveAccountStore: ObservableObject {
             }
             let manager = DriveTokenManager(configuration: config, accountID: account.id, credentials: credentials, http: http)
             try await manager.accept(token)
+            await clients[account.id]?.clearCaches()
             install(account, config: config, authenticated: manager)
             saved.removeAll { $0.account.id == account.id }
             saved.append(Saved(account: account, clientID: config.clientID))
@@ -168,6 +170,8 @@ public final class DriveAccountStore: ObservableObject {
             if case .keychain = error { lastError = error.localizedDescription; throw error }
             failure = error
         } catch { failure = error }
+        (RemoteFS.provider(for: DriveLocation(accountID: account.id).url) as? DriveProvider)?.invalidate()
+        await clients[account.id]?.clearCaches()
         managers[account.id] = nil; clients[account.id] = nil; states[account.id] = nil
         RemoteFS.unregisterDrive(accountID: account.id)
         saved.removeAll { $0.account.id == account.id }

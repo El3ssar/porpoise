@@ -15,6 +15,7 @@ public struct DrivePage: Sendable {
 /// Native Drive v3 read-only API. Each page can be consumed independently; cancellation propagates to HTTP.
 public final class DriveClient: @unchecked Sendable {
     public let accountID: UUID
+    public let mediaCache: DriveMediaCache
     private let tokens: DriveTokenManager
     private let http: DriveHTTP
     private let baseURL: URL
@@ -22,12 +23,13 @@ public final class DriveClient: @unchecked Sendable {
     private let lock = NSLock()
     private var cache: [String: DriveFile] = [:]
     static let fields =
-        "id,name,mimeType,driveId,resourceKey,size,modifiedTime,webViewLink,owners(displayName,emailAddress,photoLink),shared,capabilities(canDownload,canListChildren),shortcutDetails,exportLinks,trashed,permissions(id,type,role,displayName,emailAddress,photoLink),sharingUser(displayName,emailAddress,photoLink),lastModifyingUser(displayName,emailAddress,photoLink),sharedWithMeTime"
+        "id,name,mimeType,driveId,resourceKey,size,modifiedTime,thumbnailLink,hasThumbnail,webViewLink,owners(displayName,emailAddress,photoLink),shared,capabilities(canDownload,canListChildren),shortcutDetails,exportLinks,trashed,permissions(id,type,role,displayName,emailAddress,photoLink),sharingUser(displayName,emailAddress,photoLink),lastModifyingUser(displayName,emailAddress,photoLink),sharedWithMeTime"
 
     public init(
         accountID: UUID, tokens: DriveTokenManager, http: DriveHTTP = DriveHTTP(),
         baseURL: URL = URL(string: "https://www.googleapis.com/drive/v3/")!, report: @escaping @Sendable (Error?) -> Void = { _ in }
     ) {
+        self.mediaCache = DriveMediaCache(accountID: accountID)
         self.accountID = accountID; self.tokens = tokens; self.http = http; self.baseURL = baseURL; self.report = report
     }
 
@@ -130,9 +132,10 @@ public final class DriveClient: @unchecked Sendable {
 
     public func listPage(_ location: DriveLocation, pageToken: String? = nil) async throws -> DrivePage {
         guard location.accountID == accountID else { throw DriveError.invalidLocation }
-        var query = [URLQueryItem(name: "pageSize", value: "200")]
+        var query = [URLQueryItem(name: "pageSize", value: "1000")]
         if let pageToken { query.append(URLQueryItem(name: "pageToken", value: pageToken)) }
         if case .sharedDrives = location.collection {
+            query[0] = URLQueryItem(name: "pageSize", value: "100")
             query.append(URLQueryItem(name: "fields", value: "nextPageToken,drives(id,name)"))
             struct Drives: Decodable {
                 struct Drive: Decodable { let id: String; let name: String }
@@ -154,7 +157,10 @@ public final class DriveClient: @unchecked Sendable {
         switch location.collection {
         case .sharedWithMe: filter = "sharedWithMe = true and trashed = false"
         case .folder(let id, let drive):
-            let target = try await resolve(file(id, resourceKey: resourceKey))
+            let known = lock.withLock { cache[id] }
+            let source: DriveFile
+            if let known { source = known } else { source = try await file(id, resourceKey: resourceKey) }
+            let target = try await resolve(source)
             guard target.isFolder, target.operations.canBrowse else { throw DriveError.permissionDenied }
             parentID = target.id; driveID = target.driveId ?? drive; resourceKey = target.resourceKey ?? resourceKey
             filter = "'\(parentID)' in parents and trashed = false"
@@ -187,6 +193,39 @@ public final class DriveClient: @unchecked Sendable {
             if let token, !seen.insert(token).inserted { throw DriveError.invalidResponse }
         } while token != nil
         return files
+    }
+
+    public func clearCaches() async {
+        lock.withLock { cache.removeAll() }
+        await mediaCache.clear()
+    }
+
+    public func preview(_ file: DriveFile) async throws -> URL {
+        let target = try await resolve(file)
+        let format = target.isGoogleDocument ? DriveExportPreset.pdf.format(for: target.mimeType) : nil
+        let name = format.map { "\(file.name).\($0.fileExtension)" } ?? file.name
+        return try await mediaCache.file(key: "preview|\(target.id)|\(target.modifiedTime ?? "")", name: name) {
+            try await self.download(target, preset: .pdf).data
+        }
+    }
+
+    public func thumbnail(_ file: DriveFile) async throws -> URL {
+        let target = try await resolve(file)
+        guard target.hasThumbnail != false, let url = target.thumbnailLink, let host = url.host?.lowercased() else {
+            // Native Docs/Sheets/Slides can always use a PDF export when no thumbnail is available.
+            return try await preview(file)
+        }
+        let fixture =
+            baseURL.scheme == "http" && baseURL.host == "127.0.0.1" && url.scheme == baseURL.scheme
+            && url.host == baseURL.host && url.port == baseURL.port
+        let google =
+            url.scheme == "https" && (host.hasSuffix(".googleusercontent.com") || host.hasSuffix(".googleapis.com") || host == "lh3.google.com")
+        guard url.user == nil, url.password == nil, fixture || google else { throw DriveError.invalidResponse }
+        return try await mediaCache.file(key: "thumbnail|\(target.id)|\(target.modifiedTime ?? "")|\(url.absoluteString)", name: "thumbnail.jpg") {
+            var request = URLRequest(url: url)
+            request.setValue("Bearer \(try await self.tokens.accessToken())", forHTTPHeaderField: "Authorization")
+            return try await self.http.data(request)
+        }
     }
 
     public func download(_ file: DriveFile, preset: DriveExportPreset = .office) async throws -> (data: Data, name: String) {

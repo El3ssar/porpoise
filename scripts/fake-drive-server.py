@@ -7,6 +7,10 @@ Connect opens this fake consent endpoint; it redirects immediately back to the r
 Response fixtures are sanitized representative Drive v3 wire-format examples, never live account captures.
 """
 import argparse
+import base64
+import struct
+import time
+import zlib
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -29,6 +33,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self):
+        if self.path == "/__fixture":
+            self.server.fixtures = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+            return self.reply({})
         body = parse_qs(self.rfile.read(int(self.headers.get("Content-Length", "0"))).decode())
         if self.path == "/token":
             if body.get("refresh_token") == ["revoked"]:
@@ -42,6 +49,13 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply({}, 404)
 
     def do_GET(self):
+        if self.path == "/__stats":
+            with self.server.profile_lock:
+                return self.reply({"requests": self.server.requests})
+        if self.path.startswith("/drive/") or self.path.startswith("/thumbnail/"):
+            with self.server.profile_lock:
+                self.server.requests.append(self.path)
+            time.sleep(self.server.latency_ms / 1000)
         fixtures = self.server.fixtures
         profiles = fixtures.get("profiles", [fixtures.get("profile", {})])
         parsed = urlsplit(self.path)
@@ -63,6 +77,14 @@ class Handler(BaseHTTPRequestHandler):
         allowed = ["Bearer fixture-access" + (f"-{i}" if i else "") for i in range(len(profiles))]
         if authorization not in allowed:
             return self.reply({"error": {"errors": [{"reason": "authError"}]}}, 401)
+        if parsed.path.startswith("/thumbnail/"):
+            # A real PNG fixture, large enough to inspect in the grid and information pane.
+            width, height = 640, 400
+            rows = b"".join(b"\x00" + bytes(c for x in range(width) for c in ((42, 112, 176) if y < 160 else ((243, 190, 73) if x < 240 else (84, 164, 139)))) for y in range(height))
+            def chunk(kind, data):
+                return struct.pack("!I", len(data)) + kind + data + struct.pack("!I", zlib.crc32(kind + data))
+            png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack("!2I5B", width, height, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+            return self.reply(png, content_type="image/png")
         if parsed.path == "/userinfo":
             return self.reply(profiles[allowed.index(authorization)])
         if parsed.path == "/drive/v3/about":
@@ -98,6 +120,9 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path.endswith("/export") or query.get("alt") == ["media"]:
                 if item_id == "denied":
                     return self.reply({}, 403)
+                media = fixtures.get("media", {}).get(item_id)
+                if media:
+                    return self.reply(base64.b64decode(media), content_type="application/octet-stream")
                 return self.reply(b"fixture bytes", content_type="application/octet-stream")
             return self.reply(item)
         return self.reply({}, 404)
@@ -105,12 +130,15 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--latency-ms", type=int, default=0)
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--port-file", type=Path)
     parser.add_argument("--fixture", type=Path, default=FIXTURE)
     args = parser.parse_args()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    server.fixtures = json.loads(args.fixture.read_text())
+    server.fixtures = json.loads(args.fixture.read_text().replace("{base}", f"http://127.0.0.1:{server.server_port}"))
+    server.latency_ms = args.latency_ms
+    server.requests = []
     server.profile_counter = 0
     server.profile_lock = Lock()
     if args.port_file:
