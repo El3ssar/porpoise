@@ -52,6 +52,8 @@ struct FileDiffPresentation {
 /// One clip offset drives both panes and the seam; only visible lines are shaped and drawn.
 final class FileDiffTextView: NSView {
     var presentation: FileDiffPresentation?
+    var canCopyChanges = true
+    var forceContrast = false
     var inline = false
     var focused = 0
     var copyChange: ((Int, Bool) -> Void)?
@@ -71,9 +73,9 @@ final class FileDiffTextView: NSView {
         }
     }
     func updateCopyButtons() {
-        guard let p = presentation else { return }
+        guard let p = presentation else { copyLeft.isHidden = true; copyRight.isHidden = true; return }
         let c = hover ?? focused
-        guard !inline, p.starts.indices.contains(c) else { copyLeft.isHidden = true; copyRight.isHidden = true; return }
+        guard canCopyChanges, !inline, p.starts.indices.contains(c) else { copyLeft.isHidden = true; copyRight.isHidden = true; return }
         let change = p.difference.changes[c], height = CGFloat(max(change.left.count, change.right.count)) * 18
         let y = 10 + CGFloat(p.starts[c]) * 18 + height / 2 - 9
         buttonChange = c
@@ -90,7 +92,7 @@ final class FileDiffTextView: NSView {
             b.bezelStyle = .circular; b.controlSize = .small; b.font = .systemFont(ofSize: 11, weight: .semibold)
             b.wantsLayer = true; b.layer?.shadowColor = NSColor.black.cgColor; b.layer?.shadowOpacity = 0.12; b.layer?.shadowRadius = 2;
             b.layer?.shadowOffset = NSSize(width: 0, height: -1)
-            addSubview(b)
+            b.isHidden = true; addSubview(b)
         }
         copyLeft.setAccessibilityLabel("Copy Change to Left"); copyRight.setAccessibilityLabel("Copy Change to Right")
         copyLeft.handler = { [weak self] _ in
@@ -118,10 +120,10 @@ final class FileDiffTextView: NSView {
         guard let p = presentation else { return }
         let point = convert(event.locationInWindow, from: nil)
         if point.x > bounds.width - 8 {
-            let target = Int((point.y - visibleRect.minY) / max(1, visibleRect.height) * CGFloat(p.rows.count))
+            let target = Int(((point.y - visibleRect.minY) / max(1, visibleRect.height) * bounds.height - 10) / lineHeight)
             if let best = p.starts.indices.min(by: { abs(p.starts[$0] - target) < abs(p.starts[$1] - target) }) { jump?(best) }; return
         }
-        if !inline, abs(point.x - (bounds.width - 8) / 2) < 20 {
+        if canCopyChanges, !inline, abs(point.x - (bounds.width - 8) / 2) < 20 {
             let i = row(at: point)
             if p.rows.indices.contains(i), let c = p.rows[i].change { copyChange?(c, point.x > (bounds.width - 8) / 2) }
         } else {
@@ -141,10 +143,12 @@ final class FileDiffTextView: NSView {
         for index in start..<end {
             let row = p.rows[index], y = 10 + CGFloat(index) * lineHeight
             if row.change != nil {
-                color(row).withAlphaComponent(Theme.increasedContrast ? 0.18 : 0.10).setFill()
+                color(row).withAlphaComponent((Theme.increasedContrast || forceContrast) ? 0.18 : 0.10).setFill()
                 if inline || row.left != nil { NSRect(x: 0, y: y, width: inline ? width : half - 20, height: 18).fill() }
                 if !inline && row.right != nil { NSRect(x: half + 20, y: y, width: half - 20, height: 18).fill() }
-                if Theme.increasedContrast { color(row).setFill(); NSRect(x: inline ? 0 : half - 22, y: y, width: 2, height: 18).fill() }
+                if Theme.increasedContrast || forceContrast {
+                    color(row).setFill(); NSRect(x: inline ? 0 : half - 22, y: y, width: 2, height: 18).fill()
+                }
             }
             if inline {
                 let text = row.left.map { p.difference.left[$0] } ?? row.right.map { p.difference.right[$0] } ?? ""
@@ -189,14 +193,15 @@ final class FileDiffTextView: NSView {
                     to: NSPoint(x: half - 20, y: y + leftH), controlPoint1: NSPoint(x: half, y: y + rightH),
                     controlPoint2: NSPoint(x: half, y: y + leftH));
                 path.close()
-                tint.withAlphaComponent(0.14).setFill(); path.fill(); tint.withAlphaComponent(0.4).setStroke(); path.stroke()
+                Theme.viewBackground.setFill(); path.fill(); tint.withAlphaComponent(0.14).setFill(); path.fill();
+                tint.withAlphaComponent(0.4).setStroke(); path.stroke()
 
             }
         }
         Theme.windowBackground.setFill(); NSRect(x: width, y: visibleRect.minY, width: 8, height: visibleRect.height).fill()
         for i in stride(from: 0, to: p.starts.count, by: max(1, p.starts.count / max(1, Int(visibleRect.height)))) {
             let start = p.starts[i]
-            let y = visibleRect.minY + CGFloat(start) / CGFloat(max(1, p.rows.count)) * visibleRect.height
+            let y = visibleRect.minY + (10 + CGFloat(start) * lineHeight) / max(1, bounds.height) * visibleRect.height
             color(p.rows[start]).setFill(); NSRect(x: width + 1, y: y, width: 6, height: i == focused ? 4 : 2).fill()
         }
     }

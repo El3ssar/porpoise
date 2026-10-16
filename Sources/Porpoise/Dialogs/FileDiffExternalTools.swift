@@ -26,7 +26,36 @@ enum FileDiffExternalTools {
     static func open(_ app: URL, left: URL, right: URL, error: @escaping (Error) -> Void) {
         let config = NSWorkspace.OpenConfiguration()
         let name = app.lastPathComponent.lowercased()
-        if name.contains("visual studio code") {
+        if name.contains("bbedit") {
+            // Bare Bones documents bbdiff as the Find Differences entry point:
+            // https://www.barebones.com/products/bbedit/benefitsintegrate.html
+            let helpers = [
+                app.appendingPathComponent("Contents/Helpers/bbdiff"), app.appendingPathComponent("Contents/Resources/bbdiff"),
+                URL(fileURLWithPath: "/usr/local/bin/bbdiff"),
+            ]
+            guard let helper = helpers.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) else {
+                error(
+                    NSError(
+                        domain: "PorpoiseFileDiff", code: 1,
+                        userInfo: [
+                            NSLocalizedDescriptionKey: "BBEdit’s comparison helper isn’t available. Install its command-line tools, then try again."
+                        ]));
+                return
+            }
+            let process = Process(); process.executableURL = helper; process.arguments = [left.path, right.path]
+            process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
+            process.terminationHandler = { process in
+                if process.terminationStatus != 0 {
+                    DispatchQueue.main.async {
+                        error(
+                            NSError(
+                                domain: "PorpoiseFileDiff", code: Int(process.terminationStatus),
+                                userInfo: [NSLocalizedDescriptionKey: "BBEdit couldn’t open this comparison."]))
+                    }
+                }
+            }
+            do { try process.run() } catch let failure { error(failure) }
+        } else if name.contains("visual studio code") {
             config.arguments = ["--diff", left.path, right.path]
             NSWorkspace.shared.openApplication(at: app, configuration: config) { _, e in if let e { DispatchQueue.main.async { error(e) } } }
         } else if name.contains("filemerge") || name.contains("beyond compare") {

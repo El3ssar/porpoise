@@ -4,21 +4,23 @@ import PorpoiseServices
 import UniformTypeIdentifiers
 
 /// Document-like comparison windows, independent of the browser's selection and lifecycle.
-final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate {
+final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate, NSMenuItemValidation {
     private static var open: [FileDiffWindow] = []
     private static let queue = DispatchQueue(label: "app.porpoise.file-diff", qos: .userInitiated, attributes: .concurrent)
     static var current: FileDiffWindow? { (NSApp.keyWindow?.windowController as? FileDiffWindow) ?? open.last }
     static func present(left: URL, right: URL) {
-        if let path = Settings.store.string(forKey: "fileDiff.defaultApp"), FileManager.default.fileExists(atPath: path) {
+        if left.isFileURL && right.isFileURL, let path = Settings.store.string(forKey: "fileDiff.defaultApp"),
+            FileManager.default.fileExists(atPath: path)
+        {
             FileDiffExternalTools.open(URL(fileURLWithPath: path), left: left, right: right) { error in NSAlert(error: error).runModal() }; return
         }
         let controller = FileDiffWindow(left: left, right: right); open.append(controller); controller.showWindow(nil);
-        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true); controller.window?.makeKeyAndOrderFront(nil)
     }
 
     let leftURL: URL, rightURL: URL
     private let root = FileDiffRoot()
-    private let header = NSView(), footer = NSView(), body = NSView()
+    private let header = NSView(), footer = NSView(), body = FileDiffBody()
     private let leftCapsule = GlassGroup(), rightCapsule = GlassGroup(), navigation = GlassGroup()
     private let previous = ClosureButton(title: "‹") { _ in }, next = ClosureButton(title: "›") { _ in }
     private let openWith = NSPopUpButton(frame: .zero, pullsDown: true)
@@ -29,16 +31,23 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         labels: ["Side by Side", "Onion Skin", "Difference"], trackingMode: .selectOne, target: nil, action: nil)
     private let ignore = ClosureButton(checkboxWithTitle: "Ignore whitespace") { _ in }
     private let blend = NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
+    private let dimensions = NSTextField(labelWithString: ""), pixelsChanged = NSTextField(labelWithString: "")
+    private let blendLeft = NSTextField(labelWithString: ""), blendRight = NSTextField(labelWithString: "")
     private let facts = NSTextField(labelWithString: "Reading files…")
     private let loading = NSProgressIndicator()
+    private let progressText = NSTextField(labelWithString: "Reading files…")
+    private let cancelComparison = ClosureButton(title: "Cancel") { _ in }
     private let textScroll = NSScrollView(), textCanvas = FileDiffTextView(frame: .zero), imageCanvas = FileDiffImageView()
     private let infoScroll = NSScrollView(), infoStack = NSStackView()
     private let infoDocument = NSView()
     private let message = NSTextField(labelWithString: "")
+    private let identicalIcon = FileDiffSuccessIcon(), identicalDetail = NSTextField(labelWithString: "")
     private let undo = UndoManager()
     private var token = DiskCancellation()
     private var generation = 0
     private var leftFile: ComparedFile?, rightFile: ComparedFile?
+    private var copies: FileComparisonCopies?
+    private var readOnly: Bool { !leftURL.isFileURL || !rightURL.isFileURL }
     private var leftText: String?, rightText: String?
     private var savedLeft: String?, savedRight: String?
     private var images: FileDiffImages?
@@ -49,6 +58,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
     private var hashes: [String?] = [nil, nil]
     private var hashBusy = Set<Int>()
     private var observers: [NSObjectProtocol] = []
+    private var forceOpaque = false
     private var busy = true
     private var lineEnding = "LF"
     private var dirty: Bool { leftText != savedLeft || rightText != savedRight }
@@ -107,7 +117,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         }
         viewSwitch.setAccessibilityLabel("Comparison View"); textMode.setAccessibilityLabel("Text Layout");
         imageMode.setAccessibilityLabel("Image Comparison Mode")
-        for v in [viewSwitch, textMode, imageMode, blend, facts, ignore] { footer.addSubview(v) }
+        for v in [viewSwitch, textMode, imageMode, facts, ignore] { footer.addSubview(v) }
         facts.font = .systemFont(ofSize: 11); facts.textColor = Theme.windowTextInactive; facts.lineBreakMode = .byTruncatingTail
         blend.target = self; blend.action = #selector(blendChanged); blend.setAccessibilityLabel("Onion Skin Opacity")
         ignore.font = .systemFont(ofSize: 11); ignore.handler = { [weak self] _ in self?.rediff() }
@@ -124,21 +134,41 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         infoStack.orientation = .vertical; infoStack.alignment = .leading; infoStack.spacing = 0
         infoDocument.addSubview(infoStack); infoScroll.documentView = infoDocument; infoScroll.hasVerticalScroller = true;
         infoScroll.autohidesScrollers = true; infoScroll.drawsBackground = false
-        for v in [textScroll, imageCanvas, infoScroll, message, loading] { body.addSubview(v) }
-        message.font = .systemFont(ofSize: 17, weight: .semibold); message.textColor = Theme.viewText; message.alignment = .center;
+        for v in [
+            textScroll, imageCanvas, dimensions, pixelsChanged, blend, blendLeft, blendRight, infoScroll, identicalIcon, message, identicalDetail,
+            loading, progressText, cancelComparison,
+        ] {
+            body.addSubview(v)
+        }
+        for label in [dimensions, pixelsChanged, blendLeft, blendRight] {
+            label.font = .systemFont(ofSize: 12); label.textColor = Theme.viewTextInactive
+        }
+        pixelsChanged.font = .systemFont(ofSize: 12, weight: .semibold); pixelsChanged.textColor = Theme.compareChanged;
+        pixelsChanged.alignment = .right
+        blendLeft.alignment = .right; blendRight.alignment = .left
+        imageCanvas.onOpacityChange = { [weak self] value in self?.blend.doubleValue = Double(value) }
+        identicalDetail.font = .systemFont(ofSize: 12); identicalDetail.textColor = Theme.viewTextInactive; identicalDetail.alignment = .center
+        message.font = .systemFont(ofSize: 15, weight: .semibold); message.textColor = Theme.viewText; message.alignment = .center;
         message.maximumNumberOfLines = 2
-        loading.style = .spinning; loading.controlSize = .small; loading.startAnimation(nil)
+        loading.style = .bar; loading.controlSize = .small; loading.isIndeterminate = true; loading.startAnimation(nil)
+        progressText.font = .systemFont(ofSize: 12); progressText.textColor = Theme.viewTextInactive; progressText.alignment = .center
+        cancelComparison.bezelStyle = .rounded; cancelComparison.keyEquivalent = "\u{1b}"; cancelComparison.keyEquivalentModifierMask = []
+        cancelComparison.handler = { [weak self] _ in self?.window?.performClose(nil) }
         previous.nextKeyView = next; next.nextKeyView = openWith
         openWith.nextKeyView = viewSwitch; viewSwitch.nextKeyView = textMode; textMode.nextKeyView = ignore
         updateVisibility()
     }
     private func addFile(_ url: URL, to capsule: GlassGroup) {
-        let icon = NSImageView(); icon.image = Icons.shared.image(for: FileItem(url: url, name: url.lastPathComponent, isDirectory: false), size: 18);
+        let icon = NSImageView();
+        icon.image = Icons.shared.image(
+            for: FileItem(
+                url: url, name: url.lastPathComponent, isDirectory: false, contentType: UTType(filenameExtension: url.pathExtension)?.identifier),
+            size: 18);
         icon.frame = NSRect(x: 12, y: 8, width: 18, height: 18)
         let name = NSTextField(labelWithString: url.lastPathComponent); name.font = .systemFont(ofSize: 13, weight: .semibold);
         name.textColor = Theme.windowText; name.lineBreakMode = .byTruncatingMiddle
         let path = NSTextField(labelWithString: url.deletingLastPathComponent().pathComponents.suffix(3).joined(separator: " › "));
-        path.font = .systemFont(ofSize: 12); path.textColor = Theme.windowTextInactive; path.lineBreakMode = .byTruncatingHead
+        path.font = .systemFont(ofSize: 12); path.textColor = Theme.windowTextInactive; path.lineBreakMode = .byTruncatingMiddle
         capsule.content.addSubview(icon); capsule.content.addSubview(name); capsule.content.addSubview(path); capsule.toolTip = url.path
         capsule.setAccessibilityElement(true); capsule.setAccessibilityRole(.group); capsule.setAccessibilityLabel(url.path)
     }
@@ -161,6 +191,20 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
                 let cap = capsule.frame.width
                 let nameW = min((labels[0].stringValue as NSString).size(withAttributes: [.font: labels[0].font!]).width + 4, max(20, cap - 65))
                 labels[0].frame = NSRect(x: 38, y: 9, width: max(20, nameW), height: 18)
+                let url = capsule === leftCapsule ? leftURL : rightURL
+                let components = url.deletingLastPathComponent().pathComponents.filter { $0 != "/" }
+                let parts = url.isFileURL ? Array(components.suffix(3)) : [url.host ?? "Remote"] + components.suffix(2)
+                let fullPath = parts.joined(separator: " › ")
+                let pathWidth = max(0, cap - 56 - nameW)
+                let fullWidth = (fullPath as NSString).size(withAttributes: [.font: labels[1].font!]).width
+                var shown = fullPath
+                if fullWidth > pathWidth {
+                    shown = parts.count > 2 ? "\(parts.first!) › … › \(parts.last!)" : fullPath
+                    if (shown as NSString).size(withAttributes: [.font: labels[1].font!]).width > pathWidth {
+                        shown = "\(parts.first ?? "") › …"
+                    }
+                }
+                labels[1].stringValue = shown; labels[1].lineBreakMode = .byClipping
                 labels[1].frame = NSRect(x: 44 + nameW, y: 10, width: max(0, cap - 56 - nameW), height: 16)
             }
         }
@@ -170,16 +214,36 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         ignore.frame = NSRect(x: w - 143, y: 7, width: 135, height: 20)
         let x: CGFloat = mode == 2 ? 170 : 174 + controlWidth
         facts.frame = NSRect(x: x, y: 9, width: max(0, w - x - (mode == 0 ? 151 : 14)), height: 16)
-        blend.frame = NSRect(x: w - 130, y: 5, width: 118, height: 24)
-        if mode == 1 && imageMode.selectedSegment == 1 { facts.frame.size.width = max(0, w - x - 145) }
-        for v in [textScroll, imageCanvas, infoScroll] { v.frame = body.bounds }
+        let imageBottom: CGFloat = imageMode.selectedSegment == 1 ? 82 : 24
+        imageCanvas.frame = NSRect(x: 24, y: 54, width: w - 48, height: max(40, body.bounds.height - 54 - imageBottom))
+        dimensions.frame = NSRect(x: 24, y: 22, width: w * 0.6 - 24, height: 22)
+        pixelsChanged.frame = NSRect(x: w * 0.6, y: 23, width: w * 0.4 - 24, height: 20)
+        if let images {
+            let maxW = CGFloat(max(images.left.width, images.right.width)), maxH = CGFloat(max(images.left.height, images.right.height))
+            let availableWidth = imageMode.selectedSegment == 0 ? imageCanvas.bounds.width / 2 - 12 : imageCanvas.bounds.width
+            let scale = min(availableWidth / maxW, imageCanvas.bounds.height / maxH) * imageCanvas.zoom
+            let inset = max(0, (availableWidth - maxW * scale) / 2)
+            let left = imageCanvas.frame.minX + inset, right = imageCanvas.frame.maxX - inset
+            dimensions.frame = NSRect(x: left, y: 22, width: (right - left) * 0.62, height: 22)
+            pixelsChanged.frame = NSRect(x: left + (right - left) * 0.62, y: 23, width: (right - left) * 0.38, height: 20)
+        }
+        let blendWidth: CGFloat = min(320, w - 300)
+        blend.frame = NSRect(x: (w - blendWidth) / 2, y: body.bounds.height - 52, width: blendWidth, height: 24)
+        blendLeft.frame = NSRect(x: blend.frame.minX - 140, y: blend.frame.minY + 4, width: 128, height: 18)
+        blendRight.frame = NSRect(x: blend.frame.maxX + 12, y: blend.frame.minY + 4, width: 128, height: 18)
+        for v in [textScroll, infoScroll] { v.frame = body.bounds }
         resizeText()
         let infoWidth = min(780, max(550, w - 80));
         infoDocument.frame = NSRect(x: 0, y: 0, width: w, height: max(body.bounds.height, infoStack.fittingSize.height + 56));
         infoStack.frame = NSRect(x: (w - infoWidth) / 2, y: 0, width: infoWidth, height: max(body.bounds.height, infoStack.fittingSize.height + 56))
         for row in infoStack.arrangedSubviews { row.setFrameSize(NSSize(width: infoWidth, height: row.frame.height)) }
-        message.frame = NSRect(x: 30, y: body.bounds.height / 2 - 12, width: w - 60, height: 52)
-        loading.frame = NSRect(x: w / 2 - 8, y: body.bounds.height / 2 + 28, width: 16, height: 16)
+        let identicalTop = (body.bounds.height - 110) / 2
+        identicalIcon.frame = NSRect(x: w / 2 - 24, y: identicalTop, width: 48, height: 48)
+        message.frame = NSRect(x: 30, y: identicalTop + 64, width: w - 60, height: 22)
+        identicalDetail.frame = NSRect(x: 30, y: identicalTop + 92, width: w - 60, height: 18)
+        loading.frame = NSRect(x: w / 2 - 140, y: body.bounds.height / 2 - 30, width: 280, height: 6)
+        progressText.frame = NSRect(x: 30, y: body.bounds.height / 2 - 8, width: w - 60, height: 20)
+        cancelComparison.frame = NSRect(x: w / 2 - 42, y: body.bounds.height / 2 + 24, width: 84, height: 24)
     }
     private func resizeText() {
         textCanvas.frame = NSRect(
@@ -188,6 +252,11 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         textCanvas.needsDisplay = true; textCanvas.updateCopyButtons()
     }
     private func refreshLook() {
+        for capsule in [leftCapsule, rightCapsule, navigation, externalCapsule] {
+            capsule.content.wantsLayer = true; capsule.content.layer?.cornerRadius = 17
+            capsule.content.layer?.backgroundColor =
+                (forceOpaque || NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency) ? Theme.windowBackground.cgColor : nil
+        }
         window?.backgroundColor = Theme.windowBackground; root.needsDisplay = true; textCanvas.needsDisplay = true; imageCanvas.needsDisplay = true;
         if ready { buildInfo() }
     }
@@ -196,16 +265,37 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         let isImage = [left, right].allSatisfy { UTType(filenameExtension: $0.pathExtension)?.conforms(to: .image) == true }
         Self.queue.async { [weak self] in
             do {
+                let copies = try FileComparisonCopies(left: left, right: right, cancellation: token)
+                let localLeft = copies.left, localRight = copies.right
                 let binaryExtensions: Set<String> = [
                     "numbers", "pages", "key", "pdf", "zip", "gz", "dmg", "mp4", "mov", "mp3", "sqlite", "db", "exe",
                 ]
-                let a = try ComparedFile(url: left, readText: !isImage && !binaryExtensions.contains(left.pathExtension.lowercased())),
-                    b = try ComparedFile(url: right, readText: !isImage && !binaryExtensions.contains(right.pathExtension.lowercased()))
-                let offset = try FileComparison.firstDifference(left, right, cancellation: token)
-                let images = isImage ? try FileDiffImages.load(left, right) : nil
+                let throttle = NSLock(); var lastProgress = Date.distantPast
+                func progress(_ name: String, _ bytes: UInt64, _ total: UInt64) {
+                    guard
+                        throttle.withLock({
+                            if Date().timeIntervalSince(lastProgress) < 0.08 && bytes < total { return false }; lastProgress = Date(); return true
+                        })
+                    else { return }
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, !token.isCancelled, self.busy else { return }
+                        self.loading.isIndeterminate = false; self.loading.maxValue = Double(max(1, total)); self.loading.doubleValue = Double(bytes)
+                        self.progressText.stringValue = "Reading \(name)… \(FileFormat.size(Int64(bytes))) of \(FileFormat.size(Int64(total)))"
+                    }
+                }
+                let
+                    a = try ComparedFile(
+                        url: localLeft, readText: !isImage && !binaryExtensions.contains(left.pathExtension.lowercased()), cancellation: token,
+                        progress: { progress(left.lastPathComponent, $0, $1) }),
+                    b = try ComparedFile(
+                        url: localRight, readText: !isImage && !binaryExtensions.contains(right.pathExtension.lowercased()), cancellation: token,
+                        progress: { progress(right.lastPathComponent, $0, $1) })
+                let offset = try FileComparison.firstDifference(localLeft, localRight, cancellation: token)
+                let images = isImage ? try FileDiffImages.load(localLeft, localRight) : nil
                 try token.check()
                 DispatchQueue.main.async {
                     guard let self, !token.isCancelled else { return }
+                    self.copies = copies; self.textCanvas.canCopyChanges = !self.readOnly
                     self.leftFile = a; self.rightFile = b; self.leftText = a.text; self.rightText = b.text; self.savedLeft = a.text;
                     self.savedRight = b.text
                     self.lineEnding = a.text?.prefix(8192).contains("\r\n") == true ? "CRLF" : "LF"
@@ -220,13 +310,14 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
     }
     private func fail(_ error: Error) {
         busy = false; facts.stringValue = error.localizedDescription; message.stringValue = "Couldn’t compare these files"; message.isHidden = false;
-        loading.stopAnimation(nil); loading.isHidden = true
+        loading.stopAnimation(nil); loading.isHidden = true; progressText.isHidden = true; cancelComparison.isHidden = true
     }
     private func rediff() {
         guard ready else { return }
         generation += 1; let version = generation
         guard let a = leftText, let b = rightText else { busy = false; updateVisibility(); return }
-        busy = true; facts.stringValue = "Comparing text…"; loading.startAnimation(nil); loading.isHidden = false
+        busy = true; facts.stringValue = "Comparing…"; progressText.stringValue = "Comparing \(leftURL.lastPathComponent)…";
+        loading.isIndeterminate = true; loading.startAnimation(nil); updateVisibility()
         let whitespace = ignore.state == .on, inline = textMode.selectedSegment == 1
         Self.queue.async { [weak self] in
             let difference = TextDifference(left: a, right: b, ignoreWhitespace: whitespace)
@@ -236,36 +327,51 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
                 self.textCanvas.presentation = presentation; self.textCanvas.inline = inline; self.busy = false
                 self.focused = min(self.focused, max(0, presentation.starts.count - 1)); self.textCanvas.focused = self.focused;
                 self.textCanvas.updateCopyButtons()
-                self.resizeText(); self.updateVisibility()
+                self.resizeText(); self.updateVisibility(); self.root.layoutSubtreeIfNeeded()
+                if !presentation.starts.isEmpty { self.focus(self.focused) }
             }
         }
     }
     private func updateVisibility() {
-        textScroll.isHidden = mode != 0; imageCanvas.isHidden = mode != 1; infoScroll.isHidden = mode != 2
+        textScroll.isHidden = mode != 0 || busy; imageCanvas.isHidden = mode != 1 || busy; infoScroll.isHidden = mode != 2 || busy
         textMode.isHidden = mode != 0; imageMode.isHidden = mode != 1; blend.isHidden = mode != 1 || imageMode.selectedSegment != 1;
         ignore.isHidden = mode != 0
+        dimensions.isHidden = mode != 1; pixelsChanged.isHidden = mode != 1
+        blendLeft.isHidden = blend.isHidden; blendRight.isHidden = blend.isHidden
         let count = textCanvas.presentation?.difference.changes.count ?? 0
+        openWith.isEnabled = ready && !busy
         previous.isEnabled = mode == 0 && count > 0 && !busy; next.isEnabled = previous.isEnabled
-        loading.isHidden = !busy; if !busy { loading.stopAnimation(nil) }
-        let identical = mode == 0 && !busy && ready && count == 0
-        message.isHidden = !identical; message.stringValue = "✓  The files are identical"
+        loading.isHidden = !busy; progressText.isHidden = !busy; cancelComparison.isHidden = !busy; if !busy { loading.stopAnimation(nil) }
+        let identical = mode == 0 && !busy && ready && textCanvas.presentation != nil && count == 0
+        message.isHidden = !identical; identicalIcon.isHidden = !identical; identicalDetail.isHidden = !identical
+        message.stringValue = "The files are identical"
+        identicalDetail.stringValue = "Same contents · \((leftFile?.size ?? 0).formatted(.number.locale(Locale(identifier: "en_US")))) bytes"
         if identical, let a = leftFile, let b = rightFile, a.modified != b.modified {
-            message.stringValue += "\nMetadata differs: modified date"
+            identicalDetail.stringValue = "Metadata differs: modified date"
         }
-        textScroll.isHidden = mode != 0 || identical
+        textMode.isEnabled = !identical
+        textScroll.isHidden = mode != 0 || identical || busy
         if !busy {
             if mode == 0 {
                 facts.stringValue =
-                    "\(count > 0 ? "\(focused + 1) of " : "")\(count) changes · UTF-8 · \(lineEnding)"
+                    "\(count == 1 ? "1 change" : (count > 1 ? "\(focused + 1) of \(count) changes" : "No changes")) · UTF-8 · \(lineEnding)"
             } else if mode == 1, let images {
-                facts.stringValue =
-                    imageMode.selectedSegment == 2
-                    ? String(format: "Changed pixels: %.2f %%%@", images.changedPercent ?? 0, images.sampled ? " (sampled)" : "")
+                let sameSize = images.left.width == images.right.width && images.left.height == images.right.height
+                dimensions.stringValue =
+                    sameSize
+                    ? "\(images.left.width) × \(images.left.height) · both"
                     : "\(images.left.width) × \(images.left.height) vs \(images.right.width) × \(images.right.height)"
+                dimensions.isBezeled = !sameSize; dimensions.bezelStyle = .roundedBezel
+                pixelsChanged.stringValue = String(format: "%.1f %% pixels differ%@", images.changedPercent ?? 0, images.sampled ? " (sampled)" : "")
+                let names = sideNames(); blendLeft.stringValue = names.0; blendRight.stringValue = names.1
+                facts.stringValue = "\(FileFormat.size(Int64(leftFile?.size ?? 0))) · \(FileFormat.size(Int64(rightFile?.size ?? 0)))"
+
             } else {
                 facts.stringValue = "\(propertyRows().filter { $0.1 != $0.2 }.count) properties differ"
             }
         }
+        if busy { facts.stringValue = "Comparing…" }
+        if readOnly { facts.stringValue += " · Read-only downloaded copy" }
         root.needsLayout = true
     }
     @objc private func controlChanged(_ sender: NSSegmentedControl) {
@@ -291,9 +397,10 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
             rightExcerpt = p.difference.right[c.right].prefix(3).map { String($0.prefix(500)) }.joined()
         textCanvas.setAccessibilityValue(speech + " Left: " + leftExcerpt + " Right: " + rightExcerpt)
         NSAccessibility.post(element: textCanvas, notification: .valueChanged)
+        updateVisibility()
     }
     func copyChange(_ index: Int, toRight: Bool) {
-        guard !busy, let d = textCanvas.presentation?.difference else { return }
+        guard !busy, !readOnly, let d = textCanvas.presentation?.difference else { return }
         busy = true; updateVisibility()
         Self.queue.async { [weak self] in
             let new = d.copying(index, toRight: toRight)
@@ -315,7 +422,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
     @objc func redoFileOperation(_ sender: Any?) { undo.redo() }
     @objc func saveDocument(_ sender: Any?) { save(completion: nil) }
     private func save(completion: (() -> Void)?, failed: (() -> Void)? = nil) {
-        guard !busy else { failed?(); return }
+        guard !busy, !readOnly else { failed?(); return }
         let a = leftText, b = rightText, sa = savedLeft, sb = savedRight, left = leftURL, right = rightURL
         busy = true; facts.stringValue = "Saving…"; updateVisibility()
         Self.queue.async { [weak self] in
@@ -377,7 +484,9 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
     }
     @objc private func openExternal(_ sender: NSMenuItem) {
         guard let app = sender.representedObject as? URL else { return }
-        FileDiffExternalTools.open(app, left: leftURL, right: rightURL) { [weak self] error in self?.showError(error) }
+        copies?.keepForExternalApplication()
+        FileDiffExternalTools.open(app, left: copies?.left ?? leftURL, right: copies?.right ?? rightURL) { [weak self] error in self?.showError(error)
+        }
     }
     @objc private func chooseExternal() { FileDiffExternalTools.chooseDefault(window: window) {} }
     func debug(_ command: String) {
@@ -390,6 +499,8 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         case "onion", "difference":
             mode = 1; viewSwitch.selectedSegment = 1; imageMode.selectedSegment = op == "onion" ? 1 : 2; imageCanvas.mode = imageMode.selectedSegment;
             updateVisibility()
+        case "contrast": textCanvas.forceContrast = true; textCanvas.needsDisplay = true
+        case "opaque": forceOpaque = true; refreshLook()
         case "front":
             NSApp.activate(ignoringOtherApps: true); window?.makeKeyAndOrderFront(nil)
         case "state":
@@ -410,12 +521,24 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         case "save": saveDocument(nil)
         case "hash": computeHash(0); computeHash(1)
         case "openwith": menuNeedsUpdate(openWith.menu!); openWith.performClick(nil)
-        case "size": if parts.count == 3, let w = Double(parts[1]), let h = Double(parts[2]) { window?.setContentSize(NSSize(width: w, height: h)) }
+        case "size":
+            if parts.count == 3, let w = Double(parts[1]), let h = Double(parts[2]) {
+                window?.setContentSize(NSSize(width: w, height: h)); window?.center()
+            }
         case "dark", "light": window?.appearance = NSAppearance(named: op == "dark" ? .darkAqua : .aqua); refreshLook()
         default: break
         }
     }
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(saveDocument(_:)): return !readOnly && dirty && !busy
+        case #selector(undoFileOperation(_:)): return undo.canUndo
+        case #selector(redoFileOperation(_:)): return undo.canRedo
+        default: return true
+        }
+    }
     func handleKey(_ event: NSEvent) -> Bool {
+        if event.keyCode == 53 && busy { window?.performClose(nil); return true }
         guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) else { return false }
         switch event.charactersIgnoringModifiers {
         case "1", "2", "3":
@@ -439,11 +562,21 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         func date(_ value: Date?) -> String { value?.formatted(date: .abbreviated, time: .shortened) ?? "—" }
         func kind(_ url: URL) -> String { UTType(filenameExtension: url.pathExtension)?.localizedDescription ?? "Data" }
         var rows = [
-            ("Kind", kind(a.url), kind(b.url)), ("Size", "\(a.size.formatted()) bytes", "\(b.size.formatted()) bytes"),
+            ("Kind", kind(a.url), kind(b.url)),
+            (
+                "Size", "\(a.size.formatted(.number.locale(Locale(identifier: Bundle.main.preferredLocalizations.first ?? "en")))) bytes",
+                "\(b.size.formatted(.number.locale(Locale(identifier: Bundle.main.preferredLocalizations.first ?? "en")))) bytes"
+            ),
             ("Modified", date(a.modified), date(b.modified)), ("Created", date(a.created), date(b.created)),
-            ("Permissions", a.permissions, b.permissions), ("Owner", a.owner, b.owner),
+            (
+                "Permissions", FileFormat.permissions(Int(a.permissions, radix: 8) ?? 0, isDirectory: false),
+                FileFormat.permissions(Int(b.permissions, radix: 8) ?? 0, isDirectory: false)
+            ), ("Owner", a.owner, b.owner),
             ("Tags", a.tags.joined(separator: ", "), b.tags.joined(separator: ", ")),
-            ("Extended attributes", a.attributes.joined(separator: ", "), b.attributes.joined(separator: ", ")),
+            (
+                "Extended attributes", a.attributes.map { $0.components(separatedBy: " · ")[0] }.joined(separator: ", "),
+                b.attributes.map { $0.components(separatedBy: " · ")[0] }.joined(separator: ", ")
+            ),
         ]
         if let images {
             rows.append(("Dimensions", "\(images.left.width) × \(images.left.height)", "\(images.right.width) × \(images.right.height)"))
@@ -460,49 +593,76 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
             ? "\(leftText == nil && images == nil ? "Binary files" : "Files") are identical"
             : (leftText == nil && images == nil ? "Binary files differ" : "Files differ")
         let title = NSTextField(labelWithString: headline); title.font = .systemFont(ofSize: 17, weight: .semibold); title.textColor = Theme.viewText
-        addInfoRow(title, height: 28)
         let detail = NSTextField(
-            labelWithString: offset.map { "First difference at byte \($0.formatted()) (0x\(String($0, radix: 16)))" } ?? "Every byte matches.")
-        detail.font = .systemFont(ofSize: 12); detail.textColor = Theme.viewTextInactive; addInfoRow(detail, height: 36)
+            labelWithString: offset.map {
+                "First difference at byte \($0.formatted(.number.locale(Locale(identifier: "en_US")))) (0x\(String($0, radix: 16)))"
+            } ?? "Every byte matches.")
+        detail.font = .systemFont(ofSize: 12); detail.textColor = Theme.viewTextInactive
+        let labels = NSStackView(views: [title, detail]); labels.orientation = .vertical; labels.alignment = .leading; labels.spacing = 2
+        let icon = NSImageView();
+        icon.image = Icons.shared.image(
+            for: FileItem(
+                url: leftURL, name: leftURL.lastPathComponent, isDirectory: false,
+                contentType: UTType(filenameExtension: leftURL.pathExtension)?.identifier), size: 40)
+        icon.widthAnchor.constraint(equalToConstant: 40).isActive = true; icon.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        let heading = NSStackView(views: [icon, labels]); heading.spacing = 14; heading.alignment = .centerY
+        addInfoRow(heading, height: 70)
+        let table = NSStackView(); table.orientation = .vertical; table.alignment = .leading; table.spacing = 0
+        table.wantsLayer = true; table.layer?.cornerRadius = 5; table.layer?.masksToBounds = true; table.layer?.borderWidth = 1;
+        window?.effectiveAppearance.performAsCurrentDrawingAppearance { table.layer?.borderColor = Theme.frame.cgColor }
         let names = sideNames()
-        infoRow("", names.0, names.1, index: -1)
-        for (i, row) in propertyRows().enumerated() { infoRow(row.0, row.1.isEmpty ? "—" : row.1, row.2.isEmpty ? "—" : row.2, index: i) }
-        let hash = NSStackView(); hash.orientation = .horizontal; hash.spacing = 12
-        let label = NSTextField(labelWithString: "SHA-256"); label.font = .systemFont(ofSize: 12); label.textColor = Theme.viewTextInactive;
-        label.widthAnchor.constraint(equalToConstant: 126).isActive = true; hash.addArrangedSubview(label)
+        infoRow("", names.0, names.1, index: -1, table: table)
+        let rows = propertyRows()
+        for (i, row) in rows.enumerated() { infoRow(row.0, row.1.isEmpty ? "—" : row.1, row.2.isEmpty ? "—" : row.2, index: i, table: table) }
+        let hash = FileDiffHashRow()
         for i in 0..<2 {
             if let digest = hashes[i] {
                 let text = NSTextField(labelWithString: digest); text.font = .monospacedSystemFont(ofSize: 11, weight: .regular);
-                text.lineBreakMode = .byTruncatingMiddle; text.toolTip = digest; text.isSelectable = true; hash.addArrangedSubview(text)
+                text.textColor = Theme.viewText
+                text.lineBreakMode = .byTruncatingMiddle; text.toolTip = digest; text.isSelectable = true; hash.cells.append(text)
             } else {
-                let button = ClosureButton(title: hashBusy.contains(i) ? "Computing…" : "Compute") { [weak self] _ in self?.computeHash(i) };
+                let button = ClosureButton(title: hashBusy.contains(i) ? "Computing…" : "Compute") { [weak self] _ in self?.computeHash(i) }
+                button.bezelStyle = .rounded; button.controlSize = .small; button.font = .systemFont(ofSize: 12)
                 button.isEnabled = !hashBusy.contains(i); button.setAccessibilityLabel("Compute SHA-256 for \(i == 0 ? names.0 : names.1)");
-                hash.addArrangedSubview(button)
+                hash.cells.append(button)
             }
         }
-        hash.distribution = .fillEqually; addInfoRow(hash, height: 32); root.needsLayout = true
+        hash.cells.forEach(hash.addSubview); table.addArrangedSubview(hash)
+        hash.heightAnchor.constraint(equalToConstant: 32).isActive = true; hash.widthAnchor.constraint(equalTo: table.widthAnchor).isActive = true
+        addInfoRow(table, height: CGFloat(rows.count + 1) * 30 + 32); root.needsLayout = true
     }
     private func sideNames() -> (String, String) {
-        var a = leftURL.deletingLastPathComponent().lastPathComponent, b = rightURL.deletingLastPathComponent().lastPathComponent
-        if a == b {
-            a = leftURL.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent + " › " + a;
-            b = rightURL.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent + " › " + b
-        }; return (a, b)
+        let left = leftURL.deletingLastPathComponent().pathComponents, right = rightURL.deletingLastPathComponent().pathComponents
+        if left == right && (leftURL.host != rightURL.host) {
+            return (
+                leftURL.host ?? leftURL.deletingLastPathComponent().lastPathComponent,
+                rightURL.host ?? rightURL.deletingLastPathComponent().lastPathComponent
+            )
+        }
+        var count = 1
+        while count < max(left.count, right.count) && left.suffix(count) == right.suffix(count) { count += 1 }
+        return (left.suffix(count).first ?? leftURL.lastPathComponent, right.suffix(count).first ?? rightURL.lastPathComponent)
     }
+
     private func addInfoRow(_ view: NSView, height: CGFloat) {
         view.heightAnchor.constraint(equalToConstant: height).isActive = true; infoStack.addArrangedSubview(view);
         view.widthAnchor.constraint(equalTo: infoStack.widthAnchor).isActive = true
     }
-    private func infoRow(_ property: String, _ left: String, _ right: String, index: Int) {
+    private func infoRow(_ property: String, _ left: String, _ right: String, index: Int, table: NSStackView) {
         let row = FileDiffInfoRow(); row.values = [property, left, right]; row.different = index >= 0 && left != right;
+        if property == "Extended attributes", let a = leftFile, let b = rightFile {
+            row.different = a.attributes != b.attributes; row.toolTip = (a.attributes + b.attributes).joined(separator: "\n")
+        }
+        if property == "Permissions" { row.toolTip = "\(leftFile?.permissions ?? "") · \(rightFile?.permissions ?? "")" }
         row.alternate = index % 2 == 0; row.heading = index < 0
         row.setAccessibilityElement(true); row.setAccessibilityRole(.staticText);
         row.setAccessibilityLabel("\(property). \(sideNames().0): \(left). \(sideNames().1): \(right)\(row.different ? ". Different" : "")")
-        addInfoRow(row, height: 30)
+        table.addArrangedSubview(row); row.heightAnchor.constraint(equalToConstant: 30).isActive = true;
+        row.widthAnchor.constraint(equalTo: table.widthAnchor).isActive = true
     }
     private func computeHash(_ side: Int) {
         guard !hashBusy.contains(side) else { return }; hashBusy.insert(side); buildInfo()
-        let url = side == 0 ? leftURL : rightURL, token = self.token
+        let url = side == 0 ? (copies?.left ?? leftURL) : (copies?.right ?? rightURL), token = self.token
         Self.queue.async { [weak self] in
             do {
                 let value = try FileChecksums.digest(url, algorithm: .sha256, cancellation: token)
@@ -557,5 +717,35 @@ private final class FileDiffInfoRow: NSView {
                     .foregroundColor: i == 0 ? Theme.viewTextInactive : (different ? Theme.compareChanged : Theme.viewText), .paragraphStyle: p,
                 ])
         }
+    }
+}
+
+private final class FileDiffBody: NSView {
+    override var isFlipped: Bool { true }
+    override func draw(_ dirtyRect: NSRect) { Theme.viewBackground.setFill(); bounds.fill() }
+}
+private final class FileDiffHashRow: NSView {
+    var cells: [NSView] = []
+    override var isFlipped: Bool { true }
+    override func layout() {
+        super.layout(); let col = (bounds.width - 138) / 2
+        for (i, cell) in cells.enumerated() {
+            let button = cell is NSButton
+            cell.frame = NSRect(x: 138 + CGFloat(i) * col, y: button ? 5 : 8, width: button ? 96 : col - 12, height: button ? 22 : 18)
+        }
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        Theme.viewAlternate.setFill(); bounds.fill()
+        ("SHA-256" as NSString).draw(
+            at: NSPoint(x: 12, y: 8), withAttributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: Theme.viewTextInactive])
+    }
+}
+
+private final class FileDiffSuccessIcon: NSView {
+    override var isFlipped: Bool { true }
+    override func draw(_ dirtyRect: NSRect) {
+        Theme.compareOnly.withAlphaComponent(effectiveAppearance.isDark ? 0.20 : 0.16).setFill(); NSBezierPath(ovalIn: bounds).fill()
+        ("✓" as NSString).draw(
+            at: NSPoint(x: 14, y: 8), withAttributes: [.font: NSFont.systemFont(ofSize: 25, weight: .medium), .foregroundColor: Theme.compareOnly])
     }
 }

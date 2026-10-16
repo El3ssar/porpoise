@@ -213,6 +213,7 @@ final class DebugBridge: NSObject {
             let pair = arg.components(separatedBy: "|")
             if pair.count == 2 { FileDiffWindow.present(left: URL(fileURLWithPath: pair[0]), right: URL(fileURLWithPath: pair[1])) }
         case "filediffmode": FileDiffWindow.current?.debug(arg)
+        case "filediffmenucapture": fileDiffMenuSnapshot(to: arg)
         case "snapshot": snapshot(to: arg)
         case "lsnapshot": layerSnapshot(to: arg)
         case "wsnapshot": windowServerSnapshot(to: arg)
@@ -836,6 +837,19 @@ final class DebugBridge: NSObject {
             RunLoop.main.add(t, forMode: .common)
         default: return
         }
+    }
+
+    /// A native popup menu is a separate WindowServer window; capture its own ID.
+    private func fileDiffMenuSnapshot(to path: String) {
+        guard
+            let popup = NSApp.windows.filter({ $0.isVisible && $0.level.rawValue > NSWindow.Level.normal.rawValue }).sorted(by: {
+                $0.level.rawValue > $1.level.rawValue
+            }).first
+        else { return }
+        typealias Capture = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return }
+        let capture = unsafeBitCast(symbol, to: Capture.self)
+        if let image = capture(.null, 8, UInt32(popup.windowNumber), 1)?.takeRetainedValue() { writePNG(image, to: path) }
     }
 
     private func windowServerSnapshot(to arg: String) {
