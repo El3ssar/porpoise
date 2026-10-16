@@ -7,7 +7,8 @@
   stay). Offline, Drive folders stay browsable from what was last seen ("You’re offline. Showing Google Drive as it was
   today at 14:02."), changes are disabled with the reason, and everything recovers by itself. The search bar searches
   Google Drive in Drive folders (here or everywhere, names or contents). Files opened from Drive show “Editing” on their
-  row; saves go back as new versions, and if the file changed in Drive meanwhile both versions are kept and Activity
+  row; saves go back as new versions (until that is verified on real Drive, they stay on the Mac with Save as a Copy
+  in Drive), and if the file changed in Drive meanwhile both versions are kept and Activity
   offers Keep Both, Open Both or Replace with Mine. Saves that can’t be sent yet are kept and sent later.
 
 - **Faster Google Drive browsing and previews.** Folder revisits and prefetched expansions show cached rows immediately,
