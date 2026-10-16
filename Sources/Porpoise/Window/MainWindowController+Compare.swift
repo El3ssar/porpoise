@@ -38,7 +38,8 @@ extension MainWindowController {
         }
         let model = CompareModel(left: left, right: right, options: options)
         phase("recentsAndModel")
-        let comparison = CompareView(model: model)
+        let comparison = tab.comparisonView(model: model)
+        comparison.document.activeSide = tab.activeIsSecondary ? .right : .left
         phase("viewConstruction")
         comparison.onClose = { [weak self] in self?.stopComparing() }
         comparison.onSync = { [weak self, weak comparison] in
