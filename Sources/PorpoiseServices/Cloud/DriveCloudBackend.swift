@@ -6,7 +6,7 @@ import PorpoiseCore
 /// quota, the shared drives, a cached picture, sharing details and pasted links.
 public final class DriveCloudBackend: CloudBackend {
     public var onChange: (() -> Void)?
-    private let store: DriveAccountStore
+    let store: DriveAccountStore
     private var watch: AnyCancellable?
     /// Quota and shared drives per account, fetched after connecting and at launch.
     private var details: [UUID: (used: Int64?, total: Int64?, drives: Int)] = [:]
@@ -47,7 +47,9 @@ public final class DriveCloudBackend: CloudBackend {
                 }
                 return CloudAccount(
                     id: Self.key(a.id), email: a.email, displayName: a.displayName, photoURL: a.photoURL, quotaUsed: d?.used,
-                    quotaTotal: d?.total, sharedDriveCount: d?.drives ?? 0, status: status)
+                    quotaTotal: d?.total, sharedDriveCount: d?.drives ?? 0, status: status,
+                    // Unknown until the grant is checked: assume yes, so "Allow Changes" never flashes at launch.
+                    canWrite: store.writeAccess[a.id] != false)
             }
         }
     }
