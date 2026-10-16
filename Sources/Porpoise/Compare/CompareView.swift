@@ -14,6 +14,8 @@ final class CompareView: NSView {
     let method = CompareFocusButton(title: "Size & date ⌄", target: nil, action: nil)
     let summary = NSTextField(labelWithString: "")
     let sizes = NSTextField(labelWithString: "")
+    private let methodGlyph = NSImageView(), methodSeparator = NSView()
+    private let smallZoom = ZoomGlyph(large: false), largeZoom = ZoomGlyph(large: true)
     let progress = NSProgressIndicator()
     let progressLabel = NSTextField(labelWithString: "Comparing…")
     let stop = NSButton(title: "Stop", target: nil, action: nil)
@@ -70,7 +72,17 @@ final class CompareView: NSView {
             bar.addSubview(pill); pills.append(pill)
         }
         for child in [sync, close, progress, progressLabel, stop, pause, jobLine] { bar.addSubview(child) }
-        for child in [method, summary, sizes, zoom] { footer.addSubview(child) }
+        for child in [methodGlyph, method, methodSeparator, summary, sizes, smallZoom, zoom, largeZoom] { footer.addSubview(child) }
+        methodGlyph.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: nil);
+        methodGlyph.contentTintColor = Theme.windowTextInactive
+        methodSeparator.wantsLayer = true
+        Theme.whenChanged(methodSeparator) { [weak methodSeparator] in methodSeparator?.layer?.backgroundColor = Theme.hairline.cgColor }
+        smallZoom.onClick = { [weak self] in
+            guard let self else { return }; self.zoom.doubleValue = max(16, self.zoom.doubleValue - 4); self.zoomChanged()
+        }
+        largeZoom.onClick = { [weak self] in
+            guard let self else { return }; self.zoom.doubleValue = min(48, self.zoom.doubleValue + 4); self.zoomChanged()
+        }
         sync.bezelStyle = .rounded; sync.controlSize = .small; sync.keyEquivalent = ""
         sync.contentTintColor = Theme.accent; sync.target = self; sync.action = #selector(syncPressed)
         close.isBordered = false; close.font = .systemFont(ofSize: 20); close.target = self; close.action = #selector(closePressed)
@@ -150,11 +162,15 @@ final class CompareView: NSView {
         stop.frame = CGRect(x: width - 100, y: 7, width: 60, height: 22)
         pause.frame = CGRect(x: width - 172, y: 7, width: 66, height: 22)
         jobLine.frame = CGRect(x: 0, y: 34, width: width, height: 2)
-        method.frame = CGRect(x: 6, y: 2, width: 120, height: 24)
-        summary.frame = CGRect(x: 132, y: 7, width: max(50, width - (width < 780 ? 240 : 455)), height: 17)
+        methodGlyph.frame = CGRect(x: 12, y: 7, width: 14, height: 14)
+        method.frame = CGRect(x: 28, y: 2, width: 112, height: 24)
+        methodSeparator.frame = CGRect(x: 148, y: 6, width: 1, height: 16)
+        summary.frame = CGRect(x: 160, y: 7, width: max(50, width - (width < 780 ? 320 : 515)), height: 17)
         sizes.isHidden = width < 780
-        sizes.frame = CGRect(x: width - 320, y: 7, width: 200, height: 17)
-        zoom.frame = CGRect(x: width - 108, y: 7, width: 98, height: 16)
+        sizes.frame = CGRect(x: width - 360, y: 7, width: 200, height: 17)
+        smallZoom.frame = CGRect(x: width - 150, y: 4, width: 20, height: 20)
+        zoom.frame = CGRect(x: width - 130, y: 7, width: 106, height: 16)
+        largeZoom.frame = CGRect(x: width - 24, y: 4, width: 20, height: 20)
         overlay.frame = CGRect(x: max(8, (width - 460) / 2), y: max(80, (bounds.height - 185) / 2), width: min(460, width - 16), height: 185)
     }
     func update() {
@@ -352,27 +368,41 @@ final class ComparePill: NSButton {
     }
     required init?(coder: NSCoder) { fatalError() }
     override var intrinsicContentSize: NSSize {
-        let text = compact ? "\(glyph)  \(count.formatted())" : "\(glyph)  \(count.formatted())  \(label)"
-        return CGSize(
-            width: ceil((text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12, weight: .medium)]).width) + 20, height: 24)
+        let font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        let countWidth = (count.formatted() as NSString).size(withAttributes: [.font: font]).width
+        let labelWidth = compact ? 0 : 8 + (label as NSString).size(withAttributes: [.font: font]).width
+        return CGSize(width: ceil(40 + countWidth + labelWidth), height: 24)
     }
     override func draw(_ dirty: NSRect) {
         let box = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.75, dy: 0.75), xRadius: 12, yRadius: 12)
         if window?.firstResponder === self {
             NSGraphicsContext.saveGraphicsState(); NSFocusRingPlacement.only.set(); box.fill(); NSGraphicsContext.restoreGraphicsState()
         }
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current?.cgContext.setAlpha(isOn && isEnabled ? 1 : 0.55)
         if isOn {
             color.withAlphaComponent(effectiveAppearance.isDark ? 0.2 : 0.16).setFill(); box.fill()
         } else {
             Theme.frame.setStroke(); box.stroke()
         }
-        let text = compact ? "\(glyph)  \(count.formatted())" : "\(glyph)  \(count.formatted())  \(label)"
-        (text as NSString).draw(
-            at: CGPoint(x: 10, y: 4),
-            withAttributes: [
-                .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-                .foregroundColor: (isOn ? color : Theme.windowTextInactive).withAlphaComponent(isEnabled ? 1 : 0.55),
-            ])
+        if Theme.increasedContrast {
+            (isOn ? color : Theme.frame).setStroke(); box.lineWidth = 1.5; box.stroke()
+        }
+        let font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        if filter == .onlyLeft || filter == .onlyRight {
+            CompareSymbols.drawOnly(filter == .onlyLeft ? .left : .right, centeredAt: CGPoint(x: 17, y: bounds.midY), color: color)
+        } else {
+            (glyph as NSString).draw(
+                at: CGPoint(x: 10, y: 3), withAttributes: [.font: NSFont.systemFont(ofSize: 14, weight: .medium), .foregroundColor: color])
+        }
+        let count = count.formatted() as NSString, attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        count.draw(at: CGPoint(x: 30, y: 4), withAttributes: attributes)
+        if !compact {
+            (label as NSString).draw(
+                at: CGPoint(x: 38 + count.size(withAttributes: attributes).width, y: 4),
+                withAttributes: [.font: font, .foregroundColor: Theme.windowText])
+        }
     }
     @objc private func pressed() { onToggle?() }
 }
