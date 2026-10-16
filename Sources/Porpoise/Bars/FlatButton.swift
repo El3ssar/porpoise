@@ -11,6 +11,7 @@ class FlatButton: NSControl {
     private var shownTitle: String { showsTitle || iconName == nil ? title : "" }
     var isToggled = false { didSet { needsDisplay = true; setAccessibilityValue(isToggled ? 1 : 0) } }
     var showsMenuIndicator = false { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
+    var iconTint: NSColor? { didSet { needsDisplay = true } }
     var iconSize: CGFloat = 16
     var cornerRadius: CGFloat = 4
     var menuProvider: (() -> NSMenu?)?
@@ -173,7 +174,13 @@ class FlatButton: NSControl {
         let menuW = menuIndicatorWidth
         let contentW = intrinsicContentSize.width - 12 - menuW
         if title.isEmpty || iconName == nil { x = (bounds.width - menuW - contentW) / 2 }
-        if let name = iconName, let img = Icons.shared.image(name, size: iconSize) {
+        if let name = iconName, let original = Icons.shared.image(name, size: iconSize) {
+            let img =
+                iconTint.map { tint in
+                    NSImage(size: original.size, flipped: false) { rect in
+                        original.draw(in: rect); tint.setFill(); rect.fill(using: .sourceAtop); return true
+                    }
+                } ?? original
             img.draw(
                 in: CGRect(x: x, y: (bounds.height - iconSize) / 2, width: iconSize, height: iconSize), from: .zero,
                 operation: .sourceOver, fraction: alpha, respectFlipped: true, hints: nil)

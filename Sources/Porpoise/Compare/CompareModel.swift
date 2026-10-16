@@ -40,7 +40,8 @@ final class CompareModel {
     private var active = true
     var overrides: [String: SyncOverride] = [:]
     private let refresh = ComparisonRefresh()
-    let names: (String, String)
+    private(set) var names: (String, String)
+    func reanchorNames(left: URL, right: URL) { names = CompareOutline.sideNames(left, right) }
     init(left: URL, right: URL, options: SyncCompareOptions = CompareModel.defaultOptions) {
         leftRoot = left; rightRoot = right; self.options = options
         names = CompareOutline.sideNames(left, right)
@@ -144,8 +145,10 @@ final class CompareModel {
                 if row.left?.kind == .file { left += row.left?.size ?? 0 }
                 if row.right?.kind == .file { right += row.right?.size ?? 0 }
             }
-            let leftDetails = CompareDetailsPresentation(rows, root: leftRoot, side: .left, expanded: expanded)
-            let rightDetails = CompareDetailsPresentation(rows, root: rightRoot, side: .right, expanded: expanded)
+            let leftDetails = CompareDetailsPresentation(
+                rows, root: leftRoot, side: .left, expanded: expanded, folderCounts: outline?.childCounts[.left] ?? [:])
+            let rightDetails = CompareDetailsPresentation(
+                rows, root: rightRoot, side: .right, expanded: expanded, folderCounts: outline?.childCounts[.right] ?? [:])
             let changedPaths = paths != previousPaths
             DispatchQueue.main.async {
                 guard let self, self.presentationGeneration == ticket else { return }

@@ -68,6 +68,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     var comparisonPropsChanged: (() -> Void)?
     var comparisonSelectionChanged: (() -> Void)?
     var comparisonMissingName: String?
+    var comparisonMissingSideLabel: String?
     private var comparisonSuspended = false
     private var comparisonNeedsRefresh = false
     func suspendForComparison(_ value: Bool) {
@@ -468,6 +469,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     }
 
     func comparisonRowsDidLoad() {
+        list.refreshHover()
         if let position = pendingPosition {
             pendingPosition = nil
             list.scroll(position.origin); model.currentURL = position.current
@@ -503,7 +505,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     func updateStatus() {
         if let name = comparisonMissingName {
-            statusBar.text = "No “\(name)” here · Go back or up"
+            statusBar.text = "Not in \(comparisonMissingSideLabel ?? name)"
             statusBar.toolTip = statusBar.text
             return
         }

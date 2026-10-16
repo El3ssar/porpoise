@@ -74,6 +74,7 @@ final class CompareView: NSView {
     var onChoose: (() -> Void)?
     var onIgnore: (() -> Void)?
     var onCompareFiles: ((SyncDifference) -> Void)?
+    var onMissingRoot: ((SyncSide?) -> Void)?
     var lastUpdateMilliseconds: Double = 0
     init(model: CompareModel) {
         self.model = model; document = CompareRowsView(model: model)
@@ -164,7 +165,7 @@ final class CompareView: NSView {
     /// Reuse native controls prepared during idle time; pair data and callbacks never carry over.
     func reset(model: CompareModel) {
         self.model.onChange = nil; self.model.stop()
-        onClose = nil; onSync = nil; onChoose = nil; onIgnore = nil; onCompareFiles = nil
+        onClose = nil; onSync = nil; onChoose = nil; onIgnore = nil; onCompareFiles = nil; onMissingRoot = nil
         document.onOpen = nil; document.onCopy = nil; document.onSelection = nil
         popover?.close(); popover = nil; currentActivity = nil; completedActivity = nil; jobMetadata = [:]; reviewJob = nil
         activityPaintTimer?.invalidate(); activityPaintTimer = nil; lastActivityPaint = 0; lastActivityState = nil; laidOutActivityState = nil
@@ -246,7 +247,8 @@ final class CompareView: NSView {
             pill.count = model.outline?.counts[pill.filter.rawValue] ?? 0
             pill.label = labels[index]; pill.isOn = model.filter.contains(pill.filter)
             pill.isEnabled = pill.count > 0; pill.isHidden = false; pill.needsDisplay = true
-            pill.toolTip = "\(pill.label), \(FileFormat.count(pill.count)) items"
+            pill.toolTip =
+                "\(pill.label), \(FileFormat.count(pill.count)) items\n\(index == 0 ? model.leftRoot.path : (index == 1 ? model.rightRoot.path : model.leftRoot.path + " ⇄ " + model.rightRoot.path))"
             pill.setAccessibilityLabel("\(pill.label), \(FileFormat.count(pill.count)) items, \(pill.isOn ? "showing" : "hidden")")
         }
         progress.isHidden = !model.showProgress; progressLabel.isHidden = true; stop.isHidden = true
@@ -321,6 +323,12 @@ final class CompareView: NSView {
             } else {
                 self.model.filter = .all; self.model.rebuild()
             }
+        }
+        if !model.loading, let comparison = model.comparison {
+            let missing: SyncSide? =
+                model.leftRoot.isFileURL && comparison.leftRootIdentity == nil
+                ? .left : (model.rightRoot.isFileURL && comparison.rightRootIdentity == nil ? .right : nil)
+            onMissingRoot?(missing)
         }
         overlay.button.isPrimary = !identical
         if let currentActivity { renderActivity(currentActivity) }

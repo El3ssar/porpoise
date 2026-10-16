@@ -64,6 +64,15 @@ extension MainWindowController {
                     "scroll": comparison.scroll.contentView.bounds.origin,
                 ])
         }
+        comparison.onMissingRoot = { [weak self, weak tab] side in
+            guard let self, let tab else { return }
+            if let side {
+                self.showMissingCounterpart(in: tab, side: side, target: side == .left ? model.leftRoot : model.rightRoot)
+            } else {
+                tab.missingCounterpart?.removeFromSuperview(); tab.missingCounterpart = nil
+                if tab === self.tab { self.syncToActiveView() }
+            }
+        }
         comparison.onChoose = { [weak self] in self?.chooseCompareFolder() }
         comparison.onIgnore = { [weak self, weak model] in self?.editComparisonExclusions(model) }
         comparison.onCompareFiles = { [weak self] row in
@@ -164,6 +173,7 @@ extension MainWindowController {
         else { return }
         tab.linkGeneration += 1
         let generation = tab.linkGeneration
+        var reanchored = tab.linkedRoots == nil
         if let roots = tab.linkedRoots {
             let sourceRoot = container === tab.primary ? roots.left : roots.right
             let targetRoot = container === tab.primary ? roots.right : roots.left
@@ -171,6 +181,7 @@ extension MainWindowController {
                 // Widen anchors on Up so Back/Forward and re-entering the old root stay paired.
                 if LinkedBrowsing.relativePath(container.url, below: sourceRoot) == nil {
                     tab.linkedRoots = container === tab.primary ? (container.url, target) : (target, container.url)
+                    reanchored = true
                 }
                 if other.url != target {
                     tab.linkUpdating = true
@@ -179,16 +190,20 @@ extension MainWindowController {
                     } else if container.historyTraversal > 0, let index = other.history.forwardList.firstIndex(of: target) {
                         other.goForward(index + 1)
                     } else {
-                        other.setURL(target)
+                        let prior = other.url
+                        other.setURL(target, selecting: prior.deletingLastPathComponent() == target ? prior : nil)
                     }
                     tab.linkUpdating = false
                 }
             } else {
                 // An unrelated path edit starts a new pair at the two visible locations.
                 tab.linkedRoots = (tab.primary.url, tab.secondary!.url)
+                reanchored = true
             }
         }
         if let comparison = tab.compareView {
+            comparison.document.selectedPath = nil
+            if reanchored { comparison.model.reanchorNames(left: tab.primary.url, right: tab.secondary!.url) }
             comparison.model.navigate(left: tab.primary.url, right: tab.secondary!.url)
             comparison.scroll.contentView.scroll(to: .zero)
         }
@@ -207,19 +222,44 @@ extension MainWindowController {
                 guard let self, let tab, let other, tab.linkGeneration == generation, tab.linkedRoots != nil, tab.compareView == nil, !exists else {
                     return
                 }
-                let placeholder = ComparePanePlaceholder()
-                placeholder.content.configure(
-                    symbol: "folder.badge.questionmark", title: "No “\(target.lastPathComponent)” on this side",
-                    detail: "Go back or up to continue browsing both folders.", button: "Create Folder"
-                ) { [weak self] in self?.createLinkedCounterpart(target) }
-                placeholder.unlink.isHidden = false; placeholder.unlink.clicked = { [weak self] in self?.toggleLinkedBrowsing(nil) }
-                tab.missingCounterpart = placeholder; tab.missingOnRight = other === tab.secondary
-                tab.addSubview(placeholder); tab.needsLayout = true; self.syncToActiveView()
+                self.showMissingCounterpart(in: tab, side: other === tab.secondary ? .right : .left, target: target)
             }
         }
     }
-    private func createLinkedCounterpart(_ url: URL) {
-        let selectedTab = tab
+    private func showMissingCounterpart(in tab: PorpoiseTab, side: SyncSide, target: URL) {
+        let roots = tab.linkedRoots ?? (tab.primary.url, tab.secondary?.url ?? tab.primary.url)
+        let names = tab.compareView?.model.names ?? CompareOutline.sideNames(roots.0, roots.1)
+        let sideName = side == .left ? names.0 : names.1
+        let placeholder = tab.missingCounterpart ?? ComparePanePlaceholder()
+        placeholder.showsStatusBar = tab.compareView == nil
+        placeholder.content.configure(
+            symbol: "folder.badge.questionmark", title: "No “\(target.lastPathComponent)” in \(sideName)",
+            detail: "Linked browsing will follow again when you open a folder that exists on both sides.",
+            button: "Create “\(target.lastPathComponent)”"
+        ) { [weak self, weak tab] in if let tab { self?.createLinkedCounterpart(target, in: tab) } }
+        placeholder.unlink.isHidden = false; placeholder.unlink.clicked = { [weak self] in self?.toggleLinkedBrowsing(nil) }
+        placeholder.choose.isHidden = false
+        placeholder.choose.clicked = { [weak self, weak tab] in if let tab { self?.chooseLinkedCounterpart(in: tab, side: side) } }
+        placeholder.statusText = "Not in \(sideName)"
+        tab.missingCounterpart = placeholder; tab.missingOnRight = side == .right
+        if placeholder.superview !== tab { tab.addSubview(placeholder) }
+        tab.needsLayout = true
+        if tab === self.tab { syncToActiveView() }
+    }
+    private func chooseLinkedCounterpart(in tab: PorpoiseTab, side: SyncSide) {
+        let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.prompt = "Choose Folder"
+        let container = side == .left ? tab.primary : tab.secondary!
+        panel.directoryURL = container.url.deletingLastPathComponent()
+        guard let window else { return }
+        panel.beginSheetModal(for: window) { [weak self, weak tab, weak container] response in
+            guard let self, let tab, let container, response == .OK, let url = panel.url else { return }
+            tab.linkUpdating = true; container.setURL(url); tab.linkUpdating = false
+            tab.linkedRoots = (tab.primary.url, tab.secondary!.url)
+            tab.compareView?.model.reanchorNames(left: tab.primary.url, right: tab.secondary!.url)
+            self.comparisonNavigationChanged(container)
+        }
+    }
+    private func createLinkedCounterpart(_ url: URL, in selectedTab: PorpoiseTab) {
         DispatchQueue.global(qos: .utility).async { [weak self, weak selectedTab] in
             let result = Result {
                 if let provider = RemoteFS.provider(for: url) {
@@ -233,7 +273,7 @@ extension MainWindowController {
                 switch result {
                 case .success:
                     selectedTab.missingCounterpart?.removeFromSuperview(); selectedTab.missingCounterpart = nil;
-                    selectedTab.containers.forEach { $0.reload() }
+                    selectedTab.containers.forEach { $0.reload() }; selectedTab.compareView?.model.start()
                 case .failure(let error): self.view.messageBar.show(error.localizedDescription, error: true)
                 }
                 self.syncToActiveView()

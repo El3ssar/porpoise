@@ -46,7 +46,7 @@ extension ItemListView {
                 c.selectionMode = false
                 return
             }
-            if !model.selection.isEmpty { model.selection = []; needsDisplay = true }
+            if !model.selection.isEmpty { model.selection = []; needsDisplay = true } else { comparisonExit?() }
             return
         case Key.backspace where mods.isEmpty:
             // ⌫ = Back (Dolphin's Backspace), only while the view has focus.

@@ -7,8 +7,9 @@ public struct CompareDetailsPresentation {
     public var rows: [Row] = []
     public var slots: [Int] = []
     public var pathAliases: [String: String] = [:]
+    public var folderCounts: [URL: Int] = [:]
     public var counts: (folders: Int, files: Int, bytes: Int64) = (0, 0, 0)
-    public init(_ differences: [SyncDifference], root: URL, side: SyncSide, expanded: Set<String>) {
+    public init(_ differences: [SyncDifference], root: URL, side: SyncSide, expanded: Set<String>, folderCounts: [String: Int] = [:]) {
         rows.reserveCapacity(differences.count); slots.reserveCapacity(differences.count)
         var types: [String: String] = [:]
         for (slot, difference) in differences.enumerated() {
@@ -25,6 +26,7 @@ public struct CompareDetailsPresentation {
                 contentType: directory ? "public.folder" : types[ext], linkDestination: entry.linkTarget)
             rows.append(Row(item: item, depth: entry.path.split(separator: "/").count - 1, isExpanded: expanded.contains(difference.path)))
             slots.append(slot)
+            if let count = folderCounts[difference.path], directory { self.folderCounts[url] = count }
             if entry.path != difference.path { pathAliases[entry.path] = difference.path }
             if entry.path.split(separator: "/").count == 1 {
                 if item.isBrowsableFolder { counts.folders += 1 } else { counts.files += 1; counts.bytes += item.size }

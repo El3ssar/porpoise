@@ -21,9 +21,11 @@ final class ComparePanePlaceholder: NSView {
         needsLayout = true
     }
     let unlink = CompareActionButton(title: "Unlink", clicked: {})
+    let choose = CompareActionButton(title: "Choose Folder…", clicked: {})
+    var showsStatusBar = true
     override init(frame: CGRect) {
         super.init(frame: frame); wantsLayer = true
-        for view in [content, recentHeading, recentFrame, dropHint, unlink, status] { addSubview(view) }
+        for view in [content, recentHeading, recentFrame, dropHint, unlink, choose, status] { addSubview(view) }
         recentFrame.wantsLayer = true; recentFrame.layer?.cornerRadius = 6; recentFrame.layer?.borderWidth = 1
         recentHeading.font = .systemFont(ofSize: 11); dropHint.font = .systemFont(ofSize: 11); dropHint.alignment = .center
         status.font = .systemFont(ofSize: 11)
@@ -36,7 +38,7 @@ final class ComparePanePlaceholder: NSView {
                 button.wantsLayer = true; button.layer?.backgroundColor = index == 0 ? Theme.selection.withAlphaComponent(0.24).cgColor : nil
             }
         }
-        unlink.isHidden = true; unlink.isBordered = false
+        unlink.isHidden = true; unlink.isBordered = false; choose.isHidden = true
     }
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
@@ -50,6 +52,7 @@ final class ComparePanePlaceholder: NSView {
     }
     override func draw(_ dirty: NSRect) {
         Theme.viewBackground.setFill(); bounds.fill()
+        guard showsStatusBar else { return }
         Theme.windowBackground.setFill(); CGRect(x: 0, y: bounds.height - 28, width: bounds.width, height: 28).fill()
         Theme.hairline.setFill(); CGRect(x: 0, y: bounds.height - 28, width: bounds.width, height: 1).fill()
     }
@@ -74,6 +77,8 @@ final class ComparePanePlaceholder: NSView {
         }
         dropHint.frame = CGRect(x: listX, y: (recentButtons.isEmpty ? content.frame.maxY : recentFrame.frame.maxY) + 10, width: listWidth, height: 20)
         unlink.frame = CGRect(x: primary.maxX + 8, y: primary.minY + 1, width: 68, height: 26)
+        choose.frame = CGRect(x: max(8, (bounds.width - 150) / 2), y: primary.maxY + 10, width: 150, height: 28)
+        status.isHidden = !showsStatusBar
         status.frame = CGRect(x: 12, y: bounds.height - 23, width: max(0, bounds.width - 24), height: 18)
     }
 }
