@@ -89,7 +89,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
     }
     func reviewInclude(_ path: String, enabled: Bool) {
         guard Settings.isTesting else { return }
-        overrides[path] = enabled ? nil : .skip; replan()
+        overrides[path] = enabled ? (pair.mode == .twoWay ? nil : .keepLeft) : .skip; replan()
     }
     func reviewDismiss() {
         guard Settings.isTesting else { return }
@@ -205,7 +205,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         guard let root = window?.contentView else { return }
         let width = root.bounds.width, height = root.bounds.height
         let minimumHeight: CGFloat =
-            480 + keepExpansion * 24 + (optionsOpen ? 94 : 0)
+            540 + keepExpansion * 24 + (optionsOpen ? 94 : 0)
             + 0 + (callout.text.isEmpty ? 0 : 44)
         window?.contentMinSize = CGSize(width: 600, height: minimumHeight)
         if height < minimumHeight { window?.setContentSize(CGSize(width: width, height: minimumHeight)); return }
@@ -419,7 +419,13 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
     nonisolated private static func presentedSteps(_ preview: SyncPreview, pair: SavedSync, previous: SyncState?, overrides: [String: SyncOverride])
         -> [SyncStep]
     {
-        let display = SyncPlanner.plan(preview.comparison, mode: pair.mode, previous: previous, overrides: overrides.filter { $0.value != .skip })
+        var displayOverrides = overrides.filter { $0.value != .skip }
+        if pair.mode == .backup {
+            for step in SyncPlanner.plan(preview.comparison, mode: .backup).conflicts where step.reason == SyncPlanner.backupNewerReason {
+                displayOverrides[step.path] = .keepLeft
+            }
+        }
+        let display = SyncPlanner.plan(preview.comparison, mode: pair.mode, previous: previous, overrides: displayOverrides)
             .steps
         guard pair.mode == .twoWay else { return display }
         let conflicts = SyncPlanner.plan(preview.comparison, mode: pair.mode, previous: previous).conflicts
@@ -430,7 +436,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         planning = false; outline.alphaValue = 1; spinner.stopAnimation(nil); summary.textColor = Theme.windowText
         guard let preview else { return }
         let plan = preview.plan
-        includedStepIDs = Set(plan.steps.map(\.id))
+        includedStepIDs = Set(preview.executable.steps.map(\.id))
         blockedStepIDs = Set(preview.blockedSteps.map(\.id))
         let attributed = NSMutableAttributedString()
         for (action, word, color) in [
@@ -446,11 +452,21 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                 attributed.append(NSAttributedString(string: " " + word, attributes: [.foregroundColor: Theme.windowText]))
             }
         }
-        if preview.skippedConflicts > 0 {
+        let newerSkipped = plan.conflicts.filter { $0.reason == SyncPlanner.backupNewerReason }.count
+        if newerSkipped > 0 {
             if attributed.length > 0 { attributed.append(NSAttributedString(string: " · ")) }
             attributed.append(
                 NSAttributedString(
-                    string: "\(preview.skippedConflicts) \(preview.skippedConflicts == 1 ? "conflict" : "conflicts") will be skipped",
+                    string:
+                        "\(newerSkipped) newer \(newerSkipped == 1 ? "file" : "files") in \(pair.rightTitle) \(newerSkipped == 1 ? "is" : "are") skipped",
+                    attributes: [.foregroundColor: Theme.compareDanger]))
+        }
+        let otherConflicts = preview.skippedConflicts - newerSkipped
+        if otherConflicts > 0 {
+            if attributed.length > 0 { attributed.append(NSAttributedString(string: " · ")) }
+            attributed.append(
+                NSAttributedString(
+                    string: "\(otherConflicts) \(otherConflicts == 1 ? "conflict" : "conflicts") will be skipped",
                     attributes: [.foregroundColor: Theme.compareDanger]))
         }
         if attributed.length == 0 {
@@ -462,7 +478,10 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                             : "Nothing to do. \(pair.leftTitle) and \(pair.rightTitle) already match.")
                         : "No items selected for this sync."))
         }
-        let unchecked = displaySteps.filter { $0.action != .conflict && !includedStepIDs.contains($0.id) && !blockedStepIDs.contains($0.id) }.count
+        let unchecked = max(
+            0,
+            displaySteps.filter { $0.action != .conflict && !includedStepIDs.contains($0.id) && !blockedStepIDs.contains($0.id) }.count - newerSkipped
+        )
         let bytes = plan.steps.filter { $0.action == .copy || $0.action == .replace }.reduce(Int64(0)) { $0 + ($1.expectedSource?.size ?? 0) }
         if bytes > 0 {
             attributed.append(NSAttributedString(string: " · " + FileFormat.size(bytes), attributes: [.foregroundColor: Theme.windowTextInactive]))
@@ -537,7 +556,14 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             window.setContentSize(CGSize(width: root.bounds.width, height: desired))
         }
     }
-    @objc private func toggleOptions() { optionsOpen.toggle(); layout() }
+    @objc private func toggleOptions() {
+        optionsOpen.toggle()
+        if let window, let root = window.contentView {
+            let height = min(900, max(window.contentMinSize.height, root.bounds.height + (optionsOpen ? 94 : -94)))
+            window.setContentSize(CGSize(width: root.bounds.width, height: height))
+        }
+        layout()
+    }
     @objc private func automaticChanged() { animateFooter() }
     private func animateFooter() {
         let start = keepExpansion, end: CGFloat = automatic.state == .on || savingTask || editing ? 1 : 0
@@ -651,7 +677,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             guard let self, !self.planning else { return }
             for child in node.allSteps {
                 self.overrides[self.differences[child.path]?.path ?? child.sourcePath.flatMap { self.differences[$0]?.path } ?? child.path] =
-                    include ? nil : .skip
+                    include ? (self.pair.mode == .twoWay ? nil : .keepLeft) : .skip
             }
             self.replan()
         }

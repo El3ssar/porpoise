@@ -249,7 +249,8 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
                         let copied = preview.executable.itemCount(for: .copy) + preview.executable.itemCount(for: .replace)
                         let trashed = preview.executable.itemCount(for: .trash)
                         activity.completionSummary =
-                            "Synced · \(copied) copied" + (trashed > 0 ? " · \(trashed) moved to the Trash" : "") + " · just now"
+                            "Synced" + (copied > 0 ? " · \(copied) copied" : "") + (trashed > 0 ? " · \(trashed) moved to the Trash" : "")
+                            + " · just now"
                         self.activities[pair.id] = activity; self.runs[pair.id] = preview
                         self.runPaths[pair.id] = Dictionary(uniqueKeysWithValues: preview.plan.steps.map { ($0.id, $0.path) })
                         self.statuses[pair.id] = .syncing

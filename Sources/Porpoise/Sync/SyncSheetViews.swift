@@ -174,6 +174,10 @@ final class SyncPlanRow: NSView {
             contentType: UTType(filenameExtension: (step.path as NSString).pathExtension)?.identifier)
         icon.image = Icons.shared.image(Icons.shared.iconName(for: file), size: 16, folder: folder)
         path.stringValue = displayPath ?? (step.path.isEmpty ? "Both folders" : step.path)
+        if let rename = step.renameTo {
+            path.stringValue = "Rename \((step.path as NSString).lastPathComponent) to \((rename as NSString).lastPathComponent)"
+            path.toolTip = path.stringValue + " in " + (step.target == .left ? pair.leftTitle : pair.rightTitle)
+        }
         path.font = .systemFont(ofSize: 13); path.lineBreakMode = .byTruncatingMiddle;
         path.textColor = unavailable ? Theme.windowTextInactive : step.action == .trash ? Theme.compareDanger : Theme.windowText
         size.stringValue = FileFormat.size(displayBytes ?? step.expectedSource?.size ?? step.expectedTarget?.size ?? 0)
@@ -184,7 +188,7 @@ final class SyncPlanRow: NSView {
                 ? "new"
                 : step.action == .mkdir
                     ? "new folder" : step.action == .trash ? "only in \(step.target == .left ? pair.leftTitle : pair.rightTitle)" : "changed")
-        if step.action != .conflict, let difference, case .changed(let change) = difference.status {
+        if step.renameTo == nil, step.action != .conflict, let difference, case .changed(let change) = difference.status {
             detail.stringValue =
                 change == .newerLeft ? "newer in " + pair.leftTitle : change == .newerRight ? "newer in " + pair.rightTitle : "changed"
         }
@@ -201,15 +205,28 @@ final class SyncPlanRow: NSView {
             if let difference {
                 func metadata(_ entry: SyncEntry?, _ title: String) -> String {
                     guard let entry else { return "Deleted in " + title }
-                    let date = entry.modified.map { ", " + $0.formatted(date: .omitted, time: .shortened) } ?? ""
-                    return FileFormat.size(entry.size) + date + (title == pair.leftTitle ? " here" : " there")
+                    let date =
+                        entry.modified.map { date -> String in
+                            let format = DateFormatter()
+                            format.locale = .current
+                            format.dateFormat = Calendar.current.isDateInToday(date) ? "'today' HH:mm" : "d MMM HH:mm"
+                            return ", " + format.string(from: date)
+                        } ?? ""
+                    return title + " " + FileFormat.size(entry.size) + date
                 }
                 detail.stringValue =
-                    (difference.left != nil && difference.right != nil ? "Changed on both sides · " : "") + metadata(difference.left, pair.leftTitle)
+                    (difference.left != nil && difference.right != nil ? (hasState ? "Changed on both sides · " : "Different on both sides · ") : "")
+                    + metadata(difference.left, pair.leftTitle)
                     + " · " + metadata(difference.right, pair.rightTitle)
                 detail.toolTip = (step.reason ?? "Changed on both sides") + " · " + detail.stringValue
             }
-            if let difference, difference.left?.kind != .directory, difference.right?.kind != .directory,
+            if let difference, let left = difference.left, let right = difference.right,
+                left.kind == right.kind, (left.path as NSString).lastPathComponent != (right.path as NSString).lastPathComponent,
+                difference.status != .collision
+            {
+                labels = [(left.path as NSString).lastPathComponent, (right.path as NSString).lastPathComponent]
+                choiceValues = [.keepLeft, .keepRight]
+            } else if let difference, difference.left?.kind != .directory, difference.right?.kind != .directory,
                 difference.left != nil, difference.right != nil, difference.left?.kind == difference.right?.kind, difference.status != .collision
             {
                 labels = [pair.leftTitle, pair.rightTitle, "Both"]; choiceValues = [.keepLeft, .keepRight, .keepBoth]
