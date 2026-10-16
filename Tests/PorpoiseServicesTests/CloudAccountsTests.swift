@@ -221,17 +221,3 @@ import Testing
         #expect(PlaceSection.places.accountID == nil)
     }
 }
-
-/// Test instances keep the fake server's token out of the login Keychain.
-@Suite(.isolatedSettings) struct DriveTestingCredentialsTests {
-    @Test func tokensLiveInTheInstancesDefaults() throws {
-        let store = DriveTestingCredentials()
-        let id = UUID()
-        #expect(try store.read(clientID: "porpoise-fixture", accountID: id) == nil)
-        try store.save("synthetic", clientID: "porpoise-fixture", accountID: id)
-        #expect(try store.read(clientID: "porpoise-fixture", accountID: id) == "synthetic")
-        #expect(try store.read(clientID: "other", accountID: id) == nil)
-        try store.remove(clientID: "porpoise-fixture", accountID: id)
-        #expect(try store.read(clientID: "porpoise-fixture", accountID: id) == nil)
-    }
-}

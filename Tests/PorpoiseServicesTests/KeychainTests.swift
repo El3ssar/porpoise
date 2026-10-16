@@ -1,20 +1,19 @@
 import Foundation
-import Security
 import Testing
 
 @testable import PorpoiseServices
 
-/// Logins by server, account and protocol, in a throwaway keychain (never the login keychain).
+/// Logins by server, account and protocol, in a memory store (never the login keychain).
 @Suite struct KeychainTests {
-    let test: TestKeychain
-    init() throws { test = try TestKeychain() }
+    let api = MemoryKeychainAPI()
+    private var test: Keychain { Keychain(api: api) }
 
     private func password(_ scheme: String, account: String = "me") -> String? {
-        Keychain.password(server: "nas.invalid", account: account, scheme: scheme, in: test.keychain)
+        test.password(server: "nas.invalid", account: account, scheme: scheme)
     }
 
     private func save(_ password: String, _ scheme: String) {
-        Keychain.save(server: "nas.invalid", account: "me", password: password, scheme: scheme, in: test.keychain)
+        test.save(server: "nas.invalid", account: "me", password: password, scheme: scheme)
     }
 
     @Test func savesAndUpdatesPerProtocol() {
@@ -28,16 +27,16 @@ import Testing
     }
 
     @Test func anotherProtocolsPasswordIsNeverSentOverFTP() {
-        test.add(server: "nas.invalid", account: "me", password: "smb secret", protocol: kSecAttrProtocolSMB)
+        api.add(server: "nas.invalid", account: "me", password: "smb secret", scheme: "smb")
         #expect(password("ftp") == nil)
         // Saving the FTP login leaves the SMB one alone.
         save("ftp secret", "ftp")
-        #expect(test.password(server: "nas.invalid", account: "me", protocol: kSecAttrProtocolSMB) == "smb secret")
+        #expect(api.password(server: "nas.invalid", account: "me", scheme: "smb") == "smb secret")
         #expect(password("ftp") == "ftp secret")
     }
 
     @Test func itemsSavedWithoutAProtocolAreStillFound() {
-        test.add(server: "nas.invalid", account: "me", password: "old version", protocol: nil)
+        api.add(server: "nas.invalid", account: "me", password: "old version", scheme: nil)
         #expect(password("ftp") == "old version")
         // Once saved with a protocol, that one wins.
         save("new", "ftp")

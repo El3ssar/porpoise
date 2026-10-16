@@ -29,37 +29,23 @@ public protocol DriveCredentialStore: Sendable {
     func remove(clientID: String, accountID: UUID) throws
 }
 
-/// Test instances (PORPOISE_DEFAULTS_SUITE) against the fake Drive server: the synthetic fixture token is kept in the
-/// instance's throwaway defaults, never in the login Keychain, where every rebuilt (ad-hoc signed) binary would make
-/// macOS ask the user for access.
-public struct DriveTestingCredentials: DriveCredentialStore, @unchecked Sendable {
-    private let defaults: UserDefaults
-    public init(defaults: UserDefaults = Settings.store) { self.defaults = defaults }
-    private func key(_ clientID: String, _ accountID: UUID) -> String { "testing.driveCredential.\(clientID).\(accountID.uuidString)" }
-    public func read(clientID: String, accountID: UUID) throws -> String? { defaults.string(forKey: key(clientID, accountID)) }
-    public func save(_ token: String, clientID: String, accountID: UUID) throws { defaults.set(token, forKey: key(clientID, accountID)) }
-    public func remove(clientID: String, accountID: UUID) throws { defaults.removeObject(forKey: key(clientID, accountID)) }
-}
-
 public struct DriveKeychainCredentials: DriveCredentialStore, @unchecked Sendable {
-    private let keychain: SecKeychain?
-    public init() { keychain = nil }
-    init(in keychain: SecKeychain) { self.keychain = keychain }
+    private let api: any KeychainAPI
+    public init() { api = SystemKeychainAPI() }
+    init(api: any KeychainAPI) { self.api = api }
     private func query(_ clientID: String, _ accountID: UUID) -> [String: Any] {
-        var query: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "com.porpoise.google-drive.\(clientID)",
             kSecAttrAccount as String: accountID.uuidString,
         ]
-        if let keychain { query[kSecMatchSearchList as String] = [keychain] }
         return query
     }
     public func read(clientID: String, accountID: UUID) throws -> String? {
         var q = query(clientID, accountID)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(q as CFDictionary, &result)
+        let (status, result) = api.copy(q)
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess else { throw DriveError.keychain(status) }
         guard let data = result as? Data, let token = String(data: data, encoding: .utf8) else { throw DriveError.invalidResponse }
@@ -68,19 +54,17 @@ public struct DriveKeychainCredentials: DriveCredentialStore, @unchecked Sendabl
     public func save(_ token: String, clientID: String, accountID: UUID) throws {
         let q = query(clientID, accountID)
         let data = Data(token.utf8)
-        let status = SecItemUpdate(q as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        let status = api.update(q, attributes: [kSecValueData as String: data])
         if status == errSecSuccess { return }
         guard status == errSecItemNotFound else { throw DriveError.keychain(status) }
         var add = q
-        add.removeValue(forKey: kSecMatchSearchList as String)
-        if let keychain { add[kSecUseKeychain as String] = keychain }
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let added = SecItemAdd(add as CFDictionary, nil)
+        let added = api.add(add)
         guard added == errSecSuccess else { throw DriveError.keychain(added) }
     }
     public func remove(clientID: String, accountID: UUID) throws {
-        let status = SecItemDelete(query(clientID, accountID) as CFDictionary)
+        let status = api.delete(query(clientID, accountID))
         guard status == errSecSuccess || status == errSecItemNotFound else { throw DriveError.keychain(status) }
     }
 }
@@ -176,7 +160,7 @@ public actor DriveTokenManager {
     private var disconnected = false
 
     public init(
-        configuration: DriveOAuthConfiguration, accountID: UUID, credentials: any DriveCredentialStore = DriveKeychainCredentials(),
+        configuration: DriveOAuthConfiguration, accountID: UUID, credentials: any DriveCredentialStore = CredentialStores.drive(),
         http: DriveHTTP = DriveHTTP()
     ) {
         self.configuration = configuration; self.accountID = accountID; self.credentials = credentials; self.http = http

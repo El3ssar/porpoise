@@ -1,6 +1,5 @@
 import Foundation
 import PorpoiseCore
-import Security
 
 /// FTP through curl. Credentials reach curl on stdin (`--config -`), never on its command line, where
 /// any local user could read them with `ps`.
@@ -11,15 +10,14 @@ final class FTPProvider: RemoteProvider {
     private var user: String?
     private var password: String?
     private let curl: String
-    /// Where logins are looked up and saved (nil: the user's keychains).
-    private let keychain: SecKeychain?
+    private let credentialStore: any PasswordCredentialStore
 
     /// curl's exit code for a refused login (CURLE_LOGIN_DENIED).
     private static let loginDenied: Int32 = 67
     private static let connectTimeout = 15
 
-    /// Tests pass their own `curl` (which records what it gets) and a throwaway keychain.
-    init(url: URL, curl: String = "/usr/bin/curl", keychain: SecKeychain? = nil) {
+    /// Tests pass their own `curl` (which records what it gets) and a memory credential store.
+    init(url: URL, curl: String = "/usr/bin/curl", credentialStore: any PasswordCredentialStore = CredentialStores.passwords()) {
         scheme = url.scheme?.lowercased() ?? "ftp"
         host = url.host ?? ""
         port = url.port
@@ -27,8 +25,8 @@ final class FTPProvider: RemoteProvider {
         // `password` alone stays percent-encoded ("p%40ss"); the server needs the password itself.
         password = url.password(percentEncoded: false)
         self.curl = curl
-        self.keychain = keychain
-        if let u = user, password == nil { password = Keychain.password(server: host, account: u, scheme: scheme, in: keychain) }
+        self.credentialStore = credentialStore
+        if let u = user, password == nil { password = credentialStore.password(server: host, account: u, scheme: scheme) }
     }
 
     func rootTitle(_ url: URL) -> String { user.map { "\($0)@\(host)" } ?? host }
@@ -99,7 +97,7 @@ final class FTPProvider: RemoteProvider {
         guard let login = RemoteFS.askLogin(host, user) else { return false }
         user = login.user
         password = login.password
-        Keychain.save(server: host, account: login.user, password: login.password, scheme: scheme, in: keychain)
+        credentialStore.save(server: host, account: login.user, password: login.password, scheme: scheme)
         return true
     }
 

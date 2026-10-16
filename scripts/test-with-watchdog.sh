@@ -11,7 +11,12 @@ for a in "$@"; do [ "$a" = --enable-code-coverage ] && build+=("$a"); done  # th
 swift build "${build[@]}" || exit $?
 marker=$(mktemp)
 here=$(dirname "$0")
-swift test "$@" &
+test_command=(swift)
+# Use the actual toolchain executable: macOS strips DYLD variables from the /usr/bin/swift shim.
+if [[ -n "${PORPOISE_DENY_KEYCHAIN_DYLIB:-}" ]]; then
+    test_command=(env "DYLD_INSERT_LIBRARIES=$PORPOISE_DENY_KEYCHAIN_DYLIB" "$(xcrun --find swift)")
+fi
+"${test_command[@]}" test "$@" &
 pid=$!
 for ((i = 0; i < limit; i++)); do
     if ! kill -0 "$pid" 2>/dev/null; then

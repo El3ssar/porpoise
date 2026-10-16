@@ -85,6 +85,10 @@ The bridge only exists in instances started with `PORPOISE_DEFAULTS_SUITE`; it c
 run menu items, change settings and take snapshots, all inside the test instance. Delete the suite afterwards
 (`defaults delete app.porpoise.mytest`).
 
+Tests and isolated launches (`PORPOISE_DEFAULTS_SUITE` or `PORPOISE_BRIDGE`) keep FTP passwords and Drive refresh tokens
+in process memory. These credentials disappear on exit; reconnect the fake Drive account after relaunch. The central
+credential policy rejects direct system Keychain access in isolated processes. Normal launches use the system Keychain.
+
 Test instances leave the index off by default. To exercise indexed search, also set
 `PORPOISE_TEST_INDEX_DIRECTORY` to a throwaway snapshot directory and put the JSON-encoded
 `IndexConfiguration` data in the test suite's `searchIndex.configuration` key before launch. Both the index
