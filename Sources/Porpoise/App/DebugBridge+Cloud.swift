@@ -77,6 +77,17 @@ extension DebugBridge {
             guard let w = AppDelegate.shared.windows.first, let win = w.window, let f = w.view.messageBar.actionFrame else { return }
             let r = w.view.messageBar.convert(f, to: nil)
             try? "\(Int(r.midX)) \(Int(win.frame.height - r.midY))".write(toFile: rest, atomically: true, encoding: .utf8)
+        case "menushot": menuShot(rest)
+        case "barclick":
+            // barclick: the message bar's action button (Undo, Allow Changes…), as a click does.
+            AppDelegate.shared.windows.first?.view.messageBar.performAction()
+        case "type":
+            // type <text>: replaces the text being edited (the New Folder name, an inline rename), as typing does.
+            let window = NSApp.windows.first { $0.isVisible && $0.isSheet } ?? AppDelegate.shared.windows.first?.window
+            if let editor = window?.firstResponder as? NSTextView {
+                editor.selectAll(nil)
+                editor.insertText(rest, replacementRange: editor.selectedRange())
+            }
         case "newfolder":
             // newfolder <name>: what the New Folder dialog's Create does.
             AppDelegate.shared.windows.first?.createCloudFolder(named: rest)
@@ -107,22 +118,46 @@ extension DebugBridge {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            var ids: [UnsafeRawPointer?] = ([window.attachedSheet].compactMap { $0 } + [window])
-                .compactMap { UnsafeRawPointer(bitPattern: $0.windowNumber) }
-            // "all": every on-screen window of this process, front to back: open menus and tooltips too.
-            if a.count > 3, a[3] == "all" {
-                let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
-                ids = info.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == getpid() }
-                    .compactMap { ($0[kCGWindowNumber as String] as? Int).flatMap { UnsafeRawPointer(bitPattern: $0) } }
-            }
-            typealias Fn = @convention(c) (CGRect, CFArray, UInt32) -> Unmanaged<CGImage>?
-            guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImageFromArray") else { return }
-            let fn = unsafeBitCast(sym, to: Fn.self)
-            let count = ids.count
-            let list = ids.withUnsafeMutableBufferPointer { CFArrayCreate(nil, $0.baseAddress, count, nil) }
-            // kCGWindowImageBoundsIgnoreFraming
-            guard let list, let image = fn(.null, list, 1)?.takeRetainedValue() else { return }
-            try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: a[0]))
+            let ids = a.count > 3 && a[3] == "all" ? Self.ownWindowIDs() : ([window.attachedSheet].compactMap { $0 } + [window]).map(\.windowNumber)
+            Self.capture(ids, to: a[0])
         }
+    }
+
+    /// Every on-screen window of this process, front to back: open menus, popovers and tooltips too.
+    static func ownWindowIDs() -> [Int] {
+        let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
+        return info.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == getpid() }.compactMap { $0[kCGWindowNumber as String] as? Int }
+    }
+
+    /// Window-server images of these windows only (whatever covers them on screen), composited front to back.
+    static func capture(_ windowIDs: [Int], to path: String) {
+        var ids: [UnsafeRawPointer?] = windowIDs.map { UnsafeRawPointer(bitPattern: $0) }
+        typealias Fn = @convention(c) (CGRect, CFArray, UInt32) -> Unmanaged<CGImage>?
+        guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImageFromArray") else { return }
+        let fn = unsafeBitCast(sym, to: Fn.self)
+        let count = ids.count
+        let list = ids.withUnsafeMutableBufferPointer { CFArrayCreate(nil, $0.baseAddress, count, nil) }
+        // kCGWindowImageBoundsIgnoreFraming
+        guard let list, let image = fn(.null, list, 1)?.takeRetainedValue() else { return }
+        try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+    }
+
+    /// `cloud menushot <item name or empty>|<png>`: the item's context menu (the background's when empty), opened at
+    /// the item as a right-click would, captured while it is open, then closed.
+    private func menuShot(_ arg: String) {
+        let f = arg.components(separatedBy: "|")
+        guard Settings.isTesting, f.count == 2, let w = AppDelegate.shared.windows.first else { return }
+        let list = w.view.list
+        let row = w.view.model.rows.firstIndex { $0.item.name == f[0] }
+        if let row { list.select(w.view.model.rows[row].item.url) } else { w.view.model.selection = [] }
+        let menu = w.contextMenu(for: row.map { w.view.model.rows[$0].item }, in: w.view)
+        let at = row.map { CGPoint(x: list.iconRect($0).midX, y: list.iconRect($0).midY) } ?? CGPoint(x: list.bounds.midX, y: 300)
+        // The menu runs its own tracking loop: the capture is a timer in the common modes, which that loop serves.
+        let timer = Timer(timeInterval: 0.7, repeats: false) { _ in
+            Self.capture(Self.ownWindowIDs(), to: f[1])
+            menu.cancelTracking()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        DispatchQueue.main.async { menu.popUp(positioning: nil, at: at, in: list) }
     }
 }

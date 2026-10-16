@@ -37,6 +37,8 @@ final class MessageBar: NSView {
     var onDismiss: (() -> Void)?
 
     @objc private func runAction() { actionHandler?() }
+    /// The action button's click (test bridge).
+    func performAction() { if actionFrame != nil { actionButton.performClick(nil) } }
 
     func show(_ text: String, error: Bool, action: String? = nil, handler: (() -> Void)? = nil) {
         closeHandler = nil

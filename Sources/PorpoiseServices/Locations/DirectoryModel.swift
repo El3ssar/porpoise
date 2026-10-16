@@ -160,38 +160,53 @@ public final class DirectoryModel {
 
     // MARK: Optimistic changes
 
-    /// Changes made on a remote folder show at once and survive listings that arrive before the service answers.
-    private var edits: [(id: UUID, edit: ListingEdit, originals: [FileItem])] = []
+    /// Changes made on a remote folder show at once and survive listings that arrive before the service answers, and
+    /// confirmed ones also survive listings that were already under way: they go once a listing started after them ends.
+    private var edits: [(id: UUID, edit: ListingEdit, originals: [FileItem], confirmedAt: Int?)] = []
 
     /// Shows a change now (rows appear, change or vanish, the selection stays); `endEdit` once the service answered.
     @discardableResult public func applyEdit(_ edit: ListingEdit) -> UUID {
         let id = UUID()
         let touched = edit.removed.union(edit.replaced.map(\.url))
         let originals = (items + children.values.flatMap { $0 }).filter { touched.contains($0.url) }
-        edits.append((id, edit, originals))
-        apply(edit)
+        edits.append((id, edit, originals, nil))
+        show(edit)
         return id
     }
 
-    /// The service answered: the change stays (until the next listing confirms it), or `rollback` puts things back.
+    /// The service answered: the change stays (until a newer listing has it), or `rollback` puts things back.
     public func endEdit(_ id: UUID, rollback: Bool = false) {
         guard let i = edits.firstIndex(where: { $0.id == id }) else { return }
-        let (_, edit, originals) = edits.remove(at: i)
-        guard rollback else { return }
+        guard rollback else {
+            if edits[i].confirmedAt == nil { edits[i].confirmedAt = loadToken }
+            return
+        }
+        let (_, edit, originals, _) = edits.remove(at: i)
         let back = ListingEdit(
             folder: edit.folder, removed: Set(edit.added.map(\.url)),
             replaced: originals.filter { o in edit.replaced.contains { $0.url == o.url } },
             added: originals.filter { edit.removed.contains($0.url) })
-        apply(back)
+        show(back)
     }
 
-    /// A one-off change (the service's version of an optimistic row).
+    /// The service's own version of a change (its real item for an optimistic row): shown, and kept until a newer
+    /// listing has it.
     public func apply(_ edit: ListingEdit) {
+        edits.append((UUID(), edit, [], loadToken))
+        show(edit)
+    }
+
+    private func show(_ edit: ListingEdit) {
         items = edit.apply(to: items, in: location)
         for (folder, list) in children { children[folder] = edit.apply(to: list, in: folder) }
         selection.subtract(edit.removed)
         if let c = currentURL, edit.removed.contains(c) { currentURL = nil }
         rebuild()
+    }
+
+    /// A complete listing that started after a confirmed change has it: the change needn't be laid over listings anymore.
+    private func listingArrived(_ token: Int) {
+        edits.removeAll { $0.confirmedAt.map { $0 < token } ?? false }
     }
 
     private func withEdits(_ listed: [FileItem], in folder: URL) -> [FileItem] {
@@ -510,6 +525,7 @@ public final class DirectoryModel {
                 for e in expandedNow { kids[e] = (try? provider.list(e)) ?? [] }
                 DispatchQueue.main.async {
                     guard let self, token == self.loadToken else { return }
+                    self.listingArrived(token)
                     self.items = self.withEdits(listed, in: url)
                     self.children = self.keepingExpanded(kids)
                     self.isLoading = false
@@ -578,6 +594,7 @@ public final class DirectoryModel {
             for e in expandedNow { kids[e] = (try? DirectoryLister.list(e)) ?? [] }
             DispatchQueue.main.async {
                 guard let self, token == self.loadToken else { return }
+                self.listingArrived(token)
                 self.items = self.withEdits(listed, in: url)
                 self.children = self.keepingExpanded(kids)
                 self.isLoading = false
@@ -601,6 +618,7 @@ public final class DirectoryModel {
     @MainActor private func applyDrivePage(_ listed: [FileItem], complete: Bool, hasCache: Bool, token: Int, keepSelection: Bool) {
         guard token == loadToken, !hasCache || complete else { return }
         // A refresh never temporarily removes later pages or resets expanded rows.
+        if complete { listingArrived(token) }
         let listed = withEdits(listed, in: location)
         if items != listed {
             items = listed
