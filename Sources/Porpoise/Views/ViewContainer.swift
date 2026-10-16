@@ -514,7 +514,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 statusBar.text = statusBar.text.isEmpty ? "Updating…" : statusBar.text + " · Updating…"
             }
             if readOnly != nil, !(hoverItem?.isWebDocument ?? false) {
-                statusBar.text = statusBar.text.isEmpty ? "View only" : statusBar.text + " · View only"
+                // Offline is a passing state, not the folder's sharing role.
+                let what = CloudAccounts.shared.account(for: url)?.status == .offline ? "Offline" : "View only"
+                statusBar.text = statusBar.text.isEmpty ? what : statusBar.text + " · " + what
             }
             let account = CloudAccounts.shared.account(for: url)
             if Settings.shared.statusBarMode == .fullWidth, let used = account?.quotaUsed, let total = account?.quotaTotal, total > 0 {

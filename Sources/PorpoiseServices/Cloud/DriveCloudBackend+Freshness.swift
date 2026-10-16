@@ -22,7 +22,9 @@ extension DriveCloudBackend {
             return {}
         }
         // Everywhere: all the account can see (My Drive and what's shared with it). A folder: its own items.
-        let scope = everywhere || location.collection == .sharedDrives ? DriveLocation(accountID: location.accountID) : location
+        var scope = everywhere || location.collection == .sharedDrives ? DriveLocation(accountID: location.accountID) : location
+        // Here in My Drive: its own items (Drive would otherwise search everything the account can see).
+        if !everywhere, location.collection == .myDrive { scope = DriveLocation(accountID: location.accountID, collection: .folder("root")) }
         let parent: DriveLocation? = everywhere ? nil : location
         let task = Task { @MainActor in
             do {
