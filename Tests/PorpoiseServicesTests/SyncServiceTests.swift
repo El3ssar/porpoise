@@ -87,6 +87,25 @@ struct SyncServiceTests {
         try await Task.sleep(for: .milliseconds(100))
         #expect(counter.count == 2)
     }
+    @Test func idleLocalRootsDoNotPollButRemoteAndMissingRootsDo() async throws {
+        final class Counter: @unchecked Sendable {
+            let lock = NSLock(); private var value = 0
+            func increment() { lock.withLock { value += 1 } }
+            var count: Int { lock.withLock { value } }
+        }
+        let scratch = try Scratch(), local = Counter(), remote = Counter(), missing = Counter()
+        let localWatcher = SyncWatcher(roots: [scratch.url], debounce: 0, pollInterval: 1) { local.increment() }
+        let remoteWatcher = SyncWatcher(roots: [URL(string: "sftp://example.invalid/data")!], debounce: 0, pollInterval: 1) { remote.increment() }
+        let missingWatcher = SyncWatcher(roots: [scratch.url.appendingPathComponent("absent-volume")], debounce: 0, pollInterval: 1) {
+            missing.increment()
+        }
+        defer { localWatcher.stop(); remoteWatcher.stop(); missingWatcher.stop() }
+        #expect(await eventually(5) { remote.count >= 2 && missing.count >= 2 })
+        #expect(local.count == 0)
+        // Event-driven local updates still work after multiple quiet poll intervals.
+        try scratch.file("changed", "event")
+        #expect(await eventually(5) { local.count > 0 })
+    }
     @Test func actualFSEventRequestsScan() async throws {
         let scratch = try Scratch()
         let changed = AsyncStream<Void>.makeStream()

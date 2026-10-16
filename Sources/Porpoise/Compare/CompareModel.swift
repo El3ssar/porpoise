@@ -47,6 +47,9 @@ final class CompareModel {
         names = CompareOutline.sideNames(left, right)
         refresh.onStart = { [weak self] request in self?.beginScan(request) }
     }
+    private(set) var scanCount = 0
+    private(set) var refreshing = false
+    var presentsScanProgress: Bool { loading && !refreshing }
     private let scanQueue = DispatchQueue(label: "porpoise.compare.scan", qos: .utility)
     func navigate(left: URL, right: URL) {
         guard left != leftRoot || right != rightRoot else { return }
@@ -66,9 +69,10 @@ final class CompareModel {
     }
     private func beginScan(_ request: ComparisonRefresh.Request) {
         let token = request.cancellation, start = CACurrentMediaTime(), options = options
+        scanCount += 1; refreshing = comparison != nil
         loading = true; showProgress = false; error = nil; onChange?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            guard let self, self.refresh.accepts(request), self.loading else { return }
+            guard let self, self.refresh.accepts(request), self.loading, !self.refreshing else { return }
             self.showProgress = true; self.onChange?()
         }
         let left = request.left, right = request.right
@@ -82,7 +86,7 @@ final class CompareModel {
             }
             if case .success(let (c, outline)) = top, !c.complete {
                 DispatchQueue.main.async { [weak self] in
-                    guard let self, self.refresh.accepts(request), !token.isCancelled else { return }
+                    guard let self, self.refresh.accepts(request), !token.isCancelled, !self.refreshing else { return }
                     releaseComparisonValuesLater((self.comparison, self.outline))
                     self.comparison = c; self.outline = outline; self.rebuild()
                 }
@@ -98,7 +102,7 @@ final class CompareModel {
             }
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.refresh.accepts(request), !token.isCancelled else { return }
-                self.loading = false; self.showProgress = false; self.elapsed = CACurrentMediaTime() - start
+                self.loading = false; self.refreshing = false; self.showProgress = false; self.elapsed = CACurrentMediaTime() - start
                 switch result {
                 case .success(let (c, outline)):
                     releaseComparisonValuesLater((self.comparison, self.outline))

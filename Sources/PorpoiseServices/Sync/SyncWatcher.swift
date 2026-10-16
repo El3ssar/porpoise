@@ -22,7 +22,13 @@ public final class SyncWatcher: @unchecked Sendable {
         }
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + max(1, pollInterval), repeating: max(1, pollInterval))
-        timer.setEventHandler { [weak self] in self?.schedule() }
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            // Existing local roots are event-driven. Poll remote/missing roots (including an unmounted
+            // volume), or fall back when the native stream could not be created.
+            let needsProbe = roots.contains { !$0.isFileURL || !FileManager.default.fileExists(atPath: $0.path) }
+            if needsProbe || (!local.isEmpty && self.events?.available != true) { self.schedule() }
+        }
         self.timer = timer; timer.resume()
     }
     public func requestScan() { queue.async { [weak self] in self?.schedule() } }

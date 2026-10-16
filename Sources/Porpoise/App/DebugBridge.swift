@@ -38,6 +38,13 @@ final class DebugBridge: NSObject {
             } else {
                 wc?.toggleCompare(nil)
             }
+        case "comparepairnotification":
+            let pair = arg.components(separatedBy: "|")
+            if pair.count == 2 {
+                NotificationCenter.default.post(
+                    name: Notification.Name("PorpoiseCompareOpenRequested"), object: wc?.window,
+                    userInfo: ["left": URL(fileURLWithPath: pair[0]), "right": URL(fileURLWithPath: pair[1])])
+            }
         case "comparefilter":
             if let model = wc?.tab.compareView?.model {
                 var filter: CompareFilter = []
@@ -988,6 +995,10 @@ final class DebugBridge: NSObject {
                     "scrollY": compare.scroll.contentView.bounds.minY, "iconSize": compare.document.detailsContainers.first?.list.iconSize ?? 0,
                     "filterMS": compare.document.filterMilliseconds, "updateMS": compare.lastUpdateMilliseconds,
                     "rebuildMS": compare.model.lastRebuildMilliseconds,
+                    "scanCount": compare.model.scanCount, "refreshing": compare.model.refreshing,
+                    "presentsScanProgress": compare.model.presentsScanProgress,
+                    "counts": (compare.model.outline?.counts ?? [:]).reduce(into: [String: Int]()) { $0[String($1.key)] = $1.value },
+                    "detailsVersion": compare.model.detailsVersion,
                     "leftDrawMS": compare.document.detailsDrawMilliseconds[.left] ?? [],
                     "rightDrawMS": compare.document.detailsDrawMilliseconds[.right] ?? [],
                     "gutterDrawMS": compare.document.drawMilliseconds,
