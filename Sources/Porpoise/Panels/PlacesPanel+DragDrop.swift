@@ -63,7 +63,7 @@ extension PlacesPanel {
     }
 
     private func draggedSection(_ pb: NSPasteboard) -> PlaceSection? {
-        pb.string(forType: .placeSection).flatMap(PlaceSection.init(rawValue:))
+        pb.string(forType: .placeSection).flatMap(PlaceSection.init(stored:))
     }
 
     @discardableResult

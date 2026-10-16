@@ -29,7 +29,7 @@ final class PlaceAccessibilityElement: NSAccessibilityElement {
 
     override func accessibilityLabel() -> String? {
         switch kind {
-        case .header(let s): return s.rawValue
+        case .header(let s): return PlacesModel.shared.title(of: s)
         case .entry(let e): return e.title
         case nil: return nil
         }

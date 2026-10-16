@@ -1,8 +1,37 @@
 import Foundation
 import PorpoiseCore
 
-public enum PlaceSection: String, Codable, CaseIterable {
-    case places = "Places", remote = "Remote", recent = "Recent", tags = "Tags", devices = "Devices", removable = "Removable Devices"
+/// A sidebar section: the built-in ones, and one per connected cloud account ("account:<id>"). Stored by its raw
+/// value, as when this was an enum, so places.json keeps its format.
+public struct PlaceSection: RawRepresentable, Hashable, Codable, Sendable {
+    public let rawValue: String
+    public init(rawValue: String) { self.rawValue = rawValue }
+    /// Built-in names and account sections; anything else is a retired section.
+    public init?(stored: String) {
+        guard Self.allCases.contains(where: { $0.rawValue == stored }) || stored.hasPrefix(Self.accountPrefix) else { return nil }
+        self.rawValue = stored
+    }
+
+    public static let places = PlaceSection(rawValue: "Places")
+    public static let remote = PlaceSection(rawValue: "Remote")
+    public static let recent = PlaceSection(rawValue: "Recent")
+    public static let tags = PlaceSection(rawValue: "Tags")
+    public static let devices = PlaceSection(rawValue: "Devices")
+    public static let removable = PlaceSection(rawValue: "Removable Devices")
+    /// The built-in sections, in their default order.
+    public static let allCases: [PlaceSection] = [.places, .remote, .recent, .tags, .devices, .removable]
+
+    private static let accountPrefix = "account:"
+    /// The section of a connected cloud account.
+    public static func account(_ id: String) -> PlaceSection { PlaceSection(rawValue: accountPrefix + id) }
+    /// The account id for an account section.
+    public var accountID: String? { rawValue.hasPrefix(Self.accountPrefix) ? String(rawValue.dropFirst(Self.accountPrefix.count)) : nil }
+
+    public init(from decoder: Decoder) throws { rawValue = try decoder.singleValueContainer().decode(String.self) }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(rawValue)
+    }
 }
 
 public struct PlaceEntry: Codable, Equatable {
@@ -13,6 +42,44 @@ public struct PlaceEntry: Codable, Equatable {
     public var hidden = false
     public var isVolume = false
     public var isEjectable = false
+}
+
+/// A connected cloud account as the sidebar shows it: a section of its own, right after Remote.
+public struct AccountSection: Equatable {
+    public enum Status: Equatable { case ok, offline, signInNeeded }
+    public var id: String
+    /// Header text: "Google Drive", or "Google Drive · work" when two accounts of a provider are connected.
+    public var title: String
+    public var email: String
+    public var displayName: String
+    /// The account's picture (PNG/JPEG), nil until fetched or when it has none: the initial is drawn instead.
+    public var avatar: Data?
+    /// Brand mark in Resources/brands ("google-drive").
+    public var brand: String
+    public var status: Status
+    /// The rows (My Drive, Shared with me, Shared drives), as the user chose them.
+    public var entries: [PlaceEntry]
+    /// Storage use for My Drive's capacity bar (nil: unknown or unlimited).
+    public var quotaUsed: Int64?
+    public var quotaTotal: Int64?
+
+    public init(
+        id: String, title: String, email: String, displayName: String, avatar: Data? = nil, brand: String,
+        status: Status = .ok, entries: [PlaceEntry], quotaUsed: Int64? = nil, quotaTotal: Int64? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.email = email
+        self.displayName = displayName
+        self.avatar = avatar
+        self.brand = brand
+        self.status = status
+        self.entries = entries
+        self.quotaUsed = quotaUsed
+        self.quotaTotal = quotaTotal
+    }
+
+    public var section: PlaceSection { .account(id) }
 }
 
 /// Dolphin's KFilePlacesModel: default places, user bookmarks (persisted), mounted volumes,
@@ -55,6 +122,30 @@ public final class PlacesModel {
         if collapsedSections.contains(sec) { collapsedSections.remove(sec) } else { collapsedSections.insert(sec) }
     }
 
+    /// Connected cloud accounts, one section each (the app keeps this current).
+    public var accounts: [AccountSection] = [] {
+        didSet { if accounts != oldValue { post() } }
+    }
+
+    /// Every section in display order: account sections the user hasn't moved go right after Remote.
+    var effectiveOrder: [PlaceSection] {
+        let placed = Set(sectionOrder)
+        let fresh = accounts.map(\.section).filter { !placed.contains($0) }
+        let live = Set(accounts.map(\.section))
+        var order = sectionOrder.filter { $0.accountID == nil || live.contains($0) }
+        order.insert(contentsOf: fresh, at: order.firstIndex(of: .remote).map { $0 + 1 } ?? order.count)
+        return order
+    }
+
+    /// The account a section belongs to.
+    public func account(for sec: PlaceSection) -> AccountSection? {
+        guard let id = sec.accountID else { return nil }
+        return accounts.first { $0.id == id }
+    }
+
+    /// Header text of a section.
+    public func title(of sec: PlaceSection) -> String { account(for: sec)?.title ?? sec.rawValue }
+
     /// Moves `sec` before `target` (nil = to the end).
     public func moveSection(_ sec: PlaceSection, before target: PlaceSection?) {
         guard let order = sectionOrder(moving: sec, before: target) else { return }
@@ -69,9 +160,10 @@ public final class PlacesModel {
 
     private func sectionOrder(moving sec: PlaceSection, before target: PlaceSection?) -> [PlaceSection]? {
         guard sec != target else { return nil }
-        var order = sectionOrder.filter { $0 != sec }
+        let current = effectiveOrder
+        var order = current.filter { $0 != sec }
         order.insert(sec, at: target.flatMap { order.firstIndex(of: $0) } ?? order.count)
-        return order != sectionOrder ? order : nil
+        return order != current ? order : nil
     }
 
     private static func normalizedOrder(_ stored: [PlaceSection]?) -> [PlaceSection] {
@@ -115,12 +207,12 @@ public final class PlacesModel {
         let bookmarked = Set(userEntries.map(\.url.standardizedFileURL))
         return cloudEntries.filter { !bookmarked.contains($0.url.standardizedFileURL) } + phoneEntries
     }
-    public var allEntries: [PlaceEntry] { userEntries + detected + tagEntries + devices }
+    public var allEntries: [PlaceEntry] { userEntries + detected + accounts.flatMap(\.entries) + tagEntries + devices }
 
     /// Entries grouped by section, honoring hidden flags.
     public func sections() -> [(PlaceSection, [PlaceEntry])] {
         let all = allEntries
-        return sectionOrder.compactMap { sec in
+        return effectiveOrder.compactMap { sec in
             guard showHidden || !hiddenSections.contains(sec) else { return nil }
             let list = all.filter { $0.section == sec && (showHidden || !$0.hidden) }
             return list.isEmpty ? nil : (sec, list)
@@ -190,12 +282,12 @@ public final class PlacesModel {
         // Retired sections must not discard the user's remaining bookmarks and ordering.
         if var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
             for key in ["hiddenSections", "collapsedSections", "sectionOrder"] {
-                if let names = object[key] as? [String] { object[key] = names.filter { PlaceSection(rawValue: $0) != nil } }
+                if let names = object[key] as? [String] { object[key] = names.filter { PlaceSection(stored: $0) != nil } }
             }
             if let entries = object["entries"] as? [[String: Any]] {
                 object["entries"] = entries.filter { entry in
                     guard let section = entry["section"] as? String else { return true }
-                    return PlaceSection(rawValue: section) != nil
+                    return PlaceSection(stored: section) != nil
                 }
             }
             if let cleaned = try? JSONSerialization.data(withJSONObject: object) { data = cleaned }
@@ -319,9 +411,19 @@ public final class PlacesModel {
 
     // MARK: Editing
 
+    /// Schemes of cloud accounts' folders: added to Places (not Remote), with the cloud folder icon.
+    public static let cloudSchemes: Set<String> = ["gdrive"]
+    public static func isCloud(_ url: URL) -> Bool { cloudSchemes.contains(url.scheme?.lowercased() ?? "") }
+
     public func add(_ url: URL, title: String? = nil) {
         guard !userEntries.contains(where: { $0.url.standardizedFileURL == url.standardizedFileURL }) else { return }
-        if !url.isFileURL {
+        if Self.isCloud(url) {
+            // A cloud folder is a place like a local one; its badge and tooltip tell where it lives.
+            let entry = PlaceEntry(title: title ?? url.lastPathComponent, url: url, icon: "folder-cloud", section: .places)
+            let afterLast = (userEntries.lastIndex { $0.section == .places } ?? (userEntries.count - 1)) + 1
+            let at = userEntries.firstIndex { $0.icon == "user-trash" } ?? afterLast
+            userEntries.insert(entry, at: max(0, at))
+        } else if !url.isFileURL {
             // Network folders go to the end of the Remote section.
             let entry = PlaceEntry(title: title ?? (url.host ?? url.absoluteString), url: url, icon: "folder-remote", section: .remote)
             let at = userEntries.lastIndex { $0.section == .remote }.map { $0 + 1 } ?? userEntries.count

@@ -34,12 +34,13 @@ extension PlacesPanel {
                 add("Remove from Places", "bookmark-remove", #selector(removeEntry(_:)), e)
             }
             if !PlacesModel.shared.hiddenSections.contains(e.section) {
-                add("Hide Section “\(e.section.rawValue)”", "view-hidden", #selector(hideSection(_:)), e.section.rawValue)
+                add("Hide Section “\(PlacesModel.shared.title(of: e.section))”", "view-hidden", #selector(hideSection(_:)), e.section.rawValue)
             }
             m.addItem(.separator())
         } else if let i, case .header(let sec) = rows[i].kind {
             let folded = PlacesModel.shared.collapsedSections.contains(sec)
-            add(folded ? "Expand “\(sec.rawValue)”" : "Collapse “\(sec.rawValue)”", nil, #selector(toggleSection(_:)), sec.rawValue)
+            let name = PlacesModel.shared.title(of: sec)
+            add(folded ? "Expand “\(name)”" : "Collapse “\(name)”", nil, #selector(toggleSection(_:)), sec.rawValue)
             if !PlacesModel.shared.isLocked {
                 let order = PlacesModel.shared.sections().map(\.0)
                 if let n = order.firstIndex(of: sec) {
@@ -49,9 +50,9 @@ extension PlacesPanel {
             }
             // Hidden sections are listed while "Show Hidden Places" is on; they can be shown again one by one.
             if PlacesModel.shared.hiddenSections.contains(sec) {
-                add("Show Section “\(sec.rawValue)”", "view-visible", #selector(showSection(_:)), sec.rawValue)
+                add("Show Section “\(name)”", "view-visible", #selector(showSection(_:)), sec.rawValue)
             } else {
-                add("Hide Section “\(sec.rawValue)”", "view-hidden", #selector(hideSection(_:)), sec.rawValue)
+                add("Hide Section “\(name)”", "view-hidden", #selector(hideSection(_:)), sec.rawValue)
             }
             m.addItem(.separator())
         }
@@ -64,7 +65,7 @@ extension PlacesPanel {
         lock.toolTip = "Locked: places and sections can't be dragged or reordered."
         m.addItem(.separator())
         add("Add Entry…", "bookmark-new", #selector(addEntry))
-        add("Add Network Folder…", "folder-network", #selector(addNetworkFolder))
+        add("Connect…", "folder-network", #selector(connect))
         let showAll = m.addItem(withTitle: "Show Hidden Places", action: #selector(toggleShowHidden), keyEquivalent: "")
         showAll.target = self
         showAll.state = PlacesModel.shared.showHidden ? .on : .off
@@ -111,10 +112,15 @@ extension PlacesPanel {
     @objc private func showSections() { PlacesModel.shared.hiddenSections = [] }
     @objc private func setIconSize(_ s: NSMenuItem) { Settings.shared.placesIconSize = s.tag }
     @objc private func resetPlaces() { PlacesModel.shared.resetDefaults() }
-    @objc private func addNetworkFolder() { AddNetworkFolderDialog.run(window: window) }
+    @objc private func connect() {
+        ConnectSheet.run(window: window) { [weak self] url in
+            guard let self else { return }
+            self.delegate?.places(self, open: url, newTab: false, splitView: false)
+        }
+    }
 
     @objc private func toggleSection(_ s: NSMenuItem) {
-        if let raw = s.representedObject as? String, let sec = PlaceSection(rawValue: raw) { toggleSectionAnimated(sec) }
+        if let raw = s.representedObject as? String, let sec = PlaceSection(stored: raw) { toggleSectionAnimated(sec) }
     }
 
     @objc private func toggleAllSections() {
@@ -132,7 +138,7 @@ extension PlacesPanel {
 
     /// Moves a section past its visible neighbour (hidden or empty sections keep their place in the stored order).
     private func moveSection(_ s: NSMenuItem, by delta: Int) {
-        guard let raw = s.representedObject as? String, let sec = PlaceSection(rawValue: raw) else { return }
+        guard let raw = s.representedObject as? String, let sec = PlaceSection(stored: raw) else { return }
         let shown = PlacesModel.shared.sections().map(\.0)
         guard let n = shown.firstIndex(of: sec), shown.indices.contains(n + delta) else { return }
         if delta < 0 {
@@ -143,11 +149,11 @@ extension PlacesPanel {
     }
 
     @objc private func hideSection(_ s: NSMenuItem) {
-        if let raw = s.representedObject as? String, let sec = PlaceSection(rawValue: raw) { PlacesModel.shared.hiddenSections.insert(sec) }
+        if let raw = s.representedObject as? String, let sec = PlaceSection(stored: raw) { PlacesModel.shared.hiddenSections.insert(sec) }
     }
 
     @objc private func showSection(_ s: NSMenuItem) {
-        if let raw = s.representedObject as? String, let sec = PlaceSection(rawValue: raw) { PlacesModel.shared.hiddenSections.remove(sec) }
+        if let raw = s.representedObject as? String, let sec = PlaceSection(stored: raw) { PlacesModel.shared.hiddenSections.remove(sec) }
     }
 
     @objc private func toggleHidden(_ s: NSMenuItem) {

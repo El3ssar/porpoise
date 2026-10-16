@@ -35,6 +35,7 @@ cat > "$APP/Contents/Resources/app.porpoise.helper.plist" <<HELPER
 </dict></plist>
 HELPER
 cp -R Resources/icons "$APP/Contents/Resources/icons"
+cp -R Resources/brands "$APP/Contents/Resources/brands"
 cp Resources/Desert-Konsole.colorscheme "$APP/Contents/Resources/"
 cp -R Resources/fonts "$APP/Contents/Resources/fonts"
 # Bundled ffmpeg for video previews of every format (built once by scripts/build-ffmpeg.sh).
