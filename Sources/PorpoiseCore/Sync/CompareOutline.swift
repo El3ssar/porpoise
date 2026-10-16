@@ -24,6 +24,7 @@ public struct CompareOutline: Sendable {
     public private(set) var counts: [Int: Int] = [:]
     public private(set) var differenceCounts: [String: Int] = [:]
     public private(set) var childCounts: [SyncSide: [String: Int]] = [:]
+    public private(set) var totalBytes: [SyncSide: Int64] = [:]
     public init(_ comparison: SyncComparison) {
         self.comparison = comparison
         var displayRows = comparison.rows
@@ -61,10 +62,17 @@ public struct CompareOutline: Sendable {
             children[(row.path as NSString).deletingLastPathComponent, default: []].append(row)
             for side in [SyncSide.left, .right] where (side == .left ? row.left : row.right) != nil {
                 childCounts[side, default: [:]][(row.path as NSString).deletingLastPathComponent, default: 0] += 1
+                if let entry = side == .left ? row.left : row.right, entry.kind == .file { totalBytes[side, default: 0] += entry.size }
             }
             let category = CompareFilter.category(row.status)
             counts[category.rawValue, default: 0] += 1
-            masks[row.path, default: []].formUnion(category)
+            let rollup =
+                row.left?.kind == .directory && row.right?.kind == .directory
+                && row.status == .changed(.unknown) && comparison.complete
+                && (row.left!.path as NSString).lastPathComponent == (row.right!.path as NSString).lastPathComponent
+            // A folder's aggregate Changed status is not itself a Changed descendant. Its mask
+            // comes from matching children, so an Only-only subtree disappears under Changed-only.
+            if !rollup { masks[row.path, default: []].formUnion(category) }
             differenceCounts[row.path] = (row.left ?? row.right)?.kind != .directory && row.status != .same ? 1 : 0
         }
         for row in displayRows.reversed() {
@@ -75,7 +83,7 @@ public struct CompareOutline: Sendable {
         for parent in children.keys {
             children[parent]?.sort {
                 let ld = ($0.left ?? $0.right)?.kind == .directory, rd = ($1.left ?? $1.right)?.kind == .directory
-                return ld == rd ? $0.path < $1.path : ld
+                return ld == rd ? Self.nameOrder($0.path, $1.path) : ld
             }
         }
     }
@@ -101,11 +109,15 @@ public struct CompareOutline: Sendable {
                 } else if role == .modificationTime, l?.modified != r?.modified {
                     order = (l?.modified ?? .distantPast) < (r?.modified ?? .distantPast)
                 } else {
-                    order = a.path < b.path
+                    order = Self.nameOrder(a.path, b.path)
                 }
                 return ascending ? order : !order && a.path != b.path
             }
         }
+    }
+    private static func nameOrder(_ left: String, _ right: String) -> Bool {
+        let order = left.localizedStandardCompare(right)
+        return order == .orderedSame ? left < right : order == .orderedAscending
     }
     public static func sideNames(_ left: URL, _ right: URL) -> (String, String) {
         var l = left.lastPathComponent, r = right.lastPathComponent
