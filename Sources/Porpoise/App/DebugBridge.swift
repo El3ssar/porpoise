@@ -30,6 +30,73 @@ final class DebugBridge: NSObject {
         let parts = cmd.split(separator: " ", maxSplits: 1).map(String.init)
         let arg = parts.count > 1 ? parts[1] : ""
         switch parts.first {
+        case "compare":
+            let pair = arg.contains("|") ? arg.components(separatedBy: "|") : arg.split(separator: " ", maxSplits: 1).map(String.init)
+            if pair.count == 2 {
+                wc?.startComparing(left: URL(fileURLWithPath: pair[0]), right: URL(fileURLWithPath: pair[1]))
+            } else {
+                wc?.toggleCompare(nil)
+            }
+        case "comparefilter":
+            if let model = wc?.tab.compareView?.model {
+                var filter: CompareFilter = []
+                if arg == "all" {
+                    filter = .all
+                } else if arg == "differences" {
+                    filter = .differences
+                } else {
+                    for token in arg.components(separatedBy: ",") {
+                        filter.formUnion(["left": .onlyLeft, "right": .onlyRight, "changed": .changed, "same": .same][token] ?? [])
+                    }
+                }
+                model.filter = filter; model.rebuild()
+            }
+        case "compareexpand": wc?.tab.compareView?.model.expand(arg)
+        case "compareselect":
+            if let compare = wc?.tab.compareView, let index = compare.model.rows.firstIndex(where: { $0.path == arg }) {
+                compare.document.select(index)
+            }
+        case "comparemethod":
+            if let method = SyncCompareMethod(rawValue: arg), let compare = wc?.tab.compareView {
+                compare.model.options.method = method; compare.model.start()
+            }
+        case "compareprogress":
+            if let model = wc?.tab.compareView?.model {
+                model.stop(); model.loading = arg == "on"; model.showProgress = arg == "on"; model.onChange?()
+            }
+        case "comparehover":
+            if let compare = wc?.tab.compareView, let index = Int(arg) { compare.document.hoverIndex = index; compare.document.needsDisplay = true }
+        case "comparebench":
+            if let compare = wc?.tab.compareView {
+                let probe = Animator(); var intervals: [Double] = [], previous = CACurrentMediaTime()
+                probe.run(
+                    duration: 0.6,
+                    step: { _ in
+                        let now = CACurrentMediaTime(); intervals.append((now - previous) * 1000); previous = now
+                    })
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    compare.model.filter = .all; compare.model.rebuild()
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                    _ = probe
+                    let data: [String: Any] = [
+                        "rows": compare.model.rows.count, "filterTotalMS": compare.model.lastRebuildMilliseconds,
+                        "viewUpdateMS": compare.lastUpdateMilliseconds, "rowLayoutMS": compare.document.filterMilliseconds,
+                        "drawMS": compare.document.drawMilliseconds, "frameIntervalsMS": Array(intervals.dropFirst()),
+                    ]
+                    try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: arg))
+                }
+            }
+        case "compareperf":
+            if let compare = wc?.tab.compareView {
+                let data: [String: Any] = [
+                    "rows": compare.model.rows.count, "filterUpdateMS": compare.lastUpdateMilliseconds,
+                    "rowLayoutMS": compare.document.filterMilliseconds, "drawMS": compare.document.drawMilliseconds,
+                ]
+                try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: arg))
+            }
+        case "link":
+            if let wc, (wc.tab.linkedRoots != nil) != (arg == "on") { wc.toggleLinkedBrowsing(nil) }
         case "snapshot": snapshot(to: arg)
         case "lsnapshot": layerSnapshot(to: arg)
         case "wsnapshot": windowServerSnapshot(to: arg)

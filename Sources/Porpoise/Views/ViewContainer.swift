@@ -29,6 +29,13 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     let messageBar = MessageBar()
     let selectionTop = SelectionTopBar()
     let selectionBottom = SelectionBottomBar()
+    var preservesMissingLocation = false
+    private var comparisonSuspended = false
+    private var comparisonNeedsRefresh = false
+    func suspendForComparison(_ value: Bool) {
+        comparisonSuspended = value
+        if !value && comparisonNeedsRefresh { comparisonNeedsRefresh = false; modelChanged() }
+    }
     var selectionMode = false {
         didSet {
             selectionTop.isHidden = !selectionMode
@@ -150,7 +157,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 once()
             }
             // The folder shown was moved or deleted: go to the nearest one left, as Dolphin does.
-            if self.model.locationVanished {
+            if self.model.locationVanished && !self.preservesMissingLocation {
                 let gone = self.model.location
                 self.setURL(DirectoryModel.nearestExisting(gone))
                 self.messageBar.show("“\(gone.lastPathComponent)” was moved or deleted.", error: false)
@@ -415,6 +422,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     }
 
     private func modelChanged() {
+        if comparisonSuspended { comparisonNeedsRefresh = true; return }
         if showsApps { apps?.reload() }
         list.relayout()
         list.refreshHover()

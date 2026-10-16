@@ -145,6 +145,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     }
 
     private func observeNotifications() {
+        observe(Notification.Name("PorpoiseCompareOpenRequested")) { me, note in
+            guard note.object == nil || (note.object as? NSWindow) === me.window,
+                let left = note.userInfo?["left"] as? URL, let right = note.userInfo?["right"] as? URL
+            else { return }
+            if note.userInfo?["newTab"] as? Bool == true { me.addTab(url: left) }
+            me.startComparing(left: left, right: right, options: note.userInfo?["options"] as? SyncCompareOptions ?? .init())
+        }
+        observe(Notification.Name("PorpoiseSyncActivityChanged")) { me, note in
+            guard (note.object as? NSWindow) === me.window, let activity = note.userInfo?["activity"] as? Activity,
+                let compare = me.tab.compareView
+            else { return }
+            compare.document.finishedPaths = Set(note.userInfo?["completedPaths"] as? [String] ?? [])
+            compare.show(activity: activity)
+        }
         observe(Settings.changed) { me, note in me.settingsChanged(key: note.object as? String) }
         observe(PlacesModel.changed) { me, _ in me.placesChanged() }
         observe(.terminalExited) { me, n in
@@ -182,6 +196,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     var allContainers: [ViewContainer] { tabs.flatMap(\.containers) }
 
     private func wireToolbar() {
+        toolbar.compareFolders.onClick = { [weak self] in self?.toggleCompare(nil) }
+        toolbar.linkFolders.onClick = { [weak self] in self?.toggleLinkedBrowsing(nil) }
         toolbar.back.onClick = { [weak self] in self?.view.goBack() }
         toolbar.forward.onClick = { [weak self] in self?.view.goForward() }
         toolbar.up.onClick = { [weak self] in self?.goUp(nil) }
@@ -306,7 +322,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         toolbar.forward.isEnabled = v.history.canGoForward
         // Same rule as goUp(_:) and its menu item.
         toolbar.up.isEnabled = v.canGoUp
-        toolbar.viewMode.iconName = v.model.props.mode.iconName
+        toolbar.viewMode.iconName = t.compareView == nil ? v.model.props.mode.iconName : "view-list-details"
+        toolbar.viewMode.isEnabled = t.compareView == nil
+        toolbar.viewMode.toolTip = t.compareView == nil ? "Change View Mode" : "Comparing uses Details"
+        toolbar.compareFolders.isToggled = t.compareView != nil
+        toolbar.linkFolders.isToggled = t.linkedRoots != nil
+        toolbar.linkFolders.iconName = t.missingCounterpart == nil ? "insert-link" : "edit-unlink"
         updateSplitButton(for: t)
         toolbar.search.isToggled = !v.searchBar.isHidden
         toolbar.needsLayout = true

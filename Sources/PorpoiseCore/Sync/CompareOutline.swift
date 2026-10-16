@@ -22,11 +22,17 @@ public struct CompareOutline: Sendable {
     public private(set) var children: [String: [SyncDifference]] = [:]
     public private(set) var masks: [String: CompareFilter] = [:]
     public private(set) var counts: [Int: Int] = [:]
+    public private(set) var differenceCounts: [String: Int] = [:]
     public init(_ comparison: SyncComparison) {
         self.comparison = comparison
         var displayRows = comparison.rows
         let indices = Dictionary(displayRows.enumerated().map { ($0.element.path, $0.offset) }, uniquingKeysWith: { a, _ in a })
         for index in displayRows.indices {
+            if !comparison.complete, (displayRows[index].left ?? displayRows[index].right)?.kind == .directory,
+                displayRows[index].status == .same
+            {
+                displayRows[index].status = .changed(.unknown)
+            }
             if let left = displayRows[index].left, let right = displayRows[index].right,
                 (left.path as NSString).lastPathComponent != (right.path as NSString).lastPathComponent,
                 displayRows[index].status == .same
@@ -43,10 +49,12 @@ public struct CompareOutline: Sendable {
             let category = CompareFilter.category(row.status)
             counts[category.rawValue, default: 0] += 1
             masks[row.path, default: []].formUnion(category)
+            differenceCounts[row.path] = (row.left ?? row.right)?.kind != .directory && row.status != .same ? 1 : 0
         }
         for row in displayRows.reversed() {
             let parent = (row.path as NSString).deletingLastPathComponent
             masks[parent, default: []].formUnion(masks[row.path] ?? [])
+            differenceCounts[parent, default: 0] += differenceCounts[row.path] ?? 0
         }
         for parent in children.keys {
             children[parent]?.sort {

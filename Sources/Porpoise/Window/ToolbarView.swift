@@ -5,6 +5,9 @@ import PorpoiseServices
 /// Dolphin's default toolbar (Back, Forward, View settings, location, Split, Search, menu), presented like a
 /// macOS 26 unified toolbar: glass capsules over a translucent bar that sits right of the full-height sidebar.
 final class ToolbarView: NSView {
+    let compareFolders = FlatButton(icon: nil, tooltip: "Compare Folders (⌃⌘C)")
+    let linkFolders = FlatButton(icon: nil, tooltip: "Linked Browsing (⌃⌘L)")
+    private let pairGroup = GlassGroup()
     let back = FlatButton(icon: "go-previous", tooltip: "Back")
     let forward = FlatButton(icon: "go-next", tooltip: "Forward")
     let up = FlatButton(icon: "go-up", tooltip: "Up (⌘↑)")
@@ -51,6 +54,12 @@ final class ToolbarView: NSView {
         hairline.wantsLayer = true
         Theme.whenChanged(hairline) { [weak hairline] in hairline?.layer?.backgroundColor = Theme.hairline.cgColor }
         addSubview(background)
+        addSubview(pairGroup)
+        pairGroup.content.addSubview(linkFolders); pairGroup.content.addSubview(compareFolders)
+        linkFolders.iconName = "insert-link"
+        compareFolders.iconName = "edit-copy"
+        linkFolders.identifier = .init("Porpoise.toolbar.link"); compareFolders.identifier = .init("Porpoise.toolbar.compare")
+
         navGroup.content.addSubview(back)
         navGroup.content.addSubview(forward)
         navGroup.content.addSubview(up)
@@ -158,6 +167,8 @@ final class ToolbarView: NSView {
         case .terminal:
             let item = NSMenuItem(); item.tag = 3; controller.togglePanel(item)
         case .commandPalette: AppDelegate.shared.showCommandPalette(nil)
+        case .compare: controller.toggleCompare(nil)
+        case .link: controller.toggleLinkedBrowsing(nil)
         default: break
         }
     }
@@ -218,12 +229,19 @@ final class ToolbarView: NSView {
     /// Location field(s) between `minX` and `maxX`: capped in width so the toolbar keeps free space to grab the
     /// window; in a split, one field per pane, the second starting where the right pane starts (Dolphin).
     private func layoutFields(from minX: CGFloat, to maxX: CGFloat, y: CGFloat, height: CGFloat) {
-        let gap = Self.fieldSpacing
+        let hasPair = navigatorViews.count == 2 && bounds.width >= 700
+        pairGroup.isHidden = !hasPair
+        let gap: CGFloat = hasPair ? 40 : Self.fieldSpacing
         let available = max(0, maxX - minX)
         if navigatorViews.count == 2, paneRanges.count == 2 {
             // Each field at least minFieldWidth while there is room for both; never over the buttons on the right.
             let minW = min(Self.minFieldWidth, max(0, (available - gap) / 2))
             let splitX = convert(CGPoint(x: paneRanges[1].lowerBound, y: 0), from: nil).x
+            if hasPair {
+                pairGroup.frame = CGRect(x: splitX - 34, y: y, width: 68, height: height)
+                linkFolders.frame = CGRect(x: 3, y: 3, width: 31, height: 28)
+                compareFolders.frame = CGRect(x: 34, y: 3, width: 31, height: 28)
+            }
             let rightX = min(max(splitX + gap, minX + minW + gap), minX + available - minW)
             let leftW = max(minW, min(splitX - gap, rightX - gap) - minX)
             fieldGroups[0].frame = CGRect(x: minX, y: y, width: leftW, height: height)
@@ -255,6 +273,8 @@ private extension ToolbarCommand {
         case .newTab: return "tab-new"
         case .terminal: return "utilities-terminal"
         case .commandPalette: return "system-search"
+        case .compare: return "edit-copy"
+        case .link: return "insert-link"
         default: return "application-menu"
         }
     }
