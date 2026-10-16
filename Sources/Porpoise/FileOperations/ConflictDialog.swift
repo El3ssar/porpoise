@@ -265,6 +265,14 @@ final class ConflictDialog: NSObject {
 }
 
 class ConflictActionButton: NSButton {
+    static var primaryTextColor: NSColor {
+        guard let color = Theme.activeText.usingColorSpace(.sRGB) else { return .white }
+        func linear(_ component: CGFloat) -> CGFloat {
+            component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linear(color.redComponent) + 0.7152 * linear(color.greenComponent) + 0.0722 * linear(color.blueComponent)
+        return luminance > 0.179 ? .black : .white
+    }
     var primary = false
     var drawsBackground = true
     var titleTint: NSColor?
@@ -272,7 +280,7 @@ class ConflictActionButton: NSButton {
         if drawsBackground { ConflictSplitView.paint(bounds.insetBy(dx: 1, dy: 1), primary: primary, highlighted: isHighlighted) }
         let text = title as NSString
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: font ?? NSFont.systemFont(ofSize: 12), .foregroundColor: titleTint ?? (primary ? NSColor.white : Theme.windowText),
+            .font: font ?? NSFont.systemFont(ofSize: 12), .foregroundColor: titleTint ?? (primary ? Self.primaryTextColor : Theme.windowText),
         ]
         let size = text.size(withAttributes: attributes)
         text.draw(at: CGPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2), withAttributes: attributes)
@@ -289,7 +297,7 @@ private final class ConflictSplitView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         Self.paint(bounds.insetBy(dx: 1, dy: 1), primary: primary)
         if showsDivider {
-            (primary ? NSColor.white.withAlphaComponent(0.3) : Theme.frame).setFill()
+            (primary ? ConflictActionButton.primaryTextColor.withAlphaComponent(0.3) : Theme.frame).setFill()
             CGRect(x: 128, y: 4, width: 1, height: bounds.height - 8).fill()
         }
     }

@@ -115,11 +115,21 @@ final class SyncPlanRow: NSView {
             step.reason
             ?? (step.action == .copy
                 ? "new"
-                : step.action == .trash ? "only in \(step.target == .left ? pair.leftTitle : pair.rightTitle)" : "changed")
+                : step.action == .mkdir
+                    ? "new folder" : step.action == .trash ? "only in \(step.target == .left ? pair.leftTitle : pair.rightTitle)" : "changed")
         detail.font = .systemFont(ofSize: 11); detail.textColor = Theme.windowTextInactive; detail.lineBreakMode = .byTruncatingTail
         [include, icon, path, detail, size].forEach(addSubview)
         if step.action == .conflict {
             let labels: [String]
+            if let difference {
+                func metadata(_ entry: SyncEntry?, _ title: String) -> String {
+                    guard let entry else { return "Deleted in " + title }
+                    let date = entry.modified.map { ", " + $0.formatted(date: .abbreviated, time: .shortened) } ?? ""
+                    return title + " " + FileFormat.size(entry.size) + date
+                }
+                detail.stringValue = metadata(difference.left, pair.leftTitle) + " · " + metadata(difference.right, pair.rightTitle)
+                detail.toolTip = (step.reason ?? "Changed on both sides") + " · " + detail.stringValue
+            }
             if let difference, difference.left?.kind != .directory, difference.right?.kind != .directory,
                 difference.left != nil, difference.right != nil, difference.left?.kind == difference.right?.kind, difference.status != .collision
             {
