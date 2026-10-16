@@ -8,6 +8,7 @@ enum SyncDebugBridge {
         URL(fileURLWithPath: ProcessInfo.processInfo.environment["PORPOISE_SYNC_FIXTURE"] ?? NSTemporaryDirectory() + "porpoise-sync-fixture")
     }
     static func present(_ argument: String, window: NSWindow) {
+        dismiss()
         let pieces = argument.components(separatedBy: "|")
         let mode: SyncMode = pieces[0] == "mirror" ? .mirror : pieces[0] == "twoway" ? .twoWay : .backup
         let left = pieces.count > 1 ? URL(fileURLWithPath: pieces[1]) : root.appendingPathComponent("Home/Projects")
@@ -16,10 +17,16 @@ enum SyncDebugBridge {
         var pair = SyncCoordinator.shared.pair(left: left, right: right) ?? newPair
         if pieces[0] != "edit" { pair.mode = mode }
         let sheet = SyncSheetController(pair: pair, owner: window, editing: pieces[0] == "edit")
-        if pieces[0] == "planning" { sheet.reviewPlanningDelay = 3 }
+        if pieces[0] == "planning" { sheet.reviewPlanningDelay = 5 }
         sheet.present()
     }
     static func sidebar(_ argument: String) {
+        dismiss()
+        if argument == "remove", let pair = SyncCoordinator.shared.pairs.first,
+            let window = NSApp.windows.first(where: { $0.windowController is MainWindowController })
+        {
+            SyncCoordinator.shared.remove(pair, window: window); return
+        }
         if argument == "states" {
             SyncCoordinator.shared.installReviewSidebarStates(
                 left: root.appendingPathComponent("Home/Projects"), right: root.appendingPathComponent("Backup/Projects"));
@@ -40,12 +47,14 @@ enum SyncDebugBridge {
         let parts = argument.components(separatedBy: "|")
         if command == "syncinclude", parts.count == 2 { sheet.reviewInclude(parts[0], enabled: parts[1] != "off") }
         if command == "syncresolve", parts.count == 2, let choice = SyncOverride(rawValue: parts[1]) { sheet.reviewResolve(parts[0], choice: choice) }
+        if command == "syncautomatic" { sheet.reviewAutomatically(argument == "on") }
         if command == "syncsize" {
             let sizes = argument.split(separator: " ").compactMap { Double($0) }
             if sizes.count == 2 { sheet.window?.setContentSize(CGSize(width: sizes[0], height: sizes[1])) }
         }
     }
     static func remote(_ argument: String, window: NSWindow) {
+        dismiss()
         let local = root.appendingPathComponent("Remote/Home/Projects")
         Task { @MainActor in
             do {
@@ -58,6 +67,16 @@ enum SyncDebugBridge {
                 let pair = SavedSync(left: local, right: remote, mode: .mirror)
                 SyncSheetController(pair: pair, owner: window).present()
             } catch { SyncCoordinator.shared.showError(error.localizedDescription, window: window) }
+        }
+    }
+    private static func dismiss() {
+        guard Settings.isTesting else { return }
+        for window in NSApp.windows {
+            if let sheet = window.windowController as? SyncSheetController {
+                sheet.reviewDismiss()
+            } else if let parent = window.sheetParent {
+                parent.endSheet(window, returnCode: .cancel); window.orderOut(nil)
+            }
         }
     }
     static func notifications(_ path: String) {
@@ -80,6 +99,7 @@ enum SyncDebugBridge {
             [
                 "id": pair.id.uuidString, "name": pair.name, "automatic": pair.automatic, "paused": pair.paused,
                 "left": pair.left.path, "right": pair.right.path, "activity": coordinator.activities[pair.id]?.state.rawValue ?? "none",
+                "tooltip": coordinator.tooltip(pair),
             ]
         }
         if let data = try? JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys]) {

@@ -27,7 +27,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
     private let summary = NSTextField(labelWithString: "Planning…")
     private let direction = SyncDirectionView()
     private let callout = SyncCalloutView()
-    private let spinner = NSProgressIndicator()
+    private let spinner = SyncPlanningSpinner()
     private let options = NSButton(title: "Options", target: nil, action: nil)
     private let automatic = SyncIncludeCheckbox(checkboxWithTitle: "Keep in sync automatically", target: nil, action: nil)
     private let name = NSTextField()
@@ -88,6 +88,14 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         guard Settings.isTesting else { return }
         overrides[path] = enabled ? nil : .skip; replan()
     }
+    func reviewDismiss() {
+        guard Settings.isTesting else { return }
+        closeSheet()
+    }
+    func reviewAutomatically(_ enabled: Bool) {
+        guard Settings.isTesting else { return }
+        automatic.state = enabled ? .on : .off; animateFooter()
+    }
     func reviewResolve(_ path: String, choice: SyncOverride) {
         guard Settings.isTesting else { return }
         overrides[path] = choice; replan()
@@ -115,7 +123,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             }
             cards.append(card); add(card)
         }
-        spinner.style = .spinning; spinner.controlSize = .small; spinner.isDisplayedWhenStopped = false; add(spinner)
+        add(spinner)
         options.isBordered = false; options.alignment = .left; options.font = .systemFont(ofSize: 11)
         options.target = self; options.action = #selector(toggleOptions); options.setAccessibilityLabel("Options"); add(options)
         automatic.state = pair.automatic ? .on : .off
@@ -216,7 +224,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         callout.frame = CGRect(x: 20, y: 180, width: width - 40, height: calloutHeight)
         let summaryY: CGFloat = 180 + (showCallout ? calloutHeight + 10 : 0)
         summary.frame = CGRect(x: planning ? 44 : 20, y: summaryY, width: width - 40, height: 22)
-        spinner.frame = CGRect(x: 20, y: summaryY + 1, width: 16, height: 16)
+        spinner.frame = CGRect(x: 20, y: summaryY + 5, width: 12, height: 12)
         callout.isHidden = !showCallout
         let bulkY: CGFloat = summaryY + 32
         newerButton.frame = CGRect(x: 20, y: bulkY, width: 132, height: 24)

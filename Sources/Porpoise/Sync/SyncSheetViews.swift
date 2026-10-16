@@ -448,3 +448,21 @@ final class SyncEmptyStateView: NSView {
         line("Compared by " + method, y: top + 78, font: .systemFont(ofSize: 12), color: Theme.windowTextInactive)
     }
 }
+
+final class SyncPlanningSpinner: NSView {
+    private let arc = CompareArcSpinner()
+    private var timer: Timer?
+    override init(frame: NSRect) {
+        super.init(frame: frame); addSubview(arc); arc.setAccessibilityLabel("Planning"); isHidden = true
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func layout() { super.layout(); arc.frame = bounds }
+    func startAnimation(_ sender: Any?) {
+        isHidden = false; arc.needsDisplay = true
+        guard timer == nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        let timer = Timer(timeInterval: 1 / 30, repeats: true) { [weak self] _ in self?.arc.needsDisplay = true }
+        self.timer = timer; RunLoop.main.add(timer, forMode: .common)
+    }
+    func stopAnimation(_ sender: Any?) { timer?.invalidate(); timer = nil; isHidden = true }
+    deinit { timer?.invalidate() }
+}

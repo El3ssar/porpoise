@@ -566,7 +566,7 @@ final class DebugBridge: NSObject {
         case "syncsidebar":
             guard Settings.isTesting else { return }
             SyncDebugBridge.sidebar(arg)
-        case "syncinclude", "syncresolve", "syncsize":
+        case "syncinclude", "syncresolve", "syncsize", "syncautomatic":
             guard Settings.isTesting else { return }
             SyncDebugBridge.control(command: parts.first ?? "", argument: arg)
         case "syncremote":
