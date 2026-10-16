@@ -24,7 +24,7 @@ public final class DriveClient: @unchecked Sendable {
     private let lock = NSLock()
     private var cache: [String: DriveFile] = [:]
     static let fields =
-        "id,name,mimeType,driveId,resourceKey,size,parents,version,md5Checksum,appProperties,modifiedTime,thumbnailLink,hasThumbnail,webViewLink,owners(displayName,emailAddress,photoLink),shared,capabilities(canDownload,canListChildren,canEdit,canRename,canTrash,canUntrash,canAddChildren,canMoveItemWithinDrive,canMoveItemOutOfDrive,canCopy),shortcutDetails,exportLinks,trashed,permissions(id,type,role,displayName,emailAddress,photoLink),sharingUser(displayName,emailAddress,photoLink),lastModifyingUser(displayName,emailAddress,photoLink),sharedWithMeTime"
+        "id,name,mimeType,driveId,resourceKey,size,parents,headRevisionId,version,md5Checksum,appProperties,modifiedTime,thumbnailLink,hasThumbnail,webViewLink,owners(displayName,emailAddress,photoLink),shared,capabilities(canDownload,canListChildren,canEdit,canRename,canTrash,canUntrash,canAddChildren,canMoveItemWithinDrive,canMoveItemOutOfDrive,canCopy),shortcutDetails,exportLinks,trashed,permissions(id,type,role,displayName,emailAddress,photoLink),sharingUser(displayName,emailAddress,photoLink),lastModifyingUser(displayName,emailAddress,photoLink),sharedWithMeTime"
 
     public init(
         accountID: UUID, tokens: DriveTokenManager, http: DriveHTTP = DriveHTTP(),
@@ -89,6 +89,12 @@ public final class DriveClient: @unchecked Sendable {
         {
             throw DriveError.quota
         }
+        if response.statusCode == 403,
+            let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data),
+            envelope.error.errors?.contains(where: { $0.reason == "exportSizeLimitExceeded" }) == true
+        {
+            throw DriveError.exportTooLarge
+        }
         try DriveHTTP.check(response.statusCode)
         report(nil)
         return data
@@ -116,8 +122,9 @@ public final class DriveClient: @unchecked Sendable {
             ], resource: (id, resourceKey))
         var file = try decode(DriveFile.self, data)
         file.resourceKey = file.resourceKey ?? resourceKey
-        guard file.id == id, includeTrashed || file.trashed != true else { throw DriveError.notFound }
+        guard (file.id == id || id == "root"), DriveLink.isValidID(file.id), includeTrashed || file.trashed != true else { throw DriveError.notFound }
         remember([file])
+        if id == "root" { lock.withLock { cache["root"] = file } }
         return file
     }
 

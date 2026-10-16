@@ -99,7 +99,7 @@ public final class DriveAccountStore: ObservableObject {
             }
         }
         states[account.id] = .connected
-        writeAccess[account.id] = false
+        writeAccess[account.id] = nil
         Task { @MainActor [weak self] in
             let allowed = (try? await manager.requireWriteScope()) != nil
             guard self?.managers[account.id] === manager else { return }

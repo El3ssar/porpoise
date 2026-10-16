@@ -19,6 +19,12 @@ extension FileOperationsController {
         activity.originWindow = window
         activity.controlJob = control
         activity.remoteRemaining = urls
+        runtime.onNotice = { [weak self, weak activity] notice in
+            DispatchQueue.main.async {
+                activity?.notice = notice
+                self?.activityDidChange()
+            }
+        }
         runtime.onIncoming = { [weak activity] item in
             DispatchQueue.main.async {
                 activity?.incomingItem = item

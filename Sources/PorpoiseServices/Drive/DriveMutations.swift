@@ -3,7 +3,9 @@ import PorpoiseCore
 
 extension DriveClient {
     /// Only idempotent requests may be replayed on quota responses; a lost mutation response goes to reconciliation.
-    func mutationResponse(_ url: URL, method: String = "GET", body: Data? = nil, headers: [String: String] = [:]) async throws -> (
+    func mutationResponse(
+        _ url: URL, method: String = "GET", body: Data? = nil, headers: [String: String] = [:], context: DriveTransferContext? = nil
+    ) async throws -> (
         Data, HTTPURLResponse
     ) {
         var request = URLRequest(url: url)
@@ -11,9 +13,15 @@ extension DriveClient {
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
         let token = try await tokens.accessToken()
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let started = Date()
         for attempt in 0...4 {
             try Task.checkCancellation()
-            let (data, response) = try await http.response(request)
+            try await context?.checkpoint()
+            let data: Data, response: HTTPURLResponse
+            do { (data, response) = try await http.response(request) } catch let error as URLError {
+                if error.code != .cancelled { context?.status("Waiting for network") }
+                throw error
+            }
             if response.statusCode == 401, attempt == 0 {
                 let fresh = try await tokens.accessToken(rejectedToken: token)
                 request.setValue("Bearer \(fresh)", forHTTPHeaderField: "Authorization")
@@ -26,6 +34,7 @@ extension DriveClient {
             if response.statusCode == 429 || quota403 {
                 guard attempt < 4 else { throw DriveError.quota }
                 let delay = min(30, max(0, Double(response.value(forHTTPHeaderField: "Retry-After") ?? "") ?? pow(2, Double(attempt))))
+                if Date().timeIntervalSince(started) + delay >= 10 { context?.status("Slowed down by Google, retrying") }
                 try await Task.sleep(nanoseconds: UInt64((delay + Double.random(in: 0...0.05)) * 1_000_000_000))
                 continue
             }
@@ -36,6 +45,7 @@ extension DriveClient {
                 if reason.contains("exportSizeLimitExceeded") { throw DriveError.exportTooLarge }
             }
             if response.statusCode != 308 { try DriveHTTP.check(response.statusCode) }
+            context?.status(nil)
             return (data, response)
         }
         throw DriveError.quota
@@ -59,8 +69,10 @@ extension DriveClient {
     func invalidateMutation(parents: [String]) {
         let provider = RemoteFS.provider(for: DriveLocation(accountID: accountID).url) as? DriveProvider
         if parents.isEmpty { provider?.invalidate() }
+        let rootID = cachedFile(for: DriveLocation(accountID: accountID, collection: .folder("root")).url)?.id
         for parent in parents {
-            provider?.invalidate(folder: DriveLocation(accountID: accountID, collection: parent == "root" ? .myDrive : .folder(parent)).url)
+            provider?.invalidate(
+                folder: DriveLocation(accountID: accountID, collection: parent == "root" || parent == rootID ? .myDrive : .folder(parent)).url)
         }
     }
 
@@ -185,14 +197,15 @@ extension DriveClient {
 
     public func move(_ id: String, to parentID: String, operationID: UUID = UUID()) async throws -> DriveFile {
         let parent = try await writableParent(parentID)
-        let current = try await file(id)
-        guard current.driveId == parent.driveId else { throw DriveError.permissionDenied }
+        let current = try await file(id, includeTrashed: true)
+        let destinationID = parent.id
+        if current.driveId != parent.driveId { return try await crossDriveMove(current, parentID: destinationID, operationID: operationID) }
         return try await patchJournaled(
             id, kind: "move", body: [:],
             query: [
-                URLQueryItem(name: "addParents", value: parentID),
+                URLQueryItem(name: "addParents", value: destinationID),
                 URLQueryItem(name: "removeParents", value: (current.parents ?? []).joined(separator: ",")),
-            ], operationID: operationID, allow: { $0.operations.canMove }, satisfied: { $0.parents == [parentID] })
+            ], operationID: operationID, allow: { $0.operations.canMove }, satisfied: { $0.parents == [destinationID] })
     }
 }
 

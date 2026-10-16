@@ -39,6 +39,10 @@ extension DriveClient {
                 throw DriveError.invalidResponse
             }
         }
+        if let fingerprint = record.fingerprint, fingerprint.inode != JobJournal.Fingerprint(partial)?.inode {
+            throw DriveMutationError.sourceChanged
+        }
+        record.fingerprint = JobJournal.Fingerprint(partial)
         let output = try FileHandle(forWritingTo: partial)
         defer { try? output.close() }
         // A torn uncheckpointed chunk is discarded; bytes after the journal offset were never confirmed.
@@ -62,12 +66,12 @@ extension DriveClient {
                 let end = min(total - 1, record.offset + 256 * 1024 - 1)
                 let (data, response) = try await mutationResponse(
                     mutationURL("files/\(target.id)", query: [URLQueryItem(name: "alt", value: "media")]),
-                    headers: ["Range": "bytes=\(record.offset)-\(end)"])
+                    headers: ["Range": "bytes=\(record.offset)-\(end)"], context: context)
                 guard response.statusCode == 206, data.count == end - record.offset + 1,
                     response.value(forHTTPHeaderField: "Content-Range") == "bytes \(record.offset)-\(end)/\(total)"
                 else { throw DriveError.invalidResponse }
                 try output.write(contentsOf: data); try output.synchronize()
-                record.offset += Int64(data.count); try mutationJournal.save(record)
+                record.offset += Int64(data.count); record.fingerprint = JobJournal.Fingerprint(partial); try mutationJournal.save(record)
                 context.progress(record.offset, total)
             }
             if let checksum = target.md5Checksum, try Self.md5(partial) != checksum { throw DriveError.invalidResponse }

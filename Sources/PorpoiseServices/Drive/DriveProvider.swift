@@ -289,7 +289,7 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
                     let delta = max(0, done - box.value); box.value = done; return delta
                 }
                 control?.onBytes(delta)
-            })
+            }, status: { control?.onStatus($0) })
     }
     private final class ByteCounter: @unchecked Sendable { let lock = NSLock(); var value: Int64 = 0 }
 

@@ -50,9 +50,10 @@ extension RemoteTransferJob {
             !source.isFileURL || record.fingerprint == JobJournal.Fingerprint(source)
         else { throw DriveMutationError.sourceChanged }
         // A native document export is a representation, never proof permitting source removal.
-        if kind == .move, incoming.isWebDocument, targetProvider == nil { throw DriveError.unsupportedExport }
+        let exportsNative = incoming.isWebDocument && targetProvider?.accountID != sourceProvider?.accountID
+        if kind == .move, exportsNative { throw DriveError.unsupportedExport }
         var name = incoming.name
-        if incoming.isWebDocument, targetProvider == nil,
+        if exportsNative,
             let file = metadata,
             let format = (DriveExportPreset(rawValue: Settings.store.string(forKey: "googleDriveExportPreset") ?? "") ?? .office).format(
                 for: file.mimeType)
@@ -106,7 +107,9 @@ extension RemoteTransferJob {
             }
             if replacing { break }
         }
-        if replacing, targetProvider != nil { throw RemoteError.unsupported("Drive cannot safely replace this item yet. Keep Both instead.") }
+        if replacing, let old = existing, (RemoteFS.provider(for: old.url) as? DriveProvider)?.metadata(for: old.url)?.isGoogleDocument == true {
+            throw RemoteError.unsupported("A Google document cannot be replaced with uploaded bytes. Export it or choose Keep Both.")
+        }
         let finalName = name
         if incoming.isDirectory {
             let target: URL
@@ -145,10 +148,32 @@ extension RemoteTransferJob {
             if record.childOperationID == nil { record.childOperationID = UUID(); try journal.save(record) }
             let child = record.childOperationID!
             let result: DriveFile
-            if let sourceProvider, sourceProvider.accountID == provider.accountID, let metadata {
-                if kind == .move {
-                    result = try DriveProvider.wait { try await client.move(metadata.id, to: parent, operationID: child) }
+            var serverMoved = false
+            if replacing, let old = existing {
+                guard let oldFile = provider.metadata(for: old.url) else { throw DriveMutationError.conflict }
+                let scratch = journal.folder.appendingPathComponent("Sources").appendingPathComponent(operationID.uuidString)
+                try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+                let local: URL
+                if source.isFileURL {
+                    local = source
+                } else if let kept = try FileManager.default.contentsOfDirectory(at: scratch, includingPropertiesForKeys: nil).first {
+                    local = kept
                 } else {
+                    local = try RemoteFS.provider(for: source)!.download(source, into: scratch)
+                }
+                let context = provider.transferContext()
+                result = try DriveProvider.wait {
+                    try await client.upload(
+                        local, parentID: parent, name: finalName, operationID: child, context: context,
+                        replacingID: oldFile.id, expectedVersion: oldFile.version)
+                }
+            } else if let sourceProvider, sourceProvider.accountID == provider.accountID, let metadata {
+                let destinationParent = try DriveProvider.wait { try await client.file(parent) }
+                if kind == .move && metadata.driveId == destinationParent.driveId {
+                    result = try DriveProvider.wait { try await client.move(metadata.id, to: parent, operationID: child) }
+                    serverMoved = true
+                } else {
+                    if kind == .move, metadata.capabilities?.canMoveItemOutOfDrive != true { throw DriveError.permissionDenied }
                     result = try DriveProvider.wait { try await client.copy(metadata.id, to: parent, name: finalName, operationID: child) }
                 }
             } else {
@@ -167,9 +192,22 @@ extension RemoteTransferJob {
                     try await client.upload(local, parentID: parent, name: finalName, operationID: child, context: context)
                 }
             }
+            let verified = try DriveProvider.wait { try await client.file(result.id) }
+            guard verified.version == result.version, verified.size == result.size, verified.md5Checksum == result.md5Checksum else {
+                throw DriveMutationError.conflict
+            }
+            if let metadata, !serverMoved, !replacing, !exportsNative {
+                guard
+                    metadata.isGoogleDocument
+                        ? metadata.mimeType == result.mimeType
+                        : (metadata.md5Checksum != nil && metadata.md5Checksum == result.md5Checksum && metadata.size == result.size)
+                else {
+                    throw DriveMutationError.sourceChanged
+                }
+            }
             target = result.childLocation(in: DriveLocation(url: folder)!).url
             record.result = result; record.destinationURL = target; record.phase = .committed; try journal.save(record)
-            if kind == .move, sourceProvider?.accountID != targetProvider?.accountID {
+            if kind == .move, !serverMoved {
                 try finishDriveSource(source, metadata: metadata, record: &record, journal: journal)
             }
         } else {

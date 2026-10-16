@@ -13,6 +13,7 @@ final class RemoteTransferJob {
     var options: TransferCompareOptions
     var resolve: (ConflictInfo) -> ConflictAnswer = { _ in .init(.cancel) }
     var onProgress: (JobProgress) -> Void = { _ in }
+    var onNotice: (String?) -> Void = { _ in }
     var onIncoming: (FileItem?) -> Void = { _ in }
     var onNoSpace: ((Int64) -> Bool)?
     var cloudBatchID = UUID()
@@ -47,9 +48,10 @@ final class RemoteTransferJob {
     var remaining: [URL] { sources.filter { completed[$0] == nil } }
 
     func run() {
+        defer { onNotice(nil) }
         let transport = Shell.TransferControl(
             isPaused: { self.control.isPaused }, isCancelled: { self.control.isCancelled },
-            isInterrupted: { self.control.isInterrupted }, onBytes: { self.advance(bytes: $0) })
+            isInterrupted: { self.control.isInterrupted }, onBytes: { self.advance(bytes: $0) }, onStatus: { self.onNotice($0) })
         Shell.withTransferControl(transport) {
             do {
                 for source in sources {
@@ -85,6 +87,16 @@ final class RemoteTransferJob {
                     errors.append("\(source.lastPathComponent): \(error.localizedDescription)")
                 }
                 publish()
+            }
+        }
+        if control.isCancelled {
+            let clients = (sources + (destination.map { [$0] } ?? [])).compactMap { (RemoteFS.provider(for: $0) as? DriveProvider)?.client }
+            for client in clients {
+                for record in (try? client.mutationJournal.all(accountID: client.accountID)) ?? [] where record.batchID == cloudBatchID {
+                    for operation in [record.childOperationID, record.downloadOperationID].compactMap({ $0 }) {
+                        try? DriveProvider.wait { try await client.cancelTransfer(operation) }
+                    }
+                }
             }
         }
         publish(force: true)

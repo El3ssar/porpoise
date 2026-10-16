@@ -4,11 +4,12 @@ import PorpoiseCore
 
 extension DriveClient {
     public func upload(
-        _ local: URL, parentID: String, name: String? = nil, operationID: UUID = UUID(), context: DriveTransferContext = .init()
+        _ local: URL, parentID: String, name: String? = nil, operationID: UUID = UUID(), context: DriveTransferContext = .init(),
+        replacingID: String? = nil, expectedVersion: String? = nil
     ) async throws -> DriveFile {
         let name = name ?? local.lastPathComponent
         try RemoteFS.checkName(name)
-        _ = try await writableParent(parentID)
+        if replacingID == nil { _ = try await writableParent(parentID) } else { try await tokens.requireWriteScope() }
         guard let fingerprint = JobJournal.Fingerprint(local),
             try local.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true
         else { throw DriveMutationError.sourceChanged }
@@ -17,13 +18,39 @@ extension DriveClient {
         var record =
             try mutationJournal.load(operationID)
             ?? DriveMutationRecord(
-                operationID: operationID, accountID: accountID, kind: "upload", parentID: parentID, name: name)
-        guard record.accountID == accountID, record.kind == "upload", record.parentID == parentID, record.name == name,
+                operationID: operationID, accountID: accountID, kind: replacingID == nil ? "upload" : "replace", sourceID: replacingID,
+                parentID: parentID, name: name)
+        guard record.accountID == accountID, record.kind == (replacingID == nil ? "upload" : "replace"), record.sourceID == replacingID,
+            record.parentID == parentID, record.name == name,
             record.localSource == nil || record.localSource == local,
             record.fingerprint == nil || record.fingerprint == fingerprint
         else { throw DriveMutationError.sourceChanged }
         if let result = record.result { return result }
-        if record.phase != .prepared, let recovered = try await reconcile(record) {
+        if let replacingID {
+            let existing = try await file(replacingID)
+            guard !existing.isGoogleDocument, !existing.isFolder, existing.operations.canWrite else { throw DriveError.permissionDenied }
+            if record.phase == .prepared {
+                guard expectedVersion == nil || existing.version == expectedVersion else { throw DriveMutationError.conflict }
+                guard let revision = existing.headRevisionId, DriveLink.isValidID(revision) else { throw DriveMutationError.conflict }
+                // Pin the old bytes before creating a new revision. Pin failure leaves the old file intact.
+                var pin = URLComponents(
+                    url: baseURL.appendingPathComponent("files/\(replacingID)/revisions/\(revision)"), resolvingAgainstBaseURL: false)!
+                pin.queryItems = [URLQueryItem(name: "fields", value: "id,keepForever")]
+                let (data, _) = try await mutationResponse(
+                    pin.url!, method: "PATCH", body: JSONSerialization.data(withJSONObject: ["keepForever": true]),
+                    headers: ["Content-Type": "application/json"])
+                struct Revision: Decodable { let keepForever: Bool }
+                guard try decode(Revision.self, data).keepForever else { throw DriveMutationError.conflict }
+                let protected = try await file(replacingID)
+                guard protected.headRevisionId == revision, protected.md5Checksum == existing.md5Checksum else { throw DriveMutationError.conflict }
+                record.itemID = replacingID; record.revision = protected.version; record.previousRevisionID = revision
+            } else if existing.appProperties?["porpoiseOperation"] != operationID.uuidString && existing.version != record.revision {
+                throw DriveMutationError.conflict
+            }
+        }
+        if record.phase != .prepared, let recovered = try await reconcile(record),
+            replacingID == nil || recovered.appProperties?["porpoiseOperation"] == operationID.uuidString
+        {
             guard recovered.size.flatMap(Int64.init) == fingerprint.size, recovered.md5Checksum == (try Self.md5(local)) else {
                 throw DriveMutationError.sourceChanged
             }
@@ -39,7 +66,8 @@ extension DriveClient {
         if record.hasSession, let secret = try await tokens.session(operationID) { session = try validatedSession(secret) }
         if let url = session {
             do {
-                let result = try await mutationResponse(url, method: "PUT", body: Data(), headers: ["Content-Range": "bytes */\(total)"])
+                let result = try await mutationResponse(
+                    url, method: "PUT", body: Data(), headers: ["Content-Range": "bytes */\(total)"], context: context)
                 if result.1.statusCode != 308 { return try await finishUpload(result.0, record: &record, local: local, context: context) }
                 record.offset = try confirmedOffset(result.1, total: total)
                 try mutationJournal.save(record)
@@ -62,18 +90,22 @@ extension DriveClient {
             record.phase = .requesting; try mutationJournal.save(record)
             var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
             components.path = "/upload" + components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).withLeadingSlash + "/files"
+            if let replacingID { components.path += "/" + replacingID }
             components.queryItems = [
                 URLQueryItem(name: "uploadType", value: "resumable"), URLQueryItem(name: "supportsAllDrives", value: "true"),
                 URLQueryItem(name: "fields", value: Self.fields),
             ]
-            let metadata: [String: Any] = [
-                "id": record.itemID!, "name": name, "parents": [parentID], "appProperties": ["porpoiseOperation": operationID.uuidString],
-            ]
+            var metadata: [String: Any] = ["appProperties": ["porpoiseOperation": operationID.uuidString]]
+            if replacingID == nil { metadata["id"] = record.itemID!; metadata["name"] = name; metadata["parents"] = [parentID] }
+            if let replacingID {
+                let fresh = try await file(replacingID)
+                guard fresh.version == record.revision else { throw DriveMutationError.conflict }
+            }
             let (_, response) = try await mutationResponse(
-                components.url!, method: "POST", body: JSONSerialization.data(withJSONObject: metadata),
+                components.url!, method: replacingID == nil ? "POST" : "PATCH", body: JSONSerialization.data(withJSONObject: metadata),
                 headers: [
                     "Content-Type": "application/json", "X-Upload-Content-Type": "application/octet-stream", "X-Upload-Content-Length": String(total),
-                ])
+                ], context: context)
             guard let location = response.value(forHTTPHeaderField: "Location") else { throw DriveError.invalidResponse }
             session = try validatedSession(location)
             try await tokens.saveSession(location, id: operationID)
@@ -88,7 +120,7 @@ extension DriveClient {
             let data = try input.read(upToCount: Int(min(256 * 1024, total - record.offset))) ?? Data()
             let range = total == 0 ? "bytes */0" : "bytes \(record.offset)-\(record.offset + Int64(data.count) - 1)/\(total)"
             let (body, response) = try await mutationResponse(
-                session, method: "PUT", body: data, headers: ["Content-Range": range, "Content-Type": "application/octet-stream"])
+                session, method: "PUT", body: data, headers: ["Content-Range": range, "Content-Type": "application/octet-stream"], context: context)
             if response.statusCode != 308 { return try await finishUpload(body, record: &record, local: local, context: context) }
             let offset = try confirmedOffset(response, total: total)
             guard offset > record.offset else { throw DriveError.invalidResponse }
@@ -104,6 +136,10 @@ extension DriveClient {
             JobJournal.Fingerprint(local) == record.fingerprint
         else { throw DriveMutationError.sourceChanged }
         guard let md5 = result.md5Checksum, md5 == (try Self.md5(local)) else { throw DriveError.invalidResponse }
+        let fresh = try await file(result.id)
+        guard fresh.version == result.version, fresh.md5Checksum == result.md5Checksum, fresh.size == result.size else {
+            throw DriveMutationError.conflict
+        }
         record.result = result; record.offset = record.fingerprint!.size; record.phase = .committed
         try mutationJournal.save(record)
         try await tokens.removeSession(record.operationID)

@@ -196,6 +196,7 @@ public struct DriveFile: Codable, Hashable, Sendable {
     public var resourceKey: String?
     public var size: String?
     public var parents: [String]?
+    public var headRevisionId: String?
     public var version: String?
     public var md5Checksum: String?
     public var appProperties: [String: String]?
