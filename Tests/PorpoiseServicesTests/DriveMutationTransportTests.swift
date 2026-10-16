@@ -107,3 +107,27 @@ private final class MutationStatus: @unchecked Sendable {
     var values: [String] { lock.withLock { entries } }
     func record(_ value: String?) { if let value { lock.withLock { entries.append(value) } } }
 }
+
+extension DriveMutationTests {
+    @Test func sharedResourceKeysSurviveFreshCapabilityChecksAndMutations() async throws {
+        let server = try server(), scratch = try Scratch()
+        let (_, tokens, _) = try server.client()
+        let captured = MutationStatus()
+        let http = DriveHTTP { request in
+            if let key = request.value(forHTTPHeaderField: "X-Goog-Drive-Resource-Keys") { captured.record(key) }
+            let (data, response) = try await URLSession.shared.data(for: request)
+            return (data, response as! HTTPURLResponse)
+        }
+        let client = DriveClient(
+            accountID: UUID(), tokens: tokens, http: http, baseURL: server.base.appendingPathComponent("drive/v3/"),
+            mutationJournal: .init(folder: scratch.url.appendingPathComponent("journal")))
+        _ = try await client.file("binary-a", resourceKey: "source-key")
+        _ = try await client.file("folder-a", resourceKey: "parent-key")
+        _ = try await client.copy("binary-a", to: "folder-a")
+        #expect(captured.values.contains("binary-a/source-key,folder-a/parent-key"))
+        #expect(captured.values.filter { $0 == "binary-a/source-key" }.count >= 2)
+        let local = try scratch.file("shared-upload.txt", "shared folder bytes")
+        _ = try await client.upload(local, parentID: "folder-a")
+        #expect(captured.values.filter { $0 == "folder-a/parent-key" }.count >= 3)
+    }
+}

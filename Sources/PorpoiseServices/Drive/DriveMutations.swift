@@ -11,6 +11,25 @@ extension DriveClient {
         var request = URLRequest(url: url)
         request.httpMethod = method; request.httpBody = body; request.timeoutInterval = 60
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+        var resourceIDs: Set<String> = []
+        let parts = url.pathComponents
+        if let index = parts.firstIndex(of: "files"), index + 1 < parts.count { resourceIDs.insert(parts[index + 1]) }
+        if headers["Content-Type"] == "application/json", let body,
+            let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any], let parents = json["parents"] as? [String]
+        {
+            resourceIDs.formUnion(parents)
+        }
+        for query in URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [] where query.name == "addParents" {
+            resourceIDs.formUnion((query.value ?? "").split(separator: ",").map(String.init))
+        }
+        let keys = resourceIDs.sorted().compactMap { id -> String? in
+            guard DriveLink.isValidID(id),
+                let key = cachedFile(for: DriveLocation(accountID: accountID, collection: .folder(id)).url)?.resourceKey,
+                DriveLink.isValidID(key)
+            else { return nil }
+            return "\(id)/\(key)"
+        }
+        if !keys.isEmpty { request.setValue(keys.joined(separator: ","), forHTTPHeaderField: "X-Goog-Drive-Resource-Keys") }
         let token = try await tokens.accessToken()
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let started = Date()

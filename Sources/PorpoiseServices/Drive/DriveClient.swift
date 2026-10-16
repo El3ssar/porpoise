@@ -115,6 +115,7 @@ public final class DriveClient: @unchecked Sendable {
 
     public func file(_ id: String, resourceKey: String? = nil, includeTrashed: Bool = false) async throws -> DriveFile {
         guard DriveLink.isValidID(id) else { throw DriveError.invalidLocation }
+        let resourceKey = resourceKey ?? lock.withLock { cache[id]?.resourceKey }
         let data = try await request(
             "files/\(id)",
             query: [
