@@ -534,7 +534,15 @@ public final class DirectoryModel {
 
     /// Rebuilds the rows; `keepingOrder` when only the name filter changed, `adding` when only those items were added
     /// to what's shown.
+    /// Compare renders its own aligned rows. Defer browse sorting/grouping while it owns the surface, then
+    /// rebuild once when ordinary browsing returns. Raw listing/state and load errors continue updating.
+    public var defersPresentation = false {
+        didSet { if !defersPresentation && presentationNeedsRebuild { presentationNeedsRebuild = false; rebuild() } }
+    }
+    private var presentationNeedsRebuild = false
+
     public func rebuild(keepingOrder: Bool = false, adding: [FileItem]? = nil) {
+        if defersPresentation { presentationNeedsRebuild = true; return }
         let choice = Settings.shared.sortingChoice
         var out: [Row] = []
         var grps: [ItemGroup] = []

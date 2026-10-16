@@ -14,6 +14,22 @@ final class PorpoiseTab: NSView {
     let navigators: [BreadcrumbView] = [BreadcrumbView(), BreadcrumbView()]
     private(set) var activeIsSecondary = false
     var customTitle: String?
+    var compareView: CompareView?
+    var compareChooser: ComparePanePlaceholder?
+    var linkedRoots: (left: URL, right: URL)?
+    var linkUpdating = false
+    var linkGeneration = 0
+    var missingCounterpart: ComparePanePlaceholder?
+    var missingOnRight = true
+    var lastComparePartner: URL?
+
+    func installComparison(_ compare: CompareView?) {
+        compareView?.model.stop(); compareView?.removeFromSuperview(); compareView = compare
+        primary.suspendForComparison(compare != nil); secondary?.suspendForComparison(compare != nil)
+        primary.isHidden = compare != nil; secondary?.isHidden = compare != nil
+        if let compare { addSubview(compare); compare.frame = bounds }
+        needsLayout = true
+    }
 
     private let handle = SplitHandleView()
     /// Handle position as a fraction of the width, so it stays proportional when the window resizes.
@@ -64,7 +80,12 @@ final class PorpoiseTab: NSView {
 
     /// Places the panes and the handle at `splitFraction`; the only place their frames are set.
     private func layoutPanes() {
-        defer { NotificationCenter.default.post(name: .splitResized, object: self) }
+        defer {
+            if let compareView { compareView.frame = bounds; handle.isHidden = true }
+            if let compareChooser, let secondary { compareChooser.frame = secondary.frame }
+            if let missingCounterpart { missingCounterpart.frame = missingOnRight ? (secondary?.frame ?? bounds) : primary.frame }
+            NotificationCenter.default.post(name: .splitResized, object: self)
+        }
         let b = bounds
         let left: ViewContainer, right: ViewContainer
         if let s = secondary {
@@ -233,6 +254,8 @@ final class PorpoiseTab: NSView {
     /// Closes one view of the split (Dolphin's CloseSplitViewChoice); the closed view shrinks away (InCubic).
     func closeSplit(closeActive: Bool? = nil, animated: Bool = true) {
         guard let s = secondary else { return }
+        installComparison(nil); compareChooser?.removeFromSuperview(); compareChooser = nil
+        missingCounterpart?.removeFromSuperview(); missingCounterpart = nil; linkedRoots = nil
         let closeSecondary: Bool
         if let closeActive {
             closeSecondary = closeActive == activeIsSecondary

@@ -5,8 +5,18 @@ import PorpoiseServices
 extension MainWindowController {
     // MARK: View
 
-    @objc func zoomIn(_ sender: Any?) { view.zoom(by: 1) }
-    @objc func zoomOut(_ sender: Any?) { view.zoom(by: -1) }
+    @objc func zoomIn(_ sender: Any?) {
+        if let compare = tab.compareView {
+            compare.zoom.doubleValue = min(48, compare.zoom.doubleValue + 4); compare.document.rowHeight = CGFloat(compare.zoom.doubleValue) + 6;
+            compare.needsLayout = true; return
+        }; view.zoom(by: 1)
+    }
+    @objc func zoomOut(_ sender: Any?) {
+        if let compare = tab.compareView {
+            compare.zoom.doubleValue = max(16, compare.zoom.doubleValue - 4); compare.document.rowHeight = CGFloat(compare.zoom.doubleValue) + 6;
+            compare.needsLayout = true; return
+        }; view.zoom(by: -1)
+    }
     @objc func zoomReset(_ sender: Any?) {
         if view.showsApps, let g = view.apps?.grid { return g.animateZoom(to: AppsGridView.defaultIconSize) }
         mutateProps { $0.resetIconSize(for: $0.mode) }
@@ -115,7 +125,7 @@ extension MainWindowController {
         focusPane(secondary: !tab.activeIsSecondary)
     }
 
-    @objc func reloadView(_ sender: Any?) { view.reload() }
+    @objc func reloadView(_ sender: Any?) { if let compare = tab.compareView { compare.model.start() } else { view.reload() } }
 
     /// ⌥← / ⌥→: move focus to the left / right pane of a split view.
     @objc func focusLeftPane(_ sender: Any?) { focusPane(secondary: false) }
@@ -124,7 +134,12 @@ extension MainWindowController {
     private func focusPane(secondary: Bool) {
         guard tab.isSplit, tab.activeIsSecondary != secondary else { return }
         tab.setActive(secondary: secondary)
-        window?.makeFirstResponder(view.list)
+        if let compare = tab.compareView {
+            compare.document.activeSide = secondary ? .right : .left; compare.document.needsDisplay = true;
+            window?.makeFirstResponder(compare.document)
+        } else {
+            window?.makeFirstResponder(view.list)
+        }
         syncToActiveView()
     }
 

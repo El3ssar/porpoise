@@ -8,6 +8,7 @@ import SwiftTerm
 /// via distributed notifications. Used by scripts/uitest.sh. Inert unless someone posts to it.
 final class DebugBridge: NSObject {
     static let shared = DebugBridge()
+    var compareEntryPhases: [String: Double] = [:]
     private var transferPreviewJob: FileJob?
     /// The channel; PORPOISE_BRIDGE gives a test instance its own, so parallel test runs don't hear each other.
     static let request = Notification.Name("app.porpoise.Porpoise.debug." + (ProcessInfo.processInfo.environment["PORPOISE_BRIDGE"] ?? "test"))
@@ -30,6 +31,136 @@ final class DebugBridge: NSObject {
         let parts = cmd.split(separator: " ", maxSplits: 1).map(String.init)
         let arg = parts.count > 1 ? parts[1] : ""
         switch parts.first {
+        case "compare":
+            let pair = arg.contains("|") ? arg.components(separatedBy: "|") : arg.split(separator: " ", maxSplits: 1).map(String.init)
+            if pair.count == 2 {
+                wc?.startComparing(left: URL(fileURLWithPath: pair[0]), right: URL(fileURLWithPath: pair[1]))
+            } else {
+                wc?.toggleCompare(nil)
+            }
+        case "comparefilter":
+            if let model = wc?.tab.compareView?.model {
+                var filter: CompareFilter = []
+                if arg == "all" {
+                    filter = .all
+                } else if arg == "differences" {
+                    filter = .differences
+                } else {
+                    for token in arg.components(separatedBy: ",") {
+                        filter.formUnion(["left": .onlyLeft, "right": .onlyRight, "changed": .changed, "same": .same][token] ?? [])
+                    }
+                }
+                model.filter = filter; model.rebuild()
+            }
+        case "compareexpand": wc?.tab.compareView?.model.expand(arg)
+        case "compareselect":
+            if let compare = wc?.tab.compareView, let index = compare.model.rows.firstIndex(where: { $0.path == arg }) {
+                compare.document.select(index)
+            }
+        case "comparemethod":
+            if let method = SyncCompareMethod(rawValue: arg), let compare = wc?.tab.compareView {
+                compare.model.options.method = method; compare.model.start()
+            }
+        case "compareprogress":
+            if let model = wc?.tab.compareView?.model {
+                model.stop(); model.loading = arg == "on"; model.showProgress = arg == "on"; model.onChange?()
+            }
+        case "comparehover":
+            if let compare = wc?.tab.compareView, let index = Int(arg) { compare.document.hoverIndex = index; compare.document.needsDisplay = true }
+        case "comparescroll":
+            if let compare = wc?.tab.compareView, let offset = Double(arg) {
+                compare.scroll.contentView.scroll(to: CGPoint(x: 0, y: offset)); compare.scroll.reflectScrolledClipView(compare.scroll.contentView)
+            }
+        case "comparemenu":
+            if !arg.isEmpty { wc?.tab.compareView?.showMethodMenu { self.windowServerMenuSnapshot(to: arg) } }
+        case "comparetheme":
+            guard Settings.isTesting else { break }
+            Settings.shared.updateAppearance { $0.themeName = arg }
+        case "compareopaque":
+            guard Settings.isTesting, let compare = wc?.tab.compareView else { break }
+            compare.bar.forcesOpaque = arg == "on"; compare.footer.forcesOpaque = arg == "on"
+        case "comparescrollbench":
+            if let compare = wc?.tab.compareView {
+                let probe = Animator(); var intervals: [Double] = [], previous = CACurrentMediaTime()
+                compare.document.drawMilliseconds = []
+                let start = compare.scroll.contentView.bounds.minY
+                probe.run(
+                    duration: 1, curve: { $0 },
+                    step: { value in
+                        let now = CACurrentMediaTime(); intervals.append((now - previous) * 1000); previous = now
+                        compare.scroll.contentView.scroll(to: CGPoint(x: 0, y: start + CGFloat(value) * 2800))
+                        compare.scroll.reflectScrolledClipView(compare.scroll.contentView)
+                    })
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.3) {
+                    _ = probe
+                    let data: [String: Any] = [
+                        "rows": compare.model.rows.count, "frameIntervalsMS": Array(intervals.dropFirst()),
+                        "drawMS": compare.document.drawMilliseconds,
+                    ]
+                    try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: arg))
+                }
+            }
+        case "compareentrybench":
+            let args = arg.components(separatedBy: "|")
+            if args.count == 3, let wc {
+                let probe = Animator(); var intervals: [Double] = [], previous: CFTimeInterval?
+                var setup = 0.0, ticks = 0
+                probe.run(
+                    duration: 1.8,
+                    step: { _ in
+                        let now = CACurrentMediaTime()
+                        if let previous { intervals.append((now - previous) * 1000) }
+                        previous = now; ticks += 1
+                        // Warm the display link before measuring entry: registration-to-first-callback
+                        // includes startup latency, rather than an interval between displayed frames.
+                        if ticks == 2 {
+                            let begin = CACurrentMediaTime()
+                            wc.startComparing(left: URL(fileURLWithPath: args[1]), right: URL(fileURLWithPath: args[2]))
+                            setup = (CACurrentMediaTime() - begin) * 1000
+                        }
+                    })
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.1) {
+                    _ = probe
+                    let compare = wc.tab.compareView
+                    let data: [String: Any] = [
+                        "entrySetupMS": setup, "rows": compare?.model.rows.count ?? 0,
+                        "phasesMS": self.compareEntryPhases,
+                        "frameIntervalsMS": intervals, "drawMS": compare?.document.drawMilliseconds ?? [],
+                    ]
+                    try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: args[0]))
+                }
+            }
+        case "comparebench":
+            if let compare = wc?.tab.compareView {
+                let probe = Animator(); var intervals: [Double] = [], previous = CACurrentMediaTime()
+                probe.run(
+                    duration: 0.6,
+                    step: { _ in
+                        let now = CACurrentMediaTime(); intervals.append((now - previous) * 1000); previous = now
+                    })
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    compare.model.filter = .all; compare.model.rebuild()
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                    _ = probe
+                    let data: [String: Any] = [
+                        "rows": compare.model.rows.count, "filterTotalMS": compare.model.lastRebuildMilliseconds,
+                        "viewUpdateMS": compare.lastUpdateMilliseconds, "rowLayoutMS": compare.document.filterMilliseconds,
+                        "drawMS": compare.document.drawMilliseconds, "frameIntervalsMS": Array(intervals.dropFirst()),
+                    ]
+                    try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: arg))
+                }
+            }
+        case "compareperf":
+            if let compare = wc?.tab.compareView {
+                let data: [String: Any] = [
+                    "rows": compare.model.rows.count, "filterUpdateMS": compare.lastUpdateMilliseconds,
+                    "rowLayoutMS": compare.document.filterMilliseconds, "drawMS": compare.document.drawMilliseconds,
+                ]
+                try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: arg))
+            }
+        case "link":
+            if let wc, (wc.tab.linkedRoots != nil) != (arg == "on") { wc.toggleLinkedBrowsing(nil) }
         case "snapshot": snapshot(to: arg)
         case "lsnapshot": layerSnapshot(to: arg)
         case "wsnapshot": windowServerSnapshot(to: arg)
@@ -401,6 +532,7 @@ final class DebugBridge: NSObject {
             window.level = .floating
             window.orderFrontRegardless()
             NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
         case "transferdialog":
             guard Settings.isTesting, let owner = wc?.window else { return }
@@ -622,6 +754,20 @@ final class DebugBridge: NSObject {
         try? NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
     }
 
+    /// Includes the native popup menu, which is a separate WindowServer window. Only this process's
+    /// onscreen windows are captured, so another app's content cannot enter a design review artifact.
+    private func windowServerMenuSnapshot(to path: String) {
+        let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
+        var ids: [UnsafeRawPointer?] = info.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(getpid()) }
+            .compactMap { ($0[kCGWindowNumber as String] as? NSNumber).flatMap { UnsafeRawPointer(bitPattern: $0.uintValue) } }
+        typealias Fn = @convention(c) (CGRect, CFArray, UInt32) -> Unmanaged<CGImage>?
+        guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImageFromArray") else { return }
+        let fn = unsafeBitCast(sym, to: Fn.self)
+        let count = ids.count
+        let windows = ids.withUnsafeMutableBufferPointer { buffer in CFArrayCreate(nil, buffer.baseAddress, count, nil) }
+        if let windows, let image = fn(.null, windows, 1)?.takeRetainedValue() { writePNG(image, to: path) }
+    }
+
     /// `nominal`: at 1x, much quicker to take (frames of an animation).
     private func windowServerImage(_ arg: String, nominal: Bool = false) -> CGImage? {
         let parts = arg.components(separatedBy: "|")
@@ -678,6 +824,21 @@ final class DebugBridge: NSObject {
             "tabs": w.tabs.map(\.title),
             "currentTab": w.current,
             "split": w.tab.isSplit,
+            "linked": w.tab.linkedRoots != nil,
+            "missingCounterpart": w.tab.missingCounterpart != nil,
+            "compareChooser": w.tab.compareChooser != nil,
+            "compare": w.tab.compareView.map { compare -> [String: Any] in
+                [
+                    "rows": compare.model.rows.count, "selected": compare.document.selectedPath ?? "",
+                    "activeSide": compare.document.activeSide.rawValue,
+                    "filter": compare.model.filter.rawValue, "sort": compare.model.sortRole.rawValue, "ascending": compare.model.sortAscending,
+                    "complete": compare.model.comparison?.complete ?? false, "loading": compare.model.loading,
+                    "scrollY": compare.scroll.contentView.bounds.minY, "iconSize": compare.zoom.doubleValue,
+                    "left": compare.model.leftRoot.absoluteString, "right": compare.model.rightRoot.absoluteString,
+                    "samplePaths": Array(compare.model.rowPaths.prefix(20)),
+                    "accessibilityRows": compare.document.accessibilityChildren()?.count ?? 0,
+                ]
+            } ?? [:],
             "activeIsSecondary": w.tab.activeIsSecondary,
             "filterVisible": !v.filterBar.isHidden,
             "searchVisible": !v.searchBar.isHidden,
