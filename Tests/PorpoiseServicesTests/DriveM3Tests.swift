@@ -183,6 +183,19 @@ import Testing
         client = nil
         await #expect(throws: DriveError.reconnect) { try await edits.open(file) }
     }
+    @Test func unverifiedProductionConditionalSaveCannotSendBytes() async throws {
+        let server = try DriveMutationTests().server(), scratch = try Scratch()
+        let credentials = MemoryDriveCredentials(), id = UUID()
+        let tokens = DriveTokenManager(configuration: server.config, accountID: id, credentials: credentials)
+        let client = DriveClient(
+            accountID: id, tokens: tokens,
+            http: DriveHTTP { _ in
+                Issue.record("Unverified production edit must not issue a request"); throw DriveError.offline
+            },
+            metadataDirectory: scratch.url)
+        let file = DriveFile(id: "binary-a", name: "safe.txt", mimeType: "text/plain")
+        await #expect(throws: DriveError.safeUpdateUnavailable) { try await client.saveEdit(scratch.url, baseline: file) }
+    }
     @Test func searchIsPagedEscapedScopedAndSupportsFullText() async throws {
         let server = try DriveMutationTests().server(), scratch = try Scratch()
         let client = try make(server, scratch.url)

@@ -29,6 +29,7 @@ public final class DriveClient: @unchecked Sendable {
     public static let changed = Notification.Name("PorpoiseDriveMetadataChanged")
     private var offline = false
     public var isOffline: Bool { lock.withLock { offline } }
+    public var canSaveEdits: Bool { baseURL.scheme == "http" && baseURL.host == "127.0.0.1" }
     func setOffline(_ value: Bool) { lock.withLock { offline = value } }
     var pollingChanges = false
     var polling: Task<Void, Never>?

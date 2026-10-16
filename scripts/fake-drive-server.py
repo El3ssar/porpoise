@@ -408,7 +408,9 @@ def main():
     server.profile_counter = 0
     server.profile_lock = Lock()
     if args.port_file:
-        args.port_file.write_text(str(server.server_port))
+        ready = args.port_file.with_suffix(".ready")
+        ready.write_text(str(server.server_port))
+        ready.replace(args.port_file)
     else:
         print(f"Fake Drive: http://127.0.0.1:{server.server_port}", flush=True)
     server.serve_forever()

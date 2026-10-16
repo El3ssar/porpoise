@@ -152,6 +152,8 @@ public actor DriveEditStore {
 extension DriveClient {
     /// One conditional publication; no gap between revision validation and server-side replacement.
     func saveEdit(_ local: URL, baseline: DriveFile) async throws -> DriveFile {
+        // Live v3 conditional semantics must be established with a disposable account before enabling publication.
+        guard canSaveEdits else { throw DriveError.safeUpdateUnavailable }
         try await tokens.requireWriteScope()
         var url = URLComponents(url: baseURL.appendingPathComponent("files/\(baseline.id)"), resolvingAgainstBaseURL: false)!
         url.queryItems = [URLQueryItem(name: "fields", value: Self.fields), URLQueryItem(name: "supportsAllDrives", value: "true")]

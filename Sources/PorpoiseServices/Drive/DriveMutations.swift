@@ -39,7 +39,7 @@ extension DriveClient {
             try await context?.checkpoint()
             let data: Data, response: HTTPURLResponse
             do { (data, response) = try await http.response(request) } catch let error as URLError {
-                if error.code != .cancelled { setOffline(true); context?.status("Waiting for network") }
+                if error.code != .cancelled { context?.status("Waiting for network") }
                 throw error
             }
             if response.statusCode == 401, attempt == 0 {
