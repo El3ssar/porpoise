@@ -61,7 +61,7 @@ public final class Activity: Identifiable {
         self.job = job
         self.pauseUnavailable = pauseUnavailable
         progress = JobProgress(
-            kind: kind, totalBytes: 0, doneBytes: 0, totalItems: sources.count, doneItems: 0, currentName: sources.first?.lastPathComponent ?? "",
+            kind: kind, totalBytes: 0, doneBytes: 0, totalItems: sources.count, doneItems: 0, currentName: sources.first.map(Self.name) ?? "",
             destination: destination)
     }
 
@@ -71,10 +71,19 @@ public final class Activity: Identifiable {
 
     /// "Copying 3 items to Backup"
     public var title: String {
-        let n = sources.count == 1 ? "“\(sources[0].lastPathComponent)”" : "\(sources.count) items"
-        let dest = destination.map { " to \($0.lastPathComponent)" } ?? ""
+        let n = sources.count == 1 ? "“\(Self.name(sources[0]))”" : "\(sources.count) items"
+        let dest = destination.map { " to \(Self.name($0))" } ?? ""
         return "\(kind.verb) \(n)\(dest)"
     }
+
+    /// Cloud items have ids in their URLs: their names come from the listing ("Q3", "My Drive").
+    static func name(_ url: URL) -> String {
+        url.scheme == "gdrive" ? RemoteFS.displayName(for: url) : url.lastPathComponent
+    }
+
+    /// A passing condition the transfer is handling by itself ("Slowed down by Google, retrying", "Waiting for
+    /// network"): shown instead of the speed until it clears.
+    public internal(set) var notice: String?
 
     /// One line: speed, amounts and time left while running; the outcome once ended.
     public var statusText: String {
@@ -91,10 +100,11 @@ public final class Activity: Identifiable {
                     "Preparing… \(p.totalFiles) \(p.totalFiles == 1 ? "file" : "files") · \(p.totalFolders) \(p.totalFolders == 1 ? "folder" : "folders") · \(FileFormat.size(p.totalBytes))"
             }
             var parts: [String] = []
+            if let notice { parts.append(notice) }
             if let p, p.totalFiles > 0 { parts.append("\(p.doneFiles) of \(p.totalFiles) files") }
             if !amounts.isEmpty { parts.append(amounts) }
-            if rate.hasSpeedEstimate { parts.append(rate.speedText) }
-            if let p, p.totalBytes > 0 || p.totalFiles > 0 { parts.append(rate.timeLeftText) }
+            if notice == nil, rate.hasSpeedEstimate { parts.append(rate.speedText) }
+            if notice == nil, let p, p.totalBytes > 0 || p.totalFiles > 0 { parts.append(rate.timeLeftText) }
             return parts.joined(separator: " — ")
         case .completed:
             let base = errors.isEmpty ? "Done" : "Done, with \(errors.count) \(errors.count == 1 ? "error" : "errors")"

@@ -89,10 +89,13 @@ public enum CloudAction: Sendable, CaseIterable {
 public enum CloudEditError: LocalizedError, Equatable {
     case denied(String)
     case notSupported
+    /// The sign-in only allows viewing (the app shows "Allow Changes…").
+    case needsWriteAccess
 
     public var errorDescription: String? {
         switch self {
         case .denied(let why): return why
+        case .needsWriteAccess: return "Allow Porpoise to make changes to this account first."
         case .notSupported: return "This account can’t be changed from Porpoise yet."
         }
     }

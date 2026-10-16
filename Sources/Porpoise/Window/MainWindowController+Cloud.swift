@@ -42,6 +42,7 @@ struct Weak<T: AnyObject> {
 extension MainWindowController {
     /// Something in a cloud folder couldn't be done: the reason in the message bar, never an alert.
     func cloudFailed(_ what: String, _ error: Error, in c: ViewContainer) {
+        if (error as? CloudEditError) == .needsWriteAccess { c.showWriteAccessBanner(); return }
         let why = error.localizedDescription
         c.messageBar.show(why.isEmpty ? what : "\(what) \(why)", error: true)
         c.needsLayout = true
