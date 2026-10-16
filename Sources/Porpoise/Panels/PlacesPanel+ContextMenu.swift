@@ -15,15 +15,16 @@ extension PlacesPanel {
             if let icon { it.image = Icons.shared.menuIcon(icon) }
         }
         if let entry = entry(at: i), let pair = SyncCoordinator.shared.pair(for: entry.url) {
-            func syncItem(_ title: String, _ action: Selector) {
-                let item = m.addItem(withTitle: title, action: action, keyEquivalent: "")
+            func syncItem(_ title: String, _ action: Selector, key: String = "", modifiers: NSEvent.ModifierFlags = []) {
+                let item = m.addItem(withTitle: title, action: action, keyEquivalent: key)
+                item.keyEquivalentModifierMask = modifiers
                 item.target = self; item.representedObject = pair.id.uuidString
             }
             syncItem("Sync Now", #selector(syncNow(_:)))
-            syncItem("Compare", #selector(compareSync(_:))); m.addItem(.separator())
+            syncItem("Compare", #selector(compareSync(_:)), key: "c", modifiers: [.control, .command]); m.addItem(.separator())
             if pair.automatic { syncItem(pair.paused ? "Resume Keeping in Sync" : "Pause Keeping in Sync", #selector(pauseSync(_:))) }
             syncItem("Edit Sync…", #selector(editSync(_:)))
-            syncItem("Rename…", #selector(renameSync(_:))); m.addItem(.separator())
+            syncItem("Rename…", #selector(renameSync(_:)), key: String(UnicodeScalar(NSF2FunctionKey)!)); m.addItem(.separator())
             syncItem("Show in Activity", #selector(syncActivity)); m.addItem(.separator())
             syncItem("Remove Sync…", #selector(removeSync(_:)))
             return m
