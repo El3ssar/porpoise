@@ -223,10 +223,11 @@ final class AccountRow: NSView {
         switch a.status {
         case .signInNeeded: sub = "⚠︎ Needs sign-in"
         case .offline: sub = "Offline"
-        case .ok: sub = a.quotaUsed.map { "\(a.provider.title) · \(QuotaBar.text(used: $0, total: a.quotaTotal))" } ?? a.provider.title
+        case .ok: sub = a.quotaUsed.map { QuotaBar.text(used: $0, total: a.quotaTotal) } ?? a.provider.title
         }
         let subtitle = NSTextField(labelWithString: sub)
         subtitle.font = .systemFont(ofSize: 10.5)
+        subtitle.lineBreakMode = .byTruncatingTail
         subtitle.textColor = selected ? .alternateSelectedControlTextColor.withAlphaComponent(0.8) : .secondaryLabelColor
         if selected { email.textColor = .alternateSelectedControlTextColor }
         let text = NSStackView(views: [email, subtitle])

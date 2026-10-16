@@ -48,12 +48,13 @@ extension MainWindowController {
                 if u.scheme == "https" {
                     NSWorkspace.shared.open(AccountActions.webLink(u, account: CloudAccounts.shared.account(for: u)))
                 } else {
-                    target.messageBar.show("This link points to a file. Opening it…", error: false)
-                    if let item = target.model.items.first(where: { $0.url == u }) { RemoteOpener.open(item) }
+                    // A file without a web page: a copy opens, as from the folder.
+                    RemoteOpener.open(FileItem(url: u, name: CloudAccounts.shared.info(for: u)?.name ?? u.folderName, isDirectory: false))
                 }
             case .noAccess:
-                target.messageBar.show("None of your accounts can open this folder.", error: false, action: "Connect…") { [weak self] in
-                    ConnectSheet.run(window: self?.window) { [weak target] in target?.setURL($0) }
+                target.messageBar.show("None of your accounts can open this folder.", error: false, action: "Connect…") {
+                    [weak self, weak target] in
+                    ConnectSheet.run(window: self?.window) { target?.setURL($0) }
                 }
                 target.needsLayout = true
             case .notALink:

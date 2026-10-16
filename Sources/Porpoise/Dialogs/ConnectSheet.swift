@@ -608,6 +608,8 @@ final class ServerForm {
         rows.append([NSGridCell.emptyContentView, add])
         for r in rows { view.addRow(with: r) }
         view.column(at: 0).xPlacement = .trailing
+        // The labels keep their width; the fields take the rest, so the form sits under the title.
+        view.column(at: 0).width = 90
         view.rowAlignment = .firstBaseline
         view.columnSpacing = 8
         view.rowSpacing = 8
