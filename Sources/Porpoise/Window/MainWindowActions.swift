@@ -224,7 +224,7 @@ extension MainWindowController {
     @objc func goForward(_ sender: Any?) { view.goForward() }
     @objc func goHome(_ sender: Any?) { view.setURL(Settings.shared.homeURL) }
     @objc func goNetwork(_ sender: Any?) { view.setURL(NetworkBrowser.url) }
-    @objc func connectToServer(_ sender: Any?) { AddNetworkFolderDialog.run(window: window) }
+    @objc func connectToServer(_ sender: Any?) { ConnectSheet.run(window: window) { [weak self] in self?.view.setURL($0) } }
     @objc func goToPlace(_ sender: NSMenuItem) {
         if let s = sender.representedObject as? String, let u = URL(string: s) { view.setURL(u) }
     }

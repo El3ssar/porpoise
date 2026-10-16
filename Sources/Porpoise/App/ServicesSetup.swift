@@ -9,6 +9,10 @@ extension AppDelegate {
         FileOperationsController.shared.ui = FileOperationsDialogs()
         FileOperationsController.shared.clipboard = SystemClipboard()
         RemoteOpener.openFile = { NSWorkspace.shared.open($0) }
+        // Test instances can show made-up cloud accounts (no network, no browser).
+        if Settings.isTesting, ProcessInfo.processInfo.environment["PORPOISE_CLOUD_DEMO"] != nil {
+            CloudAccounts.shared.backend = DemoCloudBackend()
+        }
         let nc = NSWorkspace.shared.notificationCenter
         for n in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {
             nc.addObserver(forName: n, object: nil, queue: .main) { _ in PlacesModel.shared.refreshDevices() }
