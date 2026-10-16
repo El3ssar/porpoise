@@ -12,6 +12,8 @@ public enum CloudEditMark: Equatable, Sendable {
     case unsent(String)
     /// Changed in Drive while it was edited here: both versions are kept until the user chooses.
     case conflict
+    /// Saved here, on a service that can't yet take it as a new version safely: kept until saved as a copy in Drive.
+    case needsCopy
 
     /// The badge on the item's icon.
     public var symbol: String {
@@ -21,6 +23,7 @@ public enum CloudEditMark: Equatable, Sendable {
         case .saved: return "checkmark.circle.fill"
         case .unsent: return "icloud.slash.fill"
         case .conflict: return "exclamationmark.triangle.fill"
+        case .needsCopy: return "doc.on.doc.fill"
         }
     }
 
@@ -32,13 +35,14 @@ public enum CloudEditMark: Equatable, Sendable {
         case .saved: return "Saved to \(service)"
         case .unsent: return "Not in \(service) yet · kept on this Mac"
         case .conflict: return "Changed in \(service) meanwhile · review in Activity"
+        case .needsCopy: return "Saved on this Mac · save it as a copy in \(service)"
         }
     }
 
     /// Worth the user's attention (drawn in the warning color).
     public var needsAttention: Bool {
         switch self {
-        case .conflict, .unsent: return true
+        case .conflict, .unsent, .needsCopy: return true
         default: return false
         }
     }
@@ -65,6 +69,7 @@ public struct CloudEditEntry: Equatable, Sendable {
         switch mark {
         case .conflict: return "“\(name)” changed in Google Drive while you edited it"
         case .unsent: return "1 unsent edit to “\(name)”"
+        case .needsCopy: return "Your changes to “\(name)” are on this Mac"
         default: return "Editing “\(name)”"
         }
     }
@@ -79,6 +84,8 @@ public struct CloudEditEntry: Equatable, Sendable {
         case .saved: return "Saved to Google Drive"
         case .unsent(let why): return "\(why) Your changes are kept on this Mac and sent when they can be."
         case .conflict: return "Both versions are kept. Keep both as separate files, compare them, or make yours the current version."
+        case .needsCopy:
+            return "Google Drive can’t take them as a new version of the file yet. Save them as a copy next to it; the original stays as it is."
         }
     }
 }
@@ -101,6 +108,9 @@ public final class DriveEditing {
     public var saveDelay: TimeInterval = 0.8
     /// How long "Saved to Google Drive" stays before the row goes back to "Editing".
     public var savedShownFor: TimeInterval = 4
+    /// Whether saves can go to Drive as new versions of the file: only where Drive can refuse to overwrite someone
+    /// else's version (the engine says so). Otherwise they stay here until saved as a copy.
+    public var savesVersions: (DriveClient) -> Bool = { $0.canSaveEdits }
     /// Says something in the status bar (set by the app).
     public var post: (_ text: String, _ error: Bool) -> Void = { _, _ in }
 
@@ -150,11 +160,10 @@ public final class DriveEditing {
     // MARK: Opening
 
     /// Whether `item` can be edited in another app with its saves going back to Drive: a file (not a Google Doc) the
-    /// account may change, on a service where a save can't overwrite someone else's (the engine says so). Others open
-    /// as a copy that stays on this Mac.
+    /// account may change. Others open as a copy that stays on this Mac.
     public func canEdit(_ item: FileItem) -> Bool {
         guard let provider = RemoteFS.provider(for: item.url) as? DriveProvider, let file = provider.metadata(for: item.url),
-            client(provider.accountID)?.canSaveEdits == true
+            client(provider.accountID) != nil
         else { return false }
         return !file.isFolder && !file.isGoogleDocument && file.operations.canWrite && file.operations.canDownload
     }
@@ -186,7 +195,10 @@ public final class DriveEditing {
                 NotificationCenter.default.post(name: Self.changed, object: nil)
                 self.openFile(session.localURL)
                 self.watch(session.id)
-                self.post("Editing “\(entry.name)”: changes you save go to Google Drive.", false)
+                self.post(
+                    self.savesVersions(client)
+                        ? "Editing “\(entry.name)”: changes you save go to Google Drive."
+                        : "Editing “\(entry.name)”: when you save, you can keep your changes as a copy in Google Drive.", false)
                 done(true)
             } catch {
                 self?.post("Couldn’t open “\(item.name)” for editing: \(error.localizedDescription)", false)
@@ -241,6 +253,14 @@ public final class DriveEditing {
         guard let entry = entries.first(where: { $0.id == id }), let client = client(entry.account) else { return }
         guard entry.mark != .conflict else { return }
         guard FileManager.default.fileExists(atPath: entry.localURL.path) else { return }
+        guard savesVersions(client) else {
+            // Nothing is sent: the changes wait, safe on this Mac, for "Save as a Copy in Drive".
+            if entry.mark != .needsCopy {
+                set(id) { $0.mark = .needsCopy }
+                post("Your changes to “\(entry.name)” are kept on this Mac. Save them as a copy in Google Drive from Activity.", true)
+            }
+            return
+        }
         guard saving.insert(id).inserted else { saveAgain.insert(id); return }
         set(id) { $0.mark = .saving }
         Task { @MainActor [weak self] in
@@ -299,7 +319,7 @@ public final class DriveEditing {
 
     // MARK: Conflicts
 
-    /// Keeps Drive's version where it is and adds yours next to it as a separate file.
+    /// Keeps Drive's version where it is and adds yours next to it as a separate file (also "Save as a Copy in Drive").
     public func keepBoth(_ id: UUID) {
         resolve(id, "Kept both versions of") { client in _ = try await client.edits.keepBoth(id) }
     }
@@ -317,7 +337,10 @@ public final class DriveEditing {
     }
 
     private func resolve(_ id: UUID, _ done: String, _ action: @escaping (DriveClient) async throws -> Void) {
-        guard let entry = entries.first(where: { $0.id == id }), entry.mark == .conflict, let client = client(entry.account) else { return }
+        guard let entry = entries.first(where: { $0.id == id }), entry.mark == .conflict || entry.mark == .needsCopy,
+            let client = client(entry.account)
+        else { return }
+        let back = entry.mark
         set(id) { $0.mark = .saving }
         Task { @MainActor [weak self] in
             do {
@@ -339,8 +362,8 @@ public final class DriveEditing {
                 self.backToEditing(id)
             } catch {
                 guard let self else { return }
-                self.set(id) { $0.mark = .conflict }
-                self.post("Couldn’t do that with “\(entry.name)”: \(error.localizedDescription) Both versions are still kept.", true)
+                self.set(id) { $0.mark = back }
+                self.post("Couldn’t do that with “\(entry.name)”: \(error.localizedDescription) Your changes are still kept.", true)
             }
         }
     }

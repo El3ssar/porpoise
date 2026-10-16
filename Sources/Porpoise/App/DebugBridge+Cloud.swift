@@ -127,15 +127,18 @@ extension DebugBridge {
                 + DebugBridge.openedFiles.map { "opened \($0)" }
             try? lines.joined(separator: "\n").write(toFile: rest, atomically: true, encoding: .utf8)
         case "editresolve":
-            // editresolve <name>|keep|open|replace|send: Activity's buttons for a file being edited.
+            // editresolve <name>|keep|copy|open|replace|send: Activity's buttons for a file being edited.
             let f = rest.components(separatedBy: "|")
             guard f.count == 2, let e = DriveEditing.shared.entries.first(where: { $0.name == f[0] }) else { return }
             switch f[1] {
-            case "keep": DriveEditing.shared.keepBoth(e.id)
+            case "keep", "copy": DriveEditing.shared.keepBoth(e.id)
             case "open": DriveEditing.shared.openBoth(e.id)
             case "replace": DriveEditing.shared.replaceWithMine(e.id)
             default: DriveEditing.shared.save(e.id)
             }
+        case "copyonly":
+            // copyonly on|off: as on real Drive until conditional saves are verified (saves wait for Save as a Copy).
+            DriveEditing.shared.savesVersions = rest == "on" ? { _ in false } : { $0.canSaveEdits }
         case "poll": CloudAccounts.shared.checkForChanges()
         case "activity": ActivityWindowController.shared.show()
         case "select":

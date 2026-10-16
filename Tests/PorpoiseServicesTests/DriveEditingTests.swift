@@ -103,7 +103,7 @@ import Testing
         #expect(posts.contains { $0.0.hasPrefix("Kept both versions of") })
         // The other app's saves now go to the new file, which carries the mark.
         let kept = try #require(editing.entries.first)
-        #expect(kept.fileID != "binary-a" && kept.name.contains("Edited on Mac") && editing.mark(for: item.url) == nil)
+        #expect(kept.fileID != "binary-a" && kept.name.hasSuffix("(edited on Mac).txt") && editing.mark(for: item.url) == nil)
     }
 
     @Test func replaceWithMineAndUnsentEditsAfterARelaunch() async throws {
@@ -149,10 +149,42 @@ import Testing
         #expect(try await client.download(client.file("binary-a")).data == Data("before the quit".utf8))
     }
 
+    @Test func whereDriveCantTakeVersionsSavesWaitForACopy() async throws {
+        let (server, client, editing, item, _) = try await setup()
+        defer {
+            server.stop()
+            RemoteFS.unregisterDrive(accountID: client.accountID)
+        }
+        editing.savesVersions = { _ in false }
+        var posts: [(String, Bool)] = []
+        editing.post = { posts.append(($0, $1)) }
+        #expect(editing.canEdit(item))
+        editing.open(item)
+        try await wait { editing.entry(for: item.url) != nil }
+        #expect(posts.contains { $0.0.hasSuffix("you can keep your changes as a copy in Google Drive.") })
+        let entry = try #require(editing.entry(for: item.url))
+        try Data("kept here".utf8).write(to: entry.localURL)
+        try await wait { editing.mark(for: item.url) == .needsCopy }
+        let waiting = try #require(editing.entry(for: item.url))
+        #expect(waiting.title == "Your changes to “\(waiting.name)” are on this Mac" && waiting.mark.needsAttention)
+        #expect(posts.contains { $0.0.contains("Save them as a copy in Google Drive") && $0.1 })
+        // Nothing went to Drive; the copy goes next to the original, which stays as it was.
+        let original = try await client.download(client.file("binary-a")).data
+        #expect(original != Data("kept here".utf8))
+        editing.keepBoth(entry.id)
+        try await wait { editing.entries.first?.mark == .saved }
+        let copy = try #require(editing.entries.first)
+        #expect(copy.name.hasSuffix("(edited on Mac).txt"))
+        #expect(try await client.download(client.file(copy.fileID)).data == Data("kept here".utf8))
+        #expect(try await client.download(client.file("binary-a")).data == original)
+    }
+
     @Test func marksSayWhatsGoingOn() {
-        let all: [CloudEditMark] = [.editing, .saving, .saved, .unsent("x"), .conflict]
-        #expect(Set(all.map(\.symbol)).count == 5)
-        #expect(all.filter(\.needsAttention) == [.unsent("x"), .conflict])
+        #expect(FileFormat.noted("Report.pdf", "edited on Mac") == "Report (edited on Mac).pdf")
+        #expect(FileFormat.noted("backup.tar.gz", "x") == "backup (x).tar.gz" && FileFormat.noted("Notes", "x") == "Notes (x)")
+        let all: [CloudEditMark] = [.editing, .saving, .saved, .unsent("x"), .conflict, .needsCopy]
+        #expect(Set(all.map(\.symbol)).count == 6)
+        #expect(all.filter(\.needsAttention) == [.unsent("x"), .conflict, .needsCopy])
         #expect(CloudEditMark.saving.note("Google Drive") == "Saving to Google Drive…")
         #expect(DriveEditing.mark(.saved) == .saved && DriveEditing.mark(.saved, fresh: true) == .editing)
         #expect(DriveEditing.mark(.unsent("Later.")) == .unsent("Later.") && DriveEditing.mark(.saving) == .saving)

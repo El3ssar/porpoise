@@ -265,7 +265,7 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
         let next = Self.ordered(controller.activities)
         let nextEdits = DriveEditing.shared.entries
         if next.map(\.id) == rows.map(\.id), nextEdits.map(\.id) == edits.map(\.id),
-            nextEdits.map({ $0.mark == .conflict }) == edits.map({ $0.mark == .conflict })
+            nextEdits.map({ EditActivityRowView.isTall($0.mark) }) == edits.map({ EditActivityRowView.isTall($0.mark) })
         {
             // Same jobs: update the rows in place (buttons keep working while you click them).
             edits = nextEdits
@@ -314,7 +314,7 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         guard tableView === activityTable, row < edits.count else { return tableView.rowHeight }
-        return edits[row].mark == .conflict ? EditActivityRowView.conflictHeight : tableView.rowHeight
+        return EditActivityRowView.isTall(edits[row].mark) ? EditActivityRowView.conflictHeight : tableView.rowHeight
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -709,6 +709,8 @@ final class ActivityProgressView: NSView {
 /// meanwhile (Keep Both, Open Both, Replace with Mine). Nothing is ever lost: both versions stay until one is chosen.
 final class EditActivityRowView: NSView {
     static let conflictHeight: CGFloat = 92
+    /// Rows with a choice to make: the explanation on two lines, the buttons under it.
+    static func isTall(_ mark: CloudEditMark) -> Bool { mark == .conflict || mark == .needsCopy }
     private let title = NSTextField(labelWithString: "")
     private let detail = NSTextField(wrappingLabelWithString: "")
     private let icon = NSImageView()
@@ -753,7 +755,7 @@ final class EditActivityRowView: NSView {
         badge.frame = CGRect(x: 36, y: 28, width: 16, height: 16)
         close.frame = CGRect(x: bounds.width - 34, y: 14, width: 22, height: 22)
         let right = close.isHidden ? bounds.width - 12 : close.frame.minX - 8
-        let conflict = entry?.mark == .conflict
+        let conflict = entry.map { Self.isTall($0.mark) } ?? false
         title.frame = CGRect(x: 60, y: 9, width: max(0, right - 60), height: 17)
         detail.frame = CGRect(x: 60, y: 27, width: max(0, (conflict ? bounds.width - 12 : right) - 60), height: conflict ? 30 : 15)
         let size = buttons.fittingSize
@@ -791,6 +793,7 @@ final class EditActivityRowView: NSView {
         let want: [String]
         switch e.mark {
         case .conflict: want = ["keep", "open", "replace"]
+        case .needsCopy: want = ["copy"]
         case .unsent: want = ["send"]
         default: want = ["show"]
         }
@@ -804,6 +807,7 @@ final class EditActivityRowView: NSView {
                 case "open": (label, tip) = ("Open Both", "Open your version and Drive’s side by side to compare them")
                 case "replace": (label, tip) = ("Replace with Mine", "Make your version the current one; Drive’s stays in the file’s version history")
                 case "send": (label, tip) = ("Send Now", "Try sending your saved changes to Google Drive again")
+                case "copy": (label, tip) = ("Save as a Copy in Drive", "Add your version next to the original as a separate file")
                 default: (label, tip) = ("Show in Folder", "Show the file in its Google Drive folder")
                 }
                 let b = ClosureButton(title: label) { [weak self] _ in self?.run(w) }
@@ -823,7 +827,7 @@ final class EditActivityRowView: NSView {
         guard let e = entry else { return }
         let editing = DriveEditing.shared
         switch action {
-        case "keep": editing.keepBoth(e.id)
+        case "keep", "copy": editing.keepBoth(e.id)
         case "open": editing.openBoth(e.id)
         case "replace": editing.replaceWithMine(e.id)
         case "send": editing.save(e.id)

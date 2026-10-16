@@ -154,6 +154,9 @@ public enum FileFormat {
         return (base, ext)
     }
 
+    /// "Report.pdf" with a note before its extension: "Report (edited on Mac).pdf".
+    public static func noted(_ name: String, _ note: String) -> String { join(splitExtension(name).base + " (\(note))", splitExtension(name).ext) }
+
     private static func join(_ base: String, _ ext: String) -> String { ext.isEmpty ? base : base + "." + ext }
 
     /// Names taken in a folder, ignoring case: on a case-insensitive volume (the default) "Report (1).txt" is taken
