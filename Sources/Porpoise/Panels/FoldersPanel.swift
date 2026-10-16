@@ -87,7 +87,8 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     }
 
     override init(frame: NSRect) {
-        root = Node(FileManager.default.homeDirectoryForCurrentUser)
+        // Test instances root at their own home folder: never the user's ~/Documents or ~/Desktop (privacy prompts).
+        root = Node(Settings.isTesting ? Settings.shared.homeURL : FileManager.default.homeDirectoryForCurrentUser)
         super.init(frame: frame)
         let col = NSTableColumn(identifier: .init("name"))
         outline.addTableColumn(col)
