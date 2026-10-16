@@ -45,6 +45,20 @@ enum SyncDebugBridge {
             if sizes.count == 2 { sheet.window?.setContentSize(CGSize(width: sizes[0], height: sizes[1])) }
         }
     }
+    static func notifications(_ path: String) {
+        let pair = SavedSync(
+            id: UUID(uuidString: "77777777-7777-4777-8777-777777777777")!, name: "Website", left: URL(fileURLWithPath: "/Home/Photos"),
+            right: URL(string: "sftp://nas.local/NAS")!)
+        let payloads = [
+            SyncNotificationPayload(pair: pair, event: .conflicts(2)),
+            SyncNotificationPayload(pair: pair, event: .failure(reason: "server.local is full.", waiting: 18)),
+            SyncNotificationPayload(pair: pair, event: .deletionReview(count: 340, destination: "Backup")),
+        ]
+        DispatchQueue.global(qos: .utility).async {
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try? encoder.encode(payloads).write(to: URL(fileURLWithPath: path), options: .atomic)
+        }
+    }
     static func state(_ path: String) {
         let coordinator = SyncCoordinator.shared
         let rows: [[String: Any]] = coordinator.pairs.map { pair in

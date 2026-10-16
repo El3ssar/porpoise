@@ -166,8 +166,8 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
                     var paused = pair; paused.paused = true; save(paused)
                     statuses[id] = .review(preview.deletionCount)
                     notify(
-                        pair, key: "deletions:\(preview.deletionCount)", title: "Sync paused",
-                        body: "\(preview.deletionCount) items would be moved to the Trash in \(pair.right.lastPathComponent).")
+                        pair, key: "deletions:\(preview.deletionCount)",
+                        event: .deletionReview(count: preview.plan.itemCount(for: .trash), destination: pair.rightTitle))
                     changed(); drain(); return
                 }
                 if preview.skippedConflicts > 0 { attention(preview) }
@@ -190,7 +190,7 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
                     statuses[id] = .missing
                 } else {
                     statuses[id] = .failed(error.localizedDescription)
-                    notify(pair, key: "failure:\(error.localizedDescription)", title: "Couldn't sync \(pair.name)", body: error.localizedDescription)
+                    notify(pair, key: "failure:\(error.localizedDescription)", event: .failure(reason: error.localizedDescription, waiting: nil))
                 }
                 changed(); drain()
             }
@@ -320,7 +320,11 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
                     if let owner = activity.originWindow as? NSWindow {
                         FileOperationsController.shared.ui?.showTransferErrors(activity, window: owner)
                     }
-                    notify(preview.pair, key: "failure:\(activity.errors)", title: "Couldn't sync \(preview.pair.name)", body: activity.errors.first!)
+                    notify(
+                        preview.pair, key: "failure:\(activity.errors)",
+                        event: .failure(
+                            reason: activity.errors.first!,
+                            waiting: max(0, preview.executable.steps.count - (activity.planProgress?.completedSteps ?? 0))))
                 }
                 if preview.pair.automatic, activity.state == .cancelled || activity.state == .interrupted {
                     if var pair = pairs.first(where: { $0.id == id }) { pair.paused = true; save(pair) }
@@ -351,14 +355,15 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
         statuses[preview.pair.id] = .conflicts(preview.skippedConflicts)
         notify(
             preview.pair, key: "conflicts:\(preview.plan.conflicts.map(\.path).joined(separator: "|"))",
-            title: "\(preview.pair.description) needs you", body: "\(preview.skippedConflicts) files changed on both sides.")
+            event: .conflicts(preview.skippedConflicts))
     }
-    private func notify(_ pair: SavedSync, key: String, title: String, body: String) {
+    private func notify(_ pair: SavedSync, key: String, event: SyncNoticeEvent) {
         guard pair.automatic, !Settings.isTesting, notices[pair.id] != key else { return }
         notices[pair.id] = key
-        let content = UNMutableNotificationContent(); content.title = title; content.body = body
-        content.threadIdentifier = pair.id.uuidString
-        content.categoryIdentifier = key.hasPrefix("failure:") ? "PORPOISE_SYNC_SHOW" : "PORPOISE_SYNC_REVIEW"
+        let payload = SyncNotificationPayload(pair: pair, event: event)
+        let content = UNMutableNotificationContent(); content.title = payload.title; content.body = payload.body
+        content.threadIdentifier = payload.threadIdentifier
+        content.categoryIdentifier = payload.categoryIdentifier
         content.userInfo = ["pair": pair.id.uuidString]
         UNUserNotificationCenter.current().add(.init(identifier: "sync-\(pair.id)", content: content, trigger: nil))
     }

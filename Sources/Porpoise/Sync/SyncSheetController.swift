@@ -615,7 +615,9 @@ private final class SyncPlanNode: NSObject {
     }
     init(step: SyncStep) { self.step = step; action = step.action; title = step.path; allSteps = [step] }
     private static func tree(_ steps: [SyncStep]) -> [SyncPlanNode] {
-        guard let first = steps.first, first.action != .conflict, first.action != .replace else { return steps.map(SyncPlanNode.init) }
+        guard let first = steps.first, first.action != .conflict, first.action != .replace else {
+            return steps.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }.map(SyncPlanNode.init)
+        }
         var byPath: [String: SyncPlanNode] = [:]
         for step in steps { byPath[step.path] = SyncPlanNode(step: step) }
         for step in steps {

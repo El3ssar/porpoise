@@ -538,6 +538,9 @@ final class DebugBridge: NSObject {
         case "syncinclude", "syncresolve", "syncsize":
             guard Settings.isTesting else { return }
             SyncDebugBridge.control(command: parts.first ?? "", argument: arg)
+        case "syncnotifications":
+            guard Settings.isTesting else { return }
+            SyncDebugBridge.notifications(arg)
         case "syncmenu":
             guard Settings.isTesting, !arg.isEmpty else { return }
             wc?.places.reviewSyncContextMenu { self.windowServerMenuSnapshot(to: arg) }
