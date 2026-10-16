@@ -21,6 +21,7 @@ public enum Shell {
             if isCancelled() { throw FileOperationError.cancelled }
         }
     }
+    static var currentTransferControl: TransferControl? { Thread.current.threadDictionary[transferKey] as? TransferControl }
     private static let transferKey = "Porpoise.Shell.transferControl"
     public static func withTransferControl<T>(_ control: TransferControl, _ body: () throws -> T) rethrows -> T {
         let dictionary = Thread.current.threadDictionary

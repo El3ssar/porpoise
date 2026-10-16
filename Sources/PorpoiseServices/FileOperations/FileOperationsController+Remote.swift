@@ -4,7 +4,8 @@ import PorpoiseCore
 extension FileOperationsController {
     func runRemote(
         _ kind: FileOperationKind, _ urls: [URL], to folder: URL?, window: AnyObject?, done: (([URL]) -> Void)?,
-        completed: [URL: URL] = [:], rule: TransferConflictRule? = nil, options: TransferCompareOptions? = nil
+        completed: [URL: URL] = [:], cloudOperations: [URL: UUID] = [:], cloudBatchID: UUID? = nil, rule: TransferConflictRule? = nil,
+        options: TransferCompareOptions? = nil
     ) {
         let control = FileJob(kind: kind, sources: urls, destinationFolder: folder)
         configureReplacementDisposal(control)
@@ -12,7 +13,9 @@ extension FileOperationsController {
             kind: kind, sources: urls, destination: folder, control: control,
             rule: rule ?? Settings.shared.transferConflictRule,
             options: options ?? TransferCompareOptions(method: Settings.shared.transferCompareMethod), completed: completed)
+        runtime.cloudOperations = cloudOperations
         let activity = Activity(kind: kind, sources: urls, destination: folder, job: nil)
+        runtime.cloudBatchID = cloudBatchID ?? activity.id
         activity.originWindow = window
         activity.controlJob = control
         activity.remoteRemaining = urls
@@ -40,7 +43,8 @@ extension FileOperationsController {
             self.activities.removeAll { $0 === activity }
             self.runRemote(
                 kind, remaining, to: folder, window: window, done: done,
-                completed: runtime.completed, rule: runtime.rule, options: runtime.options)
+                completed: runtime.completed, cloudOperations: runtime.cloudOperations, cloudBatchID: runtime.cloudBatchID, rule: runtime.rule,
+                options: runtime.options)
         }
         activity.start = { [weak self, weak activity] in
             guard let self, let activity, activity.state == .queued else { return }

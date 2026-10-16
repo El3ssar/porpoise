@@ -33,6 +33,8 @@ public final class DriveAccountStore: ObservableObject {
     private let baseURL: URL
     private var saved: [Saved] = []
     private var clients: [UUID: DriveClient] = [:]
+    @Published public private(set) var writeAccess: [UUID: Bool] = [:]
+    public func hasWriteAccess(_ accountID: UUID) -> Bool { writeAccess[accountID] == true }
     private var managers: [UUID: DriveTokenManager] = [:]
 
     public init(
@@ -97,8 +99,17 @@ public final class DriveAccountStore: ObservableObject {
             }
         }
         states[account.id] = .connected
+        writeAccess[account.id] = false
+        Task { @MainActor [weak self] in
+            let allowed = (try? await manager.requireWriteScope()) != nil
+            guard self?.managers[account.id] === manager else { return }
+            self?.writeAccess[account.id] = allowed
+            NotificationCenter.default.post(name: Self.changed, object: nil)
+        }
         managers[account.id] = manager; clients[account.id] = client
-        RemoteFS.registerDrive(DriveProvider(accountID: account.id, client: client, accountName: account.displayName), accountID: account.id)
+        RemoteFS.registerDrive(
+            DriveProvider(accountID: account.id, client: client, accountName: account.displayName, accountEmail: account.email), accountID: account.id
+        )
     }
 
     private func persist() throws {
