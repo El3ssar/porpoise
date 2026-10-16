@@ -46,6 +46,7 @@ public struct ItemGroup {
 /// The items one view shows: loading, live updates, sorting, filtering, grouping, expansion and selection.
 /// Main-thread only (Dolphin's KFileItemModel + selection manager).
 public final class DirectoryModel {
+    private var driveListing: Task<Void, Never>?
     private var transferObserver: NSObjectProtocol?
     private var incomingItems: [FileItem] = []
     public private(set) var incomingProgress: [URL: Double] = [:]
@@ -59,7 +60,7 @@ public final class DirectoryModel {
         incomingProgress = Dictionary(pairs.map { ($0.0.url, $0.1) }, uniquingKeysWith: max)
         if incomingItems != next { incomingItems = next; rebuild() } else if !next.isEmpty { onChange?() }
     }
-    deinit { if let transferObserver { NotificationCenter.default.removeObserver(transferObserver) } }
+    deinit { driveListing?.cancel(); if let transferObserver { NotificationCenter.default.removeObserver(transferObserver) } }
     public private(set) var location: URL
     public private(set) var items: [FileItem] = []  // top level, unsorted, including hidden
     public private(set) var rows: [Row] = [] { didSet { rowIndex = nil; rowIndexByPath = nil } }
@@ -365,6 +366,7 @@ public final class DirectoryModel {
     // MARK: Loading
 
     public func reload(keepSelection: Bool = true) {
+        driveListing?.cancel(); driveListing = nil
         loadToken += 1
         let token = loadToken
         let url = location
@@ -404,6 +406,41 @@ public final class DirectoryModel {
             isLoading = false
             rebuild()
             onLoaded?()
+            return
+        }
+        if let provider = RemoteFS.provider(for: url) as? DriveProvider {
+            isLoading = true
+            driveListing = Task { @MainActor [weak self] in
+                var pageToken: String?
+                var seen: Set<String> = []
+                var listed: [FileItem] = []
+                let selected = self?.selection ?? []
+                do {
+                    repeat {
+                        let page = try await provider.listPage(url, pageToken: pageToken)
+                        try Task.checkCancellation()
+                        guard let self, token == self.loadToken else { return }
+                        listed += page.items
+                        self.items = listed
+                        self.children = [:]
+                        if keepSelection { self.selection = selected.intersection(Set(listed.map(\.url))) }
+                        self.rebuild()
+                        pageToken = page.nextPageToken
+                        if let pageToken, !seen.insert(pageToken).inserted { throw DriveError.invalidResponse }
+                    } while pageToken != nil
+                    guard let self, token == self.loadToken else { return }
+                    self.isLoading = false
+                    for expandedURL in self.expanded { self.loadChildren(of: expandedURL) }
+                    self.onLoaded?()
+                } catch is CancellationError {
+                    return
+                } catch {
+                    guard let self, token == self.loadToken else { return }
+                    self.isLoading = false
+                    self.loadError = error.localizedDescription
+                    self.onLoaded?()
+                }
+            }
             return
         }
         if let provider = RemoteFS.provider(for: url) {
