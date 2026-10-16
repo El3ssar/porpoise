@@ -26,7 +26,6 @@ public final class Activity: Identifiable {
     public internal(set) var progress: JobProgress?
     public internal(set) var rate = TransferRate()
     public internal(set) var errors: [String] = []
-    public internal(set) var notice: String?
     public internal(set) var verification: CopyVerification.Result?
     public internal(set) var queuedAt = Date()
     public internal(set) var startedAt: Date?
