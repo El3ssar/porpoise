@@ -235,10 +235,23 @@ final class CompareRowsView: NSView, NSAccessibilityCustomRotorItemSearchDelegat
         if rows.isEmpty, !model.loading, model.comparison?.complete == true {
             let counts = model.outline?.counts ?? [:]
             let matches = [CompareFilter.onlyLeft, .onlyRight, .changed].allSatisfy { (counts[$0.rawValue] ?? 0) == 0 }
-            let message = matches ? "No differences · Show Same to see matching items" : "No items match these filters"
+            let sameRoot = LinkedBrowsing.relativePath(model.leftRoot, below: model.rightRoot) == ""
+            let message =
+                matches
+                ? (sameRoot
+                    ? "Both sides show “\(model.leftRoot.lastPathComponent)”"
+                    : "No differences by \(CompareView.methodTitle(model.options.method).lowercased())")
+                : "No items match these filters"
             text(
                 message, CGRect(x: list.visibleRect.minX + 12, y: list.visibleRect.midY - 30, width: list.visibleRect.width - 24, height: 24),
                 size: 15, color: Theme.viewTextInactive, align: .center)
+            let detail =
+                sameRoot
+                ? "Navigate either pane to compare another folder."
+                : (matches ? "Show Same to see the matching items." : "Choose which differences to show above.")
+            text(
+                detail, CGRect(x: list.visibleRect.minX + 12, y: list.visibleRect.midY, width: list.visibleRect.width - 24, height: 24), size: 12,
+                color: Theme.viewTextInactive, align: .center)
         }
         guard first < last else { return }
         for index in first..<last {

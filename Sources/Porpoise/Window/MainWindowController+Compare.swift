@@ -16,6 +16,17 @@ extension MainWindowController {
         var previous = CACurrentMediaTime(), phases: [String: Double] = [:]
         func phase(_ name: String) { let now = CACurrentMediaTime(); phases[name] = (now - previous) * 1000; previous = now }
         let tab = tab
+        let replacingPair = tab.compareView != nil
+        if let current = tab.compareView {
+            let sameLeft = LinkedBrowsing.relativePath(left, below: current.model.leftRoot) == ""
+            let sameRight = LinkedBrowsing.relativePath(right, below: current.model.rightRoot) == ""
+            if sameLeft && sameRight {
+                if !current.model.options.isEquivalent(to: options) { current.model.options = options; current.model.start() }
+                return
+            }
+            // Detach the old lens before changing locations, so its callbacks cannot restore stale pair state.
+            tab.linkUpdating = true; tab.linkGeneration += 1; tab.installComparison(nil)
+        }
         if tab.comparisonSnapshots.isEmpty {
             tab.comparisonWasSecondary = tab.activeIsSecondary
             tab.comparisonPreviousLinks = tab.linkedRoots
@@ -31,6 +42,15 @@ extension MainWindowController {
         tab.containers.forEach { $0.suspendForComparison(true) }
         if tab.primary.url != left { tab.primary.setURL(left) }
         if tab.secondary?.url != right { tab.secondary?.setURL(right) }
+        if replacingPair {
+            // Deferral intentionally keeps rows during ordinary live navigation. A new pair must not expose
+            // the previous pair's FileItem URLs while its first aligned scan is still loading.
+            tab.containers.forEach { $0.model.presentComparisonRows([]) }
+        }
+        if !preserveLinkRoots {
+            tab.primary.history = NavigationHistory(start: tab.primary.url)
+            if let secondary = tab.secondary { secondary.history = NavigationHistory(start: secondary.url) }
+        }
         tab.compareChooser?.removeFromSuperview(); tab.compareChooser = nil
         tab.missingCounterpart?.removeFromSuperview(); tab.missingCounterpart = nil
         if !preserveLinkRoots || tab.linkedRoots == nil { tab.linkedRoots = (left, right) }

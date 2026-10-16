@@ -81,3 +81,32 @@ extension CompareDetailsPresentationTests {
         }
     }
 }
+
+extension CompareDetailsPresentationTests {
+    @Test func switchingPairsDiscardsOldFileURLsAndStartsFreshPairedHistory() async throws {
+        let scratch = try Scratch()
+        let a = try scratch.folder("A"), b = try scratch.folder("B"), c = try scratch.folder("C"), d = try scratch.folder("D")
+        try scratch.folder("A/child"); try scratch.folder("B/child"); try scratch.folder("C/child"); try scratch.folder("D/child")
+        let model = DirectoryModel(location: a); model.reload()
+        #expect(await eventually(5) { !model.isLoading && model.rows.count == 1 })
+        model.defersPresentation = true
+        let old = CompareDetailsPresentation(
+            CompareOutline(try SyncScanner.compare(a, b).comparison).visible(filter: .all, expanded: []), root: a, side: .left, expanded: [])
+        model.presentComparisonRows(old.rows)
+        // Replacing an existing lens resumes browse state, then clears projected URLs for the new pair.
+        model.defersPresentation = false; model.defersPresentation = true; model.setLocation(c); model.presentComparisonRows([])
+        #expect(model.rows.isEmpty)
+        #expect(await eventually(5) { !model.isLoading && model.items.first?.url.path == c.appendingPathComponent("child").path })
+        let fresh = CompareDetailsPresentation(
+            CompareOutline(try SyncScanner.compare(c, d).comparison).visible(filter: .all, expanded: []), root: c, side: .left, expanded: [])
+        model.presentComparisonRows(fresh.rows)
+        let opened = try #require(model.rows.first?.item.url)
+        #expect(LinkedBrowsing.relativePath(opened, below: c) == "child")
+        let counterpart = try #require(LinkedBrowsing.counterpart(opened, sourceRoot: c, targetRoot: d))
+        #expect(LinkedBrowsing.relativePath(counterpart, below: d) == "child")
+        var leftHistory = NavigationHistory(start: c), rightHistory = NavigationHistory(start: d)
+        leftHistory.visit(opened); rightHistory.visit(counterpart)
+        #expect(leftHistory.goBack() == c); #expect(rightHistory.goBack() == d)
+        #expect(LinkedBrowsing.counterpart(leftHistory.current, sourceRoot: c, targetRoot: d) == rightHistory.current)
+    }
+}

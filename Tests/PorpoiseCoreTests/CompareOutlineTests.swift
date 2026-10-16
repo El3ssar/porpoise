@@ -137,3 +137,13 @@ extension CompareOutlineTests {
                 == nil)
     }
 }
+
+extension CompareOutlineTests {
+    @Test func cachedComparisonIgnoresExclusionEnumerationOrderButNotScanOptions() {
+        let cached = SyncCompareOptions(exclusions: [".DS_Store", "._*", "Thumbs.db"])
+        #expect(cached.isEquivalent(to: .init(exclusions: ["Thumbs.db", "._*", ".DS_Store", "._*"])))
+        #expect(!cached.isEquivalent(to: .init(method: .content, exclusions: cached.exclusions)))
+        #expect(!cached.isEquivalent(to: .init(timestampTolerance: 1, exclusions: cached.exclusions)))
+        #expect(!cached.isEquivalent(to: .init(exclusions: [".DS_Store"])))
+    }
+}

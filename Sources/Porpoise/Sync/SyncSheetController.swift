@@ -365,7 +365,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                 let previous = try await stateStore.load(pairID: pair.id, leftRoot: pair.left, rightRoot: pair.right)
                 let result = try await Task.detached(priority: .userInitiated) {
                     if reviewDelay > 0 { try await Task.sleep(for: .seconds(reviewDelay)); try cancellation.check() }
-                    if let initial, initial.complete, initial.options == pair.options {
+                    if let initial, initial.complete, initial.options.isEquivalent(to: pair.options) {
                         let left = SyncSnapshot(
                             entries: initial.rows.compactMap(\.left), caseSensitive: initial.caseSensitive, rootIdentity: initial.leftRootIdentity,
                             excludedPaths: initial.leftExcludedPaths)

@@ -33,6 +33,7 @@ final class PorpoiseTab: NSView {
 
     func installComparison(_ compare: CompareView?) {
         let previous = compareView
+        previous?.model.onChange = nil; previous?.onMissingRoot = nil
         previous?.model.stop(); previous?.document.detachDetails(); previous?.removeFromSuperview(); compareView = compare
         if compare == nil, let previous {
             previous.reset(model: CompareModel(left: primary.url, right: secondary?.url ?? primary.url))
