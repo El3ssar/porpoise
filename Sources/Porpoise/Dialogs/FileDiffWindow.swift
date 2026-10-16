@@ -38,6 +38,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
     private let loading = FileDiffProgressView()
     private let progressText = NSTextField(labelWithString: "Reading files…")
     private let cancelComparison = ClosureButton(title: "Cancel") { _ in }
+    private let cancelCapsule = GlassGroup(cornerRadius: 12)
     private let textScroll = NSScrollView(), textCanvas = FileDiffTextView(frame: .zero), imageCanvas = FileDiffImageView()
     private let infoScroll = NSScrollView(), infoStack = NSStackView()
     private let infoDocument = NSView()
@@ -138,7 +139,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         infoScroll.autohidesScrollers = true; infoScroll.drawsBackground = false
         for v in [
             textScroll, imageCanvas, dimensions, pixelsChanged, blend, blendLeft, blendRight, infoScroll, identicalIcon, message, identicalDetail,
-            loading, progressText, cancelComparison,
+            loading, progressText, cancelCapsule,
         ] {
             body.addSubview(v)
         }
@@ -154,7 +155,8 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         message.maximumNumberOfLines = 2
         loading.isIndeterminate = true; loading.startAnimation(nil)
         progressText.font = .systemFont(ofSize: 12); progressText.textColor = Theme.viewTextInactive; progressText.alignment = .center
-        cancelComparison.bezelStyle = .rounded; cancelComparison.keyEquivalent = "\u{1b}"; cancelComparison.keyEquivalentModifierMask = []
+        cancelCapsule.content.addSubview(cancelComparison); cancelComparison.isBordered = false
+        cancelComparison.font = .systemFont(ofSize: 13); cancelComparison.keyEquivalent = "\u{1b}"; cancelComparison.keyEquivalentModifierMask = []
         cancelComparison.handler = { [weak self] _ in self?.window?.performClose(nil) }
         previous.nextKeyView = next; next.nextKeyView = openWith
         openWith.nextKeyView = viewSwitch; viewSwitch.nextKeyView = textMode; textMode.nextKeyView = ignore
@@ -244,7 +246,8 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         identicalDetail.frame = NSRect(x: 30, y: identicalTop + 92, width: w - 60, height: 18)
         loading.frame = NSRect(x: w / 2 - 140, y: body.bounds.height / 2 - 30, width: 280, height: 6)
         progressText.frame = NSRect(x: 30, y: body.bounds.height / 2 - 8, width: w - 60, height: 20)
-        cancelComparison.frame = NSRect(x: w / 2 - 42, y: body.bounds.height / 2 + 24, width: 84, height: 24)
+        cancelCapsule.frame = NSRect(x: w / 2 - 42, y: body.bounds.height / 2 + 24, width: 84, height: 24)
+        cancelComparison.frame = NSRect(x: 0, y: 0, width: 84, height: 24)
     }
     private func resizeText() {
         textCanvas.frame = NSRect(
@@ -321,7 +324,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
     }
     private func fail(_ error: Error) {
         busy = false; facts.stringValue = error.localizedDescription; message.stringValue = "Couldn’t compare these files"; message.isHidden = false;
-        loading.stopAnimation(nil); loading.isHidden = true; progressText.isHidden = true; cancelComparison.isHidden = true
+        loading.stopAnimation(nil); loading.isHidden = true; progressText.isHidden = true; cancelCapsule.isHidden = true
     }
     private func rediff() {
         guard ready else { return }
@@ -352,7 +355,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         let count = textCanvas.presentation?.difference.changes.count ?? 0
         openWith.isEnabled = ready && !busy
         previous.isEnabled = mode == 0 && count > 0 && !busy; next.isEnabled = previous.isEnabled
-        loading.isHidden = !busy; progressText.isHidden = !busy; cancelComparison.isHidden = !busy; if !busy { loading.stopAnimation(nil) }
+        loading.isHidden = !busy; progressText.isHidden = !busy; cancelCapsule.isHidden = !busy; if !busy { loading.stopAnimation(nil) }
         let identical = mode == 0 && !busy && ready && textCanvas.presentation != nil && count == 0
         message.isHidden = !identical; identicalIcon.isHidden = !identical; identicalDetail.isHidden = !identical
         message.stringValue = "The files are identical"
@@ -443,10 +446,14 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
             do {
                 // Refuse to overwrite a file changed outside this comparison since it was opened/saved.
                 if a != sa, let sa {
-                    guard try String(contentsOf: left, encoding: .utf8) == sa else { throw FileDiffSaveError.changed(left.lastPathComponent) }
+                    guard try String(contentsOf: left, encoding: .utf8).utf8.elementsEqual(sa.utf8) else {
+                        throw FileDiffSaveError.changed(left.lastPathComponent)
+                    }
                 }
                 if b != sb, let sb {
-                    guard try String(contentsOf: right, encoding: .utf8) == sb else { throw FileDiffSaveError.changed(right.lastPathComponent) }
+                    guard try String(contentsOf: right, encoding: .utf8).utf8.elementsEqual(sb.utf8) else {
+                        throw FileDiffSaveError.changed(right.lastPathComponent)
+                    }
                 }
                 if a != sa, let a { try a.write(to: left, atomically: true, encoding: .utf8); writtenLeft = true }
                 if b != sb, let b { try b.write(to: right, atomically: true, encoding: .utf8); writtenRight = true }
