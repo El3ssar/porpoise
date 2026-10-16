@@ -154,10 +154,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         }
         observe(Notification.Name("PorpoiseSyncActivityChanged")) { me, note in
             guard (note.object as? NSWindow) === me.window, let activity = note.userInfo?["activity"] as? Activity,
-                let compare = me.tab.compareView
+                let left = note.userInfo?["left"] as? URL, let right = note.userInfo?["right"] as? URL
             else { return }
-            compare.document.finishedPaths = Set(note.userInfo?["completedPaths"] as? [String] ?? [])
-            compare.show(activity: activity)
+            for compare in me.tabs.compactMap(\.compareView) {
+                let model = compare.model
+                guard (model.leftRoot == left && model.rightRoot == right) || (model.leftRoot == right && model.rightRoot == left) else { continue }
+                compare.document.finishedPaths = Set(note.userInfo?["completedPaths"] as? [String] ?? [])
+                compare.show(activity: activity)
+            }
         }
         observe(Settings.changed) { me, note in me.settingsChanged(key: note.object as? String) }
         observe(PlacesModel.changed) { me, _ in me.placesChanged() }
