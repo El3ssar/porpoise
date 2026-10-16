@@ -10,7 +10,9 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
     private let sizeLabel = NSTextField(labelWithString: "Calculating…")
     private var closeObserver: NSObjectProtocol?
     /// Set when the window closes, so the background size count stops early.
-    private let sizeCount = CancelFlag()
+    private var sizeCount = DiskCancellation()
+    private let sizeQueue = DispatchQueue(label: "app.porpoise.properties-size", qos: .userInitiated)
+    private lazy var recalculateButton = NSButton(title: "Recalculate", target: self, action: #selector(recalculate(_:)))
 
     /// Local files only: remote and virtual locations (sftp://, recent:/…) have no local path to inspect.
     static func show(urls: [URL]) {
@@ -24,7 +26,9 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
 
     init(urls: [URL]) {
         self.urls = urls
-        let w = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 440, height: 660), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        let w = PropertiesPanel(
+            contentRect: CGRect(x: 0, y: 0, width: 440, height: 660), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        w.contentMinSize = NSSize(width: 440, height: 660)
         w.backgroundColor = Theme.windowBackground
         w.isReleasedWhenClosed = false
         super.init(window: w)
@@ -57,6 +61,7 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
         content.addSubview(seg)
         for (i, p) in pages.enumerated() {
             p.frame = CGRect(x: 20, y: 10, width: content.bounds.width - 40, height: seg.frame.minY - 20)
+            p.autoresizingMask = [.width, .height]
             p.isHidden = i != 0
             content.addSubview(p)
         }
@@ -70,16 +75,30 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
         let l = NSTextField(labelWithString: k)
         l.alignment = .right
         l.textColor = Theme.windowTextInactive
+        l.font = .systemFont(ofSize: 13)
+        let valueWidth = view.bounds.width - 118
         var h = max(v.frame.height, 20)
-        if let t = v as? NSTextField {
-            t.preferredMaxLayoutWidth = 270
-            h = max(20, ceil(t.cell?.cellSize(forBounds: CGRect(x: 0, y: 0, width: 270, height: 400)).height ?? 20))
+        if let t = v as? NSTextField, t.maximumNumberOfLines != 1 {
+            t.preferredMaxLayoutWidth = valueWidth
+            h = max(20, ceil(t.cell?.cellSize(forBounds: CGRect(x: 0, y: 0, width: valueWidth, height: 400)).height ?? 20))
         }
-        // Rows grow downward: the label aligns with the value's first line.
-        v.frame = CGRect(x: 118, y: y - h + 18, width: 270, height: h)
-        l.frame = CGRect(x: 0, y: y, width: 110, height: 18)
-        view.addSubview(l)
-        view.addSubview(v)
+        let container = NSView(frame: CGRect(x: 0, y: y - h + 18, width: view.bounds.width, height: h))
+        container.autoresizingMask = [.width, .minYMargin]
+        for child in [l, v] {
+            child.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(child)
+        }
+        NSLayoutConstraint.activate([
+            l.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            l.widthAnchor.constraint(equalToConstant: 110),
+            l.topAnchor.constraint(equalTo: container.topAnchor),
+            l.heightAnchor.constraint(equalToConstant: 18),
+            v.leadingAnchor.constraint(equalTo: l.trailingAnchor, constant: 8),
+            v.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            v.topAnchor.constraint(equalTo: container.topAnchor),
+            v.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        view.addSubview(container)
         y -= h + 8
     }
 
@@ -87,7 +106,15 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
         let f = NSTextField(wrappingLabelWithString: s)
         f.isSelectable = true
         f.textColor = Theme.windowText
-        f.lineBreakMode = .byCharWrapping
+        f.font = .systemFont(ofSize: 13)
+        f.toolTip = s
+        return f
+    }
+
+    private func pathLabel(_ path: String) -> NSTextField {
+        let f = label(path)
+        f.maximumNumberOfLines = 1
+        f.lineBreakMode = .byTruncatingMiddle
         return f
     }
 
@@ -96,17 +123,20 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
         var y: CGFloat = 572
         let items = urls.compactMap(FileItem.load)
         let icon = NSImageView(frame: CGRect(x: 20, y: y - 40, width: 64, height: 64))
+        icon.autoresizingMask = [.minYMargin]
         icon.image = items.count == 1 ? Icons.shared.image(for: items[0], size: 64) : Icons.shared.image("document-multiple", size: 64)
         v.addSubview(icon)
         if items.count == 1 {
             let nf = NSTextField(string: items[0].name)
             nf.frame = CGRect(x: 100, y: y - 16, width: 290, height: 24)
+            nf.autoresizingMask = [.width, .minYMargin]
             nf.delegate = self
             nameField = nf
             v.addSubview(nf)
         } else {
             let l = label("\(items.count) items")
             l.frame = CGRect(x: 100, y: y - 16, width: 290, height: 24)
+            l.autoresizingMask = [.width, .minYMargin]
             v.addSubview(l)
         }
         y -= 70
@@ -114,12 +144,34 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
             let it = items[0]
             row("Type:", label(it.typeDescription), y: &y, in: v)
             if let mime = it.mimeType { row("MIME type:", label(mime), y: &y, in: v) }
-            row("Location:", label(it.url.deletingLastPathComponent().path), y: &y, in: v)
-            if let l = it.linkDestination { row("Points to:", label(l), y: &y, in: v) }
+            row("Location:", pathLabel(it.url.deletingLastPathComponent().path), y: &y, in: v)
+            if let l = it.linkDestination { row("Points to:", pathLabel(l), y: &y, in: v) }
         }
-        row("Size:", sizeLabel, y: &y, in: v)
+        let sizeRow = NSView(frame: CGRect(x: 0, y: 0, width: 282, height: 44))
+        sizeLabel.font = .systemFont(ofSize: 13)
+        sizeLabel.textColor = Theme.windowText
+        sizeLabel.maximumNumberOfLines = 2
+        sizeLabel.lineBreakMode = .byTruncatingTail
+        sizeLabel.isSelectable = true
+        sizeLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        recalculateButton.controlSize = .small
+        recalculateButton.font = .systemFont(ofSize: 11)
+        recalculateButton.bezelStyle = .rounded
+        for child in [sizeLabel, recalculateButton] {
+            child.translatesAutoresizingMaskIntoConstraints = false
+            sizeRow.addSubview(child)
+        }
+        NSLayoutConstraint.activate([
+            sizeLabel.leadingAnchor.constraint(equalTo: sizeRow.leadingAnchor),
+            sizeLabel.topAnchor.constraint(equalTo: sizeRow.topAnchor),
+            sizeLabel.bottomAnchor.constraint(equalTo: sizeRow.bottomAnchor),
+            recalculateButton.leadingAnchor.constraint(equalTo: sizeLabel.trailingAnchor, constant: 8),
+            recalculateButton.trailingAnchor.constraint(equalTo: sizeRow.trailingAnchor),
+            recalculateButton.topAnchor.constraint(equalTo: sizeRow.topAnchor),
+            recalculateButton.widthAnchor.constraint(equalToConstant: 86),
+        ])
+        row("Size:", sizeRow, y: &y, in: v)
         countSize()
-        sizeLabel.frame.size.height = items.count == 1 && !items[0].isBrowsableFolder ? 20 : 38
         if items.count == 1, let volURL = try? urls[0].resourceValues(forKeys: [.volumeURLKey]).volume,
             let vol = try? volURL.resourceValues(forKeys: [
                 .volumeLocalizedNameKey, .volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey,
@@ -160,6 +212,7 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
             tags.frame.size = CGSize(width: 230, height: 30)
             row("Tags:", tags, y: &y, in: v)
             let locked = NSButton(checkboxWithTitle: "Locked", target: self, action: #selector(lockedChanged(_:)))
+            locked.toolTip = "Prevents the item from being changed, renamed or moved to the Trash (Finder's Locked flag)"
             locked.state = urls.allSatisfy({ (try? $0.resourceValues(forKeys: [.isUserImmutableKey]).isUserImmutable) == true }) ? .on : .off
             locked.frame.size = CGSize(width: 240, height: 20)
             row("", locked, y: &y, in: v)
@@ -182,43 +235,38 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
         return v
     }
 
-    /// Total size, files and subfolders, counted in the background (Dolphin's KDirectorySizeJob).
+    @objc private func recalculate(_ sender: Any?) { countSize() }
+
+    /// A private queue keeps filesystem work off both the main thread and GCD's shared worker pool.
     private func countSize() {
+        sizeCount.cancel()
+        let cancellation = DiskCancellation()
+        sizeCount = cancellation
         let all = urls
-        let cancel = sizeCount
-        let label = sizeLabel
-        DispatchQueue.global(qos: .userInitiated).async {
-            var total: Int64 = 0
-            var files = 0, dirs = 0
-            for u in all {
-                var isDir: ObjCBool = false
-                FileManager.default.fileExists(atPath: u.path, isDirectory: &isDir)
-                guard isDir.boolValue else {
-                    files += 1
-                    total += Int64((try? u.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-                    continue
-                }
-                dirs += 1
-                guard let e = FileManager.default.enumerator(at: u, includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey]) else { continue }
-                for case let c as URL in e {
-                    if cancel.isCancelled { return }
-                    let rv = try? c.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
-                    if rv?.isDirectory == true {
-                        dirs += 1
-                    } else {
-                        files += 1
-                        total += Int64(rv?.fileSize ?? 0)
-                    }
+        recalculateButton.isEnabled = false
+        sizeLabel.stringValue = "Calculating…\n0 bytes, 0 items"
+        sizeLabel.toolTip = sizeLabel.stringValue
+        sizeQueue.async { [weak self] in
+            let total = FolderSizeCounter.count(all, cancellation: cancellation) { partial in
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.sizeCount === cancellation, !cancellation.isCancelled else { return }
+                    let text = "Calculating…\n\(FileFormat.size(partial.bytes)), \(partial.items.formatted()) items"
+                    self.sizeLabel.stringValue = text
+                    self.sizeLabel.toolTip = text
                 }
             }
-            DispatchQueue.main.async {
-                // A single folder doesn't count itself as a subfolder.
-                let sub = max(0, dirs - (all.count == 1 && dirs > 0 ? 1 : 0))
-                var text = "\(FileFormat.size(total)) (\(total.formatted()) bytes)"
-                if dirs > 0 || all.count > 1 {
-                    text += "\n\(files == 1 ? "1 file" : "\(files) files"), \(sub == 1 ? "1 subfolder" : "\(sub) subfolders")"
+            guard let total else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.sizeCount === cancellation, !cancellation.isCancelled else { return }
+                let sub = max(0, total.folders - (all.count == 1 && total.folders > 0 ? 1 : 0))
+                var text = "\(FileFormat.size(total.bytes)) (\(total.bytes.formatted()) bytes)"
+                if total.folders > 0 || all.count > 1 {
+                    text +=
+                        "\n\(total.files.formatted()) \(total.files == 1 ? "file" : "files"), \(sub.formatted()) \(sub == 1 ? "subfolder" : "subfolders")"
                 }
-                label.stringValue = text
+                self.sizeLabel.stringValue = text
+                self.sizeLabel.toolTip = text
+                self.recalculateButton.isEnabled = true
             }
         }
     }
@@ -229,6 +277,7 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
         guard let it = FileItem.load(urls[0]) else { return v }
         var y: CGFloat = 550
         let groups = [("Owner:", 6), ("Group:", 3), ("Others:", 0)]
+        var popups: [NSPopUpButton] = []
         for (title, shift) in groups {
             let popup = NSPopUpButton(frame: .zero, pullsDown: false)
             let choices =
@@ -243,6 +292,7 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
             popup.action = #selector(permChanged(_:))
             popup.frame.size = CGSize(width: 240, height: 26)
             row(title, popup, y: &y, in: v)
+            popups.append(popup)
         }
         let exec = NSButton(
             checkboxWithTitle: it.isDirectory ? "Allow listing (execute)" : "Is executable", target: self, action: #selector(execChanged(_:)))
@@ -253,7 +303,7 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
         row("Ownership:", label("\(it.owner ?? "?") : \(it.group ?? "?")"), y: &y, in: v)
         modeLabel.stringValue = Self.modeText(it)
         row("Mode:", modeLabel, y: &y, in: v)
-        permControls = (v.subviews.compactMap { $0 as? NSPopUpButton }, exec)
+        permControls = (popups, exec)
         return v
     }
 
@@ -391,15 +441,31 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
+        if sel == #selector(NSResponder.cancelOperation(_:)) { window?.makeFirstResponder(nil); return true }
         if sel == #selector(NSResponder.insertNewline(_:)) { window?.performClose(nil); return true }
         return false
     }
 }
 
-/// A thread-safe "stop" flag for background work tied to a window.
-final class CancelFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var cancelled = false
-    var isCancelled: Bool { lock.withLock { cancelled } }
-    func cancel() { lock.withLock { cancelled = true } }
+/// Closing shortcuts stay local to Properties, including when another Porpoise window is open.
+final class PropertiesPanel: NSWindow {
+    override func cancelOperation(_ sender: Any?) {
+        if let editor = firstResponder as? NSTextView, editor.isFieldEditor {
+            makeFirstResponder(nil)
+        } else {
+            performClose(sender)
+        }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { cancelOperation(nil) } else { super.keyDown(with: event) }
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
+        if flags == .command {
+            if [".", "w"].contains(event.charactersIgnoringModifiers ?? "") { performClose(nil); return true }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
 }

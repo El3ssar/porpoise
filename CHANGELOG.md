@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Clearer Properties.** Long locations stay within their column, folder sizes grow live while counting, and
+  Recalculate refreshes changed sizes. Escape ends text editing before closing; ⌘W and ⌘. also close the window.
+  Locked now explains Finder’s protection flag.
+
 - **More reliable Settings and hiding.** Appearance theme cards use stable equal-width columns, avoiding a
   layout-engine crash. Hiding after a cancelled drag no longer lets a temporary window quit the browser.
 
