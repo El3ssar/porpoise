@@ -364,7 +364,9 @@ From  📁 Projects  ⇄  📁 Backup                     (direction row; hidden
   Chips show folder icon 16 + name, r 6, `viewBackground`, tooltip shows full path. Swapping animates the chips
   crossing (200 ms) and replans.
 - **Summary line:** SF 13. Counts in their colours, bold. Totals in secondary. Zero counts are omitted.
-  "Nothing to do. Projects and Backup already match." when empty; Sync then becomes **Done**.
+  "Nothing to do. Projects and Backup already match." when empty; Sync then becomes **Done**. The footer stays in
+  every state: a pair that already matches is the most common one to keep in sync. With "Keep in sync
+  automatically" checked, **Done** becomes **Save**.
 - **Plan list:** an outline (NSOutlineView look: `viewBackground`, alternating rows, 24 tall, r 5 frame).
   Sections in this order: **Conflicts**, **Moved to the Trash** / **Deleted**, **Copy**, **Replace**, **Create
   folder** (folded into Copy when the folder is new with contents). Section header row: disclosure, glyph, title,
