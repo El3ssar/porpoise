@@ -26,7 +26,7 @@ public final class Scratch {
         // Something is still mounted inside (an image whose attach finished late): detach it, then try again.
         for case let u as URL in fm.enumerator(at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) ?? .init()
         where Self.isMountPoint(u) {
-            _ = try? Process.run(URL(fileURLWithPath: "/usr/bin/hdiutil"), arguments: ["detach", "-quiet", "-force", u.path]).waitUntilExit()
+            try? DiskImage.hdiutil(["detach", "-quiet", "-force", u.path])
         }
         try? fm.removeItem(at: url)
     }
@@ -84,12 +84,15 @@ public final class DiskImage {
     private let image: URL
     /// Kept alive until the image is detached: the image and its mount point live in it.
     private let scratch: Scratch
+    /// DiskImages' APFS formatter shares OS state with attach/detach. Concurrent lifecycle commands
+    /// sporadically fail creation with ENOTEMPTY. The file lock below also coordinates separate test processes.
+    private static let commandLock = NSLock()
 
     public init(name: String = "PorpoiseTest", megabytes: Int = 20, in scratch: Scratch) throws {
         self.scratch = scratch
         image = scratch.path("\(name).dmg")
         volume = scratch.path("mnt-\(name)")
-        try Self.hdiutil(["create", "-quiet", "-size", "\(megabytes)m", "-fs", "APFS", "-volname", name, image.path])
+        try Self.hdiutil(["create", "-size", "\(megabytes)m", "-fs", "APFS", "-volname", name, image.path])
         try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
         do {
             try Self.hdiutil(["attach", "-quiet", "-nobrowse", "-mountpoint", volume.path, image.path])
@@ -103,14 +106,47 @@ public final class DiskImage {
     deinit { try? Self.hdiutil(["detach", "-quiet", "-force", volume.path]) }
 
     /// Runs hdiutil, giving up after a minute (a stuck disk image must fail the test, not hang the run).
-    private static func hdiutil(_ args: [String]) throws {
-        let p = try Process.run(URL(fileURLWithPath: "/usr/bin/hdiutil"), arguments: args)
-        let deadline = Date().addingTimeInterval(60)
-        while p.isRunning && Date() < deadline { usleep(20_000) }
-        if p.isRunning { p.terminate() }
-        p.waitUntilExit()
-        guard p.terminationReason == .exit, p.terminationStatus == 0 else {
-            throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "hdiutil \(args[0]) failed"])
+    fileprivate static func hdiutil(_ args: [String]) throws {
+        commandLock.lock()
+        defer { commandLock.unlock() }
+        // A test process/worktree must not format while another fixture attaches or detaches. Keep the
+        // advisory lock inode in place: unlinking it would let a new caller lock a different inode.
+        let lockURL = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-disk-image-tests-\(getuid()).lock")
+        let lockFD = open(lockURL.path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0o600)
+        guard lockFD >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        defer { close(lockFD) }
+        while flock(lockFD, LOCK_EX) != 0 {
+            guard errno == EINTR else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        }
+        defer { _ = flock(lockFD, LOCK_UN) }
+        let output = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-hdiutil-\(UUID()).log")
+        guard FileManager.default.createFile(atPath: output.path, contents: nil) else { throw CocoaError(.fileWriteUnknown) }
+        let handle = try FileHandle(forWritingTo: output)
+        defer { try? handle.close(); try? FileManager.default.removeItem(at: output) }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+        p.arguments = args
+        p.standardOutput = handle
+        p.standardError = handle
+        let ended = DispatchSemaphore(value: 0)
+        p.terminationHandler = { _ in ended.signal() }
+        try p.run()
+        // Completion is an event; the deadline only catches a stuck tool. No polling delays or pipe-reader
+        // tasks compete with the test runner's cooperative threads. A file also keeps failure output intact.
+        let timedOut = ended.wait(timeout: .now() + 60) == .timedOut
+        if timedOut {
+            p.terminate()
+            if ended.wait(timeout: .now() + 2) == .timedOut {
+                if p.isRunning { kill(p.processIdentifier, SIGKILL) }
+                _ = ended.wait(timeout: .now() + 5)
+            }
+        }
+        guard !timedOut, !p.isRunning, p.terminationReason == .exit, p.terminationStatus == 0 else {
+            let diagnostic = (try? String(contentsOf: output, encoding: .utf8)) ?? ""
+            let status = p.isRunning ? "still running" : "\(p.terminationReason), status \(p.terminationStatus)"
+            throw CocoaError(
+                .fileWriteUnknown,
+                userInfo: [NSLocalizedDescriptionKey: "hdiutil \(args[0]) failed (\(status), timed out: \(timedOut)): \(diagnostic)"])
         }
     }
 }
