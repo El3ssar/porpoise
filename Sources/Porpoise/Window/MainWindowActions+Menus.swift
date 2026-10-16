@@ -99,6 +99,7 @@ extension MainWindowController {
         m.addItem(.separator())
         m.addItem(item("Split View to Tabs", "tab-new", #selector(splitToTabs(_:))))
         m.addItem(item(tab.activeIsSecondary ? "Pop out Right View" : "Pop out Left View", "window-new", #selector(popOutSplit(_:))))
+        for item in m.items where !item.isSeparatorItem { item.target = self }
         return m
     }
 
