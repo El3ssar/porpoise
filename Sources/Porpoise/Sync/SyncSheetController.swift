@@ -111,7 +111,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             cards.append(card); add(card)
         }
         spinner.style = .spinning; spinner.controlSize = .small; spinner.isDisplayedWhenStopped = false; add(spinner)
-        options.isBordered = false; options.font = .systemFont(ofSize: 11)
+        options.isBordered = false; options.alignment = .left; options.font = .systemFont(ofSize: 11)
         options.target = self; options.action = #selector(toggleOptions); options.setAccessibilityLabel("Options"); add(options)
         automatic.state = pair.automatic ? .on : .off
         automatic.target = self; automatic.action = #selector(automaticChanged); add(automatic)
@@ -190,18 +190,23 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             card.leftName = pair.leftTitle; card.rightName = pair.rightTitle
             card.chosen = pair.mode == card.mode; card.needsDisplay = true
         }
+        direction.breadcrumb =
+            pair.left.deletingLastPathComponent().lastPathComponent + " › " + pair.left.lastPathComponent + " → "
+            + pair.right.deletingLastPathComponent().lastPathComponent + " › " + pair.right.lastPathComponent
         direction.source = pair.leftTitle; direction.destination = pair.rightTitle
         direction.toolTip = pair.left.path + " → " + pair.right.path
         direction.frame = CGRect(x: 20, y: 141, width: width - 40, height: 28)
         direction.isHidden = pair.mode == .twoWay; direction.needsDisplay = true
         swapButton.frame = direction.swapRect.offsetBy(dx: 20, dy: 141); swapButton.isHidden = pair.mode == .twoWay
-        summary.frame = CGRect(x: planning ? 44 : 20, y: 180, width: width - 64, height: 22)
-        spinner.frame = CGRect(x: 20, y: 181, width: 16, height: 16)
-        callout.frame = CGRect(x: 20, y: 210, width: width - 40, height: 44)
         let showCallout = !callout.text.isEmpty
+        let calloutHeight: CGFloat = showCallout ? (width < 660 ? 44 : 32) : 0
+        callout.frame = CGRect(x: 20, y: 180, width: width - 40, height: calloutHeight)
+        let summaryY: CGFloat = 180 + (showCallout ? calloutHeight + 10 : 0)
+        summary.frame = CGRect(x: planning ? 44 : 20, y: summaryY, width: width - 40, height: 22)
+        spinner.frame = CGRect(x: 20, y: summaryY + 1, width: 16, height: 16)
         callout.isHidden = !showCallout
         let conflicts = (preview?.skippedConflicts ?? 0) > 0
-        let bulkY: CGFloat = showCallout ? 260 : 210
+        let bulkY: CGFloat = summaryY + 32
         newerButton.frame = CGRect(x: 20, y: bulkY, width: 132, height: 24)
         leftButton.title = "Keep All from \(pair.leftTitle)"
         rightButton.title = "Keep All from \(pair.rightTitle)"
@@ -214,7 +219,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         scroll.frame = listFrame.bounds.insetBy(dx: 1, dy: 1)
         outline.tableColumns[0].width = max(200, scroll.contentSize.width)
         options.title =
-            "Options: \(pair.presets.contains(.system) ? "Ignore system files · " : "")Trash · \(method.titleOfSelectedItem ?? "Size & date")"
+            "\(optionsOpen ? "▾" : "▸") Options   \(pair.presets.contains(.system) ? "Ignore system files · " : "")Trash · \(method.titleOfSelectedItem ?? "Size & date")"
         options.frame = CGRect(x: 20, y: bottom + 5, width: width - 40, height: 24)
         let optionsY = bottom + 34
         presets.frame = CGRect(x: 22, y: optionsY, width: width - 44, height: 22)
@@ -239,7 +244,9 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             ? "Porpoise syncs changes while it's open. You'll only hear about conflicts and errors."
             : "Save this sync to run it again from the sidebar."
         explanation.frame = CGRect(x: 22, y: height - 62, width: width - 44, height: 16)
-        let y = height - 34
+        (root as? SyncSheetBackdrop)?.footerY = height - 70 - keepExpansion * 66
+        root.needsDisplay = true
+        let y = height - 36
         cancelButton.frame = CGRect(x: width - 214, y: y, width: 90, height: 28)
         syncButton.frame = CGRect(x: width - 114, y: y, width: 94, height: 28)
         saveButton.frame = CGRect(x: width - 330, y: y, width: 106, height: 28)
@@ -334,7 +341,8 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                 if attributed.length > 0 { attributed.append(NSAttributedString(string: " · ")) }
                 attributed.append(
                     NSAttributedString(
-                        string: "\(count) \(word)", attributes: [.foregroundColor: color, .font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
+                        string: "\(count)", attributes: [.foregroundColor: color, .font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
+                attributed.append(NSAttributedString(string: " " + word, attributes: [.foregroundColor: Theme.windowText]))
             }
         }
         if preview.skippedConflicts > 0 {
@@ -352,6 +360,13 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                             ? "Nothing to copy. \(pair.rightTitle) is up to date with \(pair.leftTitle)."
                             : "Nothing to do. \(pair.leftTitle) and \(pair.rightTitle) already match.")
                         : "No items selected for this sync."))
+        }
+        let unchecked = displaySteps.filter { $0.action != .conflict && !includedStepIDs.contains($0.id) }.count
+        if unchecked > 0 {
+            attributed.append(
+                NSAttributedString(
+                    string: " · \(unchecked) \(unchecked == 1 ? "item" : "items") unchecked", attributes: [.foregroundColor: Theme.windowTextInactive]
+                ))
         }
         let bytes = plan.steps.filter { $0.action == .copy || $0.action == .replace }.reduce(Int64(0)) { $0 + ($1.expectedSource?.size ?? 0) }
         if bytes > 0 {
@@ -380,11 +395,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         }
         nodes = [SyncAction.conflict, .trash, .copy, .replace, .mkdir].flatMap { action -> [SyncPlanNode] in
             let all = displaySteps.filter { step in
-                let populatedFolder =
-                    step.action == .mkdir
-                    && displaySteps.contains {
-                        $0.target == step.target && ($0.action == .copy || $0.action == .replace) && $0.path.hasPrefix(step.path + "/")
-                    }
+                let populatedFolder = step.action == .mkdir && populatedFolders.contains(step.target.rawValue + ":" + step.path)
                 return action == .copy ? step.action == .copy || populatedFolder : step.action == action && !populatedFolder
             }
             if action == .conflict { return all.isEmpty ? [] : [SyncPlanNode(action: action, steps: all, title: "Conflicts")] }
@@ -482,16 +493,25 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         let node = item as! SyncPlanNode
         guard let step = node.step else {
-            return SyncGroupRow(title: node.title + " (\(node.children.count))", action: node.action, color: node.color)
+            return SyncGroupRow(
+                title: node.title + " (\(node.allSteps.filter { includedStepIDs.contains($0.id) }.count))", action: node.action, color: node.color)
         }
         let difference = differences[step.path] ?? step.sourcePath.flatMap { differences[$0] }
         let key = difference?.path ?? step.path
-        let included = includedStepIDs.contains(step.id)
+        let included = node.allSteps.contains { includedStepIDs.contains($0.id) }
         let row = SyncPlanRow(
             step: step, pair: pair, checked: overrides[key] != .skip && included, choice: overrides[key],
-            difference: difference, hasState: previous != nil)
+            difference: difference, hasState: previous != nil,
+            displayPath: node.children.isEmpty
+                ? (step.path as NSString).lastPathComponent
+                : (step.path as NSString).lastPathComponent + " — \(node.allSteps.filter { $0.path != step.path }.count) items",
+            isFolder: !node.children.isEmpty,
+            displayBytes: node.children.isEmpty
+                ? nil : node.allSteps.reduce(Int64(0)) { $0 + ($1.expectedSource?.size ?? $1.expectedTarget?.size ?? 0) })
         row.onInclude = { [weak self] include in
-            self?.overrides[key] = include ? nil : .skip; self?.replan()
+            guard let self else { return }
+            for child in node.allSteps { self.overrides[differences[child.path]?.path ?? child.path] = include ? nil : .skip }
+            self.replan()
         }
         row.onChoice = { [weak self] choice in
             self?.overrides[key] = choice; self?.replan()
@@ -510,10 +530,42 @@ private final class SyncPlanNode: NSObject {
     let action: SyncAction
     let title: String
     var children: [SyncPlanNode] = []
+    var allSteps: [SyncStep] = []
     init(action: SyncAction, steps: [SyncStep], title: String) {
-        self.action = action; self.title = title; step = nil; super.init(); children = steps.map(SyncPlanNode.init)
+        self.action = action; self.title = title; step = nil; super.init(); children = Self.tree(steps)
+        allSteps = steps
     }
-    init(step: SyncStep) { self.step = step; action = step.action; title = step.path }
+    init(step: SyncStep) { self.step = step; action = step.action; title = step.path; allSteps = [step] }
+    private static func tree(_ steps: [SyncStep]) -> [SyncPlanNode] {
+        guard let first = steps.first, first.action != .conflict else { return steps.map(SyncPlanNode.init) }
+        var byPath: [String: SyncPlanNode] = [:]
+        for step in steps { byPath[step.path] = SyncPlanNode(step: step) }
+        for step in steps {
+            var parent = (step.path as NSString).deletingLastPathComponent
+            while !parent.isEmpty {
+                if byPath[parent] == nil {
+                    byPath[parent] = SyncPlanNode(
+                        step: SyncStep(
+                            path: parent, target: step.target, action: step.action, expectedTarget: SyncEntry(path: parent, kind: .directory)))
+                    byPath[parent]?.allSteps = []
+                }
+                parent = (parent as NSString).deletingLastPathComponent
+            }
+        }
+        var roots: [SyncPlanNode] = []
+        for (path, node) in byPath {
+            let parent = (path as NSString).deletingLastPathComponent
+            if let owner = byPath[parent] { owner.children.append(node) } else { roots.append(node) }
+        }
+        func finish(_ nodes: inout [SyncPlanNode]) {
+            nodes.sort { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+            for node in nodes {
+                finish(&node.children)
+                node.allSteps += node.children.flatMap(\.allSteps)
+            }
+        }
+        finish(&roots); return roots
+    }
     var color: NSColor {
         action == .trash || action == .conflict ? Theme.compareDanger : action == .replace ? Theme.compareChanged : Theme.compareOnly
     }
