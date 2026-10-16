@@ -50,7 +50,7 @@ public enum RemoteFS {
 
     public static func isRemote(_ url: URL) -> Bool {
         guard let s = url.scheme?.lowercased() else { return false }
-        return sshSchemes.contains(s) || ftpSchemes.contains(s) || s == "adb"
+        return sshSchemes.contains(s) || ftpSchemes.contains(s) || s == "adb" || s == "gdrive"
     }
 
     /// Guarded by `lock`.
@@ -65,6 +65,15 @@ public enum RemoteFS {
     static func use(_ provider: RemoteProvider?, for url: URL) {
         lock.lock(); defer { lock.unlock() }
         providers[key(url)] = provider
+    }
+
+    /// Installs the authenticated account adapter; no credentials are contained in the location URL.
+    public static func registerDrive(_ provider: DriveProvider, accountID: UUID) {
+        use(provider, for: DriveLocation(accountID: accountID).url)
+    }
+
+    public static func unregisterDrive(accountID: UUID) {
+        use(nil, for: DriveLocation(accountID: accountID).url)
     }
 
     /// Explicit test launches may install a provider without contacting a real server.
@@ -88,7 +97,10 @@ public enum RemoteFS {
         lock.lock(); defer { lock.unlock() }
         if let p = providers[key] { return p }
         let p: RemoteProvider
-        if sshSchemes.contains(s) {
+        if s == "gdrive" {
+            guard let accountID = url.host.flatMap(UUID.init(uuidString:)) else { return nil }
+            p = DriveProvider(accountID: accountID, client: nil)
+        } else if sshSchemes.contains(s) {
             p = SSHProvider(url: url)
         } else if ftpSchemes.contains(s) {
             p = FTPProvider(url: url)
@@ -137,6 +149,9 @@ public enum RemoteFS {
     }
 
     public static func displayName(for url: URL) -> String {
+        if url.scheme == "gdrive", let p = provider(for: url) as? DriveProvider {
+            return p.displayName(for: url) ?? "Google Drive folder"
+        }
         if url.path.isEmpty || url.path == "/" { return provider(for: url)?.rootTitle(url) ?? (url.host ?? "") }
         return url.lastPathComponent
     }

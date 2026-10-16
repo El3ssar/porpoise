@@ -32,6 +32,23 @@ public enum RemoteOpener {
 
     public static func open(_ item: FileItem) {
         guard let p = RemoteFS.provider(for: item.url), RemoteParsing.isSafeName(item.url.lastPathComponent) else { return }
+        if item.url.scheme == "gdrive" {
+            // M1 downloads/exports are independent copies; never attach the legacy save-back watcher.
+            let folder = cacheFolder(for: item.url).appendingPathComponent(item.url.lastPathComponent).appendingPathComponent(UUID().uuidString)
+            StatusCenter.post("Downloading “\(item.name)”…")
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let local = try p.download(item.url, into: folder)
+                    DispatchQueue.main.async {
+                        openFile(local)
+                        StatusCenter.post("Opened a copy of “\(item.name)”. Changes stay on this Mac.")
+                    }
+                } catch {
+                    DispatchQueue.main.async { StatusCenter.error("Could not open “\(item.name)”: \(error.localizedDescription)") }
+                }
+            }
+            return
+        }
         let folder = cacheFolder(for: item.url)
         let cached = folder.appendingPathComponent(item.url.lastPathComponent)
         // Opened again before its edits reached the server: open those edits, never replace them with a download.

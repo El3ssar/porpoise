@@ -69,6 +69,14 @@ public struct FileItem: Hashable, Sendable {
     /// Human readable type, e.g. "PDF document", "Folder".
     public var typeDescription: String {
         if isBrowsableFolder { return "Folder" }
+        switch contentType {
+        case "com.google.apps.document": return "Google Docs document"
+        case "com.google.apps.spreadsheet": return "Google Sheets spreadsheet"
+        case "com.google.apps.presentation": return "Google Slides presentation"
+        case "com.google.apps.drawing": return "Google Drawing"
+        case "com.google.apps.form": return "Google Form"
+        default: break
+        }
         if let c = contentType, let d = Self.typeDescriptions.description(of: c) { return d }
         return fileExtension.isEmpty ? "File" : "\(fileExtension.uppercased()) file"
     }

@@ -1,0 +1,17 @@
+{
+  "files": [
+    {"id":"folder-a","name":"Project Atlas","mimeType":"application/vnd.google-apps.folder","capabilities":{"canListChildren":true},"owners":[{"displayName":"Alex Example","emailAddress":"alex@example.invalid"}],"shared":true},
+    {"id":"binary-a","name":"report.txt","mimeType":"text/plain","size":"13","modifiedTime":"2026-10-16T10:00:00Z","webViewLink":"https://drive.google.com/file/d/binary-a/view","capabilities":{"canDownload":true}},
+    {"id":"binary-b","name":"report.txt","mimeType":"text/plain","size":"13","capabilities":{"canDownload":true}},
+    {"id":"doc-a","name":"Meeting notes","mimeType":"application/vnd.google-apps.document","webViewLink":"https://docs.google.com/document/d/doc-a/edit","capabilities":{"canDownload":true},"owners":[{"displayName":"Alex Example","emailAddress":"alex@example.invalid"}],"permissions":[{"id":"owner-a","type":"user","role":"owner","displayName":"Alex Example","emailAddress":"alex@example.invalid"},{"type":"anyone","role":"reader"}],"sharingUser":{"displayName":"Sam Example","emailAddress":"sam@example.invalid"},"lastModifyingUser":{"displayName":"Alex Example"}},
+    {"id":"shortcut-a","name":"Atlas shortcut","mimeType":"application/vnd.google-apps.shortcut","shortcutDetails":{"targetId":"folder-a","targetMimeType":"application/vnd.google-apps.folder","targetResourceKey":"resource-a"}},
+    {"id":"denied","name":"Restricted.pdf","mimeType":"application/pdf","capabilities":{"canDownload":false}},
+    {"id":"cycle-a","name":"Cycle A","mimeType":"application/vnd.google-apps.shortcut","shortcutDetails":{"targetId":"cycle-b"}},
+    {"id":"cycle-b","name":"Cycle B","mimeType":"application/vnd.google-apps.shortcut","shortcutDetails":{"targetId":"cycle-a"}},
+    {"id":"shared-drive-a","name":"External studio","mimeType":"application/vnd.google-apps.folder","driveId":"shared-drive-a"},
+    {"id":"native-unsupported","name":"Form","mimeType":"application/vnd.google-apps.form"},
+    {"id":"bad-name","name":"../escape","mimeType":"text/plain"}
+  ],
+  "profile":{"sub":"fixture-user","email":"alex@example.invalid","name":"Alex Example"},
+  "drives":[{"id":"shared-drive-a","name":"External studio"}]
+}
