@@ -23,9 +23,22 @@ public struct CompareOutline: Sendable {
     public private(set) var masks: [String: CompareFilter] = [:]
     public private(set) var counts: [Int: Int] = [:]
     public private(set) var differenceCounts: [String: Int] = [:]
+    public private(set) var childCounts: [SyncSide: [String: Int]] = [:]
     public init(_ comparison: SyncComparison) {
         self.comparison = comparison
         var displayRows = comparison.rows
+        if !comparison.caseSensitive {
+            // An only-right child may use a different spelling of its aligned parent. Give the
+            // presentation one parent path while retaining each entry's actual filesystem path.
+            var canonical: [String: String] = [:]
+            for index in displayRows.indices {
+                let path = displayRows[index].path, parent = (path as NSString).deletingLastPathComponent
+                if let aligned = canonical[parent.precomposedStringWithCanonicalMapping.lowercased()] {
+                    displayRows[index].path = aligned + "/" + (path as NSString).lastPathComponent
+                }
+                canonical[path.precomposedStringWithCanonicalMapping.lowercased()] = displayRows[index].path
+            }
+        }
         let indices = Dictionary(displayRows.enumerated().map { ($0.element.path, $0.offset) }, uniquingKeysWith: { a, _ in a })
         for index in displayRows.indices {
             if !comparison.complete, (displayRows[index].left ?? displayRows[index].right)?.kind == .directory,
@@ -46,6 +59,9 @@ public struct CompareOutline: Sendable {
         }
         for row in displayRows {
             children[(row.path as NSString).deletingLastPathComponent, default: []].append(row)
+            for side in [SyncSide.left, .right] where (side == .left ? row.left : row.right) != nil {
+                childCounts[side, default: [:]][(row.path as NSString).deletingLastPathComponent, default: 0] += 1
+            }
             let category = CompareFilter.category(row.status)
             counts[category.rawValue, default: 0] += 1
             masks[row.path, default: []].formUnion(category)
