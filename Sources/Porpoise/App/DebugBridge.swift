@@ -169,6 +169,7 @@ final class DebugBridge: NSObject {
                 let data: [String: Any] = [
                     "rows": compare.model.rows.count, "filterUpdateMS": compare.lastUpdateMilliseconds,
                     "rowLayoutMS": compare.document.filterMilliseconds, "drawMS": compare.document.drawMilliseconds,
+                    "activityNotifications": compare.activityNotificationCount, "activityPaints": compare.activityPaintCount,
                 ]
                 try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: arg))
             }
