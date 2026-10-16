@@ -98,11 +98,14 @@ public struct DriveOAuthTransaction: Sendable {
     public let state: String
     public let redirectURL: URL
     public let configuration: DriveOAuthConfiguration
+    /// Signing in again: the account's email, so Google offers that account straight away.
+    public let loginHint: String?
 
-    public init(configuration: DriveOAuthConfiguration, redirectURL: URL) throws {
+    public init(configuration: DriveOAuthConfiguration, redirectURL: URL, loginHint: String? = nil) throws {
         guard !configuration.clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw DriveError.configuration }
         self.configuration = configuration
         self.redirectURL = redirectURL
+        self.loginHint = loginHint
         verifier = try Self.random()
         state = try Self.random()
     }
@@ -132,6 +135,7 @@ public struct DriveOAuthTransaction: Sendable {
             URLQueryItem(name: "code_challenge", value: Self.base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
         ]
+        if let loginHint { c.queryItems?.append(URLQueryItem(name: "login_hint", value: loginHint)) }
         return c.url!
     }
 
