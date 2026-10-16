@@ -69,12 +69,22 @@ struct DriveModelsTests {
         let json =
             #"{"id":"doc","name":"Notes","mimeType":"application/vnd.google-apps.document","owners":[{"emailAddress":"owner@example.invalid"}],"size":"12","modifiedTime":"2026-10-16T10:00:00Z","webViewLink":"https://docs.google.com/document/d/doc/edit"}"#
         let doc = try JSONDecoder().decode(DriveFile.self, from: Data(json.utf8))
+        #expect(doc.contentType == "com.google.apps.document")
         #expect(doc.operations.canExport && doc.operations.canOpenInBrowser)
         #expect(!doc.operations.canWrite && !doc.operations.canRename && !doc.operations.canTrash && !doc.operations.canBrowse)
         let item = doc.fileItem(accountID: UUID())
         #expect(!item.isWritable && item.isReadable && item.size == 12 && item.owner == "owner@example.invalid")
         #expect(item.modificationDate != nil)
+        #expect(item.typeDescription == "Google Docs document")
+        for (kind, label) in [
+            ("spreadsheet", "Google Sheets spreadsheet"), ("presentation", "Google Slides presentation"), ("drawing", "Google Drawing"),
+            ("form", "Google Form"),
+        ] {
+            let native = DriveFile(id: "native", name: "Native", mimeType: "application/vnd.google-apps.\(kind)")
+            #expect(native.fileItem(accountID: UUID()).typeDescription == label)
+        }
         let binary = DriveFile(id: "bin", name: "Binary", mimeType: "text/plain")
+        #expect(binary.contentType == "public.plain-text")
         #expect(binary.operations.canDownload && !binary.operations.canExport)
         let folder = DriveFile(id: "folder", name: "Folder", mimeType: "application/vnd.google-apps.folder")
         #expect(folder.operations.canBrowse && !folder.operations.canDownload)

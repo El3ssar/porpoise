@@ -57,3 +57,9 @@ Internal URLs: `gdrive://<account UUID>/my-drive`, `/shared-with-me`, `/shared-d
 The fake server fixtures are sanitized representative wire responses (not recorded from a live account); live API/OAuth verification waits for the operator's client ID.
 
 The existing DirectoryModel publishes Drive pages incrementally and cancels the in-flight listing on navigation/reload. Legacy synchronous RemoteProvider.list remains for expansion/transfers. RemoteOpener opens independent copies for Drive, with no save-back watcher.
+
+## UI integration follow-up
+
+`DriveFile.contentType` / `fileItem.contentType` now use `UTType(mimeType:)` for binary files and stable native identifiers `com.google.apps.document`, `.spreadsheet`, `.presentation`, `.drawing`, `.form`, etc. Native identity does not depend on the export preset.
+
+Fake server accepts `--fixture /absolute/path/ui-demo.json`. Schema: `files` (Drive v3 file metadata array), `profile` (one userinfo object) or `profiles` (multiple userinfo objects), `drives` (id/name array). Each `/auth` rotates through `profiles`; `login_hint=<email>` selects a specific one. Access/refresh credentials are synthetic and account-specific. Optional `rootIDs`, `sharedWithMeIDs` arrays and `children: {"folderID": ["childID", ...]}` control the fixture collections. Files retain fixture order. Default fixture remains unchanged.

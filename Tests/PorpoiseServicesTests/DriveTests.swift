@@ -19,12 +19,13 @@ final class FakeDriveServer {
     let process = Process()
     let scratch: Scratch
     let base: URL
-    init() throws {
+    init(fixture: URL? = nil) throws {
         scratch = try Scratch()
         let portFile = scratch.url.appendingPathComponent("port")
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
         process.arguments = [repo.appendingPathComponent("scripts/fake-drive-server.py").path, "--port", "0", "--port-file", portFile.path]
+        if let fixture { process.arguments! += ["--fixture", fixture.path] }
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         try process.run()
@@ -202,6 +203,34 @@ final class FakeDriveServer {
         #expect(store.accounts.isEmpty && store.client(for: account.id) == nil && store.states[account.id] == nil)
         #expect(try credentials.read(clientID: server.config.clientID, accountID: account.id) == nil)
         try await store.disconnect(account)
+    }
+
+    @MainActor @Test func customFixturesConnectTwoDistinctAccounts() async throws {
+        let scratch = try Scratch()
+        let original = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/metadata.json")
+        var fixture = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: original)) as? [String: Any])
+        fixture["profiles"] = [
+            ["sub": "one", "email": "one@example.invalid", "name": "One"],
+            ["sub": "two", "email": "two@example.invalid", "name": "Two"],
+        ]
+        let file = scratch.url.appendingPathComponent("custom.json")
+        try JSONSerialization.data(withJSONObject: fixture).write(to: file)
+        let server = try FakeDriveServer(fixture: file)
+        let suite = "porpoise-drive-test-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let credentials = MemoryDriveCredentials()
+        let store = DriveAccountStore(
+            defaults: defaults, credentials: credentials, configuration: server.config, baseURL: server.base.appendingPathComponent("drive/v3/"))
+        let browser: @MainActor (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
+        let one = try await store.connect(openBrowser: browser)
+        let two = try await store.connect(openBrowser: browser)
+        defer { RemoteFS.unregisterDrive(accountID: one.id); RemoteFS.unregisterDrive(accountID: two.id) }
+        #expect(one.id != two.id && one.email == "one@example.invalid" && two.email == "two@example.invalid")
+        #expect(store.accounts.count == 2)
+        #expect(try credentials.read(clientID: server.config.clientID, accountID: two.id) == "fixture-refresh-1")
+        let secondClient = try #require(store.client(for: two.id))
+        #expect(try await secondClient.list(DriveLocation(accountID: two.id)).count == 6)
     }
 
     @MainActor @Test func missingConfigurationAndCancelledConnect() async throws {

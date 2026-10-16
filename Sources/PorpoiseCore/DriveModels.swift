@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 /// Account metadata only. OAuth credentials are stored separately in Keychain.
 public struct DriveAccount: Codable, Hashable, Identifiable, Sendable {
@@ -211,6 +212,13 @@ public struct DriveFile: Codable, Hashable, Sendable {
             canOpenInBrowser: webViewLink != nil)
     }
 
+    /// Native Google identities stay distinct from their downloadable export formats.
+    public var contentType: String {
+        if isFolder { return "public.folder" }
+        if isGoogleDocument { return "com.google.apps." + mimeType.dropFirst("application/vnd.google-apps.".count) }
+        return UTType(mimeType: mimeType)?.identifier ?? "public.data"
+    }
+
     public func location(accountID: UUID) -> DriveLocation {
         DriveLocation(accountID: accountID, collection: .folder(id, driveID: driveId), resourceKey: resourceKey)
     }
@@ -226,7 +234,7 @@ public struct DriveFile: Codable, Hashable, Sendable {
             url: parent.map { childLocation(in: $0).url } ?? location(accountID: accountID).url, name: name, isDirectory: target.isFolder,
             isSymlink: isShortcut, isHidden: name.hasPrefix("."), size: Int64(target.size ?? "") ?? 0,
             modificationDate: target.modifiedTime.flatMap { ISO8601DateFormatter().date(from: $0) },
-            contentType: target.isFolder ? "public.folder" : "public.data", posixPermissions: target.isFolder ? 0o555 : 0o444,
+            contentType: target.contentType, posixPermissions: target.isFolder ? 0o555 : 0o444,
             owner: owners?.first?.displayName ?? owners?.first?.emailAddress,
             linkDestination: shortcutDetails?.targetId,
             isReadable: target.isFolder ? target.operations.canBrowse : (target.operations.canDownload || target.operations.canExport),
