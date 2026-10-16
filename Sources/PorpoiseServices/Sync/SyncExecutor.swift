@@ -37,7 +37,21 @@ public enum SyncExecutor {
         let targetNow = try entry(
             target, path: step.path, content: step.expectedTarget?.hash != nil || step.expectedSource?.hash != nil,
             preciseDate: step.method == .sizeAndDate)
-        if applied(step, target: targetNow) { return }
+        if let renamed = step.renameTo, targetNow == nil {
+            let renamedURL = try resolve(renamed, root: root)
+            if applied(
+                step,
+                target: try entry(
+                    renamedURL, path: renamed, content: step.expectedSource?.hash != nil,
+                    preciseDate: step.method == .sizeAndDate))
+            {
+                return
+            }
+        }
+        if applied(step, target: targetNow) {
+            try finishRename(step, target: target, root: root)
+            return
+        }
         try validate(targetNow, expected: step.expectedTarget, path: step.path)
         switch step.action {
         case .conflict: throw SyncEngineError.conflicts
@@ -64,9 +78,33 @@ public enum SyncExecutor {
             try validate(
                 try entry(source, path: path, content: expected.hash != nil, preciseDate: step.method == .sizeAndDate), expected: expected, path: path
             )
-            try copy(
-                source, to: target, expected: expected, preserveDate: step.method == .sizeAndDate, timestampTolerance: step.timestampTolerance,
-                cancellation: cancellation)
+            if expected.kind != .directory {
+                try copy(
+                    source, to: target, expected: expected, preserveDate: step.method == .sizeAndDate, timestampTolerance: step.timestampTolerance,
+                    cancellation: cancellation)
+            }
+            try finishRename(step, target: target, root: root)
+        }
+    }
+    private static func finishRename(_ step: SyncStep, target: URL, root: URL) throws {
+        guard let path = step.renameTo else { return }
+        guard (path as NSString).deletingLastPathComponent == (step.path as NSString).deletingLastPathComponent,
+            path.lowercased() == step.path.lowercased()
+        else { throw SyncEngineError.unsafePath(path) }
+        let renamed = try resolve(path, root: root)
+        let provider = RemoteFS.provider(for: target)
+        let names =
+            try provider?.list(target.deletingLastPathComponent()).map(\.name)
+            ?? FileManager.default.contentsOfDirectory(atPath: target.deletingLastPathComponent().path)
+        if names.contains(renamed.lastPathComponent) {
+            // Replayed completed rename is safe; a second distinct spelling is a collision.
+            guard !names.contains(target.lastPathComponent) else { throw SyncEngineError.stale(path) }
+            return
+        }
+        if let provider {
+            try provider.rename(target, to: renamed.lastPathComponent)
+        } else if Darwin.rename(target.path, renamed.path) != 0 {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
     }
     /// Safe crash-window reconciliation: only a verified postcondition skips a previously running step.
@@ -77,6 +115,7 @@ public enum SyncExecutor {
         case .mkdir: return target?.kind == .directory
         case .copy, .replace:
             guard let expected = step.expectedSource, let target else { return false }
+            if step.renameTo != nil, expected.kind == .directory, target.identity != step.expectedTarget?.identity { return false }
             return SyncComparator.statusOf(expected, target, options: .init(method: step.method, timestampTolerance: step.timestampTolerance))
                 == .same
         }
