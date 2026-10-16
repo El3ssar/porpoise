@@ -28,6 +28,7 @@ extension MainWindowController {
 
     /// New items can be created in the current folder.
     var writable: Bool {
+        if PlacesModel.isCloud(view.url) { return CloudAccounts.shared.denial(.addItems, folder: view.url) == nil }
         if RemoteFS.isRemote(view.url) { return true }
         guard view.url.isFileURL else { return false }
         if FileManager.default.isWritableFile(atPath: view.url.path) { return true }
@@ -74,6 +75,8 @@ extension MainWindowController {
     }
 
     private func createItem(_ kind: NewItemKind) {
+        // Cloud folders: say why not, rather than ignoring the shortcut.
+        if PlacesModel.isCloud(view.url) { if kind == .folder { createCloudFolder() }; return }
         guard writable else { return }
         if let p = RemoteFS.provider(for: view.url) { createRemote(folder: kind == .folder, provider: p); return }
         NewItemDialog.run(kind: kind, in: view.url, window: window) { [weak self] url in

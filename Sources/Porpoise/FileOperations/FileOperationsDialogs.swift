@@ -39,6 +39,12 @@ final class FileOperationsDialogs: FileOperationsUI {
         return (confirmed, a.suppressionButton?.state == .on)
     }
 
+    func trashCloud(_ urls: [URL], window: AnyObject?) {
+        let w = (window as? NSWindow)?.windowController as? MainWindowController
+        guard let controller = w ?? AppDelegate.shared.windows.first else { return }
+        controller.trashCloud(urls)
+    }
+
     func showErrors(_ errs: [String], window: AnyObject?) {
         let a = NSAlert()
         a.alertStyle = .warning

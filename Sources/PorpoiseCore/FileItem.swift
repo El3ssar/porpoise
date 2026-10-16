@@ -53,6 +53,15 @@ public struct FileItem: Hashable, Sendable {
         self.sharedDate = sharedDate
     }
 
+    /// The same item under another name (a cloud rename keeps the URL, an id).
+    public func named(_ newName: String) -> FileItem {
+        FileItem(
+            url: url, name: newName, isDirectory: isDirectory, isSymlink: isSymlink, isHidden: newName.hasPrefix("."), isPackage: isPackage,
+            isApplication: isApplication, size: size, modificationDate: modificationDate, creationDate: creationDate, accessDate: accessDate,
+            contentType: contentType, posixPermissions: posixPermissions, owner: owner, group: group, linkDestination: linkDestination,
+            isReadable: isReadable, isWritable: isWritable, sharedDate: sharedDate)
+    }
+
     /// The date a date role shows (nil for other roles).
     public func date(for role: ItemRole) -> Date? {
         switch role {

@@ -19,6 +19,7 @@ extension MainWindowController: NSMenuItemValidation {
         }
         let p = view.model.props
         let ops = FileOperationsController.shared
+        if let r = validateCloudItem(item) { return r }
         switch item.action {
         case #selector(toggleLinkedBrowsing(_:)):
             item.state = tab.linkedRoots == nil ? .off : .on; return true

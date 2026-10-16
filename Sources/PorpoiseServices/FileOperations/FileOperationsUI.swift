@@ -24,6 +24,8 @@ public protocol FileOperationsUI: AnyObject {
     /// Selected items include applications. nil cancels Trash; empty keeps every support file.
     func reviewAppCleanup(_ items: [URL], window: AnyObject?, completion: @escaping ([URL]?) -> Void)
     var reviewsAppCleanup: Bool { get }
+    /// Google Drive items go to the service's own Trash, never deleted: the app shows them leave, with Undo.
+    func trashCloud(_ urls: [URL], window: AnyObject?)
 }
 
 public extension FileOperationsUI {
@@ -39,6 +41,9 @@ public extension FileOperationsUI {
     func showTransferErrors(_ activity: Activity, window: AnyObject?) { showErrors(activity.errors, window: window) }
     var reviewsAppCleanup: Bool { false }
     func reviewAppCleanup(_ items: [URL], window: AnyObject?, completion: @escaping ([URL]?) -> Void) { completion([]) }
+    func trashCloud(_ urls: [URL], window: AnyObject?) {
+        CloudAccounts.shared.trash(urls) { _, error in if let error { self.showErrors([error.localizedDescription], window: window) } }
+    }
 }
 
 /// A question before an operation, or a notice when `confirmTitle` is nil (just "OK").

@@ -8,13 +8,19 @@ final class MessageBar: NSView {
     private let close = FlatButton(icon: "dialog-close", tooltip: "Close")
     private let actionButton = NSButton(title: "", target: nil, action: nil)
     private var actionHandler: (() -> Void)?
+    /// The user closed this message (not replaced by another one); set after `show`.
+    var closeHandler: (() -> Void)?
     var isError = true
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         label.font = Theme.font
         label.textColor = Theme.windowText
-        close.onClick = { [weak self] in self?.dismiss() }
+        close.onClick = { [weak self] in
+            let closed = self?.closeHandler
+            self?.dismiss()
+            closed?()
+        }
         actionButton.bezelStyle = .rounded
         actionButton.controlSize = .small
         actionButton.target = self
@@ -33,6 +39,7 @@ final class MessageBar: NSView {
     @objc private func runAction() { actionHandler?() }
 
     func show(_ text: String, error: Bool, action: String? = nil, handler: (() -> Void)? = nil) {
+        closeHandler = nil
         actionButton.title = action ?? ""
         actionButton.isHidden = action == nil
         actionHandler = handler

@@ -65,7 +65,11 @@ extension ItemListView {
         let sameFolder = urls.allSatisfy { $0.deletingLastPathComponent().standardizedFileURL == target }
         // Recent Files, Tags, Smart Folders and Network list items from elsewhere: only their folders take drops.
         let virtualTarget = idx == nil && !folder.isFileURL && !RemoteFS.isRemote(folder)
-        if urls.isEmpty || virtualTarget || urls.contains(where: { $0.standardizedFileURL == target }) || (sameFolder && idx == nil) {
+        // A cloud folder shared as view-only (or Shared with me itself) takes nothing: the forbidden cursor.
+        let closedCloud = PlacesModel.isCloud(folder) && CloudAccounts.shared.denial(.addItems, folder: folder) != nil
+        if urls.isEmpty || virtualTarget || closedCloud || urls.contains(where: { $0.standardizedFileURL == target })
+            || (sameFolder && idx == nil)
+        {
             setDropTarget(nil, background: false)
             return []
         }

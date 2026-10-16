@@ -52,6 +52,8 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
     private let targetField = NSTextField()
     private let message = NSTextField(labelWithString: "")
     private static var active: NewItemDialog?
+    /// A cloud folder: the names in it (for the suggested name), its name, and what creates the folder.
+    private var cloud: (names: Set<String>, title: String, create: (String) -> Void)?
 
     private init(kind: NewItemKind, folder: URL) {
         self.kind = kind
@@ -65,15 +67,24 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
         d.present(window: window, done: done)
     }
 
+    /// The same dialog for a Google Drive folder; `create` gets the name (the folder appears at once, the service
+    /// confirms it later). Drive allows two items of the same name, so an existing name isn't an error.
+    static func runCloud(in folder: URL, title: String, names: Set<String>, window: NSWindow?, create: @escaping (String) -> Void) {
+        let d = NewItemDialog(kind: .folder, folder: folder)
+        d.cloud = (names, title, create)
+        active = d
+        d.present(window: window) { _ in }
+    }
+
     private func present(window: NSWindow?, done: @escaping (URL) -> Void) {
         alert.messageText = kind == .folder ? "Create New Folder" : "Create \(kind.menuTitle.replacingOccurrences(of: "…", with: ""))"
-        alert.informativeText = kind == .folder ? "Create new folder in:\n\(folder.path)" : "File name:"
+        alert.informativeText = kind == .folder ? "Create new folder in:\n\(cloud?.title ?? folder.path)" : "File name:"
         alert.addButton(withTitle: "Create")
         alert.addButton(withTitle: "Cancel")
         alert.icon = Icons.shared.image(kind.icon, size: 64)
         let hasTarget = kind == .link || kind == .urlLink
         let v = NSView(frame: CGRect(x: 0, y: 0, width: 340, height: hasTarget ? 86 : 50))
-        let existing = Set((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
+        let existing = cloud?.names ?? Set((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
         var name = kind.defaultName
         if existing.contains(name) { name = FileFormat.suggestedName(for: name, existing: existing) }
         nameField.stringValue = name
@@ -95,6 +106,7 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
         let handler: (NSApplication.ModalResponse) -> Void = { [self] r in
             defer { NewItemDialog.active = nil }
             guard r == .alertFirstButtonReturn else { return }
+            if let cloud { cloud.create(nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)); return }
             do {
                 let url: URL
                 switch kind {
@@ -159,6 +171,13 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
     func controlTextDidChange(_ obj: Notification) { validate() }
 
     private func validate() {
+        if let cloud {
+            let name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            message.stringValue = cloud.names.contains(name) ? "“\(name)” is already in this folder. Both will be kept." : ""
+            message.textColor = Theme.neutralText
+            alert.buttons.first?.isEnabled = !name.isEmpty
+            return
+        }
         let res = FileActions.validateName(nameField.stringValue, in: folder, allowSlash: kind == .folder)
         message.stringValue = res?.message ?? ""
         message.textColor = (res?.isError ?? false) ? Theme.negativeText : Theme.neutralText

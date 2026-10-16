@@ -33,7 +33,9 @@ extension MainWindowController {
         let urls = selectedURLs
         guard !urls.isEmpty else { enterSelectionMode(prompt: "Select the files and folders that should be copied."); return }
         FileOperationsController.shared.copy(urls, cut: false)
-        view.statusBar.showMessage(urls.count == 1 ? "Copied “\(urls[0].lastPathComponent)”." : "Copied \(urls.count) items.")
+        // Cloud items have ids in their URLs: the name comes from the listing.
+        let name = view.model.selectedItems.first?.name ?? urls[0].lastPathComponent
+        view.statusBar.showMessage(urls.count == 1 ? "Copied “\(name)”." : "Copied \(urls.count) items.")
     }
 
     /// Paths of local items; full URLs (sftp://…, recent:/…) for everything else.
@@ -51,6 +53,7 @@ extension MainWindowController {
             target = sel[0].url
         }
         let c = view
+        if let why = CloudAccounts.shared.denial(.addItems, folder: target) { cloudDenied(why, in: c); return }
         FileOperationsController.shared.paste(into: target, window: window) { results in
             c.model.selection = Set(results)
             if let f = results.first { c.pendingSelect = f }

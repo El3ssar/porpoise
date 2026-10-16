@@ -158,6 +158,7 @@ extension MainWindowController {
 
     func rename(_ item: FileItem, to name: String, in c: ViewContainer) {
         let old = item.url
+        if PlacesModel.isCloud(old) { renameCloud(item, to: name, in: c); return }
         if let p = RemoteFS.provider(for: old) {
             DispatchQueue.global(qos: .userInitiated).async {
                 do {

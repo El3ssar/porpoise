@@ -205,11 +205,15 @@ extension MainWindowController {
         return m
     }
 
-    /// Google Drive (read-only for now): opening, Add to Places, links, copying out, Quick Look and Properties.
+    /// Google Drive: the local menu's editing commands, each disabled with the reason when the item's sharing doesn't
+    /// allow it, plus opening in the browser, Add to Places and links.
     private func cloudContextMenu(for item: FileItem?, selection sel: [FileItem], in c: ViewContainer) -> NSMenu {
         let m = NSMenu()
         let single = sel.count <= 1
         guard let item else {
+            m.addItem(self.item("New Folder…", "folder-new", #selector(createFolder(_:))))
+            m.addItem(.separator())
+            m.addItem(self.item(FileOperationsController.shared.pasteTitle, "edit-paste", #selector(paste(_:))))
             if c.url.pathComponents.count > 2, !PlacesModel.shared.contains(c.url) {
                 m.addItem(self.item("Add to Places", "bookmark-new", #selector(addToPlaces(_:))))
             }
@@ -237,8 +241,15 @@ extension MainWindowController {
             m.addItem(self.item("Add to Places", "bookmark-new", #selector(addToPlaces(_:))))
         }
         m.addItem(.separator())
-        if !sel.contains(where: \.isBrowsableFolder) { m.addItem(self.item("Copy", "edit-copy", #selector(copy(_:)))) }
+        m.addItem(self.item("Cut", "edit-cut", #selector(cut(_:))))
+        m.addItem(self.item("Copy", "edit-copy", #selector(copy(_:))))
         if info?.webLink != nil { m.addItem(self.item("Copy Link", "edit-copy-path", #selector(copyCloudLink(_:)), obj: item.url)) }
+        if single && item.isBrowsableFolder {
+            m.addItem(self.item("Paste Into Folder", "edit-paste", #selector(paste(_:)), obj: Self.pasteIntoFolder))
+        }
+        m.addItem(self.item("Rename…", "edit-rename", #selector(renameItem(_:))))
+        m.addItem(.separator())
+        m.addItem(self.item("Move to Trash", "user-trash", #selector(moveToTrash(_:))))
         m.addItem(.separator())
         m.addItem(self.item("Quick Look", "document-preview", #selector(quickLook(_:))))
         m.addItem(self.item("Properties", "document-properties", #selector(properties(_:))))

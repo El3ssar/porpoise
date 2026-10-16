@@ -17,6 +17,7 @@ extension FileOperationsController {
         case .trashed(let p): return p.flatMap { [$0.original, $0.inTrash] }
         case .renamed(let a, let b): return [a, b]
         case .batchRenamed(let steps): return steps.flatMap { [$0.from, $0.to] }
+        case .cloud(let change): return change.urls
         }
     }
 
@@ -27,6 +28,10 @@ extension FileOperationsController {
 
     public func undo(window: AnyObject?) {
         guard let r = undoStack.popLast() else { return }
+        if case .cloud(let change) = r {
+            revertCloud(change, window: window, back: { self.undoStack.append($0) }, inverse: { self.redoStack.append($0) })
+            return
+        }
         switch revert(r) {
         case .success(let inverse): if let inverse { redoStack.append(inverse) }; stacksChanged()
         case .failure(let error): undoStack.append(r); stacksChanged(); showErrors([error.localizedDescription], window: window)
@@ -35,6 +40,10 @@ extension FileOperationsController {
 
     public func redo(window: AnyObject?) {
         guard let r = redoStack.popLast() else { return }
+        if case .cloud(let change) = r {
+            revertCloud(change, window: window, back: { self.redoStack.append($0) }, inverse: { self.undoStack.append($0) })
+            return
+        }
         switch revert(r) {
         case .success(let inverse): if let inverse { undoStack.append(inverse) }; stacksChanged()
         case .failure(let error): redoStack.append(r); stacksChanged(); showErrors([error.localizedDescription], window: window)
@@ -51,6 +60,23 @@ extension FileOperationsController {
             return .success(inverse)
         } catch {
             return .failure(error)
+        }
+    }
+
+    /// The service takes a moment: the record is off its stack meanwhile, and goes back there if the service fails.
+    private func revertCloud(
+        _ change: CloudChange, window: AnyObject?, back: @escaping (UndoRecord) -> Void, inverse: @escaping (UndoRecord) -> Void
+    ) {
+        stacksChanged()
+        CloudAccounts.shared.revert(change) { [weak self] error in
+            if let error {
+                back(.cloud(change))
+                self?.showErrors([error.localizedDescription], window: window)
+            } else {
+                inverse(.cloud(change.inverse))
+                Self.notifyChanged(change.urls)
+            }
+            self?.stacksChanged()
         }
     }
 
