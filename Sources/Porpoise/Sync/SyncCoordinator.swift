@@ -217,7 +217,11 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
         Task { @MainActor in
             do {
                 let journal = try await Task.detached(priority: .userInitiated) {
-                    if let recovering { return recovering }
+                    if var recovering {
+                        let blocked = Set(preview.blockedSteps.map(\.id))
+                        recovering.steps.removeAll { blocked.contains($0.operation.id) }
+                        return recovering
+                    }
                     return try SyncJobs.journal(preview.executable, title: "Sync \(pair.description)", leftRoot: pair.left, rightRoot: pair.right)
                 }.value
                 FileOperationsController.shared.enqueuePlanAsync(
@@ -241,8 +245,8 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
                         self.changed(); self.drain()
                     case .success(let activity):
                         activity.showsCurrentStepTitle = false
-                        let copied = preview.executable.steps.filter { $0.action == .copy || $0.action == .replace }.count
-                        let trashed = preview.executable.steps.filter { $0.action == .trash }.count
+                        let copied = preview.executable.itemCount(for: .copy) + preview.executable.itemCount(for: .replace)
+                        let trashed = preview.executable.itemCount(for: .trash)
                         activity.completionSummary =
                             "Synced · \(copied) copied" + (trashed > 0 ? " · \(trashed) moved to the Trash" : "") + " · just now"
                         self.activities[pair.id] = activity; self.runs[pair.id] = preview
@@ -279,10 +283,34 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
     private func updateActivities() {
         for (id, activity) in activities {
             if activity.state == .paused { statuses[id] = .paused } else if activity.state == .running { statuses[id] = .syncing }
+            let run = runs[id]!
+            let items = run.executable.itemSteps
+            let completedIDs = Set(activity.planProgress?.completedStepIDs ?? [])
+            let completed = items.filter { completedIDs.contains($0.id) }
+            let targets = Set(run.executable.steps.map(\.target))
+            let destination =
+                targets.count > 1
+                ? run.pair.leftTitle + " and " + run.pair.rightTitle : targets.first == .left ? run.pair.leftTitle : run.pair.rightTitle
+            let mode = run.pair.mode == .twoWay ? "Two-way" : run.pair.mode.rawValue.capitalized
+            let failedPaths =
+                activity.state == .failed
+                ? run.executable.steps.filter { activity.planProgress?.currentTitle == $0.action.rawValue.capitalized + " " + $0.path }.map(\.path)
+                : []
             NotificationCenter.default.post(
                 name: Self.activityChanged, object: activity.originWindow,
                 userInfo: [
-                    "activity": activity, "left": runs[id]!.pair.left, "right": runs[id]!.pair.right,
+                    "activity": activity, "left": run.pair.left, "right": run.pair.right,
+                    "modeLabel": mode, "pairDescription": run.pair.description, "destinationLabel": destination,
+                    "completedItems": completed.count, "totalItems": items.count,
+                    "completedCopied": completed.filter { $0.action == .copy || $0.action == .replace }.count,
+                    "completedTrashed": SyncPlan(steps: completed).itemCount(for: .trash),
+                    "completedBytes": completed.filter { $0.action == .copy || $0.action == .replace }.reduce(Int64(0)) {
+                        $0 + ($1.expectedSource?.size ?? 0)
+                    },
+                    "totalBytes": items.filter { $0.action == .copy || $0.action == .replace }.reduce(Int64(0)) {
+                        $0 + ($1.expectedSource?.size ?? 0)
+                    },
+                    "failedPaths": failedPaths,
                     "completedPaths": (activity.planProgress?.completedStepIDs ?? []).compactMap { stepID in self.runPaths[id]?[stepID] },
                 ])
             guard activity.state.isEnded, let preview = runs.removeValue(forKey: id) else { continue }
@@ -438,9 +466,8 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
                         let preview = try await Task.detached(priority: .userInitiated) {
                             let restored = try SyncJobs.restore(journal)
                             var preview = try SyncPreparation.preview(pair)
-                            preview.plan = restored.plan
                             preview.hasSkippedItems = true  // Conservatively retain the baseline after crash recovery.
-                            return preview
+                            return SyncPreparation.filteringUnavailableDeletions(in: restored.plan, using: preview)
                         }.value
                         self.run(preview, recovering: journal, window: window)
                     } catch {
