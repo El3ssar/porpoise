@@ -7,10 +7,8 @@ final class TintedMaterialView: NSVisualEffectView {
     private let tintLayer = CALayer()
     private let tint: NSColor
     private let tintAlpha: CGFloat
-    /// Isolated review hook; ordinary use follows the workspace accessibility preference.
-    var forcesOpaque = false { didSet { updateTint() } }
     private func updateTint() {
-        let opaque = forcesOpaque || NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        let opaque = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
         tintLayer.backgroundColor = tint.withAlphaComponent(opaque ? 1 : tintAlpha).cgColor
     }
 

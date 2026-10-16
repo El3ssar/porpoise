@@ -17,7 +17,6 @@ extension ToolbarCommand {
         case .newTab: return "plus"
         case .terminal: return "terminal"
         case .commandPalette: return "command"
-        case .compare: return "doc.on.doc"
         case .link: return "link"
         }
     }

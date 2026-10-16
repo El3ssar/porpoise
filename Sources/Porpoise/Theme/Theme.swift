@@ -62,10 +62,10 @@ enum Theme {
     static let negativeText = color(dark: NSColor(rgb: 191, 97, 106), light: NSColor(rgb: 192, 57, 68))
     static let neutralText = paletteColor(.accent)
     static let positiveText = color(dark: NSColor(rgb: 0, 160, 128), light: NSColor(rgb: 0, 122, 96))
-    // Shared Compare/Sync semantic text colours, with contrast on both alternating row backgrounds.
-    static let compareOnly = color(dark: NSColor(rgb: 43, 181, 148), light: NSColor(rgb: 0, 122, 96))
-    static let compareChanged = color(dark: NSColor(rgb: 216, 166, 87), light: NSColor(rgb: 161, 92, 0))
-    static let compareDanger = color(dark: NSColor(rgb: 224, 112, 122), light: NSColor(rgb: 192, 57, 68))
+    // Transfer semantic text colours, with contrast on both alternating row backgrounds.
+    static let transferPositive = color(dark: NSColor(rgb: 43, 181, 148), light: NSColor(rgb: 0, 122, 96))
+    static let transferChanged = color(dark: NSColor(rgb: 216, 166, 87), light: NSColor(rgb: 161, 92, 0))
+    static let transferDanger = color(dark: NSColor(rgb: 224, 112, 122), light: NSColor(rgb: 192, 57, 68))
     static let viewBackground = paletteColor(.viewBackground)
     static let viewAlternate = paletteColor(.alternateRow)
     static let viewText = paletteColor(.text)

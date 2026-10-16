@@ -13,7 +13,7 @@ final class ConflictDialog: NSObject {
     private let counts = NSTextField(labelWithString: "")
     private var completion: ((ConflictAnswer) -> Void)?
     private var retainedSelf: ConflictDialog?
-    private let methods: [SyncCompareMethod] = [.sizeAndDate, .sizeOnly, .content]
+    private let methods: [TransferCompareMethod] = [.sizeAndDate, .sizeOnly, .content]
 
     init(info: ConflictInfo, kind: FileOperationKind) {
         self.info = info
@@ -34,7 +34,7 @@ final class ConflictDialog: NSObject {
     }
 
     private func build() {
-        let destinationName = CompareOutline.sideNames(
+        let destinationName = LinkedBrowsing.sideNames(
             info.source.url.deletingLastPathComponent(), info.destination.url.deletingLastPathComponent()
         ).1
         let bothFolders = info.source.isBrowsableFolder && info.destination.isBrowsableFolder
@@ -104,7 +104,7 @@ final class ConflictDialog: NSObject {
         counts.font = .systemFont(ofSize: 11); counts.textColor = Theme.windowTextInactive
         window.contentView!.addSubview(counts)
         methodChanged()
-        method.toolTip = "The same comparison method used by folder sync. Size & date compares metadata; Contents reads every byte."
+        method.toolTip = "Size & date compares metadata; Contents reads every byte."
         window.contentView!.addSubview(method)
         let total = info.remainingConflicts ?? 1
         let rule = ConflictActionButton(title: total > 1 ? "Apply to All \(total)" : "Apply", target: self, action: #selector(different))
@@ -189,13 +189,13 @@ final class ConflictDialog: NSObject {
             sizeText = FileFormat.size(item.size)
         }
         let size = label(sizeText, CGRect(x: x + 86, y: 235, width: 176, height: 18))
-        if larger { size.textColor = Theme.compareChanged }
+        if larger { size.textColor = Theme.transferChanged }
         let formatter = DateFormatter()
         formatter.locale = .current; formatter.dateFormat = "d MMM yyyy, HH:mm"
         let dateText = item.modificationDate.map { formatter.string(from: $0) } ?? "Date unavailable"
         let date = label(dateText, CGRect(x: x + 86, y: 217, width: newer ? 124 : 176, height: 16), size: 10.5, secondary: !newer)
         date.lineBreakMode = .byTruncatingTail; date.toolTip = dateText
-        if newer { date.textColor = Theme.compareChanged }
+        if newer { date.textColor = Theme.transferChanged }
         for (text, value, y, fontSize, shown) in [("Newer", dateText, 217.0, 10.5, newer), ("Larger", sizeText, 235.0, 12.0, larger)] where shown {
             let width = (value as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: fontSize)]).width
             let badge = ConflictBadge(text: text)
@@ -310,9 +310,9 @@ private final class ConflictBadge: NSView {
     init(text: String) { self.text = text; super.init(frame: .zero) }
     required init?(coder: NSCoder) { fatalError() }
     override func draw(_ dirtyRect: NSRect) {
-        Theme.compareChanged.withAlphaComponent(0.14).setFill()
+        Theme.transferChanged.withAlphaComponent(0.14).setFill()
         NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
-        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10, weight: .semibold), .foregroundColor: Theme.compareChanged]
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10, weight: .semibold), .foregroundColor: Theme.transferChanged]
         let size = (text as NSString).size(withAttributes: attrs)
         (text as NSString).draw(at: CGPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2), withAttributes: attrs)
     }

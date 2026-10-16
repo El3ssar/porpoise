@@ -13,43 +13,12 @@ final class PorpoiseTab: NSView {
     private(set) var secondary: ViewContainer?
     let navigators: [BreadcrumbView] = [BreadcrumbView(), BreadcrumbView()]
     private(set) var activeIsSecondary = false
-    var customTitle: String?
-    var compareView: CompareView?
-    var comparisonSnapshots: [(ViewContainer, ViewContainer.ComparisonSnapshot)] = []
-    var comparisonWasSecondary = false
-    var comparisonPreviousLinks: (left: URL, right: URL)?
-    var comparisonPreviousMissing: (view: ComparePanePlaceholder, right: Bool)?
-    private var preparedCompareView: CompareView?
-    func comparisonView(model: CompareModel) -> CompareView {
-        guard let prepared = preparedCompareView else { return CompareView(model: model) }
-        preparedCompareView = nil; prepared.reset(model: model); return prepared
-    }
-    var compareChooser: ComparePanePlaceholder?
     var linkedRoots: (left: URL, right: URL)?
     var linkUpdating = false
     var linkGeneration = 0
-    var missingCounterpart: ComparePanePlaceholder?
+    var missingCounterpart: LinkedPanePlaceholder?
     var missingOnRight = true
-    var lastComparePartner: URL?
-
-    func installComparison(_ compare: CompareView?) {
-        let previous = compareView
-        previous?.model.onChange = nil; previous?.onMissingRoot = nil
-        previous?.model.stop(); previous?.document.detachDetails(); previous?.removeFromSuperview(); compareView = compare
-        if compare == nil, let previous {
-            previous.reset(model: CompareModel(left: primary.url, right: secondary?.url ?? primary.url))
-            preparedCompareView = previous
-        }
-        primary.suspendForComparison(compare != nil); secondary?.suspendForComparison(compare != nil)
-        primary.isHidden = compare != nil; secondary?.isHidden = compare != nil
-        if let compare {
-            addSubview(compare); compare.frame = bounds
-            compare.document.attachDetails(containers)
-            compare.header.attachDetails(containers.map(\.header))
-            compare.needsLayout = true
-        }
-        needsLayout = true
-    }
+    var customTitle: String?
 
     private let handle = SplitHandleView()
     /// Handle position as a fraction of the width, so it stays proportional when the window resizes.
@@ -89,17 +58,6 @@ final class PorpoiseTab: NSView {
         updateActive()
     }
 
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard window != nil else { return }
-        // Native scroll/button/text controls are comparatively expensive on first construction.
-        // Prepare one empty surface while idle, without scanning or touching either browse model.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self, self.window != nil, self.compareView == nil, self.preparedCompareView == nil else { return }
-            self.preparedCompareView = CompareView(model: CompareModel(left: self.primary.url, right: self.primary.url))
-        }
-    }
-
     required init?(coder: NSCoder) { fatalError() }
 
     // MARK: - Layout
@@ -112,18 +70,7 @@ final class PorpoiseTab: NSView {
     /// Places the panes and the handle at `splitFraction`; the only place their frames are set.
     private func layoutPanes() {
         defer {
-            if let compareView { compareView.frame = bounds; handle.isHidden = true }
-            if let compareChooser, let secondary { compareChooser.frame = secondary.frame }
-            if let missingCounterpart {
-                if let compareView {
-                    let width = (compareView.scroll.frame.width - compareView.document.gutterWidth) / 2
-                    missingCounterpart.frame = CGRect(
-                        x: missingOnRight ? width + compareView.document.gutterWidth : 0, y: compareView.scroll.frame.minY, width: width,
-                        height: compareView.scroll.frame.height)
-                } else {
-                    missingCounterpart.frame = missingOnRight ? (secondary?.frame ?? bounds) : primary.frame
-                }
-            }
+            if let missingCounterpart { missingCounterpart.frame = missingOnRight ? (secondary?.frame ?? bounds) : primary.frame }
             NotificationCenter.default.post(name: .splitResized, object: self)
         }
         let b = bounds
@@ -294,8 +241,8 @@ final class PorpoiseTab: NSView {
     /// Closes one view of the split (Dolphin's CloseSplitViewChoice); the closed view shrinks away (InCubic).
     func closeSplit(closeActive: Bool? = nil, animated: Bool = true) {
         guard let s = secondary else { return }
-        installComparison(nil); compareChooser?.removeFromSuperview(); compareChooser = nil
         missingCounterpart?.removeFromSuperview(); missingCounterpart = nil; linkedRoots = nil
+        containers.forEach { $0.preservesMissingLocation = false }
         let closeSecondary: Bool
         if let closeActive {
             closeSecondary = closeActive == activeIsSecondary

@@ -26,22 +26,8 @@ final class ItemListView: NSView {
     var cutURLs: Set<URL> = FileOperationsController.shared.cutURLs
     /// Dolphin's selection mode: plain clicks toggle items instead of replacing the selection.
     var selectionModeActive = false
-    var mode: ViewMode { comparisonSlots == nil ? model.props.mode : .details }
-    /// Compare uses the real Details rows and interactions, with gaps for absent counterparts.
-    var comparisonSlots: [Int]?
-    var comparisonSlotCount = 0
-    var comparisonHasNestedRows = false
-    var comparisonPaneWidth: CGFloat?
-    var comparisonRowHeight: CGFloat?
-    var comparisonZoom: ((CGFloat) -> Void)?
-    var comparisonExit: (() -> Void)?
-    var comparisonGhostClick: ((CGPoint) -> Bool)?
-    var comparisonDrawTiming: ((Double) -> Void)?
-    var comparisonColumnColor: ((Int, ItemRole) -> NSColor?)?
-    var comparisonCaption: ((Int) -> (text: String, color: NSColor)?)?
-    var comparisonAccessibilityLabel: ((Int) -> String)?
+    var mode: ViewMode { model.props.mode }
     var accessibleItems: [URL: ItemAccessibilityElement] = [:]
-    var drawComparisonBackground: ((CGRect) -> Void)?
 
     // MARK: Layout output (+Layout)
 
@@ -213,7 +199,6 @@ final class ItemListView: NSView {
 
     /// Shows a new icon size immediately, keeping the item under `anchor` (or the current one) in place.
     func previewZoom(_ size: CGFloat, anchor: CGPoint? = nil, commitAfter delay: TimeInterval? = 0.35) {
-        if let comparisonZoom { comparisonZoom(size); return }
         let s = min(ZoomLevels.maxSize, max(ZoomLevels.minSize, size))
         let vr = visibleRect
         // Anchor: the item under the pointer (or the current item), kept at the same spot on screen.
@@ -247,10 +232,6 @@ final class ItemListView: NSView {
             duration: model.rows.count > 4000 ? 0 : 0.16,
             step: { [weak self] p in self?.previewZoom(from + (size - from) * CGFloat(p), commitAfter: nil) },
             completion: { [weak self] in self?.commitZoom() })
-    }
-
-    func finishZoomForComparison() {
-        zoomAnimator.stop(); zoomCommitTimer?.invalidate(); commitZoom()
     }
 
     func commitZoom() {

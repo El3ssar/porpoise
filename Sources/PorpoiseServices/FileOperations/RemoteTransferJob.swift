@@ -10,7 +10,7 @@ final class RemoteTransferJob {
     let sources: [URL]
     let destination: URL?
     var rule: TransferConflictRule
-    var options: SyncCompareOptions
+    var options: TransferCompareOptions
     var resolve: (ConflictInfo) -> ConflictAnswer = { _ in .init(.cancel) }
     var onProgress: (JobProgress) -> Void = { _ in }
     var onIncoming: (FileItem?) -> Void = { _ in }
@@ -32,7 +32,7 @@ final class RemoteTransferJob {
 
     init(
         kind: FileOperationKind, sources: [URL], destination: URL?, control: FileJob,
-        rule: TransferConflictRule, options: SyncCompareOptions, completed: [URL: URL] = [:]
+        rule: TransferConflictRule, options: TransferCompareOptions, completed: [URL: URL] = [:]
     ) {
         self.kind = kind; self.sources = sources; self.destination = destination; self.control = control
         self.rule = rule; self.options = options; self.completed = completed
@@ -87,6 +87,12 @@ final class RemoteTransferJob {
         }
         publish(force: true)
         control.finishExternal()
+    }
+
+    private static func temporaryFolder() throws -> URL {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-transfer-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
     }
 
     private func children(_ folder: URL, fresh: Bool = false) throws -> [FileItem] {
@@ -260,25 +266,29 @@ final class RemoteTransferJob {
     private func identical(_ source: URL, _ incoming: FileItem, _ target: URL, _ old: FileItem) throws -> Bool {
         var left = TransferComparison.entry(incoming), right = TransferComparison.entry(old)
         if options.method == .sizeAndDate {
-            if let provider = RemoteFS.provider(for: source) as? SyncRemoteMetadata { left.modified = try provider.syncModificationDate(source) }
-            if let provider = RemoteFS.provider(for: target) as? SyncRemoteMetadata { right.modified = try provider.syncModificationDate(target) }
+            if let provider = RemoteFS.provider(for: source) as? RemoteTransferMetadata {
+                left.modified = try provider.transferModificationDate(source)
+            }
+            if let provider = RemoteFS.provider(for: target) as? RemoteTransferMetadata {
+                right.modified = try provider.transferModificationDate(target)
+            }
         }
         if options.method == .content && left.size == right.size {
             left.hash = try digest(source)
             right.hash = try digest(target)
         }
-        return SyncComparator.statusOf(left, right, options: options) == .same
+        return TransferComparator.statusOf(left, right, options: options) == .same
     }
 
     private func digest(_ url: URL) throws -> String {
-        let scratch = try SyncScanner.temporaryFolder()
+        let scratch = try Self.temporaryFolder()
         defer { try? FileManager.default.removeItem(at: scratch) }
         let local = try RemoteFS.provider(for: url)?.download(url, into: scratch) ?? url
         return try FileChecksums.digest(local, cancellation: DiskCancellation(checkpoint: { try self.control.checkCancellation() }))
     }
 
     private func stagedFile(_ source: URL, to target: URL, replacing: Bool, modified: Date?) throws {
-        let scratch = try SyncScanner.temporaryFolder()
+        let scratch = try Self.temporaryFolder()
         defer { try? FileManager.default.removeItem(at: scratch) }
         let downloaded = try RemoteFS.provider(for: source)?.download(source, into: scratch) ?? source
         if let provider = RemoteFS.provider(for: target) {
@@ -296,10 +306,10 @@ final class RemoteTransferJob {
             // arriving here leaves this completed item intact and prevents the next item from starting.
             try Shell.withoutTransferControl {
                 if replacing {
-                    guard let publishing = provider as? SyncRemotePublishing else {
+                    guard let publishing = provider as? RemoteTransferPublishing else {
                         throw RemoteError.unsupported("This server cannot safely replace a file. Keep Both instead.")
                     }
-                    try publishing.publishSyncFile(staged, to: target, modified: options.method == .sizeAndDate ? modified : nil)
+                    try publishing.publishTransferFile(staged, to: target, modified: options.method == .sizeAndDate ? modified : nil)
                 } else {
                     guard try children(target.deletingLastPathComponent(), fresh: true).allSatisfy({ $0.name != target.lastPathComponent }) else {
                         throw RemoteError.exists(target.lastPathComponent)

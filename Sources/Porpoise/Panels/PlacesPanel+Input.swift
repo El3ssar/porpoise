@@ -24,7 +24,7 @@ extension PlacesPanel {
         func open(_ k: Int) {
             let row = idx[max(0, min(idx.count - 1, k))]
             guard let e = entry(at: row) else { return }
-            openPlace(e, newTab: false)
+            delegate?.places(self, open: e.url, newTab: false, splitView: false)
             scrollToVisible(rect(of: row).insetBy(dx: 0, dy: -8))
         }
         // The current place may be inside a folded section: step from its position in the full list, so ↓/↑ go to
@@ -38,11 +38,6 @@ extension PlacesPanel {
                 previousBeforeFolded = all[..<c].reversed().lazy.compactMap(shown).first ?? 0
             }
         }
-        if event.keyCode == 120, let index = cur, let entry = entry(at: idx[index]),
-            let pair = SyncCoordinator.shared.pair(for: entry.url)
-        {
-            renameSavedSync(pair); return
-        }
         switch event.keyCode {
         case KeyCode.down: open(cur.map { $0 + 1 } ?? nextAfterFolded ?? 0)
         case KeyCode.up: open(cur.map { $0 - 1 } ?? previousBeforeFolded ?? idx.count - 1)
@@ -50,16 +45,6 @@ extension PlacesPanel {
         case KeyCode.end: open(idx.count - 1)
         case KeyCode.returnKey, KeyCode.enter, KeyCode.tab, KeyCode.escape: delegate?.placesWantsViewFocus(self)
         default: super.keyDown(with: event)
-        }
-    }
-
-    func openPlace(_ entry: PlaceEntry, newTab: Bool) {
-        if let pair = SyncCoordinator.shared.pair(for: entry.url) {
-            currentSyncID = pair.id
-            SyncCoordinator.shared.open(pair, window: window, newTab: newTab)
-            needsDisplay = true
-        } else {
-            delegate?.places(self, open: entry.url, newTab: newTab, splitView: false)
         }
     }
 
@@ -86,7 +71,6 @@ extension PlacesPanel {
 
     private func tooltip(for e: PlaceEntry?) -> String? {
         guard let e else { return nil }
-        if let pair = SyncCoordinator.shared.pair(for: e.url) { return SyncCoordinator.shared.tooltip(pair) }
         if e.isVolume, let c = capacities[e.url] {
             let usedPct = c.total > 0 ? Int(Double(c.total - c.free) / Double(c.total) * 100) : 0
             return "\(FileFormat.size(c.free)) free out of \(FileFormat.size(c.total)) (\(usedPct)% used)"
@@ -120,7 +104,7 @@ extension PlacesPanel {
             let i = pressed
         else { return }
         if let sec = header(at: i) { beginSectionDrag(sec, row: i, event: event); return }
-        guard let e = entry(at: i), !e.isVolume, e.section != .sync else { return }
+        guard let e = entry(at: i), !e.isVolume else { return }
         isDraggingRow = true
         let item = NSPasteboardItem()
         item.setString(e.title + "\n" + e.url.absoluteString, forType: .placeEntry)
@@ -159,30 +143,17 @@ extension PlacesPanel {
         let p = convert(event.locationInWindow, from: nil)
         defer { pressed = nil }
         guard !isDraggingRow, let i = rowIndex(at: p), i == pressed else { return }
-        if let sec = header(at: i) {
-            if sec == .sync, p.x > bounds.width - 56, p.x < bounds.width - 28 {
-                SyncCoordinator.shared.create(window: window, left: currentURL)
-            } else {
-                toggleSectionAnimated(sec)
-            }
-            return
-        }
+        if let sec = header(at: i) { toggleSectionAnimated(sec); return }
         guard let e = entry(at: i) else { return }
         if e.isEjectable && p.x > bounds.width - Metrics.ejectHitWidth { eject(e); return }
-        openPlace(e, newTab: event.modifierFlags.contains(.command))
-        if let pair = SyncCoordinator.shared.pair(for: e.url), p.x >= bounds.width - Metrics.syncBadgeWidth {
-            switch SyncCoordinator.shared.statuses[pair.id] {
-            case .conflicts, .review: SyncCoordinator.shared.review(pair.id, window: window)
-            default: break
-            }
-        }
+        delegate?.places(self, open: e.url, newTab: event.modifierFlags.contains(.command), splitView: false)
     }
 
     /// Middle click opens in a new tab; other buttons (mouse back/forward) go up the responder chain.
     override func otherMouseUp(with event: NSEvent) {
         guard event.buttonNumber == 2 else { return super.otherMouseUp(with: event) }
         if let e = entry(at: rowIndex(at: convert(event.locationInWindow, from: nil))) {
-            openPlace(e, newTab: true)
+            delegate?.places(self, open: e.url, newTab: true, splitView: false)
         }
     }
 }

@@ -10,16 +10,6 @@ final class ThinSplitView: NSSplitView {
 }
 
 final class DolphinWindow: NSWindow {
-    override func sendEvent(_ event: NSEvent) {
-        if event.type == .keyDown, event.keyCode == 48,
-            event.modifierFlags.intersection([.command, .control, .option]).isEmpty, attachedSheet == nil,
-            let compare = (windowController as? MainWindowController)?.tab.compareView,
-            let focused = firstResponder as? NSView, focused.isDescendant(of: compare)
-        {
-            compare.advanceKeyboardFocus(backward: event.modifierFlags.contains(.shift)); return
-        }
-        super.sendEvent(event)
-    }
     /// Traffic-light placement of a macOS 26 window with a unified toolbar.
     private static let trafficLightsLeft: CGFloat = 16
     private static let trafficLightsSpacing: CGFloat = 20

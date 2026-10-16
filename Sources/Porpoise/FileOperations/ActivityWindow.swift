@@ -18,7 +18,7 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
     private let settings = NSButton()
     private let empty = NSStackView()
     private let emptyTitle = NSTextField(labelWithString: "No activity")
-    private let emptyDetail = NSTextField(labelWithString: "Copies, moves and syncs show up here.")
+    private let emptyDetail = NSTextField(labelWithString: "Copies and moves show up here.")
     private let footer = ActivityFooterView()
     private var header: ActivityHeaderView?
     private var rows: [Activity] = []
@@ -202,7 +202,7 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
 
     @objc private func showSettings() {
         let menu = NSMenu(title: "Activity options")
-        let heading = NSMenuItem(title: "Copies, moves and syncs", action: nil, keyEquivalent: "")
+        let heading = NSMenuItem(title: "Copies and moves", action: nil, keyEquivalent: "")
         heading.isEnabled = false
         menu.addItem(heading)
         for count in 1...8 {
@@ -423,16 +423,14 @@ final class ActivityRowView: NSView {
 
     func update(_ a: Activity) {
         if activity?.id != a.id {
-            if a.planJob != nil {
-                icon.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: "Sync")
-            } else if let source = a.sources.first, source.isFileURL {
+            if let source = a.sources.first, source.isFileURL {
                 icon.image = NSWorkspace.shared.icon(forFile: source.path)
             } else {
                 icon.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "File operation")
             }
         }
         activity = a
-        icon.contentTintColor = a.planJob == nil ? nil : Theme.activeText
+        icon.contentTintColor = nil
         let attributed = NSMutableAttributedString(
             string: a.title, attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: Theme.viewText])
         if let start = a.title.firstIndex(of: "“"), let end = a.title[start...].firstIndex(of: "”") {
@@ -441,12 +439,6 @@ final class ActivityRowView: NSView {
         }
         title.attributedStringValue = attributed
         var text = a.statusText
-        if let progress = a.planProgress, a.state == .running || a.state == .paused {
-            let current = min(progress.totalSteps, progress.completedSteps + 1)
-            text = "\(progress.currentTitle) · step \(current) of \(progress.totalSteps)"
-            if progress.stepFraction > 0 { text += " · " + progress.stepFraction.formatted(.percent.precision(.fractionLength(0))) }
-            if a.state == .paused { text = "Paused · " + text }
-        }
         let failed = a.state == .failed || (a.state == .completed && (!a.errors.isEmpty || a.verification?.ok == false))
         if failed {
             text = (a.state == .failed ? "Failed: " : "") + text
@@ -459,15 +451,16 @@ final class ActivityRowView: NSView {
             text = "⏸ " + text
         }
         let statusText = NSMutableAttributedString(
-            string: text, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: failed ? Theme.compareDanger : Theme.viewTextInactive])
+            string: text,
+            attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: failed ? Theme.transferDanger : Theme.viewTextInactive])
         if a.state == .completed && !failed {
-            statusText.addAttribute(.foregroundColor, value: Theme.compareOnly, range: NSRange(location: 0, length: 6))
+            statusText.addAttribute(.foregroundColor, value: Theme.transferPositive, range: NSRange(location: 0, length: 6))
         }
         status.attributedStringValue = statusText
         statusBadge.isHidden = !failed
         if failed {
             statusBadge.image = NSImage(systemSymbolName: "exclamationmark.circle.fill", accessibilityDescription: "Failed")?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.white, Theme.compareDanger]))
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.white, Theme.transferDanger]))
         }
         status.toolTip = ([a.statusText] + a.errors.prefix(10)).joined(separator: "\n")
         title.toolTip = a.title

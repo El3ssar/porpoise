@@ -250,7 +250,7 @@ import Testing
     }
 
     @Test func placesSections() {
-        #expect(PlaceSection.allCases.map(\.rawValue) == ["Places", "Sync", "Remote", "Recent", "Tags", "Devices", "Removable Devices"])
+        #expect(PlaceSection.allCases.map(\.rawValue) == ["Places", "Remote", "Recent", "Tags", "Devices", "Removable Devices"])
     }
 
     /// Every @Pref key, as found on users' disks.

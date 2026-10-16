@@ -95,21 +95,6 @@ extension MainWindowController {
     }
 
     @objc func copyToOtherView(_ sender: Any?) {
-        if let compare = tab.compareView {
-            let side = compare.document.activeSide
-            let source = side == .left ? compare.model.leftRoot : compare.model.rightRoot
-            let target = side == .left ? compare.model.rightRoot : compare.model.leftRoot
-            let groups = Dictionary(grouping: view.model.selectedItems) { item in
-                let path = LinkedBrowsing.relativePath(item.url, below: source) ?? item.name
-                return (path as NSString).deletingLastPathComponent
-            }
-            for (parent, items) in groups {
-                let destination = parent.isEmpty ? target : target.appendingPathComponent(parent)
-                FileOperationsController.shared.run(
-                    .copy, items.map(\.url), to: destination, window: window, done: { [weak compare] _ in compare?.model.start() })
-            }
-            return
-        }
         guard let other = tab.inactive else { return }
         guard hasSelection else { enterSelectionMode(prompt: "Select the files and folders that should be copied to the other view."); return }
         FileOperationsController.shared.run(.copy, selectedURLs, to: other.url, window: window)

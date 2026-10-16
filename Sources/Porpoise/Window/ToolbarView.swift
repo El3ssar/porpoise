@@ -5,7 +5,6 @@ import PorpoiseServices
 /// Dolphin's default toolbar (Back, Forward, View settings, location, Split, Search, menu), presented like a
 /// macOS 26 unified toolbar: glass capsules over a translucent bar that sits right of the full-height sidebar.
 final class ToolbarView: NSView {
-    let compareFolders = PairToolbarButton(icon: nil, tooltip: "Compare Folders (⌃⌘C)")
     let linkFolders = PairToolbarButton(icon: nil, tooltip: "Linked Browsing (⌃⌘L)")
     private let pairGroup = GlassGroup()
     let back = FlatButton(icon: "go-previous", tooltip: "Back")
@@ -55,10 +54,9 @@ final class ToolbarView: NSView {
         Theme.whenChanged(hairline) { [weak hairline] in hairline?.layer?.backgroundColor = Theme.hairline.cgColor }
         addSubview(background)
         addSubview(pairGroup)
-        pairGroup.content.addSubview(linkFolders); pairGroup.content.addSubview(compareFolders)
+        pairGroup.content.addSubview(linkFolders)
         linkFolders.iconName = "insert-link"
-        compareFolders.iconName = "edit-copy"
-        linkFolders.identifier = .init("Porpoise.toolbar.link"); compareFolders.identifier = .init("Porpoise.toolbar.compare")
+        linkFolders.identifier = .init("Porpoise.toolbar.link")
 
         navGroup.content.addSubview(back)
         navGroup.content.addSubview(forward)
@@ -167,7 +165,6 @@ final class ToolbarView: NSView {
         case .terminal:
             let item = NSMenuItem(); item.tag = 3; controller.togglePanel(item)
         case .commandPalette: AppDelegate.shared.showCommandPalette(nil)
-        case .compare: controller.toggleCompare(nil)
         case .link: controller.toggleLinkedBrowsing(nil)
         default: break
         }
@@ -239,9 +236,8 @@ final class ToolbarView: NSView {
             let splitX = convert(CGPoint(x: paneRanges[1].lowerBound, y: 0), from: nil).x
             let minW = min(Self.minFieldWidth, max(0, (available - gap) / 2), max(0, splitX - gap - minX))
             if hasPair {
-                pairGroup.frame = CGRect(x: splitX - 34, y: y + (height - 34) / 2, width: 68, height: 34)
+                pairGroup.frame = CGRect(x: splitX - 17, y: y + (height - 34) / 2, width: 34, height: 34)
                 linkFolders.frame = CGRect(x: 4, y: 3, width: 28, height: 28)
-                compareFolders.frame = CGRect(x: 36, y: 3, width: 28, height: 28)
             }
             let rightX = hasPair ? min(max(splitX + gap, minX + minW + gap), minX + available - minW) : minX + (available + gap) / 2
             let leftW = hasPair ? max(minW, min(splitX - gap, rightX - gap) - minX) : (available - gap) / 2
@@ -274,7 +270,6 @@ private extension ToolbarCommand {
         case .newTab: return "tab-new"
         case .terminal: return "utilities-terminal"
         case .commandPalette: return "system-search"
-        case .compare: return "edit-copy"
         case .link: return "insert-link"
         default: return "application-menu"
         }
@@ -292,36 +287,21 @@ final class PairToolbarButton: FlatButton {
     override func layout() { super.layout(); symbol.frame = bounds.insetBy(dx: 5, dy: 5) }
     override func draw(_ dirty: NSRect) {
         if isToggled {
-            (iconName == "edit-unlink" ? Theme.compareChanged.withAlphaComponent(0.16) : Theme.selection.withAlphaComponent(0.32)).setFill()
+            (iconName == "edit-unlink" ? Theme.transferChanged.withAlphaComponent(0.16) : Theme.selection.withAlphaComponent(0.32)).setFill()
             NSBezierPath(ovalIn: bounds).fill()
         }
-        let name = iconName == "edit-copy" ? "compare-pages" : "link"
+        let name = "link"
         if shownSymbol != name {
-            symbol.image = name == "compare-pages" ? Self.pages : NSImage(systemSymbolName: name, accessibilityDescription: nil)
+            symbol.image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
             shownSymbol = name
         }
-        symbol.contentTintColor = iconName == "edit-unlink" ? Theme.compareChanged : (isToggled ? Theme.accent : Theme.windowText)
+        symbol.contentTintColor = iconName == "edit-unlink" ? Theme.transferChanged : (isToggled ? Theme.accent : Theme.windowText)
         symbol.alphaValue = isEnabled ? 1 : 0.35
         if iconName == "edit-unlink" {
-            Theme.compareChanged.setStroke(); let slash = NSBezierPath(); slash.move(to: CGPoint(x: 5, y: 5)); slash.line(to: CGPoint(x: 23, y: 23));
+            Theme.transferChanged.setStroke(); let slash = NSBezierPath(); slash.move(to: CGPoint(x: 5, y: 5)); slash.line(to: CGPoint(x: 23, y: 23));
             slash.lineWidth = 1.5; slash.stroke()
         }
     }
-    static let pages: NSImage = {
-        let image = NSImage(size: CGSize(width: 18, height: 18), flipped: false) { _ in
-            NSColor.black.setStroke()
-            for x: CGFloat in [1.5, 10.5] {
-                let page = NSBezierPath(roundedRect: CGRect(x: x, y: 2.5, width: 6, height: 13), xRadius: 0.75, yRadius: 0.75)
-                page.lineWidth = 1.25; page.stroke()
-                for y: CGFloat in [11, 8] {
-                    let line = NSBezierPath(); line.move(to: CGPoint(x: x + 1.5, y: y)); line.line(to: CGPoint(x: x + 4.5, y: y))
-                    line.lineWidth = 1; line.stroke()
-                }
-            }
-            return true
-        }
-        image.isTemplate = true; return image
-    }()
 }
 
 private final class PairToolbarSymbolView: NSImageView {

@@ -44,14 +44,14 @@ public struct ConflictInfo: Sendable {
     public let suggestedName: String
     /// Remaining known name clashes, including this one; nil when a remote listing cannot establish it.
     public let remainingConflicts: Int?
-    public let comparisonOptions: SyncCompareOptions
+    public let comparisonOptions: TransferCompareOptions
     public let differentItems: Int?
     public let identicalItems: Int?
     public let replacedItems: Int
     public let skippedIdenticalItems: Int
     public init(
         source: FileItem, destination: FileItem, suggestedName: String, remainingConflicts: Int? = nil,
-        comparisonOptions: SyncCompareOptions = .init(), replacedItems: Int = 0, skippedIdenticalItems: Int = 0,
+        comparisonOptions: TransferCompareOptions = .init(), replacedItems: Int = 0, skippedIdenticalItems: Int = 0,
         differentItems: Int? = nil, identicalItems: Int? = nil,
         sourceFolder: TransferFolderSummary? = nil, destinationFolder: TransferFolderSummary? = nil
     ) {
@@ -71,8 +71,8 @@ public struct ConflictInfo: Sendable {
 public struct ConflictAnswer: Sendable {
     public var resolution: ConflictResolution
     public var applyToAll: Bool
-    public var comparisonMethod: SyncCompareMethod?
-    public init(_ resolution: ConflictResolution, applyToAll: Bool = false, comparisonMethod: SyncCompareMethod? = nil) {
+    public var comparisonMethod: TransferCompareMethod?
+    public init(_ resolution: ConflictResolution, applyToAll: Bool = false, comparisonMethod: TransferCompareMethod? = nil) {
         self.resolution = resolution
         self.applyToAll = applyToAll
         self.comparisonMethod = comparisonMethod
@@ -199,7 +199,7 @@ public final class FileJob: @unchecked Sendable {
     public var allowsClone = true
     /// Upfront name-clash policy; nil asks through resolveConflict.
     public var conflictRule: TransferConflictRule = .ask
-    public var comparisonOptions = SyncCompareOptions()
+    public var comparisonOptions = TransferCompareOptions()
     /// App moves the displaced complete item to Trash; tests may inject an isolated disposal.
     public var disposeReplacedItem: ((URL, URL) throws -> Void)?
     /// Files at least this large are copied in chunks that can resume where they stopped.
@@ -245,7 +245,7 @@ public final class FileJob: @unchecked Sendable {
     private var currentIndex = 0
     private var pendingIncoming: (source: URL, target: URL, began: Date, base: Int64, emitted: Bool)?
     private var knownConflicts: Set<URL> = []
-    private var inventoryMethod: SyncCompareMethod = .sizeAndDate
+    private var inventoryMethod: TransferCompareMethod = .sizeAndDate
     private var childCounts: [URL: Int] = [:]
     private var differentItems = 0
     private var identicalItems = 0
@@ -910,7 +910,7 @@ public final class FileJob: @unchecked Sendable {
             left.hash = try digest(source.url)
             right.hash = try digest(destination.url)
         }
-        return SyncComparator.statusOf(left, right, options: comparisonOptions) == .same
+        return TransferComparator.statusOf(left, right, options: comparisonOptions) == .same
     }
 
     private func digest(_ url: URL) throws -> String {
@@ -943,7 +943,7 @@ public final class FileJob: @unchecked Sendable {
         if let target, Self.itemExists(at: target), !Self.isSame(url, target) {
             knownConflicts.insert(url)
             if st.st_mode & S_IFMT != S_IFDIR, inventoryMethod != .content, let source = FileItem.load(url), let destination = FileItem.load(target) {
-                let status = SyncComparator.statusOf(
+                let status = TransferComparator.statusOf(
                     TransferComparison.entry(source), TransferComparison.entry(destination), options: comparisonOptions)
                 if status == .same { identicalItems += 1 } else { differentItems += 1 }
             }

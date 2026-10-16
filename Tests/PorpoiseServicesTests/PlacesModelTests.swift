@@ -17,6 +17,27 @@ import Testing
         try #require(m.userEntries.first { $0.title == title })
     }
 
+    @Test func retiredSectionsPreserveBookmarksAndOrdering() throws {
+        let scratch = try Scratch(), file = scratch.path("places.json")
+        let model = PlacesModel(storeURL: file)
+        model.add(URL(fileURLWithPath: "/my-folder"), title: "My folder")
+        var object = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        object["hiddenSections"] = ["Sync", "Tags"]
+        object["collapsedSections"] = ["Sync", "Remote"]
+        object["sectionOrder"] = ["Remote", "Sync", "Places"]
+        var entries = try #require(object["entries"] as? [[String: Any]])
+        entries.append(["id": UUID().uuidString, "title": "Retired pair", "url": "porpoise-sync://retired", "icon": "folder", "section": "Sync"])
+        object["entries"] = entries
+        try JSONSerialization.data(withJSONObject: object).write(to: file)
+        let restored = PlacesModel(storeURL: file)
+        #expect(restored.userEntries.contains { $0.title == "My folder" })
+        #expect(!restored.userEntries.contains { $0.title == "Retired pair" })
+        #expect(restored.hiddenSections == [.tags])
+        #expect(restored.collapsedSections == [.remote])
+        #expect(restored.sectionOrder.prefix(2) == [.remote, .places])
+        #expect(!FileManager.default.fileExists(atPath: scratch.path("places.unreadable.json").path))
+    }
+
     @Test func startsWithTheDefaultPlaces() throws {
         let s = try Scratch()
         let m = PlacesModel(storeURL: s.path("places.json"))
@@ -95,26 +116,13 @@ import Testing
         #expect(m.userEntries == before)
     }
 
-    @Test func syncSectionAppearsOnlyForSavedPairsBetweenPlacesAndRemote() throws {
-        let model = PlacesModel(storeURL: nil)
-        #expect(!model.sections().map(\.0).contains(.sync))
-        let pair = SavedSync(name: "Projects", left: URL(fileURLWithPath: "/left"), right: URL(fileURLWithPath: "/right"))
-        model.setSyncEntries([pair])
-        let sections = model.sections().map(\.0)
-        let syncIndex = try #require(sections.firstIndex(of: .sync))
-        #expect(sections[syncIndex - 1] == .places && sections[syncIndex + 1] == .remote)
-        #expect(model.sections().first { $0.0 == .sync }?.1.first?.url.host?.lowercased() == pair.id.uuidString.lowercased())
-        model.setSyncEntries([])
-        #expect(!model.sections().map(\.0).contains(.sync))
-    }
-
     @Test func sectionsFoldHideLockAndReorder() throws {
         let s = try Scratch()
         let store = s.path("places.json")
         let m = PlacesModel(storeURL: store)
 
         #expect(!m.canMoveSection(.tags, before: .tags))
-        #expect(!m.canMoveSection(.places, before: .sync))  // already there
+        #expect(!m.canMoveSection(.places, before: .remote))  // already there
         m.moveSection(.tags, before: .places)
         #expect(m.sections().map(\.0).prefix(2) == [.tags, .places])
         m.moveSection(.tags, before: nil)

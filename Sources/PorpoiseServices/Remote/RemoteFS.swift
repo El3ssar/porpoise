@@ -3,8 +3,6 @@ import PorpoiseCore
 
 /// A remote file system reachable through a command-line tool (Dolphin's KIO workers, the Mac way).
 public protocol RemoteProvider: AnyObject {
-    /// Read-only planning probe; false preserves deletions before any job starts.
-    func canRecoverSyncDeletions(in root: URL) throws -> Bool
     func list(_ folder: URL) throws -> [FileItem]
     /// Copies a remote file or folder into a local folder; returns the local URL. Fails rather than
     /// overwrite an existing local item.
@@ -25,7 +23,6 @@ public protocol RemoteProvider: AnyObject {
 }
 
 extension RemoteProvider {
-    public func canRecoverSyncDeletions(in root: URL) throws -> Bool { false }
     public func removeEmptyFolder(_ remote: URL) throws {
         throw RemoteError.unsupported("This provider cannot remove an empty moved folder safely.")
     }

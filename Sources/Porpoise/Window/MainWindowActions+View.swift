@@ -5,29 +5,20 @@ import PorpoiseServices
 extension MainWindowController {
     // MARK: View
 
-    @objc func zoomIn(_ sender: Any?) {
-        view.zoom(by: 1)
-    }
+    @objc func zoomIn(_ sender: Any?) { view.zoom(by: 1) }
     @objc func zoomOut(_ sender: Any?) { view.zoom(by: -1) }
     @objc func zoomReset(_ sender: Any?) {
-        if let comparison = tab.compareView {
-            var props = view.model.props; props.resetIconSize(for: .details)
-            comparison.document.setDetailsZoom(props.iconSize(for: .details))
-            return
-        }
         if view.showsApps, let g = view.apps?.grid { return g.animateZoom(to: AppsGridView.defaultIconSize) }
         mutateProps { $0.resetIconSize(for: $0.mode) }
     }
 
     @objc func setViewMode(_ sender: NSMenuItem) {
         guard let m = ViewMode.allCases[safe: sender.tag] else { return }
-        if tab.compareView != nil { stopComparing() }
         view.setMode(m)
         syncToActiveView()
     }
 
     func cycleViewMode() {
-        if tab.compareView != nil { stopComparing() }
         let all = ViewMode.allCases
         let i = all.firstIndex(of: view.model.props.mode) ?? 0
         view.setMode(all[(i + 1) % all.count])
@@ -124,7 +115,7 @@ extension MainWindowController {
         focusPane(secondary: !tab.activeIsSecondary)
     }
 
-    @objc func reloadView(_ sender: Any?) { if let compare = tab.compareView { compare.model.start() } else { view.reload() } }
+    @objc func reloadView(_ sender: Any?) { view.reload() }
 
     /// ⌥← / ⌥→: move focus to the left / right pane of a split view.
     @objc func focusLeftPane(_ sender: Any?) { focusPane(secondary: false) }
@@ -133,12 +124,7 @@ extension MainWindowController {
     private func focusPane(secondary: Bool) {
         guard tab.isSplit, tab.activeIsSecondary != secondary else { return }
         tab.setActive(secondary: secondary)
-        if let compare = tab.compareView {
-            compare.document.activeSide = secondary ? .right : .left; compare.document.needsDisplay = true;
-            window?.makeFirstResponder(compare.document)
-        } else {
-            window?.makeFirstResponder(view.list)
-        }
+        window?.makeFirstResponder(view.list)
         syncToActiveView()
     }
 

@@ -200,8 +200,8 @@ final class FTPProvider: RemoteProvider {
     }
 }
 
-extension FTPProvider: SyncRemotePublishing {
-    public func publishSyncFile(_ staged: URL, to target: URL, modified: Date?) throws {
+extension FTPProvider: RemoteTransferPublishing {
+    public func publishTransferFile(_ staged: URL, to target: URL, modified: Date?) throws {
         if let modified {
             let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
             formatter.timeZone = TimeZone(secondsFromGMT: 0); formatter.dateFormat = "yyyyMMddHHmmss"
@@ -213,8 +213,8 @@ extension FTPProvider: SyncRemotePublishing {
     }
 }
 
-extension FTPProvider: SyncRemoteMetadata {
-    public func syncModificationDate(_ remote: URL) throws -> Date {
+extension FTPProvider: RemoteTransferMetadata {
+    public func transferModificationDate(_ remote: URL) throws -> Date {
         let headers = String(decoding: try curlRun(["--head", base(remote.path)]), as: UTF8.self)
         let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .gmt; formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
@@ -223,6 +223,6 @@ extension FTPProvider: SyncRemoteMetadata {
                 return date
             }
         }
-        throw SyncEngineError.unsupported("This FTP server does not provide precise modification dates. Choose Content or Size comparison.")
+        throw FileOperationError.failed("This FTP server does not provide precise modification dates. Choose Content or Size comparison.")
     }
 }

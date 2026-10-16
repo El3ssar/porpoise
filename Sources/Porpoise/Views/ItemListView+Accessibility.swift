@@ -68,12 +68,11 @@ final class ItemAccessibilityElement: NSAccessibilityElement, NSAccessibilityEle
 
     override func accessibilityLabel() -> String? {
         guard let list, let item else { return nil }
-        return list.comparisonAccessibilityLabel?(index) ?? item.name
+        return item.name
     }
 
     override func accessibilityValue() -> Any? {
         guard let it = item else { return nil }
-        if list?.comparisonAccessibilityLabel != nil { return nil }
         return it.isBrowsableFolder ? it.typeDescription : "\(it.typeDescription), \(FileFormat.size(it.size))"
     }
 
