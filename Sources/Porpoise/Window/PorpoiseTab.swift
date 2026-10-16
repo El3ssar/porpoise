@@ -33,6 +33,7 @@ final class PorpoiseTab: NSView {
 
     func installComparison(_ compare: CompareView?) {
         let previous = compareView
+        previous?.model.onChange = nil; previous?.onMissingRoot = nil
         previous?.model.stop(); previous?.document.detachDetails(); previous?.removeFromSuperview(); compareView = compare
         if compare == nil, let previous {
             previous.reset(model: CompareModel(left: primary.url, right: secondary?.url ?? primary.url))
@@ -112,7 +113,16 @@ final class PorpoiseTab: NSView {
         defer {
             if let compareView { compareView.frame = bounds; handle.isHidden = true }
             if let compareChooser, let secondary { compareChooser.frame = secondary.frame }
-            if let missingCounterpart { missingCounterpart.frame = missingOnRight ? (secondary?.frame ?? bounds) : primary.frame }
+            if let missingCounterpart {
+                if let compareView {
+                    let width = (compareView.scroll.frame.width - compareView.document.gutterWidth) / 2
+                    missingCounterpart.frame = CGRect(
+                        x: missingOnRight ? width + compareView.document.gutterWidth : 0, y: compareView.scroll.frame.minY, width: width,
+                        height: compareView.scroll.frame.height)
+                } else {
+                    missingCounterpart.frame = missingOnRight ? (secondary?.frame ?? bounds) : primary.frame
+                }
+            }
             NotificationCenter.default.post(name: .splitResized, object: self)
         }
         let b = bounds

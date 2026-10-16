@@ -13,10 +13,12 @@ struct CompareDetailsPresentationTests {
         let right = SyncSnapshot(
             entries: [.init(path: "Tree", kind: .directory), .init(path: "Tree/a.txt", size: 20), .init(path: "right.txt")], caseSensitive: false)
         let rows = CompareOutline(SyncComparator.compare(left, right)).visible(filter: .all, expanded: ["tree"])
-        let l = CompareDetailsPresentation(rows, root: root, side: .left, expanded: ["tree"])
-        let r = CompareDetailsPresentation(rows, root: root, side: .right, expanded: ["tree"])
+        let l = CompareDetailsPresentation(rows, root: root, side: .left, expanded: ["tree"], folderCounts: ["tree": 1])
+        let r = CompareDetailsPresentation(rows, root: root, side: .right, expanded: ["tree"], folderCounts: ["tree": 1])
         #expect(l.rows.map(\.item.name) == ["tree", "a.txt", "left.txt"])
         #expect(r.rows.map(\.item.name) == ["Tree", "a.txt", "right.txt"])
+        #expect(l.folderCounts[root.appendingPathComponent("tree")] == 1)
+        #expect(r.folderCounts[root.appendingPathComponent("Tree")] == 1)
         #expect(l.counts.folders == 1); #expect(l.counts.files == 1)
         #expect(l.slots == [0, 1, 2]); #expect(r.slots == [0, 1, 3])
         #expect(l.rows[0].isExpanded); #expect(l.rows[1].depth == 1)
@@ -37,7 +39,8 @@ struct CompareDetailsPresentationTests {
         .visible(filter: .all, expanded: ["nested"])
         // Expanded nested entries also flow through ordinary selectedItems, menus and Quick Look.
         let projection = CompareDetailsPresentation(rows, root: scratch.url, side: .left, expanded: ["nested"])
-        model.presentComparisonRows(projection.rows, counts: projection.counts)
+        model.presentComparisonRows(projection.rows, counts: projection.counts, folderCounts: [scratch.url.appendingPathComponent("nested"): 1])
+        #expect(model.folderSizeText(try #require(projection.rows.first?.item)) == FileFormat.itemCount(1))
         let item = try #require(projection.rows.last?.item)
         #expect(item.url.path.hasSuffix("nested/file.txt"))
         model.selection = [item.url]; #expect(model.selectedItems == [item])
@@ -76,5 +79,34 @@ extension CompareDetailsPresentationTests {
         #expect(throws: (any Error).self) {
             try CompareBrowserScan.scan(URL(string: "unsupported://host/path")!, options: .init(), cancellation: DiskCancellation())
         }
+    }
+}
+
+extension CompareDetailsPresentationTests {
+    @Test func switchingPairsDiscardsOldFileURLsAndStartsFreshPairedHistory() async throws {
+        let scratch = try Scratch()
+        let a = try scratch.folder("A"), b = try scratch.folder("B"), c = try scratch.folder("C"), d = try scratch.folder("D")
+        try scratch.folder("A/child"); try scratch.folder("B/child"); try scratch.folder("C/child"); try scratch.folder("D/child")
+        let model = DirectoryModel(location: a); model.reload()
+        #expect(await eventually(5) { !model.isLoading && model.rows.count == 1 })
+        model.defersPresentation = true
+        let old = CompareDetailsPresentation(
+            CompareOutline(try SyncScanner.compare(a, b).comparison).visible(filter: .all, expanded: []), root: a, side: .left, expanded: [])
+        model.presentComparisonRows(old.rows)
+        // Replacing an existing lens resumes browse state, then clears projected URLs for the new pair.
+        model.defersPresentation = false; model.defersPresentation = true; model.setLocation(c); model.presentComparisonRows([])
+        #expect(model.rows.isEmpty)
+        #expect(await eventually(5) { !model.isLoading && model.items.first?.url.path == c.appendingPathComponent("child").path })
+        let fresh = CompareDetailsPresentation(
+            CompareOutline(try SyncScanner.compare(c, d).comparison).visible(filter: .all, expanded: []), root: c, side: .left, expanded: [])
+        model.presentComparisonRows(fresh.rows)
+        let opened = try #require(model.rows.first?.item.url)
+        #expect(LinkedBrowsing.relativePath(opened, below: c) == "child")
+        let counterpart = try #require(LinkedBrowsing.counterpart(opened, sourceRoot: c, targetRoot: d))
+        #expect(LinkedBrowsing.relativePath(counterpart, below: d) == "child")
+        var leftHistory = NavigationHistory(start: c), rightHistory = NavigationHistory(start: d)
+        leftHistory.visit(opened); rightHistory.visit(counterpart)
+        #expect(leftHistory.goBack() == c); #expect(rightHistory.goBack() == d)
+        #expect(LinkedBrowsing.counterpart(leftHistory.current, sourceRoot: c, targetRoot: d) == rightHistory.current)
     }
 }

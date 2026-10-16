@@ -354,6 +354,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
             }
         }
         toolbar.linkFolders.iconName = t.missingCounterpart == nil ? "insert-link" : "edit-unlink"
+        toolbar.linkFolders.iconTint = t.missingCounterpart == nil ? nil : Theme.compareChanged
         updateSplitButton(for: t)
         toolbar.search.isToggled = !v.searchBar.isHidden
         toolbar.needsLayout = true

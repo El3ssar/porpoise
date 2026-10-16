@@ -33,8 +33,11 @@ final class ItemListView: NSView {
     var comparisonPaneWidth: CGFloat?
     var comparisonRowHeight: CGFloat?
     var comparisonZoom: ((CGFloat) -> Void)?
+    var comparisonExit: (() -> Void)?
     var comparisonGhostClick: ((CGPoint) -> Bool)?
     var comparisonDrawTiming: ((Double) -> Void)?
+    var comparisonColumnColor: ((Int, ItemRole) -> NSColor?)?
+    var comparisonCaption: ((Int) -> (text: String, color: NSColor)?)?
     var drawComparisonBackground: ((CGRect) -> Void)?
 
     // MARK: Layout output (+Layout)

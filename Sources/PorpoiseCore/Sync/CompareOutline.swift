@@ -119,7 +119,7 @@ public struct CompareOutline: Sendable {
         let order = left.localizedStandardCompare(right)
         return order == .orderedSame ? left < right : order == .orderedAscending
     }
-    /// Short, symmetric labels with enough ancestry to distinguish equal leaf names.
+    /// Short, symmetric side names: equal leaves use the nearest differing ancestor (paths stay in tooltips).
     public static func sideNames(_ left: URL, _ right: URL) -> (String, String) {
         let l = left.lastPathComponent.isEmpty ? "/" : left.lastPathComponent
         let r = right.lastPathComponent.isEmpty ? "/" : right.lastPathComponent
@@ -129,12 +129,12 @@ public struct CompareOutline: Sendable {
         {
             return (l + " (left)", r + " (right)")
         }
-        if left.host != right.host { return (left.host.map { $0 + " › " + l } ?? l, right.host.map { $0 + " › " + r } ?? r) }
-        let lc = left.standardized.pathComponents.filter { $0 != "/" }
-        let rc = right.standardized.pathComponents.filter { $0 != "/" }
-        for depth in 2...max(2, max(lc.count, rc.count)) {
-            let a = lc.suffix(depth).joined(separator: " › "), b = rc.suffix(depth).joined(separator: " › ")
-            if a != b { return (a.isEmpty ? "/" : a, b.isEmpty ? "/" : b) }
+        if left.host != right.host { return (left.host ?? l, right.host ?? r) }
+        let lc = Array(left.standardized.pathComponents.dropLast().reversed())
+        let rc = Array(right.standardized.pathComponents.dropLast().reversed())
+        for depth in 0..<max(lc.count, rc.count) {
+            let a = depth < lc.count ? lc[depth] : "/", b = depth < rc.count ? rc[depth] : "/"
+            if a != b { return (a, b) }
         }
         return (l + " (left)", r + " (right)")
     }

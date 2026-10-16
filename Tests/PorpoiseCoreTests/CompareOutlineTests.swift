@@ -30,20 +30,20 @@ struct CompareOutlineTests {
     }
     @Test func matchingFolderNamesUseDistinctAncestorLabels() {
         let names = CompareOutline.sideNames(URL(fileURLWithPath: "/Home/Projects"), URL(fileURLWithPath: "/Backup/Projects"))
-        #expect(names.0 == "Home › Projects"); #expect(names.1 == "Backup › Projects")
+        #expect(names.0 == "Home"); #expect(names.1 == "Backup")
         let remote = CompareOutline.sideNames(URL(fileURLWithPath: "/Home/Projects"), URL(string: "sftp://nas.local/Projects")!)
-        #expect(remote.1 == "nas.local › Projects")
+        #expect(remote.1 == "nas.local")
     }
     @Test func sideNamesUseNearestDistinctAncestorsAndHandleIdenticalRoots() {
         let a = URL(fileURLWithPath: "/home/Projects/Website"), b = URL(fileURLWithPath: "/backup/Projects/Website")
         let labels = CompareOutline.sideNames(a, b)
-        #expect(labels.0 == "home › Projects › Website"); #expect(labels.1 == "backup › Projects › Website")
+        #expect(labels.0 == "home"); #expect(labels.1 == "backup")
         let same = CompareOutline.sideNames(a, a)
         #expect(same.0 == "Website (left)"); #expect(same.1 == "Website (right)")
         let unequal = CompareOutline.sideNames(a, URL(fileURLWithPath: "/backup"))
         #expect(unequal.0 == "Website"); #expect(unequal.1 == "backup")
         let root = CompareOutline.sideNames(URL(fileURLWithPath: "/"), URL(string: "sftp://nas/")!)
-        #expect(root.0 == "/"); #expect(root.1 == "nas › /")
+        #expect(root.0 == "/"); #expect(root.1 == "nas")
     }
     @Test func tenThousandRowFilteringUsesCachedTree() {
         let entries = (0..<10_000).map { file("file-\($0)") }
@@ -135,5 +135,15 @@ extension CompareOutlineTests {
         #expect(
             LinkedBrowsing.counterpart(URL(string: "sftp://other/root/child")!, sourceRoot: URL(string: "sftp://host/root")!, targetRoot: right)
                 == nil)
+    }
+}
+
+extension CompareOutlineTests {
+    @Test func cachedComparisonIgnoresExclusionEnumerationOrderButNotScanOptions() {
+        let cached = SyncCompareOptions(exclusions: [".DS_Store", "._*", "Thumbs.db"])
+        #expect(cached.isEquivalent(to: .init(exclusions: ["Thumbs.db", "._*", ".DS_Store", "._*"])))
+        #expect(!cached.isEquivalent(to: .init(method: .content, exclusions: cached.exclusions)))
+        #expect(!cached.isEquivalent(to: .init(timestampTolerance: 1, exclusions: cached.exclusions)))
+        #expect(!cached.isEquivalent(to: .init(exclusions: [".DS_Store"])))
     }
 }

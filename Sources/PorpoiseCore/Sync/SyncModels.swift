@@ -46,6 +46,11 @@ public struct SyncCompareOptions: Codable, Equatable, Sendable {
     public var method: SyncCompareMethod
     public var timestampTolerance: TimeInterval
     public var exclusions: [String]
+    /// Exclusion order/duplicates do not change the scan. Reuse a completed comparison when only that
+    /// presentation differs (saved presets and custom exclusions may enumerate the same rules differently).
+    public func isEquivalent(to other: Self) -> Bool {
+        method == other.method && timestampTolerance == other.timestampTolerance && Set(exclusions) == Set(other.exclusions)
+    }
     public init(method: SyncCompareMethod = .sizeAndDate, timestampTolerance: TimeInterval = 2, exclusions: [String] = []) {
         self.method = method; self.timestampTolerance = max(0, timestampTolerance); self.exclusions = exclusions
     }

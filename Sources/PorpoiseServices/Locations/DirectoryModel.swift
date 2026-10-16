@@ -541,7 +541,7 @@ public final class DirectoryModel {
     /// rebuild once when ordinary browsing returns. Raw listing/state and load errors continue updating.
     public var defersPresentation = false {
         didSet {
-            if !defersPresentation { comparisonCounts = nil }
+            if !defersPresentation { comparisonCounts = nil; comparisonFolderCounts = [:] }
             if !defersPresentation && presentationNeedsRebuild { presentationNeedsRebuild = false; rebuild() }
         }
     }
@@ -715,10 +715,11 @@ public final class DirectoryModel {
 
     public var onComparisonExpansion: ((URL, Bool) -> Void)?
     private var comparisonCounts: (folders: Int, files: Int, bytes: Int64)?
-    public func presentComparisonRows(_ next: [Row], counts: (folders: Int, files: Int, bytes: Int64)? = nil) {
+    private var comparisonFolderCounts: [URL: Int] = [:]
+    public func presentComparisonRows(_ next: [Row], counts: (folders: Int, files: Int, bytes: Int64)? = nil, folderCounts: [URL: Int] = [:]) {
         guard defersPresentation else { return }
         let previous = (rows, rowIndex, rowIndexByPath)
-        groups = []; rows = next; comparisonCounts = counts; presentationNeedsRebuild = true
+        groups = []; rows = next; comparisonCounts = counts; comparisonFolderCounts = folderCounts; presentationNeedsRebuild = true
         // The scanner owns these rows. Browse reloads keep updating raw items without replacing them.
         DispatchQueue.global(qos: .utility).async { withExtendedLifetime(previous) {} }
     }
@@ -801,6 +802,7 @@ public final class DirectoryModel {
     }
 
     public func folderSizeText(_ item: FileItem) -> String {
+        if let count = comparisonFolderCounts[item.url] { return FileFormat.itemCount(count) }
         guard let c = folderCounts[item.url] else { return "" }
         if c < 0 { return "" }
         return Settings.shared.folderSizeMode == .contentSize ? FileFormat.size(Int64(c)) : FileFormat.itemCount(c)
