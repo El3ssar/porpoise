@@ -49,7 +49,10 @@ final class SyncCalloutView: NSView {
 }
 final class SyncClosureButton: ConflictActionButton {
     var perform: (() -> Void)?
-    init(title: String) { super.init(frame: .zero); self.title = title; target = self; action = #selector(invoke); font = .systemFont(ofSize: 13) }
+    init(title: String) {
+        super.init(frame: .zero); self.title = title; target = self; action = #selector(invoke); font = .systemFont(ofSize: 13);
+        setAccessibilityElement(true); setAccessibilityRole(.button)
+    }
     required init?(coder: NSCoder) { fatalError() }
     override func draw(_ dirtyRect: NSRect) {
         guard drawsBackground else { super.draw(dirtyRect); return }
@@ -152,11 +155,13 @@ final class SyncPlanRow: NSView {
     private var choices: NSSegmentedControl?
     init(
         step: SyncStep, pair: SavedSync, checked: Bool, choice: SyncOverride?, difference: SyncDifference? = nil, hasState: Bool = false,
+        unavailable: Bool = false,
         displayPath: String? = nil, isFolder: Bool = false, folderCount: Int? = nil, displayBytes: Int64? = nil
     ) {
         self.step = step; self.pair = pair; self.difference = difference; super.init(frame: .zero)
+        if unavailable { include.isEnabled = false; include.toolTip = "This destination cannot keep deleted items. The item will be left in place." }
         include.contentTintColor = Theme.activeText
-        include.state = checked ? .on : .off; include.target = self; include.action = #selector(toggled)
+        include.state = checked && !unavailable ? .on : .off; include.target = self; include.action = #selector(toggled)
         include.setAccessibilityLabel("Include \(step.path)")
         if step.sourcePath != nil, step.path != difference?.left?.path, step.path != difference?.right?.path {
             include.isEnabled = false; include.toolTip = "Both versions are kept together. Change the original item's choice to skip this group."
@@ -182,9 +187,13 @@ final class SyncPlanRow: NSView {
                 change == .newerLeft ? "newer in " + pair.leftTitle : change == .newerRight ? "newer in " + pair.rightTitle : "changed"
         }
         if let folderCount { size.stringValue = "\(folderCount) \(folderCount == 1 ? "item" : "items")" }
-        detail.font = .systemFont(ofSize: 11); detail.textColor = Theme.windowTextInactive; detail.lineBreakMode = .byTruncatingTail
+        detail.font = .systemFont(ofSize: 11)
+        detail.textColor =
+            step.action == .replace && pair.mode != .twoWay && difference?.status == .changed(.newerRight)
+            ? Theme.compareDanger : Theme.windowTextInactive;
+        detail.lineBreakMode = .byTruncatingTail
         [include, icon, path, detail, size].forEach(addSubview)
-        if !checked && step.action != .conflict { [icon, path, detail, size].forEach { $0.alphaValue = 0.5 } }
+        if (!checked || unavailable) && step.action != .conflict { [icon, path, detail, size].forEach { $0.alphaValue = 0.5 } }
         if step.action == .conflict {
             let labels: [String]
             if let difference {
@@ -224,6 +233,15 @@ final class SyncPlanRow: NSView {
 
         setAccessibilityElement(true); setAccessibilityRole(.row)
         setAccessibilityLabel("\(step.path), \(detail.stringValue)" + (step.action == .conflict ? "" : ", " + size.stringValue))
+        if step.action == .conflict {
+            compareButton.setAccessibilityLabel("Compare " + step.path)
+            var controls: [Any] = []
+            if let choices { controls.append(choices) }
+            if compareButton.superview != nil { controls.append(compareButton) }
+            setAccessibilityChildren(controls)
+        } else {
+            setAccessibilityChildren([include])
+        }
     }
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
@@ -366,10 +384,12 @@ final class SyncGroupRow: NSView {
         countLabel.stringValue = String(count); countLabel.font = .systemFont(ofSize: 12); countLabel.textColor = Theme.windowTextInactive;
         addSubview(countLabel)
         updateGlyph = action == .replace; icon.isHidden = updateGlyph
+        setAccessibilityElement(true); setAccessibilityRole(.group); setAccessibilityLabel(title + ", " + String(count))
         for (title, action) in actions {
             let link = SyncClosureButton(title: title); link.perform = action; link.drawsBackground = false; link.isBordered = false
             link.titleTint = Theme.activeText; link.font = .systemFont(ofSize: 11); addSubview(link); links.append(link)
         }
+        if !links.isEmpty { setAccessibilityChildren(links) }
     }
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
@@ -420,6 +440,12 @@ final class SyncEmptyStateView: NSView {
             at: CGPoint(x: center - 10, y: top + 6),
             withAttributes: [.font: NSFont.systemFont(ofSize: 24, weight: .semibold), .foregroundColor: Theme.compareOnly])
         func line(_ text: String, y: CGFloat, font: NSFont, color: NSColor) {
+            if title == "⚙︎",
+                let gear = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)?.withSymbolConfiguration(
+                    .init(pointSize: 15, weight: .regular, scale: .medium).applying(.init(paletteColors: [Theme.windowText])))
+            {
+                gear.draw(in: CGRect(x: bounds.midX - 7.5, y: bounds.midY - 7.5, width: 15, height: 15)); return
+            }
             let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
             let width = (text as NSString).size(withAttributes: attrs).width
             (text as NSString).draw(at: CGPoint(x: center - width / 2, y: y), withAttributes: attrs)

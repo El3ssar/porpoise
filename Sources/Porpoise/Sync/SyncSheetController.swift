@@ -17,6 +17,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
     var reviewPlanningDelay: TimeInterval = 0
     private var providedComparison: SyncComparison?
     private var includedStepIDs: Set<String> = []
+    private var blockedStepIDs: Set<String> = []
     private var differences: [String: SyncDifference] = [:]
     private var savingTask = false
     private var displaySteps: [SyncStep] = []
@@ -223,13 +224,15 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         [newerButton, leftButton, rightButton].forEach { $0.isHidden = true }
         let top = bulkY
         let bottom = height - 100 - keepExpansion * 24 - (optionsOpen ? 94 : 0)
-        let contentHeight = outline.numberOfRows == 0 ? 80 : outline.rect(ofRow: outline.numberOfRows - 1).maxY + 2
-        listFrame.frame = CGRect(x: 20, y: top, width: width - 40, height: min(max(40, bottom - top), contentHeight))
+        listFrame.frame = CGRect(x: 20, y: top, width: width - 40, height: max(40, bottom - top))
         let optionsBase = height - 86 - keepExpansion * 24 - (optionsOpen ? 94 : 0)
         scroll.frame = listFrame.bounds.insetBy(dx: 1, dy: 1)
         outline.tableColumns[0].width = max(200, scroll.contentSize.width)
+        let deletionSummary =
+            preview?.unavailableDeletionSides.contains(.right) == true
+            ? "Deletions left in place" : pair.right.isFileURL ? "Deletions to the Trash" : "Deletions to .porpoise-trash"
         options.title =
-            "Options   \(pair.presets.contains(.system) ? "Ignore system files · " : "")Deletions to the Trash · \(method.titleOfSelectedItem ?? "Size & date")"
+            "Options   \(pair.presets.contains(.system) ? "Ignore system files · " : "")\(deletionSummary) · \(method.titleOfSelectedItem ?? "Size & date")"
         options.image = NSImage(systemSymbolName: optionsOpen ? "chevron.down" : "chevron.right", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 12, weight: .regular))
         options.imagePosition = .imageLeading
@@ -242,7 +245,9 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         let optionsY = optionsBase + 34
         presets.frame = CGRect(x: 22, y: optionsY, width: width - 44, height: 22)
         deletion.frame = CGRect(x: 22, y: optionsY + 30, width: 235, height: 22)
-        deletion.stringValue = pair.right.isFileURL ? "Deletions: Move to Trash" : "Deletions: Move to .porpoise-trash"
+        deletion.stringValue =
+            preview?.unavailableDeletionSides.contains(.right) == true
+            ? "Deletions: Leave in place" : pair.right.isFileURL ? "Deletions: Move to Trash" : "Deletions: Move to .porpoise-trash"
         method.frame = CGRect(x: width - 180, y: optionsY + 26, width: 158, height: 26)
         let ignored = (preview?.left.excludedPaths?.count ?? 0) + (preview?.right.excludedPaths?.count ?? 0)
         custom.stringValue = "Ignores \(ignored) items" + (pair.customExclusions.isEmpty ? "" : " · \(pair.customExclusions.count) custom patterns")
@@ -302,9 +307,16 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         } else {
             automatic.isHidden = false; options.isHidden = false; cancelButton.isHidden = false
         }
+        func rowControls(_ view: NSView) -> [NSView] {
+            view.subviews.flatMap { child -> [NSView] in
+                if child is NSButton || child is NSSegmentedControl { return [child] }
+                return rowControls(child)
+            }
+        }
+        let planControls = rowControls(outline)
         let order: [NSView] =
-            cards + [swapButton, outline, options] + (optionsOpen ? presetButtons + [method, customButton] : [])
-            + [automatic, name, saveButton, cancelButton, syncButton]
+            (cards + [swapButton, outline] + planControls + [options] + (optionsOpen ? presetButtons + [method, customButton] : [])
+            + [automatic, name, saveButton, cancelButton, syncButton]).filter { !$0.isHiddenOrHasHiddenAncestor }
         for index in order.indices { order[index].nextKeyView = order[(index + 1) % order.count] }
 
     }
@@ -331,11 +343,12 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                         let right = SyncSnapshot(
                             entries: initial.rows.compactMap(\.right), caseSensitive: initial.caseSensitive, rootIdentity: initial.rightRootIdentity,
                             excludedPaths: initial.rightExcludedPaths)
-                        return SyncPreview(
-                            pair: pair, left: left, right: right, comparison: initial,
-                            plan: SyncPlanner.plan(initial, mode: pair.mode, previous: previous, overrides: decisions),
-                            firstTwoWay: pair.mode == .twoWay && previous == nil
-                        )
+                        return try SyncPreparation.checkingDeletionSupport(
+                            SyncPreview(
+                                pair: pair, left: left, right: right, comparison: initial,
+                                plan: SyncPlanner.plan(initial, mode: pair.mode, previous: previous, overrides: decisions),
+                                firstTwoWay: pair.mode == .twoWay && previous == nil
+                            ))
                     }
                     return try SyncPreparation.preview(pair, previous: previous, overrides: decisions, cancellation: cancellation)
                 }.value
@@ -388,6 +401,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         guard let preview else { return }
         let plan = preview.plan
         includedStepIDs = Set(plan.steps.map(\.id))
+        blockedStepIDs = Set(preview.blockedSteps.map(\.id))
         let attributed = NSMutableAttributedString()
         for (action, word, color) in [
             (SyncAction.copy, "to copy", Theme.compareOnly), (.replace, pair.mode == .twoWay ? "to update" : "to replace", Theme.compareChanged),
@@ -418,7 +432,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                             : "Nothing to do. \(pair.leftTitle) and \(pair.rightTitle) already match.")
                         : "No items selected for this sync."))
         }
-        let unchecked = displaySteps.filter { $0.action != .conflict && !includedStepIDs.contains($0.id) }.count
+        let unchecked = displaySteps.filter { $0.action != .conflict && !includedStepIDs.contains($0.id) && !blockedStepIDs.contains($0.id) }.count
         let bytes = plan.steps.filter { $0.action == .copy || $0.action == .replace }.reduce(Int64(0)) { $0 + ($1.expectedSource?.size ?? 0) }
         if bytes > 0 {
             attributed.append(NSAttributedString(string: " · " + FileFormat.size(bytes), attributes: [.foregroundColor: Theme.windowTextInactive]))
@@ -429,11 +443,22 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                     string: " · \(unchecked) \(unchecked == 1 ? "item" : "items") unchecked", attributes: [.foregroundColor: Theme.windowTextInactive]
                 ))
         }
+        let leftInPlace = SyncPlan(steps: preview.blockedSteps).itemCount(for: .trash)
+        if leftInPlace > 0 {
+            attributed.append(NSAttributedString(string: " · \(leftInPlace) left in place", attributes: [.foregroundColor: Theme.windowTextInactive]))
+        }
         summary.attributedStringValue = attributed
         let deletions = plan.itemCount(for: .trash)
-        if deletions > 0 {
+        if leftInPlace > 0 {
+            let names = preview.unavailableDeletionSides.map { side in
+                (side == .left ? pair.left : pair.right).host ?? (side == .left ? pair.leftTitle : pair.rightTitle)
+            }.sorted().joined(separator: " and ")
             callout.text =
-                "⚠ \(deletions) \(deletions == 1 ? "item" : "items") in \(pair.rightTitle) \(deletions == 1 ? "isn’t" : "aren’t") in \(pair.leftTitle). \(deletions == 1 ? "It’ll" : "They’ll") be moved to \(pair.right.isFileURL ? "the Trash" : ".porpoise-trash")."
+                "\(names) can't keep deleted items, so \(leftInPlace == 1 ? "this item will" : "these \(leftInPlace) items will") be left in place."
+            callout.danger = true
+        } else if deletions > 0 {
+            callout.text =
+                "⚠ \(deletions) \(deletions == 1 ? "item" : "items") in \(pair.rightTitle) \(deletions == 1 ? "isn’t" : "aren’t") in \(pair.leftTitle). \(deletions == 1 ? "It’ll" : "They’ll") be moved to \(pair.right.isFileURL ? "the Trash" : ".porpoise-trash on " + (pair.right.host ?? pair.rightTitle))."
             callout.danger = true
         } else if preview.firstTwoWay {
             callout.text = "ⓘ First two-way sync. Nothing will be deleted this time. Porpoise remembers both sides for next time."
@@ -462,7 +487,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                 let destination = side == .left ? pair.leftTitle : pair.rightTitle
                 let verb =
                     action == .trash
-                    ? "Moved to the Trash in"
+                    ? (preview.unavailableDeletionSides.contains(side) ? "Left in place in" : "Moved to the Trash in")
                     : action == .copy ? "Copy to" : action == .replace ? (pair.mode == .twoWay ? "Update in" : "Replace in") : "Create folder in"
                 return steps.isEmpty ? nil : SyncPlanNode(action: action, steps: steps, title: verb + " " + destination)
             }
@@ -569,8 +594,10 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
                 ] : []
             return SyncGroupRow(
                 title: node.title,
-                count: node.action == .conflict
-                    ? node.allSteps.count : SyncPlan(steps: node.allSteps.filter { includedStepIDs.contains($0.id) }).itemCount(for: node.action),
+                count: node.allSteps.allSatisfy { blockedStepIDs.contains($0.id) }
+                    ? SyncPlan(steps: node.allSteps).itemCount(for: node.action)
+                    : node.action == .conflict
+                        ? node.allSteps.count : SyncPlan(steps: node.allSteps.filter { includedStepIDs.contains($0.id) }).itemCount(for: node.action),
                 action: node.action, color: node.color, actions: actions)
         }
         let difference = differences[step.path] ?? step.sourcePath.flatMap { differences[$0] }
@@ -578,7 +605,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         let included = node.allSteps.contains { includedStepIDs.contains($0.id) }
         let row = SyncPlanRow(
             step: step, pair: pair, checked: overrides[key] != .skip && included, choice: overrides[key],
-            difference: difference, hasState: previous != nil,
+            difference: difference, hasState: previous != nil, unavailable: node.allSteps.allSatisfy { blockedStepIDs.contains($0.id) },
             displayPath: node.children.isEmpty ? step.path : (step.path as NSString).lastPathComponent,
             isFolder: !node.children.isEmpty, folderCount: node.children.isEmpty ? nil : node.allSteps.filter { $0.path != step.path }.count,
             displayBytes: node.children.isEmpty

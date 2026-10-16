@@ -45,6 +45,21 @@ enum SyncDebugBridge {
             if sizes.count == 2 { sheet.window?.setContentSize(CGSize(width: sizes[0], height: sizes[1])) }
         }
     }
+    static func remote(_ argument: String, window: NSWindow) {
+        let local = root.appendingPathComponent("Remote/Projects")
+        Task { @MainActor in
+            do {
+                try await Task.detached(priority: .utility) {
+                    try FileManager.default.createDirectory(at: local, withIntermediateDirectories: true)
+                    try Data("Review-only local file".utf8).write(to: local.appendingPathComponent("new.txt"))
+                }.value
+                let remote = URL(string: "sftp://nas.local/Backup")!
+                guard RemoteFS.installTestingProvider(SyncReviewRemoteProvider(recoverable: argument != "blocked"), for: remote) else { return }
+                let pair = SavedSync(left: local, right: remote, mode: .mirror)
+                SyncSheetController(pair: pair, owner: window).present()
+            } catch { SyncCoordinator.shared.showError(error.localizedDescription, window: window) }
+        }
+    }
     static func notifications(_ path: String) {
         let pair = SavedSync(
             id: UUID(uuidString: "77777777-7777-4777-8777-777777777777")!, name: "Website", left: URL(fileURLWithPath: "/Home/Photos"),
@@ -71,4 +86,28 @@ enum SyncDebugBridge {
             DispatchQueue.global(qos: .utility).async { try? data.write(to: URL(fileURLWithPath: path)) }
         }
     }
+}
+
+/// A read-only, non-networked provider for explicit isolated UI launches.
+private final class SyncReviewRemoteProvider: RemoteProvider {
+    let recoverable: Bool
+    init(recoverable: Bool) { self.recoverable = recoverable }
+    func canRecoverSyncDeletions(in root: URL) throws -> Bool { recoverable }
+    func list(_ folder: URL) throws -> [FileItem] {
+        guard folder.path == "/Backup" else { return [] }
+        return ["old-one.txt", "old-two.txt"].map {
+            FileItem(
+                url: folder.appendingPathComponent($0), name: $0, isDirectory: false, size: 200, modificationDate: Date(timeIntervalSince1970: 100),
+                contentType: "public.plain-text")
+        }
+    }
+    private var error: SyncEngineError { .unsupported("This read-only review provider does not execute file operations.") }
+    func download(_ remote: URL, into localFolder: URL) throws -> URL { throw error }
+    func upload(_ local: URL, into remoteFolder: URL) throws { throw error }
+    func delete(_ remote: [URL]) throws { throw error }
+    func makeFolder(_ remote: URL) throws { throw error }
+    func rename(_ remote: URL, to newName: String) throws { throw error }
+    func move(_ remote: [URL], into folder: URL) throws { throw error }
+    func copy(_ remote: [URL], into folder: URL) throws { throw error }
+    func rootTitle(_ url: URL) -> String { "nas.local" }
 }

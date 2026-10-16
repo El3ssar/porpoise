@@ -538,6 +538,9 @@ final class DebugBridge: NSObject {
         case "syncinclude", "syncresolve", "syncsize":
             guard Settings.isTesting else { return }
             SyncDebugBridge.control(command: parts.first ?? "", argument: arg)
+        case "syncremote":
+            guard Settings.isTesting, let window = wc?.window else { return }
+            SyncDebugBridge.remote(arg, window: window)
         case "syncnotifications":
             guard Settings.isTesting else { return }
             SyncDebugBridge.notifications(arg)
