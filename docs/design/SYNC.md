@@ -373,7 +373,9 @@ From  📁 Projects  ⇄  📁 Backup                     (direction row; hidden
   "only in Backup", "larger in Projects"). Unchecking excludes that item from this run only; an unchecked row dims
   to 50 % and leaves every count. A folder collapses to one row ("Archive 2024 · 48 items") only when the whole
   folder is the unit (new, or only on the destination); replacements always list file paths. A replacement whose
-  reason is "newer in Backup" (it overwrites newer work) draws that reason in `compareDanger`. The list fills the
+  reason is "newer in Backup" (it overwrites newer work) draws that reason in `compareDanger` and **starts
+  unchecked** in Backup and Mirror. That holds for automatic runs too, which skip it and report it like a conflict.
+  The summary adds "1 newer file in Backup is skipped". Checking the row is a deliberate act. The list fills the
   sheet's free height with plain background; it never draws empty striped rows.
   Right-click: Reveal in Projects/Backup, Compare Files, Exclude from Future Syncs (adds an exclusion to the pair).
 - **Deletions are summarised first and in red.** The section header is `compareDanger`, and above the list a callout
@@ -421,7 +423,8 @@ forms (pills hidden while running):
 | Done | ✓ `compareOnly` · "Synced · 22 copied · 2 moved to the Trash · just now" · **Show in Activity**. After 4 s the bar returns to the pills. | Recompare runs automatically; usually ends in the Identical overlay. |
 
 Stop asks nothing; finished items stay done (the engine never repeats completed steps). Closing the window or the
-tab doesn't stop the job; Activity keeps it.
+tab doesn't stop the job; Activity keeps it. Zero counts are left out of every summary ("Synced · 22 copied · just
+now"). Job state never adds or removes a toolbar item, because the breadcrumbs must not relayout while a job runs.
 
 ---
 
@@ -586,6 +589,11 @@ Differing values in `compareChanged` semibold. Binary files open here, with the 
 House style: sentence case for messages, Title Case for buttons and menu items, curly quotes around names, real
 folder names instead of "source/destination", "the Trash" capitalised, no "successfully", no exclamation marks.
 Counts use the grouping separator. "items" when files and folders are mixed, "files"/"folders" when not.
+
+**Side names: one rule, one helper, every surface.** Pills, popover, missing counterpart, the sync sheet, sync bar
+and notifications, Compare Files headers and the copy conflict dialog ("“notes.txt” already exists in Backup") all
+name a side with the §4.4 rule. Never use a raw `lastPathComponent` of a different ancestor, and never "here" /
+"there". Relative times read "now" under a minute and tick while visible.
 
 Key strings: "Comparing… 12,480 items" · "Compared by size & date · 1,284 items · 37 differences · 0.8 s" ·
 "Projects and Backup are identical" · "Compare Projects with…" · "Sync Projects and Backup" · "Nothing to do.
