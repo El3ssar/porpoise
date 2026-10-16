@@ -87,8 +87,13 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     }
 
     override init(frame: NSRect) {
-        // Test instances root at their own home folder: never the user's ~/Documents or ~/Desktop (privacy prompts).
-        root = Node(Settings.isTesting ? Settings.shared.homeURL : FileManager.default.homeDirectoryForCurrentUser)
+        // Test instances root at their own home folder (or a temporary one), never the user's real home: its
+        // protected folders raise privacy prompts that block open().
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let testHome =
+            Settings.shared.homeURL.standardizedFileURL == home.standardizedFileURL
+            ? FileManager.default.temporaryDirectory : Settings.shared.homeURL
+        root = Node(Settings.isTesting ? testHome : home)
         super.init(frame: frame)
         let col = NSTableColumn(identifier: .init("name"))
         outline.addTableColumn(col)
