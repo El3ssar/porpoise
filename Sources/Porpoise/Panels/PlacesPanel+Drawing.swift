@@ -162,7 +162,7 @@ extension PlacesPanel {
         case .idle:
             if let date = pair.lastSynced {
                 let minutes = max(0, Int(Date().timeIntervalSince(date) / 60))
-                text = minutes < 60 ? "✓ \(minutes)m" : minutes < 1440 ? "✓ \(minutes / 60)h" : "✓ \(minutes / 1440)d"
+                text = minutes == 0 ? "✓ now" : minutes < 60 ? "✓ \(minutes)m" : minutes < 1440 ? "✓ \(minutes / 60)h" : "✓ \(minutes / 1440)d"
                 color = Theme.compareOnly
             } else if pair.paused {
                 text = "⏸"

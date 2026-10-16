@@ -78,6 +78,8 @@ public enum SyncOverride: String, Codable, Sendable { case skip, keepLeft, keepR
 public struct SyncStep: Codable, Equatable, Identifiable, Sendable {
     public var id: String { "\(action.rawValue):\(target.rawValue):\(path)" }
     public var path: String
+    /// Case-only destination spelling change, applied after updating the contents.
+    public var renameTo: String?
     public var sourcePath: String?
     public var source: SyncSide?
     public var target: SyncSide

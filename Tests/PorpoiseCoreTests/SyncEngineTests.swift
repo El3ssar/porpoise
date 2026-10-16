@@ -138,9 +138,38 @@ extension SyncEngineTests {
         let result = SyncPlanner.plan(SyncComparator.compare(l, r), mode: .backup)
         #expect(result.steps.first?.path == "folder/new")
         #expect(result.steps.first?.sourcePath == "Folder/new")
+        #expect(result.steps.last?.renameTo == "Folder")
         let old = SyncState(left: .init(entries: [file("A")]), right: .init(entries: [file("a")], caseSensitive: false))
         let deleted = SyncPlanner.plan(
             SyncComparator.compare(.init(entries: []), .init(entries: [file("A")], caseSensitive: false)), mode: .twoWay, previous: old)
         #expect(deleted.steps.first?.action == .trash)
+    }
+}
+
+extension SyncEngineTests {
+    @Test func backupProtectsNewerDestinationUntilExplicitlyApproved() {
+        let left = [file(time: 100)], right = [file(size: 2, time: 110)]
+        let safe = plan(left, right, mode: .backup)
+        #expect(safe.conflicts.first?.reason == SyncPlanner.backupNewerReason)
+        #expect(!safe.steps.contains { $0.action == .replace })
+        #expect(plan(left, right, mode: .backup, overrides: ["a": .keepLeft]).steps.first?.action == .replace)
+        #expect(plan(left, right, mode: .backup, overrides: ["a": .skip]).steps.isEmpty)
+        #expect(plan(left, right, mode: .mirror).steps.first?.action == .replace)
+        #expect(plan(right, left, mode: .backup).steps.first?.action == .replace)
+    }
+    @Test func caseOnlyNamesProduceReviewedRenamesEvenForIdenticalContents() {
+        let comparison = SyncComparator.compare(
+            .init(entries: [file("Readme.md")]),
+            .init(entries: [file("README.md")], caseSensitive: false))
+        for mode in [SyncMode.backup, .mirror] {
+            let result = SyncPlanner.plan(comparison, mode: mode)
+            #expect(result.steps.first?.action == .replace)
+            #expect(result.steps.first?.path == "README.md")
+            #expect(result.steps.first?.renameTo == "Readme.md")
+        }
+        #expect(SyncPlanner.plan(comparison, mode: .twoWay).conflicts.count == 1)
+        let right = SyncPlanner.plan(comparison, mode: .twoWay, overrides: ["Readme.md": .keepRight])
+        #expect(right.steps.first?.target == .left)
+        #expect(right.steps.first?.renameTo == "README.md")
     }
 }

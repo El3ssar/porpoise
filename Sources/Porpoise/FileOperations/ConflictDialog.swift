@@ -34,6 +34,9 @@ final class ConflictDialog: NSObject {
     }
 
     private func build() {
+        let destinationName = CompareOutline.sideNames(
+            info.source.url.deletingLastPathComponent(), info.destination.url.deletingLastPathComponent()
+        ).1
         let bothFolders = info.source.isBrowsableFolder && info.destination.isBrowsableFolder
         let delta = (info.source.modificationDate?.timeIntervalSince1970 ?? 0) - (info.destination.modificationDate?.timeIntervalSince1970 ?? 0)
         let newer = delta > info.comparisonOptions.timestampTolerance
@@ -64,11 +67,11 @@ final class ConflictDialog: NSObject {
         window.setContentSize(CGSize(width: 620, height: 358 + height))
         _ = label(
             (bothFolders ? "A folder named “\(info.source.name)”" : "“\(info.source.name)”")
-                + " already exists in \(info.destination.url.deletingLastPathComponent().lastPathComponent)",
+                + " already exists in \(destinationName)",
             CGRect(x: 20, y: 324 + height, width: 450, height: 18), size: 13, weight: .semibold)
         _ = label(hint, CGRect(x: 20, y: 321, width: 580, height: height), secondary: true)
         card(
-            info.destination, heading: "In \(info.destination.url.deletingLastPathComponent().lastPathComponent)", x: 20, newer: older,
+            info.destination, heading: "In \(destinationName)", x: 20, newer: older,
             larger: bothFolders
                 ? ((info.destinationFolder?.bytes ?? 0) > (info.sourceFolder?.bytes ?? .max)) : info.destination.size > info.source.size,
             summary: info.destinationFolder)

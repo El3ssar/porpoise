@@ -172,9 +172,63 @@ extension SyncServiceTests {
         try scratch.file("left/a", "new"); try scratch.file("right/a", "old")
         try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 100)], ofItemAtPath: scratch.path("left/a").path)
         try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 101)], ofItemAtPath: scratch.path("right/a").path)
-        let plan = SyncPlanner.plan(try SyncScanner.compare(left, right, options: .init(timestampTolerance: 0)).comparison, mode: .backup)
+        let plan = SyncPlanner.plan(
+            try SyncScanner.compare(left, right, options: .init(timestampTolerance: 0)).comparison, mode: .backup, overrides: ["a": .keepLeft])
         #expect(plan.steps.count == 1)
         try SyncExecutor.execute(plan, leftRoot: left, rightRoot: right)
         #expect(scratch.read("right/a") == "new")
+    }
+}
+
+extension SyncServiceTests {
+    @Test func caseOnlyRenamesUpdateContentsThenParentsAndReplaySafely() throws {
+        let scratch = try Scratch(), left = try scratch.folder("left"), right = try scratch.folder("right")
+        try scratch.file("left/Folder/Readme.md", "new contents")
+        try scratch.file("right/folder/README.md", "old")
+        let options = SyncCompareOptions(method: .content)
+        var l = try SyncScanner.scan(left, options: options), r = try SyncScanner.scan(right, options: options)
+        l.caseSensitive = false; r.caseSensitive = false
+        let plan = SyncPlanner.plan(SyncComparator.compare(l, r, options: options), mode: .mirror)
+        #expect(plan.steps.last?.renameTo == "Folder")
+        try SyncExecutor.execute(plan, leftRoot: left, rightRoot: right)
+        #expect(scratch.read("right/Folder/Readme.md") == "new contents")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: right.path) == ["Folder"])
+        #expect(try FileManager.default.contentsOfDirectory(atPath: right.appendingPathComponent("Folder").path) == ["Readme.md"])
+        let fresh = try SyncScanner.compare(left, right, options: options)
+        #expect(SyncPlanner.plan(fresh.comparison, mode: .mirror).steps.isEmpty)
+        // The directory step may be replayed after publishing but before its journal checkpoint.
+        try SyncExecutor.execute(try #require(plan.steps.last), leftRoot: left, rightRoot: right)
+    }
+    @Test func backupDefaultNeverExecutesNewerDestinationReplacement() throws {
+        let scratch = try Scratch(), left = try scratch.folder("left"), right = try scratch.folder("right")
+        try scratch.file("left/a", "source"); try scratch.file("right/a", "newer work")
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 100)], ofItemAtPath: left.appendingPathComponent("a").path)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 200)], ofItemAtPath: right.appendingPathComponent("a").path)
+        let preview = try SyncPreparation.preview(SavedSync(left: left, right: right, mode: .backup))
+        #expect(preview.skippedConflicts == 1)
+        try SyncExecutor.execute(preview.executable, leftRoot: left, rightRoot: right)
+        #expect(scratch.read("right/a") == "newer work")
+        let approved = SyncPreparation.replan(preview, pair: preview.pair, previous: nil, overrides: ["a": .keepLeft])
+        try SyncExecutor.execute(approved.executable, leftRoot: left, rightRoot: right)
+        #expect(scratch.read("right/a") == "source")
+    }
+}
+
+extension SyncServiceTests {
+    @Test func directoryRenameRefusesAReplacedTargetAndUnsafeSpelling() throws {
+        let scratch = try Scratch(), left = try scratch.folder("left"), right = try scratch.folder("right")
+        _ = try scratch.folder("left/Folder"); _ = try scratch.folder("right/folder")
+        var l = try SyncScanner.scan(left), r = try SyncScanner.scan(right)
+        l.caseSensitive = false; r.caseSensitive = false
+        let plan = SyncPlanner.plan(SyncComparator.compare(l, r), mode: .backup)
+        var unsafe = try #require(plan.steps.first)
+        unsafe.renameTo = "../escape"
+        #expect(throws: (any Error).self) { try SyncExecutor.execute(unsafe, leftRoot: left, rightRoot: right) }
+        try FileManager.default.moveItem(at: right.appendingPathComponent("folder"), to: right.appendingPathComponent("detached"))
+        _ = try scratch.folder("right/folder")
+        #expect(throws: (any Error).self) { try SyncExecutor.execute(plan, leftRoot: left, rightRoot: right) }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: right.path).contains("folder"))
     }
 }

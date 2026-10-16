@@ -56,7 +56,7 @@ final class PlacesPanel: NSView {
     var rows: [Row] = []
     private var syncTick: Timer?
     private var shownSyncStatuses: [UUID: SyncCoordinator.Status] = [:]
-    private var syncMinute = -1
+    private var syncSecond = -1
 
     // Fold/unfold animation (macOS style): rows glide to their new places, folding rows slide into their header and
     // fade, unfolding ones come out of it; the chevron turns.
@@ -174,22 +174,23 @@ final class PlacesPanel: NSView {
         NotificationCenter.default.addObserver(self, selector: #selector(placesChanged(_:)), name: PlacesModel.changed, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged(_:)), name: Settings.changed, object: nil)
         _ = SyncCoordinator.shared
-        syncTick = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+        syncTick = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
             guard let self else { return }
-            let minute = Int(Date().timeIntervalSince1970 / 60)
-            let minuteChanged = minute != self.syncMinute
-            self.syncMinute = minute
+            let second = Int(Date().timeIntervalSince1970)
+            let timeChanged = second != self.syncSecond
+            self.syncSecond = second
             for index in self.rows.indices {
                 guard case .entry(let entry) = self.rows[index].kind,
                     let pair = SyncCoordinator.shared.pair(for: entry.url)
                 else { continue }
                 let status = SyncCoordinator.shared.statuses[pair.id] ?? .idle
-                if status == .syncing || status == .planning || minuteChanged {
+                if status == .syncing || status == .planning || timeChanged {
                     let row = self.rect(of: index)
-                    self.setNeedsDisplay(minuteChanged ? row : CGRect(x: row.maxX - 32, y: row.minY, width: 32, height: row.height))
+                    self.setNeedsDisplay(timeChanged ? row : CGRect(x: row.maxX - 32, y: row.minY, width: 32, height: row.height))
                 }
             }
         }
+        if let syncTick { RunLoop.main.add(syncTick, forMode: .common) }
         NotificationCenter.default.addObserver(self, selector: #selector(syncStatusChanged), name: SyncCoordinator.changed, object: nil)
         reload()
         setAccessibilityRole(.list)

@@ -1,6 +1,7 @@
 import Foundation
 
 public enum SyncPlanner {
+    public static let backupNewerReason = "Newer in destination. Skipped unless you choose to replace it."
     public static func plan(
         _ comparison: SyncComparison, mode: SyncMode, previous: SyncState? = nil,
         overrides: [String: SyncOverride] = [:], keepBothLabel: String = "right"
@@ -80,17 +81,23 @@ public enum SyncPlanner {
                 step =
                     row.right == nil
                     ? conflict(row, "The selected side no longer has this item. Choose Keep or Move to Trash.") : transfer(row, from: .right)
+            } else if mode == .backup, let left = row.left, let right = row.right,
+                left.kind != .directory, let sourceDate = left.modified, let targetDate = right.modified,
+                targetDate.timeIntervalSince(sourceDate) > comparison.options.timestampTolerance, row.status != .same
+            {
+                step = conflict(row, backupNewerReason)
             } else if mode == .twoWay {
                 step = twoWay(
                     row, oldLeft: oldLeft[key(row.left?.path ?? row.path)], oldRight: oldRight[key(row.right?.path ?? row.path)],
                     hasState: previous != nil, options: comparison.options)
             } else {
+                if hasNameDifference(row) { step = transfer(row, from: .left) }
                 switch row.status {
                 case .onlyLeft: step = transfer(row, from: .left)
                 case .onlyRight: if mode == .mirror { step = trash(row, side: .right) }
                 case .changed:
                     // Folder timestamps and roll-ups do not themselves require copying a folder tree.
-                    if row.left?.kind != .directory { step = transfer(row, from: .left) }
+                    if row.left?.kind != .directory || hasNameDifference(row) { step = transfer(row, from: .left) }
                 case .same, .collision: break
                 }
             }
@@ -137,6 +144,10 @@ public enum SyncPlanner {
         }
         // Parents first for creation; leaves first for removal. Every leaf remains explicit in the preview.
         let sorted = steps.sorted { a, b in
+            let renameA = a.renameTo != nil && a.expectedTarget?.kind == .directory
+            let renameB = b.renameTo != nil && b.expectedTarget?.kind == .directory
+            if renameA != renameB { return renameB }
+            if renameA { return a.path > b.path }
             if (a.action == .trash) != (b.action == .trash) { return b.action == .trash }
             if a.action == .trash { return a.path > b.path }
             return a.path < b.path
@@ -156,6 +167,7 @@ public enum SyncPlanner {
         options: SyncCompareOptions
     ) -> SyncStep? {
         if let l = row.left, let r = row.right {
+            if hasNameDifference(row) { return conflict(row, "Names differ in case. Choose the name to keep.") }
             if l.kind == .directory && r.kind == .directory { return nil }
             if SyncComparator.statusOf(l, r, options: options) == .same { return nil }
             guard hasState else { return conflict(row, "Both sides differ on the first sync.") }
@@ -181,13 +193,24 @@ public enum SyncPlanner {
         if let a = current.hash, let b = old.hash { return a != b }
         return current.size != old.size || current.modified != old.modified || current.identity != old.identity
     }
+    private static func hasNameDifference(_ row: SyncDifference) -> Bool {
+        guard let left = row.left, let right = row.right else { return false }
+        return (left.path as NSString).lastPathComponent != (right.path as NSString).lastPathComponent
+    }
     private static func transfer(_ row: SyncDifference, from source: SyncSide) -> SyncStep? {
-        guard row.status != .same, let entry = source == .left ? row.left : row.right else { return nil }
+        let rename = hasNameDifference(row)
+        guard row.status != .same || rename, let entry = source == .left ? row.left : row.right else { return nil }
         let target = source == .left ? row.right : row.left
-        if target?.kind == .directory && entry.kind == .directory { return nil }
-        return .init(
+        if target?.kind == .directory && entry.kind == .directory && !rename { return nil }
+        var step = SyncStep(
             path: target?.path ?? entry.path, sourcePath: entry.path, source: source, target: source.opposite,
-            action: entry.kind == .directory ? .mkdir : (target == nil ? .copy : .replace), expectedSource: entry, expectedTarget: target)
+            action: target == nil ? (entry.kind == .directory ? .mkdir : .copy) : .replace, expectedSource: entry, expectedTarget: target)
+        if rename, let target {
+            let parent = (target.path as NSString).deletingLastPathComponent
+            let name = (entry.path as NSString).lastPathComponent
+            step.renameTo = parent.isEmpty ? name : parent + "/" + name
+        }
+        return step
     }
     private static func trash(_ row: SyncDifference, side: SyncSide) -> SyncStep {
         .init(
