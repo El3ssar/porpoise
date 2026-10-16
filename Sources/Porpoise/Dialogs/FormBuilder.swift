@@ -146,7 +146,11 @@ final class FormBuilder: NSObject {
                 row.addArrangedSubview(b)
             }
             // Keep a partial final row aligned with the full rows.
-            while row.arrangedSubviews.count < 3 { row.addArrangedSubview(NSView()) }
+            while row.arrangedSubviews.count < 3 {
+                let placeholder = NSView()
+                placeholder.heightAnchor.constraint(equalToConstant: 62).isActive = true
+                row.addArrangedSubview(placeholder)
+            }
             grid.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: grid.widthAnchor).isActive = true
         }
