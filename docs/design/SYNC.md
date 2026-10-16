@@ -73,7 +73,7 @@ replace = `compareChanged`, delete/conflict = `compareDanger`.
 | Compare Folders / Stop Comparing | View | ⌃⌘C | Compares the two panes at once; opens split first if needed (§4.1). Toggles. |
 | Linked Browsing | View | ⌃⌘L | Toggle; checkmark in menu. |
 | Sync… | File | ⌃⌘S | Opens the sync sheet for the current pair. Enabled while comparing or on a saved pair. |
-| Compare Files | File | ⌥⌘Y | Two selected files, or the selected row's two sides while comparing. ⌘Y is Quick Look. |
+| Compare Files | File | ⌥⌘Y | Two selected files in one pane; one selected file in each pane of a split view (left vs right); or the selected row's two sides while comparing. The file chooser appears only when none of these applies. ⌘Y is Quick Look. |
 | Next / Previous Difference | Go | ⌃⌘↓ / ⌃⌘↑ | Compare view and Compare Files. |
 | Copy to Other View | (exists) | ⇧F5 | While comparing: "Copy to Backup →" / "← Copy to Projects" for the selected rows. |
 | Show Same Items | View | — | Toggles the `=` filter pill. |
