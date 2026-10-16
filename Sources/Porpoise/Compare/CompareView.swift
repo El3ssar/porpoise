@@ -406,7 +406,8 @@ final class CompareView: NSView {
         stop.image = failed ? nil : NSImage(systemSymbolName: "stop.fill", accessibilityDescription: nil)
         stop.imagePosition = .imageLeft; stop.imageHugsTitle = true
         showJob.isHidden = !failed && !done; showJob.title = done ? "Show in Activity" : "Show"
-        summary.stringValue = "\(job.mode) · \(model.names.0) → \(job.destination)"
+        let pair = jobMetadata["pairDescription"] as? String ?? "\(model.names.0) → \(job.destination)"
+        summary.stringValue = "\(job.mode) · \(pair)"
         jobLine.isIndeterminate = false
         jobLine.isHidden = job.state.isEnded; jobLine.doubleValue = job.fraction
         jobLine.alphaValue = paused ? 0.4 : 1
