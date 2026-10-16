@@ -566,6 +566,7 @@ final class DebugBridge: NSObject {
             NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
+        case "comparejob": wc?.tab.compareView?.previewJob(arg)
         case "reviewcapture":
             // Keep activation, capture and its key-state evidence in one app-side transaction.
             guard Settings.isTesting, let window = wc?.window else { break }
@@ -811,8 +812,14 @@ final class DebugBridge: NSObject {
     /// onscreen windows are captured, so another app's content cannot enter a design review artifact.
     private func windowServerMenuSnapshot(to path: String) {
         let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
-        var ids: [UnsafeRawPointer?] = info.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(getpid()) }
-            .compactMap { ($0[kCGWindowNumber as String] as? NSNumber).flatMap { UnsafeRawPointer(bitPattern: $0.uintValue) } }
+        let owned = info.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(getpid()) }
+        try? JSONSerialization.data(withJSONObject: owned, options: [.prettyPrinted, .sortedKeys]).write(
+            to: URL(fileURLWithPath: path + ".windows.json"))
+        var ids: [UnsafeRawPointer?] = owned.filter {
+            let bounds = $0[kCGWindowBounds as String] as? [String: Any] ?? [:]
+            return ($0[kCGWindowLayer as String] as? Int) == 0 || (bounds["Height"] as? Double ?? 0) < 500
+        }
+        .compactMap { ($0[kCGWindowNumber as String] as? NSNumber).flatMap { UnsafeRawPointer(bitPattern: $0.uintValue) } }
         typealias Fn = @convention(c) (CGRect, CFArray, UInt32) -> Unmanaged<CGImage>?
         guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImageFromArray") else { return }
         let fn = unsafeBitCast(sym, to: Fn.self)

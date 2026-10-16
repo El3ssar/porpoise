@@ -235,8 +235,8 @@ final class ToolbarView: NSView {
         let available = max(0, maxX - minX)
         if navigatorViews.count == 2, paneRanges.count == 2 {
             // Each field at least minFieldWidth while there is room for both; never over the buttons on the right.
-            let minW = min(Self.minFieldWidth, max(0, (available - gap) / 2))
             let splitX = convert(CGPoint(x: paneRanges[1].lowerBound, y: 0), from: nil).x
+            let minW = min(Self.minFieldWidth, max(0, (available - gap) / 2), max(0, splitX - gap - minX))
             if hasPair {
                 pairGroup.frame = CGRect(x: splitX - 34, y: y + (height - 34) / 2, width: 68, height: 34)
                 linkFolders.frame = CGRect(x: 4, y: 3, width: 28, height: 28)

@@ -2,6 +2,17 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
+private struct CompareJobBarState {
+    var state: Activity.State
+    var completed: Int, total: Int
+    var fraction: Double
+    var canPause: Bool
+    var destination: String, mode: String
+    var copied: Int, trashed: Int, errors: Int
+    var reason: String
+    var lostConnection: Bool
+}
+
 final class CompareView: NSView {
     private(set) var model: CompareModel
     let document: CompareRowsView
@@ -43,6 +54,10 @@ final class CompareView: NSView {
     private var lastRowsVersion = -1
     private var popover: NSPopover?
     private var currentActivity: Activity?
+    private var jobMetadata: [AnyHashable: Any] = [:]
+    private var reviewJob: CompareJobBarState?
+    private let jobWash = NSView(), jobSymbol = NSImageView()
+    private let showJob = CompareFocusButton(title: "Show", target: nil, action: nil)
     private var completedActivity: UUID?
     private var progressTicker: Timer?
     private let pause = NSButton(title: "Pause", target: nil, action: nil)
@@ -71,7 +86,10 @@ final class CompareView: NSView {
             pill.onToggle = { [weak self] in self?.model.toggle(filter) }
             bar.addSubview(pill); pills.append(pill)
         }
-        for child in [sync, close, progress, progressLabel, stop, pause, jobLine] { bar.addSubview(child) }
+        jobWash.wantsLayer = true; bar.addSubview(jobWash)
+        for child in [sync, close, progress, progressLabel, stop, pause, showJob, jobSymbol, jobLine] { bar.addSubview(child) }
+        showJob.isBordered = false; showJob.font = .systemFont(ofSize: 12); showJob.contentTintColor = Theme.accent
+        showJob.target = self; showJob.action = #selector(showJobPressed); showJob.isHidden = true; jobSymbol.isHidden = true
         for child in [method, methodSeparator, summary, sizes, smallZoom, zoom, largeZoom] { footer.addSubview(child) }
         method.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: nil)?.withSymbolConfiguration(
             .init(pointSize: 14, weight: .regular))
@@ -93,7 +111,8 @@ final class CompareView: NSView {
         summary.font = .systemFont(ofSize: 11); summary.textColor = Theme.windowTextInactive; summary.lineBreakMode = .byTruncatingTail
         sizes.font = .systemFont(ofSize: 11); sizes.textColor = Theme.windowTextInactive; sizes.alignment = .right
         progressLabel.font = .systemFont(ofSize: 12); progressLabel.textColor = Theme.windowTextInactive
-        pause.bezelStyle = .inline; pause.target = self; pause.action = #selector(pausePressed); pause.isHidden = true
+        pause.bezelStyle = .rounded; pause.font = .systemFont(ofSize: 12); pause.target = self; pause.action = #selector(pausePressed);
+        pause.isHidden = true
         jobLine.isHidden = true
         jobLine.onFrame = { [weak self] in self?.progress.needsDisplay = true }
         stop.bezelStyle = .rounded; stop.font = .systemFont(ofSize: 12); stop.target = self; stop.action = #selector(stopPressed)
@@ -109,7 +128,8 @@ final class CompareView: NSView {
     required init?(coder: NSCoder) { fatalError() }
     func advanceKeyboardFocus(backward: Bool) {
         guard let window else { return }
-        let controls: [NSView] = pills.filter { $0.isEnabled && !$0.isHidden } + [sync, pause, stop, close].filter { $0.isEnabled && !$0.isHidden }
+        let controls: [NSView] =
+            pills.filter { $0.isEnabled && !$0.isHidden } + [sync, pause, stop, showJob, close].filter { $0.isEnabled && !$0.isHidden }
         // The shared row surface has two logical focus stops; footer controls remain reachable too.
         var stops: [(view: NSView, side: SyncSide?)] = controls.map { ($0, nil) }
         stops += [(document, .left), (document, .right), (method, nil), (zoom, nil)]
@@ -132,9 +152,9 @@ final class CompareView: NSView {
         self.model.onChange = nil; self.model.stop()
         onClose = nil; onSync = nil; onChoose = nil; onIgnore = nil; onCompareFiles = nil
         document.onOpen = nil; document.onCopy = nil; document.onSelection = nil
-        popover?.close(); popover = nil; currentActivity = nil; completedActivity = nil
+        popover?.close(); popover = nil; currentActivity = nil; completedActivity = nil; jobMetadata = [:]; reviewJob = nil
         self.model = model; document.model = model
-        document.selectedPath = nil; document.finishedPaths = []; document.hoverIndex = nil
+        document.selectedPath = nil; document.finishedPaths = []; document.failedPaths = []; document.hoverIndex = nil
         document.replaceRows([], indices: [:]); lastRowsVersion = -1
         scroll.contentView.scroll(to: .zero)
         model.onChange = { [weak self] in self?.update() }; update()
@@ -161,9 +181,13 @@ final class CompareView: NSView {
         close.frame = CGRect(x: width - 32, y: 5, width: 24, height: 24)
         progress.frame = CGRect(x: 12, y: 12, width: 12, height: 12)
         progressLabel.frame = CGRect(x: 32, y: 10, width: max(50, width - 210), height: 18)
-        stop.frame = CGRect(x: width - 100, y: 7, width: 60, height: 22)
+        let retrying = currentActivity?.state == .failed || reviewJob?.state == .failed
+        stop.frame = CGRect(x: width - (retrying ? 106 : 100), y: 7, width: retrying ? 92 : 60, height: 22)
         pause.frame = CGRect(x: width - 172, y: 7, width: 66, height: 22)
         jobLine.frame = CGRect(x: 0, y: 0, width: width, height: 2)
+        jobWash.frame = bar.bounds; jobSymbol.frame = CGRect(x: 11, y: 10, width: 16, height: 16)
+        let completedJob = currentActivity?.state == .completed || reviewJob?.state == .completed
+        showJob.frame = CGRect(x: width - (completedJob ? 164 : 152), y: 6, width: completedJob ? 130 : 44, height: 24)
         method.frame = CGRect(x: 6, y: 2, width: 140, height: 24)
         methodSeparator.frame = CGRect(x: 148, y: 6, width: 1, height: 16)
         summary.frame = CGRect(x: 160, y: 7, width: max(50, width - (width < 780 ? 320 : 515)), height: 17)
@@ -203,6 +227,7 @@ final class CompareView: NSView {
             progress.stopAnimation(nil)
         }
         pause.isHidden = true
+        close.isHidden = false; showJob.isHidden = true; jobSymbol.isHidden = true; jobWash.layer?.backgroundColor = nil
         jobLine.isHidden = !model.showProgress; jobLine.isIndeterminate = model.showProgress
         if model.showProgress { jobLine.startAnimation(nil) } else { jobLine.stopAnimation(nil) }
         sync.isHidden = model.showProgress; sync.isEnabled = model.comparison?.complete == true && model.error == nil && !model.loading
@@ -217,7 +242,7 @@ final class CompareView: NSView {
             progressLabel.isHidden = false; progressLabel.stringValue = "Couldn't compare: " + error; progressLabel.textColor = Theme.compareDanger
             stop.isHidden = false; stop.title = "Try Again"; sync.isHidden = true
         } else {
-            stop.title = "Stop"; progressLabel.textColor = Theme.windowTextInactive
+            stop.title = "Stop"; stop.image = nil; progressLabel.textColor = Theme.windowTextInactive
         }
         header.needsDisplay = true
         let counts = model.outline?.counts ?? [:]
@@ -257,7 +282,9 @@ final class CompareView: NSView {
                 self.model.filter = .all; self.model.rebuild()
             }
         }
+        overlay.button.isPrimary = !identical
         if let currentActivity { renderActivity(currentActivity) }
+        if let reviewJob { renderJob(reviewJob) }
         needsLayout = true; lastUpdateMilliseconds = (CACurrentMediaTime() - started) * 1000
     }
     static func methodTitle(_ method: SyncCompareMethod) -> String {
@@ -268,8 +295,17 @@ final class CompareView: NSView {
         }
     }
     @objc private func syncPressed() { onSync?() }
-    @objc private func closePressed() { onClose?() }
+    @objc private func closePressed() {
+        if currentActivity?.state == .completed || reviewJob?.state == .completed {
+            currentActivity = nil; reviewJob = nil; document.finishedPaths = []; update()
+        } else {
+            onClose?()
+        }
+    }
     @objc private func stopPressed() {
+        if currentActivity?.state == .failed, let currentActivity {
+            FileOperationsController.shared.retry(currentActivity, window: window); return
+        }
         if let currentActivity, !currentActivity.state.isEnded {
             FileOperationsController.shared.cancel(currentActivity)
         } else if model.error != nil {
@@ -286,29 +322,96 @@ final class CompareView: NSView {
             FileOperationsController.shared.pause(currentActivity)
         }
     }
-    func show(activity: Activity) {
+    @objc private func showJobPressed() { ActivityWindowController.shared.show() }
+    func show(activity: Activity, metadata: [AnyHashable: Any] = [:]) {
+        jobMetadata = metadata
         currentActivity = activity
         model.suppressWatchUpdates = !activity.state.isEnded
-        if activity.state.isEnded, completedActivity != activity.id {
+        if activity.state == .completed, completedActivity != activity.id {
             completedActivity = activity.id; model.start()
             DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
-                self?.currentActivity = nil; self?.update()
+                guard self?.currentActivity?.id == activity.id, self?.currentActivity?.state == .completed else { return }
+                self?.currentActivity = nil; self?.document.finishedPaths = []; self?.update()
             }
         }
         renderActivity(activity)
     }
     private func renderActivity(_ activity: Activity) {
+        renderJob(
+            CompareJobBarState(
+                state: activity.state,
+                completed: jobMetadata["completedItems"] as? Int ?? activity.planProgress?.completedSteps ?? activity.progress?.doneItems ?? 0,
+                total: jobMetadata["totalItems"] as? Int ?? activity.planProgress?.totalSteps ?? activity.progress?.totalItems ?? 0,
+                fraction: activity.fraction,
+                canPause: activity.canPause, destination: jobMetadata["destinationLabel"] as? String ?? model.names.1,
+                mode: jobMetadata["modeLabel"] as? String ?? "Sync", copied: jobMetadata["completedCopied"] as? Int ?? 0,
+                trashed: jobMetadata["completedTrashed"] as? Int ?? 0,
+                errors: max(activity.errors.count, (jobMetadata["failedPaths"] as? [String])?.count ?? 0),
+                reason: activity.errors.first ?? "", lostConnection: jobMetadata["lostConnection"] as? Bool ?? false))
+    }
+    func previewJob(_ state: String) {
+        guard Settings.isTesting else { return }
+        if state == "off" { reviewJob = nil; update(); return }
+        let value = Activity.State(rawValue: state) ?? .running
+        reviewJob = CompareJobBarState(
+            state: value, completed: value == .completed ? 24 : 12, total: 24, fraction: 0.5,
+            canPause: !value.isEnded, destination: model.names.1, mode: "Mirror", copied: 22, trashed: 2,
+            errors: value == .failed ? 3 : 0, reason: "Backup is full.", lostConnection: state == "connection")
+        if value == .failed, let path = model.rows.first(where: { ($0.left ?? $0.right)?.kind == .file })?.path {
+            document.failedPaths = [path]; document.needsDisplay = true
+        } else {
+            document.failedPaths = []
+        }
+        update()
+    }
+    private func renderJob(_ job: CompareJobBarState) {
         pills.forEach { $0.isHidden = true }; sync.isHidden = true
-        progress.isHidden = activity.state.isEnded; progressLabel.isHidden = false
-        progressLabel.stringValue = (activity.state == .completed ? "✓ Synced · " : "") + activity.statusText
-        progressLabel.textColor = activity.state == .failed ? Theme.compareDanger : Theme.windowText
-        if !activity.state.isEnded { progress.startAnimation(nil) }
-        pause.isHidden = !activity.canPause; pause.title = activity.state == .paused ? "Resume" : "Pause"
-        stop.isHidden = activity.state.isEnded
+        let paused = job.state == .paused, failed = job.state == .failed, done = job.state == .completed
+        progress.isHidden = job.state.isEnded || paused || job.lostConnection; progressLabel.isHidden = false
+        let title: String, detail: String, symbol: String?, color: NSColor
+        if job.lostConnection {
+            title = "Lost connection to \(job.destination)."; detail = "Finished items are kept."; symbol = "exclamationmark.triangle.fill";
+            color = Theme.compareChanged
+        } else if failed {
+            title = "\(max(1, job.errors)) \(job.errors == 1 ? "item couldn't" : "items couldn't") be copied."
+            detail = job.reason; symbol = "exclamationmark.circle.fill"; color = Theme.compareDanger
+        } else if done {
+            title = "Synced"; detail = "\(job.copied) copied · \(job.trashed) moved to the Trash · just now"; symbol = "checkmark";
+            color = Theme.compareOnly
+        } else if paused {
+            title = "Paused"; detail = "\(job.completed) of \(job.total) done"; symbol = "pause.fill"; color = Theme.windowTextInactive
+        } else {
+            title = job.state == .waiting ? "Waiting for your answer" : "Syncing to \(job.destination)"
+            detail = "\(job.completed) of \(job.total)"; symbol = nil; color = Theme.accent
+        }
+        var text = title + (detail.isEmpty ? "" : " · " + detail)
+        if !job.state.isEnded, let totalBytes = jobMetadata["totalBytes"] as? Int64, totalBytes > 0,
+            let completedBytes = jobMetadata["completedBytes"] as? Int64
+        {
+            text += " · \(FileFormat.size(completedBytes)) of \(FileFormat.size(totalBytes))"
+        }
+        let run = NSMutableAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: Theme.windowText])
+        run.addAttribute(
+            .font, value: NSFont.systemFont(ofSize: 12, weight: .semibold), range: NSRange(location: 0, length: (title as NSString).length))
+        progressLabel.attributedStringValue = run
+        jobSymbol.isHidden = symbol == nil; jobSymbol.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }
+        jobSymbol.contentTintColor = color; jobWash.layer?.backgroundColor = failed ? Theme.compareDanger.withAlphaComponent(0.1).cgColor : nil
+        if !progress.isHidden { progress.startAnimation(nil) } else { progress.stopAnimation(nil) }
+        close.isHidden = !done
+        pause.isHidden = !job.canPause && !job.lostConnection; pause.title = paused || job.lostConnection ? "Resume" : "Pause"
+        pause.image = NSImage(systemSymbolName: paused || job.lostConnection ? "play.fill" : "pause.fill", accessibilityDescription: nil)
+        pause.imagePosition = .imageLeft; pause.imageHugsTitle = true;
+        pause.contentTintColor = paused || job.lostConnection ? Theme.accent : Theme.windowText
+        stop.isHidden = job.state.isEnded && !failed; stop.title = failed ? "Try Again" : "Stop"
+        stop.image = failed ? nil : NSImage(systemSymbolName: "stop.fill", accessibilityDescription: nil)
+        stop.imagePosition = .imageLeft; stop.imageHugsTitle = true
+        showJob.isHidden = !failed && !done; showJob.title = done ? "Show in Activity" : "Show"
+        summary.stringValue = "\(job.mode) · \(model.names.0) → \(job.destination)"
         jobLine.isIndeterminate = false
-        jobLine.isHidden = activity.state.isEnded; jobLine.doubleValue = activity.fraction
-        jobLine.alphaValue = activity.state == .paused ? 0.4 : 1
-        if activity.state.isEnded { jobLine.stopAnimation(nil) } else { jobLine.startAnimation(nil) }
+        jobLine.isHidden = job.state.isEnded; jobLine.doubleValue = job.fraction
+        jobLine.alphaValue = paused ? 0.4 : 1
+        if job.state.isEnded { jobLine.stopAnimation(nil) } else { jobLine.startAnimation(nil) }
+        needsLayout = true
     }
     @objc private func zoomChanged() {
         document.rowHeight = CGFloat(zoom.doubleValue) + 6
@@ -395,7 +498,7 @@ final class ComparePill: NSButton {
         }
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
-        NSGraphicsContext.current?.cgContext.setAlpha(isOn && isEnabled ? 1 : 0.55)
+        NSGraphicsContext.current?.cgContext.setAlpha(!isEnabled ? 0.5 : (isOn ? 1 : 0.55))
         if isOn {
             color.withAlphaComponent(effectiveAppearance.isDark ? 0.2 : 0.16).setFill(); box.fill()
         } else {
@@ -572,7 +675,9 @@ final class CompareFocusSlider: NSSlider {
 }
 
 final class ComparePrimaryButton: CompareActionButton {
+    var isPrimary = true { didSet { needsDisplay = true } }
     override func draw(_ dirty: NSRect) {
+        if !isPrimary { super.draw(dirty); return }
         Theme.accent.withAlphaComponent(isEnabled ? 1 : 0.4).setFill()
         NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 14, yRadius: 14).fill()
         let style = NSMutableParagraphStyle(); style.alignment = .center
