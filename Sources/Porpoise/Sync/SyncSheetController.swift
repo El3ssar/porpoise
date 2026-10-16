@@ -226,9 +226,10 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         rightButton.frame = CGRect(x: leftButton.frame.maxX + 8, y: bulkY, width: (width - 196) / 2, height: 24)
         [newerButton, leftButton, rightButton].forEach { $0.isHidden = true }
         let top = bulkY
-        let bottom = height - 93 - keepExpansion * 24 - (optionsOpen ? 94 : 0)
+        let editSpacing: CGFloat = editing ? 32 : 0
+        let bottom = height - 93 - keepExpansion * 24 - (optionsOpen ? 94 : 0) - editSpacing
         listFrame.frame = CGRect(x: 20, y: top, width: width - 40, height: max(40, bottom - top))
-        let optionsBase = height - 86 - keepExpansion * 24 - (optionsOpen ? 94 : 0)
+        let optionsBase = height - 86 - keepExpansion * 24 - (optionsOpen ? 94 : 0) - editSpacing
         scroll.frame = listFrame.bounds.insetBy(dx: 1, dy: 1)
         outline.tableColumns[0].width = max(200, scroll.contentSize.width)
         let deletionSummary =
@@ -270,7 +271,7 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
             ? "Porpoise syncs changes while it’s open. You’ll only hear about conflicts and errors."
             : "Save this sync to run it again from the sidebar."
         explanation.frame = CGRect(x: 22, y: height - 62, width: width - 44, height: 16)
-        (root as? SyncSheetBackdrop)?.footerY = height - 56 - keepExpansion * 24
+        (root as? SyncSheetBackdrop)?.footerY = height - 56 - (editing ? 0 : keepExpansion * 24)
         root.needsDisplay = true
         let y = height - 43
         cancelButton.frame = CGRect(x: width - 190, y: y, width: 80, height: 30)
@@ -302,10 +303,10 @@ final class SyncSheetController: NSWindowController, NSWindowDelegate, NSOutline
         }
         let empty = !planning && displaySteps.isEmpty && preview?.plan.steps.isEmpty == true
         emptyState.isHidden = !empty; listFrame.isHidden = empty; summary.isHidden = empty
-        emptyState.frame = CGRect(x: 20, y: 180, width: width - 40, height: max(130, height - 270))
+        emptyState.frame = CGRect(x: 20, y: 180, width: width - 40, height: editing ? max(80, bottom - 180) : max(130, height - 270))
         emptyState.title = (editing ? "Nothing to do. " : "") + pair.leftTitle + " and " + pair.rightTitle + " already match" + (editing ? "." : "")
         emptyState.method = method.titleOfSelectedItem?.lowercased() ?? "size & date"; emptyState.needsDisplay = true
-        if empty {
+        if empty && !editing {
             automatic.isHidden = true; options.isHidden = true; saveButton.isHidden = true; cancelButton.isHidden = true
         } else {
             automatic.isHidden = false; options.isHidden = false; cancelButton.isHidden = false

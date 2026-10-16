@@ -504,12 +504,12 @@ final class SyncCoordinator: NSObject, UNUserNotificationCenterDelegate {
         guard Settings.isTesting, activities.isEmpty, preparing.isEmpty else { return }
         for watcher in watchers.values { watcher.stop() }
         watchers.removeAll(); dirty.removeAll()
-        let names = ["Projects", "Photos", "Website", "Documents", "Work", "Archive"]
+        let names = ["Projects", "Photos", "Website", "Documents", "Work", "Archive", "Music"]
         pairs = names.map { name in
             var pair = SavedSync(name: name, left: left, right: right)
-            pair.automatic = true; pair.lastSynced = Date().addingTimeInterval(-120); return pair
+            pair.automatic = name != "Music"; pair.lastSynced = Date().addingTimeInterval(-120); return pair
         }
-        let values: [Status] = [.idle, .syncing, .conflicts(2), .failed("Permission denied"), .paused, .missing]
+        let values: [Status] = [.idle, .syncing, .conflicts(2), .failed("Permission denied"), .paused, .missing, .idle]
         for (index, pair) in pairs.enumerated() { statuses[pair.id] = values[index] }
         changed()
     }
