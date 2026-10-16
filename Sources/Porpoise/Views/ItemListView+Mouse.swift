@@ -95,6 +95,7 @@ extension ItemListView {
         if downloadFromCloudBadge(at: p) { return }
         mouseDownPoint = p
         let idx = index(at: p)
+        if idx == nil, comparisonGhostClick?(p) == true { return }
         mouseDownIndex = idx
         let mods = event.modifierFlags
 

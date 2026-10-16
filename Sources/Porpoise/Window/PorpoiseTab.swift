@@ -15,6 +15,9 @@ final class PorpoiseTab: NSView {
     private(set) var activeIsSecondary = false
     var customTitle: String?
     var compareView: CompareView?
+    var comparisonSnapshots: [(ViewContainer, ViewContainer.ComparisonSnapshot)] = []
+    var comparisonWasSecondary = false
+    var comparisonPreviousLinks: (left: URL, right: URL)?
     private var preparedCompareView: CompareView?
     func comparisonView(model: CompareModel) -> CompareView {
         guard let prepared = preparedCompareView else { return CompareView(model: model) }
@@ -30,14 +33,19 @@ final class PorpoiseTab: NSView {
 
     func installComparison(_ compare: CompareView?) {
         let previous = compareView
-        previous?.model.stop(); previous?.removeFromSuperview(); compareView = compare
+        previous?.model.stop(); previous?.document.detachDetails(); previous?.removeFromSuperview(); compareView = compare
         if compare == nil, let previous {
             previous.reset(model: CompareModel(left: primary.url, right: secondary?.url ?? primary.url))
             preparedCompareView = previous
         }
         primary.suspendForComparison(compare != nil); secondary?.suspendForComparison(compare != nil)
         primary.isHidden = compare != nil; secondary?.isHidden = compare != nil
-        if let compare { addSubview(compare); compare.frame = bounds }
+        if let compare {
+            addSubview(compare); compare.frame = bounds
+            compare.document.attachDetails(containers)
+            compare.header.attachDetails(containers.map(\.header))
+            compare.needsLayout = true
+        }
         needsLayout = true
     }
 

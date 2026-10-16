@@ -79,7 +79,7 @@ final class CompareView: NSView {
         self.model = model; document = CompareRowsView(model: model)
         super.init(frame: .zero); wantsLayer = true
         header.document = document
-        scroll.documentView = document; scroll.drawsBackground = false; scroll.hasVerticalScroller = true
+        scroll.documentView = document; scroll.drawsBackground = false; scroll.hasVerticalScroller = false
         scroll.autohidesScrollers = true; scroll.scrollerStyle = .overlay
         for child in [scroll, bar, header, footer, overlay] { addSubview(child) }
         let definitions: [(CompareFilter, String, NSColor)] = [
@@ -96,7 +96,8 @@ final class CompareView: NSView {
         for child in [sync, close, progress, progressLabel, stop, pause, showJob, jobSymbol, jobLine] { bar.addSubview(child) }
         showJob.isBordered = false; showJob.font = .systemFont(ofSize: 12); showJob.contentTintColor = Theme.accent
         showJob.target = self; showJob.action = #selector(showJobPressed); showJob.isHidden = true; jobSymbol.isHidden = true
-        for child in [method, methodSeparator, summary, sizes, smallZoom, zoom, largeZoom] { footer.addSubview(child) }
+        bar.addSubview(method)
+        for child in [methodSeparator, summary, sizes, smallZoom, zoom, largeZoom] { footer.addSubview(child); child.isHidden = true }
         method.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: nil)?.withSymbolConfiguration(
             .init(pointSize: 14, weight: .regular))
         method.imagePosition = .imageLeft; method.imageHugsTitle = true
@@ -139,7 +140,12 @@ final class CompareView: NSView {
             pills.filter { $0.isEnabled && !$0.isHidden } + [sync, pause, stop, showJob, close].filter { $0.isEnabled && !$0.isHidden }
         // The shared row surface has two logical focus stops; footer controls remain reachable too.
         var stops: [(view: NSView, side: SyncSide?)] = controls.map { ($0, nil) }
-        stops += [(document, .left), (document, .right), (method, nil), (zoom, nil)]
+        if document.detailsContainers.count == 2 {
+            stops += [(document.detailsContainers[0].list, .left), (document.detailsContainers[1].list, .right)]
+        } else {
+            stops += [(document, .left), (document, .right)]
+        }
+        stops += [(method, nil)]
         let current = stops.firstIndex { window.firstResponder === $0.view && ($0.side == nil || $0.side == document.activeSide) }
         let next = ((current ?? (backward ? 0 : -1)) + (backward ? -1 : 1) + stops.count) % stops.count
         if let side = stops[next].side { focusSide(side) } else { window.makeFirstResponder(stops[next].view) }
@@ -181,6 +187,13 @@ final class CompareView: NSView {
         scroll.frame = CGRect(x: 0, y: 26 + barHeight, width: width, height: max(0, bounds.height - 54 - barHeight))
         document.frame.size = CGSize(
             width: scroll.contentSize.width, height: max(scroll.contentSize.height, CGFloat(document.rows.count) * document.rowHeight))
+        let detailsWidth = (scroll.frame.width - document.gutterWidth) / 2
+        for (index, container) in document.detailsContainers.enumerated() {
+            if container.scroll.superview !== self { addSubview(container.scroll, positioned: .above, relativeTo: scroll) }
+            container.scroll.frame = CGRect(
+                x: index == 0 ? 0 : detailsWidth + document.gutterWidth, y: scroll.frame.minY, width: detailsWidth, height: scroll.frame.height)
+        }
+        document.layoutDetails(); header.needsLayout = true; header.layoutSubtreeIfNeeded()
         var x: CGFloat = 10
         for pill in pills {
             pill.compact = width < 900; let desired = pill.intrinsicContentSize.width
@@ -188,7 +201,7 @@ final class CompareView: NSView {
         }
         sync.frame = CGRect(x: width - 100, y: 5, width: 62, height: 26)
         close.frame = CGRect(x: width - 32, y: 5, width: 24, height: 24)
-        progress.frame = CGRect(x: 12, y: 12, width: 12, height: 12)
+        progress.frame = CGRect(x: width - 269, y: 12, width: 12, height: 12)
         progressLabel.frame = CGRect(x: 32, y: 10, width: max(50, width - 210), height: 18)
         let stopWidth = max(68, stop.intrinsicContentSize.width + 24), pauseWidth = max(80, pause.intrinsicContentSize.width + 24)
         let trailing: CGFloat = close.isHidden ? 12 : 40
@@ -200,14 +213,19 @@ final class CompareView: NSView {
         let completedJob = currentActivity?.state == .completed || reviewJob?.state == .completed
         showJob.frame = CGRect(x: completedJob ? width - 164 : stop.frame.minX - 60, y: 6, width: completedJob ? 130 : 44, height: 24)
         if !showJob.isHidden { progressLabel.frame.size.width = max(50, showJob.frame.minX - 48) }
-        method.frame = CGRect(x: 6, y: 2, width: 140, height: 24)
+        method.frame = CGRect(x: width - 252, y: 6, width: 140, height: 24)
         methodSeparator.frame = CGRect(x: 148, y: 6, width: 1, height: 16)
         summary.frame = CGRect(x: 160, y: 7, width: max(50, width - (width < 780 ? 320 : 515)), height: 17)
-        sizes.isHidden = width < 780
+        sizes.isHidden = true
         sizes.frame = CGRect(x: width - 360, y: 7, width: 200, height: 17)
         smallZoom.frame = CGRect(x: width - 150, y: 4, width: 20, height: 20)
         zoom.frame = CGRect(x: width - 130, y: 7, width: 106, height: 16)
         largeZoom.frame = CGRect(x: width - 24, y: 4, width: 20, height: 20)
+        let paneWidth = (width - document.gutterWidth) / 2
+        for (index, container) in document.detailsContainers.enumerated() {
+            if container.statusBar.superview !== footer { footer.addSubview(container.statusBar) }
+            container.statusBar.frame = CGRect(x: index == 0 ? 0 : paneWidth + document.gutterWidth, y: 0, width: paneWidth, height: 28)
+        }
         overlay.frame = CGRect(x: max(8, (width - 460) / 2), y: max(80, (bounds.height - 185) / 2), width: min(460, width - 16), height: 185)
     }
     func update() {
@@ -223,11 +241,11 @@ final class CompareView: NSView {
         for (index, pill) in pills.enumerated() {
             pill.count = model.outline?.counts[pill.filter.rawValue] ?? 0
             pill.label = labels[index]; pill.isOn = model.filter.contains(pill.filter)
-            pill.isEnabled = pill.count > 0; pill.isHidden = model.showProgress; pill.needsDisplay = true
+            pill.isEnabled = pill.count > 0; pill.isHidden = false; pill.needsDisplay = true
             pill.toolTip = "\(pill.label), \(pill.count) items"
             pill.setAccessibilityLabel("\(pill.label), \(pill.count) items, \(pill.isOn ? "showing" : "hidden")")
         }
-        progress.isHidden = !model.showProgress; progressLabel.isHidden = !model.showProgress; stop.isHidden = !model.showProgress
+        progress.isHidden = !model.showProgress; progressLabel.isHidden = true; stop.isHidden = true
         if model.showProgress {
             progress.startAnimation(nil)
             let count = (model.comparison?.rows.count ?? 0).formatted(), text = "Comparing… \(count) items"
@@ -242,13 +260,18 @@ final class CompareView: NSView {
         close.isHidden = false; showJob.isHidden = true; jobSymbol.isHidden = true; jobWash.layer?.backgroundColor = nil
         jobLine.isHidden = !model.showProgress; jobLine.isIndeterminate = model.showProgress
         if model.showProgress { jobLine.startAnimation(nil) } else { jobLine.stopAnimation(nil) }
-        sync.isHidden = model.showProgress; sync.isEnabled = model.comparison?.complete == true && model.error == nil && !model.loading
+        sync.isHidden = false; sync.isEnabled = model.comparison?.complete == true && model.error == nil && !model.loading
         if model.rowsVersion != lastRowsVersion {
             document.replaceRows(model.rows, indices: model.rowIndices); lastRowsVersion = model.rowsVersion
         } else {
             document.rows = model.rows; document.needsDisplay = true
         }
+        document.updateDetails()
         method.title = Self.methodTitle(model.options.method) + " ⌄"
+        method.toolTip = model.loading ? "Comparing…" : summary.stringValue
+        if !model.loading, model.comparison?.complete == false, model.error == nil {
+            method.toolTip = "A linked folder is missing. Go back or up to continue comparing; Sync is unavailable."
+        }
         if let error = model.error {
             pills.forEach { $0.isHidden = true }; progress.isHidden = true
             progressLabel.isHidden = false; progressLabel.stringValue = "Couldn't compare: " + error; progressLabel.textColor = Theme.compareDanger
@@ -273,7 +296,7 @@ final class CompareView: NSView {
         sizes.stringValue =
             "\(model.names.0) \(FileFormat.size(model.outline?.totalBytes[.left] ?? 0)) · \(model.names.1) \(FileFormat.size(model.outline?.totalBytes[.right] ?? 0))"
         let identical = differences == 0 && model.comparison?.complete == true
-        overlay.isHidden = !model.rows.isEmpty || model.loading || (model.comparison == nil && model.error == nil)
+        overlay.isHidden = model.error == nil || !model.rows.isEmpty || model.loading
         overlay.configure(
             symbol: identical ? "checkmark.circle" : (model.error == nil ? "line.3.horizontal.decrease.circle" : "exclamationmark.triangle"),
             title: model.error != nil
@@ -448,7 +471,11 @@ final class CompareView: NSView {
         if laidOutActivityState != job.state { laidOutActivityState = job.state; needsLayout = true }
     }
     @objc private func zoomChanged() {
-        document.rowHeight = CGFloat(zoom.doubleValue) + 6
+        for container in document.detailsContainers {
+            var props = container.model.props; props.setIconSize(CGFloat(zoom.doubleValue), for: .details); container.model.props = props
+        }
+        document.rowHeight = 2 * ItemListView.pad + max(CGFloat(zoom.doubleValue), document.detailsContainers.first?.list.lineHeight ?? 16) + 2
+        document.layoutDetails()
         document.frame.size.height = max(scroll.contentSize.height, CGFloat(document.rows.count) * document.rowHeight)
         document.needsDisplay = true
     }
@@ -607,75 +634,25 @@ final class ComparePlaceholder: NSView {
 final class CompareHeaderView: NSView {
     var gutterWidth: CGFloat = 28
     weak var document: CompareRowsView?
-    private var drag: (side: SyncSide, second: Bool, combined: CGFloat)?
+    private var detailsHeaders: [DetailsHeaderView] = []
+    func attachDetails(_ headers: [DetailsHeaderView]) {
+        detailsHeaders = headers
+        headers.forEach {
+            addSubview($0); $0.isHidden = false
+        }
+        needsLayout = true; needsDisplay = true
+    }
     override var isFlipped: Bool { true }
+    override func layout() {
+        super.layout()
+        let width = (bounds.width - gutterWidth) / 2
+        for (index, header) in detailsHeaders.enumerated() {
+            header.frame = CGRect(x: index == 0 ? 0 : width + gutterWidth, y: 0, width: width, height: bounds.height)
+            header.needsDisplay = true
+        }
+    }
     override func draw(_ dirty: NSRect) {
-        Theme.viewBackground.setFill(); bounds.fill()
-        let width = (bounds.width - gutterWidth) / 2
-        let style = NSMutableParagraphStyle(); style.alignment = .right
-        for side in [SyncSide.left, .right] {
-            let x: CGFloat = side == .left ? 0 : width + gutterWidth
-            let columns = document?.widths(side, paneWidth: width) ?? (date: CGFloat(114), size: CGFloat(60))
-            func title(_ string: String, _ role: ItemRole) -> String {
-                guard document?.model.sortRole == role, document?.model.sortSide == side else { return string }
-                return string + (document?.model.sortAscending == true ? "  ⌃" : "  ⌄")
-            }
-            (title("Name", .name) as NSString).draw(
-                at: CGPoint(x: x + 12, y: 6), withAttributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: Theme.windowTextInactive])
-            if columns.date > 0 {
-                (title("Modified", .modificationTime) as NSString).draw(
-                    in: CGRect(x: x + width - columns.date, y: 6, width: columns.date - 10, height: 18),
-                    withAttributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: Theme.windowTextInactive, .paragraphStyle: style])
-            }
-            if columns.size > 0 {
-                (title("Size", .size) as NSString).draw(
-                    in: CGRect(x: x + width - columns.date - columns.size - 10, y: 6, width: columns.size, height: 18),
-                    withAttributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: Theme.windowTextInactive, .paragraphStyle: style])
-            }
-            Theme.hairline.setFill()
-            for boundary in [x + width - columns.date - columns.size - 10, x + width - columns.date - 4] {
-                CGRect(x: boundary, y: 6, width: 1, height: 14).fill()
-            }
-        }
-        Theme.hairline.setFill(); CGRect(x: 0, y: 25, width: bounds.width, height: 1).fill()
-        CGRect(x: width, y: 0, width: 1, height: 26).fill(); CGRect(x: width + gutterWidth - 1, y: 0, width: 1, height: 26).fill()
-    }
-    override func mouseDown(with event: NSEvent) {
-        guard let document else { return }
-        let point = convert(event.locationInWindow, from: nil), width = (bounds.width - gutterWidth) / 2
-        let side: SyncSide = point.x < bounds.midX ? .left : .right
-        let relative = point.x - (side == .left ? 0 : width + gutterWidth)
-        let columns = document.widths(side, paneWidth: width)
-        let first = width - columns.date - columns.size - 10, second = width - columns.date - 4
-        if abs(relative - first) < 5 || abs(relative - second) < 5 {
-            drag = (side, abs(relative - second) < 5, columns.date + columns.size); NSCursor.resizeLeftRight.set(); return
-        }
-        let role: ItemRole = relative > second ? .modificationTime : (relative > first ? .size : .name)
-        document.model.sort(by: role, side: side); needsDisplay = true
-    }
-    override func mouseDragged(with event: NSEvent) {
-        guard let drag, let document else { return }
-        let width = (bounds.width - gutterWidth) / 2,
-            x = convert(event.locationInWindow, from: nil).x - (drag.side == .left ? 0 : width + gutterWidth)
-        let size = document.widths(drag.side, paneWidth: width).size
-        if drag.second {
-            let date = max(70, min(drag.combined - 40, width - x - 4))
-            document.dateWidths[drag.side] = date; document.sizeWidths[drag.side] = drag.combined - date
-        } else {
-            document.dateWidths[drag.side] = max(70, min(width - 180, width - x - size - 10))
-        }
-        needsDisplay = true; document.needsDisplay = true
-    }
-    override func mouseUp(with event: NSEvent) { drag = nil; NSCursor.arrow.set() }
-    override func resetCursorRects() {
-        let width = (bounds.width - gutterWidth) / 2
-        for side in [SyncSide.left, .right] {
-            let columns = document?.widths(side, paneWidth: width) ?? (date: CGFloat(114), size: CGFloat(60)),
-                x: CGFloat = side == .left ? 0 : width + gutterWidth
-            for boundary in [x + width - columns.date - columns.size - 10, x + width - columns.date - 4] {
-                addCursorRect(CGRect(x: boundary - 4, y: 0, width: 8, height: 26), cursor: .resizeLeftRight)
-            }
-        }
+        Theme.windowBackground.setFill(); bounds.fill()
     }
 }
 

@@ -7,8 +7,8 @@ final class CompareModel {
     static var defaultOptions: SyncCompareOptions {
         .init(exclusions: [".DS_Store", "._*", ".Spotlight-V100", ".Trashes", "Thumbs.db", "desktop.ini", ".porpoise-trash"])
     }
-    let leftRoot: URL
-    let rightRoot: URL
+    private(set) var leftRoot: URL
+    private(set) var rightRoot: URL
     var options: SyncCompareOptions
     var comparison: SyncComparison?
     var outline: CompareOutline? { didSet { needsSort = true } }
@@ -16,6 +16,9 @@ final class CompareModel {
     var rows: [SyncDifference] = []
     var lastRebuildMilliseconds: Double = 0
     var rowsVersion = 0
+    var detailsVersion = 0
+    var leftDetails = CompareDetailsPresentation([], root: URL(fileURLWithPath: "/"), side: .left, expanded: [])
+    var rightDetails = CompareDetailsPresentation([], root: URL(fileURLWithPath: "/"), side: .right, expanded: [])
     var rowIndices: [String: Int] = [:]
     var rowPaths: [String] = []
     var visibleLeftBytes: Int64 = 0
@@ -34,14 +37,33 @@ final class CompareModel {
     var onChange: (() -> Void)?
     var watcher: SyncWatcher?
     private var startingWatcher = false
+    private var active = true
     var overrides: [String: SyncOverride] = [:]
     private var cancellation = DiskCancellation()
     private var generation = 0
     let names: (String, String)
     init(left: URL, right: URL, options: SyncCompareOptions = CompareModel.defaultOptions) {
-        leftRoot = left; rightRoot = right; self.options = options; names = CompareOutline.sideNames(left, right)
+        leftRoot = left; rightRoot = right; self.options = options
+        names = left == right ? (left.lastPathComponent + " (left)", right.lastPathComponent + " (right)") : CompareOutline.sideNames(left, right)
+    }
+    private var navigationRefresh: DispatchWorkItem?
+    private let scanQueue = DispatchQueue(label: "porpoise.compare.scan", qos: .utility)
+    func navigate(left: URL, right: URL) {
+        guard left != leftRoot || right != rightRoot else { return }
+        cancellation.cancel(); generation += 1; presentationGeneration += 1
+        leftRoot = left; rightRoot = right
+        watcher?.stop(); watcher = nil; startingWatcher = false
+        expanded = []; overrides = [:]
+        // Old rows belong to another location; same-location watcher refreshes keep their selection and scroll.
+        releaseComparisonValuesLater((comparison, outline))
+        comparison = nil; outline = nil
+        navigationRefresh?.cancel()
+        let refresh = DispatchWorkItem { [weak self] in self?.start() }
+        navigationRefresh = refresh
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: refresh)
     }
     func start() {
+        active = true
         cancellation.cancel(); cancellation = DiskCancellation(); generation += 1
         let token = cancellation, ticket = generation, start = CACurrentMediaTime(), options = options
         loading = true; showProgress = false; error = nil; onChange?()
@@ -50,11 +72,11 @@ final class CompareModel {
             self.showProgress = true; self.onChange?()
         }
         let left = leftRoot, right = rightRoot
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        scanQueue.async { [weak self] in
             // Top-level rows arrive first, with directory subtrees explicitly incomplete until the full pass.
             let top = Result { () throws -> (SyncComparison, CompareOutline) in
-                let l = try SyncScanner.scan(left, options: options, maxDepth: 1, cancellation: token)
-                let r = try SyncScanner.scan(right, options: options, maxDepth: 1, cancellation: token)
+                let l = try CompareBrowserScan.scan(left, options: options, maxDepth: 1, cancellation: token)
+                let r = try CompareBrowserScan.scan(right, options: options, maxDepth: 1, cancellation: token)
                 let c = SyncComparator.compare(l, r, options: options)
                 return (c, CompareOutline(c))
             }
@@ -69,7 +91,9 @@ final class CompareModel {
                 // A shallow pass is already complete for flat folders. Reuse it rather than scanning,
                 // comparing and publishing the same potentially large set of files twice.
                 if case .success(let pair) = top, pair.0.complete { return pair }
-                let c = try SyncScanner.compare(left, right, options: options, cancellation: token).comparison
+                let l = try CompareBrowserScan.scan(left, options: options, cancellation: token)
+                let r = try CompareBrowserScan.scan(right, options: options, cancellation: token)
+                let c = SyncComparator.compare(l, r, options: options)
                 return (c, CompareOutline(c))
             }
             DispatchQueue.main.async { [weak self] in
@@ -88,14 +112,18 @@ final class CompareModel {
             startingWatcher = true
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 let watcher = SyncWatcher(roots: [left, right]) { [weak self] in
-                    DispatchQueue.main.async { if self?.suppressWatchUpdates == false { self?.start() } }
+                    DispatchQueue.main.async {
+                        if let self, self.active, self.leftRoot == left, self.rightRoot == right, !self.suppressWatchUpdates { self.start() }
+                    }
                 }
                 DispatchQueue.main.async { [weak self] in
-                    self?.watcher = watcher; self?.startingWatcher = false
+                    guard let self, self.active, self.leftRoot == left, self.rightRoot == right else { watcher.stop(); return };
+                    self.watcher = watcher; self.startingWatcher = false
                 }
             }
         }
     }
+    func invalidateSort() { needsSort = true; rebuild() }
     func sort(by role: ItemRole, side: SyncSide) {
         if sortRole == role && sortSide == side { sortAscending.toggle() } else { sortRole = role; sortSide = side; sortAscending = true }
         needsSort = true; rebuild()
@@ -105,6 +133,7 @@ final class CompareModel {
         presentationGeneration += 1
         let ticket = presentationGeneration, outline = outline, filter = filter, expanded = expanded, previousPaths = rowPaths
         let needsSort = needsSort, role = sortRole, side = sortSide, ascending = sortAscending
+        let leftRoot = leftRoot, rightRoot = rightRoot
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var outline = outline
             if needsSort { outline?.sort(by: role, side: side, ascending: ascending) }
@@ -116,6 +145,8 @@ final class CompareModel {
                 if row.left?.kind == .file { left += row.left?.size ?? 0 }
                 if row.right?.kind == .file { right += row.right?.size ?? 0 }
             }
+            let leftDetails = CompareDetailsPresentation(rows, root: leftRoot, side: .left, expanded: expanded)
+            let rightDetails = CompareDetailsPresentation(rows, root: rightRoot, side: .right, expanded: expanded)
             let changedPaths = paths != previousPaths
             DispatchQueue.main.async {
                 guard let self, self.presentationGeneration == ticket else { return }
@@ -123,6 +154,8 @@ final class CompareModel {
                 if changedPaths { self.rowsVersion += 1 }
                 releaseComparisonValuesLater((self.rows, self.rowIndices, self.rowPaths))
                 self.rows = rows; self.rowIndices = indices; self.rowPaths = paths
+                releaseComparisonValuesLater((self.leftDetails, self.rightDetails))
+                self.leftDetails = leftDetails; self.rightDetails = rightDetails; self.detailsVersion += 1
                 self.visibleLeftBytes = left; self.visibleRightBytes = right
                 self.onChange?(); self.lastRebuildMilliseconds = (CACurrentMediaTime() - start) * 1000
             }
@@ -130,7 +163,10 @@ final class CompareModel {
     }
     func toggle(_ flag: CompareFilter) { filter.formSymmetricDifference(flag); rebuild() }
     func expand(_ path: String) { if expanded.contains(path) { expanded.remove(path) } else { expanded.insert(path) }; rebuild() }
-    func stop() { cancellation.cancel(); generation += 1; loading = false; showProgress = false; onChange?() }
+    func stop() {
+        active = false; watcher?.stop(); watcher = nil; startingWatcher = false; navigationRefresh?.cancel(); cancellation.cancel(); generation += 1;
+        presentationGeneration += 1; loading = false; showProgress = false; onChange?()
+    }
     deinit {
         cancellation.cancel()
         // Replacing a large Compare surface must not destroy its trees and dictionaries in an

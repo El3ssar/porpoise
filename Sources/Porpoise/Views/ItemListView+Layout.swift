@@ -6,7 +6,7 @@ import PorpoiseServices
 
 extension ItemListView {
     var visibleHeight: CGFloat { enclosingScrollView?.contentView.bounds.height ?? bounds.height }
-    var visibleWidth: CGFloat { enclosingScrollView?.contentView.bounds.width ?? bounds.width }
+    var visibleWidth: CGFloat { comparisonPaneWidth ?? enclosingScrollView?.contentView.bounds.width ?? bounds.width }
 
     func relayout() {
         computeLayout()
@@ -132,7 +132,7 @@ extension ItemListView {
     /// Details: one row per item; Name takes the width the other columns leave, unless the user sized it.
     private func layoutDetails(width: CGFloat) -> NSSize {
         detailsRoles = [.name] + model.props.roles(for: .details)
-        let h = 2 * Self.pad + max(iconSize, lineHeight) + 2
+        let h = comparisonRowHeight ?? (2 * Self.pad + max(iconSize, lineHeight) + 2)
         let side = Self.sidePadding, groupH = groupHeaderHeight
         let saved = Self.savedColumnWidths
         var fixed: CGFloat = 0
@@ -151,9 +151,11 @@ extension ItemListView {
                 y += groupH
                 lastGroup = r.group
             }
+            if let comparisonSlots, comparisonSlots.indices.contains(i) { y = CGFloat(comparisonSlots[i]) * h }
             frames[i] = CGRect(x: side, y: y, width: total, height: h)
             y += h
         }
+        if comparisonSlots != nil { y = CGFloat(comparisonSlotCount) * h }
         computeTreeLines()
         return NSSize(width: max(width, total + 2 * side), height: max(visibleHeight, y + 4))
     }

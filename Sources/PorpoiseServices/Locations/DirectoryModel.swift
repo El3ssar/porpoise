@@ -9,6 +9,9 @@ public struct Row {
     public var isExpanded: Bool
     /// Index into `groups`, -1 when not grouping.
     public var group: Int
+    public init(item: FileItem, depth: Int, isExpanded: Bool, group: Int = -1) {
+        self.item = item; self.depth = depth; self.isExpanded = isExpanded; self.group = group
+    }
 }
 
 /// What a search looked for: with `contents`, results are grouped into name and content matches.
@@ -707,7 +710,16 @@ public final class DirectoryModel {
         rebuild()
     }
 
+    public var onComparisonExpansion: ((URL, Bool) -> Void)?
+    public func presentComparisonRows(_ next: [Row]) {
+        guard defersPresentation else { return }
+        let previous = rows
+        groups = []; rows = next; presentationNeedsRebuild = true
+        // The scanner owns these rows. Browse reloads keep updating raw items without replacing them.
+        DispatchQueue.global(qos: .utility).async { withExtendedLifetime(previous) {} }
+    }
     public func setExpanded(_ url: URL, _ on: Bool) {
+        if let onComparisonExpansion { onComparisonExpansion(url, on); return }
         if on {
             expanded.insert(url)
             if children[url] == nil { loadChildren(of: url) }
@@ -823,7 +835,7 @@ public final class DirectoryModel {
 
     /// Saves the shown properties as the folder's (or the common) style, minus the temporary overrides.
     public func saveProps() {
-        guard !isVirtual else { return }
+        guard !isVirtual, !defersPresentation else { return }
         let p = dynamicOverride.stored(searchOverride.stored(props))
         Settings.shared.save(p, for: location)
     }

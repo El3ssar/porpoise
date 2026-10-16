@@ -105,3 +105,24 @@ extension CompareOutlineTests {
         #expect(sorted.visible(filter: .all, expanded: ["d"]).map(\.path) == ["d", "d/b", "d/a", "z"])
     }
 }
+
+extension CompareOutlineTests {
+    @Test func linkedCounterpartsCoverEnterUpBackForwardBreadcrumbAndPathEdits() {
+        let left = URL(fileURLWithPath: "/home/Projects"), right = URL(fileURLWithPath: "/backup/Projects")
+        for path in ["Brand", "Brand/assets", "", "Website", "Brand"] {
+            let source = path.isEmpty ? left : left.appendingPathComponent(path)
+            let expected = path.isEmpty ? right : right.appendingPathComponent(path)
+            #expect(LinkedBrowsing.counterpart(source, sourceRoot: left, targetRoot: right) == expected)
+        }
+        #expect(LinkedBrowsing.counterpart(left.deletingLastPathComponent(), sourceRoot: left, targetRoot: right)?.path == "/backup")
+        #expect(LinkedBrowsing.counterpart(URL(fileURLWithPath: "/"), sourceRoot: left, targetRoot: right)?.path == "/")
+        #expect(LinkedBrowsing.counterpart(URL(fileURLWithPath: "/unrelated"), sourceRoot: left, targetRoot: right) == nil)
+        #expect(LinkedBrowsing.counterpart(URL(fileURLWithPath: "/"), sourceRoot: left, targetRoot: URL(fileURLWithPath: "/")) == nil)
+        #expect(
+            LinkedBrowsing.counterpart(URL(string: "sftp://host/root/child")!, sourceRoot: URL(string: "sftp://host/root")!, targetRoot: right)?.path
+                == "/backup/Projects/child")
+        #expect(
+            LinkedBrowsing.counterpart(URL(string: "sftp://other/root/child")!, sourceRoot: URL(string: "sftp://host/root")!, targetRoot: right)
+                == nil)
+    }
+}

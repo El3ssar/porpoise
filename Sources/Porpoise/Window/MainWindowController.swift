@@ -334,8 +334,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         // Same rule as goUp(_:) and its menu item.
         toolbar.up.isEnabled = v.canGoUp
         toolbar.viewMode.iconName = t.compareView == nil ? v.model.props.mode.iconName : "view-list-details"
-        toolbar.viewMode.isEnabled = t.compareView == nil
-        toolbar.viewMode.toolTip = t.compareView == nil ? "Change View Mode" : "Comparing uses Details"
+        toolbar.viewMode.isEnabled = true
+        toolbar.viewMode.toolTip = "Change View Mode"
         toolbar.compareFolders.isToggled = t.compareView != nil || t.compareChooser != nil
         toolbar.linkFolders.isToggled = t.linkedRoots != nil && t.compareChooser == nil
         for (index, navigator) in t.navigators.enumerated() {

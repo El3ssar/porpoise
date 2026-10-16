@@ -11,6 +11,7 @@ extension ItemListView {
         bg.setFill()
         dirty.fill()
         if frames.count != model.rows.count { computeLayout() }
+        drawComparisonBackground?(dirty)
 
         for (gi, gr) in groupHeaderFrames.enumerated() where gr.intersects(dirty) && gi < model.groups.count {
             drawGroupHeader(model.groups[gi].title, in: gr)
@@ -32,7 +33,7 @@ extension ItemListView {
             let p = NSBezierPath(roundedRect: r, xRadius: Theme.frameRadius, yRadius: Theme.frameRadius)
             Theme.focus.setStroke(); p.lineWidth = 2; p.stroke()
         }
-        if model.rows.isEmpty { drawPlaceholder() }
+        if model.rows.isEmpty && comparisonSlots == nil { drawPlaceholder() }
     }
 
     private func drawPlaceholder() {
@@ -109,7 +110,7 @@ extension ItemListView {
 
         if mode == .details {
             // Alternating row colors (Dolphin draws them across the whole view width).
-            if i % 2 == 1 {
+            if comparisonSlots == nil && i % 2 == 1 {
                 Theme.viewAlternate.setFill()
                 CGRect(x: 0, y: frames[i].minY, width: bounds.width, height: frames[i].height).fill()
             }

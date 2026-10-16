@@ -136,6 +136,20 @@ public struct CompareOutline: Sendable {
 }
 
 public enum LinkedBrowsing {
+    /// Follow a descendant relative to the anchors, or mirror an upward step beyond them.
+    /// Unrelated path edits establish a fresh anchor pair instead of jumping to an arbitrary folder.
+    public static func counterpart(_ url: URL, sourceRoot: URL, targetRoot: URL) -> URL? {
+        if let relative = relativePath(url, below: sourceRoot) {
+            return relative.isEmpty ? targetRoot : targetRoot.appendingPathComponent(relative)
+        }
+        guard let relative = relativePath(sourceRoot, below: url), !relative.isEmpty else { return nil }
+        var target = targetRoot
+        for _ in relative.split(separator: "/") {
+            guard target.path != "/" else { return nil }
+            target.deleteLastPathComponent()
+        }
+        return target
+    }
     /// nil means navigation left the linked roots; empty means the root itself. No disk access.
     public static func relativePath(_ url: URL, below root: URL) -> String? {
         guard url.scheme == root.scheme, url.host == root.host, url.user == root.user, url.port == root.port else { return nil }
