@@ -106,6 +106,26 @@ enum SyncDebugBridge {
             DispatchQueue.global(qos: .utility).async { try? data.write(to: URL(fileURLWithPath: path)) }
         }
     }
+    /// Logical view pixels for visual review when Stage Manager exposes only a WindowServer thumbnail.
+    /// This deliberately does not claim onscreen visibility, compositor timing or native-input evidence.
+    static func image(_ argument: String) {
+        guard Settings.isTesting,
+            let view = NSApp.windows.first(where: { $0.isVisible && $0.windowController is SyncSheetController })?.contentView
+        else { return }
+        let parts = argument.components(separatedBy: "|")
+        view.layoutSubtreeIfNeeded(); view.displayIfNeeded()
+        let height = parts.count > 1 ? min(view.bounds.height, Double(parts[1]) ?? view.bounds.height) : view.bounds.height
+        let rect = CGRect(x: 0, y: view.bounds.maxY - height, width: view.bounds.width, height: height)
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: rect) else { return }
+        view.cacheDisplay(in: rect, to: bitmap)
+        try? bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: parts[0]))
+        let metadata: [String: Any] = [
+            "source": "NSView.cacheDisplay", "rect": NSStringFromRect(rect), "pixelWidth": bitmap.pixelsWide,
+            "pixelHeight": bitmap.pixelsHigh, "onscreenVisibilityVerified": false,
+        ]
+        try? JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys]).write(
+            to: URL(fileURLWithPath: parts[0] + ".metadata.json"))
+    }
 }
 
 /// A read-only, non-networked provider for explicit isolated UI launches.

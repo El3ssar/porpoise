@@ -581,6 +581,9 @@ final class DebugBridge: NSObject {
         case "syncstate":
             guard Settings.isTesting else { return }
             SyncDebugBridge.state(arg)
+        case "syncimage":
+            guard Settings.isTesting else { return }
+            SyncDebugBridge.image(arg)
         case "reviewfront":
             guard Settings.isTesting,
                 let window = arg.isEmpty ? wc?.window : NSApp.windows.first(where: { $0.title.hasPrefix(arg) })
