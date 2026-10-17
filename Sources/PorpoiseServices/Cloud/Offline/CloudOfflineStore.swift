@@ -11,6 +11,7 @@ public actor CloudOfflineStore {
     private struct Flight { let id: UUID; let task: Task<URL, Error> }
     private var inFlight: [String: Flight] = [:]
     private var active = 0
+    private var reserved: Int64 = 0
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var generation = 0
     private var limit: Int64?
@@ -127,7 +128,8 @@ public actor CloudOfflineStore {
         try Task.checkCancellation()
         guard epoch == generation else { throw CancellationError() }
         guard !source.isOffline else { throw CloudContentError.offline }
-        do { try await makeSpace(item.size ?? 0) } catch { errors[item.ref.item] = error.localizedDescription; publish(); throw error }
+        do { try await makeSpace(max(0, item.size ?? 0)) } catch { errors[item.ref.item] = error.localizedDescription; publish(); throw error }
+        defer { reserved -= max(0, item.size ?? 0) }
         let folder = directory.appendingPathComponent("objects").appendingPathComponent(cloudObjectKey(item.ref.item))
             .appendingPathComponent(cloudObjectKey((item.revision ?? "") + ":" + (item.export ?? "")))
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -154,14 +156,11 @@ public actor CloudOfflineStore {
         publish()
     }
     public func adopt(file: URL, as item: CloudRemoteItem) async throws -> URL {
+        try Task.checkCancellation()
         guard item.ref.account == source.accountID, !item.isFolder,
             !item.name.isEmpty, item.name != ".", item.name != "..",
             !item.name.contains("/"), !item.name.contains("\\"), !item.name.contains("\0")
         else { throw CloudContentError.unsupported }
-        let size = (try FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.int64Value ?? 0
-        guard (item.size == nil || item.export != nil || item.size == size), try item.checksum?.verify(file) != false else {
-            throw CloudContentError.checksum
-        }
         let relative =
             "objects/" + cloudObjectKey(item.ref.item) + "/" + cloudObjectKey((item.revision ?? "") + ":" + (item.export ?? "")) + "/" + item.name
         let target = directory.appendingPathComponent(relative)
@@ -170,6 +169,11 @@ public actor CloudOfflineStore {
         let staged = target.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
         try cloudClone(file, to: staged)
         defer { try? fm.removeItem(at: staged) }
+        let size = (try FileManager.default.attributesOfItem(atPath: staged.path)[.size] as? NSNumber)?.int64Value ?? 0
+        guard (item.size == nil || item.export != nil || item.size == size), try item.checksum?.verify(staged) != false else {
+            throw CloudContentError.checksum
+        }
+        try Task.checkCancellation()
         try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: staged.path)
         let handle = try FileHandle(forWritingTo: staged); try handle.synchronize(); try handle.close()
         if fm.fileExists(atPath: target.path) {
@@ -227,12 +231,13 @@ public actor CloudOfflineStore {
         for ref in refs where !(await held(ref)) { try await remove([ref]) }
     }
     public func space() -> (available: Int64, reserve: Int64) {
-        let values = freeSpace(); return (values.available, max(2_000_000_000, values.total / 20))
+        let values = freeSpace(); return (max(0, values.available - reserved), max(2_000_000_000, values.total / 20))
     }
     private func makeSpace(_ bytes: Int64) async throws {
         var values = space()
         if bytes > max(0, values.available - values.reserve) { try await removeRecent(); values = space() }
         guard bytes <= max(0, values.available - values.reserve) else { throw CloudContentError.lowSpace }
+        reserved += bytes
     }
     private func trim(excluding: String? = nil) async throws {
         guard let limit else { return }

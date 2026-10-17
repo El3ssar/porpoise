@@ -37,7 +37,7 @@ public struct CloudOfflineDetails: Equatable, Sendable {
 
 /// Provider-neutral, main-queue surface. Notifications carry affected URLs in userInfo["urls"].
 /// The facade owns account stores; UI consumers never need a Drive client or filesystem path.
-public final class CloudOffline: @unchecked Sendable {
+public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
     public static let shared = CloudOffline()
     public static let changed = Notification.Name("PorpoiseCloudOfflineChanged")
     static let spaceChanged = Notification.Name("PorpoiseCloudOfflineSpaceChanged")
@@ -174,16 +174,28 @@ public final class CloudOffline: @unchecked Sendable {
             if let entry = snapshot.entries[id] { result.bytes += entry.size; result.items += 1 }
             if let child = snapshot.items[id], !child.isFolder { result.totalBytes += child.size ?? 0; result.totalItems += 1 }
         }
-        if item?.isFolder == true { result.downloaded = result.items > 0 }
+        if item?.isFolder == true {
+            result.downloaded = result.items > 0
+            if result.error == nil { result.error = ids.compactMap { snapshot.errors[$0] }.first }
+            if ids.contains(where: { snapshot.progress[$0] != nil }) {
+                let received = ids.reduce(0.0) { value, id in
+                    let child = snapshot.items[id]
+                    if let fraction = snapshot.progress[id] { return value + fraction * Double(child?.size ?? 0) }
+                    return value + Double(snapshot.entries[id]?.size ?? 0)
+                }
+                result.progress = result.totalBytes > 0 ? min(1, received / Double(result.totalBytes)) : nil
+            }
+        }
         return result
     }
     public func state(for url: URL) -> CloudState {
-        guard let source = source(for: url), let ref = source.ref(for: url),
-            source.cachedItem(ref)?.isFolder != true
-        else { return .local }
+        guard let source = source(for: url), let ref = source.ref(for: url) else { return .local }
         let details = details(for: url)
-        if details.progress != nil { return .downloading }
-        return details.downloaded ? .local : .cloudOnly
+        let folder = source.cachedItem(ref)?.isFolder == true
+        if let reason = details.error { return .error(reason) }
+        if let progress = details.progress { return .downloading(progress) }
+        if details.kept && (details.downloaded || folder) { return .kept }
+        return details.downloaded || folder ? .local : .cloudOnly
     }
     public func usage(account: String) -> CloudOfflineUsage {
         var usage = snapshots[account]?.usage ?? CloudOfflineUsage()

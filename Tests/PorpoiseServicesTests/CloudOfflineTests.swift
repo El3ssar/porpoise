@@ -121,3 +121,43 @@ extension CloudOfflineTests {
         facade.wipe(account: source.accountID)
     }
 }
+
+extension CloudOfflineTests {
+    @Test func serviceDistinguishesQueuedPinsBytesAndTransferErrors() async throws {
+        let (facade, source, scratch) = try setup(); _ = scratch
+        let item = source.add("one")
+        let url = source.url(for: item)
+        let service: CloudOfflineService = facade
+        source.isOffline = true
+        let error: Error? = await withCheckedContinuation { continuation in
+            facade.keep(true, [url]) { continuation.resume(returning: $0) }
+        }
+        #expect(error != nil)
+        try await wait { facade.details(for: url).kept }
+        #expect(service.keep(for: url) == .direct)
+        #expect(!service.hasLocalCopy(url) && service.state(for: url) == .cloudOnly)
+        source.isOffline = false; source.delay = .milliseconds(100)
+        let download = Task {
+            await withCheckedContinuation { continuation in
+                facade.downloadNow([url]) { continuation.resume(returning: $0) }
+            }
+        }
+        try await wait {
+            if case .downloading = service.state(for: url) { return true }; return false
+        }
+        #expect(await download.value == nil)
+        try await wait { service.state(for: url) == .kept }
+        #expect(service.hasLocalCopy(url))
+        let bad = source.add("bad")
+        source.bytes["bad"] = Data("wrong bytes".utf8)
+        let failure: Error? = await withCheckedContinuation { continuation in
+            facade.downloadNow([source.url(for: bad)]) { continuation.resume(returning: $0) }
+        }
+        #expect(failure as? CloudContentError == .checksum)
+        try await wait {
+            if case .error = service.state(for: source.url(for: bad)) { return true }; return false
+        }
+        #expect(!service.hasLocalCopy(source.url(for: bad)))
+        facade.wipe(account: source.accountID)
+    }
+}

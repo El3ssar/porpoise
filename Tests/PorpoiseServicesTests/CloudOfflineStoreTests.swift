@@ -225,3 +225,21 @@ extension CloudOfflineStoreTests {
         #expect(await store.state(updated.ref) == .downloaded)
     }
 }
+
+extension CloudOfflineStoreTests {
+    @Test func concurrentDownloadsReserveSpaceUntilTheirCopyCommits() async throws {
+        let source = FakeContentSource(), scratch = try Scratch()
+        let first = source.add("first"), second = source.add("second")
+        source.delay = .milliseconds(100)
+        let store = try store(source, scratch, free: { (2_000_000_008, 20_000_000_000) })
+        let running = Task { try await store.fetch(first) }
+        for _ in 0..<100 where source.active == 0 { try await Task.sleep(for: .milliseconds(1)) }
+        #expect(source.active == 1)
+        await #expect(throws: CloudContentError.lowSpace) { try await store.fetch(second, keep: true) }
+        #expect(await store.state(second.ref) == .error(CloudContentError.lowSpace.localizedDescription))
+        _ = try await running.value
+        _ = try await store.fetch(second)
+        #expect(source.downloads == 2 && source.maximum == 1)
+        #expect(await store.state(second.ref) == .kept)
+    }
+}
