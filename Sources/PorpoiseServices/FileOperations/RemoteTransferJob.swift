@@ -183,49 +183,16 @@ final class RemoteTransferJob {
         var existing = try item(target)
         var replace = false
         while let old = existing {
-            let bothFolders = Self.isFolderPair(incoming, old)
-            let names = Set(try children(folder).map(\.name))
-            let suggestion = FileFormat.suggestedName(for: source.lastPathComponent, existing: names)
-            let choice: ConflictResolution
-            if let selected = sticky ?? rule.resolution, selected != .writeInto || bothFolders {
-                choice = selected
-            } else {
-                let answer = resolve(
-                    .init(
-                        source: incoming, destination: old, suggestedName: suggestion, comparisonOptions: options,
-                        sourceFolder: bothFolders
-                            ? (try? children(source)).map { TransferFolderSummary(itemCount: $0.count, bytes: totals[source]?.bytes) } : nil,
-                        destinationFolder: bothFolders ? (try? children(target)).map { TransferFolderSummary(itemCount: $0.count) } : nil))
-                if let method = answer.comparisonMethod { options.method = method }
-                if answer.applyToAll { sticky = answer.resolution }
-                choice = answer.resolution
-            }
-            switch choice {
+            let suggestion = FileFormat.suggestedName(for: source.lastPathComponent, existing: Set(try children(folder).map(\.name)))
+            switch try conflictDecision(source, incoming: incoming, existing: old, suggestion: suggestion) {
             case .cancel: control.cancel(); throw FileOperationError.cancelled
-            case .skip: finishProgress(source); completed[source] = target; return nil
-            case .keepBoth: target = folder.appendingPathComponent(suggestion)
+            case .skip(let identical): skipConflict(source, target: target, identical: identical); return nil
             case .rename(let name):
                 try RemoteFS.checkName(name)
                 target = folder.appendingPathComponent(name)
-            case .writeInto:
-                guard bothFolders else { finishProgress(source); return nil }
-                return try merge(source, into: target)
-            case .overwriteIfDifferent:
-                if bothFolders { return try merge(source, into: target) }
-                if try identical(source, incoming, target, old) {
-                    progressLock.withLock { progress.skippedIdenticalItems += 1 }
-                    finishProgress(source); completed[source] = target; return nil
-                }
-                replace = true
-            case .overwriteIfOlder, .overwriteIfLarger:
-                if bothFolders { return try merge(source, into: target) }
-                guard choice.shouldReplace(source: incoming, destination: old, options: options) else {
-                    finishProgress(source); completed[source] = target; return nil
-                }
-                replace = true
-            case .overwrite:
-                if bothFolders { return try merge(source, into: target) }
-                replace = true
+            case .merge: return try merge(source, into: target)
+            case .replace: replace = true
+            case .compareContents: preconditionFailure("Content comparison must be resolved before placement")
             }
             if replace { break }
             existing = try item(target)
@@ -250,8 +217,7 @@ final class RemoteTransferJob {
         }
         while true {
             do { try stagedFile(source, to: target, replacing: replace, modified: incoming.modificationDate); break } catch {
-                let message = error.localizedDescription.lowercased()
-                guard FileJob.isNoSpace(error) || message.contains("no space left") || message.contains("disk full"), let onNoSpace else {
+                guard FileErrorKind.classify(error) == .noSpace, let onNoSpace else {
                     throw error
                 }
                 progressLock.withLock {
@@ -267,6 +233,36 @@ final class RemoteTransferJob {
         finishProgress(source)
         listings[folder] = nil
         return target
+    }
+
+    /// The shared remote prompt flow: providers supply metadata and IO, never their own conflict rules.
+    func conflictDecision(_ source: URL, incoming: FileItem, existing: FileItem, suggestion: String) throws -> ConflictDecision {
+        let policy = ConflictPolicy(source: incoming, destination: existing)
+        let answer: ConflictAnswer
+        if let choice = policy.automaticResolution(sticky: sticky, rule: rule) {
+            answer = .init(choice)
+        } else {
+            answer = resolve(
+                .init(
+                    source: incoming, destination: existing, suggestedName: suggestion, comparisonOptions: options,
+                    replacedItems: progress.replacedItems, skippedIdenticalItems: progress.skippedIdenticalItems,
+                    sourceFolder: policy.isFolderPair
+                        ? (try? children(source)).map { TransferFolderSummary(itemCount: $0.count, bytes: totals[source]?.bytes) } : nil,
+                    destinationFolder: policy.isFolderPair
+                        ? (try? children(existing.url)).map { TransferFolderSummary(itemCount: $0.count) } : nil))
+        }
+        if let method = answer.comparisonMethod { options.method = method }
+        if answer.applyToAll { sticky = answer.resolution }
+        let decision = policy.decision(for: answer.resolution, suggestedName: { suggestion }, options: options)
+        if decision == .compareContents {
+            return try identical(source, incoming, existing.url, existing) ? .skip(identical: true) : .replace
+        }
+        return decision
+    }
+
+    func skipConflict(_ source: URL, target: URL, identical: Bool) {
+        if identical { progressLock.withLock { progress.skippedIdenticalItems += 1 } }
+        completed[source] = target; finishProgress(source)
     }
 
     func publishIncoming(_ source: URL, item: FileItem, target: URL) {

@@ -200,7 +200,7 @@ extension MainWindowController {
             FileOperationsController.shared.pushUndo(.renamed(from: old, to: new))
             c.pendingSelect = new
             c.reload()
-        } catch  where FileJob.isPermissionError(error) {
+        } catch  where FileErrorKind.classify(error) == .permission {
             // Root-owned item or folder: authenticate, as Finder does.
             let new = old.deletingLastPathComponent().appendingPathComponent(name)
             if FileOperationsController.shared.authorize(

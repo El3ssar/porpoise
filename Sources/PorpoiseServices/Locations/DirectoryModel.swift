@@ -597,11 +597,9 @@ public final class DirectoryModel {
             var err: String?
             var privacy = false
             do { listed = try DirectoryLister.list(url) } catch {
-                let ns = error as NSError
-                let posix = (ns.userInfo[NSUnderlyingErrorKey] as? NSError)?.code
-                if ns.code == NSFileReadNoPermissionError || posix == Int(EPERM) || posix == Int(EACCES) {
-                    // EPERM on a readable folder means macOS privacy protection (TCC), not file permissions.
-                    privacy = access(url.path, R_OK) == 0 || posix == Int(EPERM)
+                let kind = FileErrorKind.classify(error, readable: access(url.path, R_OK) == 0)
+                if kind == .permission || kind == .privacy {
+                    privacy = kind == .privacy
                     err =
                         privacy
                         ? "macOS protects this folder. Give Porpoise Full Disk Access in System Settings to see its contents."

@@ -434,7 +434,7 @@ public final class FileJob: @unchecked Sendable {
 
     /// Files permission problems separately so the app can offer to authenticate.
     private func record(_ error: Error, for src: URL, target: URL?) {
-        if Self.isPermissionError(error) {
+        if FileErrorKind.classify(error) == .permission {
             denied.append(src)
             if let t = target { deniedTargets[src] = t }
         } else {
@@ -442,26 +442,8 @@ public final class FileJob: @unchecked Sendable {
         }
     }
 
-    public static func isNoSpace(_ error: Error) -> Bool {
-        let error = error as NSError
-        if error.domain == NSPOSIXErrorDomain && error.code == Int(ENOSPC) { return true }
-        if error.domain == NSCocoaErrorDomain && error.code == NSFileWriteOutOfSpaceError { return true }
-        return (error.userInfo[NSUnderlyingErrorKey] as? NSError).map { isNoSpace($0) } ?? false
-    }
-
     static func describe(_ error: Error) -> String {
         (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-    }
-
-    /// EACCES/EPERM, however Foundation wraps it.
-    public static func isPermissionError(_ error: Error) -> Bool {
-        var e: NSError? = error as NSError
-        while let n = e {
-            if n.domain == NSCocoaErrorDomain && [NSFileWriteNoPermissionError, NSFileReadNoPermissionError].contains(n.code) { return true }
-            if n.domain == NSPOSIXErrorDomain && (n.code == Int(EACCES) || n.code == Int(EPERM)) { return true }
-            e = n.userInfo[NSUnderlyingErrorKey] as? NSError
-        }
-        return false
     }
 
     /// The volume has no Trash (NSFeatureUnsupportedError from `trashItem`).
@@ -530,7 +512,7 @@ public final class FileJob: @unchecked Sendable {
             throw FileOperationError.cancelled
         } catch FileOperationError.interrupted {
             throw FileOperationError.interrupted
-        } catch  where Self.isPermissionError(error) {
+        } catch  where FileErrorKind.classify(error) == .permission {
             record(error, for: src, target: target)
             return nil
         }
@@ -547,52 +529,34 @@ public final class FileJob: @unchecked Sendable {
             if isCancelled { throw FileOperationError.cancelled }
             let srcItem = FileItem.load(src)
             let dstItem = FileItem.load(target)
-            // A link to a folder is transferred as the link: there is nothing in it to merge.
-            let srcIsFolder = (srcItem?.isBrowsableFolder ?? false) && !(srcItem?.isSymlink ?? false)
-            let bothDirs = srcIsFolder && (dstItem?.isBrowsableFolder ?? false)
-            let physicalFolders =
-                srcItem?.isDirectory == true && srcItem?.isSymlink == false
-                && dstItem?.isDirectory == true && dstItem?.isSymlink == false
+            guard let source = srcItem, let destination = dstItem else { return skipped(src) }
+            let policy = ConflictPolicy(source: source, destination: destination, mergePackages: false)
             // Only worked out when needed: listing the folder for every conflict of a big merge is quadratic.
             let suggestion = { FileFormat.suggestedName(for: src.lastPathComponent, existing: self.names(in: folder)) }
-            let answer = conflictAnswer(srcItem, dstItem, bothDirs: bothDirs, suggestion: suggestion)
-            switch answer {
+            let answer = conflictAnswer(source, destination, policy: policy, suggestion: suggestion)
+            var decision = policy.decision(for: answer, suggestedName: suggestion, options: comparisonOptions)
+            if decision == .compareContents {
+                decision = try identical(source, destination) ? .skip(identical: true) : .replace
+            }
+            switch decision {
             case .cancel:
                 cancel()
                 throw FileOperationError.cancelled
-            case .skip:
-                return skipped(src)
-            case .keepBoth:
-                target = folder.appendingPathComponent(suggestion())
+            case .skip(let identical): return skipped(src, identical: identical)
             case .rename(let name):
                 guard FileActions.isValidName(name) else { throw FileOperationError.failed("“\(name)” is not a valid name.") }
                 target = folder.appendingPathComponent(name)  // loop: the new name may exist too
-            case .writeInto:
-                return bothDirs ? (target, .merge) : skipped(src)
-            case .overwriteIfOlder, .overwriteIfDifferent, .overwriteIfLarger:
-                guard !physicalFolders else { return (target, .merge) }
-                guard let source = srcItem, let destination = dstItem else { return skipped(src) }
-                if answer == .overwriteIfDifferent {
-                    if try identical(source, destination) { return skipped(src, identical: true) }
-                    return try replaceable(target, by: src)
-                }
-                return answer.shouldReplace(source: source, destination: destination, options: comparisonOptions)
-                    ? try replaceable(target, by: src) : skipped(src)
-            case .overwrite:
-                return bothDirs ? (target, .merge) : try replaceable(target, by: src)
+            case .merge: return (target, .merge)
+            case .replace: return try replaceable(target, by: src)
+            case .compareContents: preconditionFailure("Content comparison must be resolved before placement")
             }
         }
         return (target, .new)
     }
 
-    private func conflictAnswer(_ src: FileItem?, _ dst: FileItem?, bothDirs: Bool, suggestion: () -> String) -> ConflictResolution {
-        defer { if let src { knownConflicts.remove(src.url) } }
-        // "Apply to All" answers stick, except Write Into, which only means something for two folders.
-        if let s = sticky ?? conflictRule.resolution, !(s == .writeInto && !bothDirs) {
-            if case .rename = s { return .rename(suggestion()) }
-            return s
-        }
-        guard let s = src, let d = dst else { return .skip }
+    private func conflictAnswer(_ s: FileItem, _ d: FileItem, policy: ConflictPolicy, suggestion: () -> String) -> ConflictResolution {
+        defer { knownConflicts.remove(s.url) }
+        if let choice = policy.automaticResolution(sticky: sticky, rule: conflictRule) { return choice }
         let a = resolveConflict(
             ConflictInfo(
                 source: s, destination: d, suggestedName: suggestion(), remainingConflicts: max(1, knownConflicts.count),
@@ -600,8 +564,8 @@ public final class FileJob: @unchecked Sendable {
                 replacedItems: progress.replacedItems, skippedIdenticalItems: progress.skippedIdenticalItems,
                 differentItems: inventoryMethod == comparisonOptions.method && inventoryMethod != .content ? differentItems : nil,
                 identicalItems: inventoryMethod == comparisonOptions.method && inventoryMethod != .content ? identicalItems : nil,
-                sourceFolder: bothDirs ? childCounts[s.url].map { TransferFolderSummary(itemCount: $0, bytes: sizes[s.url]) } : nil,
-                destinationFolder: bothDirs
+                sourceFolder: policy.isFolderPair ? childCounts[s.url].map { TransferFolderSummary(itemCount: $0, bytes: sizes[s.url]) } : nil,
+                destinationFolder: policy.isFolderPair
                     ? (try? fm.contentsOfDirectory(atPath: d.url.path)).map { TransferFolderSummary(itemCount: $0.count) } : nil))
         if let method = a.comparisonMethod { comparisonOptions.method = method }
         knownConflicts.remove(s.url)
@@ -656,7 +620,7 @@ public final class FileJob: @unchecked Sendable {
                     throw FileOperationError.interrupted
                 } catch {
                     try? fm.removeItem(at: dest)
-                    guard Self.isNoSpace(error), let onNoSpace else { throw error }
+                    guard FileErrorKind.classify(error) == .noSpace, let onNoSpace else { throw error }
                     progress.doneBytes = bytesBefore
                     publish(force: true)
                     guard onNoSpace(size(of: src)) else { cancel(); throw FileOperationError.cancelled }

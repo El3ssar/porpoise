@@ -50,6 +50,15 @@ final class RemoteTransferCoverageTests {
         return (results, ui.errors)
     }
 
+    @Test func pathBasedTransfersRunTheSameConflictCases() async throws {
+        let directory = try server.folder()
+        let file = directory.appendingPathComponent("report.txt")
+        let bytes = Data("incoming bytes".utf8)
+        try bytes.write(to: file)
+        let source = try #require(try server.provider().list(remoteFolder(directory)).first)
+        try await TransferConflictParityTests.exerciseRules(source: source, bytes: bytes, scratch: local)
+    }
+
     @Test func downloadsWithCopyAndMove() async throws {
         let dir = try server.folder()
         try write("copied", dir.appendingPathComponent("copy me.txt"))
