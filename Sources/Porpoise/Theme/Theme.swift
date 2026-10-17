@@ -85,6 +85,8 @@ enum Theme {
     static let separator = derived { windowText.mixed(with: windowBackground, 0.85) }
     /// The thin line under the toolbar and above the status bar, and the split view's divider.
     static let hairline = color(dark: NSColor.black.withAlphaComponent(0.30), light: NSColor.black.withAlphaComponent(0.10))
+    /// A disabled label: the text color, faded.
+    static let disabledText = derived { windowText.withAlphaComponent(0.4) }
     static let buttonHoverBackground = derived { windowText.withAlphaComponent(0.10) }
     static let buttonPressedBackground = derived { windowText.withAlphaComponent(0.16) }
     /// Field (line edit) background: View background.
@@ -146,6 +148,7 @@ enum Theme {
                 window.backgroundColor = Theme.windowBackground.usingColorSpace(.sRGB) ?? Theme.windowBackground
                 window.contentView?.redrawAll()
             }
+            redressWindows()
         }
     }
 
