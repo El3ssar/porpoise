@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+Google Drive is in preview: until Google finishes reviewing Porpoise, only invited accounts can sign in.
+
 - **Keep Downloaded and Remove Download for Google Drive, as with iCloud.** Right-click a Drive file or folder: Download
   Now, Keep Downloaded (a kept folder downloads what's added to it later, after showing its size and the space left),
   Remove Download. Kept copies follow changes and deletions in Drive and open, preview and edit from the same copy.
@@ -34,7 +36,7 @@
   then refresh in place. Shortcuts resolve concurrently, and Drive images and Google documents now have cached
   thumbnails, cancellable information previews and local Quick Look copies.
 
-- **Google Drive, like a network folder (read-only for now).** Go › Connect to Server… (⌘K) now opens one Connect
+- **Google Drive, like a network folder.** Go › Connect to Server… (⌘K) now opens one Connect
   sheet: pick Google Drive, sign in in your browser, and the account appears in the sidebar with its picture and
   storage: My Drive, Shared with me and Shared drives, each a normal place. Shared with me lists who shared what and
   when, newest first. Any Drive folder, including one shared with you, can be added to Places (context menu, dragging
