@@ -65,6 +65,27 @@ public final class DriveContentSource: CloudContentSource, @unchecked Sendable {
         if folder.item == "root" { lock.withLock { rootAliases.formUnion(files.flatMap { $0.parents ?? [] }) } }
         return files.map(remoteItem)
     }
+    public func discardPartial(at partial: URL) async throws {
+        let sidecar = partial.deletingLastPathComponent().appendingPathComponent(".operation")
+        guard let bytes = try? Data(contentsOf: sidecar), let operation = try? JSONDecoder().decode(UUID.self, from: bytes), let client else {
+            return
+        }
+        if let record = try client.mutationJournal.load(operation) {
+            guard record.accountID == client.accountID, record.kind == "download" else { throw DriveMutationError.sourceChanged }
+            if record.phase == .done {
+                let staging = client.mutationJournal.folder.appendingPathComponent("Downloads").appendingPathComponent(operation.uuidString + ".part")
+                if FileManager.default.fileExists(atPath: staging.path) {
+                    guard record.destinationURL == staging, let fingerprint = record.fingerprint,
+                        JobJournal.Fingerprint(staging) == fingerprint
+                    else { throw DriveMutationError.sourceChanged }
+                    try FileManager.default.removeItem(at: staging)
+                }
+            } else {
+                try await client.cancelTransfer(operation)
+            }
+        }
+        try? FileManager.default.removeItem(at: sidecar)
+    }
     public func holdsCopy(_ ref: CloudItemRef) async -> Bool {
         guard let client else { return false }
         return await client.edits.holdsCopy(ref.item)

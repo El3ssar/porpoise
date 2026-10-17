@@ -276,6 +276,9 @@ public final class DriveClient: @unchecked Sendable {
         let target = try await resolve(file)
         if !target.isGoogleDocument {
             let store = try await offlineCopies()
+            let item = contentSource.remoteItem(target)
+            if let local = try await store.localCopy(item.ref, revision: item.revision) { return local }
+            if isOffline { throw DriveError.offline }
             do {
                 return try await store.fetch(contentSource.remoteItem(target), progress: { bytes, total in context.progress(bytes, total ?? bytes) })
             } catch CloudContentError.offline { throw DriveError.offline }

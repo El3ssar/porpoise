@@ -243,3 +243,23 @@ extension CloudOfflineStoreTests {
         #expect(await store.state(second.ref) == .kept)
     }
 }
+
+extension CloudOfflineStoreTests {
+    @Test func removalAndWipeDrainFlightsAndDeletePartialBytes() async throws {
+        let source = FakeContentSource(), scratch = try Scratch(), item = source.add("one")
+        let store = try store(source, scratch)
+        source.failAfterPartial = true
+        await #expect(throws: CancellationError.self) { try await store.fetch(item, keep: true) }
+        let object = store.directory.appendingPathComponent("objects").appendingPathComponent(cloudObjectKey(item.ref.item))
+        #expect(FileManager.default.fileExists(atPath: object.path))
+        try await store.remove([item.ref])
+        #expect(!FileManager.default.fileExists(atPath: object.path))
+        source.delay = .seconds(5)
+        let task = Task { try await store.fetch(item, keep: true) }
+        for _ in 0..<100 where source.active == 0 { try await Task.sleep(for: .milliseconds(1)) }
+        try await store.wipe()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(!FileManager.default.fileExists(atPath: store.directory.path))
+        await #expect(throws: CancellationError.self) { try await store.fetch(item) }
+    }
+}

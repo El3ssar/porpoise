@@ -62,6 +62,11 @@ public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
     private var snapshots: [String: CloudOfflineSnapshot] = [:]
     private var sources: [String: CloudContentSource] = [:]
     private var epochs: [String: UUID] = [:]
+    private final class RetiredSource {
+        weak var source: CloudContentSource?
+        init(_ source: CloudContentSource) { self.source = source }
+    }
+    private var retiredSources: [String: RetiredSource] = [:]
     public var editHeld: @Sendable (CloudItemRef) async -> Bool = { _ in false }
 
     public init(accounts: CloudAccounts = .shared, root: URL? = nil, source: ((URL) -> CloudContentSource?)? = nil) {
@@ -205,6 +210,7 @@ public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
 
     /// Lazily opens the account index, then reconciles its persisted pins in the background.
     public func store(for source: CloudContentSource) throws -> CloudOfflineStore {
+        guard retiredSources[source.accountID]?.source !== source else { throw CancellationError() }
         if let existing = stores[source.accountID], sources[source.accountID] === source { return existing }
         if let old = keepers[source.accountID] { Task { await old.stop() } }
         let id = source.accountID, epoch = UUID()
@@ -345,6 +351,7 @@ public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
         }
     }
     public func wipe(account: String, done: @escaping (Error?) -> Void = { _ in }) {
+        if let source = sources[account] { retiredSources[account] = RetiredSource(source) }
         epochs[account] = nil
         backgroundTasks.removeValue(forKey: account)?.cancel(); backgroundPending[account] = nil
         let store = stores.removeValue(forKey: account), keeper = keepers.removeValue(forKey: account)

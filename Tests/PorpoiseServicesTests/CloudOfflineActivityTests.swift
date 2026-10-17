@@ -80,11 +80,16 @@ extension CloudOfflineActivityTests {
             }
         }
         defer { NotificationCenter.default.removeObserver(observer) }
-        _ = try await operations.cloudTask(title: "Keeping files", sources: []) { _ in
-            attempts += 1
-            if attempts == 1 { throw CloudContentError.lowSpace }
-            return []
+        let task = Task {
+            try await operations.cloudTask(title: "Keeping files", sources: []) { _ in
+                attempts += 1
+                if attempts == 1 { throw CloudContentError.lowSpace }
+                return []
+            }
         }
+        try await wait { attempts == 2 }
+        if attempts < 2 { task.cancel() }
+        _ = try await task.value
         #expect(attempts == 2 && operations.activities.last?.state == .completed)
     }
 }

@@ -114,10 +114,10 @@ private final class CloudTransferWake: @unchecked Sendable {
     private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     private var pending = false
     func signal() {
-        let pending = lock.withLock {
-            let all = Array(waiters.values); waiters.removeAll(); return all
+        let waiting = lock.withLock {
+            let all = Array(waiters.values); waiters.removeAll(); pending = all.isEmpty; return all
         }
-        for continuation in pending { continuation.resume() }
+        for continuation in waiting { continuation.resume() }
     }
     private func signal(_ id: UUID) { lock.withLock { waiters.removeValue(forKey: id) }?.resume() }
     func wait() async throws {

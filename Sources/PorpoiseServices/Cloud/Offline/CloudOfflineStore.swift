@@ -14,6 +14,8 @@ public actor CloudOfflineStore {
     private var reserved: Int64 = 0
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var generation = 0
+    private var invalidated = false
+    private var removing: Set<String> = []
     private var limit: Int64?
     private let freeSpace: @Sendable () -> (available: Int64, total: Int64)
     private let held: @Sendable (CloudItemRef) async -> Bool
@@ -64,6 +66,7 @@ public actor CloudOfflineStore {
     }
     public func usage() -> CloudOfflineUsage { snapshot().usage }
     public func remember(_ items: [CloudRemoteItem]) throws {
+        guard !invalidated else { throw CancellationError() }
         var pending = items, seen: Set<String> = []
         while let item = pending.popLast() {
             guard item.ref.account == source.accountID else { throw CloudContentError.unsupported }
@@ -76,7 +79,7 @@ public actor CloudOfflineStore {
         try persist()
     }
     public func localCopy(_ ref: CloudItemRef, revision: String?) throws -> URL? {
-        guard ref.account == source.accountID, var entry = index.entries[ref.item], entry.item.revision == revision else { return nil }
+        guard !invalidated, ref.account == source.accountID, var entry = index.entries[ref.item], entry.item.revision == revision else { return nil }
         let url = directory.appendingPathComponent(entry.path)
         guard FileManager.default.fileExists(atPath: url.path) else {
             index.entries[ref.item] = nil; try persist(); return nil
@@ -89,6 +92,7 @@ public actor CloudOfflineStore {
         checkpoint: @escaping @Sendable () async throws -> Void = { try Task.checkCancellation() },
         progress report: @escaping @Sendable (Int64, Int64?) -> Void = { _, _ in }
     ) async throws -> URL {
+        guard !invalidated, !removing.contains(item.ref.item) else { throw CancellationError() }
         guard item.ref.account == source.accountID, !item.isFolder, item.canDownload else { throw CloudContentError.unsupported }
         index.items[item.ref.item] = item
         if keep { index.pins.insert(item.ref.item) }
@@ -157,6 +161,7 @@ public actor CloudOfflineStore {
     }
     public func adopt(file: URL, as item: CloudRemoteItem) async throws -> URL {
         try Task.checkCancellation()
+        guard !invalidated, !removing.contains(item.ref.item) else { throw CancellationError() }
         guard item.ref.account == source.accountID, !item.isFolder,
             !item.name.isEmpty, item.name != ".", item.name != "..",
             !item.name.contains("/"), !item.name.contains("\\"), !item.name.contains("\0")
@@ -194,6 +199,7 @@ public actor CloudOfflineStore {
         return target
     }
     public func pin(_ refs: [CloudItemRef]) throws {
+        guard !invalidated else { throw CancellationError() }
         for ref in refs where ref.account == source.accountID { index.pins.insert(ref.item) }
         try persist()
     }
@@ -203,18 +209,28 @@ public actor CloudOfflineStore {
     }
     public func remove(_ refs: [CloudItemRef], unpin: Bool = true) async throws {
         for ref in refs where ref.account == source.accountID {
+            guard removing.insert(ref.item).inserted else { throw CancellationError() }
+            defer { removing.remove(ref.item) }
             guard !(await held(ref)) else { throw CloudContentError.heldForEditing }
             if unpin, snapshot().inheritedPin(ref.item) != nil {
                 throw CloudContentError.unavailable("Kept because a parent folder is kept downloaded.")
             }
-            inFlight[ref.item]?.task.cancel()
+            if let flight = inFlight[ref.item] { flight.task.cancel(); _ = try? await flight.task.value }
+            try await discardPartials(ref.item)
             if unpin { index.pins.remove(ref.item) }
             if let entry = index.entries.removeValue(forKey: ref.item) {
                 try? FileManager.default.removeItem(at: directory.appendingPathComponent(entry.path).deletingLastPathComponent())
             }
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("objects").appendingPathComponent(cloudObjectKey(ref.item)))
             errors[ref.item] = nil
         }
         try persist()
+    }
+    private func discardPartials(_ id: String) async throws {
+        let object = directory.appendingPathComponent("objects").appendingPathComponent(cloudObjectKey(id))
+        for folder in (try? FileManager.default.contentsOfDirectory(at: object, includingPropertiesForKeys: nil)) ?? [] {
+            try await source.discardPartial(at: folder.appendingPathComponent(".partial"))
+        }
     }
     /// Provider removals drop metadata and pin intent as well as bytes. Held edits remain available for conflict UI.
     public func forget(_ refs: [CloudItemRef]) async throws {
@@ -247,9 +263,12 @@ public actor CloudOfflineStore {
             try await remove([entry.item.ref])
         }
     }
-    public func wipe() throws {
-        generation += 1
-        for flight in inFlight.values { flight.task.cancel() }
+    public func wipe() async throws {
+        invalidated = true; generation += 1
+        let flights = Array(inFlight.values)
+        for flight in flights { flight.task.cancel() }
+        for flight in flights { _ = try? await flight.task.value }
+        for id in Array(index.items.keys) { try await discardPartials(id) }
         index = CloudOfflineIndex(); progress = [:]; errors = [:]
         try FileManager.default.removeItem(at: directory)
         publish()

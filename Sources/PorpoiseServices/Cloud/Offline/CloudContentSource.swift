@@ -76,6 +76,8 @@ public protocol CloudContentSource: AnyObject, Sendable {
         _ item: CloudRemoteItem, to partial: URL,
         checkpoint: @escaping @Sendable () async throws -> Void,
         progress: @escaping @Sendable (Int64, Int64?) -> Void) async throws
+    /// Cleans up provider-owned recovery bytes associated with this store partial, after its task has stopped.
+    func discardPartial(at partial: URL) async throws
     var isOffline: Bool { get }
     var onChanges: (@Sendable (CloudChangeBatch) -> Void)? { get set }
 }
@@ -88,6 +90,7 @@ extension CloudContentSource {
     ) async throws {
         try await checkpoint(); try await download(item, to: partial, progress: progress); try await checkpoint()
     }
+    public func discardPartial(at partial: URL) async throws {}
     public var offlineDirectory: URL? { nil }
     public func holdsCopy(_ ref: CloudItemRef) async -> Bool { false }
 }

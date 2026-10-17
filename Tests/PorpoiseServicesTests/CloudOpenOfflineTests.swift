@@ -45,3 +45,31 @@ import Testing
         try await store.wipe()
     }
 }
+
+extension CloudOpenOfflineTests {
+    @Test(arguments: [false, true]) func removingARecoveryPartialAlsoRemovesJournalOwnedStaging(completed: Bool) async throws {
+        let server = try DriveMutationTests().server(), scratch = try Scratch()
+        let client = try DriveMutationTests().client(server, folder: scratch.url.appendingPathComponent("Journal"))
+        let file = try await client.file("binary-a"), source = client.contentSource
+        let store = try await client.offlineCopies(), item = source.remoteItem(file)
+        try await store.remember([item]); try await store.pin([item.ref])
+        let folder = store.directory.appendingPathComponent("objects").appendingPathComponent(cloudObjectKey(item.ref.item))
+            .appendingPathComponent("recovery")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let operation = UUID(),
+            staging = client.mutationJournal.folder.appendingPathComponent("Downloads").appendingPathComponent(operation.uuidString + ".part")
+        try FileManager.default.createDirectory(at: staging.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("partial bytes".utf8).write(to: staging)
+        var record = DriveMutationRecord(operationID: operation, accountID: client.accountID, kind: "download", sourceID: file.id)
+        record.phase = .transferring; record.offset = 13; record.fingerprint = JobJournal.Fingerprint(staging)
+        try client.mutationJournal.save(record)
+        // A completed journal can still precede the move into the store when the process dies.
+        record.phase = completed ? .done : .transferring; record.destinationURL = completed ? staging : nil
+        try client.mutationJournal.save(record)
+        try JSONEncoder().encode(operation).write(to: folder.appendingPathComponent(".operation"))
+        try await store.remove([item.ref])
+        #expect(!FileManager.default.fileExists(atPath: staging.path))
+        #expect(!FileManager.default.fileExists(atPath: folder.path))
+        try await store.wipe()
+    }
+}
