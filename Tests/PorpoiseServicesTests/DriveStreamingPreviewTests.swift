@@ -74,17 +74,17 @@ import Testing
         }
     }
 
-    @Test(.enabled(if: VideoPreview.ffmpeg != nil)) @MainActor
+    @Test(.enabled(if: testFFmpeg != nil)) @MainActor
     func playerStartsBeforeTenPercentFetched() async throws {
         let scratch = try Scratch(), media = scratch.url.appendingPathComponent("movie.mp4")
-        let ffmpeg = try #require(VideoPreview.ffmpeg)
+        let ffmpeg = try #require(testFFmpeg)
         let result = try Shell.run(
             ffmpeg,
             [
                 "-hide_banner", "-loglevel", "error", "-nostdin", "-f", "lavfi", "-i", "color=c=blue:s=320x180:r=10",
-                "-t", "120", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", media.path,
+                "-t", "120", "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p", "-movflags", "+faststart", media.path,
             ], timeout: 30)
-        try #require(result.status == 0)
+        try #require(result.status == 0, "\(result.err)")
         let handle = try FileHandle(forWritingTo: media)
         let size = try handle.seekToEnd()
         let padding = UInt32((64 << 20) - size).bigEndian
