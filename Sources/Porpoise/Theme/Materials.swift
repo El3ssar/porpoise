@@ -64,11 +64,17 @@ final class Animator: NSObject {
     private var curve: (Double) -> Double = Animator.easeOutCubic
     private var step: ((Double) -> Void)?
     private var completion: (() -> Void)?
+    /// The end state is shown for one frame before the completion runs (see `run`).
+    private var showsEnd = false
+    private var ended = false
 
     /// Runs `step(progress)` with progress eased 0→1 over `duration`, replacing any running animation
     /// (whose completion is then not called). Steps follow the display's refresh: one per frame shown.
+    /// `showsEnd`: the completion waits for the next frame, so the end state is on screen before it runs. A slow machine
+    /// skips frames, and the last one shown may be far from the end: what the completion puts in place (the items
+    /// copies fly onto) would then seem to jump.
     func run(
-        duration: TimeInterval, curve: @escaping (Double) -> Double = Animator.easeOutCubic,
+        duration: TimeInterval, curve: @escaping (Double) -> Double = Animator.easeOutCubic, showsEnd: Bool = false,
         step: @escaping (Double) -> Void, completion: (() -> Void)? = nil
     ) {
         stop()
@@ -84,6 +90,8 @@ final class Animator: NSObject {
         self.curve = curve
         self.step = step
         self.completion = completion
+        self.showsEnd = showsEnd
+        ended = false
         start = nil
         let l = screen.displayLink(target: self, selector: #selector(tick(_:)))
         l.add(to: .main, forMode: .common)
@@ -91,6 +99,12 @@ final class Animator: NSObject {
     }
 
     @objc private func tick(_ l: CADisplayLink) {
+        if ended {
+            let done = completion
+            stop()
+            done?()
+            return
+        }
         // The clock starts with the first frame: work done right after `run` (a new split pane being set up) would
         // otherwise use up part of the animation before anything is drawn, and it would seem to jump.
         let now = l.timestamp
@@ -99,6 +113,10 @@ final class Animator: NSObject {
         let p = min(1, (now - begin) / duration)
         step?(curve(p))
         guard p >= 1 else { return }
+        if showsEnd {
+            ended = true
+            return
+        }
         let done = completion
         stop()
         done?()

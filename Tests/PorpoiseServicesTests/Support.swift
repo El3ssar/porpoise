@@ -24,37 +24,8 @@ struct IsolatedSettings: TestTrait, SuiteTrait, TestScoping {
     }
 }
 
-/// UserDefaults whose values live in memory only. Every typed accessor (`bool(forKey:)`, `set(_:forKey:)` for a
-/// Double…) goes through these three, so the app's code reads and writes it exactly as it does the real store.
-final class MemoryDefaults: UserDefaults, @unchecked Sendable {
-    private var values: [String: Any] = [:]
-    private let lock = NSLock()
-
-    init() { super.init(suiteName: nil)! }
-
-    override func object(forKey key: String) -> Any? { lock.withLock { values[key] } }
-    override func set(_ value: Any?, forKey key: String) { lock.withLock { values[key] = value } }
-    override func removeObject(forKey key: String) { lock.withLock { values[key] = nil } }
-}
-
 extension Trait where Self == IsolatedSettings {
     static var isolatedSettings: Self { IsolatedSettings() }
-}
-
-/// One test at a time with the settings store.
-private actor SettingsTurn {
-    static let shared = SettingsTurn()
-    private var busy = false
-    private var waiting: [CheckedContinuation<Void, Never>] = []
-
-    func acquire() async {
-        if !busy { busy = true; return }
-        await withCheckedContinuation { waiting.append($0) }
-    }
-
-    func release() {
-        if waiting.isEmpty { busy = false } else { waiting.removeFirst().resume() }
-    }
 }
 
 /// Waits up to `timeout` seconds for `condition`, letting the main queue run (models finish their loads there).

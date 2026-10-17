@@ -17,20 +17,10 @@ import Testing
         }
     }
 
-    @Test @MainActor func closingAuxiliaryWindowDoesNotQuitAnOrderedOutBrowser() throws {
+    @Test(.isolatedSettings) @MainActor func closingAuxiliaryWindowDoesNotQuitAnOrderedOutBrowser() throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
         let suite = "app.porpoise.lifetime-test.\(UUID().uuidString)"
-        let store = try #require(UserDefaults(suiteName: suite))
-        let previousStore = Settings.store
-        let previousTesting = Settings.isTesting
-        Settings.store = store
-        Settings.isTesting = true
-        defer {
-            Settings.store = previousStore
-            Settings.isTesting = previousTesting
-            store.removePersistentDomain(forName: suite)
-        }
         let delegate = AppDelegate.shared
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
