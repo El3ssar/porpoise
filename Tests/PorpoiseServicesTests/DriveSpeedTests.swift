@@ -85,14 +85,14 @@ import Testing
         // Cache callbacks run immediately, then the complete background diff arrives later.
         model.reload()
         completed = false
-        for _ in 0..<100 where !completed { try await Task.sleep(for: .milliseconds(50)) }
+        _ = await poll(timeout: 5) { completed }
         #expect(completed)
         #expect(model.items.contains { $0.name == "Updated report.txt" })
         #expect(model.selection == [selected] && model.expanded.contains(folder.url))
         server.stop()
         model.reload()
         completed = false
-        for _ in 0..<100 where !completed { try await Task.sleep(for: .milliseconds(20)) }
+        _ = await poll(timeout: 5) { completed }
         #expect(completed && model.loadError == nil && !model.items.isEmpty)
         model.prefetch(folder)
         model.prefetch(nil)

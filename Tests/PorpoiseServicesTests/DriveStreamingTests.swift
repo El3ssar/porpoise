@@ -94,7 +94,7 @@ import Testing
         #expect(operations.activities.last?.title == "Opening “movie.mp4”")
         server.stop()
         RemoteOpener.open(item, using: { opened.append($0) })
-        for _ in 0..<20 where opened.count != 2 { try await Task.sleep(for: .milliseconds(5)) }
+        _ = await poll(timeout: 5) { opened.count == 2 }
         #expect(opened.count == 2 && opened.first == opened.last && operations.activities.count == 1)
         await client.clearCaches()
     }

@@ -292,14 +292,12 @@ import Testing
         #expect(Self.canConnect(family: AF_INET, address: "127.0.0.1", port: f.port))
     }
 
-    @Test func stopClosesThePort() throws {
+    @Test func stopClosesThePort() async throws {
         let f = try Fixture()
         #expect(Self.canConnect(family: AF_INET, address: "127.0.0.1", port: f.port))
         f.stop()
         // Cancelling is asynchronous: give it a moment.
-        var open = true
-        for _ in 0..<50 where open { usleep(20_000); open = Self.canConnect(family: AF_INET, address: "127.0.0.1", port: f.port) }
-        #expect(!open)
+        await expectEventually(timeout: 5) { !Self.canConnect(family: AF_INET, address: "127.0.0.1", port: f.port) }
     }
 
     static func canConnect(family: Int32, address: String, port: UInt16) -> Bool {

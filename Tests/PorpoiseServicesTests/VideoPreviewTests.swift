@@ -318,7 +318,7 @@ struct StreamSessionTests {
     }
 
     private func gone(_ url: URL) async -> Bool {
-        for _ in 0..<200 where FileManager.default.fileExists(atPath: url.path) { try? await Task.sleep(for: .milliseconds(25)) }
+        _ = await poll(timeout: 5) { !FileManager.default.fileExists(atPath: url.path) }
         // Still gone a moment later: nothing wrote it back.
         try? await Task.sleep(for: .milliseconds(300))
         return !FileManager.default.fileExists(atPath: url.path)

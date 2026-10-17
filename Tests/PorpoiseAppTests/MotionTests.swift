@@ -30,7 +30,7 @@ import Testing
         animator.run(duration: 0.05, step: { _ in }) {
             animator.run(duration: 0.05, step: { steps.append($0) }) { second = true }
         }
-        for _ in 0..<300 where !second { try await Task.sleep(for: .milliseconds(10)) }
+        _ = await poll(timeout: 5) { second }
         #expect(second && steps.last == 1)
     }
 
@@ -48,7 +48,7 @@ import Testing
         let tab = PorpoiseTab(url: folder)
         window.contentView = tab
         let list = tab.primary.list
-        for _ in 0..<600 where list.model.rows.count < 3 { try await Task.sleep(for: .milliseconds(10)) }
+        _ = await poll(timeout: 6) { list.model.rows.count >= 3 }
         list.layoutSubtreeIfNeeded()
         let url = list.model.rows[0].item.url
 
@@ -61,9 +61,9 @@ import Testing
         Animator.reducesMotion = { false }
         list.hoverIndex = 0
         #expect((list.hoverAlpha[url] ?? 0) < 1)
-        for _ in 0..<300 where list.hoverAlpha[url] != 1 { try await Task.sleep(for: .milliseconds(10)) }
+        _ = await poll(timeout: 5) { list.hoverAlpha[url] == 1 }
         #expect(list.hoverAlpha[url] == 1)
-        for _ in 0..<300 where list.hoverClock.isRunning { try await Task.sleep(for: .milliseconds(10)) }
+        _ = await poll(timeout: 5) { !list.hoverClock.isRunning }
         #expect(!list.hoverClock.isRunning)
     }
 }

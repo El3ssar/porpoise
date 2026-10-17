@@ -226,7 +226,7 @@ extension CloudOfflineStoreTests {
         source.delay = .milliseconds(100)
         let store = try store(source, scratch)
         let firstFetch = Task { try await store.fetch(first) }
-        for _ in 0..<100 where source.active == 0 { try await Task.sleep(for: .milliseconds(1)) }
+        _ = await poll(timeout: 5) { source.active != 0 }
         #expect(source.active == 1)
         let updated = source.add("one", text: "updated", revision: "r2")
         async let a = store.fetch(updated)
@@ -247,7 +247,7 @@ extension CloudOfflineStoreTests {
         source.delay = .milliseconds(100)
         let store = try store(source, scratch, free: { (2_000_000_008, 20_000_000_000) })
         let running = Task { try await store.fetch(first) }
-        for _ in 0..<100 where source.active == 0 { try await Task.sleep(for: .milliseconds(1)) }
+        _ = await poll(timeout: 5) { source.active != 0 }
         #expect(source.active == 1)
         await #expect(throws: CloudContentError.lowSpace) { try await store.fetch(second, keep: true) }
         #expect(await store.state(second.ref) == .error(CloudContentError.lowSpace.localizedDescription))
@@ -270,7 +270,7 @@ extension CloudOfflineStoreTests {
         #expect(!FileManager.default.fileExists(atPath: object.path))
         source.delay = .seconds(5)
         let task = Task { try await store.fetch(item, keep: true) }
-        for _ in 0..<100 where source.active == 0 { try await Task.sleep(for: .milliseconds(1)) }
+        _ = await poll(timeout: 5) { source.active != 0 }
         try await store.wipe()
         await #expect(throws: CancellationError.self) { try await task.value }
         #expect(!FileManager.default.fileExists(atPath: store.directory.path))
