@@ -69,3 +69,60 @@ search and thumbnails. A warm full-copy view must issue no request. Keep stress 
 latency-budget measurements. Run existing Drive regressions after refactoring, then strict lint, full watchdog and
 coverage (at least 92%, with search tools fetched first). Runtime/source gates and attended UI verification are
 separate evidence; fake-server tests do not authorize real-account probing.
+
+## Dropbox engine (W-73)
+
+`Services/Dropbox` is deliberately engine-only. `CloudProvider.dropbox.isAvailable` remains false, and no
+app view or RemoteFS registry is changed. The UI work item can build its provider descriptor and backend
+adapter on the following capabilities:
+
+- `DropboxAccountStore`: PKCE loopback connection, duplicate/wrong-account checks, offline refresh credentials,
+  persisted account metadata, reconnect, disconnect, and foreground change-feed lifecycle. App key selection is
+  `PORPOISE_DROPBOX_APP_KEY`, then Settings `dropboxAppKey`, then Info.plist `DropboxAppKey`. No client secret.
+- `DropboxClient`: paginated listing, metadata, shared received files/folders, explicit namespace clients,
+  search pages and thumbnails. `metadataCache.snapshot(path).savedAt` and `onFreshness` supply the existing
+  freshness UI. `onReachability` supplies account connectivity; transport failures alone mean offline.
+- `DropboxChangeFeed`: recursive root cursor, ordered patches, deleted descendants, cursor reset, coalesced
+  checks, no-auth longpoll, server backoff and explicit start/stop. A listing cursor and a whole-account change
+  cursor are different scopes. Namespace clients use different cache/journal/offline directories.
+- `DropboxContentSource`: the existing `CloudOffline` store, pin keeper, Keep Downloaded/Remove Download,
+  incremental changes, verified full copies, cached opening, and held edit sessions. References include provider,
+  account and namespace. `DropboxLocation` encodes the whole opaque item ID into one URL segment; an optional
+  namespace query preserves unmounted shared-folder identity. It never splits a decoded ID or uses a display
+  filename as a remote identity.
+- `DropboxClient.open`: `CloudRemoteOpen`/Activity on a miss and an immediate current local copy on a hit.
+  `streamingPreview` returns the shared selection-owned secret loopback proxy, using immutable revision reads;
+  `readRange` limits each upstream read to 1 MiB. `thumbnail` uses the shared rendition LRU, never full-file bytes.
+- `download`: shared fsynced range engine, four to eight connections at 32 MiB and above, resumable independent
+  offsets, exact Content-Range, revision metadata, full Dropbox content hash and fresh final metadata. Verified
+  staging bytes are private. The consumer still owns final no-overwrite publication.
+- `upload`: eight MiB session append chunks (the last can be smaller), per-call content hashes, full returned
+  content-hash verification, session secret in `CloudOAuthSession`, durable offsets and bounded offset recovery
+  after a lost append. Add/update commits always use `autorename=false` and `strict_conflict=true`. Update uses
+  the baseline `rev`. `CommitInfo` has no full-file `content_hash` field; the finish hash covers the finish body,
+  and the response's metadata hash authenticates the full file.
+- `DropboxEditStore`: durable private editable copies, restart discovery, held-copy capability, revision-conditional
+  save-back, conflict preservation and Save as Copy with an explicit new path.
+
+Dropbox does not offer Drive's operation-ID app properties or conditional restore. An operation with a lost
+non-idempotent response remains `uncertain`; callers must show it for review rather than automatically retrying.
+Upload finish uncertainty never restarts as unconditional overwrite. File deletion uses `parent_rev`. Folder deletion
+requires explicit confirmation that automatic Undo is unavailable. Restore can overwrite the current item and therefore
+requires an explicit `confirmedMayReplace`; the default fails closed. These limitations must be represented in the
+future UI's capabilities and confirmation flow. The engine never calls permanent-delete endpoints.
+
+`DropboxAccountStore.setActive` and `checkForChanges` are the future backend's lifecycle forwarding points; constructing
+an engine account alone does not register it in the app or start a live account probe. UI integration must preserve that
+explicit lifecycle and use the service's retained client/content source rather than constructing duplicate offline stores.
+
+The loopback fixture is `scripts/fake-dropbox-server.py`. It supports latency, per-response bandwidth, aggregate bandwidth,
+opaque pagination, namespace-header inspection, strict revision conflicts, lost append/finish/mutation responses and corrupt
+range responses. Its diagnostics omit bearer values, refresh credentials and upload session IDs. Tests use `LocalFixtureServer`
+and `MemoryCredentials`, and the full validation runs with the system-Keychain denial tripwire.
+
+Wire contracts were checked against Dropbox's primary references:
+[OAuth](https://docs.dropboxapi.com/dropbox-api/docs/oauth),
+[files schema](https://github.com/dropbox/dropbox-api-spec/blob/main/files.stone),
+[sharing schema](https://github.com/dropbox/dropbox-api-spec/blob/main/sharing.stone),
+[content hash](https://docs.dropboxapi.com/dropbox-api/docs/technical-reference/content-hash), and
+[team files](https://docs.dropboxapi.com/dropbox-api/docs/team-files).

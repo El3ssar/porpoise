@@ -47,6 +47,7 @@ public struct CloudOfflineSnapshot: Sendable {
 extension CloudChecksum {
     /// Hash incrementally: full-file downloads must never require full-file resident memory.
     func verify(_ url: URL) throws -> Bool {
+        if case .dropbox(let expected) = self { return try CloudContentHash.dropbox(url) == expected.lowercased() }
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var md5 = Insecure.MD5(); var sha = SHA256()
