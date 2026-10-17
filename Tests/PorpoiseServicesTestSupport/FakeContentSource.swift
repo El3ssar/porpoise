@@ -19,6 +19,13 @@ public final class FakeContentSource: CloudContentSource, @unchecked Sendable {
     public var offsets: [Int] = []
     public var failAfterPartial = false
     public var delay: Duration = .milliseconds(2)
+    private var holds = false
+    /// While true, downloads that have taken their bytes wait before writing them: a test's download stays under way
+    /// (and `active`) until it sets this back, however slowly the test gets to run.
+    public var holdsDownloads: Bool {
+        get { lock.withLock { holds } }
+        set { lock.withLock { holds = newValue } }
+    }
     public init() {}
     public func add(_ id: String, parent: String? = nil, folder: Bool = false, text: String = "hello", revision: String = "r1") -> CloudRemoteItem {
         let data = Data(text.utf8)
@@ -47,6 +54,7 @@ public final class FakeContentSource: CloudContentSource, @unchecked Sendable {
             downloads += 1; active += 1; maximum = max(maximum, active); return bytes[item.ref.item]!
         }
         defer { lock.withLock { active -= 1 } }
+        while holdsDownloads { try await Task.sleep(for: .milliseconds(5)) }
         let offset = (try? partial.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         lock.withLock { offsets.append(offset) }
         if failAfterPartial {

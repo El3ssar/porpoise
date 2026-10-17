@@ -161,14 +161,17 @@ extension CloudOfflineStoreTests {
 extension CloudOfflineStoreTests {
     @Test func aNewRevisionWaitsForOldFlightAndStillDeduplicates() async throws {
         let source = FakeContentSource(), scratch = try Scratch(), first = source.add("one")
-        source.delay = .milliseconds(100)
+        source.holdsDownloads = true
         let store = try store(source, scratch)
         let firstFetch = Task { try await store.fetch(first) }
-        _ = await poll(timeout: 5) { source.active != 0 }
-        #expect(source.active == 1)
+        // The first download has taken r1's bytes before r2 replaces them (they did not, once a 5 s wait ran out).
+        await expectEventually { source.active == 1 }
         let updated = source.add("one", text: "updated", revision: "r2")
         async let a = store.fetch(updated)
         async let b = store.fetch(updated)
+        // Both wait for the first flight, then share one download (whether or not they came while it ran).
+        try await Task.sleep(for: .milliseconds(100))
+        source.holdsDownloads = false
         _ = try await firstFetch.value
         let (one, two) = try await (a, b)
         #expect(one == two && source.downloads == 2)
@@ -182,13 +185,13 @@ extension CloudOfflineStoreTests {
     @Test func concurrentDownloadsReserveSpaceUntilTheirCopyCommits() async throws {
         let source = FakeContentSource(), scratch = try Scratch()
         let first = source.add("first"), second = source.add("second")
-        source.delay = .milliseconds(100)
+        source.holdsDownloads = true
         let store = try store(source, scratch, free: { (2_000_000_008, 20_000_000_000) })
         let running = Task { try await store.fetch(first) }
-        _ = await poll(timeout: 5) { source.active != 0 }
-        #expect(source.active == 1)
+        await expectEventually { source.active == 1 }
         await #expect(throws: CloudContentError.lowSpace) { try await store.fetch(second, keep: true) }
         #expect(await store.state(second.ref) == .error(CloudContentError.lowSpace.localizedDescription))
+        source.holdsDownloads = false
         _ = try await running.value
         _ = try await store.fetch(second)
         #expect(source.downloads == 2 && source.maximum == 1)
@@ -206,9 +209,9 @@ extension CloudOfflineStoreTests {
         #expect(FileManager.default.fileExists(atPath: object.path))
         try await store.remove([item.ref])
         #expect(!FileManager.default.fileExists(atPath: object.path))
-        source.delay = .seconds(5)
+        source.holdsDownloads = true
         let task = Task { try await store.fetch(item, keep: true) }
-        _ = await poll(timeout: 5) { source.active != 0 }
+        await expectEventually { source.active == 1 }
         try await store.wipe()
         await #expect(throws: CancellationError.self) { try await task.value }
         #expect(!FileManager.default.fileExists(atPath: store.directory.path))
