@@ -53,4 +53,23 @@ import Testing
         await expectEventually { playingFailed }
         session.stop()
     }
+    @Test func cachedObservationAndBufferingPolicyRemainSelectable() async throws {
+        let session = CloudPlaybackSession(preferredForwardBufferDuration: 0, observesCached: false), statuses = Counter()
+        session.onStatus = { _ in statuses.add() }
+        session.start { CloudPlayback(url: URL(fileURLWithPath: "/fixture-missing-cache-" + UUID().uuidString)) }
+        await expectEventually { session.player?.currentItem?.status == .failed }
+        #expect(session.player?.currentItem?.preferredForwardBufferDuration == 0 && statuses.value == 1)
+        session.stop()
+    }
+
+    @Test func releasingTheSessionStopsItsOwnedStream() async throws {
+        let stream = Stream()
+        var session: CloudPlaybackSession? = CloudPlaybackSession()
+        weak var owner = session
+        session?.start { CloudPlayback(url: stream.url, stream: stream) }
+        await expectEventually { owner?.player != nil }
+        session = nil
+        await expectEventually { owner == nil && stream.stops.value == 1 }
+    }
+
 }

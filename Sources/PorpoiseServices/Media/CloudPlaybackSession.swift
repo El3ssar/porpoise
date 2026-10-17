@@ -16,8 +16,12 @@ import Foundation
     private var observation: NSKeyValueObservation?
     private var itemObservation: NSKeyValueObservation?
     private var generation = UUID()
+    private let preferredForwardBufferDuration: TimeInterval
+    private let observesCached: Bool
 
-    public init() {}
+    public init(preferredForwardBufferDuration: TimeInterval = 2, observesCached: Bool = true) {
+        self.preferredForwardBufferDuration = preferredForwardBufferDuration; self.observesCached = observesCached
+    }
 
     public func start(load: @escaping () async throws -> CloudPlayback) {
         stop()
@@ -30,11 +34,11 @@ import Foundation
                 guard !Task.isCancelled, let self, self.generation == generation else { playback.stream?.stop(); return }
                 self.loading = nil; self.stream = playback.stream
                 let item = AVPlayerItem(url: playback.url)
-                item.preferredForwardBufferDuration = 2
+                item.preferredForwardBufferDuration = self.preferredForwardBufferDuration
                 let player = AVPlayer(playerItem: item)
                 player.automaticallyWaitsToMinimizeStalling = false
                 self.player = player; self.onPlayer(player, playback.url)
-                guard self.generation == generation else { return }
+                guard self.generation == generation, self.stream != nil || self.observesCached else { return }
                 self.observation = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
                     DispatchQueue.main.async {
                         guard let self, self.generation == generation, self.player === player, player.currentItem?.status != .failed else { return }

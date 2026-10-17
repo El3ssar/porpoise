@@ -6,7 +6,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     TabBarDelegate, PlacesPanelDelegate, NSSplitViewDelegate
 {
 
-    var driveMediaQuickLook: DriveMediaPreviewPanel?
+    var driveMediaQuickLook: CloudMediaPreviewPanel?
     var driveQuickLook: Task<Void, Never>?
     var driveQuickLookURLs: [URL: URL] = [:]
     var driveQuickLookLoading: Set<URL> = []
