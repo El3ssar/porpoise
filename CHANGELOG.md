@@ -1,7 +1,22 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
 
+- **Dropbox.** Connect a Dropbox account with ⌘K › Dropbox (or Settings › Accounts) and browse it like a network
+  folder: preview, open, copy in and out, rename, move, delete, Download and Remove Download, and edit files in place.
+  Its space used and left shows in the sidebar, the status bar and Settings, as for Google Drive. Porpoise's Dropbox
+  app is in development status, so Dropbox shows a notice when you connect and limits how many accounts can link.
+- **Cloud folders keep your view.** With "Use common display style for all folders", Google Drive, Dropbox, network
+  and Android folders now show the same view as every other folder, instead of switching to List. With "Remember
+  display style for each folder", they remember their own. Every location now takes its view from the same place.
+- **Remote folders expand in the Folders panel.** Google Drive, Dropbox, SFTP and FTP folders get disclosure
+  triangles in the Folders tree, starting from the top of the account or server, and load as you open them.
+- **Cloud fixes.** Dropbox files being edited say Dropbox, not Google Drive; Properties and the location bar show a
+  Dropbox file's folders; dropping files on a Google Drive, Dropbox or SFTP place in the sidebar uploads them; Dropbox
+  share links open; "Sign in again" no longer turns back to OK by itself; a paused Dropbox transfer stops when you
+  quit; signing out of Dropbox also revokes Porpoise's access there.
+- **Settings and the other windows follow the theme.** Settings, Properties, Activity, Compare, Disk Usage and the
+  Connect sheet use the app's colors and switch with it.
 - **Split view flights land at the right size.** When the two panes show items at different sizes (one zoomed in or out, in any view), the items flying between them grow or shrink smoothly on the way and land as exactly what the other pane shows, with no snap or blink at the end, even on a busy Mac that skips frames: the last frame always shows them at their landing size.
 
 Google Drive is in preview: until Google finishes reviewing Porpoise, only invited accounts can sign in.
