@@ -1,4 +1,5 @@
 import AppKit
+import PorpoiseCore
 import PorpoiseServices
 
 extension DebugBridge {
@@ -107,6 +108,14 @@ extension DebugBridge {
         case "newfolder":
             // newfolder <name>: what the New Folder dialog's Create does.
             AppDelegate.shared.windows.first?.createCloudFolder(named: rest)
+        case "split":
+            // split [<folder id>]: opens the split view on that Drive folder of the first account (none: the same folder).
+            guard let w = AppDelegate.shared.windows.first else { return }
+            let account = MainActor.assumeIsolated { DriveAccountStore.shared.accounts.first }
+            let url = rest.isEmpty ? nil : account.map { DriveLocation(accountID: $0.id, collection: .folder(rest)).url }
+            w.tab.openSplit(url: url)
+            w.tab.secondary?.delegate = w
+        case "unsplit": AppDelegate.shared.windows.first?.tab.closeSplit(closeActive: true)
         case "nolaunch":
             // nolaunch: files "opened in their app" are only recorded (no other app starts in a test instance).
             RemoteOpener.openFile = { DebugBridge.openedFiles.append($0.path) }

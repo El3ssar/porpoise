@@ -40,6 +40,157 @@ struct ItemTransition {
     }
 }
 
+/// What a transition is for, as `ItemTransitions.log` records it.
+enum TransitionKind: String {
+    /// The split view opening: the left pane's items glide to their places, the right pane's fly in from them.
+    case splitOpen
+    /// The split view closing: the closing pane's items fly back onto the same ones in the pane that stays.
+    case splitClose
+    /// The filter bar's text changed.
+    case filter
+    /// Search results came in or went.
+    case search
+    /// A listing changed under a view that already showed it (Drive's answer after the saved listing, a change made
+    /// elsewhere).
+    case remote
+    /// A resize or a zoom put the items in other places.
+    case reflow
+}
+
+/// The one owner of a view's item animations (see artifacts/p4/m4/TRANSITIONS.md). Everything that changes what a view
+/// shows or where comes through here, whatever the location (a local folder, Google Drive, a search):
+/// - `navigate()` when the view goes somewhere else: whatever ran stops;
+/// - `itemsDelivered(loading:)` whenever its listing changed, from the first page of a slow listing to the last: a
+///   listing only delivers, it never animates on its own;
+/// - `change(_:_:)` for a change shown as a glide (filter, search, remote changes, a split's left pane);
+/// - `whenItemsArrive(_:)`, `flightStarts(hiding:)`, `flightLanded(_:)`, `flightLeaves(_:)` for the split's flights;
+/// - `resized()` and `reflow(_:)` for the layout changing under the items.
+/// Only one transition runs at a time per view: while a split's flight is due or running, other changes show at once
+/// (the flight already moves the items there), so nothing animates twice.
+@MainActor final class ItemTransitions {
+    private unowned let list: ItemListView
+    /// Reduce Motion (Accessibility › Display): changes show at once, nothing moves.
+    static var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    /// The transitions started since the view was made (the last 32), for the debug bridge and tests.
+    private(set) var log: [TransitionKind] = []
+    /// When each of them started (`CACurrentMediaTime`).
+    private(set) var logTimes: [CFTimeInterval] = []
+    /// The view has its location's items (or knows there are none): set by the first delivery after `navigate()`.
+    private var delivered = false
+    /// What runs once the items are there (the split's flight into this pane).
+    private var arrival: (() -> Void)?
+    /// A flight brings this view's items in: other changes don't animate meanwhile.
+    private var flying = false
+
+    init(list: ItemListView) { self.list = list }
+
+    /// Whether a change would animate now (a window to show it in, no Reduce Motion, not a huge folder).
+    var animates: Bool { list.animates }
+
+    /// The view shows another location: what ran stops, and the next delivery is that location's first.
+    func navigate() {
+        list.stopTransitions()
+        delivered = false
+        arrival = nil
+        flying = false
+    }
+
+    /// The listing changed (its first page, its whole contents, a reload). `loading`: more is coming.
+    func itemsDelivered(loading: Bool) {
+        guard !delivered, !list.model.rows.isEmpty || !loading else { return }
+        delivered = true
+        if let run = arrival {
+            arrival = nil
+            run()
+        }
+    }
+
+    /// Runs `run` once the view has its items: at once if it has them (a listing saved from before), else on their
+    /// first delivery, which may be the first page of a slow listing. Until then nothing of them is shown moving.
+    func whenItemsArrive(_ run: @escaping () -> Void) {
+        if delivered { run() } else { arrival = run }
+    }
+
+    /// Applies `apply`, which changes what's listed or where, the items gliding from where they were: those that went
+    /// away fade out, new ones grow in. `cascade`: new ones come in one after another (search results). `pictures`:
+    /// false when the change only adds items (nothing to fade out), which is quicker to start.
+    func change(
+        _ kind: TransitionKind, duration: TimeInterval = ItemListView.transitionDuration,
+        curve: @escaping (Double) -> Double = Animator.easeOutCubic, cascade: Bool = false, pictures: Bool = true, _ apply: () -> Void
+    ) {
+        let start = flying || arrival != nil ? nil : list.snapshotForTransition(pictures: pictures)
+        apply()
+        guard let start else { return }
+        record(kind)
+        list.animateLayoutChange(from: start, duration: duration, curve: curve, cascade: cascade)
+    }
+
+    /// The pictures a flight leaving this view starts from (its visible items, as drawn now); nil when nothing would
+    /// animate.
+    func flightPictures() -> [String: CGImage]? { list.snapshotForTransition()?.flightImages }
+
+    /// A flight is about to bring `keys` here: they stay hidden until it lands; the view's other items come in where
+    /// they are.
+    func flightStarts(hiding keys: Set<String>) {
+        flying = true
+        record(.splitOpen)
+        list.animateAppearing(except: keys)
+    }
+
+    /// The flight landed on `keys`: they fade in where it put them, then `completion`.
+    func flightLanded(_ keys: Set<String>, completion: @escaping () -> Void) {
+        list.reveal(keys) { [weak self] in
+            self?.flying = false
+            completion()
+        }
+    }
+
+    /// The flight was cut short (the split closed while it ran): what it hid shows again where it is.
+    func flightCancelled() {
+        guard flying || !list.transitionHidden.isEmpty else { return }
+        flying = false
+        list.transitionHidden = []
+        list.needsDisplay = true
+    }
+
+    /// `keys` leave this view on a flight (the pane closing): they're no longer drawn here.
+    func flightLeaves(_ keys: Set<String>) {
+        record(.splitClose)
+        list.transitionHidden.formUnion(keys)
+        list.needsDisplay = true
+    }
+
+    /// The view was resized (window, split pane, panel): items that change places glide there. Not while a flight
+    /// brings them in: it reads where they are at every frame, so it follows them by itself.
+    func resized() {
+        guard !flying, arrival == nil else { return list.relayout() }
+        if list.resized() { record(.reflow) }
+    }
+
+    /// Runs `change` (a zoom step); items it puts in other places glide there.
+    func reflow(_ change: () -> Void) {
+        guard !flying, arrival == nil else { return change() }
+        if list.reflowing(change) { record(.reflow) }
+    }
+
+    /// The view was laid out for a coming width (`layoutWidthOverride`) while its pane moved; it has that width now.
+    /// Its container is laid out first, so the items are placed at the width they really have, and don't move again.
+    func releaseWidth() {
+        guard list.layoutWidthOverride != nil else { return }
+        list.window?.contentView?.layoutSubtreeIfNeeded()
+        list.layoutWidthOverride = nil
+    }
+
+    private func record(_ kind: TransitionKind) {
+        log.append(kind)
+        logTimes.append(CACurrentMediaTime())
+        if log.count > 32 {
+            log.removeFirst(log.count - 32)
+            logTimes.removeFirst(logTimes.count - 32)
+        }
+    }
+}
+
 extension ItemListView {
     static let transitionDuration: TimeInterval = 0.3
     /// Beyond this many rows a change is shown at once: every frame would draw a large view.
@@ -59,14 +210,22 @@ extension ItemListView {
         return i
     }
 
-    var animates: Bool {
-        window != nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion && model.rows.count <= Self.maxAnimatedRows
+    fileprivate var animates: Bool { window != nil && !ItemTransitions.reducesMotion() && model.rows.count <= Self.maxAnimatedRows }
+
+    /// Stops whatever runs (the view goes somewhere else): items are drawn where they are.
+    func stopTransitions() {
+        transitionAnimator.stop()
+        revealAnimator.stop()
+        transition = nil
+        revealing = nil
+        transitionHidden = []
+        needsDisplay = true
     }
 
     /// The visible items as drawn now (mid-transition included), with pictures of them; nil when nothing would
     /// animate (no window, Reduce Motion, a very large folder). Without `pictures`, only where they are: enough when
     /// nothing will leave or change its look (items are only added), and much quicker.
-    func snapshotForTransition(pictures: Bool = true) -> ItemSnapshot? {
+    fileprivate func snapshotForTransition(pictures: Bool = true) -> ItemSnapshot? {
         guard animates else { return nil }
         if frames.count != model.rows.count { computeLayout() }
         let vr = visibleRect
@@ -96,7 +255,7 @@ extension ItemListView {
 
     /// Animates from `start` to the current layout (call after the model and the layout changed).
     /// `cascade`: new items come in one after another, in order, instead of all together (search results).
-    func animateLayoutChange(
+    fileprivate func animateLayoutChange(
         from start: ItemSnapshot, duration: TimeInterval = ItemListView.transitionDuration,
         curve: @escaping (Double) -> Double = Animator.easeOutCubic, cascade: Bool = false
     ) {
@@ -124,10 +283,11 @@ extension ItemListView {
 
     /// The view was resized (window, split pane, panel): laid out again. Items that change places (another number of
     /// columns in Icons, of rows per column in Compact) glide there instead of jumping; a resize that keeps them in
-    /// place is shown at once, so they never trail the pointer.
-    func resized() {
+    /// place is shown at once, so they never trail the pointer. True when they glide.
+    fileprivate func resized() -> Bool {
         guard mode != .details, layoutWidthOverride == nil, animates, frames.count == model.rows.count, !frames.isEmpty else {
-            return computeLayout()
+            computeLayout()
+            return false
         }
         let vr = visibleRect.insetBy(dx: -40, dy: -40)
         let before = Dictionary(transitionIndexes(in: vr).map { (key(ofRow: $0), shownFrame($0)) }, uniquingKeysWith: { a, _ in a })
@@ -135,18 +295,23 @@ extension ItemListView {
         computeLayout()
         // A running glide keeps going to the new places by itself; a new one starts only when the layout reflows.
         let reflowed = zip(old, frames).contains { abs($0.minX - $1.minX) > 24 || abs($0.minY - $1.minY) > 24 }
-        guard reflowed, !before.isEmpty, frames.count == old.count else { return needsDisplay = true }
+        guard reflowed, !before.isEmpty, frames.count == old.count else {
+            needsDisplay = true
+            return false
+        }
         transition = ItemTransition(from: before, leaving: [])
         runTransition(duration: 0.3)
+        return true
     }
 
     /// Runs `change` (a zoom step: a layout at another icon size, maybe scrolled to keep the anchor in place). When it
     /// reflows the items (another number of columns in Icons, of rows per column in Compact), they glide to their new
     /// cells as in `resized()`, starting from where they were on screen; a running glide carries on, kept on screen
-    /// across the scroll.
-    func reflowing(_ change: () -> Void) {
+    /// across the scroll. True when a new glide started.
+    fileprivate func reflowing(_ change: () -> Void) -> Bool {
         guard mode != .details, layoutWidthOverride == nil, animates, frames.count == model.rows.count, !frames.isEmpty else {
-            return change()
+            change()
+            return false
         }
         let vr = visibleRect
         let before = Dictionary(
@@ -159,22 +324,25 @@ extension ItemListView {
         if reflowed, !before.isEmpty, frames.count == count {
             transition = ItemTransition(from: before.mapValues { $0.offsetBy(dx: dx, dy: dy) }, leaving: [])
             runTransition(duration: 0.3)
-        } else if var t = transition, dx != 0 || dy != 0 {
+            return true
+        }
+        if var t = transition, dx != 0 || dy != 0 {
             t.from = t.from.mapValues { $0.offsetBy(dx: dx, dy: dy) }
             t.leaving = t.leaving.map { ($0.rect.offsetBy(dx: dx, dy: dy), $0.image) }
             transition = t
         }
+        return false
     }
 
     /// Lets the visible items come in where they are (a view that just got its items), except `except` (keys).
-    func animateAppearing(except: Set<String> = [], duration: TimeInterval = ItemListView.transitionDuration) {
+    fileprivate func animateAppearing(except: Set<String> = [], duration: TimeInterval = ItemListView.transitionDuration) {
         guard animates else { return }
         transitionHidden = except
         transition = ItemTransition(from: [:], leaving: [])
         runTransition(duration: duration)
     }
 
-    func runTransition(duration: TimeInterval, curve: @escaping (Double) -> Double = Animator.easeOutCubic) {
+    fileprivate func runTransition(duration: TimeInterval, curve: @escaping (Double) -> Double = Animator.easeOutCubic) {
         transitionAnimator.run(
             duration: duration, curve: curve,
             step: { [weak self] p in
@@ -188,7 +356,7 @@ extension ItemListView {
     }
 
     /// Items another view flew in (keys): they fade in where they landed, then `completion`.
-    func reveal(_ keys: Set<String>, completion: @escaping () -> Void = {}) {
+    fileprivate func reveal(_ keys: Set<String>, completion: @escaping () -> Void = {}) {
         transitionHidden.subtract(keys)
         guard animates, !keys.isEmpty else {
             needsDisplay = true

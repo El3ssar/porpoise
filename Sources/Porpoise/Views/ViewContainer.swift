@@ -173,6 +173,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
         model.onLoaded = { [weak self] in
             guard let self else { return }
+            self.list.transitions.itemsDelivered(loading: false)
             self.noteRefreshing()
             self.updateStatus()
             if let once = self.onNextLoad {
@@ -367,7 +368,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         scroll.frame = CGRect(x: 0, y: y, width: bounds.width, height: max(0, bottom - y))
         if scroll.frame.size != laidOutScrollSize {
             laidOutScrollSize = scroll.frame.size
-            list.resized()
+            list.transitions.resized()
         }
         header.needsDisplay = true
         layoutStatusBar(bottom: bottom, mode: statusMode)
@@ -421,6 +422,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         // The app library has its own search, which starts empty; elsewhere the filter bar's text applies.
         model.filter = AppLibrary.isActive(for: u) ? NameFilter() : filterBar.filter
         list.scroll(.zero)  // first: a location that loads synchronously restores its position inside setLocation
+        list.transitions.navigate()
         model.setLocation(u)
         if AppLibrary.isActive(for: u) { apps?.prepareForDisplay() }
         RecentLocations.shared.visit(u)
@@ -477,6 +479,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     private func modelChanged() {
         if showsApps { apps?.reload() }
         list.relayout()
+        list.transitions.itemsDelivered(loading: model.isLoading)
         list.refreshHover()
         updateStatus()
         needsLayout = true
@@ -598,13 +601,11 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     /// that went away fading out and new ones growing in.
     /// `onlyAdding`: the change only adds items (the same search's next results), so no pictures are needed.
     private func animatingItems(searchStyle: Bool = false, onlyAdding: Bool = false, _ change: () -> Void) {
-        let start = showsApps ? nil : list.snapshotForTransition(pictures: !onlyAdding)
-        change()
-        guard let start else { return }
+        guard !showsApps else { return change() }
         if searchStyle {
-            list.animateLayoutChange(from: start, duration: 0.45, curve: Animator.easeInOutCubic, cascade: true)
+            list.transitions.change(.search, duration: 0.45, curve: Animator.easeInOutCubic, cascade: true, pictures: !onlyAdding, change)
         } else {
-            list.animateLayoutChange(from: start)
+            list.transitions.change(.filter, pictures: !onlyAdding, change)
         }
     }
 
@@ -616,15 +617,14 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         let list = self.list
         let top = list.visibleRect.minY > 1 ? list.candidateIndexes(in: list.visibleRect).min() : nil
         let anchor = top.map { (key: list.key(ofRow: $0), offset: list.frames[$0].minY - list.visibleRect.minY) }
-        let start = list.snapshotForTransition()
-        change()
-        list.computeLayout()
-        if let anchor, let i = list.row(forKey: anchor.key) {
-            let y = list.frames[i].minY - anchor.offset
-            if abs(y - list.visibleRect.minY) > 0.5 { list.scroll(CGPoint(x: list.visibleRect.minX, y: max(0, y))) }
+        list.transitions.change(.remote, duration: 0.35) {
+            change()
+            list.computeLayout()
+            if let anchor, let i = list.row(forKey: anchor.key) {
+                let y = list.frames[i].minY - anchor.offset
+                if abs(y - list.visibleRect.minY) > 0.5 { list.scroll(CGPoint(x: list.visibleRect.minX, y: max(0, y))) }
+            }
         }
-        guard let start else { return }
-        list.animateLayoutChange(from: start, duration: 0.35)
     }
 
     func filterBarClosed(_ bar: FilterBar) {

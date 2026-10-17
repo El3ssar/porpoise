@@ -109,6 +109,8 @@ final class ItemListView: NSView {
 
     // MARK: Transitions (+Transition)
 
+    /// The one owner of this view's item animations.
+    private(set) lazy var transitions = ItemTransitions(list: self)
     var transition: ItemTransition?
     let transitionAnimator = Animator()
     /// Items (transition keys) not drawn until another view's flight brings them here.
@@ -207,7 +209,7 @@ final class ItemListView: NSView {
         if anchorIndex == nil { anchorIndex = candidateIndexes(in: vr).first }
         if let i = anchorIndex, i >= frames.count { anchorIndex = nil }
         let before = anchorIndex.map { frames[$0].origin } ?? .zero
-        reflowing {
+        transitions.reflow {
             liveIconSize = s
             computeLayout()
             if let i = anchorIndex, i < frames.count {
@@ -244,7 +246,7 @@ final class ItemListView: NSView {
         committingZoom = true
         defer { committingZoom = false }
         // The rounded size may hold one item more or less per row: that glides too.
-        reflowing {
+        transitions.reflow {
             liveIconSize = nil
             if p != model.props {
                 model.props = p
