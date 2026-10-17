@@ -71,44 +71,30 @@ extension DropboxClient {
         guard !item.isFolder, item.isDownloadable != false, let total = item.size, total >= 0,
             let rev = item.rev, let hash = item.contentHash
         else { throw DropboxError.invalidResponse }
-        try journal.claim(operationID); defer { journal.release(operationID) }
-        let folder = journal.folder.appendingPathComponent("Downloads")
-        let partial = folder.appendingPathComponent(operationID.uuidString + ".part")
-        var record = try journal.load(operationID) ?? DropboxOperation(operationID: operationID, kind: "download", path: item.id)
-        guard record.kind == "download", record.phase != "cancelled", record.path == item.id,
-            record.revision == nil || record.revision == rev,
-            record.hash == nil || record.hash == hash
-        else { throw DropboxError.sourceChanged }
-        if record.phase == "done" {
-            guard record.localURL == partial, JobJournal.Fingerprint(partial) == record.fingerprint,
-                try DropboxContentHash.hash(partial) == hash
-            else { throw DropboxError.sourceChanged }
-            let fresh = try await metadata(item.id)
-            guard fresh.rev == rev, fresh.contentHash == hash, fresh.size == total else { throw DropboxError.sourceChanged }
+        do {
+            let (partial, _) = try await CloudStagedDownload.run(
+                journal: journal, operationID: operationID, context: context,
+                transfer: .binary(total: total, connections: total < 32 << 20 ? 1 : maximumConnections, ranges: true), checksum: .dropbox(hash),
+                prepare: { existing in
+                    var record = existing ?? DropboxOperation(operationID: operationID, kind: "download", path: item.id)
+                    guard record.kind == "download", record.phase != "cancelled", record.path == item.id,
+                        record.revision == nil || record.revision == rev, record.hash == nil || record.hash == hash
+                    else { throw DropboxError.sourceChanged }
+                    record.revision = rev; record.hash = hash; record.total = total; return record
+                },
+                fetch: { range, receive in
+                    guard let range else { throw DropboxError.invalidResponse }
+                    return try await self.stream(item, range: range, receive: receive)
+                },
+                verify: {
+                    let fresh = try await self.metadata(item.id)
+                    guard fresh.rev == rev, fresh.contentHash == hash, fresh.size == total else { throw DropboxError.sourceChanged }
+                    return fresh
+                }, finish: { $0.result = $1 })
             return partial
+        } catch CloudTransferError.sourceChanged { throw DropboxError.sourceChanged } catch CloudTransferError.invalidResponse {
+            throw DropboxError.invalidResponse
         }
-        try await context.checkpoint()
-        if record.downloadRanges == nil {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            let fd = Darwin.open(partial.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
-            guard fd >= 0 else { throw DropboxError.sourceChanged }; close(fd)
-            record.revision = rev; record.hash = hash; record.total = total; record.localURL = partial
-            record.fingerprint = JobJournal.Fingerprint(partial); try journal.save(record)
-        } else {
-            guard record.localURL == partial, JobJournal.Fingerprint(partial) == record.fingerprint else { throw DropboxError.sourceChanged }
-        }
-        record = try await CloudRangeDownload.run(
-            total: total, partial: partial, record: record, context: context,
-            maximumConnections: total < 32 << 20 ? 1 : maximumConnections,
-            save: { try self.journal.save($0) },
-            fetch: { range, receive in
-                try await self.stream(item, range: range, receive: receive)
-            })
-        guard try DropboxContentHash.hash(partial) == hash else { throw CloudContentError.checksum }
-        let fresh = try await metadata(item.id)
-        guard fresh.rev == rev, fresh.contentHash == hash, fresh.size == total else { throw DropboxError.sourceChanged }
-        record.phase = "done"; record.fingerprint = JobJournal.Fingerprint(partial); record.result = fresh
-        try journal.save(record); context.progress(total, total); return partial
     }
     /// Session IDs stay in the credential store. No unconditional overwrite or autorename is ever attempted.
     public func upload(
@@ -198,4 +184,16 @@ extension DropboxClient {
             try journal.save(record); throw error
         }
     }
+}
+
+extension DropboxOperation: CloudStagedDownloadRecord {
+    var stagedURL: URL? {
+        get { localURL }
+        set { localURL = newValue }
+    }
+    var stagedComplete: Bool {
+        get { phase == "done" }
+        set { if newValue { phase = "done" } }
+    }
+    mutating func beginDownload() {}
 }

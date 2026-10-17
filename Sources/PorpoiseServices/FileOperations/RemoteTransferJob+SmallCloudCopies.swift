@@ -9,15 +9,13 @@ extension RemoteTransferJob {
         var items: [FileItem] = []
         var names: Set<String> = []
         for source in sources {
-            guard let provider = RemoteFS.provider(for: source) as? DriveProvider, let file = provider.metadata(for: source),
-                !file.isFolder, !file.isGoogleDocument, file.shortcutDetails == nil, file.version != nil, file.md5Checksum != nil,
-                let size = file.size.flatMap(Int64.init), size >= 0, size < 8 * 1024 * 1024,
-                let name = RemoteParsing.localName(forRemote: file.name),
+            guard let provider = RemoteFS.provider(for: source) as? CloudTransferProvider, let item = provider.smallTransferItem(source),
+                let name = RemoteParsing.localName(forRemote: item.name),
                 names.insert(name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX")))
                     .inserted,
                 (try? FileManager.default.attributesOfItem(atPath: destination.appendingPathComponent(name).path)) == nil
             else { return false }
-            items.append(file.fileItem(accountID: provider.accountID))
+            items.append(item)
         }
         progressLock.withLock {
             progress.phase = .transferring
@@ -26,8 +24,7 @@ extension RemoteTransferJob {
         }
         onIncoming(nil)
         publish(force: true)
-        let queue = OperationQueue()
-        queue.maxConcurrentOperationCount = 6
+        var children: [RemoteTransferJob] = []
         var snapshots: [URL: JobProgress] = [:]
         for item in items {
             let operation = cloudOperations[item.url] ?? UUID()
@@ -48,7 +45,13 @@ extension RemoteTransferJob {
                 }
                 self.publish()
             }
-            queue.addOperation {
+            children.append(child)
+        }
+        let nextLock = NSLock(); var next = 0
+        DispatchQueue.concurrentPerform(iterations: min(6, children.count)) { _ in
+            while let child = nextLock.withLock({ () -> RemoteTransferJob? in
+                guard next < children.count else { return nil }; defer { next += 1 }; return children[next]
+            }) {
                 child.run(ownsControl: false)
                 self.progressLock.withLock {
                     self.results += child.results
@@ -59,7 +62,6 @@ extension RemoteTransferJob {
                 }
             }
         }
-        queue.waitUntilAllOperationsAreFinished()
         return true
     }
 }

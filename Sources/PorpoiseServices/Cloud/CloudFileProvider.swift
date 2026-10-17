@@ -48,6 +48,7 @@ extension DriveProvider: CloudFileProvider {
         guard let client, let location = DriveLocation(url: url), case .folder(let id, _) = location.collection else {
             throw DriveError.invalidLocation
         }
+        if let small = smallTransferItem(url) { return small }
         return try Self.wait {
             try await client.file(id).fileItem(accountID: self.accountID, parent: DriveLocation(url: url.deletingLastPathComponent()))
         }

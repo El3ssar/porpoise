@@ -56,7 +56,7 @@ extension FileOperationsController {
             self.began(activity)
             TrashService.shared.record([])
             self.ui?.jobStarted(activity)
-            DispatchQueue.global(qos: .userInitiated).async {
+            DispatchQueue(label: "porpoise.remote-transfer." + activity.id.uuidString, qos: .userInitiated).async {
                 runtime.run()
                 DispatchQueue.main.async {
                     activity.remoteComparisonMethod = runtime.options.method

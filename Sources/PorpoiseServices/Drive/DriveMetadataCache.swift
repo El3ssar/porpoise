@@ -26,6 +26,7 @@ public final class DriveMetadataCache: @unchecked Sendable {
     /// Where the cache is now: what a request starts from, so that what it reads back doesn't undo a change made here
     /// meanwhile (`learn`, `store`, `apply`).
     var generation: UInt64 { storage.generation }
+    var files: [DriveFile] { storage.files }
     func remember(_ files: [DriveFile]) { storage.remember(files) }
     func learn(_ files: [DriveFile], since: UInt64) -> [DriveFile] { storage.learn(files, since: since) }
     func rememberRoot(_ file: DriveFile) { storage.alias("root", to: file) }
@@ -36,14 +37,21 @@ public final class DriveMetadataCache: @unchecked Sendable {
     func setCursor(_ token: String?, scope: String) { storage.setCursor(token, scope: scope) }
     var sharedDriveIDs: [String] { Array(Set(storage.files.compactMap(\.driveId))).sorted() }
     func invalidate(_ location: DriveLocation? = nil) { storage.invalidate(location.map(key)) }
-    func apply(_ files: [DriveFile], removed: [String], since: UInt64? = nil) {
+    @discardableResult func apply(_ files: [DriveFile], removed: [String], since: UInt64? = nil) -> [String] {
         let root = storage.file("root")?.id ?? "root"
-        storage.apply(
+        return storage.apply(
             files, removed: removed,
             belongs: { key, file in
                 let parent = key == "root" ? root : String(key.dropFirst("folder:".count))
                 return (file.parents ?? []).contains(parent) || (key == "root" && (file.parents ?? []).contains("root"))
             }, retainExisting: { $0 == "shared" || $0 == "drives" }, since: since)
+    }
+    func invalidateScope(_ scope: String) {
+        if scope == "user" { storage.invalidate("root"); storage.invalidate("shared") }
+        storage.invalidate("folder:" + scope)
+        for file in storage.files where scope == "user" ? file.driveId == nil : file.driveId == scope {
+            storage.invalidate("folder:" + file.id)
+        }
     }
     public func clear() { storage.clear() }
 }

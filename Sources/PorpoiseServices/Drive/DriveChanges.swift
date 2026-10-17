@@ -3,88 +3,19 @@ import PorpoiseCore
 
 extension DriveClient {
     public func startPolling(interval: TimeInterval = CloudAccountRefreshPolicy.interval) {
-        stopPolling()
-        let task = Task { [weak self] in
-            while !Task.isCancelled {
-                do { try await self?.pollChanges() } catch {}
-                do { try await Task.sleep(nanoseconds: UInt64(max(30, interval) * 1_000_000_000)) } catch { return }
-            }
+        let feed = changes
+        let generation = lock.withLock {
+            pollingGeneration += 1; return pollingGeneration
         }
-        lock.withLock { polling = task }
+        Task { await feed.setPolling(true, generation: generation, interval: max(30, interval)) }
     }
     public func stopPolling() {
-        let task = lock.withLock {
-            let task = polling; polling = nil; return task
+        let (feed, generation) = lock.withLock {
+            pollingGeneration += 1; return (changeFeed, pollingGeneration)
         }
-        task?.cancel()
+        if let feed { Task { await feed.setPolling(false, generation: generation, interval: 30) } }
     }
-    /// Advances each cursor only after applying its page. Replays are harmless after interruption.
-    public func pollChanges() async throws {
-        guard
-            lock.withLock({
-                if pollingChanges { return false }; pollingChanges = true; return true
-            })
-        else { return }
-        defer { lock.withLock { pollingChanges = false } }
-        for scope in ["user"] + metadataCache.sharedDriveIDs {
-            var query = [URLQueryItem(name: "supportsAllDrives", value: "true")]
-            if scope != "user" { query.append(URLQueryItem(name: "driveId", value: scope)) }
-            var cursor = metadataCache.cursor(scope)
-            if cursor == nil {
-                struct Start: Decodable { let startPageToken: String }
-                cursor = try decode(Start.self, await request("changes/startPageToken", query: query)).startPageToken
-                metadataCache.setCursor(cursor, scope: scope)
-            }
-            var seen: Set<String> = []
-            while let token = cursor {
-                guard seen.insert(token).inserted else { throw DriveError.invalidResponse }
-                struct Page: Decodable {
-                    struct Change: Decodable { let fileId: String?; let removed: Bool?; let file: DriveFile? }
-                    let changes: [Change]?
-                    let nextPageToken: String?
-                    let newStartPageToken: String?
-                }
-                let page: Page
-                let since = metadataCache.generation
-                do {
-                    page = try decode(
-                        Page.self,
-                        await request(
-                            "changes",
-                            query: query + [
-                                URLQueryItem(name: "pageToken", value: token), URLQueryItem(name: "includeItemsFromAllDrives", value: "true"),
-                                URLQueryItem(name: "fields", value: "nextPageToken,newStartPageToken,changes(fileId,removed,file(\(Self.fields)))"),
-                            ]))
-                } catch DriveError.http(410) {
-                    metadataCache.setCursor(nil, scope: scope)
-                    metadataCache.invalidate()
-                    emitContentChanges(.init(reset: true))
-                    NotificationCenter.default.post(name: Self.changed, object: accountID)
-                    NotificationCenter.default.post(name: CloudAccounts.remoteChanged, object: accountID.uuidString.lowercased())
-                    return
-                }
-                let changes = page.changes ?? []
-                if !changes.isEmpty {
-                    let removed = changes.filter { $0.removed == true || $0.file?.trashed == true }.compactMap(\.fileId)
-                    // A change made here after this page was asked for is newer than what the page says.
-                    let files = metadataCache.learn(changes.compactMap(\.file).filter { !removed.contains($0.id) }, since: since)
-                    metadataCache.apply(files, removed: removed)
-                    lock.withLock {
-                        for id in removed { cache[id] = nil }; for file in files where !removed.contains(file.id) { cache[file.id] = file }
-                    }
-                    let source = contentSource
-                    emitContentChanges(.init(changed: files.filter { !removed.contains($0.id) }.map(source.remoteItem), removed: removed))
-                    (RemoteFS.provider(for: DriveLocation(accountID: accountID).url) as? DriveProvider)?.invalidate(preserveDisk: true)
-                    NotificationCenter.default.post(name: Self.changed, object: accountID)
-                    NotificationCenter.default.post(name: CloudAccounts.remoteChanged, object: accountID.uuidString.lowercased())
-                }
-                guard let next = page.nextPageToken ?? page.newStartPageToken else { throw DriveError.invalidResponse }
-                metadataCache.setCursor(next, scope: scope)
-                cursor = page.nextPageToken
-            }
-        }
-    }
-
+    public func pollChanges() async throws { try await changes.check() }
     /// Remote search is paged and explicitly scoped; no local content index is implied.
     public func search(_ text: String, in location: DriveLocation, fullText: Bool = false, pageToken: String? = nil) async throws -> DrivePage {
         guard location.accountID == accountID else { throw DriveError.invalidLocation }
@@ -115,4 +46,123 @@ extension DriveClient {
         guard files.allSatisfy({ DriveLink.isValidID($0.id) }) else { throw DriveError.invalidResponse }
         return DrivePage(files: learned(files, since: since), nextPageToken: page.nextPageToken)
     }
+}
+
+extension CloudChangeFeed {
+    public init(client: DriveClient) {
+        self.init(
+            source: CloudChangeSource(
+                scopes: { [weak client] in client.map { ["user"] + $0.metadataCache.sharedDriveIDs } ?? [] },
+                cursor: { [weak client] scope in
+                    guard let client, client.metadataCache.cursor("reset:" + scope) == nil else { return nil }
+                    return client.metadataCache.cursor(scope)
+                },
+                setCursor: { [weak client] token, scope in client?.metadataCache.setCursor(token, scope: scope) },
+                initialize: { [weak client] scope in
+                    guard let client else { throw CancellationError() }
+                    if let token = client.metadataCache.cursor("reset:" + scope) {
+                        try await driveResetBaseline(client, scope: scope, token: token); return token
+                    }
+                    return try await driveStartCursor(client, scope: scope)
+                },
+                page: { [weak client] scope, cursor in
+                    guard let client, let cursor else { throw DriveError.invalidResponse }
+                    return try await driveChangePage(client, scope: scope, cursor: cursor)
+                }, isReset: { ($0 as? DriveError) == .http(410) },
+                reset: { [weak client] scope in
+                    guard let client else { throw CancellationError() }
+                    let token = try await driveStartCursor(client, scope: scope)
+                    client.metadataCache.setCursor(token, scope: "reset:" + scope)
+                    client.metadataCache.setCursor(nil, scope: scope)
+                    try await driveResetBaseline(client, scope: scope, token: token)
+                },
+                waitNeedsCursor: false,
+                wait: { [weak client] in
+                    guard client != nil else { throw CancellationError() }
+                    return CloudChangePoll(changes: true, backoff: CloudAccountRefreshPolicy.interval)
+                }, invalidPage: DriveError.invalidResponse))
+    }
+}
+private func driveChangeQuery(_ scope: String) -> [URLQueryItem] {
+    var query = [URLQueryItem(name: "supportsAllDrives", value: "true")]
+    if scope != "user" { query.append(URLQueryItem(name: "driveId", value: scope)) }
+    return query
+}
+private func driveChangePage(_ client: DriveClient, scope: String, cursor: String) async throws -> CloudChangePage {
+    struct Page: Decodable {
+        struct Change: Decodable { let fileId: String?; let removed: Bool?; let file: DriveFile? }
+        let changes: [Change]?
+        let nextPageToken: String?
+        let newStartPageToken: String?
+    }
+    let since = client.metadataCache.generation
+    let page = try client.decode(
+        Page.self,
+        await client.request(
+            "changes",
+            query: driveChangeQuery(scope) + [
+                URLQueryItem(name: "pageToken", value: cursor), URLQueryItem(name: "includeItemsFromAllDrives", value: "true"),
+                URLQueryItem(name: "fields", value: "nextPageToken,newStartPageToken,changes(fileId,removed,file(\(DriveClient.fields)))"),
+            ]))
+    guard let next = page.nextPageToken ?? page.newStartPageToken, !next.isEmpty else { throw DriveError.invalidResponse }
+    return CloudChangePage(
+        cursor: next, hasMore: page.nextPageToken != nil,
+        apply: {
+            let changes = page.changes ?? []
+            if !changes.isEmpty {
+                let removed = changes.filter { $0.removed == true || $0.file?.trashed == true }.compactMap(\.fileId)
+                // A change made here after this page was asked for is newer than what the page says.
+                let files = client.metadataCache.learn(changes.compactMap(\.file).filter { !removed.contains($0.id) }, since: since)
+                let actualRemoved = client.metadataCache.apply(files, removed: removed, since: since)
+                client.lock.withLock {
+                    for id in actualRemoved { client.cache[id] = nil };
+                    for file in files where !actualRemoved.contains(file.id) { client.cache[file.id] = file }
+                }
+                let source = client.contentSource
+                client.emitContentChanges(.init(changed: files.filter { !removed.contains($0.id) }.map(source.remoteItem), removed: actualRemoved))
+                (RemoteFS.provider(for: DriveLocation(accountID: client.accountID).url) as? DriveProvider)?.invalidate(preserveDisk: true)
+                NotificationCenter.default.post(name: CloudAccounts.remoteChanged, object: client.accountID.uuidString.lowercased())
+            }
+        })
+}
+
+private func driveStartCursor(_ client: DriveClient, scope: String) async throws -> String {
+    struct Start: Decodable { let startPageToken: String }
+    let bytes = try await client.request("changes/startPageToken", query: driveChangeQuery(scope))
+    let token = try client.decode(Start.self, bytes).startPageToken
+    guard !token.isEmpty else { throw DriveError.invalidResponse }
+    return token
+}
+
+/// The token precedes the baseline; replay then includes changes made during enumeration.
+private func driveResetBaseline(_ client: DriveClient, scope: String, token: String) async throws {
+    let since = client.metadataCache.generation
+    let previous = client.metadataCache.files.filter { scope == "user" ? $0.driveId == nil : $0.driveId == scope }
+    var files: [DriveFile] = []
+    try await CloudPager.each(repeated: DriveError.invalidResponse) { (pageToken: String?) in
+        var query = [
+            URLQueryItem(name: "q", value: "trashed = false"), URLQueryItem(name: "pageSize", value: "1000"),
+            URLQueryItem(name: "supportsAllDrives", value: "true"), URLQueryItem(name: "includeItemsFromAllDrives", value: "true"),
+            URLQueryItem(name: "corpora", value: scope == "user" ? "user" : "drive"),
+            URLQueryItem(name: "fields", value: "nextPageToken,incompleteSearch,files(\(DriveClient.fields))"),
+        ]
+        if scope != "user" { query.append(URLQueryItem(name: "driveId", value: scope)) }
+        if let pageToken { query.append(URLQueryItem(name: "pageToken", value: pageToken)) }
+        struct Page: Decodable { let files: [DriveFile]?; let nextPageToken: String?; let incompleteSearch: Bool? }
+        let page = try client.decode(Page.self, await client.request("files", query: query))
+        guard page.incompleteSearch != true else { throw DriveError.invalidResponse }
+        files += page.files ?? []; return page.nextPageToken
+    }
+    try Task.checkCancellation()
+    let ids = Set(files.map(\.id)), learned = client.metadataCache.learn(files, since: since)
+    let removed = client.metadataCache.apply(learned, removed: previous.filter { !ids.contains($0.id) }.map(\.id), since: since)
+    client.lock.withLock {
+        for id in removed { client.cache[id] = nil }
+        for file in learned { client.cache[file.id] = file }
+    }
+    client.metadataCache.invalidateScope(scope)
+    client.emitContentChanges(.init(changed: learned.map(client.contentSource.remoteItem), removed: removed, reset: true))
+    client.metadataCache.setCursor(token, scope: scope)
+    client.metadataCache.setCursor(nil, scope: "reset:" + scope)
+    NotificationCenter.default.post(name: CloudAccounts.remoteChanged, object: client.accountID.uuidString.lowercased())
 }

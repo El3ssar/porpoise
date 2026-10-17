@@ -29,7 +29,6 @@ public final class DriveClient: @unchecked Sendable {
             return store
         }
     }
-    public static let changed = Notification.Name("PorpoiseDriveMetadataChanged")
     private var offline = false
     public var isOffline: Bool { lock.withLock { offline } }
     public var canSaveEdits: Bool { baseURL.scheme == "http" && baseURL.host == "127.0.0.1" }
@@ -39,8 +38,14 @@ public final class DriveClient: @unchecked Sendable {
         }
         if returned { emitContentChanges(.init(reset: true)) }
     }
-    var pollingChanges = false
-    var polling: Task<Void, Never>?
+    var changeFeed: CloudChangeFeed?
+    var pollingGeneration = 0
+    public var changes: CloudChangeFeed {
+        lock.withLock {
+            if let changeFeed { return changeFeed }
+            let feed = CloudChangeFeed(client: self); changeFeed = feed; return feed
+        }
+    }
     public let mutationJournal: DriveMutationJournal
     let tokens: DriveTokenManager
     let http: DriveHTTP
@@ -258,6 +263,8 @@ public final class DriveClient: @unchecked Sendable {
 
     public func clearCaches() async {
         stopPolling()
+        let feed = lock.withLock { changeFeed }
+        await feed?.stop()
         metadataCache.clear()
         lock.withLock { cache.removeAll() }
         await mediaCache.clear()

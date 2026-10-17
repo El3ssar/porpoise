@@ -99,6 +99,7 @@ public func makeController(_ ui: ScriptedUI) -> FileOperationsController {
     let c = FileOperationsController()
     c.ui = ui
     c.clipboard = LocalClipboard()
+    c.cloudTransferJournals = []  // Fixtures discover only the recovery stores they explicitly provide.
     return c
 }
 

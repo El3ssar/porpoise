@@ -17,11 +17,8 @@ extension DriveClient {
             }
         }
         if record.kind == "download" {
-            let partial = mutationJournal.folder.appendingPathComponent("Downloads").appendingPathComponent(operationID.uuidString + ".part")
-            if let fingerprint = record.fingerprint, JobJournal.Fingerprint(partial) == fingerprint {
-                try FileManager.default.removeItem(at: partial)
-            } else if FileManager.default.fileExists(atPath: partial.path) {
-                // Changed partials are preserved; a user modification never becomes cleanup permission.
+            let partial = mutationJournal.partial(operationID)
+            do { try CloudStagedDownload.removeOwned(partial, fingerprint: record.fingerprint) } catch CloudTransferError.sourceChanged {
                 throw DriveMutationError.sourceChanged
             }
         }

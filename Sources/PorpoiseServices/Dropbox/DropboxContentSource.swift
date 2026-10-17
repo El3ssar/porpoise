@@ -64,31 +64,31 @@ public final class DropboxContentSource: CloudContentSource, @unchecked Sendable
         guard let client, item.ref.account == accountID else { throw CloudContentError.unsupported }
         let fresh = try await client.metadata(item.ref.item)
         guard fresh.rev == item.revision else { throw CloudContentError.changed }
-        let sidecar = partial.appendingPathExtension("dropbox-operation")
-        let operation = (try? Data(contentsOf: sidecar)).flatMap { try? JSONDecoder().decode(UUID.self, from: $0) } ?? UUID()
-        try JSONEncoder().encode(operation).write(to: sidecar, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: sidecar.path)
-        let handle = try FileHandle(forWritingTo: sidecar); try handle.synchronize(); try handle.close()
+        let sidecar = CloudOperationSidecar(
+            partial: partial, account: accountID, legacy: partial.appendingPathExtension("dropbox-operation"), item: item)
+        if try await CloudStagedDownload.reuseVerified(item, partial: partial, refresh: { self.remoteItem(try await client.metadata(fresh.id)) }) {
+            try sidecar.remove(); progress(item.size ?? 0, item.size); return
+        }
+        let operation = try sidecar.operation()
         let staging = try await client.download(fresh, operationID: operation, context: .init(checkpoint: checkpoint, progress: { progress($0, $1) }))
         try await checkpoint()
         if FileManager.default.fileExists(atPath: partial.path) { try FileManager.default.removeItem(at: partial) }
         try cloudClone(staging, to: partial)
-        try FileManager.default.removeItem(at: sidecar)
+        try sidecar.remove()
     }
     public func discardPartial(at partial: URL) async throws {
-        let sidecar = partial.appendingPathExtension("dropbox-operation")
-        guard let bytes = try? Data(contentsOf: sidecar), let id = try? JSONDecoder().decode(UUID.self, from: bytes), let client else { return }
+        let sidecar = CloudOperationSidecar(partial: partial, account: accountID, legacy: partial.appendingPathExtension("dropbox-operation"))
+        guard let id = try sidecar.existing(), let client else { return }
         try client.journal.claim(id); defer { client.journal.release(id) }
         if var record = try client.journal.load(id) {
-            let owned = client.journal.folder.appendingPathComponent("Downloads").appendingPathComponent(id.uuidString + ".part")
+            let owned = client.journal.partial(id)
             guard record.kind == "download", record.localURL == owned else { throw DropboxError.sourceChanged }
-            if FileManager.default.fileExists(atPath: owned.path) {
-                guard JobJournal.Fingerprint(owned) == record.fingerprint else { throw DropboxError.sourceChanged }
-                try FileManager.default.removeItem(at: owned)
+            do { try CloudStagedDownload.removeOwned(owned, fingerprint: record.fingerprint) } catch CloudTransferError.sourceChanged {
+                throw DropboxError.sourceChanged
             }
             record.phase = "cancelled"; try client.journal.save(record)
         }
-        try FileManager.default.removeItem(at: sidecar)
+        try sidecar.remove()
     }
 }
 

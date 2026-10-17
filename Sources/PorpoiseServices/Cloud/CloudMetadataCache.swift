@@ -87,13 +87,13 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
             if let key { state.listings[key] = nil } else { state.listings.removeAll() }; persist()
         }
     }
-    public func apply(
+    @discardableResult public func apply(
         _ files: [Item], removed: [String], belongs: (String, Item) -> Bool, retainExisting: (String) -> Bool = { _ in false },
         since: UInt64? = nil
-    ) {
+    ) -> [String] {
         lock.withLock {
             let files = files.map { newest($0, since: since) }
-            let removed = Set(removed)
+            let removed = Set(removed.filter { since == nil || (rememberedAt[$0] ?? 0) <= since! })
             for id in removed { state.files[id] = nil }
             for file in files where !removed.contains(file.id) { state.files[file.id] = file }
             for key in state.listings.keys {
@@ -110,6 +110,7 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
                 state.listings[key] = snapshot
             }
             persist()
+            return Array(removed)
         }
     }
     public func clear() {

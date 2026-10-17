@@ -37,20 +37,25 @@ extension FileOperationsController {
     public func recoveryPlans() -> [RecoveryPlan] {
         let live = Set(activities.filter { !$0.state.isEnded }.map(\.id))
         let local = journals.all().filter { !live.contains($0.id) }.compactMap(Self.plan)
-        let cloud = ((try? driveJournals.all()) ?? []).compactMap { record -> RecoveryPlan? in
-            guard record.topLevel == true, record.phase != .done, !live.contains(record.batchID ?? record.operationID),
-                let source = record.localSource, let destination = record.destinationFolder,
-                record.kind == "transferMove" || record.kind == "transferCopy"
+        let records = recoveryTransferJournals().flatMap { (try? $0.all()) ?? [] }
+        let cloud = Dictionary(records.map { ($0.operationID, $0) }, uniquingKeysWith: { a, _ in a }).values.compactMap { record -> RecoveryPlan? in
+            guard record.topLevel, record.phase != .done, !live.contains(record.batchID ?? record.operationID),
+                !CloudTransferJournal.isActive(record)
             else { return nil }
-            var plan = RecoveryPlan(id: record.operationID, kind: record.kind == "transferMove" ? .move : .copy, destination: destination)
-            plan.cloudBatchID = record.batchID
-            plan.sources = [source]; plan.cloudOperations = [source: record.operationID]
+            var plan = RecoveryPlan(id: record.operationID, kind: record.kind == "move" ? .move : .copy, destination: record.destinationFolder)
+            plan.cloudBatchID = record.batchID; plan.sources = [record.source]; plan.cloudOperations = [record.source: record.operationID]
             if record.phase == .sourceRemovalPending {
                 plan.notes = ["Source removal was interrupted. Review the source before retrying; it will not be removed automatically."]
             }
             return plan
         }
         return local + cloud
+    }
+
+    private func recoveryTransferJournals() -> [CloudTransferJournal] {
+        if let cloudTransferJournals { return cloudTransferJournals }
+        let all = [DriveProvider.transferJournal(driveJournals), .shared] + RemoteFS.transferJournals + CloudTransferJournal.known
+        return Array(Dictionary(all.map { ($0.folder, $0) }, uniquingKeysWith: { a, _ in a }).values)
     }
 
     /// What can be resumed of `journal`. Items in progress are continued only if their source is unchanged (size,
@@ -145,10 +150,9 @@ extension FileOperationsController {
 
     /// Forgets a plan, removing the partial copies it made (only those: the items it finished stay).
     public func discard(_ plan: RecoveryPlan) {
-        for id in plan.cloudOperations.values {
-            if var record = try? driveJournals.load(id) {
-                record.phase = .done
-                try? driveJournals.save(record)
+        for journal in recoveryTransferJournals() {
+            for id in plan.cloudOperations.values {
+                if var record = try? journal.load(id) { record.phase = .done; try? journal.save(record) }
             }
         }
         for p in plan.partials { try? FileManager.default.removeItem(at: p) }

@@ -156,6 +156,7 @@ public final class DriveAccountStore: ObservableObject {
     public func disconnect(_ account: DriveAccount) async throws {
         guard let manager = managers[account.id] else { return }
         if let client = clients[account.id], !(await client.edits.pending()).isEmpty { throw CloudConnectionError.unsentEdits }
+        await CloudTransferJournal.stop(account: account.id.uuidString.lowercased())
         var failure: Error?
         do { try await manager.revoke() } catch let error as DriveError {
             if case .keychain = error { throw error }
@@ -189,6 +190,7 @@ extension DriveAccountStore {
             }
             try journal.remove(record.operationID)
         }
+        try CloudAccountWipe.transfers(client.accountID.uuidString.lowercased())
         for folder in [client.metadataCache.directory, client.offlineDirectory].compactMap({ $0 }) { try CloudAccountWipe.remove(folder) }
     }
 }
