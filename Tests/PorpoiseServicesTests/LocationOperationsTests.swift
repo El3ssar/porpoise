@@ -114,7 +114,10 @@ import Testing
 final class MemoryServer: RemoteProvider, @unchecked Sendable {
     let root: URL
     private var entries: [String: (folder: Bool, size: Int64)] = [:]
+    private var listings = 0
     private let lock = NSLock()
+    /// How many times a folder was listed.
+    var lists: Int { lock.withLock { listings } }
     init(root: URL) { self.root = root }
 
     func add(_ path: String, size: Int64, folder: Bool = false) { lock.withLock { entries[path] = (folder, size) } }
@@ -130,6 +133,7 @@ final class MemoryServer: RemoteProvider, @unchecked Sendable {
 
     func list(_ folder: URL) throws -> [FileItem] {
         try lock.withLock {
+            listings += 1
             let k = key(folder)
             guard k.isEmpty || entries[k]?.folder == true else { throw CocoaError(.fileNoSuchFile) }
             return children(of: k).map {
