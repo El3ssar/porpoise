@@ -92,7 +92,7 @@ final class FakeDriveServer {
         RemoteFS.registerDrive(provider, accountID: client.accountID)
         defer { RemoteFS.unregisterDrive(accountID: client.accountID) }
         #expect(RemoteFS.isRemote(root.url) && RemoteFS.provider(for: root.url) === provider)
-        let rows = try provider.list(root.url)
+        let rows = try await offThePool { try provider.list(root.url) }
         #expect(rows.count == 6 && rows.allSatisfy { !$0.isWritable })
         #expect(rows[0].url.deletingLastPathComponent() == root.url)
         #expect(RemoteFS.displayName(for: rows[0].url) == "Project Atlas")
@@ -100,24 +100,28 @@ final class FakeDriveServer {
         #expect(rows.first { $0.name == "Atlas shortcut" }?.isDirectory == true)
         let local = try Scratch()
         let binary = try #require(rows.first { $0.name == "report.txt" })
-        let output = try provider.download(binary.url, into: local.url)
+        let output = try await offThePool { try provider.download(binary.url, into: local.url) }
         #expect(try Data(contentsOf: output) == Data("fixture bytes".utf8))
-        #expect(throws: (any Error).self) { try provider.download(binary.url, into: local.url) }
-        #expect(throws: DriveError.notFound) { try provider.upload(output, into: root.url) }
-        #expect(throws: DriveError.permissionDenied) { try provider.delete([binary.url]) }
-        #expect(throws: DriveError.invalidLocation) { try provider.makeFolder(root.url) }
-        #expect(throws: DriveMutationError.conflict) { try provider.removeEmptyFolder(root.url) }
-        #expect(throws: DriveError.permissionDenied) { try provider.rename(binary.url, to: "new") }
-        #expect(throws: DriveError.notFound) { try provider.move([binary.url], into: root.url) }
-        #expect(throws: DriveError.permissionDenied) { try provider.copy([binary.url], into: root.url) }
-        #expect(throws: DriveError.invalidLocation) { try provider.list(DriveLocation(accountID: UUID()).url) }
+        await #expect(throws: (any Error).self) { try await offThePool { try provider.download(binary.url, into: local.url) } }
+        await #expect(throws: DriveError.notFound) { try await offThePool { try provider.upload(output, into: root.url) } }
+        await #expect(throws: DriveError.permissionDenied) { try await offThePool { try provider.delete([binary.url]) } }
+        await #expect(throws: DriveError.invalidLocation) { try await offThePool { try provider.makeFolder(root.url) } }
+        await #expect(throws: DriveMutationError.conflict) { try await offThePool { try provider.removeEmptyFolder(root.url) } }
+        await #expect(throws: DriveError.permissionDenied) { try await offThePool { try provider.rename(binary.url, to: "new") } }
+        await #expect(throws: DriveError.notFound) { try await offThePool { try provider.move([binary.url], into: root.url) } }
+        await #expect(throws: DriveError.permissionDenied) { try await offThePool { try provider.copy([binary.url], into: root.url) } }
+        await #expect(throws: DriveError.invalidLocation) { try await offThePool { try provider.list(DriveLocation(accountID: UUID()).url) } }
         let bad = try await client.file("bad-name")
-        #expect(throws: (any Error).self) { try provider.download(bad.location(accountID: client.accountID).url, into: local.url) }
+        await #expect(throws: (any Error).self) {
+            try await offThePool { try provider.download(bad.location(accountID: client.accountID).url, into: local.url) }
+        }
         let page = try await provider.listPage(root.url)
         #expect(page.items.count == 2)
         #expect(provider.metadata(for: binary.url)?.name == "report.txt")
         let disconnected = DriveProvider(accountID: UUID(), client: nil)
-        #expect(throws: DriveError.reconnect) { try disconnected.list(DriveLocation(accountID: disconnected.accountID).url) }
+        await #expect(throws: DriveError.reconnect) {
+            try await offThePool { try disconnected.list(DriveLocation(accountID: disconnected.accountID).url) }
+        }
         #expect(RemoteFS.provider(for: URL(string: "gdrive://invalid/my-drive")!) == nil)
     }
 

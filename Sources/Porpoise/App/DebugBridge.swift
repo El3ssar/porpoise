@@ -111,7 +111,14 @@ final class DebugBridge: NSObject {
                         return zip(t.log, t.logTimes).map { "\($0.rawValue)@\(Int((CACurrentMediaTime() - $1) * 1000))ms" }.joined(separator: ",")
                     }
             }
-            try? lines.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
+            var all = lines
+            if let f = MainActor.assumeIsolated({ wc?.tab.lastFlight }) {
+                let sizes = f.sizes.map { "\(Int($0.width.rounded()))x\(Int($0.height.rounded()))" }
+                all.append(
+                    "flight frames=\(f.sizes.count) sizes=\(sizes.joined(separator: ",")) landing=\(f.landing.map { "\(Int($0.width))x\(Int($0.height))" } ?? "-") "
+                        + "smooth=\(f.isSmooth) shownWhenCopiesWent=\(f.shownWhenCopiesWent)")
+            }
+            try? all.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
         case "animprobe":
             // animprobe <file>: runs a 0.3 s animation and writes how many frames it got (the display's ticks).
             var ticks = 0
@@ -315,7 +322,14 @@ final class DebugBridge: NSObject {
             PlacesModel.shared.move(e, before: all.first { $0.title == p[1] }, endOf: sec)
         case "places":
             let lines = PlacesModel.shared.sections().map { "\($0.0.rawValue): " + $0.1.map(\.title).joined(separator: ", ") }
-            try? lines.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
+            var all = lines
+            if let f = MainActor.assumeIsolated({ wc?.tab.lastFlight }) {
+                let sizes = f.sizes.map { "\(Int($0.width.rounded()))x\(Int($0.height.rounded()))" }
+                all.append(
+                    "flight frames=\(f.sizes.count) sizes=\(sizes.joined(separator: ",")) landing=\(f.landing.map { "\(Int($0.width))x\(Int($0.height))" } ?? "-") "
+                        + "smooth=\(f.isSmooth) shownWhenCopiesWent=\(f.shownWhenCopiesWent)")
+            }
+            try? all.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
         case "rename":
             // rename <path>|<new name>, through the normal rename path (async so the bridge returns).
             let p = arg.components(separatedBy: "|")
@@ -362,7 +376,14 @@ final class DebugBridge: NSObject {
                         : "\(it.title)\(self.isEnabled(it) ? "" : " (disabled)")\(it.isAlternate ? " (alt)" : "")\(it.submenu != nil ? " ▸" : "")"
                             + (it.toolTip.map { " — \($0)" } ?? ""))
             }
-            try? lines.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
+            var all = lines
+            if let f = MainActor.assumeIsolated({ wc?.tab.lastFlight }) {
+                let sizes = f.sizes.map { "\(Int($0.width.rounded()))x\(Int($0.height.rounded()))" }
+                all.append(
+                    "flight frames=\(f.sizes.count) sizes=\(sizes.joined(separator: ",")) landing=\(f.landing.map { "\(Int($0.width))x\(Int($0.height))" } ?? "-") "
+                        + "smooth=\(f.isSmooth) shownWhenCopiesWent=\(f.shownWhenCopiesWent)")
+            }
+            try? all.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
         case "key": sendKey(arg)
         case "search":
             // search <n|c|N|C> <text>: names or contents, here (lowercase) or everywhere (uppercase)
@@ -380,7 +401,14 @@ final class DebugBridge: NSObject {
                 let b = v as? FlatButton
                 return "\(b?.title ?? String(describing: type(of: v))) \(NSStringFromRect(v.frame)) \(b?.isToggled == true ? "on" : "")"
             }
-            try? lines.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
+            var all = lines
+            if let f = MainActor.assumeIsolated({ wc?.tab.lastFlight }) {
+                let sizes = f.sizes.map { "\(Int($0.width.rounded()))x\(Int($0.height.rounded()))" }
+                all.append(
+                    "flight frames=\(f.sizes.count) sizes=\(sizes.joined(separator: ",")) landing=\(f.landing.map { "\(Int($0.width))x\(Int($0.height))" } ?? "-") "
+                        + "smooth=\(f.isSmooth) shownWhenCopiesWent=\(f.shownWhenCopiesWent)")
+            }
+            try? all.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
         case "lagprobe":
             // lagprobe <file> <seconds>: the longest the main thread didn't answer, in ms, every 5 ms meanwhile
             let parts = arg.split(separator: " ").map(String.init)

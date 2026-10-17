@@ -30,6 +30,24 @@ final class PorpoiseTab: NSView {
     /// Copies of the left pane's items flying into the right one as the split opens.
     private var flightOverlay: SplitFlightOverlay?
     private let flightAnimator = Animator()
+    /// The last flight, as it went (the debug bridge and tests read it): the sizes its first copy was drawn at, the
+    /// size of the cell it landed on, and whether that cell showed its item when the copies went (no blank frame).
+    struct FlightRecord {
+        var sizes: [CGSize]
+        var landing: CGSize?
+        var shownWhenCopiesWent: Bool
+        /// Sizes only grew or only shrank, and the last one is the cell's.
+        var isSmooth: Bool {
+            guard let landing, let last = sizes.last else { return false }
+            let widths = sizes.map(\.width), heights = sizes.map(\.height)
+            func monotonic(_ v: [CGFloat]) -> Bool {
+                zip(v, v.dropFirst()).allSatisfy { $1 >= $0 - 0.01 } || zip(v, v.dropFirst()).allSatisfy { $1 <= $0 + 0.01 }
+            }
+            return monotonic(widths) && monotonic(heights) && abs(last.width - landing.width) < 0.5
+                && abs(last.height - landing.height) < 0.5
+        }
+    }
+    private(set) var lastFlight: FlightRecord?
     private static let flightDuration: TimeInterval = 0.42
     /// The right list's width once the split has opened: which of its items fly in (in Compact, items flow in
     /// columns, and the still narrow pane would show only the first).
@@ -191,8 +209,10 @@ final class PorpoiseTab: NSView {
             x: 0, y: 0, width: list.layoutWidthOverride ?? openingRightWidth ?? list.visibleWidth, height: list.visibleHeight)
         openingRightWidth = nil
         let keys = list.candidateIndexes(in: shown).map(list.key(ofRow:)).filter { images[$0] != nil }
+        let landing = list.transitions.landingPictures(keys)
         list.transitions.flightStarts(hiding: Set(keys))
-        fly(keys, images: images, from: primary.list, to: list, duration: Self.flightDuration) { [weak self, weak list] done in
+        fly(keys, images: images, landing: landing, from: primary.list, to: list, duration: Self.flightDuration) {
+            [weak self, weak list] done in
             // The pane keeps its coming width until both the flight and its slide are over (whichever ends last
             // releases it: the slide's end does when the flight is gone by then).
             list?.transitions.flightLanded(Set(keys)) {
@@ -203,13 +223,17 @@ final class PorpoiseTab: NSView {
     }
 
     /// Closing: copies of the closing pane's visible items fly back onto the same items in the pane that stays,
-    /// and merge into them; what's only in the closing pane leaves with it.
+    /// turning into them on the way (that pane may show them at another size); what's only in the closing pane leaves
+    /// with it.
     private func flyItems(backFrom closing: ItemListView, to remaining: ItemListView) {
         guard let images = closing.transitions.flightPictures() else { return }
         let keys = images.keys.filter { remaining.row(forKey: $0) != nil }
+        let landing = remaining.transitions.landingPictures(Array(keys))
         closing.transitions.flightLeaves(Set(keys))
-        fly(Array(keys), images: images, from: closing, to: remaining, duration: Self.closeDuration, fadesIntoTarget: true) { done in
-            done()
+        remaining.transitions.flightArrives(Set(keys))
+        fly(Array(keys), images: images, landing: landing, from: closing, to: remaining, duration: Self.closeDuration) {
+            [weak remaining] done in
+            if let remaining { remaining.transitions.flightLanded(Set(keys)) { done() } } else { done() }
         }
     }
 
@@ -217,15 +241,15 @@ final class PorpoiseTab: NSView {
     /// read at every frame (the panes and their items move meanwhile). `landed` gets a function that removes the
     /// copies, to call once whatever replaces them is shown.
     private func fly(
-        _ keys: [String], images: [String: CGImage], from source: ItemListView, to target: ItemListView, duration: TimeInterval,
-        fadesIntoTarget: Bool = false, landed: @escaping (_ done: @escaping () -> Void) -> Void
+        _ keys: [String], images: [String: CGImage], landing: [String: CGImage], from source: ItemListView, to target: ItemListView,
+        duration: TimeInterval, landed: @escaping (_ done: @escaping () -> Void) -> Void
     ) {
         endFlights()
         guard !keys.isEmpty else { return landed {} }
         let overlay = SplitFlightOverlay(frame: bounds)
         overlay.flights = keys.compactMap { k in
-            guard let img = images[k], let i = source.row(forKey: k) else { return nil }
-            return .init(key: k, image: img, size: source.flightRect(i).size)
+            guard let img = images[k], source.row(forKey: k) != nil else { return nil }
+            return .init(key: k, image: img, landing: landing[k])
         }
         func place(_ list: ItemListView) -> (String) -> CGRect? {
             { [weak list, weak overlay] k in
@@ -233,7 +257,6 @@ final class PorpoiseTab: NSView {
                 return list.convert(list.flightRect(i), to: overlay)
             }
         }
-        overlay.fadesIntoTarget = fadesIntoTarget
         overlay.source = place(source)
         overlay.target = place(target)
         addSubview(overlay, positioned: .above, relativeTo: nil)
@@ -241,8 +264,15 @@ final class PorpoiseTab: NSView {
         flightAnimator.run(
             duration: duration, curve: Animator.easeInOutCubic,
             step: { [weak overlay] p in overlay?.progress = CGFloat(p) },
-            completion: { [weak self, weak overlay] in
-                landed { if self?.flightOverlay === overlay { self?.endFlights() } }
+            completion: { [weak self, weak overlay, weak target] in
+                landed {
+                    if let overlay, let k = overlay.flights.first?.key, let target {
+                        self?.lastFlight = FlightRecord(
+                            sizes: overlay.drawnSizes, landing: overlay.target(k)?.size,
+                            shownWhenCopiesWent: !target.transitionHidden.contains(k))
+                    }
+                    if self?.flightOverlay === overlay { self?.endFlights() }
+                }
             })
     }
 

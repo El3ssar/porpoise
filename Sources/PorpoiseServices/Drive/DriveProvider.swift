@@ -346,7 +346,13 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
     private final class ResultBox<T>: @unchecked Sendable {
         var value: Result<T, Error>?
     }
+    /// Runs `work` and blocks the calling thread until it's done (the providers' synchronous API, for file jobs on
+    /// threads of their own). Never on a thread of the cooperative pool: the work may need a pool thread (a token
+    /// refresh, a change feed), and with the few the pool has blocked so (CI's 3-core runner), nothing runs again.
     static func wait<T>(_ work: @escaping @Sendable () async throws -> T) throws -> T {
+        assert(
+            !String(cString: __dispatch_queue_get_label(nil)).hasSuffix(".cooperative"),
+            "A blocking provider call on a cooperative thread: call it from a thread of its own (tests: offThePool).")
         let semaphore = DispatchSemaphore(value: 0)
         let box = ResultBox<T>()
         Task.detached {

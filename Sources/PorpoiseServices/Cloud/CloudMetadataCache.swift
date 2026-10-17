@@ -17,6 +17,12 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     public let directory: URL
     private let lock = NSLock()
     private var state: State
+    /// Bumped by each `remember` (what a change made here returned). A listing or a page of changes fetched before
+    /// then is older than what it remembered: it passes the generation it started at, and doesn't put that back.
+    private var current: UInt64 = 0
+    private var rememberedAt: [String: UInt64] = [:]
+    /// Where the cache is now: what a listing or a page of changes starts from (`store(_:key:since:)`, `apply`).
+    public var generation: UInt64 { lock.withLock { current } }
     private var path: URL { directory.appendingPathComponent("metadata.json") }
     public init(directory: URL) {
         self.directory = directory
@@ -33,16 +39,28 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     public var files: [Item] { lock.withLock { Array(state.files.values) } }
     public func remember(_ files: [Item]) {
         lock.withLock {
-            for file in files { state.files[file.id] = file }; persist()
+            current += 1
+            for file in files {
+                state.files[file.id] = file
+                rememberedAt[file.id] = current
+            }
+            persist()
         }
+    }
+    /// `file`, or what was remembered of it since `since` (newer than a listing fetched from then).
+    private func newest(_ file: Item, since: UInt64?) -> Item {
+        guard let since, let at = rememberedAt[file.id], at > since, let newer = state.files[file.id] else { return file }
+        return newer
     }
     public func alias(_ id: String, to file: Item) {
         lock.withLock {
             state.files[id] = file; persist()
         }
     }
-    public func store(_ files: [Item], key: String) {
+    /// `since`: the `generation` the listing was fetched from; what was remembered after it is kept.
+    public func store(_ files: [Item], key: String, since: UInt64? = nil) {
         lock.withLock {
+            let files = files.map { newest($0, since: since) }
             state.listings[key] = Snapshot(files: files, savedAt: Date())
             for file in files { state.files[file.id] = file }
             persist()
@@ -60,9 +78,11 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
         }
     }
     public func apply(
-        _ files: [Item], removed: [String], belongs: (String, Item) -> Bool, retainExisting: (String) -> Bool = { _ in false }
+        _ files: [Item], removed: [String], belongs: (String, Item) -> Bool, retainExisting: (String) -> Bool = { _ in false },
+        since: UInt64? = nil
     ) {
         lock.withLock {
+            let files = files.map { newest($0, since: since) }
             let removed = Set(removed)
             for id in removed { state.files[id] = nil }
             for file in files where !removed.contains(file.id) { state.files[file.id] = file }

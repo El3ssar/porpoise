@@ -24,17 +24,17 @@ extension DriveMutationTests {
         try await control(server, ["remoteChanges": renames.map { ["fileId": $0.0, "file": ["name": $0.1]] }])
         func url(_ id: String) async throws -> URL { try await client.file(id).location(accountID: client.accountID).url }
         let output = try scratch.folder("area/output")
-        func copy(_ sources: [URL]) -> RemoteTransferJob {
+        func copy(_ sources: [URL]) async -> RemoteTransferJob {
             let job = RemoteTransferJob(
                 kind: .copy, sources: sources, destination: output,
                 control: FileJob(kind: .copy, sources: sources, destinationFolder: output), rule: .keepBoth, options: .init())
-            job.run()
+            await offThePool { job.run() }
             return job
         }
         // A folder (the ordered path) and several small files (the parallel path).
-        let folderJob = copy([try await url(folder.id)])
+        let folderJob = await copy([try await url(folder.id)])
         #expect(folderJob.errors.isEmpty, "\(folderJob.errors)")
-        let filesJob = copy([try await url(first.id), try await url(second.id)])
+        let filesJob = await copy([try await url(first.id), try await url(second.id)])
         #expect(filesJob.errors.isEmpty, "\(filesJob.errors)")
         let fm = FileManager.default
         #expect(try fm.contentsOfDirectory(atPath: scratch.path("area").path) == ["output"])

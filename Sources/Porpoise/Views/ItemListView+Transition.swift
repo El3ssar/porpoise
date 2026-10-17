@@ -63,14 +63,13 @@ enum TransitionKind: String {
 /// - `itemsDelivered(loading:)` whenever its listing changed, from the first page of a slow listing to the last: a
 ///   listing only delivers, it never animates on its own;
 /// - `change(_:_:)` for a change shown as a glide (filter, search, remote changes, a split's left pane);
-/// - `whenItemsArrive(_:)`, `flightStarts(hiding:)`, `flightLanded(_:)`, `flightLeaves(_:)` for the split's flights;
+/// - `whenItemsArrive(_:)`, `flightPictures()`, `landingPictures(_:)`, `flightStarts(hiding:)`, `flightArrives(_:)`,
+///   `flightLanded(_:)`, `flightLeaves(_:)` for the split's flights;
 /// - `resized()` and `reflow(_:)` for the layout changing under the items.
 /// Only one transition runs at a time per view: while a split's flight is due or running, other changes show at once
 /// (the flight already moves the items there), so nothing animates twice.
 @MainActor final class ItemTransitions {
     private unowned let list: ItemListView
-    /// Reduce Motion (Accessibility › Display): changes show at once, nothing moves.
-    static var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     /// The transitions started since the view was made (the last 32), for the debug bridge and tests.
     private(set) var log: [TransitionKind] = []
     /// When each of them started (`CACurrentMediaTime`).
@@ -129,6 +128,17 @@ enum TransitionKind: String {
     /// animate.
     func flightPictures() -> [String: CGImage]? { list.snapshotForTransition()?.flightImages }
 
+    /// The items `keys` as this view will show them once a flight lands here (its own icon size, row height and
+    /// layout): the copies turn into these on the way, so they land as exactly what's drawn there.
+    func landingPictures(_ keys: [String]) -> [String: CGImage] {
+        if list.frames.count != list.model.rows.count { list.computeLayout() }
+        var out: [String: CGImage] = [:]
+        for k in keys {
+            if let i = list.row(forKey: k), let image = list.picture(ofRow: i, part: list.flightPart(i)) { out[k] = image }
+        }
+        return out
+    }
+
     /// A flight is about to bring `keys` here: they stay hidden until it lands; the view's other items come in where
     /// they are.
     func flightStarts(hiding keys: Set<String>) {
@@ -137,12 +147,21 @@ enum TransitionKind: String {
         list.animateAppearing(except: keys)
     }
 
-    /// The flight landed on `keys`: they fade in where it put them, then `completion`.
-    func flightLanded(_ keys: Set<String>, completion: @escaping () -> Void) {
-        list.reveal(keys) { [weak self] in
-            self?.flying = false
-            completion()
-        }
+    /// A flight brings `keys` back onto items this view already shows (the split closing): they're hidden until it
+    /// lands, the copies standing in for them.
+    func flightArrives(_ keys: Set<String>) {
+        flying = true
+        list.transitionHidden.formUnion(keys)
+        list.needsDisplay = true
+    }
+
+    /// The flight landed on `keys`: they show where it put them, at once. `completion` (which removes the copies) runs
+    /// in the same turn, so no frame shows both or neither; the copies' last picture is these items as drawn here.
+    func flightLanded(_ keys: Set<String>, completion: () -> Void) {
+        flying = false
+        list.transitionHidden.subtract(keys)
+        list.needsDisplay = true
+        completion()
     }
 
     /// The flight was cut short (the split closed while it ran): what it hid shows again where it is.
@@ -210,14 +229,12 @@ extension ItemListView {
         return i
     }
 
-    fileprivate var animates: Bool { window != nil && !ItemTransitions.reducesMotion() && model.rows.count <= Self.maxAnimatedRows }
+    fileprivate var animates: Bool { window != nil && !Animator.reducesMotion() && model.rows.count <= Self.maxAnimatedRows }
 
     /// Stops whatever runs (the view goes somewhere else): items are drawn where they are.
     func stopTransitions() {
         transitionAnimator.stop()
-        revealAnimator.stop()
         transition = nil
-        revealing = nil
         transitionHidden = []
         needsDisplay = true
     }
@@ -243,7 +260,7 @@ extension ItemListView {
     }
 
     /// The part of row `i` that flies between split panes, where it is in the final layout.
-    private func flightPart(_ i: Int) -> CGRect {
+    fileprivate func flightPart(_ i: Int) -> CGRect {
         mode == .icons ? frames[i] : iconRect(i).union(nameTextRect(i)).insetBy(dx: -4, dy: -2)
     }
 
@@ -355,27 +372,6 @@ extension ItemListView {
             })
     }
 
-    /// Items another view flew in (keys): they fade in where they landed, then `completion`.
-    fileprivate func reveal(_ keys: Set<String>, completion: @escaping () -> Void = {}) {
-        transitionHidden.subtract(keys)
-        guard animates, !keys.isEmpty else {
-            needsDisplay = true
-            return completion()
-        }
-        revealing = (keys, 0)
-        revealAnimator.run(
-            duration: 0.16,
-            step: { [weak self] p in
-                self?.revealing?.progress = CGFloat(p)
-                self?.needsDisplay = true
-            },
-            completion: { [weak self] in
-                self?.revealing = nil
-                self?.needsDisplay = true
-                completion()
-            })
-    }
-
     /// Row `i`'s cell where it's drawn at this moment of the transition.
     func shownFrame(_ i: Int) -> CGRect {
         let target = frames[i]
@@ -396,14 +392,13 @@ extension ItemListView {
     }
 
     /// Draws row `i` where the transition has it: moved by its offset, coming in when new, hidden while another
-    /// view flies it here, fading in once it landed.
+    /// view flies it here.
     func drawItemInTransition(_ i: Int, draw: (Int) -> Void) {
         let k = key(ofRow: i)
         if transitionHidden.contains(k) { return }
         guard let ctx = NSGraphicsContext.current?.cgContext else { return draw(i) }
         ctx.saveGState()
         defer { ctx.restoreGState() }
-        if let r = revealing, r.keys.contains(k) { ctx.setAlpha(r.progress) }
         guard let t = transition else { return draw(i) }
         let target = frames[i]
         let shown = shownFrame(i)

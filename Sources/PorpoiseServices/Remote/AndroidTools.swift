@@ -5,7 +5,9 @@ import Foundation
 public enum AndroidTools {
     /// Where platform-tools come from and Porpoise's own folder (tests use a local server and a scratch folder).
     nonisolated(unsafe) static var downloadURL = URL(string: "https://dl.google.com/android/repository/platform-tools-latest-darwin.zip")!
-    nonisolated(unsafe) static var supportFolder = Settings.supportFolder
+    nonisolated(unsafe) static var supportFolderOverride: URL?
+    /// Porpoise's support folder, asked each time (tests may point it at a scratch folder instead).
+    static var supportFolder: URL { supportFolderOverride ?? Settings.supportFolder }
 
     static var installDir: URL { supportFolder.appendingPathComponent("platform-tools", isDirectory: true) }
 

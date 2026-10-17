@@ -117,9 +117,6 @@ final class ItemListView: NSView {
     let transitionAnimator = Animator()
     /// Items (transition keys) not drawn until another view's flight brings them here.
     var transitionHidden: Set<String> = []
-    /// Items fading in where a flight landed.
-    var revealing: (keys: Set<String>, progress: CGFloat)?
-    let revealAnimator = Animator()
     /// Row per transition key, rebuilt with each layout.
     var rowKeys: [String: Int] = [:]
     /// Lays out at this width instead of the visible one: the width the view is about to have, while an animation
@@ -152,7 +149,6 @@ final class ItemListView: NSView {
         for t in [hoverTimer, zoomCommitTimer, dragOpenTimer] { t?.invalidate() }
         zoomAnimator.stop()
         transitionAnimator.stop()
-        revealAnimator.stop()
     }
 
     override var isFlipped: Bool { true }

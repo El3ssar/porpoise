@@ -146,7 +146,7 @@ final class AppsGridView: NSView, NSDraggingSource {
     /// and fade out (`items` has them), new ones grow in.
     private func glide(from before: [URL: CGRect], items beforeItems: [URL: FileItem], duration: CFTimeInterval) {
         // Reduce Motion: no gliding, the apps only fade.
-        let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let still = Animator.reducesMotion()
         let leaving = before.compactMap { url, cell in targets[url] == nil ? beforeItems[url].map { (item: $0, cell: cell) } : nil }
         let from = still ? targets.filter { before[$0.key] != nil } : before.filter { targets[$0.key] != nil }
         transition = Transition(from: from, leaving: leaving)
@@ -272,7 +272,7 @@ final class AppsGridView: NSView, NSDraggingSource {
         let before = window != nil && !targets.isEmpty ? currentCells() : [:]
         change()
         let dy = visibleRect.minY - vr.minY
-        if columns != shape, !before.isEmpty, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        if columns != shape, !before.isEmpty, !Animator.reducesMotion() {
             glide(from: before.mapValues { $0.offsetBy(dx: 0, dy: dy) }, items: [:], duration: ItemListView.transitionDuration)
         } else if var t = transition, dy != 0 {
             t.from = t.from.mapValues { $0.offsetBy(dx: 0, dy: dy) }
