@@ -9,9 +9,7 @@ import Testing
 
 struct ImageFileComparisonTests {
     @Test func exactPixelsAndOrientation() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        let scratch = try Scratch(), root = scratch.url
         let a = root.appendingPathComponent("a.png"), b = root.appendingPathComponent("b.png")
         var pixels = [UInt8](repeating: 0, count: 3 * 2 * 4)
         for i in stride(from: 3, to: pixels.count, by: 4) { pixels[i] = 255 }

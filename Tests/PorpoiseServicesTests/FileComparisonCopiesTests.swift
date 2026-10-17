@@ -8,9 +8,7 @@ import Testing
 
 struct FileComparisonCopiesTests {
     @Test func remoteSnapshotsAreIsolatedAndNeverUpload() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
+        let scratch = try Scratch(), folder = scratch.url
         let remote = URL(string: "sftp://\(UUID().uuidString).invalid/report.txt")!, provider = ComparisonProvider()
         RemoteFS.use(provider, for: remote); defer { RemoteFS.use(nil, for: remote) }
         let a = try FileComparisonCopies(left: remote, right: remote, cacheParent: folder)

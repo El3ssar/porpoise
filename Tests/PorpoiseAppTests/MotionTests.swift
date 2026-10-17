@@ -38,9 +38,7 @@ import Testing
     @Test func hoverFadesUnlessMotionIsReduced() async throws {
         let reduces = Animator.reducesMotion
         defer { Animator.reducesMotion = reduces }
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-hover-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
+        let scratch = try Scratch(), folder = scratch.url
         for n in 1...3 { try Data("\(n)".utf8).write(to: folder.appendingPathComponent("file \(n).txt")) }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false

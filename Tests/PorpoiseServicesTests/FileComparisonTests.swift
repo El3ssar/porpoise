@@ -9,8 +9,7 @@ import Testing
 
 struct FileComparisonTests {
     @Test func textReadReportsBytesAndSupportsCancellation() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".txt")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let scratch = try Scratch(), url = scratch.path("file.txt")
         let data = Data(repeating: 65, count: 2 * 1024 * 1024 + 17)
         try data.write(to: url)
         var updates: [(UInt64, UInt64)] = []
@@ -24,9 +23,7 @@ struct FileComparisonTests {
         }
     }
     @Test func streamingByteOffsetsAndMetadata() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
+        let scratch = try Scratch(), folder = scratch.url
         let a = folder.appendingPathComponent("a"), b = folder.appendingPathComponent("b")
         var data = Data(repeating: 65, count: (1 << 20) + 20)
         try data.write(to: a); try data.write(to: b)
