@@ -76,6 +76,17 @@ import Testing
         #expect(listed?.map(\.url) == RecentLocations.shared.urls.compactMap { FileItem.load($0)?.url })
         #expect(!source.traits.prunesSelection && !source.traits.optimisticEdits && source.traits.watch == .none)
     }
+
+    @Test func everyKindHasItsSource() {
+        #expect(LocationContentSources.source(for: URL(string: "network:/")!) is NetworkSource)
+        Settings.shared.appLibraryView = true
+        let apps = LocationContentSources.source(for: AppLibrary.location)
+        #expect(apps is AppLibrarySource && apps.traits.watch == .appLibrary && apps.traits.prunesSelection)
+        Settings.shared.appLibraryView = false
+        #expect(LocationContentSources.source(for: AppLibrary.location) is LocalSource)
+        // Dropbox without a connected account has no provider: it lists as a folder that can't be opened, as before.
+        #expect(LocationContentSources.source(for: URL(string: "dropbox://\(UUID().uuidString)/")!) is LocalSource)
+    }
 }
 
 /// A server whose root holds "sub" (holding "inner") and whose "locked" folder refuses to be listed.

@@ -455,33 +455,9 @@ public final class DirectoryModel {
         tagCache = [:]
         cloudCache = [:]
         metadataWanted = []
-        // Every branch starts clean: an error or a query of the previous location must not leak into this one.
+        // Every load starts clean: an error of the previous location must not leak into this one.
         loadError = nil
         blockedByPrivacy = false
-        if kind == .network {
-            NetworkBrowser.shared.start()
-            items = NetworkBrowser.shared.items
-            isLoading = false
-            rebuild()
-            onLoaded?()
-            return
-        }
-        if AppLibrary.isActive(for: url) {
-            isLoading = true
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let apps = AppLibrary.listAll()
-                DispatchQueue.main.async {
-                    guard let self, token == self.loadToken else { return }
-                    self.items = apps
-                    self.isLoading = false
-                    if keepSelection { self.selection = self.selection.intersection(Set(apps.map(\.url))) }
-                    self.rebuild()
-                    self.updateWatcher()
-                    self.onLoaded?()
-                }
-            }
-            return
-        }
         let source = self.source
         let cached = source.traits.paintsCache ? source.cached(url) : nil
         if let cached {
@@ -585,8 +561,11 @@ public final class DirectoryModel {
     }
 
     private func updateWatcher() {
-        if AppLibrary.isActive(for: location) { watcher.watch(AppLibrary.roots); return }
-        watcher.watch(source.traits.watch == .fileSystem ? [location] + Array(expanded) : [])
+        switch source.traits.watch {
+        case .fileSystem: watcher.watch([location] + Array(expanded))
+        case .appLibrary: watcher.watch(AppLibrary.roots)
+        case .none: watcher.watch([])
+        }
     }
 
     // MARK: Building rows
