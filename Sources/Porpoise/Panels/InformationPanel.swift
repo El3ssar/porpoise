@@ -9,6 +9,9 @@ import QuickLookThumbnailing
 final class InformationPanel: NSView {
     private let preview = NSImageView()
     private let previewSpinner = NSProgressIndicator()
+    private let previewStatus = NSTextField(wrappingLabelWithString: "")
+    private var drivePlayer: Task<Void, Never>?
+    private var driveStream: DriveStreamingPreview?
     private var drivePreview: Task<Void, Never>?
     private let nameLabel = NSTextField(wrappingLabelWithString: "")
     private let grid = NSStackView()
@@ -32,6 +35,8 @@ final class InformationPanel: NSView {
     /// The thumbnail, kept over the video until playback starts (no jump from thumbnail to first frame).
     private let poster = NSImageView()
     private var playObservation: NSKeyValueObservation?
+    private var loadingObservation: NSKeyValueObservation?
+    private var failureObservation: NSKeyValueObservation?
     private var playerWork: DispatchWorkItem?
     private var thumbnailObserver: NSObjectProtocol?
     private var windowCloseObserver: NSObjectProtocol?
@@ -75,6 +80,10 @@ final class InformationPanel: NSView {
         controls.isHidden = true
         [preview, player, controls, nameLabel, grid].forEach(addSubview)
         addSubview(previewSpinner)
+        previewStatus.font = .systemFont(ofSize: 10)
+        previewStatus.textColor = Theme.windowTextInactive
+        previewStatus.alignment = .center
+        addSubview(previewStatus)
         poster.imageScaling = .scaleProportionallyUpOrDown
         poster.wantsLayer = true
         poster.layer?.backgroundColor = NSColor.black.cgColor
@@ -86,6 +95,8 @@ final class InformationPanel: NSView {
         [thumbnailObserver, windowCloseObserver].compactMap { $0 }.forEach(NotificationCenter.default.removeObserver)
         playerWork?.cancel()
         drivePreview?.cancel()
+        drivePlayer?.cancel()
+        driveStream?.stop()
     }
 
     override func draw(_ dirty: NSRect) {}
@@ -98,6 +109,7 @@ final class InformationPanel: NSView {
         preview.frame = CGRect(x: (w - side) / 2, y: 16, width: side, height: Settings.shared.infoShowPreview ? side : 0)
         // Decided from the file type (never by loading the media on the main thread).
         previewSpinner.frame = CGRect(x: preview.frame.midX - 8, y: preview.frame.midY - 8, width: 16, height: 16)
+        previewStatus.frame = CGRect(x: preview.frame.minX, y: preview.frame.maxY - 26, width: preview.frame.width, height: 24)
         player.frame = playerIsAudio ? CGRect(x: 12, y: preview.frame.maxY + 6, width: w - 24, height: 32) : preview.frame
         // Songs: the bar is the player. Videos: the bar sits over the bottom of the picture.
         controls.frame =
@@ -241,6 +253,7 @@ final class InformationPanel: NSView {
         guard let u = urls.first, let item = item(for: u) else {
             stopPlayer()
             drivePreview?.cancel(); drivePreview = nil
+            previewStatus.stringValue = ""
             previewSpinner.stopAnimation(nil)
             preview.image = nil
             nameLabel.stringValue = ""
@@ -254,6 +267,7 @@ final class InformationPanel: NSView {
 
     private func showSummary(of urls: [URL]) {
         drivePreview?.cancel(); drivePreview = nil
+        previewStatus.stringValue = ""
         previewSpinner.stopAnimation(nil)
         preview.image = Icons.shared.image("document-multiple", size: 128) ?? Icons.shared.image("folder", size: 128)
         nameLabel.stringValue = "\(urls.count) items selected"
@@ -273,34 +287,63 @@ final class InformationPanel: NSView {
 
     private func showPreview(of item: FileItem) {
         drivePreview?.cancel(); drivePreview = nil
+        previewStatus.stringValue = ""
         previewSpinner.stopAnimation(nil)
         let big = Self.previewSize
         preview.image = Icons.shared.image(for: item, size: big)
         guard Settings.shared.infoShowPreview, Thumbnails.wantsPreview(item) else { return }
-        if let drive = RemoteFS.provider(for: item.url) as? DriveProvider {
+        if let drive = RemoteFS.provider(for: item.url) as? DriveProvider, let client = drive.client {
             previewSpinner.startAnimation(nil)
+            previewStatus.stringValue = "Loading preview…"
             drivePreview = Task { @MainActor [weak self] in
                 do {
-                    let local = try await drive.preview(item.url, thumbnail: true)
-                    try Task.checkCancellation()
-                    let image: NSImage?
-                    if let loaded = NSImage(contentsOf: local) {
-                        image = loaded
+                    let file: DriveFile
+                    if let cached = drive.metadata(for: item.url) {
+                        file = cached
                     } else {
-                        let request = QLThumbnailGenerator.Request(
-                            fileAt: local, size: CGSize(width: big, height: big), scale: 2, representationTypes: .thumbnail)
-                        image = await withCheckedContinuation { continuation in
-                            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { rep, _ in
-                                continuation.resume(returning: rep?.nsImage)
+                        guard let location = DriveLocation(url: item.url), case .folder(let id, _) = location.collection else {
+                            throw DriveError.invalidLocation
+                        }
+                        file = try await client.file(id, resourceKey: location.resourceKey)
+                    }
+                    let paint: (URL) async throws -> Void = { [weak self] local in
+                        try Task.checkCancellation()
+                        let image: NSImage?
+                        if let loaded = NSImage(contentsOf: local) {
+                            image = loaded
+                        } else {
+                            let request = QLThumbnailGenerator.Request(
+                                fileAt: local, size: CGSize(width: big, height: big), scale: 2, representationTypes: .thumbnail)
+                            image = await withCheckedContinuation { continuation in
+                                QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { rep, _ in
+                                    continuation.resume(returning: rep?.nsImage)
+                                }
                             }
                         }
+                        guard !Task.isCancelled, let self, self.shownURLs == [item.url] else { return }
+                        if let image { self.preview.image = local.pathExtension == "pdf" ? Thumbnails.paperPreview(image) : image }
+                    }
+                    if file.mimeType.hasPrefix("video/") || file.mimeType.hasPrefix("audio/") {
+                        if let cached = try await client.cachedPreview(file) {
+                            try await paint(cached)
+                        } else if file.thumbnailLink != nil {
+                            try await paint(try await client.thumbnail(file, maximumPixelSize: 1600))
+                        }
+                    } else {
+                        let context = DriveTransferContext(progress: { [weak self] bytes, total in
+                            Task { @MainActor [weak self] in
+                                guard let self, self.shownURLs == [item.url] else { return }
+                                self.previewStatus.stringValue = total > 0 ? "Loading \(min(100, bytes * 100 / total))%" : "Loading preview…"
+                            }
+                        })
+                        _ = try await client.progressivePreview(file, context: context, show: paint)
                     }
                     guard !Task.isCancelled, let self, self.shownURLs == [item.url] else { return }
-                    if let image { self.preview.image = local.pathExtension == "pdf" ? Thumbnails.paperPreview(image) : image }
-                    self.previewSpinner.stopAnimation(nil)
+                    self.previewSpinner.stopAnimation(nil); self.previewStatus.stringValue = ""
                 } catch {
                     guard !Task.isCancelled, let self, self.shownURLs == [item.url] else { return }
-                    self.previewSpinner.stopAnimation(nil)
+                    self.previewSpinner.stopAnimation(nil); self.previewStatus.stringValue = "Preview unavailable"
+                    self.previewStatus.toolTip = error.localizedDescription
                 }
             }
             return
@@ -415,6 +458,8 @@ final class InformationPanel: NSView {
     private func stopPlayer() {
         playerWork?.cancel()
         playerWork = nil
+        drivePlayer?.cancel(); drivePlayer = nil
+        driveStream?.stop(); driveStream = nil
         player.player?.pause()
         // Before releasing the player: the controls hold it weakly and must remove their time observer from it.
         controls.detach()
@@ -422,6 +467,7 @@ final class InformationPanel: NSView {
         player.isHidden = true
         controls.isHidden = true
         playObservation = nil
+        loadingObservation = nil; failureObservation = nil
         playerURL = nil
         poster.removeFromSuperview()
         VideoPreview.shared.stop(for: self)
@@ -429,7 +475,9 @@ final class InformationPanel: NSView {
 
     private func setupPlayer(for item: FileItem) {
         let playable =
-            Settings.shared.infoShowPreview && item.url.isFileURL
+            Settings.shared.infoShowPreview
+            && (item.url.isFileURL
+                || (Settings.shared.previewRemote && Settings.shared.previewVideos && RemoteFS.provider(for: item.url) is DriveProvider))
             && (item.utType.map {
                 $0.conforms(to: .audiovisualContent) || VideoPreview.isVideoExtension(item.fileExtension)
             } ?? false)
@@ -443,6 +491,36 @@ final class InformationPanel: NSView {
         playerURL = url
         let work = DispatchWorkItem { [weak self] in
             guard let owner = self else { return }
+            if let drive = RemoteFS.provider(for: url) as? DriveProvider, let client = drive.client {
+                owner.drivePlayer = Task { @MainActor [weak owner] in
+                    do {
+                        let file: DriveFile
+                        if let cached = drive.metadata(for: url) {
+                            file = cached
+                        } else {
+                            guard let location = DriveLocation(url: url), case .folder(let id, _) = location.collection else {
+                                throw DriveError.invalidLocation
+                            }
+                            file = try await client.file(id, resourceKey: location.resourceKey)
+                        }
+                        let cached = try await client.cachedPreview(file)
+                        try Task.checkCancellation()
+                        guard let owner, owner.shownURLs == [url] else { return }
+                        if let cached {
+                            owner.startPlayer(with: cached)
+                        } else {
+                            let stream = try client.streamingPreview(file)
+                            owner.driveStream = stream
+                            owner.startPlayer(with: stream.url)
+                        }
+                    } catch {
+                        guard !Task.isCancelled, let owner, owner.shownURLs == [url] else { return }
+                        owner.previewStatus.stringValue = "Playback unavailable"
+                        owner.previewStatus.toolTip = error.localizedDescription
+                    }
+                }
+                return
+            }
             VideoPreview.shared.playableURL(for: url, owner: owner) { [weak self] playable in
                 guard let self, self.shownURLs == [url], let playable else { return }
                 self.startPlayer(with: playable)
@@ -456,9 +534,29 @@ final class InformationPanel: NSView {
         let p = AVPlayer(url: playable)
         p.automaticallyWaitsToMinimizeStalling = false
         player.player = p
+        if driveStream != nil {
+            loadingObservation = p.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] p, _ in
+                DispatchQueue.main.async {
+                    guard let self, self.player.player === p else { return }
+                    if p.timeControlStatus == .waitingToPlayAtSpecifiedRate {
+                        self.previewSpinner.startAnimation(nil); self.previewStatus.stringValue = "Buffering…"
+                    } else {
+                        self.previewSpinner.stopAnimation(nil); self.previewStatus.stringValue = ""
+                    }
+                }
+            }
+            failureObservation = p.currentItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
+                guard item.status == .failed else { return }
+                DispatchQueue.main.async {
+                    guard let self, self.player.player?.currentItem === item else { return }
+                    self.previewSpinner.stopAnimation(nil); self.previewStatus.stringValue = "Playback unavailable"
+                    self.previewStatus.toolTip = item.error?.localizedDescription
+                }
+            }
+        }
         // Songs play without a picture: the bar is all there is.
         player.isHidden = playerIsAudio
-        controls.attach(p, duration: playable.scheme == "http" ? VideoPreview.shared.streamDuration : nil)
+        controls.attach(p, duration: playable.scheme == "http" && driveStream == nil ? VideoPreview.shared.streamDuration : nil)
         controls.onStateChange = { [weak self] in self?.updateControls() }
         needsLayout = true
         // The thumbnail stays over the video until it plays (with autoplay too: no black frame while it starts).
@@ -474,7 +572,7 @@ final class InformationPanel: NSView {
                 }
             }
         }
-        guard playable.scheme == "http" else {
+        guard playable.scheme == "http", driveStream == nil else {
             if Settings.shared.infoAutoPlay { p.play() }
             return
         }

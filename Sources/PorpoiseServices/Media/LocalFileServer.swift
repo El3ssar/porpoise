@@ -14,6 +14,13 @@ final class LocalFileServer {
     private static let chunkSize = 1 << 20
     private static let startTimeout: TimeInterval = 2
 
+    struct RangeSource: Sendable {
+        let size: Int64
+        let contentType: String
+        let read: @Sendable (Range<Int64>) async throws -> Data
+    }
+    private var source: RangeSource?
+    private var flights: [ObjectIdentifier: (NWConnection, Task<Void, Never>)] = [:]
     private var listener: NWListener?
     private var port: UInt16?
     private var root: URL?
@@ -47,8 +54,19 @@ final class LocalFileServer {
         return URL(string: "http://127.0.0.1:\(p)/\(secret)/")
     }
 
+    /// An authenticated on-demand source. Its secret URL never contains an upstream URL or credential.
+    func start(source: RangeSource) -> URL? {
+        queue.sync { self.source = source }
+        return start(root: FileManager.default.temporaryDirectory)?.appendingPathComponent("media")
+    }
+
     /// Stops listening (for tests: the app keeps its one server for as long as it runs).
     func stop() {
+        queue.sync {
+            source = nil
+            for (connection, task) in flights.values { task.cancel(); connection.cancel() }
+            flights.removeAll()
+        }
         listener?.cancel()
         listener = nil
         port = nil
@@ -87,6 +105,10 @@ final class LocalFileServer {
         guard parts.count >= 2 else { return send(c, status: "400 Bad Request") }
         let method = parts[0]
         guard method == "GET" || method == "HEAD" else { return send(c, status: "405 Method Not Allowed") }
+        if let source {
+            guard parts[1] == "/\(secret)/media" else { return send(c, status: "404 Not Found") }
+            return respond(c, source: source, request: request, headOnly: method == "HEAD")
+        }
         guard let file = resolve(String(parts[1])), let data = try? Data(contentsOf: file, options: .alwaysMapped) else {
             return send(c, status: "404 Not Found")
         }
@@ -99,6 +121,73 @@ final class LocalFileServer {
                 guard error == nil, method == "GET", let self else { c.cancel(); return }
                 self.sendBody(c, data, from: 0)
             })
+    }
+
+    private func respond(_ c: NWConnection, source: RangeSource, request: Data, headOnly: Bool) {
+        let headers = String(decoding: request, as: UTF8.self).components(separatedBy: "\r\n").dropFirst()
+        let ranges = headers.filter { $0.lowercased().hasPrefix("range:") }
+        let range: Range<Int64>
+        do { range = try Self.byteRange(ranges.first.map { String($0.dropFirst(6)).trimmingCharacters(in: .whitespaces) }, size: source.size) } catch
+        { return send(c, status: "416 Range Not Satisfiable") }
+        guard ranges.count <= 1 else { return send(c, status: "416 Range Not Satisfiable") }
+        let ranged = !ranges.isEmpty
+        var head = "HTTP/1.1 \(ranged ? "206 Partial Content" : "200 OK")\r\nContent-Type: \(source.contentType)\r\n"
+        head += "Content-Length: \(range.count)\r\nAccept-Ranges: bytes\r\nCache-Control: no-store\r\nConnection: close\r\n"
+        if ranged { head += "Content-Range: bytes \(range.lowerBound)-\(range.upperBound - 1)/\(source.size)\r\n" }
+        head += "\r\n"
+        let id = ObjectIdentifier(c)
+        let task = Task { [weak self] in
+            do {
+                try await Self.send(c, data: Data(head.utf8))
+                if !headOnly {
+                    var offset = range.lowerBound
+                    while offset < range.upperBound {
+                        try Task.checkCancellation()
+                        let end = min(range.upperBound, offset + 1024 * 1024)
+                        let data = try await source.read(offset..<end)
+                        guard data.count == end - offset else { throw DriveError.invalidResponse }
+                        try Task.checkCancellation()
+                        try await Self.send(c, data: data)
+                        offset = end
+                    }
+                }
+            } catch { /* Closing an incomplete response makes AVPlayer surface the load error. */  }
+            c.cancel()
+            self?.queue.async { [weak self] in self?.flights.removeValue(forKey: id) }
+        }
+        flights[id] = (c, task)
+        c.stateUpdateHandler = { state in
+            switch state {
+            case .cancelled, .failed: task.cancel()
+            default: break
+            }
+        }
+    }
+
+    private static func send(_ c: NWConnection, data: Data) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            c.send(
+                content: data,
+                completion: .contentProcessed { error in
+                    if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+                })
+        }
+    }
+
+    static func byteRange(_ value: String?, size: Int64) throws -> Range<Int64> {
+        guard size >= 0 else { throw DriveError.invalidResponse }
+        guard let value else { return 0..<size }
+        guard value.hasPrefix("bytes="), !value.contains(","), size > 0 else { throw DriveError.invalidResponse }
+        let bounds = value.dropFirst(6).split(separator: "-", omittingEmptySubsequences: false)
+        guard bounds.count == 2 else { throw DriveError.invalidResponse }
+        if bounds[0].isEmpty {
+            guard let count = Int64(bounds[1]), count > 0 else { throw DriveError.invalidResponse }
+            return max(0, size - count)..<size
+        }
+        guard let start = Int64(bounds[0]), start >= 0, start < size else { throw DriveError.invalidResponse }
+        if bounds[1].isEmpty { return start..<size }
+        guard let end = Int64(bounds[1]), end >= start else { throw DriveError.invalidResponse }
+        return start..<(min(end, size - 1) + 1)
     }
 
     private func sendBody(_ c: NWConnection, _ data: Data, from offset: Int) {

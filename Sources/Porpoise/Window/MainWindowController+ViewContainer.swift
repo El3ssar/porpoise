@@ -16,6 +16,7 @@ extension MainWindowController {
     }
 
     func containerDidChangeURL(_ c: ViewContainer) {
+        if c === view { driveMediaQuickLook?.close() }
         linkedNavigationChanged(c)
         AppDelegate.shared.sessionChanged()
         if c === view || tab.containers.contains(where: { $0 === c }) {
@@ -26,6 +27,7 @@ extension MainWindowController {
     }
 
     func containerSelectionChanged(_ c: ViewContainer) {
+        if c === view, driveMediaQuickLook?.isVisible == true, !showDriveMediaQuickLook() { driveMediaQuickLook?.close() }
         if c === view, showInformation { information.show(hovered: nil, container: c) }
         if c === view, QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible {
             prepareDriveQuickLook()
