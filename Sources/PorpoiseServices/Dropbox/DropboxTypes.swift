@@ -46,11 +46,15 @@ public struct DropboxItem: CloudMetadataItem, Equatable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        tag = try c.decode(String.self, forKey: .tag); name = try c.decode(String.self, forKey: .name)
+        rev = try c.decodeIfPresent(String.self, forKey: .rev); size = try c.decodeIfPresent(Int64.self, forKey: .size)
+        // Only a Metadata union names its subtype. A route typed FileMetadata (download's Dropbox-API-Result, upload,
+        // restore) or FolderMetadata (create_folder_v2) sends none; a file always has a rev, a folder never does.
+        // https://github.com/dropbox/dropbox-api-spec/blob/master/files.stone
+        tag = try c.decodeIfPresent(String.self, forKey: .tag) ?? (rev == nil ? "folder" : "file")
+        name = try c.decode(String.self, forKey: .name)
         pathLower = try c.decodeIfPresent(String.self, forKey: .pathLower); pathDisplay = try c.decodeIfPresent(String.self, forKey: .pathDisplay)
         id = try c.decodeIfPresent(String.self, forKey: .id) ?? (tag == "deleted" ? pathLower ?? "" : "")
         guard !id.isEmpty, ["file", "folder", "deleted"].contains(tag) else { throw DropboxError.invalidResponse }
-        rev = try c.decodeIfPresent(String.self, forKey: .rev); size = try c.decodeIfPresent(Int64.self, forKey: .size)
         contentHash = try c.decodeIfPresent(String.self, forKey: .contentHash)
         serverModified = try c.decodeIfPresent(String.self, forKey: .serverModified)
         isDownloadable = try c.decodeIfPresent(Bool.self, forKey: .isDownloadable)

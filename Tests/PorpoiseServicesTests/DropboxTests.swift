@@ -181,6 +181,35 @@ import Testing
         await #expect(throws: (any Error).self) { try await client.download(stale) }
     }
 
+    /// Dropbox names a value's subtype (".tag") only where the route returns the Metadata union: files/download's
+    /// Dropbox-API-Result, upload_session/finish and restore return a FileMetadata, create_folder_v2 a FolderMetadata,
+    /// all without one (https://github.com/dropbox/dropbox-api-spec/blob/master/files.stone). v0.8.1 read every
+    /// download as a changed source and wrote nothing, so opening and downloading a Dropbox file failed.
+    @Test func leafMetadataWithoutTagOpensDownloadsUploadsAndCreates() async throws {
+        let documented = Data(
+            #"{"name":"Prime_Numbers.txt","id":"id:a4ayc_80_OEAAAAAAAAAXw","client_modified":"2015-05-12T15:50:38Z","server_modified":"2015-05-12T15:50:38Z","rev":"a1c10ce0dd78","size":7212,"path_lower":"/homework/math/prime_numbers.txt","path_display":"/Homework/math/Prime_Numbers.txt","is_downloadable":true,"content_hash":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}"#
+                .utf8)
+        let decoded = try JSONDecoder().decode(DropboxItem.self, from: documented)
+        #expect(decoded.tag == "file" && decoded.rev == "a1c10ce0dd78" && decoded.size == 7212)
+        let folderJSON = #"{"name":"math","id":"id:a4ayc_80_OEAAAAAAAAAXz","path_lower":"/homework/math"}"#
+        let folder = try JSONDecoder().decode(DropboxItem.self, from: Data(folderJSON.utf8))
+        #expect(folder.isFolder)
+
+        let server = try FakeDropboxServer(); let client = try server.client()
+        try await server.configure(["files": [["id": "id:doc", "path": "/doc.pdf", "size": 1_102_331]]])
+        let file = try await client.metadata("id:doc")
+        let downloaded = try await client.download(file)
+        #expect(try DropboxContentHash.hash(downloaded) == file.contentHash)
+        #expect(try await client.readRange(file, range: 0..<4096).count == 4096)
+        let scratch = try Scratch(); let local = scratch.url.appendingPathComponent("up.txt")
+        try Data("uploaded".utf8).write(to: local)
+        let uploaded = try await client.upload(local, to: "/up.txt")
+        #expect(!uploaded.isFolder && uploaded.size == 8)
+        #expect(try await client.createFolder(name: "Made").isFolder)
+        let deleted = try await client.delete(uploaded)
+        #expect(try await client.restore(deleted, confirmedMayReplace: true).id == uploaded.id)
+    }
+
     @Test func instantStreamingThumbnailAndOfflinePreviewTiming() async throws {
         let server = try FakeDropboxServer(latencyMS: 40); let client = try server.client()
         let item = try await client.metadata("id:hello")
