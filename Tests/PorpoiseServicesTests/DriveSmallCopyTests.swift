@@ -46,8 +46,7 @@ struct DriveSmallCopyTests {
         #expect(job.errors.isEmpty && job.results.count == 12 && job.completed.count == 12 && control.hasEnded)
         #expect(job.progress.doneBytes == 12 * 4096 && job.progress.doneFiles == 12)
         for result in job.results { #expect(try Data(contentsOf: result) == bytes) }
-        let stats = try await URLSession.shared.data(from: server.base.appendingPathComponent("__stats")).0
-        let json = try #require(try JSONSerialization.jsonObject(with: stats) as? [String: Any])
+        let json = try await server.stats()
         let concurrency = try #require(json["maxConcurrentMedia"] as? Int)
         #expect(concurrency > 1 && concurrency <= 6)
         let requests = try #require(json["requests"] as? [String])

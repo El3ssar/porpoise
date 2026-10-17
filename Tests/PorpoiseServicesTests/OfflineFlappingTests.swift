@@ -41,7 +41,7 @@ import Testing
         defer { server.stop() }
         let defaults = MemoryDefaults()
         let store = DriveAccountStore(
-            defaults: defaults, credentials: MemoryDriveCredentials(), configuration: server.config,
+            defaults: defaults, credentials: MemoryCredentials(), configuration: server.config,
             baseURL: server.base.appendingPathComponent("drive/v3/"))
         let backend = DriveCloudBackend(store: store, avatarFolder: scratch.url.appendingPathComponent("avatars"))
         let browser: (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
@@ -59,11 +59,11 @@ import Testing
         let flap = DriveMutationTests()
         // Down for 300 ms, up for 100 ms, over and over for about 3 s, reading folders all the while.
         for n in 0..<30 {
-            try await flap.control(server, ["offline": n % 4 != 3])
+            try await server.control(["offline": n % 4 != 3])
             _ = try? await client.list(DriveLocation(accountID: id))
             try await Task.sleep(for: .milliseconds(100))
         }
-        try await flap.control(server, ["offline": false])
+        try await server.control(["offline": false])
         for _ in 0..<50 where shown.last != .ok {
             _ = try? await client.list(DriveLocation(accountID: id))
             try await Task.sleep(for: .milliseconds(100))

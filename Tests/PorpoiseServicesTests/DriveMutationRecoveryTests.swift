@@ -141,7 +141,7 @@ extension DriveMutationTests {
         let calls = ExpiryCheckpoints()
         let stop = DriveTransferContext(checkpoint: { if await calls.next() == 2 { throw FileOperationError.interrupted } })
         await #expect(throws: FileOperationError.self) { try await client.upload(local, parentID: "root", operationID: operation, context: stop) }
-        try await control(server, ["expireSessions": true])
+        try await server.control(["expireSessions": true])
         let uploaded = try await client.upload(local, parentID: "root", operationID: operation)
         #expect(try await client.download(uploaded).data == bytes)
         // A fixture writer with cross-drive relocation permission may copy then trash.
@@ -258,7 +258,7 @@ extension DriveMutationTests {
         let original = try await client.upload(source, parentID: "root")
         try Data("new".utf8).write(to: source)
         for code in [409, 412] {
-            try await control(server, ["mutationFaults": [0, code]])
+            try await server.control(["mutationFaults": [0, code]])
             await #expect(throws: DriveError.http(code)) {
                 try await client.upload(source, parentID: "root", replacingID: original.id, expectedVersion: original.version)
             }
@@ -266,7 +266,7 @@ extension DriveMutationTests {
             #expect(try Data(contentsOf: source) == Data("new".utf8))
         }
         let op = UUID()
-        try await control(server, ["dropUploadResponse": true])
+        try await server.control(["dropUploadResponse": true])
         do {
             _ = try await client.upload(source, parentID: "root", operationID: op, replacingID: original.id); Issue.record("Expected response drop")
         } catch {}

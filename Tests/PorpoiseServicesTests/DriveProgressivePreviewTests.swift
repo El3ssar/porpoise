@@ -35,15 +35,14 @@ import Testing
         let elapsed = try #require(firstTime)
         print("PREVIEW_FIRST_IMAGE seconds=\(elapsed) latency=300ms")
         if ProcessInfo.processInfo.environment["PORPOISE_PREVIEW_BENCHMARK"] == "1" { #expect(elapsed < 0.55) }
-        let stats = server.base.appendingPathComponent("__stats")
-        let before = try await URLSession.shared.data(from: stats).0
-        let json = try #require(try JSONSerialization.jsonObject(with: before) as? [String: Any])
-        #expect((json["requests"] as? [String])?.contains { $0.contains("/thumbnail/image=s1600") } == true)
+        let before = try await server.stats()
+        #expect((before["requests"] as? [String])?.contains { $0.contains("/thumbnail/image=s1600") } == true)
         var warm: [URL] = []
         #expect(try await client.progressivePreview(file) { warm.append($0) } == full)
         #expect(warm == [full])
-        let after = try await URLSession.shared.data(from: stats).0
-        #expect(before == after)
+        // Warm: nothing more was asked of the server.
+        let after = try await server.stats()
+        #expect(NSDictionary(dictionary: before).isEqual(to: after))
         await client.clearCaches()
     }
 
@@ -74,8 +73,7 @@ import Testing
             }
         }
         await #expect(throws: CancellationError.self) { try await task.value }
-        let data = try await URLSession.shared.data(from: server.base.appendingPathComponent("__stats")).0
-        let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let json = try await server.stats()
         #expect(json["mediaBytes"] as? Int == 0)
         await client.clearCaches()
     }

@@ -8,7 +8,7 @@ import Testing
 
 @Suite(.serialized) struct DriveM3Tests {
     private func make(_ server: FakeDriveServer, _ folder: URL, id: UUID = UUID(), http: DriveHTTP = .init()) throws -> DriveClient {
-        let credentials = MemoryDriveCredentials()
+        let credentials = MemoryCredentials()
         try credentials.save("fixture-refresh", clientID: server.config.clientID, accountID: id)
         let tokens = DriveTokenManager(configuration: server.config, accountID: id, credentials: credentials)
         return DriveClient(
@@ -48,7 +48,7 @@ import Testing
         _ = try await provider.refresh(root.url)
         try await client.pollChanges()
         let other = try make(server, scratch.url.appendingPathComponent("Other"))
-        try await DriveMutationTests().control(server, ["remoteChanges": [["file": ["id": "binary-a", "name": "Changed on phone.txt"]]]])
+        try await server.control(["remoteChanges": [["file": ["id": "binary-a", "name": "Changed on phone.txt"]]]])
         try await client.pollChanges()
         #expect(provider.cachedListing(root.url)?.contains { $0.name == "Changed on phone.txt" } == true)
         let relaunched = try make(server, scratch.url, id: client.accountID)
@@ -65,11 +65,11 @@ import Testing
         let root = DriveLocation(accountID: client.accountID).url
         let provider = DriveProvider(accountID: client.accountID, client: client)
         let rows = try await provider.refresh(root)
-        try await DriveMutationTests().control(server, ["offline": true])
+        try await server.control(["offline": true])
         #expect(try await provider.refresh(root).count == rows.count)
         #expect(client.isOffline)
         await #expect(throws: DriveError.offline) { try await client.rename("binary-a", to: "Must not send") }
-        try await DriveMutationTests().control(server, ["offline": false])
+        try await server.control(["offline": false])
         #expect(try await provider.refresh(root).count == rows.count)
         #expect(!client.isOffline)
         #expect(try await client.rename("binary-a", to: "Connected.txt").name == "Connected.txt")
@@ -85,7 +85,7 @@ import Testing
         #expect(try await client.download(result).data == Data("my first edit".utf8))
         #expect(await client.edits.pending().isEmpty)
         try Data("my second edit".utf8).write(to: session.localURL)
-        try await DriveMutationTests().control(server, ["conflictOnSave": true])
+        try await server.control(["conflictOnSave": true])
         await #expect(throws: DriveMutationError.conflict) { try await client.edits.save(session.id) }
         #expect(try await client.download(client.file(file.id)).data == Data("remote edit".utf8))
         #expect(try Data(contentsOf: session.localURL) == Data("my second edit".utf8))
@@ -109,9 +109,9 @@ import Testing
         #expect(await client.edits.pending().count == 1)
         #expect(try await client.edits.open(session.file).id == session.id)
         client.setOffline(false)
-        try await DriveMutationTests().control(server, ["omitETag": true])
+        try await server.control(["omitETag": true])
         await #expect(throws: DriveMutationError.conflict) { try await client.edits.save(session.id) }
-        try await DriveMutationTests().control(server, ["omitETag": false])
+        try await server.control(["omitETag": false])
         _ = try await client.upload(session.localURL, parentID: "root", replacingID: session.file.id)
         await #expect(throws: DriveMutationError.conflict) { try await client.edits.save(session.id) }
         let replaced = try await client.edits.replaceWithMine(session.id)
@@ -168,9 +168,9 @@ import Testing
         _ = try await client.listPage(shared)
         try await client.pollChanges()
         #expect(client.metadataCache.cursor("shared-drive-a") != nil)
-        try await DriveMutationTests().control(server, ["changeFaults": [503, 0]])
+        try await server.control(["changeFaults": [503, 0]])
         try await client.pollChanges()
-        try await DriveMutationTests().control(server, ["changeFaults": [410]])
+        try await server.control(["changeFaults": [410]])
         try await client.pollChanges()
         #expect(client.metadataCache.cursor("user") == nil)
         try await client.pollChanges()
@@ -188,7 +188,7 @@ import Testing
     }
     @Test func unverifiedProductionConditionalSaveCannotSendBytes() async throws {
         let server = try DriveMutationTests().server(), scratch = try Scratch()
-        let credentials = MemoryDriveCredentials(), id = UUID()
+        let credentials = MemoryCredentials(), id = UUID()
         let tokens = DriveTokenManager(configuration: server.config, accountID: id, credentials: credentials)
         let client = DriveClient(
             accountID: id, tokens: tokens,
@@ -235,8 +235,8 @@ import Testing
         let server = try DriveMutationTests().server(), scratch = try Scratch()
         let client = try make(server, scratch.url)
         let root = DriveLocation(accountID: client.accountID)
-        try await DriveMutationTests().control(server, ["searchPageSize": 1])
-        try await DriveMutationTests().control(server, ["remoteChanges": [["file": ["id": "binary-a", "description": "a fulltext needle"]]]])
+        try await server.control(["searchPageSize": 1])
+        try await server.control(["remoteChanges": [["file": ["id": "binary-a", "description": "a fulltext needle"]]]])
         #expect(try await client.search("fulltext needle", in: root, fullText: true).files.first?.id == "binary-a")
         let page = try await client.search("report", in: root)
         #expect(page.files.count == 1 && page.nextPageToken != nil)

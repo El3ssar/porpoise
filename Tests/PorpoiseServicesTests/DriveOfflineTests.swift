@@ -9,8 +9,7 @@ import Testing
 
 @Suite(.serialized) struct DriveOfflineTests {
     func stats(_ server: FakeDriveServer) async throws -> (requests: [String], concurrent: Int) {
-        let (data, _) = try await URLSession.shared.data(from: server.base.appendingPathComponent("__stats"))
-        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let json = try await server.stats()
         return (json["requests"] as? [String] ?? [], json["maxConcurrentMedia"] as? Int ?? 0)
     }
     private func files(_ root: URL) throws -> Int {
@@ -52,8 +51,7 @@ import Testing
         let changed = Data("new revision".utf8)
         let changedMD5 = Insecure.MD5.hash(data: changed).map { String(format: "%02x", $0) }.joined()
         media["kept-0"] = changed.base64EncodedString()
-        try await DriveMutationTests().control(
-            server,
+        try await server.control(
             [
                 "media": media,
                 "remoteChanges": [
@@ -67,10 +65,10 @@ import Testing
             ])
         try await client.pollChanges()
         await expectEventually(timeout: 30) { await store.snapshot().entries["kept-0"]?.item.revision == "revision-2" }
-        try await DriveMutationTests().control(server, ["remoteChanges": [["file": ["id": "kept-1", "trashed": true]]]])
+        try await server.control(["remoteChanges": [["file": ["id": "kept-1", "trashed": true]]]])
         try await client.pollChanges()
         await expectEventually(timeout: 30) { await store.snapshot().entries.count == 199 }
-        try await DriveMutationTests().control(server, ["remoteChanges": [["fileId": "kept-2", "removed": true]], "changeFaults": [410]])
+        try await server.control(["remoteChanges": [["fileId": "kept-2", "removed": true]], "changeFaults": [410]])
         try await client.pollChanges()
         await expectEventually(timeout: 30) { await store.snapshot().entries.count == 198 }
         let count = try self.files(store.directory.appendingPathComponent("objects"))

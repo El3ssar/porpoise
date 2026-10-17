@@ -20,7 +20,7 @@ import Testing
     @MainActor @Test func disconnectingADriveAccountLeavesNothing() async throws {
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/mutations.json")
         let server = try FakeDriveServer(fixture: fixture)
-        let credentials = MemoryDriveCredentials()
+        let credentials = MemoryCredentials()
         let suite = "porpoise-signout-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }

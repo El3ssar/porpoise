@@ -118,8 +118,7 @@ import Testing
         let thumbnail = try await client.thumbnail(file)
         #expect(try Data(contentsOf: thumbnail).starts(with: [137, 80, 78, 71]))
         #expect(try await client.thumbnail(file) == thumbnail)
-        let stats = try await URLSession.shared.data(from: server.base.appendingPathComponent("__stats")).0
-        let requests = try #require((try JSONSerialization.jsonObject(with: stats) as? [String: Any])?["requests"] as? [String])
+        let requests = try #require(try await server.stats()["requests"] as? [String])
         #expect(requests.filter { $0 == "/thumbnail/image" }.count == 1)
         let native = try await client.file("native")
         #expect(try await client.thumbnail(native).pathExtension == "pdf")

@@ -11,7 +11,7 @@ import Testing
         let server = try DriveMutationTests().server(), scratch = try Scratch()
         let defaults = MemoryDefaults()
         let accounts = DriveAccountStore(
-            defaults: defaults, credentials: MemoryDriveCredentials(), configuration: server.config,
+            defaults: defaults, credentials: MemoryCredentials(), configuration: server.config,
             baseURL: server.base.appendingPathComponent("drive/v3/"))
         let account = try await accounts.connect { url in Task { _ = try? await URLSession.shared.data(from: url) } }
         let client = try #require(accounts.client(for: account.id))

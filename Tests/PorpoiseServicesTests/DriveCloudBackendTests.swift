@@ -14,7 +14,7 @@ import Testing
     private func backend(_ server: FakeDriveServer, scratch: Scratch) -> (DriveCloudBackend, DriveAccountStore) {
         let defaults = MemoryDefaults()
         let store = DriveAccountStore(
-            defaults: defaults, credentials: MemoryDriveCredentials(), configuration: server.config,
+            defaults: defaults, credentials: MemoryCredentials(), configuration: server.config,
             baseURL: server.base.appendingPathComponent("drive/v3/"))
         return (DriveCloudBackend(store: store, avatarFolder: scratch.url.appendingPathComponent("avatars")), store)
     }

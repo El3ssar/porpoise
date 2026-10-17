@@ -22,7 +22,7 @@ extension DriveMutationTests {
         let renames: [(String, String)] = [
             (folder.id, "../escape"), (child.id, "../child.txt"), (first.id, "../first.txt"), (second.id, "../\u{301}second.txt"),
         ]
-        try await control(server, ["remoteChanges": renames.map { ["fileId": $0.0, "file": ["name": $0.1]] }])
+        try await server.control(["remoteChanges": renames.map { ["fileId": $0.0, "file": ["name": $0.1]] }])
         func url(_ id: String) async throws -> URL { try await client.file(id).location(accountID: client.accountID).url }
         let output = try scratch.folder("area/output")
         func copy(_ sources: [URL]) async -> RemoteTransferJob {

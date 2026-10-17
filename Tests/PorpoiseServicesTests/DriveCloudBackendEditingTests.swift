@@ -16,19 +16,12 @@ import Testing
     private func connected(_ server: FakeDriveServer, scratch: Scratch) async throws -> (DriveCloudBackend, DriveAccountStore, CloudAccount) {
         let defaults = MemoryDefaults()
         let store = DriveAccountStore(
-            defaults: defaults, credentials: MemoryDriveCredentials(), configuration: server.config,
+            defaults: defaults, credentials: MemoryCredentials(), configuration: server.config,
             baseURL: server.base.appendingPathComponent("drive/v3/"))
         let b = DriveCloudBackend(store: store, avatarFolder: scratch.url.appendingPathComponent("avatars"))
         let result = try await awaitCallback { c in _ = b.connect(.googleDrive, openBrowser: browser) { c.resume(returning: $0) } }
         guard case .success(let account) = result else { throw CloudEditError.notSupported }
         return (b, store, account)
-    }
-
-    private func control(_ server: FakeDriveServer, _ values: [String: Any]) async throws {
-        var request = URLRequest(url: server.base.appendingPathComponent("__control"))
-        request.httpMethod = "POST"
-        request.httpBody = try JSONSerialization.data(withJSONObject: values)
-        _ = try await URLSession.shared.data(for: request)
     }
 
     private func call<T>(_ start: (@escaping (T) -> Void) -> Void) async throws -> T {
@@ -89,7 +82,7 @@ import Testing
         #expect(try await drive.refresh(myDrive).contains { $0.url == created.url })
 
         // A refusal comes back in the message bar's words.
-        try await control(server, ["mutationFaults": [403]])
+        try await server.control(["mutationFaults": [403]])
         let refused = try await call { done in b.rename(created.url, to: "X") { done($0) } }
         guard case .failure(let error) = refused else { Issue.record("expected a refusal"); return }
         #expect(error.localizedDescription == "Google Drive didn’t allow it: your access to this item may have changed.")
@@ -107,7 +100,7 @@ import Testing
 
     @Test func missingAccountsFailCalmly() async throws {
         let store = DriveAccountStore(
-            defaults: MemoryDefaults(), credentials: MemoryDriveCredentials())
+            defaults: MemoryDefaults(), credentials: MemoryCredentials())
         let b = DriveCloudBackend(store: store, avatarFolder: FileManager.default.temporaryDirectory)
         let gone = URL(string: "gdrive://\(UUID().uuidString.lowercased())/my-drive/")!
         let created = try await call { done in b.createFolder(named: "x", in: gone) { done($0) } }

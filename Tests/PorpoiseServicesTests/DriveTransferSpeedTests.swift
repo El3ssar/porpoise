@@ -51,8 +51,7 @@ struct DriveTransferSpeedTests {
                     }.start()
                 }
                 #expect(job.errors.isEmpty && job.results.count == 200)
-                let stats = try await URLSession.shared.data(from: server.base.appendingPathComponent("__stats")).0
-                let json = try #require(try JSONSerialization.jsonObject(with: stats) as? [String: Any])
+                let json = try await server.stats()
                 let concurrent = try #require(json["maxConcurrentMedia"] as? Int)
                 print("TRANSFER_BATCH maxConcurrentMedia=\(concurrent) results=\(job.results.count) errors=\(job.errors.count)")
                 #expect(concurrent > 1 && concurrent <= 6)

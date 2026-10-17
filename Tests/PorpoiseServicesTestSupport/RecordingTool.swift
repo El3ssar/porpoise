@@ -1,20 +1,19 @@
 import Foundation
 import PorpoiseCore
-import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 
 /// Stands in for a command-line tool (curl, adb) that needs a server or a device we don't have: an executable script
 /// that records the arguments and stdin of every call, prints a canned reply and exits with a canned status.
-final class RecordingTool {
-    struct Call {
-        let args: [String]
-        let stdin: String
+public final class RecordingTool {
+    public struct Call {
+        public let args: [String]
+        public let stdin: String
     }
 
-    let path: String
+    public let path: String
     private let scratch: Scratch
 
-    init() throws {
+    public init() throws {
         scratch = try Scratch("tool")
         let d = RemoteParsing.quote(scratch.url.path)
         let script = try scratch.file(
@@ -34,13 +33,13 @@ final class RecordingTool {
     }
 
     /// What every call prints and how it exits, unless `call` (0-based) picks one call.
-    func reply(_ output: String, status: Int32 = 0, call: Int? = nil) throws {
+    public func reply(_ output: String, status: Int32 = 0, call: Int? = nil) throws {
         let suffix = call.map { "-\($0)" } ?? ""
         try scratch.file("reply" + suffix, output)
         try scratch.file("status" + suffix, "\(status)")
     }
 
-    var calls: [Call] {
+    public var calls: [Call] {
         let count = Int(scratch.read("count")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") ?? 0
         return (0..<count).map { n in
             let args = (try? Data(contentsOf: scratch.path("args-\(n)"))) ?? Data()

@@ -11,7 +11,7 @@ import Testing
 @MainActor @Suite(.serialized, .isolatedSettings) struct DriveEditingTests {
     private func setup() async throws -> (FakeDriveServer, DriveClient, DriveEditing, FileItem, Scratch) {
         let server = try DriveMutationTests().server(), scratch = try Scratch()
-        let credentials = MemoryDriveCredentials()
+        let credentials = MemoryCredentials()
         let id = UUID()
         try credentials.save("fixture-refresh", clientID: server.config.clientID, accountID: id)
         let tokens = DriveTokenManager(configuration: server.config, accountID: id, credentials: credentials)
@@ -97,7 +97,7 @@ import Testing
         editing.open(item)
         await expectEventually { editing.entry(for: item.url) != nil }
         let entry = try #require(editing.entry(for: item.url))
-        try await DriveMutationTests().control(server, ["conflictOnSave": true])
+        try await server.control(["conflictOnSave": true])
         try Data("mine".utf8).write(to: entry.localURL)
         await expectEventually { editing.mark(for: item.url) == .conflict }
         let conflicted = try #require(editing.entry(for: item.url))
@@ -132,7 +132,7 @@ import Testing
         editing.open(item)
         await expectEventually { editing.entry(for: item.url) != nil }
         let entry = try #require(editing.entry(for: item.url))
-        try await DriveMutationTests().control(server, ["conflictOnSave": true])
+        try await server.control(["conflictOnSave": true])
         try Data("mine wins".utf8).write(to: entry.localURL)
         await expectEventually { editing.mark(for: item.url) == .conflict }
         editing.replaceWithMine(entry.id)

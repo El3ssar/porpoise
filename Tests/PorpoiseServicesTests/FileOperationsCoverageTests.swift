@@ -6,42 +6,6 @@ import Testing
 
 @testable import PorpoiseServices
 
-/// A user who confirms everything and ticks "Do not ask again". Never agrees to authenticate.
-private final class DontAskAgainUI: FileOperationsUI {
-    private(set) var questions: [PorpoiseServices.Confirmation] = []
-    private var waiting: [UUID: CheckedContinuation<Void, Never>] = [:]
-
-    func confirm(_ question: PorpoiseServices.Confirmation, window: AnyObject?) -> (confirmed: Bool, dontAskAgain: Bool) {
-        questions.append(question)
-        return question.confirmTitle == "Authenticate" ? (false, false) : (true, true)
-    }
-
-    func showErrors(_ errors: [String], window: AnyObject?) { Issue.record("Unexpected errors: \(errors)") }
-    func resolveConflict(_ info: ConflictInfo, kind: FileOperationKind) -> ConflictAnswer { ConflictAnswer(.cancel) }
-    func jobStarted(_ activity: Activity) {}
-    func jobProgressed(_ activity: Activity, _ progress: JobProgress) {}
-    func showAuthorizationError(_ message: String) {}
-
-    func jobFinished(_ activity: Activity) {
-        let w = waiting
-        waiting = [:]
-        w.values.forEach { $0.resume() }
-    }
-
-    /// Waits for the next job to finish; fails the test after `timeout` instead of hanging.
-    @MainActor func nextJobFinished(timeout: TimeInterval = 20) async {
-        let id = UUID()
-        await withCheckedContinuation { c in
-            waiting[id] = c
-            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [self] in
-                guard let c = waiting.removeValue(forKey: id) else { return }
-                Issue.record("No job finished within \(Int(timeout)) seconds")
-                c.resume()
-            }
-        }
-    }
-}
-
 /// FileOperationsController's questions ("Do not ask again", emptying a Trash, volumes without one), conflicts
 /// without anyone to ask, authentication for several items, and putting items back where they can't be listed.
 @MainActor @Suite(.isolatedSettings) struct FileOperationsCoverageTests {
@@ -52,14 +16,14 @@ private final class DontAskAgainUI: FileOperationsUI {
     @Test func deletingWithDoNotAskAgainStopsAsking() async throws {
         let s = try Scratch()
         let f = try s.file("old.txt")
-        let ui = DontAskAgainUI()
+        let ui = ScriptedUI(dontAskAgain: true)
         let c = FileOperationsController()
         c.ui = ui
         #expect(Settings.shared.confirmDelete)
         c.delete([f], window: nil)
         await ui.nextJobFinished()
         #expect(!Settings.shared.confirmDelete)
-        #expect(s.listing().isEmpty && ui.questions.count == 1)
+        #expect(s.listing().isEmpty && ui.questions.count == 1 && ui.errors.isEmpty)
     }
 
     @Test func trashingWithDoNotAskAgainStopsAsking() async throws {
@@ -68,14 +32,14 @@ private final class DontAskAgainUI: FileOperationsUI {
         let f = disk.volume.appendingPathComponent("notes.txt")
         try Data("x".utf8).write(to: f)
         Settings.shared.confirmTrash = true
-        let ui = DontAskAgainUI()
+        let ui = ScriptedUI(dontAskAgain: true)
         let c = FileOperationsController()
         c.ui = ui
         c.trash([f], window: nil)
         await ui.nextJobFinished()
         #expect(!Settings.shared.confirmTrash)
         #expect(!FileJob.itemExists(at: f))
-        #expect(ui.questions.map(\.message) == ["Do you really want to move “notes.txt” to the Trash?"])
+        #expect(ui.questions.map(\.message) == ["Do you really want to move “notes.txt” to the Trash?"] && ui.errors.isEmpty)
     }
 
     // MARK: Emptying the Trash
@@ -93,13 +57,13 @@ private final class DontAskAgainUI: FileOperationsUI {
     @Test func emptyingDeletesEveryTrashFoldersItems() async throws {
         let s = try Scratch()
         try s.file("trash1/a.txt"); try s.file("trash1/folder/inner.txt"); try s.file("trash2/b.txt")
-        let ui = DontAskAgainUI()
+        let ui = ScriptedUI(dontAskAgain: true)
         let c = FileOperationsController()
         c.ui = ui
         c.emptyTrash([s.path("trash1"), s.path("trash2")], window: nil)
         await ui.nextJobFinished()
         #expect(s.listing("trash1").isEmpty && s.listing("trash2").isEmpty)
-        #expect(!Settings.shared.confirmEmptyTrash)
+        #expect(!Settings.shared.confirmEmptyTrash && ui.errors.isEmpty)
 
         // Not asked any more.
         try s.file("trash1/c.txt")

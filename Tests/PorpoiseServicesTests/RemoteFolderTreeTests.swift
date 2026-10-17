@@ -51,10 +51,7 @@ import Testing
         #expect(folder.children?.isEmpty == true && !folder.isExpandable)
         #expect(provider.cachedListing(folder.url)?.count == 2)
         func change(_ file: [String: Any]) async throws {
-            var request = URLRequest(url: server.base.appendingPathComponent("__control"))
-            request.httpMethod = "POST"
-            request.httpBody = try JSONSerialization.data(withJSONObject: ["remoteChanges": [["fileId": "folder-a", "file": file]]])
-            _ = try await URLSession.shared.data(for: request)
+            try await server.control(["remoteChanges": [["fileId": "folder-a", "file": file]]])
         }
         try await change(["name": "Renamed Atlas"])
         provider.invalidate(folder: root)
