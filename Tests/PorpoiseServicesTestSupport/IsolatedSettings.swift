@@ -14,13 +14,13 @@ public struct IsolatedSettings: TestTrait, SuiteTrait, TestScoping {
     ) async throws {
         guard testCase != nil else { return try await function() }  // the suite itself: each test gets its own
         await SettingsTurn.shared.acquire()
-        let previous = Settings.store, previousTesting = Settings.isTesting
+        let previous = Settings.store
         Settings.store = MemoryDefaults()
+        // Stays set afterwards: the process is a test run, and a later test must never write the real ~/Library.
         Settings.isTesting = true
         var failure: Error?
         do { try await function() } catch { failure = error }
         Settings.store = previous
-        Settings.isTesting = previousTesting
         await SettingsTurn.shared.release()
         if let failure { throw failure }
     }

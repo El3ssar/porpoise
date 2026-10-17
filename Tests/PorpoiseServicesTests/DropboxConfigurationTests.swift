@@ -22,7 +22,7 @@ struct DropboxConfigurationTests {
         #expect(!DropboxConfiguration.selected(defaults: MemoryDefaults(), environment: [:], bundle: emptyBundle).isConfigured)
         let defaults = MemoryDefaults()
         func selected(_ environment: [String: String] = [:]) -> DropboxConfiguration {
-            .selected(defaults: defaults, environment: environment, bundle: bundle)
+            .selected(defaults: defaults, environment: environment, bundle: bundle, testing: true)  // a test instance reads the environment
         }
         #expect(selected().appKey == "bundled-key")
         defaults.set(" settings-key ", forKey: "dropboxAppKey")
@@ -73,40 +73,39 @@ struct DropboxConfigurationTests {
         let fixed = try CloudOAuthLoopback(port: port)
         #expect(fixed.redirectURL.absoluteString == "http://127.0.0.1:\(port)/oauth/callback")
     }
+    /// The registered port first, then the next two in order; all three busy: a message that names them. Checked
+    /// against a scripted set of busy ports: real sockets close asynchronously, so a port a test just released can
+    /// still look busy (the flake in #2649), and one another process takes can't be predicted.
     @Test func busyDropboxPortsFallBackInOrderAndExplainExhaustion() throws {
-        // Keep fixture ports below macOS's ephemeral range: concurrent HTTP tests can immediately reclaim
-        // an OS-selected port after release. Probe an adjacent range and hold blockers through each assertion.
-        var blockers: [CloudOAuthLoopback] = []
-        var base: UInt16 = 0
-        for _ in 0..<100 {
-            let candidate = UInt16.random(in: 20000...40000)
-            do {
-                let first = try CloudOAuthLoopback(port: candidate)
-                let second = try CloudOAuthLoopback(port: candidate + 1)
-                let third = try CloudOAuthLoopback(port: candidate + 2)
-                blockers = [first, second, third]; base = candidate; break
-            } catch is CloudOAuthLoopback.PortInUse { continue }
+        let configuration = DropboxConfiguration(appKey: "fixture", loopbackPort: 30000)
+        #expect(configuration.loopbackPorts == [30000, 30001, 30002])
+        func first(busy: Set<UInt16>) throws -> UInt16 {
+            var tried: [UInt16] = []
+            let port: UInt16 = try configuration.makeLoopbackListener { port in
+                tried.append(port)
+                if busy.contains(port) { throw CloudOAuthLoopback.PortInUse(port: port) }
+                return port
+            }
+            #expect(tried == Array(configuration.loopbackPorts.prefix(tried.count)))
+            return port
         }
-        try #require(blockers.count == 3)
-        let configuration = DropboxConfiguration(appKey: "fixture", loopbackPort: base)
-        // Release P+1 and P+2, leaving P busy.
-        blockers.removeLast(); blockers.removeLast()
-        func assertFallback(_ port: UInt16) throws {
-            let fallback = try configuration.makeLoopbackListener()
-            #expect(fallback.redirectURL.port == Int(port))
-        }
-        try assertFallback(base + 1)
-        blockers.append(try CloudOAuthLoopback(port: base + 1))
-        try assertFallback(base + 2)
-        blockers.append(try CloudOAuthLoopback(port: base + 2))
-        #expect(throws: DropboxCallbackError.portsBusy([base, base + 1, base + 2])) {
-            _ = try configuration.makeLoopbackListener()
-        }
+        #expect(try first(busy: []) == 30000)
+        #expect(try first(busy: [30000]) == 30001)
+        #expect(try first(busy: [30000, 30001]) == 30002)
+        #expect(try first(busy: [30001]) == 30000)
+        #expect(throws: DropboxCallbackError.portsBusy([30000, 30001, 30002])) { _ = try first(busy: [30000, 30001, 30002]) }
         let error = DropboxCallbackError.portsBusy(configuration.loopbackPorts).localizedDescription
         #expect(error.contains("in use") && error.contains("try again"))
         #expect(configuration.loopbackPorts.allSatisfy { error.contains(String($0)) })
-        blockers.removeFirst(); try assertFallback(base)
-        withExtendedLifetime(blockers) {}
+    }
+
+    /// On real sockets: a port held by another listener is skipped. The held one is never released during the test.
+    @Test func aRealBusyPortIsSkipped() throws {
+        let held = try CloudOAuthLoopback(port: 0)
+        let port = try #require(held.redirectURL.port.flatMap { UInt16(exactly: $0) })
+        let listener = try DropboxConfiguration(appKey: "fixture", loopbackPort: port).makeLoopbackListener()
+        #expect(listener.redirectURL.port != Int(port))
+        withExtendedLifetime(held) {}
         let ephemeral = try DropboxConfiguration(appKey: "fixture", loopbackPort: 0).makeLoopbackListener()
         #expect(ephemeral.redirectURL.port != 0)
     }
