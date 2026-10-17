@@ -265,7 +265,10 @@ public final class DirectoryModel {
     /// undo a view mode the user picked in the meantime.
     private var dynamicViewPending = true
 
-    public init(location: URL) {
+    private let prefetchFolders: Bool
+
+    public init(location: URL, prefetchFolders: Bool = true) {
+        self.prefetchFolders = prefetchFolders
         self.location = location
         self.props = Self.storedProps(for: location)
         applyCloudView()
@@ -538,7 +541,7 @@ public final class DirectoryModel {
                     for expandedURL in self.expanded { self.loadChildren(of: expandedURL) }
                     self.onLoaded?()
                     let folders = self.rows.filter { $0.depth == 0 && $0.item.isBrowsableFolder }.map { $0.item.url }
-                    self.drivePrefetch = Task(priority: .utility) { await provider.prefetch(folders) }
+                    if self.prefetchFolders { self.drivePrefetch = Task(priority: .utility) { await provider.prefetch(folders) } }
                 } catch is CancellationError {
                     return
                 } catch {

@@ -6,6 +6,7 @@ import PorpoiseServices
 final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate {
     private let outline = FolderOutlineView()
     private let scroll = NSScrollView()
+    private var remoteTree: RemoteFolderTree?
     private var root: Node
     var onNavigate: ((URL, Bool) -> Void)?
     var currentURL: URL? { didSet { if currentURL != oldValue { followCurrent() } } }
@@ -156,6 +157,11 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     // MARK: Following the view
 
     private func resetRoot() {
+        if let target = currentURL, RemoteFS.isRemote(target) {
+            showRemote(target)
+            return
+        }
+        remoteTree = nil
         let inHome = currentURL.map(Self.isInHome) ?? true
         root = Node(Settings.shared.foldersLimitToHome && inHome ? Self.home : URL(fileURLWithPath: "/"))
         outline.reloadData()
@@ -165,7 +171,17 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
 
     /// Expands down to the current folder and selects it.
     private func followCurrent() {
-        guard let target = currentURL, target.isFileURL else { return }
+        guard let target = currentURL else { return }
+        if RemoteFS.isRemote(target) {
+            if let tree = remoteTree, let node = tree.find(target) {
+                selectRemote(node, in: tree.root)
+            } else {
+                showRemote(target)
+            }
+            return
+        }
+        if remoteTree != nil { resetRoot(); return }
+        guard target.isFileURL else { return }
         let home = Self.home
         if Settings.shared.foldersLimitToHome && (root.url.path == home.path) != Self.isInHome(target) { resetRoot(); return }
         var chain: [URL] = []
@@ -190,6 +206,51 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         }
         outline.selectRowIndexes([row], byExtendingSelection: false)
         outline.scrollRowToVisible(row)
+    }
+
+    /// Remote locations have a visible root: their opaque IDs are never treated as local paths or names.
+    private func showRemote(_ url: URL) {
+        let tree = RemoteFolderTree(url: url)
+        tree.showHidden = showHidden
+        remoteTree = tree
+        tree.onChange = { [weak self, weak tree] node in
+            guard let self, let tree, self.remoteTree === tree else { return }
+            // DirectoryModel can paint a cached page synchronously, including inside shouldExpandItem.
+            // Let AppKit finish that disclosure operation before changing its rows.
+            DispatchQueue.main.async { [weak self, weak tree, weak node] in
+                guard let self, let tree, let node, self.remoteTree === tree, tree.find(node.url) === node else { return }
+                self.outline.reloadItem(node, reloadChildren: true)
+                self.restoreRemoteExpansion(tree.root)
+                if let current = self.currentURL, let selected = tree.find(current) { self.selectRemote(selected, in: tree.root) }
+            }
+        }
+        outline.reloadData()
+        outline.expandItem(tree.root)
+        selectRemote(tree.root, in: tree.root)
+    }
+
+    private func restoreRemoteExpansion(_ node: RemoteFolderTree.Node) {
+        if node.isExpanded { outline.expandItem(node) }
+        for child in node.children ?? [] { restoreRemoteExpansion(child) }
+    }
+
+    private func selectRemote(_ node: RemoteFolderTree.Node, in ancestor: RemoteFolderTree.Node) {
+        if ancestor !== node {
+            for child in ancestor.children ?? [] where containsRemote(node, in: child) {
+                outline.expandItem(ancestor)
+                selectRemote(node, in: child)
+                return
+            }
+        }
+        let row = outline.row(forItem: node)
+        if row >= 0 {
+            outline.selectRowIndexes([row], byExtendingSelection: false)
+            outline.scrollRowToVisible(row)
+        }
+    }
+
+    private func containsRemote(_ node: RemoteFolderTree.Node, in ancestor: RemoteFolderTree.Node) -> Bool {
+        ancestor === node || (ancestor.children ?? []).contains { containsRemote(node, in: $0) }
     }
 
     /// The folder with symlinks resolved (realpath keeps /private, unlike URL.resolvingSymlinksInPath).
@@ -224,24 +285,50 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     // MARK: Outline data
 
     func outlineView(_ o: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
-        ((item as? Node) ?? root).load(showHidden: showHidden).count
+        if remoteTree != nil {
+            return item == nil ? 1 : (item as? RemoteFolderTree.Node)?.children?.count ?? 0
+        }
+        return ((item as? Node) ?? root).load(showHidden: showHidden).count
     }
 
     func outlineView(_ o: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
-        ((item as? Node) ?? root).load(showHidden: showHidden)[index]
+        if let tree = remoteTree {
+            return item == nil ? tree.root! : (item as! RemoteFolderTree.Node).children![index]
+        }
+        return ((item as? Node) ?? root).load(showHidden: showHidden)[index]
     }
 
     func outlineView(_ o: NSOutlineView, isItemExpandable item: Any) -> Bool {
-        (item as? Node)?.isExpandable(showHidden: showHidden) ?? false
+        if let node = item as? RemoteFolderTree.Node { return node.isExpandable }
+        return (item as? Node)?.isExpandable(showHidden: showHidden) ?? false
     }
 
     func outlineView(_ o: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
-        guard let n = item as? Node else { return nil }
+        guard let url = nodeURL(item) else { return nil }
         let v = (o.makeView(withIdentifier: Self.cellID, owner: self) as? NSTableCellView) ?? makeCell()
-        v.imageView?.image = Icons.shared.image(IconTheme.folderIconName(n.url), size: 16)
-        v.textField?.stringValue = n.name
+        v.imageView?.image = Icons.shared.image(IconTheme.folderIconName(url), size: 16)
+        if let n = item as? RemoteFolderTree.Node {
+            v.textField?.stringValue = n.name + (n.isLoading ? " — Loading…" : "")
+            v.toolTip = n.message
+            v.setAccessibilityLabel(n.name + (n.isLoading ? ", loading" : ""))
+        } else {
+            v.textField?.stringValue = (item as? Node)?.name ?? ""
+            v.toolTip = nil
+            v.setAccessibilityLabel(nil)
+        }
         return v
     }
+
+    func outlineView(_ outlineView: NSOutlineView, shouldExpandItem item: Any) -> Bool {
+        (item as? RemoteFolderTree.Node)?.expand()
+        return true
+    }
+
+    func outlineViewItemDidCollapse(_ notification: Notification) {
+        (notification.userInfo?["NSObject"] as? RemoteFolderTree.Node)?.collapse()
+    }
+
+    private func nodeURL(_ item: Any?) -> URL? { (item as? Node)?.url ?? (item as? RemoteFolderTree.Node)?.url }
 
     private func makeCell() -> NSTableCellView {
         let v = NSTableCellView()
@@ -266,21 +353,21 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     // MARK: Mouse
 
     @objc private func clicked() {
-        guard let n = outline.item(atRow: outline.clickedRow) as? Node else { return }
-        onNavigate?(n.url, NSEvent.modifierFlags.contains(.command))
+        guard let url = nodeURL(outline.item(atRow: outline.clickedRow)) else { return }
+        onNavigate?(url, NSEvent.modifierFlags.contains(.command))
     }
 
     /// Return opens the folder selected with the keyboard (⌘Return: in a new tab).
     private func openSelected() {
-        guard let n = outline.item(atRow: outline.selectedRow) as? Node else { return }
-        onNavigate?(n.url, NSEvent.modifierFlags.contains(.command))
+        guard let url = nodeURL(outline.item(atRow: outline.selectedRow)) else { return }
+        onNavigate?(url, NSEvent.modifierFlags.contains(.command))
     }
 
     /// Middle click opens in a new tab; other buttons (mouse back/forward) go up the responder chain.
     override func otherMouseUp(with event: NSEvent) {
         guard event.buttonNumber == 2 else { return super.otherMouseUp(with: event) }
         let row = outline.row(at: outline.convert(event.locationInWindow, from: nil))
-        if let n = outline.item(atRow: row) as? Node { onNavigate?(n.url, true) }
+        if let url = nodeURL(outline.item(atRow: row)) { onNavigate?(url, true) }
     }
 }
 
@@ -289,11 +376,11 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
 extension FoldersPanel: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        if let n = outline.item(atRow: outline.clickedRow) as? Node {
+        if let url = nodeURL(outline.item(atRow: outline.clickedRow)) {
             let open = menu.addItem(withTitle: "Open in New Tab", action: #selector(openInTab(_:)), keyEquivalent: "")
-            open.target = self; open.representedObject = n.url; open.image = Icons.shared.menuIcon("tab-new")
+            open.target = self; open.representedObject = url; open.image = Icons.shared.menuIcon("tab-new")
             let props = menu.addItem(withTitle: "Properties", action: #selector(props(_:)), keyEquivalent: "")
-            props.target = self; props.representedObject = n.url; props.image = Icons.shared.menuIcon("document-properties")
+            props.target = self; props.representedObject = url; props.image = Icons.shared.menuIcon("document-properties")
             menu.addItem(.separator())
         }
         let hidden = menu.addItem(withTitle: "Show Hidden Files", action: #selector(toggleHidden), keyEquivalent: "")
