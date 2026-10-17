@@ -6,6 +6,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     TabBarDelegate, PlacesPanelDelegate, NSSplitViewDelegate
 {
 
+    var driveMediaQuickLook: DriveMediaPreviewPanel?
     var driveQuickLook: Task<Void, Never>?
     var driveQuickLookURLs: [URL: URL] = [:]
     var driveQuickLookLoading: Set<URL> = []
@@ -396,6 +397,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
 
     func windowWillClose(_ notification: Notification) {
         driveQuickLook?.cancel()
+        driveMediaQuickLook?.close()
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
         AppDelegate.shared.saveSession()

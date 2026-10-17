@@ -18,6 +18,25 @@ extension MainWindowController: QLPreviewPanelDataSource, QLPreviewPanelDelegate
         panel.dataSource = nil; panel.delegate = nil
     }
 
+    @discardableResult func showDriveMediaQuickLook() -> Bool {
+        guard quickLookURLs.count == 1, let url = quickLookURLs.first,
+            let drive = RemoteFS.provider(for: url) as? DriveProvider, let client = drive.client,
+            let file = drive.metadata(for: url), file.mimeType.hasPrefix("video/") || file.mimeType.hasPrefix("audio/"),
+            let window
+        else { return false }
+        if driveMediaQuickLook == nil {
+            let panel = DriveMediaPreviewPanel()
+            panel.onArrow = { [weak self] event in
+                guard let self else { return }
+                self.view.list.keyDown(with: event)
+                if !self.showDriveMediaQuickLook() { self.driveMediaQuickLook?.close(); self.quickLook(nil) }
+            }
+            driveMediaQuickLook = panel
+        }
+        driveMediaQuickLook?.show(file, client: client, relativeTo: window)
+        return true
+    }
+
     func prepareDriveQuickLook() {
         driveQuickLook?.cancel(); driveQuickLookLoading = []; driveQuickLookURLs = [:]
         let urls = quickLookURLs.filter { $0.scheme == "gdrive" && driveQuickLookURLs[$0] == nil }
@@ -27,10 +46,24 @@ extension MainWindowController: QLPreviewPanelDataSource, QLPreviewPanelDelegate
                 guard let drive = RemoteFS.provider(for: url) as? DriveProvider else { continue }
                 do {
                     self?.view.statusBar.showMessage("Loading preview…")
-                    let local = try await drive.preview(url)
+                    guard let client = drive.client else { throw DriveError.reconnect }
+                    let file: DriveFile
+                    if let cached = drive.metadata(for: url) {
+                        file = cached
+                    } else {
+                        guard let location = DriveLocation(url: url), case .folder(let id, _) = location.collection else {
+                            throw DriveError.invalidLocation
+                        }
+                        file = try await client.file(id, resourceKey: location.resourceKey)
+                    }
+                    _ = try await client.progressivePreview(file) { [weak self] local in
+                        try Task.checkCancellation()
+                        guard let self else { return }
+                        self.driveQuickLookURLs[url] = local
+                        QLPreviewPanel.shared().reloadData()
+                    }
                     try Task.checkCancellation()
                     guard let self else { return }
-                    self.driveQuickLookURLs[url] = local
                     self.driveQuickLookLoading.remove(url)
                     QLPreviewPanel.shared().reloadData()
                 } catch {
