@@ -501,7 +501,7 @@ public final class DirectoryModel {
             onLoaded?()
             return
         }
-        if let provider = RemoteFS.provider(for: url) as? DriveProvider {
+        if let provider = RemoteFS.provider(for: url) as? CloudFileProvider {
             let cached = provider.cachedListing(url)
             if let cached {
                 let listed = withEdits(cached, in: url)
@@ -906,7 +906,7 @@ public final class DirectoryModel {
 
     /// Lists an expanded folder off the main thread (it may be huge or on a slow mount), then shows its rows.
     private func loadChildren(of url: URL) {
-        if let drive = RemoteFS.provider(for: url) as? DriveProvider {
+        if let drive = RemoteFS.provider(for: url) as? CloudFileProvider {
             if let cached = drive.cachedListing(url) { children[url] = cached }
             let token = loadToken
             driveChildren[url]?.cancel()
@@ -936,7 +936,7 @@ public final class DirectoryModel {
     /// Hover is speculative and must never hold up a disclosure click.
     public func prefetch(_ item: FileItem?) {
         driveHover?.cancel()
-        guard let item, item.isBrowsableFolder, let drive = RemoteFS.provider(for: item.url) as? DriveProvider else { return }
+        guard let item, item.isBrowsableFolder, let drive = RemoteFS.provider(for: item.url) as? CloudFileProvider else { return }
         driveHover = Task(priority: .utility) { await drive.prefetch([item.url]) }
     }
 

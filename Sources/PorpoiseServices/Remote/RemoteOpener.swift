@@ -33,10 +33,10 @@ public enum RemoteOpener {
     public static func open(_ item: FileItem, using launch: ((URL) -> Void)? = nil) {
         let launch = launch ?? openFile
         guard let p = RemoteFS.provider(for: item.url), RemoteParsing.isSafeName(item.url.lastPathComponent) else { return }
-        if item.url.scheme == "gdrive" {
+        if PlacesModel.isCloud(item.url) {
             // A file the account may change: edited in place, its saves go back to Drive as new versions.
-            if DriveEditing.shared.canEdit(item) {
-                DriveEditing.shared.open(item, using: launch) { opened in if !opened { openCopy(item, provider: p, launch: launch) } }
+            if CloudEditing.shared.canEdit(item) {
+                CloudEditing.shared.open(item, using: launch) { opened in if !opened { openCopy(item, provider: p, launch: launch) } }
                 return
             }
             openCopy(item, provider: p, launch: launch)
@@ -72,7 +72,7 @@ public enum RemoteOpener {
 
     /// A copy that stays on this Mac (read-only items, Google Docs' exports): never sent back.
     private static func openCopy(_ item: FileItem, provider p: RemoteProvider, launch: @escaping (URL) -> Void) {
-        if let drive = p as? DriveProvider {
+        if let drive = p as? CloudFileProvider {
             Task { @MainActor in
                 do { launch(try await drive.preview(item.url)) } catch {
                     if !(error is CancellationError) { StatusCenter.error("Could not open “\(item.name)”: \(error.localizedDescription)") }

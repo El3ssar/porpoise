@@ -83,8 +83,7 @@ public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
 
     public func source(for url: URL) -> CloudContentSource? {
         if let resolveSource { return resolveSource(url) }
-        guard let id = accounts.backend?.accountID(for: url) else { return nil }
-        return accounts.backend?.content(for: id)
+        return accounts.backend?.content(for: url)
     }
 
     public func activate() {

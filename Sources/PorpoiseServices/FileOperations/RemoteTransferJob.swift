@@ -129,6 +129,7 @@ final class RemoteTransferJob {
 
     func item(_ url: URL) throws -> FileItem? {
         if url.isFileURL { return FileItem.load(url) }
+        if let cloud = RemoteFS.provider(for: url) as? CloudTransferProvider { return try cloud.transferItem(url) }
         if let provider = RemoteFS.provider(for: url) as? DriveProvider, let client = provider.client,
             let location = DriveLocation(url: url), case .folder(let id, _) = location.collection
         {
@@ -165,6 +166,9 @@ final class RemoteTransferJob {
     }
 
     func transfer(_ source: URL, into folder: URL) throws -> URL? {
+        if RemoteFS.provider(for: source) is CloudTransferProvider || RemoteFS.provider(for: folder) is CloudTransferProvider {
+            return try transferCloud(source, into: folder)
+        }
         if source.scheme == "gdrive" || folder.scheme == "gdrive" { return try transferDrive(source, into: folder) }
         try control.checkCancellation()
         guard source.isFileURL || RemoteFS.provider(for: source) != nil else {
@@ -328,13 +332,15 @@ final class RemoteTransferJob {
 
     func stagedFile(
         _ source: URL, to target: URL, replacing: Bool, modified: Date?, beforeSourceRemoval: (() throws -> Void)? = nil,
-        sourceDownloadOperationID: UUID? = nil
+        sourceDownloadOperationID: UUID? = nil, sourceRemovalHandled: Bool = false
     ) throws {
         let scratch = try Self.temporaryFolder()
         defer { try? FileManager.default.removeItem(at: scratch) }
         let downloaded: URL
         if let drive = RemoteFS.provider(for: source) as? DriveProvider, let operationID = sourceDownloadOperationID {
             downloaded = try drive.download(source, into: scratch, operationID: operationID)
+        } else if let cloud = RemoteFS.provider(for: source) as? CloudTransferProvider, let operationID = sourceDownloadOperationID {
+            downloaded = try cloud.downloadTransfer(source, into: scratch, operationID: operationID)
         } else {
             downloaded = try RemoteFS.provider(for: source)?.download(source, into: scratch) ?? source
         }
@@ -414,7 +420,7 @@ final class RemoteTransferJob {
                 guard renamex_np(staged.path, target.path, UInt32(RENAME_EXCL)) == 0 else { throw RemoteError.exists(target.lastPathComponent) }
             }
             try beforeSourceRemoval?()
-            if kind == .move { try Shell.withoutTransferControl { try removeOriginal(source) } }
+            if kind == .move, !sourceRemovalHandled { try Shell.withoutTransferControl { try removeOriginal(source) } }
         }
     }
 

@@ -74,6 +74,14 @@ public actor DropboxEditStore {
         session.file = result; session.sentHash = try result.contentHash ?? DropboxContentHash.hash(session.localURL)
         session.state = "saved"; session.uploadOperation = nil; try persist(session); return session
     }
+    /// Explicit Replace with Mine still supplies an atomic revision condition; a concurrent edit conflicts again.
+    public func replace(_ id: UUID, expectedCurrent: DropboxItem) async throws -> Session {
+        guard var session = sessions[id], session.file.id == expectedCurrent.id, expectedCurrent.rev != nil, !saving.contains(id) else {
+            throw DropboxError.conflict
+        }
+        session.file = expectedCurrent; session.uploadOperation = nil; try persist(session)
+        return try await save(id)
+    }
     private func persist(_ session: Session) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let path = directory.appendingPathComponent(session.id.uuidString + ".json")

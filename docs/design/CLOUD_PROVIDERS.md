@@ -72,9 +72,10 @@ separate evidence; fake-server tests do not authorize real-account probing.
 
 ## Dropbox engine (W-73)
 
-`Services/Dropbox` is deliberately engine-only. `CloudProvider.dropbox.isAvailable` remains false, and no
-app view or RemoteFS registry is changed. The UI work item can build its provider descriptor and backend
-adapter on the following capabilities:
+`CloudProviderDescriptor` drives Connect, sidebar roots, Settings, browser links and deletion/Undo policy.
+`CompositeCloudBackend` composes Drive and Dropbox account adapters. `CloudFileProvider` supplies cached
+browsing, previews and playback; `CloudTransferProvider` preserves opaque destination IDs in Activity.
+Dropbox is enabled. The implementation uses the following engine capabilities:
 
 - `DropboxAccountStore`: PKCE loopback connection, duplicate/wrong-account checks, offline refresh credentials,
   persisted account metadata, reconnect, disconnect, and foreground change-feed lifecycle. App key selection is
@@ -109,11 +110,13 @@ non-idempotent response remains `uncertain`; callers must show it for review rat
 Upload finish uncertainty never restarts as unconditional overwrite. File deletion uses `parent_rev`. Folder deletion
 requires explicit confirmation that automatic Undo is unavailable. Restore can overwrite the current item and therefore
 requires an explicit `confirmedMayReplace`; the default fails closed. These limitations must be represented in the
-future UI's capabilities and confirmation flow. The engine never calls permanent-delete endpoints.
+UI's capabilities and confirmation flow. The engine never calls permanent-delete endpoints.
 
-`DropboxAccountStore.setActive` and `checkForChanges` are the future backend's lifecycle forwarding points; constructing
-an engine account alone does not register it in the app or start a live account probe. UI integration must preserve that
-explicit lifecycle and use the service's retained client/content source rather than constructing duplicate offline stores.
+`DropboxCloudBackend` owns explicit foreground/check lifecycle, retained namespace providers and shared offline
+sources. Cloud editing routes through `CloudEditing` with durable conditional Dropbox save-back. Deletes
+require confirmation and offer no automatic Undo. Transfers between Dropbox and other remote protocols
+currently require an intermediate local folder; local copy in/out and same-account native copies are supported.
+Settings accepts the public Dropbox app key; app packaging embeds `PORPOISE_DROPBOX_APP_KEY` as `DropboxAppKey`.
 
 The loopback fixture is `scripts/fake-dropbox-server.py`. It supports latency, per-response bandwidth, aggregate bandwidth,
 opaque pagination, namespace-header inspection, strict revision conflicts, lost append/finish/mutation responses and corrupt

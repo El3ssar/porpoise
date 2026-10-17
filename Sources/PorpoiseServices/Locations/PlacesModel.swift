@@ -416,7 +416,7 @@ public final class PlacesModel {
     // MARK: Editing
 
     /// Schemes of cloud accounts' folders: added to Places (not Remote), with the cloud folder icon.
-    public static let cloudSchemes: Set<String> = ["gdrive"]
+    public static let cloudSchemes: Set<String> = Set(CloudProviderDescriptor.catalog.filter(\.available).compactMap(\.scheme))
     public static func isCloud(_ url: URL) -> Bool { cloudSchemes.contains(url.scheme?.lowercased() ?? "") }
 
     public func add(_ url: URL, title: String? = nil) {

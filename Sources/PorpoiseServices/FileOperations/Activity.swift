@@ -83,7 +83,7 @@ public final class Activity: Identifiable {
 
     /// Cloud items have ids in their URLs: their names come from the listing ("Q3", "My Drive").
     public static func name(_ url: URL) -> String {
-        url.scheme == "gdrive" ? RemoteFS.displayName(for: url) : url.lastPathComponent
+        PlacesModel.isCloud(url) ? RemoteFS.displayName(for: url) : url.lastPathComponent
     }
 
     /// A passing condition the transfer is handling by itself ("Slowed down by Google, retrying", "Waiting for

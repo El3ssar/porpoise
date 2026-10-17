@@ -50,7 +50,7 @@ public enum RemoteFS {
 
     public static func isRemote(_ url: URL) -> Bool {
         guard let s = url.scheme?.lowercased() else { return false }
-        return sshSchemes.contains(s) || ftpSchemes.contains(s) || s == "adb" || s == "gdrive"
+        return sshSchemes.contains(s) || ftpSchemes.contains(s) || s == "adb" || PlacesModel.isCloud(url)
     }
 
     /// Guarded by `lock`.
@@ -71,6 +71,8 @@ public enum RemoteFS {
     public static func registerDrive(_ provider: DriveProvider, accountID: UUID) {
         use(provider, for: DriveLocation(accountID: accountID).url)
     }
+
+    public static func registerCloud(_ provider: (any CloudFileProvider)?, for root: URL) { use(provider, for: root) }
 
     public static func unregisterDrive(accountID: UUID) {
         use(nil, for: DriveLocation(accountID: accountID).url)
@@ -100,6 +102,8 @@ public enum RemoteFS {
         if s == "gdrive" {
             guard let accountID = url.host.flatMap(UUID.init(uuidString:)) else { return nil }
             p = DriveProvider(accountID: accountID, client: nil)
+        } else if PlacesModel.isCloud(url) {
+            return nil
         } else if sshSchemes.contains(s) {
             p = SSHProvider(url: url)
         } else if ftpSchemes.contains(s) {
@@ -149,8 +153,8 @@ public enum RemoteFS {
     }
 
     public static func displayName(for url: URL) -> String {
-        if url.scheme == "gdrive", let p = provider(for: url) as? DriveProvider {
-            return p.displayName(for: url) ?? "Google Drive folder"
+        if let p = provider(for: url) as? CloudFileProvider {
+            return p.displayName(for: url) ?? p.descriptor.title
         }
         if url.path.isEmpty || url.path == "/" { return provider(for: url)?.rootTitle(url) ?? (url.host ?? "") }
         return url.lastPathComponent

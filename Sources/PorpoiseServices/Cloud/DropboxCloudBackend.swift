@@ -1,0 +1,202 @@
+import Foundation
+import PorpoiseCore
+
+/// Dropbox policy behind the same account/edit/search/offline contracts the UI uses for every provider.
+public final class DropboxCloudBackend: CloudBackend {
+    public var onChange: (() -> Void)?
+    public let store: DropboxAccountStore
+    private var providers: [UUID: DropboxProvider] = [:]
+    private var statuses: [UUID: CloudAccount.Status] = [:]
+    private var reachability: [UUID: OfflineHysteresis] = [:]
+    private var checks: [UUID: DispatchWorkItem] = [:]
+    @MainActor public init(store: DropboxAccountStore) {
+        self.store = store
+        store.onChange = { [weak self] in self?.install() }
+        install()
+    }
+    private func install() {
+        MainActor.assumeIsolated {
+            let live = Set(store.accounts.map(\.id))
+            for id in providers.keys where !live.contains(id) {
+                RemoteFS.registerCloud(nil, for: DropboxLocation(accountID: id).url); providers[id] = nil; statuses[id] = nil
+                checks.removeValue(forKey: id)?.cancel(); reachability[id] = nil
+            }
+            for account in store.accounts {
+                guard let client = store.client(for: account.id) else { continue }
+                if providers[account.id]?.client !== client {
+                    let provider = DropboxProvider(client: client); providers[account.id] = provider
+                    RemoteFS.registerCloud(provider, for: DropboxLocation(accountID: account.id).url)
+                    reachability[account.id] = OfflineHysteresis(); statuses[account.id] = .ok
+                    DropboxEditing.shared.restore(client)
+                    client.onReachability = { [weak self] error in Task { @MainActor in self?.reached(account.id, error) } }
+                    client.onFreshness = { [weak self] in
+                        Task { @MainActor in
+                            guard let self else { return }
+                            NotificationCenter.default.post(name: CloudAccounts.remoteChanged, object: self.key(account))
+                        }
+                    }
+                }
+            }
+        }
+        onChange?()
+    }
+    private func key(_ account: DropboxAccount) -> String {
+        "dropbox:" + account.id.uuidString.lowercased() + ":" + account.rootNamespaceID
+    }
+    private func account(_ key: String) -> DropboxAccount? { MainActor.assumeIsolated { store.accounts.first { self.key($0) == key } } }
+    private func provider(_ url: URL) -> DropboxProvider? {
+        guard let location = DropboxLocation(url: url) else { return nil }; return providers[location.accountID]
+    }
+    public var accounts: [CloudAccount] {
+        MainActor.assumeIsolated {
+            store.accounts.map { account in
+                CloudAccount(
+                    id: key(account), provider: .dropbox, email: account.email, displayName: account.displayName,
+                    sharedDriveCount: account.hasTeamSpace ? 1 : 0, status: statuses[account.id] ?? .ok)
+            }
+        }
+    }
+    public func connect(
+        _ provider: CloudProvider, openBrowser: @escaping (URL) -> Void,
+        done: @escaping (Result<CloudAccount, CloudConnectError>) -> Void
+    ) -> () -> Void {
+        authenticate(nil, openBrowser: openBrowser) { result in done(result) }
+    }
+    private func authenticate(
+        _ expected: DropboxAccount?, openBrowser: @escaping (URL) -> Void,
+        done: @escaping (Result<CloudAccount, CloudConnectError>) -> Void
+    ) -> () -> Void {
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let account = try await store.connect(expected: expected, openBrowser: { openBrowser($0) }); install()
+                setActive(true); done(.success(accounts.first { $0.id == self.key(account) }!))
+            } catch {
+                if error is CancellationError
+                    || {
+                        if case .cancelled = error as? CloudOAuthError { return true }; return false
+                    }()
+                {
+                    done(.failure(.cancelled))
+                } else if (error as? DropboxConnectionError) == .alreadyConnected, let account = accounts.first {
+                    done(.failure(.alreadyConnected(account)))
+                } else {
+                    done(.failure(.failed(error.localizedDescription)))
+                }
+            }
+        }
+        return { task.cancel() }
+    }
+    public func signInAgain(
+        _ id: String, openBrowser: @escaping (URL) -> Void,
+        done: @escaping (Result<Void, CloudConnectError>) -> Void
+    ) -> () -> Void {
+        guard let account = account(id) else { done(.failure(.failed("This account is no longer connected."))); return {} }
+        return authenticate(account, openBrowser: openBrowser) { done($0.map { _ in () }) }
+    }
+    public func remove(_ id: String, done: @escaping (Error?) -> Void) {
+        guard let account = account(id) else { done(nil); return }
+        Task { @MainActor in do { try await store.disconnect(account.id); install(); done(nil) } catch { done(error) } }
+    }
+    public func url(_ id: String, root: CloudRoot) -> URL {
+        guard let account = account(id) else { return URL(string: "cloud-disconnected:///")! }
+        return DropboxLocation(
+            accountID: account.id,
+            itemID: root == .sharedWithMe ? "collection:shared" : "",
+            namespaceID: root == .sharedDrives ? account.rootNamespaceID : account.homeNamespaceID
+        ).url
+    }
+    public func accountID(for url: URL) -> String? {
+        guard let location = DropboxLocation(url: url) else { return nil }
+        return MainActor.assumeIsolated { store.accounts.first { $0.id == location.accountID }.map(key) }
+    }
+    public func info(for url: URL) -> CloudItemInfo? {
+        guard let file = provider(url)?.metadata(url) else { return nil }
+        return CloudItemInfo(name: file.name, isFolder: file.isFolder)
+    }
+    public func permissions(for url: URL) -> CloudPermissions? {
+        guard let location = DropboxLocation(url: url), provider(url) != nil else { return nil }
+        if location.itemID.hasPrefix("collection:") { return CloudPermissions(collection: .sharedWithMe) }
+        let file = provider(url)?.metadata(url)
+        return CloudPermissions(
+            canAddChildren: location.itemID.isEmpty || file?.isFolder == true, canRename: file != nil,
+            canTrash: file != nil, canMove: file != nil, canCopy: true, name: file?.name)
+    }
+    public func content(for accountID: String) -> CloudContentSource? { account(accountID).flatMap { providers[$0.id]?.client.contentSource } }
+    public func content(for url: URL) -> CloudContentSource? { try? provider(url)?.scoped(url).contentSource }
+    public func savedAt(for folder: URL) -> Date? {
+        guard let location = DropboxLocation(url: folder), let client = try? provider(folder)?.scoped(folder) else { return nil }
+        return client.metadataCache.snapshot(location.itemID)?.savedAt
+    }
+    public func createFolder(named name: String, in folder: URL, done: @escaping (Result<FileItem, Error>) -> Void) {
+        run(folder, done: done) { provider in
+            let client = try provider.scoped(folder); let parent = try await provider.path(folder)
+            return provider.item(try await client.createFolder(name: name, parent: parent), client: client)
+        }
+    }
+    public func rename(_ url: URL, to name: String, done: @escaping (Result<FileItem, Error>) -> Void) {
+        run(url, done: done) { provider in
+            let client = try provider.scoped(url); let file = try await client.metadata(provider.location(url).itemID)
+            return provider.item(try await client.rename(file, to: name), client: client)
+        }
+    }
+    private func run<T>(_ url: URL, done: @escaping (Result<T, Error>) -> Void, work: @escaping (DropboxProvider) async throws -> T) {
+        guard let provider = provider(url) else { done(.failure(DropboxError.reconnect)); return }
+        Task { @MainActor in do { let result = try await work(provider); done(.success(result)); changed(url) } catch { done(.failure(error)) } }
+    }
+    public func trash(_ urls: [URL], done: @escaping ([URL], Error?) -> Void) {
+        Task { @MainActor in
+            var removed: [URL] = []; var failure: Error?
+            for url in urls {
+                do {
+                    guard let provider = provider(url) else { throw DropboxError.reconnect }
+                    let client = try provider.scoped(url); let file = try await client.metadata(provider.location(url).itemID)
+                    _ = try await client.delete(file, confirmedWithoutUndo: true); removed.append(url); changed(url)
+                } catch { failure = error }
+            }
+            done(removed, failure)
+        }
+    }
+    public func untrash(_ urls: [URL], done: @escaping ([URL], Error?) -> Void) { done([], DropboxError.unsupportedUndo) }
+    public func avatar(_ id: String, done: @escaping (Data?) -> Void) { done(nil) }
+    public func resolveLink(_ text: String, done: @escaping (CloudLinkResult) -> Void) { done(.notALink) }
+    public func search(
+        _ text: String, in folder: URL, everywhere: Bool, contents: Bool, pageToken: String?,
+        done: @escaping (Result<CloudSearchPage, Error>) -> Void
+    ) -> () -> Void {
+        let task = Task { @MainActor in
+            do {
+                guard let provider = provider(folder) else { throw DropboxError.reconnect }
+                let client = try provider.scoped(folder)
+                let path = everywhere ? "" : try await provider.path(folder)
+                let page = try await client.search(text, path: path, contents: contents, cursor: pageToken)
+                let items = page.items.filter { everywhere || $0.parentPath == path.lowercased() }.map { provider.item($0, client: client) }
+                try Task.checkCancellation(); done(.success(CloudSearchPage(items: items, nextPageToken: page.cursor)))
+            } catch { if !Task.isCancelled { done(.failure(error)) } }
+        }
+        return { task.cancel() }
+    }
+    public func checkForChanges(_ id: String?) {
+        for (uuid, provider) in providers where id == nil || account(id!)?.id == uuid {
+            Task { try? await provider.checkForChanges() }
+        }
+    }
+    public func setActive(_ active: Bool) { providers.values.forEach { $0.setActive(active) } }
+    private func changed(_ url: URL) { NotificationCenter.default.post(name: CloudAccounts.remoteChanged, object: accountID(for: url)) }
+    @MainActor private func reached(_ id: UUID, _ error: Error?) {
+        if (error as? DropboxError) == .reconnect { statuses[id] = .signInNeeded; onChange?(); return }
+        if let error = error as? URLError, error.code == .cancelled { return }
+        _ = reachability[id]?.record(reached: !(error is URLError), at: Date()); settle(id)
+    }
+    @MainActor private func settle(_ id: UUID) {
+        guard var gate = reachability[id] else { return }
+        let now = Date(); _ = gate.update(at: now); reachability[id] = gate
+        let status: CloudAccount.Status = gate.isOffline ? .offline : .ok
+        if statuses[id] != status { statuses[id] = status; onChange?() }
+        checks.removeValue(forKey: id)?.cancel()
+        if let next = gate.nextCheck(after: now) {
+            let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.settle(id) } }; checks[id] = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(0.05, next.timeIntervalSince(now)), execute: work)
+        }
+    }
+}

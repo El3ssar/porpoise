@@ -59,6 +59,7 @@ extension DriveClient {
                     metadataCache.invalidate()
                     emitContentChanges(.init(reset: true))
                     NotificationCenter.default.post(name: Self.changed, object: accountID)
+                    NotificationCenter.default.post(name: CloudAccounts.remoteChanged, object: accountID.uuidString.lowercased())
                     return
                 }
                 let changes = page.changes ?? []
@@ -73,6 +74,7 @@ extension DriveClient {
                     emitContentChanges(.init(changed: files.filter { !removed.contains($0.id) }.map(source.remoteItem), removed: removed))
                     (RemoteFS.provider(for: DriveLocation(accountID: accountID).url) as? DriveProvider)?.invalidate(preserveDisk: true)
                     NotificationCenter.default.post(name: Self.changed, object: accountID)
+                    NotificationCenter.default.post(name: CloudAccounts.remoteChanged, object: accountID.uuidString.lowercased())
                 }
                 guard let next = page.nextPageToken ?? page.newStartPageToken else { throw DriveError.invalidResponse }
                 metadataCache.setCursor(next, scope: scope)
