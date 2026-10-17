@@ -76,6 +76,9 @@ final class FolderSearch: @unchecked Sendable {
     }
 
     func start() {
+        // A fast first tool may finish while the next Process is still launching. Keep startup counted until
+        // every launch has been attempted, so that reader cannot publish an early empty completion.
+        lock.withLock { running += 1 }
         for (n, command) in commands.enumerated() {
             let p = Process()
             // Below the app's own work: a big search keeps the cores busy, the window stays smooth.
@@ -99,7 +102,10 @@ final class FolderSearch: @unchecked Sendable {
             let withLines = n == 1
             Thread { [self] in read(out.fileHandleForReading, of: p, withLines: withLines) }.start()
         }
-        if lock.withLock({ running == 0 }) { DispatchQueue.main.async { [self] in finish() } }
+        let finished = lock.withLock {
+            running -= 1; return running == 0
+        }
+        if finished { DispatchQueue.main.async { [self] in finish() } }
     }
 
     func stop() {
