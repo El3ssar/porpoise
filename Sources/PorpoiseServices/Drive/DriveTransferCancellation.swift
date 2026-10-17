@@ -26,7 +26,7 @@ extension DriveClient {
             }
         }
         try await tokens.removeSession(operationID)
-        record.offset = 0; record.hasSession = false; record.phase = .prepared;
+        record.offset = 0; record.downloadRanges = nil; record.hasSession = false; record.phase = .prepared;
         record.fingerprint = record.kind == "download" ? nil : record.fingerprint
         try mutationJournal.save(record)
     }

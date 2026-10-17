@@ -40,6 +40,12 @@ public struct DriveMutationRecord: Codable, Equatable, Sendable {
     public var revision: String?
     public var localSource: URL?
     public var fingerprint: JobJournal.Fingerprint?
+    public struct DownloadRange: Codable, Equatable, Sendable {
+        public var start: Int64
+        public var end: Int64
+        public var offset: Int64
+    }
+    public var downloadRanges: [DownloadRange]?
     public var offset: Int64 = 0
     public var hasSession = false
     public var phase: Phase = .prepared

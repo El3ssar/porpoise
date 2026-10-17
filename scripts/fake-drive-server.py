@@ -38,21 +38,34 @@ class Handler(BaseHTTPRequestHandler):
         for key, value in (headers or {}).items():
             self.send_header(key, value)
         self.end_headers()
+        def account(count):
+            if "alt=media" in self.path:
+                with self.server.profile_lock:
+                    self.server.media_bytes += count
         drop_after = self.server.fixtures.pop("dropDownloadAfterBytes", None) if content_type == "application/octet-stream" else None
         if drop_after is not None:
-            self.wfile.write(data[:drop_after]); self.wfile.flush()
+            self.wfile.write(data[:drop_after]); self.wfile.flush(); account(min(len(data), drop_after))
             self.connection.shutdown(socket.SHUT_RDWR); self.connection.close()
             return
-        if content_type == "application/octet-stream" and self.server.bandwidth_mbps:
+        if content_type == "application/octet-stream" and (self.server.bandwidth_mbps or self.server.connection_mbps):
             started = time.monotonic()
             for offset in range(0, len(data), 256 * 1024):
                 self.wfile.write(data[offset:offset + 256 * 1024])
                 self.wfile.flush()
-                delay = (min(offset + 256 * 1024, len(data)) / (self.server.bandwidth_mbps * 125000)) - (time.monotonic() - started)
+                account(min(256 * 1024, len(data) - offset))
+                count = min(256 * 1024, len(data) - offset)
+                with self.server.bandwidth_lock:
+                    now = time.monotonic()
+                    if self.server.bandwidth_mbps:
+                        self.server.bandwidth_next = max(now, self.server.bandwidth_next) + count / (self.server.bandwidth_mbps * 125000)
+                    total_deadline = self.server.bandwidth_next
+                connection_deadline = started + min(offset + 256 * 1024, len(data)) / (self.server.connection_mbps * 125000) if self.server.connection_mbps else started
+                delay = max(total_deadline, connection_deadline) - time.monotonic()
                 if delay > 0:
                     time.sleep(delay)
         else:
             self.wfile.write(data)
+            account(len(data))
 
     def mutation_fault(self):
         faults = self.server.fixtures.get("mutationFaults", [])
@@ -279,10 +292,12 @@ class Handler(BaseHTTPRequestHandler):
     def get(self):
         if self.path == "/__stats":
             with self.server.profile_lock:
-                return self.reply({"requests": self.server.requests, "maxConcurrentMedia": self.server.max_active_media})
+                return self.reply({"requests": self.server.requests, "ranges": self.server.ranges, "mediaBytes": self.server.media_bytes, "maxConcurrentMedia": self.server.max_active_media})
         if self.path.startswith("/drive/") or self.path.startswith("/thumbnail/"):
             with self.server.profile_lock:
                 self.server.requests.append(self.path)
+                if "alt=media" in self.path:
+                    self.server.ranges.append(self.headers.get("Range"))
             time.sleep(self.server.latency_ms / 1000)
         fixtures = self.server.fixtures
         profiles = fixtures.get("profiles", [fixtures.get("profile", {})])
@@ -432,6 +447,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--connection-mbps", type=float, default=0)
     parser.add_argument("--bandwidth-mbps", type=float, default=0)
     parser.add_argument("--latency-ms", type=int, default=0)
     parser.add_argument("--port", type=int, default=8765)
@@ -442,7 +458,12 @@ def main():
     server.fixtures = json.loads(args.fixture.read_text().replace("{base}", f"http://127.0.0.1:{server.server_port}"))
     server.latency_ms = args.latency_ms
     server.bandwidth_mbps = args.bandwidth_mbps
+    server.connection_mbps = args.connection_mbps
+    server.bandwidth_lock = Lock()
+    server.bandwidth_next = 0
     server.requests = []
+    server.ranges = []
+    server.media_bytes = 0
     server.sessions = {}
     server.changes = []
     server.revisions = {}
