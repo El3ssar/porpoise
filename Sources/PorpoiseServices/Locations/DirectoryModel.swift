@@ -46,6 +46,9 @@ public struct ItemGroup {
 /// The items one view shows: loading, live updates, sorting, filtering, grouping, expansion and selection.
 /// Main-thread only (Dolphin's KFileItemModel + selection manager).
 public final class DirectoryModel {
+    /// What lists the location, and the load in progress.
+    private var source: LocationContentSource
+    private var currentLoad: LocationLoad?
     private var driveListing: Task<Void, Never>?
     private var drivePrefetch: Task<Void, Never>?
     private var driveHover: Task<Void, Never>?
@@ -273,6 +276,7 @@ public final class DirectoryModel {
     public init(location: URL, prefetchFolders: Bool = true) {
         self.prefetchFolders = prefetchFolders
         self.location = location
+        self.source = LocationContentSources.source(for: location)
         self.props = Settings.shared.viewProperties(for: location)
         transferObserver = NotificationCenter.default.addObserver(forName: FileOperationsController.activityChanged, object: nil, queue: .main) {
             [weak self] _ in self?.updateIncoming()
@@ -327,6 +331,7 @@ public final class DirectoryModel {
             searchOverride = ViewOverride()
             dynamicViewPending = true
             props = Settings.shared.viewProperties(for: url)
+            source = LocationContentSources.source(for: url)
             // Stop watching the old folder now: virtual and remote locations don't use FSEvents.
             updateWatcher()
         }
@@ -442,6 +447,8 @@ public final class DirectoryModel {
     // MARK: Loading
 
     public func reload(keepSelection: Bool = true) {
+        currentLoad?.cancel(); currentLoad = nil
+        source = LocationContentSources.source(for: location)
         driveListing?.cancel(); driveListing = nil
         drivePrefetch?.cancel(); drivePrefetch = nil
         driveHover?.cancel(); driveHover = nil
@@ -596,46 +603,34 @@ public final class DirectoryModel {
             return
         }
         isLoading = true
-        let expandedNow = expanded
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var listed: [FileItem] = []
-            var err: String?
-            var privacy = false
-            do { listed = try DirectoryLister.list(url) } catch {
-                let kind = FileErrorKind.classify(error, readable: access(url.path, R_OK) == 0)
-                if kind == .permission || kind == .privacy {
-                    privacy = kind == .privacy
-                    err =
-                        privacy
-                        ? "macOS protects this folder. Give Porpoise Full Disk Access in System Settings to see its contents."
-                        : "You don't have permission to view this folder."
-                } else {
-                    err = "Could not open “\(url.lastPathComponent)”."
-                }
-            }
-            var kids: [URL: [FileItem]] = [:]
-            for e in expandedNow { kids[e] = (try? DirectoryLister.list(e)) ?? [] }
-            DispatchQueue.main.async {
-                guard let self, token == self.loadToken else { return }
-                self.listingArrived(token)
-                self.items = self.withEdits(listed, in: url)
-                self.children = self.keepingExpanded(kids)
-                self.isLoading = false
-                self.applyDynamicView()
-                self.recountFolders = true
-                self.loadError = err
-                self.blockedByPrivacy = privacy
-                let missing = err != nil && url.isFileURL && !FileManager.default.fileExists(atPath: url.path)
-                self.locationVanished = missing && self.lastLoaded?.standardizedFileURL == url.standardizedFileURL
-                if err == nil { self.lastLoaded = url }
-                let alive = Set(self.allLoadedURLs())
-                if keepSelection { self.selection = self.selection.intersection(alive) }
-                if let c = self.currentURL, !alive.contains(c) { self.currentURL = nil }
-                self.rebuild()
-                self.updateWatcher()
-                self.onLoaded?()
-            }
+        let source = self.source
+        currentLoad = source.load(url, expanded: expanded) { [weak self] listing in
+            guard let self, token == self.loadToken else { return }
+            self.apply(listing, of: url, from: source, token: token, keepSelection: keepSelection)
         }
+    }
+
+    /// A source's answer for the location (and the expanded folders it listed with it).
+    private func apply(_ listing: LocationListing, of url: URL, from source: LocationContentSource, token: Int, keepSelection: Bool) {
+        let traits = source.traits
+        if traits.optimisticEdits, listing.complete { listingArrived(token) }
+        items = traits.optimisticEdits ? withEdits(listing.items, in: url) : listing.items
+        if let kids = listing.children { children = keepingExpanded(kids) }
+        isLoading = false
+        if traits.dynamicView { applyDynamicView() }
+        if traits.folderCounts { recountFolders = true }
+        loadError = listing.error?.message
+        blockedByPrivacy = listing.error == .privacy
+        if let vanished = listing.vanished {
+            locationVanished = vanished && lastLoaded?.standardizedFileURL == url.standardizedFileURL
+        }
+        if listing.error == nil { lastLoaded = url }
+        let alive = Set(allLoadedURLs())
+        if traits.prunesSelection, keepSelection { selection = selection.intersection(alive) }
+        if traits.clearsCurrentItem, let c = currentURL, !alive.contains(c) { currentURL = nil }
+        rebuild()
+        if traits.watch != .none { updateWatcher() }
+        onLoaded?()
     }
 
     @MainActor private func applyDrivePage(_ listed: [FileItem], complete: Bool, hasCache: Bool, token: Int, keepSelection: Bool) {
@@ -667,7 +662,7 @@ public final class DirectoryModel {
 
     private func updateWatcher() {
         if AppLibrary.isActive(for: location) { watcher.watch(AppLibrary.roots); return }
-        watcher.watch(location.isFileURL ? [location] + Array(expanded) : [])
+        watcher.watch(source.traits.watch == .fileSystem ? [location] + Array(expanded) : [])
     }
 
     // MARK: Building rows
@@ -757,7 +752,7 @@ public final class DirectoryModel {
     private static let countQueue = DispatchQueue(label: "app.porpoise.folder-counts", qos: .utility)
 
     private func requestFolderCounts() {
-        guard Settings.shared.folderSizeMode != .none, location.isFileURL else { return }
+        guard Settings.shared.folderSizeMode != .none, source.traits.folderCounts else { return }
         let all = recountFolders
         recountFolders = false
         // Counting everything again supersedes the counts still under way: they were made with the old settings.
@@ -797,7 +792,7 @@ public final class DirectoryModel {
     /// Dolphin's "Use icons view mode for locations which mostly contain media files".
     /// Shown, never saved as the folder's or the common style (`dynamicOverride`); checked once per visit.
     private func applyDynamicView() {
-        guard dynamicViewPending, location.isFileURL else { return }
+        guard dynamicViewPending, source.traits.dynamicView else { return }
         dynamicViewPending = false
         guard Settings.shared.dynamicView, !Settings.shared.rememberPerFolder, items.count >= 4 else { return }
         let media = items.filter { $0.utType.map { $0.conforms(to: .image) || $0.conforms(to: .movie) } ?? false }.count
@@ -886,15 +881,23 @@ public final class DirectoryModel {
             return
         }
         let token = loadToken
-        let provider = RemoteFS.provider(for: url)  // sftp://, ftp://, adb:// folders expand through their provider
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let kids = (try? provider.map { try $0.list(url) } ?? DirectoryLister.list(url)) ?? []
-            DispatchQueue.main.async {
-                // A reload since then lists expanded folders itself; a collapse makes this one moot.
-                guard let self, token == self.loadToken, self.expanded.contains(url) else { return }
-                self.children[url] = kids
-                self.rebuild()
+        if let provider = RemoteFS.provider(for: url) {  // sftp://, ftp://, adb:// folders expand through their provider
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let kids = (try? provider.list(url)) ?? []
+                DispatchQueue.main.async {
+                    // A reload since then lists expanded folders itself; a collapse makes this one moot.
+                    guard let self, token == self.loadToken, self.expanded.contains(url) else { return }
+                    self.children[url] = kids
+                    self.rebuild()
+                }
             }
+            return
+        }
+        _ = source.load(url, expanded: []) { [weak self] listing in
+            // A reload since then lists expanded folders itself; a collapse makes this one moot.
+            guard let self, token == self.loadToken, self.expanded.contains(url) else { return }
+            self.children[url] = listing.items
+            self.rebuild()
         }
     }
 
