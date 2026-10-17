@@ -180,6 +180,16 @@ import Testing
         let ref = try #require(source.ref(for: file.url)); let item = try await source.item(ref)
         let store = try CloudOfflineStore(source: source, directory: fixture.server.fixture.scratch.url.appendingPathComponent("offline"))
         _ = try await store.fetch(item, keep: true); #expect(await store.snapshot().isKept(item.ref.item))
+        let facade = CloudOffline(accounts: fixture.accounts, root: fixture.server.fixture.scratch.url.appendingPathComponent("facade"))
+        facade.operations = FileOperationsController(); facade.activate()
+        let kept: Error? = await withCheckedContinuation { continuation in
+            _ = facade.keep(true, [file.url]) { continuation.resume(returning: $0) }
+        }
+        #expect(kept == nil)
+        try await uiEventually { facade.usage(account: account.id).kept == item.size }
+        #expect(facade.state(for: file.url) == .kept)
+        let wiped: Error? = await withCheckedContinuation { continuation in facade.wipe(account: account.id) { continuation.resume(returning: $0) } }
+        #expect(wiped == nil && facade.usage(account: account.id).kept == 0)
         let copies = try await provider.scoped(file.url).offlineCopies(); _ = try await copies.fetch(item)
         let playback = try await provider.playback(file.url); #expect(playback.url.isFileURL && playback.stream == nil)
         let operations = FileOperationsController(); provider.openingOperations = operations

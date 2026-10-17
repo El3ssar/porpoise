@@ -61,6 +61,7 @@ public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
     private var keepers: [String: CloudPinKeeper] = [:]
     private var snapshots: [String: CloudOfflineSnapshot] = [:]
     private var sources: [String: CloudContentSource] = [:]
+    private var owners: [String: String] = [:]
     private var epochs: [String: UUID] = [:]
     private final class RetiredSource {
         weak var source: CloudContentSource?
@@ -202,8 +203,11 @@ public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
         return details.downloaded || folder ? .local : .cloudOnly
     }
     public func usage(account: String) -> CloudOfflineUsage {
-        var usage = snapshots[account]?.usage ?? CloudOfflineUsage()
-        usage.account = account
+        var usage = CloudOfflineUsage(account: account)
+        for id in sourceIDs(account) {
+            usage.kept += snapshots[id]?.usage.kept ?? 0
+            usage.recent += snapshots[id]?.usage.recent ?? 0
+        }
         return usage
     }
 
@@ -214,6 +218,8 @@ public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
         if let old = keepers[source.accountID] { Task { await old.stop() } }
         let id = source.accountID, epoch = UUID()
         epochs[id] = epoch; sources[id] = source
+        let contentRoot = CloudRemoteItem(ref: .init(account: id, item: ""), name: source.providerTitle, isFolder: true)
+        owners[id] = accounts.backend?.accountID(for: source.url(for: contentRoot)) ?? id
         let store = try CloudOfflineStore(
             source: source,
             directory: source.offlineDirectory
@@ -341,24 +347,34 @@ public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
         }
         return false
     }
+    private func sourceIDs(_ account: String) -> [String] {
+        Set([account] + owners.compactMap { $0.value == account ? $0.key : nil }).sorted()
+    }
     public func removeRecent(account: String, done: @escaping (Error?) -> Void) {
+        let ids = sourceIDs(account)
         Task { @MainActor in
             do {
-                try await stores[account]?.removeRecent(); NotificationCenter.default.post(name: Self.spaceChanged, object: nil);
-                await keepers[account]?.resume(); done(nil)
+                for id in ids { try await stores[id]?.removeRecent(); await keepers[id]?.resume() }
+                NotificationCenter.default.post(name: Self.spaceChanged, object: nil); done(nil)
             } catch { done(error) }
         }
     }
     public func wipe(account: String, done: @escaping (Error?) -> Void = { _ in }) {
-        if let source = sources[account] { retiredSources[account] = RetiredSource(source) }
-        epochs[account] = nil
-        backgroundTasks.removeValue(forKey: account)?.cancel(); backgroundPending[account] = nil
-        let store = stores.removeValue(forKey: account), keeper = keepers.removeValue(forKey: account)
-        snapshots[account] = nil; sources[account] = nil; accountStatus[account] = nil
+        var removed: [(CloudOfflineStore?, CloudPinKeeper?)] = []
+        for id in sourceIDs(account) {
+            if let source = sources[id] { retiredSources[id] = RetiredSource(source) }
+            epochs[id] = nil
+            backgroundTasks.removeValue(forKey: id)?.cancel(); backgroundPending[id] = nil
+            removed.append((stores.removeValue(forKey: id), keepers.removeValue(forKey: id)))
+            snapshots[id] = nil; sources[id] = nil; accountStatus[id] = nil; owners[id] = nil
+        }
         Task { @MainActor in
-            await keeper?.stop()
-            do { try await store?.wipe(); done(nil) } catch { done(error) }
-            NotificationCenter.default.post(name: Self.changed, object: nil)
+            var failure: Error?
+            for (store, keeper) in removed {
+                await keeper?.stop()
+                do { try await store?.wipe() } catch { failure = error }
+            }
+            done(failure); NotificationCenter.default.post(name: Self.changed, object: nil)
         }
     }
 }
