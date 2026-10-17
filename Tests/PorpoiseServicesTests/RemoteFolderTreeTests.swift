@@ -244,4 +244,23 @@ import Testing
         #expect(!RemoteFolderTree.sameLocation(a, DropboxLocation(accountID: account, itemID: "id:opaque/slash/", namespaceID: "one").url))
     }
 
+    // A change on another server ("/" is every server's root) or to the cloud accounts listed an SFTP tree again.
+    @MainActor @Test func aServerTreeListsAgainOnlyForItsOwnServer() async throws {
+        let root = URL(string: "sftp://tree-\(UUID().uuidString.prefix(8).lowercased()).invalid/")!
+        let server = MemoryServer(root: root)
+        server.add("Folder", size: 0, folder: true)
+        RemoteFS.use(server, for: root)
+        defer { RemoteFS.use(nil, for: root) }
+        let tree = RemoteFolderTree(url: root)
+        tree.root.expand()
+        try await until(tree) { tree.root.children != nil && !tree.root.isLoading }
+        #expect(server.lists == 1 && tree.root.children?.map(\.name) == ["Folder"])
+        FileOperationsController.notifyChanged([URL(string: "sftp://elsewhere.invalid/x.txt")!])
+        NotificationCenter.default.post(name: CloudAccounts.changed, object: nil)
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(server.lists == 1)
+        FileOperationsController.notifyChanged([root.appendingPathComponent("y.txt")])
+        #expect(await eventually { server.lists == 2 })
+    }
+
 }

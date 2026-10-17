@@ -10,7 +10,8 @@ public final class FileOperationsController {
     /// Posted after an operation with the folders it touched (KDirNotify equivalent); views reload at once.
     public static let foldersChanged = Notification.Name("PorpoiseFoldersChanged")
 
-    /// Posts `foldersChanged` for each URL and its parent folder.
+    /// Posts `foldersChanged` for each URL and its parent folder: "paths" has their paths, and "remote" the servers'
+    /// folders with their server (`remoteKey`), since a path alone ("/") names a folder on every server.
     public static func notifyChanged(_ urls: [URL]) {
         let dirs = Set(
             urls.flatMap { url in
@@ -18,7 +19,18 @@ public final class FileOperationsController {
                     ? [FilePath.entry(url.path), FilePath.canonical(url.deletingLastPathComponent().path)]
                     : [url.path, url.deletingLastPathComponent().path]
             })
-        NotificationCenter.default.post(name: foldersChanged, object: nil, userInfo: ["paths": dirs])
+        let remote = Set(urls.filter { !$0.isFileURL }.flatMap { [remoteKey($0), remoteKey($0.deletingLastPathComponent())] })
+        NotificationCenter.default.post(name: foldersChanged, object: nil, userInfo: ["paths": dirs, "remote": remote])
+    }
+
+    /// A server's folder as `foldersChanged` names it: scheme, server and path, without a trailing slash or a query.
+    public static func remoteKey(_ url: URL) -> String {
+        var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) ?? URLComponents()
+        parts.query = nil; parts.fragment = nil; parts.user = nil; parts.password = nil
+        parts.scheme = parts.scheme?.lowercased(); parts.host = parts.host?.lowercased()
+        while parts.percentEncodedPath.count > 1 && parts.percentEncodedPath.hasSuffix("/") { parts.percentEncodedPath.removeLast() }
+        if parts.percentEncodedPath.isEmpty { parts.percentEncodedPath = "/" }
+        return parts.string ?? url.absoluteString
     }
 
     /// Dialogs and progress (set by the app; without it nothing is confirmed and conflicts cancel).

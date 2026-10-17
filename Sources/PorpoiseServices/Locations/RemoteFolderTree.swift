@@ -144,11 +144,13 @@ public final class RemoteFolderTree {
             })
         observers.append(
             center.addObserver(forName: CloudAccounts.changed, object: nil, queue: .main) { [weak self] _ in
-                self?.scheduleRefresh()
+                // Accounts signed in or out: only a cloud account's tree can be affected.
+                guard let self, LocationKind.of(self.root.url).isCloud else { return }
+                self.scheduleRefresh()
             })
         observers.append(
             center.addObserver(forName: FileOperationsController.foldersChanged, object: nil, queue: .main) { [weak self] note in
-                guard let self, let paths = note.userInfo?["paths"] as? Set<String>, self.contains(paths: paths, node: self.root) else { return }
+                guard let self, let changed = note.userInfo?["remote"] as? Set<String>, self.contains(changed, node: self.root) else { return }
                 self.scheduleRefresh()
             })
     }
@@ -225,7 +227,7 @@ public final class RemoteFolderTree {
         }
     }
 
-    private func contains(paths: Set<String>, node: Node) -> Bool {
-        paths.contains(node.url.path) || (node.children ?? []).contains { contains(paths: paths, node: $0) }
+    private func contains(_ changed: Set<String>, node: Node) -> Bool {
+        changed.contains(FileOperationsController.remoteKey(node.url)) || (node.children ?? []).contains { contains(changed, node: $0) }
     }
 }
