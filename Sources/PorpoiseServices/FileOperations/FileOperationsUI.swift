@@ -12,13 +12,14 @@ public protocol FileOperationsUI: AnyObject {
     func resolveConflict(_ info: ConflictInfo, kind: FileOperationKind) -> ConflictAnswer
     /// Presents without blocking the main queue; the worker waits for completion.
     func resolveConflict(
-        _ info: ConflictInfo, kind: FileOperationKind, window: AnyObject?, job: FileJob, completion: @escaping (ConflictAnswer) -> Void)
-    func cancelConflict(for job: FileJob)
-    func resolveDiskFull(destination: URL?, neededBytes: Int64, window: AnyObject?, job: FileJob, completion: @escaping (Bool) -> Void)
+        _ info: ConflictInfo, kind: FileOperationKind, window: AnyObject?, job: JobControl, completion: @escaping (ConflictAnswer) -> Void)
+    func cancelConflict(for job: JobControl)
+    func resolveDiskFull(
+        destination: URL?, source: URL?, neededBytes: Int64, window: AnyObject?, job: JobControl, completion: @escaping (Bool) -> Void)
     func showTransferErrors(_ activity: Activity, window: AnyObject?)
-    func jobStarted(_ job: FileJob)
-    func jobProgressed(_ job: FileJob, _ progress: JobProgress)
-    func jobFinished(_ job: FileJob)
+    func jobStarted(_ activity: Activity)
+    func jobProgressed(_ activity: Activity, _ progress: JobProgress)
+    func jobFinished(_ activity: Activity)
     /// Running commands as administrator failed (through the helper or the password prompt).
     func showAuthorizationError(_ message: String)
     /// Selected items include applications. nil cancels Trash; empty keeps every support file.
@@ -30,12 +31,14 @@ public protocol FileOperationsUI: AnyObject {
 
 public extension FileOperationsUI {
     func resolveConflict(
-        _ info: ConflictInfo, kind: FileOperationKind, window: AnyObject?, job: FileJob, completion: @escaping (ConflictAnswer) -> Void
+        _ info: ConflictInfo, kind: FileOperationKind, window: AnyObject?, job: JobControl, completion: @escaping (ConflictAnswer) -> Void
     ) {
         completion(resolveConflict(info, kind: kind))
     }
-    func cancelConflict(for job: FileJob) {}
-    func resolveDiskFull(destination: URL?, neededBytes: Int64, window: AnyObject?, job: FileJob, completion: @escaping (Bool) -> Void) {
+    func cancelConflict(for job: JobControl) {}
+    func resolveDiskFull(
+        destination: URL?, source: URL?, neededBytes: Int64, window: AnyObject?, job: JobControl, completion: @escaping (Bool) -> Void
+    ) {
         completion(false)
     }
     func showTransferErrors(_ activity: Activity, window: AnyObject?) { showErrors(activity.errors, window: window) }

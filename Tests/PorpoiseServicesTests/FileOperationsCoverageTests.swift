@@ -17,11 +17,11 @@ private final class DontAskAgainUI: FileOperationsUI {
 
     func showErrors(_ errors: [String], window: AnyObject?) { Issue.record("Unexpected errors: \(errors)") }
     func resolveConflict(_ info: ConflictInfo, kind: FileOperationKind) -> ConflictAnswer { ConflictAnswer(.cancel) }
-    func jobStarted(_ job: FileJob) {}
-    func jobProgressed(_ job: FileJob, _ progress: JobProgress) {}
+    func jobStarted(_ activity: Activity) {}
+    func jobProgressed(_ activity: Activity, _ progress: JobProgress) {}
     func showAuthorizationError(_ message: String) {}
 
-    func jobFinished(_ job: FileJob) {
+    func jobFinished(_ activity: Activity) {
         let w = waiting
         waiting = [:]
         w.values.forEach { $0.resume() }
@@ -190,7 +190,7 @@ private final class DontAskAgainUI: FileOperationsUI {
         let docs = s.path("docs")
         let ui = ScriptedUI()
         let c = makeController(ui)
-        c.recordTrash(.trashed([(original: s.path("docs/report.txt"), inTrash: trashed)]))
+        TrashService.shared.record([(original: s.path("docs/report.txt"), inTrash: trashed)])
         chmod(docs.path, 0o300)
         defer { chmod(docs.path, 0o755) }
         #expect(c.restore([trashed], window: nil).isEmpty)
@@ -205,7 +205,7 @@ private final class DontAskAgainUI: FileOperationsUI {
         let trashed = try s.file("fake-trash/gone.txt")
         let ui = ScriptedUI()
         let c = makeController(ui)
-        c.recordTrash(.trashed([(original: s.path("docs/gone.txt"), inTrash: trashed)]))
+        TrashService.shared.record([(original: s.path("docs/gone.txt"), inTrash: trashed)])
         try fm.removeItem(at: trashed)
         #expect(c.restore([trashed], window: nil).isEmpty)
         #expect(ui.errors.count == 1)

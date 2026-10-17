@@ -3,9 +3,9 @@ import Foundation
 import PorpoiseCore
 
 /// One controlled remote batch. Only completed staged files become visible at their final names.
-/// All methods run on its worker thread, except the FileJob's thread-safe controls.
+/// All methods run on its worker thread, except the shared thread-safe controls.
 final class RemoteTransferJob {
-    let control: FileJob
+    let control: JobControl
     let kind: FileOperationKind
     let sources: [URL]
     let destination: URL?
@@ -15,6 +15,7 @@ final class RemoteTransferJob {
     var onProgress: (JobProgress) -> Void = { _ in }
     var onNotice: (String?) -> Void = { _ in }
     var onIncoming: (FileItem?) -> Void = { _ in }
+    var disposeReplacedItem: ((URL, URL) throws -> Void)?
     var onNoSpace: ((Int64) -> Bool)?
     var cloudBatchID = UUID()
     var cloudOperations: [URL: UUID] = [:]
@@ -34,7 +35,7 @@ final class RemoteTransferJob {
     var lastPublish = Date.distantPast
 
     init(
-        kind: FileOperationKind, sources: [URL], destination: URL?, control: FileJob,
+        kind: FileOperationKind, sources: [URL], destination: URL?, control: JobControl,
         rule: TransferConflictRule, options: TransferCompareOptions, completed: [URL: URL] = [:]
     ) {
         self.kind = kind; self.sources = sources; self.destination = destination; self.control = control
@@ -49,14 +50,12 @@ final class RemoteTransferJob {
 
     func run(ownsControl: Bool = true) {
         defer { onNotice(nil) }
-        let transport = Shell.TransferControl(
-            isPaused: { self.control.isPaused }, isCancelled: { self.control.isCancelled },
-            isInterrupted: { self.control.isInterrupted }, onBytes: { self.advance(bytes: $0) }, onStatus: { self.onNotice($0) })
+        let transport = control.asTransferControl(onBytes: { self.advance(bytes: $0) }, onStatus: { self.onNotice($0) })
         Shell.withTransferControl(transport) {
             if runSmallCloudCopies() { return }
             do {
                 for source in sources {
-                    try control.checkCancellation()
+                    try control.checkpoint()
                     if kind == .copy || kind == .move { _ = try inventory(source) }
                 }
             } catch {
@@ -67,7 +66,7 @@ final class RemoteTransferJob {
             publish(force: true)
             for source in sources {
                 do {
-                    try control.checkCancellation()
+                    try control.checkpoint()
                     switch kind {
                     case .copy, .move:
                         guard let destination else { continue }
@@ -102,7 +101,7 @@ final class RemoteTransferJob {
             }
         }
         publish(force: true)
-        if ownsControl { control.finishExternal() }
+        if ownsControl { control.finish() }
     }
 
     static func temporaryFolder() throws -> URL {
@@ -112,7 +111,7 @@ final class RemoteTransferJob {
     }
 
     func children(_ folder: URL, fresh: Bool = false) throws -> [FileItem] {
-        try control.checkCancellation()
+        try control.checkpoint()
         if !fresh, let cached = listings[folder] { return cached }
         let items: [FileItem]
         if let provider = RemoteFS.provider(for: folder) {
@@ -148,7 +147,7 @@ final class RemoteTransferJob {
     }
 
     func inventory(_ url: URL) throws -> (bytes: Int64, files: Int) {
-        try control.checkCancellation()
+        try control.checkpoint()
         guard let item = try item(url) else { return (0, 0) }
         var count = (bytes: item.isSymlink || item.isDirectory ? Int64(0) : item.size, files: item.isDirectory && !item.isSymlink ? 0 : 1)
         if item.isDirectory && !item.isSymlink {
@@ -170,7 +169,7 @@ final class RemoteTransferJob {
             return try transferCloud(source, into: folder)
         }
         if source.scheme == "gdrive" || folder.scheme == "gdrive" { return try transferDrive(source, into: folder) }
-        try control.checkCancellation()
+        try control.checkpoint()
         guard source.isFileURL || RemoteFS.provider(for: source) != nil else {
             throw RemoteError.unsupported("Unsupported source: \(source.scheme ?? "unknown")")
         }
@@ -225,7 +224,7 @@ final class RemoteTransferJob {
                 }
                 publish(force: true)
                 guard onNoSpace(totals[source]?.bytes ?? incoming.size) else { control.cancel(); throw FileOperationError.cancelled }
-                try control.checkCancellation()
+                try control.checkpoint()
             }
         }
         if replace { progressLock.withLock { progress.replacedItems += 1 } }
@@ -323,7 +322,7 @@ final class RemoteTransferJob {
         let scratch = try Self.temporaryFolder()
         defer { try? FileManager.default.removeItem(at: scratch) }
         let local = try RemoteFS.provider(for: url)?.download(url, into: scratch) ?? url
-        return try FileChecksums.digest(local, cancellation: DiskCancellation(checkpoint: { try self.control.checkCancellation() }))
+        return try FileChecksums.digest(local, cancellation: control.asDiskCancellation())
     }
 
     func stagedFile(
@@ -350,7 +349,7 @@ final class RemoteTransferJob {
                 try provider.rename(staged, to: target.lastPathComponent)
                 staged = stageFolder.appendingPathComponent(target.lastPathComponent)
             }
-            try control.checkCancellation()
+            try control.checkpoint()
             // Publication and removing a moved original form a short non-cancellable commit section. A Stop
             // arriving here leaves this completed item intact and prevents the next item from starting.
             try Shell.withoutTransferControl {
@@ -378,17 +377,17 @@ final class RemoteTransferJob {
             let copy = FileJob(kind: .copy, sources: [downloaded], destinationFolder: stageFolder)
             var previous: Int64 = 0
             copy.onProgress = { [weak copy] snapshot in
-                do { try self.control.checkCancellation() } catch { copy?.cancel() }
+                do { try self.control.checkpoint() } catch { copy?.cancel() }
                 let next = max(0, snapshot.doneBytes - previous)
                 previous = snapshot.doneBytes
                 self.advance(bytes: next)
             }
             _ = try copy.run()
-            if copy.isCancelled { try control.checkCancellation() }
+            if copy.isCancelled { try control.checkpoint() }
             guard copy.errors.isEmpty, copy.denied.isEmpty, !copy.results.isEmpty else {
                 throw RemoteError.failed(copy.errors.first ?? "Could not stage the downloaded file.")
             }
-            try control.checkCancellation()
+            try control.checkpoint()
             if replacing {
                 var info = stat()
                 guard lstat(target.path, &info) == 0, info.st_mode & S_IFMT != S_IFDIR else {
@@ -398,7 +397,7 @@ final class RemoteTransferJob {
                     throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
                 }
                 do {
-                    if let dispose = control.disposeReplacedItem {
+                    if let dispose = disposeReplacedItem {
                         try dispose(staged, target)
                     } else {
                         try FileManager.default.removeItem(at: staged)

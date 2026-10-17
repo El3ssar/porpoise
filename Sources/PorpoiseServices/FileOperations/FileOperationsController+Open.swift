@@ -13,10 +13,10 @@ extension FileOperationsController {
         title: String, sources: [URL], opening item: FileItem? = nil, quiet: Bool = false,
         load: @escaping (CloudTransferContext) async throws -> [URL]
     ) async throws -> [URL] {
-        let control = FileJob(kind: .copy, sources: sources, destinationFolder: nil)
+        let control = JobControl()
         let activity = Activity(
-            kind: .copy, sources: sources, destination: nil, job: nil, pauseUnavailable: item == nil ? nil : "Opening a remote file")
-        activity.controlJob = control
+            kind: .copy, sources: sources, destination: nil, job: nil, control: control, pauseUnavailable: item == nil ? nil : "Opening a remote file"
+        )
         activity.cloudTitle = title
         if let item {
             activity.openingName = item.name
@@ -29,9 +29,7 @@ extension FileOperationsController {
         }
         let context = CloudTransferContext(
             checkpoint: {
-                while control.isPaused { try Task.checkCancellation(); try await Task.sleep(for: .milliseconds(40)) }
-                try Task.checkCancellation()
-                if control.isCancelled || control.isInterrupted { throw CancellationError() }
+                try await control.checkpointAsync()
             },
             progress: { [weak self, weak activity] bytes, total in
                 DispatchQueue.main.async {
@@ -44,7 +42,7 @@ extension FileOperationsController {
                         progress.totalFiles = prior.totalFiles; progress.doneFiles = prior.doneFiles
                     }
                     self.progressed(activity, progress)
-                    self.ui?.jobProgressed(control, progress)
+                    self.ui?.jobProgressed(activity, progress)
                 }
             },
             items: { [weak self, weak activity] done, total in
@@ -79,9 +77,9 @@ extension FileOperationsController {
         }
         activities.append(activity)
         began(activity)
-        ui?.jobStarted(control)
+        ui?.jobStarted(activity)
         activityDidChange()
-        defer { control.finishExternal(); remoteCancel.removeValue(forKey: activity.id); ui?.jobFinished(control) }
+        defer { control.finish(); remoteCancel.removeValue(forKey: activity.id); ui?.jobFinished(activity) }
         do {
             let local = try await withTaskCancellationHandler {
                 try await task.value

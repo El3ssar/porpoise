@@ -58,7 +58,7 @@ final class FileOperationsDialogs: FileOperationsUI {
     }
 
     func resolveConflict(
-        _ info: ConflictInfo, kind: FileOperationKind, window: AnyObject?, job: FileJob, completion: @escaping (ConflictAnswer) -> Void
+        _ info: ConflictInfo, kind: FileOperationKind, window: AnyObject?, job: JobControl, completion: @escaping (ConflictAnswer) -> Void
     ) {
         let key = ObjectIdentifier(job)
         let began = ProcessInfo.processInfo.systemUptime
@@ -79,7 +79,7 @@ final class FileOperationsDialogs: FileOperationsUI {
         }
     }
 
-    func cancelConflict(for job: FileJob) {
+    func cancelConflict(for job: JobControl) {
         let key = ObjectIdentifier(job)
         conflicts[key]?.cancel()
         if let alert = diskFullAlerts.removeValue(forKey: key) {
@@ -88,12 +88,14 @@ final class FileOperationsDialogs: FileOperationsUI {
         }
     }
 
-    func resolveDiskFull(destination: URL?, neededBytes: Int64, window: AnyObject?, job: FileJob, completion: @escaping (Bool) -> Void) {
+    func resolveDiskFull(
+        destination: URL?, source: URL?, neededBytes: Int64, window: AnyObject?, job: JobControl, completion: @escaping (Bool) -> Void
+    ) {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "\(destination.map(Activity.name) ?? "The destination") is full."
         alert.informativeText =
-            "Free space for “\(job.sources.first.map(Activity.name) ?? "this item")” (up to \(FileFormat.size(neededBytes))), then try again. Finished files stay in place."
+            "Free space for “\(source.map(Activity.name) ?? "this item")” (up to \(FileFormat.size(neededBytes))), then try again. Finished files stay in place."
         alert.addButton(withTitle: "Try Again"); alert.addButton(withTitle: "Stop")
         let key = ObjectIdentifier(job)
         diskFullAlerts[key] = alert
@@ -197,23 +199,24 @@ final class FileOperationsDialogs: FileOperationsUI {
         owner.beginSheet(sheet)
     }
 
-    func jobStarted(_ job: FileJob) {
-        if Settings.isTesting, let delay = ProcessInfo.processInfo.environment["PORPOISE_TRANSFER_PREPARATION_DELAY"].flatMap(Double.init) {
-            job.inventoryDelay = min(0.01, max(0, delay))
+    func jobStarted(_ activity: Activity) {
+        if let job = activity.job {
+            if Settings.isTesting, let delay = ProcessInfo.processInfo.environment["PORPOISE_TRANSFER_PREPARATION_DELAY"].flatMap(Double.init) {
+                job.inventoryDelay = min(0.01, max(0, delay))
+            }
+            if Settings.isTesting, let delay = ProcessInfo.processInfo.environment["PORPOISE_TRANSFER_DELAY"].flatMap(Double.init) {
+                job.allowsClone = false
+                job.resumableSize = 1
+                job.chunkDelay = min(1, max(0, delay))
+            }
         }
-        if Settings.isTesting, let delay = ProcessInfo.processInfo.environment["PORPOISE_TRANSFER_DELAY"].flatMap(Double.init) {
-            job.allowsClone = false
-            job.resumableSize = 1
-            job.chunkDelay = min(1, max(0, delay))
-        }
-        jobsPanel.add(job)
+        jobsPanel.add()
     }
-    func jobProgressed(_ job: FileJob, _ progress: JobProgress) { jobsPanel.update(job, progress) }
-    func jobFinished(_ job: FileJob) {
-        jobsPanel.finish(job)
+    func jobProgressed(_ activity: Activity, _ progress: JobProgress) {}
+    func jobFinished(_ activity: Activity) {
+        jobsPanel.finish()
         DispatchQueue.main.async {
-            guard let activity = FileOperationsController.shared.activities.first(where: { $0.job === job || $0.controlJob === job }),
-                activity.state == .completed
+            guard FileOperationsController.shared.activities.contains(where: { $0 === activity }), activity.state == .completed
             else { return }
             let owner = (activity.originWindow as? NSWindow)?.windowController as? MainWindowController
             owner?.view.statusBar.showMessage(TransferSummary.text(activity), duration: 4)

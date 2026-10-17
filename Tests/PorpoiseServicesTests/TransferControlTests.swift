@@ -14,16 +14,16 @@ struct TransferControlTests {
         let target = try s.file("dst/item.txt", "old")
         let control = FileJob(kind: .copy, sources: [source], destinationFolder: destination)
         var disposals = 0
-        control.disposeReplacedItem = { old, _ in
+        // The mixed local/remote engine also stages its local legs. Inject a disk-full failure
+        // after the swap to check rollback, cleanup, and the user's Cancel/Retry decision.
+        let transfer = RemoteTransferJob(
+            kind: .copy, sources: [source], destination: destination, control: control.control,
+            rule: .replace, options: .init())
+        transfer.disposeReplacedItem = { old, _ in
             disposals += 1
             if disposals == 1 { throw POSIXError(.ENOSPC) }
             try FileManager.default.removeItem(at: old)
         }
-        // The mixed local/remote engine also stages its local legs. Inject a disk-full failure
-        // after the swap to check rollback, cleanup, and the user's Cancel/Retry decision.
-        let transfer = RemoteTransferJob(
-            kind: .copy, sources: [source], destination: destination, control: control,
-            rule: .replace, options: .init())
         var prompts = 0
         transfer.onNoSpace = { needed in
             prompts += 1

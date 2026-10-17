@@ -10,7 +10,7 @@ import Testing
     private func driveJob(_ source: URL, into folder: URL, rule: TransferConflictRule = .ask) -> RemoteTransferJob {
         RemoteTransferJob(
             kind: .copy, sources: [source], destination: folder,
-            control: FileJob(kind: .copy, sources: [source], destinationFolder: folder), rule: rule, options: .init())
+            control: JobControl(), rule: rule, options: .init())
     }
 
     /// Each engine gets the same conflict cases, checking bytes and identity rather than only policy outputs.
@@ -31,7 +31,7 @@ import Testing
                 _ = try await offThePool { try control.run() }
                 #expect(control.errors.isEmpty)
             } else {
-                let job = RemoteTransferJob(kind: .copy, sources: [source.url], destination: out, control: control, rule: rule, options: .init())
+                let job = RemoteTransferJob(kind: .copy, sources: [source.url], destination: out, control: control.control, rule: rule, options: .init())
                 job.resolve = { _ in
                     asked += 1; return .init(.overwrite)
                 }
@@ -156,7 +156,7 @@ import Testing
         try Data("Nested fixture.".utf8).write(to: local)  // the same bytes as /Folder/nested.txt
         let job = RemoteTransferJob(
             kind: .copy, sources: [local], destination: folder,
-            control: FileJob(kind: .copy, sources: [local], destinationFolder: folder), rule: .different, options: .init(method: .content))
+            control: JobControl(), rule: .different, options: .init(method: .content))
         await offThePool { job.run() }
         #expect(job.errors.isEmpty, "\(job.errors)")
         #expect(job.progress.skippedIdenticalItems == 1, "\(job.progress) \(job.results)")

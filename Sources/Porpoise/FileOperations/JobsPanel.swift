@@ -238,13 +238,12 @@ private final class TransferPopoverRow: NSView {
 /// Owns only the Dock aggregate. Window toolbars observe Activity directly.
 final class JobsPanel {
     private var timer: Timer?
-    func add(_ job: FileJob) {
+    func add() {
         guard timer == nil else { return }
         let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in self?.refresh() }
         RunLoop.main.add(timer, forMode: .common); self.timer = timer
     }
-    func update(_ job: FileJob, _ progress: JobProgress) {}
-    func finish(_ job: FileJob) { refresh() }
+    func finish() { refresh() }
     private func refresh() {
         let jobs = FileOperationsController.shared.activities.filter { $0.state.isActive }
         guard !jobs.isEmpty else {

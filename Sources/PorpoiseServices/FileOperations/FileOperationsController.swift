@@ -104,7 +104,8 @@ public final class FileOperationsController {
         job.completedTransfers = completedTransfers
         job.conflictRule = Settings.shared.transferConflictRule
         job.comparisonOptions = TransferCompareOptions(method: Settings.shared.transferCompareMethod)
-        configureReplacementDisposal(job)
+        job.disposeReplacedItem = replacementDisposal
+        job.trashItem = { try TrashService.shared.trash([$0]).first?.inTrash }
         prepareJob?(job)
         let activity = Activity(kind: kind, sources: urls, destination: folder, job: job)
         activity.originWindow = window
@@ -121,20 +122,20 @@ public final class FileOperationsController {
     ) {
         let kind = activity.kind, urls = activity.sources, folder = activity.destination
         began(activity)
-        ui?.jobStarted(job)
+        ui?.jobStarted(activity)
         job.onNoSpace = { [weak self, weak activity, weak job] bytes in
             guard let job else { return false }
-            return self?.awaitDiskSpace(bytes, activity: activity, job: job, window: window) ?? false
+            return self?.awaitDiskSpace(bytes, activity: activity, job: job.control, window: window) ?? false
         }
-        job.onProgress = { [weak self, weak job, weak activity] p in
+        job.onProgress = { [weak self, weak activity] p in
             DispatchQueue.main.async {
-                if let job { self?.ui?.jobProgressed(job, p) }
+                if let activity { self?.ui?.jobProgressed(activity, p) }
                 if let activity { self?.progressed(activity, p) }
             }
         }
         job.resolveConflict = { [weak self, weak activity, weak job] info in
             guard let job else { return .init(.cancel) }
-            return self?.awaitConflict(info, kind: kind, activity: activity, job: job, window: window) ?? .init(.cancel)
+            return self?.awaitConflict(info, kind: kind, activity: activity, job: job.control, window: window) ?? .init(.cancel)
         }
         DispatchQueue.global(qos: .userInitiated).async {
             var record: UndoRecord?
@@ -142,8 +143,8 @@ public final class FileOperationsController {
             do { record = try job.run() } catch { fatal = error }
             DispatchQueue.main.async {
                 Self.notifyChanged(urls + (folder.map { [$0] } ?? []) + job.results)
-                self.ui?.jobFinished(job)
-                if let r = record { self.pushUndo(r); self.recordTrash(r) }
+                self.ui?.jobFinished(activity)
+                if let r = record { self.pushUndo(r) }
                 let errs = job.errors + (fatal.map { [($0 as? LocalizedError)?.errorDescription ?? $0.localizedDescription] } ?? [])
                 self.ended(activity, errors: errs)
                 // Quitting: nothing more to say or do now; the journal resumes it next time.
@@ -296,14 +297,15 @@ public final class FileOperationsController {
 }
 
 extension FileOperationsController {
-    func awaitDiskSpace(_ bytes: Int64, activity: Activity?, job: FileJob, window: AnyObject?) -> Bool {
+    func awaitDiskSpace(_ bytes: Int64, activity: Activity?, job: JobControl, window: AnyObject?) -> Bool {
         let reply = ConflictReply()
         job.pause()
         DispatchQueue.main.async { [weak self, weak activity] in
             guard let self, let ui = self.ui, !job.isCancelled, !job.isInterrupted else { reply.finish(.init(.cancel)); return }
             activity?.state = .paused
             self.activityDidChange()
-            ui.resolveDiskFull(destination: activity?.destination, neededBytes: bytes, window: window, job: job) { retry in
+            ui.resolveDiskFull(destination: activity?.destination, source: activity?.sources.first, neededBytes: bytes, window: window, job: job) {
+                retry in
                 job.resume()
                 if !retry { job.cancel() }
                 activity?.rate.reset()
@@ -322,7 +324,7 @@ extension FileOperationsController {
     }
 
     /// Only the worker waits. Sheets and unrelated jobs keep servicing the main run loop.
-    func awaitConflict(_ info: ConflictInfo, kind: FileOperationKind, activity: Activity?, job: FileJob, window: AnyObject?) -> ConflictAnswer {
+    func awaitConflict(_ info: ConflictInfo, kind: FileOperationKind, activity: Activity?, job: JobControl, window: AnyObject?) -> ConflictAnswer {
         let reply = ConflictReply()
         DispatchQueue.main.async { [weak self, weak activity] in
             guard let self, let ui = self.ui, !job.isCancelled, !job.isInterrupted else { reply.finish(.init(.cancel)); return }

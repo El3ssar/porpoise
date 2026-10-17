@@ -4,11 +4,14 @@ import Foundation
 public final class DiskCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
+    private let owningCancelled: () -> Bool
     private let checkpoint: (() throws -> Void)?
     /// Optional owning-job pause/cancel gate, called outside the cancellation lock at safe IO boundaries.
-    public init(checkpoint: (() throws -> Void)? = nil) { self.checkpoint = checkpoint }
+    public init(checkpoint: (() throws -> Void)? = nil, isCancelled: @escaping () -> Bool = { false }) {
+        self.checkpoint = checkpoint; self.owningCancelled = isCancelled
+    }
     public func cancel() { lock.withLock { cancelled = true } }
-    public var isCancelled: Bool { lock.withLock { cancelled } }
+    public var isCancelled: Bool { lock.withLock { cancelled } || owningCancelled() }
     public func check() throws {
         if isCancelled { throw CancellationError() }
         try checkpoint?()

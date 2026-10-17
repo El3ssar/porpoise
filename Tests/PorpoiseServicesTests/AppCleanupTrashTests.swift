@@ -16,9 +16,9 @@ private final class CleanupReviewUI: FileOperationsUI {
     func confirm(_ q: PorpoiseServices.Confirmation, window: AnyObject?) -> (confirmed: Bool, dontAskAgain: Bool) { base.confirm(q, window: window) }
     func showErrors(_ errors: [String], window: AnyObject?) { base.showErrors(errors, window: window) }
     func resolveConflict(_ info: ConflictInfo, kind: FileOperationKind) -> ConflictAnswer { base.resolveConflict(info, kind: kind) }
-    func jobStarted(_ job: FileJob) { base.jobStarted(job) }
-    func jobProgressed(_ job: FileJob, _ progress: JobProgress) { base.jobProgressed(job, progress) }
-    func jobFinished(_ job: FileJob) { base.jobFinished(job) }
+    func jobStarted(_ activity: Activity) { base.jobStarted(activity) }
+    func jobProgressed(_ activity: Activity, _ progress: JobProgress) { base.jobProgressed(activity, progress) }
+    func jobFinished(_ activity: Activity) { base.jobFinished(activity) }
     func showAuthorizationError(_ message: String) { base.showAuthorizationError(message) }
 }
 

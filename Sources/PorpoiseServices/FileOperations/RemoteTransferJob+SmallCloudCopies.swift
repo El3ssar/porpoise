@@ -35,6 +35,7 @@ extension RemoteTransferJob {
             let child = RemoteTransferJob(kind: .copy, sources: [item.url], destination: destination, control: control, rule: rule, options: options)
             child.cloudBatchID = cloudBatchID
             child.cloudOperations[item.url] = operation
+            child.disposeReplacedItem = disposeReplacedItem
             child.resolve = resolve
             child.onNoSpace = onNoSpace
             child.onNotice = onNotice

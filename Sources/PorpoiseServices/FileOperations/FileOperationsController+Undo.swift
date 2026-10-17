@@ -55,10 +55,9 @@ extension FileOperationsController {
     /// callers before any alert: a job finishing during the alert pushes onto them.
     private func revert(_ r: UndoRecord) -> Result<UndoRecord?, Error> {
         do {
-            let inverse = try FileActions.undo(r)
+            let inverse = try FileActions.undo(r, trash: TrashService.shared.trash)
             if let inverse {
                 // Items Undo put in the Trash can go back where they were (Restore to Former Location).
-                recordTrash(inverse)
                 Self.notifyChanged(Self.urls(of: inverse))
             }
             return .success(inverse)

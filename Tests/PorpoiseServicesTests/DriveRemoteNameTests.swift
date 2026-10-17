@@ -27,7 +27,7 @@ extension DriveMutationTests {
         func copy(_ sources: [URL]) async -> RemoteTransferJob {
             let job = RemoteTransferJob(
                 kind: .copy, sources: sources, destination: output,
-                control: FileJob(kind: .copy, sources: sources, destinationFolder: output), rule: .keepBoth, options: .init())
+                control: JobControl(), rule: .keepBoth, options: .init())
             await offThePool { job.run() }
             return job
         }
