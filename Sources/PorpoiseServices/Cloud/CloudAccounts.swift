@@ -188,6 +188,9 @@ public protocol CloudBackend: AnyObject {
     func trash(_ urls: [URL], done: @escaping (_ trashed: [URL], _ error: Error?) -> Void)
     func untrash(_ urls: [URL], done: @escaping (_ restored: [URL], _ error: Error?) -> Void)
 
+    /// Optional provider-neutral offline content capability.
+    func content(for accountID: String) -> CloudContentSource?
+
     // Freshness (CloudFreshness.swift has the defaults: nothing is saved).
     /// When the listing of a folder that can be shown without the network was last read from the service.
     func savedAt(for folder: URL) -> Date?
