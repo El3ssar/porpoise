@@ -1,7 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.8.1
 
+- **Copy conflicts behave the same everywhere.** Copying to this Mac, a server, Google Drive or Dropbox follows one set of rules: a Google Drive shortcut to a folder is no longer merged into a folder of the same name, a file and a folder never replace each other (Keep Both is offered), and Dropbox counts identical files it skipped.
+- **Undoing a copy keeps Put Back.** The copy goes to the Trash with its origin, so Restore to Former Location works.
+- **Cloud menus and storage.** Items in Google Drive, Dropbox and SFTP folders no longer offer Open Path, and clicking the storage bar in a cloud folder opens that account's storage page instead of macOS Storage settings.
+- **Steadier cloud connections.** Google Drive and Dropbox share one connection layer: when the service is busy, both wait as asked and retry, and Drive thumbnails renew an expired sign-in.
+- **Signing out of Dropbox always finishes,** even when Dropbox is slow to confirm the revoke.
 - **Storage bars agree.** The sidebar, Settings › Accounts and the status bar now color a disk or account the same way: amber past 80 % used, red past 95 %. A 92 %-full disk used to be blue in the sidebar, amber in Settings and red in the status bar.
 - **Questions that come late are no longer lost.** An alert that arrives after its window was closed or hidden (a sign-in finishing in the browser, a counted download, a full disk during a copy) now shows on its own or in Activity, instead of on a window you can't see.
 - **Reduce Motion is respected in more places.** The Compare Files progress band and the Info panel's video controls no longer animate when Reduce Motion is on.
