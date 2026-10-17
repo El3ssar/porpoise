@@ -356,7 +356,7 @@ final class FakeDropboxServer {
         try await store.disconnect(account.id); #expect(store.accounts.isEmpty)
         #expect(try credentials.read(clientID: server.config.appKey, accountID: account.id) == nil)
         #expect((try await server.stats())["secretSent"] as? Bool == false)
-        #expect(!CloudProvider.dropbox.isAvailable)
+        #expect(CloudProvider.dropbox.isAvailable)
     }
 }
 

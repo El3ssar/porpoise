@@ -61,7 +61,7 @@ import Testing
     @Test func unavailableProvidersDontStartASignIn() {
         let (m, backend) = model()
         var result: Result<CloudAccount, CloudConnectError>?
-        _ = m.connect(.dropbox, openBrowser: { _ in }, done: { result = $0 })
+        _ = m.connect(.oneDrive, openBrowser: { _ in }, done: { result = $0 })
         #expect(!backend.isSigningIn)
         guard case .failure(.failed) = result else { Issue.record("expected a failure"); return }
     }
@@ -179,7 +179,7 @@ import Testing
     }
 
     @Test func providersAndRootsHaveNamesAndMarks() {
-        #expect(CloudProvider.allCases.filter(\.isAvailable) == [.googleDrive])
+        #expect(CloudProvider.allCases.filter(\.isAvailable) == [.googleDrive, .dropbox])
         #expect(CloudProvider.allCases.map(\.brand) == ["google-drive", "dropbox", "onedrive", "box"])
         #expect(CloudProvider.allCases.map(\.title) == ["Google Drive", "Dropbox", "OneDrive", "Box"])
         #expect(CloudRoot.allCases.map(\.title) == ["My Drive", "Shared with me", "Shared drives"])

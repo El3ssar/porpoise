@@ -502,7 +502,8 @@ final class DebugBridge: NSObject {
             guard Settings.isTesting else { return }
             let paths = arg.components(separatedBy: "|")
             if paths.count == 2 {
-                FileOperationsController.shared.run(.copy, [URL(fileURLWithPath: paths[0])], to: URL(fileURLWithPath: paths[1]), window: wc?.window)
+                func location(_ path: String) -> URL { path.contains("://") ? URL(string: path)! : URL(fileURLWithPath: path) }
+                FileOperationsController.shared.run(.copy, [location(paths[0])], to: location(paths[1]), window: wc?.window)
             }
         case "transferpopover":
             guard Settings.isTesting else { return }

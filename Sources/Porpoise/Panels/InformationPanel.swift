@@ -11,7 +11,7 @@ final class InformationPanel: NSView {
     private let previewSpinner = NSProgressIndicator()
     private let previewStatus = NSTextField(wrappingLabelWithString: "")
     private var drivePlayer: Task<Void, Never>?
-    private var driveStream: DriveStreamingPreview?
+    private var driveStream: (any CloudPreviewStream)?
     private var drivePreview: Task<Void, Never>?
     private let nameLabel = NSTextField(wrappingLabelWithString: "")
     private let grid = NSStackView()
@@ -292,20 +292,11 @@ final class InformationPanel: NSView {
         let big = Self.previewSize
         preview.image = Icons.shared.image(for: item, size: big)
         guard Settings.shared.infoShowPreview, Thumbnails.wantsPreview(item) else { return }
-        if let drive = RemoteFS.provider(for: item.url) as? DriveProvider, let client = drive.client {
+        if let cloud = RemoteFS.provider(for: item.url) as? CloudFileProvider {
             previewSpinner.startAnimation(nil)
             previewStatus.stringValue = "Loading preview…"
             drivePreview = Task { @MainActor [weak self] in
                 do {
-                    let file: DriveFile
-                    if let cached = drive.metadata(for: item.url) {
-                        file = cached
-                    } else {
-                        guard let location = DriveLocation(url: item.url), case .folder(let id, _) = location.collection else {
-                            throw DriveError.invalidLocation
-                        }
-                        file = try await client.file(id, resourceKey: location.resourceKey)
-                    }
                     let paint: (URL) async throws -> Void = { [weak self] local in
                         try Task.checkCancellation()
                         let image: NSImage?
@@ -323,20 +314,16 @@ final class InformationPanel: NSView {
                         guard !Task.isCancelled, let self, self.shownURLs == [item.url] else { return }
                         if let image { self.preview.image = local.pathExtension == "pdf" ? Thumbnails.paperPreview(image) : image }
                     }
-                    if file.mimeType.hasPrefix("video/") || file.mimeType.hasPrefix("audio/") {
-                        if let cached = try await client.cachedPreview(file) {
-                            try await paint(cached)
-                        } else if file.thumbnailLink != nil {
-                            try await paint(try await client.thumbnail(file, maximumPixelSize: 1600))
-                        }
+                    if item.utType?.conforms(to: .audiovisualContent) == true {
+                        if let thumbnail = try? await cloud.preview(item.url, thumbnail: true) { try await paint(thumbnail) }
                     } else {
-                        let context = DriveTransferContext(progress: { [weak self] bytes, total in
-                            Task { @MainActor [weak self] in
+                        let context = CloudTransferContext(progress: { [weak self] bytes, total in
+                            Task { @MainActor in
                                 guard let self, self.shownURLs == [item.url] else { return }
                                 self.previewStatus.stringValue = total > 0 ? "Loading \(min(100, bytes * 100 / total))%" : "Loading preview…"
                             }
                         })
-                        _ = try await client.progressivePreview(file, context: context, show: paint)
+                        _ = try await cloud.progressivePreview(item.url, context: context, onPreview: paint)
                     }
                     guard !Task.isCancelled, let self, self.shownURLs == [item.url] else { return }
                     self.previewSpinner.stopAnimation(nil); self.previewStatus.stringValue = ""
@@ -477,7 +464,7 @@ final class InformationPanel: NSView {
         let playable =
             Settings.shared.infoShowPreview
             && (item.url.isFileURL
-                || (Settings.shared.previewRemote && Settings.shared.previewVideos && RemoteFS.provider(for: item.url) is DriveProvider))
+                || (Settings.shared.previewRemote && Settings.shared.previewVideos && RemoteFS.provider(for: item.url) is CloudFileProvider))
             && (item.utType.map {
                 $0.conforms(to: .audiovisualContent) || VideoPreview.isVideoExtension(item.fileExtension)
             } ?? false)
@@ -491,28 +478,13 @@ final class InformationPanel: NSView {
         playerURL = url
         let work = DispatchWorkItem { [weak self] in
             guard let owner = self else { return }
-            if let drive = RemoteFS.provider(for: url) as? DriveProvider, let client = drive.client {
+            if let cloud = RemoteFS.provider(for: url) as? CloudFileProvider {
                 owner.drivePlayer = Task { @MainActor [weak owner] in
                     do {
-                        let file: DriveFile
-                        if let cached = drive.metadata(for: url) {
-                            file = cached
-                        } else {
-                            guard let location = DriveLocation(url: url), case .folder(let id, _) = location.collection else {
-                                throw DriveError.invalidLocation
-                            }
-                            file = try await client.file(id, resourceKey: location.resourceKey)
-                        }
-                        let cached = try await client.cachedPreview(file)
+                        let playback = try await cloud.playback(url)
                         try Task.checkCancellation()
-                        guard let owner, owner.shownURLs == [url] else { return }
-                        if let cached {
-                            owner.startPlayer(with: cached)
-                        } else {
-                            let stream = try client.streamingPreview(file)
-                            owner.driveStream = stream
-                            owner.startPlayer(with: stream.url)
-                        }
+                        guard let owner, owner.shownURLs == [url] else { playback.stream?.stop(); return }
+                        owner.driveStream = playback.stream; owner.startPlayer(with: playback.url)
                     } catch {
                         guard !Task.isCancelled, let owner, owner.shownURLs == [url] else { return }
                         owner.previewStatus.stringValue = "Playback unavailable"

@@ -5,6 +5,14 @@ public enum DropboxConnectionError: Error, Equatable { case alreadyConnected, wr
 
 /// Engine-only account lifecycle. UI registration/Connect sheet availability is a separate integration step.
 @MainActor public final class DropboxAccountStore {
+    public static let shared = DropboxAccountStore(directory: defaultDirectory)
+    private static var defaultDirectory: URL {
+        if CredentialStores.isIsolated {
+            let suite = ProcessInfo.processInfo.environment["PORPOISE_DEFAULTS_SUITE"] ?? "tests"
+            return FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-dropbox-" + cloudObjectKey(suite))
+        }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise/Dropbox")
+    }
     private struct Saved: Codable { var account: DropboxAccount; var appKey: String }
     public private(set) var accounts: [DropboxAccount] = []
     public private(set) var connecting = false
@@ -20,7 +28,17 @@ public enum DropboxConnectionError: Error, Equatable { case alreadyConnected, wr
         defaults: UserDefaults = Settings.store, credentials: any CloudCredentialStore = CredentialStores.cloud(providerID: "dropbox"),
         configuration: DropboxConfiguration? = nil, directory: URL, http: CloudHTTPTransport = .init()
     ) {
-        self.defaults = defaults; self.credentials = credentials; self.configuration = configuration; self.directory = directory; self.http = http
+        self.defaults = defaults; self.credentials = credentials; self.directory = directory; self.http = http
+        if configuration == nil, Settings.isTesting, let raw = ProcessInfo.processInfo.environment["PORPOISE_DROPBOX_FAKE"],
+            let fake = URL(string: raw), fake.scheme == "http", fake.host == "127.0.0.1"
+        {
+            self.configuration = DropboxConfiguration(
+                appKey: "porpoise-dropbox-fixture", authorizationURL: fake.appendingPathComponent("auth"),
+                tokenURL: fake.appendingPathComponent("token"), apiURL: fake.appendingPathComponent("2"),
+                contentURL: fake.appendingPathComponent("2"), notifyURL: fake.appendingPathComponent("2"))
+        } else {
+            self.configuration = configuration
+        }
         if let bytes = defaults.data(forKey: "dropboxAccounts"), let records = try? JSONDecoder().decode([Saved].self, from: bytes) {
             saved = records; accounts = records.map(\.account)
             for record in records { install(record.account, configuration: config(appKey: record.appKey)) }

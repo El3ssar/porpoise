@@ -204,7 +204,7 @@ final class Thumbnails {
         pending.insert(k)
         if item.url.isFileURL {
             generate(k, for: item, file: item.url, size: size)
-        } else if let drive = RemoteFS.provider(for: item.url) as? DriveProvider {
+        } else if let drive = RemoteFS.provider(for: item.url) as? CloudFileProvider {
             Task { [weak self] in
                 let local = try? await drive.preview(item.url, thumbnail: true)
                 guard let self else { return }

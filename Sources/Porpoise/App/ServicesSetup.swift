@@ -9,9 +9,9 @@ extension AppDelegate {
         FileOperationsController.shared.ui = FileOperationsDialogs()
         FileOperationsController.shared.clipboard = SystemClipboard()
         RemoteOpener.openFile = { NSWorkspace.shared.open($0) }
-        DriveEditing.shared.openFile = { RemoteOpener.openFile($0) }
+        CloudEditing.shared.openFile = { RemoteOpener.openFile($0) }
         // Something to decide (a conflict, a save refused): a calm line in the front window with the way to Activity.
-        DriveEditing.shared.post = { [weak self] text, attention in
+        CloudEditing.shared.post = { [weak self] text, attention in
             guard attention, let w = self?.windows.first(where: { $0.window?.isKeyWindow == true }) ?? self?.windows.first else {
                 return StatusCenter.post(text)
             }
@@ -21,12 +21,14 @@ extension AppDelegate {
             }
             w.view.needsLayout = true
         }
-        DriveEditing.shared.restoresAtLaunch = true
+        CloudEditing.shared.restoresAtLaunch = true
         // Test instances can show made-up cloud accounts (no network, no browser).
         if Settings.isTesting, ProcessInfo.processInfo.environment["PORPOISE_CLOUD_DEMO"] != nil {
             CloudAccounts.shared.backend = DemoCloudBackend()
         } else {
-            CloudAccounts.shared.backend = MainActor.assumeIsolated { DriveCloudBackend(store: .shared) }
+            CloudAccounts.shared.backend = MainActor.assumeIsolated {
+                CompositeCloudBackend([.googleDrive: DriveCloudBackend(store: .shared), .dropbox: DropboxCloudBackend(store: .shared)])
+            }
         }
         // Test instances can show offline states set by hand (the bridge's `cloud offline`).
         if Settings.isTesting, ProcessInfo.processInfo.environment["PORPOISE_OFFLINE_DEMO"] != nil {
@@ -34,8 +36,8 @@ extension AppDelegate {
         } else {
             CloudOfflineHub.service = CloudOffline.shared
             CloudOffline.shared.removalDenial = { url in
-                guard let entry = DriveEditing.shared.entry(for: url) else { return nil }
-                return "“\(entry.name)” has an open edit session or changes not in Google Drive yet."
+                guard let entry = CloudEditing.shared.entry(for: url) else { return nil }
+                return "“\(entry.name)” has an open edit session or changes not in \(entry.provider.title) yet."
             }
             CloudOffline.shared.activate()
         }

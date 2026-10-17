@@ -6,26 +6,10 @@ import PorpoiseCore
 public enum CloudProvider: String, Codable, CaseIterable, Sendable {
     case googleDrive, dropbox, oneDrive, box
 
-    public var title: String {
-        switch self {
-        case .googleDrive: return "Google Drive"
-        case .dropbox: return "Dropbox"
-        case .oneDrive: return "OneDrive"
-        case .box: return "Box"
-        }
-    }
+    public var title: String { descriptor.title }
+    public var brand: String { descriptor.brand }
+    public var isAvailable: Bool { descriptor.available }
 
-    /// The mark's file name in Resources/brands.
-    public var brand: String {
-        switch self {
-        case .googleDrive: return "google-drive"
-        case .dropbox: return "dropbox"
-        case .oneDrive: return "onedrive"
-        case .box: return "box"
-        }
-    }
-
-    public var isAvailable: Bool { self == .googleDrive }
 }
 
 /// The rows an account shows in the sidebar.
@@ -190,6 +174,7 @@ public protocol CloudBackend: AnyObject {
 
     /// Optional provider-neutral offline content capability.
     func content(for accountID: String) -> CloudContentSource?
+    func content(for url: URL) -> CloudContentSource?
 
     // Freshness (CloudFreshness.swift has the defaults: nothing is saved).
     /// When the listing of a folder that can be shown without the network was last read from the service.
@@ -211,6 +196,7 @@ public protocol CloudBackend: AnyObject {
 public final class CloudAccounts {
     public static let shared = CloudAccounts()
     public static let changed = Notification.Name("PorpoiseCloudAccountsChanged")
+    public static let remoteChanged = Notification.Name("PorpoiseCloudRemoteChanged")
 
     public var backend: CloudBackend? {
         didSet {
@@ -277,9 +263,16 @@ public final class CloudAccounts {
 
     /// The rows the account offers: Shared drives only when it has some.
     public func availableRows(_ id: String) -> [CloudRoot] {
-        CloudRoot.allCases.filter { $0 != .sharedDrives || (account(id)?.sharedDriveCount ?? 0) > 0 }
+        (account(id)?.provider.descriptor.roots.map(\.key) ?? CloudRoot.allCases).filter {
+            $0 != .sharedDrives || (account(id)?.sharedDriveCount ?? 0) > 0
+        }
     }
 
+    public func rootTitle(_ root: CloudRoot, for id: String, includeCount: Bool = false) -> String {
+        guard let account = account(id) else { return root.title }
+        let descriptor = account.provider.descriptor.root(root)
+        return includeCount && descriptor.counted ? "\(descriptor.title) (\(account.sharedDriveCount))" : descriptor.title
+    }
     public func shows(_ root: CloudRoot, for id: String) -> Bool { !(prefs[id]?.hiddenRows.contains(root) ?? false) }
 
     public func setShows(_ root: CloudRoot, for id: String, _ on: Bool) {
@@ -386,7 +379,7 @@ public final class CloudAccounts {
             let entries = rows.compactMap { root -> PlaceEntry? in
                 guard let u = url(a.id, root: root) else { return nil }
                 return PlaceEntry(
-                    title: root.title, url: u, icon: root.icon, section: .account(a.id),
+                    title: rootTitle(root, for: a.id), url: u, icon: a.provider.descriptor.root(root).icon, section: .account(a.id),
                     isVolume: root == .myDrive && a.quotaTotal != nil)
             }
             let status: AccountSection.Status

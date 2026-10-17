@@ -152,7 +152,7 @@ final class ConnectSheet: NSWindowController {
         let head = NSTextField(labelWithString: "Continue in your browser")
         head.font = .systemFont(ofSize: 13, weight: .semibold)
         let body = Self.secondary(
-            "Sign in to Google and allow Porpoise to see your Drive files. Then come back here. Nothing is typed into Porpoise.")
+            provider.descriptor.signInInstructions)
         body.preferredMaxLayoutWidth = 440
         let text = NSStackView(views: [head, body])
         text.orientation = .vertical
@@ -181,7 +181,7 @@ final class ConnectSheet: NSWindowController {
         if !already {
             views.append(Self.secondary("Show in the sidebar:"))
             for root in accounts.availableRows(id) {
-                let label = root == .sharedDrives ? "\(root.title) (\(a.sharedDriveCount))" : root.title
+                let label = accounts.rootTitle(root, for: id, includeCount: true)
                 let check = NSButton(checkboxWithTitle: label, target: self, action: #selector(toggleRow(_:)))
                 check.identifier = NSUserInterfaceItemIdentifier(root.rawValue)
                 check.state = accounts.shows(root, for: id) ? .on : .off
@@ -190,7 +190,7 @@ final class ConnectSheet: NSWindowController {
         }
         let close = Self.button("Close", self, #selector(close(_:)))
         close.keyEquivalent = "\u{1b}"
-        let primary = Self.button(already ? "Show It" : "Open My Drive", self, #selector(openAccount(_:)))
+        let primary = Self.button(already ? "Show It" : "Open " + accounts.rootTitle(.myDrive, for: id), self, #selector(openAccount(_:)))
         primary.keyEquivalent = "\r"
         views.append(Self.row([NSView(), close, primary]))
         let stack = NSStackView(views: views)

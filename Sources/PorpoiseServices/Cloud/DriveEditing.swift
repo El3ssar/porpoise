@@ -63,11 +63,12 @@ public struct CloudEditEntry: Equatable, Sendable {
     public var lastSaved: Date?
     /// Where the file is in Drive (the folder it was opened from).
     public var location: URL
+    public var provider: CloudProvider = .googleDrive
 
     /// "Editing “Report.pdf”" and the like.
     public var title: String {
         switch mark {
-        case .conflict: return "“\(name)” changed in Google Drive while you edited it"
+        case .conflict: return "“\(name)” changed in \(provider.title) while you edited it"
         case .unsent: return "1 unsent edit to “\(name)”"
         case .needsCopy: return "Your changes to “\(name)” are on this Mac"
         default: return "Editing “\(name)”"
@@ -78,14 +79,14 @@ public struct CloudEditEntry: Equatable, Sendable {
     public var detail: String {
         switch mark {
         case .editing:
-            return lastSaved.map { "Changes save to Google Drive · last saved \($0.formatted(date: .omitted, time: .shortened))" }
-                ?? "Changes you save in the other app go to Google Drive"
-        case .saving: return "Saving to Google Drive…"
-        case .saved: return "Saved to Google Drive"
+            return lastSaved.map { "Changes save to \(provider.title) · last saved \($0.formatted(date: .omitted, time: .shortened))" }
+                ?? "Changes you save in the other app go to \(provider.title)"
+        case .saving: return "Saving to \(provider.title)…"
+        case .saved: return "Saved to \(provider.title)"
         case .unsent(let why): return "\(why) Your changes are kept on this Mac and sent when they can be."
         case .conflict: return "Both versions are kept. Keep both as separate files, compare them, or make yours the current version."
         case .needsCopy:
-            return "Google Drive can’t take them as a new version of the file yet. Save them as a copy next to it; the original stays as it is."
+            return "\(provider.title) can’t take them as a new version of the file yet. Save them as a copy next to it; the original stays as it is."
         }
     }
 }

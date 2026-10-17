@@ -414,7 +414,7 @@ extension ItemListView {
 
     /// A Drive file open in another app: how its saves are doing.
     func editMark(_ item: FileItem) -> CloudEditMark? {
-        item.url.scheme == "gdrive" ? DriveEditing.shared.mark(for: item.url) : nil
+        CloudEditing.shared.mark(for: item.url)
     }
 
     /// After the name in Details: "Editing · changes save to Google Drive", quiet unless it needs attention.

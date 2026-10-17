@@ -10,7 +10,7 @@ final class DriveMediaPreviewPanel: NSPanel, NSWindowDelegate {
     private let status = NSTextField(wrappingLabelWithString: "Loading preview…")
     private var shown: String?
     private var loading: Task<Void, Never>?
-    private var stream: DriveStreamingPreview?
+    private var stream: (any CloudPreviewStream)?
     private var observation: NSKeyValueObservation?
     private var itemObservation: NSKeyValueObservation?
     var onArrow: ((NSEvent) -> Void)?
@@ -43,9 +43,9 @@ final class DriveMediaPreviewPanel: NSPanel, NSWindowDelegate {
         super.keyDown(with: event)
     }
 
-    func show(_ file: DriveFile, client: DriveClient, relativeTo parent: NSWindow) {
+    func show(_ file: FileItem, provider: any CloudFileProvider, relativeTo parent: NSWindow) {
         title = file.name
-        let key = "\(client.accountID)|\(file.id)|\(file.headRevisionId ?? file.version ?? "")"
+        let key = file.url.absoluteString + "|" + String(file.modificationDate?.timeIntervalSince1970 ?? 0)
         if shown == key, isVisible { return }
         stop()
         shown = key
@@ -57,16 +57,11 @@ final class DriveMediaPreviewPanel: NSPanel, NSWindowDelegate {
         makeKeyAndOrderFront(nil)
         loading = Task { @MainActor [weak self] in
             do {
-                let cached = try await client.cachedPreview(file)
+                let playback = try await provider.playback(file.url)
                 try Task.checkCancellation()
-                guard let self else { return }
-                let url: URL
-                if let cached {
-                    url = cached
-                } else {
-                    let stream = try client.streamingPreview(file)
-                    self.stream = stream; url = stream.url
-                }
+                guard let self else { playback.stream?.stop(); return }
+                self.stream = playback.stream
+                let url = playback.url
                 let item = AVPlayerItem(url: url)
                 item.preferredForwardBufferDuration = 2
                 let player = AVPlayer(playerItem: item)

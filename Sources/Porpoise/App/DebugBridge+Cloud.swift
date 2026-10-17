@@ -127,27 +127,41 @@ extension DebugBridge {
         case "editwrite":
             // editwrite <name>|<text>: another app saves the file being edited.
             let f = rest.components(separatedBy: "|")
-            guard f.count == 2, let e = DriveEditing.shared.entries.first(where: { $0.name == f[0] }) else { return }
+            guard f.count == 2, let e = CloudEditing.shared.entries.first(where: { $0.name == f[0] }) else { return }
             try? Data(f[1].utf8).write(to: e.localURL)
         case "edits":
             // edits <file>: what Activity lists about files being edited, and the files opened.
             let lines =
-                DriveEditing.shared.entries.map { "\($0.name) | \($0.mark) | \($0.title) | \($0.detail)" }
+                CloudEditing.shared.entries.map { "\($0.name) | \($0.mark) | \($0.title) | \($0.detail)" }
                 + DebugBridge.openedFiles.map { "opened \($0)" }
             try? lines.joined(separator: "\n").write(toFile: rest, atomically: true, encoding: .utf8)
         case "editresolve":
             // editresolve <name>|keep|copy|open|replace|send: Activity's buttons for a file being edited.
             let f = rest.components(separatedBy: "|")
-            guard f.count == 2, let e = DriveEditing.shared.entries.first(where: { $0.name == f[0] }) else { return }
+            guard f.count == 2, let e = CloudEditing.shared.entries.first(where: { $0.name == f[0] }) else { return }
             switch f[1] {
-            case "keep", "copy": DriveEditing.shared.keepBoth(e.id)
-            case "open": DriveEditing.shared.openBoth(e.id)
-            case "replace": DriveEditing.shared.replaceWithMine(e.id)
-            default: DriveEditing.shared.save(e.id)
+            case "keep", "copy": CloudEditing.shared.keepBoth(e.id)
+            case "open": CloudEditing.shared.openBoth(e.id)
+            case "replace": CloudEditing.shared.replaceWithMine(e.id)
+            default: CloudEditing.shared.save(e.id)
             }
         case "copyonly":
             // copyonly on|off: as on real Drive until conditional saves are verified (saves wait for Save as a Copy).
             DriveEditing.shared.savesVersions = rest == "on" ? { _ in false } : { $0.canSaveEdits }
+        case "download": AppDelegate.shared.windows.first?.cloudDownload(nil)
+        case "keep": AppDelegate.shared.windows.first?.cloudKeep(nil)
+        case "evict": AppDelegate.shared.windows.first?.cloudEvict(nil)
+        case "accounts":
+            let accounts = CloudAccounts.shared
+            let rows = accounts.accounts.map { account in
+                [
+                    "id": account.id, "provider": account.provider.rawValue, "email": account.email,
+                    "root": accounts.url(account.id, root: .myDrive)?.absoluteString ?? "",
+                ]
+            }
+            if let data = try? JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: URL(fileURLWithPath: rest))
+            }
         case "poll": CloudAccounts.shared.checkForChanges()
         case "activity": ActivityWindowController.shared.show()
         case "select":

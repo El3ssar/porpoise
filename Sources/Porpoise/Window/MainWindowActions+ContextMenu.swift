@@ -144,7 +144,7 @@ extension MainWindowController {
             m.addItem(.separator())
         }
         // Launch Services only knows local files; remote items open through RemoteOpener (double-click).
-        if local || (item.url.scheme == "gdrive" && !item.isBrowsableFolder) { addOpenWith(to: m, item: item) }
+        if local || (PlacesModel.isCloud(item.url) && !item.isBrowsableFolder) { addOpenWith(to: m, item: item) }
         addCloudItems(to: m, selection: sel, in: c)
         if item.isSymlink || Self.isAlias(item) { m.addItem(self.item("Show Original", "document-open-folder", #selector(showOriginal(_:)))) }
         if single && item.isPackage { m.addItem(self.item("Show Package Contents", "folder-open", #selector(showPackageContents(_:)))) }
@@ -250,7 +250,7 @@ extension MainWindowController {
         }
         m.addItem(self.item("Rename…", "edit-rename", #selector(renameItem(_:))))
         m.addItem(.separator())
-        m.addItem(self.item("Move to Trash", "user-trash", #selector(moveToTrash(_:))))
+        m.addItem(self.item(CloudAccounts.shared.deletionTitle(for: item.url), "user-trash", #selector(moveToTrash(_:))))
         m.addItem(.separator())
         m.addItem(self.item("Quick Look", "document-preview", #selector(quickLook(_:))))
         m.addItem(self.item("Properties", "document-properties", #selector(properties(_:))))
@@ -385,7 +385,7 @@ extension MainWindowController {
     private func openSelection(with app: URL, urls: [URL]? = nil, remote: [FileItem]? = nil) {
         let local = (urls ?? selectedURLs).filter(\.isFileURL)
         if !local.isEmpty { NSWorkspace.shared.open(local, withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration()) }
-        for item in remote ?? view.model.selectedItems where item.url.scheme == "gdrive" {
+        for item in remote ?? view.model.selectedItems where PlacesModel.isCloud(item.url) {
             RemoteOpener.open(item, using: { NSWorkspace.shared.open([$0], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration()) })
         }
     }

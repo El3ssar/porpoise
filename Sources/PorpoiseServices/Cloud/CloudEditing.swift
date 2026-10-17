@@ -157,8 +157,18 @@ extension CloudAccounts {
     public func providerTitle(for url: URL) -> String { account(for: url)?.provider.title ?? "the cloud" }
 
     /// "Moved “Budget” to Google Drive Trash" / "Moved 3 items to Google Drive Trash".
+    public func supportsTrashUndo(_ urls: [URL]) -> Bool {
+        urls.allSatisfy { url in account(for: url)?.provider.descriptor.supportsTrashUndo ?? true }
+    }
+    public func deletionTitle(for url: URL) -> String {
+        account(for: url)?.provider.descriptor.supportsTrashUndo == false ? "Delete from " + providerTitle(for: url) + "…" : "Move to Trash"
+    }
     public func trashMessage(_ urls: [URL], names: [URL: String]) -> String {
         let place = providerTitle(for: urls.first ?? URL(fileURLWithPath: "/")) + " Trash"
+        if !supportsTrashUndo(urls) {
+            if urls.count == 1, let name = names[urls[0]] { return "Deleted “\(name)” from \(providerTitle(for: urls[0]))" }
+            return "Deleted \(urls.count) items"
+        }
         if urls.count == 1, let n = names[urls[0]] { return "Moved “\(n)” to \(place)" }
         return "Moved \(urls.count) item\(urls.count == 1 ? "" : "s") to \(place)"
     }
@@ -177,7 +187,7 @@ extension CloudAccounts {
         if let why = denial(.addItems, folder: folder) { done(.failure(CloudEditError.denied(why))); return }
         guard let backend else { done(.failure(CloudEditError.notSupported)); return }
         backend.createFolder(named: name, in: folder) { result in
-            if case .success(let item) = result {
+            if case .success(let item) = result, self.supportsTrashUndo([item.url]) {
                 self.operations.pushUndo(.cloud(CloudChange(.appeared, [item.url], label: "New Folder")))
             }
             done(result)
@@ -200,7 +210,7 @@ extension CloudAccounts {
         if let why = denial(.trash, items: urls) { done([], CloudEditError.denied(why)); return }
         guard let backend else { done([], CloudEditError.notSupported); return }
         backend.trash(urls) { trashed, error in
-            if !trashed.isEmpty {
+            if !trashed.isEmpty, self.supportsTrashUndo(trashed) {
                 self.operations.pushUndo(.cloud(CloudChange(.trashed, trashed, label: "Move to Trash")))
             }
             done(trashed, error)
