@@ -134,10 +134,13 @@ extension ItemListView {
             }
         }
         let (image, imageRect) = drawIcon(i)
-        let badge = CloudBadgeKind.resolve(cloud, edit: editMark(item))
-        drawCloudBadge(badge.cloudState ?? .local, row: i, image: image, imageRect: imageRect, selected: selected)
-        if case .edit(let edit) = badge { drawEditBadge(edit, image: image, imageRect: imageRect, selected: selected) }
-        if item.isSymlink || item.isAliasFile || item.isWebDocument { drawLinkEmblem(i, besideCloudBadge: badge.cloudState != nil) }
+        // The list modes draw the badge after the name (drawNameWithTags); Icons on the icon's corner.
+        let badge = cloudBadge(item, state: cloud)
+        cloudRects[i] = nil
+        if mode == .icons { drawIconBadge(badge, row: i, imageRect: imageRect, selected: selected) }
+        if item.isSymlink || item.isAliasFile || item.isWebDocument {
+            drawLinkEmblem(i, besideCloudBadge: mode == .icons && badge != .none)
+        }
 
         // Selection marker (Dolphin's +/- toggle on hover)
         if hoverIndex == i && Settings.shared.showSelectionMarker && rubberBand == nil && renamingItem == nil {
@@ -221,17 +224,39 @@ extension ItemListView {
     }
 
     /// Cloud state badge on the icon's lower right corner (white or blue, whichever reads on that icon).
-    private func drawCloudBadge(_ cloud: CloudState, row i: Int, image: NSImage, imageRect: CGRect, selected: Bool) {
-        guard cloud != .local else { cloudRects[i] = nil; return }
-        // At least 14 pt, so it reads on small list icons too; it may overhang the icon's corner a little.
-        let b = max(14, min(30, iconSize * 0.4))
-        let over = b * 0.08
+    /// The item's one badge: an edit in progress, else its cloud state.
+    func cloudBadge(_ item: FileItem, state: CloudState? = nil) -> CloudBadgeKind {
+        CloudBadgeKind.resolve(state ?? model.shownCloud(for: item).state, edit: editMark(item))
+    }
+
+    /// Icons: one disc on the icon's lower right corner, overhanging it a little so it covers less of the glyph.
+    private func drawIconBadge(_ badge: CloudBadgeKind, row i: Int, imageRect: CGRect, selected: Bool) {
+        guard let look = CloudBadge.look(badge) else { return }
+        let b = max(16, min(30, iconSize * 0.34))
+        let over = b * 0.22
         let br = CGRect(x: imageRect.maxX + over - b, y: imageRect.maxY + over - b, width: b, height: b)
-        let light = CloudBadge.backgroundIsLight(image, imageRect: imageRect, badge: br, behind: itemBackground(selected: selected))
-        CloudBadge.draw(cloud, in: br, onLight: light)
-        cloudRects[i] = br.insetBy(dx: -2, dy: -2)
-        // Accounts' transfers redraw from the offline service's notifications; iCloud's are read again.
-        if cloud.isTransferring, model.rows[i].item.url.isFileURL { scheduleCloudRefresh() }
+        CloudBadge.drawBadge(look, in: br, disc: itemBackground(selected: selected))
+        noteBadge(badge, rect: br, row: i)
+    }
+
+    /// List modes: the glyph after the name and tags, at text size; returns where it ends.
+    private func drawStatusGlyph(_ badge: CloudBadgeKind, row i: Int, at x: CGFloat, in line: CGRect, selected: Bool) -> CGFloat {
+        guard let look = CloudBadge.look(badge, selected: selected) else { return x }
+        let g = statusGlyphSize
+        let r = CGRect(x: x + 5, y: line.midY - g / 2, width: g, height: g)
+        CloudBadge.drawGlyph(look, in: r)
+        noteBadge(badge, rect: r, row: i)
+        return r.maxX
+    }
+
+    /// 14–16 pt, following the text.
+    var statusGlyphSize: CGFloat { min(16, max(14, round(lineHeight * 0.8))) }
+
+    /// Where the badge can be clicked and hovered; iCloud transfers are read again while they last (accounts' come
+    /// from the offline service's notifications).
+    private func noteBadge(_ badge: CloudBadgeKind, rect: CGRect, row i: Int) {
+        cloudRects[i] = rect.insetBy(dx: -2, dy: -2)
+        if badge.cloudState?.isTransferring == true, model.rows[i].item.url.isFileURL { scheduleCloudRefresh() }
     }
 
     /// Offline, files that are only in the cloud are drawn faded: what's on this Mac still opens.
@@ -329,7 +354,7 @@ extension ItemListView {
         let tr = nameTextRect(i)
         let roles = model.props.roles(for: .compact)
         var y = tr.midY - lineHeight * CGFloat(1 + roles.count) / 2
-        drawNameWithTags(item, in: CGRect(x: tr.minX, y: y, width: tr.width, height: lineHeight), selected: selected)
+        drawNameWithTags(item, row: i, in: CGRect(x: tr.minX, y: y, width: tr.width, height: lineHeight), selected: selected)
         y += lineHeight
         let roleAttrs: [NSAttributedString.Key: Any] = [
             .font: font, .foregroundColor: roleTextColor(selected: selected), .paragraphStyle: nameParagraph,
@@ -348,7 +373,7 @@ extension ItemListView {
         let tr = nameTextRect(i)
         let y = tr.midY - lineHeight / 2
         if showName {
-            let end = drawNameWithTags(item, in: CGRect(x: tr.minX, y: y, width: tr.width, height: lineHeight), selected: selected)
+            let end = drawNameWithTags(item, row: i, in: CGRect(x: tr.minX, y: y, width: tr.width, height: lineHeight), selected: selected)
             if let line = model.searchSnippet(for: item) {
                 drawSnippet(line, in: CGRect(x: end + 10, y: y, width: tr.maxX - end - 10, height: lineHeight), selected: selected)
             } else if let edit = editMark(item) {
@@ -392,15 +417,6 @@ extension ItemListView {
         item.url.scheme == "gdrive" ? DriveEditing.shared.mark(for: item.url) : nil
     }
 
-    /// The edit badge on the icon's upper right corner (the cloud badge has the lower right).
-    private func drawEditBadge(_ mark: CloudEditMark, image: NSImage, imageRect: CGRect, selected: Bool) {
-        let b = max(12, min(26, iconSize * 0.36))
-        let over = b * 0.08
-        let br = CGRect(x: imageRect.maxX + over - b, y: imageRect.minY - over, width: b, height: b)
-        let tint: NSColor = mark.needsAttention ? Theme.transferDanger : mark == .saved ? Theme.transferPositive : Theme.activeText
-        CloudBadge.draw(symbol: mark.symbol, tint: tint, in: br)
-    }
-
     /// After the name in Details: "Editing · changes save to Google Drive", quiet unless it needs attention.
     private func drawEditNote(_ mark: CloudEditMark, in r: CGRect, selected: Bool) {
         guard r.width > 60 else { return }
@@ -429,21 +445,24 @@ extension ItemListView {
         s.draw(in: r)
     }
 
-    /// One-line name followed by its Finder tag dots; returns where they end.
+    /// One-line name followed by its Finder tag dots and its cloud glyph (row `i`); returns where they end.
     @discardableResult
-    private func drawNameWithTags(_ item: FileItem, in r: CGRect, selected: Bool) -> CGFloat {
+    private func drawNameWithTags(_ item: FileItem, row i: Int, in r: CGRect, selected: Bool) -> CGFloat {
         let name = model.displayName(for: item)
         let tags = model.shownTags(for: item)
         let d = tagDotDiameter
         let dw = tags.isEmpty ? 0 : FinderTags.dotsWidth(tags.count, diameter: d) + 5
-        let nameW = min(textWidth(name) + 1, max(0, r.width - dw - 2))
+        let badge = cloudBadge(item)
+        // A long name gives way to the glyph, which always shows.
+        let gw = badge == .none ? 0 : statusGlyphSize + 5
+        let nameW = min(textWidth(name) + 1, max(0, r.width - dw - gw - 2))
         (name as NSString).draw(in: CGRect(x: r.minX, y: r.minY, width: nameW, height: r.height), withAttributes: nameAttributes(item))
         if !tags.isEmpty {
             FinderTags.drawDots(
                 tags, at: CGPoint(x: r.minX + nameW + 5, y: r.minY + (r.height - d) / 2 + 1), diameter: d,
                 background: itemBackground(selected: selected))
         }
-        return r.minX + nameW + dw
+        return drawStatusGlyph(badge, row: i, at: r.minX + nameW + dw, in: r, selected: selected)
     }
 
     /// Breeze's emblem-added / emblem-remove as KDE renders them with the color scheme: a light disc with +/−.

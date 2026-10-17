@@ -21,6 +21,19 @@ extension ItemListView {
         let onMarker = i.map { Settings.shared.showSelectionMarker && markerRect($0).contains(p) } ?? false
         if onMarker != hoverOnMarker, let i { hoverOnMarker = onMarker; setNeedsDisplay(frames[i].insetBy(dx: -30, dy: -2)) }
         hoverIndex = i
+        updateBadgeTip(at: p, row: i)
+    }
+
+    /// Over a cloud badge the tooltip says what it means ("Kept downloaded on this Mac."); off it, the item's again.
+    private func updateBadgeTip(at p: CGPoint, row i: Int?) {
+        let help = i.flatMap { i in cloudRects[i].flatMap { $0.contains(p) ? CloudBadge.help(cloudBadge(model.rows[i].item)) : nil } }
+        if let help {
+            if toolTip != help { toolTip = help }
+            badgeTipShown = true
+        } else if badgeTipShown {
+            badgeTipShown = false
+            hoverChanged(hoverIndex)
+        }
     }
 
     override func mouseExited(with event: NSEvent) { hoverIndex = nil }
@@ -152,8 +165,9 @@ extension ItemListView {
     /// Finder: clicking the cloud badge of an item that is only in the cloud downloads it; a problem badge shows
     /// Activity, where it's explained.
     private func downloadFromCloudBadge(at p: CGPoint) -> Bool {
-        guard let i = cloudRects.first(where: { $0.value.contains(p) })?.key, i < model.rows.count else { return false }
-        let state = model.cloud(for: model.rows[i].item).state
+        guard let i = cloudRects.first(where: { $0.value.contains(p) })?.key, i < model.rows.count,
+            case .cloud(let state) = cloudBadge(model.rows[i].item)
+        else { return false }
         if case .error = state {
             ActivityWindowController.shared.show()
             return true

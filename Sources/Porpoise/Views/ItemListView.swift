@@ -45,6 +45,8 @@ final class ItemListView: NSView {
     var treeLines: [[Bool]] = []
     /// Click targets of the cloud badges drawn so far (row → rect).
     var cloudRects: [Int: CGRect] = [:]
+    /// The tooltip shows what the pointed cloud badge means (instead of the item's own tooltip).
+    var badgeTipShown = false
 
     // MARK: Text measurement caches (+Layout)
 
