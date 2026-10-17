@@ -27,11 +27,16 @@ final class Icons {
     }
 
     private init() {
-        NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] _ in
+        NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
+            guard Self.redraws(after: n.object as? String) else { return }
             self?.cache.removeAllObjects()
             self?.flattened.removeAllObjects()
         }
     }
+
+    /// Settings that change how icons are drawn (nil: every setting, after Restore Defaults). Others, such as Show
+    /// Hidden Files, a panel's size or the saved session, leave the rendered icons as they are.
+    static func redraws(after key: String?) -> Bool { key == nil || key == "appearance" || key == "appearancePreferences" }
 
     /// Icon image by freedesktop name. `selected` uses highlighted-text colors (like KDE's selected state). It draws
     /// in the colors of the look it's drawn in (light or dark), so menus and buttons holding it follow a change.

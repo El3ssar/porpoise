@@ -117,8 +117,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             self?.zoomView.previewZoom(ZoomLevels.size(forContinuousLevel: level), anchor: nil, commitAfter: 0.6)
         }
         statusBar.onZoomCommit = { [weak self] in self?.zoomView.commitZoom() }
-        statusBar.onDiskClick = {
-            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.settings.Storage")!)
+        statusBar.onDiskClick = { [weak self] in
+            guard let self else { return }
+            NSWorkspace.shared.open(Self.storagePage(for: self.url))
         }
         for v in [scroll, header, searchBar, messageBar, selectionTop, selectionBottom, filterBar, statusBar] as [NSView] { addSubview(v) }
         list.onZoomPreview = { [weak self] size in
@@ -644,6 +645,15 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         animatingItems { model.filter = NameFilter() }
         needsLayout = true
         window?.makeFirstResponder(list)
+    }
+
+    /// What the capacity bar opens: in a cloud folder its account's storage page (the bar shows that quota), else
+    /// macOS's Storage settings.
+    static func storagePage(for url: URL) -> URL {
+        if let account = CloudAccounts.shared.account(for: url), let page = account.provider.descriptor.storageURL {
+            return AccountActions.webLink(page, account: account)
+        }
+        return URL(string: "x-apple.systempreferences:com.apple.settings.Storage")!
     }
 
     // MARK: Search
