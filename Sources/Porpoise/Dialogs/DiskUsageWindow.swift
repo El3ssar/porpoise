@@ -116,7 +116,7 @@ private final class DiskTreemapView: NSView {
         }
         if tiles.isEmpty {
             ("No non-zero files in this level" as NSString).draw(
-                at: CGPoint(x: 10, y: 10), withAttributes: [.foregroundColor: NSColor.secondaryLabelColor])
+                at: CGPoint(x: 10, y: 10), withAttributes: [.foregroundColor: Theme.windowTextInactive])
         }
     }
     override func mouseDown(with event: NSEvent) {

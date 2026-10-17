@@ -267,7 +267,7 @@ private final class TransferDockView: NSView {
         NSApp.applicationIconImage.draw(in: bounds)
         let track = CGRect(x: bounds.width * 0.13, y: bounds.height * 0.08, width: bounds.width * 0.74, height: 8)
         NSColor.black.withAlphaComponent(0.5).setFill(); NSBezierPath(roundedRect: track, xRadius: 4, yRadius: 4).fill()
-        NSColor.controlAccentColor.setFill();
+        Theme.accent.setFill();
         NSBezierPath(
             roundedRect: CGRect(x: track.minX, y: track.minY, width: track.width * min(1, max(0, fraction)), height: track.height), xRadius: 4,
             yRadius: 4

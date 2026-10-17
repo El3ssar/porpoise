@@ -37,7 +37,7 @@ final class ThemePreviewButton: NSButton {
         let text = NSAttributedString(string: title, attributes: attrs)
         text.draw(at: NSPoint(x: (bounds.width - text.size().width) / 2, y: 5))
         NSGraphicsContext.restoreGraphicsState()
-        (state == .on ? NSColor.controlAccentColor : NSColor.separatorColor).setStroke()
+        (state == .on ? Theme.accent : Theme.frame).setStroke()
         border.lineWidth = state == .on ? 2 : 0.5; border.stroke()
     }
 }
