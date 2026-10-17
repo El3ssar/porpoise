@@ -30,7 +30,12 @@ import Testing
         try await DriveMutationTests().control(server, ["dropDownloadAfterBytes": 12 << 20])
         await #expect(throws: (any Error).self) { try await client.downloadToStaging(file, operationID: operation) }
         let record = try #require(try client.mutationJournal.load(operation))
-        #expect(record.offset >= 8 << 20 && record.offset < 12 << 20)
+        // The engine checkpoints after 8 MiB OR two seconds. A loaded runner may durably
+        // checkpoint a smaller prefix before the connection drops; its bytes must still be exact.
+        #expect(record.offset > 0 && record.offset <= 12 << 20)
+        let partial = client.mutationJournal.folder.appendingPathComponent("Downloads").appendingPathComponent(operation.uuidString + ".part")
+        #expect((try FileManager.default.attributesOfItem(atPath: partial.path)[.size] as? NSNumber)?.int64Value == record.offset)
+        #expect(try Data(contentsOf: partial) == Data(repeating: 120, count: Int(record.offset)))
         let result = try await client.downloadToStaging(file, operationID: operation)
         #expect(try DriveClient.md5(result.url) == file.md5Checksum)
         let stats = try await URLSession.shared.data(from: server.base.appendingPathComponent("__stats")).0
