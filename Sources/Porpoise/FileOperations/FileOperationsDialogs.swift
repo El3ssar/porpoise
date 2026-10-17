@@ -219,7 +219,7 @@ final class FileOperationsDialogs: FileOperationsUI {
             guard FileOperationsController.shared.activities.contains(where: { $0 === activity }), activity.state == .completed
             else { return }
             let owner = (activity.originWindow as? NSWindow)?.windowController as? MainWindowController
-            owner?.view.statusBar.showMessage(TransferSummary.text(activity), duration: 4)
+            owner?.view.statusBar.showMessage(ActivityPresentation.summary(activity), duration: 4)
             NSAccessibility.post(
                 element: owner?.window ?? NSApp, notification: .announcementRequested,
                 userInfo: [.announcement: activity.title + ". " + activity.statusText, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
