@@ -74,7 +74,10 @@ public struct Violations {
     public mutating func check(_ ok: Bool, _ what: @autoclosure () -> String) { if !ok && list.count < 5 { list.append(what()) } }
 }
 
-/// Waits up to `timeout` seconds for `condition`, polling; returns whether it came true.
+/// Waits up to `timeout` seconds for `condition`, polling; returns whether it came true. It blocks its thread: an
+/// async test waits with `eventually` instead, or it holds one of the cooperative pool's few threads meanwhile (CI's
+/// runner has 3).
+@available(*, noasync, message: "blocks a cooperative pool thread: use eventually")
 public func waitUntil(_ timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
     let end = Date().addingTimeInterval(timeout)
     while Date() < end {

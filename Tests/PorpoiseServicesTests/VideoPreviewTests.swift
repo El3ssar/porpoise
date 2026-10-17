@@ -190,9 +190,12 @@ final class VideoPreviewStreamTests {
         return ((resp as? HTTPURLResponse)?.statusCode ?? 0, data)
     }
 
-    /// Waits up to 15 s for `condition` (slow when the machine is busy).
-    func eventually(_ condition: () -> Bool) -> Bool {
-        for _ in 0..<300 { if condition() { return true }; usleep(50_000) }
+    /// Waits up to 15 s for `condition` (slow when the machine is busy), without holding a cooperative pool thread.
+    func eventually(_ condition: () -> Bool) async -> Bool {
+        for _ in 0..<300 {
+            if condition() { return true }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
         return condition()
     }
 
@@ -252,9 +255,9 @@ final class VideoPreviewStreamTests {
         await MainActor.run { p.stop(for: owner) }
         // ffmpeg is ended and its folder removed once it has exited.
         #expect(
-            eventually { sessionFolders().isEmpty },
+            await eventually { sessionFolders().isEmpty },
             "left: \(sessionFolders().map { "\($0.lastPathComponent): \((try? FileManager.default.contentsOfDirectory(atPath: $0.path)) ?? [])" })")
-        #expect(eventually { !ffmpegRunning(on: v) })
+        #expect(await eventually { !ffmpegRunning(on: v) })
         #expect(try await fetch(url).0 == 404)
     }
 
@@ -269,10 +272,10 @@ final class VideoPreviewStreamTests {
         }
         let url = try #require(await playable(p, second, owner: NSObject()))
         #expect(url.lastPathComponent == "index.m3u8")
-        usleep(300_000)
+        try await Task.sleep(for: .milliseconds(300))
         #expect(!firstAnswered.withLock { $0 })  // the older request never calls back
-        #expect(eventually { !ffmpegRunning(on: first) })
-        #expect(eventually { sessionFolders().count == 1 })
+        #expect(await eventually { !ffmpegRunning(on: first) })
+        #expect(await eventually { sessionFolders().count == 1 })
     }
 
     @Test func unplayableFilesGiveNil() async throws {
@@ -322,33 +325,33 @@ struct StreamSessionTests {
         return p
     }
 
-    private func gone(_ url: URL) -> Bool {
-        for _ in 0..<200 where FileManager.default.fileExists(atPath: url.path) { usleep(25_000) }
+    private func gone(_ url: URL) async -> Bool {
+        for _ in 0..<200 where FileManager.default.fileExists(atPath: url.path) { try? await Task.sleep(for: .milliseconds(25)) }
         // Still gone a moment later: nothing wrote it back.
-        usleep(300_000)
+        try? await Task.sleep(for: .milliseconds(300))
         return !FileManager.default.fileExists(atPath: url.path)
     }
 
-    @Test func stoppedAfterFFmpegStarted() throws {
+    @Test func stoppedAfterFFmpegStarted() async throws {
         let s = try Scratch()
         let dir = try s.folder("session")
         let session = StreamSession(dir: dir)
         let p = try writer(into: dir)
         #expect(session.attach(p))
         session.stop()
-        #expect(gone(dir))
+        #expect(await gone(dir))
         #expect(!p.isRunning)
     }
 
     /// The race that left folders behind: the stop comes before ffmpeg is handed to the session.
-    @Test func stoppedBeforeFFmpegWasHandedOver() throws {
+    @Test func stoppedBeforeFFmpegWasHandedOver() async throws {
         let s = try Scratch()
         let dir = try s.folder("session")
         let session = StreamSession(dir: dir)
         session.stop()
         let p = try writer(into: dir)
         #expect(!session.attach(p))
-        #expect(gone(dir))
+        #expect(await gone(dir))
         p.waitUntilExit()
     }
 }
