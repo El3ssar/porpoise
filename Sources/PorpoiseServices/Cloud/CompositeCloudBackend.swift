@@ -35,6 +35,7 @@ public final class CompositeCloudBackend: CloudBackend {
     public func url(_ id: String, root: CloudRoot) -> URL { backend(id)?.url(id, root: root) ?? URL(string: "cloud-disconnected:///")! }
     public func accountID(for url: URL) -> String? { backend(url)?.accountID(for: url) }
     public func info(for url: URL) -> CloudItemInfo? { backend(url)?.info(for: url) }
+    public func ancestors(of url: URL) -> [URL] { backend(url)?.ancestors(of: url) ?? [] }
     public func permissions(for url: URL) -> CloudPermissions? { backend(url)?.permissions(for: url) }
     public func content(for accountID: String) -> CloudContentSource? { backend(accountID)?.content(for: accountID) }
     public func content(for url: URL) -> CloudContentSource? { backend(url)?.content(for: url) }

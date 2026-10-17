@@ -328,6 +328,15 @@ class Handler(BaseHTTPRequestHandler):
         if route == 'sharing/list_received_files':
             file = next((i for i in s.items.values() if i['.tag'] == 'file'), None)
             return ok({'entries': [{'id': file['id'], 'name': file['name']}] if file else []})
+        if route == 'sharing/get_shared_link_metadata':
+            # config 'links': share link -> item id this account can see; 'foreignLinks': links to items it can't.
+            identifier = s.config.get('links', {}).get(arg.get('url'))
+            item = s.items.get(identifier) if identifier else None
+            if item:
+                return ok({'.tag': item['.tag'], 'url': arg['url'], 'id': item['id'], 'name': item['name'], 'path_lower': item['path_lower']})
+            if arg.get('url') in s.config.get('foreignLinks', []):
+                return ok({'.tag': 'file', 'url': arg['url'], 'name': 'Someone else’s file'})
+            return self.failure('shared_link_not_found', 'shared_link_not_found')
         if route == 'sharing/list_folders':
             folder = next((i for i in s.items.values() if i['.tag'] == 'folder'), None)
             entries = [{'shared_folder_id': 'shared:fixture', 'name': folder['name'], 'path_lower': folder['path_lower']}] if folder else []

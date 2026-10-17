@@ -156,6 +156,9 @@ public protocol CloudBackend: AnyObject {
     /// The account a location belongs to.
     func accountID(for url: URL) -> String?
     func info(for url: URL) -> CloudItemInfo?
+    /// The folders above an item, outermost first: the account's row (My Drive, Files…), then each folder down to its
+    /// parent. Empty when not known (CloudAncestry.swift has the default: each path component is an item id).
+    func ancestors(of url: URL) -> [URL]
     func resolveLink(_ text: String, done: @escaping (CloudLinkResult) -> Void)
     /// The account picture's bytes (nil: none).
     func avatar(_ id: String, done: @escaping (Data?) -> Void)
@@ -357,18 +360,15 @@ public final class CloudAccounts {
 
     public func info(for url: URL) -> CloudItemInfo? { backend?.info(for: url) }
 
+    public func ancestors(of url: URL) -> [URL] { backend?.ancestors(of: url) ?? [] }
+
     public func resolveLink(_ text: String, done: @escaping (CloudLinkResult) -> Void) {
         guard Self.looksLikeLink(text), let backend else { done(.notALink); return }
         backend.resolveLink(text, done: done)
     }
 
-    /// drive.google.com and docs.google.com links (what the location field hands over before treating text as a path).
-    public static func looksLikeLink(_ text: String) -> Bool {
-        guard let u = URL(string: text.trimmingCharacters(in: .whitespaces)), u.scheme == "https", let host = u.host?.lowercased() else {
-            return false
-        }
-        return host == "drive.google.com" || host == "docs.google.com"
-    }
+    /// A cloud service's share link (what the location field hands over before treating text as a path).
+    public static func looksLikeLink(_ text: String) -> Bool { CloudProviderDescriptor.linkProvider(text) != nil }
 
     // MARK: Sidebar
 

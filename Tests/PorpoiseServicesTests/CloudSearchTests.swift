@@ -77,10 +77,12 @@ import Testing
         backend.searchError = CloudEditError.denied("Lost the connection.")
         backend.answerSearch()
         #expect(partly.items.map(\.name) == ["a"] && partly.summary == "1 item found in Google Drive; the rest couldn’t be loaded.")
-        #expect(CloudSearch("x", in: folder, accounts: CloudAccounts()).serviceTitle == "the cloud")
+        // Without the account, the service is still known from the location; with neither, "the cloud".
+        #expect(CloudSearch("x", in: folder, accounts: CloudAccounts()).serviceTitle == "Google Drive")
+        #expect(CloudSearch("x", in: URL(string: "cloud-disconnected:///")!, accounts: CloudAccounts()).serviceTitle == "the cloud")
         let nothing = CloudSearch("x", in: folder, accounts: CloudAccounts())
         nothing.start()
-        #expect(nothing.summary == "Searching isn’t available in the cloud yet.")
+        #expect(nothing.summary == "Searching isn’t available in Google Drive yet.")
     }
 
     @Test func emptyResults() throws {

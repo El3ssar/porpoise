@@ -154,7 +154,9 @@ extension CloudAccounts {
     }
 
     /// The account's provider name ("Google Drive"), for messages.
-    public func providerTitle(for url: URL) -> String { account(for: url)?.provider.title ?? "the cloud" }
+    public func providerTitle(for url: URL) -> String {
+        account(for: url)?.provider.title ?? CloudProviderDescriptor.descriptor(for: url)?.title ?? "the cloud"
+    }
 
     /// "Moved “Budget” to Google Drive Trash" / "Moved 3 items to Google Drive Trash".
     public func supportsTrashUndo(_ urls: [URL]) -> Bool {
