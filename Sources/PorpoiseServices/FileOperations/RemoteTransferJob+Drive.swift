@@ -77,45 +77,18 @@ extension RemoteTransferJob {
         if existing?.url == source, kind == .move { completed[source] = source; finishProgress(source); return source }
         var replacing = false
         while let old = existing {
-            let bothFolders = Self.isFolderPair(incoming, old)
             let suggestion = FileFormat.suggestedName(for: name, existing: Set(try children(folder).map(\.name)))
-            let answer: ConflictAnswer
-            // "Replace" chosen for folders asks again for anything but two folders, as local copies do.
-            if let choice = sticky ?? rule.resolution, choice != .writeInto || bothFolders {
-                answer = .init(choice)
-            } else {
-                answer = resolve(.init(source: incoming, destination: old, suggestedName: suggestion, comparisonOptions: options))
-            }
-            if let method = answer.comparisonMethod { options.method = method }
-            if answer.applyToAll { sticky = answer.resolution }
-            switch answer.resolution {
+            switch try conflictDecision(source, incoming: incoming, existing: old, suggestion: suggestion) {
             case .cancel: control.cancel(); throw FileOperationError.cancelled
-            case .skip: completed[source] = old.url; finishProgress(source); return nil
-            case .keepBoth: name = suggestion; existing = nil
+            case .skip(let identical): skipConflict(source, target: old.url, identical: identical); return nil
             case .rename(let chosen):
                 try RemoteFS.checkName(chosen); name = chosen
                 let matches = try children(folder).filter { $0.name == name }
                 guard matches.count <= 1 else { throw DriveMutationError.conflict }
                 existing = matches.first
-            case .writeInto:
-                guard bothFolders else { throw DriveMutationError.conflict }
-                return try mergeRecorded(old.url)
-            case .overwriteIfDifferent:
-                if bothFolders { return try mergeRecorded(old.url) }
-                if try identical(source, incoming, old.url, old) {
-                    progressLock.withLock { progress.skippedIdenticalItems += 1 }
-                    completed[source] = old.url; finishProgress(source); return nil
-                }
-                replacing = true
-            case .overwriteIfOlder, .overwriteIfLarger:
-                if bothFolders { return try mergeRecorded(old.url) }
-                guard answer.resolution.shouldReplace(source: incoming, destination: old, options: options) else {
-                    completed[source] = old.url; finishProgress(source); return nil
-                }
-                replacing = true
-            case .overwrite:
-                if bothFolders { return try mergeRecorded(old.url) }
-                replacing = true
+            case .merge: return try mergeRecorded(old.url)
+            case .replace: replacing = true
+            case .compareContents: preconditionFailure("Content comparison must be resolved before placement")
             }
             if replacing { break }
         }

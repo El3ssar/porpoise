@@ -13,6 +13,81 @@ import Testing
             control: FileJob(kind: .copy, sources: [source], destinationFolder: folder), rule: rule, options: .init())
     }
 
+    /// Each engine gets the same conflict cases, checking bytes and identity rather than only policy outputs.
+    static func exerciseRules(source: FileItem, bytes: Data, scratch: Scratch, local: Bool = false) async throws {
+        for rule in TransferConflictRule.allCases {
+            let out = try scratch.folder(rule.rawValue)
+            let destination = out.appendingPathComponent(source.name)
+            try Data("x".utf8).write(to: destination)
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1)], ofItemAtPath: destination.path)
+            let before = JobJournal.Fingerprint(destination)
+            var asked = 0
+            let control = FileJob(kind: .copy, sources: [source.url], destinationFolder: out)
+            if local {
+                control.conflictRule = rule
+                control.resolveConflict = { _ in
+                    asked += 1; return .init(.overwrite)
+                }
+                _ = try await offThePool { try control.run() }
+                #expect(control.errors.isEmpty)
+            } else {
+                let job = RemoteTransferJob(kind: .copy, sources: [source.url], destination: out, control: control, rule: rule, options: .init())
+                job.resolve = { _ in
+                    asked += 1; return .init(.overwrite)
+                }
+                await offThePool { job.run() }
+                #expect(job.errors.isEmpty, "\(rule): \(job.errors)")
+            }
+            #expect(asked == (rule == .ask ? 1 : 0))
+            if rule == .skip || rule == .keepBoth {
+                #expect(try Data(contentsOf: destination) == Data("x".utf8))
+                #expect(JobJournal.Fingerprint(destination) == before)
+                if rule == .keepBoth {
+                    let copy = out.appendingPathComponent(FileFormat.suggestedName(for: source.name, existing: [source.name]))
+                    #expect(try Data(contentsOf: copy) == bytes)
+                }
+            } else {
+                #expect(try Data(contentsOf: destination) == bytes, "\(rule)")
+            }
+        }
+    }
+
+    @Test func localAndDriveRunTheSameConflictCases() async throws {
+        let tests = DriveMutationTests(), scratch = try Scratch()
+        let server = try tests.server()
+        let client = try tests.client(server, folder: scratch.path("journal"))
+        let provider = DriveProvider(accountID: client.accountID, client: client)
+        RemoteFS.registerDrive(provider, accountID: client.accountID)
+        defer { RemoteFS.unregisterDrive(accountID: client.accountID) }
+        let listing = try await offThePool { try provider.list(DriveLocation(accountID: client.accountID).url) }
+        let source = try #require(listing.first { $0.url.path.hasSuffix("/binary-a") })
+        let local = try await offThePool { try provider.download(source.url, into: scratch.folder("download")) }
+        let bytes = try Data(contentsOf: local)
+        try await Self.exerciseRules(source: source, bytes: bytes, scratch: Scratch())
+        try await Self.exerciseRules(source: #require(FileItem.load(local)), bytes: bytes, scratch: Scratch(), local: true)
+    }
+
+    @MainActor @Test func dropboxRunsTheSameConflictCases() async throws {
+        Settings.store.set("fixture-app", forKey: "dropboxAppKey")
+        let server = try FakeDropboxServer(), scratch = try Scratch()
+        let suite = "porpoise-rule-" + UUID().uuidString
+        defer { UserDefaults().removePersistentDomain(forName: suite) }
+        let store = DropboxAccountStore(
+            defaults: UserDefaults(suiteName: suite)!, credentials: MemoryCredentials(), configuration: server.config,
+            directory: server.directory)
+        let backend = DropboxCloudBackend(store: store)
+        defer {
+            backend.setActive(false)
+            for account in store.accounts { RemoteFS.registerCloud(nil, for: DropboxLocation(accountID: account.id).url) }
+        }
+        let account = try await store.connect(openBrowser: { url in Task { _ = try? await URLSession.shared.data(from: url) } })
+        _ = backend.accounts
+        let folder = DropboxLocation(accountID: account.id, itemID: "id:folder", namespaceID: account.rootNamespaceID).url
+        let provider = try #require(RemoteFS.provider(for: folder))
+        let source = try #require(try await offThePool { try provider.list(folder).first { $0.name == "nested.txt" } })
+        try await Self.exerciseRules(source: source, bytes: Data("Nested fixture.".utf8), scratch: scratch)
+    }
+
     // B6: a Drive shortcut to a folder meeting a folder is no folder pair: never merged into it (as d04b320 for links).
     @Test func aDriveShortcutToAFolderIsNeverMergedIntoAFolder() async throws {
         let tests = DriveMutationTests()
@@ -53,8 +128,8 @@ import Testing
         let folder = FileItem(url: URL(fileURLWithPath: "/a"), name: "a", isDirectory: true)
         let link = FileItem(url: URL(fileURLWithPath: "/b"), name: "b", isDirectory: true, isSymlink: true)
         let file = FileItem(url: URL(fileURLWithPath: "/c"), name: "c", isDirectory: false)
-        #expect(RemoteTransferJob.isFolderPair(folder, folder))
-        #expect(!RemoteTransferJob.isFolderPair(link, folder) && !RemoteTransferJob.isFolderPair(folder, link))
+        #expect(ConflictPolicy(source: folder, destination: folder).isFolderPair)
+        #expect(!ConflictPolicy(source: link, destination: folder).isFolderPair && !ConflictPolicy(source: folder, destination: link).isFolderPair)
         #expect(throws: RemoteError.self) { try RemoteTransferJob.checkReplaceable(link, folder) }
         #expect(throws: RemoteError.self) { try RemoteTransferJob.checkReplaceable(file, folder) }
         #expect(throws: RemoteError.self) { try RemoteTransferJob.checkReplaceable(folder, file) }

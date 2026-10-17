@@ -29,23 +29,6 @@ public enum TransferConflictRule: String, Codable, CaseIterable, Sendable {
     }
 }
 
-extension ConflictResolution {
-    /// Size/date comparison is metadata-only. Equal metadata never establishes byte-identical contents.
-    /// Missing timestamps cannot justify a conditional replacement by date.
-    public func shouldReplace(source: FileItem, destination: FileItem, options: TransferCompareOptions = .init()) -> Bool {
-        switch self {
-        case .overwrite: return true
-        case .overwriteIfOlder:
-            guard let sourceDate = source.modificationDate, let destinationDate = destination.modificationDate else { return false }
-            return sourceDate.timeIntervalSince(destinationDate) > options.timestampTolerance
-        case .overwriteIfDifferent:
-            return TransferComparator.statusOf(TransferComparison.entry(source), TransferComparison.entry(destination), options: options) != .same
-        case .overwriteIfLarger: return source.size > destination.size
-        default: return false
-        }
-    }
-}
-
 /// Metadata and link semantics for copy conflict rules.
 public enum TransferComparison {
     public static func entry(_ item: FileItem, hash: String? = nil) -> TransferEntry {
