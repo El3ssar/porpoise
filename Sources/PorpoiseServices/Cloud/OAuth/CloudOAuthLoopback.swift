@@ -3,6 +3,7 @@ import Foundation
 
 /// Binds only 127.0.0.1 on a requested or OS-selected port. No web server or callback URL is exposed on the LAN.
 public final class CloudOAuthLoopback: @unchecked Sendable {
+    public struct PortInUse: Error, Equatable, Sendable { public let port: UInt16 }
     public let redirectURL: URL
     private let descriptor: Int32
     private let lock = NSLock()
@@ -22,7 +23,12 @@ public final class CloudOAuthLoopback: @unchecked Sendable {
         let bound = withUnsafePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
         }
-        guard bound == 0, listen(fd, 4) == 0 else { close(fd); throw CloudOAuthError.invalidResponse }
+        guard bound == 0 else {
+            let failure = errno; close(fd)
+            if failure == EADDRINUSE { throw PortInUse(port: port) }
+            throw CloudOAuthError.invalidResponse
+        }
+        guard listen(fd, 4) == 0 else { close(fd); throw CloudOAuthError.invalidResponse }
         var length = socklen_t(MemoryLayout<sockaddr_in>.size)
         let named = withUnsafeMutablePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) }

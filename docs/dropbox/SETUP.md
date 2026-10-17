@@ -18,13 +18,16 @@ For the Porpoise maintainer/operator. Register one app for the distributed build
    | `sharing.read` | Shared files and folders |
 
    This list matches `DropboxConfiguration.scopes`. No team administrator scopes are requested. Dropbox explains the Permissions tab and scope selection in its [OAuth guide](https://docs.dropboxapi.com/dropbox-api/docs/oauth#scopes).
-4. In **Settings → OAuth 2 → Redirect URIs**, add this exact value, including the port and path, with no trailing slash:
+4. In **Settings → OAuth 2 → Redirect URIs**, add all three exact values below, including each port and path, with no trailing slash:
 
    ```text
-   http://127.0.0.1:53682/oauth/callback
+   http://127.0.0.1:61843/oauth/callback
+   http://127.0.0.1:61844/oauth/callback
+   http://127.0.0.1:61845/oauth/callback
    ```
 
-   This is the production Dropbox listener in `DropboxConfiguration.registeredLoopbackPort`. Dropbox [requires an exact registered redirect](https://docs.dropboxapi.com/dropbox-api/docs/oauth#implementing-code-flow); do not substitute `localhost`, HTTPS, a wildcard port, or a different path. The listener binds only the local Mac. If port 53682 is occupied, sign-in fails closed; close the other Porpoise sign-in instance or the process using that port and try again. Drive still uses an ephemeral port, and loopback test fixtures explicitly select port zero.
+   Porpoise tries 61843, then 61844, then 61845 if the previous port is busy. The base port is `DropboxConfiguration.registeredLoopbackPort`. Dropbox [requires an exact registered redirect](https://docs.dropboxapi.com/dropbox-api/docs/oauth#implementing-code-flow); do not substitute `localhost`, HTTPS, a wildcard port, or a different path. The listener binds only the local Mac. If all three are occupied, sign-in shows which ports are in use and asks you to close other sign-in windows or apps using them before retrying. It never silently selects an unregistered port. Drive still uses an ephemeral port, and loopback test fixtures explicitly select port zero.
+   The selected ports are in IANA’s [dynamic/private range](https://www.iana.org/assignments/service-names-port-numbers), not assigned service ports. They avoid [rclone’s documented 53682 OAuth listener](https://rclone.org/faq/). This does not guarantee another local app cannot use them; the two fallbacks handle collisions.
 5. Porpoise uses **authorization code + PKCE S256** and requests `token_access_type=offline`. Copy only the **App key** from Settings. Do not copy, embed or distribute the App secret, and do not use a generated access token. PKCE is Dropbox’s recommended client flow when a desktop app cannot keep a secret. Disable **Allow implicit grant** if that option is shown; Porpoise does not use it. See [PKCE and refresh tokens](https://docs.dropboxapi.com/dropbox-api/docs/oauth).
 
 ## Supply the public app key

@@ -57,7 +57,7 @@ public enum DropboxConnectionError: Error, Equatable { case alreadyConnected, wr
     public func connect(expected: DropboxAccount? = nil, openBrowser: @escaping @MainActor (URL) -> Void) async throws -> DropboxAccount {
         guard !connecting else { throw DropboxConnectionError.busy }; connecting = true; defer { connecting = false }
         let configuration = config(appKey: expected.flatMap { account in saved.first { $0.account.id == account.id }?.appKey })
-        let listener = try CloudOAuthLoopback(port: configuration.loopbackPort); defer { listener.cancel() }
+        let listener = try configuration.makeLoopbackListener(); defer { listener.cancel() }
         do {
             let transaction = try DropboxOAuthTransaction(configuration: configuration, redirectURL: listener.redirectURL)
             openBrowser(transaction.authorizationURL)

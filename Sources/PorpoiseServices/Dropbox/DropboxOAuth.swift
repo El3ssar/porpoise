@@ -6,7 +6,16 @@ public struct DropboxConfiguration: Sendable {
     public var isConfigured: Bool { !appKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     /// Dropbox requires an exactly registered redirect URI; zero is reserved for loopback fixtures.
     public var loopbackPort: UInt16
-    public static let registeredLoopbackPort: UInt16 = 53682
+    public static let registeredLoopbackPort: UInt16 = 61843
+    public var loopbackPorts: [UInt16] {
+        loopbackPort == 0 ? [0] : (0...2).compactMap { UInt16(exactly: Int(loopbackPort) + $0) }
+    }
+    public func makeLoopbackListener() throws -> CloudOAuthLoopback {
+        for port in loopbackPorts {
+            do { return try CloudOAuthLoopback(port: port) } catch is CloudOAuthLoopback.PortInUse { continue }
+        }
+        throw DropboxCallbackError.portsBusy(loopbackPorts)
+    }
     public var authorizationURL: URL
     public var tokenURL: URL
     public var apiURL: URL
@@ -37,6 +46,17 @@ public struct DropboxConfiguration: Sendable {
                 ?? nonempty(bundle.object(forInfoDictionaryKey: "DropboxAppKey") as? String) ?? "")
     }
     public static let scopes = "files.metadata.read files.metadata.write files.content.read files.content.write account_info.read sharing.read"
+}
+
+public enum DropboxCallbackError: Error, Equatable, LocalizedError {
+    case portsBusy([UInt16])
+    public var errorDescription: String? {
+        switch self {
+        case .portsBusy(let ports):
+            return
+                "Dropbox sign-in couldn’t start because local ports \(ports.map(String.init).joined(separator: ", ")) are in use. Close other sign-in windows or apps using these ports, then try again."
+        }
+    }
 }
 
 public struct DropboxOAuthTransaction: Sendable {
