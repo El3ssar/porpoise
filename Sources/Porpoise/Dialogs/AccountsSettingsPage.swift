@@ -20,7 +20,7 @@ enum AccountsSettingsPage {
         _ = f.note("Copying a Google document out of Drive saves an export; the original stays in Drive. Opening one opens it in your browser.")
         offlineSection(f)
         f.section("Sign-in configuration")
-        for descriptor in CloudProviderDescriptor.catalog where descriptor.available {
+        for descriptor in CloudProviderDescriptor.catalog {
             if let configuration = descriptor.configuration {
                 f.text(configuration.label, Settings.store.string(forKey: configuration.key) ?? "") {
                     Settings.store.set($0.trimmingCharacters(in: .whitespacesAndNewlines), forKey: configuration.key)

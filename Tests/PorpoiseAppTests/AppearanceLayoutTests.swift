@@ -6,6 +6,17 @@ import Testing
 @testable import Porpoise
 
 @Suite(.serialized) struct AppearanceLayoutTests {
+    @Test @MainActor func dropboxTileOnlyOffersSignInWithAConfiguredKey() throws {
+        for key in ["", "configured-key"] {
+            let descriptor = try #require(CloudProviderDescriptor.catalog(dropbox: .init(appKey: key)).first { $0.provider == .dropbox })
+            let tile = ConnectTile(title: descriptor.title, image: nil, available: descriptor.available)
+            var pressed = false; tile.onClick = { pressed = true }
+            #expect(tile.accessibilityLabel() == (key.isEmpty ? "Dropbox, coming soon" : "Dropbox"))
+            #expect(tile.accessibilityPerformPress() == !key.isEmpty)
+            #expect(pressed == !key.isEmpty)
+        }
+    }
+
     @Test @MainActor func closingAuxiliaryWindowDoesNotQuitAnOrderedOutBrowser() throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
