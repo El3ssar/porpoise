@@ -10,7 +10,7 @@ Goal: Dolphin's structure and behavior, presented the way a current macOS app (F
 | 2 | Nowhere obvious to grab the window | Controls fill the toolbar edge to edge; dragging only works in tiny gaps | Empty strip above the sidebar (like Finder), real gaps between toolbar groups, location field capped in width, every non-control pixel of the toolbar drags the window, double-click zooms |
 | 3 | Flat hover buttons, one per icon | macOS 26+ groups toolbar controls in **Liquid Glass capsules** (Back/Forward together, trailing actions together) | `NSGlassEffectView` groups: Back+Forward, View mode, location field, Split+Search+Menu |
 | 4 | Two different bottom elements (Dolphin's corner box + floating zoom pill) | Inconsistent; the pill floats over content | One **full-width status bar** like Dolphin's "Full width" mode, done Mac-style: thin, translucent, hairline on top. Left: folder/selection info; right: icon-size slider and a disk-space capsule bar |
-| 5 | Option+←/→ is Back/Forward (Dolphin's Alt) | Mac users expect ⌘[ / ⌘] for history; Option+arrows are free | ⌥← / ⌥→ switch between split panes; ⌘[ / ⌘] Back/Forward; ⌫ still Back; tabs on ⌃Tab and ⌘⇧[ / ⌘⇧] |
+| 5 | Option+←/→ is Back/Forward (Dolphin's Alt) | Mac users expect ⌘[ / ⌘] for history; Option+arrows are free | ⌥← / ⌥→ switch between split panes; ⌘[ / ⌘] and ⌘← / ⌘→ Back/Forward (not while a text field is edited); ⌫ still Back; tabs on ⌃Tab and ⌘⇧[ / ⌘⇧] |
 | 6 | Terminal spans under the sidebar | With a full-height sidebar the panel belongs to the content column (like Xcode/VS Code panels) | Terminal docks at the bottom of the content column |
 | 7 | Information panel is a plain view | Mac inspectors share the sidebar's material | Inspector material on the right |
 
