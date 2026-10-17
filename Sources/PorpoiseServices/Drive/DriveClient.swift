@@ -86,6 +86,9 @@ public final class DriveClient: @unchecked Sendable {
         return lock.withLock { cache[id] } ?? metadataCache.file(id)
     }
 
+    /// The file with `id` as last read ("root": My Drive's own folder), without asking Drive.
+    func cachedFile(id: String) -> DriveFile? { lock.withLock { cache[id] } ?? metadataCache.file(id) }
+
     /// What a change made here returned: newer than anything read before it.
     func remember(_ files: [DriveFile]) {
         lock.withLock { for file in files { cache[file.id] = file } }
