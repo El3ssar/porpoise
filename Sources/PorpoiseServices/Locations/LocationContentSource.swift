@@ -11,17 +11,21 @@ protocol LocationContentSource: AnyObject {
     /// Lists `folder` (the location, or an expanded folder in it) and the `expanded` folders below it. `deliver` gets
     /// each page, the last one `complete`, or the failure. Cancelling the returned load drops what's still to come.
     func load(_ folder: URL, expanded: Set<URL>, deliver: @escaping (LocationListing) -> Void) -> LocationLoad
-    /// Folders the user will probably open next (hover, the visible folders after a listing).
-    func prefetch(_ folders: [URL])
+    /// Reads ahead the folders the user will probably open next (hover, the visible folders after a listing).
+    func prefetch(_ folders: [URL]) -> LocationLoad
 }
 
 extension LocationContentSource {
     func cached(_ folder: URL) -> [FileItem]? { nil }
-    func prefetch(_ folders: [URL]) {}
+    func prefetch(_ folders: [URL]) -> LocationLoad { LocationLoad() }
 }
 
 /// One answer of a source.
 struct LocationListing {
+    /// The listing itself; or, from a source that pages, one page of it, then the load's end (with the whole
+    /// listing as the service gave it, or the failure).
+    enum Part { case whole, page, end }
+    var part = Part.whole
     var items: [FileItem] = []
     /// The expanded folders' listings, when the source lists them with the folder.
     var children: [URL: [FileItem]]?
@@ -61,6 +65,8 @@ struct LocationTraits {
     var dynamicView = false
     /// Folders show their item count or size.
     var folderCounts = false
+    /// The saved listing paints first and the answer glides in; a failure after painting it stays quiet.
+    var paintsCache = false
 }
 
 /// A load in progress; cancelling it drops what it would still deliver.
@@ -76,7 +82,10 @@ final class LocationLoad {
 enum LocationContentSources {
     /// The source that lists `url`.
     static func source(for url: URL) -> LocationContentSource {
-        if let provider = RemoteFS.provider(for: url) { return ProviderSource(location: url, provider: provider) }
+        if let provider = RemoteFS.provider(for: url) {
+            if let cloud = provider as? CloudFileProvider { return CloudSource(location: url, provider: cloud) }
+            return ProviderSource(location: url, provider: provider)
+        }
         return LocalSource(location: url)
     }
 }
