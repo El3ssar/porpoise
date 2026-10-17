@@ -5,8 +5,9 @@ public final class IconTheme {
     public static let shared = IconTheme()
 
     private let root: URL
-    /// Icon file per name and size directory (small, fixed set).
+    /// Icon file per name and size directory (small, fixed set). Read from any thread (Places loads off main).
     private var pathCache: [String: URL?] = [:]
+    private let cacheLock = NSLock()
 
     private static let fixedSizes = [16, 22, 24]
     private static let contexts = ["actions", "places", "devices", "mimetypes", "emblems", "status"]
@@ -29,7 +30,7 @@ public final class IconTheme {
         guard !name.contains("/"), name != ".", name != ".." else { return nil }
         let preferences = Settings.shared.appearancePreferences
         let key = "\(preferences.iconTheme)|\(preferences.folderVariant)|\(name)|\(size)"
-        if let cached = pathCache[key] { return cached }
+        if let cached = cacheLock.withLock({ pathCache[key] }) { return cached }
         let names = [name]
         var roots: [URL] = []
         if Self.installedThemes.contains(preferences.iconTheme) {
@@ -76,7 +77,7 @@ public final class IconTheme {
             }
             return nil
         }.first
-        pathCache[key] = found
+        cacheLock.withLock { pathCache[key] = found }
         return found
     }
 
