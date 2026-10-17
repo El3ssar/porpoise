@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import SQLite3
 import Testing

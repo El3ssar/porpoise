@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 
 /// Stands in for a command-line tool (curl, adb) that needs a server or a device we don't have: an executable script

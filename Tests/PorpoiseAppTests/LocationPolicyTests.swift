@@ -1,6 +1,7 @@
 import AppKit
 import PorpoiseCore
 import PorpoiseServices
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 

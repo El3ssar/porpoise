@@ -3,13 +3,15 @@ import PorpoiseServices
 import PorpoiseTestSupport
 import Testing
 
-/// The app's tests with settings take the same turns as Services' (`SettingsTurn`): on CI all targets share the
-/// process, and a Services test swapping `Settings.store` meanwhile would lose a pane's saved zoom. Each test runs
-/// with a fresh, empty store kept in memory.
-struct IsolatedSettings: TestTrait, SuiteTrait, TestScoping {
-    var isRecursive: Bool { true }
+/// `Settings.store` is one store for the whole process (and on CI every test target runs in that one process), so
+/// tests that read or write settings take turns: each runs with a fresh, empty store kept in memory (nothing is written
+/// to disk, nothing is left behind). Put `.isolatedSettings` on such a test or suite.
+public struct IsolatedSettings: TestTrait, SuiteTrait, TestScoping {
+    public var isRecursive: Bool { true }
 
-    func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
+    public func provideScope(
+        for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void
+    ) async throws {
         guard testCase != nil else { return try await function() }  // the suite itself: each test gets its own
         await SettingsTurn.shared.acquire()
         let previous = Settings.store, previousTesting = Settings.isTesting
@@ -25,5 +27,5 @@ struct IsolatedSettings: TestTrait, SuiteTrait, TestScoping {
 }
 
 extension Trait where Self == IsolatedSettings {
-    static var isolatedSettings: Self { IsolatedSettings() }
+    public static var isolatedSettings: Self { IsolatedSettings() }
 }

@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 

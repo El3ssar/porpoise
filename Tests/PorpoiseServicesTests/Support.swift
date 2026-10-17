@@ -1,43 +1,9 @@
 import Foundation
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseServices
-
-/// `Settings.store` is one store for the whole process, so tests that read or write settings take turns: each runs
-/// with a fresh, empty store kept in memory (nothing is written to disk, nothing is left behind). Put
-/// `.isolatedSettings` on such a test or suite.
-struct IsolatedSettings: TestTrait, SuiteTrait, TestScoping {
-    var isRecursive: Bool { true }
-
-    func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
-        guard testCase != nil else { return try await function() }  // the suite itself: each test gets its own
-        await SettingsTurn.shared.acquire()
-        let previous = Settings.store
-        Settings.store = MemoryDefaults()
-        Settings.isTesting = true
-        var failure: Error?
-        do { try await function() } catch { failure = error }
-        Settings.store = previous
-        await SettingsTurn.shared.release()
-        if let failure { throw failure }
-    }
-}
-
-extension Trait where Self == IsolatedSettings {
-    static var isolatedSettings: Self { IsolatedSettings() }
-}
-
-/// Waits up to `timeout` seconds for `condition`, letting the main queue run (models finish their loads there).
-@MainActor
-func eventually(_ timeout: TimeInterval = 10, _ condition: () -> Bool) async -> Bool {
-    let end = Date().addingTimeInterval(timeout)
-    while Date() < end {
-        if condition() { return true }
-        try? await Task.sleep(nanoseconds: 10_000_000)
-    }
-    return condition()
-}
 
 /// Runs a command line tool and fails the test if it fails.
 @discardableResult

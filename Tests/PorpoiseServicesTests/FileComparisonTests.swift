@@ -1,6 +1,8 @@
 import Darwin
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
+import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseServices

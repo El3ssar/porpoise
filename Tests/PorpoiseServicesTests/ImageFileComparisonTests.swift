@@ -1,6 +1,8 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import PorpoiseServicesTestSupport
+import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseServices
