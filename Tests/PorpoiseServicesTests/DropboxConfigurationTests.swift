@@ -67,14 +67,14 @@ struct DropboxConfigurationTests {
         #expect(fixed.redirectURL.absoluteString == "http://127.0.0.1:\(port)/oauth/callback")
     }
     @Test func busyDropboxPortsFallBackInOrderAndExplainExhaustion() throws {
-        // Reserve a free adjacent range. Keep every socket open for the assertions; no timing sleeps.
+        // Keep fixture ports below macOS's ephemeral range: concurrent HTTP tests can immediately reclaim
+        // an OS-selected port after release. Probe an adjacent range and hold blockers through each assertion.
         var blockers: [CloudOAuthLoopback] = []
         var base: UInt16 = 0
         for _ in 0..<100 {
-            let first = try CloudOAuthLoopback()
-            let candidate = UInt16(try #require(first.redirectURL.port))
-            guard candidate <= UInt16.max - 2 else { continue }
+            let candidate = UInt16.random(in: 20000...40000)
             do {
+                let first = try CloudOAuthLoopback(port: candidate)
                 let second = try CloudOAuthLoopback(port: candidate + 1)
                 let third = try CloudOAuthLoopback(port: candidate + 2)
                 blockers = [first, second, third]; base = candidate; break
