@@ -13,7 +13,7 @@ import Testing
     private let browser: (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
 
     private func connected(_ server: FakeDriveServer, scratch: Scratch) async throws -> (DriveCloudBackend, DriveAccountStore, CloudAccount) {
-        let defaults = UserDefaults(suiteName: "porpoise-drive-edit-\(UUID().uuidString)")!
+        let defaults = MemoryDefaults()
         let store = DriveAccountStore(
             defaults: defaults, credentials: MemoryDriveCredentials(), configuration: server.config,
             baseURL: server.base.appendingPathComponent("drive/v3/"))
@@ -110,7 +110,7 @@ import Testing
 
     @Test func missingAccountsFailCalmly() async {
         let store = DriveAccountStore(
-            defaults: UserDefaults(suiteName: "porpoise-drive-edit-\(UUID().uuidString)")!, credentials: MemoryDriveCredentials())
+            defaults: MemoryDefaults(), credentials: MemoryDriveCredentials())
         let b = DriveCloudBackend(store: store, avatarFolder: FileManager.default.temporaryDirectory)
         let gone = URL(string: "gdrive://\(UUID().uuidString.lowercased())/my-drive/")!
         let created = await call { done in b.createFolder(named: "x", in: gone) { done($0) } }

@@ -8,7 +8,7 @@ import Testing
 @MainActor @Suite(.serialized, .isolatedSettings) struct DriveOfflineLifecycleTests {
     @Test func unsentBlocksSignoutThenCleanSignoutWipesOfflineAccount() async throws {
         let server = try DriveMutationTests().server(), scratch = try Scratch()
-        let defaults = UserDefaults(suiteName: "offline-signout-\(UUID().uuidString)")!
+        let defaults = MemoryDefaults()
         let accounts = DriveAccountStore(
             defaults: defaults, credentials: MemoryDriveCredentials(), configuration: server.config,
             baseURL: server.base.appendingPathComponent("drive/v3/"))

@@ -11,7 +11,7 @@ import Testing
     private let browser: (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
 
     private func backend(_ server: FakeDriveServer, scratch: Scratch) -> (DriveCloudBackend, DriveAccountStore) {
-        let defaults = UserDefaults(suiteName: "porpoise-drive-cloud-\(UUID().uuidString)")!
+        let defaults = MemoryDefaults()
         let store = DriveAccountStore(
             defaults: defaults, credentials: MemoryDriveCredentials(), configuration: server.config,
             baseURL: server.base.appendingPathComponent("drive/v3/"))

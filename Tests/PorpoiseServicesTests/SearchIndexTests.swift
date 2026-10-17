@@ -11,7 +11,7 @@ import Testing
     /// soon as their condition holds.
     static let liveWait: TimeInterval = 30
     private func setup(_ scratch: Scratch, content: Bool = false) -> SearchIndex {
-        let defaults = UserDefaults(suiteName: "PorpoiseIndexTests.\(UUID())")!
+        let defaults = MemoryDefaults()
         let service = SearchIndex(directory: scratch.path("store"), defaults: defaults)
         var config = IndexConfiguration()
         config.enabled = true; config.roots = [scratch.path("root").path]; config.content = content
@@ -75,7 +75,7 @@ import Testing
         try #require(await eventually(Self.liveWait) { index.search("renamed", scope: s.path("root"))?.paths.isEmpty == true })
         // A new service loads the on-disk snapshot, including tombstones.
         try #require(await eventually(Self.liveWait) { FileManager.default.fileExists(atPath: s.path("store/manifest.json").path) })
-        let restored = SearchIndex(directory: s.path("store"), defaults: UserDefaults(suiteName: "PorpoiseIndexTests.\(UUID())")!)
+        let restored = SearchIndex(directory: s.path("store"), defaults: MemoryDefaults())
         restored.configure(index.configuration)
         defer { restored.configure(IndexConfiguration()) }
         try await waitReady(restored)
@@ -108,7 +108,7 @@ import Testing
         let s = try Scratch()
         try s.file("root/Test.app/Contents/hidden-name.txt")
         try s.file("root/visible.txt")
-        let index = SearchIndex(directory: s.path("root/index-store"), defaults: UserDefaults(suiteName: "PorpoiseIndexTests.\(UUID())")!)
+        let index = SearchIndex(directory: s.path("root/index-store"), defaults: MemoryDefaults())
         var config = IndexConfiguration(); config.enabled = true; config.roots = [s.path("root").path]
         index.configure(config)
         defer { index.configure(IndexConfiguration()) }
@@ -142,7 +142,7 @@ import Testing
         let configuration = index.configuration
         index.configure(IndexConfiguration())
         try s.file("root/offline-file.txt")
-        let restored = SearchIndex(directory: s.path("store"), defaults: UserDefaults(suiteName: "PorpoiseIndexTests.\(UUID())")!)
+        let restored = SearchIndex(directory: s.path("store"), defaults: MemoryDefaults())
         restored.configure(configuration)
         defer { restored.configure(IndexConfiguration()) }
         try await waitReady(restored)
@@ -186,7 +186,7 @@ import Testing
         var result: [FileItem]?
         let runner = SearchRunner(text: "fallback", scope: s.url, contents: false) { items, done in if done { result = items } }
         runner.usesSpotlight = false; runner.folderTools = nil
-        runner.index = SearchIndex(directory: s.path("index"), defaults: UserDefaults(suiteName: "PorpoiseIndexTests.\(UUID())")!)
+        runner.index = SearchIndex(directory: s.path("index"), defaults: MemoryDefaults())
         runner.start(); defer { runner.stop() }
         try #require(await eventually(Self.liveWait) { result != nil })
         #expect(result?.map(\.name) == ["fallback-name.txt"])
