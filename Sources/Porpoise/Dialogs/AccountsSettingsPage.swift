@@ -18,6 +18,27 @@ enum AccountsSettingsPage {
             accounts.exportPreset = CloudAccounts.exportPresets[$0].key
         }
         _ = f.note("Copying a Google document out of Drive saves an export; the original stays in Drive. Opening one opens it in your browser.")
+        offlineSection(f)
+    }
+
+    /// Offline copies: how much recently opened files may use, what each account keeps, and where.
+    static func offlineSection(_ f: FormBuilder) {
+        guard CloudOfflineHub.service != nil else { return }
+        f.section("Offline copies")
+        let limits = CloudCommands.cacheLimits
+        f.popup(
+            "Recently opened files use up to:", limits.map(\.title),
+            limits.firstIndex { $0.bytes == CloudOfflineHub.service?.cacheLimit } ?? 1
+        ) {
+            CloudOfflineHub.service?.cacheLimit = limits[$0].bytes
+        }
+        _ = f.note("Files you keep downloaded don’t count toward this, and are never removed to save space.")
+        let usage = OfflineUsageView()
+        f.stack.addArrangedSubview(usage)
+        usage.widthAnchor.constraint(equalTo: f.stack.widthAnchor, constant: -60).isActive = true
+        if let root = CloudOfflineHub.service?.root {
+            _ = f.note("Offline copies are kept in \((root.path as NSString).abbreviatingWithTildeInPath).")
+        }
     }
 
     /// The selected account in the page, for the test bridge.
@@ -279,6 +300,10 @@ enum AccountActions {
         let a = NSAlert()
         a.messageText = "Remove \(account.email)?"
         var info = "Porpoise signs out of this \(account.provider.title) account and forgets its cache. Nothing in your Drive changes."
+        let usage = CloudOfflineHub.service?.usage(account: account.id)
+        if let line = CloudCommands.signOutLine(bytes: (usage?.kept ?? 0) + (usage?.recent ?? 0), provider: account.provider.title) {
+            info += "\n\n" + line
+        }
         if !places.isEmpty {
             let names = places.prefix(5).map { "“\($0.title)”" }.joined(separator: ", ")
             info += "\n\nThese places point into it and are removed too: \(names)\(places.count > 5 ? "…" : "")."
@@ -331,5 +356,44 @@ enum AccountActions {
             if r == .alertFirstButtonReturn { CloudAccounts.shared.setLabel(account.id, field.stringValue) }
         }
         if let window { a.beginSheetModal(for: window, completionHandler: done) } else { done(a.runModal()) }
+    }
+}
+
+/// Per account: what's kept downloaded and what was recently opened, with a button to remove the recent ones. Follows
+/// downloads and accounts as they change.
+final class OfflineUsageView: NSStackView {
+    private var observers: [NSObjectProtocol] = []
+
+    init() {
+        super.init(frame: .zero)
+        orientation = .vertical
+        alignment = .leading
+        spacing = 6
+        for name in [CloudOfflineHub.changed, CloudAccounts.changed] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.rebuild() })
+        }
+        rebuild()
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+
+    func rebuild() {
+        arrangedSubviews.forEach { $0.removeFromSuperview() }
+        guard let service = CloudOfflineHub.service else { return }
+        let accounts = CloudAccounts.shared
+        for a in accounts.accounts {
+            let u = service.usage(account: a.id)
+            let text = NSTextField(labelWithString: CloudCommands.usageText(u, account: "\(accounts.title(a.id)) · \(a.email)"))
+            text.lineBreakMode = .byTruncatingMiddle
+            let remove = ClosureButton(title: "Remove Recent Downloads") { _ in service.removeRecent(account: a.id) }
+            remove.controlSize = .small
+            remove.font = .systemFont(ofSize: 11)
+            remove.isEnabled = u.recent > 0
+            let row = NSStackView(views: [text, remove])
+            row.spacing = 10
+            addArrangedSubview(row)
+        }
     }
 }

@@ -254,6 +254,13 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 self.updateStatus()
             })
         observers.append(
+            center.addObserver(forName: CloudOfflineHub.changed, object: nil, queue: .main) { [weak self] _ in
+                // Badges come from memory: a redraw shows the new states and progress.
+                guard let self, PlacesModel.isCloud(self.model.location) || self.model.isSearching else { return }
+                self.list.needsDisplay = true
+                self.updateStatus()
+            })
+        observers.append(
             center.addObserver(forName: DriveClient.changed, object: nil, queue: .main) { [weak self] n in
                 guard let self, let id = n.object as? UUID else { return }
                 self.driveChanged(account: id)
@@ -509,6 +516,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             let pointed = hoverItem ?? (model.selection.count == 1 ? model.selectedItems.first : nil)
             if let pointed, let edit = list.editMark(pointed) {
                 statusBar.text = "\(pointed.name) · " + edit.note(CloudAccounts.shared.providerTitle(for: url))
+            } else if let pointed, case let state = model.cloud(for: pointed).state, state != .local, state != .cloudOnly {
+                // Kept, downloading, a problem: what the badge means.
+                statusBar.text = "\(pointed.name) · " + state.help
             }
             if showsUpdating, model.isRefreshing, hoverItem == nil, model.selection.isEmpty {
                 statusBar.text = statusBar.text.isEmpty ? "Updating…" : statusBar.text + " · Updating…"

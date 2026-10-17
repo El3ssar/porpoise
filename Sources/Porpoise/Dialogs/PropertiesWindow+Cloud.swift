@@ -43,6 +43,9 @@ extension PropertiesWindow {
         if let d = item?.modificationDate {
             row("Modified:", label(FileFormat.longDate(d) + (info?.modifiedBy.map { " by \($0)" } ?? "")), y: &y, in: v)
         }
+        if let service = CloudOfflineHub.service, service.supports(url) {
+            row("On this Mac:", CloudOfflineRow(url: url, item: item, service: service, provider: accounts.providerTitle(for: url)), y: &y, in: v)
+        }
 
         y -= 10
         let heading = NSTextField(labelWithString: "Sharing")
@@ -179,5 +182,75 @@ extension PropertiesWindow {
                 self.recalculateButton.isEnabled = true
             }
         }
+    }
+}
+
+/// Properties' "On this Mac": how much of the item is here, and Keep Downloaded; follows downloads as they go.
+final class CloudOfflineRow: NSView {
+    private let url: URL
+    private let item: FileItem?
+    private let service: CloudOfflineService
+    private let provider: String
+    let text = NSTextField(labelWithString: "")
+    let keep = ClosureButton(checkboxWithTitle: "Keep Downloaded") { _ in }
+    private var observer: NSObjectProtocol?
+
+    init(url: URL, item: FileItem?, service: CloudOfflineService, provider: String) {
+        self.url = url
+        self.item = item
+        self.service = service
+        self.provider = provider
+        super.init(frame: CGRect(x: 0, y: 0, width: 282, height: 44))
+        text.frame = CGRect(x: 0, y: 24, width: 282, height: 18)
+        text.autoresizingMask = [.width]
+        text.lineBreakMode = .byTruncatingTail
+        keep.frame = CGRect(x: 0, y: 0, width: 282, height: 20)
+        keep.controlSize = .small
+        keep.font = .systemFont(ofSize: 11)
+        keep.handler = { [weak self] b in self?.toggle(on: b.state == .on) }
+        addSubview(text)
+        addSubview(keep)
+        update()
+        observer = NotificationCenter.default.addObserver(forName: CloudOfflineHub.changed, object: nil, queue: .main) { [weak self] n in
+            guard let self else { return }
+            if let urls = CloudOfflineHub.urls(n), !urls.contains(self.url) { return }
+            self.update()
+        }
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    deinit { observer.map(NotificationCenter.default.removeObserver) }
+
+    override var isFlipped: Bool { true }
+
+    func update() {
+        text.stringValue = CloudCommands.summaryText(service.details(for: url), folder: item?.isBrowsableFolder ?? false, provider: provider)
+        let state = service.keep(for: url)
+        keep.state = state == .no ? .off : .on
+        let denial = service.keepDenial(for: url)
+        if case .inherited(let folder) = state {
+            keep.isEnabled = false
+            keep.toolTip = "Kept because “\(folder)” is kept downloaded."
+        } else {
+            keep.isEnabled = denial == nil
+            keep.toolTip = denial
+        }
+    }
+
+    private func toggle(on: Bool) {
+        if !on {
+            service.stopKeeping([url])
+            return
+        }
+        guard let item else { return service.keep([url]) }
+        KeepDownloadedSheet.run(
+            [item], window: window, status: { [weak self] t in if let t { self?.text.stringValue = t } else { self?.update() } },
+            failed: { [weak self] message in
+                self?.update()
+                self?.text.stringValue = message
+            })
+        // A sheet that's cancelled leaves it unchecked.
+        update()
     }
 }

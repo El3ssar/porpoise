@@ -241,6 +241,7 @@ extension MainWindowController {
             m.addItem(self.item("Add to Places", "bookmark-new", #selector(addToPlaces(_:))))
         }
         m.addItem(.separator())
+        addCloudItems(to: m, selection: sel, in: c)
         m.addItem(self.item("Cut", "edit-cut", #selector(cut(_:))))
         m.addItem(self.item("Copy", "edit-copy", #selector(copy(_:))))
         if info?.webLink != nil { m.addItem(self.item("Copy Link", "edit-copy-path", #selector(copyCloudLink(_:)), obj: item.url)) }
@@ -269,19 +270,27 @@ extension MainWindowController {
         pb.setString(link.absoluteString, forType: .string)
     }
 
-    /// Cloud items (iCloud Drive, Google Drive…): Finder's Download Now / Remove Download, right under Open.
+    /// Cloud items (iCloud Drive, Google Drive…): Finder's Download Now / Keep Downloaded / Remove Download, right
+    /// under Open.
     private func addCloudItems(to m: NSMenu, selection sel: [FileItem], in c: ViewContainer) {
-        let clouds = sel.map { c.model.cloud(for: $0) }
-        guard clouds.contains(where: { $0.isCloud }) else { return }
-        if clouds.contains(where: { $0.state == .cloudOnly }) || sel.contains(where: \.isBrowsableFolder) {
+        let a = CloudCommands.available(for: sel) { c.model.cloud(for: $0) }
+        guard !a.isEmpty else { return }
+        if a.downloadNow {
             let it = item("Download Now", nil, #selector(cloudDownload(_:)))
             it.image = NSImage(systemSymbolName: "icloud.and.arrow.down", accessibilityDescription: nil)
             m.addItem(it)
         }
-        if clouds.contains(where: { $0.isCloud && $0.state != .cloudOnly }) {
+        if let keep = a.keep {
+            let it = item("Keep Downloaded", nil, #selector(cloudKeep(_:)))
+            it.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: nil)
+            it.state = keep == .on ? NSControl.StateValue.on : keep == .mixed ? .mixed : .off
+            it.toolTip = a.keepEnabled ? "Keep a copy on this Mac, updated when it changes." : a.reason
+            m.addItem(it)
+        }
+        if a.removeDownload {
             let it = item("Remove Download", nil, #selector(cloudEvict(_:)))
             it.image = NSImage(systemSymbolName: "icloud.slash", accessibilityDescription: nil)
-            it.toolTip = "Free up space on this Mac. The item stays in the cloud."
+            it.toolTip = a.removeEnabled ? "Free up space on this Mac. The item stays in the cloud." : a.reason
             m.addItem(it)
         }
         m.addItem(.separator())

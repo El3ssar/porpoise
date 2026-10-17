@@ -80,22 +80,69 @@ enum CloudBadge {
     }
 
     static func draw(_ state: CloudState, in r: CGRect, onLight: Bool) {
+        if let p = state.progress {
+            var upload = false
+            if case .uploading = state { upload = true }
+            drawProgress(p, upload: upload, in: r, onLight: onLight)
+            return
+        }
+        if case .error = state {
+            draw(symbol: "exclamationmark.circle.fill", tint: Theme.transferDanger, in: r)
+            return
+        }
         guard let name = state.symbol, let base = NSImage(systemSymbolName: name, accessibilityDescription: state.help) else { return }
-        let color: NSColor = onLight ? NSColor(srgbRed: 0.10, green: 0.42, blue: 0.86, alpha: 1) : .white
+        let color = tint(onLight: onLight)
         let conf = NSImage.SymbolConfiguration(pointSize: r.height * 0.8, weight: .semibold).applying(.init(paletteColors: [color]))
         let img = base.withSymbolConfiguration(conf) ?? base
         let s = img.size
         let sc = min(r.width / max(s.width, 1), r.height / max(s.height, 1))
         let w = s.width * sc, h = s.height * sc
         NSGraphicsContext.saveGraphicsState()
+        halo(onLight: onLight, r: r).set()
+        img.draw(
+            in: CGRect(x: r.midX - w / 2, y: r.midY - h / 2, width: w, height: h), from: .zero, operation: .sourceOver,
+            fraction: 1, respectFlipped: true, hints: nil)
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private static func tint(onLight: Bool) -> NSColor { onLight ? NSColor(srgbRed: 0.10, green: 0.42, blue: 0.86, alpha: 1) : .white }
+
+    private static func halo(onLight: Bool, r: CGRect) -> NSShadow {
         let sh = NSShadow()
         sh.shadowBlurRadius = max(1.5, r.height * 0.14)
         sh.shadowOffset = .zero
         sh.shadowColor = onLight ? NSColor.white.withAlphaComponent(0.95) : NSColor.black.withAlphaComponent(0.85)
-        sh.set()
-        img.draw(
-            in: CGRect(x: r.midX - w / 2, y: r.midY - h / 2, width: w, height: h), from: .zero, operation: .sourceOver,
-            fraction: 1, respectFlipped: true, hints: nil)
+        return sh
+    }
+
+    /// A transfer with known progress: a ring that fills clockwise from the top around a small arrow.
+    static func drawProgress(_ p: Double, upload: Bool, in r: CGRect, onLight: Bool) {
+        let color = tint(onLight: onLight)
+        let ring = r.insetBy(dx: r.width * 0.12, dy: r.height * 0.12)
+        let lw = max(1.5, r.width * 0.12)
+        NSGraphicsContext.saveGraphicsState()
+        halo(onLight: onLight, r: r).set()
+        let track = NSBezierPath(ovalIn: ring)
+        track.lineWidth = lw
+        color.withAlphaComponent(0.35).setStroke()
+        track.stroke()
+        // Flipped view: angles run clockwise from the right; start at the top.
+        let arc = NSBezierPath()
+        arc.appendArc(
+            withCenter: CGPoint(x: ring.midX, y: ring.midY), radius: ring.width / 2, startAngle: -90,
+            endAngle: -90 + 360 * CGFloat(max(0.02, min(1, p))), clockwise: false)
+        arc.lineWidth = lw
+        arc.lineCapStyle = .round
+        color.setStroke()
+        arc.stroke()
+        if let arrow = NSImage(systemSymbolName: upload ? "arrow.up" : "arrow.down", accessibilityDescription: nil) {
+            let conf = NSImage.SymbolConfiguration(pointSize: ring.height * 0.5, weight: .bold).applying(.init(paletteColors: [color]))
+            let img = arrow.withSymbolConfiguration(conf) ?? arrow
+            let s = img.size
+            img.draw(
+                in: CGRect(x: ring.midX - s.width / 2, y: ring.midY - s.height / 2, width: s.width, height: s.height), from: .zero,
+                operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        }
         NSGraphicsContext.restoreGraphicsState()
     }
 }

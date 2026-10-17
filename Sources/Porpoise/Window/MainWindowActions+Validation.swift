@@ -57,8 +57,10 @@ extension MainWindowController: NSMenuItemValidation {
         case #selector(duplicateItem(_:)):
             return !hasSelection ? writable : selectionIsLocal
         case #selector(shareItems(_:)), #selector(compress(_:)),
-            #selector(setTag(_:)), #selector(cloudDownload(_:)), #selector(cloudEvict(_:)):
+            #selector(setTag(_:)):
             return selectionIsLocal
+        case #selector(cloudDownload(_:)), #selector(cloudKeep(_:)), #selector(cloudEvict(_:)):
+            return validateCloud(item)
         case #selector(extractHere(_:)):
             return view.model.selectedItems.first.map { $0.url.isFileURL && Self.extractableExtensions.contains($0.fileExtension.lowercased()) }
                 ?? false

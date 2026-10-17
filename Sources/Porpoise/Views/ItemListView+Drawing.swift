@@ -123,8 +123,9 @@ extension ItemListView {
             }
         }
         let incoming = model.incomingProgress[item.url]
+        let cloud = model.shownCloud(for: item).state
         NSGraphicsContext.saveGraphicsState()
-        if incoming != nil { NSGraphicsContext.current?.cgContext.setAlpha(0.5) }
+        if incoming != nil || dimmedOffline(cloud) { NSGraphicsContext.current?.cgContext.setAlpha(0.5) }
         defer {
             NSGraphicsContext.restoreGraphicsState()
             if let incoming, mode != .details {
@@ -133,10 +134,10 @@ extension ItemListView {
             }
         }
         let (image, imageRect) = drawIcon(i)
-        let cloud = model.shownCloud(for: item).state
-        drawCloudBadge(cloud, row: i, image: image, imageRect: imageRect, selected: selected)
-        if let edit = editMark(item) { drawEditBadge(edit, image: image, imageRect: imageRect, selected: selected) }
-        if item.isSymlink || item.isAliasFile || item.isWebDocument { drawLinkEmblem(i, besideCloudBadge: cloud != .local) }
+        let badge = CloudBadgeKind.resolve(cloud, edit: editMark(item))
+        drawCloudBadge(badge.cloudState ?? .local, row: i, image: image, imageRect: imageRect, selected: selected)
+        if case .edit(let edit) = badge { drawEditBadge(edit, image: image, imageRect: imageRect, selected: selected) }
+        if item.isSymlink || item.isAliasFile || item.isWebDocument { drawLinkEmblem(i, besideCloudBadge: badge.cloudState != nil) }
 
         // Selection marker (Dolphin's +/- toggle on hover)
         if hoverIndex == i && Settings.shared.showSelectionMarker && rubberBand == nil && renamingItem == nil {
@@ -229,7 +230,14 @@ extension ItemListView {
         let light = CloudBadge.backgroundIsLight(image, imageRect: imageRect, badge: br, behind: itemBackground(selected: selected))
         CloudBadge.draw(cloud, in: br, onLight: light)
         cloudRects[i] = br.insetBy(dx: -2, dy: -2)
-        if cloud == .downloading || cloud == .uploading { scheduleCloudRefresh() }
+        // Accounts' transfers redraw from the offline service's notifications; iCloud's are read again.
+        if cloud.isTransferring, model.rows[i].item.url.isFileURL { scheduleCloudRefresh() }
+    }
+
+    /// Offline, files that are only in the cloud are drawn faded: what's on this Mac still opens.
+    func dimmedOffline(_ cloud: CloudState) -> Bool {
+        guard cloud == .cloudOnly, !model.location.isFileURL else { return false }
+        return CloudAccounts.shared.account(for: model.location)?.status == .offline
     }
 
     private func drawLinkEmblem(_ i: Int, besideCloudBadge: Bool) {
