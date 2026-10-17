@@ -43,13 +43,15 @@ import Testing
         let account = try await fixture.connect().get()
         let id = try #require(fixture.store.accounts.first?.id)
         // A connection failure leaves a re-check scheduled; then Dropbox refuses the sign-in.
-        fixture.backend.reached(id, URLError(.notConnectedToInternet))
-        fixture.backend.reached(id, DropboxError.reconnect)
+        fixture.store.status.record(id, URLError(.notConnectedToInternet))
+        fixture.store.status.record(id, DropboxError.reconnect, signInNeeded: true)
         #expect(fixture.accounts.accounts.first { $0.id == account.id }?.status == .signInNeeded)
-        fixture.backend.settle(id)  // what the re-check timer runs
+        fixture.store.status.settle(id)  // what the re-check timer runs
         #expect(fixture.accounts.accounts.first { $0.id == account.id }?.status == .signInNeeded)
-        try await Task.sleep(nanoseconds: 300_000_000)
-        #expect(fixture.accounts.accounts.first { $0.id == account.id }?.status == .signInNeeded)
+        // A request that gets through proves the sign-in works again (as Drive has it).
+        fixture.store.status.record(id, nil)
+        #expect(fixture.accounts.accounts.first { $0.id == account.id }?.status == .ok)
+        fixture.store.status.record(id, DropboxError.reconnect, signInNeeded: true)
         // Signing in again gives the account a new sign-in: it is OK again.
         let again: Result<Void, CloudConnectError> = await withCheckedContinuation { continuation in
             _ = fixture.accounts.signInAgain(

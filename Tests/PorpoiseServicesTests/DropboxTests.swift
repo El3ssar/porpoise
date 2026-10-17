@@ -343,10 +343,10 @@ final class FakeDropboxServer {
         #expect(try credentials.read(clientID: server.config.appKey, accountID: account.id) == "fixture-refresh")
         let persisted = try #require(defaults.data(forKey: "dropboxAccounts"));
         #expect(!String(decoding: persisted, as: UTF8.self).contains("fixture-refresh"))
-        await #expect(throws: DropboxConnectionError.alreadyConnected(account.id)) { try await store.connect(openBrowser: browser) }
+        await #expect(throws: CloudConnectionError.alreadyConnected(account.id)) { try await store.connect(openBrowser: browser) }
         #expect(try await store.connect(expected: account, openBrowser: browser).id == account.id)
         try await server.configure(["account": "dbid:wrong"])
-        await #expect(throws: DropboxConnectionError.wrongAccount) { try await store.connect(expected: account, openBrowser: browser) }
+        await #expect(throws: CloudConnectionError.wrongAccount) { try await store.connect(expected: account, openBrowser: browser) }
         let restored = DropboxAccountStore(defaults: defaults, credentials: credentials, configuration: server.config, directory: scratch.url)
         #expect(restored.accounts == [account] && restored.client(for: account.id) != nil)
         try await store.checkForChanges(account.id)
@@ -354,7 +354,7 @@ final class FakeDropboxServer {
         let client = try #require(store.client(for: account.id))
         let edit = try await client.edits.begin(client.metadata("id:hello"))
         try Data("pending".utf8).write(to: edit.localURL)
-        await #expect(throws: DropboxConnectionError.unsentEdits) { try await store.disconnect(account.id) }
+        await #expect(throws: CloudConnectionError.unsentEdits) { try await store.disconnect(account.id) }
         _ = try await client.edits.save(edit.id)
         try await store.disconnect(account.id); #expect(store.accounts.isEmpty)
         #expect(try credentials.read(clientID: server.config.appKey, accountID: account.id) == nil)

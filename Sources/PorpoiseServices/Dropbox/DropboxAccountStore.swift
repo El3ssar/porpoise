@@ -1,12 +1,6 @@
 import Foundation
 import PorpoiseCore
 
-public enum DropboxConnectionError: Error, Equatable {
-    /// The account signed in to is connected already (its id here).
-    case alreadyConnected(UUID)
-    case wrongAccount, busy, unsentEdits
-}
-
 /// Engine-only account lifecycle. UI registration/Connect sheet availability is a separate integration step.
 @MainActor public final class DropboxAccountStore {
     public static let shared = DropboxAccountStore(directory: defaultDirectory)
@@ -17,22 +11,26 @@ public enum DropboxConnectionError: Error, Equatable {
         }
         return Settings.supportFolder.appendingPathComponent("Dropbox")
     }
-    private struct Saved: Codable { var account: DropboxAccount; var appKey: String }
     public private(set) var accounts: [DropboxAccount] = []
-    public private(set) var connecting = false
+    /// OK, offline or waiting to be signed in again, per account.
+    public let status = CloudAccountStatus()
+    private let signIn = CloudSignIn(provider: "Dropbox")
+    public var connecting: Bool { signIn.inProgress }
     public var onChange: (() -> Void)?
     private let defaults: UserDefaults
     private let credentials: any CloudCredentialStore
     private let configuration: DropboxConfiguration?
     private let http: CloudHTTPTransport
     private let directory: URL
-    private var saved: [Saved] = []
+    private let records: CloudAccountRecords<DropboxAccount>
+    private var saved: [CloudAccountRecords<DropboxAccount>.Record] = []
     private var clients: [UUID: DropboxClient] = [:]
     public init(
         defaults: UserDefaults = Settings.store, credentials: any CloudCredentialStore = CredentialStores.cloud(providerID: "dropbox"),
         configuration: DropboxConfiguration? = nil, directory: URL, http: CloudHTTPTransport = .init()
     ) {
         self.defaults = defaults; self.credentials = credentials; self.directory = directory; self.http = http
+        records = CloudAccountRecords(defaults: defaults, key: "dropboxAccounts", clientField: "appKey")
         if configuration == nil, Settings.isTesting, let raw = ProcessInfo.processInfo.environment["PORPOISE_DROPBOX_FAKE"],
             let fake = URL(string: raw), fake.scheme == "http", fake.host == "127.0.0.1"
         {
@@ -43,26 +41,28 @@ public enum DropboxConnectionError: Error, Equatable {
         } else {
             self.configuration = configuration
         }
-        if let bytes = defaults.data(forKey: "dropboxAccounts"), let records = try? JSONDecoder().decode([Saved].self, from: bytes) {
-            saved = records; accounts = records.map(\.account)
-            for record in records { install(record.account, configuration: config(appKey: record.appKey)) }
-        }
+        saved = records.load(); accounts = saved.map(\.account)
+        status.onChange = { [weak self] in self?.onChange?() }
+        for record in saved { install(record.account, configuration: config(appKey: record.clientID)) }
     }
     private func config(appKey: String? = nil) -> DropboxConfiguration {
         var config = configuration ?? .selected(defaults: defaults); if let appKey { config.appKey = appKey }; return config
     }
     private func install(_ account: DropboxAccount, configuration: DropboxConfiguration, session: CloudOAuthSession? = nil) {
         let tokens = session ?? DropboxTokens.session(configuration: configuration, accountID: account.id, credentials: credentials, http: http)
-        clients[account.id] = DropboxClient(
+        let client = DropboxClient(
             accountID: account.id, configuration: configuration, tokens: tokens,
             namespaceID: account.rootNamespaceID, directory: directory.appendingPathComponent(account.id.uuidString), http: http)
+        client.onReachability = { [weak self] error in
+            Task { @MainActor in self?.status.record(account.id, error, signInNeeded: (error as? DropboxError) == .reconnect) }
+        }
+        clients[account.id] = client
+        status.track(account.id)
     }
     public func client(for id: UUID) -> DropboxClient? { clients[id] }
     public func connect(expected: DropboxAccount? = nil, openBrowser: @escaping @MainActor (URL) -> Void) async throws -> DropboxAccount {
-        guard !connecting else { throw DropboxConnectionError.busy }; connecting = true; defer { connecting = false }
-        let configuration = config(appKey: expected.flatMap { account in saved.first { $0.account.id == account.id }?.appKey })
-        let listener = try configuration.makeLoopbackListener(); defer { listener.cancel() }
-        do {
+        let configuration = config(appKey: expected.flatMap { account in saved.first { $0.account.id == account.id }?.clientID })
+        return try await signIn.run(listener: { try configuration.makeLoopbackListener() }, email: \.email) { listener in
             let transaction = try DropboxOAuthTransaction(configuration: configuration, redirectURL: listener.redirectURL)
             openBrowser(transaction.authorizationURL)
             let callback = try await listener.callback()
@@ -82,10 +82,9 @@ public enum DropboxConnectionError: Error, Equatable {
             guard !profile.account_id.isEmpty, !profile.email.isEmpty, !profile.root_info.root_namespace_id.isEmpty else {
                 throw DropboxError.invalidResponse
             }
-            if let expected, expected.accountID != profile.account_id { throw DropboxConnectionError.wrongAccount }
-            if expected == nil, let existing = accounts.first(where: { $0.accountID == profile.account_id }) {
-                throw DropboxConnectionError.alreadyConnected(existing.id)
-            }
+            try CloudSignIn.check(
+                expected: expected?.id, isExpected: expected?.accountID == profile.account_id,
+                existing: accounts.first { $0.accountID == profile.account_id }?.id)
             let account = DropboxAccount(
                 id: expected?.id ?? UUID(), accountID: profile.account_id, email: profile.email,
                 displayName: profile.name.display_name, rootNamespaceID: profile.root_info.root_namespace_id,
@@ -103,12 +102,8 @@ public enum DropboxConnectionError: Error, Equatable {
             let tokens = DropboxTokens.session(configuration: configuration, accountID: account.id, credentials: credentials, http: http)
             try await tokens.accept(token)
             install(account, configuration: configuration, session: tokens)
-            saved.removeAll { $0.account.id == account.id }; saved.append(Saved(account: account, appKey: configuration.appKey)); try persist()
-            listener.finish(.signedIn(provider: "Dropbox", account: account.email))
+            saved.removeAll { $0.account.id == account.id }; saved.append(.init(account: account, clientID: configuration.appKey)); try persist()
             return account
-        } catch {
-            listener.finish(.failed(provider: "Dropbox", reason: error.localizedDescription))
-            throw error
         }
     }
     /// A future CloudBackend forwards foreground/background lifecycle here; no UI availability is changed.
@@ -122,7 +117,7 @@ public enum DropboxConnectionError: Error, Equatable {
     }
     public func disconnect(_ id: UUID) async throws {
         guard let client = clients[id] else { return }
-        guard await client.edits.pending().isEmpty else { throw DropboxConnectionError.unsentEdits }
+        guard await client.edits.pending().isEmpty else { throw CloudConnectionError.unsentEdits }
         let owned = directory.appendingPathComponent(id.uuidString)
         let namespaces = (try? FileManager.default.contentsOfDirectory(at: owned, includingPropertiesForKeys: nil)) ?? []
         // Namespace clients share the account credential but keep independent edit/journal directories.
@@ -134,17 +129,13 @@ public enum DropboxConnectionError: Error, Equatable {
                 guard let bytes = try? Data(contentsOf: path), let edit = try? JSONDecoder().decode(DropboxEditStore.Session.self, from: bytes),
                     edit.localURL.standardizedFileURL.path.hasPrefix(owned.standardizedFileURL.path + "/"),
                     (try? DropboxContentHash.hash(edit.localURL)) == edit.sentHash
-                else { throw DropboxConnectionError.unsentEdits }
+                else { throw CloudConnectionError.unsentEdits }
             }
         }
         await client.changes.stop()
         let source = client.contentSource
         _ = try await client.offlineCopies()
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            CloudOffline.shared.wipe(account: source.accountID) { error in
-                if let error { continuation.resume(throwing: error) } else { continuation.resume() }
-            }
-        }
+        try await CloudAccountWipe.offlineCopies(source.accountID)
         // An access token for Dropbox's revoke, read before the credentials are forgotten here.
         let access = try? await client.tokens.accessToken()
         _ = try await client.tokens.disconnect()
@@ -159,18 +150,10 @@ public enum DropboxConnectionError: Error, Equatable {
             for record in try journal.all() where record.hasSession { try await client.tokens.removeSecret(record.operationID) }
         }
         // Only this account's private engine data is removed. No provider is registered in the UI yet.
-        try Self.remove(owned)
-        clients[id] = nil; saved.removeAll { $0.account.id == id }; try persist()
-    }
-    /// Removes a folder, again if something was still being written into it as it went (a late listing).
-    private static func remove(_ folder: URL) throws {
-        let fm = FileManager.default
-        for attempt in 1...3 {
-            guard fm.fileExists(atPath: folder.path) else { return }
-            do { try fm.removeItem(at: folder); return } catch  where attempt < 3 { Thread.sleep(forTimeInterval: 0.05) }
-        }
+        try CloudAccountWipe.remove(owned)
+        clients[id] = nil; status.forget(id); saved.removeAll { $0.account.id == id }; try persist()
     }
     private func persist() throws {
-        defaults.set(try JSONEncoder().encode(saved), forKey: "dropboxAccounts"); accounts = saved.map(\.account); onChange?()
+        try records.save(saved); accounts = saved.map(\.account); onChange?()
     }
 }

@@ -39,15 +39,9 @@ public final class DriveCloudBackend: CloudBackend {
         MainActor.assumeIsolated {
             store.accounts.map { a in
                 let d = details[a.id]
-                let status: CloudAccount.Status
-                switch store.states[a.id] {
-                case .offline: status = .offline
-                case .needsSignIn: status = .signInNeeded
-                default: status = .ok
-                }
                 return CloudAccount(
                     id: Self.key(a.id), email: a.email, displayName: a.displayName, photoURL: a.photoURL, quotaUsed: d?.used,
-                    quotaTotal: d?.total, sharedDriveCount: d?.drives ?? 0, status: status,
+                    quotaTotal: d?.total, sharedDriveCount: d?.drives ?? 0, status: store.status[a.id] ?? .ok,
                     // Unknown until the grant is checked: assume yes, so "Allow Changes" never flashes at launch.
                     canWrite: store.writeAccess[a.id] != false)
             }
@@ -102,12 +96,7 @@ public final class DriveCloudBackend: CloudBackend {
     }
 
     private func connectError(_ error: Error) -> CloudConnectError {
-        if error is CancellationError || (error as? DriveError) == .oauthCancelled { return .cancelled }
-        if case .alreadyConnected(let a) = error as? DriveConnectionError {
-            return .alreadyConnected(
-                accounts.first { $0.id == Self.key(a.id) } ?? CloudAccount(id: Self.key(a.id), email: a.email, displayName: a.displayName))
-        }
-        return .failed(error.localizedDescription)
+        .from(error, cancelled: { ($0 as? DriveError) == .oauthCancelled }) { id in self.accounts.first { $0.id == Self.key(id) } }
     }
 
     public func signInAgain(_ id: String, openBrowser: @escaping (URL) -> Void, done: @escaping (Result<Void, CloudConnectError>) -> Void)

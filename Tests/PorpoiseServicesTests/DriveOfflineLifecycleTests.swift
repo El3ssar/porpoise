@@ -32,7 +32,7 @@ import Testing
         let copy = try await store.fetch(item, keep: true)
         let session = try await client.edits.open(file)
         try Data("unsent".utf8).write(to: session.localURL)
-        await #expect(throws: DriveMutationError.conflict) { try await accounts.disconnect(account) }
+        await #expect(throws: CloudConnectionError.unsentEdits) { try await accounts.disconnect(account) }
         #expect(FileManager.default.fileExists(atPath: copy.path))
         #expect(await store.snapshot().pins.contains(file.id))
         try Data(contentsOf: copy).write(to: session.localURL)
