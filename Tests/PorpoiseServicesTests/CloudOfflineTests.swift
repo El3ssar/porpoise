@@ -1,0 +1,79 @@
+import Foundation
+import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseServices
+
+@MainActor @Suite(.serialized, .isolatedSettings) struct CloudOfflineTests {
+    private func wait(_ test: () -> Bool) async throws {
+        for _ in 0..<200 where !test() { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(test())
+    }
+    private func setup() throws -> (CloudOffline, FakeContentSource, Scratch) {
+        let source = FakeContentSource(), scratch = try Scratch()
+        let facade = CloudOffline(accounts: CloudAccounts(), root: scratch.url, source: { source.ref(for: $0) == nil ? nil : source })
+        return (facade, source, scratch)
+    }
+    @Test func plansPinsSnapshotsRemoveAndWipe() async throws {
+        let (facade, source, scratch) = try setup()
+        _ = scratch
+        let folder = source.add("folder", folder: true), item = source.add("one", parent: "folder")
+        let url = source.url(for: folder), fileURL = source.url(for: item)
+        let plan: CloudKeepPlan = try await withCheckedThrowingContinuation { continuation in
+            facade.plan(keep: [url, url]) { continuation.resume(with: $0) }
+        }
+        #expect(plan.bytes == 5 && plan.items == 1 && plan.fits && !plan.needsConfirmation)
+        #expect(CloudKeepPlan(bytes: 1_000_000_000, items: 1, available: 0).needsConfirmation)
+        #expect(CloudKeepPlan(bytes: 0, items: 500, available: 0).needsConfirmation)
+        #expect(facade.state(for: url) == .local)
+        #expect(facade.state(for: fileURL) == .cloudOnly)
+        let error: Error? = await withCheckedContinuation { continuation in
+            facade.keep(true, [url]) { continuation.resume(returning: $0) }
+        }
+        #expect(error == nil)
+        try await wait { facade.details(for: fileURL).downloaded }
+        #expect(facade.details(for: fileURL).kept)
+        #expect(facade.details(for: fileURL).inheritedFrom == folder.name)
+        #expect(facade.details(for: url).bytes == 5 && facade.details(for: url).items == 1)
+        #expect(facade.usage(account: source.accountID).kept == 5)
+        #expect(!facade.removeDownload([fileURL]).isEmpty)
+        let stopped: Error? = await withCheckedContinuation { continuation in
+            facade.keep(false, [url]) { continuation.resume(returning: $0) }
+        }
+        #expect(stopped == nil)
+        try await wait { !facade.details(for: fileURL).kept }
+        #expect(facade.usage(account: source.accountID).recent == 5)
+        facade.recentLimit = 0
+        try await wait { !facade.details(for: fileURL).downloaded }
+        facade.recentLimit = nil
+        let downloaded: Error? = await withCheckedContinuation { continuation in
+            facade.downloadNow([fileURL]) { continuation.resume(returning: $0) }
+        }
+        #expect(downloaded == nil)
+        try await wait { facade.details(for: fileURL).downloaded }
+        facade.removeRecent(account: source.accountID)
+        try await wait { !facade.details(for: fileURL).downloaded }
+        facade.wipe(account: source.accountID)
+        try await wait { facade.usage(account: source.accountID).recent == 0 }
+        #expect(facade.details(for: URL(fileURLWithPath: "/tmp/local")).downloaded == false)
+    }
+    @Test func invalidActionsReturnErrorsAndCancellationIsSafe() async throws {
+        let (facade, source, scratch) = try setup(); _ = scratch
+        let invalid = URL(fileURLWithPath: "/tmp/local")
+        let result: Result<CloudKeepPlan, Error> = await withCheckedContinuation { continuation in
+            facade.plan(keep: [invalid]) { continuation.resume(returning: $0) }
+        }
+        if case .success = result { Issue.record("Local paths must not use the account store") }
+        let error: Error? = await withCheckedContinuation { continuation in
+            facade.downloadNow([invalid]) { continuation.resume(returning: $0) }
+        }
+        #expect(error as? CloudContentError == .unsupported)
+        let folder = source.add("folder", folder: true)
+        for n in 0..<20 { _ = source.add("item-\(n)", parent: "folder") }
+        let cancel = facade.keep(true, [source.url(for: folder)])
+        cancel()
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(source.downloads < 20)
+        #expect(facade.removeDownload([invalid]).isEmpty)
+    }
+}
