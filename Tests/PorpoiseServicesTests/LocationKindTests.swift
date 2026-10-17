@@ -67,6 +67,8 @@ import Testing
         #expect(LocationNaming.name(for: URL(string: "tags:/Red")!) == "Red")
         #expect(LocationNaming.name(for: URL(string: "sftp://alice@fixture.invalid/")!) == "alice@fixture.invalid")
         #expect(LocationNaming.name(for: remote) == "folder")
+        #expect(LocationNaming.name(for: URL(string: "sftp://fixture.invalid/~/")!) == "Home")
+        #expect(LocationNaming.name(for: URL(string: "smb://fixture.invalid/")!) == "fixture.invalid")
         #expect(LocationNaming.connectionTitle(for: remote) == "fixture.invalid")
         #expect(local.folderName == LocationNaming.name(for: local))
         #expect(LocationNaming.icon(for: local) == IconTheme.folderIconName(local))

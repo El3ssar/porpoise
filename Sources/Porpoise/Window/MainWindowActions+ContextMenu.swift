@@ -90,7 +90,7 @@ extension MainWindowController {
 
     private func buildContextMenu(for item: FileItem?, in c: ViewContainer) -> NSMenu {
         let m = NSMenu()
-        let inTrash = c.url.isFileURL && c.url.standardizedFileURL == TrashInfo.folder.standardizedFileURL
+        let inTrash = c.model.kind == .trash
         let sel = c.model.selectedItems
         if PlacesModel.isCloud(c.url) { return cloudContextMenu(for: item, selection: sel, in: c) }
         guard let item else {

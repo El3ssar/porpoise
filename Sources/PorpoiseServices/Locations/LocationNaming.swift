@@ -11,10 +11,10 @@ public enum LocationNaming {
         }
         if let title = kind.title { return title }
         if kind == .smartFolder { return url.deletingPathExtension().lastPathComponent }
-        if kind.isRemote, url.path.isEmpty || url.path == "/" {
-            return RemoteFS.provider(for: url)?.rootTitle(url) ?? url.host ?? ""
+        if url.path.isEmpty || url.path == "/" {
+            return (kind.isRemote ? RemoteFS.provider(for: url)?.rootTitle(url) : nil) ?? url.host ?? url.scheme ?? ""
         }
-        return url.lastPathComponent
+        return kind.isRemote && url.lastPathComponent == "~" ? "Home" : url.lastPathComponent
     }
 
     public static func title(for url: URL) -> String { PlacesModel.shared.title(for: url) ?? name(for: url) }

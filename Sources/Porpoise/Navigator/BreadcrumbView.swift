@@ -135,11 +135,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         if LocationKind.of(url).isVirtual { return [(url, LocationNaming.title(for: url))] }
         if PlacesModel.isCloud(url) { return cloudCrumbs() }
         let chain = RemoteFS.pathAncestors(of: url) + [url]
-        return chain.enumerated().map { index, folder in
-            if index == 0 { return (folder, RemoteFS.provider(for: folder)?.rootTitle(folder) ?? (folder.host ?? folder.scheme ?? "")) }
-            let name = folder.lastPathComponent
-            return (folder, name == "~" ? "Home" : name)
-        }
+        return chain.map { (url: $0, title: LocationNaming.name(for: $0)) }
     }
 
     /// Cloud folders: the account, then its row (My Drive, Files, Shared with me…), then each folder by name, as

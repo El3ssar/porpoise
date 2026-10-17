@@ -10,8 +10,10 @@ public enum LocationKind: Equatable, Sendable {
             descriptor.scheme.map { ($0, descriptor.provider) }
         })
 
+    private static let trashPath = TrashInfo.folder.standardizedFileURL.path
+
     public static func of(_ url: URL) -> Self {
-        if url.isFileURL { return url.standardizedFileURL.path == TrashInfo.folder.standardizedFileURL.path ? .trash : .local }
+        if url.isFileURL { return url.standardizedFileURL.path == trashPath ? .trash : .local }
         let scheme = url.scheme?.lowercased() ?? ""
         if let provider = cloudProviders[scheme] { return .cloud(provider) }
         if RemoteFS.sshSchemes.contains(scheme) || RemoteFS.ftpSchemes.contains(scheme) { return .remote }
@@ -60,7 +62,7 @@ public enum LocationKind: Equatable, Sendable {
         case .trash: return "user-trash"
         case .local: return "folder"
         case .device: return "smartphone"
-        case .cloud, .remote, .networkShare: return "folder-remote"
+        case .cloud, .remote: return "folder-remote"
         case .network: return "network-workgroup"
         default: return "document-open-recent"
         }
