@@ -234,7 +234,7 @@ final class InformationPanel: NSView {
             if let i = c.model.index(of: u), c.model.rows.indices.contains(i) { return c.model.rows[i].item }
             if u == c.url {
                 // A remote or virtual folder itself.
-                let name = PlacesModel.shared.title(for: u) ?? (RemoteFS.isRemote(u) ? RemoteFS.displayName(for: u) : u.lastPathComponent)
+                let name = LocationNaming.title(for: u)
                 return FileItem(url: u, name: name, isDirectory: true, contentType: "public.folder")
             }
         }

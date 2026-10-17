@@ -103,7 +103,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         segs.append(Segment(kind: .rootArrow))
         let crumbs = url.isFileURL ? localCrumbs() : remoteCrumbs()
         // Virtual locations (network:, recent:) have no subfolder menus.
-        let arrows = url.isFileURL || RemoteFS.isRemote(url)
+        let arrows = LocationKind.of(url).hasHierarchy
         for (i, c) in crumbs.enumerated() {
             let last = i == crumbs.count - 1
             segs.append(Segment(kind: .crumb(c.url, c.title, last)))
@@ -113,7 +113,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         hover = nil
         layoutSegments()
         needsDisplay = true
-        setAccessibilityValue(url.isFileURL ? url.path : url.absoluteString)
+        setAccessibilityValue(LocationNaming.address(for: url))
     }
 
     /// Crumbs from the root place (or the volume) down to the folder.
@@ -130,29 +130,12 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         return crumbs.reversed()
     }
 
-    /// Virtual locations (Recent, Network, Tags, Smart Folders): one crumb, they have no folder hierarchy.
-    private static let virtualSchemes: Set<String> = ["recent", "network", "tags", "smart"]
-    private var isVirtual: Bool { url.scheme.map { Self.virtualSchemes.contains($0) } ?? false }
-
     /// Remote/virtual locations: a "user@host" (or location name) root crumb, then the path components.
     private func remoteCrumbs() -> [(url: URL, title: String)] {
-        if isVirtual {
-            let title: String
-            switch url.scheme {
-            case "recent": title = url.path == "/files" ? "Recent Files" : "Recent Locations"
-            case "network": title = "Network"
-            case "smart": title = url.deletingPathExtension().lastPathComponent
-            default: title = PlacesModel.shared.title(for: url) ?? url.lastPathComponent
-            }
-            return [(url, title)]
-        }
+        if LocationKind.of(url).isVirtual { return [(url, LocationNaming.title(for: url))] }
         if PlacesModel.isCloud(url) { return cloudCrumbs() }
         let chain = RemoteFS.pathAncestors(of: url) + [url]
-        return chain.enumerated().map { index, folder in
-            if index == 0 { return (folder, RemoteFS.provider(for: folder)?.rootTitle(folder) ?? (folder.host ?? folder.scheme ?? "")) }
-            let name = folder.lastPathComponent
-            return (folder, name == "~" ? "Home" : name)
-        }
+        return chain.map { (url: $0, title: LocationNaming.name(for: $0)) }
     }
 
     /// Cloud folders: the account, then its row (My Drive, Files, Shared with me…), then each folder by name, as
@@ -323,7 +306,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         let i = segmentIndex(at: convert(event.locationInWindow, from: nil))
         if i != hover { hover = i; needsDisplay = true }
         if let i, case .crumb(let u, _, _) = segments[i].kind {
-            toolTip = u.isFileURL ? u.path : u.absoluteString
+            toolTip = LocationNaming.address(for: u)
         } else if i == nil {
             toolTip = "Click to Edit Location"
         } else {
@@ -373,7 +356,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         let p = convert(event.locationInWindow, from: nil)
         guard i < segments.count, segments[i].rect.contains(p), case .crumb(let u, _, _) = segments[i].kind else { return }
         // A virtual location's only crumb is where the view already is.
-        if isVirtual && u == url && !event.modifierFlags.contains(.command) { return }
+        if LocationKind.of(url).isVirtual && u == url && !event.modifierFlags.contains(.command) { return }
         let mods = event.modifierFlags
         delegate?.breadcrumb(self, navigateTo: u, newTab: mods.contains(.command))
     }
@@ -391,7 +374,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         // Mouse wheel over a crumb switches to sibling folders (KUrlNavigator).
         let p = convert(event.locationInWindow, from: nil)
         // Local folders only: listing a remote one would block the window on every wheel tick.
-        guard !event.hasPreciseScrollingDeltas, event.scrollingDeltaY != 0, !isVirtual, let i = segmentIndex(at: p),
+        guard !event.hasPreciseScrollingDeltas, event.scrollingDeltaY != 0, !LocationKind.of(url).isVirtual, let i = segmentIndex(at: p),
             case .crumb(let u, _, _) = segments[i].kind, u.isFileURL, u.path != "/", u.path != ""
         else { super.scrollWheel(with: event); return }
         let parent = u.deletingLastPathComponent()
@@ -430,7 +413,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     @objc private func copyLocation(_ s: NSMenuItem) {
         NSPasteboard.general.clearContents()
         let u = (s.representedObject as? URL) ?? url
-        NSPasteboard.general.setString(u.isFileURL ? u.path : u.absoluteString, forType: .string)
+        NSPasteboard.general.setString(LocationNaming.address(for: u), forType: .string)
     }
 
     /// Goes to the location on the clipboard (a path, "~/…", or a remote URL), like typing it.
@@ -694,7 +677,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             }
         }
         // Files can be dropped onto folders, local or remote (not onto Recent, Tags…).
-        guard let i, case .crumb(let u, _, _) = segments[i].kind, u.isFileURL || RemoteFS.isRemote(u) else { return [] }
+        guard let i, case .crumb(let u, _, _) = segments[i].kind, LocationKind.of(u).acceptsDrops else { return [] }
         return ItemListView.operation(for: sender)
     }
 
@@ -710,7 +693,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let p = convert(sender.draggingLocation, from: nil)
         endDropHover()
-        guard let i = segmentIndex(at: p), case .crumb(let u, _, _) = segments[i].kind, u.isFileURL || RemoteFS.isRemote(u) else { return false }
+        guard let i = segmentIndex(at: p), case .crumb(let u, _, _) = segments[i].kind, LocationKind.of(u).acceptsDrops else { return false }
         let urls = (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
         guard !urls.isEmpty else { return false }
         delegate?.breadcrumb(self, drop: urls, onto: u)

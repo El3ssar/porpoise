@@ -273,7 +273,7 @@ final class SystemClipboard: FileClipboard {
     func write(_ urls: [URL]) {
         pasteboard.clearContents()
         pasteboard.writeObjects(urls as [NSURL])
-        pasteboard.setString(urls.map { $0.isFileURL ? $0.path : $0.absoluteString }.joined(separator: "\n"), forType: .string)
+        pasteboard.setString(LocationNaming.clipboardText(for: urls), forType: .string)
     }
 
     func readURLs() -> [URL] { (pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL]) ?? [] }

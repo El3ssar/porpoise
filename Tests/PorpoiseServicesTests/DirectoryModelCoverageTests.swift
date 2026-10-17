@@ -46,7 +46,7 @@ import Testing
             $0.props.mode = .details
             $0.onLoaded = { loads += 1 }
         }
-        #expect(m.isVirtual && m.loadError == nil && loads == 1)
+        #expect(m.kind == .device && m.loadError == nil && loads == 1)
         #expect(names(m) == ["DCIM", "photo.jpg"])
 
         // An expanded remote folder is listed by the provider too, and again on every reload.
@@ -70,7 +70,7 @@ import Testing
 
     @Test func aTagNobodyUsesListsNothing() async throws {
         let m = try await loaded(FinderTags.url(for: "porpoise-coverage-\(UUID().uuidString)"), timeout: 60)
-        #expect(m.isVirtual && m.items.isEmpty && m.rows.isEmpty && m.loadError == nil)
+        #expect(m.kind.isVirtual && m.items.isEmpty && m.rows.isEmpty && m.loadError == nil)
         #expect(m.props.mode == .icons && m.props.sortRole == .name)
     }
 

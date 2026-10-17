@@ -231,7 +231,7 @@ public final class PlacesModel {
 
     /// Title for a URL if it is a place (window/tab titles use it, e.g. "Home").
     public func title(for url: URL) -> String? {
-        if url.scheme == "smart" { return url.deletingPathExtension().lastPathComponent }
+        if LocationKind.of(url) == .smartFolder { return LocationNaming.name(for: url) }
         let u = url.standardizedFileURL
         return allEntries.first { $0.url.standardizedFileURL == u }?.title
     }
@@ -420,25 +420,24 @@ public final class PlacesModel {
     // MARK: Editing
 
     /// Schemes of cloud accounts' folders: added to Places (not Remote), with the cloud folder icon.
-    public static let cloudSchemes: Set<String> = Set(CloudProviderDescriptor.catalog.compactMap(\.scheme))
-    public static func isCloud(_ url: URL) -> Bool { cloudSchemes.contains(url.scheme?.lowercased() ?? "") }
+    public static func isCloud(_ url: URL) -> Bool { LocationKind.of(url).isCloud }
 
     public func add(_ url: URL, title: String? = nil) {
         guard !userEntries.contains(where: { $0.url.standardizedFileURL == url.standardizedFileURL }) else { return }
         if Self.isCloud(url) {
             // A cloud folder is a place like a local one; its badge and tooltip tell where it lives.
-            let entry = PlaceEntry(title: title ?? url.lastPathComponent, url: url, icon: "folder-cloud", section: .places)
+            let entry = PlaceEntry(title: title ?? LocationNaming.name(for: url), url: url, icon: "folder-cloud", section: .places)
             let afterLast = (userEntries.lastIndex { $0.section == .places } ?? (userEntries.count - 1)) + 1
             let at = userEntries.firstIndex { $0.icon == "user-trash" } ?? afterLast
             userEntries.insert(entry, at: max(0, at))
         } else if !url.isFileURL {
             // Network folders go to the end of the Remote section.
-            let entry = PlaceEntry(title: title ?? (url.host ?? url.absoluteString), url: url, icon: "folder-remote", section: .remote)
+            let entry = PlaceEntry(title: title ?? LocationNaming.connectionTitle(for: url), url: url, icon: "folder-remote", section: .remote)
             let at = userEntries.lastIndex { $0.section == .remote }.map { $0 + 1 } ?? userEntries.count
             userEntries.insert(entry, at: at)
         } else {
             // Folders go after the last "Places" entry, before Trash if present.
-            let entry = PlaceEntry(title: title ?? url.lastPathComponent, url: url, icon: IconTheme.folderIconName(url), section: .places)
+            let entry = PlaceEntry(title: title ?? LocationNaming.name(for: url), url: url, icon: IconTheme.folderIconName(url), section: .places)
             let afterLast = (userEntries.lastIndex { $0.section == .places } ?? (userEntries.count - 1)) + 1
             let at = userEntries.firstIndex { $0.icon == "user-trash" } ?? afterLast
             userEntries.insert(entry, at: max(0, at))

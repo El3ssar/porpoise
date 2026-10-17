@@ -196,7 +196,7 @@ extension PlacesPanel {
 
     @objc private func addEntry() {
         let u = currentURL ?? FileManager.default.homeDirectoryForCurrentUser
-        let label = PlacesModel.shared.title(for: u) ?? (RemoteFS.isRemote(u) ? RemoteFS.displayName(for: u) : u.lastPathComponent)
+        let label = LocationNaming.title(for: u)
         PlaceEditDialog.run(title: "Add Places Entry", label: label, url: u, window: window) { label, url in
             PlacesModel.shared.add(url, title: label)
         }

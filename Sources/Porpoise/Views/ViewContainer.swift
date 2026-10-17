@@ -462,9 +462,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     /// Up works in local folders and on remote servers (sftp/ftp/adb) below their root; virtual lists have no parent.
     var canGoUp: Bool {
-        guard url.isFileURL || RemoteFS.isRemote(url) else { return false }
-        let path = url.path
-        return !path.isEmpty && path != "/"
+        LocationKind.of(url).canGoUp(from: url)
     }
 
     func goUp() {
