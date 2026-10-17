@@ -17,6 +17,8 @@ struct ActivityTests {
         s = try Scratch("activity")
         c = makeController(ui)
         c.journals = JournalStore(folder: s.path("journals"))
+        // Its own: Drive transfers of tests running meanwhile record theirs in the shared one, and would be plans here.
+        c.driveJournals = DriveMutationJournal(folder: s.path("drive-journals"))
         c.history = OperationHistory(file: s.path("history.jsonl"))
         // Real byte copies, slow enough to be caught in the middle.
         c.prepareJob = { job in
@@ -74,6 +76,7 @@ struct ActivityTests {
         // Next launch: a new controller finds the journal.
         let next = makeController(ScriptedUI())
         next.journals = c.journals
+        next.driveJournals = c.driveJournals
         next.history = c.history
         let plans = next.recoveryPlans()
         #expect(plans.count == 1)
