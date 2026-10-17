@@ -5,12 +5,16 @@ import PorpoiseCore
 public final class DropboxCloudBackend: CloudBackend {
     public var onChange: (() -> Void)?
     public let store: DropboxAccountStore
+    private var quotas: [UUID: DropboxSpaceUsage] = [:]
+    private var fetchingQuota: Set<UUID> = []
+    private var quotaRefresh: CloudQuotaRefresh?
     private var providers: [UUID: DropboxProvider] = [:]
     private var statuses: [UUID: CloudAccount.Status] = [:]
     private var reachability: [UUID: OfflineHysteresis] = [:]
     private var checks: [UUID: DispatchWorkItem] = [:]
     @MainActor public init(store: DropboxAccountStore) {
         self.store = store
+        quotaRefresh = CloudQuotaRefresh { [weak self] in self?.refreshQuotas() }
         store.onChange = { [weak self] in self?.install() }
         install()
     }
@@ -19,7 +23,7 @@ public final class DropboxCloudBackend: CloudBackend {
             let live = Set(store.accounts.map(\.id))
             for id in providers.keys where !live.contains(id) {
                 RemoteFS.registerCloud(nil, for: DropboxLocation(accountID: id).url); providers[id] = nil; statuses[id] = nil
-                checks.removeValue(forKey: id)?.cancel(); reachability[id] = nil
+                checks.removeValue(forKey: id)?.cancel(); reachability[id] = nil; quotas[id] = nil
             }
             for account in store.accounts {
                 guard let client = store.client(for: account.id) else { continue }
@@ -28,6 +32,7 @@ public final class DropboxCloudBackend: CloudBackend {
                     RemoteFS.registerCloud(provider, for: DropboxLocation(accountID: account.id).url)
                     reachability[account.id] = OfflineHysteresis(); statuses[account.id] = .ok
                     DropboxEditing.shared.restore(client)
+                    fetchQuota(account.id)
                     client.onReachability = { [weak self] error in Task { @MainActor in self?.reached(account.id, error) } }
                     client.onFreshness = { [weak self] in
                         Task { @MainActor in
@@ -52,6 +57,7 @@ public final class DropboxCloudBackend: CloudBackend {
             store.accounts.map { account in
                 CloudAccount(
                     id: key(account), provider: .dropbox, email: account.email, displayName: account.displayName,
+                    quotaUsed: quotas[account.id]?.used, quotaTotal: quotas[account.id]?.total,
                     sharedDriveCount: account.hasTeamSpace ? 1 : 0, status: statuses[account.id] ?? .ok)
             }
         }
@@ -176,12 +182,27 @@ public final class DropboxCloudBackend: CloudBackend {
         }
         return { task.cancel() }
     }
+    @MainActor private func refreshQuotas() { for account in store.accounts { fetchQuota(account.id) } }
+    @MainActor private func fetchQuota(_ id: UUID) {
+        guard let client = store.client(for: id), fetchingQuota.insert(id).inserted else { return }
+        Task { @MainActor [weak self] in
+            defer { self?.fetchingQuota.remove(id) }
+            guard let value = try? await client.spaceUsage(), self?.store.client(for: id) === client else { return }
+            self?.quotas[id] = value; self?.onChange?()
+        }
+    }
     public func checkForChanges(_ id: String?) {
+        MainActor.assumeIsolated {
+            for account in store.accounts where id == nil || key(account) == id { fetchQuota(account.id) }
+        }
         for (uuid, provider) in providers where id == nil || account(id!)?.id == uuid {
             Task { try? await provider.checkForChanges() }
         }
     }
-    public func setActive(_ active: Bool) { providers.values.forEach { $0.setActive(active) } }
+    public func setActive(_ active: Bool) {
+        MainActor.assumeIsolated { quotaRefresh?.setActive(active) }
+        providers.values.forEach { $0.setActive(active) }
+    }
     private func changed(_ url: URL) { NotificationCenter.default.post(name: CloudAccounts.remoteChanged, object: accountID(for: url)) }
     @MainActor private func reached(_ id: UUID, _ error: Error?) {
         if (error as? DropboxError) == .reconnect { statuses[id] = .signInNeeded; onChange?(); return }

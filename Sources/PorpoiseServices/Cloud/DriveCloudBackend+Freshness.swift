@@ -44,6 +44,7 @@ extension DriveCloudBackend {
 
     /// Asks Drive for changes now (the app came to the front, or the user reloaded): what changed shows by itself.
     public func checkForChanges(_ id: String?) {
+        MainActor.assumeIsolated { refreshQuotas(id) }
         let clients = MainActor.assumeIsolated {
             store.accounts.filter { id == nil || Self.key($0.id) == id }.compactMap { store.client(for: $0.id) }
         }
@@ -51,6 +52,7 @@ extension DriveCloudBackend {
     }
 
     public func setActive(_ active: Bool) {
+        MainActor.assumeIsolated { quotaRefresh?.setActive(active) }
         let clients = MainActor.assumeIsolated { store.accounts.compactMap { store.client(for: $0.id) } }
         for client in clients {
             if active {

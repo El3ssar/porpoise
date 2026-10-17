@@ -2,7 +2,7 @@ import Foundation
 import PorpoiseCore
 
 extension DriveClient {
-    public func startPolling(interval: TimeInterval = 45) {
+    public func startPolling(interval: TimeInterval = CloudAccountRefreshPolicy.interval) {
         stopPolling()
         let task = Task { [weak self] in
             while !Task.isCancelled {

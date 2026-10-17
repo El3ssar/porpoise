@@ -157,6 +157,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply({}, 401)
         if forced:
             return self.reply({}, 503)
+        if route == 'users/get_space_usage':
+            with self.server.lock:
+                usage = copy.deepcopy(self.server.config.get('spaceUsage',
+                    {'used': 4000000000, 'allocation': {'.tag': 'individual', 'allocated': 15000000000}}))
+            return self.reply(usage)
         if route == 'users/get_current_account':
             with self.server.lock:
                 account = self.server.config.get('account', 'dbid:fixture')
