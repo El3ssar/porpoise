@@ -48,7 +48,7 @@ import Testing
             store.set(false, forKey: "perFolder")
             var common = ViewProperties(); common.mode = mode; common.sortRole = .size; common.previews = false
             common.setIconSize(73, for: mode)
-            Settings.shared.save(common, for: other)
+            ViewStyleStore().save(common, for: other)
             let model = DirectoryModel(location: location.url)
             let list = ItemListView(model: model)
             #expect(list.mode == mode && model.props == common)

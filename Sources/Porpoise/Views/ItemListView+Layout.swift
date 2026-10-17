@@ -134,7 +134,7 @@ extension ItemListView {
         detailsRoles = [.name] + model.props.roles(for: .details)
         let h = 2 * Self.pad + max(iconSize, lineHeight) + 2
         let side = Self.sidePadding, groupH = groupHeaderHeight
-        let saved = Self.savedColumnWidths
+        let saved = ViewStyleStore().columnWidths
         var fixed: CGFloat = 0
         for r in detailsRoles.dropFirst() {
             let w = saved[r.rawValue] ?? r.defaultColumnWidth
@@ -177,15 +177,10 @@ extension ItemListView {
 
     // MARK: - Details column widths
 
-    static var savedColumnWidths: [String: CGFloat] {
-        get { (Settings.store.dictionary(forKey: "columnWidths") as? [String: Double])?.mapValues { CGFloat($0) } ?? [:] }
-        set { Settings.store.set(newValue.mapValues { Double($0) }, forKey: "columnWidths") }
-    }
-
     func setColumnWidth(_ w: CGFloat, for role: ItemRole) {
-        var saved = Self.savedColumnWidths
+        var saved = ViewStyleStore().columnWidths
         saved[role.rawValue] = max(40, w)
-        Self.savedColumnWidths = saved
+        ViewStyleStore().columnWidths = saved
         relayout()
     }
 
@@ -201,7 +196,7 @@ extension ItemListView {
     }
 
     func resetColumnWidths() {
-        Self.savedColumnWidths = [:]
+        ViewStyleStore().columnWidths = [:]
         relayout()
     }
 

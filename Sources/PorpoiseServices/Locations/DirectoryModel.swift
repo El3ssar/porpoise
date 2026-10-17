@@ -46,10 +46,12 @@ public struct ItemGroup {
 /// The items one view shows: loading, live updates, sorting, filtering, grouping, expansion and selection.
 /// Main-thread only (Dolphin's KFileItemModel + selection manager).
 public final class DirectoryModel {
-    private var driveListing: Task<Void, Never>?
-    private var drivePrefetch: Task<Void, Never>?
-    private var driveHover: Task<Void, Never>?
-    private var driveChildren: [URL: Task<Void, Never>] = [:]
+    /// What lists the location, and the load in progress.
+    private var source: LocationContentSource
+    private var currentLoad: LocationLoad?
+    private var childLoads: [URL: LocationLoad] = [:]
+    private var folderPrefetch: LocationLoad?
+    private var hoverPrefetch: LocationLoad?
     private var transferObserver: NSObjectProtocol?
     private var incomingItems: [FileItem] = []
     public private(set) var incomingProgress: [URL: Double] = [:]
@@ -64,7 +66,7 @@ public final class DirectoryModel {
         if incomingItems != next { incomingItems = next; rebuild() } else if !next.isEmpty { onChange?() }
     }
     deinit {
-        driveListing?.cancel(); drivePrefetch?.cancel(); driveHover?.cancel(); for task in driveChildren.values { task.cancel() };
+        currentLoad?.cancel(); folderPrefetch?.cancel(); hoverPrefetch?.cancel(); for load in childLoads.values { load.cancel() }
         if let transferObserver { NotificationCenter.default.removeObserver(transferObserver) }
     }
     public private(set) var location: URL
@@ -273,7 +275,8 @@ public final class DirectoryModel {
     public init(location: URL, prefetchFolders: Bool = true) {
         self.prefetchFolders = prefetchFolders
         self.location = location
-        self.props = Settings.shared.viewProperties(for: location)
+        self.source = LocationContentSources.source(for: location)
+        self.props = ViewStyleStore().style(for: location)
         transferObserver = NotificationCenter.default.addObserver(forName: FileOperationsController.activityChanged, object: nil, queue: .main) {
             [weak self] _ in self?.updateIncoming()
         }
@@ -285,7 +288,7 @@ public final class DirectoryModel {
         dynamicOverride = ViewOverride()
         searchOverride = ViewOverride()
         dynamicViewPending = true
-        props = Settings.shared.viewProperties(for: location)
+        props = ViewStyleStore().style(for: location)
         if !isLoading { applyDynamicView() }
         if isSearching { showSearchView() }
     }
@@ -326,15 +329,13 @@ public final class DirectoryModel {
             dynamicOverride = ViewOverride()
             searchOverride = ViewOverride()
             dynamicViewPending = true
-            props = Settings.shared.viewProperties(for: url)
+            props = ViewStyleStore().style(for: url)
+            source = LocationContentSources.source(for: url)
             // Stop watching the old folder now: virtual and remote locations don't use FSEvents.
             updateWatcher()
         }
         reload()
     }
-
-    private var recentQuery: RecentFilesQuery?
-    private var tagQuery: MetadataListQuery?
 
     // MARK: Per-item metadata (read lazily for drawn items, cleared on reload)
 
@@ -442,203 +443,97 @@ public final class DirectoryModel {
     // MARK: Loading
 
     public func reload(keepSelection: Bool = true) {
-        driveListing?.cancel(); driveListing = nil
-        drivePrefetch?.cancel(); drivePrefetch = nil
-        driveHover?.cancel(); driveHover = nil
-        for task in driveChildren.values { task.cancel() }
-        driveChildren = [:]
+        currentLoad?.cancel(); currentLoad = nil
+        source = LocationContentSources.source(for: location)
+        folderPrefetch?.cancel(); folderPrefetch = nil
+        hoverPrefetch?.cancel(); hoverPrefetch = nil
+        for load in childLoads.values { load.cancel() }
+        childLoads = [:]
         loadToken += 1
         let token = loadToken
         let url = location
         tagCache = [:]
         cloudCache = [:]
         metadataWanted = []
-        // Every branch starts clean: an error or a query of the previous location must not leak into this one.
+        // Every load starts clean: an error of the previous location must not leak into this one.
         loadError = nil
         blockedByPrivacy = false
-        tagQuery = nil
-        recentQuery = nil
-        if kind == .tag || kind == .smartFolder {
-            isLoading = true
-            let tag = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
-            let finish: ([FileItem]) -> Void = { [weak self] list in
-                guard let self, token == self.loadToken else { return }
-                self.items = list
-                self.isLoading = false
-                self.rebuild()
-                self.onLoaded?()
-            }
-            if kind == .smartFolder {
-                tagQuery = MetadataListQuery.smartFolder(URL(fileURLWithPath: url.path), done: finish)
-                if tagQuery == nil {
-                    // Set before finishing, so onLoaded shows it.
-                    loadError = "This Smart Folder's search could not be read."
-                    finish([])
-                }
-            } else {
-                tagQuery = MetadataListQuery.tagged(tag, done: finish)
-            }
-            return
-        }
-        if kind == .network {
-            NetworkBrowser.shared.start()
-            items = NetworkBrowser.shared.items
-            isLoading = false
-            rebuild()
-            onLoaded?()
-            return
-        }
-        if let provider = RemoteFS.provider(for: url) as? CloudFileProvider {
-            let cached = provider.cachedListing(url)
-            if let cached {
-                let listed = withEdits(cached, in: url)
-                // The same folder again (a change came in): what's different glides in; a new folder paints at once.
-                let shown = !items.isEmpty && lastLoaded == url
-                if shown, items != listed {
-                    remoteUpdate {
-                        items = listed
-                        if keepSelection { selection.formIntersection(Set(allLoadedURLs())) }
-                        rebuild()
-                    }
-                } else if !shown {
+        let source = self.source
+        let cached = source.traits.paintsCache ? source.cached(url) : nil
+        if let cached {
+            let listed = withEdits(cached, in: url)
+            // The same folder again (a change came in): what's different glides in; a new folder paints at once.
+            let shown = !items.isEmpty && lastLoaded == url
+            if shown, items != listed {
+                remoteUpdate {
                     items = listed
+                    if keepSelection { selection.formIntersection(Set(allLoadedURLs())) }
                     rebuild()
                 }
-                isLoading = false
-                isRefreshing = true
-                lastLoaded = url
-                onLoaded?()
-            } else {
-                isLoading = true
-                isRefreshing = false
+            } else if !shown {
+                items = listed
+                rebuild()
             }
-            driveListing = Task { @MainActor [weak self] in
-                do {
-                    _ = try await provider.refresh(url) { [weak self] listed, complete in
-                        await self?.applyDrivePage(listed, complete: complete, hasCache: cached != nil, token: token, keepSelection: keepSelection)
-                    }
-                    try Task.checkCancellation()
-                    guard let self, token == self.loadToken else { return }
-                    self.isLoading = false
-                    self.isRefreshing = false
-                    self.lastLoaded = url
-                    for expandedURL in self.expanded { self.loadChildren(of: expandedURL) }
-                    self.onLoaded?()
-                    let folders = self.rows.filter { $0.depth == 0 && $0.item.isBrowsableFolder }.map { $0.item.url }
-                    if self.prefetchFolders { self.drivePrefetch = Task(priority: .utility) { await provider.prefetch(folders) } }
-                } catch is CancellationError {
-                    return
-                } catch {
-                    guard let self, token == self.loadToken else { return }
-                    self.isLoading = false
-                    self.isRefreshing = false
-                    if cached == nil { self.loadError = error.localizedDescription }
-                    self.onLoaded?()
-                }
-            }
-            return
-        }
-
-        if let provider = RemoteFS.provider(for: url) {
+            isLoading = false
+            isRefreshing = true
+            lastLoaded = url
+            onLoaded?()
+        } else {
             isLoading = true
-            let expandedNow = expanded
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                var listed: [FileItem] = []
-                var err: String?
-                do { listed = try provider.list(url) } catch { err = error.localizedDescription }
-                var kids: [URL: [FileItem]] = [:]
-                for e in expandedNow { kids[e] = (try? provider.list(e)) ?? [] }
-                DispatchQueue.main.async {
-                    guard let self, token == self.loadToken else { return }
-                    self.listingArrived(token)
-                    self.items = self.withEdits(listed, in: url)
-                    self.children = self.keepingExpanded(kids)
-                    self.isLoading = false
-                    self.loadError = err
-                    let alive = Set(self.allLoadedURLs())
-                    if keepSelection { self.selection = self.selection.intersection(alive) }
-                    self.rebuild()
-                    self.onLoaded?()
-                }
-            }
-            return
+            if source.traits.paintsCache { isRefreshing = false }
         }
-        if AppLibrary.isActive(for: url) {
-            isLoading = true
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let apps = AppLibrary.listAll()
-                DispatchQueue.main.async {
-                    guard let self, token == self.loadToken else { return }
-                    self.items = apps
-                    self.isLoading = false
-                    if keepSelection { self.selection = self.selection.intersection(Set(apps.map(\.url))) }
-                    self.rebuild()
-                    self.updateWatcher()
-                    self.onLoaded?()
-                }
-            }
-            return
-        }
-        if kind == .recentFiles || kind == .recentLocations {
-            isLoading = true
-            let finish: ([FileItem]) -> Void = { [weak self] list in
-                guard let self, token == self.loadToken else { return }
-                self.items = list
-                self.isLoading = false
-                self.rebuild()
-                self.onLoaded?()
-            }
-            if kind == .recentLocations {
-                finish(RecentLocations.shared.urls.compactMap { FileItem.load($0) })
-            } else {
-                recentQuery = RecentFilesQuery { list in finish(list) }
-            }
-            return
-        }
-        isLoading = true
-        let expandedNow = expanded
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var listed: [FileItem] = []
-            var err: String?
-            var privacy = false
-            do { listed = try DirectoryLister.list(url) } catch {
-                let kind = FileErrorKind.classify(error, readable: access(url.path, R_OK) == 0)
-                if kind == .permission || kind == .privacy {
-                    privacy = kind == .privacy
-                    err =
-                        privacy
-                        ? "macOS protects this folder. Give Porpoise Full Disk Access in System Settings to see its contents."
-                        : "You don't have permission to view this folder."
-                } else {
-                    err = "Could not open “\(url.lastPathComponent)”."
-                }
-            }
-            var kids: [URL: [FileItem]] = [:]
-            for e in expandedNow { kids[e] = (try? DirectoryLister.list(e)) ?? [] }
-            DispatchQueue.main.async {
-                guard let self, token == self.loadToken else { return }
-                self.listingArrived(token)
-                self.items = self.withEdits(listed, in: url)
-                self.children = self.keepingExpanded(kids)
-                self.isLoading = false
-                self.applyDynamicView()
-                self.recountFolders = true
-                self.loadError = err
-                self.blockedByPrivacy = privacy
-                let missing = err != nil && url.isFileURL && !FileManager.default.fileExists(atPath: url.path)
-                self.locationVanished = missing && self.lastLoaded?.standardizedFileURL == url.standardizedFileURL
-                if err == nil { self.lastLoaded = url }
-                let alive = Set(self.allLoadedURLs())
-                if keepSelection { self.selection = self.selection.intersection(alive) }
-                if let c = self.currentURL, !alive.contains(c) { self.currentURL = nil }
-                self.rebuild()
-                self.updateWatcher()
-                self.onLoaded?()
+        currentLoad = source.load(url, expanded: expanded) { [weak self] listing in
+            guard let self, token == self.loadToken else { return }
+            switch listing.part {
+            case .whole: self.apply(listing, of: url, from: source, token: token, keepSelection: keepSelection)
+            case .page: self.applyPage(listing.items, complete: listing.complete, hasCache: cached != nil, token: token, keepSelection: keepSelection)
+            case .end: self.finish(listing, of: url, from: source, hadCache: cached != nil)
             }
         }
     }
 
-    @MainActor private func applyDrivePage(_ listed: [FileItem], complete: Bool, hasCache: Bool, token: Int, keepSelection: Bool) {
+    /// A paging source finished: the expanded folders are listed again and the visible ones read ahead. A failure
+    /// after the saved listing painted stays quiet.
+    private func finish(_ end: LocationListing, of url: URL, from source: LocationContentSource, hadCache: Bool) {
+        isLoading = false
+        isRefreshing = false
+        if let error = end.error {
+            if !hadCache { loadError = error.message }
+            onLoaded?()
+            return
+        }
+        lastLoaded = url
+        for expandedURL in expanded { loadChildren(of: expandedURL) }
+        onLoaded?()
+        let folders = rows.filter { $0.depth == 0 && $0.item.isBrowsableFolder }.map { $0.item.url }
+        if prefetchFolders { folderPrefetch = source.prefetch(folders) }
+    }
+
+    /// A source's answer for the location (and the expanded folders it listed with it).
+    private func apply(_ listing: LocationListing, of url: URL, from source: LocationContentSource, token: Int, keepSelection: Bool) {
+        let traits = source.traits
+        if traits.optimisticEdits, listing.complete { listingArrived(token) }
+        items = traits.optimisticEdits ? withEdits(listing.items, in: url) : listing.items
+        if let kids = listing.children { children = keepingExpanded(kids) }
+        isLoading = false
+        if traits.dynamicView { applyDynamicView() }
+        if traits.folderCounts { recountFolders = true }
+        loadError = listing.error?.message
+        blockedByPrivacy = listing.error == .privacy
+        if let vanished = listing.vanished {
+            locationVanished = vanished && lastLoaded?.standardizedFileURL == url.standardizedFileURL
+        }
+        // Only where a vanished folder can be told apart (a folder on this Mac) is the last folder that listed kept.
+        if listing.error == nil, listing.vanished != nil { lastLoaded = url }
+        let alive = Set(allLoadedURLs())
+        if traits.prunesSelection, keepSelection { selection = selection.intersection(alive) }
+        if traits.clearsCurrentItem, let c = currentURL, !alive.contains(c) { currentURL = nil }
+        rebuild()
+        if traits.watch != .none { updateWatcher() }
+        onLoaded?()
+    }
+
+    private func applyPage(_ listed: [FileItem], complete: Bool, hasCache: Bool, token: Int, keepSelection: Bool) {
         guard token == loadToken, !hasCache || complete else { return }
         // A refresh never temporarily removes later pages or resets expanded rows.
         if complete { listingArrived(token) }
@@ -666,8 +561,11 @@ public final class DirectoryModel {
     }
 
     private func updateWatcher() {
-        if AppLibrary.isActive(for: location) { watcher.watch(AppLibrary.roots); return }
-        watcher.watch(location.isFileURL ? [location] + Array(expanded) : [])
+        switch source.traits.watch {
+        case .fileSystem: watcher.watch([location] + Array(expanded))
+        case .appLibrary: watcher.watch(AppLibrary.roots)
+        case .none: watcher.watch([])
+        }
     }
 
     // MARK: Building rows
@@ -757,7 +655,7 @@ public final class DirectoryModel {
     private static let countQueue = DispatchQueue(label: "app.porpoise.folder-counts", qos: .utility)
 
     private func requestFolderCounts() {
-        guard Settings.shared.folderSizeMode != .none, location.isFileURL else { return }
+        guard Settings.shared.folderSizeMode != .none, source.traits.folderCounts else { return }
         let all = recountFolders
         recountFolders = false
         // Counting everything again supersedes the counts still under way: they were made with the old settings.
@@ -797,7 +695,7 @@ public final class DirectoryModel {
     /// Dolphin's "Use icons view mode for locations which mostly contain media files".
     /// Shown, never saved as the folder's or the common style (`dynamicOverride`); checked once per visit.
     private func applyDynamicView() {
-        guard dynamicViewPending, location.isFileURL else { return }
+        guard dynamicViewPending, source.traits.dynamicView else { return }
         dynamicViewPending = false
         guard Settings.shared.dynamicView, !Settings.shared.rememberPerFolder, items.count >= 4 else { return }
         let media = items.filter { $0.utType.map { $0.conforms(to: .image) || $0.conforms(to: .movie) } ?? false }.count
@@ -858,7 +756,7 @@ public final class DirectoryModel {
             // Collapse descendants too, and forget their listings: they are no longer watched, so they would go stale.
             let prefix = url.path + "/"
             let inside = { (u: URL) in u.path.hasPrefix(prefix) }
-            for (child, task) in driveChildren where child == url || inside(child) { task.cancel(); driveChildren[child] = nil }
+            for (child, load) in childLoads where child == url || inside(child) { load.cancel(); childLoads[child] = nil }
             expanded = expanded.filter { $0 != url && !inside($0) }
             children = children.filter { $0.key != url && !inside($0.key) }
             selection = selection.filter { !inside($0) }
@@ -871,38 +769,32 @@ public final class DirectoryModel {
 
     /// Lists an expanded folder off the main thread (it may be huge or on a slow mount), then shows its rows.
     private func loadChildren(of url: URL) {
-        if let drive = RemoteFS.provider(for: url) as? CloudFileProvider {
-            if let cached = drive.cachedListing(url) { children[url] = cached }
-            let token = loadToken
-            driveChildren[url]?.cancel()
-            driveChildren[url] = Task { @MainActor [weak self] in
-                guard let kids = try? await drive.refresh(url), !Task.isCancelled,
-                    let self, token == self.loadToken, self.expanded.contains(url)
-                else { return }
-                let edited = self.withEdits(kids, in: url)
-                if self.children[url] != edited { self.children[url] = edited; self.rebuild() }
-                self.driveChildren[url] = nil
-            }
-            return
-        }
         let token = loadToken
-        let provider = RemoteFS.provider(for: url)  // sftp://, ftp://, adb:// folders expand through their provider
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let kids = (try? provider.map { try $0.list(url) } ?? DirectoryLister.list(url)) ?? []
-            DispatchQueue.main.async {
-                // A reload since then lists expanded folders itself; a collapse makes this one moot.
-                guard let self, token == self.loadToken, self.expanded.contains(url) else { return }
-                self.children[url] = kids
+        // A cloud folder shows its saved listing until the service answers.
+        if let cached = source.cached(url) { children[url] = cached }
+        childLoads[url]?.cancel()
+        childLoads[url] = source.load(url, expanded: []) { [weak self] listing in
+            // A reload since then lists expanded folders itself; a collapse makes this one moot.
+            guard let self, token == self.loadToken, self.expanded.contains(url) else { return }
+            switch listing.part {
+            case .page: return
+            case .whole:
+                self.children[url] = listing.items
                 self.rebuild()
+            case .end:
+                guard listing.error == nil else { return }
+                let edited = self.withEdits(listing.items, in: url)
+                if self.children[url] != edited { self.children[url] = edited; self.rebuild() }
             }
+            self.childLoads[url] = nil
         }
     }
 
     /// Hover is speculative and must never hold up a disclosure click.
     public func prefetch(_ item: FileItem?) {
-        driveHover?.cancel()
-        guard let item, item.isBrowsableFolder, let drive = RemoteFS.provider(for: item.url) as? CloudFileProvider else { return }
-        driveHover = Task(priority: .utility) { await drive.prefetch([item.url]) }
+        hoverPrefetch?.cancel()
+        guard let item, item.isBrowsableFolder else { return }
+        hoverPrefetch = LocationContentSources.source(for: item.url).prefetch([item.url])
     }
 
     // MARK: Queries
@@ -929,8 +821,8 @@ public final class DirectoryModel {
         if let index = rowIndexByPath?[FilePath.key(url)] { return index }
         // Drive permits redundant drive/resource context for the same opaque item. The provider owns that
         // equivalence; Dropbox's namespaces (and remote authorities) must never collapse by path alone.
-        guard !url.isFileURL, let provider = RemoteFS.provider(for: location) as? CloudFileProvider else { return nil }
-        return rows.firstIndex { provider.sameItem(url, $0.item.url) }
+        guard !url.isFileURL, let cloud = source as? CloudSource else { return nil }
+        return rows.firstIndex { cloud.provider.sameItem(url, $0.item.url) }
     }
 
     /// In row order. Without copying every row's item first: the status bar asks on every selection change.
@@ -997,7 +889,7 @@ public final class DirectoryModel {
     /// Saves the shown properties as the folder's (or the common) style, minus the temporary overrides.
     public func saveProps() {
         let p = dynamicOverride.stored(searchOverride.stored(props))
-        Settings.shared.save(p, for: location)
+        ViewStyleStore().save(p, for: location)
     }
 }
 

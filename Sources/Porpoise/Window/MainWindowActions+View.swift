@@ -62,7 +62,7 @@ extension MainWindowController {
     /// Restore to Defaults: the folder's built-in style (Downloads by date…) when styles are remembered per folder;
     /// with the common style, the plain defaults (a folder's special defaults would become everyone's style).
     @objc func restoreViewDefaults(_ sender: Any?) {
-        mutateProps { [url = view.url] in $0 = Settings.shared.viewProperties(for: url, restoringDefaults: true) }
+        mutateProps { [url = view.url] in $0 = ViewStyleStore().style(for: url, restoringDefaults: true) }
     }
 
     @objc func adjustViewStyle(_ sender: Any?) {

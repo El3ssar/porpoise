@@ -512,7 +512,7 @@ import Testing
         m.props.mode = .compact
         m.saveProps()
         #expect(changed == 1)
-        #expect(Settings.shared.viewProperties(for: s.url).mode == .compact)
+        #expect(ViewStyleStore().style(for: s.url).mode == .compact)
         #expect(DirectoryModel(location: s.url).props.mode == .compact)
         m.props.mode = .details
         m.reloadProps()
@@ -525,12 +525,12 @@ import Testing
         for n in ["a.jpg", "b.png", "c.mov", "d.txt"] { try s.file(n) }
         Settings.shared.dynamicView = true
         var p = ViewProperties(); p.mode = .details; p.previews = false
-        Settings.shared.save(p, for: s.url)
+        ViewStyleStore().save(p, for: s.url)
         let m = try await DirectoryModel.loaded(s.url)
         #expect(m.props.mode == .icons && m.props.previews)
         m.props.sortRole = .size
         m.saveProps()
-        let saved = Settings.shared.viewProperties(for: s.url)
+        let saved = ViewStyleStore().style(for: s.url)
         #expect(saved.mode == .details && !saved.previews && saved.sortRole == .size)
         // A later reload (a file changed) doesn't undo a mode picked meanwhile.
         m.props.mode = .compact
@@ -542,7 +542,7 @@ import Testing
     @Test func recentLocationsRememberTheChosenStyle() async throws {
         Settings.shared.rememberPerFolder = true
         let m = try await DirectoryModel.loaded(PlacesModel.recentLocationsURL)
-        #expect(m.kind.isVirtual && m.props == ViewProperties.defaults(for: PlacesModel.recentLocationsURL))
+        #expect(m.kind.isVirtual && m.props == LocationContentSources.defaultStyle(for: PlacesModel.recentLocationsURL))
         m.props.mode = .compact
         m.saveProps()
         #expect(DirectoryModel(location: PlacesModel.recentLocationsURL).props.mode == .compact)

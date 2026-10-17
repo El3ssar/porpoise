@@ -72,13 +72,13 @@ import Testing
         }
         let posted = changes { s.applyAppearanceIconSizes() }
         #expect(posted == ["appearanceIconSizes"])
-        let properties = s.globalViewProperties
+        let properties = ViewStyleStore().common
         #expect(properties.iconSize(for: .icons) == 96)
         #expect(properties.iconSize(for: .compact) == ZoomLevels.minSize)
         #expect(properties.iconSize(for: .details) == ZoomLevels.maxSize)
         s.updateAppearance { $0.iconsSize = 48 }
         s.applyAppearanceIconSizes()
-        #expect(s.globalViewProperties.iconSize(for: .icons) == 48 && s.globalViewProperties.iconSize(for: .compact) == ZoomLevels.minSize)
+        #expect(ViewStyleStore().common.iconSize(for: .icons) == 48 && ViewStyleStore().common.iconSize(for: .compact) == ZoomLevels.minSize)
     }
 
     @Test func exportCarriesWindowAppearanceAndFileFont() throws {

@@ -78,11 +78,12 @@ extension Settings {
 extension Settings {
     public func applyAppearanceIconSizes() {
         let p = appearancePreferences
-        var properties = globalViewProperties
+        let styles = ViewStyleStore()
+        var properties = styles.common
         properties.setIconSize(CGFloat(p.iconsSize), for: .icons)
         properties.setIconSize(CGFloat(p.compactSize), for: .compact)
         properties.setIconSize(CGFloat(p.detailsSize), for: .details)
-        globalViewProperties = properties
+        styles.common = properties
         NotificationCenter.default.post(name: Settings.changed, object: "appearanceIconSizes")
     }
 }

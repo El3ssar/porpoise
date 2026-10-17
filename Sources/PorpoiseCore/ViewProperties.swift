@@ -174,29 +174,9 @@ public struct ViewProperties: Codable, Equatable, Sendable {
 
     public var effectiveGroupRole: ItemRole? { groupSameAsSort ? sortRole : groupRole }
 
-    /// Dolphin's defaults for special locations.
+    /// Dolphin's defaults for special folders on this Mac (other locations' come from their content source).
     public static func defaults(for url: URL) -> ViewProperties {
         var p = ViewProperties()
-        if url.scheme == "gdrive" || url.scheme == "dropbox" {
-            let shared = url.pathComponents.filter { $0 != "/" } == ["shared-with-me"] || url.path == "/collection:shared"
-            p.setRoles((shared ? [.owner, .sharedTime] : [.owner]) + p.roles(for: .details), for: .details)
-            if shared {
-                p.mode = .details
-                p.sortRole = .sharedTime
-                p.sortOrder = .descending
-                p.foldersFirst = false
-            }
-            return p
-        }
-        if url.scheme == "recent" || url.scheme == "tags" || url.scheme == "smart" {
-            p.mode = .details
-            p.foldersFirst = false
-            let byName = url.path == "/locations" || url.scheme != "recent"
-            p.sortRole = byName ? .name : .accessTime
-            p.sortOrder = byName ? .ascending : .descending
-            p.setRoles([.path, .accessTime], for: .details)
-            return p
-        }
         guard url.isFileURL else { return p }
         let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
         let path = url.standardizedFileURL.path

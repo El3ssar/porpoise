@@ -122,11 +122,11 @@ import Testing
         for n in ["a.jpg", "b.png", "c.mov", "d.txt"] { try s.file(n) }
         Settings.shared.dynamicView = true
         var p = ViewProperties(); p.mode = .icons; p.previews = true; p.sortRole = .size
-        Settings.shared.save(p, for: s.url)
+        ViewStyleStore().save(p, for: s.url)
         let m = try await DirectoryModel.loaded(s.url)
         #expect(m.props.mode == .icons && m.props.previews && m.props.sortRole == .size)
         m.saveProps()
-        #expect(Settings.shared.viewProperties(for: s.url).mode == .icons)
+        #expect(ViewStyleStore().style(for: s.url).mode == .icons)
     }
 
     /// The same item twice (a search can find it along two paths): rows are found by URL and by path all the same.
