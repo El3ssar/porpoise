@@ -410,8 +410,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     /// One entry per tab; the first also holds the window's frame and active tab.
     var sessionState: [[String: String]] {
         tabs.enumerated().map { i, t in
-            var d = ["url": t.primary.url.absoluteString, "mode": t.primary.model.props.mode.rawValue]
-            if let s = t.secondary { d["split"] = s.url.absoluteString }
+            var d = ["url": RemoteFS.withoutPassword(t.primary.url).absoluteString, "mode": t.primary.model.props.mode.rawValue]
+            if let s = t.secondary { d["split"] = RemoteFS.withoutPassword(s.url).absoluteString }
             if i == 0, let w = window {
                 d["frame"] = NSStringFromRect(w.frame)
                 d["active"] = String(current)
