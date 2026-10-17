@@ -4,7 +4,7 @@ import PorpoiseServices
 /// First-run assistant: welcome, then every permission Porpoise needs (Full Disk Access, App Management, administrator
 /// actions, Local Network), each detected live, then done. Shown before the first browser window; also reachable
 /// later from Porpoise › Permissions…, which starts at the first permission that's still missing.
-final class OnboardingWindowController: NSWindowController {
+final class OnboardingWindowController: SecondaryWindowController {
     static var shared: OnboardingWindowController?
     /// Set once the assistant has been finished (v2: with all four permissions).
     private static let doneKey = "onboardingDone2"

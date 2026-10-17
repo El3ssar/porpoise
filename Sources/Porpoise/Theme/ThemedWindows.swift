@@ -1,19 +1,10 @@
 import AppKit
 import PorpoiseServices
 
-/// Secondary windows (Settings, Properties, Activity, Connect, Compare Files, the disk utilities) in the app's theme,
-/// as the main window is: its window color, also behind the title bar and toolbar, its text colors, and its accent on
-/// native controls. They are dressed when they come to the front and again whenever the look or the palette changes.
-protocol ThemedWindowController: NSWindowController {}
-
-extension SettingsWindowController: ThemedWindowController {}
-extension PropertiesWindow: ThemedWindowController {}
-extension ActivityWindowController: ThemedWindowController {}
-extension ConnectSheet: ThemedWindowController {}
-extension FileDiffWindow: ThemedWindowController {}
-extension DiskUtilityWindow: ThemedWindowController {}
-extension OnboardingWindowController: ThemedWindowController {}
-
+/// Secondary windows (`SecondaryWindowController`: Settings, Properties, Activity, Connect, Compare Files, the dialogs
+/// and disk utilities) in the app's theme, as the main window is: its window color, also behind the title bar and
+/// toolbar, its text colors, and its accent on native controls. They are dressed when they come to the front and again
+/// whenever the look or the palette changes.
 extension Theme {
     private static var watching = false
 
@@ -36,8 +27,12 @@ extension Theme {
 
     static func dressIfThemed(_ window: NSWindow) {
         let owner = window.sheetParent ?? window
-        guard owner.windowController is ThemedWindowController || window.windowController is ThemedWindowController else { return }
+        guard isThemed(owner) || isThemed(window) else { return }
         dress(window)
+    }
+
+    private static func isThemed(_ window: NSWindow) -> Bool {
+        window is SecondaryPanel || (window.windowController as? SecondaryWindowController)?.isThemed == true
     }
 
     /// The window color everywhere (a transparent title bar shows it behind the toolbar too), then every view.

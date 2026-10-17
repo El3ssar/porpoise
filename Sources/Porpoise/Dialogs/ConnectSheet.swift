@@ -4,7 +4,7 @@ import PorpoiseServices
 
 /// The Connect sheet (Go › Connect to Server…, ⌘K): one door for cloud accounts and servers. Cloud tiles sign in
 /// through the browser and end on a "connected" page in the same sheet; server tiles show the server form.
-final class ConnectSheet: NSWindowController {
+final class ConnectSheet: SecondaryWindowController {
     /// The sheet on screen, for the test bridge.
     private(set) static var current: ConnectSheet?
 

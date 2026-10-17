@@ -3,8 +3,7 @@ import PorpoiseCore
 import PorpoiseServices
 
 /// KPropertiesDialog.
-final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
-    private static var open: [PropertiesWindow] = []
+final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
     private let urls: [URL]
     private var nameField: NSTextField?
     let sizeLabel = NSTextField(labelWithString: "Calculating…")
@@ -18,18 +17,12 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
     /// locations (sftp://, recent:/…) have no local path to inspect. `items`: what the view knows about them.
     static func show(urls: [URL], items: [FileItem] = []) {
         if let cloud = urls.first(where: PlacesModel.isCloud) {
-            let w = PropertiesWindow(cloud: cloud, item: items.first { $0.url == cloud })
-            open.append(w)
-            w.showWindow(nil)
-            w.window?.makeKeyAndOrderFront(nil)
+            PropertiesWindow(cloud: cloud, item: items.first { $0.url == cloud }).present()
             return
         }
         let urls = urls.filter(\.isFileURL)
         guard !urls.isEmpty else { NSSound.beep(); return }
-        let w = PropertiesWindow(urls: urls)
-        open.append(w)
-        w.showWindow(nil)
-        w.window?.makeKeyAndOrderFront(nil)
+        PropertiesWindow(urls: urls).present()
     }
 
     /// The cloud item shown (nil: local items).
@@ -55,7 +48,6 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
             self.sizeCount.cancel()
             if self.cloudItem == nil { self.commitName() }
             if let o = self.closeObserver { NotificationCenter.default.removeObserver(o) }
-            PropertiesWindow.open.removeAll { $0 === self }
         }
     }
 

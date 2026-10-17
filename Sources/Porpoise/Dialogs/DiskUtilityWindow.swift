@@ -3,8 +3,7 @@ import PorpoiseCore
 import PorpoiseServices
 
 /// Common native table/progress shell. Every window owns and cancels its background task.
-class DiskUtilityWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate {
-    private static var open: [DiskUtilityWindow] = []
+class DiskUtilityWindow: SecondaryWindowController, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate {
     let stack = NSStackView()
     let toolbar = NSStackView()
     let table = NSTableView()
@@ -27,15 +26,7 @@ class DiskUtilityWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             backing: .buffered, defer: false)
         w.isReleasedWhenClosed = false; w.title = title
         super.init(window: w); w.delegate = self
-        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        let content = w.contentView!; content.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
-            stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 16),
-            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16),
-        ])
+        contentStack(stack)
         toolbar.orientation = .horizontal; toolbar.spacing = 8
         stack.addArrangedSubview(toolbar)
         progress.style = .bar; progress.isIndeterminate = true
@@ -68,8 +59,7 @@ class DiskUtilityWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         w.minSize = NSSize(width: 860, height: 500); w.center()
     }
     required init?(coder: NSCoder) { fatalError() }
-    func present() { Self.open.append(self); showWindow(nil); window?.makeKeyAndOrderFront(nil) }
-    func windowWillClose(_ notification: Notification) { cancellation.cancel(); Self.open.removeAll { $0 === self } }
+    func windowWillClose(_ notification: Notification) { cancellation.cancel() }
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
     func tableView(_ tableView: NSTableView, viewFor column: NSTableColumn?, row: Int) -> NSView? {
         guard rows.indices.contains(row), let key = column?.identifier.rawValue, let index = keys.firstIndex(of: key),

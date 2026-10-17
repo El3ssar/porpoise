@@ -115,6 +115,9 @@ extension ItemListView {
 // MARK: - Clicks, rubber band, context menu
 
 extension ItemListView {
+    /// Clicks, Shift and Cmd, and moves of the current item, as in the Applications grid.
+    var selecting: ItemSelectionController { ItemSelectionController(model: model) }
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         commitRename()
@@ -137,7 +140,7 @@ extension ItemListView {
 
         guard let i = idx else {
             // Background: start a rubber band.
-            if !mods.contains(.command) && !mods.contains(.shift) { model.selection = [] }
+            selecting.clickBackground(modifiers: mods)
             rubberBaseSelection = model.selection
             rubberStart = p
             needsDisplay = true
@@ -161,17 +164,7 @@ extension ItemListView {
             mouseDownIndex = nil
             return
         }
-        if mods.contains(.shift), let anchor = model.anchorURL, let a = model.index(of: anchor) {
-            let urls = Set((min(a, i)...max(a, i)).map { model.rows[$0].item.url })
-            model.selection = mods.contains(.command) ? model.selection.union(urls) : urls
-        } else if mods.contains(.command) {
-            if model.selection.contains(url) { model.selection.remove(url) } else { model.selection.insert(url) }
-            model.anchorURL = url
-        } else if !model.selection.contains(url) {
-            model.selection = [url]
-            model.anchorURL = url
-        }
-        model.currentURL = url
+        selecting.click(i, modifiers: mods)
         needsDisplay = true
     }
 
@@ -194,9 +187,7 @@ extension ItemListView {
 
     /// Adds or removes one item, making it the current item and the anchor for Shift ranges.
     func toggleSelected(_ url: URL) {
-        if model.selection.contains(url) { model.selection.remove(url) } else { model.selection.insert(url) }
-        model.currentURL = url
-        model.anchorURL = url
+        selecting.toggle(url)
         needsDisplay = true
     }
 
@@ -238,9 +229,7 @@ extension ItemListView {
         if let i = mouseDownIndex, i < model.rows.count, event.clickCount == 1, !event.modifierFlags.contains(.command),
             !event.modifierFlags.contains(.shift)
         {
-            let url = model.rows[i].item.url
-            if mouseDownSelectedBefore && model.selection.count > 1 { model.selection = [url] }
-            model.anchorURL = url
+            selecting.clickEnded(i, wasSelected: mouseDownSelectedBefore)
             needsDisplay = true
         }
         mouseDownIndex = nil
@@ -259,17 +248,10 @@ extension ItemListView {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         window?.makeFirstResponder(self)
-        let p = convert(event.locationInWindow, from: nil)
-        if let i = index(at: p) {
-            let url = model.rows[i].item.url
-            if !model.selection.contains(url) { model.selection = [url] }
-            model.currentURL = url
-            needsDisplay = true
-            return delegate?.itemList(self, menuFor: model.rows[i].item)
-        }
-        model.selection = []
+        let i = index(at: convert(event.locationInWindow, from: nil))
+        selecting.contextClick(i)
         needsDisplay = true
-        return delegate?.itemList(self, menuFor: nil)
+        return delegate?.itemList(self, menuFor: i.map { model.rows[$0].item })
     }
 }
 
@@ -277,17 +259,7 @@ extension ItemListView {
 
 extension ItemListView {
     override func scrollWheel(with event: NSEvent) {
-        if event.modifierFlags.contains(.command) {
-            // Cmd+wheel / two-finger scroll zooms smoothly (trackpads) or by Dolphin's steps (mouse wheels).
-            let p = convert(event.locationInWindow, from: nil)
-            if event.hasPreciseScrollingDeltas {
-                let level = ZoomLevels.continuousLevel(for: iconSize) + Double(event.scrollingDeltaY) * 0.02
-                previewZoom(ZoomLevels.size(forContinuousLevel: level), anchor: p)
-            } else if event.scrollingDeltaY != 0 {
-                previewZoom(ZoomLevels.step(from: iconSize, by: event.scrollingDeltaY > 0 ? 1 : -1), anchor: p)
-            }
-            return
-        }
+        if zoomWithWheel(event) { return }
         super.scrollWheel(with: event)
         // The content moved under a still pointer.
         if let w = window {
@@ -295,11 +267,7 @@ extension ItemListView {
         }
     }
 
-    override func magnify(with event: NSEvent) {
-        // Pinch: continuous zoom around the fingers, saved when the gesture ends.
-        let p = convert(event.locationInWindow, from: nil)
-        previewZoom(iconSize * (1 + event.magnification), anchor: p, commitAfter: event.phase == .ended || event.phase == .cancelled ? 0 : 0.5)
-    }
+    override func magnify(with event: NSEvent) { zoomWithPinch(event) }
 
     override func swipe(with event: NSEvent) {
         if event.deltaX > 0 {

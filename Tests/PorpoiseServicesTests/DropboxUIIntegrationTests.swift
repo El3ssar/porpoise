@@ -315,7 +315,6 @@ import Testing
         let account = try await fixture.connect(); let root = try #require(fixture.accounts.url(account.id, root: .myDrive))
         let provider = try #require(RemoteFS.provider(for: root) as? DropboxProvider)
         let file = try #require(try await provider.refresh(root).first { $0.name == "hello.txt" })
-        let client = try provider.scoped(file.url)
         let editing = CloudEditCoordinator(); editing.saveDelay = 0.02
         var messages: [String] = []; editing.post = { text, _ in messages.append(text) }
         editing.open(file)
@@ -324,7 +323,9 @@ import Testing
         try await fixture.server.configure(["files": [["id": entry.fileID, "path": "/hello.txt", "text": "remote"]]])
         try Data("mine".utf8).write(to: entry.localURL)
         await expectEventually(timeout: 5) { editing.entries.first?.mark == .conflict }
-        client.reached(URLError(.notConnectedToInternet))
+        // Really unreachable: marking the client offline lasted only until a request already under way (the change
+        // feed's, after the remote edit) came back and marked it online, and then the replacement went through.
+        fixture.server.fixture.stop()
         editing.replaceWithMine(entry.id)
         await expectEventually(timeout: 5) { messages.contains { $0.hasPrefix("Couldn’t do that") } }
         #expect(editing.entries.first?.mark == .conflict)

@@ -818,16 +818,6 @@ extension Notification.Name {
 
 // MARK: - App library
 
-/// A view that zooms like the Icons view: a size shown live, then saved.
-protocol ZoomableView: AnyObject {
-    var iconSize: CGFloat { get }
-    func previewZoom(_ size: CGFloat, anchor: CGPoint?, commitAfter delay: TimeInterval?)
-    func animateZoom(to size: CGFloat)
-    func commitZoom()
-    /// How far a reflow glide has come, while one runs (for the debug bridge).
-    var glideProgress: CGFloat? { get }
-}
-
 extension ItemListView: ZoomableView {
     var glideProgress: CGFloat? { transition?.progress }
 }
