@@ -128,7 +128,7 @@ final class ConnectSheet: NSWindowController {
                 return t
             })
         servers.spacing = 8
-        let tip = Self.secondary("Tip: you can also paste a server address or a Google Drive link in the location bar.")
+        let tip = Self.secondary("Tip: you can also paste a server address or a share link in the location bar.")
         let cancel = Self.button("Cancel", self, #selector(close(_:)))
         cancel.keyEquivalent = "\u{1b}"
         let stack = NSStackView(views: [

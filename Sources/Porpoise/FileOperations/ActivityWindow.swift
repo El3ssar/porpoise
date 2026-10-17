@@ -28,7 +28,7 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
     private let footer = ActivityFooterView()
     private var header: ActivityHeaderView?
     private var rows: [Activity] = []
-    /// Drive files edited in other apps, listed above the jobs.
+    /// Cloud files edited in other apps, listed above the jobs.
     private var edits: [CloudEditEntry] = []
     private var history: [HistoryEntry] = []
     private var reloadPending = false
@@ -705,7 +705,7 @@ final class ActivityProgressView: NSView {
     }
 }
 
-/// A Drive file being edited in another app: how its saves are doing, and the choices when Drive's copy changed
+/// A cloud file being edited in another app: how its saves are doing, and the choices when the service’s copy changed
 /// meanwhile (Keep Both, Open Both, Replace with Mine). Nothing is ever lost: both versions stay until one is chosen.
 final class EditActivityRowView: NSView {
     static let conflictHeight: CGFloat = 92
@@ -719,6 +719,7 @@ final class EditActivityRowView: NSView {
     private let close = NSButton()
     private var entry: CloudEditEntry?
     private var shownButtons: [String] = []
+    private var shownService = ""
     private let alternate: Bool
 
     override var isFlipped: Bool { true }
@@ -737,7 +738,6 @@ final class EditActivityRowView: NSView {
         close.imagePosition = .imageOnly
         close.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Remove from the list")
         close.contentTintColor = Theme.windowTextInactive
-        close.toolTip = "Remove from the list (changes you save later still go to Google Drive while it’s open)"
         close.target = self
         close.action = #selector(dismiss)
         for v in [icon, badge, title, detail, buttons, close] as [NSView] { addSubview(v) }
@@ -790,6 +790,8 @@ final class EditActivityRowView: NSView {
         badge.image = NSImage(systemSymbolName: e.mark.symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold).applying(.init(paletteColors: [.white, tint])))
         close.isHidden = !(e.mark == .editing || e.mark == .saved)
+        let service = e.provider.title
+        close.toolTip = "Remove from the list (changes you save later still go to \(service) while it’s open)"
         let want: [String]
         switch e.mark {
         case .conflict: want = ["keep", "open", "replace"]
@@ -797,18 +799,20 @@ final class EditActivityRowView: NSView {
         case .unsent: want = ["send"]
         default: want = ["show"]
         }
-        if want != shownButtons {
+        if want != shownButtons || shownService != service {
             shownButtons = want
+            shownService = service
             buttons.arrangedSubviews.forEach { $0.removeFromSuperview() }
             for w in want {
                 let (label, tip): (String, String)
                 switch w {
-                case "keep": (label, tip) = ("Keep Both", "Add your version next to Drive’s as a separate file")
-                case "open": (label, tip) = ("Open Both", "Open your version and Drive’s side by side to compare them")
-                case "replace": (label, tip) = ("Replace with Mine", "Make your version the current one; Drive’s stays in the file’s version history")
-                case "send": (label, tip) = ("Send Now", "Try sending your saved changes to Google Drive again")
-                case "copy": (label, tip) = ("Save as a Copy in Drive", "Add your version next to the original as a separate file")
-                default: (label, tip) = ("Show in Folder", "Show the file in its Google Drive folder")
+                case "keep": (label, tip) = ("Keep Both", "Add your version next to \(service)’s as a separate file")
+                case "open": (label, tip) = ("Open Both", "Open your version and \(service)’s side by side to compare them")
+                case "replace":
+                    (label, tip) = ("Replace with Mine", "Make your version the current one; \(service)’s stays in the file’s version history")
+                case "send": (label, tip) = ("Send Now", "Try sending your saved changes to \(service) again")
+                case "copy": (label, tip) = ("Save as a Copy in \(service)", "Add your version next to the original as a separate file")
+                default: (label, tip) = ("Show in Folder", "Show the file in its \(service) folder")
                 }
                 let b = ClosureButton(title: label) { [weak self] _ in self?.run(w) }
                 b.bezelStyle = .rounded
@@ -831,7 +835,7 @@ final class EditActivityRowView: NSView {
         case "open": editing.openBoth(e.id)
         case "replace": editing.replaceWithMine(e.id)
         case "send": editing.save(e.id)
-        default: (NSApp.delegate as? AppDelegate)?.newWindow(at: e.location.deletingLastPathComponent())
+        default: (NSApp.delegate as? AppDelegate)?.newWindow(at: e.folder)
         }
     }
 

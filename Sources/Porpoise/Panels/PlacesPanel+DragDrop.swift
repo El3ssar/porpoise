@@ -33,14 +33,9 @@ extension PlacesPanel {
         }
         // Devices, tags and detected places can't be reordered (and are already listed).
         if sender.draggingPasteboard.types?.contains(.placeEntry) == true { return setDrop(nil, insert: nil) }
-        if !Self.cloudFolders(sender.draggingPasteboard).isEmpty {
-            // Cloud folders can become places, nothing can be dropped into them (read-only for now).
-            guard !PlacesModel.shared.isLocked else { return setDrop(nil, insert: nil) }
-            setDrop(nil, insert: insertion)
-            return .link
-        }
-        let allFolders = draggedURLsAreFolders(sender)
-        if let i, let e = entry(at: i), e.url.isFileURL {
+        let cloudFolders = !Self.cloudFolders(sender.draggingPasteboard).isEmpty
+        let allFolders = cloudFolders || draggedURLsAreFolders(sender)
+        if let i, let e = entry(at: i), Self.takesDrops(e.url), !Self.droppedURLs(sender.draggingPasteboard).isEmpty {
             // Near the row edges with folders: insert as new place; in the middle: drop onto the place.
             let r = rect(of: i)
             if allFolders && !PlacesModel.shared.isLocked && (p.y < r.minY + Metrics.dropEdge || p.y > r.maxY - Metrics.dropEdge) {
@@ -49,6 +44,12 @@ extension PlacesPanel {
             }
             setDrop(i, insert: nil)
             return ItemListView.operation(for: sender)
+        }
+        if cloudFolders {
+            // Cloud folders become places where they are dropped between rows.
+            guard !PlacesModel.shared.isLocked else { return setDrop(nil, insert: nil) }
+            setDrop(nil, insert: insertion)
+            return .link
         }
         if allFolders && !PlacesModel.shared.isLocked {
             setDrop(nil, insert: insertion)
@@ -101,6 +102,12 @@ extension PlacesPanel {
             PlacesModel.shared.move(moving, before: d.target, endOf: d.section)
             return true
         }
+        if let e = entry(at: dropIndex), Self.takesDrops(e.url) {
+            let urls = Self.droppedURLs(pb)
+            guard !urls.isEmpty else { return false }
+            delegate?.places(self, drop: urls, onto: e.url)
+            return true
+        }
         let clouds = Self.cloudFolders(pb)
         if !clouds.isEmpty, let ins = dropInsertBefore, !PlacesModel.shared.isLocked {
             let d = reorderDestination(insertBefore: ins, section: .places)
@@ -113,12 +120,7 @@ extension PlacesPanel {
             return true
         }
         let urls = Self.fileURLs(pb)
-        guard !urls.isEmpty else { return false }
-        if let e = entry(at: dropIndex) {
-            delegate?.places(self, drop: urls, onto: e.url)
-            return true
-        }
-        guard let ins = dropInsertBefore, !PlacesModel.shared.isLocked else { return false }
+        guard !urls.isEmpty, let ins = dropInsertBefore, !PlacesModel.shared.isLocked else { return false }
         // New folders land where they were dropped when that is inside the Places section (the model's
         // reload renumbers rows, so the destination is resolved first).
         let d = reorderDestination(insertBefore: ins, section: .places)
@@ -147,11 +149,24 @@ extension PlacesPanel {
         return PlacesModel.shared.userEntries.first { $0.title == title && $0.url.absoluteString == url }
     }
 
+    /// A place items can be dropped into: a folder on this Mac, or on a server or cloud account that allows adding
+    /// to it (not Shared with me, nor a folder shared as view-only).
+    static func takesDrops(_ url: URL) -> Bool {
+        if url.isFileURL { return true }
+        guard RemoteFS.isRemote(url) else { return false }
+        return !PlacesModel.isCloud(url) || CloudAccounts.shared.denial(.addItems, folder: url) == nil
+    }
+
+    /// What can be dropped onto a place: files on this Mac, and items on servers and cloud accounts.
+    private static func droppedURLs(_ pb: NSPasteboard) -> [URL] {
+        ((pb.readObjects(forClasses: [NSURL.self]) as? [URL]) ?? []).filter { $0.isFileURL || RemoteFS.isRemote($0) }
+    }
+
     private static func fileURLs(_ pb: NSPasteboard) -> [URL] {
         (pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
     }
 
-    /// Dragged cloud folders (Google Drive) with their names; empty when anything else is dragged along.
+    /// Dragged cloud folders with their names; empty when anything else is dragged along.
     static func cloudFolders(_ pb: NSPasteboard) -> [(URL, String)] {
         let urls = (pb.readObjects(forClasses: [NSURL.self]) as? [URL]) ?? []
         let folders = urls.compactMap { u -> (URL, String)? in

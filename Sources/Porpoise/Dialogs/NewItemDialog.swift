@@ -67,8 +67,9 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
         d.present(window: window, done: done)
     }
 
-    /// The same dialog for a Google Drive folder; `create` gets the name (the folder appears at once, the service
-    /// confirms it later). Drive allows two items of the same name, so an existing name isn't an error.
+    /// The same dialog for a cloud folder; `create` gets the name (the folder appears at once, the service confirms it
+    /// later). Where the service allows two items of the same name (Drive) an existing name is only noted; elsewhere
+    /// it is refused, ignoring case as the service does.
     static func runCloud(in folder: URL, title: String, names: Set<String>, window: NSWindow?, create: @escaping (String) -> Void) {
         let d = NewItemDialog(kind: .folder, folder: folder)
         d.cloud = (names, title, create)
@@ -170,12 +171,23 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
 
     func controlTextDidChange(_ obj: Notification) { validate() }
 
+    /// What to say about a new cloud folder's name: nothing, a note (the service keeps both), or an error.
+    static func cloudNameProblem(_ name: String, names: Set<String>, in folder: URL) -> (message: String, isError: Bool)? {
+        let duplicates = CloudProviderDescriptor.descriptor(for: folder)?.allowsDuplicateNames ?? false
+        if duplicates {
+            return names.contains(name) ? ("“\(name)” is already in this folder. Both will be kept.", false) : nil
+        }
+        let taken = names.contains { $0.compare(name, options: [.caseInsensitive]) == .orderedSame }
+        return taken ? ("An item named “\(name)” is already in this folder.", true) : nil
+    }
+
     private func validate() {
         if let cloud {
             let name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            message.stringValue = cloud.names.contains(name) ? "“\(name)” is already in this folder. Both will be kept." : ""
-            message.textColor = Theme.neutralText
-            alert.buttons.first?.isEnabled = !name.isEmpty
+            let problem = Self.cloudNameProblem(name, names: cloud.names, in: folder)
+            message.stringValue = problem?.message ?? ""
+            message.textColor = problem?.isError == true ? Theme.negativeText : Theme.neutralText
+            alert.buttons.first?.isEnabled = !name.isEmpty && problem?.isError != true
             return
         }
         let res = FileActions.validateName(nameField.stringValue, in: folder, allowSlash: kind == .folder)

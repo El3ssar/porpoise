@@ -68,9 +68,21 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         registerForDraggedTypes([.fileURL])
         setAccessibilityRole(.group)
         setAccessibilityLabel("Location")
+        // A cloud folder's ancestry and names can arrive after the folder itself.
+        cloudObserver = NotificationCenter.default.addObserver(forName: CloudAccounts.remoteChanged, object: nil, queue: .main) {
+            [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, PlacesModel.isCloud(self.url), !self.isEditing else { return }
+                self.rebuild()
+            }
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    deinit { cloudObserver.map(NotificationCenter.default.removeObserver) }
+
+    private var cloudObserver: NSObjectProtocol?
 
     // MARK: Model
 
@@ -153,26 +165,15 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         return crumbs
     }
 
-    /// Cloud folders: the account, then its row (My Drive, Shared with me…), then each folder by name. Every path
-    /// component after the account is an item id, so each ancestor is the location one component up.
-    private func cloudCrumbs() -> [(url: URL, title: String)] {
-        let account = CloudAccounts.shared.account(for: url)
-        let accountTitle = account.map { CloudAccounts.shared.title($0.id) } ?? "Google Drive"
-        let parts = url.pathComponents.filter { $0 != "/" }
-        guard let first = parts.first else { return [(url, accountTitle)] }
-        var c = URLComponents(url: url, resolvingAgainstBaseURL: false) ?? URLComponents()
-        c.query = nil
-        var crumbs: [(url: URL, title: String)] = []
-        var path = ""
-        for (i, part) in parts.enumerated() {
-            path += "/" + part
-            // A pasted link's "folder" prefix isn't a place to go: its folder is the first crumb after the account.
-            if i == 0 && first == "folder" { continue }
-            c.path = path + "/"
-            // The folder itself keeps its query (resource key, shared drive).
-            let u = i == parts.count - 1 ? url : (c.url ?? url)
-            crumbs.append((u, u.folderName))
-        }
+    /// Cloud folders: the account, then its row (My Drive, Files, Shared with me…), then each folder by name, as
+    /// the service tells its ancestry.
+    func cloudCrumbs() -> [(url: URL, title: String)] {
+        let accounts = CloudAccounts.shared
+        let account = accounts.account(for: url)
+        let accountTitle = account.map { accounts.title($0.id) } ?? accounts.providerTitle(for: url)
+        guard url.pathComponents.contains(where: { $0 != "/" }) else { return [(url, accountTitle)] }
+        // The folder itself keeps its query (resource key, shared drive, namespace).
+        let crumbs = (accounts.ancestors(of: url) + [url]).map { (url: $0, title: $0.folderName) }
         // The account's crumb opens its first row.
         let root = account.flatMap { a in CloudAccounts.shared.url(a.id, root: CloudAccounts.shared.availableRows(a.id).first ?? .myDrive) }
         return [(root ?? crumbs.first?.url ?? url, accountTitle)] + crumbs

@@ -27,10 +27,11 @@ extension MainWindowController {
         window?.makeFirstResponder(target.list)
     }
 
-    /// A pasted Google Drive link: opened with the connected account that can see it. A folder is browsed like any
+    /// A pasted cloud share link: opened with the connected account that can see it. A folder is browsed like any
     /// other, with Add to Places offered; a file opens (Google Docs in the browser); nobody can see it: Connect….
     func openCloudLink(_ link: URL, in target: ViewContainer, newTab: Bool) {
-        target.statusBar.showMessage("Opening the Google Drive link…")
+        let service = CloudProviderDescriptor.linkProvider(link.absoluteString)?.title ?? "cloud"
+        target.statusBar.showMessage("Opening the \(service) link…")
         CloudAccounts.shared.resolveLink(link.absoluteString) { [weak self, weak target] result in
             guard let self, let target else { return }
             switch result {
@@ -58,7 +59,7 @@ extension MainWindowController {
                 }
                 target.needsLayout = true
             case .notALink:
-                target.messageBar.show("That isn’t a Google Drive link Porpoise can open.", error: true)
+                target.messageBar.show("That isn’t a \(service) link Porpoise can open.", error: true)
                 target.needsLayout = true
             }
         }

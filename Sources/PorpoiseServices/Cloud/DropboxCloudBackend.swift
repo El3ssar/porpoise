@@ -12,6 +12,8 @@ public final class DropboxCloudBackend: CloudBackend {
     private var statuses: [UUID: CloudAccount.Status] = [:]
     private var reachability: [UUID: OfflineHysteresis] = [:]
     private var checks: [UUID: DispatchWorkItem] = [:]
+    /// Folders above a location being read once (by account, namespace and path), so drawing doesn't ask again.
+    private var ancestorFetches: Set<String> = []
     @MainActor public init(store: DropboxAccountStore) {
         self.store = store
         quotaRefresh = CloudQuotaRefresh { [weak self] in self?.refreshQuotas() }
@@ -165,7 +167,53 @@ public final class DropboxCloudBackend: CloudBackend {
     }
     public func untrash(_ urls: [URL], done: @escaping ([URL], Error?) -> Void) { done([], DropboxError.unsupportedUndo) }
     public func avatar(_ id: String, done: @escaping (Data?) -> Void) { done(nil) }
-    public func resolveLink(_ text: String, done: @escaping (CloudLinkResult) -> Void) { done(.notALink) }
+    /// Tries each account until one can see the linked item.
+    public func resolveLink(_ text: String, done: @escaping (CloudLinkResult) -> Void) {
+        guard CloudProviderDescriptor.linkProvider(text)?.provider == .dropbox, let link = URL(string: text.trimmingCharacters(in: .whitespaces))
+        else { done(.notALink); return }
+        let clients = MainActor.assumeIsolated { store.accounts.compactMap { store.client(for: $0.id) } }
+        Task { @MainActor [weak self] in
+            for client in clients {
+                guard let item = try? await client.sharedLink(link), let provider = self?.providers[client.accountID] else { continue }
+                let url = provider.item(item, client: client).url
+                done(item.isFolder ? .folder(url) : .file(url))
+                return
+            }
+            done(.noAccess)
+        }
+    }
+    /// Dropbox locations name only the item: its folders are found by path among the items already read, and the
+    /// ones not read yet are fetched (they show the next time the location is drawn).
+    public func ancestors(of url: URL) -> [URL] {
+        guard let provider = provider(url), let location = try? provider.location(url), let client = try? provider.scoped(url),
+            !location.itemID.isEmpty, !location.itemID.hasPrefix("collection:")
+        else { return [] }
+        let root = DropboxLocation(accountID: location.accountID, namespaceID: location.namespaceID).url
+        guard let path = client.metadataCache.file(location.itemID)?.pathLower else {
+            // Not read yet (a location opened directly): the item is read, then its folders.
+            fetchAncestors([location.itemID], client: client, account: location.accountID)
+            return [root]
+        }
+        let names = path.split(separator: "/").dropLast()
+        let paths = names.indices.map { i in "/" + names[...i].joined(separator: "/") }
+        let wanted = Set(paths)
+        var folders: [String: DropboxItem] = [:]
+        for file in client.metadataCache.files where file.isFolder { if let p = file.pathLower, wanted.contains(p) { folders[p] = file } }
+        let missing = paths.filter { folders[$0] == nil }
+        if !missing.isEmpty { fetchAncestors(missing, client: client, account: location.accountID) }
+        return [root] + paths.compactMap { folders[$0].map { provider.item($0, client: client).url } }
+    }
+    private func fetchAncestors(_ paths: [String], client: DropboxClient, account: UUID) {
+        let key = client.accountID.uuidString + (client.namespaceID ?? "")
+        let wanted = paths.filter { !ancestorFetches.contains(key + $0) }
+        guard !wanted.isEmpty else { return }
+        wanted.forEach { ancestorFetches.insert(key + $0) }
+        Task { @MainActor [weak self] in
+            for path in wanted { _ = try? await client.metadata(path) }
+            guard let self, let dropbox = store.accounts.first(where: { $0.id == account }) else { return }
+            NotificationCenter.default.post(name: CloudAccounts.remoteChanged, object: self.key(dropbox))
+        }
+    }
     public func search(
         _ text: String, in folder: URL, everywhere: Bool, contents: Bool, pageToken: String?,
         done: @escaping (Result<CloudSearchPage, Error>) -> Void

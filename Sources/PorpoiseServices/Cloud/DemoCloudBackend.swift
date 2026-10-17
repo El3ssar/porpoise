@@ -13,6 +13,8 @@ public final class DemoCloudBackend: CloudBackend {
     public var avatars: [String: Data] = [:]
     public var infos: [URL: CloudItemInfo] = [:]
     public var links: [String: CloudLinkResult] = [:]
+    /// The folders above a location, for services whose locations don't carry them (otherwise read from the path).
+    public var ancestry: [URL: [URL]] = [:]
     /// When each folder's listing was last read (the offline message's time).
     public var savedDates: [URL: Date] = [:]
     /// What a search answers, page by page (nil: searching isn't supported); `searchError` fails the next page asked for.
@@ -98,6 +100,7 @@ public final class DemoCloudBackend: CloudBackend {
     public func accountID(for url: URL) -> String? { url.host }
 
     public func info(for url: URL) -> CloudItemInfo? { infos[url] }
+    public func ancestors(of url: URL) -> [URL] { ancestry[url] ?? CloudAncestry.fromPath(url) }
 
     public func resolveLink(_ text: String, done: @escaping (CloudLinkResult) -> Void) { done(links[text] ?? .noAccess) }
 

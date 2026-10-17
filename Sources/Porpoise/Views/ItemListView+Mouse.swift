@@ -26,7 +26,9 @@ extension ItemListView {
 
     /// Over a cloud badge the tooltip says what it means ("Kept downloaded on this Mac."); off it, the item's again.
     private func updateBadgeTip(at p: CGPoint, row i: Int?) {
-        let help = i.flatMap { i in cloudRects[i].flatMap { $0.contains(p) ? CloudBadge.help(cloudBadge(model.rows[i].item)) : nil } }
+        let help = i.flatMap { i in
+            cloudRects[i].flatMap { $0.contains(p) ? CloudBadge.help(cloudBadge(model.rows[i].item), of: model.rows[i].item.url) : nil }
+        }
         if let help {
             if toolTip != help { toolTip = help }
             badgeTipShown = true
