@@ -10,6 +10,10 @@ Google Drive is in preview: until Google finishes reviewing Porpoise, only invit
   what's added to it later, after showing its size and the space left). Downloads open, preview and edit from the same
   copy. Status shows after the name in lists and as one badge in icons, for Drive and iCloud alike. Signing out removes
   the downloads, but not while an edit hasn't reached Drive yet.
+- **Signing out leaves nothing behind.** Disconnecting a Google Drive or Dropbox account removes everything Porpoise
+  kept for it on this Mac, including edit and conflict copies, unfinished transfers and their upload sessions. Account
+  data is no longer cached by the system's web cache, and a password typed into an ftp:// address goes to the Keychain
+  instead of staying in tabs, history, Places or the saved session.
 - **Signing in ends on a proper page.** After choosing your account in the browser, the page says you're signed in to
   Google Drive (or Dropbox) as which account, or why it didn't work, and Porpoise comes back to the front.
 - **Opening a Drive file shows its progress.** A file not on the Mac yet downloads in Activity (progress, speed, time
