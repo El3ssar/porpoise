@@ -12,7 +12,8 @@ FLAGS=(-Xswiftc -file-prefix-map -Xswiftc "$PWD=." -Xcc "-ffile-prefix-map=$PWD=
 # The debug bridge and the PORPOISE_* test switches (TestEnvironment) are in local and UI-test builds, never in a
 # release (PORPOISE_RELEASE=1, set by .github/workflows/release.yml; scripts/check-release.sh checks the disk image).
 [ "${PORPOISE_RELEASE:-}" = 1 ] || FLAGS+=(-Xswiftc -DPORPOISE_TEST_HOOKS)
-swift build -c "$CONFIG" --arch arm64 "${FLAGS[@]}"
+# Only what ships: the test support targets don't build in release.
+swift build -c "$CONFIG" --arch arm64 "${FLAGS[@]}" --product Porpoise
 BIN=$(swift build -c "$CONFIG" --arch arm64 "${FLAGS[@]}" --show-bin-path)
 APP=build/Porpoise.app
 rm -rf "$APP"
