@@ -28,24 +28,10 @@ struct ActivityTests {
         }
     }
 
-    /// A file of `size` pseudo-random bytes.
-    func randomFile(_ name: String, size: Int, seed: UInt64 = 1) throws -> URL {
-        var g = SeededGenerator(seed: seed)
-        var d = Data(count: size)
-        d.withUnsafeMutableBytes { b in
-            let words = b.bindMemory(to: UInt64.self)
-            for i in 0..<words.count { words[i] = g.next() }
-        }
-        let u = s.path(name)
-        try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try d.write(to: u)
-        return u
-    }
-
     // MARK: Resuming after a relaunch
 
     @Test func interruptedCopyResumesAfterRelaunchWithIdenticalBytes() async throws {
-        let src = try randomFile("src/big.bin", size: 48 << 20)
+        let src = try s.randomFile("src/big.bin", size: 48 << 20)
         let small = try s.file("src/small.txt", "small")
         let dst = try s.folder("dst")
         // Hold the worker at an observable byte boundary. A loaded main queue can otherwise
@@ -95,7 +81,7 @@ struct ActivityTests {
     }
 
     @Test func changesMadeMeanwhileAreDetected() async throws {
-        let src = try randomFile("src/big.bin", size: 32 << 20, seed: 2)
+        let src = try s.randomFile("src/big.bin", size: 32 << 20, seed: 2)
         let dst = try s.folder("dst")
         c.run(.copy, [src], to: dst, window: nil)
         let a = try #require(c.activities.last)
@@ -182,8 +168,8 @@ struct ActivityTests {
 
     @Test func copiesQueueBehindTheConcurrencyLimit() async throws {
         c.concurrency = 1
-        let one = try randomFile("src/one.bin", size: 24 << 20, seed: 3)
-        let two = try randomFile("src/two.bin", size: 12 << 20, seed: 4)
+        let one = try s.randomFile("src/one.bin", size: 24 << 20, seed: 3)
+        let two = try s.randomFile("src/two.bin", size: 12 << 20, seed: 4)
         let three = try s.file("src/three.txt", "3")
         let dst = try s.folder("dst")
         c.run(.copy, [one], to: dst, window: nil)
@@ -211,7 +197,7 @@ struct ActivityTests {
     }
 
     @Test func pauseAndResumeThroughTheController() async throws {
-        let src = try randomFile("src/p.bin", size: 32 << 20, seed: 5)
+        let src = try s.randomFile("src/p.bin", size: 32 << 20, seed: 5)
         let dst = try s.folder("dst")
         c.run(.copy, [src], to: dst, window: nil)
         let a = try #require(c.activities.last)
@@ -230,7 +216,7 @@ struct ActivityTests {
 
     @Test func quittingDoesNotStartTheNextQueuedCopy() async throws {
         c.concurrency = 1
-        let big = try randomFile("src/shutdown.bin", size: 32 << 20)
+        let big = try s.randomFile("src/shutdown.bin", size: 32 << 20)
         let waiting = try s.file("src/waiting.txt", "leave queued")
         let dst = try s.folder("dst")
         c.run(.copy, [big], to: dst, window: nil)

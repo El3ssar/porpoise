@@ -52,7 +52,6 @@ import Testing
             let status = backend.accounts.first { $0.id == account.id }?.status ?? .ok
             if status != shown.last ?? .ok { shown.append(status) }
         }
-        let flap = DriveMutationTests()
         // Down for 300 ms, up for 100 ms, over and over for about 3 s, reading folders all the while.
         for n in 0..<30 {
             try await server.control(["offline": n % 4 != 3])

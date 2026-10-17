@@ -18,13 +18,6 @@ private let searchTools: FolderSearch.Tools? = {
 /// Apple's own apps: Spotlight indexes them on every Mac (when it's on), and they're never in the user's home.
 private let systemApps = URL(fileURLWithPath: "/System/Applications")
 
-/// Holds the Spotlight queue until the returned function is called (a Spotlight that never answers).
-private func stallSpotlight() -> () -> Void {
-    let release = DispatchSemaphore(value: 0)
-    SpotlightQuery.queue.addOperation { _ = release.wait(timeout: .now() + 30) }
-    return { release.signal() }
-}
-
 // MARK: Search
 
 /// One at a time: some of these hold Spotlight's queue (a Spotlight that never answers), which would make the others'

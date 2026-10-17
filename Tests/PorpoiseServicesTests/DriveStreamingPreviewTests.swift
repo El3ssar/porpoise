@@ -9,7 +9,6 @@ import Testing
 
 @Suite(.serialized) struct DriveStreamingPreviewTests {
     private func fixture(_ scratch: Scratch, media: URL? = nil) throws -> URL {
-        let url = scratch.url.appendingPathComponent("fixture.json")
         var json: [String: Any] = [
             "files": [
                 [
@@ -20,8 +19,7 @@ import Testing
             "generatedMedia": ["movie": 64 << 20],
         ]
         if let media { json["mediaFiles"] = ["movie": media.path] }
-        try JSONSerialization.data(withJSONObject: json).write(to: url)
-        return url
+        return try FakeDriveServer.writeFixture(in: scratch, json)
     }
 
     @Test func rangesAreBoundedSecretAndStopCancels() async throws {

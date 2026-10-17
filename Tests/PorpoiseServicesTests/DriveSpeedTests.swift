@@ -8,12 +8,12 @@ import Testing
 
 @Suite(.serialized) struct DriveSpeedTests {
     private func fixture(_ scratch: Scratch, files: [[String: Any]], children: [String: [String]] = [:]) throws -> URL {
-        let url = scratch.url.appendingPathComponent("fixture.json")
-        try JSONSerialization.data(withJSONObject: [
-            "files": files, "children": children, "rootIDs": files.filter { $0["shortcutDetails"] != nil }.map { $0["id"]! },
-            "profile": ["sub": "speed", "email": "speed@example.invalid", "name": "Speed fixture"], "drives": [],
-        ]).write(to: url)
-        return url
+        return try FakeDriveServer.writeFixture(
+            in: scratch,
+            [
+                "files": files, "children": children, "rootIDs": files.filter { $0["shortcutDetails"] != nil }.map { $0["id"]! },
+                "profile": ["sub": "speed", "email": "speed@example.invalid", "name": "Speed fixture"], "drives": [],
+            ])
     }
 
     @Test func latencyCacheAndBoundedShortcuts() async throws {

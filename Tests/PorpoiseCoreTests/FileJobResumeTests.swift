@@ -9,20 +9,6 @@ struct FileJobResumeTests {
     let scratch: Scratch
     init() throws { scratch = try Scratch("jobresume") }
 
-    /// A file of `size` pseudo-random bytes (different for each seed).
-    func randomFile(_ name: String, size: Int, seed: UInt64 = 1) throws -> URL {
-        var g = SeededGenerator(seed: seed)
-        var d = Data(count: size)
-        d.withUnsafeMutableBytes { b in
-            let words = b.bindMemory(to: UInt64.self)
-            for i in 0..<words.count { words[i] = g.next() }
-        }
-        let u = scratch.path(name)
-        try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try d.write(to: u)
-        return u
-    }
-
     func job(_ src: URL, to folder: URL) -> FileJob {
         let j = FileJob(kind: .copy, sources: [src], destinationFolder: folder)
         j.allowsClone = false  // real bytes, even on one volume
@@ -66,7 +52,7 @@ struct FileJobResumeTests {
     }
 
     @Test func interruptedThenResumedCopyIsIdentical() throws {
-        let src = try randomFile("src/big.bin", size: 40 << 20)
+        let src = try scratch.randomFile("src/big.bin", size: 40 << 20)
         let dst = try scratch.folder("dst")
         let first = job(src, to: dst)
         var events: [JobEvent] = []
@@ -104,7 +90,7 @@ struct FileJobResumeTests {
     }
 
     @Test func aStagingFileShorterThanItsPointRestartsFromWhatIsThere() throws {
-        let src = try randomFile("src/big.bin", size: 20 << 20, seed: 2)
+        let src = try scratch.randomFile("src/big.bin", size: 20 << 20, seed: 2)
         let dst = try scratch.folder("dst")
         // A partial copy with 3 MB written, though the journal says 9.
         let staging = dst.appendingPathComponent(".big.bin.porpoise-0000abcd")
@@ -121,7 +107,7 @@ struct FileJobResumeTests {
     }
 
     @Test func pauseHoldsTheCopyAndResumeFinishesIt() throws {
-        let src = try randomFile("src/big.bin", size: 32 << 20, seed: 3)
+        let src = try scratch.randomFile("src/big.bin", size: 32 << 20, seed: 3)
         let dst = try scratch.folder("dst")
         let j = job(src, to: dst)
         var latest: Int64 = 0
@@ -150,7 +136,7 @@ struct FileJobResumeTests {
     }
 
     @Test func pausedThenCancelledLeavesNothing() async throws {
-        let src = try randomFile("src/big.bin", size: 24 << 20, seed: 4)
+        let src = try scratch.randomFile("src/big.bin", size: 24 << 20, seed: 4)
         let dst = try scratch.folder("dst")
         let j = job(src, to: dst)
         let (paused, progress) = AsyncStream<Void>.makeStream()
@@ -182,7 +168,7 @@ struct FileJobResumeTests {
 
     @Test func stoppedQueueResumesWithoutRecopyingFinishedItems() throws {
         let first = try scratch.file("src/first", "finished")
-        let big = try randomFile("src/big", size: 24 << 20)
+        let big = try scratch.randomFile("src/big", size: 24 << 20)
         let destination = try scratch.folder("dst")
         let job = FileJob(kind: .copy, sources: [first, big], destinationFolder: destination)
         job.allowsClone = false
@@ -201,7 +187,7 @@ struct FileJobResumeTests {
 
     @Test func stoppedMergeKeepsItsAlreadyPublishedLeavesOnResume() throws {
         let first = try scratch.file("src/folder/a.txt", "finished")
-        _ = try randomFile("src/folder/z.bin", size: 24 << 20)
+        _ = try scratch.randomFile("src/folder/z.bin", size: 24 << 20)
         let destination = try scratch.folder("dst")
         try scratch.folder("dst/folder")
         let job = FileJob(kind: .copy, sources: [first.deletingLastPathComponent()], destinationFolder: destination)
@@ -237,7 +223,7 @@ struct FileJobResumeTests {
 
     @Test func slowIncomingItemUsesItsLogicalTargetAndByteBaseline() throws {
         let first = try scratch.file("src/first", "x")
-        let large = try randomFile("src/large", size: 32 << 20)
+        let large = try scratch.randomFile("src/large", size: 32 << 20)
         let destination = try scratch.folder("dst")
         let job = FileJob(kind: .copy, sources: [first, large], destinationFolder: destination)
         job.allowsClone = false; job.chunkDelay = 0.1
@@ -278,7 +264,7 @@ struct FileJobResumeTests {
     }
 
     @Test func largeFilesCloneOnOneVolume() throws {
-        let src = try randomFile("src/big.bin", size: 16 << 20, seed: 5)
+        let src = try scratch.randomFile("src/big.bin", size: 16 << 20, seed: 5)
         let dst = try scratch.folder("dst")
         let j = FileJob(kind: .copy, sources: [src], destinationFolder: dst)
         _ = try j.run()

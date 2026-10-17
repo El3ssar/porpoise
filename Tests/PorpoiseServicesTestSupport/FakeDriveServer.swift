@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import PorpoiseServices
 import PorpoiseTestSupport
@@ -22,6 +23,18 @@ public final class FakeDriveServer {
 
     /// A fixture in Tests/PorpoiseServicesTests/Fixtures/Drive.
     public static func fixture(_ name: String) -> URL { TestPaths.fixtures.appendingPathComponent("Drive").appendingPathComponent(name) }
+
+    /// Writes a fixture of the test's own (files, generated media…) as fixture.json in `scratch`.
+    public static func writeFixture(in scratch: Scratch, _ json: [String: Any]) throws -> URL {
+        let url = scratch.url.appendingPathComponent("fixture.json")
+        try JSONSerialization.data(withJSONObject: json).write(to: url)
+        return url
+    }
+
+    /// The MD5 the fake reports for `generatedMedia` of `size` bytes (it serves that many bytes of "x").
+    public static func generatedMediaMD5(size: Int) -> String {
+        Insecure.MD5.hash(data: Data(repeating: 120, count: size)).map { String(format: "%02x", $0) }.joined()
+    }
 
     public func stop() { fixtureServer.stop() }
 

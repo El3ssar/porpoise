@@ -8,17 +8,17 @@ import Testing
 
 @Suite(.serialized) struct DriveProgressivePreviewTests {
     private func fixture(_ scratch: Scratch) throws -> URL {
-        let url = scratch.url.appendingPathComponent("fixture.json")
-        try JSONSerialization.data(withJSONObject: [
-            "files": [
-                [
-                    "id": "image", "name": "image.png", "mimeType": "image/png", "size": "4096", "version": "1",
-                    "thumbnailLink": "{base}/thumbnail/image", "hasThumbnail": true, "capabilities": ["canDownload": true],
-                ]
-            ],
-            "generatedMedia": ["image": 4096],
-        ]).write(to: url)
-        return url
+        return try FakeDriveServer.writeFixture(
+            in: scratch,
+            [
+                "files": [
+                    [
+                        "id": "image", "name": "image.png", "mimeType": "image/png", "size": "4096", "version": "1",
+                        "thumbnailLink": "{base}/thumbnail/image", "hasThumbnail": true, "capabilities": ["canDownload": true],
+                    ]
+                ],
+                "generatedMedia": ["image": 4096],
+            ])
     }
 
     @Test func firstThumbnailThenFullAndWarmViewMakesNoRequest() async throws {

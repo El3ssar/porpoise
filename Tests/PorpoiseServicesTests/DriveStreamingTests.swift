@@ -9,18 +9,18 @@ import Testing
 
 @Suite(.serialized) struct DriveStreamingTests {
     private func fixture(_ scratch: Scratch, size: Int, checksum: String? = nil) throws -> URL {
-        let url = scratch.url.appendingPathComponent("fixture.json")
-        let digest = checksum ?? Insecure.MD5.hash(data: Data(repeating: 120, count: size)).map { String(format: "%02x", $0) }.joined()
-        try JSONSerialization.data(withJSONObject: [
-            "files": [
-                [
-                    "id": "movie", "name": "movie.mp4", "mimeType": "video/mp4",
-                    "size": String(size), "version": "1", "headRevisionId": "revision-1", "md5Checksum": digest,
-                    "capabilities": ["canDownload": true],
-                ]
-            ], "generatedMedia": ["movie": size],
-        ]).write(to: url)
-        return url
+        let digest = checksum ?? FakeDriveServer.generatedMediaMD5(size: size)
+        return try FakeDriveServer.writeFixture(
+            in: scratch,
+            [
+                "files": [
+                    [
+                        "id": "movie", "name": "movie.mp4", "mimeType": "video/mp4",
+                        "size": String(size), "version": "1", "headRevisionId": "revision-1", "md5Checksum": digest,
+                        "capabilities": ["canDownload": true],
+                    ]
+                ], "generatedMedia": ["movie": size],
+            ])
     }
 
     @Test func disconnectedStreamResumesFromDurableCheckpoint() async throws {

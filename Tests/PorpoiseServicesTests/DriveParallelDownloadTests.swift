@@ -9,18 +9,18 @@ import Testing
 
 @Suite(.serialized) struct DriveParallelDownloadTests {
     private func fixture(_ scratch: Scratch, size: Int) throws -> URL {
-        let url = scratch.url.appendingPathComponent("fixture.json")
-        let digest = Insecure.MD5.hash(data: Data(repeating: 120, count: size)).map { String(format: "%02x", $0) }.joined()
-        try JSONSerialization.data(withJSONObject: [
-            "files": [
-                [
-                    "id": "big", "name": "big.bin", "mimeType": "application/octet-stream", "size": String(size),
-                    "version": "1", "md5Checksum": digest, "capabilities": ["canDownload": true],
-                ]
-            ],
-            "generatedMedia": ["big": size],
-        ]).write(to: url)
-        return url
+        let digest = FakeDriveServer.generatedMediaMD5(size: size)
+        return try FakeDriveServer.writeFixture(
+            in: scratch,
+            [
+                "files": [
+                    [
+                        "id": "big", "name": "big.bin", "mimeType": "application/octet-stream", "size": String(size),
+                        "version": "1", "md5Checksum": digest, "capabilities": ["canDownload": true],
+                    ]
+                ],
+                "generatedMedia": ["big": size],
+            ])
     }
 
     @Test func rangesCompleteAndWarmStagingDoesNotTransferAgain() async throws {

@@ -9,13 +9,6 @@ import Testing
 /// Spotlight queries run off the main thread and give up when Spotlight doesn't answer. A Spotlight that never
 /// answers is simulated by keeping the queries' queue busy, as a `start()` that never returns does.
 @MainActor @Suite(.serialized) struct SpotlightQueryTests {
-    /// Holds the Spotlight queue until the returned function is called.
-    private func stallSpotlight() -> () -> Void {
-        let release = DispatchSemaphore(value: 0)
-        SpotlightQuery.queue.addOperation { _ = release.wait(timeout: .now() + 30) }
-        return { release.signal() }
-    }
-
     private func nothing(in scope: URL) -> NSPredicate { NSPredicate(format: "kMDItemFSName == %@", "none-\(UUID().uuidString)") }
 
     @Test func aQueryThatSpotlightNeverAnswersReportsUnavailableWithoutBlocking() async throws {
