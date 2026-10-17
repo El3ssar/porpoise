@@ -11,17 +11,11 @@ extension DriveMutationTests {
         -> Int32
     {
         let repo = TestPaths.repo
-        let process = Process()
-        process.executableURL = repo.appendingPathComponent(".build/debug/DriveRecoveryProbe")
-        process.arguments = [server.base.absoluteString, folder.path, account.uuidString, operation.uuidString, mode, kind, value]
-        process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
-        try process.run()
-        return try await awaitCallback { continuation in
-            // Process.waitUntilExit must not block Swift's cooperative executor or the main actor.
-            Thread {
-                process.waitUntilExit(); continuation.resume(returning: process.terminationStatus)
-            }.start()
-        }
+        let probe = repo.appendingPathComponent(".build/debug/DriveRecoveryProbe").path
+        // Waiting for the probe must not block Swift's cooperative executor or the main actor.
+        return try await offThePool {
+            try runTool(probe, [server.base.absoluteString, folder.path, account.uuidString, operation.uuidString, mode, kind, value])
+        }.status
     }
 
     @Test func processDeathBeforeAndAfterRemoteCommitNeverDuplicates() async throws {

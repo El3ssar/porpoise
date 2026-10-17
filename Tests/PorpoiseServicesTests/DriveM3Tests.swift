@@ -124,16 +124,10 @@ import Testing
     @Test func unsentEditsSurviveActualSIGKILL() async throws {
         let server = try DriveMutationTests().server(), scratch = try Scratch(), id = UUID()
         let repo = TestPaths.repo
-        let process = Process()
-        process.executableURL = repo.appendingPathComponent(".build/debug/DriveRecoveryProbe")
-        process.arguments = [server.base.absoluteString, scratch.url.path, id.uuidString, UUID().uuidString, "kill", "edit", "binary-a"]
-        process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
-        try process.run()
-        let status: Int32 = try await awaitCallback { continuation in
-            Thread {
-                process.waitUntilExit(); continuation.resume(returning: process.terminationStatus)
-            }.start()
-        }
+        let probe = repo.appendingPathComponent(".build/debug/DriveRecoveryProbe").path
+        let status = try await offThePool {
+            try runTool(probe, [server.base.absoluteString, scratch.url.path, id.uuidString, UUID().uuidString, "kill", "edit", "binary-a"])
+        }.status
         #expect(status == SIGKILL)
         let restored = try make(server, scratch.url.appendingPathComponent("Metadata"), id: id)
         let pending = await restored.edits.pending()
@@ -201,24 +195,14 @@ import Testing
     }
     @Test func conditionalProbeIsOptInAndUsesOnlyItsDisposableFixtureFile() async throws {
         let server = try DriveMutationTests().server(), scratch = try Scratch()
-        let repo = TestPaths.repo
         func run(enabled: Bool) async throws -> (Int32, Data) {
-            let process = Process(), output = Pipe()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-            process.arguments = [repo.appendingPathComponent("scripts/drive-conditional-probe.py").path]
             var env = ProcessInfo.processInfo.environment
             env["PORPOISE_DRIVE_LIVE_PROBE"] = enabled ? "1" : nil
             env["PORPOISE_DRIVE_PROBE_TOKEN"] = "fixture-access"
             env["PORPOISE_DRIVE_PROBE_BASE_URL"] = server.base.appendingPathComponent("drive/v3").absoluteString
-            process.environment = env
-            process.standardOutput = output; process.standardError = FileHandle.nullDevice
-            try process.run()
-            let status: Int32 = try await awaitCallback { continuation in
-                Thread {
-                    process.waitUntilExit(); continuation.resume(returning: process.terminationStatus)
-                }.start()
-            }
-            return (status, output.fileHandleForReading.readDataToEndOfFile())
+            // Its output is drained while it runs (read only after it exits, a big one would fill the pipe and hang it).
+            let r = try await offThePool { try runTool("/usr/bin/python3", [TestPaths.script("drive-conditional-probe.py").path], env: env) }
+            return (r.status, r.out)
         }
         #expect(try await run(enabled: false).0 == 2)
         let result = try await run(enabled: true)

@@ -95,16 +95,9 @@ import Testing
         let script = FileOperationsController.administratorScript([["/usr/bin/printf", "<%s>"] + hostile])
         let suffix = " with administrator privileges"
         try #require(script.hasSuffix(suffix))
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        p.arguments = ["-e", String(script.dropLast(suffix.count))]
-        p.currentDirectoryURL = s.url
-        let out = Pipe()
-        p.standardOutput = out
-        try p.run()
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        #expect(p.terminationStatus == 0)
+        let r = try runTool("/usr/bin/osascript", ["-e", String(script.dropLast(suffix.count))], cwd: s.url)
+        let data = r.out
+        #expect(r.status == 0)
         // do shell script turns line endings into returns.
         let printed = String(decoding: data, as: UTF8.self).replacingOccurrences(of: "\r", with: "\n").dropLast()
         #expect(printed == hostile.map { "<\($0)>" }.joined())

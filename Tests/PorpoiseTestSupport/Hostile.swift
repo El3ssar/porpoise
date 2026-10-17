@@ -38,9 +38,13 @@ public func bytes(_ s: String) -> [UInt8] { Array(s.utf8) }
 /// Output of a tool run to completion.
 public struct RunResult { public var status: Int32; public var out: Data; public var err: Data }
 
-/// Runs a tool with arguments (no shell in between) and waits; stdout and stderr are drained concurrently.
+/// Runs a tool with arguments (no shell in between) and waits; stdout and stderr are drained concurrently. A tool still
+/// running after `timeout` seconds is terminated (its status then says so), so a stuck tool fails its test instead of
+/// hanging the run. It blocks its thread: from an async test, call it through `offThePool`.
 @discardableResult
-public func runTool(_ tool: String, _ args: [String], cwd: URL? = nil, env: [String: String]? = nil) throws -> RunResult {
+public func runTool(_ tool: String, _ args: [String], cwd: URL? = nil, env: [String: String]? = nil, timeout: TimeInterval = 120) throws
+    -> RunResult
+{
     let p = Process()
     p.executableURL = URL(fileURLWithPath: tool)
     p.arguments = args
@@ -51,6 +55,9 @@ public func runTool(_ tool: String, _ args: [String], cwd: URL? = nil, env: [Str
     p.standardError = err
     p.standardInput = FileHandle.nullDevice
     try p.run()
+    let deadline = DispatchWorkItem { if p.isRunning { p.terminate() } }
+    DispatchQueue(label: "porpoise.test.tool-timeout").asyncAfter(deadline: .now() + timeout, execute: deadline)
+    defer { deadline.cancel() }
     var errData = Data()
     let group = DispatchGroup()
     group.enter()
