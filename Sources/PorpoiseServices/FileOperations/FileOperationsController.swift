@@ -36,6 +36,8 @@ public final class FileOperationsController {
     /// Where unfinished jobs are written down, to be resumed after a relaunch.
     public var journals = JournalStore(folder: JournalStore.defaultFolder)
     public var driveJournals = DriveMutationJournal.shared
+    /// An explicit recovery store set; nil discovers the registered provider journals.
+    var cloudTransferJournals: [CloudTransferJournal]?
     public var history = OperationHistory.shared
     /// Cancelling a remote transfer (by activity).
     var remoteCancel: [UUID: () -> Void] = [:]

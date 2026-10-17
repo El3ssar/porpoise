@@ -139,7 +139,7 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
         self.accountID = accountID; self.client = client; self.accountName = accountName; self.accountEmail = accountEmail
     }
 
-    private func location(_ url: URL) throws -> DriveLocation {
+    func location(_ url: URL) throws -> DriveLocation {
         guard let location = DriveLocation(url: url), location.accountID == accountID else { throw DriveError.invalidLocation }
         return location
     }

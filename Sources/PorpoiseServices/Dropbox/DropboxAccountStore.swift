@@ -132,6 +132,7 @@ import PorpoiseCore
                 else { throw CloudConnectionError.unsentEdits }
             }
         }
+        await CloudTransferJournal.stop(account: "dropbox:" + id.uuidString.lowercased())
         await client.changes.stop()
         let source = client.contentSource
         _ = try await client.offlineCopies()
@@ -150,6 +151,7 @@ import PorpoiseCore
             for record in try journal.all() where record.hasSession { try await client.tokens.removeSecret(record.operationID) }
         }
         // Only this account's private engine data is removed. No provider is registered in the UI yet.
+        try CloudAccountWipe.transfers("dropbox:" + id.uuidString.lowercased())
         try CloudAccountWipe.remove(owned)
         clients[id] = nil; status.forget(id); saved.removeAll { $0.account.id == id }; try persist()
     }

@@ -68,10 +68,16 @@ public enum RemoteFS {
 
     /// Installs the authenticated account adapter; no credentials are contained in the location URL.
     public static func registerDrive(_ provider: DriveProvider, accountID: UUID) {
+        CloudTransferJournal.allow(account: accountID.uuidString.lowercased())
         use(provider, for: DriveLocation(accountID: accountID).url)
     }
 
-    public static func registerCloud(_ provider: (any CloudFileProvider)?, for root: URL) { use(provider, for: root) }
+    public static func registerCloud(_ provider: (any CloudFileProvider)?, for root: URL) {
+        if provider != nil, let location = DropboxLocation(url: root) {
+            CloudTransferJournal.allow(account: "dropbox:" + location.accountID.uuidString.lowercased())
+        }
+        use(provider, for: root)
+    }
 
     public static func unregisterDrive(accountID: UUID) {
         use(nil, for: DriveLocation(accountID: accountID).url)
@@ -81,6 +87,11 @@ public enum RemoteFS {
     public static func installTestingProvider(_ provider: RemoteProvider, for url: URL) -> Bool {
         guard Settings.isTesting else { return false }
         use(provider, for: url); return true
+    }
+
+    static var transferJournals: [CloudTransferJournal] {
+        let all = lock.withLock { Array(providers.values) }
+        return all.compactMap { $0 as? CloudTransferProvider }.flatMap(\.recoveryTransferJournals)
     }
 
     /// One provider (connection) per scheme+user+host+port.

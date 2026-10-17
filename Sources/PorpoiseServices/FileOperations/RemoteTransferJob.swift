@@ -19,6 +19,7 @@ final class RemoteTransferJob {
     var onNoSpace: ((Int64) -> Bool)?
     var cloudBatchID = UUID()
     var cloudOperations: [URL: UUID] = [:]
+    var cloudRecovered: [URL: [CloudTransferRecord]] = [:]
     var completed: [URL: URL]
     var results: [URL] = []
     var errors: [String] = []
@@ -49,7 +50,27 @@ final class RemoteTransferJob {
     var remaining: [URL] { sources.filter { completed[$0] == nil } }
 
     func run(ownsControl: Bool = true) {
-        defer { onNotice(nil) }
+        // A batch owns its accounts before inventory starts: sign-out must also drain metadata
+        // requests and all small-copy children before credentials or caches are removed.
+        var ownsAccounts = false
+        defer {
+            onNotice(nil)
+            if ownsControl { control.finish() }
+            if ownsAccounts { CloudTransferJournal.shared.release(cloudBatchID) }
+        }
+        if ownsControl {
+            do {
+                let accounts = try (sources + [destination].compactMap { $0 }).compactMap { url in
+                    try (RemoteFS.provider(for: url) as? CloudTransferProvider)?.transferAccount(url)
+                }
+                if !accounts.isEmpty {
+                    try CloudTransferJournal.shared.claim(cloudBatchID, accounts: accounts, control: control)
+                    ownsAccounts = true
+                }
+            } catch {
+                errors.append(error.localizedDescription); failedSources = remaining; return
+            }
+        }
         let transport = control.asTransferControl(onBytes: { self.advance(bytes: $0) }, onStatus: { self.onNotice($0) })
         Shell.withTransferControl(transport) {
             if runSmallCloudCopies() { return }
@@ -90,18 +111,7 @@ final class RemoteTransferJob {
                 publish()
             }
         }
-        if control.isCancelled {
-            let clients = (sources + (destination.map { [$0] } ?? [])).compactMap { (RemoteFS.provider(for: $0) as? DriveProvider)?.client }
-            for client in clients {
-                for record in (try? client.mutationJournal.all(accountID: client.accountID)) ?? [] where record.batchID == cloudBatchID {
-                    for operation in [record.childOperationID, record.downloadOperationID].compactMap({ $0 }) {
-                        try? DriveProvider.wait { try await client.cancelTransfer(operation) }
-                    }
-                }
-            }
-        }
         publish(force: true)
-        if ownsControl { control.finish() }
     }
 
     static func temporaryFolder() throws -> URL {
@@ -129,20 +139,6 @@ final class RemoteTransferJob {
     func item(_ url: URL) throws -> FileItem? {
         if url.isFileURL { return FileItem.load(url) }
         if let cloud = RemoteFS.provider(for: url) as? CloudTransferProvider { return try cloud.transferItem(url) }
-        if let provider = RemoteFS.provider(for: url) as? DriveProvider, let client = provider.client,
-            let location = DriveLocation(url: url), case .folder(let id, _) = location.collection
-        {
-            let file: DriveFile
-            if let known = provider.metadata(for: url), !known.isFolder, known.shortcutDetails == nil,
-                known.size.flatMap(Int64.init).map({ $0 < 8 * 1024 * 1024 }) == true,
-                known.version != nil, known.md5Checksum != nil
-            {
-                file = known
-            } else {
-                file = try DriveProvider.wait { try await client.file(id) }
-            }
-            return file.fileItem(accountID: provider.accountID, parent: DriveLocation(url: url.deletingLastPathComponent()))
-        }
         return try children(url.deletingLastPathComponent()).first { $0.name == url.lastPathComponent }
     }
 
@@ -168,7 +164,6 @@ final class RemoteTransferJob {
         if RemoteFS.provider(for: source) is CloudTransferProvider || RemoteFS.provider(for: folder) is CloudTransferProvider {
             return try transferCloud(source, into: folder)
         }
-        if source.scheme == "gdrive" || folder.scheme == "gdrive" { return try transferDrive(source, into: folder) }
         try control.checkpoint()
         guard source.isFileURL || RemoteFS.provider(for: source) != nil else {
             throw RemoteError.unsupported("Unsupported source: \(source.scheme ?? "unknown")")
@@ -295,13 +290,13 @@ final class RemoteTransferJob {
 
     func identical(_ source: URL, _ incoming: FileItem, _ target: URL, _ old: FileItem) throws -> Bool {
         if incoming.isWebDocument || old.isWebDocument { return false }
-        let driveLeft = (RemoteFS.provider(for: source) as? DriveProvider)?.metadata(for: source)
-        let driveRight = (RemoteFS.provider(for: target) as? DriveProvider)?.metadata(for: target)
-        if let checksum = driveLeft?.md5Checksum, let other = driveRight?.md5Checksum {
-            return checksum == other && driveLeft?.size == driveRight?.size
+        let sourceChecksum = try (RemoteFS.provider(for: source) as? CloudTransferProvider)?.transferChecksum(source)
+        let targetChecksum = try (RemoteFS.provider(for: target) as? CloudTransferProvider)?.transferChecksum(target)
+        if let sourceChecksum, let targetChecksum, sourceChecksum.algorithm == targetChecksum.algorithm {
+            return sourceChecksum == targetChecksum && incoming.size == old.size
         }
-        if let checksum = driveLeft?.md5Checksum, target.isFileURL { return try DriveClient.md5(target) == checksum }
-        if let checksum = driveRight?.md5Checksum, source.isFileURL { return try DriveClient.md5(source) == checksum }
+        if let sourceChecksum, target.isFileURL { return try sourceChecksum.verify(target) }
+        if let targetChecksum, source.isFileURL { return try targetChecksum.verify(source) }
         var left = TransferComparison.entry(incoming), right = TransferComparison.entry(old)
         if options.method == .sizeAndDate {
             if let provider = RemoteFS.provider(for: source) as? RemoteTransferMetadata {
@@ -332,9 +327,7 @@ final class RemoteTransferJob {
         let scratch = try Self.temporaryFolder()
         defer { try? FileManager.default.removeItem(at: scratch) }
         let downloaded: URL
-        if let drive = RemoteFS.provider(for: source) as? DriveProvider, let operationID = sourceDownloadOperationID {
-            downloaded = try drive.download(source, into: scratch, operationID: operationID)
-        } else if let cloud = RemoteFS.provider(for: source) as? CloudTransferProvider, let operationID = sourceDownloadOperationID {
+        if let cloud = RemoteFS.provider(for: source) as? CloudTransferProvider, let operationID = sourceDownloadOperationID {
             downloaded = try cloud.downloadTransfer(source, into: scratch, operationID: operationID)
         } else {
             downloaded = try RemoteFS.provider(for: source)?.download(source, into: scratch) ?? source

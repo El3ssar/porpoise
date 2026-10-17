@@ -82,6 +82,32 @@ struct CloudChangeFeedTests {
         #expect(stopped.isSet && applied.value == 0 && cursors.value["user"] == "start")
     }
 
+    @Test func stopAlsoDrainsAnExplicitLongPollBeforeItCanStartAnotherCheck() async throws {
+        let release = Locked<Callback<Void>?>(nil), cancelled = Flag(), stopped = Flag(), pages = Counter()
+        var adapter = source(cursors: Locked(["user": "start"])) { _, _ in
+            pages.add(); return CloudChangePage(cursor: "late", hasMore: false, apply: {})
+        }
+        adapter.wait = {
+            try await withTaskCancellationHandler {
+                try await awaitCallback { callback in release.change { $0 = callback } }
+            } onCancel: {
+                cancelled.set()
+            }
+            return CloudChangePoll(changes: true, backoff: 0)
+        }
+        let feed = CloudChangeFeed(source: adapter), polling = Task { try await feed.pollOnce() }
+        defer { release.value?.resume() }
+        await expectEventually("long poll held") { release.value != nil }
+        let stop = Task {
+            await feed.stop(); stopped.set()
+        }
+        await expectEventually("long poll cancellation observed") { cancelled.isSet }
+        #expect(!stopped.isSet && pages.value == 0)
+        release.value?.resume(); await stop.value
+        await #expect(throws: CancellationError.self) { try await polling.value }
+        #expect(stopped.isSet && pages.value == 0)
+    }
+
     @Test func resetContinuesOtherScopesAndLoopsAreBounded() async throws {
         let cursors = Locked(["user": "old", "shared": "old"]), calls = Locked<[String]>([]), applied = Locked<[String]>([])
         let feed = CloudChangeFeed(

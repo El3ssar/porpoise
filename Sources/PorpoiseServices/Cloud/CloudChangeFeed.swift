@@ -28,6 +28,7 @@ public actor CloudChangeFeed {
     private let source: CloudChangeSource
     private var task: Task<Void, Never>?
     private var flight: (UUID, Task<Void, Error>)?
+    private var pollFlight: (UUID, Task<Bool, Error>)?
     private var stopping: Task<Void, Never>?
     private var wantsPolling = false
     private var pollingGeneration = 0
@@ -68,6 +69,14 @@ public actor CloudChangeFeed {
         }
     }
     public func pollOnce() async throws -> Bool {
+        guard stopping == nil else { throw CancellationError() }
+        if let pollFlight { return try await pollFlight.1.value }
+        let id = UUID(), task = Task { try await self.poll() }
+        pollFlight = (id, task)
+        defer { if pollFlight?.0 == id { pollFlight = nil } }
+        return try await task.value
+    }
+    private func poll() async throws -> Bool {
         if source.waitNeedsCursor, source.scopes().contains(where: { source.cursor($0) == nil }) { try await check() }
         let delay = nextPoll.timeIntervalSinceNow
         if delay > 0 { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
@@ -77,6 +86,7 @@ public actor CloudChangeFeed {
             for scope in source.scopes() { try await source.reset(scope) }
             try await check(); return true
         }
+        try Task.checkCancellation()
         nextPoll = Date().addingTimeInterval(max(0, interval ?? poll.backoff))
         if poll.changes { try await check() }
         return poll.changes
@@ -103,11 +113,11 @@ public actor CloudChangeFeed {
     public func stop() async {
         wantsPolling = false
         if let stopping { await stopping.value; return }
-        let running = task, applying = flight?.1
-        task = nil; flight = nil
-        running?.cancel(); applying?.cancel()
+        let running = task, applying = flight?.1, polling = pollFlight?.1
+        task = nil; flight = nil; pollFlight = nil
+        running?.cancel(); applying?.cancel(); polling?.cancel()
         let drain = Task {
-            await running?.value; _ = try? await applying?.value
+            await running?.value; _ = try? await applying?.value; _ = try? await polling?.value
         }
         stopping = drain; await drain.value; stopping = nil
         if wantsPolling { start() }

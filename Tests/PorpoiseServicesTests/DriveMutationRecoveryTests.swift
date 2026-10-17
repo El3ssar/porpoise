@@ -79,11 +79,14 @@ extension DriveMutationTests {
         _ = try await client.rename(target.id, to: "changed")
         let changed = runtime(); await offThePool { changed.run() }
         #expect(changed.errors.count == 1 && FileManager.default.fileExists(atPath: source.path))
-        record.result = try await client.file(target.id)
-        record.phase = .sourceRemovalPending; try client.mutationJournal.save(record)
+        // After import, the neutral record owns progress; the legacy copy cannot roll it back.
+        let journal = try provider.transferJournal(root)
+        var canonical = try #require(try journal.load(record.operationID))
+        canonical.receipt?.snapshot = try await offThePool { try provider.transferSnapshot(target.location(accountID: client.accountID).url) }
+        canonical.phase = .sourceRemovalPending; try journal.save(canonical)
         let uncertain = runtime(); await offThePool { uncertain.run() }
         #expect(uncertain.errors.count == 1 && FileManager.default.fileExists(atPath: source.path))
-        record.phase = .committed; try client.mutationJournal.save(record)
+        canonical.phase = .committed; try journal.save(canonical)
         let recovered = runtime(); await offThePool { recovered.run() }
         #expect(recovered.errors.isEmpty && !FileManager.default.fileExists(atPath: source.path))
     }

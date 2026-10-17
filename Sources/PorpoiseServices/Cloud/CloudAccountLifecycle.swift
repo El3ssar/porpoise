@@ -178,6 +178,10 @@ extension CloudOAuthLoopback: CloudSignInListener {}
 
 /// What signing out leaves behind: nothing.
 enum CloudAccountWipe {
+    static func transfers(_ account: String) throws {
+        let journals = RemoteFS.transferJournals + CloudTransferJournal.known
+        for journal in Dictionary(journals.map { ($0.folder, $0) }, uniquingKeysWith: { a, _ in a }).values { try journal.forget(account: account) }
+    }
     /// The account's offline copies and their index.
     @MainActor static func offlineCopies(_ account: String) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in

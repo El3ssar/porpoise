@@ -185,3 +185,15 @@ extension DropboxClient {
         }
     }
 }
+
+extension DropboxOperation: CloudStagedDownloadRecord {
+    var stagedURL: URL? {
+        get { localURL }
+        set { localURL = newValue }
+    }
+    var stagedComplete: Bool {
+        get { phase == "done" }
+        set { if newValue { phase = "done" } }
+    }
+    mutating func beginDownload() {}
+}

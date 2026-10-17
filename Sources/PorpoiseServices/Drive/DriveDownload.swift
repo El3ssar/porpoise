@@ -64,3 +64,16 @@ extension DriveClient {
         } catch CloudContentError.checksum { throw DriveError.invalidResponse }
     }
 }
+
+extension DriveMutationJournal: CloudStagedDownloadJournal { typealias Record = DriveMutationRecord }
+extension DriveMutationRecord: CloudStagedDownloadRecord {
+    var stagedURL: URL? {
+        get { destinationURL }
+        set { destinationURL = newValue }
+    }
+    var stagedComplete: Bool {
+        get { phase == .done }
+        set { if newValue { phase = .done } }
+    }
+    mutating func beginDownload() { phase = .transferring }
+}

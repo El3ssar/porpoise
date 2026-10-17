@@ -32,8 +32,9 @@ extension DriveMutationTests {
         try scratch.file("Tree/new.txt", "new child")
         let merge = job([source], root, rule: .different); await offThePool { merge.run() }
         #expect(merge.errors.isEmpty)
-        let records = try client.mutationJournal.all(accountID: client.accountID)
-        #expect(records.filter { $0.batchID == merge.cloudBatchID && $0.topLevel == true }.allSatisfy { $0.phase == .done })
+        let records = try provider.transferJournal(root).all()
+        let top = records.filter { $0.batchID == merge.cloudBatchID && $0.topLevel }
+        #expect(top.count == 1 && top.allSatisfy { $0.phase == .done })
         #expect(try await offThePool { try provider.list(cloud) }.contains { $0.name == "new.txt" })
         let resumed = job([source], root)
         resumed.cloudOperations = upload.cloudOperations; resumed.cloudBatchID = upload.cloudBatchID
@@ -84,6 +85,7 @@ extension DriveMutationTests {
         try client.mutationJournal.save(record)
         let controller = makeController(ScriptedUI())
         controller.driveJournals = client.mutationJournal
+        controller.cloudTransferJournals = [DriveProvider.transferJournal(client.mutationJournal)]
         controller.journals = JournalStore(folder: try scratch.folder("local-journals"))
         let plans = controller.recoveryPlans()
         let plan = try #require(plans.first { $0.id == record.operationID })
