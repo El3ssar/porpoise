@@ -9,9 +9,6 @@ public final class DropboxCloudBackend: CloudBackend {
     private var fetchingQuota: Set<UUID> = []
     private var quotaRefresh: CloudQuotaRefresh?
     private var providers: [UUID: DropboxProvider] = [:]
-    private var statuses: [UUID: CloudAccount.Status] = [:]
-    private var reachability: [UUID: OfflineHysteresis] = [:]
-    private var checks: [UUID: DispatchWorkItem] = [:]
     /// Folders above a location being read once (by account, namespace and path), so drawing doesn't ask again.
     private var ancestorFetches: Set<String> = []
     @MainActor public init(store: DropboxAccountStore) {
@@ -24,18 +21,15 @@ public final class DropboxCloudBackend: CloudBackend {
         MainActor.assumeIsolated {
             let live = Set(store.accounts.map(\.id))
             for id in providers.keys where !live.contains(id) {
-                RemoteFS.registerCloud(nil, for: DropboxLocation(accountID: id).url); providers[id] = nil; statuses[id] = nil
-                checks.removeValue(forKey: id)?.cancel(); reachability[id] = nil; quotas[id] = nil
+                RemoteFS.registerCloud(nil, for: DropboxLocation(accountID: id).url); providers[id] = nil; quotas[id] = nil
             }
             for account in store.accounts {
                 guard let client = store.client(for: account.id) else { continue }
                 if providers[account.id]?.client !== client {
                     let provider = DropboxProvider(client: client); providers[account.id] = provider
                     RemoteFS.registerCloud(provider, for: DropboxLocation(accountID: account.id).url)
-                    reachability[account.id] = OfflineHysteresis(); statuses[account.id] = .ok
                     DropboxEditing.shared.restore(client)
                     fetchQuota(account.id)
-                    client.onReachability = { [weak self] error in Task { @MainActor in self?.reached(account.id, error) } }
                     client.onFreshness = { [weak self] in
                         Task { @MainActor in
                             guard let self else { return }
@@ -61,7 +55,7 @@ public final class DropboxCloudBackend: CloudBackend {
                 CloudAccount(
                     id: key(account), provider: .dropbox, email: account.email, displayName: account.displayName,
                     quotaUsed: quotas[account.id]?.used, quotaTotal: quotas[account.id]?.total,
-                    sharedDriveCount: account.hasTeamSpace ? 1 : 0, status: statuses[account.id] ?? .ok)
+                    sharedDriveCount: account.hasTeamSpace ? 1 : 0, status: store.status[account.id] ?? .ok)
             }
         }
     }
@@ -81,19 +75,7 @@ public final class DropboxCloudBackend: CloudBackend {
                 let account = try await store.connect(expected: expected, openBrowser: { openBrowser($0) }); install()
                 setActive(true); done(.success(accounts.first { $0.id == self.key(account) }!))
             } catch {
-                if error is CancellationError
-                    || {
-                        if case .cancelled = error as? CloudOAuthError { return true }; return false
-                    }()
-                {
-                    done(.failure(.cancelled))
-                } else if case .alreadyConnected(let id) = error as? DropboxConnectionError,
-                    let account = accounts.first(where: { $0.id == self.accountKey(id) })
-                {
-                    done(.failure(.alreadyConnected(account)))
-                } else {
-                    done(.failure(.failed(error.localizedDescription)))
-                }
+                done(.failure(.from(error) { id in self.accountKey(id).flatMap { key in self.accounts.first { $0.id == key } } }))
             }
         }
         return { task.cancel() }
@@ -159,7 +141,9 @@ public final class DropboxCloudBackend: CloudBackend {
     }
     private func run<T>(_ url: URL, done: @escaping (Result<T, Error>) -> Void, work: @escaping (DropboxProvider) async throws -> T) {
         guard let provider = provider(url) else { done(.failure(DropboxError.reconnect)); return }
-        Task { @MainActor in do { let result = try await work(provider); done(.success(result)); changed(url) } catch { done(.failure(error)) } }
+        Task { @MainActor in
+            do { let result = try await work(provider); done(.success(result)); changed(url) } catch { done(.failure(Self.editError(error))) }
+        }
     }
     public func trash(_ urls: [URL], done: @escaping ([URL], Error?) -> Void) {
         Task { @MainActor in
@@ -169,7 +153,7 @@ public final class DropboxCloudBackend: CloudBackend {
                     guard let provider = provider(url) else { throw DropboxError.reconnect }
                     let client = try provider.scoped(url); let file = try await client.metadata(provider.location(url).itemID)
                     _ = try await client.delete(file, confirmedWithoutUndo: true); removed.append(url); changed(url)
-                } catch { failure = error }
+                } catch { failure = Self.editError(error) }
             }
             done(removed, failure)
         }
@@ -261,24 +245,15 @@ public final class DropboxCloudBackend: CloudBackend {
         providers.values.forEach { $0.setActive(active) }
     }
     private func changed(_ url: URL) { NotificationCenter.default.post(name: CloudAccounts.remoteChanged, object: accountID(for: url)) }
-    @MainActor func reached(_ id: UUID, _ error: Error?) {
-        if (error as? DropboxError) == .reconnect {
-            // Until the account is signed in again (a new client): a re-check scheduled before mustn't call it OK.
-            checks.removeValue(forKey: id)?.cancel()
-            statuses[id] = .signInNeeded; onChange?(); return
-        }
-        if let error = error as? URLError, error.code == .cancelled { return }
-        _ = reachability[id]?.record(reached: !(error is URLError), at: Date()); settle(id)
-    }
-    @MainActor func settle(_ id: UUID) {
-        guard var gate = reachability[id] else { return }
-        let now = Date(); _ = gate.update(at: now); reachability[id] = gate
-        let status: CloudAccount.Status = gate.isOffline ? .offline : .ok
-        if statuses[id] != .signInNeeded, statuses[id] != status { statuses[id] = status; onChange?() }
-        checks.removeValue(forKey: id)?.cancel()
-        if let next = gate.nextCheck(after: now) {
-            let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.settle(id) } }; checks[id] = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + max(0.05, next.timeIntervalSince(now)), execute: work)
+    /// Dropbox's error as the message bar says it after "Couldn’t rename “Q3”.", as Drive's are.
+    static func editError(_ error: Error) -> Error {
+        switch error as? DropboxError {
+        case .reconnect: return CloudEditError.denied("Sign in to Dropbox again to make changes.")
+        case .offline: return CloudEditError.denied("You’re offline. Nothing was changed.")
+        case .notFound: return CloudEditError.denied("It’s no longer in Dropbox, or no longer shared with you.")
+        case .conflict: return CloudEditError.denied("An item with that name is already there, or it changed meanwhile.")
+        case .api(429, _), .http(429): return CloudEditError.denied("Dropbox is busy. Try again in a moment.")
+        default: return error
         }
     }
 }

@@ -195,7 +195,7 @@ final class FakeDriveServer {
         let account = try await store.connect(openBrowser: browser)
         defer { RemoteFS.unregisterDrive(accountID: account.id) }
         #expect(account.email == "alex@example.invalid" && store.accounts == [account])
-        #expect(store.states[account.id] == .connected && !store.connecting && store.lastError == nil)
+        #expect(store.status[account.id] == .ok && !store.connecting)
         #expect(try credentials.read(clientID: server.config.clientID, accountID: account.id) == "fixture-refresh")
         let metadata = try #require(defaults.data(forKey: "googleDriveAccounts"))
         #expect(!String(decoding: metadata, as: UTF8.self).contains("fixture-refresh"))
@@ -203,12 +203,12 @@ final class FakeDriveServer {
         let restored = DriveAccountStore(
             defaults: defaults, credentials: credentials, configuration: server.config, baseURL: server.base.appendingPathComponent("drive/v3/"))
         #expect(restored.accounts == [account] && restored.client(for: account.id) != nil)
-        await #expect(throws: DriveConnectionError.alreadyConnected(account)) { try await store.connect(openBrowser: browser) }
+        await #expect(throws: CloudConnectionError.alreadyConnected(account.id)) { try await store.connect(openBrowser: browser) }
         #expect(store.accounts.count == 1)
         let reconnected = try await store.reauthorize(account, openBrowser: browser)
         #expect(reconnected.id == account.id)
         try await store.disconnect(account)
-        #expect(store.accounts.isEmpty && store.client(for: account.id) == nil && store.states[account.id] == nil)
+        #expect(store.accounts.isEmpty && store.client(for: account.id) == nil && store.status[account.id] == nil)
         #expect(try credentials.read(clientID: server.config.clientID, accountID: account.id) == nil)
         try await store.disconnect(account)
     }
@@ -250,12 +250,13 @@ final class FakeDriveServer {
         await #expect(throws: DriveError.configuration) {
             try await missing.connect { _ in Issue.record("Browser must not open without configuration") }
         }
-        #expect(missing.lastError != nil && !missing.connecting)
+        #expect(!missing.connecting)
         let server = try FakeDriveServer()
         let store = DriveAccountStore(defaults: defaults, credentials: MemoryDriveCredentials(), configuration: server.config)
         let task = Task { @MainActor in try await store.connect { _ in } }
         for _ in 0..<100 where !store.connecting { await Task.yield() }
-        await #expect(throws: DriveError.oauthCancelled) { try await store.connect { _ in } }
+        // A second sign-in while one waits in the browser: said so (it read as "cancelled" before).
+        await #expect(throws: CloudConnectionError.busy) { try await store.connect { _ in } }
         task.cancel()
         await #expect(throws: CancellationError.self) { try await task.value }
         #expect(!store.connecting && store.accounts.isEmpty)

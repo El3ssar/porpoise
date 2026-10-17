@@ -1,7 +1,7 @@
 import Foundation
 
 /// Compatibility adapter for Drive's public OAuth errors.
-public final class DriveLoopback: @unchecked Sendable {
+public final class DriveLoopback: CloudSignInListener, @unchecked Sendable {
     private let loopback: CloudOAuthLoopback
     public var redirectURL: URL { loopback.redirectURL }
     public init() throws {
