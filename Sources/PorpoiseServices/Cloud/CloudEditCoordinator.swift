@@ -101,7 +101,6 @@ public final class CloudEditCoordinator {
         return nil
     }
     public func mark(for url: URL) -> CloudEditMark? { entry(for: url)?.mark }
-    public var needingAttention: [CloudEditEntry] { entries.filter(\.mark.needsAttention) }
     static func mark(_ state: CloudEditState, fresh: Bool = false) -> CloudEditMark {
         switch state {
         case .editing: return .editing

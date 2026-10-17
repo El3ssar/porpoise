@@ -15,7 +15,6 @@ public struct DrivePage: Sendable {
 /// Native Drive v3 read-only API. Each page can be consumed independently; cancellation propagates to HTTP.
 public final class DriveClient: @unchecked Sendable {
     public let accountID: UUID
-    public let openCache: CloudOpenCache
     public let mediaCache: DriveMediaCache
     public let metadataCache: DriveMetadataCache
     var offlineSource: DriveContentSource?
@@ -64,7 +63,6 @@ public final class DriveClient: @unchecked Sendable {
         self.offlineDirectory = metadataDirectory?.appendingPathComponent("Offline")
         self.mediaCache = DriveMediaCache(accountID: accountID, directory: metadataDirectory?.appendingPathComponent("Previews"))
         self.metadataCache = DriveMetadataCache(accountID: accountID, directory: metadataDirectory)
-        self.openCache = CloudOpenCache(directory: self.metadataCache.directory.appendingPathComponent("OpenFiles"))
         self.mutationJournal = mutationJournal
         self.accountID = accountID; self.tokens = tokens; self.http = http; self.baseURL = baseURL; self.report = report
     }
@@ -268,7 +266,6 @@ public final class DriveClient: @unchecked Sendable {
         metadataCache.clear()
         lock.withLock { cache.removeAll() }
         await mediaCache.clear()
-        openCache.clear()
     }
 
     public func preview(_ file: DriveFile, context: DriveTransferContext = .init()) async throws -> URL {

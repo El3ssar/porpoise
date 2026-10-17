@@ -36,12 +36,6 @@ extension DropboxClient {
         if !item.isFolder { guard let rev = item.rev else { throw DropboxError.invalidResponse }; arguments["parent_rev"] = rev }
         return try await mutate("files/delete_v2", path: item.id, revision: item.rev, arguments: arguments, operationID: operationID)
     }
-    /// Dropbox restore can replace the current file, with no conditional parameter. Never offer automatic Undo.
-    public func restore(_ item: DropboxItem, confirmedMayReplace: Bool = false) async throws -> DropboxItem {
-        guard confirmedMayReplace, !item.isFolder, let path = item.pathDisplay, let rev = item.rev else { throw DropboxError.unsupportedUndo }
-        let result: DropboxItem = try await rpc("files/restore", ["path": path, "rev": rev])
-        metadataCache.remember([result]); metadataCache.invalidate(); return result
-    }
     func validateTarget(_ path: String) throws {
         guard path.hasPrefix("/"), path != "/", !path.contains("\0"), !path.contains("\\"),
             !path.split(separator: "/").contains(where: { $0 == "." || $0 == ".." })

@@ -16,7 +16,7 @@ extension PropertiesWindow {
         icon.autoresizingMask = [.minYMargin]
         icon.image = item.map { Icons.shared.image(for: $0, size: 64) } ?? Icons.shared.image("folder-cloud", size: 64)
         v.addSubview(icon)
-        // Read-only for now: the name can't be changed here.
+        // Read-only: the name can't be changed here.
         let title = label(name)
         title.font = .systemFont(ofSize: 15, weight: .semibold)
         title.frame = CGRect(x: 100, y: y - 6, width: 290, height: 20)

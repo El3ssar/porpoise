@@ -109,7 +109,7 @@ import UniformTypeIdentifiers
         let plan = BatchRename.plan(
             snapshot.entries, names: targets.map { .success($0) }, existing: snapshot.existing, caseSensitive: snapshot.caseSensitive)
         let controller = FileOperationsController()
-        let output = try controller.batchRename(plan, snapshot: snapshot)
+        let output = try controller.finishBatchRename(BatchRenameService.execute(plan, snapshot: snapshot), snapshot: snapshot)
         #expect(output.map(\.lastPathComponent) == targets)
         for (name, target) in zip(names, targets) { #expect(scratch.read(target) == name) }
         #expect(controller.undoTitle == "Undo: Batch Rename")
@@ -229,7 +229,7 @@ import UniformTypeIdentifiers
         let snapshot = try BatchRenameService.snapshot([source])
         let plan = BatchRenameService.preview(snapshot, preset: BatchRenamePreset(name: "", rules: [.template("new")]))
         let controller = FileOperationsController()
-        try controller.batchRename(plan, snapshot: snapshot)
+        try controller.finishBatchRename(BatchRenameService.execute(plan, snapshot: snapshot), snapshot: snapshot)
         try scratch.file("a", "external")
         controller.undo(window: nil)
         #expect(controller.canUndo && !controller.canRedo)

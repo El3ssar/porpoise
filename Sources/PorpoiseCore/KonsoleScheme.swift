@@ -7,19 +7,6 @@ public struct KonsoleScheme: Sendable {
     public var background: RGB?
     public var foreground: RGB?
 
-    /// Desert-Konsole from the bundle (or the project's Resources under `swift run`), else the built-in copy.
-    public static let desert: KonsoleScheme = {
-        let name = "Desert-Konsole.colorscheme"
-        let candidates = [
-            Bundle.main.resourceURL?.appendingPathComponent(name),
-            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Resources/" + name),
-        ]
-        for case let u? in candidates {
-            if let text = try? String(contentsOf: u, encoding: .utf8) { return parse(text) }
-        }
-        return KonsoleScheme(palette: builtInDesertPalette)
-    }()
-
     /// The light look's terminal: dark text on the light window color, with ANSI colors deep enough to read on it.
     public static let light = KonsoleScheme(
         palette: [

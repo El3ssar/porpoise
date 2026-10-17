@@ -199,10 +199,6 @@ public final class DropboxClient: @unchecked Sendable {
             accountID: accountID, configuration: configuration, tokens: tokens, namespaceID: namespaceID, directory: directory, http: http)
         client.onReachability = onReachability; client.onFreshness = onFreshness; return client
     }
-    public func sharedFolderClient(_ folder: DropboxItem) throws -> DropboxClient {
-        guard folder.isFolder, folder.id.hasPrefix("ns:"), folder.id.count > 3 else { throw DropboxError.invalidLocation }
-        return namespaceClient(String(folder.id.dropFirst(3)))
-    }
     public func thumbnail(_ item: DropboxItem) async throws -> URL {
         guard !item.isFolder, let rev = item.rev else { throw DropboxError.invalidLocation }
         return try await renditions.file(key: "thumbnail:" + item.id + ":" + rev, name: "thumbnail.jpg") {

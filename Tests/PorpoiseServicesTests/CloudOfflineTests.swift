@@ -134,7 +134,7 @@ extension CloudOfflineTests {
         #expect(error != nil)
         await expectEventually { facade.details(for: url).kept }
         #expect(service.keep(for: url) == .direct)
-        #expect(!service.hasLocalCopy(url) && service.state(for: url) == .cloudOnly)
+        #expect(service.state(for: url) == .cloudOnly && facade.details(for: url).bytes == 0)
         source.isOffline = false; source.holdsDownloads = true
         let download = Task {
             try await awaitCallback { continuation in
@@ -147,7 +147,7 @@ extension CloudOfflineTests {
         source.holdsDownloads = false
         #expect(try await download.value == nil)
         await expectEventually { service.state(for: url) == .local }
-        #expect(service.hasLocalCopy(url))
+        #expect(facade.details(for: url).downloaded)
         let bad = source.add("bad")
         source.bytes["bad"] = Data("wrong bytes".utf8)
         let failure: Error? = try await awaitCallback { continuation in
@@ -157,7 +157,7 @@ extension CloudOfflineTests {
         await expectEventually {
             if case .error = service.state(for: source.url(for: bad)) { return true }; return false
         }
-        #expect(!service.hasLocalCopy(source.url(for: bad)))
+        #expect(!facade.details(for: source.url(for: bad)).downloaded)
         facade.wipe(account: source.accountID)
     }
 }

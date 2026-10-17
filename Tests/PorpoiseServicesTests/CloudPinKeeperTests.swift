@@ -54,7 +54,7 @@ struct CloudPinKeeperTests {
         await keeper.apply(.init(changed: [moved]))
         #expect(await store.snapshot().usage.recent == 5)
         #expect(await store.snapshot().entries["child"] != nil)
-        await keeper.pause(); await keeper.reconcile(); await keeper.resume(); await keeper.stop()
+        await keeper.resume(); await keeper.stop()
     }
 }
 

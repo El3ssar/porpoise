@@ -106,15 +106,6 @@ import PorpoiseCore
             return account
         }
     }
-    /// A future CloudBackend forwards foreground/background lifecycle here; no UI availability is changed.
-    public func setActive(_ active: Bool) async {
-        for client in clients.values {
-            if active { await client.changes.start() } else { await client.changes.stop() }
-        }
-    }
-    public func checkForChanges(_ id: UUID? = nil) async throws {
-        for (key, client) in clients where id == nil || id == key { try await client.changes.check() }
-    }
     public func disconnect(_ id: UUID) async throws {
         guard let client = clients[id] else { return }
         guard await client.edits.pending().isEmpty else { throw CloudConnectionError.unsentEdits }

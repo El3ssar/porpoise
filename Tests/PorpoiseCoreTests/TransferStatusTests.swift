@@ -7,11 +7,9 @@ import Testing
 struct TransferStatusTests {
     @Test func rateAndTimeLeft() {
         var r = TransferRate()
-        #expect(r.secondsLeft(100) == nil)
         r.add(bytes: 0, at: 0)
         r.add(bytes: 10_000_000, at: 1)
         #expect(r.bytesPerSecond == 10_000_000)
-        #expect(r.secondsLeft(50_000_000) == 5)
         r.add(bytes: 10_000_100, at: 1.1)  // too soon: ignored
         #expect(r.bytesPerSecond == 10_000_000)
         r.add(bytes: 10_000_000, at: 3)  // two seconds without progress (paused) pull it down

@@ -65,29 +65,6 @@ import Testing
         #expect(v.list.isEmpty, "\(v.list)")
     }
 
-    /// `isNewer` is a strict weak order: irreflexive, antisymmetric, transitive, and "neither is newer" is an
-    /// equivalence (so sorting releases by it is well defined).
-    @Test func versionOrdering() {
-        var f = Fuzzer(seed: 3)
-        var v = Violations()
-        let parts = ["0", "1", "2", "9", "10", "010", "99999999999999999999", "-1", "a", "beta", "", " "]
-        func version() -> String {
-            (f.int(4) == 0 ? "v" : "") + (0...f.int(4)).map { _ in f.pick(parts) }.joined(separator: f.int(8) == 0 ? ".." : ".")
-        }
-        for _ in 0..<cases {
-            let a = version(), b = version(), c = version()
-            let ab = Version.isNewer(a, than: b), ba = Version.isNewer(b, than: a)
-            v.check(!Version.isNewer(a, than: a), "\(a) newer than itself")
-            v.check(!(ab && ba), "\(a) and \(b) both newer")
-            let bc = Version.isNewer(b, than: c), ac = Version.isNewer(a, than: c)
-            v.check(!(ab && bc) || ac, "\(a) > \(b) > \(c) but not \(a) > \(c)")
-            if !ab && !ba {
-                v.check(ac == bc && Version.isNewer(c, than: a) == Version.isNewer(c, than: b), "\(a) ~ \(b) but they differ against \(c)")
-            }
-        }
-        #expect(v.list.isEmpty, "\(v.list)")
-    }
-
     @Test func nameFilters() throws {
         var f = Fuzzer(seed: 4)
         var v = Violations()

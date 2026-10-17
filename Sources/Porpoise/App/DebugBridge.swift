@@ -745,43 +745,6 @@ final class DebugBridge: NSObject {
         try? NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
     }
 
-    /// Includes the native popup menu, which is a separate WindowServer window. Only this process's
-    /// onscreen windows are captured, so another app's content cannot enter a design review artifact.
-    private func windowServerMenuSnapshot(to path: String) {
-        let native = NSApp.windows.filter(\.isVisible).sorted { $0.level.rawValue > $1.level.rawValue }
-        let metadata = native.map {
-            [
-                "id": $0.windowNumber, "level": $0.level.rawValue, "type": String(describing: type(of: $0)),
-                "title": $0.title, "frame": NSStringFromRect($0.frame),
-            ] as [String: Any]
-        }
-        try? JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys]).write(
-            to: URL(fileURLWithPath: path + ".native.json"))
-        if let popup = native.first(where: { $0 !== wc?.window && $0.frame.height < 500 }) {
-            typealias Single = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
-            if let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") {
-                let capture = unsafeBitCast(sym, to: Single.self)
-                if let image = capture(.null, 8, UInt32(popup.windowNumber), 1)?.takeRetainedValue() {
-                    writePNG(image, to: path); return
-                }
-            }
-        }
-        let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
-        let owned = info.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(getpid()) }
-        try? JSONSerialization.data(withJSONObject: owned, options: [.prettyPrinted, .sortedKeys]).write(
-            to: URL(fileURLWithPath: path + ".windows.json"))
-        // Direct window IDs work without broad screen-recording access; CGWindowList can be empty.
-        // Native popup windows are present here even though main-window screenshots exclude them.
-        var ids: [UnsafeRawPointer?] = NSApp.windows.filter(\.isVisible).sorted { $0.level.rawValue > $1.level.rawValue }
-            .compactMap { UnsafeRawPointer(bitPattern: $0.windowNumber) }
-        typealias Fn = @convention(c) (CGRect, CFArray, UInt32) -> Unmanaged<CGImage>?
-        guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImageFromArray") else { return }
-        let fn = unsafeBitCast(sym, to: Fn.self)
-        let count = ids.count
-        let windows = ids.withUnsafeMutableBufferPointer { buffer in CFArrayCreate(nil, buffer.baseAddress, count, nil) }
-        if let windows, let image = fn(.null, windows, 1)?.takeRetainedValue() { writePNG(image, to: path) }
-    }
-
     /// `nominal`: at 1x, much quicker to take (frames of an animation).
     private func windowServerImage(_ arg: String, nominal: Bool = false) -> CGImage? {
         let parts = arg.components(separatedBy: "|")

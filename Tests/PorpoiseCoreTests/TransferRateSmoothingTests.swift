@@ -56,14 +56,14 @@ struct TransferRateSmoothingTests {
         var rate = TransferRate()
         rate.add(bytes: 0, at: 0, totalBytes: 1_000_000)
         rate.add(bytes: 10_000, at: 1, totalBytes: 1_000_000)
-        let before = try #require(rate.secondsLeft(990_000))
+        let before = try #require(rate.eta)
         rate.add(bytes: 10_000, at: 2, totalBytes: 1_000_000)
-        let after = try #require(rate.secondsLeft(990_000))
+        let after = try #require(rate.eta)
         #expect(after <= before + 3 && after >= before - 3)
         rate.add(bytes: 1_000_000, at: 3, totalBytes: 1_000_000)
-        #expect(rate.secondsLeft(0) == 0)
+        #expect(rate.eta == 0)
         rate.reset()
-        #expect(rate.secondsLeft(100) == nil)
+        #expect(rate.eta == nil)
     }
 
     @Test func invalidAndResetCountersRemainFinite() {
