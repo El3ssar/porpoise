@@ -69,18 +69,18 @@ import Testing
         let server = try FakeDropboxServer(); let client = try server.client()
         _ = try await client.list(); _ = try await client.list("id:folder")
         let source = client.contentSource
-        let batch = BatchBox(); source.onChanges = { batch.add($0) }
+        let batch = Locked([CloudChangeBatch]()); source.onChanges = { batch.append($0) }
         try await client.changes.check()
         let initialCursor = try #require(client.metadataCache.cursor("changes"))
         try await server.configure(["files": [["id": "id:new", "path": "/Folder/new.txt", "text": "new"]], "remove": ["/hello.txt"]])
         #expect(try await client.changes.pollOnce())
         #expect(client.metadataCache.file("id:hello") == nil)
         #expect(client.metadataCache.snapshot("id:folder")?.files.contains { $0.id == "id:new" } == true)
-        #expect(batch.values.contains { $0.removed.contains("id:hello") })
+        #expect(batch.value.contains { $0.removed.contains("id:hello") })
         #expect(client.metadataCache.cursor("changes") != initialCursor)
         #expect(try await !client.changes.pollOnce())
         client.metadataCache.setCursor("expired", scope: "changes")
-        try await client.changes.check(); #expect(batch.values.contains { $0.reset })
+        try await client.changes.check(); #expect(batch.value.contains { $0.reset })
         client.metadataCache.setCursor("expired-longpoll", scope: "changes")
         #expect(try await client.changes.pollOnce())
         try await server.configure(["remove": ["/Folder", "/Folder/nested.txt", "/Folder/new.txt"]])
@@ -355,11 +355,6 @@ import Testing
     }
 }
 
-private final class BatchBox: @unchecked Sendable {
-    private let lock = NSLock(); private var batches: [CloudChangeBatch] = []
-    func add(_ batch: CloudChangeBatch) { lock.withLock { batches.append(batch) } }
-    var values: [CloudChangeBatch] { lock.withLock { batches } }
-}
 private final class ProgressStop: @unchecked Sendable {
     private let lock = NSLock(); private var stop = false
     func progress(_ bytes: Int64) { lock.withLock { if bytes >= 20 << 20 { stop = true } } }

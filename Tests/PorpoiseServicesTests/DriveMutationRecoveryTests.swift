@@ -138,7 +138,7 @@ extension DriveMutationTests {
         let bytes = Data(repeating: 9, count: 300_000)
         try bytes.write(to: local)
         let operation = UUID()
-        let calls = ExpiryCheckpoints()
+        let calls = Checkpoints()
         let stop = DriveTransferContext(checkpoint: { if await calls.next() == 2 { throw FileOperationError.interrupted } })
         await #expect(throws: FileOperationError.self) { try await client.upload(local, parentID: "root", operationID: operation, context: stop) }
         try await server.control(["expireSessions": true])
@@ -155,8 +155,6 @@ extension DriveMutationTests {
     }
 }
 
-private actor ExpiryCheckpoints { var count = 0; func next() -> Int { count += 1; return count } }
-
 extension DriveMutationTests {
     @Test func cancelCleansOnlyOwnedPartialAndPreservesCommittedRemoteObject() async throws {
         let server = try server(), scratch = try Scratch()
@@ -164,14 +162,14 @@ extension DriveMutationTests {
         let source = scratch.url.appendingPathComponent("cancel.bin")
         try Data(repeating: 4, count: 600_000).write(to: source)
         let remote = try await client.upload(source, parentID: "root")
-        let download = UUID(), calls = CancellationCheckpoints()
+        let download = UUID(), calls = Checkpoints()
         let context = DriveTransferContext(checkpoint: { if await calls.next() == 2 { throw FileOperationError.cancelled } })
         await #expect(throws: FileOperationError.self) { try await client.downloadToStaging(remote, operationID: download, context: context) }
         let partial = client.mutationJournal.folder.appendingPathComponent("Downloads/\(download.uuidString).part")
         #expect(FileManager.default.fileExists(atPath: partial.path))
         try await client.cancelTransfer(download)
         #expect(!FileManager.default.fileExists(atPath: partial.path) && FileManager.default.fileExists(atPath: source.path))
-        let changed = UUID(), next = CancellationCheckpoints()
+        let changed = UUID(), next = Checkpoints()
         await #expect(throws: FileOperationError.self) {
             try await client.downloadToStaging(
                 remote, operationID: changed,
@@ -215,8 +213,6 @@ extension DriveMutationTests {
         #expect(newer.errors.isEmpty && newer.results.isEmpty)
     }
 }
-
-private actor CancellationCheckpoints { var count = 0; func next() -> Int { count += 1; return count } }
 
 extension DriveMutationTests {
     @Test func crossAccountCopiesVerifyBinaryAndExportNativeWithoutRemovingIt() async throws {

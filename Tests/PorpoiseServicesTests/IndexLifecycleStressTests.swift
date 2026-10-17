@@ -64,17 +64,4 @@ import Testing
         }
     }
 
-    final class Flag: @unchecked Sendable {
-        private let lock = NSLock()
-        private var value = false
-        var isSet: Bool { lock.withLock { value } }
-        func set() { lock.withLock { value = true } }
-    }
-
-    final class Counter: @unchecked Sendable {
-        private let lock = NSLock()
-        private var n = 0
-        var value: Int { lock.withLock { n } }
-        func add() { lock.withLock { n += 1 } }
-    }
 }

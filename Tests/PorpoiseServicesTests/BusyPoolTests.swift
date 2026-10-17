@@ -11,7 +11,7 @@ import Testing
 @MainActor @Suite(.serialized) struct BusyPoolTests {
     /// Keeps a default-QoS GCD worker spinning per core until the returned function is called.
     private func occupyEveryCore() -> () -> Void {
-        let stop = StopFlag()
+        let stop = Flag()
         for _ in 0..<ProcessInfo.processInfo.activeProcessorCount {
             DispatchQueue.global().async {
                 while !stop.isSet { _ = (0..<1000).reduce(0, +) }
@@ -53,12 +53,6 @@ import Testing
         #expect(await eventually(15) { m.detected.contains { $0.title == "Pixel 9" } })
     }
 
-    private final class StopFlag: @unchecked Sendable {
-        private let lock = NSLock()
-        private var value = false
-        var isSet: Bool { lock.withLock { value } }
-        func set() { lock.withLock { value = true } }
-    }
 }
 
 /// Asking AVFoundation whether a file plays needs no free cooperative thread: synchronous work may hold them all

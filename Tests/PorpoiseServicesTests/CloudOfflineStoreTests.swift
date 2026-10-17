@@ -68,12 +68,12 @@ struct CloudOfflineStoreTests {
     }
     @Test func lowSpacePausesAndResumesWithoutLosingPin() async throws {
         let source = FakeContentSource(), scratch = try Scratch(), item = source.add("one")
-        let space = LockedOfflineSpace()
-        let store = try store(source, scratch, free: { space.get() })
+        let space = Locked(Int64(0))
+        let store = try store(source, scratch, free: { (space.value, 20_000_000_000) })
         await #expect(throws: CloudContentError.lowSpace) { try await store.fetch(item, keep: true) }
         #expect(source.downloads == 0)
         #expect(await store.snapshot().pins.contains("one"))
-        space.set(10_000_000_000)
+        space.change { $0 = 10_000_000_000 }
         _ = try await store.fetch(item)
         #expect(source.downloads == 1)
         try await store.wipe()
@@ -107,13 +107,6 @@ struct CloudOfflineStoreTests {
         #expect(try Data(contentsOf: copy) == Data("hello".utf8))
         await #expect(throws: CloudContentError.checksum) { try await store.adopt(file: input, as: item) }
     }
-}
-
-final class LockedOfflineSpace: @unchecked Sendable {
-    private let lock = NSLock()
-    private var available: Int64 = 0
-    func get() -> (Int64, Int64) { lock.withLock { (available, 20_000_000_000) } }
-    func set(_ value: Int64) { lock.withLock { available = value } }
 }
 
 extension CloudOfflineStoreTests {

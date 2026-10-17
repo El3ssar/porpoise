@@ -7,12 +7,6 @@ import Testing
 
 /// Shell.run from many threads at once.
 @Suite struct ShellConcurrencyTests {
-    final class Counter: @unchecked Sendable {
-        private let lock = NSLock()
-        private var n = 0
-        func add() { lock.withLock { n += 1 } }
-        var value: Int { lock.withLock { n } }
-    }
 
     /// More callers than cores, each with its own stdin and outputs: every run gets back exactly its own. (Shell's
     /// pipe work runs on queues of its own so that callers filling Swift concurrency's few threads can't starve it;

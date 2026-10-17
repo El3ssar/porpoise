@@ -10,36 +10,36 @@ extension DriveMutationTests {
     @Test func quotaNoticeIsCancellableAndOfflineHasCalmStatus() async throws {
         let server = try server(), scratch = try Scratch()
         let (_, tokens, _) = try server.client()
-        let status = MutationStatus()
+        let status = Locked([String]())
         let throttled = DriveClient(
             accountID: UUID(), tokens: tokens,
             http: .init { request in
                 (Data(), HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: ["Retry-After": "10"])!)
             }, baseURL: server.base, mutationJournal: .init(folder: scratch.url))
-        let context = DriveTransferContext(status: { status.record($0) })
+        let context = DriveTransferContext(status: { value in if let value { status.append(value) } })
         let task = Task { try await throttled.mutationResponse(server.base, context: context) }
         // The task may wait for a pool thread on a busy runner: wait for the notice, not for a fixed time.
-        await expectEventually(timeout: 30) { status.values.contains("Slowed down by Google, retrying") }
+        await expectEventually(timeout: 30) { status.value.contains("Slowed down by Google, retrying") }
         task.cancel()
         await #expect(throws: CancellationError.self) { try await task.value }
         let offline = DriveClient(
             accountID: UUID(), tokens: tokens, http: .init { _ in throw URLError(.notConnectedToInternet) }, baseURL: server.base)
         await #expect(throws: URLError.self) { try await offline.mutationResponse(server.base, context: context) }
-        #expect(status.values.contains("Waiting for network"))
+        #expect(status.value.contains("Waiting for network"))
     }
 
     @Test func exhaustedThrottleAuthRefreshAndProviderReasonsStayDistinct() async throws {
         let server = try server()
         let (_, tokens, _) = try server.client()
-        let count = MutationStatus()
+        let count = Locked([String]())
         let throttled = DriveClient(
             accountID: UUID(), tokens: tokens,
             http: .init { request in
-                count.record("attempt")
+                count.append("attempt")
                 return (Data(), HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: ["Retry-After": "0"])!)
             }, baseURL: server.base)
         await #expect(throws: DriveError.quota) { try await throttled.mutationResponse(server.base) }
-        #expect(count.values.count == 5)
+        #expect(count.value.count == 5)
         for (reason, error) in [
             ("insufficientPermissions", DriveError.needsWriteAccess), ("storageQuotaExceeded", .quota), ("exportSizeLimitExceeded", .exportTooLarge),
         ] {
@@ -53,18 +53,18 @@ extension DriveMutationTests {
                 }, baseURL: server.base)
             await #expect(throws: error) { try await client.mutationResponse(server.base) }
         }
-        let requests = MutationStatus()
+        let requests = Locked([String]())
         let refresh = DriveClient(
             accountID: UUID(), tokens: tokens,
             http: .init { request in
-                requests.record("request")
+                requests.append("request")
                 return (
                     Data(),
-                    HTTPURLResponse(url: request.url!, statusCode: requests.values.count == 1 ? 401 : 200, httpVersion: nil, headerFields: nil)!
+                    HTTPURLResponse(url: request.url!, statusCode: requests.value.count == 1 ? 401 : 200, httpVersion: nil, headerFields: nil)!
                 )
             }, baseURL: server.base)
         #expect(try await refresh.mutationResponse(server.base).1.statusCode == 200)
-        #expect(requests.values.count == 2)
+        #expect(requests.value.count == 2)
     }
 
     @Test func hostileUploadSessionAndUnverifiedDownloadRangeAreRejected() async throws {
@@ -102,20 +102,13 @@ extension DriveMutationTests {
     }
 }
 
-private final class MutationStatus: @unchecked Sendable {
-    private let lock = NSLock()
-    private var entries: [String] = []
-    var values: [String] { lock.withLock { entries } }
-    func record(_ value: String?) { if let value { lock.withLock { entries.append(value) } } }
-}
-
 extension DriveMutationTests {
     @Test func sharedResourceKeysSurviveFreshCapabilityChecksAndMutations() async throws {
         let server = try server(), scratch = try Scratch()
         let (_, tokens, _) = try server.client()
-        let captured = MutationStatus()
+        let captured = Locked([String]())
         let http = DriveHTTP { request in
-            if let key = request.value(forHTTPHeaderField: "X-Goog-Drive-Resource-Keys") { captured.record(key) }
+            if let key = request.value(forHTTPHeaderField: "X-Goog-Drive-Resource-Keys") { captured.append(key) }
             let (data, response) = try await URLSession.shared.data(for: request)
             return (data, response as! HTTPURLResponse)
         }
@@ -125,10 +118,10 @@ extension DriveMutationTests {
         _ = try await client.file("binary-a", resourceKey: "source-key")
         _ = try await client.file("folder-a", resourceKey: "parent-key")
         _ = try await client.copy("binary-a", to: "folder-a")
-        #expect(captured.values.contains("binary-a/source-key,folder-a/parent-key"))
-        #expect(captured.values.filter { $0 == "binary-a/source-key" }.count >= 2)
+        #expect(captured.value.contains("binary-a/source-key,folder-a/parent-key"))
+        #expect(captured.value.filter { $0 == "binary-a/source-key" }.count >= 2)
         let local = try scratch.file("shared-upload.txt", "shared folder bytes")
         _ = try await client.upload(local, parentID: "folder-a")
-        #expect(captured.values.filter { $0 == "folder-a/parent-key" }.count >= 3)
+        #expect(captured.value.filter { $0 == "folder-a/parent-key" }.count >= 3)
     }
 }

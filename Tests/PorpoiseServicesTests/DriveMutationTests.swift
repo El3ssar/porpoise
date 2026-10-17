@@ -113,7 +113,7 @@ import Testing
         let bytes = Data(repeating: 42, count: 600_000)
         try bytes.write(to: source)
         let uploaded = try await client.upload(source, parentID: "root")
-        let op = UUID(), calls = CheckpointCounter()
+        let op = UUID(), calls = Checkpoints()
         let context = DriveTransferContext(checkpoint: { if await calls.next() == 2 { throw FileOperationError.interrupted } })
         await #expect(throws: FileOperationError.self) { try await client.downloadToStaging(uploaded, operationID: op, context: context) }
         #expect(try client.mutationJournal.load(op)?.offset == 0)
@@ -197,7 +197,6 @@ import Testing
     }
 }
 
-private actor CheckpointCounter { var count = 0; func next() -> Int { count += 1; return count } }
 private extension DriveLocation {
     var collectionID: String { if case .folder(let id, _) = collection { return id }; return "root" }
 }
