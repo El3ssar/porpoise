@@ -274,6 +274,60 @@ import Testing
         editing.restore(client)
     }
 
+    @Test @MainActor func recoveredDropboxEditsRespectLaunchSettingAndRetryOnReconnect() async throws {
+        let fixture = try DropboxUIFixture(); defer { fixture.cleanup() }
+        let account = try await fixture.connect()
+        let root = try #require(fixture.accounts.url(account.id, root: .myDrive))
+        let provider = try #require(RemoteFS.provider(for: root) as? DropboxProvider)
+        let row = try #require(try await provider.refresh(root).first { $0.name == "hello.txt" })
+        let client = try provider.scoped(row.url)
+        let session = try await client.edits.begin(client.metadata(provider.location(row.url).itemID))
+        try Data("saved before quit".utf8).write(to: session.localURL, options: .atomic)
+        client.reached(URLError(.notConnectedToInternet))
+        let editing = CloudEditCoordinator(); editing.saveDelay = 0.02
+        editing.restore(client)
+        #expect(editing.entries.isEmpty)
+        editing.restoresAtLaunch = true
+        try await uiEventually { editing.contains(session.id) }
+        #expect(editing.entries.first?.mark.needsAttention == true)
+        #expect(editing.entry(for: row.url)?.id == session.id)
+        client.reached(nil)
+        NotificationCenter.default.post(name: CloudAccounts.changed, object: nil)
+        try await uiEventually { editing.entries.first?.mark == .saved }
+        #expect(try await client.metadata(session.file.id).contentHash == DropboxContentHash.hash(session.localURL))
+        // The recovered copy is watched too, including successive atomic editor saves.
+        try Data("after relaunch".utf8).write(to: session.localURL, options: .atomic)
+        try await uiEventually { (try? DropboxContentHash.hash(session.localURL)) != session.sentHash && editing.entries.first?.mark == .saved }
+        try await uiEventually { editing.entries.first?.lastSaved != nil }
+        let expected = try DropboxContentHash.hash(session.localURL)
+        for _ in 0..<100 {
+            if try await client.metadata(session.file.id).contentHash == expected { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(try await client.metadata(session.file.id).contentHash == expected)
+    }
+
+    @Test @MainActor func failedDropboxReplacementPostsAndKeepsConflict() async throws {
+        let fixture = try DropboxUIFixture(); defer { fixture.cleanup() }
+        let account = try await fixture.connect(); let root = try #require(fixture.accounts.url(account.id, root: .myDrive))
+        let provider = try #require(RemoteFS.provider(for: root) as? DropboxProvider)
+        let file = try #require(try await provider.refresh(root).first { $0.name == "hello.txt" })
+        let client = try provider.scoped(file.url)
+        let editing = CloudEditCoordinator(); editing.saveDelay = 0.02
+        var messages: [String] = []; editing.post = { text, _ in messages.append(text) }
+        editing.open(file)
+        try await uiEventually { !editing.entries.isEmpty }
+        let entry = try #require(editing.entries.first)
+        try await fixture.server.configure(["files": [["id": entry.fileID, "path": "/hello.txt", "text": "remote"]]])
+        try Data("mine".utf8).write(to: entry.localURL)
+        try await uiEventually { editing.entries.first?.mark == .conflict }
+        client.reached(URLError(.notConnectedToInternet))
+        editing.replaceWithMine(entry.id)
+        try await uiEventually { messages.contains { $0.hasPrefix("Couldn’t do that") } }
+        #expect(editing.entries.first?.mark == .conflict)
+        #expect(try Data(contentsOf: entry.localURL) == Data("mine".utf8))
+    }
+
     @Test @MainActor func mutationsUseDescriptorUndoPolicyAndAccountCallbacks() async throws {
         let fixture = try DropboxUIFixture(); defer { fixture.cleanup() }
         let account = try await fixture.connect(); let root = try #require(fixture.accounts.url(account.id, root: .myDrive))
