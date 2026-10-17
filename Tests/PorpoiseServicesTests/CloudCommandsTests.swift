@@ -57,6 +57,7 @@ import Testing
             #expect(m.shownCloud(for: file("c")).state == .cloudOnly)
             // Folders aren't badged cloud-only; rows without offline copies have no badge at all.
             #expect(m.shownCloud(for: folder("f")).state == .local)
+            #expect(m.shownCloud(for: folder("g")).state == .local)
             demo.unsupported = [url("c")]
             #expect(m.shownCloud(for: file("c")) == (.local, false))
         }
@@ -200,6 +201,7 @@ import Testing
         d.downloaded = true
         #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive") == "Downloaded · may be removed to save space")
         d.kept = true
+        #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive") == "Kept downloaded")
         d.bytes = 24_100_000
         #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive").hasPrefix("Kept downloaded · "))
         d.export = "docx"

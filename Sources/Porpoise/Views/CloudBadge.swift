@@ -90,6 +90,11 @@ enum CloudBadge {
             draw(symbol: "exclamationmark.circle.fill", tint: Theme.transferDanger, in: r)
             return
         }
+        // Kept: a white arrow on a filled disc, like the edit badges (a single-color fill would hide the arrow).
+        if state == .kept {
+            draw(symbol: "arrow.down.circle.fill", tint: tint(onLight: true), in: r)
+            return
+        }
         guard let name = state.symbol, let base = NSImage(systemSymbolName: name, accessibilityDescription: state.help) else { return }
         let color = tint(onLight: onLight)
         let conf = NSImage.SymbolConfiguration(pointSize: r.height * 0.8, weight: .semibold).applying(.init(paletteColors: [color]))

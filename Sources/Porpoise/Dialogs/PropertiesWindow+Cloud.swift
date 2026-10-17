@@ -201,10 +201,10 @@ final class CloudOfflineRow: NSView {
         self.service = service
         self.provider = provider
         super.init(frame: CGRect(x: 0, y: 0, width: 282, height: 44))
-        text.frame = CGRect(x: 0, y: 24, width: 282, height: 18)
+        text.frame = CGRect(x: 0, y: 0, width: 282, height: 18)
         text.autoresizingMask = [.width]
         text.lineBreakMode = .byTruncatingTail
-        keep.frame = CGRect(x: 0, y: 0, width: 282, height: 20)
+        keep.frame = CGRect(x: 0, y: 22, width: 282, height: 20)
         keep.controlSize = .small
         keep.font = .systemFont(ofSize: 11)
         keep.handler = { [weak self] b in self?.toggle(on: b.state == .on) }

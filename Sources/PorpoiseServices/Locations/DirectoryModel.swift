@@ -380,9 +380,11 @@ public final class DirectoryModel {
         return c
     }
     /// Items of connected accounts: their offline state, kept in memory by the offline service (no disk read).
+    /// Folders aren't badged cloud-only (most would be); they show kept, downloading or a problem.
     private func accountCloud(_ item: FileItem) -> (state: CloudState, isCloud: Bool)? {
         guard !item.url.isFileURL, let service = CloudOfflineHub.service, service.supports(item.url) else { return nil }
-        return (service.state(for: item.url), true)
+        let state = service.state(for: item.url)
+        return (state == .cloudOnly && item.isBrowsableFolder ? .local : state, true)
     }
 
     /// Re-reads the cloud states in the background; the ones known stay shown meanwhile (no flicker).

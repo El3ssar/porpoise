@@ -144,7 +144,7 @@ public enum CloudCommands {
         }
         let export = d.export.map { " · as .\($0), read-only offline" } ?? ""
         switch keep {
-        case .direct, .inherited: return "Kept downloaded · \(FileFormat.size(d.bytes))\(export)"
+        case .direct, .inherited: return "Kept downloaded" + (d.bytes > 0 ? " · \(FileFormat.size(d.bytes))" : "") + export
         case .no: return d.downloaded ? "Downloaded · may be removed to save space\(export)" : "In \(provider) only"
         }
     }
