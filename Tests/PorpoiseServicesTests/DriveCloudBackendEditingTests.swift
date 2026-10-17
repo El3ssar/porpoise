@@ -31,10 +31,6 @@ import Testing
         _ = try await URLSession.shared.data(for: request)
     }
 
-    private func eventually(_ condition: () -> Bool) async {
-        for _ in 0..<200 where !condition() { try? await Task.sleep(nanoseconds: 20_000_000) }
-    }
-
     private func call<T>(_ start: (@escaping (T) -> Void) -> Void) async -> T {
         await withCheckedContinuation { c in start { c.resume(returning: $0) } }
     }
@@ -44,7 +40,7 @@ import Testing
         let scratch = try Scratch()
         let (b, store, account) = try await connected(server, scratch: scratch)
         defer { for a in store.accounts { RemoteFS.unregisterDrive(accountID: a.id) } }
-        await eventually { b.accounts.first?.canWrite == true }
+        await expectEventually { b.accounts.first?.canWrite == true }
         #expect(b.accounts.first?.canWrite == true)
 
         let myDrive = b.url(account.id, root: .myDrive)

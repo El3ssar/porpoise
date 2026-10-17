@@ -191,15 +191,6 @@ final class VideoPreviewStreamTests {
         return ((resp as? HTTPURLResponse)?.statusCode ?? 0, data)
     }
 
-    /// Waits up to 15 s for `condition` (slow when the machine is busy), without holding a cooperative pool thread.
-    func eventually(_ condition: () -> Bool) async -> Bool {
-        for _ in 0..<300 {
-            if condition() { return true }
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-        return condition()
-    }
-
     func sessionFolders() -> [URL] {
         let mine = streams.appendingPathComponent(String(getpid()))
         return ((try? FileManager.default.contentsOfDirectory(at: mine, includingPropertiesForKeys: nil)) ?? [])
@@ -256,9 +247,9 @@ final class VideoPreviewStreamTests {
         await MainActor.run { p.stop(for: owner) }
         // ffmpeg is ended and its folder removed once it has exited.
         #expect(
-            await eventually { sessionFolders().isEmpty },
+            await poll(timeout: 15) { sessionFolders().isEmpty },
             "left: \(sessionFolders().map { "\($0.lastPathComponent): \((try? FileManager.default.contentsOfDirectory(atPath: $0.path)) ?? [])" })")
-        #expect(await eventually { !ffmpegRunning(on: v) })
+        #expect(await poll(timeout: 15) { !ffmpegRunning(on: v) })
         #expect(try await fetch(url).0 == 404)
     }
 
@@ -275,8 +266,8 @@ final class VideoPreviewStreamTests {
         #expect(url.lastPathComponent == "index.m3u8")
         try await Task.sleep(for: .milliseconds(300))
         #expect(!firstAnswered.withLock { $0 })  // the older request never calls back
-        #expect(await eventually { !ffmpegRunning(on: first) })
-        #expect(await eventually { sessionFolders().count == 1 })
+        #expect(await poll(timeout: 15) { !ffmpegRunning(on: first) })
+        #expect(await poll(timeout: 15) { sessionFolders().count == 1 })
     }
 
     @Test func unplayableFilesGiveNil() async throws {

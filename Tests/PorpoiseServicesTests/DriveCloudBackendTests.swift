@@ -23,11 +23,6 @@ import Testing
         await withCheckedContinuation { c in _ = b.connect(.googleDrive, openBrowser: browser) { c.resume(returning: $0) } }
     }
 
-    /// Waits (bounded) for `condition`, letting the main actor run the backend's follow-up work.
-    private func eventually(_ condition: () -> Bool) async {
-        for _ in 0..<200 where !condition() { try? await Task.sleep(nanoseconds: 20_000_000) }
-    }
-
     @Test func connectsTwoAccountsWithQuotaSharedDrivesAndSharing() async throws {
         let server = try FakeDriveServer(fixture: Self.fixture)
         let scratch = try Scratch()
@@ -42,7 +37,7 @@ import Testing
         // The same account again is shown, not added (the fixture's profiles rotate back to the first one).
         guard case .failure(.alreadyConnected(let again)) = await connect(b) else { Issue.record("expected already connected"); return }
         #expect(again.id == one.id)
-        await eventually { b.accounts.allSatisfy { $0.quotaTotal != nil && $0.sharedDriveCount == 2 } }
+        await expectEventually { b.accounts.allSatisfy { $0.quotaTotal != nil && $0.sharedDriveCount == 2 } }
         let a = try #require(b.accounts.first { $0.id == one.id })
         #expect(a.quotaUsed == 1024 && a.quotaTotal == 16_106_127_360 && a.sharedDriveCount == 2 && a.status == .ok)
         #expect(changes > 0)
@@ -69,15 +64,15 @@ import Testing
         // Pasted links: the first account that can see the item.
         var link: CloudLinkResult?
         b.resolveLink("https://drive.google.com/drive/folders/fold-brand") { link = $0 }
-        await eventually { link != nil }
+        await expectEventually { link != nil }
         #expect(link == .folder(DriveLocation(accountID: try #require(UUID(uuidString: one.id)), collection: .folder("fold-brand")).url))
         link = nil
         b.resolveLink("https://docs.google.com/spreadsheets/d/sheet-budget/edit") { link = $0 }
-        await eventually { link != nil }
+        await expectEventually { link != nil }
         #expect(link == .file(URL(string: "https://docs.google.com/spreadsheets/d/sheet-budget/edit")!))
         link = nil
         b.resolveLink("https://drive.google.com/drive/folders/missing") { link = $0 }
-        await eventually { link != nil }
+        await expectEventually { link != nil }
         #expect(link == .noAccess)
         b.resolveLink("https://example.com/x") { link = $0 }
         #expect(link == .notALink)
