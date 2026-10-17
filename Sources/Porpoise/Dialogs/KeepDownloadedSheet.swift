@@ -2,17 +2,31 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
-/// Keep Downloaded on cloud items: counts what it takes first, asks before a big folder, and says plainly when it
-/// won't fit on this Mac.
+/// Download on cloud items: iCloud Drive items download now; account items stay on this Mac until Remove Download,
+/// counted first: it asks before a big folder, and says plainly when it won't fit on this Mac.
 enum KeepDownloadedSheet {
+    /// Download for any selection (menus, the cloud badge).
+    static func download(
+        _ items: [FileItem], window: NSWindow?, status: @escaping (String?) -> Void = { _ in },
+        failed: @escaping (String) -> Void = { message in
+            let a = NSAlert()
+            a.messageText = message
+            a.runModal()
+        }
+    ) {
+        let remote = Set(CloudCommands.downloadNow(items.map(\.url)))
+        guard !remote.isEmpty else { return }
+        run(items.filter { remote.contains($0.url) }, window: window, status: status, failed: failed)
+    }
+
     /// The question for a plan; nil when it can start straight away.
     static func alert(for plan: CloudKeepPlan, name: String, folder: Bool) -> NSAlert? {
         guard !plan.fits || plan.needsConfirmation else { return nil }
         let a = NSAlert()
         a.informativeText = CloudCommands.planText(plan, folder: folder)
         if plan.fits {
-            a.messageText = "Keep “\(name)” downloaded?"
-            a.addButton(withTitle: "Keep Downloaded")
+            a.messageText = "Download “\(name)”?"
+            a.addButton(withTitle: "Download")
             a.addButton(withTitle: "Cancel")
         } else {
             a.messageText = "“\(name)” won’t fit on this Mac."
@@ -22,7 +36,7 @@ enum KeepDownloadedSheet {
         return a
     }
 
-    /// Plans keeping `items`, confirms if needed, then keeps them. `status` shows "Counting “Photos”…".
+    /// Plans downloading `items`, confirms if needed, then keeps them on this Mac. `status` shows "Counting “Photos”…".
     static func run(_ items: [FileItem], window: NSWindow?, status: @escaping (String?) -> Void, failed: @escaping (String) -> Void) {
         guard let service = CloudOfflineHub.service, !items.isEmpty else { return }
         let urls = items.map(\.url)
@@ -33,7 +47,7 @@ enum KeepDownloadedSheet {
             status(nil)
             switch result {
             case .failure(let error):
-                failed("Couldn’t keep “\(name)” downloaded: \(error.localizedDescription)")
+                failed("Couldn’t download “\(name)”: \(error.localizedDescription)")
             case .success(let plan):
                 guard let a = alert(for: plan, name: name, folder: folder) else { return service.keep(urls) }
                 let answer: (NSApplication.ModalResponse) -> Void = { r in

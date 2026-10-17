@@ -40,7 +40,6 @@ enum CloudBadge {
             switch state {
             case .local: return nil
             case .cloudOnly: return Look(symbol: "icloud.and.arrow.down", tint: quiet)
-            case .kept: return Look(symbol: "arrow.down.circle.fill", tint: accent)
             case .downloading(let p): return Look(symbol: "arrow.down.circle.dotted", tint: accent, progress: p)
             case .uploading(let p): return Look(symbol: "icloud.and.arrow.up", tint: accent, progress: p, upload: true)
             case .error: return Look(symbol: "exclamationmark.circle.fill", tint: danger)

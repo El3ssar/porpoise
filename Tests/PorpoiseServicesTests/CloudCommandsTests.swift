@@ -28,8 +28,8 @@ import Testing
 
     @Test func oneBadgeAnEditComesFirst() {
         #expect(CloudBadgeKind.resolve(.local, edit: nil) == .none)
-        #expect(CloudBadgeKind.resolve(.kept, edit: nil) == .cloud(.kept))
-        #expect(CloudBadgeKind.resolve(.kept, edit: .editing) == .edit(.editing))
+        #expect(CloudBadgeKind.resolve(.cloudOnly, edit: nil) == .cloud(.cloudOnly))
+        #expect(CloudBadgeKind.resolve(.local, edit: .editing) == .edit(.editing))
         #expect(CloudBadgeKind.resolve(.error("x"), edit: .conflict) == .edit(.conflict))
         #expect(CloudBadgeKind.resolve(.downloading(0.4), edit: nil).cloudState == .downloading(0.4))
         #expect(CloudBadgeKind.resolve(.cloudOnly, edit: .saving).cloudState == nil)
@@ -38,26 +38,29 @@ import Testing
     @Test func statesSayWhatTheyAre() {
         #expect(CloudState.downloading(0.42).help == "Downloading… 42%" && CloudState.downloading(nil).help == "Downloading…")
         #expect(CloudState.uploading(0.5).progress == 0.5 && CloudState.uploading(nil).isTransferring)
-        #expect(!CloudState.kept.isTransferring && CloudState.kept.progress == nil)
-        #expect(CloudState.kept.symbol == "arrow.down.circle.fill" && CloudState.kept.help == "Kept downloaded on this Mac.")
+        #expect(!CloudState.cloudOnly.isTransferring && CloudState.local.progress == nil)
         #expect(CloudState.error("The disk isn’t connected").help == "The disk isn’t connected")
         #expect(CloudState.error("x").symbol == "exclamationmark.icloud" && CloudState.local.symbol == nil)
-        #expect(CloudState.cloudOnly.symbol == "icloud.and.arrow.down")
+        #expect(CloudState.cloudOnly.symbol == "icloud.and.arrow.down" && CloudState.local.help.isEmpty)
     }
 
+    /// Two states: on this Mac (downloaded, no badge) or in the cloud only (a cached copy doesn't count), folders too.
     @Test func accountItemsBadgeFromTheService() {
         let demo = DemoOfflineService()
         demo.set(url("a"), "kept")
         demo.set(url("b"), "downloading:0.4")
-        demo.folders = [url("f", folder: true)]
+        demo.set(url("d"), "downloaded")
+        demo.set(url("f", folder: true), "kept")
+        demo.set(url("i"), "inherited:Photos")
         with(demo) {
             let m = DirectoryModel(location: URL(string: base)!)
-            #expect(m.shownCloud(for: file("a")) == (.kept, true))
+            #expect(m.shownCloud(for: file("a")) == (.local, true))
             #expect(m.cloud(for: file("b")).state == .downloading(0.4))
             #expect(m.shownCloud(for: file("c")).state == .cloudOnly)
-            // Folders aren't badged cloud-only; rows without offline copies have no badge at all.
+            #expect(m.shownCloud(for: file("d")).state == .cloudOnly)
+            #expect(m.shownCloud(for: file("i")).state == .local)
             #expect(m.shownCloud(for: folder("f")).state == .local)
-            #expect(m.shownCloud(for: folder("g")).state == .local)
+            #expect(m.shownCloud(for: folder("g")).state == .cloudOnly)
             demo.unsupported = [url("c")]
             #expect(m.shownCloud(for: file("c")) == (.local, false))
         }
@@ -65,42 +68,41 @@ import Testing
 
     // MARK: What the menus offer
 
-    @Test func cloudOnlyFilesOfferDownloadAndKeep() {
+    @Test func cloudOnlyItemsOfferDownload() {
         let demo = DemoOfflineService()
+        demo.set(url("d"), "downloaded")
         with(demo) {
             let a = available([file("a")], demo)
-            #expect(a.downloadNow && a.keep == .off && a.keepEnabled && !a.removeDownload)
-            // A folder can always be downloaded (what's inside may not be).
-            demo.set(url("f", folder: true), "kept")
-            #expect(available([folder("f")], demo).downloadNow)
+            #expect(a.download && a.downloadEnabled && a.downloadTitle == "Download" && !a.removeDownload)
+            // A cached copy is still in the cloud only.
+            let cached = available([file("d")], demo)
+            #expect(cached.download && !cached.removeDownload)
+            #expect(available([folder("f")], demo).download)
         }
     }
 
-    @Test func keptAndMixedSelections() {
+    @Test func downloadedAndMixedSelections() {
         let demo = DemoOfflineService()
         demo.set(url("a"), "kept")
-        demo.set(url("b"), "downloaded")
         with(demo) {
-            let kept = available([file("a")], demo)
-            #expect(kept.keep == .on && kept.removeDownload && !kept.downloadNow)
+            let here = available([file("a")], demo)
+            #expect(!here.download && here.removeDownload && here.removeEnabled)
             let mixed = available([file("a"), file("c")], demo)
-            #expect(mixed.keep == .mixed && mixed.removeDownload && mixed.downloadNow)
-            let downloaded = available([file("b")], demo)
-            #expect(downloaded.keep == .off && downloaded.removeDownload)
+            #expect(mixed.download && mixed.removeDownload)
         }
     }
 
-    @Test func keptThroughAFolderOnlyThatFolderCanStopIt() {
+    @Test func downloadedWithAFolderOnlyThatFolderCanBeRemoved() {
         let demo = DemoOfflineService()
         demo.set(url("a"), "inherited:Photos")
         demo.set(url("b"), "inherited:Photos")
         with(demo) {
             let a = available([file("a"), file("b")], demo)
-            #expect(a.keep == .on && !a.keepEnabled && a.removeDownload && !a.removeEnabled)
-            #expect(a.reason == "Kept because “Photos” is kept downloaded.")
+            #expect(!a.download && a.removeDownload && !a.removeEnabled)
+            #expect(a.reason == "On this Mac because “Photos” is downloaded.")
             // With an item of its own, the selection can be changed.
             demo.set(url("c"), "kept")
-            #expect(available([file("a"), file("c")], demo).keepEnabled)
+            #expect(available([file("a"), file("c")], demo).removeEnabled)
         }
     }
 
@@ -109,18 +111,18 @@ import Testing
         demo.denials[url("a")] = "The owner turned off downloading."
         with(demo) {
             let a = available([file("a")], demo)
-            #expect(a.keep == .off && !a.keepEnabled && !a.downloadNow && a.reason == "The owner turned off downloading.")
+            #expect(a.download && !a.downloadEnabled && a.reason == "The owner turned off downloading.")
         }
     }
 
-    @Test func iCloudKeepsItsTwoCommands() {
+    @Test func iCloudKeepsDownloadNow() {
         let demo = DemoOfflineService()
         with(demo) {
             let local = FileItem(url: URL(fileURLWithPath: "/tmp/x.txt"), name: "x.txt", isDirectory: false)
             let only = CloudCommands.available(for: [local]) { _ in (.cloudOnly, true) }
-            #expect(only.downloadNow && only.keep == nil && !only.removeDownload)
+            #expect(only.download && only.downloadTitle == "Download Now" && !only.removeDownload)
             let here = CloudCommands.available(for: [local]) { _ in (.local, true) }
-            #expect(!here.downloadNow && here.keep == nil && here.removeDownload)
+            #expect(!here.download && here.removeDownload)
             #expect(CloudCommands.available(for: [local]) { _ in (.local, false) }.isEmpty)
             // Virtual rows (Shared with me) have no offline commands.
             demo.unsupported = [url("v")]
@@ -138,19 +140,15 @@ import Testing
     @Test func commandsGoToTheService() {
         let demo = DemoOfflineService()
         with(demo) {
-            CloudCommands.downloadNow([url("a")])
-            #expect(demo.log == ["download a"] && demo.state(for: url("a")) == .local)
-            // Keep Downloaded on kept items stops keeping the ones kept directly; otherwise it plans.
-            #expect(!CloudCommands.stopKeepingIfAllKept([url("a")]))
+            // Download hands account items not yet on this Mac back to the app, which keeps them (counted first).
+            demo.set(url("b"), "kept")
+            #expect(CloudCommands.downloadNow([url("a"), url("b")]) == [url("a")])
             demo.keep([url("a")])
-            demo.set(url("b"), "inherited:Photos")
-            #expect(demo.state(for: url("a")) == .kept)
-            #expect(CloudCommands.stopKeepingIfAllKept([url("a"), url("b")]))
-            #expect(demo.log.last == "stop a" && demo.keep(for: url("a")) == .no && demo.hasLocalCopy(url("a")))
+            #expect(demo.state(for: url("a")) == .local)
             // Remove Download returns what stayed.
             demo.refusals[url("b")] = "“b” has changes not in Google Drive yet."
             #expect(CloudCommands.removeDownload([url("a"), url("b")]) == ["“b” has changes not in Google Drive yet."])
-            #expect(!demo.hasLocalCopy(url("a")) && demo.hasLocalCopy(url("b")))
+            #expect(demo.state(for: url("a")) == .cloudOnly && demo.state(for: url("b")) == .local)
         }
     }
 
@@ -199,22 +197,26 @@ import Testing
         var d = CloudOfflineDetails()
         #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive") == "In Google Drive only")
         d.downloaded = true
-        #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive") == "Downloaded · may be removed to save space")
+        #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive") == "In Google Drive only")  // a cached copy
         d.kept = true
-        #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive") == "Kept downloaded")
+        #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive") == "On this Mac")
         d.bytes = 24_100_000
-        #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive").hasPrefix("Kept downloaded · "))
+        #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive").hasPrefix("On this Mac · "))
         d.export = "docx"
         #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive").hasSuffix("as .docx, read-only offline"))
+        var waiting = CloudOfflineDetails()
+        waiting.kept = true
+        #expect(CloudCommands.summaryText(waiting, folder: false, provider: "Google Drive") == "Waiting to download")
         var f = CloudOfflineDetails()
         f.inheritedFrom = "Photos"
-        #expect(CloudCommands.summaryText(f, folder: true, provider: "Google Drive") == "Kept downloaded")
+        #expect(CloudCommands.summaryText(f, folder: true, provider: "Google Drive") == "On this Mac · with “Photos”")
         f.items = 812
         f.totalItems = 1020
         f.bytes = 3_200_000_000
-        f.totalBytes = 4_000_000_000
-        let text = CloudCommands.summaryText(f, folder: true, provider: "Google Drive")
-        #expect(text.contains("812 of \(1020.formatted()) items") && text.contains(" of ") && text.hasSuffix("· kept"))
+        #expect(
+            CloudCommands.summaryText(f, folder: true, provider: "Google Drive") == "Downloading · 812 of \(1020.formatted()) items · with “Photos”")
+        f.items = 1020
+        #expect(CloudCommands.summaryText(f, folder: true, provider: "Google Drive").hasPrefix("On this Mac · "))
         f.progress = 0.41
         #expect(CloudCommands.summaryText(f, folder: true, provider: "Google Drive") == "Downloading 41 %")
         f.error = "Not enough space on this Mac."
@@ -227,7 +229,8 @@ import Testing
         let line = CloudCommands.signOutLine(bytes: 2_300_000_000, provider: "Google Drive")
         #expect(line?.hasPrefix("The ") == true && line?.hasSuffix("Your files stay in Google Drive.") == true)
         let u = CloudCommands.usageText(CloudOfflineUsage(kept: 3_100_000_000, recent: 820_000_000), account: "Google Drive · me@x.com")
-        #expect(u.hasPrefix("Google Drive · me@x.com: kept ") && u.contains(" · recent "))
+        #expect(u.hasPrefix("Google Drive · me@x.com: ") && u.contains(" downloaded · ") && u.hasSuffix("of recently opened files"))
+        #expect(!CloudCommands.usageText(CloudOfflineUsage(kept: 1, recent: 0), account: "a").contains("recently"))
         #expect(CloudCommands.cacheLimits.map(\.bytes).last == .some(nil) && CloudCommands.cacheLimits[1].bytes == 5 << 30)
     }
 

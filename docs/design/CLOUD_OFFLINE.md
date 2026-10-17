@@ -1,6 +1,30 @@
-# Keep Downloaded / Remove Download for every cloud account
+# Download / Remove Download for every cloud account
 
-Status: design (W-66, Phase 4 M4). No product code yet. Mirrored at `.team/artifacts/p4/m4/OFFLINE-DESIGN.md`.
+Status: built (W-66 design, W-68/W-69/W-72). **Revised by W-79: two states only** (below). That revision supersedes
+the UI sections further down (§§ 4–5: the `.kept` badge, the Keep Downloaded check item, "kept"/"recent" wording); the
+engine (store, pins, inheritance, eviction, sync) is unchanged.
+
+## W-79 revision: two states
+
+The operator: a file is either **only in the cloud** or **also on this Mac**. Nothing in the UI distinguishes "kept"
+from "downloaded" any more, for every provider.
+
+- **States** (`CloudState`): `.cloudOnly` (cloud badge, `icloud.and.arrow.down`) or `.local` (no badge, like Finder),
+  plus the transient `.downloading`/`.uploading` (progress ring), `.error` and the edit marks, unchanged. `.kept` is
+  gone. For accounts, "on this Mac" means pinned (directly or through a folder) and present; a folder is on this Mac
+  when it is pinned. Copies cached because a file was opened or previewed (the LRU "recent" entries) are an invisible
+  implementation detail: such an item still shows as in the cloud only. Folders not downloaded show the cloud badge
+  too.
+- **Commands:** one **Download** (it pins: the item stays on this Mac, kept current, until **Remove Download**, which
+  unpins and deletes). Download on a folder counts first and confirms big ones (`KeepDownloadedSheet`, now titled
+  "Download “X”?"). Clicking a cloud badge is Download. iCloud Drive keeps Finder's **Download Now** / **Remove
+  Download**, with the same two states.
+- **Properties:** "On this Mac" reads "In Google Drive only", "Waiting to download", "Downloading 41 %",
+  "Downloading · 812 of 1,020 items", "On this Mac · 24.1 MB" (and "· with “Photos”" when a folder above is the one
+  downloaded); the checkbox is **Keep on this Mac** (unchecking is Remove Download).
+- **Settings › Accounts › On this Mac:** "Recently opened files use up to …"; per account "3.1 GB downloaded · 820 MB
+  of recently opened files"; "Files you download stay on this Mac until you choose Remove Download; they don’t count
+  toward this."
 
 Goal (operator): Drive files work like iCloud Drive in Finder. A file can be **kept downloaded** (a local copy that
 stays current), have its **download removed** (it stays in the cloud only), and a cloud badge shows which is which.

@@ -27,7 +27,8 @@ import Testing
         #expect(plan.bytes == 5 && plan.items == 1 && plan.fits && !plan.needsConfirmation)
         #expect(CloudKeepPlan(bytes: 1_000_000_000, items: 1, available: 0).needsConfirmation)
         #expect(CloudKeepPlan(bytes: 0, items: 500, available: 0).needsConfirmation)
-        #expect(facade.state(for: url) == .local)
+        // Not downloaded yet: the folder is in the cloud only, like its file.
+        #expect(facade.state(for: url) == .cloudOnly)
         #expect(facade.state(for: fileURL) == .cloudOnly)
         let error: Error? = await withCheckedContinuation { continuation in
             facade.keep(true, [url]) { continuation.resume(returning: $0) }
@@ -53,6 +54,8 @@ import Testing
         }
         #expect(downloaded == nil)
         try await wait { facade.details(for: fileURL).downloaded }
+        // A copy that is only cached (not downloaded with Download) doesn't change the item's state.
+        #expect(facade.state(for: fileURL) == .cloudOnly)
         facade.removeRecent(account: source.accountID)
         try await wait { !facade.details(for: fileURL).downloaded }
         facade.wipe(account: source.accountID)
@@ -146,7 +149,7 @@ extension CloudOfflineTests {
             if case .downloading = service.state(for: url) { return true }; return false
         }
         #expect(await download.value == nil)
-        try await wait { service.state(for: url) == .kept }
+        try await wait { service.state(for: url) == .local }
         #expect(service.hasLocalCopy(url))
         let bad = source.add("bad")
         source.bytes["bad"] = Data("wrong bytes".utf8)

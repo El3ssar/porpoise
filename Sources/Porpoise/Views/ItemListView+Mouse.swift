@@ -173,7 +173,7 @@ extension ItemListView {
             return true
         }
         guard state == .cloudOnly else { return false }
-        CloudCommands.downloadNow([model.rows[i].item.url])
+        KeepDownloadedSheet.download([model.rows[i].item], window: window)
         model.refreshCloud()
         needsDisplay = true
         return true

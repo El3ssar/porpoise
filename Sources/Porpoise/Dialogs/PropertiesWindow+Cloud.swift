@@ -185,14 +185,15 @@ extension PropertiesWindow {
     }
 }
 
-/// Properties' "On this Mac": how much of the item is here, and Keep Downloaded; follows downloads as they go.
+/// Properties' "On this Mac": in the cloud only or on this Mac (how much), with a switch for it (Download / Remove
+/// Download); follows downloads as they go.
 final class CloudOfflineRow: NSView {
     private let url: URL
     private let item: FileItem?
     private let service: CloudOfflineService
     private let provider: String
     let text = NSTextField(labelWithString: "")
-    let keep = ClosureButton(checkboxWithTitle: "Keep Downloaded") { _ in }
+    let keep = ClosureButton(checkboxWithTitle: "Keep on this Mac") { _ in }
     private var observer: NSObjectProtocol?
 
     init(url: URL, item: FileItem?, service: CloudOfflineService, provider: String) {
@@ -231,7 +232,7 @@ final class CloudOfflineRow: NSView {
         let denial = service.keepDenial(for: url)
         if case .inherited(let folder) = state {
             keep.isEnabled = false
-            keep.toolTip = "Kept because “\(folder)” is kept downloaded."
+            keep.toolTip = "On this Mac because “\(folder)” is downloaded."
         } else {
             keep.isEnabled = denial == nil
             keep.toolTip = denial
@@ -240,7 +241,8 @@ final class CloudOfflineRow: NSView {
 
     private func toggle(on: Bool) {
         if !on {
-            service.stopKeeping([url])
+            // Remove Download: what couldn't be removed (unsent edits…) says why.
+            if let why = service.removeDownload([url]).first { update(); text.stringValue = why }
             return
         }
         guard let item else { return service.keep([url]) }

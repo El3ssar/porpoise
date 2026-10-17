@@ -176,7 +176,7 @@ extension DebugBridge {
 
     /// `cloud offline …` drives the demo offline service (PORPOISE_OFFLINE_DEMO):
     /// - `<item name>|<kept|inherited:<folder>|downloaded|cloudonly|downloading:<0…1>|uploading:<0…1>|error:<why>>`
-    /// - `plan <bytes>|<items>|<available>|<fits 1/0>`: what the next Keep Downloaded counts
+    /// - `plan <bytes>|<items>|<available>|<fits 1/0>`: what the next Download counts
     /// - `deny <item name>|<reason>`, `refuse <item name>|<message>`, `usage <account id>|<kept>|<recent>`
     private func offlineDemo(_ arg: String) {
         guard let demo = CloudOfflineHub.service as? DemoOfflineService else { return }
