@@ -20,6 +20,7 @@ struct FilePathTests {
         #expect(!FilePath.contains(path: folder.path + "-sibling/file", in: folder.path))
         #expect(FilePath.contains(path: before.path, in: "/"))
         #expect(FilePath.existing(missing.path) == nil)
+        #expect(FilePath.canonical(alias.path + "/missing/../file") == FilePath.canonical(folder.path + "/file"))
         let remote = URL(string: "sftp://host/private/tmp/opaque?scope=one")!
         #expect(FilePath.key(remote) == remote.absoluteString)
         let entries = [missing, alias, folder, remote]

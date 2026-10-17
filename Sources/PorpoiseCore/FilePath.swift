@@ -55,7 +55,11 @@ public struct FilePath: Hashable, Sendable {
         var suffix: [String] = []
         while true {
             if let base = existing(path) {
-                return suffix.reversed().reduce(base) { ($0 == "/" ? "" : $0) + "/" + $1 }
+                return suffix.reversed().reduce(base) { path, part in
+                    if part == "." { return path }
+                    if part == ".." { return path == "/" ? "/" : (path as NSString).deletingLastPathComponent }
+                    return (path == "/" ? "" : path) + "/" + part
+                }
             }
             if path == "/" || path.isEmpty { return expanded }
             suffix.append((path as NSString).lastPathComponent)
