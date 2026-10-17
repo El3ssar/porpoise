@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseCore
 
 /// Dropbox wire policy only. Cache, credentials, bounded streaming and range persistence are shared services.
 public final class DropboxClient: @unchecked Sendable {
@@ -48,15 +49,9 @@ public final class DropboxClient: @unchecked Sendable {
         journal = CloudJournal(folder: scoped.appendingPathComponent("Operations"))
         renditions = CloudRenditionCache(directory: scoped.appendingPathComponent("Renditions"))
     }
-    func request(
-        _ route: String, arguments: Any, content: Bool = false, body: Data? = nil, range: Range<Int64>? = nil,
-        rejectedToken: String? = nil
-    ) async throws -> URLRequest {
+    func request(_ route: String, arguments: Any, content: Bool = false, body: Data? = nil, range: Range<Int64>? = nil) throws -> URLRequest {
         var request = URLRequest(url: (content ? configuration.contentURL : configuration.apiURL).appendingPathComponent(route))
         request.httpMethod = "POST"
-        let access: String
-        do { access = try await tokens.accessToken(rejectedToken: rejectedToken) } catch is CloudOAuthSessionError { throw DropboxError.reconnect }
-        request.setValue("Bearer " + access, forHTTPHeaderField: "Authorization")
         if let namespaceID, !route.hasPrefix("users/") {
             request.setValue(try dropboxHeader([".tag": "namespace_id", "namespace_id": namespaceID]), forHTTPHeaderField: "Dropbox-API-Path-Root")
         }
@@ -70,6 +65,26 @@ public final class DropboxClient: @unchecked Sendable {
         }
         if let range { request.setValue("bytes=\(range.lowerBound)-\(range.upperBound - 1)", forHTTPHeaderField: "Range") }
         return request
+    }
+    /// Dropbox's requests with the account's token.
+    var authorized: CloudAuthorizedClient {
+        CloudAuthorizedClient(
+            transport: http,
+            token: { [tokens] rejected in
+                do { return try await tokens.accessToken(rejectedToken: rejected) } catch is CloudOAuthSessionError { throw DropboxError.reconnect }
+            }, classify: { body, response, idempotent in Self.classify(body, response, idempotent: idempotent) })
+    }
+    /// Busy (429) is sent again; a server error only for reads, which can't do anything twice.
+    static func classify(_ body: Data, _ response: HTTPURLResponse, idempotent: Bool) -> CloudHTTPOutcome {
+        let error: Error
+        do { try check(body, response); return .done } catch let failure { error = failure }
+        if response.statusCode == 429 || (idempotent && (500...599).contains(response.statusCode)) { return .retry(error) }
+        return .fail(error)
+    }
+    /// Routes that only read: sending one again changes nothing.
+    static func reads(_ route: String) -> Bool {
+        route.hasPrefix("files/list_folder") || route.hasPrefix("files/search") || route.hasPrefix("sharing/list_") || route.hasPrefix("users/")
+            || ["files/get_metadata", "files/download", "files/get_thumbnail_v2", "sharing/get_shared_link_metadata"].contains(route)
     }
     func reached(_ error: Error?) {
         lock.withLock { offline = error is URLError && (error as? URLError)?.code != .cancelled }
@@ -92,15 +107,9 @@ public final class DropboxClient: @unchecked Sendable {
     }
     func data(_ route: String, arguments: Any, content: Bool = false, body: Data? = nil) async throws -> Data {
         do {
-            var request = try await request(route, arguments: arguments, content: content, body: body)
-            var (data, response) = try await http.response(request)
-            if response.statusCode == 401 {
-                request = try await self.request(
-                    route, arguments: arguments, content: content, body: body,
-                    rejectedToken: request.value(forHTTPHeaderField: "Authorization").map { String($0.dropFirst(7)) })
-                (data, response) = try await http.response(request)
-            }
-            try Self.check(data, response); reached(nil); return data
+            let request = try request(route, arguments: arguments, content: content, body: body)
+            let (data, _) = try await authorized.send(request, idempotent: Self.reads(route))
+            reached(nil); return data
         } catch { reached(error); throw error }
     }
     func rpc<T: Decodable>(_ route: String, _ arguments: Any) async throws -> T {
@@ -124,17 +133,16 @@ public final class DropboxClient: @unchecked Sendable {
     public func list(_ path: String = "", onPage: @Sendable ([DropboxItem], Bool) async -> Void = { _, _ in }) async throws -> [DropboxItem] {
         do {
             let since = metadataCache.generation
-            var cursor: String?; var seen = Set<String>(); var files: [String: DropboxItem] = [:]
-            repeat {
-                let page = try await listPage(path, cursor: cursor)
+            var cursor: String?; var files: [String: DropboxItem] = [:]
+            try await CloudPager.each(repeated: DropboxError.invalidResponse) { (next: String?) in
+                let page = try await listPage(path, cursor: next)
                 for item in page.entries {
                     if item.tag == "deleted" { files = files.filter { $0.value.pathLower != item.pathLower } } else { files[item.id] = item }
                 }
                 cursor = page.cursor
                 await onPage(Array(files.values), !page.hasMore)
-                if !page.hasMore { break }
-                guard seen.insert(page.cursor).inserted else { throw DropboxError.invalidResponse }
-            } while true
+                return page.hasMore ? page.cursor : nil
+            }
             let result = files.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             metadataCache.store(result, key: path, since: since)
             // Nonrecursive listing cursors are kept separately from the whole-account change cursor.
@@ -164,16 +172,14 @@ public final class DropboxClient: @unchecked Sendable {
         struct Folder: Decodable { var shared_folder_id: String; var name: String; var path_lower: String? }
         struct Files: Decodable { var entries: [Received]; var cursor: String? }
         struct Folders: Decodable { var entries: [Folder]; var cursor: String? }
-        var items: [DropboxItem] = []; var cursor: String?; var seen = Set<String>()
-        repeat {
+        var items: [DropboxItem] = []
+        try await CloudPager.each(repeated: DropboxError.invalidResponse) { (cursor: String?) in
             let page: Files = try await rpc(
                 cursor == nil ? "sharing/list_received_files" : "sharing/list_received_files/continue", cursor.map { ["cursor": $0] } ?? [:])
             for entry in page.entries { items.append(try await metadata(entry.id)) }
-            cursor = page.cursor
-            if let cursor, !seen.insert(cursor).inserted { throw DropboxError.invalidResponse }
-        } while cursor != nil
-        seen.removeAll()
-        repeat {
+            return page.cursor
+        }
+        try await CloudPager.each(repeated: DropboxError.invalidResponse) { (cursor: String?) in
             let page: Folders = try await rpc(
                 cursor == nil ? "sharing/list_folders" : "sharing/list_folders/continue", cursor.map { ["cursor": $0] } ?? [:])
             for folder in page.entries {
@@ -183,9 +189,8 @@ public final class DropboxClient: @unchecked Sendable {
                     items.append(DropboxItem(id: "ns:" + folder.shared_folder_id, name: folder.name, tag: "folder"))
                 }
             }
-            cursor = page.cursor
-            if let cursor, !seen.insert(cursor).inserted { throw DropboxError.invalidResponse }
-        } while cursor != nil
+            return page.cursor
+        }
         items = Array(Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }).values)
         metadataCache.store(items, key: "shared"); return items
     }

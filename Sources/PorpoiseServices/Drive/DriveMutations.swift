@@ -2,7 +2,8 @@ import Foundation
 import PorpoiseCore
 
 extension DriveClient {
-    /// Only idempotent requests may be replayed on quota responses; a lost mutation response goes to reconciliation.
+    /// Busy responses are sent again (nothing was done); a server error only for reads, as a lost mutation response
+    /// goes to reconciliation.
     func mutationResponse(
         _ url: URL, method: String = "GET", body: Data? = nil, headers: [String: String] = [:], context: DriveTransferContext? = nil,
         receive: ((Data, HTTPURLResponse) async throws -> Void)? = nil
@@ -32,58 +33,17 @@ extension DriveClient {
             return "\(id)/\(key)"
         }
         if !keys.isEmpty { request.setValue(keys.joined(separator: ","), forHTTPHeaderField: "X-Goog-Drive-Resource-Keys") }
-        let token = try await tokens.accessToken()
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let started = Date()
-        for attempt in 0...4 {
-            try Task.checkCancellation()
-            try await context?.checkpoint()
-            let data: Data, response: HTTPURLResponse
-            do {
-                if let receive {
-                    var errorBody = Data()
-                    response = try await http.stream(request) { chunk, head in
-                        if (200..<300).contains(head.statusCode) {
-                            try await receive(chunk, head)
-                        } else {
-                            errorBody.append(chunk.prefix(max(0, 65536 - errorBody.count)))
-                        }
-                    }
-                    data = errorBody
-                } else {
-                    (data, response) = try await http.response(request)
-                }
-            } catch let error as URLError {
-                if error.code != .cancelled { context?.status("Waiting for network") }
-                throw error
-            }
-            if response.statusCode == 401, attempt == 0 {
-                let fresh = try await tokens.accessToken(rejectedToken: token)
-                request.setValue("Bearer \(fresh)", forHTTPHeaderField: "Authorization")
-                continue
-            }
-            let quota403 =
-                response.statusCode == 403
-                && (String(data: data, encoding: .utf8)?.contains("RateLimitExceeded") == true
-                    || String(data: data, encoding: .utf8)?.contains("rateLimitExceeded") == true)
-            if response.statusCode == 429 || quota403 {
-                guard attempt < 4 else { throw DriveError.quota }
-                let delay = min(30, max(0, Double(response.value(forHTTPHeaderField: "Retry-After") ?? "") ?? pow(2, Double(attempt))))
-                if Date().timeIntervalSince(started) + delay >= 10 { context?.status("Slowed down by Google, retrying") }
-                try await Task.sleep(nanoseconds: UInt64((delay + Double.random(in: 0...0.05)) * 1_000_000_000))
-                continue
-            }
-            if response.statusCode == 403 {
-                let reason = String(data: data, encoding: .utf8) ?? ""
-                if reason.contains("insufficientPermissions") { throw DriveError.needsWriteAccess }
-                if reason.contains("storageQuotaExceeded") { throw DriveError.quota }
-                if reason.contains("exportSizeLimitExceeded") { throw DriveError.exportTooLarge }
-            }
-            if response.statusCode != 308 { try DriveHTTP.check(response.statusCode) }
+        do {
+            let result = try await authorized(mutation: true).send(
+                request, idempotent: method == "GET", receive: receive, before: { try await context?.checkpoint() },
+                onWait: { delay in if Date().timeIntervalSince(started) + delay >= 10 { context?.status("Slowed down by Google, retrying") } })
             context?.status(nil)
-            return (data, response)
+            return result
+        } catch let error as URLError {
+            if error.code != .cancelled { context?.status("Waiting for network") }
+            throw error
         }
-        throw DriveError.quota
     }
 
     func mutationURL(_ path: String, query: [URLQueryItem] = []) -> URL {

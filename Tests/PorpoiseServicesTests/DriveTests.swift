@@ -342,7 +342,7 @@ struct DriveTransportTests {
         await #expect(throws: DriveError.invalidResponse) {
             try await manager.accept(DriveTokenResponse(access_token: "", expires_in: 0, refresh_token: nil, token_type: "MAC"))
         }
-        #expect(String(data: DriveHTTP.form(["a+b": "x &=y"]), encoding: .utf8) == "a%2Bb=x%20%26%3Dy")
+        #expect(String(data: CloudHTTPTransport.form(["a+b": "x &=y"]), encoding: .utf8) == "a%2Bb=x%20%26%3Dy")
     }
 }
 

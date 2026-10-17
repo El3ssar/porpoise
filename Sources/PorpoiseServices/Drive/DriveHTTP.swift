@@ -40,9 +40,6 @@ public struct DriveHTTP: Sendable {
     let transport: CloudHTTPTransport
     public init(send: Send? = nil) { transport = CloudHTTPTransport(send: send, invalidResponse: { DriveError.invalidResponse }) }
     public func response(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) { try await transport.response(request) }
-    func stream(_ request: URLRequest, consume: (Data, HTTPURLResponse) async throws -> Void) async throws -> HTTPURLResponse {
-        try await transport.stream(request, consume: consume)
-    }
 
     public func data(_ request: URLRequest) async throws -> Data {
         let (data, response) = try await response(request)
@@ -60,6 +57,4 @@ public struct DriveHTTP: Sendable {
         default: throw DriveError.http(status)
         }
     }
-
-    static func form(_ values: [String: String]) -> Data { CloudHTTPTransport.form(values) }
 }

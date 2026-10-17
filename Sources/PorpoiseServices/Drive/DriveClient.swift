@@ -98,31 +98,6 @@ public final class DriveClient: @unchecked Sendable {
     }
 
     func request(_ path: String, query: [URLQueryItem] = [], resource: (String, String?)? = nil) async throws -> Data {
-        do {
-            for attempt in 0...4 {
-                do {
-                    let data = try await perform(path, query: query, resource: resource)
-                    setOffline(false)
-                    return data
-                } catch {
-                    let retry: Bool
-                    switch error as? DriveError {
-                    case .quota, .rateLimited: retry = true
-                    case .http(let code): retry = (500...599).contains(code)
-                    default: retry = false
-                    }
-                    guard retry, attempt < 4 else { throw error }
-                    try await Task.sleep(nanoseconds: UInt64(pow(2, Double(attempt)) * 1_000_000_000))
-                }
-            }
-            throw DriveError.quota
-        } catch {
-            if let error = error as? URLError, error.code != .cancelled { setOffline(true) }
-            report(error); throw error
-        }
-    }
-
-    private func perform(_ path: String, query: [URLQueryItem], resource: (String, String?)?) async throws -> Data {
         var c = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         c.queryItems = query.isEmpty ? nil : query
         var request = URLRequest(url: c.url!)
@@ -132,31 +107,43 @@ public final class DriveClient: @unchecked Sendable {
             guard DriveLink.isValidID(id), DriveLink.isValidID(key) else { throw DriveError.invalidLocation }
             request.setValue("\(id)/\(key)", forHTTPHeaderField: "X-Goog-Drive-Resource-Keys")
         }
-        let token = try await tokens.accessToken()
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        var (data, response) = try await http.response(request)
-        if response.statusCode == 401 {
-            let renewed = try await tokens.accessToken(rejectedToken: token)
-            request.setValue("Bearer \(renewed)", forHTTPHeaderField: "Authorization")
-            (data, response) = try await http.response(request)
+        return try await read(request)
+    }
+
+    /// A read (always safe to send again): offline and reachability are told either way.
+    func read(_ request: URLRequest) async throws -> Data {
+        do {
+            let (data, _) = try await authorized(mutation: false).send(request, idempotent: true)
+            setOffline(false); report(nil)
+            return data
+        } catch {
+            if let error = error as? URLError, error.code != .cancelled { setOffline(true) }
+            report(error); throw error
         }
-        // Drive also reports rate-limit quota as 403. Do not expose provider bodies in errors.
-        if response.statusCode == 403,
-            let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data),
-            envelope.error.errors?.contains(where: { ["rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded"].contains($0.reason) })
-                == true
-        {
-            throw DriveError.quota
-        }
-        if response.statusCode == 403,
-            let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data),
-            envelope.error.errors?.contains(where: { $0.reason == "exportSizeLimitExceeded" }) == true
-        {
-            throw DriveError.exportTooLarge
-        }
-        try DriveHTTP.check(response.statusCode)
-        report(nil)
-        return data
+    }
+
+    /// Drive's requests with the account's token. Changes name more refusals than reads (no write access, storage full).
+    func authorized(mutation: Bool) -> CloudAuthorizedClient {
+        CloudAuthorizedClient(
+            transport: http.transport, token: { [tokens] rejected in try await tokens.accessToken(rejectedToken: rejected) },
+            classify: { body, response, idempotent in Self.classify(body, response, idempotent: idempotent, mutation: mutation) })
+    }
+
+    /// Busy (429, or a rate limit given as 403) is sent again; a server error only when that can't do anything twice.
+    static func classify(_ body: Data, _ response: HTTPURLResponse, idempotent: Bool, mutation: Bool) -> CloudHTTPOutcome {
+        let status = response.statusCode
+        if (200..<300).contains(status) || (mutation && status == 308) { return .done }
+        // Do not expose provider bodies in errors: only Drive's reasons are read (listed in its error, or named in the text).
+        let listed = Set((try? JSONDecoder().decode(ErrorEnvelope.self, from: body))?.error.errors?.map(\.reason) ?? [])
+        let text = String(decoding: body.prefix(65536), as: UTF8.self)
+        func says(_ reason: String) -> Bool { listed.contains(reason) || text.contains(reason) }
+        let rateLimited = says("rateLimitExceeded") || says("RateLimitExceeded") || says("dailyLimitExceeded")
+        if status == 429 || (status == 403 && rateLimited) { return .retry(DriveError.quota) }
+        if status == 403, says("exportSizeLimitExceeded") { return .fail(DriveError.exportTooLarge) }
+        if status == 403, mutation, says("insufficientPermissions") { return .fail(DriveError.needsWriteAccess) }
+        if status == 403, mutation, says("storageQuotaExceeded") { return .fail(DriveError.quota) }
+        if (500...599).contains(status) { return idempotent ? .retry(DriveError.http(status)) : .fail(DriveError.http(status)) }
+        do { try DriveHTTP.check(status); return .done } catch { return .fail(error) }
     }
 
     private struct ErrorEnvelope: Decodable {
@@ -261,15 +248,11 @@ public final class DriveClient: @unchecked Sendable {
 
     public func list(_ location: DriveLocation) async throws -> [DriveFile] {
         var files: [DriveFile] = []
-        var token: String?
-        var seen: Set<String> = []
-        repeat {
-            try Task.checkCancellation()
+        try await CloudPager.each(repeated: DriveError.invalidResponse) { (token: String?) in
             let page = try await listPage(location, pageToken: token)
             files += page.files
-            token = page.nextPageToken
-            if let token, !seen.insert(token).inserted { throw DriveError.invalidResponse }
-        } while token != nil
+            return page.nextPageToken
+        }
         return files
     }
 
@@ -348,9 +331,7 @@ public final class DriveClient: @unchecked Sendable {
             name: "thumbnail.jpg"
         ) {
             if self.isOffline { throw DriveError.offline }
-            var request = URLRequest(url: thumbnailURL)
-            request.setValue("Bearer \(try await self.tokens.accessToken())", forHTTPHeaderField: "Authorization")
-            return try await self.http.data(request)
+            return try await self.read(URLRequest(url: thumbnailURL))
         }
     }
 

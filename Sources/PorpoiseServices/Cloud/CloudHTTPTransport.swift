@@ -24,6 +24,14 @@ public struct CloudHTTPTransport: Sendable {
         let (data, response) = try await self.response(request)
         try await consume(data, response); return response
     }
+    /// A form POST (OAuth token endpoints): the provider reads the answer.
+    public func postForm(_ url: URL, _ values: [String: String]) async throws -> (Data, HTTPURLResponse) {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Self.form(values)
+        return try await response(request)
+    }
     public static func form(_ values: [String: String]) -> Data {
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
         return Data(

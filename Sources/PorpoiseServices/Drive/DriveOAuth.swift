@@ -112,19 +112,12 @@ public actor DriveTokenManager {
     /// Always forget local credentials, even if Google's revocation endpoint is unavailable.
     public func revoke() async throws {
         guard let token = try await session.disconnect() else { return }
-        var request = URLRequest(url: configuration.revokeURL)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = DriveHTTP.form(["token": token])
-        _ = try await http.data(request)
+        let (_, response) = try await http.transport.postForm(configuration.revokeURL, ["token": token])
+        try DriveHTTP.check(response.statusCode)
     }
 
     static func request(_ values: [String: String], configuration: DriveOAuthConfiguration, http: DriveHTTP) async throws -> DriveTokenResponse {
-        var request = URLRequest(url: configuration.tokenURL)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = DriveHTTP.form(values)
-        let (data, response) = try await http.response(request)
+        let (data, response) = try await http.transport.postForm(configuration.tokenURL, values)
         if response.statusCode == 400 || response.statusCode == 401 { throw DriveError.reconnect }
         try DriveHTTP.check(response.statusCode)
         guard let token = try? JSONDecoder().decode(DriveTokenResponse.self, from: data) else { throw DriveError.invalidResponse }
