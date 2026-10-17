@@ -93,6 +93,17 @@ public enum DropboxTokens {
             )
         }
     }
+    /// Ends the sign-in at Dropbox too: revoking an access token also revokes its refresh token. Best effort; the
+    /// credentials are forgotten here whatever Dropbox answers.
+    static func revoke(_ access: String, configuration: DropboxConfiguration, http: CloudHTTPTransport) async {
+        var request = URLRequest(url: configuration.apiURL.appendingPathComponent("auth/token/revoke"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer " + access, forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data("null".utf8)
+        _ = try? await http.response(request)
+    }
+
     static func request(_ values: [String: String], configuration: DropboxConfiguration, http: CloudHTTPTransport) async throws -> CloudOAuthToken {
         var request = URLRequest(url: configuration.tokenURL); request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")

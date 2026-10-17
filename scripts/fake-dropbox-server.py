@@ -328,6 +328,9 @@ class Handler(BaseHTTPRequestHandler):
         if route == 'sharing/list_received_files':
             file = next((i for i in s.items.values() if i['.tag'] == 'file'), None)
             return ok({'entries': [{'id': file['id'], 'name': file['name']}] if file else []})
+        if route == 'auth/token/revoke':
+            s.stats['revoked'] = s.stats.get('revoked', 0) + 1
+            return ok(None)
         if route == 'sharing/get_shared_link_metadata':
             # config 'links': share link -> item id this account can see; 'foreignLinks': links to items it can't.
             identifier = s.config.get('links', {}).get(arg.get('url'))

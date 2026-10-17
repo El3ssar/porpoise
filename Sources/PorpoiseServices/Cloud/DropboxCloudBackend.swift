@@ -47,6 +47,7 @@ public final class DropboxCloudBackend: CloudBackend {
         }
         onChange?()
     }
+    private func accountKey(_ id: UUID) -> String? { MainActor.assumeIsolated { store.accounts.first { $0.id == id }.map(key) } }
     private func key(_ account: DropboxAccount) -> String {
         "dropbox:" + account.id.uuidString.lowercased() + ":" + account.rootNamespaceID
     }
@@ -86,7 +87,9 @@ public final class DropboxCloudBackend: CloudBackend {
                     }()
                 {
                     done(.failure(.cancelled))
-                } else if (error as? DropboxConnectionError) == .alreadyConnected, let account = accounts.first {
+                } else if case .alreadyConnected(let id) = error as? DropboxConnectionError,
+                    let account = accounts.first(where: { $0.id == self.accountKey(id) })
+                {
                     done(.failure(.alreadyConnected(account)))
                 } else {
                     done(.failure(.failed(error.localizedDescription)))
@@ -252,16 +255,20 @@ public final class DropboxCloudBackend: CloudBackend {
         providers.values.forEach { $0.setActive(active) }
     }
     private func changed(_ url: URL) { NotificationCenter.default.post(name: CloudAccounts.remoteChanged, object: accountID(for: url)) }
-    @MainActor private func reached(_ id: UUID, _ error: Error?) {
-        if (error as? DropboxError) == .reconnect { statuses[id] = .signInNeeded; onChange?(); return }
+    @MainActor func reached(_ id: UUID, _ error: Error?) {
+        if (error as? DropboxError) == .reconnect {
+            // Until the account is signed in again (a new client): a re-check scheduled before mustn't call it OK.
+            checks.removeValue(forKey: id)?.cancel()
+            statuses[id] = .signInNeeded; onChange?(); return
+        }
         if let error = error as? URLError, error.code == .cancelled { return }
         _ = reachability[id]?.record(reached: !(error is URLError), at: Date()); settle(id)
     }
-    @MainActor private func settle(_ id: UUID) {
+    @MainActor func settle(_ id: UUID) {
         guard var gate = reachability[id] else { return }
         let now = Date(); _ = gate.update(at: now); reachability[id] = gate
         let status: CloudAccount.Status = gate.isOffline ? .offline : .ok
-        if statuses[id] != status { statuses[id] = status; onChange?() }
+        if statuses[id] != .signInNeeded, statuses[id] != status { statuses[id] = status; onChange?() }
         checks.removeValue(forKey: id)?.cancel()
         if let next = gate.nextCheck(after: now) {
             let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.settle(id) } }; checks[id] = work
