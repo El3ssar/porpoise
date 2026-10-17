@@ -256,21 +256,42 @@ final class FakeDropboxServer {
         #expect(try await client.edits.begin(item).id == session.id)
         try Data("local changes".utf8).write(to: session.localURL)
         #expect(await client.contentSource.holdsCopy(.init(account: client.contentSource.accountID, item: item.id)))
-        let saved = try await client.edits.save(session.id); #expect(saved.state == "saved" && saved.file.rev != item.rev)
-        #expect(try await client.edits.save(session.id).state == "saved")
+        let saved = try await client.edits.save(session.id); #expect(saved.state == .saved && saved.file.rev != item.rev)
+        #expect(try await client.edits.save(session.id).state == .saved)
         await client.edits.release(session.id); #expect(await !client.edits.holdsCopy(item.id))
         try Data("unsent changes".utf8).write(to: session.localURL)
         try await server.configure(["files": [["id": item.id, "path": "/hello.txt", "text": "other device"]]])
         await #expect(throws: DropboxError.conflict) { try await client.edits.save(session.id) }
-        #expect(await client.edits.session(session.id)?.state == "conflict")
+        #expect(await client.edits.session(session.id)?.state == .conflict)
         await #expect(throws: DropboxError.conflict) { try await client.edits.save(session.id) }
         #expect(try String(contentsOf: session.localURL, encoding: .utf8) == "unsent changes")
         let recovered = DropboxEditStore(client: client)
         #expect(await recovered.pending().count == 1)
         #expect(await recovered.holdsCopy(item.id))
         let copy = try await recovered.saveAsCopy(session.id, to: "/preserved-copy.txt")
-        #expect(copy.state == "saved" && copy.file.id != item.id)
+        #expect(copy.state == .saved && copy.file.id != item.id)
         #expect(try await client.metadata(item.id).contentHash != copy.sentHash)
+    }
+
+    @Test func interruptedEditUploadRetainsItsSnapshotAndThenSendsLaterChanges() async throws {
+        let server = try FakeDropboxServer(); let client = try server.client()
+        let session = try await client.edits.begin(client.metadata("id:hello"))
+        try Data("first save".utf8).write(to: session.localURL)
+        await #expect(throws: CancellationError.self) {
+            try await client.edits.save(session.id, context: .init(checkpoint: { throw CancellationError() }))
+        }
+        let interrupted = try #require(await client.edits.session(session.id))
+        #expect(interrupted.uploadOperation != nil)
+        try Data("second save".utf8).write(to: session.localURL, options: .atomic)
+        // Simulate relaunch: the durable operation and its upload inode must both survive.
+        let recovered = DropboxEditStore(client: client)
+        let first = try await recovered.save(session.id)
+        if case .unsent = first.state {} else { Issue.record("later edits must remain pending") }
+        #expect(first.sentHash == DropboxContentHash.hash(Data("first save".utf8)))
+        #expect(try await client.metadata(session.file.id).contentHash == first.sentHash)
+        let second = try await recovered.save(session.id)
+        #expect(second.state == .saved && second.sentHash == DropboxContentHash.hash(Data("second save".utf8)))
+        #expect(try await client.metadata(session.file.id).contentHash == second.sentHash)
     }
 
     @Test func cacheFallbackPaginationLoopsBackoffAndProviderErrors() async throws {

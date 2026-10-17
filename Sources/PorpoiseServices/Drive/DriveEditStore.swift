@@ -1,74 +1,32 @@
 import Foundation
 import PorpoiseCore
 
-public enum DriveEditState: Codable, Sendable, Equatable {
-    case editing, saving, saved, conflict, unsent(String)
-}
+public typealias DriveEditState = CloudEditState
+public typealias DriveEditSession = CloudEditSession<DriveFile>
+public typealias DriveEditStore = CloudEditSessionStore<DriveEditEngine>
 
-public struct DriveEditSession: Codable, Sendable, Identifiable {
-    public let id: UUID
-    public let localURL: URL
-    public var file: DriveFile
-    public var state: DriveEditState = .editing
-    public var conflictURL: URL?
-    var sentMD5: String
-}
-
-/// Durable editable bytes never enter the disposable media LRU. Hash comparison discovers saves after a crash.
-public actor DriveEditStore {
-    public static let changed = Notification.Name("PorpoiseDriveEditChanged")
+public struct DriveEditEngine: CloudEditEngine, @unchecked Sendable {
     private weak var client: DriveClient?
-    private let directory: URL
-    private var sessions: [UUID: DriveEditSession] = [:]
-    private var saving: Set<UUID> = []
-    private var openSessions: Set<UUID> = []
-    public init(client: DriveClient, directory: URL? = nil) {
-        self.client = client
-        self.directory = directory ?? client.metadataCache.directory.appendingPathComponent("Edits")
-        if let files = try? FileManager.default.contentsOfDirectory(at: self.directory, includingPropertiesForKeys: nil) {
-            for file in files where file.pathExtension == "json" {
-                if let data = try? Data(contentsOf: file), var session = try? JSONDecoder().decode(DriveEditSession.self, from: data),
-                    session.localURL.standardizedFileURL.path.hasPrefix(self.directory.standardizedFileURL.path + "/")
-                {
-                    if session.state != .conflict, (try? DriveClient.md5(session.localURL)) != session.sentMD5 {
-                        session.state = .unsent("Saved changes have not reached Google Drive.")
-                    }
-                    sessions[session.id] = session
-                }
-            }
-        }
+    public let directory: URL
+    init(client: DriveClient, directory: URL? = nil) {
+        self.client = client; self.directory = directory ?? client.metadataCache.directory.appendingPathComponent("Edits")
     }
-    public func session(_ id: UUID) -> DriveEditSession? { sessions[id] }
-    public func pending() -> [DriveEditSession] {
-        sessions.values.filter { (try? DriveClient.md5($0.localURL)) != $0.sentMD5 }.sorted { $0.id.uuidString < $1.id.uuidString }
-    }
-    public func holdsCopy(_ id: String) -> Bool {
-        sessions.values.contains { $0.file.id == id && (openSessions.contains($0.id) || (try? DriveClient.md5($0.localURL)) != $0.sentMD5) }
-    }
-    public func retainCopy(_ id: UUID) { openSessions.insert(id) }
-    public func releaseCopy(_ id: UUID) { openSessions.remove(id) }
-    public func cachedSession(_ file: DriveFile) -> DriveEditSession? {
-        sessions.values.first {
-            $0.file.id == file.id && ($0.file.headRevisionId == file.headRevisionId || $0.state != .editing)
-                && FileManager.default.fileExists(atPath: $0.localURL.path)
-        }
-    }
-
-    public func open(_ file: DriveFile, context: DriveTransferContext = .init()) async throws -> DriveEditSession {
-        guard let client else { throw DriveError.reconnect }
-        if let pending = pending().first(where: { $0.file.id == file.id }) { openSessions.insert(pending.id); return pending }
-        if client.isOffline {
-            guard let existing = sessions.values.first(where: { $0.file.id == file.id }),
-                FileManager.default.fileExists(atPath: existing.localURL.path)
-            else { throw DriveError.offline }
-            openSessions.insert(existing.id); return existing
-        }
+    public var unavailable: Error { DriveError.reconnect }
+    public var sourceChanged: Error { DriveMutationError.sourceChanged }
+    private func connected() throws -> DriveClient { guard let client else { throw unavailable }; return client }
+    public func checkConnection() throws { if try connected().isOffline { throw DriveError.offline } }
+    public func canUseCached(after error: Error) -> Bool { (error as? DriveError) == .offline }
+    public func identity(_ file: DriveFile) -> String { file.id }
+    public func revision(_ file: DriveFile) -> String? { file.headRevisionId }
+    public func hash(_ url: URL) throws -> String { try DriveClient.md5(url) }
+    public func uploadSource(_ operation: UUID) -> URL? { nil }
+    public func prepare(_ file: DriveFile, id: UUID, directory: URL, context: CloudTransferContext) async throws -> (DriveFile, URL) {
+        let client = try connected()
         let fresh = try await client.file(file.id, resourceKey: file.resourceKey)
         guard fresh.operations.canWrite, fresh.operations.canDownload, !fresh.isGoogleDocument, let revision = fresh.headRevisionId,
             DriveLink.isValidID(revision)
         else { throw DriveError.permissionDenied }
         let name = try RemoteFS.localName(fresh.name)
-        let id = UUID()
         let folder = directory.appendingPathComponent(fresh.id).appendingPathComponent(revision).appendingPathComponent(id.uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let url = folder.appendingPathComponent(name)
@@ -77,97 +35,51 @@ public actor DriveEditStore {
             client.contentSource.remoteItem(fresh), progress: { bytes, total in context.progress(bytes, total ?? bytes) })
         let verified = try await client.file(fresh.id)
         guard verified.headRevisionId == revision else { throw DriveMutationError.conflict }
-        try cloudClone(baseline, to: url)
-        let handle = try FileHandle(forWritingTo: url); try handle.synchronize(); try handle.close()
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-        let session = DriveEditSession(id: id, localURL: url, file: fresh, sentMD5: try DriveClient.md5(url))
-        try persist(session)
-        sessions[id] = session; openSessions.insert(id)
-        return session
+        try cloudClone(baseline, to: url); return (fresh, url)
     }
-    public func save(_ id: UUID) async throws -> DriveFile {
-        guard let client else { throw DriveError.reconnect }
-        guard var session = sessions[id], saving.insert(id).inserted else { throw DriveMutationError.conflict }
-        defer { saving.remove(id) }
-        guard !client.isOffline else {
-            session.state = .unsent(DriveError.offline.localizedDescription); try update(session)
-            throw DriveError.offline
-        }
-        session.state = .saving; try update(session)
-        do {
-            let fresh = try await client.file(session.file.id)
-            guard let revision = session.file.headRevisionId, fresh.headRevisionId == revision else { throw DriveMutationError.conflict }
-            let md5 = try DriveClient.md5(session.localURL)
-            if md5 == session.sentMD5 { session.state = .saved; try update(session); return fresh }
-            // Snapshot the save: later edits cannot change the bytes this operation is uploading.
-            let upload = directory.appendingPathComponent(UUID().uuidString + ".upload")
-            try FileManager.default.copyItem(at: session.localURL, to: upload)
-            defer { try? FileManager.default.removeItem(at: upload) }
-            guard try DriveClient.md5(upload) == md5 else { throw DriveMutationError.sourceChanged }
-            let result = try await client.saveEdit(upload, baseline: session.file)
-            if let offline = try? await client.offlineCopies() {
-                _ = try? await offline.adopt(file: upload, as: client.contentSource.remoteItem(result))
-            }
-            session.file = result; session.sentMD5 = md5; session.state = .saved; session.conflictURL = nil
-            try update(session)
-            return result
-        } catch {
-            if (error as? DriveMutationError) == .conflict {
-                session.state = .conflict
-                if let remote = try? await client.file(session.file.id), let bytes = try? await client.download(remote).data,
-                    let name = RemoteParsing.localName(forRemote: "Remote-" + remote.name)
-                {
-                    let copy = session.localURL.deletingLastPathComponent().appendingPathComponent(name)
-                    try? bytes.write(to: copy, options: .atomic)
-                    session.conflictURL = copy
-                }
-            } else {
-                session.state = .unsent(error.localizedDescription)
-            }
-            try update(session)
-            throw error
-        }
+    public func validate(_ file: DriveFile) async throws {
+        let fresh = try await connected().file(file.id)
+        guard let revision = file.headRevisionId, fresh.headRevisionId == revision else { throw DriveMutationError.conflict }
     }
-    public func keepBoth(_ id: UUID) async throws -> DriveFile {
-        guard let client else { throw DriveError.reconnect }
-        guard var session = sessions[id], saving.insert(id).inserted else { throw DriveMutationError.conflict }
-        defer { saving.remove(id) }
-        let current = try await client.file(session.file.id)
-        let source = session.localURL
-        let md5 = try DriveClient.md5(source)
-        let result = try await client.upload(
-            source, parentID: current.parents?.first ?? "root", name: FileFormat.noted(current.name, "edited on Mac"))
-        session.file = result; session.sentMD5 = md5; session.state = .saved; session.conflictURL = nil
-        try update(session)
+    public func publish(_ local: URL, file: DriveFile, operation: UUID, copyPath: String?, context: CloudTransferContext) async throws -> DriveFile {
+        let client = try connected()
+        let result: DriveFile
+        if copyPath != nil {
+            let current = try await client.file(file.id)
+            result = try await client.upload(local, parentID: current.parents?.first ?? "root", name: FileFormat.noted(current.name, "edited on Mac"))
+        } else {
+            result = try await client.saveEdit(local, baseline: file)
+        }
+        if let offline = try? await client.offlineCopies() { _ = try? await offline.adopt(file: local, as: client.contentSource.remoteItem(result)) }
         return result
     }
-    public func replaceWithMine(_ id: UUID) async throws -> DriveFile {
-        guard let client else { throw DriveError.reconnect }
-        guard var session = sessions[id], !saving.contains(id) else { throw DriveMutationError.conflict }
-        let current = try await client.file(session.file.id)
+    public func prepareReplacement(_ file: DriveFile) async throws -> DriveFile {
+        let client = try connected(), current = try await client.file(file.id)
         guard let revision = current.headRevisionId, DriveLink.isValidID(revision) else { throw DriveMutationError.conflict }
         let url = client.baseURL.appendingPathComponent("files/\(current.id)/revisions/\(revision)")
         let (data, _) = try await client.mutationResponse(
             url, method: "PATCH", body: Data("{\"keepForever\":true}".utf8), headers: ["Content-Type": "application/json"])
         struct Revision: Decodable { let keepForever: Bool }
         guard try client.decode(Revision.self, data).keepForever else { throw DriveMutationError.conflict }
-        session.file = current
-        try update(session)
-        return try await save(id)
+        return current
     }
-    private func update(_ session: DriveEditSession) throws {
-        try persist(session)
-        sessions[session.id] = session
-        NotificationCenter.default.post(name: Self.changed, object: session.id)
+    public func conflict(_ error: Error) -> Bool { (error as? DriveMutationError) == .conflict }
+    public func remoteCopy(_ file: DriveFile, beside: URL) async -> URL? {
+        guard let client, let remote = try? await client.file(file.id), let bytes = try? await client.download(remote).data,
+            let name = RemoteParsing.localName(forRemote: "Remote-" + remote.name)
+        else { return nil }
+        let copy = beside.deletingLastPathComponent().appendingPathComponent(name)
+        do { try bytes.write(to: copy, options: .atomic); return copy } catch { return nil }
     }
-    private func persist(_ session: DriveEditSession) throws {
-        let url = directory.appendingPathComponent(session.id.uuidString + ".json")
-        try JSONEncoder().encode(session).write(to: url, options: .atomic)
-        // Only this user reads it (the file's name and IDs, where its edited copy is), as with Dropbox's sessions.
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-        let handle = try FileHandle(forWritingTo: url)
-        try handle.synchronize(); try handle.close()
+}
+extension CloudEditSessionStore where Engine == DriveEditEngine {
+    public init(client: DriveClient, directory: URL? = nil) { self.init(engine: DriveEditEngine(client: client, directory: directory)) }
+    public func open(_ file: DriveFile, context: DriveTransferContext = .init()) async throws -> DriveEditSession {
+        try await openSession(file, context: context)
     }
+    public func save(_ id: UUID) async throws -> DriveFile { try await saveSession(id).file }
+    public func keepBoth(_ id: UUID) async throws -> DriveFile { try await saveSession(id, copyPath: "copy").file }
+    public func replaceWithMine(_ id: UUID) async throws -> DriveFile { try await replaceSession(id).file }
 }
 
 extension DriveClient {
