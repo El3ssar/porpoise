@@ -21,22 +21,22 @@ extension DriveMutationTests {
                 kind: .copy, sources: sources, destination: destination,
                 control: FileJob(kind: .copy, sources: sources, destinationFolder: destination), rule: rule, options: .init(method: .content))
         }
-        let upload = job([source], root); upload.run()
+        let upload = job([source], root); await offThePool { upload.run() }
         #expect(upload.errors.isEmpty && upload.results.count == 1)
         let cloud = try #require(upload.results.first)
         let output = try scratch.folder("output")
-        let download = job([cloud], output); download.run()
+        let download = job([cloud], output); await offThePool { download.run() }
         #expect(download.errors.isEmpty)
         #expect(scratch.read("output/Tree/nested/a.txt") == "alpha" && scratch.read("output/Tree/b.txt") == "beta")
         try scratch.file("Tree/new.txt", "new child")
-        let merge = job([source], root, rule: .different); merge.run()
+        let merge = job([source], root, rule: .different); await offThePool { merge.run() }
         #expect(merge.errors.isEmpty)
         let records = try client.mutationJournal.all(accountID: client.accountID)
         #expect(records.filter { $0.batchID == merge.cloudBatchID && $0.topLevel == true }.allSatisfy { $0.phase == .done })
-        #expect(try provider.list(cloud).contains { $0.name == "new.txt" })
+        #expect(try await offThePool { try provider.list(cloud) }.contains { $0.name == "new.txt" })
         let resumed = job([source], root)
         resumed.cloudOperations = upload.cloudOperations; resumed.cloudBatchID = upload.cloudBatchID
-        resumed.run()
+        await offThePool { resumed.run() }
         #expect(resumed.errors.isEmpty && resumed.results == [cloud])
     }
 
@@ -48,15 +48,15 @@ extension DriveMutationTests {
         defer { RemoteFS.unregisterDrive(accountID: client.accountID) }
         let folder = try await client.createFolder(name: "destination", parentID: "root").location(accountID: client.accountID).url
         let binary = try await client.file("binary-a").location(accountID: client.accountID).url
-        func run(_ kind: FileOperationKind, _ source: URL, _ target: URL) -> RemoteTransferJob {
+        func run(_ kind: FileOperationKind, _ source: URL, _ target: URL) async -> RemoteTransferJob {
             let job = RemoteTransferJob(
                 kind: kind, sources: [source], destination: target,
                 control: FileJob(kind: kind, sources: [source], destinationFolder: target), rule: .keepBoth, options: .init())
-            job.run(); return job
+            await offThePool { job.run() }; return job
         }
-        let copied = run(.copy, binary, folder)
+        let copied = await run(.copy, binary, folder)
         #expect(copied.errors.isEmpty && copied.results.first != binary)
-        let moved = run(.move, binary, folder)
+        let moved = await run(.move, binary, folder)
         #expect(moved.errors.isEmpty)
         let copiedURL = try #require(copied.results.first), movedURL = try #require(moved.results.first)
         #expect(provider.metadata(for: copiedURL)?.name != provider.metadata(for: movedURL)?.name)
@@ -64,7 +64,7 @@ extension DriveMutationTests {
         let local = try scratch.file("cross.txt", "cross drive bytes")
         let uploaded = try await client.upload(local, parentID: "root").location(accountID: client.accountID).url
         let shared = DriveLocation(accountID: client.accountID, collection: .folder("shared-drive-a", driveID: "shared-drive-a")).url
-        let cross = run(.move, uploaded, shared)
+        let cross = await run(.move, uploaded, shared)
         #expect(cross.errors.isEmpty && cross.results.count == 1)
         #expect(try await client.file(DriveLocation(url: uploaded)!.itemIDForTest, includeTrashed: true).trashed == true)
     }
@@ -114,7 +114,7 @@ extension DriveMutationTests {
         defer { RemoteFS.unregisterDrive(accountID: client.accountID) }
         let output = try scratch.folder("published")
         let document = try await client.file("doc-a").location(accountID: client.accountID).url
-        let downloaded = try provider.download(document, into: output)
+        let downloaded = try await offThePool { try provider.download(document, into: output) }
         let reference = try scratch.file("normal-created-file", "normal")
         let permissions = try FileManager.default.attributesOfItem(atPath: downloaded.path)[.posixPermissions] as? NSNumber
         let normal = try FileManager.default.attributesOfItem(atPath: reference.path)[.posixPermissions] as? NSNumber
@@ -128,7 +128,7 @@ extension DriveMutationTests {
         let job = RemoteTransferJob(
             kind: .copy, sources: [form], destination: output,
             control: FileJob(kind: .copy, sources: [form], destinationFolder: output), rule: .ask, options: .init())
-        job.run()
+        await offThePool { job.run() }
         #expect(job.errors.count == 1 && job.errors[0].hasPrefix("Form:"))
         #expect(!job.errors[0].contains("native-unsupported:") && !job.errors[0].contains("Try another preset"))
     }

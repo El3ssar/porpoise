@@ -82,14 +82,14 @@ extension DriveMutationTests {
             return job
         }
         _ = try await client.rename(target.id, to: "changed")
-        let changed = runtime(); changed.run()
+        let changed = runtime(); await offThePool { changed.run() }
         #expect(changed.errors.count == 1 && FileManager.default.fileExists(atPath: source.path))
         record.result = try await client.file(target.id)
         record.phase = .sourceRemovalPending; try client.mutationJournal.save(record)
-        let uncertain = runtime(); uncertain.run()
+        let uncertain = runtime(); await offThePool { uncertain.run() }
         #expect(uncertain.errors.count == 1 && FileManager.default.fileExists(atPath: source.path))
         record.phase = .committed; try client.mutationJournal.save(record)
-        let recovered = runtime(); recovered.run()
+        let recovered = runtime(); await offThePool { recovered.run() }
         #expect(recovered.errors.isEmpty && !FileManager.default.fileExists(atPath: source.path))
     }
 }
@@ -125,7 +125,7 @@ extension DriveMutationTests {
         let identical = RemoteTransferJob(
             kind: .copy, sources: [local], destination: root,
             control: FileJob(kind: .copy, sources: [local], destinationFolder: root), rule: .different, options: .init(method: .content))
-        identical.run()
+        await offThePool { identical.run() }
         #expect(identical.errors.isEmpty && identical.results.isEmpty)
         #expect(identical.progress.skippedIdenticalItems == 1)
     }
@@ -198,19 +198,19 @@ extension DriveMutationTests {
         let duplicate = RemoteTransferJob(
             kind: .move, sources: [ambiguous], destination: root,
             control: FileJob(kind: .move, sources: [ambiguous], destinationFolder: root), rule: .replace, options: .init())
-        duplicate.run()
+        await offThePool { duplicate.run() }
         #expect(duplicate.errors.count == 1 && FileManager.default.fileExists(atPath: ambiguous.path))
         let native = scratch.url.appendingPathComponent("Meeting notes")
         try Data("keep native".utf8).write(to: native)
         let replacement = RemoteTransferJob(
             kind: .move, sources: [native], destination: root,
             control: FileJob(kind: .move, sources: [native], destinationFolder: root), rule: .replace, options: .init())
-        replacement.run()
+        await offThePool { replacement.run() }
         #expect(replacement.errors.count == 1 && FileManager.default.fileExists(atPath: native.path))
         let newer = RemoteTransferJob(
             kind: .copy, sources: [native], destination: root,
             control: FileJob(kind: .copy, sources: [native], destinationFolder: root), rule: .newer, options: .init())
-        newer.run()
+        await offThePool { newer.run() }
         #expect(newer.errors.isEmpty && newer.results.isEmpty)
     }
 }
@@ -233,7 +233,7 @@ extension DriveMutationTests {
             let copy = RemoteTransferJob(
                 kind: .copy, sources: [item], destination: target,
                 control: FileJob(kind: .copy, sources: [item], destinationFolder: target), rule: .ask, options: .init())
-            copy.run()
+            await offThePool { copy.run() }
             #expect(copy.errors.isEmpty && copy.results.count == 1)
             if id == "doc-a", let result = copy.results.first { #expect(targetProvider.metadata(for: result)?.name == "Meeting notes.docx") }
             #expect(try await source.file(id).trashed != true)
@@ -242,7 +242,7 @@ extension DriveMutationTests {
         let move = RemoteTransferJob(
             kind: .move, sources: [document], destination: target,
             control: FileJob(kind: .move, sources: [document], destinationFolder: target), rule: .ask, options: .init())
-        move.run()
+        await offThePool { move.run() }
         let preserved = try await source.file("doc-a")
         #expect(move.errors.count == 1 && preserved.trashed != true)
     }
