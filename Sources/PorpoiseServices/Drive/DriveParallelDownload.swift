@@ -59,24 +59,29 @@ private final class DriveRangeWriter: @unchecked Sendable {
     init(partial: URL, total: Int64, record: DriveMutationRecord, journal: DriveMutationJournal, maximumConnections: Int) throws {
         self.partial = partial; self.journal = journal
         var record = record
+        if record.downloadRanges != nil {
+            guard JobJournal.Fingerprint(partial)?.size == total else { throw DriveMutationError.sourceChanged }
+        }
         if record.downloadRanges == nil {
             // Four streams for medium files, increasing with file size up to eight.
-            let count = min(max(1, maximumConnections), min(8, max(4, Int((total + (64 << 20) - 1) / (64 << 20)))))
-            let width = (total + Int64(count) - 1) / Int64(count)
+            let count = min(max(1, maximumConnections), min(8, max(4, Int((total - 1) / (64 << 20) + 1))))
+            let width = total / Int64(count) + (total % Int64(count) == 0 ? 0 : 1)
             record.downloadRanges = (0..<count).map { index in
-                let start = Int64(index) * width, end = min(total, Int64(index + 1) * width)
+                let start = Int64(index) * width, end = index == count - 1 ? total : Int64(index + 1) * width
                 return .init(start: start, end: end, offset: min(end, max(start, record.offset)))
             }
         }
         ranges = record.downloadRanges!
         var end: Int64 = 0
         for range in ranges {
-            guard range.start == end, range.start <= range.offset, range.offset <= range.end, range.end > range.start else {
+            guard range.start == end, range.start <= range.offset, range.offset <= range.end, range.end > range.start, range.end <= total else {
                 throw DriveError.invalidResponse
             }
             end = range.end
         }
-        guard end == total, ranges.count <= 8 else { throw DriveError.invalidResponse }
+        guard end == total, ranges.count <= 8, record.offset == ranges.reduce(0, { $0 + ($1.offset - $1.start) }) else {
+            throw DriveError.invalidResponse
+        }
         output = try FileHandle(forWritingTo: partial)
         try output.truncate(atOffset: UInt64(total)); try output.synchronize()
         record.fingerprint = JobJournal.Fingerprint(partial)
@@ -96,7 +101,7 @@ private final class DriveRangeWriter: @unchecked Sendable {
             }
             guard Date().timeIntervalSince(progressAt) >= 0.1 else { return nil }
             progressAt = Date()
-            return zip(received, ranges).reduce(0) { $0 + $1.0 - $1.1.start }
+            return zip(received, ranges).reduce(0) { $0 + ($1.0 - $1.1.start) }
         }
     }
 
@@ -107,7 +112,7 @@ private final class DriveRangeWriter: @unchecked Sendable {
     private func persist(index: Int, offset: Int64) throws {
         try output.synchronize()
         record.downloadRanges![index].offset = offset
-        record.offset = record.downloadRanges!.reduce(0) { $0 + $1.offset - $1.start }
+        record.offset = record.downloadRanges!.reduce(0) { $0 + ($1.offset - $1.start) }
         record.fingerprint = JobJournal.Fingerprint(partial)
         try journal.save(record); checkpointAt[index] = Date()
     }
