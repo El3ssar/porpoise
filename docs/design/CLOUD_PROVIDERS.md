@@ -75,7 +75,10 @@ separate evidence; fake-server tests do not authorize real-account probing.
 `CloudProviderDescriptor` drives Connect, sidebar roots, Settings, browser links and deletion/Undo policy.
 `CompositeCloudBackend` composes Drive and Dropbox account adapters. `CloudFileProvider` supplies cached
 browsing, previews and playback; `CloudTransferProvider` preserves opaque destination IDs in Activity.
-Dropbox is enabled. The implementation uses the following engine capabilities:
+Dropbox Connect is enabled only when a nonblank app key resolves from env, Settings or Info.plist; without it
+the tile remains Coming soon. URL routing and the Settings key field remain available independently.
+See [Dropbox setup](../dropbox/SETUP.md) for registration and the exact fixed loopback callback.
+The implementation uses the following engine capabilities:
 
 - `DropboxAccountStore`: PKCE loopback connection, duplicate/wrong-account checks, offline refresh credentials,
   persisted account metadata, reconnect, disconnect, and foreground change-feed lifecycle. App key selection is
