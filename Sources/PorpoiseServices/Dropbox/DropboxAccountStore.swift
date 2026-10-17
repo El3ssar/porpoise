@@ -6,12 +6,12 @@ public enum DropboxConnectionError: Error, Equatable { case alreadyConnected, wr
 /// Engine-only account lifecycle. UI registration/Connect sheet availability is a separate integration step.
 @MainActor public final class DropboxAccountStore {
     public static let shared = DropboxAccountStore(directory: defaultDirectory)
-    private static var defaultDirectory: URL {
-        if CredentialStores.isIsolated {
+    static var defaultDirectory: URL {
+        if CredentialStores.isIsolated, !Settings.isTesting {
             let suite = ProcessInfo.processInfo.environment["PORPOISE_DEFAULTS_SUITE"] ?? "tests"
             return FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-dropbox-" + cloudObjectKey(suite))
         }
-        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise/Dropbox")
+        return Settings.supportFolder.appendingPathComponent("Dropbox")
     }
     private struct Saved: Codable { var account: DropboxAccount; var appKey: String }
     public private(set) var accounts: [DropboxAccount] = []

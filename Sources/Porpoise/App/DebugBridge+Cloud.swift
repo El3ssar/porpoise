@@ -149,7 +149,6 @@ extension DebugBridge {
             // copyonly on|off: as on real Drive until conditional saves are verified (saves wait for Save as a Copy).
             DriveEditing.shared.savesVersions = rest == "on" ? { _ in false } : { $0.canSaveEdits }
         case "download": AppDelegate.shared.windows.first?.cloudDownload(nil)
-        case "keep": AppDelegate.shared.windows.first?.cloudKeep(nil)
         case "evict": AppDelegate.shared.windows.first?.cloudEvict(nil)
         case "accounts":
             let accounts = CloudAccounts.shared

@@ -5,8 +5,8 @@ import Testing
 
 /// A test instance (PORPOISE_DEFAULTS_SUITE) never reads or writes Porpoise's real data or caches: every store
 /// lives in the instance's own folder.
-@Suite struct TestStoreIsolationTests {
-    @Test func everyStoreLivesInTheTestsOwnFolder() throws {
+@Suite(.isolatedSettings) struct TestStoreIsolationTests {
+    @MainActor @Test func everyStoreLivesInTheTestsOwnFolder() throws {
         #expect(Settings.isTesting)
         let library = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library").path
         let temp = FileManager.default.temporaryDirectory.path
@@ -14,7 +14,7 @@ import Testing
             ("support", Settings.supportFolder), ("caches", Settings.cachesFolder),
             ("offline copies", CloudOffline(root: nil).root), ("demo offline copies", DemoOfflineService().root),
             ("Drive metadata", DriveMetadataCache.root), ("remote files", RemoteFS.cacheParent),
-            ("Android tools", AndroidTools.supportFolder),
+            ("Android tools", AndroidTools.supportFolder), ("Dropbox", DropboxAccountStore.defaultDirectory),
         ]
         for (name, url) in roots {
             #expect(url.path.hasPrefix(temp) && !url.path.hasPrefix(library), "\(name): \(url.path)")
