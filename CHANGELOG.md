@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Keep Downloaded and Remove Download for Google Drive, as with iCloud.** Right-click a Drive file or folder: Download
+  Now, Keep Downloaded (a kept folder downloads what's added to it later, after showing its size and the space left),
+  Remove Download. Kept copies follow changes and deletions in Drive and open, preview and edit from the same copy.
+  Status shows after the name in lists and as one badge in icons, for Drive and iCloud alike. Signing out removes the
+  copies, but not while an edit hasn't reached Drive yet.
+- **Opening a Drive file shows its progress.** A file not on the Mac yet downloads in Activity (progress, speed, time
+  left, Cancel) and opens when done; one already here opens at once. Drive copies are about ten times faster.
+
 - **Faster Drive downloads and immediate previews.** Large downloads use parallel byte ranges with independent resume
   checkpoints. Images and documents show a large thumbnail while the full preview loads, and text/code can show its
   beginning first. Audio and video stream and seek without waiting for the entire file; moving the selection cancels

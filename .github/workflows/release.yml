@@ -124,8 +124,13 @@ jobs:
       - name: Build the app and disk image
         env:
           PORPOISE_VERSION: ${{ steps.version.outputs.version }}
+          # Google Drive's OAuth desktop client (not confidential for installed apps, but kept out of the repo).
+          PORPOISE_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+          PORPOISE_GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
         run: |
+          [ -n "$PORPOISE_GOOGLE_CLIENT_ID" ] || { echo "::error::GOOGLE_DRIVE_CLIENT_ID secret missing: Drive sign-in would not work"; exit 1; }
           scripts/make-app.sh
+          /usr/libexec/PlistBuddy -c 'Print :GoogleDriveClientID' build/Porpoise.app/Contents/Info.plist >/dev/null
           codesign --verify --deep --strict build/Porpoise.app
           codesign -dvv build/Porpoise.app 2>&1 | grep -q "Authority=Porpoise Signing" || { echo "::error::App is not signed with Porpoise Signing"; exit 1; }
           scripts/make-dmg.sh
