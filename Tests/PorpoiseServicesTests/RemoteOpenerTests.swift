@@ -12,14 +12,13 @@ import Testing
 final class RemoteOpenerTests {
     let server = SSHServer.current!
     let cache: Scratch
-    private let savedCacheParent = RemoteFS.cacheParent
     private var opened: [URL] = []
     private var messages: [String] = []
     private var observer: NSObjectProtocol?
 
     init() throws {
         cache = try Scratch("cache")
-        RemoteFS.cacheParent = cache.url
+        RemoteFS.cacheParentOverride = cache.url
         RemoteFS.use(server.provider(), for: server.url("/"))
         RemoteOpener.openFile = { [unowned self] in opened.append($0) }
         observer = NotificationCenter.default.addObserver(forName: StatusCenter.message, object: nil, queue: .main) { [unowned self] n in
@@ -32,7 +31,7 @@ final class RemoteOpenerTests {
         observer.map(NotificationCenter.default.removeObserver)
         RemoteOpener.openFile = { _ in }
         RemoteFS.use(nil, for: server.url("/"))
-        RemoteFS.cacheParent = savedCacheParent
+        if RemoteFS.cacheParentOverride == cache.url { RemoteFS.cacheParentOverride = nil }
     }
 
     /// The remote file `name` in a fresh folder, as the file view lists it.

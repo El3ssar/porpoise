@@ -52,22 +52,21 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
     let served: URL
     /// The download this test pointed the installer at, if any.
     private var ownDownload: URL?
-    /// What the globals were before any of these tests: a test's instance can go away after the next one began, so
-    /// each restores them only while they still point at its own scratch (else it would undo the next test's).
-    private static let savedSupport = AndroidTools.supportFolder
+    /// The download URL before any of these tests. A test's instance can go away after the next one began, so each
+    /// restores the globals only while they still point at its own scratch (else it would undo the next test's).
     private static let savedDownload = AndroidTools.downloadURL
 
     init() throws {
-        _ = (Self.savedSupport, Self.savedDownload)
+        _ = Self.savedDownload
         scratch = try Scratch("android")
         support = try scratch.folder("support")
         served = try scratch.folder("served")
-        AndroidTools.supportFolder = support
+        AndroidTools.supportFolderOverride = support
     }
 
     deinit {
         server.stop()
-        if AndroidTools.supportFolder.path.hasPrefix(scratch.url.path) { AndroidTools.supportFolder = Self.savedSupport }
+        if AndroidTools.supportFolderOverride?.path.hasPrefix(scratch.url.path) == true { AndroidTools.supportFolderOverride = nil }
         if let ownDownload, AndroidTools.downloadURL == ownDownload { AndroidTools.downloadURL = Self.savedDownload }
     }
 
@@ -139,7 +138,7 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
 
     @Test func aFolderThatCannotBeMadeIsReported() async throws {
         // Porpoise's folder is a file: nothing can be unpacked into it.
-        AndroidTools.supportFolder = try scratch.file("not a folder", "x")
+        AndroidTools.supportFolderOverride = try scratch.file("not a folder", "x")
         try makeZip("tools.zip", withADB: true)
         try serve("tools.zip")
         let result = await install()

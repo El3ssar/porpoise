@@ -141,8 +141,10 @@ public enum RemoteFS {
     /// Asks for an FTP login on the main thread (host, the user name known so far); nil when cancelled. Set by the app.
     nonisolated(unsafe) public static var askLogin: (_ host: String, _ user: String?) -> (user: String, password: String)? = { _, _ in nil }
 
-    /// Where the cache below lives (tests use a scratch folder).
-    nonisolated(unsafe) static var cacheParent = Settings.cachesFolder
+    /// Where the cache below lives: Porpoise's caches folder, asked each time (a value kept from the first use could be
+    /// the user's real one, read before a test set its own); tests may point it at a scratch folder instead.
+    nonisolated(unsafe) static var cacheParentOverride: URL?
+    static var cacheParent: URL { cacheParentOverride ?? Settings.cachesFolder }
 
     /// Local cache for files opened from remote locations.
     static var cacheRoot: URL {
