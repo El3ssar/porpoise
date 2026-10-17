@@ -6,7 +6,7 @@ import Testing
 @testable import Porpoise
 
 /// Exercise the app's real list view without listing a server, device, or account.
-@MainActor struct LocationViewSettingsTests {
+@MainActor @Suite(.isolatedSettings) struct LocationViewSettingsTests {
     enum Location: String, CaseIterable {
         case local, drive, driveShared, dropbox, dropboxShared, network, sftp, smb, mtp, android, archive, recent, tags, smart, applications
         var url: URL {
@@ -38,12 +38,8 @@ import Testing
 
     @Test(arguments: Location.allCases) func everyLocationUsesCommonAndRememberedSettings(_ location: Location) throws {
         _ = NSApplication.shared
-        let suite = "porpoise-view-settings-" + UUID().uuidString
-        let store = try #require(UserDefaults(suiteName: suite))
-        let previous = Settings.store
-        Settings.store = store
-        defer { Settings.store = previous; store.removePersistentDomain(forName: suite) }
-        // Set the backing preference directly so another app test's open view receives no temporary settings notifications.
+        let store = Settings.store
+        // Switch policy directly and reload explicitly, independently of settings-notification delivery.
         store.set(false, forKey: "dynamicView")
         let other = URL(fileURLWithPath: "/tmp/view-settings/unrelated")
         for mode in ViewMode.allCases {
