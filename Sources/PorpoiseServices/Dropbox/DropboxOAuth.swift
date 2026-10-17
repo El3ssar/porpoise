@@ -34,14 +34,15 @@ public struct DropboxConfiguration: Sendable {
     }
     public static func selected(
         defaults: UserDefaults = Settings.store, environment: [String: String] = ProcessInfo.processInfo.environment,
-        bundle: Bundle = .main
+        bundle: Bundle = .main, testing: Bool = Settings.isTesting
     ) -> Self {
         func nonempty(_ value: String?) -> String? {
             let value = value?.trimmingCharacters(in: .whitespacesAndNewlines)
             return value?.isEmpty == false ? value : nil
         }
         return Self(
-            appKey: nonempty(environment["PORPOISE_DROPBOX_APP_KEY"])
+            // The environment is for test instances only; the setting is the user's own app key (Settings › Accounts).
+            appKey: nonempty(testing ? environment["PORPOISE_DROPBOX_APP_KEY"] : nil)
                 ?? nonempty(defaults.string(forKey: "dropboxAppKey"))
                 ?? nonempty(bundle.object(forInfoDictionaryKey: "DropboxAppKey") as? String) ?? "")
     }

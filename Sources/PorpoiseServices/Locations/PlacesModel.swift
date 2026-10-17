@@ -328,7 +328,11 @@ public final class PlacesModel {
 
     private func save() {
         let s = Stored(
-            entries: userEntries, hiddenSections: Array(storedHiddenSections), collapsedSections: Array(collapsedSections),
+            entries: userEntries.map { e in
+                var e = e
+                e.url = RemoteFS.withoutPassword(e.url)
+                return e
+            }, hiddenSections: Array(storedHiddenSections), collapsedSections: Array(collapsedSections),
             sectionOrder: sectionOrder, locked: isLocked, version: Self.storeVersion)
         if let storeURL { try? JSONEncoder().encode(s).write(to: storeURL) }
         post()

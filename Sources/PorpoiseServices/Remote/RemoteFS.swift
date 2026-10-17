@@ -167,6 +167,27 @@ public enum RemoteFS {
         }
     }
 
+    /// A remote URL as Porpoise keeps it (tabs, history, Places, saved sessions): never with a password in it. An FTP
+    /// password typed into the address goes to the Keychain first, where the connection finds it.
+    public static func storingPassword(_ url: URL) -> URL { storingPassword(url, in: CredentialStores.passwords()) }
+
+    static func storingPassword(_ url: URL, in store: any PasswordCredentialStore) -> URL {
+        if !url.isFileURL, let password = url.password(percentEncoded: false), !password.isEmpty,
+            let scheme = url.scheme?.lowercased(), scheme == "ftp" || scheme == "ftps", let host = url.host,
+            let user = url.user(percentEncoded: false), !user.isEmpty
+        {
+            store.save(server: host, account: user, password: password, scheme: scheme)
+        }
+        return withoutPassword(url)
+    }
+
+    /// The URL with any password left out.
+    public static func withoutPassword(_ url: URL) -> URL {
+        guard !url.isFileURL, url.password != nil, var c = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        c.password = nil
+        return c.url ?? url
+    }
+
     /// `RemoteParsing.localName(forRemote:)`, or an error naming the item: every local path built from a remote
     /// name goes through it.
     static func localName(_ remote: String) throws -> String {

@@ -75,9 +75,11 @@ public final class DriveAccountStore: ObservableObject {
             if let clientID { configuration.clientID = clientID }
             return configuration
         }
-        let env = ProcessInfo.processInfo.environment
+        // Overrides (environment, the hidden default) are for test instances only: a release uses the client it was built with.
+        let env = Settings.isTesting ? ProcessInfo.processInfo.environment : [:]
+        let override = Settings.isTesting && !clientIDOverride.isEmpty ? clientIDOverride : nil
         let selected =
-            clientID ?? env["PORPOISE_GOOGLE_CLIENT_ID"] ?? (clientIDOverride.isEmpty ? nil : clientIDOverride)
+            clientID ?? env["PORPOISE_GOOGLE_CLIENT_ID"] ?? override
             ?? (Bundle.main.object(forInfoDictionaryKey: "GoogleDriveClientID") as? String) ?? ""
         return DriveOAuthConfiguration(
             clientID: selected,
@@ -188,7 +190,10 @@ public final class DriveAccountStore: ObservableObject {
                 if let error { continuation.resume(throwing: error) } else { continuation.resume() }
             }
         }
-        await clients[account.id]?.clearCaches()
+        if let client = clients[account.id] {
+            await client.clearCaches()
+            try await forgetLocalData(client, manager: manager)
+        }
         managers[account.id] = nil; clients[account.id] = nil; states[account.id] = nil; reachability[account.id] = nil
         RemoteFS.unregisterDrive(accountID: account.id)
         saved.removeAll { $0.account.id == account.id }
@@ -199,6 +204,23 @@ public final class DriveAccountStore: ObservableObject {
 }
 
 extension DriveAccountStore {
+    /// Sign-out leaves nothing of the account on this Mac: its folder (metadata, previews, opened and edited copies,
+    /// conflict copies), its transfer records with their partial downloads, and their upload sessions in the Keychain.
+    func forgetLocalData(_ client: DriveClient, manager: DriveTokenManager) async throws {
+        let journal = client.mutationJournal
+        for record in try journal.all(accountID: client.accountID) {
+            if record.hasSession { try await manager.removeSession(record.operationID) }
+            for id in [record.operationID, record.downloadOperationID].compactMap({ $0 }) {
+                try? FileManager.default.removeItem(at: journal.partial(id))
+            }
+            try journal.remove(record.operationID)
+        }
+        for folder in [client.metadataCache.directory, client.offlineDirectory].compactMap({ $0 })
+        where FileManager.default.fileExists(atPath: folder.path) {
+            try FileManager.default.removeItem(at: folder)
+        }
+    }
+
     /// A request's result (nil: it succeeded). Only a request that never reached Drive counts against the connection;
     /// the state changes only when it really changes (each change is published to every window).
     @MainActor fileprivate func reached(_ id: UUID, _ error: Error?) {

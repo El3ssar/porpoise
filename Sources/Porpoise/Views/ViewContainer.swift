@@ -412,7 +412,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             }
             return
         }
-        let u = newURL.isFileURL ? newURL.standardizedFileURL : newURL
+        // A password typed into the address goes to the Keychain, never into the tab, its history or the session.
+        let u = newURL.isFileURL ? newURL.standardizedFileURL : RemoteFS.storingPassword(newURL)
         if !filterBar.isLocked { filterBar.clear(); if !Settings.shared.showFilterBarOnStartup { filterBar.isHidden = true } }
         if !searchBar.isHidden { closeSearch() }
         messageBar.isHidden = true
