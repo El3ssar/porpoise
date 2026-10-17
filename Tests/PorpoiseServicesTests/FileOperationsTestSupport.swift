@@ -90,11 +90,11 @@ func makeController(_ ui: ScriptedUI) -> FileOperationsController {
 
 extension FileOperationsController {
     /// Runs a job and waits for it, leaving the main queue free for its questions and results.
-    @MainActor func perform(_ kind: FileOperationKind, _ urls: [URL], to folder: URL? = nil) async -> [URL] {
-        await withCheckedContinuation { c in run(kind, urls, to: folder, window: nil) { c.resume(returning: $0) } }
+    @MainActor func perform(_ kind: FileOperationKind, _ urls: [URL], to folder: URL? = nil) async throws -> [URL] {
+        try await awaitCallback { c in run(kind, urls, to: folder, window: nil) { c.resume(returning: $0) } }
     }
 
-    @MainActor func paste(into folder: URL) async -> [URL] {
-        await withCheckedContinuation { c in paste(into: folder, window: nil) { c.resume(returning: $0) } }
+    @MainActor func paste(into folder: URL) async throws -> [URL] {
+        try await awaitCallback { c in paste(into: folder, window: nil) { c.resume(returning: $0) } }
     }
 }

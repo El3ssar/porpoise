@@ -6,34 +6,6 @@ import Testing
 
 @testable import PorpoiseServices
 
-/// Lets the first of a callback and its timeout through.
-private final class CallbackOnce: @unchecked Sendable {
-    private let lock = NSLock()
-    private var done = false
-    func claim() -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        if done { return false }
-        done = true
-        return true
-    }
-}
-
-/// Waits for a callback that arrives on another queue; a callback that never comes fails after `timeout` instead of
-/// hanging the run.
-private func awaitCallback<T: Sendable>(
-    timeout: TimeInterval = 30, sourceLocation: SourceLocation = #_sourceLocation, _ start: (@escaping @Sendable (T) -> Void) -> Void
-) async -> T? {
-    let once = CallbackOnce()
-    return await withCheckedContinuation { (c: CheckedContinuation<T?, Never>) in
-        start { value in if once.claim() { c.resume(returning: value) } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
-            guard once.claim() else { return }
-            Issue.record("No callback within \(Int(timeout)) seconds", sourceLocation: sourceLocation)
-            c.resume(returning: nil)
-        }
-    }
-}
-
 /// An executable shell script in `scratch`.
 private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -> URL {
     let u = try scratch.file(name, "#!/bin/sh\n" + body + "\n")
@@ -90,8 +62,9 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         #expect(r.status == 0)
     }
 
-    private func install() async -> String?? {
-        await awaitCallback { done in AndroidTools.install { msg in done(msg) } }
+    /// The install's message (nil when it worked).
+    private func install() async throws -> String? {
+        try await awaitCallback(timeout: 30) { c in AndroidTools.install { c.resume(returning: $0) } }
     }
 
     @Test func installsTheDownloadedToolsAndPrefersThem() async throws {
@@ -100,8 +73,8 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         try makeZip("tools.zip", withADB: true)
         try serve("tools.zip")
 
-        let result = await install()
-        #expect(result == .some(nil))
+        let result = try await install()
+        #expect(result == nil)
         let adb = support.appendingPathComponent("platform-tools/adb")
         #expect(FileManager.default.isExecutableFile(atPath: adb.path))
         #expect(scratch.read("support/platform-tools/README") == "tools")
@@ -116,24 +89,24 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
 
     @Test func aFailedDownloadIsReported() async throws {
         try serve("missing.zip")
-        let result = await install()
-        #expect(result??.hasPrefix("The download from Google failed") == true)
+        let result = try await install()
+        #expect(result?.hasPrefix("The download from Google failed") == true)
         #expect(!FileManager.default.fileExists(atPath: AndroidTools.installDir.path))
     }
 
     @Test func anArchiveWithoutADBIsNotInstalled() async throws {
         try makeZip("noadb.zip", withADB: false)
         try serve("noadb.zip")
-        let result = await install()
-        #expect(result == .some("The downloaded archive could not be unpacked."))
+        let result = try await install()
+        #expect(result == "The downloaded archive could not be unpacked.")
         #expect(await eventually(10) { scratch.listing("support").isEmpty })
     }
 
     @Test func anArchiveThatIsNotAZipIsNotInstalled() async throws {
         try scratch.file("served/broken.zip", "not a zip")
         try serve("broken.zip")
-        let result = await install()
-        #expect(result == .some("The downloaded archive could not be unpacked."))
+        let result = try await install()
+        #expect(result == "The downloaded archive could not be unpacked.")
         #expect(await eventually(10) { scratch.listing("support").isEmpty })
     }
 
@@ -142,8 +115,8 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         AndroidTools.supportFolderOverride = try scratch.file("not a folder", "x")
         try makeZip("tools.zip", withADB: true)
         try serve("tools.zip")
-        let result = await install()
-        #expect(result??.isEmpty == false)
+        let result = try await install()
+        #expect(result?.isEmpty == false)
         #expect(scratch.read("not a folder") == "x")
     }
 
@@ -173,10 +146,10 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         #expect(scratch.read("adb.log") == nil)
 
         AndroidTools.startedServer = true
-        let acknowledged: Bool? = await awaitCallback { done in
+        let acknowledged: Bool = try await awaitCallback(timeout: 30) { c in
             source.setEventHandler {
                 var byte: UInt8 = 0
-                if read(fd, &byte, 1) == 1 { done(true) }
+                if read(fd, &byte, 1) == 1 { c.resume(returning: true) }
             }
             AndroidTools.stopServerIfOurs()
         }

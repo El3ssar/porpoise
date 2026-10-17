@@ -170,20 +170,10 @@ final class VideoPreviewStreamTests {
 
     // MARK: Streaming
 
-    /// `playableURL`, waiting for its answer (nil after 30 s, so a regression fails instead of hanging).
-    @MainActor func playable(_ p: VideoPreview, _ url: URL, owner: AnyObject) async -> URL? {
-        await withCheckedContinuation { c in
-            let once = Once()
-            p.playableURL(for: url, owner: owner) { u in if once.claim() { c.resume(returning: u) } }
-            // Beyond the preview's own worst case: probe, then copy, then convert, 10s each.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 60) { if once.claim() { c.resume(returning: nil) } }
-        }
-    }
-
-    final class Once: @unchecked Sendable {
-        private let lock = NSLock()
-        private var done = false
-        func claim() -> Bool { lock.lock(); defer { lock.unlock() }; if done { return false }; done = true; return true }
+    /// `playableURL`, waiting for its answer. It fails after 60 s instead of hanging: beyond the preview's own worst
+    /// case (probe, then copy, then convert, 10 s each).
+    @MainActor func playable(_ p: VideoPreview, _ url: URL, owner: AnyObject) async throws -> URL? {
+        try await awaitCallback(timeout: 60) { c in p.playableURL(for: url, owner: owner) { c.resume(returning: $0) } }
     }
 
     func fetch(_ url: URL) async throws -> (Int, Data) {
@@ -208,7 +198,7 @@ final class VideoPreviewStreamTests {
         let p = VideoPreview()
         let owner = NSObject()
         defer { p.stop(); p.server.stop() }
-        let url = try #require(await playable(p, v, owner: owner))
+        let url = try #require(try await playable(p, v, owner: owner))
         #expect(url.scheme == "http" && url.host == "127.0.0.1" && url.lastPathComponent == "index.m3u8")
         let (status, list) = try await fetch(url)
         #expect(status == 200)
@@ -230,7 +220,7 @@ final class VideoPreviewStreamTests {
         let v = try video("plain.mp4", "h264.mp4")
         let p = VideoPreview()
         defer { p.stop(); p.server.stop() }
-        #expect(await playable(p, v, owner: NSObject()) == v)
+        #expect(try await playable(p, v, owner: NSObject()) == v)
         #expect(sessionFolders().isEmpty)
     }
 
@@ -239,7 +229,7 @@ final class VideoPreviewStreamTests {
         let p = VideoPreview()
         let owner = NSObject(), other = NSObject()
         defer { p.stop(); p.server.stop() }
-        let url = try #require(await playable(p, v, owner: owner))
+        let url = try #require(try await playable(p, v, owner: owner))
         #expect(sessionFolders().count == 1)
         await MainActor.run { p.stop(for: other) }
         #expect(try await fetch(url).0 == 200)
@@ -262,7 +252,7 @@ final class VideoPreviewStreamTests {
         await MainActor.run {
             p.playableURL(for: first, owner: NSObject()) { _ in firstAnswered.withLock { $0 = true } }
         }
-        let url = try #require(await playable(p, second, owner: NSObject()))
+        let url = try #require(try await playable(p, second, owner: NSObject()))
         #expect(url.lastPathComponent == "index.m3u8")
         try await Task.sleep(for: .milliseconds(300))
         #expect(!firstAnswered.withLock { $0 })  // the older request never calls back
@@ -274,8 +264,8 @@ final class VideoPreviewStreamTests {
         let p = VideoPreview()
         defer { p.stop(); p.server.stop() }
         let junk = try scratch.file("junk.mkv", String(repeating: "x", count: 10_000))
-        #expect(await playable(p, junk, owner: NSObject()) == nil)
-        #expect(await playable(p, scratch.path("missing.avi"), owner: NSObject()) == nil)
+        #expect(try await playable(p, junk, owner: NSObject()) == nil)
+        #expect(try await playable(p, scratch.path("missing.avi"), owner: NSObject()) == nil)
     }
 
     @Test func withoutFFmpegNothingStreams() async throws {
@@ -284,7 +274,7 @@ final class VideoPreviewStreamTests {
         defer { VideoPreview.testFFmpeg = testFFmpeg }
         let p = VideoPreview()
         defer { p.stop(); p.server.stop() }
-        #expect(await playable(p, v, owner: NSObject()) == nil)
+        #expect(try await playable(p, v, owner: NSObject()) == nil)
         #expect(VideoPreview.probe(v).duration == nil)
     }
 

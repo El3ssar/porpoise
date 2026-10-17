@@ -45,7 +45,7 @@ struct DriveTransferSpeedTests {
                 let job = RemoteTransferJob(
                     kind: .copy, sources: urls, destination: destination,
                     control: JobControl(), rule: .ask, options: .init())
-                await withCheckedContinuation { continuation in
+                try await awaitCallback { continuation in
                     Thread {
                         job.run(); continuation.resume()
                     }.start()

@@ -88,7 +88,7 @@ extension DriveMutationTests {
         let plans = controller.recoveryPlans()
         let plan = try #require(plans.first { $0.id == record.operationID })
         #expect(plan.sources == [source] && plan.destination == root)
-        let results: [URL] = await withCheckedContinuation { continuation in
+        let results: [URL] = try await awaitCallback { continuation in
             controller.recover(plan, window: nil) { continuation.resume(returning: $0) }
         }
         #expect(results.count == 1 && controller.recoveryPlans().isEmpty)

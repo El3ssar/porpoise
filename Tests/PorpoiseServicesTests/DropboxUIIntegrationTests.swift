@@ -24,7 +24,7 @@ import Testing
         accounts.operations = FileOperationsController()
     }
     func connect() async throws -> CloudAccount {
-        try await withCheckedThrowingContinuation { continuation in
+        try await awaitCallback { continuation in
             _ = accounts.connect(
                 .dropbox, openBrowser: { url in Task { _ = try? await URLSession.shared.data(from: url) } },
                 done: { continuation.resume(with: $0.mapError { $0 as Error }) })
@@ -122,7 +122,7 @@ import Testing
         let shared = try #require(fixture.accounts.url(account.id, root: .sharedWithMe))
         #expect(try await provider.refresh(shared).contains { $0.name == "Unmounted shared folder" })
         #expect(fixture.composite.permissions(for: shared)?.canAddChildren == false)
-        let page: CloudSearchPage = try await withCheckedThrowingContinuation { continuation in
+        let page: CloudSearchPage = try await awaitCallback { continuation in
             _ = fixture.composite.search("txt", in: root, everywhere: true, contents: true, pageToken: nil) { continuation.resume(with: $0) }
         }
         #expect(page.items.count == 2 && page.nextPageToken != nil)
@@ -141,7 +141,7 @@ import Testing
         let provider = try #require(RemoteFS.provider(for: root) as? DropboxProvider)
         let local = fixture.server.fixture.scratch.url.appendingPathComponent("payload.txt"); try Data("payload".utf8).write(to: local)
         let controller = FileOperationsController()
-        let uploaded: [URL] = await withCheckedContinuation { continuation in
+        let uploaded: [URL] = try await awaitCallback { continuation in
             controller.run(.copy, [local], to: root, window: nil) { continuation.resume(returning: $0) }
         }
         let remote = try #require(uploaded.first)
@@ -149,29 +149,29 @@ import Testing
         #expect(remote.lastPathComponent != "payload.txt")
         #expect(controller.activities.last?.state == .completed)
         let output = try fixture.server.fixture.scratch.folder("output")
-        let downloaded: [URL] = await withCheckedContinuation { continuation in
+        let downloaded: [URL] = try await awaitCallback { continuation in
             controller.run(.copy, [remote], to: output, window: nil) { continuation.resume(returning: $0) }
         }
         #expect(downloaded.first?.lastPathComponent == "payload.txt")
         #expect(try Data(contentsOf: output.appendingPathComponent("payload.txt")) == Data("payload".utf8))
-        func copy(_ rule: TransferConflictRule) async -> RemoteTransferJob {
+        func copy(_ rule: TransferConflictRule) async throws -> RemoteTransferJob {
             let job = RemoteTransferJob(
                 kind: .copy, sources: [local], destination: root, control: JobControl(),
                 rule: rule, options: .init())
-            await withCheckedContinuation { continuation in
+            try await awaitCallback { continuation in
                 Thread {
                     job.run(); continuation.resume()
                 }.start()
             }; return job
         }
-        let both = await copy(.keepBoth); #expect(both.errors.isEmpty && both.results.count == 1)
+        let both = try await copy(.keepBoth); #expect(both.errors.isEmpty && both.results.count == 1)
         try Data("replacement".utf8).write(to: local)
-        let replaced = await copy(.replace); #expect(replaced.errors.isEmpty && replaced.results == [remote])
+        let replaced = try await copy(.replace); #expect(replaced.errors.isEmpty && replaced.results == [remote])
         let tree = try fixture.server.fixture.scratch.folder("Tree"); _ = try fixture.server.fixture.scratch.file("Tree/child.txt", "child")
         let treeJob = RemoteTransferJob(
             kind: .copy, sources: [tree], destination: root, control: JobControl(), rule: .ask,
             options: .init())
-        await withCheckedContinuation { continuation in
+        try await awaitCallback { continuation in
             Thread {
                 treeJob.run(); continuation.resume()
             }.start()
@@ -182,7 +182,7 @@ import Testing
         let native = RemoteTransferJob(
             kind: .copy, sources: [copiedFolder.url], destination: treeURL,
             control: JobControl(), rule: .ask, options: .init())
-        await withCheckedContinuation { continuation in
+        try await awaitCallback { continuation in
             Thread {
                 native.run(); continuation.resume()
             }.start()
@@ -198,7 +198,7 @@ import Testing
         let baseline = try #require(provider.transferRevision(file.url))
         let local = try fixture.server.fixture.scratch.file("replacement.txt", "mine")
         try await fixture.server.configure(["files": [["id": "id:hello", "path": "/hello.txt", "text": "concurrent remote edit"]]])
-        let error: Error? = await withCheckedContinuation { continuation in
+        let error: Error? = try await awaitCallback { continuation in
             Thread {
                 do {
                     _ = try provider.uploadTransfer(
@@ -224,13 +224,13 @@ import Testing
         _ = try await store.fetch(item, keep: true); #expect(await store.snapshot().isKept(item.ref.item))
         let facade = CloudOffline(accounts: fixture.accounts, root: fixture.server.fixture.scratch.url.appendingPathComponent("facade"))
         facade.operations = FileOperationsController(); facade.activate()
-        let kept: Error? = await withCheckedContinuation { continuation in
+        let kept: Error? = try await awaitCallback { continuation in
             _ = facade.keep(true, [file.url]) { continuation.resume(returning: $0) }
         }
         #expect(kept == nil)
         await expectEventually(timeout: 5) { facade.usage(account: account.id).kept == item.size }
         #expect(facade.state(for: file.url) == .local)
-        let wiped: Error? = await withCheckedContinuation { continuation in facade.wipe(account: account.id) { continuation.resume(returning: $0) } }
+        let wiped: Error? = try await awaitCallback { continuation in facade.wipe(account: account.id) { continuation.resume(returning: $0) } }
         #expect(wiped == nil && facade.usage(account: account.id).kept == 0)
         let copies = try await provider.scoped(file.url).offlineCopies(); _ = try await copies.fetch(item)
         let playback = try await provider.playback(file.url); #expect(playback.url.isFileURL && playback.stream == nil)
@@ -249,7 +249,7 @@ import Testing
         let file = try #require(try await provider.refresh(root).first { $0.name == "hello.txt" })
         let editing = DropboxEditing(); editing.saveDelay = 0.02
         var opened: URL?
-        let success: Bool = await withCheckedContinuation { continuation in
+        let success: Bool = try await awaitCallback { continuation in
             editing.open(file, using: { opened = $0 }) { continuation.resume(returning: $0) }
         }
         #expect(success)
@@ -334,34 +334,34 @@ import Testing
     @Test @MainActor func mutationsUseDescriptorUndoPolicyAndAccountCallbacks() async throws {
         let fixture = try DropboxUIFixture(); defer { fixture.cleanup() }
         let account = try await fixture.connect(); let root = try #require(fixture.accounts.url(account.id, root: .myDrive))
-        let folder: FileItem = try await withCheckedThrowingContinuation { continuation in
+        let folder: FileItem = try await awaitCallback { continuation in
             fixture.accounts.createFolder(named: "Created", in: root) { continuation.resume(with: $0) }
         }
         #expect(fixture.accounts.operations.undoStack.isEmpty)
         #expect(!fixture.accounts.supportsTrashUndo([folder.url]))
         #expect(fixture.accounts.deletionTitle(for: folder.url) == "Delete from Dropbox…")
-        let renamed: FileItem = try await withCheckedThrowingContinuation { continuation in
+        let renamed: FileItem = try await awaitCallback { continuation in
             fixture.accounts.rename(folder.url, from: folder.name, to: "Renamed") { continuation.resume(with: $0) }
         }
         #expect(renamed.url == folder.url && renamed.name == "Renamed")
         #expect(fixture.composite.info(for: renamed.url)?.name == "Renamed")
-        let removed: [URL] = try await withCheckedThrowingContinuation { continuation in
+        let removed: [URL] = try await awaitCallback { continuation in
             fixture.accounts.trash([folder.url]) { urls, error in
                 if let error { continuation.resume(throwing: error) } else { continuation.resume(returning: urls) }
             }
         }
         #expect(removed == [folder.url])
         #expect(fixture.accounts.trashMessage(removed, names: [folder.url: "Renamed"]) == "Deleted “Renamed” from Dropbox")
-        let failure: Error? = await withCheckedContinuation { continuation in
+        let failure: Error? = try await awaitCallback { continuation in
             fixture.composite.untrash(removed) { _, error in continuation.resume(returning: error) }
         }
         #expect((failure as? DropboxError) == .unsupportedUndo)
-        let avatar: Data? = await withCheckedContinuation { continuation in
+        let avatar: Data? = try await awaitCallback { continuation in
             fixture.composite.avatar(account.id) { continuation.resume(returning: $0) }
         }
             ;
         #expect(avatar == nil)
-        let link: CloudLinkResult = await withCheckedContinuation { continuation in
+        let link: CloudLinkResult = try await awaitCallback { continuation in
             fixture.composite.resolveLink("not a link") { continuation.resume(returning: $0) }
         }
             ;

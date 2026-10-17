@@ -67,7 +67,7 @@ import Testing
         defer { withExtendedLifetime(query) {} }
         // Own the query until its timeout callback arrives, as DirectoryModel does. An unused local can be
         // released before the await, which stops the query rather than testing its unavailable response.
-        let tagged: [FileItem] = await withCheckedContinuation { continuation in
+        let tagged: [FileItem] = try await awaitCallback { continuation in
             query = MetadataListQuery.tagged("Red-\(UUID().uuidString)") { continuation.resume(returning: $0) }
         }
         #expect(tagged.isEmpty)

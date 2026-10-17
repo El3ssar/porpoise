@@ -45,7 +45,7 @@ import Testing
             baseURL: server.base.appendingPathComponent("drive/v3/"))
         let backend = DriveCloudBackend(store: store, avatarFolder: scratch.url.appendingPathComponent("avatars"))
         let browser: (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
-        let connected = await withCheckedContinuation { c in _ = backend.connect(.googleDrive, openBrowser: browser) { c.resume(returning: $0) } }
+        let connected = try await awaitCallback { c in _ = backend.connect(.googleDrive, openBrowser: browser) { c.resume(returning: $0) } }
         guard case .success(let account) = connected, let id = UUID(uuidString: account.id), let client = store.client(for: id) else {
             Issue.record("sign-in failed")
             return

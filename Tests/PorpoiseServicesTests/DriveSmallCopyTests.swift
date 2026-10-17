@@ -38,7 +38,7 @@ struct DriveSmallCopyTests {
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         let control = FileJob(kind: .copy, sources: sources, destinationFolder: destination)
         let job = RemoteTransferJob(kind: .copy, sources: sources, destination: destination, control: control.control, rule: .ask, options: .init())
-        await withCheckedContinuation { continuation in
+        try await awaitCallback { continuation in
             Thread {
                 job.run(); continuation.resume()
             }.start()

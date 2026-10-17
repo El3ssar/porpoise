@@ -195,7 +195,7 @@ import Testing
         let original = try file("src/photo.jpg", "pixels")
         let dst = disk.volume.appendingPathComponent("dst")
         try FileManager.default.createDirectory(at: dst, withIntermediateDirectories: true)
-        _ = await controller.perform(.copy, [original], to: dst)
+        _ = try await controller.perform(.copy, [original], to: dst)
         let copy = dst.appendingPathComponent("photo.jpg")
         #expect(controller.undoTitle == "Undo: Create")
 
@@ -213,7 +213,7 @@ import Testing
         let original = try file("src/photo.jpg", "pixels")
         let dst = disk.volume.appendingPathComponent("dst")
         try FileManager.default.createDirectory(at: dst, withIntermediateDirectories: true)
-        _ = await controller.perform(.copy, [original], to: dst)
+        _ = try await controller.perform(.copy, [original], to: dst)
         let copy = dst.appendingPathComponent("photo.jpg")
         controller.undo(window: nil)
         guard case .trashed(let pairs)? = controller.redoStack.last, let inTrash = pairs.first?.inTrash else {

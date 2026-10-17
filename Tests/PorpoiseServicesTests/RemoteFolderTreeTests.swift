@@ -9,7 +9,7 @@ import Testing
 @Suite(.serialized) struct RemoteFolderTreeTests {
     @MainActor private func until(_ tree: RemoteFolderTree, _ ready: @escaping () -> Bool) async throws {
         if ready() { return }
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        try await awaitCallback { (continuation: Callback<Void>) in
             var completed = false
             let timeout = DispatchWorkItem {
                 guard !completed else { return }

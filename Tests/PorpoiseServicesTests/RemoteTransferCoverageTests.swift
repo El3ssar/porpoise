@@ -43,11 +43,11 @@ final class RemoteTransferCoverageTests {
 
     private func read(_ url: URL) -> String? { try? String(contentsOf: url, encoding: .utf8) }
 
-    private func run(_ kind: FileOperationKind, _ urls: [URL], to folder: URL? = nil, conflicts: [ConflictAnswer] = []) async -> (
+    private func run(_ kind: FileOperationKind, _ urls: [URL], to folder: URL? = nil, conflicts: [ConflictAnswer] = []) async throws -> (
         results: [URL], errors: [String]
     ) {
         let ui = ScriptedUI(conflicts: conflicts)
-        let results = await makeController(ui).perform(kind, urls, to: folder)
+        let results = try await makeController(ui).perform(kind, urls, to: folder)
         return (results, ui.errors)
     }
 
@@ -66,12 +66,12 @@ final class RemoteTransferCoverageTests {
         try write("moved", dir.appendingPathComponent("move me.txt"))
         let dst = try local.folder("dst")
 
-        let copied = await run(.copy, [remote(dir.appendingPathComponent("copy me.txt"))], to: dst)
+        let copied = try await run(.copy, [remote(dir.appendingPathComponent("copy me.txt"))], to: dst)
         #expect(copied.errors.isEmpty && copied.results == [dst.appendingPathComponent("copy me.txt")])
         #expect(local.read("dst/copy me.txt") == "copied")
         #expect(read(dir.appendingPathComponent("copy me.txt")) == "copied")
 
-        let moved = await run(.move, [remote(dir.appendingPathComponent("move me.txt"))], to: dst)
+        let moved = try await run(.move, [remote(dir.appendingPathComponent("move me.txt"))], to: dst)
         #expect(moved.errors.isEmpty && moved.results.count == 1)
         #expect(local.read("dst/move me.txt") == "moved")
         #expect(!fm.fileExists(atPath: dir.appendingPathComponent("move me.txt").path))
@@ -83,17 +83,17 @@ final class RemoteTransferCoverageTests {
         let b = try local.file("b.txt", "b")
         let dest = remoteFolder(dir)
 
-        let copied = await run(.copy, [a], to: dest)
+        let copied = try await run(.copy, [a], to: dest)
         #expect(copied.errors.isEmpty && copied.results == [dest.appendingPathComponent("a.txt")])
         #expect(read(dir.appendingPathComponent("a.txt")) == "a" && local.read("a.txt") == "a")
 
-        let moved = await run(.move, [b], to: dest)
+        let moved = try await run(.move, [b], to: dest)
         #expect(moved.errors.isEmpty)
         #expect(read(dir.appendingPathComponent("b.txt")) == "b" && local.read("b.txt") == nil)
 
         // The name is taken now: the user chooses Skip; the previous bytes remain.
         try local.file("a.txt", "newer")
-        let again = await run(.copy, [a], to: dest, conflicts: [.init(.skip)])
+        let again = try await run(.copy, [a], to: dest, conflicts: [.init(.skip)])
         #expect(again.results.isEmpty && again.errors.isEmpty)
         #expect(read(dir.appendingPathComponent("a.txt")) == "a")
     }
@@ -111,7 +111,7 @@ final class RemoteTransferCoverageTests {
         let before = JobJournal.Fingerprint(dir.appendingPathComponent("same"))
         Settings.shared.transferConflictRule = .different
         let c = makeController(ScriptedUI())
-        _ = await c.perform(.copy, [same, changed], to: remoteFolder(dir))
+        _ = try await c.perform(.copy, [same, changed], to: remoteFolder(dir))
         #expect(read(dir.appendingPathComponent("changed")) == "incoming")
         #expect(JobJournal.Fingerprint(dir.appendingPathComponent("same")) == before)
         #expect(c.activities.last?.progress?.skippedIdenticalItems == 1)
@@ -154,16 +154,16 @@ final class RemoteTransferCoverageTests {
         try fm.createDirectory(at: dir.appendingPathComponent("dst"), withIntermediateDirectories: true)
         let dest = remoteFolder(dir.appendingPathComponent("dst"))
 
-        let copied = await run(.copy, [remote(dir.appendingPathComponent("src/c.txt"))], to: dest)
+        let copied = try await run(.copy, [remote(dir.appendingPathComponent("src/c.txt"))], to: dest)
         #expect(copied.errors.isEmpty)
         #expect(read(dir.appendingPathComponent("dst/c.txt")) == "c" && read(dir.appendingPathComponent("src/c.txt")) == "c")
 
-        let moved = await run(.move, [remote(dir.appendingPathComponent("src/m.txt"))], to: dest)
+        let moved = try await run(.move, [remote(dir.appendingPathComponent("src/m.txt"))], to: dest)
         #expect(moved.errors.isEmpty)
         #expect(read(dir.appendingPathComponent("dst/m.txt")) == "m" && !fm.fileExists(atPath: dir.appendingPathComponent("src/m.txt").path))
 
         // Moved into the folder it is already in: nothing to do.
-        let stays = await run(.move, [remote(dir.appendingPathComponent("dst/m.txt"))], to: server.url(dir.appendingPathComponent("dst").path))
+        let stays = try await run(.move, [remote(dir.appendingPathComponent("dst/m.txt"))], to: server.url(dir.appendingPathComponent("dst").path))
         #expect(stays.errors.isEmpty && stays.results.isEmpty && read(dir.appendingPathComponent("dst/m.txt")) == "m")
     }
 
@@ -174,11 +174,11 @@ final class RemoteTransferCoverageTests {
         try fm.createDirectory(at: dir.appendingPathComponent("dst"), withIntermediateDirectories: true)
         let dest = other(dir.appendingPathComponent("dst").path, isDirectory: true)
 
-        let copied = await run(.copy, [remote(dir.appendingPathComponent("src/c.txt"))], to: dest)
+        let copied = try await run(.copy, [remote(dir.appendingPathComponent("src/c.txt"))], to: dest)
         #expect(copied.errors.isEmpty && copied.results == [dest.appendingPathComponent("c.txt")])
         #expect(read(dir.appendingPathComponent("dst/c.txt")) == "c" && read(dir.appendingPathComponent("src/c.txt")) == "c")
 
-        let moved = await run(.move, [remote(dir.appendingPathComponent("src/m.txt"))], to: dest)
+        let moved = try await run(.move, [remote(dir.appendingPathComponent("src/m.txt"))], to: dest)
         #expect(moved.errors.isEmpty)
         #expect(read(dir.appendingPathComponent("dst/m.txt")) == "m" && !fm.fileExists(atPath: dir.appendingPathComponent("src/m.txt").path))
     }
@@ -187,14 +187,14 @@ final class RemoteTransferCoverageTests {
         let dir = try server.folder()
         try write("x", dir.appendingPathComponent("x.txt"))
         let mine = try local.file("mine.txt", "y")
-        let deleted = await run(.delete, [remote(dir.appendingPathComponent("x.txt")), mine])
+        let deleted = try await run(.delete, [remote(dir.appendingPathComponent("x.txt")), mine])
         #expect(deleted.errors.isEmpty)
         #expect(try fm.contentsOfDirectory(atPath: dir.path).isEmpty)
         #expect(local.read("mine.txt") == nil)
     }
 
     @Test func aFailedRemoteDeleteIsReported() async throws {
-        let deleted = await run(.delete, [server.url("/~")])
+        let deleted = try await run(.delete, [server.url("/~")])
         #expect(deleted.errors.count == 1 && deleted.errors[0].contains("top folder"))
         #expect(fm.fileExists(atPath: server.home.path))
     }
@@ -212,12 +212,12 @@ extension RemoteTransferCoverageTests {
         let folder = try server.folder()
         let source = folder.appendingPathComponent("ssh-to-drive.txt")
         try write("bytes survive both moves", source)
-        let upload = await run(.move, [remote(source)], to: root)
+        let upload = try await run(.move, [remote(source)], to: root)
         #expect(upload.errors.isEmpty && upload.results.count == 1)
         #expect(!fm.fileExists(atPath: source.path))
         let remoteItem = try #require(upload.results.first)
         let destination = try server.folder()
-        let download = await run(.move, [remoteItem], to: remoteFolder(destination))
+        let download = try await run(.move, [remoteItem], to: remoteFolder(destination))
         #expect(download.errors.isEmpty && download.results.count == 1)
         #expect(read(destination.appendingPathComponent("ssh-to-drive.txt")) == "bytes survive both moves")
         let location = try #require(DriveLocation(url: remoteItem))

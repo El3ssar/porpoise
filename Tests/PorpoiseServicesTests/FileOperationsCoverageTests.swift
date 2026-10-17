@@ -149,7 +149,7 @@ private final class DontAskAgainUI: FileOperationsUI {
         let src = try s.file("x.txt", "new")
         try s.file("dest/x.txt", "old")
         let c = FileOperationsController()
-        let results = await c.perform(.copy, [src], to: s.path("dest"))
+        let results = try await c.perform(.copy, [src], to: s.path("dest"))
         #expect(results.isEmpty)
         #expect(s.read("dest/x.txt") == "old")
     }
@@ -158,7 +158,7 @@ private final class DontAskAgainUI: FileOperationsUI {
         let s = try Scratch()
         let ui = ScriptedUI()
         let c = makeController(ui)
-        let results = await c.perform(.copy, [s.path("gone.txt")], to: try s.folder("dest"))
+        let results = try await c.perform(.copy, [s.path("gone.txt")], to: try s.folder("dest"))
         #expect(results.isEmpty)
         #expect(ui.errors.count == 1 && ui.errors.first?.contains("gone.txt") == true)
     }

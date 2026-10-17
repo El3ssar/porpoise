@@ -129,7 +129,7 @@ import Testing
         process.arguments = [server.base.absoluteString, scratch.url.path, id.uuidString, UUID().uuidString, "kill", "edit", "binary-a"]
         process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
         try process.run()
-        let status: Int32 = await withCheckedContinuation { continuation in
+        let status: Int32 = try await awaitCallback { continuation in
             Thread {
                 process.waitUntilExit(); continuation.resume(returning: process.terminationStatus)
             }.start()
@@ -213,7 +213,7 @@ import Testing
             process.environment = env
             process.standardOutput = output; process.standardError = FileHandle.nullDevice
             try process.run()
-            let status: Int32 = await withCheckedContinuation { continuation in
+            let status: Int32 = try await awaitCallback { continuation in
                 Thread {
                     process.waitUntilExit(); continuation.resume(returning: process.terminationStatus)
                 }.start()

@@ -16,7 +16,7 @@ extension DriveMutationTests {
         process.arguments = [server.base.absoluteString, folder.path, account.uuidString, operation.uuidString, mode, kind, value]
         process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
         try process.run()
-        return await withCheckedContinuation { continuation in
+        return try await awaitCallback { continuation in
             // Process.waitUntilExit must not block Swift's cooperative executor or the main actor.
             Thread {
                 process.waitUntilExit(); continuation.resume(returning: process.terminationStatus)

@@ -19,8 +19,8 @@ import Testing
         return (DriveCloudBackend(store: store, avatarFolder: scratch.url.appendingPathComponent("avatars")), store)
     }
 
-    private func connect(_ b: DriveCloudBackend) async -> Result<CloudAccount, CloudConnectError> {
-        await withCheckedContinuation { c in _ = b.connect(.googleDrive, openBrowser: browser) { c.resume(returning: $0) } }
+    private func connect(_ b: DriveCloudBackend) async throws -> Result<CloudAccount, CloudConnectError> {
+        try await awaitCallback { c in _ = b.connect(.googleDrive, openBrowser: browser) { c.resume(returning: $0) } }
     }
 
     @Test func connectsTwoAccountsWithQuotaSharedDrivesAndSharing() async throws {
@@ -29,13 +29,13 @@ import Testing
         let (b, store) = backend(server, scratch: scratch)
         var changes = 0
         b.onChange = { changes += 1 }
-        guard case .success(let one) = await connect(b), case .success(let two) = await connect(b) else {
+        guard case .success(let one) = try await connect(b), case .success(let two) = try await connect(b) else {
             Issue.record("sign-in failed"); return
         }
         defer { for a in store.accounts { RemoteFS.unregisterDrive(accountID: a.id) } }
         #expect(one.email == "daniel@example.com" && two.email == "daniel@studio.example")
         // The same account again is shown, not added (the fixture's profiles rotate back to the first one).
-        guard case .failure(.alreadyConnected(let again)) = await connect(b) else { Issue.record("expected already connected"); return }
+        guard case .failure(.alreadyConnected(let again)) = try await connect(b) else { Issue.record("expected already connected"); return }
         #expect(again.id == one.id)
         await expectEventually { b.accounts.allSatisfy { $0.quotaTotal != nil && $0.sharedDriveCount == 2 } }
         let a = try #require(b.accounts.first { $0.id == one.id })
@@ -78,15 +78,15 @@ import Testing
         #expect(link == .notALink)
 
         // Signing in again keeps the account; removing forgets it.
-        let again2: Result<Void, CloudConnectError> = await withCheckedContinuation { c in
+        let again2: Result<Void, CloudConnectError> = try await awaitCallback { c in
             _ = b.signInAgain(two.id, openBrowser: browser) { c.resume(returning: $0) }
         }
         if case .failure(let e) = again2 { Issue.record("sign in again failed: \(e)") }
-        let unknown: Result<Void, CloudConnectError> = await withCheckedContinuation { c in
+        let unknown: Result<Void, CloudConnectError> = try await awaitCallback { c in
             _ = b.signInAgain("not-an-account", openBrowser: browser) { c.resume(returning: $0) }
         }
         guard case .failure(.failed) = unknown else { Issue.record("expected a failure"); return }
-        let removed: Error? = await withCheckedContinuation { c in b.remove(two.id) { c.resume(returning: $0) } }
+        let removed: Error? = try await awaitCallback { c in b.remove(two.id) { c.resume(returning: $0) } }
         #expect(removed == nil && b.accounts.map(\.id) == [one.id])
     }
 
@@ -94,16 +94,16 @@ import Testing
         let server = try FakeDriveServer(fixture: Self.fixture)
         let scratch = try Scratch()
         let (b, store) = backend(server, scratch: scratch)
-        guard case .success(let one) = await connect(b) else { Issue.record("sign-in failed"); return }
+        guard case .success(let one) = try await connect(b) else { Issue.record("sign-in failed"); return }
         defer { for a in store.accounts { RemoteFS.unregisterDrive(accountID: a.id) } }
-        let none: Data? = await withCheckedContinuation { c in b.avatar(one.id) { c.resume(returning: $0) } }
+        let none: Data? = try await awaitCallback { c in b.avatar(one.id) { c.resume(returning: $0) } }
         #expect(none == nil)
         // A picture fetched earlier is used from the cache folder.
         try FileManager.default.createDirectory(at: scratch.url.appendingPathComponent("avatars"), withIntermediateDirectories: true)
         try Data([7, 7]).write(to: scratch.url.appendingPathComponent("avatars/\(one.id).img"))
-        let cached: Data? = await withCheckedContinuation { c in b.avatar(one.id) { c.resume(returning: $0) } }
+        let cached: Data? = try await awaitCallback { c in b.avatar(one.id) { c.resume(returning: $0) } }
         #expect(cached == Data([7, 7]))
-        let missing: Data? = await withCheckedContinuation { c in b.avatar("nobody") { c.resume(returning: $0) } }
+        let missing: Data? = try await awaitCallback { c in b.avatar("nobody") { c.resume(returning: $0) } }
         #expect(missing == nil)
     }
 
@@ -111,7 +111,7 @@ import Testing
         let server = try FakeDriveServer(fixture: Self.fixture)
         let scratch = try Scratch()
         let (b, store) = backend(server, scratch: scratch)
-        let result: Result<CloudAccount, CloudConnectError> = await withCheckedContinuation { c in
+        let result: Result<CloudAccount, CloudConnectError> = try await awaitCallback { c in
             let cancel = b.connect(.googleDrive, openBrowser: { _ in }) { c.resume(returning: $0) }
             cancel()
         }
