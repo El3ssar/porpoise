@@ -108,9 +108,9 @@ public actor CloudOfflineStore {
             if index.entries[item.ref.item]?.item.revision == item.revision { return result }
             if inFlight[item.ref.item]?.id == running.id { inFlight[item.ref.item] = nil }
         }
-        let epoch = generation
-        let task = Task { try await self.performFetch(item, epoch: epoch, checkpoint: checkpoint, report: report) }
-        let flightID = UUID()
+        guard !invalidated, !removing.contains(item.ref.item) else { throw CancellationError() }
+        let epoch = generation, flightID = UUID()
+        let task = Task { try await self.performFetch(item, epoch: epoch, flightID: flightID, checkpoint: checkpoint, report: report) }
         inFlight[item.ref.item] = Flight(id: flightID, task: task)
         defer { if inFlight[item.ref.item]?.id == flightID { inFlight[item.ref.item] = nil } }
         return try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
@@ -123,14 +123,14 @@ public actor CloudOfflineStore {
         if waiters.isEmpty { active -= 1 } else { waiters.removeFirst().resume() }
     }
     private func performFetch(
-        _ item: CloudRemoteItem, epoch: Int,
+        _ item: CloudRemoteItem, epoch: Int, flightID: UUID,
         checkpoint: @escaping @Sendable () async throws -> Void,
         report: @escaping @Sendable (Int64, Int64?) -> Void
     ) async throws -> URL {
         await acquire()
         defer { release(); progress[item.ref.item] = nil; publish() }
         try Task.checkCancellation()
-        guard epoch == generation else { throw CancellationError() }
+        guard !invalidated, epoch == generation else { throw CancellationError() }
         guard !source.isOffline else { throw CloudContentError.offline }
         do { try await makeSpace(max(0, item.size ?? 0)) } catch { errors[item.ref.item] = error.localizedDescription; publish(); throw error }
         defer { reserved -= max(0, item.size ?? 0) }
@@ -142,7 +142,7 @@ public actor CloudOfflineStore {
         do {
             try await source.download(item, to: partial, checkpoint: checkpoint) { [weak self] bytes, total in
                 report(bytes, total)
-                Task { await self?.setProgress(item.ref.item, bytes: bytes, total: total) }
+                Task { await self?.setProgress(item.ref.item, flightID: flightID, bytes: bytes, total: total) }
             }
             try Task.checkCancellation()
             guard generation == epoch else { throw CancellationError() }
@@ -154,8 +154,8 @@ public actor CloudOfflineStore {
             errors[item.ref.item] = error.localizedDescription; publish(); throw error
         }
     }
-    private func setProgress(_ id: String, bytes: Int64, total: Int64?) {
-        guard progress[id] != nil else { return }
+    private func setProgress(_ id: String, flightID: UUID, bytes: Int64, total: Int64?) {
+        guard inFlight[id]?.id == flightID, progress[id] != nil else { return }
         progress[id] = total.flatMap { $0 > 0 ? min(1, Double(bytes) / Double($0)) : nil } ?? 0
         publish()
     }
@@ -274,6 +274,7 @@ public actor CloudOfflineStore {
         publish()
     }
     private func persist() throws {
+        guard !invalidated else { throw CancellationError() }
         let fm = FileManager.default
         try fm.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let url = directory.appendingPathComponent("index.json")

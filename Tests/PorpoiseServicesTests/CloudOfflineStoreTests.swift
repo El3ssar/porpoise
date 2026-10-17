@@ -261,5 +261,7 @@ extension CloudOfflineStoreTests {
         await #expect(throws: CancellationError.self) { try await task.value }
         #expect(!FileManager.default.fileExists(atPath: store.directory.path))
         await #expect(throws: CancellationError.self) { try await store.fetch(item) }
+        await #expect(throws: CancellationError.self) { try await store.unpin([item.ref]) }
+        #expect(!FileManager.default.fileExists(atPath: store.directory.path))
     }
 }
