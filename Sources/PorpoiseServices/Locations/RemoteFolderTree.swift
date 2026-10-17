@@ -46,6 +46,7 @@ public final class RemoteFolderTree {
                 // A collapsed branch is read again only on expansion; no speculative network work.
                 listing = nil
                 children = nil
+                tree?.onChange?(self)
             }
         }
 

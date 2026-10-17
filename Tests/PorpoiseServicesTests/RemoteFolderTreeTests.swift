@@ -64,6 +64,12 @@ import Testing
         provider.invalidate(folder: root)
         NotificationCenter.default.post(name: CloudAccounts.remoteChanged, object: client.accountID.uuidString.lowercased())
         try await until(tree) { tree.find(folder.url) == nil && !tree.root.isLoading }
+        tree.root.collapse()
+        var invalidated = false
+        tree.onChange = { _ in invalidated = true }
+        tree.reload()
+        #expect(invalidated && tree.root.children == nil && tree.root.isExpandable && !tree.root.isLoading)
+        tree.onChange = nil
     }
 
     @Test(.timeLimit(.minutes(1))) @MainActor func dropboxLazyPagingChangesHiddenFoldersAndNamespaceIdentity() async throws {
