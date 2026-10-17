@@ -6,7 +6,7 @@ import PorpoiseCore
     public static let shared = DropboxAccountStore(directory: defaultDirectory)
     static var defaultDirectory: URL {
         if CredentialStores.isIsolated, !Settings.isTesting {
-            let suite = ProcessInfo.processInfo.environment["PORPOISE_DEFAULTS_SUITE"] ?? "tests"
+            let suite = TestEnvironment.defaultsSuite.value() ?? "tests"
             return FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-dropbox-" + cloudObjectKey(suite))
         }
         return Settings.supportFolder.appendingPathComponent("Dropbox")
@@ -31,7 +31,7 @@ import PorpoiseCore
     ) {
         self.defaults = defaults; self.credentials = credentials; self.directory = directory; self.http = http
         records = CloudAccountRecords(defaults: defaults, key: "dropboxAccounts", clientField: "appKey")
-        if configuration == nil, Settings.isTesting, let raw = ProcessInfo.processInfo.environment["PORPOISE_DROPBOX_FAKE"],
+        if configuration == nil, Settings.isTesting, let raw = TestEnvironment.dropboxFake.value(),
             let fake = URL(string: raw), fake.scheme == "http", fake.host == "127.0.0.1"
         {
             self.configuration = DropboxConfiguration(

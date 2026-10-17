@@ -26,8 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         MenuCommandRegistry.shared.start()
         NSApp.registerServicesMenuSendTypes([.fileURL], returnTypes: [])
         VideoPreview.shared.cleanUp()
-        // Test hook only in test launches (never in normal use).
+        // Test hook only in test launches of test and local builds (never in normal use, never in a release).
+        #if PORPOISE_TEST_HOOKS
         if Settings.isTesting { DebugBridge.shared.start() }
+        #endif
         let args = Self.folderArguments()
         // First launch: the onboarding assistant comes first; the browser window opens when it's done.
         if args.isEmpty, windows.isEmpty, OnboardingWindowController.shouldShow {

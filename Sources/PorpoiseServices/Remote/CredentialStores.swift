@@ -9,7 +9,7 @@ protocol PasswordCredentialStore: Sendable {
 /// setup hook running before a default argument or singleton is evaluated.
 public enum CredentialStores {
     static func isolated(environment: [String: String], arguments: [String], testing: Bool) -> Bool {
-        testing || environment["PORPOISE_DEFAULTS_SUITE"] != nil || environment["PORPOISE_BRIDGE"] != nil
+        testing || TestEnvironment.defaultsSuite.value(in: environment) != nil || TestEnvironment.bridge.value(in: environment) != nil
             || environment["XCTestConfigurationFilePath"] != nil || environment["SWIFT_TESTING_ENABLED"] != nil
             || arguments.contains { $0.contains(".xctest") || $0.contains("swiftpm-testing-helper") }
     }

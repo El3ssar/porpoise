@@ -12,8 +12,8 @@ final class FileOperationsDialogs: FileOperationsUI {
     func reviewAppCleanup(_ items: [URL], window: AnyObject?, completion: @escaping ([URL]?) -> Void) {
         let applications = items.filter { $0.pathExtension.lowercased() == "app" }
         let env = ProcessInfo.processInfo.environment
-        let libraries = Settings.isTesting ? env["PORPOISE_CLEANUP_LIBRARY"].map { [URL(fileURLWithPath: $0)] } : nil
-        let roots = Settings.isTesting ? env["PORPOISE_CLEANUP_APPS"].map { [URL(fileURLWithPath: $0)] } : nil
+        let libraries = Settings.isTesting ? TestEnvironment.cleanupLibrary.value(in: env).map { [URL(fileURLWithPath: $0)] } : nil
+        let roots = Settings.isTesting ? TestEnvironment.cleanupApps.value(in: env).map { [URL(fileURLWithPath: $0)] } : nil
         AppCleanupWindow(
             applications: applications, originals: items, libraries: libraries ?? AppCleanupScanner.libraries,
             catalogRoots: roots ?? (AppLibrary.roots + [URL(fileURLWithPath: "/System/Library/CoreServices")]),
@@ -201,10 +201,10 @@ final class FileOperationsDialogs: FileOperationsUI {
 
     func jobStarted(_ activity: Activity) {
         if let job = activity.job {
-            if Settings.isTesting, let delay = ProcessInfo.processInfo.environment["PORPOISE_TRANSFER_PREPARATION_DELAY"].flatMap(Double.init) {
+            if Settings.isTesting, let delay = TestEnvironment.transferPreparationDelay.value().flatMap(Double.init) {
                 job.inventoryDelay = min(0.01, max(0, delay))
             }
-            if Settings.isTesting, let delay = ProcessInfo.processInfo.environment["PORPOISE_TRANSFER_DELAY"].flatMap(Double.init) {
+            if Settings.isTesting, let delay = TestEnvironment.transferDelay.value().flatMap(Double.init) {
                 job.allowsClone = false
                 job.resumableSize = 1
                 job.chunkDelay = min(1, max(0, delay))
@@ -254,7 +254,7 @@ final class SystemClipboard: FileClipboard {
     private let pasteboard: NSPasteboard =
         Settings.isTesting
         ? NSPasteboard(
-            name: NSPasteboard.Name("app.porpoise.Porpoise.test-clipboard." + (ProcessInfo.processInfo.environment["PORPOISE_BRIDGE"] ?? "test")))
+            name: NSPasteboard.Name("app.porpoise.Porpoise.test-clipboard." + (TestEnvironment.bridge.value() ?? "test")))
         : .general
 
     var changeCount: Int { pasteboard.changeCount }

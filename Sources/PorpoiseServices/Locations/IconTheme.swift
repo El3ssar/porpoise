@@ -13,7 +13,7 @@ public final class IconTheme {
     private static let contexts = ["actions", "places", "devices", "mimetypes", "emblems", "status"]
 
     private init() {
-        if let env = ProcessInfo.processInfo.environment["PORPOISE_RESOURCES"] {
+        if let env = TestEnvironment.resources.value() {
             root = URL(fileURLWithPath: env).appendingPathComponent("icons")
         } else if let r = Bundle.main.resourceURL?.appendingPathComponent("icons"),
             FileManager.default.fileExists(atPath: r.path)

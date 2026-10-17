@@ -44,7 +44,7 @@ public struct DropboxConfiguration: Sendable {
         }
         return Self(
             // The environment is for test instances only; the setting is the user's own app key (Settings › Accounts).
-            appKey: nonempty(testing ? environment["PORPOISE_DROPBOX_APP_KEY"] : nil)
+            appKey: nonempty(testing ? TestEnvironment.dropboxAppKey.value(in: environment) : nil)
                 ?? nonempty(defaults.string(forKey: "dropboxAppKey"))
                 ?? nonempty(bundle.object(forInfoDictionaryKey: "DropboxAppKey") as? String) ?? "")
     }

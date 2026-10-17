@@ -11,7 +11,7 @@ final class OnboardingWindowController: NSWindowController {
 
     /// Until it's been finished once, and while something is missing (PORPOISE_FORCE_ONBOARDING shows it in a test instance).
     static var shouldShow: Bool {
-        if ProcessInfo.processInfo.environment["PORPOISE_FORCE_ONBOARDING"] != nil { return true }
+        if TestEnvironment.forceOnboarding.isSet { return true }
         return !Settings.isTesting && !Settings.store.bool(forKey: doneKey) && !SystemIntegration.allPermissionsGranted
     }
 

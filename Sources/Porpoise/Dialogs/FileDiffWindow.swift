@@ -278,7 +278,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
                 let throttle = NSLock(); var lastProgress = Date.distantPast
                 func progress(_ name: String, _ bytes: UInt64, _ total: UInt64) {
                     // Visual-review hook only; the responsiveness probe runs without this variable.
-                    if Settings.isTesting, let value = ProcessInfo.processInfo.environment["PORPOISE_FILEDIFF_READ_DELAY_MS"],
+                    if Settings.isTesting, let value = TestEnvironment.fileDiffReadDelayMs.value(),
                         let milliseconds = Double(value), milliseconds > 0
                     {
                         Thread.sleep(forTimeInterval: min(milliseconds, 100) / 1000)
