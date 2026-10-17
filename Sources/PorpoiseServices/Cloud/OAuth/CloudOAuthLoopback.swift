@@ -8,6 +8,8 @@ public final class CloudOAuthLoopback: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
     private var waiting = false
+    /// The browser's connection for the callback, held open until `finish` says how sign-in ended.
+    private var held: Int32 = -1
 
     public init(port: UInt16 = 0) throws {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
@@ -30,8 +32,28 @@ public final class CloudOAuthLoopback: @unchecked Sendable {
         redirectURL = URL(string: "http://127.0.0.1:\(UInt16(bigEndian: address.sin_port))/oauth/callback")!
     }
 
-    deinit { close(descriptor) }
-    public func cancel() { lock.withLock { cancelled = true } }
+    deinit {
+        finish(.received)
+        close(descriptor)
+    }
+
+    /// Stops waiting; a browser still waiting for its page gets the plain one.
+    public func cancel() {
+        lock.withLock { cancelled = true }
+        finish(.received)
+    }
+
+    /// Answers the browser that delivered the callback with how sign-in ended (once; later calls do nothing).
+    public func finish(_ page: CloudOAuthPage) {
+        let fd = lock.withLock {
+            let fd = held
+            held = -1
+            return fd
+        }
+        guard fd >= 0 else { return }
+        respond(fd, status: "200 OK", body: page.html, type: "text/html")
+        close(fd)
+    }
 
     public func callback(timeout: TimeInterval = 180) async throws -> URL {
         guard
@@ -67,7 +89,8 @@ public final class CloudOAuthLoopback: @unchecked Sendable {
             try ready(descriptor, deadline: deadline)
             let fd = accept(descriptor, nil, nil)
             guard fd >= 0 else { continue }
-            defer { close(fd) }
+            var keep = false
+            defer { if !keep { close(fd) } }
             var noSignal: Int32 = 1
             setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
             var bytes = Data()
@@ -87,14 +110,16 @@ public final class CloudOAuthLoopback: @unchecked Sendable {
                 respond(fd, status: "404 Not Found", body: "Not found.")
                 continue
             }
-            respond(fd, status: "200 OK", body: "Sign-in response received. You can return to Porpoise.")
+            // The page waits for the token exchange: it can then say who signed in, or why it failed.
+            keep = true
+            lock.withLock { held = fd }
             return url
         }
     }
 
-    private func respond(_ fd: Int32, status: String, body: String) {
+    private func respond(_ fd: Int32, status: String, body: String, type: String = "text/plain") {
         let response =
-            "HTTP/1.1 \(status)\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n\(body)"
+            "HTTP/1.1 \(status)\r\nContent-Type: \(type); charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\nCache-Control: no-store\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src data:\r\n\r\n\(body)"
         _ = response.withCString { send(fd, $0, response.utf8.count, 0) }
     }
 }

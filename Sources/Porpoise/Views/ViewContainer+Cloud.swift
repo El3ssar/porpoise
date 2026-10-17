@@ -21,7 +21,7 @@ extension ViewContainer {
             messageBar.show("Sign in to \(name) again to continue.", error: false, action: "Sign In…") { [weak self] in
                 _ = accounts.signInAgain(account.id, openBrowser: ConnectSheet.openBrowser) { result in
                     switch result {
-                    case .success: self?.messageBar.dismiss(); self?.reload()
+                    case .success: NSApp.activate(); self?.messageBar.dismiss(); self?.reload()
                     case .failure(.failed(let message)): self?.messageBar.show(message, error: true)
                     default: break
                     }
