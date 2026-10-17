@@ -1,36 +1,67 @@
 import Foundation
 import PorpoiseCore
 
-/// Main-thread folder tree for remote locations. Every expansion uses the browser's DirectoryModel and provider
-/// listing cache; probing for a disclosure triangle never starts a request.
+/// Main-thread folder tree for remote locations. Every expansion lists through the location's content source, as the
+/// browser does (a cloud folder paints its saved listing first); probing for a disclosure triangle never starts a
+/// request.
 public final class RemoteFolderTree {
     public final class Node {
         public let url: URL
         public private(set) var name: String
         public private(set) var children: [Node]?
         public private(set) var isExpanded = false
-        public var isLoading: Bool { listing?.isLoading == true || listing?.isRefreshing == true }
-        public var message: String? { listing?.loadError }
+        public private(set) var isLoading = false
+        public private(set) var message: String?
         public var isExpandable: Bool { children.map { !$0.isEmpty } ?? true }
-        private var listing: DirectoryModel?
+        /// What was listed, and the listing under way.
+        private var items: [FileItem]?
+        private var load: LocationLoad?
+        private var listed = false
         private weak var tree: RemoteFolderTree?
 
         fileprivate init(url: URL, name: String, tree: RemoteFolderTree) {
             self.url = url; self.name = name; self.tree = tree
         }
 
+        deinit { load?.cancel() }
+
         public func expand() {
             isExpanded = true
-            if let listing {
-                if listing.loadError != nil { listing.reload(); tree?.onChange?(self) }
+            if listed {
+                if message != nil { list(); tree?.onChange?(self) }
                 return
             }
-            let model = DirectoryModel(location: url, prefetchFolders: false)
-            listing = model
-            model.onChange = { [weak self] in self?.update() }
-            model.onLoaded = { [weak self] in self?.update() }
-            model.reload()
+            listed = true
+            list()
             tree?.onChange?(self)
+        }
+
+        /// Lists the folder: a saved listing shows at once and the service's answer replaces it; a failure after a
+        /// saved listing (or an earlier one) keeps what was shown.
+        private func list() {
+            load?.cancel()
+            message = nil
+            let source = LocationContentSources.source(for: url)
+            let cached = source.traits.paintsCache ? source.cached(url) : nil
+            if let cached { items = cached }
+            isLoading = true
+            load = source.load(url, expanded: []) { [weak self] listing in
+                guard let self else { return }
+                switch listing.part {
+                case .whole:
+                    self.isLoading = false
+                    self.message = listing.error?.message
+                    if listing.error == nil || !listing.items.isEmpty { self.items = listing.items }
+                case .page:
+                    guard cached == nil || listing.complete else { return }
+                    self.items = listing.items
+                case .end:
+                    self.isLoading = false
+                    if let error = listing.error, cached == nil { self.message = error.message }
+                }
+                self.update()
+            }
+            if cached != nil { update() }
         }
 
         public func collapse() {
@@ -40,22 +71,26 @@ public final class RemoteFolderTree {
 
         fileprivate func refresh() {
             if isExpanded {
-                listing?.reload()
+                list()
                 tree?.onChange?(self)
             } else {
                 // A collapsed branch is read again only on expansion; no speculative network work.
-                listing = nil
+                load?.cancel(); load = nil
+                listed = false
+                items = nil
+                isLoading = false
+                message = nil
                 children = nil
                 tree?.onChange?(self)
             }
         }
 
         private func update() {
-            guard let listing, let tree else { return }
+            guard let tree else { return }
             // An initial failure is still retryable on the next expansion. Keep any usable previous snapshot.
-            if !listing.items.isEmpty || listing.loadError == nil && !listing.isLoading {
+            if let items, !items.isEmpty || message == nil && !isLoading {
                 let old = Dictionary((children ?? []).map { ($0.url, $0) }, uniquingKeysWith: { a, _ in a })
-                children = listing.items.filter { item in
+                children = items.filter { item in
                     item.isBrowsableFolder
                         && (tree.showHidden || !item.isHidden && !item.name.hasPrefix(".")
                             || tree.visiblePath.contains { RemoteFolderTree.sameLocation($0, item.url) })
@@ -142,9 +177,12 @@ public final class RemoteFolderTree {
         advancingReveal = true
         defer { advancingReveal = false }
         var node = root!
-        for target in revealChain.dropFirst() {
+        let last = revealChain.count - 1
+        for (index, target) in revealChain.enumerated().dropFirst() {
             node.expand()
-            if let next = node.children?.first(where: { Self.sameLocation($0.url, target) }) {
+            // The target may be named by another location of the same item (a pasted Drive link): its provider says.
+            let provider = index == last ? RemoteFS.provider(for: target) as? CloudFileProvider : nil
+            if let next = node.children?.first(where: { Self.sameLocation($0.url, target) || provider?.sameItem($0.url, target) == true }) {
                 node = next
             } else {
                 if !node.isLoading, node.message == nil, revealRefreshes.insert(node.url).inserted { node.refresh() }
