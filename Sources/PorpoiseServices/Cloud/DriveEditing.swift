@@ -107,6 +107,7 @@ public final class DriveEditing {
     /// A burst of writes from one save is sent once, this long after the last.
     public var saveDelay: TimeInterval = 0.8
     /// How long "Saved to Google Drive" stays before the row goes back to "Editing".
+    public var operations: FileOperationsController = .shared
     public var savedShownFor: TimeInterval = 4
     /// Whether saves can go to Drive as new versions of the file: only where Drive can refuse to overwrite someone
     /// else's version (the engine says so). Otherwise they stay here until saved as a copy.
@@ -169,7 +170,8 @@ public final class DriveEditing {
     }
 
     /// Opens a Drive file for editing in its app. `done(false)`: it can't be edited here (a copy should open instead).
-    public func open(_ item: FileItem, done: @escaping (Bool) -> Void = { _ in }) {
+    public func open(_ item: FileItem, using launch: ((URL) -> Void)? = nil, done: @escaping (Bool) -> Void = { _ in }) {
+        let launch = launch ?? openFile
         guard let location = DriveLocation(url: item.url), let client = client(location.accountID),
             let file = (RemoteFS.provider(for: item.url) as? DriveProvider)?.metadata(for: item.url), canEdit(item)
         else { return done(false) }
@@ -177,14 +179,22 @@ public final class DriveEditing {
         if let known = entries.first(where: { $0.account == location.accountID && $0.fileID == file.id }),
             FileManager.default.fileExists(atPath: known.localURL.path)
         {
-            openFile(known.localURL)
+            launch(known.localURL)
             if watchers[known.id] == nil { watch(known.id) }
             return done(true)
         }
         post("Opening “\(item.name)”…", false)
         Task { @MainActor [weak self] in
             do {
-                let session = try await client.edits.open(file)
+                let existing = await client.edits.cachedSession(file)
+                var opened: DriveEditSession?
+                _ = try await CloudRemoteOpen.prepare(item, cached: existing?.localURL, operations: self?.operations ?? .shared) { context in
+                    let session = try await client.edits.open(file, context: context)
+                    opened = session
+                    return session.localURL
+                }
+                guard let session = opened ?? existing else { throw DriveError.invalidResponse }
+                if existing != nil { Task { _ = try? await client.file(file.id) } }
                 guard let self else { return }
                 let entry = CloudEditEntry(
                     id: session.id, account: location.accountID, fileID: file.id, name: session.file.name, localURL: session.localURL,
@@ -193,7 +203,7 @@ public final class DriveEditing {
                 self.entries.removeAll { $0.id == entry.id }
                 self.entries.insert(entry, at: 0)
                 NotificationCenter.default.post(name: Self.changed, object: nil)
-                self.openFile(session.localURL)
+                launch(session.localURL)
                 self.watch(session.id)
                 self.post(
                     self.savesVersions(client)
@@ -201,8 +211,11 @@ public final class DriveEditing {
                         : "Editing “\(entry.name)”: when you save, you can keep your changes as a copy in Google Drive.", false)
                 done(true)
             } catch {
-                self?.post("Couldn’t open “\(item.name)” for editing: \(error.localizedDescription)", false)
-                done(false)
+                if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
+                    self?.post("Couldn’t open “\(item.name)” for editing: \(error.localizedDescription)", false)
+                }
+                // A supported open already reported its error in Activity; never start another download after cancellation.
+                done(true)
             }
         }
     }

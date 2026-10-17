@@ -4,6 +4,7 @@ import PorpoiseCore
 /// Blocking compatibility adapter, called by DirectoryModel's background queue. New callers use DriveClient pages.
 public final class DriveProvider: RemoteProvider, @unchecked Sendable {
     public let accountID: UUID
+    public var openingOperations: FileOperationsController = .shared
     public let client: DriveClient?
     private let accountName: String
     private let accountEmail: String?
@@ -165,10 +166,24 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
         let location = try location(remote)
         guard let client else { throw DriveError.reconnect }
         guard case .folder(let id, _) = location.collection else { throw DriveError.invalidLocation }
+        if !thumbnail, metadata(for: remote) == nil {
+            let item = FileItem(url: remote, name: displayName(for: remote) ?? "cloud file", isDirectory: false)
+            return try await CloudRemoteOpen.prepare(item, operations: openingOperations) { context in
+                let file = try await client.file(id, resourceKey: location.resourceKey)
+                return try await client.preview(file, context: context)
+            }
+        }
         let file: DriveFile
         if let cached = metadata(for: remote) { file = cached } else { file = try await client.file(id, resourceKey: location.resourceKey) }
         if thumbnail { return try await client.thumbnail(file) }
-        return try await client.preview(file)
+        let cached = try await client.cachedPreview(file)
+        if cached != nil {
+            // Validate quietly; this open never waits on the network.
+            Task { _ = try? await client.file(file.id, resourceKey: file.resourceKey) }
+        }
+        return try await CloudRemoteOpen.prepare(file.fileItem(accountID: accountID), cached: cached, operations: openingOperations) { context in
+            try await client.preview(file, context: context)
+        }
     }
 
     public func download(_ remote: URL, into localFolder: URL) throws -> URL {
@@ -181,9 +196,11 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
         guard case .folder(let id, _) = location.collection else { throw DriveError.invalidLocation }
         let preset = DriveExportPreset(rawValue: Settings.store.string(forKey: "googleDriveExportPreset") ?? "") ?? .office
         let context = transferContext()
+        let known = metadata(for: remote)
         let result = try Self.wait {
-            try await client.downloadToStaging(
-                client.file(id, resourceKey: location.resourceKey), preset: preset, operationID: operationID, context: context)
+            let file: DriveFile
+            if let known { file = known } else { file = try await client.file(id, resourceKey: location.resourceKey) }
+            return try await client.downloadToStaging(file, preset: preset, operationID: operationID, context: context)
         }
         return try RemoteFS.downloadStaged(result.name, into: localFolder) { staging in
             // The private recovery partial is 0600. A published download gets normal creation permissions,

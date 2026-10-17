@@ -69,7 +69,10 @@ public final class Activity: Identifiable {
     }
 
     /// "Copying 3 items to Backup"
+    var openingName: String?
+
     public var title: String {
+        if let openingName { return "Opening “\(openingName)”" }
         let n = sources.count == 1 ? "“\(Self.name(sources[0]))”" : "\(sources.count) items"
         let dest = destination.map { " to \(Self.name($0))" } ?? ""
         return "\(kind.verb) \(n)\(dest)"

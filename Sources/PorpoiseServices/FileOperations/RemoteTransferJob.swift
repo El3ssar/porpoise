@@ -47,12 +47,13 @@ final class RemoteTransferJob {
 
     var remaining: [URL] { sources.filter { completed[$0] == nil } }
 
-    func run() {
+    func run(ownsControl: Bool = true) {
         defer { onNotice(nil) }
         let transport = Shell.TransferControl(
             isPaused: { self.control.isPaused }, isCancelled: { self.control.isCancelled },
             isInterrupted: { self.control.isInterrupted }, onBytes: { self.advance(bytes: $0) }, onStatus: { self.onNotice($0) })
         Shell.withTransferControl(transport) {
+            if runSmallCloudCopies() { return }
             do {
                 for source in sources {
                     try control.checkCancellation()
@@ -101,7 +102,7 @@ final class RemoteTransferJob {
             }
         }
         publish(force: true)
-        control.finishExternal()
+        if ownsControl { control.finishExternal() }
     }
 
     static func temporaryFolder() throws -> URL {
@@ -131,7 +132,15 @@ final class RemoteTransferJob {
         if let provider = RemoteFS.provider(for: url) as? DriveProvider, let client = provider.client,
             let location = DriveLocation(url: url), case .folder(let id, _) = location.collection
         {
-            let file = try DriveProvider.wait { try await client.file(id) }
+            let file: DriveFile
+            if let known = provider.metadata(for: url), !known.isFolder, known.shortcutDetails == nil,
+                known.size.flatMap(Int64.init).map({ $0 < 8 * 1024 * 1024 }) == true,
+                known.version != nil, known.md5Checksum != nil
+            {
+                file = known
+            } else {
+                file = try DriveProvider.wait { try await client.file(id) }
+            }
             return file.fileItem(accountID: provider.accountID, parent: DriveLocation(url: url.deletingLastPathComponent()))
         }
         return try children(url.deletingLastPathComponent()).first { $0.name == url.lastPathComponent }

@@ -15,6 +15,7 @@ public struct DrivePage: Sendable {
 /// Native Drive v3 read-only API. Each page can be consumed independently; cancellation propagates to HTTP.
 public final class DriveClient: @unchecked Sendable {
     public let accountID: UUID
+    public let openCache: CloudOpenCache
     public let mediaCache: DriveMediaCache
     public let metadataCache: DriveMetadataCache
     private var editStore: DriveEditStore?
@@ -50,6 +51,7 @@ public final class DriveClient: @unchecked Sendable {
     ) {
         self.mediaCache = DriveMediaCache(accountID: accountID, directory: metadataDirectory?.appendingPathComponent("Previews"))
         self.metadataCache = DriveMetadataCache(accountID: accountID, directory: metadataDirectory)
+        self.openCache = CloudOpenCache(directory: self.metadataCache.directory.appendingPathComponent("OpenFiles"))
         self.mutationJournal = mutationJournal
         self.accountID = accountID; self.tokens = tokens; self.http = http; self.baseURL = baseURL; self.report = report
     }
@@ -259,18 +261,35 @@ public final class DriveClient: @unchecked Sendable {
         metadataCache.clear()
         lock.withLock { cache.removeAll() }
         await mediaCache.clear()
+        openCache.clear()
     }
 
-    public func preview(_ file: DriveFile) async throws -> URL {
+    public func preview(_ file: DriveFile, context: DriveTransferContext = .init()) async throws -> URL {
         let target = try await resolve(file)
+        let name = previewName(file: file, target: target)
+        if let cached = try await cachedPreview(target) { return cached }
+        if isOffline { throw DriveError.offline }
+        let epoch = target.isGoogleDocument ? await mediaCache.epoch() : openCache.epoch()
+        let staged = try await downloadToStaging(target, preset: .pdf, context: context)
+        defer { try? FileManager.default.removeItem(at: staged.url) }
+        // The listing may have been old when the download began. Index the verified revision, never that old key.
+        let verifiedKey = previewKey(staged.file)
+        if target.isGoogleDocument { return try await mediaCache.importFile(staged.url, key: verifiedKey, name: name, epoch: epoch) }
+        return try openCache.adopt(staged.url, key: verifiedKey, name: name, epoch: epoch)
+    }
+
+    public func cachedPreview(_ file: DriveFile) async throws -> URL? {
+        if !file.isGoogleDocument { return try openCache.localCopy(key: previewKey(file), name: file.name) }
+        return try await mediaCache.cachedFile(key: previewKey(file), name: previewName(file: file, target: file))
+    }
+
+    private func previewKey(_ file: DriveFile) -> String {
+        "preview|\(file.id)|\(file.headRevisionId ?? file.version ?? file.modifiedTime ?? "")"
+    }
+
+    private func previewName(file: DriveFile, target: DriveFile) -> String {
         let format = target.isGoogleDocument ? DriveExportPreset.pdf.format(for: target.mimeType) : nil
-        let name = format.map { "\(file.name).\($0.fileExtension)" } ?? file.name
-        return try await mediaCache.file(
-            key: "preview|\(target.id)|\(target.headRevisionId ?? target.version ?? target.modifiedTime ?? "")", name: name
-        ) {
-            if self.isOffline { throw DriveError.offline }
-            return try await self.download(target, preset: .pdf).data
-        }
+        return format.map { "\(file.name).\($0.fileExtension)" } ?? file.name
     }
 
     public func thumbnail(_ file: DriveFile) async throws -> URL {

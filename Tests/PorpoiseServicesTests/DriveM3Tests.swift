@@ -155,6 +155,7 @@ import Testing
         client.setOffline(true)
         await #expect(throws: DriveError.offline) { try await client.preview(unknown) }
         await client.mediaCache.clear()
+        client.openCache.clear()
         #expect(FileManager.default.fileExists(atPath: session.localURL.path))
         await #expect(throws: DriveError.offline) { try await client.preview(file) }
     }

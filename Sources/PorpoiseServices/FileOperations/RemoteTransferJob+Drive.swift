@@ -9,7 +9,10 @@ extension RemoteTransferJob {
         let sourceProvider = RemoteFS.provider(for: source) as? DriveProvider
         let targetProvider = RemoteFS.provider(for: folder) as? DriveProvider
         let journal = sourceProvider?.client?.mutationJournal ?? targetProvider?.client?.mutationJournal ?? .shared
-        let recovered = try journal.all().first { $0.batchID == cloudBatchID && $0.localSource == source && $0.destinationFolder == folder }
+        let recovered =
+            cloudOperations[source] == nil
+            ? try journal.all().first { $0.batchID == cloudBatchID && $0.localSource == source && $0.destinationFolder == folder }
+            : nil
         let operationID = cloudOperations[source] ?? recovered?.operationID ?? UUID()
         cloudOperations[source] = operationID
         let accountID = sourceProvider?.accountID ?? targetProvider!.accountID

@@ -22,6 +22,8 @@ import Testing
         let rows = try await provider.refresh(DriveLocation(accountID: id).url)
         let editing = DriveEditing()
         editing.client = { $0 == id ? client : nil }
+        editing.operations = FileOperationsController()
+        editing.operations.history = OperationHistory(file: scratch.url.appendingPathComponent("history"))
         editing.saveDelay = 0.05
         editing.savedShownFor = 0.2
         let item = try #require(rows.first { $0.url.lastPathComponent == "binary-a" })

@@ -41,7 +41,14 @@ public actor DriveEditStore {
     public func pending() -> [DriveEditSession] {
         sessions.values.filter { (try? DriveClient.md5($0.localURL)) != $0.sentMD5 }.sorted { $0.id.uuidString < $1.id.uuidString }
     }
-    public func open(_ file: DriveFile) async throws -> DriveEditSession {
+    public func cachedSession(_ file: DriveFile) -> DriveEditSession? {
+        sessions.values.first {
+            $0.file.id == file.id && ($0.file.headRevisionId == file.headRevisionId || $0.state != .editing)
+                && FileManager.default.fileExists(atPath: $0.localURL.path)
+        }
+    }
+
+    public func open(_ file: DriveFile, context: DriveTransferContext = .init()) async throws -> DriveEditSession {
         guard let client else { throw DriveError.reconnect }
         if let pending = pending().first(where: { $0.file.id == file.id }) { return pending }
         if client.isOffline {
@@ -59,10 +66,11 @@ public actor DriveEditStore {
         let folder = directory.appendingPathComponent(fresh.id).appendingPathComponent(revision).appendingPathComponent(id.uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let url = folder.appendingPathComponent(fresh.name)
-        let bytes = try await client.download(fresh).data
+        let staged = try await client.downloadToStaging(fresh, context: context)
+        defer { try? FileManager.default.removeItem(at: staged.url) }
         let verified = try await client.file(fresh.id)
         guard verified.headRevisionId == revision else { throw DriveMutationError.conflict }
-        try bytes.write(to: url, options: .atomic)
+        try FileManager.default.copyItem(at: staged.url, to: url)
         let handle = try FileHandle(forWritingTo: url); try handle.synchronize(); try handle.close()
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         let session = DriveEditSession(id: id, localURL: url, file: fresh, sentMD5: try DriveClient.md5(url))

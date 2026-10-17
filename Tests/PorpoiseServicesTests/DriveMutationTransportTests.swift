@@ -87,7 +87,7 @@ extension DriveMutationTests {
             mutationJournal: .init(folder: scratch.url.appendingPathComponent("journal")))
         await #expect(throws: DriveMutationError.invalidSession) { try await client.upload(source, parentID: "root") }
         let range = DriveHTTP { request in
-            if request.value(forHTTPHeaderField: "Range") != nil {
+            if request.url?.query?.contains("alt=media") == true {
                 return (Data("wrong bytes".utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
             }
             let (data, response) = try await URLSession.shared.data(for: request)

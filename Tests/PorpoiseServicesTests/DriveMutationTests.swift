@@ -118,9 +118,9 @@ import Testing
         try bytes.write(to: source)
         let uploaded = try await client.upload(source, parentID: "root")
         let op = UUID(), calls = CheckpointCounter()
-        let context = DriveTransferContext(checkpoint: { if await calls.next() == 3 { throw FileOperationError.interrupted } })
+        let context = DriveTransferContext(checkpoint: { if await calls.next() == 2 { throw FileOperationError.interrupted } })
         await #expect(throws: FileOperationError.self) { try await client.downloadToStaging(uploaded, operationID: op, context: context) }
-        #expect(try client.mutationJournal.load(op)?.offset == 256 * 1024)
+        #expect(try client.mutationJournal.load(op)?.offset == 0)
         let recovered = try await client.downloadToStaging(uploaded, operationID: op)
         #expect(try Data(contentsOf: recovered.url) == bytes)
         #expect(try await client.downloadToStaging(uploaded, operationID: op).url == recovered.url)

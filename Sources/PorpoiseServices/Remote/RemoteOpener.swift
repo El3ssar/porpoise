@@ -30,22 +30,23 @@ public enum RemoteOpener {
         return folder
     }
 
-    public static func open(_ item: FileItem) {
+    public static func open(_ item: FileItem, using launch: ((URL) -> Void)? = nil) {
+        let launch = launch ?? openFile
         guard let p = RemoteFS.provider(for: item.url), RemoteParsing.isSafeName(item.url.lastPathComponent) else { return }
         if item.url.scheme == "gdrive" {
             // A file the account may change: edited in place, its saves go back to Drive as new versions.
             if DriveEditing.shared.canEdit(item) {
-                DriveEditing.shared.open(item) { opened in if !opened { openCopy(item, provider: p) } }
+                DriveEditing.shared.open(item, using: launch) { opened in if !opened { openCopy(item, provider: p, launch: launch) } }
                 return
             }
-            openCopy(item, provider: p)
+            openCopy(item, provider: p, launch: launch)
             return
         }
         let folder = cacheFolder(for: item.url)
         let cached = folder.appendingPathComponent(item.url.lastPathComponent)
         // Opened again before its edits reached the server: open those edits, never replace them with a download.
         if unsynced.contains(cached.path), FileManager.default.fileExists(atPath: cached.path) {
-            openFile(cached)
+            launch(cached)
             StatusCenter.post("Opened your copy of “\(item.name)”: its latest changes haven't been uploaded yet.")
             return
         }
@@ -59,7 +60,7 @@ public enum RemoteOpener {
                 try? FileManager.default.removeItem(at: local)
                 let got = try p.download(item.url, into: folder)
                 DispatchQueue.main.async {
-                    openFile(got)
+                    launch(got)
                     watch(got, remote: item.url, provider: p)
                     StatusCenter.post("Opened “\(item.name)”. Saved changes are uploaded back automatically.")
                 }
@@ -70,14 +71,22 @@ public enum RemoteOpener {
     }
 
     /// A copy that stays on this Mac (read-only items, Google Docs' exports): never sent back.
-    private static func openCopy(_ item: FileItem, provider p: RemoteProvider) {
+    private static func openCopy(_ item: FileItem, provider p: RemoteProvider, launch: @escaping (URL) -> Void) {
+        if let drive = p as? DriveProvider {
+            Task { @MainActor in
+                do { launch(try await drive.preview(item.url)) } catch {
+                    if !(error is CancellationError) { StatusCenter.error("Could not open “\(item.name)”: \(error.localizedDescription)") }
+                }
+            }
+            return
+        }
         let folder = cacheFolder(for: item.url).appendingPathComponent(item.url.lastPathComponent).appendingPathComponent(UUID().uuidString)
         StatusCenter.post("Downloading “\(item.name)”…")
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let local = try p.download(item.url, into: folder)
                 DispatchQueue.main.async {
-                    openFile(local)
+                    launch(local)
                     StatusCenter.post("Opened a copy of “\(item.name)”. Changes stay on this Mac.")
                 }
             } catch {
