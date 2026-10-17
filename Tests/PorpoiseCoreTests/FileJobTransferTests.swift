@@ -242,7 +242,7 @@ import Testing
         let handle = try FileHandle(forWritingTo: filler)
         do {
             for _ in 0..<128 { try handle.write(contentsOf: Data(repeating: 0x8B, count: 1 << 20)) }
-        } catch { #expect(FileJob.isNoSpace(error)) }
+        } catch { #expect(FileErrorKind.classify(error) == .noSpace) }
         try handle.close()
         let job = FileJob(kind: .copy, sources: [source], destinationFolder: disk.volume)
         job.allowsClone = false; job.resumableSize = 1

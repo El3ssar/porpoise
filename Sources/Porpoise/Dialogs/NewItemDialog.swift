@@ -126,7 +126,7 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
                     url = try FileActions.makeFile(named: n, in: folder, contents: plist)
                 }
                 done(url)
-            } catch  where FileJob.isPermissionError(error) {
+            } catch  where FileErrorKind.classify(error) == .permission {
                 // Protected folder: create it as administrator.
                 var n = nameField.stringValue
                 if kind == .urlLink && !n.hasSuffix(".webloc") { n += ".webloc" }

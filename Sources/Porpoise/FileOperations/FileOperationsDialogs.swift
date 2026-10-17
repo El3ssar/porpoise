@@ -158,12 +158,13 @@ final class FileOperationsDialogs: FileOperationsUI {
             path.font = .systemFont(ofSize: 11); path.lineBreakMode = .byTruncatingMiddle
             path.frame = CGRect(x: 32, y: y + 6, width: 150, height: 16); path.toolTip = source?.absoluteString
             document.addSubview(path)
-            let reason = NSTextField(labelWithString: Self.reason(error))
+            let kind = FileErrorKind.classify(message: error)
+            let reason = NSTextField(labelWithString: kind.reason ?? error)
             reason.font = .systemFont(ofSize: 11); reason.textColor = Theme.windowTextInactive
             reason.lineBreakMode = .byTruncatingTail; reason.alignment = .right
             reason.frame = CGRect(x: 190, y: y + 6, width: 236, height: 16); reason.toolTip = error
             document.addSubview(reason)
-            if let source, Self.reason(error) != "No longer exists" {
+            if let source, kind != .notFound {
                 let reveal = ClosureButton(title: "Reveal") { _ in AppDelegate.shared.newWindow(at: source.deletingLastPathComponent()) }
                 reveal.isBordered = false; reveal.font = .systemFont(ofSize: 11); reveal.contentTintColor = Theme.activeText
                 reveal.frame = CGRect(x: 436, y: y + 2, width: 60, height: 24)
@@ -194,19 +195,6 @@ final class FileOperationsDialogs: FileOperationsUI {
             FileOperationsController.shared.retry(activity, window: owner)
         }
         owner.beginSheet(sheet)
-    }
-
-    private static func reason(_ error: String) -> String {
-        let lower = error.lowercased()
-        if lower.contains("no such file") || lower.contains("no longer there") { return "No longer exists" }
-        if lower.contains("permission denied") || lower.contains("operation not permitted") || lower.contains("don’t have permission") {
-            return "Permission denied"
-        }
-        if lower.contains("file name too long") || lower.contains("name too long") { return "Name too long for this disk" }
-        if lower.contains("no space left") || lower.contains("disk full") { return "Disk full" }
-        if lower.contains("locked") || lower.contains("resource busy") { return "File is locked" }
-        if lower.contains("connection") || lower.contains("network") || lower.contains("timed out") { return "Lost connection" }
-        return error
     }
 
     func jobStarted(_ job: FileJob) {

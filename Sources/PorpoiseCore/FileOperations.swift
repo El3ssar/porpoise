@@ -434,7 +434,7 @@ public final class FileJob: @unchecked Sendable {
 
     /// Files permission problems separately so the app can offer to authenticate.
     private func record(_ error: Error, for src: URL, target: URL?) {
-        if Self.isPermissionError(error) {
+        if FileErrorKind.classify(error) == .permission {
             denied.append(src)
             if let t = target { deniedTargets[src] = t }
         } else {
@@ -442,26 +442,8 @@ public final class FileJob: @unchecked Sendable {
         }
     }
 
-    public static func isNoSpace(_ error: Error) -> Bool {
-        let error = error as NSError
-        if error.domain == NSPOSIXErrorDomain && error.code == Int(ENOSPC) { return true }
-        if error.domain == NSCocoaErrorDomain && error.code == NSFileWriteOutOfSpaceError { return true }
-        return (error.userInfo[NSUnderlyingErrorKey] as? NSError).map { isNoSpace($0) } ?? false
-    }
-
     static func describe(_ error: Error) -> String {
         (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-    }
-
-    /// EACCES/EPERM, however Foundation wraps it.
-    public static func isPermissionError(_ error: Error) -> Bool {
-        var e: NSError? = error as NSError
-        while let n = e {
-            if n.domain == NSCocoaErrorDomain && [NSFileWriteNoPermissionError, NSFileReadNoPermissionError].contains(n.code) { return true }
-            if n.domain == NSPOSIXErrorDomain && (n.code == Int(EACCES) || n.code == Int(EPERM)) { return true }
-            e = n.userInfo[NSUnderlyingErrorKey] as? NSError
-        }
-        return false
     }
 
     /// The volume has no Trash (NSFeatureUnsupportedError from `trashItem`).
@@ -530,7 +512,7 @@ public final class FileJob: @unchecked Sendable {
             throw FileOperationError.cancelled
         } catch FileOperationError.interrupted {
             throw FileOperationError.interrupted
-        } catch  where Self.isPermissionError(error) {
+        } catch  where FileErrorKind.classify(error) == .permission {
             record(error, for: src, target: target)
             return nil
         }
@@ -638,7 +620,7 @@ public final class FileJob: @unchecked Sendable {
                     throw FileOperationError.interrupted
                 } catch {
                     try? fm.removeItem(at: dest)
-                    guard Self.isNoSpace(error), let onNoSpace else { throw error }
+                    guard FileErrorKind.classify(error) == .noSpace, let onNoSpace else { throw error }
                     progress.doneBytes = bytesBefore
                     publish(force: true)
                     guard onNoSpace(size(of: src)) else { cancel(); throw FileOperationError.cancelled }

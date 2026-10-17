@@ -217,8 +217,7 @@ final class RemoteTransferJob {
         }
         while true {
             do { try stagedFile(source, to: target, replacing: replace, modified: incoming.modificationDate); break } catch {
-                let message = error.localizedDescription.lowercased()
-                guard FileJob.isNoSpace(error) || message.contains("no space left") || message.contains("disk full"), let onNoSpace else {
+                guard FileErrorKind.classify(error) == .noSpace, let onNoSpace else {
                     throw error
                 }
                 progressLock.withLock {

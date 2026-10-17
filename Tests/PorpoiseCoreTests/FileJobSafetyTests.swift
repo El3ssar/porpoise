@@ -375,7 +375,7 @@ import Testing
             _ = try FileActions.makeFile(named: "n.txt", in: src)
             Issue.record("expected an error")
         } catch {
-            #expect(FileJob.isPermissionError(error))  // so the app offers to authenticate
+            #expect(FileErrorKind.classify(error) == .permission)  // so the app offers to authenticate
         }
     }
 
@@ -390,12 +390,12 @@ import Testing
     }
 
     @Test func permissionErrorDetection() {
-        #expect(FileJob.isPermissionError(NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))))
-        #expect(FileJob.isPermissionError(NSError(domain: NSCocoaErrorDomain, code: NSFileWriteNoPermissionError)))
+        #expect(FileErrorKind.classify(NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))) == .permission)
+        #expect(FileErrorKind.classify(NSError(domain: NSCocoaErrorDomain, code: NSFileWriteNoPermissionError)) == .permission)
         let wrapped = NSError(
             domain: NSCocoaErrorDomain, code: 1, userInfo: [NSUnderlyingErrorKey: NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM))])
-        #expect(FileJob.isPermissionError(wrapped))
-        #expect(!FileJob.isPermissionError(NSError(domain: NSPOSIXErrorDomain, code: Int(ENOSPC))))
-        #expect(!FileJob.isPermissionError(FileOperationError.cancelled))
+        #expect(FileErrorKind.classify(wrapped) == .permission)
+        #expect(FileErrorKind.classify(NSError(domain: NSPOSIXErrorDomain, code: Int(ENOSPC))) != .permission)
+        #expect(FileErrorKind.classify(FileOperationError.cancelled) != .permission)
     }
 }
