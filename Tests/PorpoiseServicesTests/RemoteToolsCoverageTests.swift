@@ -50,10 +50,15 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
     let support: URL
     let server = LocalFileServer()
     let served: URL
-    private let savedSupport = AndroidTools.supportFolder
-    private let savedDownload = AndroidTools.downloadURL
+    /// The download this test pointed the installer at, if any.
+    private var ownDownload: URL?
+    /// What the globals were before any of these tests: a test's instance can go away after the next one began, so
+    /// each restores them only while they still point at its own scratch (else it would undo the next test's).
+    private static let savedSupport = AndroidTools.supportFolder
+    private static let savedDownload = AndroidTools.downloadURL
 
     init() throws {
+        _ = (Self.savedSupport, Self.savedDownload)
         scratch = try Scratch("android")
         support = try scratch.folder("support")
         served = try scratch.folder("served")
@@ -62,13 +67,14 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
 
     deinit {
         server.stop()
-        AndroidTools.supportFolder = savedSupport
-        AndroidTools.downloadURL = savedDownload
+        if AndroidTools.supportFolder.path.hasPrefix(scratch.url.path) { AndroidTools.supportFolder = Self.savedSupport }
+        if let ownDownload, AndroidTools.downloadURL == ownDownload { AndroidTools.downloadURL = Self.savedDownload }
     }
 
     /// Serves `name` (made by `make`, or missing) and points the installer at it.
     private func serve(_ name: String) throws {
         let base = try #require(server.start(root: served))
+        ownDownload = base.appendingPathComponent(name)
         AndroidTools.downloadURL = base.appendingPathComponent(name)
     }
 
