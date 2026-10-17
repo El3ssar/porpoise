@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import PorpoiseCore
 
@@ -23,5 +24,19 @@ public struct SearchMatches {
     public func nameMatches(_ item: FileItem) -> Bool {
         if snippetsMarkContentMatches { return snippets[item.url] == nil }
         return spec?.nameMatches(item.name) ?? false
+    }
+}
+
+// The index records physical entries: directories have no file-data length and links keep their own metadata.
+extension SearchSpec {
+    func metadataMatches(_ item: FileItem) -> Bool {
+        let directory = item.isDirectory && !item.isSymlink
+        var size = directory ? 0 : item.size, modified = item.modificationDate
+        if item.isSymlink {
+            var info = stat()
+            guard lstat(item.url.path, &info) == 0 else { return false }
+            size = Int64(info.st_size); modified = Date(timeIntervalSince1970: Double(info.st_mtimespec.tv_sec))
+        }
+        return metadataMatches(path: item.url.path, isDirectory: directory, size: size, modified: modified)
     }
 }

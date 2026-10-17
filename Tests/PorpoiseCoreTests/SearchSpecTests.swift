@@ -37,6 +37,7 @@ struct SearchSpecTests {
         #expect(!spec.metadataMatches(path: "/Cafe", isDirectory: true, size: 20, modified: .distantFuture))
         let noExtension = try SearchSpec("ext:.")
         #expect(noExtension.metadataMatches(path: "/.bashrc", isDirectory: false, size: 1, modified: nil))
+        #expect(!noExtension.metadataMatches(path: "/folder", isDirectory: true, size: 0, modified: nil))
         #expect(throws: IndexQuery.Invalid.self) { try SearchSpec("ext:") }
     }
 }

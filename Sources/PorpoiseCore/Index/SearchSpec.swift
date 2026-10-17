@@ -24,7 +24,11 @@ public struct SearchSpec: @unchecked Sendable {
         let time = modified?.timeIntervalSince1970 ?? 0
         if let after = query.after, time < after { return false }
         if let before = query.before, time >= before { return false }
-        if !query.extensions.isEmpty, !query.extensions.contains(IndexQuery.fold((path as NSString).pathExtension)) { return false }
+        if !query.extensions.isEmpty,
+            isDirectory || !query.extensions.contains(IndexQuery.fold((path as NSString).pathExtension))
+        {
+            return false
+        }
         let foldedPath = IndexQuery.fold(path)
         return query.paths.allSatisfy { foldedPath.contains($0) }
     }

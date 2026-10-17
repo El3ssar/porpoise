@@ -15,6 +15,8 @@ import Testing
         let old = try s.file("root/Reports/old.pdf", "old")
         try s.file("root/.hidden/cafe.pdf", "hidden")
         try s.folder("root/Folder café")
+        try s.folder("root/Café.PDF")
+        try s.symlink("root/link café", to: "Folder café")
         try s.file("root/content.txt", "CAFÉ inside\next:pdf is literal\n")
         try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_500_000_000)], ofItemAtPath: old.path)
         let index = SearchIndex(directory: s.path("index"), defaults: defaults.store)
@@ -29,7 +31,10 @@ import Testing
             ("ext:pdf", false, ["Café Annual.PDF", "tea.pdf", "old.pdf", "cafe.pdf"]),
             ("CAFÉ annual ext:pdf", false, ["Café Annual.PDF"]),
             ("path:Reports size:>5 file: dm:>=2026-01-01", false, ["Café Annual.PDF", "Cafe annual.txt"]),
-            ("folder: café", false, ["Folder café"]),
+            ("folder: café", false, ["Folder café", "Café.PDF"]),
+            ("folder: size:0", false, ["Folder café", "Café.PDF", "Reports", ".hidden"]),
+            ("file: regex:^link", false, ["link café"]),
+            ("file: regex:^link size:>0", false, ["link café"]),
             ("regex:^caf ext:txt", false, ["Cafe annual.txt"]),
             ("\"cafe annual\" ext:pdf", false, ["Café Annual.PDF"]),
             ("café", true, ["Café Annual.PDF", "Cafe annual.txt", "cafe.pdf", "content.txt"]),

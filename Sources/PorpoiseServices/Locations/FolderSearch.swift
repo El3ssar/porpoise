@@ -117,8 +117,7 @@ final class FolderSearch: @unchecked Sendable {
         }
         process.waitUntilExit()
         let last = lock.withLock {
-            // Killed, not by `stop()`: its results are cut short. (ripgrep's 1 and 2 are "nothing" and "some folders
-            // unreadable": results all the same.)
+            // Killed, not by `stop()`: its results are cut short.
             if process.terminationReason == .uncaughtSignal && !stopped {
                 NSLog("Folder search: \(process.executableURL?.lastPathComponent ?? "tool") ended by signal \(process.terminationStatus)")
                 failed = true
@@ -139,7 +138,7 @@ final class FolderSearch: @unchecked Sendable {
             if items.count >= available || lock.withLock({ stopped }) { break }
             guard spec.contents || spec.nameMatches((path as NSString).lastPathComponent),
                 let item = FileItem.load(URL(fileURLWithPath: path)), !(spec.contents && item.isBrowsableFolder),
-                spec.metadataMatches(path: path, isDirectory: item.isDirectory, size: item.size, modified: item.modificationDate)
+                spec.metadataMatches(item)
             else { continue }
             if spec.nameMatches(item.name) {
                 items.append(item)

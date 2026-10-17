@@ -40,26 +40,39 @@ import Testing
     }
 
     @Test func loadingAndActualPlayerFailuresAreReportedWithTheirStage() async throws {
-        let session = CloudPlaybackSession()
-        var openingFailed = false, playingFailed = false
-        session.onStatus = { status in
-            if case .unavailable(let error, let opening) = status {
-                if opening { openingFailed = error is Fault } else { playingFailed = true }
-            }
+        let scratch = try Scratch(), invalid = try scratch.file("broken.mov", "not a movie"), session = CloudPlaybackSession()
+        let opening: Bool = try await awaitCallback { callback in
+            session.onStatus = { if case .unavailable(let error, let opening) = $0 { callback.resume(returning: opening && error is Fault) } }
+            session.start { throw Fault.opening }
         }
-        session.start { throw Fault.opening }
-        await expectEventually { openingFailed }
-        session.start { CloudPlayback(url: URL(fileURLWithPath: "/fixture-missing-media-" + UUID().uuidString)) }
-        await expectEventually { playingFailed }
+        #expect(opening)
+        let playing: Bool = try await awaitCallback { callback in
+            session.onStatus = { if case .unavailable(_, let opening) = $0 { callback.resume(returning: !opening) } }
+            session.onPlayer = { player, _ in player.play() }
+            session.start { CloudPlayback(url: invalid) }
+        }
+        #expect(playing)
         session.stop()
     }
+
     @Test func cachedObservationAndBufferingPolicyRemainSelectable() async throws {
+        let scratch = try Scratch(), invalid = try scratch.file("broken.mov", "not a movie")
         let session = CloudPlaybackSession(preferredForwardBufferDuration: 0, observesCached: false), statuses = Counter()
+        let observation = Locked<NSKeyValueObservation?>(nil)
         session.onStatus = { _ in statuses.add() }
-        session.start { CloudPlayback(url: URL(fileURLWithPath: "/fixture-missing-cache-" + UUID().uuidString)) }
-        await expectEventually { session.player?.currentItem?.status == .failed }
+        try await awaitCallback { callback in
+            session.onPlayer = { player, _ in
+                observation.change {
+                    $0 = player.currentItem?.observe(\.status, options: [.initial, .new]) { item, _ in
+                        if item.status == .failed { callback.resume() }
+                    }
+                }
+                player.play()
+            }
+            session.start { CloudPlayback(url: invalid) }
+        }
         #expect(session.player?.currentItem?.preferredForwardBufferDuration == 0 && statuses.value == 1)
-        session.stop()
+        observation.change { $0 = nil }; session.stop()
     }
 
     @Test func releasingTheSessionStopsItsOwnedStream() async throws {

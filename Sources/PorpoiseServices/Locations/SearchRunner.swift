@@ -95,7 +95,7 @@ public final class SearchRunner: NSObject {
             guard let spec = self.spec, let result = self.index.search(spec, scope: self.scope, cancelled: { work.isCancelled }) else {
                 DispatchQueue.main.async { [weak self] in
                     guard let self, !work.isCancelled else { return }
-                    // An uncovered scope keeps its existing fd/rg/Spotlight search rather than restarting it.
+                    // An uncovered scope keeps its existing folder/Spotlight search rather than restarting it.
                     if self.usedIndex { self.stopFallback() }
                     if self.folderSearch == nil && self.spotlight == nil && self.fallbackWork == nil { self.startFallback() }
                     self.finishIndexRefresh()
@@ -260,7 +260,7 @@ public final class SearchRunner: NSObject {
                 n += 1
                 if n > Self.maxSimpleVisited { break }
                 guard let item = FileItem.load(u), !(contents && item.isBrowsableFolder),
-                    spec.metadataMatches(path: u.path, isDirectory: item.isDirectory, size: item.size, modified: item.modificationDate)
+                    spec.metadataMatches(item)
                 else { continue }
                 if spec.nameMatches(item.name) {
                     out.append(item)
@@ -278,7 +278,7 @@ public final class SearchRunner: NSObject {
     deinit {
         if let indexObserver { NotificationCenter.default.removeObserver(indexObserver) }
         indexWork?.cancel()
-        // A closed tab's search: fd and rg would otherwise run on to the end of a big tree (their readers hold them).
+        // A closed tab's search: fd would otherwise run on to the end of a big tree (their readers hold them).
         spotlight?.stop()
         folderSearch?.stop()
         fallbackWork?.cancel()
