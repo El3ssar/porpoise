@@ -177,6 +177,13 @@ public final class DriveAccountStore: ObservableObject {
             failure = error
         } catch { failure = error }
         (RemoteFS.provider(for: DriveLocation(accountID: account.id).url) as? DriveProvider)?.invalidate()
+        let key = account.id.uuidString.lowercased()
+        if let client = clients[account.id] { _ = try await client.offlineCopies() }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            CloudOffline.shared.wipe(account: key) { error in
+                if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+            }
+        }
         await clients[account.id]?.clearCaches()
         managers[account.id] = nil; clients[account.id] = nil; states[account.id] = nil; reachability[account.id] = nil
         RemoteFS.unregisterDrive(accountID: account.id)

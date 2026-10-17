@@ -139,7 +139,8 @@ public final class CloudOffline: @unchecked Sendable {
 
     /// Lazily opens the account index, then reconciles its persisted pins in the background.
     public func store(for source: CloudContentSource) throws -> CloudOfflineStore {
-        if let existing = stores[source.accountID] { return existing }
+        if let existing = stores[source.accountID], sources[source.accountID] === source { return existing }
+        if let old = keepers[source.accountID] { Task { await old.stop() } }
         let id = source.accountID, epoch = UUID()
         epochs[id] = epoch; sources[id] = source
         let store = try CloudOfflineStore(

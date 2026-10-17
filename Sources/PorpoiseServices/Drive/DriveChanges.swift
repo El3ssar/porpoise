@@ -57,6 +57,7 @@ extension DriveClient {
                 } catch DriveError.http(410) {
                     metadataCache.setCursor(nil, scope: scope)
                     metadataCache.invalidate()
+                    emitContentChanges(.init(reset: true))
                     NotificationCenter.default.post(name: Self.changed, object: accountID)
                     return
                 }
@@ -68,6 +69,8 @@ extension DriveClient {
                     lock.withLock {
                         for id in removed { cache[id] = nil }; for file in files where !removed.contains(file.id) { cache[file.id] = file }
                     }
+                    let source = contentSource
+                    emitContentChanges(.init(changed: files.filter { !removed.contains($0.id) }.map(source.remoteItem), removed: removed))
                     (RemoteFS.provider(for: DriveLocation(accountID: accountID).url) as? DriveProvider)?.invalidate(preserveDisk: true)
                     NotificationCenter.default.post(name: Self.changed, object: accountID)
                 }

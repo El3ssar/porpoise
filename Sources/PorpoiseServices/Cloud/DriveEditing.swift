@@ -411,6 +411,7 @@ public final class DriveEditing {
         watchers.removeValue(forKey: id)?.cancel()
         pendingSave.removeValue(forKey: id)?.cancel()
         entries.removeAll { $0.id == id }
+        if let client = client(entry.account) { Task { await client.edits.releaseCopy(id) } }
         NotificationCenter.default.post(name: Self.changed, object: nil)
     }
 
