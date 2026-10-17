@@ -153,9 +153,7 @@ final class InformationPanel: NSView {
         controls.isHidden = !show
         if !playerIsAudio {
             controls.alphaValue = show ? 0 : 1
-            NSAnimationContext.runAnimationGroup {
-                $0.duration = 0.18; controls.animator().alphaValue = show ? 1 : 0
-            }
+            Animator.fade(controls, to: show ? 1 : 0)
         }
     }
 

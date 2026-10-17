@@ -145,7 +145,7 @@ private final class TransferPopoverRow: NSView {
     private let icon = NSImageView()
     private let title = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
-    private let bar = ActivityProgressView()
+    private let bar = ThinProgressView()
     private let percent = NSTextField(labelWithString: "")
     private let pause = NSButton()
     private let stop = NSButton()

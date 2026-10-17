@@ -124,6 +124,15 @@ final class Animator: NSObject {
 
     var isRunning: Bool { link != nil }
 
+    /// Fades `view` to `alpha`: at once with Reduce Motion.
+    static func fade(_ view: NSView, to alpha: CGFloat, duration: TimeInterval = 0.18) {
+        guard !reducesMotion() else { view.alphaValue = alpha; return }
+        NSAnimationContext.runAnimationGroup {
+            $0.duration = duration
+            view.animator().alphaValue = alpha
+        }
+    }
+
     /// Ends the animation where it is, without its completion.
     func stop() {
         link?.invalidate()
