@@ -19,6 +19,63 @@ public enum FileFormat {
         return String(format: "%.1f %@", v, units[i])
     }
 
+    /// Transfer speeds use the same binary IEC units as file sizes.
+    public static func speed(_ bytesPerSecond: Double) -> String {
+        let bytes: Int64
+        if !bytesPerSecond.isFinite || bytesPerSecond <= 0 {
+            bytes = 0
+        } else if bytesPerSecond >= Double(Int64.max) {
+            bytes = Int64.max
+        } else {
+            bytes = Int64(bytesPerSecond)
+        }
+        return size(bytes) + "/s"
+    }
+
+    public static func byteLimitTitle(_ bytes: Int64?) -> String {
+        bytes.map { size($0).replacingOccurrences(of: ".0 ", with: " ") } ?? "No limit"
+    }
+
+    /// Foundation's Internet-date-time format, shared without exposing mutable formatter instances.
+    public static func iso8601(_ text: String) -> Date? { dateCache.lock.withLock { dateCache.iso.date(from: text) } }
+    public static func iso8601(_ date: Date) -> String { dateCache.lock.withLock { dateCache.iso.string(from: date) } }
+
+    public static func posixDate(
+        _ text: String, format: String, timeZone: TimeZone = .current, calendar: Calendar = Calendar(identifier: .gregorian)
+    ) -> Date? {
+        dateCache.withPOSIX(format: format, timeZone: timeZone, calendar: calendar) { $0.date(from: text) }
+    }
+
+    public static func posixString(
+        _ date: Date, format: String, timeZone: TimeZone = .current, calendar: Calendar = Calendar(identifier: .gregorian)
+    ) -> String {
+        dateCache.withPOSIX(format: format, timeZone: timeZone, calendar: calendar) { $0.string(from: date) }
+    }
+
+    private static let dateCache = DateCache()
+    private final class DateCache: @unchecked Sendable {
+        struct Key: Hashable { let format: String; let timeZone: TimeZone; let calendar: Calendar }
+        let lock = NSLock()
+        let iso = ISO8601DateFormatter()
+        private var posix: [Key: DateFormatter] = [:]
+
+        func withPOSIX<T>(format: String, timeZone: TimeZone, calendar: Calendar, _ use: (DateFormatter) -> T) -> T {
+            lock.withLock {
+                let key = Key(format: format, timeZone: timeZone, calendar: calendar)
+                let formatter: DateFormatter
+                if let known = posix[key] {
+                    formatter = known
+                } else {
+                    let f = DateFormatter()
+                    f.locale = Locale(identifier: "en_US_POSIX"); f.calendar = calendar; f.timeZone = timeZone
+                    f.dateFormat = format; f.isLenient = false
+                    posix[key] = f; formatter = f
+                }
+                return use(formatter)
+            }
+        }
+    }
+
     /// Counts follow the app's preferred language locale, consistently across file browsing and transfers.
     /// Locale.current can carry a separate region override that differs from the UI language.
     public static func count(_ n: Int, locale: Locale? = nil) -> String {

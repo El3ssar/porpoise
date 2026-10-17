@@ -97,11 +97,7 @@ public struct TransferRate: Sendable {
     public mutating func reset() { self = TransferRate() }
 
     public var speedText: String {
-        var value = hasSpeedEstimate ? shownSpeed : bytesPerSecond
-        let units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"]
-        var unit = 0
-        while value >= 1000 && unit < units.count - 1 { value /= 1000; unit += 1 }
-        return value.formatted(.number.precision(.fractionLength(value < 10 && unit > 0 ? 1 : 0))) + " " + units[unit]
+        FileFormat.speed(hasSpeedEstimate ? shownSpeed : bytesPerSecond)
     }
 
     private static func bucket(_ seconds: TimeInterval) -> Int {

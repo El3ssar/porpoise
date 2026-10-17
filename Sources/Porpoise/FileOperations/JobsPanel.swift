@@ -52,11 +52,7 @@ final class TransferToolbarButton: NSButton {
         if visible != !isHidden { isHidden = !visible; visibilityChanged?() }
         ended = active.isEmpty
         failed = jobs.contains { !$0.errors.isEmpty }
-        let total = active.reduce(Int64(0)) { $0 + ($1.progress?.totalBytes ?? 0) }
-        fraction =
-            total > 0
-            ? Double(active.reduce(Int64(0)) { $0 + ($1.progress?.doneBytes ?? 0) }) / Double(total)
-            : active.isEmpty ? 1 : active.reduce(0) { $0 + $1.fraction } / Double(active.count)
+        fraction = ActivityPresentation.aggregateFraction(active)
         let estimate = active.first?.rate.timeLeftText ?? (failed ? "Needs attention" : "Finished")
         let label = "File operations, \(Int(fraction * 100)) percent, \(estimate)"
         let progress = "\(Int(fraction * 1000))|\(ended)|\(failed)|\(jobs.allSatisfy { $0.state == .paused })|\(label)"
@@ -141,7 +137,7 @@ final class TransferToolbarButton: NSButton {
     @objc private func showAll() { popover.performClose(nil); ActivityWindowController.shared.show() }
 }
 
-private final class TransferPopoverRow: NSView {
+final class TransferPopoverRow: NSView {
     private let icon = NSImageView()
     private let title = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
@@ -150,6 +146,7 @@ private final class TransferPopoverRow: NSView {
     private let pause = NSButton()
     private let stop = NSButton()
     private var activity: Activity?
+    private var compactAction: ActivityAction?
     override init(frame: NSRect) {
         super.init(frame: frame)
         title.font = .systemFont(ofSize: 12, weight: .medium); title.lineBreakMode = .byTruncatingMiddle
@@ -169,50 +166,23 @@ private final class TransferPopoverRow: NSView {
             icon.image = NSImage(systemSymbolName: activity.sources.count > 1 ? "square.stack.3d.up" : "doc", accessibilityDescription: nil)
         }
         icon.imageScaling = .scaleProportionallyUpOrDown
-        title.stringValue = activity.title
-        var line = (activity.state == .completed ? TransferSummary.text(activity) : activity.statusText).replacingOccurrences(of: " — ", with: " · ")
-        if let progress = activity.progress, progress.phase == .transferring,
-            activity.state == .running || activity.state == .paused
-        {
-            var parts: [String] = []
-            if activity.state == .paused { parts.append("Paused") }
-            if progress.totalFiles > 1 { parts.append("\(progress.doneFiles) of \(progress.totalFiles)") }
-            if progress.totalBytes > 0 { parts.append(Self.amounts(progress.doneBytes, of: progress.totalBytes)) }
-            if activity.state == .running {
-                if activity.rate.hasSpeedEstimate { parts.append(activity.rate.speedText) }
-                parts.append(activity.rate.timeLeftText)
-            }
-            line = parts.joined(separator: " · ")
-        }
-        detail.stringValue = line
-        percent.stringValue = "\(Int(activity.fraction * 100))%"
-        percent.isHidden = activity.state.isEnded || (activity.progress?.phase == .preparing)
+        let presentation = ActivityPresentation(activity)
+        title.stringValue = presentation.title
+        detail.stringValue = presentation.detailLine
+        percent.stringValue = "\(Int(presentation.fraction * 100))%"
+        percent.isHidden = !presentation.showsProgress || presentation.isIndeterminate
         toolTip = activity.progress?.currentName
-        bar.fraction = activity.fraction
-        bar.isIndeterminate = (activity.progress?.phase == .preparing) || activity.state == .queued
-        bar.alphaValue = activity.state == .paused ? 0.4 : 1
-        bar.isHidden = activity.state.isEnded
-        pause.isHidden = !(activity.canPause || activity.state == .cancelled || !activity.errors.isEmpty)
-        pause.image = NSImage(
-            systemSymbolName: !activity.errors.isEmpty
-                ? "exclamationmark.bubble" : activity.state == .paused || activity.state == .cancelled ? "play.fill" : "pause.fill",
-            accessibilityDescription: !activity.errors.isEmpty
-                ? "Show failures" : activity.state == .paused || activity.state == .cancelled ? "Resume" : "Pause")
-        stop.isHidden = activity.state.isEnded
-        setAccessibilityLabel(activity.title + ". " + activity.statusText)
+        bar.fraction = presentation.fraction
+        bar.isIndeterminate = presentation.isIndeterminate
+        bar.alphaValue = presentation.isPaused ? 0.4 : 1
+        bar.isHidden = !presentation.showsProgress
+        compactAction = presentation.compactAction
+        pause.isHidden = compactAction == nil
+        pause.image = compactAction.flatMap { NSImage(systemSymbolName: $0.symbol, accessibilityDescription: $0.help) }
+        pause.toolTip = compactAction?.help
+        stop.isHidden = !presentation.actions.contains(.cancel)
+        setAccessibilityLabel(presentation.title + ". " + presentation.detailLine)
     }
-    /// Transfer presentation uses decimal units and the same locale/precision as TransferRate.speedText.
-    private static func amounts(_ done: Int64, of total: Int64) -> String {
-        let units = ["B", "KB", "MB", "GB", "TB"]
-        var scale = 1.0, index = 0
-        while Double(total) / scale >= 1000 && index < units.count - 1 { scale *= 1000; index += 1 }
-        func number(_ value: Int64) -> String {
-            let scaled = Double(value) / scale
-            return scaled.formatted(.number.precision(.fractionLength(scaled < 10 && index > 0 ? 1 : 0)))
-        }
-        return "\(number(done)) of \(number(total)) \(units[index])"
-    }
-
     override func layout() {
         super.layout()
         icon.frame = CGRect(x: 12, y: 19, width: 32, height: 32)
@@ -229,8 +199,13 @@ private final class TransferPopoverRow: NSView {
     @objc private func togglePause() {
         guard let activity else { return }
         let controller = FileOperationsController.shared
-        if !activity.errors.isEmpty { controller.ui?.showTransferErrors(activity, window: activity.originWindow); return }
-        if activity.state == .paused || activity.state == .cancelled { controller.resume(activity) } else { controller.pause(activity) }
+        switch compactAction {
+        case .pause: controller.pause(activity)
+        case .resume: controller.resume(activity)
+        case .failures: controller.ui?.showTransferErrors(activity, window: activity.originWindow)
+        case .retry: controller.retry(activity, window: activity.originWindow)
+        default: break
+        }
     }
     @objc private func stopJob() { if let activity { FileOperationsController.shared.cancel(activity) } }
 }
@@ -252,11 +227,7 @@ final class JobsPanel {
         // Progress updates never open or raise Activity. A pending conflict sheet keeps keyboard/mouse focus.
         guard jobs.contains(where: { Date().timeIntervalSince($0.startedAt ?? Date()) > 2 }) else { return }
         let view = NSApp.dockTile.contentView as? TransferDockView ?? TransferDockView(frame: CGRect(origin: .zero, size: NSApp.dockTile.size))
-        let total = jobs.reduce(Int64(0)) { $0 + ($1.progress?.totalBytes ?? 0) }
-        view.fraction =
-            total > 0
-            ? Double(jobs.reduce(Int64(0)) { $0 + ($1.progress?.doneBytes ?? 0) }) / Double(total)
-            : jobs.reduce(0) { $0 + $1.fraction } / Double(jobs.count)
+        view.fraction = ActivityPresentation.aggregateFraction(jobs)
         NSApp.dockTile.contentView = view; NSApp.dockTile.display()
     }
 }
@@ -280,26 +251,4 @@ private final class TransferPopoverContent: NSVisualEffectView {
         material = .popover; blendingMode = .withinWindow; state = .active
     }
     required init?(coder: NSCoder) { fatalError() }
-}
-
-/// One result sentence shared by the toolbar popover and the originating window's status bar.
-enum TransferSummary {
-    static func text(_ activity: Activity) -> String {
-        guard activity.state == .completed, activity.kind == .copy || activity.kind == .move,
-            let progress = activity.progress
-        else {
-            return activity.statusText
-        }
-        let count = progress.copiedItems
-        var parts = [
-            "\(activity.kind == .move ? "Moved" : "Copied") \(FileFormat.itemCount(count))"
-                + (activity.destination.map { " to " + Activity.name($0) } ?? "")
-        ]
-        if !activity.errors.isEmpty { parts.append("\(activity.errors.count) couldn’t be \(activity.kind == .move ? "moved" : "copied")") }
-        if progress.replacedItems > 0 { parts.append("replaced \(progress.replacedItems)") }
-        if progress.skippedIdenticalItems > 0 {
-            parts.append("skipped \(progress.skippedIdenticalItems) identical (\(activity.comparisonMethodTitle))")
-        }
-        return parts.joined(separator: " · ")
-    }
 }

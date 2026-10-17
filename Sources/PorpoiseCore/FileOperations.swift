@@ -965,7 +965,7 @@ public final class FileJob: @unchecked Sendable {
 public enum FileActions {
     /// Creates a folder; "a/b" creates nested folders (Dolphin allows slashes).
     public static func makeFolder(named name: String, in folder: URL) throws -> URL {
-        guard !name.scalarComponents(separatedBy: "/").contains(where: { $0 == "." || $0 == ".." }) else {
+        guard FileName.isValid(name, for: .multiComponent) else {
             throw FileOperationError.failed("“\(name)” is not a valid name.")
         }
         let url = folder.appendingPathComponent(name, isDirectory: true)
@@ -975,6 +975,7 @@ public enum FileActions {
 
     /// Creates a file, failing (atomically, no race) if one with that name exists.
     public static func makeFile(named name: String, in folder: URL, contents: Data = Data()) throws -> URL {
+        guard FileName.isValid(name, for: .local) else { throw FileOperationError.failed("“\(name)” is not a valid name.") }
         let url = folder.appendingPathComponent(name)
         do {
             try contents.write(to: url, options: .withoutOverwriting)
@@ -985,7 +986,7 @@ public enum FileActions {
     }
 
     public static func rename(_ url: URL, to newName: String) throws -> URL {
-        guard isValidName(newName) else { throw FileOperationError.failed("“\(newName)” is not a valid name.") }
+        guard FileName.isValid(newName, for: .local) else { throw FileOperationError.failed("“\(newName)” is not a valid name.") }
         let dst = url.deletingLastPathComponent().appendingPathComponent(newName)
         if dst.path == url.path { return url }
         // A case-only change ("a" → "A") is the same file on a case-insensitive volume.
@@ -997,24 +998,19 @@ public enum FileActions {
     }
 
     /// A single path component: not empty, no "/", not "." or "..".
-    public static func isValidName(_ name: String) -> Bool { RemoteParsing.isSafeName(name) }
+    public static func isValidName(_ name: String) -> Bool { FileName.isValid(name, for: .component) }
 
     /// Validation message for a new name (KIO's folder dialog), nil when fine.
     public static func validateName(_ name: String, in folder: URL, allowSlash: Bool) -> (message: String, isError: Bool)? {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return ("", true) }
-        if name == "." || name == ".." { return ("“\(name)” is not a valid name.", true) }
-        if !allowSlash && name.containsScalar("/") { return ("A name cannot contain “/”.", true) }
-        if name.scalarComponents(separatedBy: "/").contains(where: { $0 == "." || $0 == ".." }) {
-            return ("“\(name)” is not a valid name.", true)
-        }
+        let problem = FileName.validate(name, for: allowSlash ? .multiComponent : .local)
+        if let problem, problem.isError { return (problem.message(for: name), true) }
         // itemExists: a dangling symlink also takes the name.
         if FileJob.itemExists(at: folder.appendingPathComponent(name)) {
             return ("A file or folder with this name already exists.", true)
         }
-        if name.hasPrefix(".") { return ("The name starts with a dot, so it will be hidden by default.", false) }
-        if allowSlash && name.containsScalar("/") { return ("Using slashes in the name will create subfolders.", false) }
-        if name != trimmed { return ("The name has leading or trailing spaces.", false) }
+        if let problem { return (problem.message(for: name), false) }
         return nil
     }
 

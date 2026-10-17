@@ -14,10 +14,9 @@ extension SSHProvider: RemoteTransferPublishing {
         let source = shellPath(staged), destination = shellPath(target)
         var script = "if [ ! -f \(source) ] || [ -L \(source) ] || [ -d \(destination) ]; then exit 1; fi; "
         if let modified {
-            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = TimeZone(secondsFromGMT: 0); formatter.dateFormat = "yyyyMMddHHmm.ss"
             // -c is essential: a missing staging file must never be recreated as an empty replacement.
-            script += "TZ=UTC touch -c -m -t \(RemoteParsing.quote(formatter.string(from: modified))) \(source) && "
+            script +=
+                "TZ=UTC touch -c -m -t \(RemoteParsing.quote(FileFormat.posixString(modified, format: "yyyyMMddHHmm.ss", timeZone: .gmt))) \(source) && "
         }
         try exec(script + "mv -f -- \(source) \(destination)")
     }

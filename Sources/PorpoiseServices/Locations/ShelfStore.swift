@@ -86,8 +86,7 @@ public final class ShelfStore {
     public var current: Shelf { shelves[currentIndex] }
 
     static var defaultFile: URL {
-        if Settings.isTesting { return FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-test-shelves-\(getpid()).json") }
-        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise/shelves.json")
+        Settings.supportFolder.appendingPathComponent("shelves.json")
     }
 
     private struct Saved: Codable {

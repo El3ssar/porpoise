@@ -201,10 +201,8 @@ final class FTPProvider: RemoteProvider {
 extension FTPProvider: RemoteTransferPublishing {
     public func publishTransferFile(_ staged: URL, to target: URL, modified: Date?) throws {
         if let modified {
-            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = TimeZone(secondsFromGMT: 0); formatter.dateFormat = "yyyyMMddHHmmss"
             // MFMT is optional in FTP: failure leaves the existing target intact. Content mode needs no MFMT.
-            try command("MFMT \(formatter.string(from: modified)) \(try rel(staged))")
+            try command("MFMT \(FileFormat.posixString(modified, format: "yyyyMMddHHmmss", timeZone: .gmt)) \(try rel(staged))")
         }
         // RNTO replaces a file atomically on supporting servers; otherwise fail without a delete fallback.
         try command("RNFR \(try rel(staged))", "RNTO \(try rel(target))")
@@ -214,10 +212,11 @@ extension FTPProvider: RemoteTransferPublishing {
 extension FTPProvider: RemoteTransferMetadata {
     public func transferModificationDate(_ remote: URL) throws -> Date {
         let headers = String(decoding: try curlRun(["--head", base(remote.path)]), as: UTF8.self)
-        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .gmt; formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
         for line in headers.components(separatedBy: "\n") where line.lowercased().hasPrefix("last-modified:") {
-            if let date = formatter.date(from: String(line.dropFirst("Last-Modified:".count)).trimmingCharacters(in: .whitespacesAndNewlines)) {
+            if let date = FileFormat.posixDate(
+                String(line.dropFirst("Last-Modified:".count)).trimmingCharacters(in: .whitespacesAndNewlines),
+                format: "EEE, dd MMM yyyy HH:mm:ss zzz", timeZone: .gmt)
+            {
                 return date
             }
         }

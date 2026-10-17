@@ -45,10 +45,7 @@ public enum TemplateExpansion {
             case "name": value = context.name
             case "user": value = context.user
             case "date", "time":
-                let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
-                formatter.calendar = Calendar(identifier: .gregorian); formatter.timeZone = context.timeZone
-                formatter.dateFormat = token == "date" ? "yyyy-MM-dd" : "HH-mm-ss"
-                value = formatter.string(from: context.date)
+                value = FileFormat.posixString(context.date, format: token == "date" ? "yyyy-MM-dd" : "HH-mm-ss", timeZone: context.timeZone)
             default:
                 let width = token.split(separator: ":").last.flatMap { Int($0) } ?? 0
                 let number = String(max(1, context.counter))
@@ -62,7 +59,7 @@ public enum TemplateExpansion {
         name: String, contents: Data
     ) {
         let name = expand(filenamePattern ?? template.filename, context: context)
-        guard FileActions.isValidName(name) else { throw FileOperationError.failed("The template produces an invalid file name.") }
+        guard FileName.isValid(name, for: .local) else { throw FileOperationError.failed("The template produces an invalid file name.") }
         var bodyContext = context; bodyContext.name = (name as NSString).deletingPathExtension
         let contents = template.textContents.map { Data(expand($0, context: bodyContext).utf8) } ?? template.contents
         return (name, contents)

@@ -9,6 +9,13 @@ final class FileOperationsDialogs: FileOperationsUI {
     private var conflicts: [ObjectIdentifier: ConflictDialog] = [:]
     var reviewsAppCleanup: Bool { true }
 
+    /// Disk-space sheets need an on-screen owner; an explicitly requested error list retains its supplied owner.
+    private func sheetOwner(_ value: AnyObject?, requiresVisible: Bool = false) -> NSWindow? {
+        if let window = value as? NSWindow, !requiresVisible || window.isVisible { return window }
+        ActivityWindowController.shared.show()
+        return ActivityWindowController.shared.window
+    }
+
     func reviewAppCleanup(_ items: [URL], window: AnyObject?, completion: @escaping ([URL]?) -> Void) {
         let applications = items.filter { $0.pathExtension.lowercased() == "app" }
         let env = ProcessInfo.processInfo.environment
@@ -100,9 +107,7 @@ final class FileOperationsDialogs: FileOperationsUI {
         let key = ObjectIdentifier(job)
         diskFullAlerts[key] = alert
         // A sheet (it's dismissed when the job ends), on the job's window while that is on screen, else on Activity.
-        let owner = (window as? NSWindow).flatMap { $0.isVisible ? $0 : nil }
-        if owner == nil { ActivityWindowController.shared.show() }
-        guard let owner = owner ?? ActivityWindowController.shared.window else { completion(false); return }
+        guard let owner = sheetOwner(window, requiresVisible: true) else { completion(false); return }
         alert.beginSheetModal(for: owner) { [weak self] response in
             self?.diskFullAlerts.removeValue(forKey: key)
             completion(response == .alertFirstButtonReturn)
@@ -177,9 +182,7 @@ final class FileOperationsDialogs: FileOperationsUI {
         scroll.frame.origin = .zero
         scroll.documentView = document
         list.addSubview(scroll); sheet.contentView?.addSubview(list)
-        let owner = window as? NSWindow
-        if owner == nil { ActivityWindowController.shared.show() }
-        guard let owner = owner ?? ActivityWindowController.shared.window else { return }
+        guard let owner = sheetOwner(window) else { return }
         func button(_ title: String, x: CGFloat, primary: Bool, action: @escaping () -> Void) {
             let button = TransferErrorActionButton(title: title, action: action)
             button.primary = primary; button.bezelStyle = .rounded
@@ -219,7 +222,7 @@ final class FileOperationsDialogs: FileOperationsUI {
             guard FileOperationsController.shared.activities.contains(where: { $0 === activity }), activity.state == .completed
             else { return }
             let owner = (activity.originWindow as? NSWindow)?.windowController as? MainWindowController
-            owner?.view.statusBar.showMessage(TransferSummary.text(activity), duration: 4)
+            owner?.view.statusBar.showMessage(ActivityPresentation.summary(activity), duration: 4)
             NSAccessibility.post(
                 element: owner?.window ?? NSApp, notification: .announcementRequested,
                 userInfo: [.announcement: activity.title + ". " + activity.statusText, .priority: NSAccessibilityPriorityLevel.medium.rawValue])

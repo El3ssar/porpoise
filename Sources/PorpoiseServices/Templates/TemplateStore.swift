@@ -7,15 +7,10 @@ public final class TemplateStore {
     public static let shared = TemplateStore()
     public let directory: URL
     public init(directory: URL? = nil) {
-        let testDirectory =
-            TestEnvironment.templateDir.value().map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.temporaryDirectory.appendingPathComponent("PorpoiseTemplateTests-\(ProcessInfo.processInfo.processIdentifier)")
         self.directory =
             directory
-            ?? (Settings.isTesting
-                ? testDirectory
-                : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                    .appendingPathComponent("Porpoise/Templates", isDirectory: true))
+            ?? (Settings.isTesting ? TestEnvironment.templateDir.value().map { URL(fileURLWithPath: $0) } : nil)
+            ?? Settings.supportFolder.appendingPathComponent("Templates", isDirectory: true)
     }
     public func prepare() throws { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
     public func personal() throws -> [FileTemplate] {

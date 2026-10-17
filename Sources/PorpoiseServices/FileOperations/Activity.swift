@@ -77,13 +77,7 @@ public final class Activity: Identifiable {
     var cloudTitle: String?
     var resumeCloudTask: (() -> Void)?
 
-    public var title: String {
-        if let cloudTitle { return cloudTitle }
-        if let openingName { return "Opening “\(openingName)”" }
-        let n = sources.count == 1 ? "“\(Self.name(sources[0]))”" : "\(sources.count) items"
-        let dest = destination.map { " to \(Self.name($0))" } ?? ""
-        return "\(kind.verb) \(n)\(dest)"
-    }
+    public var title: String { ActivityPresentation.title(of: self) }
 
     /// Cloud items have ids in their URLs: their names come from the listing ("Q3", "My Drive").
     public static func name(_ url: URL) -> String {
@@ -95,37 +89,7 @@ public final class Activity: Identifiable {
     public internal(set) var notice: String?
 
     /// One line: speed, amounts and time left while running; the outcome once ended.
-    public var statusText: String {
-        let p = progress
-        let amounts = p.map { $0.totalBytes > 0 ? "\(FileFormat.size($0.doneBytes)) of \(FileFormat.size($0.totalBytes))" : "" } ?? ""
-        switch state {
-        case .queued: return "Waiting for other operations to finish"
-        case .paused: return ["Paused", amounts].filter { !$0.isEmpty }.joined(separator: " — ")
-        case .waiting: return "Waiting for your answer"
-        case .verifying: return "Verifying the copies…"
-        case .running:
-            if let p, p.phase == .preparing {
-                return
-                    "Preparing… \(p.totalFiles) \(p.totalFiles == 1 ? "file" : "files") · \(p.totalFolders) \(p.totalFolders == 1 ? "folder" : "folders") · \(FileFormat.size(p.totalBytes))"
-            }
-            var parts: [String] = []
-            if let notice { parts.append(notice) }
-            if let p, p.totalFiles > 0 { parts.append("\(p.doneFiles) of \(p.totalFiles) files") }
-            if !amounts.isEmpty { parts.append(amounts) }
-            if notice == nil, rate.hasSpeedEstimate { parts.append(rate.speedText) }
-            if notice == nil, let p, p.totalBytes > 0 || p.totalFiles > 0 { parts.append(rate.timeLeftText) }
-            return parts.joined(separator: " — ")
-        case .completed:
-            let base = errors.isEmpty ? "Done" : "Done, with \(errors.count) \(errors.count == 1 ? "error" : "errors")"
-            var summary: [String] = []
-            if let p, p.replacedItems > 0 { summary.append("Replaced \(p.replacedItems)") }
-            if let p, p.skippedIdenticalItems > 0 { summary.append("Skipped \(p.skippedIdenticalItems) identical (\(comparisonMethodTitle))") }
-            return [([base] + summary).joined(separator: " · "), verification?.summary].compactMap { $0 }.joined(separator: ". ")
-        case .failed: return errors.first ?? "Failed"
-        case .cancelled: return "Cancelled"
-        case .interrupted: return "Interrupted: it can be resumed next time Porpoise starts"
-        }
-    }
+    public var statusText: String { ActivityPresentation.status(of: self) }
 
     public var comparisonMethodTitle: String {
         switch job?.comparisonOptions.method ?? remoteComparisonMethod {

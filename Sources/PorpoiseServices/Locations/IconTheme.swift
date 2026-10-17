@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseCore
 
 /// The bundled Tela-circle icon theme's files: which icon names exist and where each one is (the app draws them).
 public final class IconTheme {
@@ -27,7 +28,7 @@ public final class IconTheme {
 
     /// Finds the best file for an icon name at a pixel size, like the freedesktop icon lookup.
     public func file(_ name: String, size: Int) -> URL? {
-        guard !name.contains("/"), name != ".", name != ".." else { return nil }
+        guard FileName.isValid(name, for: .component) else { return nil }
         let preferences = Settings.shared.appearancePreferences
         let key = "\(preferences.iconTheme)|\(preferences.folderVariant)|\(name)|\(size)"
         if let cached = cacheLock.withLock({ pathCache[key] }) { return cached }
@@ -85,7 +86,7 @@ public final class IconTheme {
         Int(directory.prefix(while: { $0.isNumber })) ?? 64
     }
     public static var userIconsDirectory: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Porpoise/icons")
+        Settings.supportFolder.appendingPathComponent("icons")
     }
     public static let bundledThemes = ["Papirus", "Breeze", "Fluent", "WhiteSur", "Colloid"]
 
