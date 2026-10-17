@@ -46,6 +46,11 @@ extension FileOperationsController {
             try Task.checkCancellation()
             if control.isCancelled { throw CancellationError() }
             activity.remoteResults = [local]
+            if var progress = activity.progress {
+                progress.doneBytes = progress.totalBytes
+                progress.doneItems = progress.totalItems
+                progressed(activity, progress)
+            }
             ended(activity, errors: [])
             return local
         } catch {
