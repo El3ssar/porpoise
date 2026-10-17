@@ -31,6 +31,13 @@ extension AppDelegate {
         // Test instances can show offline states set by hand (the bridge's `cloud offline`).
         if Settings.isTesting, ProcessInfo.processInfo.environment["PORPOISE_OFFLINE_DEMO"] != nil {
             CloudOfflineHub.service = DemoOfflineService()
+        } else {
+            CloudOfflineHub.service = CloudOffline.shared
+            CloudOffline.shared.removalDenial = { url in
+                guard let entry = DriveEditing.shared.entry(for: url) else { return nil }
+                return "“\(entry.name)” has an open edit session or changes not in Google Drive yet."
+            }
+            CloudOffline.shared.activate()
         }
         let nc = NSWorkspace.shared.notificationCenter
         for n in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {

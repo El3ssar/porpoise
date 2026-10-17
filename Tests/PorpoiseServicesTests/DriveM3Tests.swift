@@ -155,7 +155,8 @@ import Testing
         client.setOffline(true)
         await #expect(throws: DriveError.offline) { try await client.preview(unknown) }
         await client.mediaCache.clear()
-        client.openCache.clear()
+        // Full files now have one owner; clearing the legacy OpenFiles seam cannot evict them.
+        try await client.offlineCopies().wipe()
         #expect(FileManager.default.fileExists(atPath: session.localURL.path))
         await #expect(throws: DriveError.offline) { try await client.preview(file) }
     }

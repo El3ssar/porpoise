@@ -18,6 +18,8 @@ public final class DriveClient: @unchecked Sendable {
     public let openCache: CloudOpenCache
     public let mediaCache: DriveMediaCache
     public let metadataCache: DriveMetadataCache
+    var offlineSource: DriveContentSource?
+    let offlineDirectory: URL?
     private var editStore: DriveEditStore?
     public var edits: DriveEditStore {
         lock.withLock {
@@ -31,7 +33,12 @@ public final class DriveClient: @unchecked Sendable {
     private var offline = false
     public var isOffline: Bool { lock.withLock { offline } }
     public var canSaveEdits: Bool { baseURL.scheme == "http" && baseURL.host == "127.0.0.1" }
-    func setOffline(_ value: Bool) { lock.withLock { offline = value } }
+    func setOffline(_ value: Bool) {
+        let returned = lock.withLock {
+            let returned = offline && !value; offline = value; return returned
+        }
+        if returned { emitContentChanges(.init(reset: true)) }
+    }
     var pollingChanges = false
     var polling: Task<Void, Never>?
     public let mutationJournal: DriveMutationJournal
@@ -49,6 +56,7 @@ public final class DriveClient: @unchecked Sendable {
         baseURL: URL = URL(string: "https://www.googleapis.com/drive/v3/")!, mutationJournal: DriveMutationJournal = .shared,
         metadataDirectory: URL? = nil, report: @escaping @Sendable (Error?) -> Void = { _ in }
     ) {
+        self.offlineDirectory = metadataDirectory?.appendingPathComponent("Offline")
         self.mediaCache = DriveMediaCache(accountID: accountID, directory: metadataDirectory?.appendingPathComponent("Previews"))
         self.metadataCache = DriveMetadataCache(accountID: accountID, directory: metadataDirectory)
         self.openCache = CloudOpenCache(directory: self.metadataCache.directory.appendingPathComponent("OpenFiles"))
@@ -266,20 +274,31 @@ public final class DriveClient: @unchecked Sendable {
 
     public func preview(_ file: DriveFile, context: DriveTransferContext = .init()) async throws -> URL {
         let target = try await resolve(file)
+        if !target.isGoogleDocument {
+            let store = try await offlineCopies()
+            let item = contentSource.remoteItem(target)
+            if let local = try await store.localCopy(item.ref, revision: item.revision) { return local }
+            if isOffline { throw DriveError.offline }
+            do {
+                return try await store.fetch(contentSource.remoteItem(target), progress: { bytes, total in context.progress(bytes, total ?? bytes) })
+            } catch CloudContentError.offline { throw DriveError.offline }
+        }
         let name = previewName(file: file, target: target)
         if let cached = try await cachedPreview(target) { return cached }
         if isOffline { throw DriveError.offline }
-        let epoch = target.isGoogleDocument ? await mediaCache.epoch() : openCache.epoch()
+        let epoch = await mediaCache.epoch()
         let staged = try await downloadToStaging(target, preset: .pdf, context: context)
         defer { try? FileManager.default.removeItem(at: staged.url) }
         // The listing may have been old when the download began. Index the verified revision, never that old key.
         let verifiedKey = previewKey(staged.file)
-        if target.isGoogleDocument { return try await mediaCache.importFile(staged.url, key: verifiedKey, name: name, epoch: epoch) }
-        return try openCache.adopt(staged.url, key: verifiedKey, name: name, epoch: epoch)
+        return try await mediaCache.importFile(staged.url, key: verifiedKey, name: name, epoch: epoch)
     }
 
     public func cachedPreview(_ file: DriveFile) async throws -> URL? {
-        if !file.isGoogleDocument { return try openCache.localCopy(key: previewKey(file), name: file.name) }
+        if !file.isGoogleDocument {
+            let store = try await offlineCopies()
+            return try await store.localCopy(contentSource.remoteItem(file).ref, revision: file.headRevisionId ?? file.version)
+        }
         return try await mediaCache.cachedFile(key: previewKey(file), name: previewName(file: file, target: file))
     }
 

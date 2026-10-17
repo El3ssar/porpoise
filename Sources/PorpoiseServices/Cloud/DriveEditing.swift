@@ -194,6 +194,7 @@ public final class DriveEditing {
                     return session.localURL
                 }
                 guard let session = opened ?? existing else { throw DriveError.invalidResponse }
+                await client.edits.retainCopy(session.id)
                 if existing != nil { Task { _ = try? await client.file(file.id) } }
                 guard let self else { return }
                 let entry = CloudEditEntry(
@@ -411,6 +412,7 @@ public final class DriveEditing {
         watchers.removeValue(forKey: id)?.cancel()
         pendingSave.removeValue(forKey: id)?.cancel()
         entries.removeAll { $0.id == id }
+        if let client = client(entry.account) { Task { await client.edits.releaseCopy(id) } }
         NotificationCenter.default.post(name: Self.changed, object: nil)
     }
 

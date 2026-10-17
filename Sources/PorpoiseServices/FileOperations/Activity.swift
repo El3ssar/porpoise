@@ -70,8 +70,11 @@ public final class Activity: Identifiable {
 
     /// "Copying 3 items to Backup"
     var openingName: String?
+    var cloudTitle: String?
+    var resumeCloudTask: (() -> Void)?
 
     public var title: String {
+        if let cloudTitle { return cloudTitle }
         if let openingName { return "Opening “\(openingName)”" }
         let n = sources.count == 1 ? "“\(Self.name(sources[0]))”" : "\(sources.count) items"
         let dest = destination.map { " to \(Self.name($0))" } ?? ""
@@ -302,6 +305,7 @@ extension FileOperationsController {
         guard activity.state == .paused else { return }
         activity.job?.resume()
         activity.controlJob?.resume()
+        activity.resumeCloudTask?()
         activity.rate.reset()  // the pause isn't part of the speed
         activity.state = .running
         activityDidChange()

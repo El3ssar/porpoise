@@ -21,6 +21,7 @@ public actor DriveEditStore {
     private let directory: URL
     private var sessions: [UUID: DriveEditSession] = [:]
     private var saving: Set<UUID> = []
+    private var openSessions: Set<UUID> = []
     public init(client: DriveClient, directory: URL? = nil) {
         self.client = client
         self.directory = directory ?? client.metadataCache.directory.appendingPathComponent("Edits")
@@ -41,6 +42,11 @@ public actor DriveEditStore {
     public func pending() -> [DriveEditSession] {
         sessions.values.filter { (try? DriveClient.md5($0.localURL)) != $0.sentMD5 }.sorted { $0.id.uuidString < $1.id.uuidString }
     }
+    public func holdsCopy(_ id: String) -> Bool {
+        sessions.values.contains { $0.file.id == id && (openSessions.contains($0.id) || (try? DriveClient.md5($0.localURL)) != $0.sentMD5) }
+    }
+    public func retainCopy(_ id: UUID) { openSessions.insert(id) }
+    public func releaseCopy(_ id: UUID) { openSessions.remove(id) }
     public func cachedSession(_ file: DriveFile) -> DriveEditSession? {
         sessions.values.first {
             $0.file.id == file.id && ($0.file.headRevisionId == file.headRevisionId || $0.state != .editing)
@@ -50,12 +56,12 @@ public actor DriveEditStore {
 
     public func open(_ file: DriveFile, context: DriveTransferContext = .init()) async throws -> DriveEditSession {
         guard let client else { throw DriveError.reconnect }
-        if let pending = pending().first(where: { $0.file.id == file.id }) { return pending }
+        if let pending = pending().first(where: { $0.file.id == file.id }) { openSessions.insert(pending.id); return pending }
         if client.isOffline {
             guard let existing = sessions.values.first(where: { $0.file.id == file.id }),
                 FileManager.default.fileExists(atPath: existing.localURL.path)
             else { throw DriveError.offline }
-            return existing
+            openSessions.insert(existing.id); return existing
         }
         let fresh = try await client.file(file.id, resourceKey: file.resourceKey)
         guard fresh.operations.canWrite, fresh.operations.canDownload, !fresh.isGoogleDocument, let revision = fresh.headRevisionId,
@@ -66,16 +72,17 @@ public actor DriveEditStore {
         let folder = directory.appendingPathComponent(fresh.id).appendingPathComponent(revision).appendingPathComponent(id.uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let url = folder.appendingPathComponent(fresh.name)
-        let staged = try await client.downloadToStaging(fresh, context: context)
-        defer { try? FileManager.default.removeItem(at: staged.url) }
+        let offline = try await client.offlineCopies()
+        let baseline = try await offline.fetch(
+            client.contentSource.remoteItem(fresh), progress: { bytes, total in context.progress(bytes, total ?? bytes) })
         let verified = try await client.file(fresh.id)
         guard verified.headRevisionId == revision else { throw DriveMutationError.conflict }
-        try FileManager.default.copyItem(at: staged.url, to: url)
+        try cloudClone(baseline, to: url)
         let handle = try FileHandle(forWritingTo: url); try handle.synchronize(); try handle.close()
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         let session = DriveEditSession(id: id, localURL: url, file: fresh, sentMD5: try DriveClient.md5(url))
         try persist(session)
-        sessions[id] = session
+        sessions[id] = session; openSessions.insert(id)
         return session
     }
     public func save(_ id: UUID) async throws -> DriveFile {
@@ -98,6 +105,9 @@ public actor DriveEditStore {
             defer { try? FileManager.default.removeItem(at: upload) }
             guard try DriveClient.md5(upload) == md5 else { throw DriveMutationError.sourceChanged }
             let result = try await client.saveEdit(upload, baseline: session.file)
+            if let offline = try? await client.offlineCopies() {
+                _ = try? await offline.adopt(file: upload, as: client.contentSource.remoteItem(result))
+            }
             session.file = result; session.sentMD5 = md5; session.state = .saved; session.conflictURL = nil
             try update(session)
             return result

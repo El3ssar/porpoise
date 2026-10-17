@@ -42,10 +42,11 @@ public struct CloudChangeBatch: Sendable {
 }
 
 public enum CloudContentError: Error, Equatable, LocalizedError {
-    case unsupported, offline, changed, checksum, lowSpace, heldForEditing, unavailable(String)
+    case unsupported, offline, notFound, changed, checksum, lowSpace, heldForEditing, unavailable(String)
     public var errorDescription: String? {
         switch self {
         case .unsupported: return "Offline copies aren’t available for this item."
+        case .notFound: return "This file is no longer in the cloud."
         case .offline: return "This file opens when you’re back online."
         case .changed: return "The file changed while it was downloading. Try again."
         case .checksum: return "The downloaded copy failed its integrity check."
@@ -59,6 +60,10 @@ public enum CloudContentError: Error, Equatable, LocalizedError {
 public protocol CloudContentSource: AnyObject, Sendable {
     var accountID: String { get }
     var providerTitle: String { get }
+    /// Optional private directory for injected/test accounts; nil uses the app-wide offline root.
+    var offlineDirectory: URL? { get }
+    /// An edit session or unsent edit holds these bytes against automatic removal.
+    func holdsCopy(_ ref: CloudItemRef) async -> Bool
     func ref(for url: URL) -> CloudItemRef?
     func url(for item: CloudRemoteItem) -> URL
     func cachedItem(_ ref: CloudItemRef) -> CloudRemoteItem?
@@ -67,6 +72,25 @@ public protocol CloudContentSource: AnyObject, Sendable {
     func download(
         _ item: CloudRemoteItem, to partial: URL,
         progress: @escaping @Sendable (Int64, Int64?) -> Void) async throws
+    func download(
+        _ item: CloudRemoteItem, to partial: URL,
+        checkpoint: @escaping @Sendable () async throws -> Void,
+        progress: @escaping @Sendable (Int64, Int64?) -> Void) async throws
+    /// Cleans up provider-owned recovery bytes associated with this store partial, after its task has stopped.
+    func discardPartial(at partial: URL) async throws
     var isOffline: Bool { get }
     var onChanges: (@Sendable (CloudChangeBatch) -> Void)? { get set }
+}
+
+extension CloudContentSource {
+    public func download(
+        _ item: CloudRemoteItem, to partial: URL,
+        checkpoint: @escaping @Sendable () async throws -> Void,
+        progress: @escaping @Sendable (Int64, Int64?) -> Void
+    ) async throws {
+        try await checkpoint(); try await download(item, to: partial, progress: progress); try await checkpoint()
+    }
+    public func discardPartial(at partial: URL) async throws {}
+    public var offlineDirectory: URL? { nil }
+    public func holdsCopy(_ ref: CloudItemRef) async -> Bool { false }
 }
