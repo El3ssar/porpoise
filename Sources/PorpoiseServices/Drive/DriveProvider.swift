@@ -166,6 +166,13 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
         let location = try location(remote)
         guard let client else { throw DriveError.reconnect }
         guard case .folder(let id, _) = location.collection else { throw DriveError.invalidLocation }
+        if !thumbnail, metadata(for: remote) == nil {
+            let item = FileItem(url: remote, name: displayName(for: remote) ?? "cloud file", isDirectory: false)
+            return try await CloudRemoteOpen.prepare(item, operations: openingOperations) { context in
+                let file = try await client.file(id, resourceKey: location.resourceKey)
+                return try await client.preview(file, context: context)
+            }
+        }
         let file: DriveFile
         if let cached = metadata(for: remote) { file = cached } else { file = try await client.file(id, resourceKey: location.resourceKey) }
         if thumbnail { return try await client.thumbnail(file) }

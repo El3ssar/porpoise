@@ -93,4 +93,22 @@ import Testing
         await client.clearCaches()
     }
 
+    @Test @MainActor func unknownMetadataLookupIsAlreadyVisibleInActivity() async throws {
+        let scratch = try Scratch()
+        let server = try FakeDriveServer(fixture: fixture(scratch, size: 4096), latencyMS: 200)
+        let client = try DriveMutationTests().client(server, folder: scratch.url.appendingPathComponent("journal"))
+        let provider = DriveProvider(accountID: client.accountID, client: client)
+        let operations = FileOperationsController()
+        operations.history = OperationHistory(file: scratch.url.appendingPathComponent("history"))
+        provider.openingOperations = operations
+        let remote = DriveLocation(accountID: client.accountID, collection: .folder("movie")).url
+        let opening = Task { try await provider.preview(remote) }
+        for _ in 0..<100 where operations.activities.isEmpty { await Task.yield() }
+        #expect(operations.activities.last?.state == .running)
+        #expect(provider.metadata(for: remote) == nil)
+        _ = try await opening.value
+        #expect(operations.activities.last?.state == .completed)
+        await client.clearCaches()
+    }
+
 }
