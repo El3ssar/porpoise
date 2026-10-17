@@ -43,7 +43,7 @@ struct DriveTransferSpeedTests {
                 try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
                 let job = RemoteTransferJob(
                     kind: .copy, sources: urls, destination: destination,
-                    control: FileJob(kind: .copy, sources: urls, destinationFolder: destination), rule: .ask, options: .init())
+                    control: JobControl(), rule: .ask, options: .init())
                 await withCheckedContinuation { continuation in
                     Thread {
                         job.run(); continuation.resume()

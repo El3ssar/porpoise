@@ -27,10 +27,10 @@ import Testing
     }
 
     @Test func sameFileKeyIgnoresPrivateAndKeepsRemoteURLsWhole() throws {
-        #expect(PathMath.sameFileKey(URL(fileURLWithPath: "/private/tmp/x")) == "/tmp/x")
-        #expect(PathMath.sameFileKey(URL(fileURLWithPath: "/tmp/x")) == "/tmp/x")
-        #expect(PathMath.sameFileKey(URL(fileURLWithPath: "/privateer/x")) == "/privateer/x")
+        #expect(FilePath.key(URL(fileURLWithPath: "/private/tmp/x")) == FilePath.entry("/tmp/x"))
+        #expect(FilePath.key(URL(fileURLWithPath: "/tmp/x")) == FilePath.entry("/tmp/x"))
+        #expect(FilePath.key(URL(fileURLWithPath: "/privateer/x")) == "/privateer/x")
         let remote = try #require(URL(string: "sftp://me@host/private/tmp/x"))
-        #expect(PathMath.sameFileKey(remote) == "sftp://me@host/private/tmp/x")
+        #expect(FilePath.key(remote) == "sftp://me@host/private/tmp/x")
     }
 }

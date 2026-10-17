@@ -12,7 +12,7 @@ import Testing
         let scratch = try Scratch()
         defer { withExtendedLifetime(scratch) {} }
         let dir = try scratch.symlink("link", to: scratch.folder("real").path)
-        #expect(FolderWatcher.realPath(dir.path) != dir.path)  // the case under test
+        #expect(FilePath.canonical(dir.path) != dir.path)  // the case under test
         let lock = NSLock()
         var hits = Set<String>()
         let watcher = FolderWatcher { h in

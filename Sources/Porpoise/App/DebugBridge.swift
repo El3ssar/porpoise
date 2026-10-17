@@ -508,12 +508,12 @@ final class DebugBridge: NSObject {
                     sourceFolder: folder ? TransferFolderSummary(itemCount: 13, bytes: 4_300_000) : nil,
                     destinationFolder: folder ? TransferFolderSummary(itemCount: 14, bytes: 3_100_000) : nil
                 ), kind: .copy, window: owner,
-                job: job
+                job: job.control
             ) { _ in }
             try? String(format: "%.3f ms", (CACurrentMediaTime() - began) * 1000).write(
                 toFile: NSTemporaryDirectory() + "porpoise-conflict-present.txt", atomically: true, encoding: .utf8)
         case "transferdialogcancel":
-            if let job = transferPreviewJob { FileOperationsController.shared.ui?.cancelConflict(for: job) }
+            if let job = transferPreviewJob { FileOperationsController.shared.ui?.cancelConflict(for: job.control) }
             transferPreviewJob = nil
         case "transferstate":
             guard Settings.isTesting else { return }

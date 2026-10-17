@@ -4,11 +4,14 @@ import Foundation
 public final class DiskCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
+    private let owningCancelled: () -> Bool
     private let checkpoint: (() throws -> Void)?
     /// Optional owning-job pause/cancel gate, called outside the cancellation lock at safe IO boundaries.
-    public init(checkpoint: (() throws -> Void)? = nil) { self.checkpoint = checkpoint }
+    public init(checkpoint: (() throws -> Void)? = nil, isCancelled: @escaping () -> Bool = { false }) {
+        self.checkpoint = checkpoint; self.owningCancelled = isCancelled
+    }
     public func cancel() { lock.withLock { cancelled = true } }
-    public var isCancelled: Bool { lock.withLock { cancelled } }
+    public var isCancelled: Bool { lock.withLock { cancelled } || owningCancelled() }
     public func check() throws {
         if isCancelled { throw CancellationError() }
         try checkpoint?()
@@ -118,7 +121,7 @@ public enum DuplicateKeepRule: String, CaseIterable, Sendable {
     /// The copy to keep; for "in chosen folder", nil when no copy is there (the group is left alone).
     public func keeper(in group: DuplicateGroup, preferredFolder: URL? = nil) -> URL? {
         if self == .inFolder, let folder = preferredFolder,
-            !group.files.contains(where: { NameIndex.contains(path: $0.entry.url.path, in: folder.path) })
+            !group.files.contains(where: { FilePath.contains(path: $0.entry.url.path, in: folder.path) })
         {
             return nil
         }
@@ -130,7 +133,7 @@ public enum DuplicateKeepRule: String, CaseIterable, Sendable {
             case .shortestPath: if x.url.path.utf8.count != y.url.path.utf8.count { return x.url.path.utf8.count < y.url.path.utf8.count }
             case .inFolder:
                 if let folder = preferredFolder {
-                    let left = NameIndex.contains(path: x.url.path, in: folder.path), right = NameIndex.contains(path: y.url.path, in: folder.path)
+                    let left = FilePath.contains(path: x.url.path, in: folder.path), right = FilePath.contains(path: y.url.path, in: folder.path)
                     if left != right { return left }
                 }
             }

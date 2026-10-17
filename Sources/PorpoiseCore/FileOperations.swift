@@ -234,6 +234,7 @@ public final class FileJob: @unchecked Sendable {
     public var conflictRule: TransferConflictRule = .ask
     public var comparisonOptions = TransferCompareOptions()
     /// App moves the displaced complete item to Trash; tests may inject an isolated disposal.
+    public var trashItem: (URL) throws -> URL? = FileActions.trashItem
     public var disposeReplacedItem: ((URL, URL) throws -> Void)?
     /// Files at least this large are copied in chunks that can resume where they stopped.
     public var resumableSize: Int64 = 8 << 20
@@ -258,16 +259,12 @@ public final class FileJob: @unchecked Sendable {
     public private(set) var failedSources: [URL] = []
     public private(set) var completedSources: Set<URL> = []
     public var remainingSources: [URL] { sources.filter { !completedSources.contains($0) } }
-    /// A remote transport uses the same thread-safe controls without running this local FileJob.
-    public func finishExternal() { lock.withLock { _ended = true } }
-    public func checkCancellation() throws { try checkpoint() }
+    public let control: JobControl
 
     /// Minimum interval between progress callbacks (tests set 0 to see every chunk).
     var publishInterval: TimeInterval = 0.25
 
     private let fm = FileManager.default
-    private let lock = NSLock()
-    private var _cancelled = false
     private var progress: JobProgress
     /// Tree sizes by item, walked once: the total, a skip, a same-volume move and a copy's end all need them.
     private var sizes: [URL: Int64] = [:]
@@ -292,49 +289,18 @@ public final class FileJob: @unchecked Sendable {
     /// First error copyfile() reported through its callback during a recursive copy.
     fileprivate var copyFailure: (code: Int32, path: String?)?
 
-    public var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return _cancelled || _interrupted }
-    public func cancel() {
-        lock.lock(); _cancelled = true; lock.unlock()
-        pauseCondition.lock(); pauseCondition.broadcast(); pauseCondition.unlock()
-    }
+    public var isCancelled: Bool { control.isCancelled }
+    public var isPaused: Bool { control.isPaused }
+    public var isInterrupted: Bool { control.isInterrupted }
+    public var hasEnded: Bool { control.hasEnded }
+    public func cancel() { control.cancel() }
+    public func pause() { control.pause() }
+    public func resume() { control.resume() }
+    public func interrupt() { control.interrupt() }
+    private func checkpoint() throws { try control.checkpoint() }
 
-    // MARK: Pause and interruption
-
-    private let pauseCondition = NSCondition()
-    private var _paused = false
-    private var _interrupted = false
-
-    /// Stopped between two chunks (or two items) until `resume()`; nothing is lost or started over.
-    public var isPaused: Bool { pauseCondition.lock(); defer { pauseCondition.unlock() }; return _paused }
-    public func pause() { pauseCondition.lock(); _paused = true; pauseCondition.unlock() }
-    public func resume() { pauseCondition.lock(); _paused = false; pauseCondition.broadcast(); pauseCondition.unlock() }
-
-    /// Stops as soon as it can, keeping partial copies and reporting nothing as done (quitting the app: the journal
-    /// resumes the job next time). A paused job stops too.
-    public func interrupt() {
-        lock.lock(); _interrupted = true; lock.unlock()
-        pauseCondition.lock(); pauseCondition.broadcast(); pauseCondition.unlock()
-    }
-
-    public var isInterrupted: Bool { lock.lock(); defer { lock.unlock() }; return _interrupted }
-
-    /// Waits while paused (inside copyfile(), between its chunks).
-    fileprivate func waitWhilePaused() {
-        pauseCondition.lock()
-        while _paused && !isCancelled { pauseCondition.wait() }
-        pauseCondition.unlock()
-    }
-
-    /// Waits while paused; throws once cancelled or interrupted.
-    func checkpoint() throws {
-        pauseCondition.lock()
-        while _paused && !isCancelled { pauseCondition.wait() }
-        pauseCondition.unlock()
-        if isInterrupted { throw FileOperationError.interrupted }
-        if isCancelled { throw FileOperationError.cancelled }
-    }
-
-    public init(kind: FileOperationKind, sources: [URL], destinationFolder: URL? = nil) {
+    public init(kind: FileOperationKind, sources: [URL], destinationFolder: URL? = nil, control: JobControl = JobControl()) {
+        self.control = control
         self.kind = kind
         self.sources = sources
         self.destinationFolder = destinationFolder
@@ -343,13 +309,9 @@ public final class FileJob: @unchecked Sendable {
             currentName: sources.first?.lastPathComponent ?? "", destination: destinationFolder)
     }
 
-    /// `run()` has returned.
-    public var hasEnded: Bool { lock.lock(); defer { lock.unlock() }; return _ended }
-    private var _ended = false
-
     /// Runs synchronously. Returns the undo record (nil if nothing happened).
     public func run() throws -> UndoRecord? {
-        defer { lock.lock(); _ended = true; lock.unlock() }
+        defer { control.finish() }
         progress.phase = .preparing
         inventoryMethod = comparisonOptions.method
         publish(force: true)
@@ -414,19 +376,16 @@ public final class FileJob: @unchecked Sendable {
             guard let dest = destinationFolder else { return }
             // The destination is where the items go, so it is resolved fully: dropping a folder onto a symlink to
             // itself must count as "into itself" (a copy would otherwise recurse until the disk is full).
-            if kind != .link && Self.isSameOrInside(dest.resolvingSymlinksInPath(), src) {
+            if kind != .link && FilePath(entry: src).contains(FilePath(canonical: dest)) {
                 throw FileOperationError.intoItself(src.lastPathComponent)
             }
             if let r = try transfer(src, into: dest) { results.append(r) }
         case .trash:
-            var out: NSURL?
             do {
-                try fm.trashItem(at: src, resultingItemURL: &out)
+                if let out = try trashItem(src) { trashed.append((src, out)) }
             } catch  where Self.isTrashUnsupportedError(error) {
                 untrashable.append(src)
-                return
             }
-            if let o = out as URL? { trashed.append((src, o)) }
         case .delete:
             try fm.removeItem(at: src)
         }
@@ -487,7 +446,7 @@ public final class FileJob: @unchecked Sendable {
             return target
         }
         // Moving an item to the folder it is already in: nothing to do, but it is still the result.
-        if kind == .move && Self.isSame(folder.appendingPathComponent(src.lastPathComponent), src) {
+        if kind == .move && FilePath.sameItem(folder.appendingPathComponent(src.lastPathComponent), src) {
             return src
         }
         guard let (target, placement) = try resolveTarget(for: src, in: folder) else { return nil }
@@ -522,7 +481,7 @@ public final class FileJob: @unchecked Sendable {
     private func resolveTarget(for src: URL, in folder: URL) throws -> (URL, Placement)? {
         var target = folder.appendingPathComponent(src.lastPathComponent)
         // Copying onto itself (paste in the same folder) → automatic "copy" name, like Dolphin's Duplicate.
-        if Self.isSame(target, src) {
+        if FilePath.sameItem(target, src) {
             target = folder.appendingPathComponent(FileFormat.duplicateName(for: src.lastPathComponent, existing: names(in: folder)))
         }
         while Self.itemExists(at: target) {
@@ -581,7 +540,7 @@ public final class FileJob: @unchecked Sendable {
 
     /// Overwriting a folder with something inside it would delete the source too.
     private func replaceable(_ target: URL, by src: URL) throws -> (URL, Placement) {
-        if Self.isSameOrInside(src, target) {
+        if FilePath(entry: target).contains(FilePath(entry: src)) {
             throw FileOperationError.failed("“\(target.lastPathComponent)” cannot be overwritten by an item inside it.")
         }
         return (target, .replace)
@@ -788,7 +747,7 @@ public final class FileJob: @unchecked Sendable {
         let cb: copyfile_callback_t = { what, stage, state, src, _, ctx in
             guard let ctx else { return COPYFILE_CONTINUE }
             let job = Unmanaged<FileJob>.fromOpaque(ctx).takeUnretainedValue()
-            if stage == COPYFILE_PROGRESS { job.waitWhilePaused() }
+            if stage == COPYFILE_PROGRESS { job.control.waitWhilePaused() }
             if job.isCancelled { return COPYFILE_QUIT }
             if stage == COPYFILE_ERR {
                 // In recursive mode errors arrive here. Continuing after a content error would silently
@@ -879,21 +838,6 @@ public final class FileJob: @unchecked Sendable {
         target.deletingLastPathComponent().appendingPathComponent(".\(target.lastPathComponent).porpoise-\(UUID().uuidString.prefix(8))")
     }
 
-    /// Whether `url` is `folder` or inside it, comparing real paths (/tmp vs /private/tmp). The last
-    /// component of `url` is kept as is, so a symlink to a folder is not confused with the folder.
-    static func isSameOrInside(_ url: URL, _ folder: URL) -> Bool {
-        let f = realPath(folder)
-        return (realPath(url) + "/").hasPrefix(f == "/" ? "/" : f + "/")
-    }
-
-    /// The same path once the folders leading to it are resolved: the folder an item is in, reached through a link.
-    static func isSame(_ a: URL, _ b: URL) -> Bool { realPath(a) == realPath(b) }
-
-    private static func realPath(_ u: URL) -> String {
-        let s = u.standardizedFileURL
-        return s.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(s.lastPathComponent).path
-    }
-
     static func sameVolume(_ a: URL, _ b: URL) -> Bool {
         let ka = try? a.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier as? NSObject
         let kb = try? b.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier as? NSObject
@@ -937,7 +881,7 @@ public final class FileJob: @unchecked Sendable {
         if inventoryDelay > 0 { Thread.sleep(forTimeInterval: inventoryDelay) }
         var st = stat()
         guard lstat(url.path, &st) == 0 else { return 0 }
-        if let target, Self.itemExists(at: target), !Self.isSame(url, target) {
+        if let target, Self.itemExists(at: target), !FilePath.sameItem(url, target) {
             knownConflicts.insert(url)
             if st.st_mode & S_IFMT != S_IFDIR, inventoryMethod != .content, let source = FileItem.load(url), let destination = FileItem.load(target) {
                 let status = TransferComparator.statusOf(
@@ -970,27 +914,11 @@ public final class FileJob: @unchecked Sendable {
 
     private func size(of url: URL) -> Int64 {
         if let s = sizes[url] { return s }
-        let s = Self.diskSize(url)
+        let s = TreeMeasure.measure([url], followTopLevelLink: false, crossVolumes: true)?.bytes ?? 0
         sizes[url] = s
         return s
     }
 
-    /// Total size of a file or folder tree (logical sizes). Symlinks count as themselves, not their
-    /// target, matching how they are copied.
-    public static func diskSize(_ url: URL) -> Int64 {
-        var st = stat()
-        guard lstat(url.path, &st) == 0 else { return 0 }
-        if (st.st_mode & S_IFMT) != S_IFDIR { return (st.st_mode & S_IFMT) == S_IFREG ? Int64(st.st_size) : 0 }
-        var total: Int64 = 0
-        let keys: [URLResourceKey] = [.fileSizeKey, .isRegularFileKey]
-        if let e = FileManager.default.enumerator(at: url, includingPropertiesForKeys: keys) {
-            for case let u as URL in e {
-                guard let v = try? u.resourceValues(forKeys: Set(keys)), v.isRegularFile == true else { continue }
-                total += Int64(v.fileSize ?? 0)
-            }
-        }
-        return total
-    }
 }
 
 // MARK: - FileActions
@@ -1054,14 +982,16 @@ public enum FileActions {
 
     /// Reverts an undo record and returns the redo record. All or nothing: if a step fails, the steps
     /// already done are rolled back and the error is thrown, so the record stays valid for another try.
-    public static func undo(_ record: UndoRecord) throws -> UndoRecord? {
+    public static func undo(_ record: UndoRecord, trash: ([URL]) throws -> [(original: URL, inTrash: URL)] = { try trashAll($0) }) throws
+        -> UndoRecord?
+    {
         switch record {
         case .cloud:
             // The service undoes these (FileOperationsController asks it), never the file system.
             throw CocoaError(.featureUnsupported)
         case .created(let urls):
             // Items deleted since then have nothing left to undo.
-            let trashed = try trashAll(urls.filter { FileJob.itemExists(at: $0) })
+            let trashed = try trash(urls.filter { FileJob.itemExists(at: $0) })
             return trashed.isEmpty ? nil : .trashed(trashed.map { (original: $0.0, inTrash: $0.1) })
         case .moved(let pairs):
             try moveAll(pairs.reversed().map { ($0.to, $0.from) })
@@ -1096,14 +1026,19 @@ public enum FileActions {
         }
     }
 
-    private static func trashAll(_ urls: [URL]) throws -> [(URL, URL)] {
+    /// Platform primitive; Services injects its origin-recording TrashService into app jobs and Undo.
+    public static func trashItem(_ url: URL) throws -> URL? {
+        var out: NSURL?
+        try FileManager.default.trashItem(at: url, resultingItemURL: &out)
+        return out as URL?
+    }
+
+    public static func trashAll(_ urls: [URL], using moveToTrash: (URL) throws -> URL? = trashItem) throws -> [(original: URL, inTrash: URL)] {
         let fm = FileManager.default
         var trashed: [(URL, URL)] = []
         do {
             for u in urls {
-                var out: NSURL?
-                try fm.trashItem(at: u, resultingItemURL: &out)
-                if let o = out as URL? { trashed.append((u, o)) }
+                if let out = try moveToTrash(u) { trashed.append((u, out)) }
             }
         } catch {
             for (original, inTrash) in trashed.reversed() { try? fm.moveItem(at: inTrash, to: original) }

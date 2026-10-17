@@ -28,7 +28,7 @@ import Testing
     }
     /// The hint compares paths as given (no filesystem calls): scratch URLs lack the /private that roots carry.
     private func canonical(_ s: Scratch, _ relative: String) -> URL {
-        URL(fileURLWithPath: IndexPath.canonical(s.path(relative).path))
+        URL(fileURLWithPath: FilePath.canonical(s.path(relative).path))
     }
     private func waitReady(_ index: SearchIndex) async throws {
         try #require(await eventually(Self.liveWait) { !index.status.building && index.status.updated != nil })
@@ -158,7 +158,7 @@ import Testing
         index.configure(config)
         defer { index.configure(IndexConfiguration()) }
         // The nested roots fold into the root that holds them.
-        #expect(index.configuration.roots == [IndexPath.canonical(s.path("root").path), IndexPath.canonical(s.path("second").path)])
+        #expect(index.configuration.roots == [FilePath.canonical(s.path("root").path), FilePath.canonical(s.path("second").path)])
         try await waitReady(index)
         #expect(index.search("nested", scope: s.path("root"))?.paths.count == 1)
         #expect(index.search("other", scope: s.path("second"))?.paths.count == 1)

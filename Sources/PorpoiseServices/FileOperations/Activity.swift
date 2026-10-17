@@ -36,8 +36,8 @@ public final class Activity: Identifiable {
     public let pauseUnavailable: String?
     /// The job doing the work (nil for remote transfers, which have their own loop).
     public internal(set) var job: FileJob?
-    /// Controls a remote transport; its work loop is owned by Services rather than FileJob.run().
-    public internal(set) var controlJob: FileJob?
+    public let control: JobControl
+    var remoteComparisonMethod: TransferCompareMethod = .sizeAndDate
     var remoteRemaining: [URL] = []
     var remoteResults: [URL] = []
     var retryTransfer: (() -> Void)?
@@ -52,12 +52,16 @@ public final class Activity: Identifiable {
     /// Copies and moves wait their turn; trashing, deleting and links start at once.
     public var isQueued: Bool { kind == .copy || kind == .move }
 
-    init(kind: FileOperationKind, sources: [URL], destination: URL?, job: FileJob?, pauseUnavailable: String? = nil, id: UUID = UUID()) {
+    init(
+        kind: FileOperationKind, sources: [URL], destination: URL?, job: FileJob?, control: JobControl? = nil, pauseUnavailable: String? = nil,
+        id: UUID = UUID()
+    ) {
         self.id = id
         self.kind = kind
         self.sources = sources
         self.destination = destination
         self.job = job
+        self.control = control ?? job?.control ?? JobControl()
         self.pauseUnavailable = pauseUnavailable
         progress = JobProgress(
             kind: kind, totalBytes: 0, doneBytes: 0, totalItems: sources.count, doneItems: 0, currentName: sources.first.map(Self.name) ?? "",
@@ -65,7 +69,7 @@ public final class Activity: Identifiable {
     }
 
     public var canPause: Bool {
-        pauseUnavailable == nil && (job != nil || controlJob != nil) && (state == .running || state == .paused)
+        pauseUnavailable == nil && (state == .running || state == .paused)
     }
 
     /// "Copying 3 items to Backup"
@@ -124,7 +128,7 @@ public final class Activity: Identifiable {
     }
 
     public var comparisonMethodTitle: String {
-        switch job?.comparisonOptions.method ?? controlJob?.comparisonOptions.method ?? .sizeAndDate {
+        switch job?.comparisonOptions.method ?? remoteComparisonMethod {
         case .sizeAndDate: return "by size & date"
         case .sizeOnly: return "by size"
         case .content: return "by contents"
@@ -224,11 +228,11 @@ extension FileOperationsController {
         activity.incomingItem = nil
         activity.errors = errors
         if let job { activity.failedSources = job.failedSources }
-        if job?.isInterrupted == true || activity.controlJob?.isInterrupted == true {
+        if activity.control.isInterrupted {
             activity.state = .interrupted  // the journal stays, for next time
         } else {
             activity.journal.map { journals.remove($0.id) }
-            if job?.isCancelled == true || activity.controlJob?.isCancelled == true {
+            if activity.control.isCancelled {
                 activity.state = .cancelled
             } else if !errors.isEmpty && (job?.results.isEmpty ?? activity.remoteResults.isEmpty) && activity.kind != .delete
                 && activity.kind != .trash
@@ -294,8 +298,7 @@ extension FileOperationsController {
 
     public func pause(_ activity: Activity) {
         guard activity.canPause else { return }
-        activity.job?.pause()
-        activity.controlJob?.pause()
+        activity.control.pause()
         activity.state = .paused
         activityDidChange()
     }
@@ -303,8 +306,7 @@ extension FileOperationsController {
     public func resume(_ activity: Activity) {
         if activity.state == .cancelled { retry(activity, window: nil); return }
         guard activity.state == .paused else { return }
-        activity.job?.resume()
-        activity.controlJob?.resume()
+        activity.control.resume()
         activity.resumeCloudTask?()
         activity.rate.reset()  // the pause isn't part of the speed
         activity.state = .running
@@ -318,8 +320,7 @@ extension FileOperationsController {
             activity.journal.map { journals.remove($0.id) }
             activityDidChange()
         default:
-            activity.job?.cancel()
-            activity.controlJob?.cancel()
+            activity.control.cancel()
             remoteCancel[activity.id]?()
         }
     }
@@ -360,12 +361,11 @@ extension FileOperationsController {
         isInterrupting = true
         let running = activities.filter { $0.state.isActive }
         for a in running {
-            if let job = a.job, !job.hasEnded { job.interrupt() }
-            if let remote = a.controlJob, !remote.hasEnded { remote.interrupt() }
+            if !a.control.hasEnded { a.control.interrupt() }
         }
         let end = Date().addingTimeInterval(timeout)
         while running.contains(where: {
-            ($0.job.map { !$0.hasEnded } ?? false) || ($0.controlJob.map { !$0.hasEnded } ?? false)
+            !$0.control.hasEnded
         }) && Date() < end {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }

@@ -219,7 +219,7 @@ import Testing
             Issue.record("Undo didn't put the copy in the Trash"); return
         }
         #expect(isInVolumeTrash(inTrash))
-        #expect(controller.originalLocation(of: inTrash)?.standardizedFileURL == copy.standardizedFileURL)
+        #expect(TrashService.shared.originalLocation(of: inTrash)?.standardizedFileURL == copy.standardizedFileURL)
         #expect(controller.restore([inTrash], window: nil).isEmpty)
         #expect(try String(contentsOf: copy, encoding: .utf8) == "pixels")
     }

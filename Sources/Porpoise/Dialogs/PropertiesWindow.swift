@@ -266,7 +266,7 @@ final class PropertiesWindow: NSWindowController, NSTextFieldDelegate {
         sizeLabel.stringValue = "Calculating…\n0 bytes, 0 items"
         sizeLabel.toolTip = sizeLabel.stringValue
         sizeQueue.async { [weak self] in
-            let total = FolderSizeCounter.count(all, cancellation: cancellation) { partial in
+            let total = TreeMeasure.measure(all, cancellation: cancellation) { partial in
                 DispatchQueue.main.async { [weak self] in
                     guard let self, self.sizeCount === cancellation, !cancellation.isCancelled else { return }
                     let text = "Calculating…\n\(FileFormat.size(partial.bytes)), \(partial.items.formatted()) items"

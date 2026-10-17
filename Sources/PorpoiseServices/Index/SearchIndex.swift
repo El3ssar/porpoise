@@ -100,7 +100,7 @@ public final class SearchIndex: @unchecked Sendable {
         self.crawlQueue = crawlQueue
         self.defaults = defaults
         self.directory = directory ?? Settings.supportFolder.appendingPathComponent("SearchIndex", isDirectory: true)
-        storagePath = IndexPath.canonical(self.directory.path)
+        storagePath = FilePath.canonical(self.directory.path)
         if let data = defaults.data(forKey: "searchIndex.configuration"), let c = try? JSONDecoder().decode(IndexConfiguration.self, from: data) {
             current = c
         }
@@ -119,18 +119,18 @@ public final class SearchIndex: @unchecked Sendable {
         lock.withLock {
             let path = scope.path
             return current.enabled && !state.building && !excluded(path, config: current)
-                && roots.contains { NameIndex.contains(path: path, in: $0.path) }
-                && !roots.flatMap(\.holes).contains { NameIndex.contains(path: $0, in: path) || NameIndex.contains(path: path, in: $0) }
+                && roots.contains { FilePath.contains(path: path, in: $0.path) }
+                && !roots.flatMap(\.holes).contains { FilePath.contains(path: $0, in: path) || FilePath.contains(path: path, in: $0) }
         }
     }
     public func start() { configure(configuration, rebuild: false) }
     public func configure(_ proposed: IndexConfiguration, rebuild: Bool = false) {
         var config = proposed
-        config.roots = Array(Set(config.roots.map { IndexPath.canonical($0) })).sorted()
+        config.roots = Array(Set(config.roots.map { FilePath.canonical($0) })).sorted()
         // Nested roots would duplicate hits and could cross otherwise disabled volumes.
-        config.roots = config.roots.filter { p in !config.roots.contains { $0 != p && NameIndex.contains(path: p, in: $0) && Self.sameVolume(p, $0) }
+        config.roots = config.roots.filter { p in !config.roots.contains { $0 != p && FilePath.contains(path: p, in: $0) && Self.sameVolume(p, $0) }
         }
-        config.exclusions = config.exclusions.map { IndexPath.canonical($0) }
+        config.exclusions = config.exclusions.map { FilePath.canonical($0) }
         let generation = lock.withLock { () -> Int in
             current = config; revision += 1; roots = []; state = Status(); state.building = config.enabled && !config.roots.isEmpty
             state.message = state.building ? "Index queued" : (config.enabled ? "Select folders to index" : "Index off")
@@ -219,7 +219,7 @@ public final class SearchIndex: @unchecked Sendable {
         return stat(a, &left) == 0 && stat(b, &right) == 0 && left.st_dev == right.st_dev
     }
     private func excluded(_ path: String, config: IndexConfiguration) -> Bool {
-        NameIndex.contains(path: path, in: storagePath) || config.exclusions.contains { NameIndex.contains(path: path, in: $0) }
+        FilePath.contains(path: path, in: storagePath) || config.exclusions.contains { FilePath.contains(path: path, in: $0) }
             || (config.excludeGitObjects && (path.hasSuffix("/.git/objects") || path.contains("/.git/objects/")))
             || (config.excludeNodeModules && path.split(separator: "/").contains("node_modules"))
     }
@@ -247,7 +247,7 @@ public final class SearchIndex: @unchecked Sendable {
     private func refresh(_ paths: [String], event: UInt64, rescan: Bool, config: IndexConfiguration, generation: Int) {
         guard valid(generation) else { return }
         // Our manifest and snapshot writes must never feed back into the index.
-        let paths = paths.map(IndexPath.entry).filter { rescan || !excluded($0, config: config) }
+        let paths = paths.map(FilePath.entry).filter { rescan || !excluded($0, config: config) }
         if var pending = pendingBuild, pending.generation == generation {
             pending.event = max(pending.event, event)
             pending.rescan = pending.rescan || rescan
@@ -265,7 +265,7 @@ public final class SearchIndex: @unchecked Sendable {
         for r in copy.indices {
             let root = copy[r].path
             var touched = Set(
-                paths.filter { NameIndex.contains(path: $0, in: root) || NameIndex.contains(path: root, in: $0) }
+                paths.filter { FilePath.contains(path: $0, in: root) || FilePath.contains(path: root, in: $0) }
                     .map { Self.outsidePackages($0, root: root) })
             if touched.isEmpty { continue }
             if touched.count > 64 {
@@ -280,13 +280,13 @@ public final class SearchIndex: @unchecked Sendable {
                 continue
             }
             // Patches never overlap. A change inside an existing patch re-walks that patch.
-            touched = Set(touched.map { p in copy[r].patches.first(where: { NameIndex.contains(path: p, in: $0.path) })?.path ?? p })
-            let top = touched.filter { p in !touched.contains { $0 != p && NameIndex.contains(path: p, in: $0) } }
+            touched = Set(touched.map { p in copy[r].patches.first(where: { FilePath.contains(path: p, in: $0.path) })?.path ?? p })
+            let top = touched.filter { p in !touched.contains { $0 != p && FilePath.contains(path: p, in: $0) } }
             for path in top where !excluded(path, config: config) {
                 let result = crawl(path, config: config, generation: generation)
-                copy[r].holes.removeAll { NameIndex.contains(path: $0, in: path) }
+                copy[r].holes.removeAll { FilePath.contains(path: $0, in: path) }
                 copy[r].holes.append(contentsOf: result.holes)
-                copy[r].patches.removeAll { NameIndex.contains(path: $0.path, in: path) }
+                copy[r].patches.removeAll { FilePath.contains(path: $0.path, in: path) }
                 // Empty table is a deletion tombstone.
                 copy[r].patches.append(Chunk(path: path, table: result.table, shadowed: copy[r].base.countUnderPath(path)))
             }
@@ -302,7 +302,7 @@ public final class SearchIndex: @unchecked Sendable {
     /// A change inside a package is a change of the folder holding it: walked from there, the package stays one
     /// entry, as in a full crawl (a walk starting inside it would index its contents).
     private static func outsidePackages(_ path: String, root: String) -> String {
-        guard path != root, NameIndex.contains(path: path, in: root) else { return path }
+        guard path != root, FilePath.contains(path: path, in: root) else { return path }
         var folder = root
         for name in path.dropFirst(root.count).split(separator: "/") {
             let next = (folder as NSString).appendingPathComponent(String(name))
@@ -345,15 +345,15 @@ public final class SearchIndex: @unchecked Sendable {
         cancelled: () -> Bool = { false }
     ) -> (paths: [String], snippets: [String: String], error: String?)? {
         let (config, snapshot, building) = lock.withLock { (current, roots, state.building) }
-        let scope = IndexPath.canonical(scope.path)
-        let hasHoles = snapshot.flatMap(\.holes).contains { NameIndex.contains(path: $0, in: scope) || NameIndex.contains(path: scope, in: $0) }
+        let scope = FilePath.canonical(scope.path)
+        let hasHoles = snapshot.flatMap(\.holes).contains { FilePath.contains(path: $0, in: scope) || FilePath.contains(path: scope, in: $0) }
         guard config.enabled, !building, !hasHoles, !excluded(scope, config: config),
-            snapshot.contains(where: { NameIndex.contains(path: scope, in: $0.path) && Self.sameVolume(scope, $0.path) }), !contents || config.content
+            snapshot.contains(where: { FilePath.contains(path: scope, in: $0.path) && Self.sameVolume(scope, $0.path) }), !contents || config.content
         else { return nil }
         let query: IndexQuery
         do { query = try contents ? IndexQuery(literal: text) : IndexQuery(text) } catch { return ([], [:], error.localizedDescription) }
         var found: [String] = [], snippets: [String: String] = [:]
-        for root in snapshot where NameIndex.contains(path: scope, in: root.path) || NameIndex.contains(path: root.path, in: scope) {
+        for root in snapshot where FilePath.contains(path: scope, in: root.path) || FilePath.contains(path: root.path, in: scope) {
             let excludedPaths = root.patches.map(\.path)
             let chunks = [Chunk(path: root.path, table: root.base)] + root.patches
             for (number, chunk) in chunks.enumerated() {
@@ -365,7 +365,7 @@ public final class SearchIndex: @unchecked Sendable {
                     for id in chunk.table.contentCandidates(text, scope: scope, cancelled: cancelled) {
                         if cancelled() { return ([], [:], nil) }
                         let p = chunk.table.path(id)
-                        guard !exclusions.contains(where: { NameIndex.contains(path: p, in: $0) }), !found.contains(p),
+                        guard !exclusions.contains(where: { FilePath.contains(path: p, in: $0) }), !found.contains(p),
                             let value = IndexFileText.read(p, limit: 5_000_000),
                             let line = value.split(separator: "\n", omittingEmptySubsequences: false).first(where: {
                                 IndexQuery.fold(String($0)).contains(IndexQuery.fold(text))

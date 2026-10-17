@@ -168,7 +168,7 @@ public enum AppCleanupScanner {
         for item in selected {
             let now = try PhysicalTreeScanner.entry(item.url)
             guard !now.symlink, now.identity == item.entry.identity,
-                NameIndex.contains(path: item.url.deletingLastPathComponent().resolvingSymlinksInPath().path, in: item.library.path),
+                FilePath.contains(path: item.url.deletingLastPathComponent().resolvingSymlinksInPath().path, in: item.library.path),
                 item.url.deletingLastPathComponent().resolvingSymlinksInPath().path == item.url.deletingLastPathComponent().standardizedFileURL.path,
                 match(item.url, category: item.category, selected: applications, installed: installed) != nil
             else { throw FileOperationError.failed("“\(item.url.lastPathComponent)” changed or is now shared. Review the related files again.") }

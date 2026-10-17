@@ -155,7 +155,7 @@ import Testing
         #expect(try Data(contentsOf: output.appendingPathComponent("payload.txt")) == Data("payload".utf8))
         func copy(_ rule: TransferConflictRule) async -> RemoteTransferJob {
             let job = RemoteTransferJob(
-                kind: .copy, sources: [local], destination: root, control: FileJob(kind: .copy, sources: [local], destinationFolder: root),
+                kind: .copy, sources: [local], destination: root, control: JobControl(),
                 rule: rule, options: .init())
             await withCheckedContinuation { continuation in
                 Thread {
@@ -168,7 +168,7 @@ import Testing
         let replaced = await copy(.replace); #expect(replaced.errors.isEmpty && replaced.results == [remote])
         let tree = try fixture.server.fixture.scratch.folder("Tree"); _ = try fixture.server.fixture.scratch.file("Tree/child.txt", "child")
         let treeJob = RemoteTransferJob(
-            kind: .copy, sources: [tree], destination: root, control: FileJob(kind: .copy, sources: [tree], destinationFolder: root), rule: .ask,
+            kind: .copy, sources: [tree], destination: root, control: JobControl(), rule: .ask,
             options: .init())
         await withCheckedContinuation { continuation in
             Thread {
@@ -180,7 +180,7 @@ import Testing
         let copiedFolder = try await provider.refresh(root).first { $0.name == "Folder" }!
         let native = RemoteTransferJob(
             kind: .copy, sources: [copiedFolder.url], destination: treeURL,
-            control: FileJob(kind: .copy, sources: [copiedFolder.url], destinationFolder: treeURL), rule: .ask, options: .init())
+            control: JobControl(), rule: .ask, options: .init())
         await withCheckedContinuation { continuation in
             Thread {
                 native.run(); continuation.resume()

@@ -9,7 +9,7 @@ import Testing
 final class ScriptedUI: FileOperationsUI {
     /// Answers to name conflicts, in order. A conflict nobody scripted fails the test and cancels the job.
     var conflictAnswers: [ConflictAnswer]
-    var asyncConflict: ((ConflictInfo, FileJob, @escaping (ConflictAnswer) -> Void) -> Void)?
+    var asyncConflict: ((ConflictInfo, JobControl, @escaping (ConflictAnswer) -> Void) -> Void)?
     var didCancelConflict = false
     var onJobStarted: ((FileJob) -> Void)?
     var confirms: Bool
@@ -44,16 +44,16 @@ final class ScriptedUI: FileOperationsUI {
     }
 
     func resolveConflict(
-        _ info: ConflictInfo, kind: FileOperationKind, window: AnyObject?, job: FileJob, completion: @escaping (ConflictAnswer) -> Void
+        _ info: ConflictInfo, kind: FileOperationKind, window: AnyObject?, job: JobControl, completion: @escaping (ConflictAnswer) -> Void
     ) {
         if let asyncConflict { asyncConflict(info, job, completion) } else { completion(resolveConflict(info, kind: kind)) }
     }
-    func cancelConflict(for job: FileJob) { didCancelConflict = true }
-    func jobStarted(_ job: FileJob) { onJobStarted?(job) }
-    func jobProgressed(_ job: FileJob, _ progress: JobProgress) {}
+    func cancelConflict(for job: JobControl) { didCancelConflict = true }
+    func jobStarted(_ activity: Activity) { if let job = activity.job { onJobStarted?(job) } }
+    func jobProgressed(_ activity: Activity, _ progress: JobProgress) {}
 
-    func jobFinished(_ job: FileJob) {
-        finishedJobs.append(job)
+    func jobFinished(_ activity: Activity) {
+        if let job = activity.job { finishedJobs.append(job) }
         // The controller finishes its bookkeeping in the same main-queue turn, before a waiter resumes.
         let w = waiting
         waiting = [:]

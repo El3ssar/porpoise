@@ -69,7 +69,12 @@ public final class DirectoryModel {
     }
     public private(set) var location: URL
     public private(set) var items: [FileItem] = []  // top level, unsorted, including hidden
-    public private(set) var rows: [Row] = [] { didSet { rowIndex = nil; rowIndexByPath = nil } }
+    public private(set) var rows: [Row] = [] {
+        didSet {
+            rowIndex = nil; rowIndexByPath = nil
+            rowFileKeys = FilePath.keys(rows.map { $0.item.url })
+        }
+    }
     public private(set) var groups: [ItemGroup] = []
     public private(set) var isLoading = false
     public private(set) var loadError: String?
@@ -904,8 +909,12 @@ public final class DirectoryModel {
 
     /// URL → row, built on first use after `rows` changes: views look rows up per hover, draw and key press.
     private var rowIndex: [URL: Int]?
-    /// The same by standardized path (/tmp/x vs /private/tmp/x style mismatches), built only after a miss.
+    /// Canonical entry identity, built only after a URL miss. Remote scopes retain their complete URL.
     private var rowIndexByPath: [String: Int]?
+    private var rowFileKeys: [String] = []
+
+    /// Stable for this delivered listing; rendering performs no filesystem work.
+    public func identity(ofRow index: Int) -> String { rowFileKeys[index] }
 
     public func index(of url: URL) -> Int? {
         if rowIndex == nil {
@@ -914,11 +923,14 @@ public final class DirectoryModel {
         if let i = rowIndex?[url] { return i }
         if rowIndexByPath == nil {
             rowIndexByPath = Dictionary(
-                // Items' URLs are made from standard paths already: standardizing thousands of them would cost.
-                rows.enumerated().map { ($1.item.url.path, $0) },
+                rows.indices.map { (identity(ofRow: $0), $0) },
                 uniquingKeysWith: { first, _ in first })
         }
-        return rowIndexByPath?[url.standardizedFileURL.path]
+        if let index = rowIndexByPath?[FilePath.key(url)] { return index }
+        // Drive permits redundant drive/resource context for the same opaque item. The provider owns that
+        // equivalence; Dropbox's namespaces (and remote authorities) must never collapse by path alone.
+        guard !url.isFileURL, let provider = RemoteFS.provider(for: location) as? CloudFileProvider else { return nil }
+        return rows.firstIndex { provider.sameItem(url, $0.item.url) }
     }
 
     /// In row order. Without copying every row's item first: the status bar asks on every selection change.

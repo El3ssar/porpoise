@@ -20,7 +20,6 @@ extension FileOperationsController {
             if !trashed.isEmpty {
                 let r = UndoRecord.trashed(trashed.map { (original: $0.0, inTrash: $0.1) })
                 pushUndo(r)
-                recordTrash(r)
             }
         }
         guard !remaining.isEmpty else { Self.notifyChanged(urls); done(unlocked); return }
@@ -31,7 +30,7 @@ extension FileOperationsController {
         // Remember where they came from, so "Restore" can put them back.
         if ok && !plan.trashed.isEmpty {
             pushUndo(.trashed(plan.trashed))
-            recordTrash(.trashed(plan.trashed))
+            TrashService.shared.record(plan.trashed)
             // Yours from now on: emptying the Trash won't need the helper for them.
             PrivilegedHelper.takeOwnership(of: plan.trashed.map(\.inTrash.path))
         }
@@ -90,9 +89,7 @@ extension FileOperationsController {
                 if kind == .delete {
                     try fm.removeItem(at: u)
                 } else {
-                    var out: NSURL?
-                    try fm.trashItem(at: u, resultingItemURL: &out)
-                    if let o = out as URL? { trashed.append((u, o)) }
+                    trashed += try TrashService.shared.trash([u])
                 }
                 return false
             } catch {

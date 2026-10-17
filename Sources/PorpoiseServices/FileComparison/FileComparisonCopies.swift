@@ -34,7 +34,7 @@ public final class FileComparisonCopies {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let local = try provider.download(url, into: folder)
         try cancellation.check()
-        guard local.isFileURL, NameIndex.contains(path: local.resolvingSymlinksInPath().path, in: folder.resolvingSymlinksInPath().path) else {
+        guard local.isFileURL, FilePath.contains(path: local.resolvingSymlinksInPath().path, in: folder.resolvingSymlinksInPath().path) else {
             throw CocoaError(.fileReadNoPermission)
         }
         return local

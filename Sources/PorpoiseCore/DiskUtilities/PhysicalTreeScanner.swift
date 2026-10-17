@@ -1,6 +1,5 @@
 import Darwin
 import Foundation
-import PorpoiseCore
 
 public struct DiskProgress: Sendable {
     public var files: Int
@@ -23,19 +22,23 @@ public enum PhysicalTreeScanner {
     }
     public static func scan(
         _ urls: [URL], crossVolumes: Bool = false, maxDepth: Int = .max,
-        cancellation: DiskCancellation = DiskCancellation(), progress: @escaping (DiskProgress) -> Void = { _ in }
+        cancellation: DiskCancellation = DiskCancellation(), parallelism: Int = 4, retainEntries: Bool = true,
+        onEntry: @escaping (DiskEntry) -> Void = { _ in }, progress: @escaping (DiskProgress) -> Void = { _ in }
     ) -> DiskScan {
         let lock = NSLock()
+        var entryCount = 0
         var result = DiskScan(), seen: Set<DiskIdentity> = [], last = Date.distantPast, bytes: Int64 = 0
-        let roots = Array(Set(urls.filter(\.isFileURL).map { URL(fileURLWithPath: IndexPath.entry($0.path)) })).sorted { $0.path < $1.path }
+        let roots = Array(Set(urls.filter(\.isFileURL).map { URL(fileURLWithPath: FilePath.entry($0.path)) })).sorted { $0.path < $1.path }
         func error(_ path: String, _ message: String) { lock.withLock { result.errors.append("\(path): \(message)") } }
         func add(_ entry: DiskEntry) {
             let update: DiskProgress? = lock.withLock {
-                result.entries.append(entry)
+                if retainEntries { result.entries.append(entry) }
+                entryCount += 1
                 if !entry.directory && !entry.symlink { bytes += entry.size }
                 if Date().timeIntervalSince(last) < 0.1 { return nil }
-                last = Date(); return DiskProgress(files: result.entries.count, bytes: bytes, path: entry.url.path)
+                last = Date(); return DiskProgress(files: entryCount, bytes: bytes, path: entry.url.path)
             }
+            onEntry(entry)
             if let update { progress(update) }
         }
         func walk(_ item: DiskEntry, device: Int32, depth: Int) {
@@ -59,7 +62,7 @@ public enum PhysicalTreeScanner {
         let unique = distinct.filter { child in
             !distinct.contains { ancestor in
                 ancestor.directory && ancestor.url != child.url && (crossVolumes || ancestor.identity.device == child.identity.device)
-                    && NameIndex.contains(path: child.url.path, in: ancestor.url.path)
+                    && FilePath.contains(path: child.url.path, in: ancestor.url.path)
             }
         }
         for root in unique {
@@ -69,7 +72,7 @@ public enum PhysicalTreeScanner {
                 lock.withLock { _ = seen.insert(root.identity) }
                 do {
                     let children = try children(root.url, cancellation: cancellation)
-                    let partitions = min(4, children.count)
+                    let partitions = min(max(1, parallelism), children.count)
                     // The calling thread reads a share itself: a scan finishes even when no other thread is free
                     // (waiting on a queue for helpers that never came hung CI's 3-core runner).
                     DispatchQueue.concurrentPerform(iterations: partitions) { partition in
@@ -85,7 +88,7 @@ public enum PhysicalTreeScanner {
         }
         result.cancelled = cancellation.isCancelled
         result.entries.sort { $0.url.path < $1.url.path }
-        progress(DiskProgress(files: result.entries.count, bytes: bytes, path: ""))
+        progress(DiskProgress(files: entryCount, bytes: bytes, path: ""))
         return result
     }
 

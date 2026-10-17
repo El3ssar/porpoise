@@ -5,7 +5,7 @@ extension RemoteTransferJob {
     /// Shared conflict/progress flow for providers whose locations contain IDs rather than child paths.
     func transferCloud(_ source: URL, into folder: URL) throws -> URL? {
         if let target = completed[source] { finishProgress(source); return target }
-        try control.checkCancellation()
+        try control.checkpoint()
         guard let incoming = try item(source) else { throw CloudContentError.notFound }
         let sourceProvider = RemoteFS.provider(for: source) as? CloudTransferProvider
         let targetProvider = RemoteFS.provider(for: folder) as? CloudTransferProvider

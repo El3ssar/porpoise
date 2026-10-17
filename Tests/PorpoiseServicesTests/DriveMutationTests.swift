@@ -166,7 +166,7 @@ import Testing
         let root = DriveLocation(accountID: client.accountID).url
         let upload = RemoteTransferJob(
             kind: .copy, sources: [local], destination: root,
-            control: FileJob(kind: .copy, sources: [local], destinationFolder: root), rule: .ask, options: .init())
+            control: JobControl(), rule: .ask, options: .init())
         await offThePool { upload.run() }
         #expect(upload.errors.isEmpty && upload.results.count == 1)
         let remote = try #require(upload.results.first)
@@ -175,25 +175,25 @@ import Testing
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: false)
         let download = RemoteTransferJob(
             kind: .move, sources: [remote], destination: output,
-            control: FileJob(kind: .move, sources: [remote], destinationFolder: output), rule: .ask, options: .init())
+            control: JobControl(), rule: .ask, options: .init())
         await offThePool { download.run() }
         #expect(download.errors.isEmpty)
         #expect(try Data(contentsOf: output.appendingPathComponent("payload.txt")) == Data("payload".utf8))
         #expect(try await client.file(DriveLocation(url: remote)!.collectionID, includeTrashed: true).trashed == true)
         let again = RemoteTransferJob(
             kind: .copy, sources: [local], destination: root,
-            control: FileJob(kind: .copy, sources: [local], destinationFolder: root), rule: .ask, options: .init())
+            control: JobControl(), rule: .ask, options: .init())
         await offThePool { again.run() }
         #expect(again.errors.isEmpty)
         let keepBoth = RemoteTransferJob(
             kind: .copy, sources: [local], destination: root,
-            control: FileJob(kind: .copy, sources: [local], destinationFolder: root), rule: .ask, options: .init())
+            control: JobControl(), rule: .ask, options: .init())
         keepBoth.resolve = { _ in .init(.keepBoth, applyToAll: true) }
         await offThePool { keepBoth.run() }
         #expect(keepBoth.errors.isEmpty)
         let replace = RemoteTransferJob(
             kind: .copy, sources: [local], destination: root,
-            control: FileJob(kind: .copy, sources: [local], destinationFolder: root), rule: .ask, options: .init())
+            control: JobControl(), rule: .ask, options: .init())
         replace.resolve = { _ in .init(.overwrite) }
         await offThePool { replace.run() }
         #expect(replace.errors.isEmpty)

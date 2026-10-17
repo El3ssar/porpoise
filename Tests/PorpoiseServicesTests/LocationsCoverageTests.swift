@@ -281,7 +281,7 @@ private func stallSpotlight() -> () -> Void {
         }
         defer { NotificationCenter.default.removeObserver(token) }
         action()
-        return await eventually(10) { seen.value.contains(path) }
+        return await eventually(10) { seen.value.contains(FilePath.entry(path)) }
     }
 
     /// Files that aren't in the cloud: nothing to download, but the views are told to look again.

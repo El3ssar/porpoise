@@ -19,7 +19,7 @@ extension DriveMutationTests {
         func job(_ sources: [URL], _ destination: URL, rule: TransferConflictRule = .ask) -> RemoteTransferJob {
             RemoteTransferJob(
                 kind: .copy, sources: sources, destination: destination,
-                control: FileJob(kind: .copy, sources: sources, destinationFolder: destination), rule: rule, options: .init(method: .content))
+                control: JobControl(), rule: rule, options: .init(method: .content))
         }
         let upload = job([source], root); await offThePool { upload.run() }
         #expect(upload.errors.isEmpty && upload.results.count == 1)
@@ -51,7 +51,7 @@ extension DriveMutationTests {
         func run(_ kind: FileOperationKind, _ source: URL, _ target: URL) async -> RemoteTransferJob {
             let job = RemoteTransferJob(
                 kind: kind, sources: [source], destination: target,
-                control: FileJob(kind: kind, sources: [source], destinationFolder: target), rule: .keepBoth, options: .init())
+                control: JobControl(), rule: .keepBoth, options: .init())
             await offThePool { job.run() }; return job
         }
         let copied = await run(.copy, binary, folder)
@@ -127,7 +127,7 @@ extension DriveMutationTests {
         let form = try await client.file("native-unsupported").location(accountID: client.accountID).url
         let job = RemoteTransferJob(
             kind: .copy, sources: [form], destination: output,
-            control: FileJob(kind: .copy, sources: [form], destinationFolder: output), rule: .ask, options: .init())
+            control: JobControl(), rule: .ask, options: .init())
         await offThePool { job.run() }
         #expect(job.errors.count == 1 && job.errors[0].hasPrefix("Form:"))
         #expect(!job.errors[0].contains("native-unsupported:") && !job.errors[0].contains("Try another preset"))

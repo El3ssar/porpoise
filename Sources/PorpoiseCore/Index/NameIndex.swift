@@ -140,17 +140,13 @@ public struct NameIndex: @unchecked Sendable {
         return parts.reversed().joined(separator: "/").replacingOccurrences(of: "//", with: "/")
     }
 
-    public static func contains(path: String, in root: String) -> Bool {
-        path == root || path.hasPrefix(root == "/" ? "/" : root + "/")
-    }
-
     /// The entry at `path` (a root's path or below one), if indexed.
     public func id(of path: String) -> Int? {
         if let known = lookups.get(path) { return known }
         var found: Int?
         for r in roots {
             let rp = storedName(Int(r))
-            guard Self.contains(path: path, in: rp) else { continue }
+            guard FilePath.contains(path: path, in: rp) else { continue }
             var cur = Int(r)
             var ok = true
             for comp in path.dropFirst(rp.count).split(separator: "/") {
@@ -248,7 +244,7 @@ public struct NameIndex: @unchecked Sendable {
     func scopeMap(_ scope: String?) -> [UInt8]? {
         guard let scope else { return nil }
         // A scope above every root: all of it.
-        if roots.allSatisfy({ Self.contains(path: storedName(Int($0)), in: scope) }) { return nil }
+        if roots.allSatisfy({ FilePath.contains(path: storedName(Int($0)), in: scope) }) { return nil }
         guard let id = id(of: scope) else { return [UInt8](repeating: 0, count: count) }
         return subtreeMap([id])
     }

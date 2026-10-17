@@ -97,13 +97,14 @@ import Testing
         let s = try Scratch()
         let c = makeController(ScriptedUI())
         _ = await c.perform(.move, [try s.file("src/a")], to: try s.folder("dst"))
-        var paths: Set<String> = []
+        let paths = Locked(Set<String>())
         let token = NotificationCenter.default.addObserver(forName: FileOperationsController.foldersChanged, object: nil, queue: nil) {
-            paths.formUnion($0.userInfo?["paths"] as? Set<String> ?? [])
+            let changed = $0.userInfo?["paths"] as? Set<String> ?? []
+            paths.change { $0.formUnion(changed) }
         }
         defer { NotificationCenter.default.removeObserver(token) }
         c.undo(window: nil)
-        #expect(paths.isSuperset(of: [s.path("src").path, s.path("dst").path]))
+        #expect(paths.value.isSuperset(of: [FilePath.canonical(s.path("src").path), FilePath.canonical(s.path("dst").path)]))
     }
 
     @Test func aCancelledOrEmptyJobLeavesNothingToUndo() async throws {

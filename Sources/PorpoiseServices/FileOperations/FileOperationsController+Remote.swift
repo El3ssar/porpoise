@@ -7,17 +7,16 @@ extension FileOperationsController {
         completed: [URL: URL] = [:], cloudOperations: [URL: UUID] = [:], cloudBatchID: UUID? = nil, rule: TransferConflictRule? = nil,
         options: TransferCompareOptions? = nil
     ) {
-        let control = FileJob(kind: kind, sources: urls, destinationFolder: folder)
-        configureReplacementDisposal(control)
+        let control = JobControl()
         let runtime = RemoteTransferJob(
             kind: kind, sources: urls, destination: folder, control: control,
             rule: rule ?? Settings.shared.transferConflictRule,
             options: options ?? TransferCompareOptions(method: Settings.shared.transferCompareMethod), completed: completed)
+        runtime.disposeReplacedItem = replacementDisposal
         runtime.cloudOperations = cloudOperations
-        let activity = Activity(kind: kind, sources: urls, destination: folder, job: nil)
+        let activity = Activity(kind: kind, sources: urls, destination: folder, job: nil, control: control)
         runtime.cloudBatchID = cloudBatchID ?? activity.id
         activity.originWindow = window
-        activity.controlJob = control
         activity.remoteRemaining = urls
         runtime.onNotice = { [weak self, weak activity] notice in
             DispatchQueue.main.async {
@@ -36,7 +35,7 @@ extension FileOperationsController {
         }
         runtime.onProgress = { [weak self, weak activity] snapshot in
             DispatchQueue.main.async {
-                self?.ui?.jobProgressed(control, snapshot)
+                if let activity { self?.ui?.jobProgressed(activity, snapshot) }
                 if let activity { self?.progressed(activity, snapshot) }
             }
         }
@@ -55,15 +54,16 @@ extension FileOperationsController {
         activity.start = { [weak self, weak activity] in
             guard let self, let activity, activity.state == .queued else { return }
             self.began(activity)
-            self.ui?.jobStarted(control)
+            TrashService.shared.record([])
+            self.ui?.jobStarted(activity)
             DispatchQueue.global(qos: .userInitiated).async {
                 runtime.run()
                 DispatchQueue.main.async {
-                    control.comparisonOptions = runtime.options
+                    activity.remoteComparisonMethod = runtime.options.method
                     activity.remoteRemaining = runtime.remaining
                     activity.remoteResults = runtime.results
                     activity.failedSources = runtime.failedSources
-                    self.ui?.jobFinished(control)
+                    self.ui?.jobFinished(activity)
                     self.ended(activity, errors: runtime.errors)
                     Self.notifyChanged(urls + (folder.map { [$0] } ?? []) + runtime.results)
                     if !runtime.errors.isEmpty && !control.isCancelled { self.ui?.showTransferErrors(activity, window: window) }

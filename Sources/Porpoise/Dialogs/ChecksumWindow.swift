@@ -112,7 +112,7 @@ final class ChecksumWindow: DiskUtilityWindow {
             do {
                 let entries = try self.results.map { value -> ChecksumEntry in
                     let path = value.url.resolvingSymlinksInPath().path
-                    guard NameIndex.contains(path: path, in: base) else {
+                    guard FilePath.contains(path: path, in: base) else {
                         throw ChecksumManifest.Invalid(line: 0, reason: "save the manifest in a folder containing all selected files")
                     }
                     return ChecksumEntry(

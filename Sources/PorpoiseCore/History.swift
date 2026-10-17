@@ -78,7 +78,7 @@ public final class FolderWatcher: @unchecked Sendable {
         paths = newPaths
         guard !newPaths.isEmpty else { return }
         var real: [String: [String]] = [:]
-        for p in newPaths { real[Self.realPath(p), default: []].append(p) }
+        for p in newPaths { real[FilePath.canonical(p), default: []].append(p) }
         aliases = real
         var ctx = FSEventStreamContext(
             version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
@@ -123,13 +123,6 @@ public final class FolderWatcher: @unchecked Sendable {
         stream = nil
         paths = []
         aliases = [:]
-    }
-
-    /// realpath(3): resolves every symlink, including /tmp and /var (which Foundation keeps as they are).
-    static func realPath(_ path: String) -> String {
-        guard let r = realpath(path, nil) else { return path }
-        defer { free(r) }
-        return String(cString: r)
     }
 
     private static let queueKey = DispatchSpecificKey<Bool>()

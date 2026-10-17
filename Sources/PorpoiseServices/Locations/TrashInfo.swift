@@ -12,7 +12,7 @@ public enum TrashInfo {
             return "The Trash can be shown once Porpoise has Full Disk Access (System Settings › Privacy & Security)."
         }
         let items = names.filter { $0 != ".DS_Store" }
-        let size = items.reduce(Int64(0)) { $0 + FileJob.diskSize(t.appendingPathComponent($1)) }
+        let size = TreeMeasure.measure(items.map { t.appendingPathComponent($0) })?.bytes ?? 0
         return items.isEmpty ? "The Trash is empty." : "\(FileFormat.itemCount(items.count)) in the Trash, \(FileFormat.size(size))."
     }
 
