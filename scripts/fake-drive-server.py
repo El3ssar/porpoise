@@ -147,6 +147,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def put(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        upload_mbps = self.server.fixtures.get("uploadMbps", 0)
+        delay = self.server.fixtures.get("uploadLatencyMS", 0) / 1000
+        if upload_mbps:
+            delay += len(body) / (upload_mbps * 125000)
+        if delay:
+            time.sleep(delay)
         session = self.server.sessions.get(urlsplit(self.path).path)
         if not session:
             return self.reply({}, 404)
@@ -402,7 +408,18 @@ class Handler(BaseHTTPRequestHandler):
             if "/revisions/" in parsed.path:
                 item_id, revision_id = parsed.path.split("/files/")[1].split("/revisions/")
                 media = self.server.revisions.get((item_id, revision_id))
-                return self.reply(base64.b64decode(media), content_type="application/octet-stream") if media else self.reply({}, 404)
+                if media:
+                    data = base64.b64decode(media)
+                    requested = self.headers.get("Range")
+                    if requested:
+                        left, right = requested.removeprefix("bytes=").split("-")
+                        start, end = int(left), int(right) if right else len(data) - 1
+                        return self.reply(data[start:end + 1], 206, "application/octet-stream",
+                                          {"Content-Range": f"bytes {start}-{min(end, len(data)-1)}/{len(data)}"})
+                    return self.reply(data, content_type="application/octet-stream")
+                current = next((f for f in fixtures["files"] if f["id"] == item_id), None)
+                if not current or current.get("headRevisionId") != revision_id:
+                    return self.reply({}, 404)
             item_id = parsed.path[len(prefix):].split("/")[0]
             if item_id == "root" and fixtures.get("mutationFixture"):
                 return self.reply({"id": "fixture-root", "name": "My Drive", "mimeType": "application/vnd.google-apps.folder", "capabilities": {"canAddChildren": True, "canListChildren": True}})
@@ -416,6 +433,19 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply({}, 403)
                 if fixtures.pop("changeRevisionDuringDownload", False):
                     item["version"] = str(int(item.get("version", "1")) + 1)
+                media_path = fixtures.get("mediaFiles", {}).get(item_id)
+                if media_path:
+                    size = Path(media_path).stat().st_size
+                    requested = self.headers.get("Range")
+                    start, end = 0, size - 1
+                    if requested:
+                        left, right = requested.removeprefix("bytes=").split("-")
+                        start, end = int(left), min(int(right) if right else end, end)
+                    with open(media_path, "rb") as source:
+                        source.seek(start)
+                        data = source.read(end - start + 1)
+                    return self.reply(data, 206 if requested else 200, "application/octet-stream",
+                                      {"Content-Range": f"bytes {start}-{end}/{size}"} if requested else {})
                 generated = fixtures.get("generatedMedia", {}).get(item_id)
                 media = fixtures.get("media", {}).get(item_id)
                 if generated is not None:
