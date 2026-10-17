@@ -89,7 +89,7 @@ extension CloudOfflineTests {
             facade.keep(true, [source.url(for: first), source.url(for: second)]) { continuation.resume(returning: $0) }
         }
         #expect(error == nil && facade.operations.activities.count == 1)
-        source.delay = .milliseconds(100)
+        source.holdsDownloads = true
         var maximumQuiet = 0
         let observer = NotificationCenter.default.addObserver(
             forName: FileOperationsController.activityChanged, object: facade.operations, queue: .main
@@ -103,7 +103,8 @@ extension CloudOfflineTests {
         await expectEventually { facade.operations.activities.contains { $0.title.hasPrefix("Updating offline copies") } }
         let other = source.add("two", text: "second update", revision: "r2")
         source.onChanges?(.init(changed: [other]))
-        _ = await poll(timeout: 10) { await store.snapshot().entries["two"]?.item.revision == "r2" }
+        source.holdsDownloads = false
+        await expectEventually { await store.snapshot().entries["two"]?.item.revision == "r2" }
         await expectEventually { facade.operations.activities.count == 1 }
         #expect(await store.snapshot().entries["one"]?.item.revision == "r2")
         #expect(await store.snapshot().entries["two"]?.item.revision == "r2")
@@ -134,7 +135,7 @@ extension CloudOfflineTests {
         await expectEventually { facade.details(for: url).kept }
         #expect(service.keep(for: url) == .direct)
         #expect(!service.hasLocalCopy(url) && service.state(for: url) == .cloudOnly)
-        source.isOffline = false; source.delay = .milliseconds(100)
+        source.isOffline = false; source.holdsDownloads = true
         let download = Task {
             try await awaitCallback { continuation in
                 facade.downloadNow([url]) { continuation.resume(returning: $0) }
@@ -143,6 +144,7 @@ extension CloudOfflineTests {
         await expectEventually {
             if case .downloading = service.state(for: url) { return true }; return false
         }
+        source.holdsDownloads = false
         #expect(try await download.value == nil)
         await expectEventually { service.state(for: url) == .local }
         #expect(service.hasLocalCopy(url))

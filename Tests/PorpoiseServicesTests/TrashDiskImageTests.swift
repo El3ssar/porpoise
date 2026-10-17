@@ -164,8 +164,9 @@ import Testing
         let f = try file("local.txt")
         controller.trash([URL(string: "unknown://host/remote.txt")!, f], window: nil)
         #expect(ui.questions.map(\.message) == ["Permanently delete “remote.txt”?"])
-        await ui.nextJobFinished()
-        if ui.finishedJobs.count < 2 { await ui.nextJobFinished() }
+        // Counted: the remote delete has no FileJob, and when both finish in one main-queue turn a second wait for
+        // the next would start after the last.
+        await expectEventually(timeout: 20) { ui.finishedActivities == 2 }
         #expect(lastTrashed.map(\.original) == [f])
         #expect(ui.errors.count == 1)  // the remote one: nothing provides "unknown://"
     }

@@ -6,9 +6,19 @@ import Testing
 
 @testable import PorpoiseServices
 
-/// Background work (index crawls, adb polls) must start while other work keeps every core busy, as a full test run
-/// does on CI's 3-core runner. Utility work on the shared GCD pool got no thread then, and stayed queued.
-@MainActor @Suite(.serialized) struct BusyPoolTests {
+/// Background work (index crawls, adb polls, video previews) must start while other work keeps every core or every
+/// cooperative thread busy, as a full test run does on CI's 3-core runner. Utility work on the shared GCD pool got no
+/// thread then, and stayed queued.
+///
+/// These tests take what the whole test process shares, so they run alone: while one holds every core or every
+/// cooperative thread, the other suites' tests stand still, and their waits run out (a 5 s wait expired while a preview
+/// held the pool, and its test then changed a file a download had not read yet: W-111). scripts/test-with-watchdog.sh
+/// runs them in a pass of their own, before the others; by hand:
+/// `PORPOISE_TESTS_ALONE=1 swift test --filter BusyPoolTests`.
+@Suite(
+    .serialized,
+    .enabled(if: ProcessInfo.processInfo.environment["PORPOISE_TESTS_ALONE"] == "1", "runs alone: scripts/test-with-watchdog.sh"))
+struct BusyPoolTests {
     /// Keeps a default-QoS GCD worker spinning per core until the returned function is called.
     private func occupyEveryCore() -> () -> Void {
         let stop = Flag()
@@ -20,7 +30,7 @@ import Testing
         return { stop.set() }
     }
 
-    @Test func anIndexIsBuiltWhileEveryCoreIsBusy() async throws {
+    @MainActor @Test func anIndexIsBuiltWhileEveryCoreIsBusy() async throws {
         let s = try Scratch()
         try s.file("root/a.txt")
         let suite = "PorpoiseIndexTests.\(UUID())"
@@ -39,7 +49,7 @@ import Testing
         #expect(index.search("a", scope: s.path("root"))?.paths.count == 1)
     }
 
-    @Test func phonesArePolledWhileEveryCoreIsBusy() async throws {
+    @MainActor @Test func phonesArePolledWhileEveryCoreIsBusy() async throws {
         let s = try Scratch()
         let adb = try RecordingTool()
         try adb.reply("List of devices attached\nR58N123 device usb:1-1 product:x model:Pixel_9 device:o1s\n")
@@ -53,15 +63,15 @@ import Testing
         #expect(await eventually(15) { m.detected.contains { $0.title == "Pixel 9" } })
     }
 
-}
-
-/// Asking AVFoundation whether a file plays needs no free cooperative thread: synchronous work may hold them all
-/// (a preview waited 49s to start in a loaded run). In VideoPreviewStreamTests' serialized suite, which owns the
-/// preview's test ffmpeg; not on the main actor: the answer comes there while this test's thread, like the others,
-/// is held.
-extension VideoPreviewStreamTests {
-    @Test func aVideoPreviewAnswersWhileEveryCooperativeThreadIsTaken() throws {
+    /// Asking AVFoundation whether a file plays needs no free cooperative thread: synchronous work may hold them all
+    /// (a preview waited 49s to start in a loaded run). Not on the main actor: the answer comes there while this test's
+    /// thread, like the others, is held.
+    @Test(.enabled(if: testFFmpeg != nil, "needs ffmpeg: scripts/build-ffmpeg.sh, or one on PATH"))
+    func aVideoPreviewAnswersWhileEveryCooperativeThreadIsTaken() throws {
         let s = try Scratch()
+        VideoPreview.testFFmpeg = testFFmpeg
+        VideoPreview.testRoot = try s.folder("streams")
+        defer { VideoPreview.testFFmpeg = nil; VideoPreview.testRoot = nil }
         let file = try s.file("not a video.mkv", "plain text")
         let p = VideoPreview()
         defer { p.stop(); p.server.stop() }
