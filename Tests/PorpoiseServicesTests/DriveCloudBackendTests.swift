@@ -29,7 +29,7 @@ import Testing
             Issue.record("sign-in failed"); return
         }
         defer { for a in store.accounts { RemoteFS.unregisterDrive(accountID: a.id) } }
-        #expect(one.email == "daniel@example.com" && two.email == "daniel@studio.example")
+        #expect(one.email == "avery@example.com" && two.email == "avery@studio.example")
         // The same account again is shown, not added (the fixture's profiles rotate back to the first one).
         guard case .failure(.alreadyConnected(let again)) = try await connect(b) else { Issue.record("expected already connected"); return }
         #expect(again.id == one.id)

@@ -76,7 +76,7 @@ import Testing
     @Test func offlineMessageSaysHowOldTheListingIs() throws {
         let backend = DemoCloudBackend()
         _ = backend.connect(.googleDrive, openBrowser: { _ in }, done: { _ in })
-        backend.finishSignIn(CloudAccount(id: "a1", email: "daniel@gmail.com", displayName: "Daniel"))
+        backend.finishSignIn(CloudAccount(id: "a1", email: "avery@example.com", displayName: "Avery"))
         let accounts = CloudAccounts()
         accounts.backend = backend
         let myDrive = try #require(accounts.url("a1", root: .myDrive))

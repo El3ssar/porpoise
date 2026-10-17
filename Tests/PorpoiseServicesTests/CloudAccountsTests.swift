@@ -8,8 +8,8 @@ import Testing
 /// Cloud accounts as the sidebar, the Connect sheet and Settings › Accounts see them, with the demo backend.
 @MainActor @Suite(.isolatedSettings) struct CloudAccountsTests {
     let personal = CloudAccount(
-        id: "a1", email: "daniel@gmail.com", displayName: "Daniel", quotaUsed: 4_000_000_000, quotaTotal: 15_000_000_000)
-    let work = CloudAccount(id: "a2", email: "daniel@studio.com", displayName: "Daniel S", sharedDriveCount: 2)
+        id: "a1", email: "avery@gmail.com", displayName: "Avery", quotaUsed: 4_000_000_000, quotaTotal: 15_000_000_000)
+    let work = CloudAccount(id: "a2", email: "avery@studio.example", displayName: "Avery Q", sharedDriveCount: 2)
 
     /// A fresh model on a demo backend that already has `accounts`.
     private func model(_ accounts: [CloudAccount] = []) -> (CloudAccounts, DemoCloudBackend) {
@@ -54,7 +54,7 @@ import Testing
         let (m, backend) = model([personal])
         var result: Result<CloudAccount, CloudConnectError>?
         _ = m.connect(.googleDrive, openBrowser: { _ in }, done: { result = $0 })
-        backend.finishSignIn(CloudAccount(id: "other", email: "Daniel@Gmail.com", displayName: "Daniel"))
+        backend.finishSignIn(CloudAccount(id: "other", email: "Avery@Gmail.com", displayName: "Avery"))
         #expect(result == .failure(.alreadyConnected(personal)))
         #expect(m.accounts.count == 1)
     }
@@ -71,14 +71,14 @@ import Testing
         let (m, _) = model([personal])
         #expect(m.title("a1") == "Google Drive")
         let (both, _) = model([personal, work])
-        #expect(both.title("a1") == "Google Drive · daniel")
-        #expect(both.title("a2") == "Google Drive · studio.com")
+        #expect(both.title("a1") == "Google Drive · avery")
+        #expect(both.title("a2") == "Google Drive · studio.example")
         // Headers carry the provider's mark: with several accounts they show only the names.
-        #expect(both.sections().map(\.title) == ["daniel", "studio.com"])
+        #expect(both.sections().map(\.title) == ["avery", "studio.example"])
         both.setLabel("a2", "  work ")
         #expect(both.title("a2") == "Google Drive · work")
         both.setLabel("a2", "")
-        #expect(both.label("a2") == "studio.com")
+        #expect(both.label("a2") == "studio.example")
         #expect(both.title("missing") == "")
     }
 
