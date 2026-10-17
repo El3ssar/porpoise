@@ -266,12 +266,12 @@ public struct DriveFile: Codable, Hashable, Sendable {
         return FileItem(
             url: parent.map { childLocation(in: $0).url } ?? location(accountID: accountID).url, name: name, isDirectory: target.isFolder,
             isSymlink: isShortcut, isHidden: name.hasPrefix("."), size: Int64(target.size ?? "") ?? 0,
-            modificationDate: target.modifiedTime.flatMap { ISO8601DateFormatter().date(from: $0) },
+            modificationDate: target.modifiedTime.flatMap { FileFormat.iso8601($0) },
             contentType: target.contentType, posixPermissions: target.isFolder ? 0o555 : 0o444,
             owner: owners?.first?.displayName ?? owners?.first?.emailAddress,
             linkDestination: shortcutDetails?.targetId,
             isReadable: target.isFolder ? target.operations.canBrowse : (target.operations.canDownload || target.operations.canExport),
             isWritable: target.operations.canWrite || target.operations.canAddChildren,
-            sharedDate: sharedWithMeTime.flatMap { ISO8601DateFormatter().date(from: $0) })
+            sharedDate: sharedWithMeTime.flatMap { FileFormat.iso8601($0) })
     }
 }

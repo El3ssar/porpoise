@@ -127,10 +127,8 @@ public enum BatchRenameService {
         if let width = properties[kCGImagePropertyPixelWidth as String] as? NSNumber { entry.metadata["width"] = width.stringValue }
         if let height = properties[kCGImagePropertyPixelHeight as String] as? NSNumber { entry.metadata["height"] = height.stringValue }
         if let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any], let date = exif["DateTimeOriginal"] as? String {
-            let format = DateFormatter(); format.locale = Locale(identifier: "en_US_POSIX"); format.calendar = Calendar(identifier: .gregorian)
             let offset = exif["OffsetTimeOriginal"] as? String
-            format.dateFormat = offset == nil ? "yyyy:MM:dd HH:mm:ss" : "yyyy:MM:dd HH:mm:ssXXXXX"
-            entry.exifDate = format.date(from: date + (offset ?? ""))
+            entry.exifDate = FileFormat.posixDate(date + (offset ?? ""), format: offset == nil ? "yyyy:MM:dd HH:mm:ss" : "yyyy:MM:dd HH:mm:ssXXXXX")
         }
     }
 }

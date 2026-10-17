@@ -134,38 +134,30 @@ public enum RemoteParsing {
         LsDateParser(now: now, timeZone: timeZone).parse(t)
     }
 
-    /// Date column of `ls -l`; formatters are built once per listing.
+    /// Date column of `ls -l`; fixed POSIX configurations are shared across listings.
     struct LsDateParser {
         let now: Date
         let year: Int
-        let iso: DateFormatter
-        let recent: DateFormatter
-        let old: DateFormatter
+        let timeZone: TimeZone
 
         init(now: Date, timeZone: TimeZone) {
-            func make(_ format: String) -> DateFormatter {
-                let f = DateFormatter()
-                f.locale = Locale(identifier: "en_US_POSIX")
-                f.timeZone = timeZone
-                f.dateFormat = format
-                return f
-            }
             self.now = now
             var cal = Calendar(identifier: .gregorian)
             cal.timeZone = timeZone
             year = cal.component(.year, from: now)
-            iso = make("yyyy-MM-dd HH:mm")
-            recent = make("MMM d yyyy HH:mm")
-            old = make("MMM d yyyy")
+            self.timeZone = timeZone
         }
 
         func parse(_ t: [String]) -> Date? {
-            if t.count >= 2, t[0].contains("-") { return iso.date(from: "\(t[0]) \(t[1].prefix(5))") }
+            if t.count >= 2, t[0].contains("-") {
+                return FileFormat.posixDate("\(t[0]) \(t[1].prefix(5))", format: "yyyy-MM-dd HH:mm", timeZone: timeZone)
+            }
             guard t.count >= 3 else { return nil }
-            guard t[2].contains(":") else { return old.date(from: "\(t[0]) \(t[1]) \(t[2])") }
+            guard t[2].contains(":") else { return FileFormat.posixDate("\(t[0]) \(t[1]) \(t[2])", format: "MMM d yyyy", timeZone: timeZone) }
             // Recent files have no year: this year, or last year if that would be in the future.
-            guard let d = recent.date(from: "\(t[0]) \(t[1]) \(year) \(t[2])") else { return nil }
-            return d > now.addingTimeInterval(86400) ? recent.date(from: "\(t[0]) \(t[1]) \(year - 1) \(t[2])") : d
+            guard let d = FileFormat.posixDate("\(t[0]) \(t[1]) \(year) \(t[2])", format: "MMM d yyyy HH:mm", timeZone: timeZone) else { return nil }
+            return d > now.addingTimeInterval(86400)
+                ? FileFormat.posixDate("\(t[0]) \(t[1]) \(year - 1) \(t[2])", format: "MMM d yyyy HH:mm", timeZone: timeZone) : d
         }
     }
 

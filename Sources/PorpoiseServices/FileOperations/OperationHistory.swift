@@ -113,11 +113,10 @@ public final class OperationHistory: @unchecked Sendable {
             s.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" || $0 == "\r" })
                 ? "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\"" : s
         }
-        let iso = ISO8601DateFormatter()
         var out = "Date,Operation,Items,Sources,Destination,Bytes,Seconds,Outcome,Errors,Verification\r\n"
         for e in entries {
             let row = [
-                iso.string(from: e.date), e.operation, String(e.items), e.sources.joined(separator: "\n"), e.destination ?? "", String(e.bytes),
+                FileFormat.iso8601(e.date), e.operation, String(e.items), e.sources.joined(separator: "\n"), e.destination ?? "", String(e.bytes),
                 String(format: "%.1f", e.seconds), e.outcome, e.errors.joined(separator: "\n"), e.verification ?? "",
             ]
             out += row.map(field).joined(separator: ",") + "\r\n"

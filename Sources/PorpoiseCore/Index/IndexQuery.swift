@@ -77,10 +77,9 @@ public struct IndexQuery: @unchecked Sendable {
                 if date.lowercased() == "today" {
                     start = calendar.startOfDay(for: now)
                 } else {
-                    let formatter = DateFormatter(); formatter.calendar = calendar
-                    formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.timeZone = calendar.timeZone
-                    formatter.dateFormat = "yyyy-MM-dd"; formatter.isLenient = false
-                    guard let parsed = formatter.date(from: date), formatter.string(from: parsed) == date else { throw Invalid.syntax(token) }
+                    guard let parsed = FileFormat.posixDate(date, format: "yyyy-MM-dd", timeZone: calendar.timeZone, calendar: calendar),
+                        FileFormat.posixString(parsed, format: "yyyy-MM-dd", timeZone: calendar.timeZone, calendar: calendar) == date
+                    else { throw Invalid.syntax(token) }
                     start = parsed
                 }
                 let end = calendar.date(byAdding: .day, value: 1, to: start)!.timeIntervalSince1970

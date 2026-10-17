@@ -93,7 +93,7 @@ public enum CloudCommands {
 
     /// "12.4 GB in 3,210 items. You have 48 GB available on this Mac."
     public static func planText(_ plan: CloudKeepPlan, folder: Bool) -> String {
-        let items = plan.items == 1 ? "1 item" : "\(plan.items.formatted()) items"
+        let items = plan.items == 1 ? "1 item" : "\(FileFormat.count(plan.items)) items"
         let what = "\(FileFormat.size(plan.bytes)) in \(items)."
         guard plan.fits else { return "Needs \(FileFormat.size(plan.bytes)); you have \(FileFormat.size(max(0, plan.available))) available." }
         let more = folder ? " New items added to this folder will download too." : ""
@@ -102,7 +102,8 @@ public enum CloudCommands {
 
     /// Settings' choices for recently opened files (nil: no limit).
     public static let cacheLimits: [(title: String, bytes: Int64?)] = [
-        ("1 GB", 1 << 30), ("5 GB", 5 << 30), ("10 GB", 10 << 30), ("25 GB", 25 << 30), ("No limit", nil),
+        (FileFormat.byteLimitTitle(1 << 30), 1 << 30), (FileFormat.byteLimitTitle(5 << 30), 5 << 30),
+        (FileFormat.byteLimitTitle(10 << 30), 10 << 30), (FileFormat.byteLimitTitle(25 << 30), 25 << 30), (FileFormat.byteLimitTitle(nil), nil),
     ]
 
     /// "Google Drive · me@x: 3.1 GB downloaded · 820 MB of recently opened files".
@@ -126,8 +127,8 @@ public enum CloudCommands {
         if case .inherited(let parent) = keep { with = " · with “\(parent)”" }
         if folder {
             guard d.totalItems > 0 else { return "Downloaded" + with }
-            if d.items < d.totalItems { return "Downloading · \(d.items.formatted()) of \(d.totalItems.formatted()) items" + with }
-            return "Downloaded · \(FileFormat.size(d.bytes)) in \(d.totalItems.formatted()) items" + with
+            if d.items < d.totalItems { return "Downloading · \(FileFormat.count(d.items)) of \(FileFormat.count(d.totalItems)) items" + with }
+            return "Downloaded · \(FileFormat.size(d.bytes)) in \(FileFormat.count(d.totalItems)) items" + with
         }
         guard d.downloaded || d.bytes > 0 else { return "Waiting to download" + with }
         let export = d.export.map { " · as .\($0), read-only offline" } ?? ""

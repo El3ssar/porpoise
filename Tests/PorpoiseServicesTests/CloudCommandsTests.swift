@@ -189,7 +189,7 @@ import Testing
         #expect(CloudKeepPlan(bytes: 2 << 30, items: 3, available: 50 << 30, fits: true).needsConfirmation)
         #expect(CloudKeepPlan(bytes: 1 << 20, items: 500, available: 50 << 30, fits: true).needsConfirmation)
         let text = CloudCommands.planText(CloudKeepPlan(bytes: 13_300_000_000, items: 3210, available: 48_000_000_000, fits: true), folder: true)
-        #expect(text.contains("\(3210.formatted()) items") && text.contains("available on this Mac") && text.hasSuffix("will download too."))
+        #expect(text.contains("\(FileFormat.count(3210)) items") && text.contains("available on this Mac") && text.hasSuffix("will download too."))
         let full = CloudCommands.planText(CloudKeepPlan(bytes: 13_300_000_000, items: 3210, available: 9_100_000_000, fits: false), folder: true)
         #expect(full.hasPrefix("Needs ") && full.contains("you have"))
         #expect(CloudCommands.planText(CloudKeepPlan(bytes: 1, items: 1, available: 9, fits: true), folder: false).contains("1 item."))
@@ -216,7 +216,8 @@ import Testing
         f.totalItems = 1020
         f.bytes = 3_200_000_000
         #expect(
-            CloudCommands.summaryText(f, folder: true, provider: "Google Drive") == "Downloading · 812 of \(1020.formatted()) items · with “Photos”")
+            CloudCommands.summaryText(f, folder: true, provider: "Google Drive")
+                == "Downloading · 812 of \(FileFormat.count(1020)) items · with “Photos”")
         f.items = 1020
         #expect(CloudCommands.summaryText(f, folder: true, provider: "Google Drive").hasPrefix("Downloaded · "))
         f.progress = 0.41
@@ -234,6 +235,7 @@ import Testing
         #expect(u.hasPrefix("Google Drive · me@x.com: ") && u.contains(" downloaded · ") && u.hasSuffix("of recently opened files"))
         #expect(!CloudCommands.usageText(CloudOfflineUsage(kept: 1, recent: 0), account: "a").contains("recently"))
         #expect(CloudCommands.cacheLimits.map(\.bytes).last == .some(nil) && CloudCommands.cacheLimits[1].bytes == 5 << 30)
+        #expect(CloudCommands.cacheLimits.map(\.title) == ["1 GiB", "5 GiB", "10 GiB", "25 GiB", "No limit"])
     }
 
     @Test func demoWordsSetStates() {

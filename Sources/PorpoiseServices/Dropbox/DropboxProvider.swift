@@ -51,7 +51,7 @@ public final class DropboxProvider: CloudFileProvider, @unchecked Sendable {
         }
         return FileItem(
             url: url, name: file.name, isDirectory: file.isFolder, size: file.size ?? 0,
-            modificationDate: file.serverModified.flatMap { ISO8601DateFormatter().date(from: $0) },
+            modificationDate: file.serverModified.flatMap { FileFormat.iso8601($0) },
             contentType: file.isFolder ? "public.folder" : nil, isWritable: true)
     }
     public func metadata(_ url: URL) -> DropboxItem? {

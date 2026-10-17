@@ -111,7 +111,7 @@ public final class SearchIndex: @unchecked Sendable {
         let s = status
         if s.building { return "Index building…" }
         guard let updated = s.updated else { return s.message }
-        return "Index: \(s.count.formatted()) items, updated \(max(0, Int(Date().timeIntervalSince(updated))))s ago"
+        return "Index: \(FileFormat.count(s.count)) items, updated \(max(0, Int(Date().timeIntervalSince(updated))))s ago"
             + (s.warning.map { " · " + $0 } ?? "")
     }
     /// Cheap UI hint: no filesystem calls. The worker search performs canonical/device coverage checks.
