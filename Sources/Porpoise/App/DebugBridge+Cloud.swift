@@ -146,7 +146,36 @@ extension DebugBridge {
             if let v = AppDelegate.shared.windows.first?.view, let row = v.model.rows.first(where: { $0.item.name == rest }) {
                 v.list.select(row.item.url)
             }
+        case "offline": offlineDemo(rest)
         default: break
+        }
+    }
+
+    /// `cloud offline …` drives the demo offline service (PORPOISE_OFFLINE_DEMO):
+    /// - `<item name>|<kept|inherited:<folder>|downloaded|cloudonly|downloading:<0…1>|uploading:<0…1>|error:<why>>`
+    /// - `plan <bytes>|<items>|<available>|<fits 1/0>`: what the next Keep Downloaded counts
+    /// - `deny <item name>|<reason>`, `refuse <item name>|<message>`, `usage <account id>|<kept>|<recent>`
+    private func offlineDemo(_ arg: String) {
+        guard let demo = CloudOfflineHub.service as? DemoOfflineService else { return }
+        let words = arg.split(separator: " ", maxSplits: 1).map(String.init)
+        let f = (words.count > 1 ? words[1] : arg).components(separatedBy: "|")
+        func url(_ name: String) -> URL? {
+            AppDelegate.shared.windows.first?.view.model.rows.first { $0.item.name == name }?.item.url
+        }
+        switch words.first {
+        case "plan" where f.count == 4:
+            demo.nextPlan = CloudKeepPlan(
+                bytes: Int64(f[0]) ?? 0, items: Int(f[1]) ?? 0, available: Int64(f[2]) ?? 0, fits: f[3] == "1")
+        case "deny" where f.count == 2: if let u = url(f[0]) { demo.denials[u] = f[1] }
+        case "refuse" where f.count == 2: if let u = url(f[0]) { demo.refusals[u] = f[1] }
+        case "usage" where f.count == 3: demo.usages[f[0]] = CloudOfflineUsage(kept: Int64(f[1]) ?? 0, recent: Int64(f[2]) ?? 0)
+        default:
+            let g = arg.components(separatedBy: "|")
+            guard g.count == 2, let u = url(g[0]) else { return }
+            if let row = AppDelegate.shared.windows.first?.view.model.rows.first(where: { $0.item.url == u }), row.item.isBrowsableFolder {
+                demo.folders.insert(u)
+            }
+            demo.set(u, g[1])
         }
     }
 

@@ -32,7 +32,7 @@ public final class DemoOfflineService: CloudOfflineService {
         if let s = states[url] { return s }
         let d = details(for: url)
         if d.kept || d.inheritedFrom != nil { return .kept }
-        return d.downloaded || folders.contains(url) ? .local : .cloudOnly
+        return d.downloaded || folders.contains(url) || url.hasDirectoryPath ? .local : .cloudOnly
     }
 
     public func keepDenial(for url: URL) -> String? { denials[url] }

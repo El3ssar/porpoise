@@ -28,6 +28,10 @@ extension AppDelegate {
         } else {
             CloudAccounts.shared.backend = MainActor.assumeIsolated { DriveCloudBackend(store: .shared) }
         }
+        // Test instances can show offline states set by hand (the bridge's `cloud offline`).
+        if Settings.isTesting, ProcessInfo.processInfo.environment["PORPOISE_OFFLINE_DEMO"] != nil {
+            CloudOfflineHub.service = DemoOfflineService()
+        }
         let nc = NSWorkspace.shared.notificationCenter
         for n in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {
             nc.addObserver(forName: n, object: nil, queue: .main) { _ in PlacesModel.shared.refreshDevices() }
