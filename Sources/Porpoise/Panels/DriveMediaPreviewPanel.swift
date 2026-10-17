@@ -4,7 +4,7 @@ import PorpoiseCore
 import PorpoiseServices
 
 /// Space previews for uncached cloud media use AVPlayer because Quick Look requires a local file URL.
-final class DriveMediaPreviewPanel: SecondaryPanel, NSWindowDelegate {
+final class DriveMediaPreviewPanel: NSPanel, NSWindowDelegate {
     private let video = AVPlayerView()
     private let spinner = NSProgressIndicator()
     private let status = NSTextField(wrappingLabelWithString: "Loading preview…")

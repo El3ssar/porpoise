@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Every secondary window follows the app theme.** Create From Template, Batch Rename, Customise Toolbar, the Command Palette and the preview of cloud videos used the system's colors; they now take the theme's, like Settings and Properties.
+- **Every secondary window follows the app theme.** Create From Template, Batch Rename, Customise Toolbar and the Command Palette used the system's colors; they now take the theme's, like Settings and Properties.
 - **Selecting in Applications works like in a folder.** Shift-click selects from the app you last clicked, Shift with the arrow keys selects a range (going back shrinks it again), and Home, End, Page Up and Page Down move through the apps.
 
 ## 0.8.2

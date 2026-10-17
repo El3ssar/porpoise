@@ -47,15 +47,15 @@ import Testing
         #expect(controller.window?.titlebarAppearsTransparent == true)
     }
 
-    /// Secondary windows are themed by being one: those a hand-kept list missed (Create From Template, the media
-    /// preview) are dressed too, and a window opts out instead of in.
+    /// Secondary windows are themed by being one: those a hand-kept list missed (Create From Template) are dressed too,
+    /// so is a panel no controller owns, and a window opts out instead of in.
     @Test @MainActor func secondaryWindowsAreThemedUnlessTheyOptOut() {
         let template = TemplateWindow(folder: FileManager.default.temporaryDirectory) { _ in }
         Theme.dressIfThemed(template.window!)
         #expect(template.window?.titlebarAppearsTransparent == true)
-        let preview = DriveMediaPreviewPanel()
-        Theme.dressIfThemed(preview)
-        #expect(preview.titlebarAppearsTransparent)
+        let panel = SecondaryPanel(contentRect: .init(x: 0, y: 0, width: 100, height: 100), styleMask: [.titled], backing: .buffered, defer: true)
+        Theme.dressIfThemed(panel)
+        #expect(panel.titlebarAppearsTransparent)
 
         final class OwnLook: SecondaryWindowController { override var isThemed: Bool { false } }
         let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 100, height: 100), styleMask: [.titled], backing: .buffered, defer: true)
