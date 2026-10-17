@@ -27,14 +27,14 @@ extension DriveClient {
         guard record.accountID == accountID, record.sourceID == target.id, record.kind == "download" else { throw DriveMutationError.conflict }
         if record.phase != .prepared, record.revision != target.version { throw DriveMutationError.sourceChanged }
         record.revision = target.version
-        let name: String
+        let remoteName: String
         if target.isGoogleDocument {
             guard let format = preset.format(for: target.mimeType) else { throw DriveError.unsupportedExport }
-            name = file.name + "." + format.fileExtension
+            remoteName = file.name + "." + format.fileExtension
         } else {
-            name = file.name
+            remoteName = file.name
         }
-        try RemoteFS.checkName(name)
+        let name = try RemoteFS.localName(remoteName)
         if record.phase == .done, record.destinationURL == partial,
             JobJournal.Fingerprint(partial) == record.fingerprint
         {

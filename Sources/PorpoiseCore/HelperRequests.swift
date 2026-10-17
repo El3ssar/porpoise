@@ -35,7 +35,8 @@ public enum HelperRequests {
         case "/bin/rm":
             ok = a.count == 3 && a[0] == "-rf" && a[1] == "--" && removable(a[2])
         case "/usr/bin/chflags":
-            ok = a.count == 3 && a[0] == "-R" && a[1] == "nouchg,noschg" && removable(a[2])
+            // chflags follows a link given as the operand: the flags would change on its target.
+            ok = a.count == 3 && a[0] == "-R" && a[1] == "nouchg,noschg" && removable(a[2]) && !isSymlink(a[2])
         default:
             ok = false
         }
@@ -66,17 +67,30 @@ public enum HelperRequests {
         return protectedFolders.contains { r == $0 || r.hasPrefix($0 + "/") }
     }
 
-    /// A path that may be written to (created, replaced, re-moded).
-    static func writable(_ p: String) -> Bool { isPath(p) && !isProtected(p) }
+    /// The path itself is a symbolic link (not followed).
+    static func isSymlink(_ p: String) -> Bool {
+        var st = stat()
+        return lstat(p, &st) == 0 && st.st_mode & S_IFMT == S_IFLNK
+    }
 
-    /// A path that may be moved away or removed: anything but a volume's root and the top folders of the system.
+    /// A path that may be written to (created, replaced, re-moded). Never an existing link: mv, cp and ln write
+    /// into the folder a link points to, so only the parents' real paths could be checked, not where it lands.
+    static func writable(_ p: String) -> Bool { isPath(p) && !isProtected(p) && !isSymlink(p) }
+
+    /// Where nothing may be removed either: the system's own configuration and secrets. (What apps install in
+    /// the other protected folders, such as a launch daemon's plist, may be moved away: that is how they're uninstalled.)
+    static let sealedFolders = ["/private/etc", "/private/var/root", "/private/var/db", "/library/security"]
+
+    /// A path that may be moved away or removed: anything but a volume's root, the top folders of the system, the
+    /// protected folders themselves and anything in the sealed ones. A link is removed as itself.
     static func removable(_ p: String) -> Bool {
         guard isPath(p) else { return false }
         let r = resolvedParent(p).lowercased()
         let parts = r.split(separator: "/")
         if parts.count == 1 { return false }  // "/Applications", "/Users", "/private"…
         if parts.count == 2 && parts[0] == "volumes" { return false }
-        return !["/system", "/usr", "/bin", "/sbin"].contains { r == $0 || r.hasPrefix($0 + "/") }
+        if protectedFolders.contains(r) { return false }
+        return !(["/system", "/usr", "/bin", "/sbin"] + sealedFolders).contains { r == $0 || r.hasPrefix($0 + "/") }
     }
 
     static let ownershipRefused = "Only items in your own Trash can be handed over."

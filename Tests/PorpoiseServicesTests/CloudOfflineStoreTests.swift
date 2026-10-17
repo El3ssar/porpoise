@@ -134,6 +134,19 @@ struct CloudOfflineStoreTests {
         #expect(!FileManager.default.fileExists(atPath: store.directory.path))
         #expect(await store.snapshot().entries.isEmpty)
     }
+    /// A "/" in a cloud name (also one a combining mark hides) becomes ":": one file, inside the store.
+    @Test func cloudNamesStayOneFileInsideTheStore() async throws {
+        let source = FakeContentSource(), scratch = try Scratch()
+        let store = try store(source, scratch)
+        let input = scratch.url.appendingPathComponent("input")
+        try Data("hello".utf8).write(to: input)
+        for (i, (name, local)) in [("../escape", "..:escape"), ("../\u{301}x", "..:\u{301}x"), ("back\\slash", "back\\slash")].enumerated() {
+            var odd = source.add("odd\(i)"); odd.name = name
+            let copy = try await store.adopt(file: input, as: odd)
+            #expect(copy.lastPathComponent == local, "\(name)")
+            #expect(copy.resolvingSymlinksInPath().path.hasPrefix(store.directory.resolvingSymlinksInPath().path + "/objects/"), "\(name)")
+        }
+    }
     @Test func adoptUsesIndependentInodeAndRejectsWrongSize() async throws {
         let source = FakeContentSource(), scratch = try Scratch(), item = source.add("one")
         let store = try store(source, scratch)
@@ -191,7 +204,7 @@ extension CloudOfflineStoreTests {
         var other = item; other.ref.account = "other"
         await #expect(throws: CloudContentError.unsupported) { try await store.fetch(other) }
         await #expect(throws: CloudContentError.unsupported) { try await store.remember([other]) }
-        for name in ["", ".", "..", "../escape", "bad\\name", "bad\0name"] {
+        for name in ["", ".", "..", "bad\0name", "new\nline"] {
             var bad = item; bad.name = name
             await #expect(throws: CloudContentError.unsupported) { try await store.adopt(file: input, as: bad) }
         }

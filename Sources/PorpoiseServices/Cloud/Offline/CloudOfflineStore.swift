@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import PorpoiseCore
 
 /// One account's verified bytes. Durable edit sessions live elsewhere and hold entries against eviction.
 public actor CloudOfflineStore {
@@ -162,12 +163,11 @@ public actor CloudOfflineStore {
     public func adopt(file: URL, as item: CloudRemoteItem) async throws -> URL {
         try Task.checkCancellation()
         guard !invalidated, !removing.contains(item.ref.item) else { throw CancellationError() }
-        guard item.ref.account == source.accountID, !item.isFolder,
-            !item.name.isEmpty, item.name != ".", item.name != "..",
-            !item.name.contains("/"), !item.name.contains("\\"), !item.name.contains("\0")
-        else { throw CloudContentError.unsupported }
+        guard item.ref.account == source.accountID, !item.isFolder, let name = RemoteParsing.localName(forRemote: item.name) else {
+            throw CloudContentError.unsupported
+        }
         let relative =
-            "objects/" + cloudObjectKey(item.ref.item) + "/" + cloudObjectKey((item.revision ?? "") + ":" + (item.export ?? "")) + "/" + item.name
+            "objects/" + cloudObjectKey(item.ref.item) + "/" + cloudObjectKey((item.revision ?? "") + ":" + (item.export ?? "")) + "/" + name
         let target = directory.appendingPathComponent(relative)
         let fm = FileManager.default
         try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])

@@ -189,6 +189,19 @@ public enum RemoteParsing {
         !name.isEmpty && name != "." && name != ".." && !name.containsScalar("/") && !name.containsScalar("\0")
     }
 
+    /// The name a remote item gets on this Mac (a cloud file downloaded or cached, a folder copied): always a single
+    /// path component. "/" becomes ":", which Finder shows as "/", so the name reads as it does on the server; nil
+    /// for "", ".", "..", NUL and line breaks. Checked by scalar, like `isSafeName`.
+    public static func localName(forRemote name: String) -> String? {
+        var scalars = String.UnicodeScalarView()
+        for s in name.unicodeScalars {
+            if s == "\0" || s == "\n" || s == "\r" { return nil }
+            scalars.append(s == "/" ? ":" : s)
+        }
+        let local = String(scalars)
+        return isSafeName(local) ? local : nil
+    }
+
     static func item(
         folder: URL, name: String, isDir: Bool, isLink: Bool, size: Int64, mtime: Date?, mode: Int,
         owner: String, group: String, link: String?

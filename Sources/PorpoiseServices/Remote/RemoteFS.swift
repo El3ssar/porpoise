@@ -164,6 +164,13 @@ public enum RemoteFS {
         }
     }
 
+    /// `RemoteParsing.localName(forRemote:)`, or an error naming the item: every local path built from a remote
+    /// name goes through it.
+    static func localName(_ remote: String) throws -> String {
+        guard let name = RemoteParsing.localName(forRemote: remote) else { throw RemoteError.invalidName(remote) }
+        return name
+    }
+
     /// CR or LF anywhere. Checked by scalar: "\r\n" is a single Character, which `contains("\n")` doesn't find.
     static func hasLineBreak(_ s: String) -> Bool { s.unicodeScalars.contains { $0 == "\n" || $0 == "\r" } }
 

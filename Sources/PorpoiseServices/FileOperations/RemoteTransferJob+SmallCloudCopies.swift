@@ -12,9 +12,10 @@ extension RemoteTransferJob {
             guard let provider = RemoteFS.provider(for: source) as? DriveProvider, let file = provider.metadata(for: source),
                 !file.isFolder, !file.isGoogleDocument, file.shortcutDetails == nil, file.version != nil, file.md5Checksum != nil,
                 let size = file.size.flatMap(Int64.init), size >= 0, size < 8 * 1024 * 1024,
-                names.insert(file.name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX")))
+                let name = RemoteParsing.localName(forRemote: file.name),
+                names.insert(name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX")))
                     .inserted,
-                (try? FileManager.default.attributesOfItem(atPath: destination.appendingPathComponent(file.name).path)) == nil
+                (try? FileManager.default.attributesOfItem(atPath: destination.appendingPathComponent(name).path)) == nil
             else { return false }
             items.append(file.fileItem(accountID: provider.accountID))
         }

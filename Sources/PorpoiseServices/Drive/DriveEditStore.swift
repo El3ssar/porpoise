@@ -67,11 +67,11 @@ public actor DriveEditStore {
         guard fresh.operations.canWrite, fresh.operations.canDownload, !fresh.isGoogleDocument, let revision = fresh.headRevisionId,
             DriveLink.isValidID(revision)
         else { throw DriveError.permissionDenied }
-        try RemoteFS.checkName(fresh.name)
+        let name = try RemoteFS.localName(fresh.name)
         let id = UUID()
         let folder = directory.appendingPathComponent(fresh.id).appendingPathComponent(revision).appendingPathComponent(id.uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let url = folder.appendingPathComponent(fresh.name)
+        let url = folder.appendingPathComponent(name)
         let offline = try await client.offlineCopies()
         let baseline = try await offline.fetch(
             client.contentSource.remoteItem(fresh), progress: { bytes, total in context.progress(bytes, total ?? bytes) })
@@ -115,9 +115,9 @@ public actor DriveEditStore {
             if (error as? DriveMutationError) == .conflict {
                 session.state = .conflict
                 if let remote = try? await client.file(session.file.id), let bytes = try? await client.download(remote).data,
-                    (try? RemoteFS.checkName(remote.name)) != nil
+                    let name = RemoteParsing.localName(forRemote: "Remote-" + remote.name)
                 {
-                    let copy = session.localURL.deletingLastPathComponent().appendingPathComponent("Remote-" + remote.name)
+                    let copy = session.localURL.deletingLastPathComponent().appendingPathComponent(name)
                     try? bytes.write(to: copy, options: .atomic)
                     session.conflictURL = copy
                 }

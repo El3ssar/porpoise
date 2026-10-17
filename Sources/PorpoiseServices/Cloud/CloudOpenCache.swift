@@ -16,7 +16,7 @@ public final class CloudOpenCache: @unchecked Sendable {
     }
 
     private func target(key: String, name: String) throws -> URL {
-        try RemoteFS.checkName(name)
+        let name = try RemoteFS.localName(name)
         let hash = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
         return directory.appendingPathComponent(hash).appendingPathComponent(name)
     }

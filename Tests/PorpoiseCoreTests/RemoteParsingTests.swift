@@ -198,4 +198,19 @@ import Testing
         #expect(RemoteParsing.parseFind(gnu("ff", name) + "\0", folder: folder).isEmpty)
         #expect(RemoteParsing.isSafeName("e\u{301}t\u{301}e\u{301}"))  // combining marks themselves are fine
     }
+
+    /// Cloud names may hold "/": on this Mac it becomes ":" (Finder shows "/"), so a name is always one component.
+    @Test func localNamesAreOneComponent() {
+        let mapped = [
+            "a/b.pdf": "a:b.pdf", "../escape": "..:escape", "../\u{301}x": "..:\u{301}x", "/": ":", "../../etc/passwd": "..:..:etc:passwd",
+            "plain.txt": "plain.txt", "...": "...", ".hidden": ".hidden", "e\u{301}t\u{301}e\u{301}": "e\u{301}t\u{301}e\u{301}",
+        ]
+        for (remote, local) in mapped {
+            #expect(RemoteParsing.localName(forRemote: remote) == local, "\(remote)")
+            #expect(RemoteParsing.isSafeName(local), "\(remote)")
+        }
+        for remote in ["", ".", "..", "nul\0", "new\nline", "cr\rhere", "\r\n"] {
+            #expect(RemoteParsing.localName(forRemote: remote) == nil, "\(remote.debugDescription)")
+        }
+    }
 }
