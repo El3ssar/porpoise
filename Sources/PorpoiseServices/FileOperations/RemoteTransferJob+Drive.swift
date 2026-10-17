@@ -77,10 +77,11 @@ extension RemoteTransferJob {
         if existing?.url == source, kind == .move { completed[source] = source; finishProgress(source); return source }
         var replacing = false
         while let old = existing {
-            let bothFolders = incoming.isDirectory && old.isDirectory
+            let bothFolders = Self.isFolderPair(incoming, old)
             let suggestion = FileFormat.suggestedName(for: name, existing: Set(try children(folder).map(\.name)))
             let answer: ConflictAnswer
-            if let choice = sticky ?? rule.resolution {
+            // "Replace" chosen for folders asks again for anything but two folders, as local copies do.
+            if let choice = sticky ?? rule.resolution, choice != .writeInto || bothFolders {
                 answer = .init(choice)
             } else {
                 answer = resolve(.init(source: incoming, destination: old, suggestedName: suggestion, comparisonOptions: options))
@@ -118,6 +119,7 @@ extension RemoteTransferJob {
             }
             if replacing { break }
         }
+        if replacing, let old = existing { try Self.checkReplaceable(incoming, old) }
         if replacing, let old = existing, (RemoteFS.provider(for: old.url) as? DriveProvider)?.metadata(for: old.url)?.isGoogleDocument == true {
             throw RemoteError.unsupported("A Google document cannot be replaced with uploaded bytes. Export it or choose Keep Both.")
         }

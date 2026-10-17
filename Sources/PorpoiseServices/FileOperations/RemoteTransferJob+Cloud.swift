@@ -18,10 +18,11 @@ extension RemoteTransferJob {
         var existing = matches.first; var replace = false
         while let old = existing {
             if kind == .move, old.url == source { completed[source] = source; finishProgress(source); return source }
-            let bothFolders = incoming.isDirectory && old.isDirectory
+            let bothFolders = Self.isFolderPair(incoming, old)
             let suggestion = FileFormat.suggestedName(for: name, existing: Set(try children(folder).map(\.name)))
+            // "Replace" chosen for folders asks again for anything but two folders, as local copies do.
             let answer =
-                (sticky ?? rule.resolution).map { ConflictAnswer($0) }
+                (sticky ?? rule.resolution).flatMap { $0 != .writeInto || bothFolders ? ConflictAnswer($0) : nil }
                 ?? resolve(.init(source: incoming, destination: old, suggestedName: suggestion, comparisonOptions: options))
             if let method = answer.comparisonMethod { options.method = method }
             if answer.applyToAll { sticky = answer.resolution }
@@ -34,7 +35,11 @@ extension RemoteTransferJob {
                 guard bothFolders else { throw CloudEditError.notSupported }; return try merge(source, into: old.url)
             case .overwriteIfDifferent:
                 if bothFolders { return try merge(source, into: old.url) }
-                if try identical(source, incoming, old.url, old) { finishProgress(source); completed[source] = old.url; return nil }; replace = true
+                if try identical(source, incoming, old.url, old) {
+                    progressLock.withLock { progress.skippedIdenticalItems += 1 }
+                    finishProgress(source); completed[source] = old.url; return nil
+                }
+                replace = true
             case .overwriteIfOlder, .overwriteIfLarger:
                 if bothFolders { return try merge(source, into: old.url) }
                 guard answer.resolution.shouldReplace(source: incoming, destination: old, options: options) else {
@@ -47,6 +52,7 @@ extension RemoteTransferJob {
             matches = try children(folder, fresh: true).filter { $0.name == name }
             guard matches.count <= 1 else { throw CloudEditError.notSupported }; existing = matches.first
         }
+        if replace, let old = existing { try Self.checkReplaceable(incoming, old) }
         let targetRevision = existing.flatMap { targetProvider?.transferRevision($0.url) }
         let target: URL
         progressLock.withLock {
@@ -92,5 +98,17 @@ extension RemoteTransferJob {
         completed[source] = target; listings[folder] = nil
         if replace { progressLock.withLock { progress.replacedItems += 1 } }
         finishProgress(source, copied: true); return target
+    }
+
+    /// Two real folders, whose contents merge; a link or shortcut to a folder is an item of its own (d04b320).
+    static func isFolderPair(_ incoming: FileItem, _ existing: FileItem) -> Bool {
+        incoming.isDirectory && !incoming.isSymlink && existing.isDirectory && !existing.isSymlink
+    }
+
+    /// Replacing needs two items of the same kind: a folder (or a link to one) can't replace a file or the other way.
+    static func checkReplaceable(_ incoming: FileItem, _ existing: FileItem) throws {
+        guard incoming.isDirectory || existing.isDirectory else { return }
+        throw RemoteError.unsupported(
+            "“\(existing.name)” can’t be replaced by “\(incoming.name)”: one is a folder or a link to one. Keep Both instead.")
     }
 }
