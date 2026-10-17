@@ -288,7 +288,7 @@ import Testing
         let job = FileJob(kind: .copy, sources: [tree], destinationFolder: dst)
         job.onProgress = { last = $0 }
         let undo = try job.run()
-        #expect(FileJob.diskSize(dst.appendingPathComponent("tree")) == 1500)
+        #expect((TreeMeasure.measure([dst.appendingPathComponent("tree")], followTopLevelLink: false, crossVolumes: true)?.bytes ?? 0) == 1500)
         #expect(last?.doneBytes == 1500 && last?.fraction == 1)
         guard case .created(let urls)? = undo else { Issue.record("expected .created"); return }
         #expect(urls.map(\.path) == [dst.appendingPathComponent("tree").path])
@@ -307,10 +307,10 @@ import Testing
         let (src, dst) = try sandbox()
         try Data(count: 4096).write(to: dst.appendingPathComponent("big"))
         try fm.createSymbolicLink(at: src.appendingPathComponent("link"), withDestinationURL: dst)
-        #expect(FileJob.diskSize(src.appendingPathComponent("link")) == 0)
-        #expect(FileJob.diskSize(src) == 0)
-        #expect(FileJob.diskSize(dst) == 4096)
-        #expect(FileJob.diskSize(root.appendingPathComponent("missing")) == 0)
+        #expect((TreeMeasure.measure([src.appendingPathComponent("link")], followTopLevelLink: false, crossVolumes: true)?.bytes ?? 0) == 0)
+        #expect((TreeMeasure.measure([src], followTopLevelLink: false, crossVolumes: true)?.bytes ?? 0) == 0)
+        #expect((TreeMeasure.measure([dst], followTopLevelLink: false, crossVolumes: true)?.bytes ?? 0) == 4096)
+        #expect((TreeMeasure.measure([root.appendingPathComponent("missing")], followTopLevelLink: false, crossVolumes: true)?.bytes ?? 0) == 0)
     }
 
     // MARK: Undo

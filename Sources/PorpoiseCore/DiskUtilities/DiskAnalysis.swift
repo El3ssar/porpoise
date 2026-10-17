@@ -121,7 +121,7 @@ public enum DuplicateKeepRule: String, CaseIterable, Sendable {
     /// The copy to keep; for "in chosen folder", nil when no copy is there (the group is left alone).
     public func keeper(in group: DuplicateGroup, preferredFolder: URL? = nil) -> URL? {
         if self == .inFolder, let folder = preferredFolder,
-            !group.files.contains(where: { NameIndex.contains(path: $0.entry.url.path, in: folder.path) })
+            !group.files.contains(where: { FilePath.contains(path: $0.entry.url.path, in: folder.path) })
         {
             return nil
         }
@@ -133,7 +133,7 @@ public enum DuplicateKeepRule: String, CaseIterable, Sendable {
             case .shortestPath: if x.url.path.utf8.count != y.url.path.utf8.count { return x.url.path.utf8.count < y.url.path.utf8.count }
             case .inFolder:
                 if let folder = preferredFolder {
-                    let left = NameIndex.contains(path: x.url.path, in: folder.path), right = NameIndex.contains(path: y.url.path, in: folder.path)
+                    let left = FilePath.contains(path: x.url.path, in: folder.path), right = FilePath.contains(path: y.url.path, in: folder.path)
                     if left != right { return left }
                 }
             }

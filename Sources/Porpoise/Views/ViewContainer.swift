@@ -280,10 +280,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         observers.append(
             center.addObserver(forName: FileOperationsController.foldersChanged, object: nil, queue: .main) { [weak self] n in
                 guard let self, let paths = n.userInfo?["paths"] as? Set<String> else { return }
-                let mine =
-                    [self.model.location.isFileURL ? self.model.location.standardizedFileURL.path : self.model.location.path]
-                    + self.model.expanded.map(\.path)
-                let appRoots = self.showsApps ? AppLibrary.roots.map(\.path) : []
+                let mine = ([self.model.location] + Array(self.model.expanded)).map {
+                    $0.isFileURL ? FilePath.canonical($0.path) : $0.path
+                }
+                let appRoots = self.showsApps ? AppLibrary.roots.map { FilePath.canonical($0.path) } : []
                 if (mine + appRoots).contains(where: paths.contains) || self.model.isSearching { self.model.reload() }
             })
         statusBar.mode = Settings.shared.statusBarMode

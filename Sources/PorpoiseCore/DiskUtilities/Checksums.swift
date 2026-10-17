@@ -135,7 +135,7 @@ public enum ChecksumManifest {
         }
         let base = root.resolvingSymlinksInPath().standardizedFileURL
         let url = base.appendingPathComponent(entry.path).standardizedFileURL
-        guard NameIndex.contains(path: url.resolvingSymlinksInPath().path, in: base.path) else {
+        guard FilePath.contains(path: url.resolvingSymlinksInPath().path, in: base.path) else {
             throw Invalid(line: 0, reason: "symlink escapes manifest folder")
         }
         return url

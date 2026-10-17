@@ -44,9 +44,9 @@ import Testing
         defer { index.configure(IndexConfiguration()) }
         try await waitReady(index)
         let root = s.path("root")
-        #expect(index.search("report ext:txt", scope: root)?.paths == [IndexPath.canonical(s.path("root/report.txt").path)])
+        #expect(index.search("report ext:txt", scope: root)?.paths == [FilePath.canonical(s.path("root/report.txt").path)])
         #expect(
-            index.search("unusual", scope: root, contents: true)?.snippets[IndexPath.canonical(s.path("root/report.txt").path)]
+            index.search("unusual", scope: root, contents: true)?.snippets[FilePath.canonical(s.path("root/report.txt").path)]
                 == "a very unusual phrase")
         #expect(index.search("ignored", scope: root)?.paths.isEmpty == true)
         #expect(index.search("secret", scope: s.path("root/private")) == nil)

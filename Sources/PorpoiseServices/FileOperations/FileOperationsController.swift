@@ -12,7 +12,12 @@ public final class FileOperationsController {
 
     /// Posts `foldersChanged` for each URL and its parent folder.
     public static func notifyChanged(_ urls: [URL]) {
-        let dirs = Set(urls.map { $0.deletingLastPathComponent().standardizedFileURL.path } + urls.map { $0.standardizedFileURL.path })
+        let dirs = Set(
+            urls.flatMap { url in
+                url.isFileURL
+                    ? [FilePath.entry(url.path), FilePath.canonical(url.deletingLastPathComponent().path)]
+                    : [url.path, url.deletingLastPathComponent().path]
+            })
         NotificationCenter.default.post(name: foldersChanged, object: nil, userInfo: ["paths": dirs])
     }
 

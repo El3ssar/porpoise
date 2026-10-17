@@ -75,7 +75,7 @@ final class DuplicateWindow: DiskUtilityWindow {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
         panel.beginSheetModal(for: window!) { [weak self] response in
             guard let self, response == .OK, let url = panel.url else { return }
-            self.preferredFolder = URL(fileURLWithPath: IndexPath.canonical(url.path)); self.rules.selectItem(at: 3)
+            self.preferredFolder = URL(fileURLWithPath: FilePath.canonical(url.path)); self.rules.selectItem(at: 3)
             self.status.stringValue = "Keep folder: \(url.path). Apply Keep Rule to mark other copies."
         }
     }

@@ -277,7 +277,7 @@ import Testing
         #expect(try job.run() == nil)
         #expect(job.isCancelled && job.errors.isEmpty)
         #expect(!FileJob.itemExists(at: disk.volume.appendingPathComponent("big.bin")))
-        #expect(FileJob.diskSize(big) == 24 << 20)
+        #expect((TreeMeasure.measure([big], followTopLevelLink: false, crossVolumes: true)?.bytes ?? 0) == 24 << 20)
     }
 
     // MARK: Across volumes

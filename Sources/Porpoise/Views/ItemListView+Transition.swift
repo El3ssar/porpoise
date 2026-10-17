@@ -217,7 +217,7 @@ extension ItemListView {
     private static let maxAnimatedRows = 3000
 
     /// The same file however it's spelled: searches report /private/tmp/… for what the folder lists as /tmp/….
-    static func transitionKey(_ url: URL) -> String { PathMath.sameFileKey(url) }
+    static func transitionKey(_ url: URL) -> String { FilePath.key(url) }
 
     func key(ofRow i: Int) -> String { Self.transitionKey(model.rows[i].item.url) }
 

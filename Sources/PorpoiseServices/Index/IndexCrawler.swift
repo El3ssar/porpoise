@@ -13,7 +13,7 @@ public enum IndexCrawler {
         var index = NameIndex()
         var rootStat = stat()
         guard lstat(root, &rootStat) == 0 else { return index }
-        let excluded = { (path: String) in exclusions.contains { NameIndex.contains(path: path, in: $0) } }
+        let excluded = { (path: String) in exclusions.contains { FilePath.contains(path: path, in: $0) } }
         return withoutActuallyEscaping(cancelled) { cancelled in
             withoutActuallyEscaping(skip) { skip in
                 if cancelled() || skip(root) || excluded(root) { return index }

@@ -11,9 +11,9 @@ struct FolderSizeCounterTests {
         try s.file("root/.hidden", "abc")
         try s.file("root/App.app/Contents/data", "hello")
         try s.folder("root/empty")
-        var updates: [FolderSizeCounter.Progress] = []
+        var updates: [TreeMeasure.Progress] = []
         let result = try #require(
-            FolderSizeCounter.count([s.path("root")], cancellation: DiskCancellation(), reportInterval: 0) {
+            TreeMeasure.measure([s.path("root")], cancellation: DiskCancellation(), reportInterval: 0) {
                 updates.append($0)
             })
         #expect(result.bytes == 8)
@@ -33,14 +33,14 @@ struct FolderSizeCounterTests {
         for i in 0..<20 { try s.file("root/f\(i)", "12345") }
         let cancellation = DiskCancellation()
         var updates = 0
-        let result = FolderSizeCounter.count([s.path("root"), s.path("root/f0")], cancellation: cancellation, reportInterval: 0) { value in
+        let result = TreeMeasure.measure([s.path("root"), s.path("root/f0")], cancellation: cancellation, reportInterval: 0) { value in
             updates += 1
             if value.files == 1 { cancellation.cancel() }
         }
         #expect(result == nil)
         #expect(updates == 2)  // Selected root, then one child.
         var reportedAfterCancellation = false
-        #expect(FolderSizeCounter.count([s.path("root")], cancellation: cancellation) { _ in reportedAfterCancellation = true } == nil)
+        #expect(TreeMeasure.measure([s.path("root")], cancellation: cancellation) { _ in reportedAfterCancellation = true } == nil)
         #expect(!reportedAfterCancellation)
     }
 
@@ -50,14 +50,14 @@ struct FolderSizeCounterTests {
         let b = try s.file("b", "4567")
         var reports = 0
         let result = try #require(
-            FolderSizeCounter.count([a, b, s.path("missing")], cancellation: DiskCancellation(), reportInterval: 3600) { _ in
+            TreeMeasure.measure([a, b, s.path("missing")], cancellation: DiskCancellation(), reportInterval: 3600) { _ in
                 reports += 1
             })
         #expect(reports == 0)
         #expect(result.bytes == 7 && result.files == 2 && result.folders == 0)
         try Data("123456".utf8).write(to: a)
-        #expect(FolderSizeCounter.count([a, b], cancellation: DiskCancellation())?.bytes == 10)
-        #expect(FolderSizeCounter.count([], cancellation: DiskCancellation()) == FolderSizeCounter.Progress())
+        #expect(TreeMeasure.measure([a, b], cancellation: DiskCancellation())?.bytes == 10)
+        #expect(TreeMeasure.measure([], cancellation: DiskCancellation()) == TreeMeasure.Progress())
     }
 
     @Test func directorySymlinksAreNotTraversed() throws {
@@ -66,9 +66,10 @@ struct FolderSizeCounterTests {
         try s.folder("root")
         let link = s.path("root/link")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: s.path("outside"))
-        let result = try #require(FolderSizeCounter.count([s.path("root")], cancellation: DiskCancellation()))
+        let result = try #require(TreeMeasure.measure([s.path("root")], cancellation: DiskCancellation()))
         #expect(result.files == 1 && result.folders == 1)
-        let selectedLink = try #require(FolderSizeCounter.count([link], cancellation: DiskCancellation()))
-        #expect(selectedLink.files == 1 && selectedLink.folders == 0)
+        let selectedLink = try #require(TreeMeasure.measure([link], cancellation: DiskCancellation()))
+        #expect(selectedLink.files == 1 && selectedLink.folders == 1)
+        #expect(selectedLink.bytes == Int64("must not be counted".utf8.count))
     }
 }

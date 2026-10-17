@@ -904,7 +904,7 @@ public final class DirectoryModel {
 
     /// URL → row, built on first use after `rows` changes: views look rows up per hover, draw and key press.
     private var rowIndex: [URL: Int]?
-    /// The same by standardized path (/tmp/x vs /private/tmp/x style mismatches), built only after a miss.
+    /// Canonical entry identity, built only after a URL miss. Remote scopes retain their complete URL.
     private var rowIndexByPath: [String: Int]?
 
     public func index(of url: URL) -> Int? {
@@ -914,11 +914,10 @@ public final class DirectoryModel {
         if let i = rowIndex?[url] { return i }
         if rowIndexByPath == nil {
             rowIndexByPath = Dictionary(
-                // Items' URLs are made from standard paths already: standardizing thousands of them would cost.
-                rows.enumerated().map { ($1.item.url.path, $0) },
+                rows.enumerated().map { (FilePath.key($1.item.url), $0) },
                 uniquingKeysWith: { first, _ in first })
         }
-        return rowIndexByPath?[url.standardizedFileURL.path]
+        return rowIndexByPath?[FilePath.key(url)]
     }
 
     /// In row order. Without copying every row's item first: the status bar asks on every selection change.

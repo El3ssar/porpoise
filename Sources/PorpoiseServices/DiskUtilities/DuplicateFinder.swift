@@ -53,7 +53,7 @@ public enum DuplicateFinder {
     }
     /// Revalidate both marked copies and keepers before offering the existing undoable Trash operation.
     public static func validate(_ groups: [DuplicateGroup], marked: Set<URL>, cancellation: DiskCancellation = DiskCancellation()) throws -> [URL] {
-        let marked = Set(marked.map { URL(fileURLWithPath: IndexPath.entry($0.path)) })
+        let marked = Set(marked.map { URL(fileURLWithPath: FilePath.entry($0.path)) })
         var valid: [URL] = []
         let known = Set(groups.flatMap { $0.files.map(\.entry.url) })
         guard marked.isSubset(of: known) else { throw FileChecksumError.unsafeReview }
@@ -82,18 +82,18 @@ public final class FolderUsageCache: @unchecked Sendable {
     public init() {}
     public func invalidate(below url: URL) {
         // Keys are real paths (see `size`): so is the folder compared with them.
-        let base = IndexPath.canonical(url.path)
-        lock.withLock { values = values.filter { !NameIndex.contains(path: $0.key.components(separatedBy: "\0")[0], in: base) } }
+        let base = FilePath.canonical(url.path)
+        lock.withLock { values = values.filter { !FilePath.contains(path: $0.key.components(separatedBy: "\0")[0], in: base) } }
     }
     public func size(_ given: URL, depth: Int, cancellation: DiskCancellation = DiskCancellation()) -> Int64 {
         // A symlink to a folder (shown as a folder) is measured as that folder, not as a link of 0 bytes.
-        let url = URL(fileURLWithPath: IndexPath.canonical(given.path))
+        let url = URL(fileURLWithPath: FilePath.canonical(given.path))
         let key = url.path + "\0" + String(depth)
         let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
         if let hit = lock.withLock({ values[key] }), hit.modified == modified && Date().timeIntervalSince(hit.date) < 3 { return hit.size }
-        let scan = PhysicalTreeScanner.scan([url], maxDepth: depth, cancellation: cancellation)
-        let size = UsageTree(scan).nodes[0].logical
-        if !scan.cancelled && scan.errors.isEmpty {
+        let measurement = TreeMeasure.measure([url], maxDepth: depth, cancellation: cancellation)
+        let size = measurement?.bytes ?? 0
+        if let measurement, measurement.errors.isEmpty {
             lock.withLock {
                 if values.count >= 512 { values = [:] }
                 values[key] = Cached(date: Date(), modified: modified, size: size)

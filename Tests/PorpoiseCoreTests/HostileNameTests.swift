@@ -359,14 +359,14 @@ import Testing
         let job = FileJob(kind: .copy, sources: [scratch.path("deep/s")], destinationFolder: t)
         _ = try job.run()
         #expect(job.errors.isEmpty, "\(job.errors)")
-        #expect(FileJob.diskSize(t) == 4)
+        #expect((TreeMeasure.measure([t], followTopLevelLink: false, crossVolumes: true)?.bytes ?? 0) == 4)
 
         // Past PATH_MAX: built one relative step at a time.
         let over = try scratch.folder("over/x")
         let mk = try runTool("/bin/sh", ["-c", "for i in 1 2 3 4 5 6; do mkdir \(segment) && cd \(segment) || exit 1; done; echo hi > f"], cwd: over)
         #expect(mk.status == 0)
         #expect(try DirectoryLister.list(over).count == 1)
-        #expect(FileJob.diskSize(over) >= 0)  // must not crash
+        #expect((TreeMeasure.measure([over], followTopLevelLink: false, crossVolumes: true)?.bytes ?? 0) >= 0)  // must not crash
         let dst = try scratch.folder("over/dst-with-a-longer-name")
         let deepCopy = FileJob(kind: .copy, sources: [over], destinationFolder: dst)
         _ = try deepCopy.run()

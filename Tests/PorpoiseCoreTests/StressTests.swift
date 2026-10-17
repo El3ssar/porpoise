@@ -76,7 +76,7 @@ import Testing
                 total += Int64(text.utf8.count)
             }
         }
-        #expect(FileJob.diskSize(src) == total)
+        #expect((TreeMeasure.measure([src], followTopLevelLink: false, crossVolumes: true)?.bytes ?? 0) == total)
         let dst = try scratch.folder("copy")
         let job = FileJob(kind: .copy, sources: [src], destinationFolder: dst)
         var last: JobProgress?
@@ -84,7 +84,7 @@ import Testing
         let time = try seconds { _ = try job.run() }
         #expect(time < 20, "copy took \(time) s")
         #expect(job.errors.isEmpty, "\(job.errors)")
-        #expect(FileJob.diskSize(dst.appendingPathComponent("tree")) == total)
+        #expect((TreeMeasure.measure([dst.appendingPathComponent("tree")], followTopLevelLink: false, crossVolumes: true)?.bytes ?? 0) == total)
         #expect(last?.doneBytes == total && last?.totalBytes == total)
         #expect(scratch.read("copy/tree/dir 39/nested/f48") == "39-48")
         #expect(scratch.read("copy/tree/dir 0/f1") == "0-1")
@@ -103,7 +103,7 @@ import Testing
         if scratch.listing("copy2").isEmpty {
             #expect(cancelled.isCancelled && cancelled.results.isEmpty)
         } else {
-            #expect(FileJob.diskSize(dst2) == total && cancelled.results.count == 1)
+            #expect((TreeMeasure.measure([dst2], followTopLevelLink: false, crossVolumes: true)?.bytes ?? 0) == total && cancelled.results.count == 1)
         }
         #expect(cancelled.errors.isEmpty, "\(cancelled.errors)")
 
@@ -113,7 +113,7 @@ import Testing
         let moveTime = try seconds { _ = try move.run() }
         #expect(moveTime < 5)
         #expect(scratch.listing("copy").isEmpty)
-        #expect(FileJob.diskSize(moved) == total)
+        #expect((TreeMeasure.measure([moved], followTopLevelLink: false, crossVolumes: true)?.bytes ?? 0) == total)
     }
 
     /// A burst of thousands of changes is reported, and the watcher still reports the next change after it.

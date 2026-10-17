@@ -505,6 +505,9 @@ import Testing
         #expect(m.index(of: s.path("sub")) == 0 && m.index(of: s.path("a")) == 1)
         #expect(m.index(of: URL(fileURLWithPath: s.url.path + "/sub/../a")) == 1)
         #expect(m.index(of: s.path("missing")) == nil)
+        let alias = s.path("sub/alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: s.url)
+        #expect(m.index(of: alias.appendingPathComponent("a")) == 1)
     }
 
     // MARK: Display style

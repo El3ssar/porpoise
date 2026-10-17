@@ -230,11 +230,9 @@ final class FolderSearch: @unchecked Sendable {
     /// Whether `path` is inside an app or another package below the scope: those are single items (as in Finder),
     /// and their insides aren't results. The package itself is, when its name matches.
     private func isInsidePackage(_ path: String) -> Bool {
-        // The tools may print the scope as given or resolved (/var/… or /private/var/…).
-        let given = scope.standardizedFileURL.path
-        let roots = [given, given.hasPrefix("/private/") ? String(given.dropFirst(8)) : "/private" + given]
-        guard let root = roots.first(where: { path.hasPrefix($0 + "/") }) else { return false }
-        var dir = (path as NSString).deletingLastPathComponent
+        let root = FilePath.canonical(scope.path), resolved = FilePath.canonical(path)
+        guard resolved != root, FilePath.contains(path: resolved, in: root) else { return false }
+        var dir = (resolved as NSString).deletingLastPathComponent
         while dir.count > root.count, dir.hasPrefix(root) {
             let known = lock.withLock { isPackage[dir] }
             let package =

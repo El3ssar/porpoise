@@ -21,7 +21,7 @@ struct NameIndexTests {
         #expect(try index.search(IndexQuery("file:false")).count == 2)
         #expect(try index.search(IndexQuery("regex:^bud.*txt$")).count == 1)
         #expect(try index.search(IndexQuery("other"), scope: "/fixture/Documents").isEmpty)
-        #expect(!NameIndex.contains(path: "/fixture/Documents2", in: "/fixture/Documents"))
+        #expect(!FilePath.contains(path: "/fixture/Documents2", in: "/fixture/Documents"))
         #expect(try index.search(IndexQuery("ext:pdf;txt"), excluding: ["/fixture/Documents"]).isEmpty)
         #expect(try index.search(IndexQuery("\"annual report\"")).count == 1)
     }

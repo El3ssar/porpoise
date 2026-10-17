@@ -58,7 +58,7 @@ public enum HelperRequests {
     /// `p` with the folders leading to it resolved (a symlink on the way can't lead into a protected folder unseen).
     static func resolvedParent(_ p: String) -> String {
         let parent = (p as NSString).deletingLastPathComponent
-        return (realPath(parent) ?? parent) + "/" + (p as NSString).lastPathComponent
+        return (FilePath.existing(parent) ?? parent) + "/" + (p as NSString).lastPathComponent
     }
 
     static func isProtected(_ p: String) -> Bool {
@@ -124,7 +124,7 @@ public enum HelperRequests {
         defer { close(dir) }
         // What was opened, not what the path named a moment ago: a folder on the way, swapped for a symlink, would
         // have led somewhere else. realpath, unlike resolvingSymlinksInPath, keeps "/private" as F_GETPATH does.
-        let homeTrash = realPath(home + "/.Trash") ?? home + "/.Trash"
+        let homeTrash = FilePath.existing(home + "/.Trash") ?? home + "/.Trash"
         guard trashIsAFolder(home), let opened = pathOf(dir),
             PorpoiseHelperInfo.isInUsersTrash(path: opened + "/" + name, resolvedParent: opened, uid: uid, resolvedHomeTrash: homeTrash)
         else { return ownershipRefused }
@@ -137,18 +137,12 @@ public enum HelperRequests {
     /// (/private/etc) would make "the user's Trash" any folder they like.
     static func trashIsAFolder(_ home: String) -> Bool {
         var st = stat()
-        return lstat((realPath(home) ?? home) + "/.Trash", &st) == 0 && st.st_mode & S_IFMT == S_IFDIR
+        return lstat((FilePath.existing(home) ?? home) + "/.Trash", &st) == 0 && st.st_mode & S_IFMT == S_IFDIR
     }
 
     private static func pathOf(_ fd: Int32) -> String? {
         var buf = [CChar](repeating: 0, count: Int(MAXPATHLEN))
         return fcntl(fd, F_GETPATH, &buf) == 0 ? String(cString: buf) : nil
-    }
-
-    private static func realPath(_ path: String) -> String? {
-        guard let p = realpath(path, nil) else { return nil }
-        defer { free(p) }
-        return String(cString: p)
     }
 
     private struct OwnershipWalk {
