@@ -9,11 +9,13 @@ public struct CloudHTTPTransport: Sendable {
         network = send == nil
         self.send =
             send ?? { request in
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await Self.session.data(for: request)
                 guard let response = response as? HTTPURLResponse else { throw invalidResponse() }
                 return (data, response)
             }
     }
+    /// No disk cache, cookies or credential storage: account data (file names, owners) never lands in Cache.db.
+    static let session = URLSession(configuration: .ephemeral)
     public func response(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         try Task.checkCancellation(); return try await send(request)
     }

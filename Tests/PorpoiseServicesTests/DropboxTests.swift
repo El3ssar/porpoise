@@ -333,7 +333,9 @@ final class FakeDropboxServer {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(" settings-key ", forKey: "dropboxAppKey")
         #expect(DropboxConfiguration.selected(defaults: defaults, environment: [:]).appKey == "settings-key")
-        #expect(DropboxConfiguration.selected(defaults: defaults, environment: ["PORPOISE_DROPBOX_APP_KEY": "env-key"]).appKey == "env-key")
+        #expect(
+            DropboxConfiguration.selected(defaults: defaults, environment: ["PORPOISE_DROPBOX_APP_KEY": "env-key"], testing: true).appKey == "env-key"
+        )
         let store = DropboxAccountStore(defaults: defaults, credentials: credentials, configuration: server.config, directory: scratch.url)
         let browser: @MainActor (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
         let account = try await store.connect(openBrowser: browser)
@@ -356,6 +358,12 @@ final class FakeDropboxServer {
         _ = try await client.edits.save(edit.id)
         try await store.disconnect(account.id); #expect(store.accounts.isEmpty)
         #expect(try credentials.read(clientID: server.config.appKey, accountID: account.id) == nil)
+        // Nothing of the account stays: its folder (edits, journal, partials) and its offline copies.
+        let needle = account.id.uuidString.lowercased()
+        for root in [scratch.url, CloudOffline.shared.root] {
+            let left = (FileManager.default.enumerator(atPath: root.path)?.allObjects as? [String] ?? []).filter { $0.lowercased().contains(needle) }
+            #expect(left.isEmpty, "\(left)")
+        }
         #expect((try await server.stats())["secretSent"] as? Bool == false)
         #expect(CloudProviderDescriptor.catalog(dropbox: .init(appKey: "fixture-app")).first { $0.provider == .dropbox }?.available == true)
     }

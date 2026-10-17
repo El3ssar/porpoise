@@ -67,6 +67,11 @@ public final class DriveMutationJournal: @unchecked Sendable {
         do { return try storage.load(id) } catch CloudJournalError.invalidRecord { throw DriveError.invalidResponse }
     }
     public func save(_ record: DriveMutationRecord) throws { try storage.save(record) }
+    public func remove(_ id: UUID) throws { try storage.remove(id) }
+    /// A download's private partial copy (0600, under the journal).
+    public func partial(_ operationID: UUID) -> URL {
+        folder.appendingPathComponent("Downloads").appendingPathComponent(operationID.uuidString + ".part")
+    }
     public func all(accountID: UUID? = nil) throws -> [DriveMutationRecord] {
         try storage.all().filter { accountID == nil || $0.accountID == accountID }
     }

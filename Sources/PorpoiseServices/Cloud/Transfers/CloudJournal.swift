@@ -39,6 +39,13 @@ public final class CloudJournal<Record: CloudJournalRecord>: @unchecked Sendable
             guard fsync(fd) == 0 else { throw POSIXError(.EIO) }
         }
     }
+    /// Forgets a record (sign-out: nothing of the account stays).
+    public func remove(_ id: UUID) throws {
+        try lock.withLock {
+            guard FileManager.default.fileExists(atPath: url(id).path) else { return }
+            try FileManager.default.removeItem(at: url(id))
+        }
+    }
     public func all() throws -> [Record] {
         guard FileManager.default.fileExists(atPath: folder.path) else { return [] }
         return try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
