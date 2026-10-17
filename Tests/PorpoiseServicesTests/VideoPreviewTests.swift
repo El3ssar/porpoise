@@ -104,10 +104,10 @@ let testFFmpeg: String? = {
     return dirs.map { "\($0)/ffmpeg" }.first { FileManager.default.isExecutableFile(atPath: $0) }
 }()
 
-private let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+private let repoRoot = TestPaths.repo
 
 /// One-second test clips (160×120, a test picture and a tone), one per codec and container the tests need.
-private let clips = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Videos")
+private let clips = TestPaths.fixtures.appendingPathComponent("Videos")
 
 /// Probing and streaming with a real ffmpeg on tiny generated videos. Streams go to a scratch folder.
 @Suite(.serialized, .enabled(if: testFFmpeg != nil, "needs ffmpeg: scripts/build-ffmpeg.sh, or one on PATH"))

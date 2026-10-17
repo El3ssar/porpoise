@@ -323,7 +323,7 @@ import Testing
             DropboxConfiguration.selected(defaults: defaults, environment: ["PORPOISE_DROPBOX_APP_KEY": "env-key"], testing: true).appKey == "env-key"
         )
         let store = DropboxAccountStore(defaults: defaults, credentials: credentials, configuration: server.config, directory: scratch.url)
-        let browser: @MainActor (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
+        let browser = openInFakeBrowser
         let account = try await store.connect(openBrowser: browser)
         #expect(account.hasTeamSpace && account.email == "fixture@example.invalid")
         #expect(try credentials.read(clientID: server.config.appKey, accountID: account.id) == "fixture-refresh")

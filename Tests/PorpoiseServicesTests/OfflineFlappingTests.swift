@@ -36,15 +36,11 @@ import Testing
     }
 
     @Test func aFlappingServerShowsOfflineOnceAndRecoversOnce() async throws {
-        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/ui-demo.json")
+        let fixture = FakeDriveServer.fixture("ui-demo.json")
         let server = try FakeDriveServer(fixture: fixture), scratch = try Scratch()
         defer { server.stop() }
-        let defaults = MemoryDefaults()
-        let store = DriveAccountStore(
-            defaults: defaults, credentials: MemoryCredentials(), configuration: server.config,
-            baseURL: server.base.appendingPathComponent("drive/v3/"))
-        let backend = DriveCloudBackend(store: store, avatarFolder: scratch.url.appendingPathComponent("avatars"))
-        let browser: (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
+        let (backend, store) = server.backend(scratch: scratch)
+        let browser = openInFakeBrowser
         let connected = try await awaitCallback { c in _ = backend.connect(.googleDrive, openBrowser: browser) { c.resume(returning: $0) } }
         guard case .success(let account) = connected, let id = UUID(uuidString: account.id), let client = store.client(for: id) else {
             Issue.record("sign-in failed")

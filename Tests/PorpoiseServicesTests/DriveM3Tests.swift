@@ -123,7 +123,7 @@ import Testing
     }
     @Test func unsentEditsSurviveActualSIGKILL() async throws {
         let server = try DriveMutationTests().server(), scratch = try Scratch(), id = UUID()
-        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let repo = TestPaths.repo
         let process = Process()
         process.executableURL = repo.appendingPathComponent(".build/debug/DriveRecoveryProbe")
         process.arguments = [server.base.absoluteString, scratch.url.path, id.uuidString, UUID().uuidString, "kill", "edit", "binary-a"]
@@ -201,7 +201,7 @@ import Testing
     }
     @Test func conditionalProbeIsOptInAndUsesOnlyItsDisposableFixtureFile() async throws {
         let server = try DriveMutationTests().server(), scratch = try Scratch()
-        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let repo = TestPaths.repo
         func run(enabled: Bool) async throws -> (Int32, Data) {
             let process = Process(), output = Pipe()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")

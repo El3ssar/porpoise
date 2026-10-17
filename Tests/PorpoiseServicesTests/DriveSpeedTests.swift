@@ -71,7 +71,7 @@ import Testing
         #expect(elapsed < 0.016)
         let selected = try #require(rows.first { $0.name == "report.txt" }).url
         model.selection = [selected]
-        let fixtureURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/metadata.json")
+        let fixtureURL = FakeDriveServer.fixture("metadata.json")
         var changed = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as? [String: Any])
         var changedFiles = try #require(changed["files"] as? [[String: Any]])
         changedFiles[2]["name"] = "Updated report.txt"

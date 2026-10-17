@@ -154,7 +154,7 @@ import Testing
             defaults: defaults, credentials: credentials, configuration: server.config, baseURL: server.base.appendingPathComponent("drive/v3/"))
         store.clientIDOverride = "  override-client  "
         #expect(store.clientIDOverride == "override-client")
-        let browser: @MainActor (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
+        let browser = openInFakeBrowser
         let account = try await store.connect(openBrowser: browser)
         defer { RemoteFS.unregisterDrive(accountID: account.id) }
         #expect(account.email == "alex@example.invalid" && store.accounts == [account])
@@ -178,7 +178,7 @@ import Testing
 
     @MainActor @Test func customFixturesConnectTwoDistinctAccounts() async throws {
         let scratch = try Scratch()
-        let original = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/metadata.json")
+        let original = FakeDriveServer.fixture("metadata.json")
         var fixture = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: original)) as? [String: Any])
         fixture["profiles"] = [
             ["sub": "one", "email": "one@example.invalid", "name": "One"],
@@ -193,7 +193,7 @@ import Testing
         let credentials = MemoryCredentials()
         let store = DriveAccountStore(
             defaults: defaults, credentials: credentials, configuration: server.config, baseURL: server.base.appendingPathComponent("drive/v3/"))
-        let browser: @MainActor (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
+        let browser = openInFakeBrowser
         let one = try await store.connect(openBrowser: browser)
         let two = try await store.connect(openBrowser: browser)
         defer { RemoteFS.unregisterDrive(accountID: one.id); RemoteFS.unregisterDrive(accountID: two.id) }

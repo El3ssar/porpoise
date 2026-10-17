@@ -10,7 +10,7 @@ extension DriveMutationTests {
     private func probe(_ server: FakeDriveServer, folder: URL, account: UUID, operation: UUID, mode: String, kind: String, value: String) async throws
         -> Int32
     {
-        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let repo = TestPaths.repo
         let process = Process()
         process.executableURL = repo.appendingPathComponent(".build/debug/DriveRecoveryProbe")
         process.arguments = [server.base.absoluteString, folder.path, account.uuidString, operation.uuidString, mode, kind, value]

@@ -18,7 +18,7 @@ import Testing
     }
 
     @MainActor @Test func disconnectingADriveAccountLeavesNothing() async throws {
-        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/mutations.json")
+        let fixture = FakeDriveServer.fixture("mutations.json")
         let server = try FakeDriveServer(fixture: fixture)
         let credentials = MemoryCredentials()
         let suite = "porpoise-signout-\(UUID())"
@@ -26,7 +26,7 @@ import Testing
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = DriveAccountStore(
             defaults: defaults, credentials: credentials, configuration: server.config, baseURL: server.base.appendingPathComponent("drive/v3/"))
-        let browser: @MainActor (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
+        let browser = openInFakeBrowser
         let account = try await store.connect(openBrowser: browser)
         defer { RemoteFS.unregisterDrive(accountID: account.id) }
         let client = try #require(store.client(for: account.id))

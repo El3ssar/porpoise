@@ -74,7 +74,7 @@ import Testing
     func playerStartsBeforeTenPercentFetched() async throws {
         let scratch = try Scratch(), media = scratch.url.appendingPathComponent("movie.mp4")
         let ffmpeg = try #require(testFFmpeg)
-        let clip = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Videos/h264-aac.mkv")
+        let clip = TestPaths.fixtures.appendingPathComponent("Videos/h264-aac.mkv")
         let result = try Shell.run(
             ffmpeg,
             [

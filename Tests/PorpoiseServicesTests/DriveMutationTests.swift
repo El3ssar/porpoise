@@ -8,7 +8,7 @@ import Testing
 
 @Suite(.serialized) struct DriveMutationTests {
     func server() throws -> FakeDriveServer {
-        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/mutations.json")
+        let fixture = FakeDriveServer.fixture("mutations.json")
         return try FakeDriveServer(fixture: fixture)
     }
     func client(_ server: FakeDriveServer, folder: URL, id: UUID = UUID(), credentials: MemoryCredentials = .init()) throws

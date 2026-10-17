@@ -136,7 +136,7 @@ import Testing
     }
     @Test(.timeLimit(.minutes(1))) @MainActor func deepDriveRevealKeepsCollectionRootParentsAndSiblings() async throws {
         let scratch = try Scratch()
-        let fixtureURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/metadata.json")
+        let fixtureURL = FakeDriveServer.fixture("metadata.json")
         var fixture = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as? [String: Any])
         var files = try #require(fixture["files"] as? [[String: Any]])
         for (id, name) in [("deep-folder", ".hidden target"), ("folder-sibling", "Other project")] {
@@ -200,7 +200,7 @@ import Testing
 
     @Test(.timeLimit(.minutes(1))) @MainActor func sharedDriveRevealMatchesAncestorsWithoutRedundantDriveQuery() async throws {
         let scratch = try Scratch()
-        let fixtureURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/metadata.json")
+        let fixtureURL = FakeDriveServer.fixture("metadata.json")
         var fixture = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as? [String: Any])
         var files = try #require(fixture["files"] as? [[String: Any]])
         files.append(["id": "deep-folder", "name": "Team folder", "mimeType": "application/vnd.google-apps.folder", "driveId": "shared-drive-a"])

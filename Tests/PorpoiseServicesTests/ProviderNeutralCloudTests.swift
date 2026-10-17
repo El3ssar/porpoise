@@ -26,7 +26,7 @@ import Testing
         func connect() async throws -> CloudAccount {
             try await awaitCallback { continuation in
                 _ = accounts.connect(
-                    .dropbox, openBrowser: { url in Task { _ = try? await URLSession.shared.data(from: url) } },
+                    .dropbox, openBrowser: openInFakeBrowser,
                     done: { continuation.resume(with: $0.mapError { $0 as Error }) })
             }
         }

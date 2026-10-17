@@ -8,7 +8,7 @@ import Testing
 
 /// fd and ripgrep from build/search-tools (scripts/fetch-search-tools.sh), when they're there.
 private let searchTools: FolderSearch.Tools? = {
-    let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = TestPaths.repo
         .appendingPathComponent("build/search-tools")
     let fd = dir.appendingPathComponent("fd").path, rg = dir.appendingPathComponent("rg").path
     let fm = FileManager.default

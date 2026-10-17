@@ -9,16 +9,11 @@ import Testing
 /// Google Drive changes as the app makes them, through DriveCloudBackend, against the fake Drive server and the UI
 /// editing fixture (owned items, a folder shared as Editor, items shared as Viewer).
 @MainActor @Suite(.serialized, .isolatedSettings) struct DriveCloudBackendEditingTests {
-    private static let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(
-        "Fixtures/Drive/ui-edit.json")
-    private let browser: (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
+    private static let fixture = FakeDriveServer.fixture("ui-edit.json")
+    private let browser = openInFakeBrowser
 
     private func connected(_ server: FakeDriveServer, scratch: Scratch) async throws -> (DriveCloudBackend, DriveAccountStore, CloudAccount) {
-        let defaults = MemoryDefaults()
-        let store = DriveAccountStore(
-            defaults: defaults, credentials: MemoryCredentials(), configuration: server.config,
-            baseURL: server.base.appendingPathComponent("drive/v3/"))
-        let b = DriveCloudBackend(store: store, avatarFolder: scratch.url.appendingPathComponent("avatars"))
+        let (b, store) = server.backend(scratch: scratch)
         let result = try await awaitCallback { c in _ = b.connect(.googleDrive, openBrowser: browser) { c.resume(returning: $0) } }
         guard case .success(let account) = result else { throw CloudEditError.notSupported }
         return (b, store, account)

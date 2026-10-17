@@ -202,7 +202,7 @@ final class RemoteTransferCoverageTests {
 
 extension RemoteTransferCoverageTests {
     @Test func driveAndSFTPTransfersBothDirectionsVerifyBeforeSourceRemoval() async throws {
-        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/mutations.json")
+        let fixture = FakeDriveServer.fixture("mutations.json")
         let driveServer = try FakeDriveServer(fixture: fixture)
         let client = try DriveMutationTests().client(driveServer, folder: local.folder("drive-journal"))
         let provider = DriveProvider(accountID: client.accountID, client: client)

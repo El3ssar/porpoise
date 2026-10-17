@@ -27,7 +27,7 @@ import Testing
         func connect() async throws -> Result<CloudAccount, CloudConnectError> {
             try await awaitCallback { continuation in
                 _ = accounts.connect(
-                    .dropbox, openBrowser: { url in Task { _ = try? await URLSession.shared.data(from: url) } },
+                    .dropbox, openBrowser: openInFakeBrowser,
                     done: { continuation.resume(returning: $0) })
             }
         }
@@ -56,7 +56,7 @@ import Testing
         // Signing in again gives the account a new sign-in: it is OK again.
         let again: Result<Void, CloudConnectError> = try await awaitCallback { continuation in
             _ = fixture.accounts.signInAgain(
-                account.id, openBrowser: { url in Task { _ = try? await URLSession.shared.data(from: url) } },
+                account.id, openBrowser: openInFakeBrowser,
                 done: { continuation.resume(returning: $0) })
         }
         #expect((try? again.get()) != nil)

@@ -36,7 +36,7 @@ import Testing
         model.selection = [selected]
 
         // Changed in the browser: the next look at the folder animates the difference and keeps the selection.
-        let fixtureURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/metadata.json")
+        let fixtureURL = FakeDriveServer.fixture("metadata.json")
         var changed = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as? [String: Any])
         var files = try #require(changed["files"] as? [[String: Any]])
         files[2]["name"] = "Updated report.txt"

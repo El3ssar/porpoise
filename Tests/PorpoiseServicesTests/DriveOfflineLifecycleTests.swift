@@ -10,10 +10,8 @@ import Testing
     @Test func unsentBlocksSignoutThenCleanSignoutWipesOfflineAccount() async throws {
         let server = try DriveMutationTests().server(), scratch = try Scratch()
         let defaults = MemoryDefaults()
-        let accounts = DriveAccountStore(
-            defaults: defaults, credentials: MemoryCredentials(), configuration: server.config,
-            baseURL: server.base.appendingPathComponent("drive/v3/"))
-        let account = try await accounts.connect { url in Task { _ = try? await URLSession.shared.data(from: url) } }
+        let accounts = server.accountStore(defaults: defaults)
+        let account = try await accounts.connect(openBrowser: openInFakeBrowser)
         let client = try #require(accounts.client(for: account.id))
         let backend = DriveCloudBackend(store: accounts, avatarFolder: scratch.url.appendingPathComponent("avatars"))
         let previous = CloudAccounts.shared.backend

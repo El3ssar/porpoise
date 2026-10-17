@@ -8,15 +8,11 @@ import Testing
 
 /// Google Drive behind the app's cloud accounts, against the local fake Drive server and the UI fixture.
 @MainActor @Suite(.serialized, .isolatedSettings) struct DriveCloudBackendTests {
-    private static let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/ui-demo.json")
-    private let browser: (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
+    private static let fixture = FakeDriveServer.fixture("ui-demo.json")
+    private let browser = openInFakeBrowser
 
     private func backend(_ server: FakeDriveServer, scratch: Scratch) -> (DriveCloudBackend, DriveAccountStore) {
-        let defaults = MemoryDefaults()
-        let store = DriveAccountStore(
-            defaults: defaults, credentials: MemoryCredentials(), configuration: server.config,
-            baseURL: server.base.appendingPathComponent("drive/v3/"))
-        return (DriveCloudBackend(store: store, avatarFolder: scratch.url.appendingPathComponent("avatars")), store)
+        server.backend(scratch: scratch)
     }
 
     private func connect(_ b: DriveCloudBackend) async throws -> Result<CloudAccount, CloudConnectError> {

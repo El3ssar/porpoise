@@ -39,6 +39,18 @@ public final class FakeDriveServer {
         return (DriveClient(accountID: id, tokens: tokens, baseURL: base.appendingPathComponent("drive/v3/")), tokens, credentials)
     }
 
+    /// An account store signed in through this fake (its tokens in memory, its settings in `defaults`).
+    @MainActor public func accountStore(defaults: UserDefaults = MemoryDefaults()) -> DriveAccountStore {
+        DriveAccountStore(
+            defaults: defaults, credentials: MemoryCredentials(), configuration: config, baseURL: base.appendingPathComponent("drive/v3/"))
+    }
+
+    /// The app's Drive backend over a fresh `accountStore()`, its avatars in `scratch`.
+    @MainActor public func backend(scratch: Scratch, defaults: UserDefaults = MemoryDefaults()) -> (DriveCloudBackend, DriveAccountStore) {
+        let store = accountStore(defaults: defaults)
+        return (DriveCloudBackend(store: store, avatarFolder: scratch.url.appendingPathComponent("avatars")), store)
+    }
+
     /// Changes how the fake behaves from now on (`__control`: conflicts on save, remote changes, failures…).
     public func control(_ values: [String: Any]) async throws {
         var request = URLRequest(url: base.appendingPathComponent("__control"))
