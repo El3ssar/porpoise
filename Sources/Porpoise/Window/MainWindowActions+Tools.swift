@@ -126,10 +126,7 @@ extension MainWindowController {
         guard !urls.isEmpty else { return }
         let folder = Self.commonFolder(of: urls)
         let base = urls.count == 1 ? urls[0].deletingPathExtension().lastPathComponent : "Archive"
-        let existing = Set((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
-        var zipName = "\(base).zip"
-        var n = 2
-        while existing.contains(zipName) { zipName = "\(base) \(n).zip"; n += 1 }
+        let zipName = LocationOperations(for: folder).uniqueName(base, ext: "zip", in: folder)
         let zip = folder.appendingPathComponent(zipName)
         let p = Process()
         p.currentDirectoryURL = folder
@@ -153,10 +150,7 @@ extension MainWindowController {
         var base = it.url.deletingPathExtension().lastPathComponent
         if base.lowercased().hasSuffix(".tar") { base = String(base.dropLast(4)) }  // name.tar.gz
         if base.isEmpty { base = "Archive" }
-        let existing = Set((try? FileManager.default.contentsOfDirectory(atPath: parent.path)) ?? [])
-        var name = base
-        var n = 2
-        while existing.contains(name) { name = "\(base) \(n)"; n += 1 }
+        let name = LocationOperations(for: parent).uniqueName(base, in: parent)
         let dest = parent.appendingPathComponent(name, isDirectory: true)
         do { try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: false) } catch {
             reportError("Could not extract “\(it.name)”: \(error.localizedDescription)"); return

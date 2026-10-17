@@ -29,14 +29,7 @@ extension MainWindowController {
     /// New items can be created in the current folder.
     var writable: Bool {
         if PlacesModel.isCloud(view.url) { return CloudAccounts.shared.denial(.addItems, folder: view.url) == nil }
-        if RemoteFS.isRemote(view.url) { return true }
-        guard view.url.isFileURL else { return false }
-        if FileManager.default.isWritableFile(atPath: view.url.path) { return true }
-        // Root-owned folders: allowed, the operation asks to authenticate (Finder). Read-only volumes: no. The mount
-        // flags, since volumeIsReadOnly says false for the sealed system volume (/System, /usr).
-        var fs = statfs()
-        guard statfs(view.url.path, &fs) == 0 else { return false }
-        return fs.f_flags & UInt32(MNT_RDONLY) == 0
+        return LocationOperations(for: view.url).canAddItems(view.url)
     }
 
     /// Shows an error in the view's message bar.
@@ -78,7 +71,7 @@ extension MainWindowController {
         // Cloud folders: say why not, rather than ignoring the shortcut.
         if PlacesModel.isCloud(view.url) { if kind == .folder { createCloudFolder() }; return }
         guard writable else { return }
-        if let p = RemoteFS.provider(for: view.url) { createRemote(folder: kind == .folder, provider: p); return }
+        if RemoteFS.isRemote(view.url) { createRemote(kind); return }
         NewItemDialog.run(kind: kind, in: view.url, window: window) { [weak self] url in
             guard let self else { return }
             FileOperationsController.shared.pushUndo(.created([url]))
@@ -87,40 +80,29 @@ extension MainWindowController {
         }
     }
 
-    /// New folder / empty file on a remote location.
-    private func createRemote(folder: Bool, provider p: RemoteProvider) {
-        let a = NSAlert()
-        a.messageText = folder ? "Create New Folder" : "Create New File"
-        let place = view.url.host.map { "\($0)\(view.url.path)" } ?? view.url.path
-        a.informativeText = "In \(place.removingPercentEncoding ?? place)"
-        let f = NSTextField(string: folder ? "New Folder" : "New File.txt")
-        f.frame = CGRect(x: 0, y: 0, width: 300, height: 24)
-        a.accessoryView = f
-        a.addButton(withTitle: "Create")
-        a.addButton(withTitle: "Cancel")
-        a.window.initialFirstResponder = f
+    /// New folder or empty file on a server or device: a name nothing in the folder has, and Undo removes it again
+    /// while it is still empty. Links can't be made there: they are empty files.
+    private func createRemote(_ kind: NewItemKind) {
         let c = view
-        a.runSheet(for: window) { [weak self] r in
-            let name = f.stringValue
-            guard r == .alertFirstButtonReturn, !name.isEmpty else { return }
+        let folder = kind == .folder
+        let place = c.url.host.map { "\($0)\(c.url.path)" } ?? c.url.path
+        let shown: NewItemKind = kind == .link || kind == .urlLink ? .emptyFile : kind
+        NewItemDialog.runNamed(
+            shown, in: c.url, title: place.removingPercentEncoding ?? place, names: Set(c.model.items.map(\.name)), window: window
+        ) { [weak self] name in
             let target = c.url.appendingPathComponent(name)
             DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    if folder {
-                        try p.makeFolder(target)
-                    } else {
-                        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-                        defer { try? FileManager.default.removeItem(at: tmp) }
-                        let file = tmp.appendingPathComponent(name)
-                        FileManager.default.createFile(atPath: file.path, contents: Data())
-                        try p.upload(file, into: c.url)
-                    }
-                    DispatchQueue.main.async {
+                let result = Result {
+                    let operations = LocationOperations(for: c.url)
+                    return folder ? try operations.makeFolder(target) : try operations.makeEmptyFile(target)
+                }
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let undo):
+                        FileOperationsController.shared.pushUndo(undo)
                         c.pendingSelect = target; c.reload()
+                    case .failure(let error): self?.reportError(error.localizedDescription, in: c)
                     }
-                } catch {
-                    DispatchQueue.main.async { self?.reportError(error.localizedDescription, in: c) }
                 }
             }
         }

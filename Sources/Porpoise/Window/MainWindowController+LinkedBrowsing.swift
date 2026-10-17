@@ -51,13 +51,7 @@ extension MainWindowController {
         guard tab.linkedRoots != nil else { return }
         let target = other.url
         DispatchQueue.global(qos: .utility).async { [weak self, weak tab, weak other] in
-            let exists: Bool
-            if let provider = RemoteFS.provider(for: target) {
-                exists = (try? provider.list(target)) != nil
-            } else {
-                var directory: ObjCBool = false
-                exists = FileManager.default.fileExists(atPath: target.path, isDirectory: &directory) && directory.boolValue
-            }
+            let exists = LocationOperations(for: target).folderExists(target)
             DispatchQueue.main.async {
                 guard let self, let tab, let other, tab.linkGeneration == generation, tab.linkedRoots != nil, !exists else {
                     return
@@ -100,13 +94,7 @@ extension MainWindowController {
     }
     private func createLinkedCounterpart(_ url: URL, in selectedTab: PorpoiseTab) {
         DispatchQueue.global(qos: .utility).async { [weak self, weak selectedTab] in
-            let result = Result {
-                if let provider = RemoteFS.provider(for: url) {
-                    try provider.makeFolder(url)
-                } else {
-                    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-                }
-            }
+            let result = Result { try LocationOperations(for: url).makeFolder(url) }
             DispatchQueue.main.async {
                 guard let self, let selectedTab else { return }
                 switch result {

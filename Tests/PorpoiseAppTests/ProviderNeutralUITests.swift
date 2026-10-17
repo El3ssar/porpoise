@@ -60,11 +60,11 @@ import Testing
     @Test func newFolderNameRulesFollowTheService() {
         let names: Set<String> = ["Reports"]
         let drive = URL(string: "gdrive://acct/my-drive/")!
-        #expect(NewItemDialog.cloudNameProblem("Reports", names: names, in: drive)?.isError == false)
-        #expect(NewItemDialog.cloudNameProblem("Reports", names: names, in: drive)?.message.contains("Both will be kept") == true)
-        #expect(NewItemDialog.cloudNameProblem("reports", names: names, in: dropboxRoot)?.isError == true)
-        #expect(NewItemDialog.cloudNameProblem("reports", names: names, in: dropboxRoot)?.message.contains("Both will be kept") == false)
-        #expect(NewItemDialog.cloudNameProblem("Other", names: names, in: dropboxRoot) == nil)
+        #expect(NewItemDialog.nameProblem("Reports", names: names, in: drive)?.isError == false)
+        #expect(NewItemDialog.nameProblem("Reports", names: names, in: drive)?.message.contains("Both will be kept") == true)
+        #expect(NewItemDialog.nameProblem("reports", names: names, in: dropboxRoot)?.isError == true)
+        #expect(NewItemDialog.nameProblem("reports", names: names, in: dropboxRoot)?.message.contains("Both will be kept") == false)
+        #expect(NewItemDialog.nameProblem("Other", names: names, in: dropboxRoot) == nil)
     }
 
     // B12: cloud and server places take drops; locations with no folder of their own don't.

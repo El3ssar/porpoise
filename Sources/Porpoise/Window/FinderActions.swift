@@ -54,11 +54,8 @@ extension MainWindowController {
     @objc func makeAlias(_ sender: Any?) {
         var made: [URL] = []
         for it in selection where it.url.isFileURL {
-            var dst = it.url.deletingLastPathComponent().appendingPathComponent(it.name + " alias")
-            var n = 2
-            while FileManager.default.fileExists(atPath: dst.path) {
-                dst = it.url.deletingLastPathComponent().appendingPathComponent("\(it.name) alias \(n)"); n += 1
-            }
+            let parent = it.url.deletingLastPathComponent()
+            let dst = parent.appendingPathComponent(LocationOperations(for: parent).uniqueName(it.name + " alias", in: parent))
             do {
                 let data = try it.url.bookmarkData(options: .suitableForBookmarkFile, includingResourceValuesForKeys: nil, relativeTo: nil)
                 try URL.writeBookmarkData(data, to: dst)
@@ -136,9 +133,7 @@ extension MainWindowController {
         let items = selection.filter { $0.url.isFileURL }
         guard !items.isEmpty else { return }
         let parent = view.url
-        var folder = parent.appendingPathComponent("New Folder With Items")
-        var n = 2
-        while FileManager.default.fileExists(atPath: folder.path) { folder = parent.appendingPathComponent("New Folder With Items \(n)"); n += 1 }
+        let folder = parent.appendingPathComponent(LocationOperations(for: parent).uniqueName("New Folder With Items", in: parent))
         do { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false) } catch {
             reportError(error.localizedDescription); return
         }

@@ -52,8 +52,9 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
     private let targetField = NSTextField()
     private let message = NSTextField(labelWithString: "")
     private static var active: NewItemDialog?
-    /// A cloud folder: the names in it (for the suggested name), its name, and what creates the folder.
-    private var cloud: (names: Set<String>, title: String, create: (String) -> Void)?
+    /// A cloud folder or a server's: the names in it (for the suggested name and the check), its name, and what
+    /// creates the item.
+    private var named: (names: Set<String>, title: String, create: (String) -> Void)?
 
     private init(kind: NewItemKind, folder: URL) {
         self.kind = kind
@@ -67,25 +68,27 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
         d.present(window: window, done: done)
     }
 
-    /// The same dialog for a cloud folder; `create` gets the name (the folder appears at once, the service confirms it
-    /// later). Where the service allows two items of the same name (Drive) an existing name is only noted; elsewhere
-    /// it is refused, ignoring case as the service does.
-    static func runCloud(in folder: URL, title: String, names: Set<String>, window: NSWindow?, create: @escaping (String) -> Void) {
-        let d = NewItemDialog(kind: .folder, folder: folder)
-        d.cloud = (names, title, create)
+    /// The same dialog for a folder elsewhere (a cloud service, a server); `create` gets the name and makes the item.
+    /// Where the service allows two items of the same name (Drive) an existing name is only noted; elsewhere it is
+    /// refused, ignoring case as many services and servers do.
+    static func runNamed(
+        _ kind: NewItemKind = .folder, in folder: URL, title: String, names: Set<String>, window: NSWindow?, create: @escaping (String) -> Void
+    ) {
+        let d = NewItemDialog(kind: kind, folder: folder)
+        d.named = (names, title, create)
         active = d
         d.present(window: window) { _ in }
     }
 
     private func present(window: NSWindow?, done: @escaping (URL) -> Void) {
         alert.messageText = kind == .folder ? "Create New Folder" : "Create \(kind.menuTitle.replacingOccurrences(of: "…", with: ""))"
-        alert.informativeText = kind == .folder ? "Create new folder in:\n\(cloud?.title ?? folder.path)" : "File name:"
+        alert.informativeText = kind == .folder ? "Create new folder in:\n\(named?.title ?? folder.path)" : "File name:"
         alert.addButton(withTitle: "Create")
         alert.addButton(withTitle: "Cancel")
         alert.icon = Icons.shared.image(kind.icon, size: 64)
         let hasTarget = kind == .link || kind == .urlLink
         let v = NSView(frame: CGRect(x: 0, y: 0, width: 340, height: hasTarget ? 86 : 50))
-        let existing = cloud?.names ?? Set((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
+        let existing = named?.names ?? Set((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
         var name = kind.defaultName
         if existing.contains(name) { name = FileFormat.suggestedName(for: name, existing: existing) }
         nameField.stringValue = name
@@ -107,7 +110,7 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
         let handler: (NSApplication.ModalResponse) -> Void = { [self] r in
             defer { NewItemDialog.active = nil }
             guard r == .alertFirstButtonReturn else { return }
-            if let cloud { cloud.create(nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)); return }
+            if let named { named.create(nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)); return }
             do {
                 let url: URL
                 switch kind {
@@ -171,8 +174,8 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
 
     func controlTextDidChange(_ obj: Notification) { validate() }
 
-    /// What to say about a new cloud folder's name: nothing, a note (the service keeps both), or an error.
-    static func cloudNameProblem(_ name: String, names: Set<String>, in folder: URL) -> (message: String, isError: Bool)? {
+    /// What to say about a new item's name in a folder elsewhere: nothing, a note (the service keeps both), or an error.
+    static func nameProblem(_ name: String, names: Set<String>, in folder: URL) -> (message: String, isError: Bool)? {
         let duplicates = CloudProviderDescriptor.descriptor(for: folder)?.allowsDuplicateNames ?? false
         if duplicates {
             return names.contains(name) ? ("“\(name)” is already in this folder. Both will be kept.", false) : nil
@@ -182,9 +185,9 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
     }
 
     private func validate() {
-        if let cloud {
+        if let named {
             let name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            let problem = Self.cloudNameProblem(name, names: cloud.names, in: folder)
+            let problem = Self.nameProblem(name, names: named.names, in: folder)
             message.stringValue = problem?.message ?? ""
             message.textColor = problem?.isError == true ? Theme.negativeText : Theme.neutralText
             alert.buttons.first?.isEnabled = !name.isEmpty && problem?.isError != true

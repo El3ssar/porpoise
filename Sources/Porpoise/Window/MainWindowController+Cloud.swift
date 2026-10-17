@@ -62,7 +62,7 @@ extension MainWindowController {
         let c = view
         let folder = c.url
         if let why = CloudAccounts.shared.denial(.addItems, folder: folder) { cloudDenied(why, in: c); return }
-        NewItemDialog.runCloud(in: folder, title: folder.folderName, names: Set(c.model.items.map(\.name)), window: window) {
+        NewItemDialog.runNamed(in: folder, title: folder.folderName, names: Set(c.model.items.map(\.name)), window: window) {
             [weak self] name in self?.createCloudFolder(named: name, in: c)
         }
     }
