@@ -546,30 +546,6 @@ public final class DirectoryModel {
             return
         }
 
-        if let provider = RemoteFS.provider(for: url) {
-            isLoading = true
-            let expandedNow = expanded
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                var listed: [FileItem] = []
-                var err: String?
-                do { listed = try provider.list(url) } catch { err = error.localizedDescription }
-                var kids: [URL: [FileItem]] = [:]
-                for e in expandedNow { kids[e] = (try? provider.list(e)) ?? [] }
-                DispatchQueue.main.async {
-                    guard let self, token == self.loadToken else { return }
-                    self.listingArrived(token)
-                    self.items = self.withEdits(listed, in: url)
-                    self.children = self.keepingExpanded(kids)
-                    self.isLoading = false
-                    self.loadError = err
-                    let alive = Set(self.allLoadedURLs())
-                    if keepSelection { self.selection = self.selection.intersection(alive) }
-                    self.rebuild()
-                    self.onLoaded?()
-                }
-            }
-            return
-        }
         if AppLibrary.isActive(for: url) {
             isLoading = true
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -881,18 +857,6 @@ public final class DirectoryModel {
             return
         }
         let token = loadToken
-        if let provider = RemoteFS.provider(for: url) {  // sftp://, ftp://, adb:// folders expand through their provider
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let kids = (try? provider.list(url)) ?? []
-                DispatchQueue.main.async {
-                    // A reload since then lists expanded folders itself; a collapse makes this one moot.
-                    guard let self, token == self.loadToken, self.expanded.contains(url) else { return }
-                    self.children[url] = kids
-                    self.rebuild()
-                }
-            }
-            return
-        }
         _ = source.load(url, expanded: []) { [weak self] listing in
             // A reload since then lists expanded folders itself; a collapse makes this one moot.
             guard let self, token == self.loadToken, self.expanded.contains(url) else { return }

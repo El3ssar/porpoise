@@ -76,6 +76,7 @@ final class LocationLoad {
 enum LocationContentSources {
     /// The source that lists `url`.
     static func source(for url: URL) -> LocationContentSource {
-        LocalSource(location: url)
+        if let provider = RemoteFS.provider(for: url) { return ProviderSource(location: url, provider: provider) }
+        return LocalSource(location: url)
     }
 }

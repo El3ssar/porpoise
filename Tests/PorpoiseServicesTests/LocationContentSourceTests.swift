@@ -39,4 +39,39 @@ import Testing
         let traits = LocalSource(location: URL(string: "smb://server/share")!).traits
         #expect(traits.watch == .none && !traits.dynamicView && !traits.folderCounts && traits.prunesSelection)
     }
+
+    @Test func aServerFolderListsThroughItsProviderInItsWords() async throws {
+        let root = URL(string: "sftp://source-test.invalid/")!
+        let provider = ListingProvider()
+        RemoteFS.use(provider, for: root)
+        defer { RemoteFS.use(nil, for: root) }
+        let source = LocationContentSources.source(for: root)
+        #expect(source is ProviderSource && source.traits.watch == .none && source.traits.optimisticEdits && !source.traits.clearsCurrentItem)
+        let sub = root.appendingPathComponent("sub")
+        let found = try await listing(source, root, expanded: [sub, root.appendingPathComponent("locked")])
+        #expect(found.items.map(\.name) == ["sub"] && found.error == nil && found.vanished == nil)
+        #expect(found.children?[sub]?.map(\.name) == ["inner"] && found.children?[root.appendingPathComponent("locked")] == [])
+        let refused = try await listing(source, root.appendingPathComponent("locked"))
+        #expect(refused.error == .provider("Server said no") && refused.items.isEmpty)
+    }
+}
+
+/// A server whose root holds "sub" (holding "inner") and whose "locked" folder refuses to be listed.
+private final class ListingProvider: RemoteProvider {
+    struct Refusal: LocalizedError { var errorDescription: String? { "Server said no" } }
+    func list(_ folder: URL) throws -> [FileItem] {
+        switch folder.lastPathComponent {
+        case "locked": throw Refusal()
+        case "sub": return [FileItem(url: folder.appendingPathComponent("inner"), name: "inner", isDirectory: false)]
+        default: return [FileItem(url: folder.appendingPathComponent("sub"), name: "sub", isDirectory: true)]
+        }
+    }
+    func download(_ remote: URL, into localFolder: URL) throws -> URL { throw CocoaError(.featureUnsupported) }
+    func upload(_ local: URL, into remoteFolder: URL) throws { throw CocoaError(.featureUnsupported) }
+    func delete(_ remote: [URL]) throws { throw CocoaError(.featureUnsupported) }
+    func makeFolder(_ remote: URL) throws { throw CocoaError(.featureUnsupported) }
+    func rename(_ remote: URL, to newName: String) throws { throw CocoaError(.featureUnsupported) }
+    func move(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
+    func copy(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
+    func rootTitle(_ url: URL) -> String { "Test server" }
 }
