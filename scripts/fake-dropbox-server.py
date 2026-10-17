@@ -377,7 +377,9 @@ def main():
     for file in fixture.get('files', []):
         server.add(file)
     if args.port_file:
-        args.port_file.write_text(str(server.server_address[1]))
+        ready = args.port_file.with_suffix(".ready")
+        ready.write_text(str(server.server_address[1]))
+        ready.replace(args.port_file)
     server.serve_forever()
 
 
