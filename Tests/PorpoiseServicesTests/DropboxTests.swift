@@ -193,6 +193,8 @@ final class FakeDropboxServer {
         let emptyURL = try await client.download(empty, operationID: emptyID)
         #expect(try Data(contentsOf: emptyURL).isEmpty)
         #expect(try await client.download(empty, operationID: emptyID) == emptyURL)
+        try await server.configure(["files": [["id": empty.id, "path": "/empty", "size": 0]]])
+        await #expect(throws: DropboxError.sourceChanged) { try await client.download(empty, operationID: emptyID) }
         let operation = UUID(); let control = ProgressStop()
         await #expect(throws: FileOperationError.self) {
             try await client.download(

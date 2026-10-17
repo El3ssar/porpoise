@@ -91,6 +91,8 @@ extension DropboxClient {
             guard record.localURL == partial, JobJournal.Fingerprint(partial) == record.fingerprint,
                 try DropboxContentHash.hash(partial) == hash
             else { throw DropboxError.sourceChanged }
+            let fresh = try await metadata(item.id)
+            guard fresh.rev == rev, fresh.contentHash == hash, fresh.size == total else { throw DropboxError.sourceChanged }
             return partial
         }
         try await context.checkpoint()
