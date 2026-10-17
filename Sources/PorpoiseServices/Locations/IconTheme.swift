@@ -85,7 +85,7 @@ public final class IconTheme {
         Int(directory.prefix(while: { $0.isNumber })) ?? 64
     }
     public static var userIconsDirectory: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Porpoise/icons")
+        Settings.supportFolder.appendingPathComponent("icons")
     }
     public static let bundledThemes = ["Papirus", "Breeze", "Fluent", "WhiteSur", "Colloid"]
 

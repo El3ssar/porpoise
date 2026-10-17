@@ -19,7 +19,7 @@ final class SSHProvider: RemoteProvider {
     private static let controlPersist = 180
     private static let connectTimeout = 12
     private static let controlDir: URL = {
-        let u = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise")
+        let u = Settings.cachesFolder
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
         return u
     }()

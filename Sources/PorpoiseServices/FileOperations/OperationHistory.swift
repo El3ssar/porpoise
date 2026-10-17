@@ -54,9 +54,7 @@ public final class OperationHistory: @unchecked Sendable {
     public init(file: URL) { self.file = file }
 
     static var defaultFile: URL {
-        if Settings.isTesting { return FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-test-history-\(getpid()).jsonl") }
-        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Porpoise/history.jsonl")
+        Settings.supportFolder.appendingPathComponent("history.jsonl")
     }
 
     /// A location as it may be written down: local paths as they are, remote ones without user, password,

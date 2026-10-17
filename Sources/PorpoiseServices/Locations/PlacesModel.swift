@@ -178,17 +178,14 @@ public final class PlacesModel {
     /// Notifications are held back until the initial load is done.
     private var ready = false
 
-    /// places.json; nil keeps the places in memory only (test instances).
+    /// An explicit nil keeps a model in memory; the shared model uses the instance's support folder.
     private let storeURL: URL?
+    static var defaultFile: URL { Settings.supportFolder.appendingPathComponent("places.json") }
 
     private convenience init() {
-        var url: URL?
-        if !Settings.isTesting {
-            let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise")
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            url = dir.appendingPathComponent("places.json")
-        }
-        self.init(storeURL: url)
+        let file = Self.defaultFile
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        self.init(storeURL: file)
         // The app's model polls phones once the app says it's in front (a test process never does: its adb runs
         // would land in the tests' recording adb).
         isActive = false

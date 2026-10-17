@@ -14,6 +14,8 @@ import Testing
         let temp = FileManager.default.temporaryDirectory.path
         let roots: [(String, URL)] = [
             ("support", Settings.supportFolder), ("caches", Settings.cachesFolder),
+            ("Places", PlacesModel.defaultFile), ("shelves", ShelfStore.defaultFile), ("jobs", JournalStore.defaultFolder),
+            ("history", OperationHistory.defaultFile), ("templates", TemplateStore().directory), ("icons", IconTheme.userIconsDirectory),
             ("offline copies", CloudOffline(root: nil).root), ("demo offline copies", DemoOfflineService().root),
             ("Drive metadata", DriveMetadataCache.root), ("remote files", RemoteFS.cacheParent),
             ("Android tools", AndroidTools.supportFolder), ("Dropbox", DropboxAccountStore.defaultDirectory),
@@ -23,5 +25,12 @@ import Testing
             #expect(url.path.contains("/porpoise-test-"), "\(name): \(url.path)")
         }
         #expect(Settings.supportFolder != Settings.cachesFolder)
+        #expect(PlacesModel.defaultFile == Settings.supportFolder.appendingPathComponent("places.json"))
+        #expect(ShelfStore.defaultFile == Settings.supportFolder.appendingPathComponent("shelves.json"))
+        #expect(JournalStore.defaultFolder == Settings.supportFolder.appendingPathComponent("Jobs"))
+        #expect(OperationHistory.defaultFile == Settings.supportFolder.appendingPathComponent("history.jsonl"))
+        #expect(TemplateStore().directory == Settings.supportFolder.appendingPathComponent("Templates", isDirectory: true))
+        let explicit = URL(fileURLWithPath: "/fixture/explicit-templates")
+        #expect(TemplateStore(directory: explicit).directory == explicit)
     }
 }

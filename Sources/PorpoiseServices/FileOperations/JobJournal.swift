@@ -94,8 +94,7 @@ public final class JournalStore: @unchecked Sendable {
     public init(folder: URL) { self.folder = folder }
 
     static var defaultFolder: URL {
-        if Settings.isTesting { return FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-test-jobs-\(getpid())") }
-        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise/Jobs")
+        Settings.supportFolder.appendingPathComponent("Jobs")
     }
 
     private func url(_ id: UUID) -> URL { folder.appendingPathComponent(id.uuidString + ".json") }

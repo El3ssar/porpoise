@@ -11,10 +11,10 @@ public enum Migration {
             Settings.store.removeObject(forKey: key)
         }
         guard !Settings.isTesting else { return }
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let support = Settings.supportFolder
         run(
-            from: oldDomain, into: .standard, oldPlaces: support.appendingPathComponent("Dolphin/places.json"),
-            newPlaces: support.appendingPathComponent("Porpoise/places.json"))
+            from: oldDomain, into: .standard, oldPlaces: support.deletingLastPathComponent().appendingPathComponent("Dolphin/places.json"),
+            newPlaces: support.appendingPathComponent("places.json"))
     }
 
     /// The import itself, between the given domains and files (tests use throwaway ones).
