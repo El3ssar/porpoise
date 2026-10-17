@@ -186,6 +186,11 @@ class Handler(BaseHTTPRequestHandler):
             return value, 200, {}, False
         def wrapped(item):
             return ok({'metadata': copy.deepcopy(item)})
+        def leaf(item):
+            # Routes typed FileMetadata or FolderMetadata (not the Metadata union) carry no '.tag', as on the real API:
+            # https://github.com/dropbox/dropbox-api-spec/blob/master/files.stone (download, upload_session/finish,
+            # restore, create_folder_v2); only a value declared as Metadata names its subtype.
+            value = copy.deepcopy(item); value.pop('.tag', None); return value
         if route == 'files/get_metadata':
             item = s.find(arg['path'])
             if not item:
@@ -222,11 +227,11 @@ class Handler(BaseHTTPRequestHandler):
             data = s.contents[item['id']]
             matched = re.fullmatch(r'bytes=(\d+)-(\d+)', self.headers.get('Range', ''))
             if not matched:
-                return data, 200, {'Dropbox-API-Result': json.dumps(item)}, True
+                return data, 200, {'Dropbox-API-Result': json.dumps(leaf(item))}, True
             start, end = map(int, matched.groups())
             if end >= len(data) or start > end:
                 return {}, 416, {}, False
-            header = copy.deepcopy(item)
+            header = leaf(item)
             if s.config.pop('wrongRevision', False):
                 header['rev'] = 'unexpected-revision'
             headers = {'Dropbox-API-Result': json.dumps(header), 'Content-Range': f'bytes {start}-{end}/{len(data)}'}
@@ -265,14 +270,14 @@ class Handler(BaseHTTPRequestHandler):
             item = s.add(file); s.sessions.pop(cursor['session_id'])
             if s.config.pop('loseFinish', False):
                 return 'drop'
-            return ok(copy.deepcopy(item))
+            return ok(leaf(item))
         if route == 'files/create_folder_v2':
             if s.find(arg['path']):
                 return self.failure('path/conflict')
             item = s.add({'path': arg['path'], 'folder': True})
             if s.config.pop('loseMutation', False):
                 return 'drop'
-            return wrapped(item)
+            return ok({'metadata': leaf(item)})
         if route in ('files/move_v2', 'files/copy_v2'):
             item = s.find(arg['from_path'])
             if not item:
@@ -311,7 +316,7 @@ class Handler(BaseHTTPRequestHandler):
             if not deleted:
                 return self.failure('path_lookup/not_found')
             item, data = deleted
-            return ok(copy.deepcopy(s.add({'id': item['id'], 'path': arg['path'], 'dataBase64': base64.b64encode(data).decode()})))
+            return ok(leaf(s.add({'id': item['id'], 'path': arg['path'], 'dataBase64': base64.b64encode(data).decode()})))
         if route in ('files/search_v2', 'files/search/continue_v2'):
             if route.endswith('continue_v2'):
                 matches = s.search_cursors.pop(arg['cursor'], [])
