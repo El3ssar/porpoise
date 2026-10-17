@@ -106,7 +106,7 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         #expect(scratch.read("support/platform-tools/README") == "tools")
         #expect(!FileManager.default.fileExists(atPath: support.appendingPathComponent("platform-tools/old-file").path))
         // Nothing left of the staging folder (removed just after the callback is sent).
-        #expect(waitUntil(10) { scratch.listing("support") == ["platform-tools"] })
+        #expect(await eventually(10) { scratch.listing("support") == ["platform-tools"] })
         // Porpoise's own copy comes first.
         #expect(AndroidTools.adbPath == adb.path)
         #expect(AndroidTools.isInstalled)
@@ -125,7 +125,7 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         try serve("noadb.zip")
         let result = await install()
         #expect(result == .some("The downloaded archive could not be unpacked."))
-        #expect(waitUntil(10) { scratch.listing("support").isEmpty })
+        #expect(await eventually(10) { scratch.listing("support").isEmpty })
     }
 
     @Test func anArchiveThatIsNotAZipIsNotInstalled() async throws {
@@ -133,7 +133,7 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         try serve("broken.zip")
         let result = await install()
         #expect(result == .some("The downloaded archive could not be unpacked."))
-        #expect(waitUntil(10) { scratch.listing("support").isEmpty })
+        #expect(await eventually(10) { scratch.listing("support").isEmpty })
     }
 
     @Test func aFolderThatCannotBeMadeIsReported() async throws {

@@ -24,7 +24,7 @@ import Testing
         // The writes reach a watcher (FSEvents can take seconds on a busy machine).
         let seen = Counter()
         let first = IndexEvents(roots: [root.path], since: 0) { _, _, _ in seen.add() }
-        #expect(waitUntil(30) { seen.value > 0 })
+        #expect(await eventually(30) { seen.value > 0 })
         _ = first
         let calls = Counter()
         for _ in 0..<100 {

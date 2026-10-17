@@ -38,7 +38,7 @@ import Testing
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/ui-demo.json")
         let server = try FakeDriveServer(fixture: fixture), scratch = try Scratch()
         defer { server.stop() }
-        let defaults = UserDefaults(suiteName: "porpoise-drive-flap-\(UUID().uuidString)")!
+        let defaults = MemoryDefaults()
         let store = DriveAccountStore(
             defaults: defaults, credentials: MemoryDriveCredentials(), configuration: server.config,
             baseURL: server.base.appendingPathComponent("drive/v3/"))

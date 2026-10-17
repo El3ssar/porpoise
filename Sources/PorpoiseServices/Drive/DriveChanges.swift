@@ -45,6 +45,7 @@ extension DriveClient {
                     let newStartPageToken: String?
                 }
                 let page: Page
+                let since = metadataCache.generation
                 do {
                     page = try decode(
                         Page.self,
@@ -64,8 +65,9 @@ extension DriveClient {
                 }
                 let changes = page.changes ?? []
                 if !changes.isEmpty {
-                    let files = changes.compactMap(\.file)
                     let removed = changes.filter { $0.removed == true || $0.file?.trashed == true }.compactMap(\.fileId)
+                    // A change made here after this page was asked for is newer than what the page says.
+                    let files = metadataCache.learn(changes.compactMap(\.file).filter { !removed.contains($0.id) }, since: since)
                     metadataCache.apply(files, removed: removed)
                     lock.withLock {
                         for id in removed { cache[id] = nil }; for file in files where !removed.contains(file.id) { cache[file.id] = file }
@@ -86,6 +88,7 @@ extension DriveClient {
     /// Remote search is paged and explicitly scoped; no local content index is implied.
     public func search(_ text: String, in location: DriveLocation, fullText: Bool = false, pageToken: String? = nil) async throws -> DrivePage {
         guard location.accountID == accountID else { throw DriveError.invalidLocation }
+        let since = metadataCache.generation
         let escaped = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
         var filter = "trashed = false and \(fullText ? "fullText" : "name") contains '\(escaped)'"
         var driveID: String?
@@ -110,7 +113,6 @@ extension DriveClient {
         guard page.incompleteSearch != true else { throw DriveError.invalidResponse }
         let files = page.files ?? []
         guard files.allSatisfy({ DriveLink.isValidID($0.id) }) else { throw DriveError.invalidResponse }
-        remember(files)
-        return DrivePage(files: files, nextPageToken: page.nextPageToken)
+        return DrivePage(files: learned(files, since: since), nextPageToken: page.nextPageToken)
     }
 }

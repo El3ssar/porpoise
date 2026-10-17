@@ -52,6 +52,16 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
         guard let since, let at = rememberedAt[file.id], at > since, let newer = state.files[file.id] else { return file }
         return newer
     }
+    /// Metadata read from the provider (a listing, a lookup) as it was when `since` was the `generation`: kept, unless
+    /// what a change made here remembered since is newer. Returns what the cache keeps for each.
+    @discardableResult public func learn(_ files: [Item], since: UInt64) -> [Item] {
+        lock.withLock {
+            let files = files.map { newest($0, since: since) }
+            for file in files { state.files[file.id] = file }
+            persist()
+            return files
+        }
+    }
     public func alias(_ id: String, to file: Item) {
         lock.withLock {
             state.files[id] = file; persist()

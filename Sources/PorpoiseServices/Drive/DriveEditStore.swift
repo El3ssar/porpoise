@@ -163,6 +163,8 @@ public actor DriveEditStore {
     private func persist(_ session: DriveEditSession) throws {
         let url = directory.appendingPathComponent(session.id.uuidString + ".json")
         try JSONEncoder().encode(session).write(to: url, options: .atomic)
+        // Only this user reads it (the file's name and IDs, where its edited copy is), as with Dropbox's sessions.
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         let handle = try FileHandle(forWritingTo: url)
         try handle.synchronize(); try handle.close()
     }

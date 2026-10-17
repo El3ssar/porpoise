@@ -274,14 +274,14 @@ private func stallSpotlight() -> () -> Void {
 @MainActor @Suite struct CloudActionsCoverageTests {
     /// Waits for the folders-changed notification that names `path`.
     private func changed(_ path: String, after action: () -> Void) async -> Bool {
-        final class Seen: @unchecked Sendable { var paths: Set<String> = [] }
-        let seen = Seen()
+        // Posted on whatever thread changed the folders, read here on the main actor.
+        let seen = Locked(Set<String>())
         let token = NotificationCenter.default.addObserver(forName: FileOperationsController.foldersChanged, object: nil, queue: nil) { n in
-            if let p = n.userInfo?["paths"] as? Set<String> { seen.paths.formUnion(p) }
+            if let p = n.userInfo?["paths"] as? Set<String> { seen.change { $0.formUnion(p) } }
         }
         defer { NotificationCenter.default.removeObserver(token) }
         action()
-        return await eventually(10) { seen.paths.contains(path) }
+        return await eventually(10) { seen.value.contains(path) }
     }
 
     /// Files that aren't in the cloud: nothing to download, but the views are told to look again.

@@ -30,6 +30,12 @@ struct FileJobResumeTests {
         return j
     }
 
+    /// Waits for `signal` at most `seconds`: a job that never gets there fails its test instead of holding one of the
+    /// cooperative pool's threads (3 on CI's runner) for the rest of the run.
+    func wait(for signal: DispatchSemaphore, _ what: Comment, seconds: Double = 120) throws {
+        try #require(signal.wait(timeout: .now() + seconds) == .success, what)
+    }
+
     /// Runs `job` on another thread, calling `when` once with the progress where `at` first holds.
     func runInBackground(_ job: FileJob, at: @escaping (JobProgress) -> Bool, when: @escaping () -> Void) -> DispatchSemaphore {
         let done = DispatchSemaphore(value: 0)
@@ -50,6 +56,15 @@ struct FileJobResumeTests {
         return done
     }
 
+    /// A job that never gets where the test waits for fails that test, quickly, instead of holding a pool thread.
+    @Test func aWaitThatNeverEndsFailsInsteadOfHanging() {
+        let start = Date()
+        withKnownIssue {
+            try wait(for: DispatchSemaphore(value: 0), "never signalled", seconds: 0.2)
+        }
+        #expect(Date().timeIntervalSince(start) < 10)
+    }
+
     @Test func interruptedThenResumedCopyIsIdentical() throws {
         let src = try randomFile("src/big.bin", size: 40 << 20)
         let dst = try scratch.folder("dst")
@@ -58,7 +73,7 @@ struct FileJobResumeTests {
         let lock = NSLock()
         first.onEvent = { e in lock.withLock { events.append(e) } }
         let done = runInBackground(first, at: { $0.doneBytes > 12 << 20 }) { first.interrupt() }
-        done.wait()
+        try wait(for: done, "the interrupted copy never ended")
         // Nothing at the target; a partial copy under a hidden name, reported with the good bytes.
         #expect(!FileManager.default.fileExists(atPath: dst.appendingPathComponent("big.bin").path))
         let point = try #require(
@@ -122,7 +137,7 @@ struct FileJobResumeTests {
             j.pause()
             paused.signal()
         }
-        paused.wait()
+        try wait(for: paused, "the copy never got to the pause")
         Thread.sleep(forTimeInterval: 0.3)
         let held = lock.withLock { latest }
         Thread.sleep(forTimeInterval: 0.4)
@@ -130,7 +145,7 @@ struct FileJobResumeTests {
         #expect(j.isPaused)
         #expect(held < 32 << 20)
         j.resume()
-        done.wait()
+        try wait(for: done, "the resumed copy never ended")
         #expect(try Data(contentsOf: dst.appendingPathComponent("big.bin")) == Data(contentsOf: src))
     }
 

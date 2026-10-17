@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **A Google Drive rename no longer comes back under its old name.** A listing, lookup or search that started before a rename made in Porpoise and finished after it no longer puts the old name back in the folder or the cache.
+- **Google Drive edit sessions are private to you.** The small records Porpoise keeps of files you are editing in other apps are now readable only by your account, as Dropbox's already were.
+
 ## 0.8.0
 
 - **Dropbox.** Connect a Dropbox account with ⌘K › Dropbox (or Settings › Accounts) and browse it like a network
