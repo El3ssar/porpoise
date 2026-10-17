@@ -31,7 +31,8 @@ import Testing
                 _ = try await offThePool { try control.run() }
                 #expect(control.errors.isEmpty)
             } else {
-                let job = RemoteTransferJob(kind: .copy, sources: [source.url], destination: out, control: control.control, rule: rule, options: .init())
+                let job = RemoteTransferJob(
+                    kind: .copy, sources: [source.url], destination: out, control: control.control, rule: rule, options: .init())
                 job.resolve = { _ in
                     asked += 1; return .init(.overwrite)
                 }

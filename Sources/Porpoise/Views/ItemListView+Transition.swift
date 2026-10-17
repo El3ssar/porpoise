@@ -219,7 +219,7 @@ extension ItemListView {
     /// The same file however it's spelled: searches report /private/tmp/… for what the folder lists as /tmp/….
     static func transitionKey(_ url: URL) -> String { FilePath.key(url) }
 
-    func key(ofRow i: Int) -> String { Self.transitionKey(model.rows[i].item.url) }
+    func key(ofRow i: Int) -> String { model.identity(ofRow: i) }
 
     /// The row showing the item `k`, if any.
     func row(forKey k: String) -> Int? {

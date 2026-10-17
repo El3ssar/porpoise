@@ -17,10 +17,27 @@ public struct FilePath: Hashable, Sendable {
         path == root || path.hasPrefix(root == "/" ? "/" : root + "/")
     }
 
-    public static func entry(_ input: String) -> String {
+    /// Resolve each shared parent once for a listing; callers discard the result when their rows change.
+    public static func keys(_ urls: [URL]) -> [String] {
+        var parents: [String: String] = [:]
+        return urls.map { url in
+            guard url.isFileURL else { return url.absoluteString }
+            return entry(
+                url.path,
+                resolveParent: { path in
+                    if let known = parents[path] { return known }
+                    let resolved = canonical(path); parents[path] = resolved
+                    return resolved
+                })
+        }
+    }
+
+    public static func entry(_ input: String) -> String { entry(input, resolveParent: canonical) }
+
+    private static func entry(_ input: String, resolveParent: (String) -> String) -> String {
         if input == "/" { return "/" }
         let path = input.hasSuffix("/") ? String(input.dropLast()) : input
-        let parent = canonical((path as NSString).deletingLastPathComponent)
+        let parent = resolveParent((path as NSString).deletingLastPathComponent)
         return (parent == "/" ? "" : parent) + "/" + (path as NSString).lastPathComponent
     }
 

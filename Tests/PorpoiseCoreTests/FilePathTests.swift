@@ -22,5 +22,7 @@ struct FilePathTests {
         #expect(FilePath.existing(missing.path) == nil)
         let remote = URL(string: "sftp://host/private/tmp/opaque?scope=one")!
         #expect(FilePath.key(remote) == remote.absoluteString)
+        let entries = [missing, alias, folder, remote]
+        #expect(FilePath.keys(entries) == entries.map(FilePath.key))
     }
 }
