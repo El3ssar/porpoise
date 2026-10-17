@@ -7,3 +7,4 @@ Tests/UI/__pycache__/
 .claude/
 .DS_Store
 .google-oauth.json
+.dropbox-app-key

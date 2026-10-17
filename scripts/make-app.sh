@@ -82,6 +82,10 @@ if [ -z "$GOOGLE_ID" ] && [ -f .google-oauth.json ]; then
 fi
 # Public Dropbox app key only. Refresh credentials never enter the bundle.
 DROPBOX_KEYS=""
+# Local builds: the key can live in the git-ignored .dropbox-app-key (CI passes PORPOISE_DROPBOX_APP_KEY).
+if [ -z "${PORPOISE_DROPBOX_APP_KEY:-}" ] && [ -f .dropbox-app-key ]; then
+  PORPOISE_DROPBOX_APP_KEY=$(tr -d '[:space:]' < .dropbox-app-key); export PORPOISE_DROPBOX_APP_KEY
+fi
 if [ -n "${PORPOISE_DROPBOX_APP_KEY:-}" ]; then
   DROPBOX_ESCAPED=$(python3 -I -c 'import os,html;print(html.escape(os.environ["PORPOISE_DROPBOX_APP_KEY"]))')
   DROPBOX_KEYS="<key>DropboxAppKey</key><string>${DROPBOX_ESCAPED}</string>"
