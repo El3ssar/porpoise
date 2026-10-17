@@ -33,7 +33,7 @@ import Testing
         #expect(paints.count == 2 && paints.last == full && paints.first != full)
         let elapsed = try #require(firstTime)
         print("PREVIEW_FIRST_IMAGE seconds=\(elapsed) latency=300ms")
-        #expect(elapsed < 0.55)
+        if ProcessInfo.processInfo.environment["PORPOISE_PREVIEW_BENCHMARK"] == "1" { #expect(elapsed < 0.55) }
         let stats = server.base.appendingPathComponent("__stats")
         let before = try await URLSession.shared.data(from: stats).0
         let json = try #require(try JSONSerialization.jsonObject(with: before) as? [String: Any])

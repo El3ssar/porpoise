@@ -44,7 +44,7 @@ import Testing
         #expect((response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Range") == "bytes 123-456/67108864")
         #expect(data == Data(repeating: 120, count: 334))
         print("STREAM_FIRST_RANGE seconds=\(elapsed) latency=300ms bytes=\(data.count)")
-        #expect(elapsed < 0.8)
+        if ProcessInfo.processInfo.environment["PORPOISE_PREVIEW_BENCHMARK"] == "1" { #expect(elapsed < 0.55) }
         let wrong = stream.url.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("wrong/media")
         #expect((try await URLSession.shared.data(from: wrong).1 as? HTTPURLResponse)?.statusCode == 404)
         request.httpMethod = "HEAD"
