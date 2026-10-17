@@ -7,7 +7,7 @@ import Testing
 
 /// Every item animation goes through one coordinator per view: a split runs one transition per pane, whatever the
 /// listing does meanwhile, and nothing animates twice.
-@Suite(.serialized) @MainActor struct ItemTransitionsTests {
+@Suite(.serialized, .isolatedSettings) @MainActor struct ItemTransitionsTests {
     private func settle(_ seconds: Double) async throws {
         let end = Date().addingTimeInterval(seconds)
         while Date() < end {
@@ -19,17 +19,8 @@ import Testing
     @Test func aSplitRunsOneTransitionPerPaneAndChangesWaitForIt() async throws {
         _ = NSApplication.shared
         let suite = "app.porpoise.transitions-test.\(UUID().uuidString)"
-        let store = try #require(UserDefaults(suiteName: suite))
-        let previousStore = Settings.store, previousTesting = Settings.isTesting
-        Settings.store = store
-        Settings.isTesting = true
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
-        defer {
-            Settings.store = previousStore
-            Settings.isTesting = previousTesting
-            store.removePersistentDomain(forName: suite)
-            try? FileManager.default.removeItem(at: folder)
-        }
+        defer { try? FileManager.default.removeItem(at: folder) }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         for n in 1...6 { try Data("\(n)".utf8).write(to: folder.appendingPathComponent("file \(n).txt")) }
 
@@ -99,18 +90,11 @@ import Testing
     func flightsTurnIntoTheLandingPanesSize(mode: ViewMode, bigger: Bool) async throws {
         _ = NSApplication.shared
         let suite = "app.porpoise.flight-test.\(UUID().uuidString)"
-        let store = try #require(UserDefaults(suiteName: suite))
-        let previousStore = Settings.store, previousTesting = Settings.isTesting
-        Settings.store = store
-        Settings.isTesting = true
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
         let reduces = Animator.reducesMotion
         Animator.reducesMotion = { false }
         defer {
             Animator.reducesMotion = reduces
-            Settings.store = previousStore
-            Settings.isTesting = previousTesting
-            store.removePersistentDomain(forName: suite)
             try? FileManager.default.removeItem(at: folder)
         }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -125,28 +109,34 @@ import Testing
         tab.primary.setMode(mode)
         for _ in 0..<600 where tab.primary.model.rows.count < 4 { try await settle(0.05) }
         tab.layoutSubtreeIfNeeded()
-        func flown() async throws -> PorpoiseTab.FlightRecord? {
+        // A slow runner may take seconds to load the pane and start its flight: wait for it to land, and for the
+        // pane to settle, never for a fixed time.
+        func flown(after landed: Int) async throws -> PorpoiseTab.FlightRecord? {
+            for _ in 0..<600 where tab.flightsLanded == landed { try await settle(0.05) }
             for _ in 0..<600 where tab.secondary.map({ !$0.list.transitionHidden.isEmpty || $0.list.layoutWidthOverride != nil }) ?? false {
                 try await settle(0.05)
             }
-            try await settle(0.2)
-            return tab.lastFlight
+            return tab.flightsLanded > landed ? tab.lastFlight : nil
         }
 
         // The right pane's own zoom, saved for the folder: the left one keeps the size it shows.
+        var landed = tab.flightsLanded
         tab.openSplit()
         let right = try #require(tab.secondary)
-        _ = try await flown()
+        _ = try await flown(after: landed)
         var props = right.model.props
         let size = props.iconSize(for: mode)
         props.setIconSize(bigger ? size * 2 : max(16, size / 2), for: mode)
         right.model.props = props
         right.model.saveProps()
+        landed = tab.flightsLanded
         tab.closeSplit(closeActive: true)
-        try await settle(0.6)
+        _ = try await flown(after: landed)
+        for _ in 0..<600 where tab.closing != nil { try await settle(0.05) }
 
+        landed = tab.flightsLanded
         tab.openSplit()
-        let opened = try #require(try await flown(), "no flight")
+        let opened = try #require(try await flown(after: landed), "no flight")
         let left = tab.primary.list, reopened = try #require(tab.secondary).list
         #expect(reopened.iconSize != left.iconSize, "\(reopened.iconSize) vs \(left.iconSize)")
         #expect(opened.isSmooth, "\(opened.sizes) → \(String(describing: opened.landing))")
@@ -157,9 +147,9 @@ import Testing
 
         // Closing the pane zoomed so: back to the left pane's size, as smoothly.
         tab.setActive(secondary: true)
+        landed = tab.flightsLanded
         tab.closeSplit(closeActive: true)
-        for _ in 0..<40 { try await settle(0.05) }
-        let closed = try #require(tab.lastFlight)
+        let closed = try #require(try await flown(after: landed), "no flight back")
         #expect(closed.isSmooth, "\(closed.sizes) → \(String(describing: closed.landing))")
         #expect(closed.shownWhenCopiesWent && tab.primary.list.transitionHidden.isEmpty)
     }

@@ -24,8 +24,11 @@ final class PorpoiseTab: NSView {
     /// Handle position as a fraction of the width, so it stays proportional when the window resizes.
     private var splitFraction: CGFloat = 0.5
     /// Pane being closed: still visible while it shrinks away (Dolphin keeps such "zombie" views).
-    private var closing: ViewContainer?
+    private(set) var closing: ViewContainer?
     private var closingOnLeft = false
+    /// The close slide ended while the copies flying back were still landing (they show their end a frame later):
+    /// the closing pane goes once they have.
+    private var closesWhenLanded = false
     private let animator = Animator()
     /// Copies of the left pane's items flying into the right one as the split opens.
     private var flightOverlay: SplitFlightOverlay?
@@ -47,7 +50,9 @@ final class PorpoiseTab: NSView {
                 && abs(last.height - landing.height) < 0.5
         }
     }
-    private(set) var lastFlight: FlightRecord?
+    private(set) var lastFlight: FlightRecord? { didSet { flightsLanded += 1 } }
+    /// How many flights have landed (a test waits for the next one).
+    private(set) var flightsLanded = 0
     private static let flightDuration: TimeInterval = 0.42
     /// The right list's width once the split has opened: which of its items fly in (in Compact, items flow in
     /// columns, and the still narrow pane would show only the first).
@@ -232,8 +237,9 @@ final class PorpoiseTab: NSView {
         closing.transitions.flightLeaves(Set(keys))
         remaining.transitions.flightArrives(Set(keys))
         fly(Array(keys), images: images, landing: landing, from: closing, to: remaining, duration: Self.closeDuration) {
-            [weak remaining] done in
+            [weak self, weak remaining] done in
             if let remaining { remaining.transitions.flightLanded(Set(keys)) { done() } } else { done() }
+            if self?.closesWhenLanded == true { self?.finishClosing() }
         }
     }
 
@@ -262,7 +268,7 @@ final class PorpoiseTab: NSView {
         addSubview(overlay, positioned: .above, relativeTo: nil)
         flightOverlay = overlay
         flightAnimator.run(
-            duration: duration, curve: Animator.easeInOutCubic,
+            duration: duration, curve: Animator.easeInOutCubic, showsEnd: true,
             step: { [weak overlay] p in overlay?.progress = CGFloat(p) },
             completion: { [weak self, weak overlay, weak target] in
                 landed {
@@ -322,12 +328,14 @@ final class PorpoiseTab: NSView {
             flyItems(backFrom: zombie.list, to: primary.list)
         }
         animateFraction(to: closeSecondary ? 1 : 0, duration: Self.closeDuration, curve: Animator.easeInCubic) { [weak self] in
-            self?.finishClosing()
+            guard let self else { return }
+            if flightOverlay != nil, flightAnimator.isRunning { closesWhenLanded = true } else { finishClosing() }
         }
     }
 
     /// Drops the zombie pane (end of the close animation, or a new split opening before it ended).
     private func finishClosing() {
+        closesWhenLanded = false
         animator.stop()
         if flightOverlay != nil { (containers + [closing].compactMap { $0 }).forEach { $0.list.transitions.flightCancelled() } }
         endFlights()

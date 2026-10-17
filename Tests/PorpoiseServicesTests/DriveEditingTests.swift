@@ -35,8 +35,25 @@ import Testing
         #expect(condition(), sourceLocation: sourceLocation)
     }
 
+    /// Every mark the row went through, as it changed: "Saved" shows for a moment only (0.2 s here), and a busy
+    /// runner's polling could miss it. Each test edits one file at a time, so the row is the first entry.
+    private final class Marks: NSObject {
+        private(set) var seen: [CloudEditMark] = []
+        private let editing: DriveEditing
+        init(_ editing: DriveEditing) {
+            self.editing = editing
+            super.init()
+            NotificationCenter.default.addObserver(self, selector: #selector(changed), name: DriveEditing.changed, object: nil)
+        }
+        @objc private func changed() {
+            if let mark = editing.entries.first?.mark, seen.last != mark { seen.append(mark) }
+        }
+        var saves: Int { seen.filter { $0 == .saved }.count }
+    }
+
     @Test func savesGoBackToTheSameFileAndTheRowFollows() async throws {
         let (server, client, editing, item, _) = try await setup()
+        let marks = Marks(editing)
         defer {
             server.stop()
             RemoteFS.unregisterDrive(accountID: client.accountID)
@@ -56,8 +73,7 @@ import Testing
 
         // The other app saves: sent once the writes settle, "Saved", then back to "Editing".
         try Data("edited in another app".utf8).write(to: entry.localURL)
-        try await wait { editing.mark(for: item.url) == .saved }
-        #expect(editing.mark(for: item.url) == .saved)
+        try await wait { marks.saves == 1 }
         #expect(posts.contains { $0.0.hasPrefix("Saved “") && !$0.1 })
         let saved = try await client.file("binary-a")
         #expect(try await client.download(saved).data == Data("edited in another app".utf8))
@@ -73,6 +89,7 @@ import Testing
 
     @Test func aConflictKeepsBothUntilTheUserChooses() async throws {
         let (server, client, editing, item, _) = try await setup()
+        let marks = Marks(editing)
         defer {
             server.stop()
             RemoteFS.unregisterDrive(accountID: client.accountID)
@@ -98,8 +115,9 @@ import Testing
         #expect(editing.mark(for: item.url) == .conflict)
         editing.openBoth(entry.id)
         #expect(opened.suffix(2) == [entry.localURL, try #require(conflicted.conflictURL)])
+        let saves = marks.saves
         editing.keepBoth(entry.id)
-        try await wait { editing.entries.first?.mark == .saved }
+        try await wait { marks.saves > saves }
         #expect(editing.entries.first?.conflictURL == nil)
         #expect(try await client.download(client.file("binary-a")).data == Data("remote edit".utf8))
         #expect(posts.contains { $0.0.hasPrefix("Kept both versions of") })
@@ -110,6 +128,7 @@ import Testing
 
     @Test func replaceWithMineAndUnsentEditsAfterARelaunch() async throws {
         let (server, client, editing, item, _) = try await setup()
+        let marks = Marks(editing)
         defer {
             server.stop()
             RemoteFS.unregisterDrive(accountID: client.accountID)
@@ -121,7 +140,7 @@ import Testing
         try Data("mine wins".utf8).write(to: entry.localURL)
         try await wait { editing.mark(for: item.url) == .conflict }
         editing.replaceWithMine(entry.id)
-        try await wait { editing.mark(for: item.url) == .saved }
+        try await wait { marks.saves == 1 }
         #expect(try await client.download(client.file("binary-a")).data == Data("mine wins".utf8))
 
         // Offline: kept, listed as unsent, sent when the connection is back.
@@ -137,22 +156,24 @@ import Testing
         #expect(unsent.mark.note("Google Drive") == "Not in Google Drive yet · kept on this Mac")
         client.setOffline(false)
         editing.retryUnsent()
-        try await wait { editing.mark(for: item.url) == .saved }
+        try await wait { marks.saves == 2 }
         #expect(try await client.download(client.file("binary-a")).data == Data("written offline".utf8))
 
         // A save that never went (the app quit first) is listed after a relaunch and sent.
         try Data("before the quit".utf8).write(to: entry.localURL)
         let relaunched = DriveEditing()
+        let relaunchedMarks = Marks(relaunched)
         relaunched.client = editing.client
         relaunched.restore(accounts: [client.accountID])
         try await wait { relaunched.entry(for: item.url) != nil }
         #expect(relaunched.entries.count == 1)
-        try await wait { relaunched.mark(for: item.url) == .saved }
+        try await wait { relaunchedMarks.saves == 1 }
         #expect(try await client.download(client.file("binary-a")).data == Data("before the quit".utf8))
     }
 
     @Test func whereDriveCantTakeVersionsSavesWaitForACopy() async throws {
         let (server, client, editing, item, _) = try await setup()
+        let marks = Marks(editing)
         defer {
             server.stop()
             RemoteFS.unregisterDrive(accountID: client.accountID)
@@ -173,8 +194,9 @@ import Testing
         // Nothing went to Drive; the copy goes next to the original, which stays as it was.
         let original = try await client.download(client.file("binary-a")).data
         #expect(original != Data("kept here".utf8))
+        let saves = marks.saves
         editing.keepBoth(entry.id)
-        try await wait { editing.entries.first?.mark == .saved }
+        try await wait { marks.saves > saves }
         let copy = try #require(editing.entries.first)
         #expect(copy.name.hasSuffix("(edited on Mac).txt"))
         #expect(try await client.download(client.file(copy.fileID)).data == Data("kept here".utf8))
