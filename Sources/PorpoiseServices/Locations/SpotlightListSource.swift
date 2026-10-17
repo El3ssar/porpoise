@@ -7,6 +7,7 @@ final class SpotlightListSource: LocationContentSource {
     init(location: URL) { self.location = location }
 
     var traits: LocationTraits { LocationTraits() }
+    static let defaultStyle = ViewProperties.resultList(byName: true)
 
     func load(_ folder: URL, expanded: Set<URL>, deliver: @escaping (LocationListing) -> Void) -> LocationLoad {
         let found: ([FileItem]) -> Void = { deliver(LocationListing(items: $0)) }

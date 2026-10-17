@@ -12,6 +12,20 @@ final class CloudSource: LocationContentSource {
 
     var traits: LocationTraits { LocationTraits(optimisticEdits: true, prunesSelection: true, paintsCache: true) }
 
+    /// Cloud folders show who owns each item; what others shared shows as Details, newest share first.
+    static func defaultStyle(_ url: URL, _ descriptor: CloudProviderDescriptor) -> ViewProperties {
+        var p = ViewProperties()
+        let shared = descriptor.sharedListPath == "/" + url.pathComponents.filter { $0 != "/" }.joined(separator: "/")
+        p.setRoles((shared ? [.owner, .sharedTime] : [.owner]) + p.roles(for: .details), for: .details)
+        if shared {
+            p.mode = .details
+            p.sortRole = .sharedTime
+            p.sortOrder = .descending
+            p.foldersFirst = false
+        }
+        return p
+    }
+
     func cached(_ folder: URL) -> [FileItem]? { provider.cachedListing(folder) }
 
     /// Delivers each page as it comes, then the end: the whole listing as the service gave it, or the failure.

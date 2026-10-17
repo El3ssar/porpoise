@@ -69,6 +69,19 @@ struct LocationTraits {
     var paintsCache = false
 }
 
+extension ViewProperties {
+    /// A result list: Details with each item's folder, by name or newest first.
+    static func resultList(byName: Bool) -> ViewProperties {
+        var p = ViewProperties()
+        p.mode = .details
+        p.foldersFirst = false
+        p.sortRole = byName ? .name : .accessTime
+        p.sortOrder = byName ? .ascending : .descending
+        p.setRoles([.path, .accessTime], for: .details)
+        return p
+    }
+}
+
 /// A load in progress; cancelling it drops what it would still deliver.
 final class LocationLoad {
     private var onCancel: (() -> Void)?
@@ -80,6 +93,16 @@ final class LocationLoad {
 }
 
 enum LocationContentSources {
+    /// A location's built-in display style, before one is saved there.
+    static func defaultStyle(for url: URL) -> ViewProperties {
+        switch LocationKind.of(url) {
+        case .cloud(let provider): return CloudSource.defaultStyle(url, provider.descriptor)
+        case .tag, .smartFolder: return SpotlightListSource.defaultStyle
+        case .recentFiles, .recentLocations: return RecentSource.defaultStyle(url)
+        default: return ViewProperties.defaults(for: url)
+        }
+    }
+
     /// The source that lists `url`.
     static func source(for url: URL) -> LocationContentSource {
         switch LocationKind.of(url) {

@@ -276,7 +276,7 @@ public final class DirectoryModel {
         self.prefetchFolders = prefetchFolders
         self.location = location
         self.source = LocationContentSources.source(for: location)
-        self.props = Settings.shared.viewProperties(for: location)
+        self.props = ViewStyleStore().style(for: location)
         transferObserver = NotificationCenter.default.addObserver(forName: FileOperationsController.activityChanged, object: nil, queue: .main) {
             [weak self] _ in self?.updateIncoming()
         }
@@ -288,7 +288,7 @@ public final class DirectoryModel {
         dynamicOverride = ViewOverride()
         searchOverride = ViewOverride()
         dynamicViewPending = true
-        props = Settings.shared.viewProperties(for: location)
+        props = ViewStyleStore().style(for: location)
         if !isLoading { applyDynamicView() }
         if isSearching { showSearchView() }
     }
@@ -329,7 +329,7 @@ public final class DirectoryModel {
             dynamicOverride = ViewOverride()
             searchOverride = ViewOverride()
             dynamicViewPending = true
-            props = Settings.shared.viewProperties(for: url)
+            props = ViewStyleStore().style(for: url)
             source = LocationContentSources.source(for: url)
             // Stop watching the old folder now: virtual and remote locations don't use FSEvents.
             updateWatcher()
@@ -889,7 +889,7 @@ public final class DirectoryModel {
     /// Saves the shown properties as the folder's (or the common) style, minus the temporary overrides.
     public func saveProps() {
         let p = dynamicOverride.stored(searchOverride.stored(props))
-        Settings.shared.save(p, for: location)
+        ViewStyleStore().save(p, for: location)
     }
 }
 

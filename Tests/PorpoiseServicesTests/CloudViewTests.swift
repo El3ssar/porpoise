@@ -13,7 +13,7 @@ import Testing
 
     @Test func cloudFoldersUseAndSaveTheCommonStyle() {
         var common = ViewProperties(); common.mode = .compact; common.sortRole = .size
-        Settings.shared.save(common, for: URL(fileURLWithPath: "/tmp"))
+        ViewStyleStore().save(common, for: URL(fileURLWithPath: "/tmp"))
         let m = DirectoryModel(location: shared)
         #expect(m.props == common)
         m.props.mode = .icons
@@ -29,7 +29,7 @@ import Testing
         m.props.setRoles([.owner, .sharedTime], for: .details)
         m.saveProps()
         #expect(DirectoryModel(location: shared).props == m.props)
-        #expect(DirectoryModel(location: folder).props == ViewProperties.defaults(for: folder))
+        #expect(DirectoryModel(location: folder).props == LocationContentSources.defaultStyle(for: folder))
     }
 
     @Test func locationDefaultsRespectCommonAndSavedStyles() {
@@ -49,7 +49,7 @@ import Testing
         ]
         var common = ViewProperties(); common.mode = .compact; common.sortRole = .size
         common.setRoles([.type], for: .details)
-        Settings.shared.save(common, for: URL(fileURLWithPath: "/tmp"))
+        ViewStyleStore().save(common, for: URL(fileURLWithPath: "/tmp"))
         for (url, mode, role, columns) in locations {
             Settings.shared.rememberPerFolder = false
             let model = DirectoryModel(location: url)
@@ -64,7 +64,7 @@ import Testing
             var saved = common; saved.mode = .icons; saved.sortRole = .name
             model.props = saved; model.saveProps(); model.reloadProps()
             #expect(model.props == saved)  // no built-in column or mode overwrites an explicit choice
-            #expect(Settings.shared.viewProperties(for: url, restoringDefaults: true) == ViewProperties.defaults(for: url))
+            #expect(ViewStyleStore().style(for: url, restoringDefaults: true) == LocationContentSources.defaultStyle(for: url))
             Settings.shared.rememberPerFolder = false; model.reloadProps()
             #expect(model.props == common)
         }

@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var sessionSave: DispatchWorkItem?
     private var settingsWindow: SettingsWindowController?
     private var lookObservation: NSKeyValueObservation?
-    /// UserDefaults key of the saved windows/tabs: [[["url": …, "split": …, "mode": …]]], the first tab of each window
+    /// UserDefaults key of the saved windows/tabs: [[["url": …, "split": …]]], the first tab of each window
     /// also with "frame" and "active".
     private static let sessionKey = "session"
 

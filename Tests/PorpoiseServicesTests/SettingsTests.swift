@@ -73,14 +73,14 @@ import Testing
         s.tabStyle = .fullWidth
         s.setContextMenu(.share, false)
         var p = ViewProperties(); p.mode = .details
-        s.save(p, for: URL(fileURLWithPath: "/tmp"))
+        ViewStyleStore().save(p, for: URL(fileURLWithPath: "/tmp"))
         Settings.store.set(["/tmp"], forKey: "recentLocations")
         Settings.store.set(300.0, forKey: PanelSize.sidebarWidth.rawValue)
 
         s.resetAll()
 
         #expect(!s.confirmTrash && s.tabStyle == .autoSize && s.contextMenuShows(.share))
-        #expect(s.viewProperties(for: URL(fileURLWithPath: "/tmp")) == ViewProperties())
+        #expect(ViewStyleStore().style(for: URL(fileURLWithPath: "/tmp")) == ViewProperties())
         #expect(Settings.store.stringArray(forKey: "recentLocations") == ["/tmp"])
         #expect(Settings.store.double(forKey: PanelSize.sidebarWidth.rawValue) == 300)
     }
@@ -89,8 +89,8 @@ import Testing
 
     @Test func commonStyleIsSharedByEveryFolder() {
         var p = ViewProperties(); p.mode = .compact; p.sortRole = .size
-        s.save(p, for: URL(fileURLWithPath: "/tmp/a"))
-        #expect(s.viewProperties(for: URL(fileURLWithPath: "/tmp/b")) == p)
+        ViewStyleStore().save(p, for: URL(fileURLWithPath: "/tmp/a"))
+        #expect(ViewStyleStore().style(for: URL(fileURLWithPath: "/tmp/b")) == p)
         #expect(Settings.store.dictionary(forKey: "folderProps") == nil)
     }
 
@@ -98,15 +98,15 @@ import Testing
         s.rememberPerFolder = true
         var a = ViewProperties(); a.mode = .details
         var b = ViewProperties(); b.showHidden = true
-        s.save(a, for: URL(fileURLWithPath: "/tmp/a"))
-        s.save(b, for: URL(fileURLWithPath: "/tmp/b"))
-        #expect(s.viewProperties(for: URL(fileURLWithPath: "/tmp/a")) == a)
-        #expect(s.viewProperties(for: URL(fileURLWithPath: "/tmp/b")) == b)
+        ViewStyleStore().save(a, for: URL(fileURLWithPath: "/tmp/a"))
+        ViewStyleStore().save(b, for: URL(fileURLWithPath: "/tmp/b"))
+        #expect(ViewStyleStore().style(for: URL(fileURLWithPath: "/tmp/a")) == a)
+        #expect(ViewStyleStore().style(for: URL(fileURLWithPath: "/tmp/b")) == b)
         // A folder never saved: the common style.
-        #expect(s.viewProperties(for: URL(fileURLWithPath: "/tmp/c")) == ViewProperties())
+        #expect(ViewStyleStore().style(for: URL(fileURLWithPath: "/tmp/c")) == ViewProperties())
         // Special folders have their own defaults until saved.
         let downloads = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
-        #expect(s.viewProperties(for: downloads).sortRole == .modificationTime)
+        #expect(ViewStyleStore().style(for: downloads).sortRole == .modificationTime)
     }
 
     @Test func remoteFolderIdentityIncludesServerAccountPortSchemeAndNamespace() throws {
@@ -122,15 +122,15 @@ import Testing
         ].map { URL(string: $0)! }
         for (index, url) in locations.enumerated() {
             var p = ViewProperties(); p.setIconSize(CGFloat(30 + index), for: .icons)
-            s.save(p, for: url)
+            ViewStyleStore().save(p, for: url)
         }
         for (index, url) in locations.enumerated() {
-            #expect(s.viewProperties(for: url).iconSize(for: .icons) == CGFloat(30 + index))
+            #expect(ViewStyleStore().style(for: url).iconSize(for: .icons) == CGFloat(30 + index))
         }
         // A location-bar password never enters preferences and does not change folder identity.
         var p = ViewProperties(); p.mode = .compact
-        s.save(p, for: URL(string: "sftp://alice:fixture-secret@server-a.invalid/folder/")!)
-        #expect(s.viewProperties(for: locations[0]) == p)
+        ViewStyleStore().save(p, for: URL(string: "sftp://alice:fixture-secret@server-a.invalid/folder/")!)
+        #expect(ViewStyleStore().style(for: locations[0]) == p)
         let keys = try #require(Settings.store.dictionary(forKey: "folderProps")).keys
         #expect(!keys.contains { $0.contains("fixture-secret") })
         #expect(keys.contains(locations[5].path))  // existing local path keys remain compatible
@@ -140,28 +140,28 @@ import Testing
         s.rememberPerFolder = true
         var components = URLComponents(); components.scheme = "sftp"; components.host = "fixture.invalid"
         components.path = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads").path
-        #expect(s.viewProperties(for: components.url!) == ViewProperties())
+        #expect(ViewStyleStore().style(for: components.url!) == ViewProperties())
     }
 
     @Test func restoreDefaultsUsesTheSameLocationPolicy() {
         let downloads = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
         let remote = URL(string: "sftp://fixture.invalid/folder/")!
         var saved = ViewProperties(); saved.mode = .compact; saved.showHidden = true
-        s.save(saved, for: downloads)
-        #expect(s.viewProperties(for: downloads, restoringDefaults: true) == ViewProperties())
+        ViewStyleStore().save(saved, for: downloads)
+        #expect(ViewStyleStore().style(for: downloads, restoringDefaults: true) == ViewProperties())
         s.rememberPerFolder = true
-        s.save(saved, for: downloads); s.save(saved, for: remote)
-        #expect(s.viewProperties(for: downloads, restoringDefaults: true) == ViewProperties.defaults(for: downloads))
-        #expect(s.viewProperties(for: remote, restoringDefaults: true) == ViewProperties())
-        #expect(s.viewProperties(for: remote) == saved)
+        ViewStyleStore().save(saved, for: downloads); ViewStyleStore().save(saved, for: remote)
+        #expect(ViewStyleStore().style(for: downloads, restoringDefaults: true) == ViewProperties.defaults(for: downloads))
+        #expect(ViewStyleStore().style(for: remote, restoringDefaults: true) == ViewProperties())
+        #expect(ViewStyleStore().style(for: remote) == saved)
     }
 
     @Test func damagedStoredStyleFallsBackToTheDefaults() {
         Settings.store.set(Data("{oops".utf8), forKey: "viewProps")
-        #expect(s.viewProperties(for: URL(fileURLWithPath: "/tmp")) == ViewProperties())
+        #expect(ViewStyleStore().style(for: URL(fileURLWithPath: "/tmp")) == ViewProperties())
         s.rememberPerFolder = true
         Settings.store.set(["/tmp": Data("[]".utf8)], forKey: "folderProps")
-        #expect(s.viewProperties(for: URL(fileURLWithPath: "/tmp")) == ViewProperties())
+        #expect(ViewStyleStore().style(for: URL(fileURLWithPath: "/tmp")) == ViewProperties())
     }
 
     // MARK: Panel sizes

@@ -7,6 +7,8 @@ final class RecentSource: LocationContentSource {
     init(location: URL) { self.location = location }
 
     var traits: LocationTraits { LocationTraits() }
+    /// Recent Files newest first; Recent Locations by name.
+    static func defaultStyle(_ url: URL) -> ViewProperties { .resultList(byName: url.path == "/locations") }
 
     func load(_ folder: URL, expanded: Set<URL>, deliver: @escaping (LocationListing) -> Void) -> LocationLoad {
         if LocationKind.of(folder) == .recentLocations {

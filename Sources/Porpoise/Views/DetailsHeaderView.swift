@@ -233,7 +233,7 @@ final class DetailsHeaderView: NSView {
         m.addItem(.separator())
         let auto = NSMenuItem(title: "Automatic Column Widths", action: #selector(autoWidths), keyEquivalent: "")
         auto.target = self
-        auto.state = ItemListView.savedColumnWidths.isEmpty ? .on : .off
+        auto.state = ViewStyleStore().columnWidths.isEmpty ? .on : .off
         m.addItem(auto)
         return m
     }

@@ -146,48 +146,6 @@ public final class Settings {
     public func contextMenuShows(_ e: ContextMenuEntry) -> Bool { get("ctx." + e.rawValue, e.defaultOn) }
     public func setContextMenu(_ e: ContextMenuEntry, _ on: Bool) { set("ctx." + e.rawValue, on) }
 
-    // Global (common) view properties, used unless per-folder memory is on.
-    var globalViewProperties: ViewProperties {
-        get {
-            guard let data = d.data(forKey: "viewProps"), let p = try? JSONDecoder().decode(ViewProperties.self, from: data) else {
-                return ViewProperties()
-            }
-            return p
-        }
-        set { d.set(try? JSONEncoder().encode(newValue), forKey: "viewProps") }
-    }
-
-    /// The display style for a folder. "Use common display style for all folders": one style everywhere, and a change
-    /// made in any folder changes it. "Remember display style for each folder": the folder's own saved style, else the
-    /// built-in defaults of special folders (Downloads by date, Trash as details), else the common style.
-    public func viewProperties(for url: URL, restoringDefaults: Bool = false) -> ViewProperties {
-        let common = restoringDefaults ? ViewProperties() : globalViewProperties
-        guard rememberPerFolder else { return common }
-        if !restoringDefaults, let data = d.dictionary(forKey: "folderProps")?[viewPropertiesKey(for: url)] as? Data,
-            let p = try? JSONDecoder().decode(ViewProperties.self, from: data)
-        {
-            return p
-        }
-        let special = ViewProperties.defaults(for: url)
-        return special != ViewProperties() ? special : common
-    }
-
-    /// Keep legacy local path keys; remote identity includes scheme, account/host, port and opaque path.
-    /// A password entered in the location bar is never part of stored display settings.
-    private func viewPropertiesKey(for url: URL) -> String {
-        url.isFileURL ? url.path : RemoteFS.withoutPassword(url).absoluteString
-    }
-
-    public func save(_ props: ViewProperties, for url: URL) {
-        if rememberPerFolder {
-            var dict = d.dictionary(forKey: "folderProps") ?? [:]
-            dict[viewPropertiesKey(for: url)] = try? JSONEncoder().encode(props)
-            d.set(dict, forKey: "folderProps")
-        } else {
-            globalViewProperties = props
-        }
-    }
-
     /// Settings › Restore Defaults: every setting above, the context menu choices and the common view style.
     /// What the app remembers (session, Trash origins, recent places, panel sizes, per-folder view styles) stays.
     public func resetAll() {
