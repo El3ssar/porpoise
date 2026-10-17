@@ -25,8 +25,8 @@ extension AppearanceLayoutTests {
         #expect(outline.isExpandable(folder))
         #expect(provider.count == 1)
         outline.expandItem(folder)
-        for _ in 0..<500 where outline.numberOfRows < 3 { try await Task.sleep(for: .milliseconds(20)) }
-        #expect(outline.numberOfRows == 3 && provider.count == 2)
+        for _ in 0..<500 where outline.numberOfRows < 4 { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(outline.numberOfRows == 4 && provider.count == 2)
         #expect(outline.isItemExpanded(folder))
         let nested = try #require(outline.item(atRow: 2) as? RemoteFolderTree.Node)
         panel.currentURL = nested.url
@@ -39,6 +39,35 @@ extension AppearanceLayoutTests {
         panel.currentURL = FileManager.default.temporaryDirectory
         #expect(!(outline.item(atRow: 0) is RemoteFolderTree.Node))
     }
+    @Test(.timeLimit(.minutes(1))) @MainActor func deepRemoteNavigationKeepsServerRootAndUnvisitedSiblings() async throws {
+        _ = NSApplication.shared
+        let previous = Settings.isTesting
+        Settings.isTesting = true
+        defer { Settings.isTesting = previous }
+        let root = URL(string: "sftp://deep-folders-\(UUID().uuidString.lowercased()).invalid/")!
+        let provider = FolderPanelProvider(root: root)
+        #expect(RemoteFS.installTestingProvider(provider, for: root))
+        defer { RemoteFS.registerCloud(nil, for: root) }
+        let panel = FoldersPanel(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
+        let target = root.appendingPathComponent("opaque/nested", isDirectory: true)
+        panel.currentURL = target
+        let outline = try #require((panel.subviews.first as? NSScrollView)?.documentView as? NSOutlineView)
+        for _ in 0..<500 where outline.numberOfRows < 4 { try await Task.sleep(for: .milliseconds(20)) }
+        let originalRoot = try #require(outline.item(atRow: 0) as? RemoteFolderTree.Node)
+        #expect(originalRoot.url == root)
+        let selected = try #require(outline.item(atRow: outline.selectedRow) as? RemoteFolderTree.Node)
+        #expect(RemoteFolderTree.sameLocation(selected.url, target))
+        let sibling = try #require(originalRoot.children?.first { $0.name == "Z sibling" })
+        #expect(sibling.children == nil && provider.count == 2)
+        let otherTarget = sibling.url.appendingPathComponent("nested", isDirectory: true)
+        panel.currentURL = otherTarget
+        for _ in 0..<500 where outline.numberOfRows < 5 { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(outline.item(atRow: 0) as? RemoteFolderTree.Node === originalRoot)
+        let nextSelection = try #require(outline.item(atRow: outline.selectedRow) as? RemoteFolderTree.Node)
+        #expect(RemoteFolderTree.sameLocation(nextSelection.url, otherTarget))
+        #expect(originalRoot.children?.count == 2 && provider.count == 3)
+    }
+
 }
 
 private final class FolderPanelProvider: RemoteProvider, @unchecked Sendable {
@@ -49,7 +78,12 @@ private final class FolderPanelProvider: RemoteProvider, @unchecked Sendable {
     init(root: URL) { self.root = root }
     func list(_ folder: URL) throws -> [FileItem] {
         lock.withLock { calls += 1 }
-        if folder == root { return [FileItem(url: root.appendingPathComponent("opaque"), name: "Visible folder", isDirectory: true)] }
+        if folder == root {
+            return [
+                FileItem(url: root.appendingPathComponent("opaque"), name: "Visible folder", isDirectory: true),
+                FileItem(url: root.appendingPathComponent("sibling"), name: "Z sibling", isDirectory: true),
+            ]
+        }
         return [FileItem(url: folder.appendingPathComponent("nested"), name: "Nested folder", isDirectory: true)]
     }
     func rootTitle(_ url: URL) -> String { "Network fixture" }

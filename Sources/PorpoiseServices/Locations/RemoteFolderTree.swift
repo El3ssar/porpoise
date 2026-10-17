@@ -71,9 +71,12 @@ public final class RemoteFolderTree {
             tree.onChange?(self)
         }
 
-        fileprivate func find(_ target: URL) -> Node? {
-            if RemoteFolderTree.sameLocation(target, url) { return self }
-            return children?.lazy.compactMap { $0.find(target) }.first
+        fileprivate func path(to target: URL) -> [Node]? {
+            if RemoteFolderTree.sameLocation(target, url) { return [self] }
+            for child in children ?? [] {
+                if let path = child.path(to: target) { return [self] + path }
+            }
+            return nil
         }
 
         fileprivate func refreshBranch() {
@@ -117,7 +120,10 @@ public final class RemoteFolderTree {
 
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 
-    public func find(_ url: URL) -> Node? { root.find(url) }
+    public func find(_ url: URL) -> Node? { path(to: url)?.last }
+
+    /// The already-listed path also survives a temporary disconnect, when provider ancestry is unavailable.
+    public func path(to url: URL) -> [Node]? { root.path(to: url) }
 
     /// Reveals the shared breadcrumb chain, including this tree's stable root and the target. Listings arrive
     /// asynchronously; each completed page advances the pending chain without inventing missing parent nodes.
@@ -153,6 +159,8 @@ public final class RemoteFolderTree {
     public static func sameLocation(_ a: URL, _ b: URL) -> Bool {
         func key(_ url: URL) -> String {
             guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url.absoluteString }
+            parts.scheme = parts.scheme?.lowercased()
+            parts.host = parts.host?.lowercased()
             if parts.percentEncodedPath.isEmpty { parts.percentEncodedPath = "/" }
             while parts.percentEncodedPath.count > 1 && parts.percentEncodedPath.hasSuffix("/") { parts.percentEncodedPath.removeLast() }
             return parts.string ?? url.absoluteString

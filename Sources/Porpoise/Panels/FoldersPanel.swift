@@ -11,6 +11,8 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     var onNavigate: ((URL, Bool) -> Void)?
     var currentURL: URL? { didSet { if currentURL != oldValue { followCurrent() } } }
     private var settingsObserver: NSObjectProtocol?
+    private var ancestryObservers: [NSObjectProtocol] = []
+    private var followPending = false
 
     private static let cellID = NSUserInterfaceItemIdentifier("folder")
     /// Settings this panel depends on (nil: all settings were reset).
@@ -123,6 +125,17 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
                 DispatchQueue.main.async { [weak self] in self?.outline.reloadData() }
             }
         }
+        for name in [CloudAccounts.remoteChanged, CloudAccounts.changed] {
+            ancestryObservers.append(
+                NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    guard let self, self.remoteTree != nil, !self.followPending else { return }
+                    self.followPending = true
+                    DispatchQueue.main.async { [weak self] in
+                        self?.followPending = false
+                        self?.followCurrent()
+                    }
+                })
+        }
         resetRoot()
     }
 
@@ -133,7 +146,10 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         scroll.frame = bounds
     }
 
-    deinit { settingsObserver.map(NotificationCenter.default.removeObserver) }
+    deinit {
+        settingsObserver.map(NotificationCenter.default.removeObserver)
+        ancestryObservers.forEach(NotificationCenter.default.removeObserver)
+    }
 
     private var showHidden: Bool { Settings.shared.foldersShowHidden }
 
@@ -158,7 +174,9 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
 
     private func resetRoot() {
         if let target = currentURL, RemoteFS.isRemote(target) {
-            showRemote(target)
+            remoteTree?.showHidden = showHidden
+            remoteTree?.reload()
+            followCurrent()
             return
         }
         remoteTree = nil
@@ -173,10 +191,12 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     private func followCurrent() {
         guard let target = currentURL else { return }
         if RemoteFS.isRemote(target) {
-            if let tree = remoteTree, let node = tree.find(target) {
-                selectRemote(node, in: tree.root)
+            let chain = remoteChain(to: target)
+            if let tree = remoteTree, let top = chain.first, RemoteFolderTree.sameLocation(tree.root.url, top) {
+                tree.reveal(chain)
+                if let selected = tree.selected { selectRemote(selected, in: tree) }
             } else {
-                showRemote(target)
+                showRemote(chain)
             }
             return
         }
@@ -208,9 +228,16 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         outline.scrollRowToVisible(row)
     }
 
-    /// Remote locations have a visible root: their opaque IDs are never treated as local paths or names.
-    private func showRemote(_ url: URL) {
-        let tree = RemoteFolderTree(url: url)
+    private func remoteChain(to url: URL) -> [URL] {
+        let ancestors = PlacesModel.isCloud(url) ? CloudAccounts.shared.ancestors(of: url) : RemoteFS.pathAncestors(of: url)
+        if ancestors.isEmpty, let known = remoteTree?.path(to: url) { return known.map(\.url) }
+        return ancestors + [url]
+    }
+
+    /// Remote roots stay at the account row/namespace or server root, even when the selected branch is not loaded.
+    private func showRemote(_ chain: [URL]) {
+        guard let top = chain.first else { return }
+        let tree = RemoteFolderTree(url: top)
         tree.showHidden = showHidden
         remoteTree = tree
         tree.onChange = { [weak self, weak tree] node in
@@ -221,12 +248,12 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
                 guard let self, let tree, let node, self.remoteTree === tree, tree.find(node.url) === node else { return }
                 self.outline.reloadItem(node, reloadChildren: true)
                 self.restoreRemoteExpansion(tree.root)
-                if let current = self.currentURL, let selected = tree.find(current) { self.selectRemote(selected, in: tree.root) }
+                if let selected = tree.selected { self.selectRemote(selected, in: tree) }
             }
         }
         outline.reloadData()
         outline.expandItem(tree.root)
-        selectRemote(tree.root, in: tree.root)
+        tree.reveal(chain)
     }
 
     private func restoreRemoteExpansion(_ node: RemoteFolderTree.Node) {
@@ -234,23 +261,13 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         for child in node.children ?? [] { restoreRemoteExpansion(child) }
     }
 
-    private func selectRemote(_ node: RemoteFolderTree.Node, in ancestor: RemoteFolderTree.Node) {
-        if ancestor !== node {
-            for child in ancestor.children ?? [] where containsRemote(node, in: child) {
-                outline.expandItem(ancestor)
-                selectRemote(node, in: child)
-                return
-            }
-        }
+    private func selectRemote(_ node: RemoteFolderTree.Node, in tree: RemoteFolderTree) {
+        for ancestor in tree.path(to: node.url)?.dropLast() ?? [] { outline.expandItem(ancestor) }
         let row = outline.row(forItem: node)
         if row >= 0 {
             outline.selectRowIndexes([row], byExtendingSelection: false)
             outline.scrollRowToVisible(row)
         }
-    }
-
-    private func containsRemote(_ node: RemoteFolderTree.Node, in ancestor: RemoteFolderTree.Node) -> Bool {
-        ancestor === node || (ancestor.children ?? []).contains { containsRemote(node, in: $0) }
     }
 
     /// The folder with symlinks resolved (realpath keeps /private, unlike URL.resolvingSymlinksInPath).

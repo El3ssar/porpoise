@@ -167,6 +167,7 @@ import Testing
         let selected = try #require(tree.selected)
         #expect(tree.root === originalRoot && selected.name == ".hidden target")
         #expect(tree.find(parent)?.isExpanded == true && tree.root.isExpanded)
+        #expect(tree.path(to: target)?.map(\.url) == [root, parent, target])
         let sibling = try #require(tree.root.children?.first { $0.name == "Other project" })
         #expect(sibling.children == nil)
         tree.reveal([root, sibling.url])
@@ -203,6 +204,7 @@ import Testing
         #expect(RemoteFS.pathAncestors(of: target).allSatisfy { $0.host == target.host && $0.user == "user" && $0.port == 2222 })
         #expect(RemoteFS.pathAncestors(of: URL(string: "sftp://example.invalid/")!).isEmpty)
         #expect(RemoteFolderTree.sameLocation(target, URL(string: "sftp://user@example.invalid:2222/first/second/deep")!))
+        #expect(RemoteFolderTree.sameLocation(target, URL(string: "sftp://user@EXAMPLE.invalid:2222/first/second/deep/")!))
         let account = UUID()
         let a = DropboxLocation(accountID: account, itemID: "id:opaque/slash", namespaceID: "one").url
         let b = DropboxLocation(accountID: account, itemID: "id:opaque/slash", namespaceID: "two").url
