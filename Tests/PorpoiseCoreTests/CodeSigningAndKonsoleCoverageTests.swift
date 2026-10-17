@@ -19,18 +19,13 @@ import Testing
 
 /// Konsole color schemes as shipped and as written by hand.
 @Suite struct KonsoleSchemeCoverageTests {
-    @Test func desertIsReadFromResourcesWithItsOwnColors() throws {
-        let desert = KonsoleScheme.desert
-        #expect(desert.palette.count == 16)
-        // `swift test` runs in the package folder: the shipped file is found there and has its own background.
+    @Test func theShippedDesertSchemeParsesCompletely() throws {
+        // `swift test` runs in the package folder, where the shipped file is.
         let file = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Resources/Desert-Konsole.colorscheme")
-        if let text = try? String(contentsOf: file, encoding: .utf8) {
-            let parsed = KonsoleScheme.parse(text)
-            #expect(desert.background.map { [$0.0, $0.1, $0.2] } == parsed.background.map { [$0.0, $0.1, $0.2] })
-            #expect(desert.palette.map { [$0.0, $0.1, $0.2] } == parsed.palette.map { [$0.0, $0.1, $0.2] })
-            #expect(desert.background != nil && desert.foreground != nil)
-        }
+        let parsed = KonsoleScheme.parse(try String(contentsOf: file, encoding: .utf8))
+        #expect(parsed.palette.count == 16)
+        #expect(parsed.background != nil && parsed.foreground != nil)
     }
 
     @Test func aCompleteSchemeReplacesTheBuiltInPalette() {

@@ -141,7 +141,9 @@ import UniformTypeIdentifiers
         let plan = BatchRenameService.preview(snapshot, preset: rename("b"))
         try FileManager.default.removeItem(at: file)
         let controller = FileOperationsController()
-        #expect(throws: (any Error).self) { try controller.batchRename(plan, snapshot: snapshot) }
+        #expect(throws: (any Error).self) {
+            try controller.finishBatchRename(BatchRenameService.execute(plan, snapshot: snapshot), snapshot: snapshot)
+        }
         #expect(!controller.canUndo && scratch.listing().isEmpty)
     }
 

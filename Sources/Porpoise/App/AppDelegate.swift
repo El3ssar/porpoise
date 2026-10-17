@@ -308,10 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         tabs.selectedTabViewItemIndex = i
     }
 
-    @objc func configureShortcuts(_ sender: Any?) {
-        // macOS manages keyboard shortcuts for app menus centrally.
-        if let u = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension?Shortcuts") { NSWorkspace.shared.open(u) }
-    }
+    @objc func configureShortcuts(_ sender: Any?) { showSettings(page: "Shortcuts") }
 
     @objc func showHelp(_ sender: Any?) {
         if let u = URL(string: AppInfo.homepage) { NSWorkspace.shared.open(u) }

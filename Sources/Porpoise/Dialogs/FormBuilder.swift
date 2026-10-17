@@ -312,13 +312,6 @@ final class FormBuilder: NSObject {
         }
     }
 
-    func colorWell(_ label: String, _ value: @escaping () -> NSColor, _ set: @escaping (NSColor) -> Void) {
-        let well = ClosureColorWell(color: value(), handler: set)
-        let row = labeled(label, well)
-        contentStack.addArrangedSubview(row)
-        track(row, enabled: nil) { [weak well] in well?.color = value() }
-    }
-
     private func indented(_ v: NSView) -> NSView {
         let row = NSStackView(views: [v])
         row.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 0)

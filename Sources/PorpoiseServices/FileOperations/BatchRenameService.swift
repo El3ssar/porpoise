@@ -136,10 +136,10 @@ public enum BatchRenameService {
 }
 
 extension FileOperationsController {
-    /// Applies a batch as one undo item and announces all touched folders through the normal file-operation path.
+    /// Records a batch that BatchRenameService.execute applied (off the main thread) as one undo item, and announces all
+    /// touched folders through the normal file-operation path. On the main thread.
     @discardableResult
-    public func batchRename(_ plan: BatchRenamePlan, snapshot: BatchRenameSnapshot) throws -> [URL] {
-        let result = try BatchRenameService.execute(plan, snapshot: snapshot)
+    public func finishBatchRename(_ result: BatchRenameResult, snapshot: BatchRenameSnapshot) -> [URL] {
         if let record = result.undo { pushUndo(record) }
         Self.notifyChanged(snapshot.entries.map(\.url) + result.urls)
         return result.urls

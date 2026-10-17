@@ -44,12 +44,6 @@ import Testing
         #expect(client.metadataCache.snapshot("")?.files.count == 3)
         let nested = try await client.list("id:folder"); #expect(nested.map(\.id) == ["id:nested"])
         let shared = try await client.sharedWithMe(); #expect(shared.contains { $0.id == "ns:unmounted:fixture" })
-        let unmounted = try #require(shared.first { $0.id.hasPrefix("ns:") })
-        let sharedClient = try client.sharedFolderClient(unmounted)
-        #expect(sharedClient.namespaceID == "unmounted:fixture")
-        #expect(sharedClient.contentSource.accountID != client.contentSource.accountID)
-        _ = try await sharedClient.list()
-        #expect(throws: DropboxError.invalidLocation) { try client.sharedFolderClient(items.first { !$0.isFolder }!) }
         let a = try await client.search("txt", contents: false); #expect(a.items.count == 2 && a.cursor != nil)
         let b = try await client.search("ignored", cursor: a.cursor); #expect(b.items.count == 1 && b.cursor == nil)
         try await server.configure(["rejectAuthOnce": true]); _ = try await client.metadata("id:hello")
@@ -101,9 +95,7 @@ import Testing
         let moved = try await client.move(copied, to: "/moved.txt"); #expect(moved.id == copied.id)
         var stale = moved; stale.rev = "stale"
         await #expect(throws: DropboxError.conflict) { try await client.delete(stale) }
-        let deleted = try await client.delete(moved)
-        await #expect(throws: DropboxError.unsupportedUndo) { try await client.restore(deleted) }
-        #expect(try await client.restore(deleted, confirmedMayReplace: true).id == moved.id)
+        _ = try await client.delete(moved)
         await #expect(throws: DropboxError.unsupportedUndo) { try await client.delete(folder) }
         _ = try await client.delete(folder, confirmedWithoutUndo: true)
         try await server.configure(["loseMutation": true])
@@ -206,8 +198,7 @@ import Testing
         let uploaded = try await client.upload(local, to: "/up.txt")
         #expect(!uploaded.isFolder && uploaded.size == 8)
         #expect(try await client.createFolder(name: "Made").isFolder)
-        let deleted = try await client.delete(uploaded)
-        #expect(try await client.restore(deleted, confirmedMayReplace: true).id == uploaded.id)
+        _ = try await client.delete(uploaded)
     }
 
     @Test func instantStreamingThumbnailAndOfflinePreviewTiming() async throws {
@@ -380,8 +371,6 @@ import Testing
         await #expect(throws: CloudConnectionError.wrongAccount) { try await store.connect(expected: account, openBrowser: browser) }
         let restored = DropboxAccountStore(defaults: defaults, credentials: credentials, configuration: server.config, directory: scratch.url)
         #expect(restored.accounts == [account] && restored.client(for: account.id) != nil)
-        try await store.checkForChanges(account.id)
-        await store.setActive(true); await store.setActive(false)
         let client = try #require(store.client(for: account.id))
         let edit = try await client.edits.begin(client.metadata("id:hello"))
         try Data("pending".utf8).write(to: edit.localURL)

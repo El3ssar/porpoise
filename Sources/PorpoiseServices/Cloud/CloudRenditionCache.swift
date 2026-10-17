@@ -80,3 +80,10 @@ public actor CloudRenditionCache {
         }
     }
 }
+
+public enum CloudOpenError: LocalizedError {
+    case tooLarge
+    public var errorDescription: String? {
+        "This file is too large for the local cache. Copy it to a folder on this Mac to open it."
+    }
+}

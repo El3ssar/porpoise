@@ -34,12 +34,6 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
         }
     }
 
-    /// Disk snapshots stay visible while revalidation is pending or the account is offline.
-    public func isListingStale(_ folder: URL) -> Bool {
-        guard let location = try? location(folder) else { return true }
-        return cacheLock.withLock { listings[location.collection] == nil || client?.isOffline == true }
-    }
-
     /// M2 mutations can invalidate one folder; reconnect/disconnect invalidate the whole account.
     public func invalidate(folder: URL? = nil, preserveDisk: Bool = false) {
         cacheLock.withLock {
@@ -154,14 +148,6 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
 
     public func list(_ folder: URL) throws -> [FileItem] {
         try Self.wait { try await self.refresh(folder) }
-    }
-
-    public func listPage(_ folder: URL, pageToken: String? = nil) async throws -> (items: [FileItem], nextPageToken: String?) {
-        let location = try location(folder)
-        guard let client else { throw DriveError.reconnect }
-        let page = try await client.listPage(location, pageToken: pageToken)
-        let files = try await resolved(page.files, client: client)
-        return (files.map { $0.0.fileItem(accountID: accountID, shortcutTarget: $0.1, parent: location) }, page.nextPageToken)
     }
 
     public func preview(_ remote: URL, thumbnail: Bool = false) async throws -> URL {

@@ -4,8 +4,7 @@ import Foundation
 public struct TransferRate: Sendable {
     private var lastTime: TimeInterval?
     private var lastBytes: Int64 = 0
-    private var expectedRemaining: Int64?
-    private var eta: TimeInterval?
+    private(set) var eta: TimeInterval?
     public private(set) var bytesPerSecond: Double = 0
     private let timeConstant: TimeInterval = 3
     private var began: TimeInterval?
@@ -54,7 +53,6 @@ public struct TransferRate: Sendable {
         lastBytes = bytes
         if let totalBytes, totalBytes > 0 {
             let remaining = max(0, totalBytes - bytes)
-            expectedRemaining = remaining
             if remaining == 0 {
                 eta = 0
             } else if bytesPerSecond > 1 {
@@ -97,12 +95,6 @@ public struct TransferRate: Sendable {
 
     /// Call after a pause or conflict question: waiting time is not part of transfer speed.
     public mutating func reset() { self = TransferRate() }
-
-    public func secondsLeft(_ remaining: Int64) -> TimeInterval? {
-        guard bytesPerSecond > 1 else { return nil }
-        if expectedRemaining == max(0, remaining), let eta { return eta }
-        return Double(max(0, remaining)) / bytesPerSecond
-    }
 
     public var speedText: String {
         var value = hasSpeedEstimate ? shownSpeed : bytesPerSecond

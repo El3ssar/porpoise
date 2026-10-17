@@ -78,8 +78,6 @@ import Testing
         await #expect(throws: (any Error).self) {
             try await offThePool { try provider.download(bad.location(accountID: client.accountID).url, into: local.url) }
         }
-        let page = try await provider.listPage(root.url)
-        #expect(page.items.count == 2)
         #expect(provider.metadata(for: binary.url)?.name == "report.txt")
         let disconnected = DriveProvider(accountID: UUID(), client: nil)
         await #expect(throws: DriveError.reconnect) {

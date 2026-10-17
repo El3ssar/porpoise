@@ -159,7 +159,6 @@ public struct DriveCapabilities: Equatable, Sendable {
     public var canEdit: Bool { canWrite }
     public var canMoveItemWithinDrive: Bool { canMove }
     public var role: String? = nil
-    public var isOwner: Bool { role == "owner" }
 }
 
 public typealias DriveItemCapabilities = DriveCapabilities

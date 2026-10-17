@@ -227,9 +227,7 @@ final class BatchRenameDialog: NSWindowController, NSTableViewDataSource, NSTabl
                 guard let self else { return }; self.busy = false; self.cancel.isEnabled = true
                 switch result {
                 case .success(let result):
-                    if let undo = result.undo { FileOperationsController.shared.pushUndo(undo) }
-                    FileOperationsController.notifyChanged(snapshot.entries.map(\.url) + result.urls)
-                    self.done(result.urls); self.finish()
+                    self.done(FileOperationsController.shared.finishBatchRename(result, snapshot: snapshot)); self.finish()
                 case .failure(let error):
                     self.status.stringValue = error.localizedDescription; self.status.textColor = Theme.negativeText
                     self.snapshot = nil; self.plan = nil

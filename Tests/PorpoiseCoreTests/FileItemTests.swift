@@ -165,7 +165,7 @@ import Testing
         #expect(q.iconSize(for: .details) == 22)
         #expect(q.iconSize(for: .compact) == 16)  // nothing saved: the mode's default
         // A new size replaces the legacy level.
-        q.setZoomLevel(3, for: .details)
+        q.setIconSize(ZoomLevels.iconSize(for: 3), for: .details)
         #expect(q.iconSize(for: .details) == 48 && q.zoom["details"] == nil)
     }
 

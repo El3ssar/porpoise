@@ -6,7 +6,6 @@ import PorpoiseCore
 @MainActor
 public final class DriveAccountStore: ObservableObject {
     public static let shared = DriveAccountStore()
-    public static let changed = Notification.Name("PorpoiseDriveAccountsChanged")
     @Published public private(set) var accounts: [DriveAccount] = []
     /// OK, offline or waiting to be signed in again, per account.
     public let status = CloudAccountStatus()
@@ -22,7 +21,6 @@ public final class DriveAccountStore: ObservableObject {
     private var saved: [CloudAccountRecords<DriveAccount>.Record] = []
     private var clients: [UUID: DriveClient] = [:]
     @Published public private(set) var writeAccess: [UUID: Bool] = [:]
-    public func hasWriteAccess(_ accountID: UUID) -> Bool { writeAccess[accountID] == true }
     private var managers: [UUID: DriveTokenManager] = [:]
 
     public init(
@@ -88,7 +86,6 @@ public final class DriveAccountStore: ObservableObject {
             let allowed = (try? await manager.requireWriteScope()) != nil
             guard self?.managers[account.id] === manager else { return }
             self?.writeAccess[account.id] = allowed
-            NotificationCenter.default.post(name: Self.changed, object: nil)
         }
         managers[account.id] = manager; clients[account.id] = client
         RemoteFS.registerDrive(
@@ -99,7 +96,6 @@ public final class DriveAccountStore: ObservableObject {
     private func persist() throws {
         try records.save(saved)
         accounts = saved.map(\.account)
-        NotificationCenter.default.post(name: Self.changed, object: nil)
     }
 
     public func client(for accountID: UUID) -> DriveClient? { clients[accountID] }

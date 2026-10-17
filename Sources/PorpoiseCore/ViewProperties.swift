@@ -139,10 +139,6 @@ public struct ViewProperties: Codable, Equatable, Sendable {
     /// Nearest Dolphin zoom level for the current size.
     public func zoomLevel(for mode: ViewMode) -> Int { ZoomLevels.nearestLevel(for: iconSize(for: mode)) }
 
-    public mutating func setZoomLevel(_ level: Int, for mode: ViewMode) {
-        setIconSize(ZoomLevels.iconSize(for: level), for: mode)
-    }
-
     enum CodingKeys: String, CodingKey {
         case mode, sortRole, sortOrder, foldersFirst, hiddenLast, groupRole, groupSameAsSort, showHidden, previews, extraRoles, zoom, sizes
     }

@@ -17,7 +17,6 @@ public actor CloudPinKeeper {
         source.onChanges = { [weak self] batch in Task { await self?.apply(batch) } }
         await reconcile()
     }
-    public func pause() { paused = true; retry?.cancel(); retry = nil }
     public func resume() async { paused = false; await reconcile() }
     public func stop() { paused = true; retry?.cancel(); retry = nil; source.onChanges = nil }
 
