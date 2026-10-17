@@ -144,7 +144,7 @@ extension MainWindowController {
             m.addItem(.separator())
         }
         // Launch Services only knows local files; remote items open through RemoteOpener (double-click).
-        if local { addOpenWith(to: m, item: item) }
+        if local || (item.url.scheme == "gdrive" && !item.isBrowsableFolder) { addOpenWith(to: m, item: item) }
         addCloudItems(to: m, selection: sel, in: c)
         if item.isSymlink || Self.isAlias(item) { m.addItem(self.item("Show Original", "document-open-folder", #selector(showOriginal(_:)))) }
         if single && item.isPackage { m.addItem(self.item("Show Package Contents", "folder-open", #selector(showPackageContents(_:)))) }
@@ -290,21 +290,22 @@ extension MainWindowController {
     /// Folders get an "Open With" list of apps; files get "Open with <default>" plus the list.
     private func addOpenWith(to m: NSMenu, item: FileItem) {
         let ws = NSWorkspace.shared
+        let associationURL = item.url.isFileURL ? item.url : URL(fileURLWithPath: "/tmp").appendingPathComponent(item.name)
         if item.isBrowsableFolder && !item.isApplication {
-            let apps = ws.urlsForApplications(toOpen: item.url).filter { $0.lastPathComponent != "Finder.app" }.prefix(12)
+            let apps = ws.urlsForApplications(toOpen: associationURL).filter { $0.lastPathComponent != "Finder.app" }.prefix(12)
             guard !apps.isEmpty else { return }
             let sm = NSMenu()
             for a in apps { sm.addItem(openWithItem(a)) }
             m.addItem(sub("Open With", "document-open", sm))
             return
         }
-        let def = ws.urlForApplication(toOpen: item.url)
+        let def = ws.urlForApplication(toOpen: associationURL)
         if let d = def {
             let it = openWithItem(d)
             it.title = "Open with \(Self.appName(d))"
             m.addItem(it)
         }
-        let others = ws.urlsForApplications(toOpen: item.url).filter { $0 != def }.prefix(15)
+        let others = ws.urlsForApplications(toOpen: associationURL).filter { $0 != def }.prefix(15)
         let sm = NSMenu()
         for a in others { sm.addItem(openWithItem(a)) }
         if !others.isEmpty { sm.addItem(.separator()) }
@@ -369,17 +370,26 @@ extension MainWindowController {
 
     @objc func ctxOpenWith(_ s: NSMenuItem) {
         guard let app = s.representedObject as? URL else { return }
-        NSWorkspace.shared.open(selectedURLs.filter(\.isFileURL), withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+        openSelection(with: app)
+    }
+
+    private func openSelection(with app: URL, urls: [URL]? = nil, remote: [FileItem]? = nil) {
+        let local = (urls ?? selectedURLs).filter(\.isFileURL)
+        if !local.isEmpty { NSWorkspace.shared.open(local, withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration()) }
+        for item in remote ?? view.model.selectedItems where item.url.scheme == "gdrive" {
+            RemoteOpener.open(item, using: { NSWorkspace.shared.open([$0], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration()) })
+        }
     }
 
     @objc func ctxOpenWithOther(_ s: NSMenuItem) {
-        let urls = selectedURLs.filter(\.isFileURL)
+        let urls = selectedURLs
+        let remote = view.model.selectedItems
         guard !urls.isEmpty else { return }
         let p = NSOpenPanel()
         p.directoryURL = URL(fileURLWithPath: "/Applications")
         p.allowedContentTypes = [.application]
         p.prompt = "Open"
         p.message = "Choose an application to open the selected items"
-        runPanel(p) { app in NSWorkspace.shared.open(urls, withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration()) }
+        runPanel(p) { [weak self] app in self?.openSelection(with: app, urls: urls, remote: remote) }
     }
 }

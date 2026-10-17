@@ -105,7 +105,10 @@ import Testing
         let url = try fixture(
             scratch,
             files: [
-                ["id": "image", "name": "Photo.png", "mimeType": "image/png", "thumbnailLink": "{base}/thumbnail/image", "hasThumbnail": true],
+                [
+                    "id": "image", "name": "Photo.png", "mimeType": "image/png", "size": "13", "thumbnailLink": "{base}/thumbnail/image",
+                    "hasThumbnail": true,
+                ],
                 ["id": "native", "name": "Notes", "mimeType": "application/vnd.google-apps.document"],
             ])
         let server = try FakeDriveServer(fixture: url)
