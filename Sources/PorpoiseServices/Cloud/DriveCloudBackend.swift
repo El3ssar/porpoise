@@ -17,9 +17,7 @@ public final class DriveCloudBackend: CloudBackend {
     @MainActor
     public init(store: DriveAccountStore, avatarFolder: URL? = nil) {
         self.store = store
-        self.avatarFolder =
-            avatarFolder
-            ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise/avatars")
+        self.avatarFolder = avatarFolder ?? Settings.cachesFolder.appendingPathComponent("avatars")
         watch = store.objectWillChange.sink { [weak self] _ in
             // Published values change after this fires.
             DispatchQueue.main.async { self?.storeChanged() }

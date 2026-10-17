@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import PorpoiseCore
 
@@ -13,15 +12,7 @@ public final class DriveMetadataCache: @unchecked Sendable {
         self.directory = directory ?? Self.root.appendingPathComponent(accountID.uuidString)
         storage = CloudMetadataCache(directory: self.directory)
     }
-    static var root: URL {
-        if Settings.isTesting {
-            let suite = ProcessInfo.processInfo.environment["PORPOISE_DEFAULTS_SUITE"] ?? String(getpid())
-            let hash = SHA256.hash(data: Data(suite.utf8)).map { String(format: "%02x", $0) }.joined()
-            return FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-drive-tests/" + hash)
-        }
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return base.appendingPathComponent("Porpoise/Drive")
-    }
+    static var root: URL { Settings.supportFolder.appendingPathComponent("Drive") }
     private func key(_ location: DriveLocation) -> String {
         switch location.collection {
         case .myDrive: return "root"

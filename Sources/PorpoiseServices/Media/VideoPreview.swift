@@ -44,7 +44,7 @@ public final class VideoPreview {
     /// in a folder named after its process id, so one instance never removes another one's stream.
     private static var sharedRoot: URL {
         if let t = testRoot { return t }
-        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise/video-preview")
+        return Settings.cachesFolder.appendingPathComponent("video-preview")
     }
 
     private var root: URL {

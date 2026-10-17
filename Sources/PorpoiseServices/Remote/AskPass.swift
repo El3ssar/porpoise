@@ -4,8 +4,7 @@ import PorpoiseCore
 /// Native password / confirmation prompt. ssh calls our own binary with `--askpass "<prompt>"`.
 public enum AskPass {
     /// Path of a tiny script ssh can execute as SSH_ASKPASS (it calls back into the app binary).
-    static let scriptPath: String = writeScript(
-        in: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise"))
+    static let scriptPath: String = writeScript(in: Settings.supportFolder)
 
     /// Writes the script into `dir` for the executable `exe` (tests pass a scratch folder); returns its path.
     static func writeScript(in dir: URL, exe: String = Bundle.main.executablePath ?? CommandLine.arguments[0]) -> String {
