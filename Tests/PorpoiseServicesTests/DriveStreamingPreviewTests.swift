@@ -13,7 +13,7 @@ import Testing
             "files": [
                 [
                     "id": "movie", "name": "movie.mp4", "mimeType": "video/mp4", "size": String(64 << 20),
-                    "version": "1", "capabilities": ["canDownload": true],
+                    "version": "1", "headRevisionId": "revision-1", "capabilities": ["canDownload": true],
                 ]
             ],
             "generatedMedia": ["movie": 64 << 20],
@@ -50,6 +50,7 @@ import Testing
         request.httpMethod = "HEAD"
         #expect(try await URLSession.shared.data(for: request).0.isEmpty)
         #expect(try await stats(server)["mediaBytes"] as? Int == 334)
+        #expect(try await (stats(server)["requests"] as? [String])?.contains { $0.contains("/revisions/revision-1?alt=media") } == true)
         let load = Task { try await URLSession.shared.data(from: stream.url) }
         for _ in 0..<100 {
             if try await (stats(server)["ranges"] as? [String])?.count ?? 0 > 1 { break }

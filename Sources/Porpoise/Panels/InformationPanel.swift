@@ -494,7 +494,15 @@ final class InformationPanel: NSView {
             if let drive = RemoteFS.provider(for: url) as? DriveProvider, let client = drive.client {
                 owner.drivePlayer = Task { @MainActor [weak owner] in
                     do {
-                        guard let file = drive.metadata(for: url) else { throw DriveError.invalidResponse }
+                        let file: DriveFile
+                        if let cached = drive.metadata(for: url) {
+                            file = cached
+                        } else {
+                            guard let location = DriveLocation(url: url), case .folder(let id, _) = location.collection else {
+                                throw DriveError.invalidLocation
+                            }
+                            file = try await client.file(id, resourceKey: location.resourceKey)
+                        }
                         let cached = try await client.cachedPreview(file)
                         try Task.checkCancellation()
                         guard let owner, owner.shownURLs == [url] else { return }

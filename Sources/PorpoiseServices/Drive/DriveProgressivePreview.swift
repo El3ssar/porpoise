@@ -23,9 +23,36 @@ extension DriveClient {
                 // An expired thumbnail link must not prevent the full preview.
             }
         }
+        if target.thumbnailLink == nil,
+            target.mimeType.hasPrefix("text/") || ["application/json", "application/javascript", "application/xml"].contains(target.mimeType),
+            let size = target.size.flatMap(Int64.init), size > 65536
+        {
+            do {
+                let prefix = try await textPrefix(target, size: size)
+                try Task.checkCancellation()
+                try await show(prefix)
+            } catch { try Task.checkCancellation() }
+        }
         let full = try await preview(target, context: context)
         try Task.checkCancellation()
         try await show(full)
         return full
     }
+    private func textPrefix(_ file: DriveFile, size: Int64) async throws -> URL {
+        try await mediaCache.file(key: "text-prefix|\(file.id)|\(file.headRevisionId ?? file.version ?? file.modifiedTime ?? "")", name: file.name) {
+            var data = Data()
+            let (_, response) = try await self.mutationResponse(
+                self.mutationURL("files/\(file.id)", query: [URLQueryItem(name: "alt", value: "media")]),
+                headers: ["Range": "bytes=0-65535"],
+                receive: { chunk, response in
+                    guard response.statusCode == 206, data.count + chunk.count <= 65536 else { throw DriveError.invalidResponse }
+                    data.append(chunk)
+                })
+            guard response.value(forHTTPHeaderField: "Content-Range") == "bytes 0-65535/\(size)", data.count == 65536 else {
+                throw DriveError.invalidResponse
+            }
+            return data
+        }
+    }
+
 }

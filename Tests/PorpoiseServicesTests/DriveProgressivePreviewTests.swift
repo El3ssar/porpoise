@@ -44,6 +44,23 @@ import Testing
         await client.clearCaches()
     }
 
+    @Test func textPrefixShowsBeforeWholeFile() async throws {
+        let scratch = try Scratch(), url = try fixture(scratch)
+        var json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var files = try #require(json["files"] as? [[String: Any]])
+        files[0]["name"] = "code.swift"; files[0]["mimeType"] = "text/plain"; files[0]["size"] = "131072"
+        files[0].removeValue(forKey: "thumbnailLink"); files[0]["hasThumbnail"] = false
+        json["files"] = files; json["generatedMedia"] = ["image": 131072]
+        try JSONSerialization.data(withJSONObject: json).write(to: url)
+        let server = try FakeDriveServer(fixture: url, latencyMS: 300)
+        let client = try DriveMutationTests().client(server, folder: scratch.url.appendingPathComponent("journal"))
+        let file = try await client.file("image")
+        var sizes: [Int] = []
+        _ = try await client.progressivePreview(file) { sizes.append(try Data(contentsOf: $0).count) }
+        #expect(sizes == [65536, 131072])
+        await client.clearCaches()
+    }
+
     @Test func changingSelectionAfterThumbnailCancelsFullDownload() async throws {
         let scratch = try Scratch(), server = try FakeDriveServer(fixture: fixture(scratch), latencyMS: 300)
         let client = try DriveMutationTests().client(server, folder: scratch.url.appendingPathComponent("journal"))
