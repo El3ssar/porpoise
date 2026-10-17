@@ -36,7 +36,7 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
         }
     }
     private var indexObserver: NSObjectProtocol?
-    /// The cloud service searched instead of this Mac ("Google Drive"), when the folder is in one: its own search runs,
+    /// The cloud service searched instead of this Mac ("Dropbox"), when the folder is in one: its own search runs,
     /// names (or names and contents) in the folder or everywhere in the account.
     var cloudService: String? {
         didSet {

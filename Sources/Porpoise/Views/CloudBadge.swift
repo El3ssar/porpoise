@@ -48,10 +48,10 @@ enum CloudBadge {
     }
 
     /// The text for the tooltip and the status bar.
-    static func help(_ kind: CloudBadgeKind) -> String? {
+    static func help(_ kind: CloudBadgeKind, of url: URL) -> String? {
         switch kind {
         case .none: return nil
-        case .edit(let mark): return mark.note("Google Drive")
+        case .edit(let mark): return mark.note(CloudAccounts.shared.providerTitle(for: url))
         case .cloud(let state): return state == .local ? nil : state.help
         }
     }

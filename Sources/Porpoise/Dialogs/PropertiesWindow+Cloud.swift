@@ -94,21 +94,11 @@ extension PropertiesWindow {
         return v
     }
 
-    /// "Google Drive · work › Shared with me › Design": the account, then the folders above the item, by name.
+    /// "Dropbox · work › Files › Design": the account, then the folders above the item, by name.
     static func cloudLocation(of url: URL) -> String {
         let accounts = CloudAccounts.shared
-        var parts = [accounts.account(for: url).map { accounts.title($0.id) } ?? "Google Drive"]
-        var c = URLComponents(url: url, resolvingAgainstBaseURL: false) ?? URLComponents()
-        c.query = nil
-        let ids = url.pathComponents.filter { $0 != "/" }.dropLast()
-        var path = ""
-        for (i, id) in ids.enumerated() {
-            path += "/" + id
-            if i == 0 && id == "folder" { continue }
-            c.path = path + "/"
-            if let u = c.url { parts.append(u.folderName) }
-        }
-        return parts.joined(separator: " › ")
+        let account = accounts.account(for: url).map { accounts.title($0.id) } ?? accounts.providerTitle(for: url)
+        return ([account] + accounts.ancestors(of: url).map(\.folderName)).joined(separator: " › ")
     }
 
     private func pathLabel(_ s: String) -> NSTextField {

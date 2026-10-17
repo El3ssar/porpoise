@@ -5,11 +5,10 @@ import PorpoiseServices
 /// Settings › Accounts: connected cloud accounts (+ / −), per account the sidebar rows, its name and storage, and one
 /// app-wide choice, what Google Docs become when copied out.
 enum AccountsSettingsPage {
-    static func build(_ f: FormBuilder) {
-        f.section("Cloud accounts")
-        let page = AccountsView()
-        f.stack.addArrangedSubview(page)
-        page.widthAnchor.constraint(equalTo: f.stack.widthAnchor, constant: -60).isActive = true
+    /// Documents that live only on the web (Google Docs, Sheets, Slides): shown while an account of a service that
+    /// has them is connected.
+    private static func webDocumentsSection(_ f: FormBuilder) {
+        let before = f.stack.arrangedSubviews.count
         f.section("Google Docs, Sheets and Slides")
         let accounts = CloudAccounts.shared
         f.popup(
@@ -18,6 +17,18 @@ enum AccountsSettingsPage {
             accounts.exportPreset = CloudAccounts.exportPresets[$0].key
         }
         _ = f.note("Copying a Google document out of Drive saves an export; the original stays in Drive. Opening one opens it in your browser.")
+        let views = Array(f.stack.arrangedSubviews[before...])
+        guard let first = views.first else { return }
+        let follow = WebDocumentsVisibility(views)
+        objc_setAssociatedObject(first, &WebDocumentsVisibility.key, follow, .OBJC_ASSOCIATION_RETAIN)
+    }
+
+    static func build(_ f: FormBuilder) {
+        f.section("Cloud accounts")
+        let page = AccountsView()
+        f.stack.addArrangedSubview(page)
+        page.widthAnchor.constraint(equalTo: f.stack.widthAnchor, constant: -60).isActive = true
+        webDocumentsSection(f)
         offlineSection(f)
         f.section("Sign-in configuration")
         for descriptor in CloudProviderDescriptor.catalog {
@@ -401,6 +412,33 @@ final class OfflineUsageView: NSStackView {
             let row = NSStackView(views: [text, remove])
             row.spacing = 10
             addArrangedSubview(row)
+        }
+    }
+}
+
+/// Hides the web documents section while no connected account's service has such documents.
+private final class WebDocumentsVisibility {
+    nonisolated(unsafe) static var key = 0
+    private let views: [Weak]
+    private var observer: NSObjectProtocol?
+    private struct Weak { weak var view: NSView? }
+
+    init(_ views: [NSView]) {
+        self.views = views.map { Weak(view: $0) }
+        update()
+        observer = NotificationCenter.default.addObserver(forName: CloudAccounts.changed, object: nil, queue: .main) { [weak self] _ in
+            self?.update()
+        }
+    }
+
+    deinit { observer.map(NotificationCenter.default.removeObserver) }
+
+    static var isShown: Bool { CloudAccounts.shared.accounts.contains { $0.provider.descriptor.hasWebDocuments } }
+
+    private func update() {
+        MainActor.assumeIsolated {
+            let hidden = !Self.isShown
+            for v in views { v.view?.isHidden = hidden }
         }
     }
 }

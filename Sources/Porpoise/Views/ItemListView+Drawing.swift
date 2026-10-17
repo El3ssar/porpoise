@@ -377,7 +377,7 @@ extension ItemListView {
             if let line = model.searchSnippet(for: item) {
                 drawSnippet(line, in: CGRect(x: end + 10, y: y, width: tr.maxX - end - 10, height: lineHeight), selected: selected)
             } else if let edit = editMark(item) {
-                drawEditNote(edit, in: CGRect(x: end + 10, y: y, width: tr.maxX - end - 10, height: lineHeight), selected: selected)
+                drawEditNote(edit, of: item.url, in: CGRect(x: end + 10, y: y, width: tr.maxX - end - 10, height: lineHeight), selected: selected)
             }
 
         }
@@ -412,16 +412,16 @@ extension ItemListView {
         ).fill()
     }
 
-    /// A Drive file open in another app: how its saves are doing.
+    /// A cloud file open in another app: how its saves are doing.
     func editMark(_ item: FileItem) -> CloudEditMark? {
         CloudEditing.shared.mark(for: item.url)
     }
 
-    /// After the name in Details: "Editing · changes save to Google Drive", quiet unless it needs attention.
-    private func drawEditNote(_ mark: CloudEditMark, in r: CGRect, selected: Bool) {
+    /// After the name in Details: "Editing · changes save to Dropbox", quiet unless it needs attention.
+    private func drawEditNote(_ mark: CloudEditMark, of url: URL, in r: CGRect, selected: Bool) {
         guard r.width > 60 else { return }
         let color = selected ? Theme.selectionText : mark.needsAttention ? Theme.transferDanger : roleTextColor(selected: selected)
-        (mark.note("Google Drive") as NSString).draw(
+        (mark.note(CloudAccounts.shared.providerTitle(for: url)) as NSString).draw(
             in: r,
             withAttributes: [
                 .font: NSFont.systemFont(ofSize: max(10, font.pointSize - 1)), .foregroundColor: color, .paragraphStyle: Self.tailElidingParagraph,

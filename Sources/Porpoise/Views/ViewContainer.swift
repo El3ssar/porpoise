@@ -652,7 +652,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         if showsApps, let a = apps { window?.makeFirstResponder(a.field); return }
         let cloud = PlacesModel.isCloud(url)
         guard url.isFileURL || cloud else {
-            messageBar.show("Searching is available in local folders, mounted shares and Google Drive.", error: false)
+            messageBar.show("Searching is available in local folders, mounted shares and cloud accounts.", error: false)
             needsLayout = true
             return
         }
