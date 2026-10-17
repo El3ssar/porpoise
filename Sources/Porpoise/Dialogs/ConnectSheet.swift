@@ -263,6 +263,9 @@ final class ConnectSheet: NSWindowController {
             done: { [weak self] result in
                 guard let self, case .waiting = self.page else { return }
                 self.cancelSignIn = nil
+                // Signed in in the browser: back to Porpoise, where the sheet shows the account.
+                if case .success = result { NSApp.activate() }
+                if case .failure(.alreadyConnected) = result { NSApp.activate() }
                 switch result {
                 case .success(let a): self.show(.connected(a.id))
                 case .failure(.alreadyConnected(let a)): self.show(.already(a.id))

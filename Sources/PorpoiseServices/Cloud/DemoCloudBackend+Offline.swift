@@ -20,7 +20,7 @@ public final class DemoOfflineService: CloudOfflineService {
     public var refusals: [URL: String] = [:]
     public var usages: [String: CloudOfflineUsage] = [:]
     public var cacheLimit: Int64? = 5 << 30
-    public var root = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support/Porpoise/Cloud")
+    public var root = Settings.supportFolder.appendingPathComponent("Cloud")
     /// Commands asked for, in order ("download a, b", "keep a", "stop a", "remove a", "plan a", "removeRecent id").
     public private(set) var log: [String] = []
 
@@ -31,8 +31,8 @@ public final class DemoOfflineService: CloudOfflineService {
     public func state(for url: URL) -> CloudState {
         if let s = states[url] { return s }
         let d = details(for: url)
-        if d.kept || d.inheritedFrom != nil { return .kept }
-        return d.downloaded || folders.contains(url) ? .local : .cloudOnly
+        // Two states, as the engine: downloaded (kept) or in the cloud only; a cached copy doesn't count.
+        return d.kept || d.inheritedFrom != nil ? .local : .cloudOnly
     }
 
     public func keepDenial(for url: URL) -> String? { denials[url] }
@@ -108,7 +108,7 @@ public final class DemoOfflineService: CloudOfflineService {
         changed([])
     }
 
-    /// `kept`, `inherited:<folder>`, `downloaded`, `cloudonly`, `local`, `downloading:<0…1>`, `uploading:<0…1>`,
+    /// `kept` or `local` (downloaded), `inherited:<folder>`, `downloaded` (a cached copy only), `cloudonly`, `downloading:<0…1>`, `uploading:<0…1>`,
     /// `error:<reason>` (the test bridge's words).
     public func set(_ url: URL, _ word: String) {
         let parts = word.split(separator: ":", maxSplits: 1).map(String.init)
@@ -116,9 +116,9 @@ public final class DemoOfflineService: CloudOfflineService {
         var d = CloudOfflineDetails()
         states[url] = nil
         switch parts.first {
-        case "kept": d.kept = true; d.downloaded = true
+        case "kept", "local": d.kept = true; d.downloaded = true
         case "inherited": d.inheritedFrom = arg; d.downloaded = true
-        case "downloaded", "local": d.downloaded = true
+        case "downloaded": d.downloaded = true
         case "downloading": states[url] = .downloading(Double(arg)); d.progress = Double(arg)
         case "uploading": states[url] = .uploading(Double(arg))
         case "error": states[url] = .error(arg); d.error = arg

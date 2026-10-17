@@ -149,7 +149,6 @@ extension DebugBridge {
             // copyonly on|off: as on real Drive until conditional saves are verified (saves wait for Save as a Copy).
             DriveEditing.shared.savesVersions = rest == "on" ? { _ in false } : { $0.canSaveEdits }
         case "download": AppDelegate.shared.windows.first?.cloudDownload(nil)
-        case "keep": AppDelegate.shared.windows.first?.cloudKeep(nil)
         case "evict": AppDelegate.shared.windows.first?.cloudEvict(nil)
         case "accounts":
             let accounts = CloudAccounts.shared
@@ -176,7 +175,7 @@ extension DebugBridge {
 
     /// `cloud offline …` drives the demo offline service (PORPOISE_OFFLINE_DEMO):
     /// - `<item name>|<kept|inherited:<folder>|downloaded|cloudonly|downloading:<0…1>|uploading:<0…1>|error:<why>>`
-    /// - `plan <bytes>|<items>|<available>|<fits 1/0>`: what the next Keep Downloaded counts
+    /// - `plan <bytes>|<items>|<available>|<fits 1/0>`: what the next Download counts
     /// - `deny <item name>|<reason>`, `refuse <item name>|<message>`, `usage <account id>|<kept>|<recent>`
     private func offlineDemo(_ arg: String) {
         guard let demo = CloudOfflineHub.service as? DemoOfflineService else { return }

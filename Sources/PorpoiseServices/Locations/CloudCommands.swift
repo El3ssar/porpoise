@@ -1,35 +1,34 @@
 import Foundation
 import PorpoiseCore
 
-/// Finder's cloud commands for a selection (Download Now, Keep Downloaded, Remove Download), for iCloud Drive and File
-/// Provider items as well as the accounts Porpoise connects to: which ones the menus offer, and doing them.
+/// The cloud commands for a selection, Download and Remove Download, for iCloud Drive and File Provider items as well
+/// as the accounts Porpoise connects to: which ones the menus offer, and doing them. Two states only: an item is in the
+/// cloud only, or also on this Mac (for accounts, kept current until Remove Download).
 public enum CloudCommands {
-    public enum Check: Equatable { case off, on, mixed }
-
     /// What the menus show for a selection.
     public struct Available: Equatable {
-        public var downloadNow = false
-        /// Keep Downloaded: nil when not offered (iCloud, virtual rows).
-        public var keep: Check?
-        public var keepEnabled = true
+        /// Download: accounts keep the items on this Mac; iCloud Drive downloads them ("Download Now", as Finder).
+        public var download = false
+        public var downloadTitle = "Download"
+        public var downloadEnabled = true
         public var removeDownload = false
         public var removeEnabled = true
-        /// Why Keep Downloaded or Remove Download is disabled.
+        /// Why Download or Remove Download is disabled.
         public var reason: String?
 
         public init(
-            downloadNow: Bool = false, keep: Check? = nil, keepEnabled: Bool = true, removeDownload: Bool = false, removeEnabled: Bool = true,
-            reason: String? = nil
+            download: Bool = false, downloadTitle: String = "Download", downloadEnabled: Bool = true, removeDownload: Bool = false,
+            removeEnabled: Bool = true, reason: String? = nil
         ) {
-            self.downloadNow = downloadNow
-            self.keep = keep
-            self.keepEnabled = keepEnabled
+            self.download = download
+            self.downloadTitle = downloadTitle
+            self.downloadEnabled = downloadEnabled
             self.removeDownload = removeDownload
             self.removeEnabled = removeEnabled
             self.reason = reason
         }
 
-        public var isEmpty: Bool { !downloadNow && keep == nil && !removeDownload }
+        public var isEmpty: Bool { !download && !removeDownload }
     }
 
     /// The offline service (tests hand theirs).
@@ -45,52 +44,39 @@ public enum CloudCommands {
         if accountItems.isEmpty { return iCloud(items.filter(\.url.isFileURL), cloud: cloud) }
         guard let service = service() else { return Available() }
         var a = Available()
-        a.downloadNow = accountItems.contains { $0.isBrowsableFolder || cloud($0).state == .cloudOnly }
         let keeps = accountItems.map { service.keep(for: $0.url) }
-        let kept = keeps.filter { $0 != .no }.count
-        a.keep = kept == 0 ? .off : kept == keeps.count ? .on : .mixed
-        a.removeDownload = accountItems.contains { service.hasLocalCopy($0.url) || service.keep(for: $0.url) != .no }
-        // Kept because a folder above is: only that folder can stop it.
+        a.download = keeps.contains(.no)
+        a.removeDownload = keeps.contains { $0 != .no }
+        // On this Mac because a folder above is: only that folder can be removed.
         if case .inherited(let folder) = keeps.first, keeps.allSatisfy({ if case .inherited = $0 { return true } else { return false } }) {
-            a.keepEnabled = false
             a.removeEnabled = false
-            a.reason = "Kept because “\(folder)” is kept downloaded."
+            a.reason = "On this Mac because “\(folder)” is downloaded."
         }
-        if let why = accountItems.lazy.compactMap({ service.keepDenial(for: $0.url) }).first {
-            a.keepEnabled = false
-            a.downloadNow = false
+        if a.download, let why = accountItems.lazy.compactMap({ service.keepDenial(for: $0.url) }).first {
+            a.downloadEnabled = false
             a.reason = why
         }
         return a
     }
 
-    /// iCloud Drive and File Provider items: Download Now and Remove Download, as before.
+    /// iCloud Drive and File Provider items: Download Now and Remove Download, as Finder.
     private static func iCloud(_ items: [FileItem], cloud: (FileItem) -> (state: CloudState, isCloud: Bool)) -> Available {
         let clouds = items.map(cloud)
         guard clouds.contains(where: { $0.isCloud }) else { return Available() }
-        var a = Available()
-        a.downloadNow = clouds.contains { $0.state == .cloudOnly } || items.contains(where: \.isBrowsableFolder)
+        var a = Available(downloadTitle: "Download Now")
+        a.download = clouds.contains { $0.state == .cloudOnly } || items.contains(where: \.isBrowsableFolder)
         a.removeDownload = clouds.contains { $0.isCloud && $0.state != .cloudOnly }
         return a
     }
 
     // MARK: Doing them
 
-    public static func downloadNow(_ urls: [URL]) {
+    /// Download for iCloud Drive items (Download Now); returns the account items, which the app keeps on this Mac
+    /// after counting what it takes (KeepDownloadedSheet).
+    public static func downloadNow(_ urls: [URL]) -> [URL] {
         let local = urls.filter(\.isFileURL)
         if !local.isEmpty { CloudActions.download(local) }
-        let remote = urls.filter(isAccountItem)
-        if !remote.isEmpty { service()?.downloadNow(remote) }
-    }
-
-    /// Choosing Keep Downloaded: stops keeping when every item is kept, else asks for a plan to keep them (the app
-    /// confirms big ones). Returns true when it started a plan (`planned` answers).
-    public static func stopKeepingIfAllKept(_ urls: [URL]) -> Bool {
-        guard let service = service() else { return false }
-        let remote = urls.filter(isAccountItem)
-        guard !remote.isEmpty, remote.allSatisfy({ service.keep(for: $0) != .no }) else { return false }
-        service.stopKeeping(remote.filter { service.keep(for: $0) == .direct })
-        return true
+        return urls.filter(isAccountItem).filter { service()?.keep(for: $0) == CloudKeep.no }
     }
 
     /// Remove Download: returns a message for each item that couldn't be removed.
@@ -119,9 +105,9 @@ public enum CloudCommands {
         ("1 GB", 1 << 30), ("5 GB", 5 << 30), ("10 GB", 10 << 30), ("25 GB", 25 << 30), ("No limit", nil),
     ]
 
-    /// "Google Drive · me@x: kept 3.1 GB · recent 820 MB".
+    /// "Google Drive · me@x: 3.1 GB downloaded · 820 MB of recently opened files".
     public static func usageText(_ u: CloudOfflineUsage, account: String) -> String {
-        "\(account): kept \(FileFormat.size(u.kept)) · recent \(FileFormat.size(u.recent))"
+        "\(account): \(FileFormat.size(u.kept)) downloaded" + (u.recent > 0 ? " · \(FileFormat.size(u.recent)) of recently opened files" : "")
     }
 
     /// The line the sign-out confirmation adds when the account has copies on this Mac.
@@ -130,22 +116,21 @@ public enum CloudCommands {
         return "The \(FileFormat.size(bytes)) of offline copies on this Mac will be deleted. Your files stay in \(provider)."
     }
 
-    /// Properties' "On this Mac" row.
+    /// Properties' "On this Mac" row: in the cloud only, or on this Mac (downloading, how much, and why).
     public static func summaryText(_ d: CloudOfflineDetails, folder: Bool, provider: String) -> String {
         if let why = d.error { return why }
         if let p = d.progress { return "Downloading \(Int(p * 100)) %" }
         let keep = CloudKeep(d)
+        guard keep != .no else { return "In \(provider) only" }
+        var with = ""
+        if case .inherited(let parent) = keep { with = " · with “\(parent)”" }
         if folder {
-            guard d.totalItems > 0 else { return keep == .no ? "In \(provider) only" : "Kept downloaded" }
-            let bytes =
-                d.totalBytes > 0
-                ? "\(FileFormat.size(d.bytes)) of \(FileFormat.size(d.totalBytes)) downloaded" : "\(FileFormat.size(d.bytes)) downloaded"
-            return "\(bytes) · \(d.items.formatted()) of \(d.totalItems.formatted()) items" + (keep != .no ? " · kept" : "")
+            guard d.totalItems > 0 else { return "Downloaded" + with }
+            if d.items < d.totalItems { return "Downloading · \(d.items.formatted()) of \(d.totalItems.formatted()) items" + with }
+            return "Downloaded · \(FileFormat.size(d.bytes)) in \(d.totalItems.formatted()) items" + with
         }
+        guard d.downloaded || d.bytes > 0 else { return "Waiting to download" + with }
         let export = d.export.map { " · as .\($0), read-only offline" } ?? ""
-        switch keep {
-        case .direct, .inherited: return "Kept downloaded" + (d.bytes > 0 ? " · \(FileFormat.size(d.bytes))" : "") + export
-        case .no: return d.downloaded ? "Downloaded · may be removed to save space\(export)" : "In \(provider) only"
-        }
+        return "Downloaded" + (d.bytes > 0 ? " · \(FileFormat.size(d.bytes))" : "") + export + with
     }
 }

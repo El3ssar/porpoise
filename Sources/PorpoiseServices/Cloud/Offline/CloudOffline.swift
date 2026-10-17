@@ -76,10 +76,7 @@ public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
         if let stored = Settings.store.object(forKey: "cloudOfflineRecentLimit") as? NSNumber {
             self.recentLimit = stored.int64Value < 0 ? nil : stored.int64Value
         }
-        self.root =
-            root
-            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Porpoise/Cloud", isDirectory: true)
+        self.root = root ?? Settings.supportFolder.appendingPathComponent("Cloud", isDirectory: true)
     }
 
     public func source(for url: URL) -> CloudContentSource? {
@@ -199,8 +196,9 @@ public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
         let folder = source.cachedItem(ref)?.isFolder == true
         if let reason = details.error { return .error(reason) }
         if let progress = details.progress { return .downloading(progress) }
-        if details.kept && (details.downloaded || folder) { return .kept }
-        return details.downloaded || folder ? .local : .cloudOnly
+        // Two states: downloaded (kept until Remove Download) or in the cloud only. A copy cached because the file
+        // was opened is an implementation detail: the item is still in the cloud only.
+        return details.kept && (details.downloaded || folder) ? .local : .cloudOnly
     }
     public func usage(account: String) -> CloudOfflineUsage {
         var usage = CloudOfflineUsage(account: account)

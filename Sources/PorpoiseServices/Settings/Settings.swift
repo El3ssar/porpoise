@@ -12,6 +12,18 @@ public final class Settings {
     nonisolated(unsafe) public static var store: UserDefaults = testSuite.flatMap(UserDefaults.init(suiteName:)) ?? .standard
     /// A test run: nothing is written outside `store`, and the system (sounds, helper, Trash) is left alone.
     nonisolated(unsafe) public static var isTesting: Bool = testSuite != nil
+
+    /// Where Porpoise keeps its data (~/Library/Application Support/Porpoise). A test instance gets a folder of its
+    /// own instead, per settings suite (a relaunch finds it again): it never reads or writes the real one.
+    public static var supportFolder: URL { folder(.applicationSupportDirectory, test: "Application Support") }
+    /// The same for caches (~/Library/Caches/Porpoise).
+    public static var cachesFolder: URL { folder(.cachesDirectory, test: "Caches") }
+
+    private static func folder(_ kind: FileManager.SearchPathDirectory, test: String) -> URL {
+        guard isTesting else { return FileManager.default.urls(for: kind, in: .userDomainMask)[0].appendingPathComponent("Porpoise") }
+        let suite = (testSuite ?? "pid-\(getpid())").unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? String($0) : "-" }.joined()
+        return FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-test-" + suite).appendingPathComponent(test)
+    }
     private var d: UserDefaults { Settings.store }
     let appearanceLock = NSLock()
     var appearanceCache: (data: Data, value: AppearancePreferences)?

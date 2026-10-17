@@ -99,10 +99,7 @@ public final class SearchIndex: @unchecked Sendable {
     init(directory: URL?, defaults: UserDefaults, crawlQueue: OperationQueue) {
         self.crawlQueue = crawlQueue
         self.defaults = defaults
-        self.directory =
-            directory
-            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Porpoise/SearchIndex", isDirectory: true)
+        self.directory = directory ?? Settings.supportFolder.appendingPathComponent("SearchIndex", isDirectory: true)
         storagePath = IndexPath.canonical(self.directory.path)
         if let data = defaults.data(forKey: "searchIndex.configuration"), let c = try? JSONDecoder().decode(IndexConfiguration.self, from: data) {
             current = c

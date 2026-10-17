@@ -159,8 +159,13 @@ final class FakeDriveServer {
             try DriveOAuthTransaction(configuration: DriveOAuthConfiguration(clientID: " "), redirectURL: listener.redirectURL)
         }
         let receiving = Task { try await listener.callback() }
-        _ = try await URLSession.shared.data(from: callback)
+        // The browser's page waits until Porpoise says how sign-in ended.
+        let browser = Task { try await URLSession.shared.data(from: callback) }
         #expect(try await receiving.value == callback)
+        listener.finish(.signedIn(provider: "Google Drive", account: "a@example.invalid"))
+        let (page, response) = try await browser.value
+        #expect((response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("text/html") == true)
+        #expect(String(decoding: page, as: UTF8.self).contains("a@example.invalid"))
         await #expect(throws: DriveError.oauthCancelled) { try await listener.callback() }
         let timeout = try DriveLoopback()
         await #expect(throws: DriveError.oauthTimeout) { try await timeout.callback(timeout: 0.01) }

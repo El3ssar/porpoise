@@ -30,10 +30,10 @@ enum AccountsSettingsPage {
         _ = f.note("Leave blank to use the application key included with this build.")
     }
 
-    /// Offline copies: how much recently opened files may use, what each account keeps, and where.
+    /// Downloads: how much space recently opened files may take, what each account has on this Mac, and where.
     static func offlineSection(_ f: FormBuilder) {
         guard CloudOfflineHub.service != nil else { return }
-        f.section("Offline copies")
+        f.section("On this Mac")
         let limits = CloudCommands.cacheLimits
         f.popup(
             "Recently opened files use up to:", limits.map(\.title),
@@ -41,12 +41,12 @@ enum AccountsSettingsPage {
         ) {
             CloudOfflineHub.service?.cacheLimit = limits[$0].bytes
         }
-        _ = f.note("Files you keep downloaded don’t count toward this, and are never removed to save space.")
+        _ = f.note("Files you download stay on this Mac until you choose Remove Download; they don’t count toward this.")
         let usage = OfflineUsageView()
         f.stack.addArrangedSubview(usage)
         usage.widthAnchor.constraint(equalTo: f.stack.widthAnchor, constant: -60).isActive = true
         if let root = CloudOfflineHub.service?.root {
-            _ = f.note("Offline copies are kept in \((root.path as NSString).abbreviatingWithTildeInPath).")
+            _ = f.note("Downloads are kept in \((root.path as NSString).abbreviatingWithTildeInPath).")
         }
     }
 
@@ -294,6 +294,7 @@ enum AccountActions {
     /// Browser step only; paused work continues afterwards.
     static func signInAgain(_ id: String, window: NSWindow?) {
         _ = CloudAccounts.shared.signInAgain(id, openBrowser: ConnectSheet.openBrowser) { result in
+            if case .success = result { NSApp.activate() }
             if case .failure(.failed(let message)) = result {
                 let a = NSAlert()
                 a.messageText = "Couldn’t sign in again"

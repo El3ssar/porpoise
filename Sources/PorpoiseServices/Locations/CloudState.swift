@@ -1,15 +1,14 @@
 import Foundation
 import PorpoiseCore
 
-/// iCloud Drive / File Provider (Google Drive, OneDrive, Dropbox…) state of an item, as Finder shows it; for the
-/// accounts Porpoise connects to, also whether it is kept downloaded.
+/// iCloud Drive / File Provider (Google Drive, OneDrive, Dropbox…) state of an item, as Finder shows it, and the same
+/// two states for the accounts Porpoise connects to: only in the cloud, or also on this Mac (downloaded, kept current
+/// until Remove Download). Copies cached because a file was opened don't count: those items are still in the cloud only.
 public enum CloudState: Equatable {
-    case local  // not a cloud item, or downloaded and not kept (no badge, like Finder)
+    case local  // on this Mac, or not a cloud item (no badge, like Finder)
     case cloudOnly  // only in the cloud: Finder's cloud-with-arrow
     /// 0…1, nil when not known.
     case downloading(Double?)
-    /// Keep Downloaded: on this Mac and kept current.
-    case kept
     case uploading(Double?)
     /// Couldn't be downloaded or kept (the reason, for the tooltip).
     case error(String)
@@ -48,7 +47,6 @@ public enum CloudState: Equatable {
         case .local: return nil
         case .cloudOnly: return "icloud.and.arrow.down"
         case .downloading: return "arrow.down.circle.dotted"
-        case .kept: return "arrow.down.circle.fill"
         case .uploading: return "icloud.and.arrow.up"
         case .error: return "exclamationmark.icloud"
         }
@@ -59,14 +57,13 @@ public enum CloudState: Equatable {
         case .local: return ""
         case .cloudOnly: return "In the cloud only. Click to download."
         case .downloading(let p): return p.map { "Downloading… \(Int($0 * 100))%" } ?? "Downloading…"
-        case .kept: return "Kept downloaded on this Mac."
         case .uploading(let p): return p.map { "Uploading… \(Int($0 * 100))%" } ?? "Uploading…"
         case .error(let why): return why
         }
     }
 }
 
-/// The one badge an item's icon shows: an edit in progress comes first, then problems, transfers, kept, cloud-only.
+/// The one badge an item's icon shows: an edit in progress comes first, then problems, transfers, cloud-only.
 public enum CloudBadgeKind: Equatable {
     case none
     case edit(CloudEditMark)

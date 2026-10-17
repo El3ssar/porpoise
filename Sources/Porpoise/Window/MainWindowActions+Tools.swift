@@ -96,15 +96,12 @@ extension MainWindowController {
         view.list.needsDisplay = true
     }
 
-    @objc func cloudDownload(_ sender: Any?) { CloudCommands.downloadNow(selectedURLs) }
-
-    /// Keep Downloaded: a check item, so choosing it on kept items stops keeping them (their copies stay as downloads).
-    @objc func cloudKeep(_ sender: Any?) {
-        let items = view.model.selectedItems
-        guard !CloudCommands.stopKeepingIfAllKept(items.map(\.url)) else { return }
+    /// Download: iCloud Drive items download now; account items stay on this Mac until Remove Download.
+    @objc func cloudDownload(_ sender: Any?) {
         let c = view
-        KeepDownloadedSheet.run(
-            items, window: window, status: { text in if let text { c.statusBar.showMessage(text) } else { c.updateStatus() } },
+        KeepDownloadedSheet.download(
+            c.model.selectedItems, window: window,
+            status: { text in if let text { c.statusBar.showMessage(text) } else { c.updateStatus() } },
             failed: { c.messageBar.show($0, error: true) })
     }
 
@@ -195,18 +192,17 @@ extension MainWindowController {
 }
 
 extension MainWindowController {
-    /// Download Now, Keep Downloaded and Remove Download in the File menu (the context menu builds its own): enabled as
-    /// the selection allows, Keep Downloaded checked when the selection is kept.
+    /// Download and Remove Download in the File menu (the context menu builds its own): enabled as the selection
+    /// allows, "Download Now" for iCloud Drive as in Finder.
     func validateCloud(_ item: NSMenuItem) -> Bool {
         let model = view.model
         let a = CloudCommands.available(for: model.selectedItems) { model.cloud(for: $0) }
         // Disabled items say why (the context menu's own tooltips stay otherwise).
         switch item.action {
-        case #selector(cloudDownload(_:)): return a.downloadNow
-        case #selector(cloudKeep(_:)):
-            item.state = a.keep == .on ? NSControl.StateValue.on : a.keep == .mixed ? .mixed : .off
-            if !a.keepEnabled { item.toolTip = a.reason }
-            return a.keep != nil && a.keepEnabled
+        case #selector(cloudDownload(_:)):
+            item.title = a.downloadTitle
+            if !a.downloadEnabled { item.toolTip = a.reason }
+            return a.download && a.downloadEnabled
         case #selector(cloudEvict(_:)):
             if !a.removeEnabled { item.toolTip = a.reason }
             return a.removeDownload && a.removeEnabled

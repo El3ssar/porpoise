@@ -275,16 +275,10 @@ extension MainWindowController {
     private func addCloudItems(to m: NSMenu, selection sel: [FileItem], in c: ViewContainer) {
         let a = CloudCommands.available(for: sel) { c.model.cloud(for: $0) }
         guard !a.isEmpty else { return }
-        if a.downloadNow {
-            let it = item("Download Now", nil, #selector(cloudDownload(_:)))
+        if a.download {
+            let it = item(a.downloadTitle, nil, #selector(cloudDownload(_:)))
             it.image = NSImage(systemSymbolName: "icloud.and.arrow.down", accessibilityDescription: nil)
-            m.addItem(it)
-        }
-        if let keep = a.keep {
-            let it = item("Keep Downloaded", nil, #selector(cloudKeep(_:)))
-            it.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: nil)
-            it.state = keep == .on ? NSControl.StateValue.on : keep == .mixed ? .mixed : .off
-            it.toolTip = a.keepEnabled ? "Keep a copy on this Mac, updated when it changes." : a.reason
+            it.toolTip = !a.downloadEnabled ? a.reason : a.downloadTitle == "Download" ? "Keep a copy on this Mac, updated when it changes." : nil
             m.addItem(it)
         }
         if a.removeDownload {

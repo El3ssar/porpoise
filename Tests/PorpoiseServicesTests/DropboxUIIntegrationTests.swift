@@ -188,7 +188,7 @@ import Testing
         }
         #expect(kept == nil)
         try await uiEventually { facade.usage(account: account.id).kept == item.size }
-        #expect(facade.state(for: file.url) == .kept)
+        #expect(facade.state(for: file.url) == .local)
         let wiped: Error? = await withCheckedContinuation { continuation in facade.wipe(account: account.id) { continuation.resume(returning: $0) } }
         #expect(wiped == nil && facade.usage(account: account.id).kept == 0)
         let copies = try await provider.scoped(file.url).offlineCopies(); _ = try await copies.fetch(item)

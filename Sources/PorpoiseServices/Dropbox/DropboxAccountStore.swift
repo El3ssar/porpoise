@@ -6,12 +6,12 @@ public enum DropboxConnectionError: Error, Equatable { case alreadyConnected, wr
 /// Engine-only account lifecycle. UI registration/Connect sheet availability is a separate integration step.
 @MainActor public final class DropboxAccountStore {
     public static let shared = DropboxAccountStore(directory: defaultDirectory)
-    private static var defaultDirectory: URL {
-        if CredentialStores.isIsolated {
+    static var defaultDirectory: URL {
+        if CredentialStores.isIsolated, !Settings.isTesting {
             let suite = ProcessInfo.processInfo.environment["PORPOISE_DEFAULTS_SUITE"] ?? "tests"
             return FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-dropbox-" + cloudObjectKey(suite))
         }
-        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Porpoise/Dropbox")
+        return Settings.supportFolder.appendingPathComponent("Dropbox")
     }
     private struct Saved: Codable { var account: DropboxAccount; var appKey: String }
     public private(set) var accounts: [DropboxAccount] = []
@@ -58,46 +58,52 @@ public enum DropboxConnectionError: Error, Equatable { case alreadyConnected, wr
         guard !connecting else { throw DropboxConnectionError.busy }; connecting = true; defer { connecting = false }
         let configuration = config(appKey: expected.flatMap { account in saved.first { $0.account.id == account.id }?.appKey })
         let listener = try CloudOAuthLoopback(port: configuration.loopbackPort); defer { listener.cancel() }
-        let transaction = try DropboxOAuthTransaction(configuration: configuration, redirectURL: listener.redirectURL)
-        openBrowser(transaction.authorizationURL)
-        let callback = try await listener.callback()
-        let token = try await transaction.exchange(callback, http: http)
-        try Task.checkCancellation()
-        // Use the short-lived access token to identify the account before persisting any refresh credential.
-        var request = URLRequest(url: configuration.apiURL.appendingPathComponent("users/get_current_account"))
-        request.httpMethod = "POST"; request.setValue("Bearer " + token.access_token, forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = Data("null".utf8)
-        let (bytes, response) = try await http.response(request); try DropboxClient.check(bytes, response)
-        struct Profile: Decodable {
-            struct Name: Decodable { var display_name: String }
-            struct Root: Decodable { var root_namespace_id: String; var home_namespace_id: String }
-            var account_id: String; var email: String; var name: Name; var root_info: Root
-        }
-        let profile = try JSONDecoder().decode(Profile.self, from: bytes)
-        guard !profile.account_id.isEmpty, !profile.email.isEmpty, !profile.root_info.root_namespace_id.isEmpty else {
-            throw DropboxError.invalidResponse
-        }
-        if let expected, expected.accountID != profile.account_id { throw DropboxConnectionError.wrongAccount }
-        if expected == nil, accounts.contains(where: { $0.accountID == profile.account_id }) { throw DropboxConnectionError.alreadyConnected }
-        let account = DropboxAccount(
-            id: expected?.id ?? UUID(), accountID: profile.account_id, email: profile.email,
-            displayName: profile.name.display_name, rootNamespaceID: profile.root_info.root_namespace_id,
-            homeNamespaceID: profile.root_info.home_namespace_id)
-        guard try token.refresh_token?.isEmpty == false || credentials.read(clientID: configuration.appKey, accountID: account.id) != nil else {
-            throw DropboxError.reconnect
-        }
-        let existingRefresh = try credentials.read(clientID: configuration.appKey, accountID: account.id)
-        if let old = clients[account.id] {
-            await old.changes.stop(); _ = try await old.tokens.disconnect()
-            if token.refresh_token == nil, let existingRefresh {
-                try credentials.save(existingRefresh, clientID: configuration.appKey, accountID: account.id)
+        do {
+            let transaction = try DropboxOAuthTransaction(configuration: configuration, redirectURL: listener.redirectURL)
+            openBrowser(transaction.authorizationURL)
+            let callback = try await listener.callback()
+            let token = try await transaction.exchange(callback, http: http)
+            try Task.checkCancellation()
+            // Use the short-lived access token to identify the account before persisting any refresh credential.
+            var request = URLRequest(url: configuration.apiURL.appendingPathComponent("users/get_current_account"))
+            request.httpMethod = "POST"; request.setValue("Bearer " + token.access_token, forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = Data("null".utf8)
+            let (bytes, response) = try await http.response(request); try DropboxClient.check(bytes, response)
+            struct Profile: Decodable {
+                struct Name: Decodable { var display_name: String }
+                struct Root: Decodable { var root_namespace_id: String; var home_namespace_id: String }
+                var account_id: String; var email: String; var name: Name; var root_info: Root
             }
+            let profile = try JSONDecoder().decode(Profile.self, from: bytes)
+            guard !profile.account_id.isEmpty, !profile.email.isEmpty, !profile.root_info.root_namespace_id.isEmpty else {
+                throw DropboxError.invalidResponse
+            }
+            if let expected, expected.accountID != profile.account_id { throw DropboxConnectionError.wrongAccount }
+            if expected == nil, accounts.contains(where: { $0.accountID == profile.account_id }) { throw DropboxConnectionError.alreadyConnected }
+            let account = DropboxAccount(
+                id: expected?.id ?? UUID(), accountID: profile.account_id, email: profile.email,
+                displayName: profile.name.display_name, rootNamespaceID: profile.root_info.root_namespace_id,
+                homeNamespaceID: profile.root_info.home_namespace_id)
+            guard try token.refresh_token?.isEmpty == false || credentials.read(clientID: configuration.appKey, accountID: account.id) != nil else {
+                throw DropboxError.reconnect
+            }
+            let existingRefresh = try credentials.read(clientID: configuration.appKey, accountID: account.id)
+            if let old = clients[account.id] {
+                await old.changes.stop(); _ = try await old.tokens.disconnect()
+                if token.refresh_token == nil, let existingRefresh {
+                    try credentials.save(existingRefresh, clientID: configuration.appKey, accountID: account.id)
+                }
+            }
+            let tokens = DropboxTokens.session(configuration: configuration, accountID: account.id, credentials: credentials, http: http)
+            try await tokens.accept(token)
+            install(account, configuration: configuration, session: tokens)
+            saved.removeAll { $0.account.id == account.id }; saved.append(Saved(account: account, appKey: configuration.appKey)); try persist()
+            listener.finish(.signedIn(provider: "Dropbox", account: account.email))
+            return account
+        } catch {
+            listener.finish(.failed(provider: "Dropbox", reason: error.localizedDescription))
+            throw error
         }
-        let tokens = DropboxTokens.session(configuration: configuration, accountID: account.id, credentials: credentials, http: http)
-        try await tokens.accept(token)
-        install(account, configuration: configuration, session: tokens)
-        saved.removeAll { $0.account.id == account.id }; saved.append(Saved(account: account, appKey: configuration.appKey)); try persist()
-        return account
     }
     /// A future CloudBackend forwards foreground/background lifecycle here; no UI availability is changed.
     public func setActive(_ active: Bool) async {

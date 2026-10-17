@@ -142,8 +142,7 @@ public enum RemoteFS {
     nonisolated(unsafe) public static var askLogin: (_ host: String, _ user: String?) -> (user: String, password: String)? = { _, _ in nil }
 
     /// Where the cache below lives (tests use a scratch folder).
-    nonisolated(unsafe) static var cacheParent = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Porpoise")
+    nonisolated(unsafe) static var cacheParent = Settings.cachesFolder
 
     /// Local cache for files opened from remote locations.
     static var cacheRoot: URL {

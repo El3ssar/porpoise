@@ -4,11 +4,14 @@
 
 Google Drive is in preview: until Google finishes reviewing Porpoise, only invited accounts can sign in.
 
-- **Keep Downloaded and Remove Download for Google Drive, as with iCloud.** Right-click a Drive file or folder: Download
-  Now, Keep Downloaded (a kept folder downloads what's added to it later, after showing its size and the space left),
-  Remove Download. Kept copies follow changes and deletions in Drive and open, preview and edit from the same copy.
-  Status shows after the name in lists and as one badge in icons, for Drive and iCloud alike. Signing out removes the
-  copies, but not while an edit hasn't reached Drive yet.
+- **Download and Remove Download for Google Drive, as with iCloud.** A file or folder is either in the cloud only (a
+  cloud badge) or on this Mac (no badge). Right-click a Drive file or folder and choose Download: it stays on this Mac,
+  following changes and deletions in Drive, until you choose Remove Download (a downloaded folder also downloads
+  what's added to it later, after showing its size and the space left). Downloads open, preview and edit from the same
+  copy. Status shows after the name in lists and as one badge in icons, for Drive and iCloud alike. Signing out removes
+  the downloads, but not while an edit hasn't reached Drive yet.
+- **Signing in ends on a proper page.** After choosing your account in the browser, the page says you're signed in to
+  Google Drive (or Dropbox) as which account, or why it didn't work, and Porpoise comes back to the front.
 - **Opening a Drive file shows its progress.** A file not on the Mac yet downloads in Activity (progress, speed, time
   left, Cancel) and opens when done; one already here opens at once. Drive copies are about ten times faster.
 

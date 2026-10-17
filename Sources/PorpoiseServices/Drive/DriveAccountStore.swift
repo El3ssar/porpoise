@@ -128,11 +128,13 @@ public final class DriveAccountStore: ObservableObject {
         guard !connecting else { throw DriveError.oauthCancelled }
         connecting = true; lastError = nil
         defer { connecting = false }
+        var browser: DriveLoopback?
+        defer { browser?.cancel() }
         do {
             let config = config(clientID: expected.flatMap { account in saved.first { $0.account.id == account.id }?.clientID })
             guard !config.clientID.isEmpty else { throw DriveError.configuration }
             let listener = try DriveLoopback()
-            defer { listener.cancel() }
+            browser = listener
             let transaction = try DriveOAuthTransaction(configuration: config, redirectURL: listener.redirectURL, loginHint: expected?.email)
             openBrowser(transaction.authorizationURL)
             let callback = try await listener.callback()
@@ -161,9 +163,11 @@ public final class DriveAccountStore: ObservableObject {
             saved.removeAll { $0.account.id == account.id }
             saved.append(Saved(account: account, clientID: config.clientID))
             try persist()
+            listener.finish(.signedIn(provider: "Google Drive", account: account.email))
             return account
         } catch {
             lastError = error is CancellationError ? DriveError.oauthCancelled.localizedDescription : error.localizedDescription
+            browser?.finish(.failed(provider: "Google Drive", reason: lastError ?? ""))
             throw error
         }
     }

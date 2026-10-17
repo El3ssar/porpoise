@@ -21,8 +21,7 @@ public enum ArchiveBrowser {
     /// extraction happens in a temporary folder that is renamed into place only when complete, so an
     /// interrupted extraction is never mistaken for a finished one.
     public static func extractedFolder(for item: FileItem, completion: @escaping (Result<URL, Error>) -> Void) {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        extractedFolder(for: item, in: caches.appendingPathComponent("Porpoise/archives"), completion: completion)
+        extractedFolder(for: item, in: Settings.cachesFolder.appendingPathComponent("archives"), completion: completion)
     }
 
     /// The same, with the extracted copies kept in `cache` (tests use their own folder).

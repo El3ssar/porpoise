@@ -8,6 +8,7 @@ public final class DriveLoopback: @unchecked Sendable {
         do { loopback = try CloudOAuthLoopback() } catch { throw driveOAuthError(error) }
     }
     public func cancel() { loopback.cancel() }
+    public func finish(_ page: CloudOAuthPage) { loopback.finish(page) }
     public func callback(timeout: TimeInterval = 180) async throws -> URL {
         do { return try await loopback.callback(timeout: timeout) } catch { throw driveOAuthError(error) }
     }

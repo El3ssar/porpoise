@@ -65,8 +65,7 @@ extension AppDelegate {
         file.addItem(mi("Add to Places", #selector(W.addToPlaces(_:)), icon: "bookmark-new"))
         file.addItem(sep())
         // Finder's cloud commands (iCloud Drive and connected accounts); no default shortcuts, assignable in Settings.
-        file.addItem(mi("Download Now", #selector(W.cloudDownload(_:))))
-        file.addItem(mi("Keep Downloaded", #selector(W.cloudKeep(_:))))
+        file.addItem(mi("Download", #selector(W.cloudDownload(_:))))
         file.addItem(mi("Remove Download", #selector(W.cloudEvict(_:))))
         file.addItem(sep())
         file.addItem(mi("Rename…", #selector(W.renameItem(_:)), K.f(2), [], icon: "edit-rename"))
