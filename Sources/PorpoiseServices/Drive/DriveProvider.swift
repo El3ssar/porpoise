@@ -86,6 +86,8 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
     ) async throws -> [FileItem] {
         let location = try location(folder)
         guard let client else { throw DriveError.reconnect }
+        // What a change made here while this lists (a rename) is newer than the listing: it isn't undone.
+        let since = client.metadataCache.generation
         if case .myDrive = location.collection { _ = try? await client.file("root") }
         let epoch = cacheLock.withLock { generation }
         var files: [(DriveFile, DriveFile?)] = []
@@ -112,7 +114,7 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
         cacheLock.withLock {
             guard generation == epoch else { return }
             listings[location.collection] = Listing(files: files, parent: folder, items: items)
-            client.metadataCache.store(files.map { $0.0 }, at: location)
+            client.metadataCache.store(files.map { $0.0 }, at: location, since: since)
             cacheOrder.removeAll { $0 == location.collection }
             cacheOrder.append(location.collection)
             while cacheOrder.count > 128 { listings[cacheOrder.removeFirst()] = nil }
