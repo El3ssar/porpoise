@@ -78,11 +78,12 @@ import Testing
     func playerStartsBeforeTenPercentFetched() async throws {
         let scratch = try Scratch(), media = scratch.url.appendingPathComponent("movie.mp4")
         let ffmpeg = try #require(testFFmpeg)
+        let clip = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Videos/h264-aac.mkv")
         let result = try Shell.run(
             ffmpeg,
             [
-                "-hide_banner", "-loglevel", "error", "-nostdin", "-f", "lavfi", "-i", "color=c=blue:s=320x180:r=10",
-                "-t", "120", "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p", "-movflags", "+faststart", media.path,
+                "-hide_banner", "-loglevel", "error", "-nostdin", "-stream_loop", "119", "-i", clip.path,
+                "-t", "120", "-map", "0:v:0", "-c:v", "copy", "-an", "-movflags", "+faststart", media.path,
             ], timeout: 30)
         try #require(result.status == 0, "\(result.err)")
         let handle = try FileHandle(forWritingTo: media)
