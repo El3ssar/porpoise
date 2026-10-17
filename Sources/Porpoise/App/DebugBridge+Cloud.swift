@@ -6,6 +6,9 @@ import PorpoiseCore
 import PorpoiseServices
 
 extension DebugBridge {
+    /// The demo cloud backend, the Connect sheet and cloud captures.
+    static let cloudCommands: [String: Command] = ["cloud": DebugBridge.cloudDemo(_:)]
+
     /// Files a test instance "opened in their app" (`cloud nolaunch`).
     nonisolated(unsafe) static var openedFiles: [String] = []
 
@@ -95,7 +98,7 @@ extension DebugBridge {
             w.view.model.onRemoteUpdate = { apply in
                 previous?(apply)
                 w.view.model.onRemoteUpdate = previous
-                let timer = Timer(timeInterval: ms / 1000, repeats: false) { _ in Self.capture([window.windowNumber], to: f[0]) }
+                let timer = Timer(timeInterval: ms / 1000, repeats: false) { _ in WindowCapture.write([window.windowNumber], to: f[0]) }
                 RunLoop.main.add(timer, forMode: .common)
             }
         case "barclick":
@@ -222,28 +225,11 @@ extension DebugBridge {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            let ids = a.count > 3 && a[3] == "all" ? Self.ownWindowIDs() : ([window.attachedSheet].compactMap { $0 } + [window]).map(\.windowNumber)
-            Self.capture(ids, to: a[0])
+            let ids =
+                a.count > 3 && a[3] == "all"
+                ? WindowCapture.ownWindowIDs() : ([window.attachedSheet].compactMap { $0 } + [window]).map(\.windowNumber)
+            WindowCapture.write(ids, to: a[0])
         }
-    }
-
-    /// Every on-screen window of this process, front to back: open menus, popovers and tooltips too.
-    static func ownWindowIDs() -> [Int] {
-        let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
-        return info.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == getpid() }.compactMap { $0[kCGWindowNumber as String] as? Int }
-    }
-
-    /// Window-server images of these windows only (whatever covers them on screen), composited front to back.
-    static func capture(_ windowIDs: [Int], to path: String) {
-        var ids: [UnsafeRawPointer?] = windowIDs.map { UnsafeRawPointer(bitPattern: $0) }
-        typealias Fn = @convention(c) (CGRect, CFArray, UInt32) -> Unmanaged<CGImage>?
-        guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImageFromArray") else { return }
-        let fn = unsafeBitCast(sym, to: Fn.self)
-        let count = ids.count
-        let list = ids.withUnsafeMutableBufferPointer { CFArrayCreate(nil, $0.baseAddress, count, nil) }
-        // kCGWindowImageBoundsIgnoreFraming
-        guard let list, let image = fn(.null, list, 1)?.takeRetainedValue() else { return }
-        try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
     }
 
     /// `cloud menushot <item name or empty>|<png>`: the item's context menu (the background's when empty), opened at
@@ -258,7 +244,7 @@ extension DebugBridge {
         let at = row.map { CGPoint(x: list.iconRect($0).midX, y: list.iconRect($0).midY) } ?? CGPoint(x: list.bounds.midX, y: 300)
         // The menu runs its own tracking loop: the capture is a timer in the common modes, which that loop serves.
         let timer = Timer(timeInterval: 0.7, repeats: false) { _ in
-            Self.capture(Self.ownWindowIDs(), to: f[1])
+            WindowCapture.write(WindowCapture.ownWindowIDs(), to: f[1])
             menu.cancelTracking()
         }
         RunLoop.main.add(timer, forMode: .common)

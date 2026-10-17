@@ -11,7 +11,7 @@ import SwiftTerm
 /// via distributed notifications. Used by scripts/uitest.sh. Inert unless someone posts to it.
 final class DebugBridge: NSObject {
     static let shared = DebugBridge()
-    private var transferPreviewJob: FileJob?
+    var transferPreviewJob: FileJob?
     /// The channel; PORPOISE_BRIDGE gives a test instance its own, so parallel test runs don't hear each other.
     static let request = Notification.Name("app.porpoise.Porpoise.debug." + (TestEnvironment.bridge.value() ?? "test"))
 
@@ -22,772 +22,100 @@ final class DebugBridge: NSObject {
     }
 
     /// The Settings window (its title follows the page shown).
-    private var settingsWindow: NSWindow? { NSApp.windows.first { $0.isVisible && $0.windowController is SettingsWindowController } }
+    var settingsWindow: NSWindow? { NSApp.windows.first { $0.isVisible && $0.windowController is SettingsWindowController } }
 
-    private var wc: MainWindowController? {
+    var wc: MainWindowController? {
         (NSApp.keyWindow?.windowController as? MainWindowController) ?? AppDelegate.shared.windows.first
     }
 
+    /// A command: what the bridge does with the rest of the line after its name.
+    typealias Command = (DebugBridge) -> (String) -> Void
+
+    /// Every command by its first word, from the tables of the domain extensions.
+    private static let commands = [
+        stateCommands, captureCommands, inputCommands, placesCommands, settingsCommands, transfersCommands, cloudCommands,
+    ].reduce(into: [String: Command]()) { all, table in
+        all.merge(table) { first, _ in
+            assertionFailure("two bridge commands share a name"); return first
+        }
+    }
+
     @objc private func handle(_ n: Notification) {
-        guard let cmd = n.object as? String else { return }
-        let parts = cmd.split(separator: " ", maxSplits: 1).map(String.init)
-        let arg = parts.count > 1 ? parts[1] : ""
-        switch parts.first {
-        case "link":
-            if let wc, (wc.tab.linkedRoots != nil) != (arg == "on") { wc.toggleLinkedBrowsing(nil) }
-        case "filediff":
-            let pair = arg.components(separatedBy: "|")
-            if pair.count == 2 { FileDiffWindow.present(left: URL(fileURLWithPath: pair[0]), right: URL(fileURLWithPath: pair[1])) }
-        case "filediffmode": FileDiffWindow.current?.debug(arg)
-        case "filediffmenucapture":
-            // A second distributed notification waits until menu tracking ends; a common-mode timer does not.
-            let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self] _ in
-                self?.fileDiffMenuSnapshot(to: arg)
-                FileDiffWindow.current?.endToolMenu()
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            FileDiffWindow.current?.debug("openwith")
-        case "snapshot": snapshot(to: arg)
-        case "lsnapshot": layerSnapshot(to: arg)
-        case "wsnapshot": windowServerSnapshot(to: arg)
-        case "wframes":
-            // wframes <folder> <count> <ms>: the main window every <ms> milliseconds, as 00.png, 01.png… (animations).
-            let a = arg.split(separator: " ").map(String.init)
-            guard a.count == 3, let n = Int(a[1]), let ms = Int(a[2]) else { return }
-            try? FileManager.default.createDirectory(atPath: a[0], withIntermediateDirectories: true)
-            for k in 0..<n {
-                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(k * ms)) { [weak self] in
-                    self?.windowServerSnapshot(to: a[0] + String(format: "/%02d.png", k))
-                }
-            }
-        case "zoomframes":
-            // zoomframes <folder> <size> <count> <ms>: an animated zoom (Cmd+=) to <size>, the main window captured every
-            // <ms> milliseconds from its start, as 00.png, 01.png… (00 is before it).
-            let a = arg.split(separator: " ").map(String.init)
-            guard a.count == 4, let size = Double(a[1]), let n = Int(a[2]), let ms = Int(a[3]), let list = wc?.view.zoomView else { return }
-            try? FileManager.default.createDirectory(atPath: a[0], withIntermediateDirectories: true)
-            // Kept in memory while the zoom runs (writing a PNG takes longer than a frame), written after the last.
-            // Beside each frame, <k>.txt: when it was taken, the icon size and how far a glide has come.
-            let t0 = CACurrentMediaTime()
-            var shots: [(image: CGImage?, info: String)] = []
-            func capture() {
-                let info = String(
-                    format: "t=%.0fms size=%.1f glide=%@", (CACurrentMediaTime() - t0) * 1000, list.iconSize,
-                    list.glideProgress.map { String(format: "%.2f", $0) } ?? "-")
-                shots.append((windowServerImage("", nominal: true), info))
-                guard shots.count == max(2, n) else { return }
-                for (k, s) in shots.enumerated() {
-                    if let img = s.image { writePNG(img, to: a[0] + String(format: "/%02d.png", k)) }
-                    try? s.info.write(toFile: a[0] + String(format: "/%02d.txt", k), atomically: true, encoding: .utf8)
-                }
-            }
-            capture()
-            list.animateZoom(to: CGFloat(size))
-            for k in 1..<max(2, n) {
-                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(k * ms)) { capture() }
-            }
-        case "resizeframes":
-            // resizeframes <folder> <width> <height> <count> <ms>: resizes the main window, then captures it every <ms>
-            // (the resize animations), timed in the app.
-            let a = arg.split(separator: " ").map(String.init)
-            guard a.count == 5, let w = Double(a[1]), let h = Double(a[2]), let n = Int(a[3]), let ms = Int(a[4]), let win = wc?.window
-            else { return }
-            try? FileManager.default.createDirectory(atPath: a[0], withIntermediateDirectories: true)
-            var f = win.frame
-            f.size = CGSize(width: w, height: h)
-            win.setFrame(f, display: true)
-            for k in 0..<n {
-                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(k * ms)) { [weak self] in
-                    self?.windowServerSnapshot(to: a[0] + String(format: "/%02d.png", k))
-                    let info = self?.wc?.view.apps?.grid.animationInfo ?? "-"
-                    try? info.write(toFile: a[0] + String(format: "/%02d.txt", k), atomically: true, encoding: .utf8)
-                }
-            }
-        case "perfbench": perfBench(arg)
-        case "transitions":
-            // transitions <file>: the transitions each pane of the front tab ran (ItemTransitions.log), one pane a line.
-            let panes = wc.map { [$0.tab.primary] + ($0.tab.secondary.map { [$0] } ?? []) } ?? []
-            let lines = panes.map { c in
-                "\(c === wc?.tab.primary ? "primary" : "secondary") \(c.url.absoluteString) rows=\(c.model.rows.count) "
-                    + MainActor.assumeIsolated {
-                        let t = c.list.transitions
-                        return zip(t.log, t.logTimes).map { "\($0.rawValue)@\(Int((CACurrentMediaTime() - $1) * 1000))ms" }.joined(separator: ",")
-                    }
-            }
-            var all = lines
-            if let f = MainActor.assumeIsolated({ wc?.tab.lastFlight }) {
-                let sizes = f.sizes.map { "\(Int($0.width.rounded()))x\(Int($0.height.rounded()))" }
-                all.append(
-                    "flight frames=\(f.sizes.count) sizes=\(sizes.joined(separator: ",")) landing=\(f.landing.map { "\(Int($0.width))x\(Int($0.height))" } ?? "-") "
-                        + "smooth=\(f.isSmooth) shownWhenCopiesWent=\(f.shownWhenCopiesWent)")
-            }
-            try? all.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
-        case "animprobe":
-            // animprobe <file>: runs a 0.3 s animation and writes how many frames it got (the display's ticks).
-            var ticks = 0
-            let probe = Animator()
-            probe.run(duration: 0.3, step: { _ in ticks += 1 })
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                let screens = NSScreen.screens.map { "\($0.localizedName) \(Int($0.frame.width))" }.joined(separator: ", ")
-                try? "ticks=\(ticks) running=\(probe.isRunning) main=\(NSScreen.main?.localizedName ?? "-") screens=\(screens)".write(
-                    toFile: arg, atomically: true, encoding: .utf8)
-            }
-        case "csnapshot":
-            // csnapshot <png>|<title prefix or "Settings">: draws a window's views itself, so it works while the window
-            // is inactive or shrunk by Stage Manager (no window-server capture).
-            let parts = arg.components(separatedBy: "|")
-            guard parts.count == 2 else { return }
-            let w = parts[1] == "Settings" ? settingsWindow : NSApp.windows.first { $0.isVisible && $0.title.hasPrefix(parts[1]) }
-            if let fv = w?.contentView?.superview, let rep = fv.bitmapImageRepForCachingDisplay(in: fv.bounds) {
-                fv.cacheDisplay(in: fv.bounds, to: rep)
-                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: parts[0]))
-            }
-        case "winsize":
-            // winsize <width> <height>: the main window's size in points, centred (for screenshots).
-            let n = arg.split(separator: " ").compactMap { Double($0) }
-            if n.count == 2, let win = wc?.window {
-                win.setFrame(CGRect(x: 0, y: 0, width: n[0], height: n[1]), display: true)
-                win.center()
-            }
-        case "panel":
-            if let w = wc {
-                let tag = ["places": 0, "info": 1, "folders": 2, "terminal": 3, "shelf": 4][arg] ?? 3
-                let it = NSMenuItem(); it.tag = tag
-                w.togglePanel(it)
-            }
-        case "mode":
-            if let w = wc, let m = ViewMode(rawValue: arg) { w.view.setMode(m); w.syncToActiveView() }
-        case "activate":
-            NSApp.activate(ignoringOtherApps: true)
-            NSApp.orderedWindows.first { $0.windowController is MainWindowController }?.makeKeyAndOrderFront(nil)
-        case "keysnapshot":
-            if let w = NSApp.keyWindow, let fv = w.contentView?.superview, let rep = fv.bitmapImageRepForCachingDisplay(in: fv.bounds) {
-                fv.cacheDisplay(in: fv.bounds, to: rep)
-                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: arg))
-            }
-        case "termsnap":
-            if let t = wc?.terminal.terminalView, let rep = t.bitmapImageRepForCachingDisplay(in: t.bounds) {
-                t.cacheDisplay(in: t.bounds, to: rep)
-                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: arg))
-                let info =
-                    "frame=\(t.frame) superFrame=\(t.superview?.frame ?? .zero) hidden=\(t.isHidden) bg=\(t.nativeBackgroundColor) layerBg=\(String(describing: t.layer?.backgroundColor))"
-                try? info.write(toFile: arg + ".txt", atomically: true, encoding: .utf8)
-            }
-        case "termtext":
-            if let w = wc {
-                try? (w.terminal.terminalView.getTerminal().getText(start: Position(col: 0, row: 0), end: Position(col: 200, row: 40))).write(
-                    toFile: arg, atomically: true, encoding: .utf8)
-            }
-        case "state": writeState(to: arg)
-        case "onboarding":
-            try? "\(OnboardingWindowController.debugStep) windows=\(AppDelegate.shared.windows.count)".write(
+        guard let line = n.object as? String else { return }
+        let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
+        guard let name = parts.first, let command = Self.commands[name] else { return }
+        command(self)(parts.count > 1 ? parts[1] : "")
+    }
+
+    /// What the app shows and holds: state, menus, settings and windows, as files.
+    static let stateCommands: [String: Command] = [
+        "termtext": DebugBridge.termtextCommand,
+        "state": DebugBridge.writeState(to:),
+        "onboarding": DebugBridge.onboardingCommand,
+        "rtest": DebugBridge.remoteTest(_:),
+        "menus": DebugBridge.menusCommand,
+        "hamburger": DebugBridge.hamburgerCommand,
+        "commandcatalog": DebugBridge.commandcatalogCommand,
+        "settingsdump": DebugBridge.settingsdumpCommand,
+        "permissions": DebugBridge.permissionsCommand,
+        "windows": DebugBridge.windowsCommand,
+    ]
+
+    func termtextCommand(_ arg: String) {
+        if let w = wc {
+            try? (w.terminal.terminalView.getTerminal().getText(start: Position(col: 0, row: 0), end: Position(col: 200, row: 40))).write(
                 toFile: arg, atomically: true, encoding: .utf8)
-        case "rtest": remoteTest(arg)
-        case "cloud": cloudDemo(arg)
-        case "menus": if let m = NSApp.mainMenu { dumpMenu(m, to: arg) }
-        case "hamburger":
-            // hamburger <file>: the toolbar's hamburger menu, like `menus`.
-            if let w = wc { dumpMenu(w.hamburgerMenu(), to: arg) }
-        case "click":
-            // click <window title prefix or "Settings">|<button title, or popup#N for the Nth popup>[|<popup item>]:
-            // clicks a button/checkbox, or picks a popup item, in any window of the app (no real mouse).
-            let p = arg.components(separatedBy: "|")
-            // "Sheet" is the open sheet or alert (they have no title).
-            let window =
-                p[0] == "Settings"
-                ? settingsWindow
-                : p[0] == "Sheet"
-                    ? NSApp.windows.first { $0.isVisible && ($0.isSheet || $0.isModalPanel || $0.level == .modalPanel) }
-                    : NSApp.windows.first { $0.isVisible && $0.title.hasPrefix(p[0]) }
-            guard p.count >= 2, let root = window?.contentView else { return }
-            var popups: [NSPopUpButton] = []
-            var button: NSButton?
-            func walk(_ v: NSView) {
-                if let pop = v as? NSPopUpButton {
-                    popups.append(pop)
-                } else if let seg = v as? NSSegmentedControl,
-                    let i = (0..<seg.segmentCount).first(where: { seg.label(forSegment: $0) == p[1] })
-                {
-                    seg.selectedSegment = i
-                    if let a = seg.action { NSApp.sendAction(a, to: seg.target, from: seg) }
-                } else if let b = v as? NSButton, b.title == p[1], button == nil {
-                    button = b
-                }
-                v.subviews.forEach(walk)
-            }
-            walk(root)
-            if p[1].hasPrefix("popup#"), let i = Int(p[1].dropFirst(6)), let pop = popups[safe: i], p.count == 3 {
-                pop.selectItem(withTitle: p[2])
-                if let a = pop.action { NSApp.sendAction(a, to: pop.target, from: pop) }
-            } else if p[1] == "popups", p.count == 3 {
-                // click <window>|popups|<file>: each popup's items, the selected one starred, one popup per line.
-                let out = popups.map { pop in pop.itemTitles.map { $0 == pop.titleOfSelectedItem ? "*" + $0 : $0 }.joined(separator: ", ") }
-                try? out.joined(separator: "\n").write(toFile: p[2], atomically: true, encoding: .utf8)
-            } else {
-                button?.performClick(nil)
-            }
-        case "commandcatalog":
-            MenuCommandRegistry.shared.refresh()
-            let registry = MenuCommandRegistry.shared
-            let actions = registry.commands.map { command -> [String: Any] in
-                [
-                    "id": command.id, "title": command.path, "key": command.item.keyEquivalent,
-                    "modifiers": ShortcutModifiers(command.item.keyEquivalentModifierMask).rawValue,
-                ]
-            }
-            let report: [String: Any] = [
-                "actions": actions, "conflicts": Settings.shared.keyboardShortcuts.conflicts(actions: registry.commands.map(\.definition)).count,
+        }
+    }
+
+    func onboardingCommand(_ arg: String) {
+        try? "\(OnboardingWindowController.debugStep) windows=\(AppDelegate.shared.windows.count)".write(
+            toFile: arg, atomically: true, encoding: .utf8)
+    }
+
+    func menusCommand(_ arg: String) {
+        if let m = NSApp.mainMenu { dumpMenu(m, to: arg) }
+    }
+
+    /// hamburger <file>: the toolbar's hamburger menu, like `menus`.
+    func hamburgerCommand(_ arg: String) {
+        if let w = wc { dumpMenu(w.hamburgerMenu(), to: arg) }
+    }
+
+    func commandcatalogCommand(_ arg: String) {
+        MenuCommandRegistry.shared.refresh()
+        let registry = MenuCommandRegistry.shared
+        let actions = registry.commands.map { command -> [String: Any] in
+            [
+                "id": command.id, "title": command.path, "key": command.item.keyEquivalent,
+                "modifiers": ShortcutModifiers(command.item.keyEquivalentModifierMask).rawValue,
             ]
-            if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
-                try? data.write(to: URL(fileURLWithPath: arg))
-            }
-        case "shortcutsimport":
-            let paths = arg.components(separatedBy: "|")
-            guard paths.count == 2 else { return }
-            let report: String
-            do {
-                MenuCommandRegistry.shared.refresh();
-                try Settings.shared.importKeyboardShortcuts(
-                    Data(contentsOf: URL(fileURLWithPath: paths[0])), actions: MenuCommandRegistry.shared.commands.map(\.definition));
-                report = "ok"
-            } catch { report = error.localizedDescription }
-            try? report.write(toFile: paths[1], atomically: true, encoding: .utf8)
-        case "toolbarlayout":
-            let commands = arg.split(separator: ",").compactMap { ToolbarCommand(rawValue: String($0)) }
-            if let editor = NSApp.windows.first(where: { $0.windowController is ToolbarCustomizationWindow })?.toolbar {
-                editor.itemIdentifiers = commands.map(\.toolbarIdentifier)
-            } else {
-                Settings.shared.toolbarCommands = commands
-            }
-        case "settingsdump":
-            // settingsdump <file>: every control of the Settings window, page by page, with value and enabled state.
-            dumpSettings(to: arg)
-        case "tag": wc?.toggleTag(arg)
-        case "hover": if let v = wc?.view { v.list.hoverIndex = v.model.rows.firstIndex { $0.item.name == arg } }
-        case "sectionmove":
-            // sectionmove <section>|<before section or empty>
-            let p = arg.components(separatedBy: "|")
-            if p.count == 2, let s = PlaceSection(stored: p[0]) { PlacesModel.shared.moveSection(s, before: PlaceSection(stored: p[1])) }
-        case "placeslock": PlacesModel.shared.isLocked = arg == "on"
-        case "placesclick":
-            // placesclick <title>[|eject]: clicks a Places row (or its eject button) with synthesized events.
-            let parts = arg.components(separatedBy: "|")
-            guard let w = wc, let win = w.window, let r = w.places.rowRect(title: parts[0]) else { return }
-            w.places.scrollToVisible(r)  // as a user would scroll to it
-            w.window?.displayIfNeeded()
-            let local = parts.count > 1 ? CGPoint(x: r.maxX - 26, y: r.minY + 14) : CGPoint(x: 40, y: r.midY)
-            let p = w.places.convert(local, to: nil)
-            for t in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-                if let e = NSEvent.mouseEvent(
-                    with: t, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                    windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
-                {
-                    win.sendEvent(e)
-                }
-            }
-        case "permissions":
-            // permissions <step>: welcome, fullDisk, apps, admin, network or done.
-            let step = OnboardingWindowController.Step.allCases.first { "\($0)" == arg } ?? .welcome
-            OnboardingWindowController.show(at: step)
-        case "appmgmt":
-            SystemIntegration.requestAppManagement {
-                try? "\(PrivacyAccess.appManagementState)".write(toFile: arg, atomically: true, encoding: .utf8)
-            }
-        case "scrollto": if let y = Double(arg) { wc?.view.list.scroll(CGPoint(x: 0, y: y)) }
-        case "pinch":
-            // pinch <factor>: a pinch at the middle of the visible area, released (committed) like a real gesture.
-            guard let l = wc?.view.list, let f = Double(arg) else { return }
-            let vr = l.visibleRect
-            l.previewZoom(l.iconSize * CGFloat(f), anchor: CGPoint(x: vr.midX, y: vr.midY), commitAfter: 0)
-        case "dragpb":
-            // Writes the selection the way a drag does, to a private pasteboard, and reports what other apps would read.
-            guard let w = wc else { return }
-            let urls = w.view.model.selectedItems.map(\.url)
-            let pb = NSPasteboard(name: NSPasteboard.Name("app.porpoise.Porpoise.dragtest"))
-            pb.clearContents()
-            pb.writeObjects(urls.enumerated().map { FileDragWriter(url: $0.element, allURLs: $0.offset == 0 ? urls : nil) })
-            let legacy = pb.propertyList(forType: FileDragWriter.filenames) as? [String] ?? []
-            let modern = (pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL])?.map(\.path) ?? []
-            let out = "types=\(pb.types?.map(\.rawValue) ?? [])\nlegacy=\(legacy)\nmodern=\(modern)"
-            try? out.write(toFile: arg, atomically: true, encoding: .utf8)
-            pb.releaseGlobally()
-        case "droponto":
-            // droponto <folder>: drops the selection on a folder, as a drag with the move operation would.
-            guard let w = wc else { return }
-            FileOperationsController.shared.handleDrop(
-                w.view.model.selectedItems.map(\.url), onto: URL(fileURLWithPath: arg),
-                operation: .move, in: w.view)
-        case "placesmove":
-            // placesmove <title>|<before title or empty>|<section raw>
-            let p = arg.components(separatedBy: "|")
-            let all = PlacesModel.shared.allEntries
-            guard p.count == 3, let e = all.first(where: { $0.title == p[0] }), let sec = PlaceSection(stored: p[2]) else { return }
-            PlacesModel.shared.move(e, before: all.first { $0.title == p[1] }, endOf: sec)
-        case "places":
-            let lines = PlacesModel.shared.sections().map { "\($0.0.rawValue): " + $0.1.map(\.title).joined(separator: ", ") }
-            var all = lines
-            if let f = MainActor.assumeIsolated({ wc?.tab.lastFlight }) {
-                let sizes = f.sizes.map { "\(Int($0.width.rounded()))x\(Int($0.height.rounded()))" }
-                all.append(
-                    "flight frames=\(f.sizes.count) sizes=\(sizes.joined(separator: ",")) landing=\(f.landing.map { "\(Int($0.width))x\(Int($0.height))" } ?? "-") "
-                        + "smooth=\(f.isSmooth) shownWhenCopiesWent=\(f.shownWhenCopiesWent)")
-            }
-            try? all.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
-        case "rename":
-            // rename <path>|<new name>, through the normal rename path (async so the bridge returns).
-            let p = arg.components(separatedBy: "|")
-            guard p.count == 2, let w = wc, let it = FileItem.load(URL(fileURLWithPath: p[0])) else { return }
-            DispatchQueue.main.async { w.rename(it, to: p[1], in: w.view) }
-        case "cloudclick":
-            // Clicks the cloud badge of the named item with a synthesized event (inside the app only).
-            guard let w = wc, let i = w.view.model.rows.firstIndex(where: { $0.item.name == arg }), let r = w.view.list.cloudRects[i],
-                let win = w.window
-            else { return }
-            let p = w.view.list.convert(CGPoint(x: r.midX, y: r.midY), to: nil)
-            for t in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-                if let e = NSEvent.mouseEvent(
-                    with: t, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                    windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
-                {
-                    win.sendEvent(e)
-                }
-            }
-        case "menu":
-            // menu Go/Desktop: performs a main-menu item by its titles (after validation).
-            var m = NSApp.mainMenu
-            let path = arg.split(separator: "/").map(String.init)
-            for (i, t) in path.enumerated() {
-                guard let menu = m else { break }
-                menu.update()
-                guard let idx = menu.items.firstIndex(where: { $0.title == t && !$0.isHidden }) else { NSLog("DBGMENU no \(t)"); break }
-                if i == path.count - 1 {
-                    if menu.items[idx].isEnabled { menu.performActionForItem(at: idx) } else { NSLog("DBGMENU disabled \(t)") }
-                } else {
-                    m = menu.items[idx].submenu
-                }
-            }
-        case "ctxmenu":
-            // Context menu for the current selection (or the background), with enabled state.
-            guard let w = wc else { return }
-            let m = w.contextMenu(for: w.view.model.selectedItems.first, in: w.view)
-            m.update()
-            let lines = m.items.map { it -> String in
-                it.isSeparatorItem
-                    ? "---"
-                    : (it.view != nil
-                        ? "[view \(type(of: it.view!))]"
-                        : "\(it.title)\(self.isEnabled(it) ? "" : " (disabled)")\(it.isAlternate ? " (alt)" : "")\(it.submenu != nil ? " ▸" : "")"
-                            + (it.toolTip.map { " — \($0)" } ?? ""))
-            }
-            var all = lines
-            if let f = MainActor.assumeIsolated({ wc?.tab.lastFlight }) {
-                let sizes = f.sizes.map { "\(Int($0.width.rounded()))x\(Int($0.height.rounded()))" }
-                all.append(
-                    "flight frames=\(f.sizes.count) sizes=\(sizes.joined(separator: ",")) landing=\(f.landing.map { "\(Int($0.width))x\(Int($0.height))" } ?? "-") "
-                        + "smooth=\(f.isSmooth) shownWhenCopiesWent=\(f.shownWhenCopiesWent)")
-            }
-            try? all.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
-        case "key": sendKey(arg)
-        case "search":
-            // search <n|c|N|C> <text>: names or contents, here (lowercase) or everywhere (uppercase)
-            if let v = wc?.view, arg.count > 2 {
-                v.showSearch()
-                v.searchBar.field.stringValue = String(arg.dropFirst(2))
-                v.searchBar.contents = arg.lowercased().hasPrefix("c")
-                v.searchBar.everywhere = arg.first?.isUppercase == true
-                v.searchBar.fire()
-            }
-        case "searchbar":
-            // searchbar <file>: the search bar's controls, left to right: title, frame, toggled
-            guard let bar = wc?.view.searchBar else { break }
-            let lines = bar.subviews.sorted { $0.frame.minX < $1.frame.minX }.map { v in
-                let b = v as? FlatButton
-                return "\(b?.title ?? String(describing: type(of: v))) \(NSStringFromRect(v.frame)) \(b?.isToggled == true ? "on" : "")"
-            }
-            var all = lines
-            if let f = MainActor.assumeIsolated({ wc?.tab.lastFlight }) {
-                let sizes = f.sizes.map { "\(Int($0.width.rounded()))x\(Int($0.height.rounded()))" }
-                all.append(
-                    "flight frames=\(f.sizes.count) sizes=\(sizes.joined(separator: ",")) landing=\(f.landing.map { "\(Int($0.width))x\(Int($0.height))" } ?? "-") "
-                        + "smooth=\(f.isSmooth) shownWhenCopiesWent=\(f.shownWhenCopiesWent)")
-            }
-            try? all.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
-        case "lagprobe":
-            // lagprobe <file> <seconds>: the longest the main thread didn't answer, in ms, every 5 ms meanwhile
-            let parts = arg.split(separator: " ").map(String.init)
-            guard parts.count == 2, let secs = Double(parts[1]) else { break }
-            var last = CACurrentMediaTime(), worst = 0.0
-            let end = last + secs
-            let t = Timer(timeInterval: 0.005, repeats: true) { t in
-                let now = CACurrentMediaTime()
-                worst = max(worst, now - last)
-                last = now
-                if now > end {
-                    t.invalidate()
-                    try? String(format: "%.1f", worst * 1000).write(toFile: parts[0], atomically: true, encoding: .utf8)
-                }
-            }
-            RunLoop.main.add(t, forMode: .common)
-        case "set":
-            // set <key> <json value>
-            let kv = arg.split(separator: " ", maxSplits: 1).map(String.init)
-            if kv.count == 2, let v = try? JSONSerialization.jsonObject(with: Data(kv[1].utf8), options: .fragmentsAllowed) {
-                Settings.store.set(v, forKey: kv[0])
-                NotificationCenter.default.post(name: Settings.changed, object: kv[0])
-            }
-        case "windows":
-            let list = NSApp.windows.filter(\.isVisible).map { "\($0.title)|\(type(of: $0.windowController as Any))|key=\($0.isKeyWindow)" }
-            try? list.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
-        case "drivefixture":
-            // Loopback-only visual fixture. Exercise real OAuth without opening the operator's browser.
-            guard Settings.isTesting, let raw = TestEnvironment.driveFake.value(),
-                let fake = URL(string: raw), fake.scheme == "http", fake.host == "127.0.0.1"
-            else { return }
-            Task { @MainActor in
-                do {
-                    let store = DriveAccountStore.shared
-                    let account: DriveAccount
-                    if let existing = store.accounts.first {
-                        account = existing
-                    } else {
-                        account = try await store.connect { url in Task { _ = try? await URLSession.shared.data(from: url) } }
-                    }
-                    self.wc?.view.setURL(DriveLocation(accountID: account.id).url)
-                    self.writeState(to: arg)
-                } catch { try? error.localizedDescription.write(toFile: arg, atomically: true, encoding: .utf8) }
-            }
-        case "navigate": wc?.view.setURL(arg.hasPrefix("/") ? URL(fileURLWithPath: arg) : (URL(string: arg) ?? URL(fileURLWithPath: arg)))
-        case "reviewfront":
-            guard Settings.isTesting,
-                let window = arg.isEmpty ? wc?.window : NSApp.windows.first(where: { $0.title.hasPrefix(arg) })
-            else { return }
-            NSApp.unhide(nil)
-            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            window.level = .floating
-            window.orderFrontRegardless()
-            NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-        case "reviewcapture":
-            // Keep activation, capture and its key-state evidence in one app-side transaction.
-            guard Settings.isTesting, let window = wc?.window else { break }
-            let args = arg.components(separatedBy: "|")
-            if args.count > 1, ["light", "dark"].contains(args[1]) {
-                Settings.store.set(args[1], forKey: "appearance")
-                NotificationCenter.default.post(name: Settings.changed, object: "appearance")
-            }
-            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]; window.level = .floating
-            window.orderFrontRegardless(); NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                self.writeState(to: args[0] + ".state.json")
-                self.windowServerSnapshot(to: args[0])
-                if args.count > 2, args[2] == "crops", let image = self.windowServerImage(args[0]) {
-                    let scale = CGFloat(image.width) / window.frame.width
-                    let seam = CGRect(x: CGFloat(image.width) / 2 - 110 * scale, y: 0, width: 220 * scale, height: 130 * scale)
-                    let footer = CGRect(x: 0, y: CGFloat(image.height) - 28 * scale, width: CGFloat(image.width), height: 28 * scale)
-                    if let crop = image.cropping(to: seam) { self.writePNG(crop, to: args[0] + ".seam.png") }
-                    if let crop = image.cropping(to: footer) { self.writePNG(crop, to: args[0] + ".footer.png") }
-
-                }
-            }
-        case "transferdialog":
-            guard Settings.isTesting, let owner = wc?.window else { return }
-            let folder = arg == "folder"
-            let source = FileItem(
-                url: URL(fileURLWithPath: "/tmp/Incoming/Report.pdf"), name: folder ? "Project" : "Report.pdf", isDirectory: folder,
-                size: arg == "identical" ? 3_100_000 : 4_300_000,
-                modificationDate: Date(timeIntervalSince1970: arg == "older" ? 1_700_000_000 : 1_700_100_000), contentType: "com.adobe.pdf")
-            let target = FileItem(
-                url: URL(fileURLWithPath: "/tmp/Backup/Report.pdf"), name: folder ? "Project" : "Report.pdf", isDirectory: folder,
-                size: 3_100_000, modificationDate: Date(timeIntervalSince1970: arg == "identical" ? 1_700_100_000 : 1_700_050_000),
-                contentType: "com.adobe.pdf")
-            let job = FileJob(kind: .copy, sources: [source.url], destinationFolder: target.url.deletingLastPathComponent())
-            transferPreviewJob = job
-            let began = CACurrentMediaTime()
-            FileOperationsController.shared.ui?.resolveConflict(
-                ConflictInfo(
-                    source: source, destination: target, suggestedName: "Report 2.pdf", remainingConflicts: 42, differentItems: 30,
-                    identicalItems: 12,
-                    sourceFolder: folder ? TransferFolderSummary(itemCount: 13, bytes: 4_300_000) : nil,
-                    destinationFolder: folder ? TransferFolderSummary(itemCount: 14, bytes: 3_100_000) : nil
-                ), kind: .copy, window: owner,
-                job: job.control
-            ) { _ in }
-            try? String(format: "%.3f ms", (CACurrentMediaTime() - began) * 1000).write(
-                toFile: NSTemporaryDirectory() + "porpoise-conflict-present.txt", atomically: true, encoding: .utf8)
-        case "transferdialogcancel":
-            if let job = transferPreviewJob { FileOperationsController.shared.ui?.cancelConflict(for: job.control) }
-            transferPreviewJob = nil
-        case "transferstate":
-            guard Settings.isTesting else { return }
-            let rows = FileOperationsController.shared.activities.map { activity -> [String: Any] in
-                [
-                    "state": activity.state.rawValue, "phase": activity.progress?.phase.rawValue ?? "", "fraction": activity.fraction,
-                    "title": activity.title, "status": activity.statusText, "hasWindow": activity.originWindow != nil,
-                ]
-            }
-            if let data = try? JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys]) {
-                try? data.write(to: URL(fileURLWithPath: arg))
-            }
-        case "transfercopy":
-            guard Settings.isTesting else { return }
-            let paths = arg.components(separatedBy: "|")
-            if paths.count == 2 {
-                func location(_ path: String) -> URL { path.contains("://") ? URL(string: path)! : URL(fileURLWithPath: path) }
-                FileOperationsController.shared.run(.copy, [location(paths[0])], to: location(paths[1]), window: wc?.window)
-            }
-        case "transferpopover":
-            guard Settings.isTesting else { return }
-            wc?.toolbar.transfers.showTransfers()
-        case "activitypreview": activityPreview(arg)
-        case "activitycontrol":
-            let controller = FileOperationsController.shared
-            for activity in controller.activities where activity.state.isActive {
-                switch arg {
-                case "pause": controller.pause(activity)
-                case "resume": controller.resume(activity)
-                case "cancel": controller.cancel(activity)
-                default: break
-                }
-            }
-        case "activitysize":
-            let size = arg.split(separator: " ").compactMap { Double($0) }
-            if size.count == 2 { ActivityWindowController.shared.window?.setContentSize(NSSize(width: size[0], height: size[1])) }
-        case "action":
-            if let w = wc, w.responds(to: NSSelectorFromString(arg)) {
-                NSApp.sendAction(NSSelectorFromString(arg), to: w, from: nil)
-            } else {
-                NSApp.sendAction(NSSelectorFromString(arg), to: nil, from: nil)
-            }
-        case "select":
-            if let v = wc?.view { v.list.select(arg.hasPrefix("/") ? URL(fileURLWithPath: arg) : v.url.appendingPathComponent(arg)) }
-        case "appearanceexport":
-            try? Settings.shared.exportAppearance().write(to: URL(fileURLWithPath: arg))
-        case "appearanceimport":
-            if let data = try? Data(contentsOf: URL(fileURLWithPath: arg)) { try? Settings.shared.importAppearance(data) }
-        case "settingssize":
-            let dimensions = arg.split(separator: " ").compactMap { Double($0) }
-            if dimensions.count == 2 { settingsWindow?.setContentSize(NSSize(width: dimensions[0], height: dimensions[1])) }
-        case "settingsscroll":
-            if let y = Double(arg), let tabs = settingsWindow?.contentViewController as? NSTabViewController,
-                let scroll = tabs.tabViewItems[safe: tabs.selectedTabViewItemIndex]?.viewController?.view as? NSScrollView
-            {
-                scroll.contentView.scroll(to: NSPoint(x: 0, y: y)); scroll.reflectScrolledClipView(scroll.contentView)
-            }
-        case "settings":
-            AppDelegate.shared.showSettings(nil)
-            if let i = Int(arg), let tabs = settingsWindow?.contentViewController as? NSTabViewController {
-                tabs.selectedTabViewItemIndex = i
-            }
-        case "hit":
-            // hit <x> <y> <outfile>: which view is under a point (window coords from the top-left)
-            let a = arg.split(separator: " ").map(String.init)
-            if let w = wc?.window, let fv = w.contentView?.superview, a.count == 3, let x = Double(a[0]), let y = Double(a[1]) {
-                let p = CGPoint(x: x, y: w.frame.height - y)
-                var chain: [String] = []
-                var v = fv.hitTest(p)
-                while let cur = v { chain.append(String(describing: type(of: cur))); v = cur.superview }
-                try? chain.joined(separator: " < ").write(toFile: a[2], atomically: true, encoding: .utf8)
-            }
-        default: break
+        }
+        let report: [String: Any] = [
+            "actions": actions, "conflicts": Settings.shared.keyboardShortcuts.conflicts(actions: registry.commands.map(\.definition)).count,
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: URL(fileURLWithPath: arg))
         }
     }
 
-    /// Isolated visual-review fixture: real copy. Test bridge only.
-    private func activityPreview(_ path: String) {
-        let root = URL(fileURLWithPath: path).appendingPathComponent("activity-" + UUID().uuidString)
-        let source = root.appendingPathComponent("Project notes.txt")
-        let destination = root.appendingPathComponent("Reports")
-        do {
-            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-            try Data(repeating: 65, count: 2_100_000).write(to: source)
-            let controller = FileOperationsController.shared
-            controller.clearEnded()
-            controller.concurrency = 2
-            controller.run(.copy, [source], to: destination, window: nil)
-            ActivityWindowController.shared.show()
-        } catch {
-            NSLog("Activity preview failed: %@", error.localizedDescription)
-        }
+    /// settingsdump <file>: every control of the Settings window, page by page, with value and enabled state.
+    func settingsdumpCommand(_ arg: String) {
+        dumpSettings(to: arg)
     }
 
-    /// PNG of the key window including the title bar area (traffic lights are drawn by the frame view).
-    private func snapshot(to path: String) {
-        guard let w = NSApp.orderedWindows.first(where: { $0.isVisible && $0.windowController is MainWindowController }) ?? NSApp.keyWindow,
-            let frameView = w.contentView?.superview
-        else { return }
-        let b = frameView.bounds
-        guard let rep = frameView.bitmapImageRepForCachingDisplay(in: b) else { return }
-        frameView.cacheDisplay(in: b, to: rep)
-        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+    /// permissions <step>: welcome, fullDisk, apps, admin, network or done.
+    func permissionsCommand(_ arg: String) {
+        let step = OnboardingWindowController.Step.allCases.first { "\($0)" == arg } ?? .welcome
+        OnboardingWindowController.show(at: step)
     }
 
-    /// Real composited capture of our own window (materials, glass) via the window server.
-    /// CGWindowListCreateImage is hidden from Swift in newer SDKs; capturing one's own windows needs no permission.
-    /// Frame costs, timed in the app and written to <file>:
-    /// `perfbench <file> resize <w0> <w1> <steps>`: the main window resized step by step, each step laid out and drawn.
-    /// `perfbench <file> zoom <size0> <size1> <steps>`: the view (or the app library) zoomed step by step (as a pinch or the
-    /// animation does).
-    /// `perfbench <file> zoomanim <size>`: an animated zoom (Cmd+=), counting the frames it showed.
-    private func perfBench(_ arg: String) {
-        let a = arg.split(separator: " ").map(String.init)
-        guard a.count >= 3, let win = wc?.window, let list = wc?.view.zoomView else { return }
-        let n = a.dropFirst(2).compactMap { Double($0) }
-        func report(_ times: [Double], extra: String = "") {
-            let ms = times.map { $0 * 1000 }.sorted()
-            let mean = ms.reduce(0, +) / Double(max(1, ms.count))
-            let line = String(
-                format: "%@ n=%d mean=%.2fms p50=%.2fms p90=%.2fms max=%.2fms%@", a[1], ms.count, mean,
-                ms.isEmpty ? 0 : ms[ms.count / 2], ms.isEmpty ? 0 : ms[ms.count * 9 / 10], ms.last ?? 0, extra)
-            try? line.write(toFile: a[0], atomically: true, encoding: .utf8)
-        }
-        // Layer-backed views draw when Core Animation commits: flushed here, so the time includes the drawing.
-        func timed(_ body: () -> Void) -> Double {
-            let t = CACurrentMediaTime()
-            body()
-            win.displayIfNeeded()
-            CATransaction.flush()
-            return CACurrentMediaTime() - t
-        }
-        switch a[1] {
-        case "drivecache" where n.count == 1:
-            guard Settings.isTesting, let model = wc?.view.model, model.location.scheme == "gdrive" else { return }
-            report(
-                (0..<max(1, min(20, Int(n[0])))).map { _ in
-                    timed {
-                        model.reload()
-                    }
-                })
-        case "driveexpand" where n.count == 1:
-            guard Settings.isTesting, let model = wc?.view.model, model.location.scheme == "gdrive",
-                let folder = model.items.first(where: \.isBrowsableFolder)
-            else { return }
-            model.props.mode = .details
-            report(
-                (0..<max(1, min(20, Int(n[0])))).map { _ in
-                    model.setExpanded(folder.url, false)
-                    return timed {
-                        model.setExpanded(folder.url, true)
-                    }
-                })
-        case "resize" where n.count == 3:
-            var f = win.frame
-            let steps = Int(n[2])
-            report(
-                (0..<steps).map { k in
-                    // There and back, like a hand dragging the window's edge.
-                    let t = Double(k) / Double(max(1, steps - 1)) * 2
-                    f.size.width = n[0] + (n[1] - n[0]) * (t <= 1 ? t : 2 - t)
-                    return timed { win.setFrame(f, display: true) }
-                })
-        case "zoom" where n.count == 3:
-            let steps = Int(n[2])
-            report(
-                (0..<steps).map { k in
-                    let s = n[0] + (n[1] - n[0]) * Double(k) / Double(max(1, steps - 1))
-                    return timed { list.previewZoom(CGFloat(s), anchor: nil, commitAfter: nil) }
-                })
-            list.commitZoom()
-        case "zoomanim" where n.count == 1:
-            // Sizes the view showed while the animation ran, seen from a timer: one per frame drawn.
-            var sizes: [CGFloat] = [list.iconSize], gaps: [Double] = []
-            var last = CACurrentMediaTime()
-            let end = last + 0.8
-            list.animateZoom(to: CGFloat(n[0]))
-            let t = Timer(timeInterval: 0.002, repeats: true) { t in
-                let now = CACurrentMediaTime()
-                gaps.append(now - last)
-                last = now
-                if list.iconSize != sizes.last { sizes.append(list.iconSize) }
-                if now > end {
-                    t.invalidate()
-                    report(gaps.filter { $0 > 0.004 }, extra: " frames=\(sizes.count - 1) sizes=\(sizes.map { Int($0) })")
-                }
-            }
-            RunLoop.main.add(t, forMode: .common)
-        default: return
-        }
+    func windowsCommand(_ arg: String) {
+        let list = NSApp.windows.filter(\.isVisible).map { "\($0.title)|\(type(of: $0.windowController as Any))|key=\($0.isKeyWindow)" }
+        try? list.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
     }
 
-    /// A native popup menu is a separate WindowServer window; capture its own ID.
-    private func fileDiffMenuSnapshot(to path: String) {
-        let candidates = NSApp.windows.filter { $0.isVisible && $0.level.rawValue > NSWindow.Level.normal.rawValue }
-        guard
-            let popup = candidates.first(where: { String(describing: type(of: $0)).contains("PopupMenuWindow") })
-                ?? candidates.sorted(by: { $0.level.rawValue > $1.level.rawValue }).first
-        else { return }
-        if let screen = popup.screen ?? NSScreen.main {
-            popup.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - popup.frame.width / 2, y: screen.visibleFrame.midY - popup.frame.height / 2))
-            popup.displayIfNeeded()
-        }
-        typealias Capture = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
-        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return }
-        let capture = unsafeBitCast(symbol, to: Capture.self)
-        if let image = capture(.null, 8, UInt32(popup.windowNumber), 1)?.takeRetainedValue() {
-            writePNG(image, to: path)
-            let metadata: [String: Any] = [
-                "window": popup.windowNumber, "class": String(describing: type(of: popup)), "frame": NSStringFromRect(popup.frame),
-                "pixels": "\(image.width) × \(image.height)",
-            ]
-            if let data = try? JSONSerialization.data(withJSONObject: metadata, options: .prettyPrinted) {
-                try? data.write(to: URL(fileURLWithPath: path + ".json"))
-            }
-        }
-    }
-
-    private func windowServerSnapshot(to arg: String) {
-        // "wsnapshot <png>" = main window; "wsnapshot <png>|<title prefix>" = another window (Settings, Properties…).
-        guard let img = windowServerImage(arg) else { return }
-        writePNG(img, to: arg.components(separatedBy: "|")[0])
-    }
-
-    private func writePNG(_ img: CGImage, to path: String) {
-        try? NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
-    }
-
-    /// `nominal`: at 1x, much quicker to take (frames of an animation).
-    private func windowServerImage(_ arg: String, nominal: Bool = false) -> CGImage? {
-        let parts = arg.components(separatedBy: "|")
-        // The Settings window is titled after its page: "Settings" finds it whatever page is shown.
-        let w: NSWindow?
-        if parts.count > 1 {
-            switch parts[1] {
-            case "FileDiff": w = FileDiffWindow.current?.window
-            case "Settings": w = settingsWindow
-            case "Sheet": w = NSApp.windows.first { $0.isVisible && $0.isSheet }
-            default: w = NSApp.windows.first { $0.isVisible && $0.title.hasPrefix(parts[1]) }
-            }
-        } else {
-            w = NSApp.orderedWindows.first { $0.windowController is MainWindowController }
-        }
-        guard let w else { return nil }
-        typealias Fn = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
-        guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return nil }
-        let fn = unsafeBitCast(sym, to: Fn.self)
-        // kCGWindowListOptionIncludingWindow = 8, kCGWindowImageBoundsIgnoreFraming = 1, kCGWindowImageNominalResolution = 16
-        return fn(.null, 8, UInt32(w.windowNumber), nominal ? 17 : 1)?.takeRetainedValue()
-    }
-
-    /// Snapshot through Core Animation (captures layer-drawn content like the terminal).
-    private func layerSnapshot(to path: String) {
-        guard let w = NSApp.orderedWindows.first(where: { $0.windowController is MainWindowController }),
-            let v = w.contentView?.superview, let layer = v.layer
-        else { return }
-        let scale = w.backingScaleFactor
-        let size = CGSize(width: v.bounds.width * scale, height: v.bounds.height * scale)
-        guard
-            let ctx = CGContext(
-                data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
-                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-        else { return }
-        ctx.scaleBy(x: scale, y: scale)
-        layer.render(in: ctx)
-        guard let img = ctx.makeImage() else { return }
-        let rep = NSBitmapImageRep(cgImage: img)
-        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
-    }
-
-    private func writeState(to path: String) {
+    func writeState(to path: String) {
         guard let w = wc else { return }
         let v = w.view
         let state: [String: Any] = [
@@ -852,7 +180,7 @@ final class DebugBridge: NSObject {
     }
 
     /// Exercises a remote provider end to end: "rtest <folder-url>|<report-file>".
-    private func remoteTest(_ arg: String) {
+    func remoteTest(_ arg: String) {
         let parts = arg.components(separatedBy: "|")
         guard parts.count == 2, let base = URL(string: parts[0]), let p = RemoteFS.provider(for: base) else { return }
         let report = parts[1]
@@ -918,13 +246,13 @@ final class DebugBridge: NSObject {
 
     /// An item's enabled state after validation. Without a key window (a test instance in the background) AppKit
     /// disables every window action, so the window controller is asked directly, as the responder chain would.
-    private func isEnabled(_ it: NSMenuItem) -> Bool {
+    func isEnabled(_ it: NSMenuItem) -> Bool {
         if NSApp.keyWindow == nil, it.target == nil, let a = it.action, let w = wc, w.responds(to: a) { return w.validateMenuItem(it) }
         return it.isEnabled
     }
 
     /// Every item of a menu (and its submenus) with its shortcut and enabled state (after validation).
-    private func dumpMenu(_ menu: NSMenu, to path: String) {
+    func dumpMenu(_ menu: NSMenu, to path: String) {
         var out: [String] = []
         func walk(_ m: NSMenu, _ prefix: String) {
             m.delegate?.menuNeedsUpdate?(m)  // as when the menu opens (dynamic submenus fill themselves)
@@ -952,7 +280,7 @@ final class DebugBridge: NSObject {
     }
 
     /// The Settings window's controls: "[page]" headers, then one line per checkbox/radio/popup/field/button.
-    private func dumpSettings(to path: String) {
+    func dumpSettings(to path: String) {
         guard let tabs = settingsWindow?.contentViewController as? NSTabViewController else { return }
         var out: [String] = []
         func walk(_ v: NSView) {
@@ -981,54 +309,6 @@ final class DebugBridge: NSObject {
         try? out.joined(separator: "\n").write(toFile: path, atomically: true, encoding: .utf8)
     }
 
-    /// Delivers a key press inside this app only: "cmd+shift+n", "f10", "down", "cmd+,".
-    private func sendKey(_ spec: String) {
-        var parts = spec.split(separator: "+").map(String.init)
-        let k = parts.removeLast()
-        var flags: NSEvent.ModifierFlags = []
-        for p in parts {
-            switch p {
-            case "cmd": flags.insert(.command);
-            case "shift": flags.insert(.shift);
-            case "opt": flags.insert(.option);
-            case "ctrl": flags.insert(.control);
-            default: break
-            }
-        }
-        let special: [String: (UInt16, Int)] = [
-            "up": (126, NSUpArrowFunctionKey), "down": (125, NSDownArrowFunctionKey), "left": (123, NSLeftArrowFunctionKey),
-            "right": (124, NSRightArrowFunctionKey), "return": (36, 13), "esc": (53, 27), "tab": (48, 9), "space": (49, 32), "backspace": (51, 127),
-            "delete": (117, NSDeleteFunctionKey), "home": (115, NSHomeFunctionKey), "end": (119, NSEndFunctionKey),
-        ]
-        let letters: [Character: UInt16] = [
-            "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12,
-            "w": 13, "e": 14, "r": 15, "y": 16, "t": 17, "1": 18, "2": 19, "3": 20, "4": 21, "6": 22, "5": 23, "=": 24, "9": 25, "7": 26,
-            "-": 27, "8": 28, "0": 29, "]": 30, "o": 31, "u": 32, "[": 33, "i": 34, "p": 35, "l": 37, "j": 38, "k": 40, ";": 41, ",": 43,
-            "/": 44, "n": 45, "m": 46, ".": 47,
-        ]
-        var chars = k, code: UInt16 = k.count == 1 ? letters[Character(k)] ?? 0 : 0
-        if let s = special[k] {
-            code = s.0; chars = String(Character(UnicodeScalar(s.1)!))
-        } else if k.hasPrefix("f"), let n = Int(k.dropFirst()) {
-            let codes: [Int: UInt16] = [1: 122, 2: 120, 3: 99, 4: 118, 5: 96, 6: 97, 7: 98, 8: 100, 9: 101, 10: 109, 11: 103, 12: 111]
-            code = codes[n] ?? 0; chars = String(Character(UnicodeScalar(NSF1FunctionKey + n - 1)!)); flags.insert(.function)
-        }
-        if ["up", "down", "left", "right", "delete", "home", "end"].contains(k) { flags.insert([.function, .numericPad]) }
-        let ignoring = chars
-        if flags.contains(.shift), chars.count == 1, chars.first?.isLetter == true { chars = chars.uppercased() }
-        guard let w = wc?.window ?? NSApp.windows.first(where: \.isVisible),
-            let e = NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: w.windowNumber, context: nil, characters: chars,
-                charactersIgnoringModifiers: ignoring, isARepeat: false, keyCode: code)
-        else { return }
-        let target = NSApp.keyWindow?.attachedSheet ?? NSApp.keyWindow ?? w
-        if !flags.intersection([.command, .control]).isEmpty || k.hasPrefix("f") {
-            if target.performKeyEquivalent(with: e) { return }
-            if NSApp.mainMenu?.performKeyEquivalent(with: e) == true { return }
-        }
-        target.sendEvent(e)
-    }
 }
 
 #endif
