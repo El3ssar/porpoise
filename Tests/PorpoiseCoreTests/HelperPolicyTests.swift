@@ -120,6 +120,45 @@ import Testing
         }
     }
 
+    /// A destination that is itself a link: the tools would write into the folder it points to, which the check
+    /// can't see. Refused for every tool that writes, whatever the link points to.
+    @Test func refusesALinkAsTheDestination() throws {
+        let s = try Scratch()
+        for (i, folder) in (HelperRequests.protectedFolders + ["/Users/Shared"]).enumerated() {
+            let link = try s.symlink("link\(i)", to: folder).path
+            for args in [
+                ["/bin/mv", "--", "/tmp/x", link], ["/bin/mv", "-n", "--", "/tmp/x", link], ["/bin/cp", "--", "/tmp/x", link],
+                ["/bin/cp", "-pR", "--", "/tmp/x", link], ["/bin/ln", "-s", "--", "/tmp/evil", link], ["/bin/mkdir", "--", link],
+                ["/bin/chmod", "-h", "--", "644", link],
+            ] {
+                #expect(HelperRequests.refusal(args)?.hasSuffix("like this.") == true, "\(args) → \(folder)")
+            }
+            // chflags follows its operand; rm and mv remove or move the link itself.
+            #expect(HelperRequests.refusal(["/usr/bin/chflags", "-R", "nouchg,noschg", link]) != nil, "\(folder)")
+            #expect(HelperRequests.refusal(["/bin/rm", "-rf", "--", link]) == nil, "\(folder)")
+            #expect(HelperRequests.refusal(["/bin/mv", "--", link, s.path("moved\(i)").path]) == nil, "\(folder)")
+        }
+        // The same destinations as real paths that don't exist yet are still fine.
+        #expect(HelperRequests.refusal(["/bin/mv", "--", "/tmp/x", s.path("new").path]) == nil)
+    }
+
+    /// Removing: never a protected folder itself or anything in the system's configuration and secrets; what apps
+    /// install in the other protected folders may go (that's how they're uninstalled).
+    @Test func removesNothingOfTheSystemsOwn() {
+        for p in HelperRequests.protectedFolders + ["/private/etc/hosts", "/private/var/db/sudo", "/Library/Security/x", "/private/var/root/.ssh"] {
+            #expect(HelperRequests.refusal(["/bin/rm", "-rf", "--", p]) != nil, "\(p)")
+            #expect(HelperRequests.refusal(["/bin/mv", "--", p, "/Users/me/.Trash/x"]) != nil, "\(p)")
+            #expect(HelperRequests.refusal(["/usr/bin/chflags", "-R", "nouchg,noschg", p]) != nil, "\(p)")
+        }
+        for p in [
+            "/Library/LaunchDaemons/com.vendor.helper.plist", "/Library/LaunchAgents/com.vendor.agent.plist",
+            "/Library/PrivilegedHelperTools/com.vendor.helper",
+        ] {
+            #expect(HelperRequests.refusal(["/bin/mv", "--", p, "/Users/me/.Trash/x"]) == nil, "\(p)")
+            #expect(HelperRequests.refusal(["/bin/rm", "-rf", "--", p]) == nil, "\(p)")
+        }
+    }
+
     // MARK: Running the tools (as the current user, in a scratch folder)
 
     /// Names a shell would split, expand or run: each must stay one argument.
