@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import PorpoiseCore
 
 /// Account-scoped, bounded disk LRU. Only downloaded preview bytes live here; never credentials.
 public actor DriveMediaCache {
@@ -36,9 +37,7 @@ public actor DriveMediaCache {
     }
 
     private func target(key: String, name: String) throws -> URL {
-        guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.contains("\\"), !name.contains("\0") else {
-            throw DriveError.invalidResponse
-        }
+        guard let name = RemoteParsing.localName(forRemote: name) else { throw DriveError.invalidResponse }
         let hash = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
         return directory.appendingPathComponent(hash).appendingPathComponent(name)
     }

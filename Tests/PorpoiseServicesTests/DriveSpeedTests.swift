@@ -141,7 +141,7 @@ import Testing
         #expect(try await cache.file(key: "first", name: "first.png") { throw DriveError.notFound } == first)
         let second = try await cache.file(key: "second", name: "second.png") { Data([5, 6, 7, 8]) }
         #expect(!FileManager.default.fileExists(atPath: first.path) && FileManager.default.fileExists(atPath: second.path))
-        await #expect(throws: DriveError.invalidResponse) { try await cache.file(key: "bad", name: "../escape") { Data() } }
+        await #expect(throws: DriveError.invalidResponse) { try await cache.file(key: "bad", name: "..") { Data() } }
         await #expect(throws: DriveError.invalidResponse) { try await cache.file(key: "large", name: "large") { Data(count: 7) } }
         let pending = Task {
             try await cache.file(key: "pending", name: "pending") {

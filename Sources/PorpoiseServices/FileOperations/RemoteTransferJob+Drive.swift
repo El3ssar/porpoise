@@ -63,6 +63,8 @@ extension RemoteTransferJob {
         {
             name += "." + format.fileExtension
         }
+        // Anywhere but Drive, the name becomes a path component: never more than one.
+        if targetProvider == nil { name = try RemoteFS.localName(name) }
         func mergeRecorded(_ target: URL) throws -> URL {
             record.destinationURL = target; record.phase = .transferring; try journal.save(record)
             let merged = try merge(source, into: target)
