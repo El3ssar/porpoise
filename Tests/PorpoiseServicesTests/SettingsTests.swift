@@ -108,6 +108,53 @@ import Testing
         #expect(s.viewProperties(for: downloads).sortRole == .modificationTime)
     }
 
+    @Test func remoteFolderIdentityIncludesServerAccountPortSchemeAndNamespace() throws {
+        s.rememberPerFolder = true
+        let locations = [
+            "sftp://alice@server-a.invalid/folder/", "sftp://alice@server-b.invalid/folder/",
+            "sftp://bob@server-a.invalid/folder/", "sftp://alice@server-a.invalid:2222/folder/",
+            "smb://alice@server-a.invalid/folder/", "file:///folder/",
+            "gdrive://00000000-0000-0000-0000-000000000001/my-drive/",
+            "gdrive://00000000-0000-0000-0000-000000000002/my-drive/",
+            "dropbox://00000000-0000-0000-0000-000000000001/id%3Aopaque%2Fid?namespace=home",
+            "dropbox://00000000-0000-0000-0000-000000000001/id%3Aopaque%2Fid?namespace=team",
+        ].map { URL(string: $0)! }
+        for (index, url) in locations.enumerated() {
+            var p = ViewProperties(); p.setIconSize(CGFloat(30 + index), for: .icons)
+            s.save(p, for: url)
+        }
+        for (index, url) in locations.enumerated() {
+            #expect(s.viewProperties(for: url).iconSize(for: .icons) == CGFloat(30 + index))
+        }
+        // A location-bar password never enters preferences and does not change folder identity.
+        var p = ViewProperties(); p.mode = .compact
+        s.save(p, for: URL(string: "sftp://alice:fixture-secret@server-a.invalid/folder/")!)
+        #expect(s.viewProperties(for: locations[0]) == p)
+        let keys = try #require(Settings.store.dictionary(forKey: "folderProps")).keys
+        #expect(!keys.contains { $0.contains("fixture-secret") })
+        #expect(keys.contains(locations[5].path))  // existing local path keys remain compatible
+    }
+
+    @Test func remotePathsDoNotInheritLocalSpecialFolderDefaults() {
+        s.rememberPerFolder = true
+        var components = URLComponents(); components.scheme = "sftp"; components.host = "fixture.invalid"
+        components.path = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads").path
+        #expect(s.viewProperties(for: components.url!) == ViewProperties())
+    }
+
+    @Test func restoreDefaultsUsesTheSameLocationPolicy() {
+        let downloads = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
+        let remote = URL(string: "sftp://fixture.invalid/folder/")!
+        var saved = ViewProperties(); saved.mode = .compact; saved.showHidden = true
+        s.save(saved, for: downloads)
+        #expect(s.viewProperties(for: downloads, restoringDefaults: true) == ViewProperties())
+        s.rememberPerFolder = true
+        s.save(saved, for: downloads); s.save(saved, for: remote)
+        #expect(s.viewProperties(for: downloads, restoringDefaults: true) == ViewProperties.defaults(for: downloads))
+        #expect(s.viewProperties(for: remote, restoringDefaults: true) == ViewProperties())
+        #expect(s.viewProperties(for: remote) == saved)
+    }
+
     @Test func damagedStoredStyleFallsBackToTheDefaults() {
         Settings.store.set(Data("{oops".utf8), forKey: "viewProps")
         #expect(s.viewProperties(for: URL(fileURLWithPath: "/tmp")) == ViewProperties())

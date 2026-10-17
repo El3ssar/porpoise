@@ -4,38 +4,30 @@ import Testing
 
 @testable import PorpoiseServices
 
-/// How Drive folders show: who owns what, Shared with me newest first; shown, never saved as anyone's style.
+/// Cloud metadata remains available without imposing a display style over the user's settings.
 @MainActor @Suite(.isolatedSettings) struct CloudViewTests {
     let shared = URL(string: "gdrive://00000000-0000-0000-0000-000000000001/shared-with-me/")!
     let folder = URL(string: "gdrive://00000000-0000-0000-0000-000000000001/my-drive/abc/")!
 
-    @Test func sharedWithMeListsNewestSharedFirstWithOwners() {
+    @Test func cloudFoldersUseAndSaveTheCommonStyle() {
+        var common = ViewProperties(); common.mode = .compact; common.sortRole = .size
+        Settings.shared.save(common, for: URL(fileURLWithPath: "/tmp"))
         let m = DirectoryModel(location: shared)
-        #expect(m.props.mode == .details && m.props.sortRole == .sharedTime && m.props.sortOrder == .descending && !m.props.foldersFirst)
-        #expect(Array(m.props.roles(for: .details).prefix(2)) == [.owner, .sharedTime])
-        // Saving keeps the user's own style: no Owner column or Shared sorting leaks into it.
+        #expect(m.props == common)
+        m.props.mode = .icons
         m.saveProps()
-        let saved = Settings.shared.viewProperties(for: URL(fileURLWithPath: "/tmp"))
-        #expect(saved.mode == .icons && saved.sortRole == .name && !saved.roles(for: .details).contains(.owner))
+        #expect(DirectoryModel(location: folder).props.mode == .icons)
+        #expect(DirectoryModel(location: URL(fileURLWithPath: "/tmp")).props.mode == .icons)
     }
 
-    @Test func otherDriveFoldersGetAnOwnerColumnOnly() {
-        let m = DirectoryModel(location: folder)
-        #expect(m.props.roles(for: .details).first == .owner && m.props.sortRole == .name && m.props.mode == .icons)
-        m.setLocation(URL(fileURLWithPath: NSTemporaryDirectory()))
-        #expect(!m.props.roles(for: .details).contains(.owner))
-        m.setLocation(shared)
-        m.reloadProps()
-        #expect(m.props.sortRole == .sharedTime)
-    }
-
-    @Test func aChangeTheUserMakesIsTheirs() {
+    @Test func cloudFoldersRememberTheirOwnStyle() {
+        Settings.shared.rememberPerFolder = true
         let m = DirectoryModel(location: shared)
-        var p = m.props
-        p.sortRole = .name
-        m.props = p
+        m.props.mode = .compact
+        m.props.setRoles([.owner, .sharedTime], for: .details)
         m.saveProps()
-        #expect(Settings.shared.viewProperties(for: shared).sortRole == .name)
+        #expect(DirectoryModel(location: shared).props == m.props)
+        #expect(DirectoryModel(location: folder).props == ViewProperties())
     }
 
     @Test func sharedDatesSortGroupAndShow() {

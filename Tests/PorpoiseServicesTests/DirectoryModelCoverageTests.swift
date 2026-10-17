@@ -71,7 +71,7 @@ import Testing
     @Test func aTagNobodyUsesListsNothing() async throws {
         let m = try await loaded(FinderTags.url(for: "porpoise-coverage-\(UUID().uuidString)"), timeout: 60)
         #expect(m.isVirtual && m.items.isEmpty && m.rows.isEmpty && m.loadError == nil)
-        #expect(m.props.mode == .details && m.props.sortRole == .name)
+        #expect(m.props.mode == .icons && m.props.sortRole == .name)
     }
 
     /// Sorted by tags, search results aren't sorted off the main thread first (tags are read while showing them).

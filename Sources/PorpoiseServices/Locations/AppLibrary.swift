@@ -2,7 +2,7 @@ import Foundation
 import PorpoiseCore
 
 /// The Applications folder shown as an app library (Launchpad style): every app from /Applications, Apple's own
-/// apps in /System/Applications and ~/Applications in one grid, ignoring the view settings of other folders.
+/// apps in /System/Applications and ~/Applications in one grid. Its listing uses the same view-settings resolver as every other location.
 public enum AppLibrary {
     public static let location = URL(fileURLWithPath: "/Applications")
 
@@ -48,13 +48,4 @@ public enum AppLibrary {
     /// Part of macOS (System volume): can't be moved to the Trash.
     static func isBuiltIn(_ url: URL) -> Bool { url.standardizedFileURL.path.hasPrefix("/System/") }
 
-    /// View properties of the library: names A to Z, nothing hidden (the grid draws itself).
-    public static func props() -> ViewProperties {
-        var p = ViewProperties()
-        p.mode = .icons
-        p.sortRole = .name
-        p.sortOrder = .ascending
-        p.foldersFirst = false
-        return p
-    }
 }
