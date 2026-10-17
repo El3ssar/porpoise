@@ -8,7 +8,8 @@ public actor CloudOfflineStore {
     private var index: CloudOfflineIndex
     private var progress: [String: Double] = [:]
     private var errors: [String: String] = [:]
-    private var inFlight: [String: Task<URL, Error>] = [:]
+    private struct Flight { let id: UUID; let task: Task<URL, Error> }
+    private var inFlight: [String: Flight] = [:]
     private var active = 0
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var generation = 0
@@ -89,15 +90,17 @@ public actor CloudOfflineStore {
         {
             try persist(); return copy
         }
-        if let running = inFlight[item.ref.item] {
-            let result = try await running.value
+        while let running = inFlight[item.ref.item] {
+            let result = try await running.task.value
             // An earlier revision's flight must finish before starting the requested revision.
             if index.entries[item.ref.item]?.item.revision == item.revision { return result }
+            if inFlight[item.ref.item]?.id == running.id { inFlight[item.ref.item] = nil }
         }
         let epoch = generation
         let task = Task { try await self.performFetch(item, epoch: epoch, report: report) }
-        inFlight[item.ref.item] = task
-        defer { inFlight[item.ref.item] = nil }
+        let flightID = UUID()
+        inFlight[item.ref.item] = Flight(id: flightID, task: task)
+        defer { if inFlight[item.ref.item]?.id == flightID { inFlight[item.ref.item] = nil } }
         return try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
     }
     private func acquire() async {
@@ -192,12 +195,21 @@ public actor CloudOfflineStore {
             if unpin, snapshot().inheritedPin(ref.item) != nil {
                 throw CloudContentError.unavailable("Kept because a parent folder is kept downloaded.")
             }
-            inFlight[ref.item]?.cancel()
+            inFlight[ref.item]?.task.cancel()
             if unpin { index.pins.remove(ref.item) }
             if let entry = index.entries.removeValue(forKey: ref.item) {
                 try? FileManager.default.removeItem(at: directory.appendingPathComponent(entry.path).deletingLastPathComponent())
             }
             errors[ref.item] = nil
+        }
+        try persist()
+    }
+    /// Provider removals drop metadata and pin intent as well as bytes. Held edits remain available for conflict UI.
+    public func forget(_ refs: [CloudItemRef]) async throws {
+        for ref in refs where ref.account == source.accountID {
+            if await held(ref) { continue }
+            try await remove([ref], unpin: false)
+            index.items[ref.item] = nil; index.pins.remove(ref.item)
         }
         try persist()
     }
@@ -224,7 +236,7 @@ public actor CloudOfflineStore {
     }
     public func wipe() throws {
         generation += 1
-        for task in inFlight.values { task.cancel() }
+        for flight in inFlight.values { flight.task.cancel() }
         index = CloudOfflineIndex(); progress = [:]; errors = [:]
         try FileManager.default.removeItem(at: directory)
         publish()

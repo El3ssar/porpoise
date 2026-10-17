@@ -75,6 +75,21 @@ public final class CloudOffline: @unchecked Sendable {
         return accounts.backend?.content(for: id)
     }
 
+    public var cacheLimit: Int64? {
+        get { recentLimit }
+        set { recentLimit = newValue }
+    }
+    public func supports(_ url: URL) -> Bool { source(for: url)?.ref(for: url) != nil }
+    public func keepDenial(for url: URL) -> String? {
+        guard let source = source(for: url), let ref = source.ref(for: url) else { return CloudContentError.unsupported.localizedDescription }
+        if source.cachedItem(ref)?.canDownload == false { return "The owner turned off copying and downloading." }
+        return nil
+    }
+    public func keep(_ urls: [URL]) { _ = keep(true, urls) }
+    public func stopKeeping(_ urls: [URL]) { _ = keep(false, urls) }
+    public func downloadNow(_ urls: [URL]) { _ = downloadNow(urls, done: { _ in }) }
+    public func removeRecent(account: String) { removeRecent(account: account, done: { _ in }) }
+
     public func details(for url: URL) -> CloudOfflineDetails {
         guard let source = source(for: url), let ref = source.ref(for: url) else { return CloudOfflineDetails() }
         _ = try? store(for: source)
@@ -105,13 +120,16 @@ public final class CloudOffline: @unchecked Sendable {
             if let entry = snapshot.entries[id] { result.bytes += entry.size; result.items += 1 }
             if let child = snapshot.items[id], !child.isFolder { result.totalBytes += child.size ?? 0; result.totalItems += 1 }
         }
+        if item?.isFolder == true { result.downloaded = result.items > 0 }
         return result
     }
     public func state(for url: URL) -> CloudState {
         guard let source = source(for: url), let ref = source.ref(for: url),
             source.cachedItem(ref)?.isFolder != true
         else { return .local }
-        return .cloudOnly
+        let details = details(for: url)
+        if details.progress != nil { return .downloading }
+        return details.downloaded ? .local : .cloudOnly
     }
     public func usage(account: String) -> CloudOfflineUsage {
         var usage = snapshots[account]?.usage ?? CloudOfflineUsage()
@@ -167,7 +185,7 @@ public final class CloudOffline: @unchecked Sendable {
         return { task.cancel() }
     }
     @discardableResult
-    public func downloadNow(_ urls: [URL], done: @escaping (Error?) -> Void = { _ in }) -> () -> Void {
+    public func downloadNow(_ urls: [URL], done: @escaping (Error?) -> Void) -> () -> Void {
         run(urls, pin: nil, done: done)
     }
     @discardableResult
@@ -231,7 +249,7 @@ public final class CloudOffline: @unchecked Sendable {
         }
         return false
     }
-    public func removeRecent(account: String, done: @escaping (Error?) -> Void = { _ in }) {
+    public func removeRecent(account: String, done: @escaping (Error?) -> Void) {
         Task { @MainActor in
             do { try await stores[account]?.removeRecent(); await keepers[account]?.resume(); done(nil) } catch { done(error) }
         }

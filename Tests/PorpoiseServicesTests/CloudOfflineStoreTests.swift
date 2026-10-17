@@ -18,6 +18,7 @@ final class FakeContentSource: CloudContentSource, @unchecked Sendable {
     var maximum = 0
     var offsets: [Int] = []
     var failAfterPartial = false
+    var delay: Duration = .milliseconds(2)
     func add(_ id: String, parent: String? = nil, folder: Bool = false, text: String = "hello", revision: String = "r1") -> CloudRemoteItem {
         let data = Data(text.utf8)
         let item = CloudRemoteItem(
@@ -50,7 +51,7 @@ final class FakeContentSource: CloudContentSource, @unchecked Sendable {
         if failAfterPartial {
             try data.prefix(2).write(to: partial); failAfterPartial = false; throw CancellationError()
         }
-        try await Task.sleep(for: .milliseconds(2))
+        try await Task.sleep(for: delay)
         if !FileManager.default.fileExists(atPath: partial.path) { _ = FileManager.default.createFile(atPath: partial.path, contents: nil) }
         let handle = try FileHandle(forWritingTo: partial); defer { try? handle.close() }
         try handle.seekToEnd(); try handle.write(contentsOf: data.dropFirst(offset))
@@ -202,5 +203,25 @@ extension CloudOfflineStoreTests {
         for error in [CloudContentError.unsupported, .offline, .notFound, .changed, .checksum, .lowSpace, .heldForEditing, .unavailable("Reason")] {
             #expect(error.errorDescription?.isEmpty == false)
         }
+    }
+}
+
+extension CloudOfflineStoreTests {
+    @Test func aNewRevisionWaitsForOldFlightAndStillDeduplicates() async throws {
+        let source = FakeContentSource(), scratch = try Scratch(), first = source.add("one")
+        source.delay = .milliseconds(100)
+        let store = try store(source, scratch)
+        let firstFetch = Task { try await store.fetch(first) }
+        for _ in 0..<100 where source.active == 0 { try await Task.sleep(for: .milliseconds(1)) }
+        #expect(source.active == 1)
+        let updated = source.add("one", text: "updated", revision: "r2")
+        async let a = store.fetch(updated)
+        async let b = store.fetch(updated)
+        _ = try await firstFetch.value
+        let (one, two) = try await (a, b)
+        #expect(one == two && source.downloads == 2)
+        #expect(try Data(contentsOf: one) == Data("updated".utf8))
+        #expect(await store.snapshot().entries["one"]?.item.revision == "r2")
+        #expect(await store.state(updated.ref) == .downloaded)
     }
 }

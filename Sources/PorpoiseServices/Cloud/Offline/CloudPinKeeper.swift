@@ -30,7 +30,7 @@ public actor CloudPinKeeper {
                     group.addTask { [source] in
                         let item: CloudRemoteItem
                         do { item = try await source.item(ref) } catch CloudContentError.notFound {
-                            try await self.store.remove([ref], unpin: false)
+                            try await self.store.forget([ref])
                             return (CloudRemoteItem(ref: ref, name: "", isFolder: true), [])
                         }
                         return (item, item.isFolder ? try await source.children(ref) : [])
@@ -71,7 +71,16 @@ public actor CloudPinKeeper {
     public func apply(_ batch: CloudChangeBatch) async {
         do {
             try await store.remember(batch.changed)
-            try await store.remove(batch.removed.map { CloudItemRef(account: source.accountID, item: $0) }, unpin: false)
+            let before = await store.snapshot()
+            var removed = Set(batch.removed)
+            var grew = true
+            while grew {
+                grew = false
+                for item in before.items.values where !removed.contains(item.ref.item) && item.parents.contains(where: removed.contains) {
+                    removed.insert(item.ref.item); grew = true
+                }
+            }
+            try await store.forget(removed.map { CloudItemRef(account: source.accountID, item: $0) })
             if batch.reset { await reconcile(); return }
             let snapshot = await store.snapshot()
             let kept = batch.changed.filter { snapshot.isKept($0.ref.item) }
@@ -95,7 +104,7 @@ public actor CloudPinKeeper {
                 // moved items become recent; deleted items lose their bytes.
                 for entry in before.entries.values where before.isKept(entry.item.ref.item) && !found.contains(entry.item.ref.item) {
                     do { let fresh = try await source.item(entry.item.ref); try await store.remember([fresh]) } catch CloudContentError.notFound {
-                        try await store.remove([entry.item.ref], unpin: false)
+                        try await store.forget([entry.item.ref])
                     }
                 }
                 try await download(items)

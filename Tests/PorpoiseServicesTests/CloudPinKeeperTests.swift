@@ -76,3 +76,17 @@ extension CloudPinKeeperTests {
         await keeper.stop()
     }
 }
+
+extension CloudPinKeeperTests {
+    @Test func aHeldRemovalDoesNotPreventOtherRemovals() async throws {
+        let source = FakeContentSource(), scratch = try Scratch()
+        let held = source.add("held"), other = source.add("other")
+        let store = try CloudOfflineStoreTests().store(source, scratch, held: { $0.item == "held" })
+        _ = try await store.fetch(held, keep: true); _ = try await store.fetch(other, keep: true)
+        let keeper = CloudPinKeeper(store: store)
+        await keeper.apply(.init(removed: ["held", "other"]))
+        #expect(await store.snapshot().entries["held"] != nil)
+        #expect(await store.snapshot().entries["other"] == nil)
+        await keeper.stop()
+    }
+}
