@@ -327,7 +327,7 @@ final class InformationPanel: NSView {
                         if let cached = try await client.cachedPreview(file) {
                             try await paint(cached)
                         } else if file.thumbnailLink != nil {
-                            try await paint(try await client.thumbnail(file))
+                            try await paint(try await client.thumbnail(file, maximumPixelSize: 1600))
                         }
                     } else {
                         let context = DriveTransferContext(progress: { [weak self] bytes, total in

@@ -84,6 +84,28 @@ import Testing
         }
     }
 
+    @Test func truncatedPreallocatedPartialFailsClosed() async throws {
+        let scratch = try Scratch()
+        let server = try FakeDriveServer(fixture: fixture(scratch, size: 32 << 20))
+        let client = try DriveMutationTests().client(server, folder: scratch.url.appendingPathComponent("journal"))
+        let file = try await client.file("big"), id = UUID()
+        let directory = client.mutationJournal.folder.appendingPathComponent("Downloads")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let partial = directory.appendingPathComponent(id.uuidString + ".part")
+        try Data().write(to: partial)
+        let handle = try FileHandle(forWritingTo: partial)
+        try handle.truncate(atOffset: 32 << 20)
+        var record = DriveMutationRecord(operationID: id, accountID: client.accountID, kind: "download", sourceID: "big")
+        record.revision = file.version; record.phase = .transferring; record.fingerprint = JobJournal.Fingerprint(partial)
+        record.downloadRanges = (0..<4).map { index in
+            .init(start: Int64(index) << 23, end: Int64(index + 1) << 23, offset: Int64(index) << 23)
+        }
+        try client.mutationJournal.save(record)
+        try handle.truncate(atOffset: 4096); try handle.close()
+        await #expect(throws: DriveMutationError.sourceChanged) { try await client.downloadToStaging(file, operationID: id) }
+        #expect(try client.mutationJournal.load(id)?.phase != .done)
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["PORPOISE_TRANSFER_BENCHMARK"] == "1"))
     func perConnectionThroughput() async throws {
         let scratch = try Scratch()

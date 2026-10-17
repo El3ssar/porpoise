@@ -8,6 +8,7 @@ final class DriveMediaPreviewPanel: NSPanel, NSWindowDelegate {
     private let video = AVPlayerView()
     private let spinner = NSProgressIndicator()
     private let status = NSTextField(wrappingLabelWithString: "Loading preview…")
+    private var shown: String?
     private var loading: Task<Void, Never>?
     private var stream: DriveStreamingPreview?
     private var observation: NSKeyValueObservation?
@@ -21,13 +22,18 @@ final class DriveMediaPreviewPanel: NSPanel, NSWindowDelegate {
         delegate = self
         video.controlsStyle = .floating
         video.autoresizingMask = [.width, .height]
-        contentView = video
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
+        video.frame = content.bounds
+        content.addSubview(video)
+        contentView = content
         spinner.style = .spinning
         spinner.isDisplayedWhenStopped = false
-        video.addSubview(spinner)
+        content.addSubview(spinner)
+        spinner.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
         status.alignment = .center
         status.textColor = .secondaryLabelColor
-        video.addSubview(status)
+        content.addSubview(status)
+        status.autoresizingMask = [.width, .minYMargin, .maxYMargin]
         center()
     }
 
@@ -38,8 +44,11 @@ final class DriveMediaPreviewPanel: NSPanel, NSWindowDelegate {
     }
 
     func show(_ file: DriveFile, client: DriveClient, relativeTo parent: NSWindow) {
-        stop()
         title = file.name
+        let key = "\(client.accountID)|\(file.id)|\(file.headRevisionId ?? file.version ?? "")"
+        if shown == key, isVisible { return }
+        stop()
+        shown = key
         spinner.frame = NSRect(x: video.bounds.midX - 10, y: video.bounds.midY, width: 20, height: 20)
         status.frame = NSRect(x: 20, y: video.bounds.midY - 40, width: video.bounds.width - 40, height: 30)
         status.stringValue = "Loading preview…"
@@ -92,6 +101,7 @@ final class DriveMediaPreviewPanel: NSPanel, NSWindowDelegate {
     }
 
     private func stop() {
+        shown = nil
         loading?.cancel(); loading = nil
         observation = nil; itemObservation = nil
         video.player?.pause(); video.player = nil

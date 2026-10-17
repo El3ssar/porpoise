@@ -15,7 +15,7 @@ extension DriveClient {
         }
         if target.thumbnailLink != nil, target.hasThumbnail != false {
             do {
-                let initial = try await thumbnail(target)
+                let initial = try await thumbnail(target, maximumPixelSize: 1600)
                 try Task.checkCancellation()
                 try await show(initial)
             } catch {

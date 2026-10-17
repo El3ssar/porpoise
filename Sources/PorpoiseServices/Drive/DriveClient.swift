@@ -311,7 +311,7 @@ public final class DriveClient: @unchecked Sendable {
         return format.map { "\(file.name).\($0.fileExtension)" } ?? file.name
     }
 
-    public func thumbnail(_ file: DriveFile) async throws -> URL {
+    public func thumbnail(_ file: DriveFile, maximumPixelSize: Int? = nil) async throws -> URL {
         let target = try await resolve(file)
         guard target.hasThumbnail != false, let url = target.thumbnailLink, let host = url.host?.lowercased() else {
             // Native Docs/Sheets/Slides can always use a PDF export when no thumbnail is available.
@@ -323,12 +323,23 @@ public final class DriveClient: @unchecked Sendable {
         let google =
             url.scheme == "https" && (host.hasSuffix(".googleusercontent.com") || host.hasSuffix(".googleapis.com") || host == "lh3.google.com")
         guard url.user == nil, url.password == nil, fixture || google else { throw DriveError.invalidResponse }
+        let thumbnailURL: URL
+        if let maximumPixelSize {
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+            var path = components.percentEncodedPath
+            if let suffix = path.range(of: "=s[0-9]+(?:-[A-Za-z0-9]+)*$", options: .regularExpression) { path.removeSubrange(suffix) }
+            components.percentEncodedPath = path + "=s\(min(1600, max(64, maximumPixelSize)))"
+            guard let sized = components.url else { throw DriveError.invalidResponse }
+            thumbnailURL = sized
+        } else {
+            thumbnailURL = url
+        }
         return try await mediaCache.file(
-            key: "thumbnail|\(target.id)|\(target.headRevisionId ?? target.version ?? target.modifiedTime ?? "")|\(url.absoluteString)",
+            key: "thumbnail|\(target.id)|\(target.headRevisionId ?? target.version ?? target.modifiedTime ?? "")|\(thumbnailURL.absoluteString)",
             name: "thumbnail.jpg"
         ) {
             if self.isOffline { throw DriveError.offline }
-            var request = URLRequest(url: url)
+            var request = URLRequest(url: thumbnailURL)
             request.setValue("Bearer \(try await self.tokens.accessToken())", forHTTPHeaderField: "Authorization")
             return try await self.http.data(request)
         }

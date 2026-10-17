@@ -36,6 +36,8 @@ import Testing
         #expect(elapsed < 0.55)
         let stats = server.base.appendingPathComponent("__stats")
         let before = try await URLSession.shared.data(from: stats).0
+        let json = try #require(try JSONSerialization.jsonObject(with: before) as? [String: Any])
+        #expect((json["requests"] as? [String])?.contains { $0.contains("/thumbnail/image=s1600") } == true)
         var warm: [URL] = []
         #expect(try await client.progressivePreview(file) { warm.append($0) } == full)
         #expect(warm == [full])

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Faster Drive downloads and immediate previews.** Large downloads use parallel byte ranges with independent resume
+  checkpoints. Images and documents show a large thumbnail while the full preview loads, and text/code can show its
+  beginning first. Audio and video stream and seek without waiting for the entire file; moving the selection cancels
+  the preview. A downloaded copy opens immediately from the shared offline store.
+
 - **Smoother split view, a steady offline state, ⌘← / ⌘→.** Opening the split view in a Google Drive folder runs one
   animation: the items fly over from the left pane once the right one has them, instead of first sliding in from the
   right, vanishing and flying over. All item animations (split, filter, search, changes from elsewhere, resizing) now
