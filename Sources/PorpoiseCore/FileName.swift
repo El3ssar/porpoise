@@ -46,7 +46,7 @@ public enum FileName {
         if context == .remote && (scalars.contains("\n") || scalars.contains("\r")) { return .newline }
         let components: [String]
         if context == .multiComponent {
-            if name.hasPrefix("/") { return .separator }
+            if scalars.first == "/" { return .separator }
             components = name.scalarComponents(separatedBy: "/")
             if components.isEmpty { return .empty }
         } else {
@@ -55,7 +55,7 @@ public enum FileName {
         }
         if components.contains(where: { $0 == "." || $0 == ".." }) { return .dot }
         if (context == .local || context == .multiComponent) && components.contains(where: { $0.utf8.count > 255 }) { return .tooLong }
-        if name.hasPrefix(".") { return .hidden }
+        if scalars.first == "." { return .hidden }
         if context == .multiComponent && scalars.contains("/") { return .nestedFolders }
         if name != name.trimmingCharacters(in: .whitespaces) { return .whitespace }
         return nil
