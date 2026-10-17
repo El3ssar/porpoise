@@ -68,3 +68,23 @@ import Testing
         #expect(operations.activities.count == count)
     }
 }
+
+extension CloudOfflineActivityTests {
+    @Test func aSpaceSignalInsideThePauseNotificationIsNotLost() async throws {
+        let scratch = try Scratch(), operations = operations(scratch)
+        var attempts = 0
+        let observer = NotificationCenter.default.addObserver(forName: FileOperationsController.activityChanged, object: operations, queue: .main) {
+            _ in
+            if operations.activities.last?.state == .paused {
+                NotificationCenter.default.post(name: CloudOffline.spaceChanged, object: nil)
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        _ = try await operations.cloudTask(title: "Keeping files", sources: []) { _ in
+            attempts += 1
+            if attempts == 1 { throw CloudContentError.lowSpace }
+            return []
+        }
+        #expect(attempts == 2 && operations.activities.last?.state == .completed)
+    }
+}

@@ -112,6 +112,7 @@ extension FileOperationsController {
 private final class CloudTransferWake: @unchecked Sendable {
     private let lock = NSLock()
     private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    private var pending = false
     func signal() {
         let pending = lock.withLock {
             let all = Array(waiters.values); waiters.removeAll(); return all
@@ -124,7 +125,11 @@ private final class CloudTransferWake: @unchecked Sendable {
         try await withTaskCancellationHandler {
             try Task.checkCancellation()
             await withCheckedContinuation { continuation in
-                lock.withLock { waiters[id] = continuation }
+                let ready = lock.withLock {
+                    if pending { pending = false; return true }
+                    waiters[id] = continuation; return false
+                }
+                if ready { continuation.resume(); return }
                 if Task.isCancelled { signal(id) }
                 Task { [weak self] in
                     try? await Task.sleep(for: .seconds(60))
