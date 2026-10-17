@@ -59,14 +59,16 @@ import Testing
         #expect(result?.map(\.name) == ["\(tag).txt"])
     }
 
-    @Test func recentFilesAndTagsAreEmptyWhenSpotlightNeverAnswers() async throws {
+    @Test(.timeLimit(.minutes(1))) func recentFilesAndTagsAreEmptyWhenSpotlightNeverAnswers() async throws {
         let resume = stallSpotlight()
         defer { resume() }
-        var tagged: [FileItem]?
-        let q = MetadataListQuery.tagged("Red-\(UUID().uuidString)") { tagged = $0 }
-        _ = q
-        // Default timeout: Spotlight gets a few seconds before the list is shown empty.
-        #expect(await eventually(10) { tagged != nil })
-        #expect(tagged?.isEmpty == true)
+        var query: MetadataListQuery?
+        defer { withExtendedLifetime(query) {} }
+        // Own the query until its timeout callback arrives, as DirectoryModel does. An unused local can be
+        // released before the await, which stops the query rather than testing its unavailable response.
+        let tagged: [FileItem] = await withCheckedContinuation { continuation in
+            query = MetadataListQuery.tagged("Red-\(UUID().uuidString)") { continuation.resume(returning: $0) }
+        }
+        #expect(tagged.isEmpty)
     }
 }

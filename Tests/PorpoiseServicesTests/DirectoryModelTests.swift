@@ -546,13 +546,13 @@ import Testing
         #expect(m.props.mode == .compact)
     }
 
-    @Test func recentLocationsHaveTheirOwnStyle() async throws {
+    @Test func recentLocationsRememberTheChosenStyle() async throws {
+        Settings.shared.rememberPerFolder = true
         let m = try await loaded(PlacesModel.recentLocationsURL)
-        #expect(m.isVirtual)
-        #expect(m.props.mode == .details && m.props.sortRole == .name && !m.props.foldersFirst)
-        #expect(m.props.roles(for: .details) == [.path, .accessTime])
-        m.props.mode = .icons
-        m.saveProps()  // virtual locations keep theirs
+        #expect(m.isVirtual && m.props == ViewProperties.defaults(for: PlacesModel.recentLocationsURL))
+        m.props.mode = .compact
+        m.saveProps()
+        #expect(DirectoryModel(location: PlacesModel.recentLocationsURL).props.mode == .compact)
         #expect(Settings.store.object(forKey: "viewProps") == nil)
     }
 
@@ -574,7 +574,7 @@ import Testing
         let found = m.items.map { $0.url.pathComponents.suffix(2).joined(separator: "/") }
         #expect(Set(found) == ["Apps/Zed.app", "Utilities/Tool.app", "System/Calculator.app"])
         #expect(names(m) == ["Calculator.app", "Tool.app", "Zed.app"])
-        #expect(m.props == AppLibrary.props())
+        #expect(m.props == ViewProperties())
         #expect(AppLibrary.displayName(s.path("Apps/Zed.app")) == "Zed")
         #expect(AppLibrary.isBuiltIn(URL(fileURLWithPath: "/System/Applications/Calculator.app")))
         #expect(!AppLibrary.isBuiltIn(s.path("System/Calculator.app")))

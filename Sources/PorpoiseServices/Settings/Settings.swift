@@ -160,21 +160,28 @@ public final class Settings {
     /// The display style for a folder. "Use common display style for all folders": one style everywhere, and a change
     /// made in any folder changes it. "Remember display style for each folder": the folder's own saved style, else the
     /// built-in defaults of special folders (Downloads by date, Trash as details), else the common style.
-    func viewProperties(for url: URL) -> ViewProperties {
-        guard rememberPerFolder else { return globalViewProperties }
-        if let data = d.dictionary(forKey: "folderProps")?[url.path] as? Data,
+    public func viewProperties(for url: URL, restoringDefaults: Bool = false) -> ViewProperties {
+        let common = restoringDefaults ? ViewProperties() : globalViewProperties
+        guard rememberPerFolder else { return common }
+        if !restoringDefaults, let data = d.dictionary(forKey: "folderProps")?[viewPropertiesKey(for: url)] as? Data,
             let p = try? JSONDecoder().decode(ViewProperties.self, from: data)
         {
             return p
         }
         let special = ViewProperties.defaults(for: url)
-        return special != ViewProperties() ? special : globalViewProperties
+        return special != ViewProperties() ? special : common
+    }
+
+    /// Keep legacy local path keys; remote identity includes scheme, account/host, port and opaque path.
+    /// A password entered in the location bar is never part of stored display settings.
+    private func viewPropertiesKey(for url: URL) -> String {
+        url.isFileURL ? url.path : RemoteFS.withoutPassword(url).absoluteString
     }
 
     public func save(_ props: ViewProperties, for url: URL) {
         if rememberPerFolder {
             var dict = d.dictionary(forKey: "folderProps") ?? [:]
-            dict[url.path] = try? JSONEncoder().encode(props)
+            dict[viewPropertiesKey(for: url)] = try? JSONEncoder().encode(props)
             d.set(dict, forKey: "folderProps")
         } else {
             globalViewProperties = props
