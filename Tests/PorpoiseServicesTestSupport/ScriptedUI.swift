@@ -26,6 +26,8 @@ public final class ScriptedUI: FileOperationsUI {
     public private(set) var errors: [String] = []
     public private(set) var authorizationErrors: [String] = []
     public private(set) var finishedJobs: [FileJob] = []
+    /// Every activity that finished, with a job or without (a remote transfer has none).
+    public private(set) var finishedActivities = 0
     private var waiting: [UUID: CheckedContinuation<Void, Never>] = [:]
 
     public init(conflicts: [ConflictAnswer] = [], confirms: Bool = true, dontAskAgain: Bool = false) {
@@ -66,6 +68,7 @@ public final class ScriptedUI: FileOperationsUI {
     public func jobProgressed(_ activity: Activity, _ progress: JobProgress) {}
 
     public func jobFinished(_ activity: Activity) {
+        finishedActivities += 1
         if let job = activity.job { finishedJobs.append(job) }
         // The controller finishes its bookkeeping in the same main-queue turn, before a waiter resumes.
         let w = waiting
