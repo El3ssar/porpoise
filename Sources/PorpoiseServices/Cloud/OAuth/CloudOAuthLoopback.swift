@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-/// Binds only 127.0.0.1 on an OS-selected port. No web server or callback URL is exposed on the LAN.
+/// Binds only 127.0.0.1 on a requested or OS-selected port. No web server or callback URL is exposed on the LAN.
 public final class CloudOAuthLoopback: @unchecked Sendable {
     public let redirectURL: URL
     private let descriptor: Int32
@@ -9,12 +9,13 @@ public final class CloudOAuthLoopback: @unchecked Sendable {
     private var cancelled = false
     private var waiting = false
 
-    public init() throws {
+    public init(port: UInt16 = 0) throws {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { throw CloudOAuthError.invalidResponse }
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
         address.sin_addr.s_addr = inet_addr("127.0.0.1")
         let bound = withUnsafePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }

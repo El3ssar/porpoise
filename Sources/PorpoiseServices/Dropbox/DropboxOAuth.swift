@@ -3,29 +3,38 @@ import PorpoiseCore
 
 public struct DropboxConfiguration: Sendable {
     public var appKey: String
+    public var isConfigured: Bool { !appKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// Dropbox requires an exactly registered redirect URI; zero is reserved for loopback fixtures.
+    public var loopbackPort: UInt16
+    public static let registeredLoopbackPort: UInt16 = 53682
     public var authorizationURL: URL
     public var tokenURL: URL
     public var apiURL: URL
     public var contentURL: URL
     public var notifyURL: URL
     public init(
-        appKey: String, authorizationURL: URL = URL(string: "https://www.dropbox.com/oauth2/authorize")!,
+        appKey: String, loopbackPort: UInt16 = registeredLoopbackPort,
+        authorizationURL: URL = URL(string: "https://www.dropbox.com/oauth2/authorize")!,
         tokenURL: URL = URL(string: "https://api.dropboxapi.com/oauth2/token")!,
         apiURL: URL = URL(string: "https://api.dropboxapi.com/2/")!,
         contentURL: URL = URL(string: "https://content.dropboxapi.com/2/")!,
         notifyURL: URL = URL(string: "https://notify.dropboxapi.com/2/")!
     ) {
-        self.appKey = appKey; self.authorizationURL = authorizationURL; self.tokenURL = tokenURL
+        self.appKey = appKey; self.loopbackPort = loopbackPort; self.authorizationURL = authorizationURL; self.tokenURL = tokenURL
         self.apiURL = apiURL; self.contentURL = contentURL; self.notifyURL = notifyURL
     }
     public static func selected(
         defaults: UserDefaults = Settings.store, environment: [String: String] = ProcessInfo.processInfo.environment,
         bundle: Bundle = .main
     ) -> Self {
-        let setting = defaults.string(forKey: "dropboxAppKey")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        func nonempty(_ value: String?) -> String? {
+            let value = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return value?.isEmpty == false ? value : nil
+        }
         return Self(
-            appKey: environment["PORPOISE_DROPBOX_APP_KEY"] ?? (setting?.isEmpty == false ? setting : nil)
-                ?? bundle.object(forInfoDictionaryKey: "DropboxAppKey") as? String ?? "")
+            appKey: nonempty(environment["PORPOISE_DROPBOX_APP_KEY"])
+                ?? nonempty(defaults.string(forKey: "dropboxAppKey"))
+                ?? nonempty(bundle.object(forInfoDictionaryKey: "DropboxAppKey") as? String) ?? "")
     }
     public static let scopes = "files.metadata.read files.metadata.write files.content.read files.content.write account_info.read sharing.read"
 }

@@ -14,6 +14,7 @@ import Testing
     let composite: CompositeCloudBackend
     let accounts = CloudAccounts()
     init() throws {
+        Settings.store.set("fixture-app", forKey: "dropboxAppKey")
         server = try FakeDropboxServer(); defaults = UserDefaults(suiteName: suite)!
         store = DropboxAccountStore(defaults: defaults, credentials: MemoryCredentials(), configuration: server.config, directory: server.directory)
         backend = DropboxCloudBackend(store: store)
@@ -35,7 +36,7 @@ import Testing
     }
 }
 
-@Suite(.serialized) struct DropboxUIIntegrationTests {
+@Suite(.serialized, .isolatedSettings) struct DropboxUIIntegrationTests {
     @Test @MainActor func descriptorConnectCompositionRootsAndSettingsNavigation() async throws {
         let fixture = try DropboxUIFixture(); defer { fixture.cleanup() }
         let account = try await fixture.connect()

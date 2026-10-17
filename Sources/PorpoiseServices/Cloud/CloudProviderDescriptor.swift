@@ -32,34 +32,40 @@ public struct CloudProviderDescriptor: Sendable {
         c.queryItems = (c.queryItems ?? []).filter { $0.name != accountQuery } + [.init(name: accountQuery, value: email)]
         return c.url ?? link
     }
-    public static let catalog: [CloudProviderDescriptor] = [
-        .init(
-            provider: .googleDrive, title: "Google Drive", brand: "google-drive", scheme: "gdrive", available: true,
-            signInInstructions: "Sign in to Google and allow Porpoise to see your Drive files. Then come back here. Nothing is typed into Porpoise.",
-            roots: [
-                .init(key: .myDrive, title: "My Drive", icon: "folder-cloud", counted: false),
-                .init(key: .sharedWithMe, title: "Shared with me", icon: "folder-publicshare", counted: false),
-                .init(key: .sharedDrives, title: "Shared drives", icon: "folder-network", counted: true),
-            ],
-            homeURL: URL(string: "https://drive.google.com/drive/my-drive")!, accountQuery: "authuser", supportsTrashUndo: true),
-        .init(
-            provider: .dropbox, title: "Dropbox", brand: "dropbox", scheme: "dropbox", available: true,
-            signInInstructions: "Sign in to Dropbox and allow Porpoise to access your files. Then come back here. Nothing is typed into Porpoise.",
-            roots: [
-                .init(key: .myDrive, title: "Files", icon: "folder-cloud", counted: false),
-                .init(key: .sharedWithMe, title: "Shared with me", icon: "folder-publicshare", counted: false),
-                .init(key: .sharedDrives, title: "Team space", icon: "folder-network", counted: false),
-            ],
-            homeURL: URL(string: "https://www.dropbox.com/home")!, accountQuery: nil, supportsTrashUndo: false),
-        .init(
-            provider: .oneDrive, title: "OneDrive", brand: "onedrive", scheme: nil, available: false, signInInstructions: "", roots: [],
-            homeURL: URL(string: "https://onedrive.live.com")!, accountQuery: nil, supportsTrashUndo: false),
-        .init(
-            provider: .box, title: "Box", brand: "box", scheme: nil, available: false, signInInstructions: "", roots: [],
-            homeURL: URL(string: "https://app.box.com")!, accountQuery: nil, supportsTrashUndo: false),
-    ]
+    public static var catalog: [CloudProviderDescriptor] { catalog(dropbox: .selected()) }
+    public static func catalog(dropbox configuration: DropboxConfiguration) -> [CloudProviderDescriptor] {
+        [
+            .init(
+                provider: .googleDrive, title: "Google Drive", brand: "google-drive", scheme: "gdrive", available: true,
+                signInInstructions:
+                    "Sign in to Google and allow Porpoise to see your Drive files. Then come back here. Nothing is typed into Porpoise.",
+                roots: [
+                    .init(key: .myDrive, title: "My Drive", icon: "folder-cloud", counted: false),
+                    .init(key: .sharedWithMe, title: "Shared with me", icon: "folder-publicshare", counted: false),
+                    .init(key: .sharedDrives, title: "Shared drives", icon: "folder-network", counted: true),
+                ],
+                homeURL: URL(string: "https://drive.google.com/drive/my-drive")!, accountQuery: "authuser", supportsTrashUndo: true),
+            .init(
+                provider: .dropbox, title: "Dropbox", brand: "dropbox", scheme: "dropbox", available: configuration.isConfigured,
+                signInInstructions:
+                    "Sign in to Dropbox and allow Porpoise to access your files. Then come back here. Nothing is typed into Porpoise.",
+                roots: [
+                    .init(key: .myDrive, title: "Files", icon: "folder-cloud", counted: false),
+                    .init(key: .sharedWithMe, title: "Shared with me", icon: "folder-publicshare", counted: false),
+                    .init(key: .sharedDrives, title: "Team space", icon: "folder-network", counted: false),
+                ],
+                homeURL: URL(string: "https://www.dropbox.com/home")!, accountQuery: nil, supportsTrashUndo: false),
+            .init(
+                provider: .oneDrive, title: "OneDrive", brand: "onedrive", scheme: nil, available: false, signInInstructions: "", roots: [],
+                homeURL: URL(string: "https://onedrive.live.com")!, accountQuery: nil, supportsTrashUndo: false),
+            .init(
+                provider: .box, title: "Box", brand: "box", scheme: nil, available: false, signInInstructions: "", roots: [],
+                homeURL: URL(string: "https://app.box.com")!, accountQuery: nil, supportsTrashUndo: false),
+        ]
+    }
     public static func descriptor(for url: URL) -> CloudProviderDescriptor? {
-        catalog.first { $0.scheme == url.scheme?.lowercased() && $0.available }
+        guard let scheme = url.scheme?.lowercased() else { return nil }
+        return catalog.first { $0.scheme == scheme }
     }
 }
 extension CloudProvider {

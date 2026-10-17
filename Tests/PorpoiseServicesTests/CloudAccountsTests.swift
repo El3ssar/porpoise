@@ -179,6 +179,7 @@ import Testing
     }
 
     @Test func providersAndRootsHaveNamesAndMarks() {
+        Settings.store.set("fixture-app", forKey: "dropboxAppKey")
         #expect(CloudProvider.allCases.filter(\.isAvailable) == [.googleDrive, .dropbox])
         #expect(CloudProvider.allCases.map(\.brand) == ["google-drive", "dropbox", "onedrive", "box"])
         #expect(CloudProvider.allCases.map(\.title) == ["Google Drive", "Dropbox", "OneDrive", "Box"])

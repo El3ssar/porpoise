@@ -33,7 +33,7 @@ public enum DropboxConnectionError: Error, Equatable { case alreadyConnected, wr
             let fake = URL(string: raw), fake.scheme == "http", fake.host == "127.0.0.1"
         {
             self.configuration = DropboxConfiguration(
-                appKey: "porpoise-dropbox-fixture", authorizationURL: fake.appendingPathComponent("auth"),
+                appKey: "porpoise-dropbox-fixture", loopbackPort: 0, authorizationURL: fake.appendingPathComponent("auth"),
                 tokenURL: fake.appendingPathComponent("token"), apiURL: fake.appendingPathComponent("2"),
                 contentURL: fake.appendingPathComponent("2"), notifyURL: fake.appendingPathComponent("2"))
         } else {
@@ -57,7 +57,7 @@ public enum DropboxConnectionError: Error, Equatable { case alreadyConnected, wr
     public func connect(expected: DropboxAccount? = nil, openBrowser: @escaping @MainActor (URL) -> Void) async throws -> DropboxAccount {
         guard !connecting else { throw DropboxConnectionError.busy }; connecting = true; defer { connecting = false }
         let configuration = config(appKey: expected.flatMap { account in saved.first { $0.account.id == account.id }?.appKey })
-        let listener = try CloudOAuthLoopback(); defer { listener.cancel() }
+        let listener = try CloudOAuthLoopback(port: configuration.loopbackPort); defer { listener.cancel() }
         let transaction = try DropboxOAuthTransaction(configuration: configuration, redirectURL: listener.redirectURL)
         openBrowser(transaction.authorizationURL)
         let callback = try await listener.callback()

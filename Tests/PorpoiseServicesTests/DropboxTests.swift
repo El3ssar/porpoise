@@ -20,7 +20,8 @@ final class FakeDropboxServer {
     }
     var config: DropboxConfiguration {
         DropboxConfiguration(
-            appKey: "fixture-app", authorizationURL: base.appendingPathComponent("auth"), tokenURL: base.appendingPathComponent("token"),
+            appKey: "fixture-app", loopbackPort: 0, authorizationURL: base.appendingPathComponent("auth"),
+            tokenURL: base.appendingPathComponent("token"),
             apiURL: base.appendingPathComponent("2"), contentURL: base.appendingPathComponent("2"), notifyURL: base.appendingPathComponent("2"))
     }
     func client(id: UUID = UUID(), namespace: String? = nil, directory: URL? = nil) throws -> DropboxClient {
@@ -356,7 +357,7 @@ final class FakeDropboxServer {
         try await store.disconnect(account.id); #expect(store.accounts.isEmpty)
         #expect(try credentials.read(clientID: server.config.appKey, accountID: account.id) == nil)
         #expect((try await server.stats())["secretSent"] as? Bool == false)
-        #expect(CloudProvider.dropbox.isAvailable)
+        #expect(CloudProviderDescriptor.catalog(dropbox: .init(appKey: "fixture-app")).first { $0.provider == .dropbox }?.available == true)
     }
 }
 
