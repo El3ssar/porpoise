@@ -110,10 +110,30 @@ import Testing
         let error: Error? = await withCheckedContinuation { continuation in
             fixture.accounts.remove(account.id) { continuation.resume(returning: $0) }
         }
-        #expect(error == nil && fixture.store.accounts.isEmpty)
-        let stats = try await fixture.server.stats()
-        #expect(stats["revoked"] as? Int == 1)
+        #expect(error == nil, "signing out failed: \(String(describing: error))")
+        #expect(fixture.store.accounts.isEmpty)
+        // The revoke goes on its own, after signing out here has finished.
+        let deadline = Date().addingTimeInterval(10)
+        while try await fixture.server.stats()["revoked"] as? Int != 1, Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
+        #expect(try await fixture.server.stats()["revoked"] as? Int == 1)
         let revoke = try await fixture.server.requests().filter { $0["route"] as? String == "auth/token/revoke" }
         #expect(revoke.count == 1 && revoke.first?["auth"] as? Bool == true)
+    }
+
+    @Test @MainActor func aFailedRevokeNeverFailsSigningOut() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let account = try await fixture.connect().get()
+        let uuid = try #require(fixture.store.accounts.first?.id)
+        try await fixture.server.configure(["failRoute": "auth/token/revoke"])
+        let error: Error? = await withCheckedContinuation { continuation in
+            fixture.accounts.remove(account.id) { continuation.resume(returning: $0) }
+        }
+        #expect(error == nil, "signing out failed: \(String(describing: error))")
+        #expect(fixture.store.accounts.isEmpty && fixture.store.client(for: uuid) == nil)
+        let deadline = Date().addingTimeInterval(10)
+        while try await fixture.server.requests().contains(where: { $0["route"] as? String == "auth/token/revoke" }) == false, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        #expect(try await fixture.server.requests().contains { $0["route"] as? String == "auth/token/revoke" })
     }
 }

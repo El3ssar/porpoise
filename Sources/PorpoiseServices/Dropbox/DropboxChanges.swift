@@ -86,5 +86,12 @@ public actor DropboxChangeFeed {
             }
         }
     }
-    public func stop() { task?.cancel(); task = nil; flight?.1.cancel(); flight = nil }
+    /// Stops polling, and returns once nothing it started is still running (so its folder can be removed).
+    public func stop() async {
+        let running = task, applying = flight?.1
+        task = nil; flight = nil
+        running?.cancel(); applying?.cancel()
+        await running?.value
+        _ = try? await applying?.value
+    }
 }

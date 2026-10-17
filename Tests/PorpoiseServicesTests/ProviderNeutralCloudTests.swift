@@ -156,7 +156,10 @@ import Testing
         #expect(fixture.accounts.ancestors(of: nested) == [root])
         let folder = DropboxLocation(accountID: uuid, itemID: "id:folder", namespaceID: ns).url
         let deadline = Date().addingTimeInterval(10)
-        while fixture.accounts.ancestors(of: nested) != [root, folder], Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        // The folder is in the cache a moment before the views are told.
+        while fixture.accounts.ancestors(of: nested) != [root, folder] || notices < 2, Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
         #expect(fixture.accounts.ancestors(of: nested) == [root, folder])
         #expect(notices >= 2)
     }
