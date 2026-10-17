@@ -18,7 +18,8 @@ if [ ! -x "$SRC/ffmpeg-$VER/configure" ]; then
   tar -xJf "$SRC/ffmpeg-$VER.tar.xz" -C "$SRC"
 fi
 cd "$SRC/ffmpeg-$VER"
-./configure --prefix="$OUT/prefix" --cc=clang --arch=arm64 --target-os=darwin \
+# No --prefix: nothing is installed, and ffmpeg prints its configure line (-buildconf), so no local paths go in.
+./configure --cc=clang --arch=arm64 --target-os=darwin \
   --enable-static --disable-shared --disable-debug --disable-doc --disable-ffplay \
   --disable-autodetect --enable-videotoolbox --enable-audiotoolbox --enable-zlib --enable-bzlib --enable-iconv \
   --disable-network --disable-devices --disable-indevs --disable-outdevs \

@@ -20,7 +20,7 @@ public final class SearchIndex: @unchecked Sendable {
     public static let shared: SearchIndex = {
         let env = ProcessInfo.processInfo.environment
         // UI tests opt in explicitly, keeping both snapshots and defaults away from the user's index.
-        if let suite = env["PORPOISE_DEFAULTS_SUITE"], let path = env["PORPOISE_TEST_INDEX_DIRECTORY"],
+        if let suite = TestEnvironment.defaultsSuite.value(in: env), let path = TestEnvironment.testIndexDirectory.value(in: env),
             let defaults = UserDefaults(suiteName: suite)
         {
             return SearchIndex(directory: URL(fileURLWithPath: path), defaults: defaults)

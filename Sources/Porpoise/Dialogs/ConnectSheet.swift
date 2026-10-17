@@ -334,7 +334,7 @@ final class ConnectSheet: NSWindowController {
     /// The sign-in page, in the user's browser. Test instances against the fake Drive server can have it fetched
     /// instead (PORPOISE_CLOUD_BROWSER=fetch), which follows the same redirect back without opening a browser tab.
     static func openBrowser(_ url: URL) {
-        if Settings.isTesting, ProcessInfo.processInfo.environment["PORPOISE_CLOUD_BROWSER"] == "fetch" {
+        if Settings.isTesting, TestEnvironment.cloudBrowser.value() == "fetch" {
             URLSession.shared.dataTask(with: url) { _, _, _ in }.resume()
         } else {
             NSWorkspace.shared.open(url)

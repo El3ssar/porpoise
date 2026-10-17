@@ -1,3 +1,6 @@
+// Compiled only into test and local builds (PORPOISE_TEST_HOOKS): a release has no debug bridge.
+#if PORPOISE_TEST_HOOKS
+
 import AppKit
 import PorpoiseCore
 import PorpoiseServices
@@ -10,7 +13,7 @@ final class DebugBridge: NSObject {
     static let shared = DebugBridge()
     private var transferPreviewJob: FileJob?
     /// The channel; PORPOISE_BRIDGE gives a test instance its own, so parallel test runs don't hear each other.
-    static let request = Notification.Name("app.porpoise.Porpoise.debug." + (ProcessInfo.processInfo.environment["PORPOISE_BRIDGE"] ?? "test"))
+    static let request = Notification.Name("app.porpoise.Porpoise.debug." + (TestEnvironment.bridge.value() ?? "test"))
 
     func start() {
         DistributedNotificationCenter.default().addObserver(
@@ -437,7 +440,7 @@ final class DebugBridge: NSObject {
             try? list.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
         case "drivefixture":
             // Loopback-only visual fixture. Exercise real OAuth without opening the operator's browser.
-            guard Settings.isTesting, let raw = ProcessInfo.processInfo.environment["PORPOISE_DRIVE_FAKE"],
+            guard Settings.isTesting, let raw = TestEnvironment.driveFake.value(),
                 let fake = URL(string: raw), fake.scheme == "http", fake.host == "127.0.0.1"
             else { return }
             Task { @MainActor in
@@ -1064,3 +1067,5 @@ final class DebugBridge: NSObject {
         target.sendEvent(e)
     }
 }
+
+#endif

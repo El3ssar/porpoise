@@ -2,8 +2,8 @@
  "profiles": [
   {
    "sub": "demo-personal",
-   "email": "daniel@example.com",
-   "name": "Daniel Estévez"
+   "email": "avery@example.com",
+   "name": "Avery Quinn"
   }
  ],
  "drives": [
@@ -78,8 +78,8 @@
    },
    "owners": [
     {
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ],
    "parents": [
@@ -104,8 +104,8 @@
    },
    "owners": [
     {
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ],
    "parents": [
@@ -130,8 +130,8 @@
    },
    "owners": [
     {
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ],
    "parents": [
@@ -155,20 +155,20 @@
    },
    "owners": [
     {
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ],
    "permissions": [
     {
      "type": "user",
      "role": "owner",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ],
    "lastModifyingUser": {
-    "displayName": "Daniel Estévez"
+    "displayName": "Avery Quinn"
    },
    "parents": [
     "root",
@@ -192,8 +192,8 @@
    },
    "owners": [
     {
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ],
    "parents": [
@@ -218,8 +218,8 @@
    },
    "owners": [
     {
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ],
    "parents": [
@@ -243,8 +243,8 @@
    },
    "owners": [
     {
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ],
    "parents": [
@@ -300,8 +300,8 @@
     {
      "type": "user",
      "role": "writer",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ],
    "sharedWithMeTime": "2026-10-16T07:12:00Z",
@@ -365,8 +365,8 @@
     {
      "type": "user",
      "role": "reader",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ],
    "sharedWithMeTime": "2026-10-15T08:05:00Z",
@@ -402,8 +402,8 @@
     {
      "type": "user",
      "role": "reader",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ]
   },
@@ -436,8 +436,8 @@
     {
      "type": "user",
      "role": "reader",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ]
   },
@@ -469,8 +469,8 @@
     {
      "type": "user",
      "role": "reader",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ]
   },
@@ -502,8 +502,8 @@
     {
      "type": "user",
      "role": "reader",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ]
   },
@@ -535,8 +535,8 @@
     {
      "type": "user",
      "role": "reader",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ]
   },
@@ -569,8 +569,8 @@
     {
      "type": "user",
      "role": "reader",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ]
   },
@@ -600,8 +600,8 @@
     {
      "type": "user",
      "role": "reader",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ],
    "modifiedTime": "2026-10-13T14:15:00Z"
@@ -635,8 +635,8 @@
     {
      "type": "user",
      "role": "writer",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ]
   },
@@ -668,8 +668,8 @@
     {
      "type": "user",
      "role": "writer",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ]
   },
@@ -701,8 +701,8 @@
     {
      "type": "user",
      "role": "writer",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ]
   },
@@ -734,8 +734,8 @@
     {
      "type": "user",
      "role": "writer",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ]
   },
@@ -767,8 +767,8 @@
     {
      "type": "user",
      "role": "writer",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ]
   },
@@ -795,8 +795,8 @@
     {
      "type": "user",
      "role": "reader",
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ]
   },
@@ -817,8 +817,8 @@
    },
    "owners": [
     {
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ],
    "parents": [
@@ -834,8 +834,8 @@
    ],
    "owners": [
     {
-     "displayName": "Daniel Estévez",
-     "emailAddress": "daniel@example.com"
+     "displayName": "Avery Quinn",
+     "emailAddress": "avery@example.com"
     }
    ],
    "capabilities": {

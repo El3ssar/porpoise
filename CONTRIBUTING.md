@@ -21,7 +21,7 @@ what you expected and what happened. Screenshots help a lot.
 | `Sources/Porpoise/Dialogs`, `FileOperations` | Settings, onboarding, properties and other dialogs; drop menu, jobs panel, conflict dialog |
 | `Sources/PorpoiseHelper` | The privileged helper daemon (its binary is committed in `Resources/Helper`) |
 | `Vendor/SwiftTerm` | Vendored terminal emulator (MIT) |
-| `scripts/` | `make-app.sh`, `make-dmg.sh`, `build-ffmpeg.sh`, `fetch-search-tools.sh`, `setup-signing.sh`, test tools |
+| `scripts/` | `make-app.sh`, `make-dmg.sh`, `check-release.sh`, `build-ffmpeg.sh`, `fetch-search-tools.sh`, `setup-signing.sh`, test tools |
 | `docs/` | `ARCHITECTURE.md` (layers and rules), `DOLPHIN_SPEC.md` (the KDE Dolphin behaviour Porpoise follows), design notes, plan |
 | `docs/site` | The website, published to GitHub Pages on every push to `main` |
 | `.github/workflows` | CI (build + tests on every PR), releases, website |
@@ -83,7 +83,9 @@ PORPOISE_BRIDGE=mytest build/dbg "wsnapshot /tmp/shot.png"
 
 The bridge only exists in instances started with `PORPOISE_DEFAULTS_SUITE`; it can dump menus and state, send keys,
 run menu items, change settings and take snapshots, all inside the test instance. Delete the suite afterwards
-(`defaults delete app.porpoise.mytest`).
+(`defaults delete app.porpoise.mytest`). The bridge and every `PORPOISE_*` test switch (`TestEnvironment`) are compiled
+only into debug builds and `make-app.sh`'s local builds: a release (`PORPOISE_RELEASE=1 ./scripts/make-app.sh`) has
+none of them, and `scripts/check-release.sh <dmg>` checks that.
 
 Tests and isolated launches (`PORPOISE_DEFAULTS_SUITE` or `PORPOISE_BRIDGE`) keep FTP passwords and Drive refresh tokens
 in process memory. These credentials disappear on exit; reconnect the fake Drive account after relaunch. The central
@@ -133,8 +135,11 @@ Porpoise installs its helper once, with the administrator's approval, as `/Libra
 with the launchd job `/Library/LaunchDaemons/app.porpoise.helper.plist` (outside the app, so updates don't touch it). The
 user then switches on "Porpoise Helper" under Full Disk Access, next to Porpoise (setup walks through both).
 `Resources/Helper/Porpoise Helper.app` is committed and shipped unchanged in every release: as long as it's the same,
-installed copies stay current. Only when `Sources/PorpoiseHelper` (or what it uses from PorpoiseCore) changes, run
-`./scripts/build-helper.sh` and commit the new binary; users then approve the update once, the next time it's needed.
+installed copies stay current. Only when its inputs change (`Sources/PorpoiseHelper` and the PorpoiseCore files listed in
+`scripts/build-helper.sh`), run `./scripts/build-helper.sh` and commit `Resources/Helper`; users then approve the update
+once, the next time it's needed. CI fails while `Resources/Helper/inputs.sha256` doesn't match the inputs, or when the
+binary contains a home folder path (`scripts/build-helper.sh --check`). Each release publishes the signed helper's code
+hash as `helper-cdhash.txt`.
 
 To remove the helper by hand: `sudo launchctl bootout system/app.porpoise.helper; sudo rm -r /Library/LaunchDaemons/app.porpoise.helper.plist "/Library/PrivilegedHelperTools/Porpoise Helper.app"`.
 

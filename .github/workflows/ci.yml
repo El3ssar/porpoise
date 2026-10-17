@@ -27,8 +27,12 @@ jobs:
           restore-keys: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-
       - name: Format
         run: swift format lint --strict -r Sources/PorpoiseCore Sources/PorpoiseServices Sources/Porpoise Sources/PorpoiseHelper Tests
+      # The committed helper is rebuilt whenever what it's built from changes, and has no home folder paths in it.
+      - name: Helper is current
+        run: scripts/build-helper.sh --check
+      # The app as released (the test support targets use @testable imports, which only build in debug).
       - name: Build
-        run: swift build -c release
+        run: swift build -c release --product Porpoise
       # The ffmpeg Porpoise ships, for the video preview tests (cached with the release workflow's).
       - name: Restore ffmpeg
         id: ffmpeg

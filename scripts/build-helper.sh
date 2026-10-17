@@ -3,16 +3,36 @@
 #
 # Porpoise installs it into /Library/PrivilegedHelperTools once, with the administrator's approval, and the user
 # switches it on under Full Disk Access. An unchanged bundle means installed copies stay current across app updates;
-# a rebuilt one, even from the same source, is installed again (one more approval). So run this only when
-# Sources/PorpoiseHelper (or what it uses from PorpoiseCore) changes, then commit the result.
+# a rebuilt one, even from the same source, is installed again (one more approval). So run this only when its inputs
+# (below) change, then commit the result: CI fails while Resources/Helper/inputs.sha256 doesn't match them.
+#
+# The helper is compiled from exactly its inputs (not all of PorpoiseCore), with no paths from this machine in it.
+# Usage: scripts/build-helper.sh [--check]   (--check: only verify the committed helper against its inputs)
 set -euo pipefail
 cd "$(dirname "$0")/.."
-[ -f build/AppIcon.icns ] || { echo "run scripts/make-app.sh once first (it makes build/AppIcon.icns)"; exit 1; }
-swift build -c release --arch arm64 --product PorpoiseHelper
+# What it uses of PorpoiseCore: compiling fails when one is missing.
+CORE=(Sources/PorpoiseCore/{CodeSigning,Escaping,FilePath,HelperProtocol,HelperRequests}.swift)
+HELPER=(Sources/PorpoiseHelper/*.swift)
+INPUTS=(scripts/build-helper.sh "${HELPER[@]}" "${CORE[@]}")
 APP="Resources/Helper/Porpoise Helper.app"
+if [ "${1:-}" = "--check" ]; then
+    ok=0
+    shasum -a 256 "${INPUTS[@]}" | diff -u Resources/Helper/inputs.sha256 - ||
+        { echo "::error::The helper's inputs changed: run scripts/build-helper.sh and commit Resources/Helper"; ok=1; }
+    if LC_ALL=C grep -r -a -q '/Users/' Resources/Helper; then echo "::error::The committed helper contains a home folder path"; ok=1; fi
+    exit $ok
+fi
+[ -f build/AppIcon.icns ] || { echo "run scripts/make-app.sh once first (it makes build/AppIcon.icns)"; exit 1; }
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+SWIFTC=(xcrun swiftc -O -swift-version 5 -target arm64-apple-macos15.0 -file-prefix-map "$PWD=." -file-prefix-map "$WORK=.")
+"${SWIFTC[@]}" -wmo -parse-as-library -module-name PorpoiseCore -emit-module -emit-module-path "$WORK/PorpoiseCore.swiftmodule" \
+    -c -o "$WORK/PorpoiseCore.o" "${CORE[@]}"
+"${SWIFTC[@]}" -wmo -module-name PorpoiseHelper -I "$WORK" "${HELPER[@]}" "$WORK/PorpoiseCore.o" -o "$WORK/PorpoiseHelper"
+strip -S "$WORK/PorpoiseHelper"
 rm -rf "$APP" Resources/Helper/PorpoiseHelper
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$(swift build -c release --arch arm64 --show-bin-path)/PorpoiseHelper" "$APP/Contents/MacOS/PorpoiseHelper"
+cp "$WORK/PorpoiseHelper" "$APP/Contents/MacOS/PorpoiseHelper"
 cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -25,9 +45,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleShortVersionString</key><string>1</string>
-  <key>CFBundleVersion</key><string>5</string>
+  <key>CFBundleVersion</key><string>6</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>LSBackgroundOnly</key><true/>
 </dict></plist>
 PLIST
-echo "built $APP; commit it"
+shasum -a 256 "${INPUTS[@]}" > Resources/Helper/inputs.sha256
+echo "built $APP; commit Resources/Helper"

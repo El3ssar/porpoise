@@ -1,6 +1,10 @@
 // swift-tools-version:6.0
 import PackageDescription
 
+/// The debug bridge and the PORPOISE_* test switches (TestEnvironment): in debug builds (swift test) and in
+/// scripts/make-app.sh's local and UI-test builds, which pass -DPORPOISE_TEST_HOOKS. Never in a release.
+let testHooks: [SwiftSetting] = [.define("PORPOISE_TEST_HOOKS", .when(configuration: .debug))]
+
 let package = Package(
     name: "Porpoise",
     platforms: [.macOS(.v15)],
@@ -17,13 +21,14 @@ let package = Package(
         .target(name: "PorpoiseCore"),
         .executableTarget(name: "IndexBenchmark", dependencies: ["PorpoiseCore", "PorpoiseServices"], path: "Benchmarks/IndexBenchmark"),
         // Everything the app does that isn't drawing on screen: no AppKit or SwiftUI here.
-        .target(name: "PorpoiseServices", dependencies: ["PorpoiseCore"]),
+        .target(name: "PorpoiseServices", dependencies: ["PorpoiseCore"], swiftSettings: testHooks),
         .executableTarget(
             name: "Porpoise",
             dependencies: [
                 "PorpoiseCore", "PorpoiseServices", .product(name: "SwiftTerm", package: "SwiftTerm"),
                 .product(name: "Sparkle", package: "Sparkle"),
-            ]
+            ],
+            swiftSettings: testHooks
         ),
         .executableTarget(name: "PorpoiseHelper", dependencies: ["PorpoiseCore"]),
         // Fake-server-only subprocess used to verify durable journals across actual process death.

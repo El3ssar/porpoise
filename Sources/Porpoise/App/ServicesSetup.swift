@@ -4,7 +4,7 @@ import PorpoiseServices
 extension AppDelegate {
     /// Gives the services what only the app can do (dialogs, opening files), before anything uses them.
     func connectServices() {
-        if !Settings.isTesting || ProcessInfo.processInfo.environment["PORPOISE_TEST_INDEX_DIRECTORY"] != nil { SearchIndex.shared.start() }
+        if !Settings.isTesting || TestEnvironment.testIndexDirectory.isSet { SearchIndex.shared.start() }
         RemoteFS.askLogin = FTPLoginPrompt.ask
         FileOperationsController.shared.ui = FileOperationsDialogs()
         FileOperationsController.shared.clipboard = SystemClipboard()
@@ -23,7 +23,7 @@ extension AppDelegate {
         }
         CloudEditing.shared.restoresAtLaunch = true
         // Test instances can show made-up cloud accounts (no network, no browser).
-        if Settings.isTesting, ProcessInfo.processInfo.environment["PORPOISE_CLOUD_DEMO"] != nil {
+        if Settings.isTesting, TestEnvironment.cloudDemo.isSet {
             CloudAccounts.shared.backend = DemoCloudBackend()
         } else {
             CloudAccounts.shared.backend = MainActor.assumeIsolated {
@@ -31,7 +31,7 @@ extension AppDelegate {
             }
         }
         // Test instances can show offline states set by hand (the bridge's `cloud offline`).
-        if Settings.isTesting, ProcessInfo.processInfo.environment["PORPOISE_OFFLINE_DEMO"] != nil {
+        if Settings.isTesting, TestEnvironment.offlineDemo.isSet {
             CloudOfflineHub.service = DemoOfflineService()
         } else {
             CloudOfflineHub.service = CloudOffline.shared

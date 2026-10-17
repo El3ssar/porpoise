@@ -33,7 +33,7 @@ public final class DriveAccountStore: ObservableObject {
         self.defaults = defaults; self.credentials = credentials; self.http = http
         records = CloudAccountRecords(defaults: defaults, key: "googleDriveAccounts", clientField: "clientID")
         if configuration == nil, Settings.isTesting,
-            let raw = ProcessInfo.processInfo.environment["PORPOISE_DRIVE_FAKE"], let fake = URL(string: raw),
+            let raw = TestEnvironment.driveFake.value(), let fake = URL(string: raw),
             fake.scheme == "http", fake.host == "127.0.0.1"
         {
             self.configuration = DriveOAuthConfiguration(
@@ -64,11 +64,12 @@ public final class DriveAccountStore: ObservableObject {
         let env = Settings.isTesting ? ProcessInfo.processInfo.environment : [:]
         let override = Settings.isTesting && !clientIDOverride.isEmpty ? clientIDOverride : nil
         let selected =
-            clientID ?? env["PORPOISE_GOOGLE_CLIENT_ID"] ?? override
+            clientID ?? TestEnvironment.googleClientID.value(in: env) ?? override
             ?? (Bundle.main.object(forInfoDictionaryKey: "GoogleDriveClientID") as? String) ?? ""
         return DriveOAuthConfiguration(
             clientID: selected,
-            clientSecret: env["PORPOISE_GOOGLE_CLIENT_SECRET"] ?? (Bundle.main.object(forInfoDictionaryKey: "GoogleDriveClientSecret") as? String))
+            clientSecret: TestEnvironment.googleClientSecret.value(in: env)
+                ?? (Bundle.main.object(forInfoDictionaryKey: "GoogleDriveClientSecret") as? String))
     }
 
     private func install(_ account: DriveAccount, config: DriveOAuthConfiguration, authenticated: DriveTokenManager? = nil) {

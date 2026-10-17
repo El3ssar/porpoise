@@ -6,8 +6,8 @@ import PorpoiseCore
 public final class Settings {
     public static let shared = Settings()
     public static let changed = Notification.Name("PorpoiseSettingsChanged")
-    /// Test instances set PORPOISE_DEFAULTS_SUITE to use a throwaway defaults domain.
-    private static let testSuite = ProcessInfo.processInfo.environment["PORPOISE_DEFAULTS_SUITE"]
+    /// Test instances set PORPOISE_DEFAULTS_SUITE to use a throwaway defaults domain (never a release: TestEnvironment).
+    private static let testSuite = TestEnvironment.defaultsSuite.value()
     /// UserDefaults for everything the app stores. Tests may replace it (and set `isTesting`) before first use.
     nonisolated(unsafe) public static var store: UserDefaults = testSuite.flatMap(UserDefaults.init(suiteName:)) ?? .standard
     /// A test run: nothing is written outside `store`, and the system (sounds, helper, Trash) is left alone.

@@ -1,3 +1,6 @@
+// Compiled only into test and local builds (PORPOISE_TEST_HOOKS): a release has no debug bridge.
+#if PORPOISE_TEST_HOOKS
+
 import AppKit
 import PorpoiseCore
 import PorpoiseServices
@@ -262,3 +265,5 @@ extension DebugBridge {
         DispatchQueue.main.async { menu.popUp(positioning: nil, at: at, in: list) }
     }
 }
+
+#endif

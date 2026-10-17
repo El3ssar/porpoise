@@ -6,21 +6,30 @@ cd "$(dirname "$0")/.."
 # Use the Command Line Tools if Xcode is installed but its license isn't accepted yet.
 if ! xcodebuild -version >/dev/null 2>&1; then export DEVELOPER_DIR=/Library/Developer/CommandLineTools; fi
 CONFIG=${CONFIG:-release}
-swift build -c "$CONFIG" --arch arm64
-BIN=$(swift build -c "$CONFIG" --arch arm64 --show-bin-path)/Porpoise
+# No paths from the machine that builds it: sources are named relative to the project folder, and the linker's debug
+# map (object file paths, for dsymutil) is stripped from the executables below.
+FLAGS=(-Xswiftc -file-prefix-map -Xswiftc "$PWD=." -Xcc "-ffile-prefix-map=$PWD=.")
+# The debug bridge and the PORPOISE_* test switches (TestEnvironment) are in local and UI-test builds, never in a
+# release (PORPOISE_RELEASE=1, set by .github/workflows/release.yml; scripts/check-release.sh checks the disk image).
+[ "${PORPOISE_RELEASE:-}" = 1 ] || FLAGS+=(-Xswiftc -DPORPOISE_TEST_HOOKS)
+# Only what ships: the test support targets don't build in release.
+swift build -c "$CONFIG" --arch arm64 "${FLAGS[@]}" --product Porpoise
+BIN=$(swift build -c "$CONFIG" --arch arm64 "${FLAGS[@]}" --show-bin-path)
 APP=build/Porpoise.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/Porpoise"
+cp "$BIN/Porpoise" "$APP/Contents/MacOS/Porpoise"
+strip -S "$APP/Contents/MacOS/Porpoise"
 # Sparkle (in-app updates). Its XPC services are only for sandboxed apps; Porpoise isn't sandboxed.
 mkdir -p "$APP/Contents/Frameworks"
-ditto "$(dirname "$BIN")/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 rm -rf "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" "$APP/Contents/Frameworks/Sparkle.framework/XPCServices"
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/Porpoise"
 # The privileged helper, installed by Porpoise into /Library/PrivilegedHelperTools on first use (one approval). The
 # committed binary, not a fresh build: an unchanged helper means installed copies stay current (scripts/build-helper.sh).
+HELPER_APP="$APP/Contents/Helpers/Porpoise Helper.app"
 mkdir -p "$APP/Contents/Helpers"
-ditto "Resources/Helper/Porpoise Helper.app" "$APP/Contents/Helpers/Porpoise Helper.app"
+ditto "Resources/Helper/Porpoise Helper.app" "$HELPER_APP"
 # Its launchd job, copied to /Library/LaunchDaemons when Porpoise installs the helper (one approval).
 cat > "$APP/Contents/Resources/app.porpoise.helper.plist" <<HELPER
 <?xml version="1.0" encoding="UTF-8"?>
@@ -146,10 +155,13 @@ SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 "${SIGN[@]}" --identifier app.porpoise.Porpoise.ffmpeg "$APP/Contents/Helpers/ffmpeg"
 "${SIGN[@]}" --identifier app.porpoise.Porpoise.fd "$APP/Contents/Helpers/fd"
 "${SIGN[@]}" --identifier app.porpoise.Porpoise.rg "$APP/Contents/Helpers/rg"
-"${SIGN[@]}" --identifier app.porpoise.Porpoise.helper "$APP/Contents/Helpers/Porpoise Helper.app"
+"${SIGN[@]}" --identifier app.porpoise.Porpoise.helper "$HELPER_APP"
+# What installed copies are compared with: a different hash means users approve the helper once more (published
+# with each release).
+codesign -dvvv "$HELPER_APP" 2>&1 | sed -n 's/^CDHash=//p' > build/helper-cdhash.txt
 # The hardened runtime blocks code injection (the privileged helper trusts Porpoise's signature).
 "${SIGN[@]}" --identifier app.porpoise.Porpoise --entitlements Resources/Porpoise.entitlements "$APP"
-echo "built $APP"
+echo "built $APP (helper cdhash $(cat build/helper-cdhash.txt))"
 if [ "${1:-}" = "--install" ]; then
   mkdir -p "$HOME/Applications"
   rm -rf "$HOME/Applications/Porpoise.app"

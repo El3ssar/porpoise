@@ -5,7 +5,7 @@ import PorpoiseServices
 /// tiles, sidebar account headers, Settings › Accounts.
 enum BrandMarks {
     private static let root: URL = {
-        if let env = ProcessInfo.processInfo.environment["PORPOISE_RESOURCES"] {
+        if let env = TestEnvironment.resources.value() {
             return URL(fileURLWithPath: env).appendingPathComponent("brands")
         }
         if let r = Bundle.main.resourceURL?.appendingPathComponent("brands"), FileManager.default.fileExists(atPath: r.path) { return r }

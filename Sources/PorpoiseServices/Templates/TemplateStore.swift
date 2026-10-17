@@ -8,7 +8,7 @@ public final class TemplateStore {
     public let directory: URL
     public init(directory: URL? = nil) {
         let testDirectory =
-            ProcessInfo.processInfo.environment["PORPOISE_TEMPLATE_DIR"].map { URL(fileURLWithPath: $0) }
+            TestEnvironment.templateDir.value().map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.temporaryDirectory.appendingPathComponent("PorpoiseTemplateTests-\(ProcessInfo.processInfo.processIdentifier)")
         self.directory =
             directory

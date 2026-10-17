@@ -11,7 +11,7 @@ final class Updates: NSObject, SPUUpdaterDelegate {
 
     /// Test instances don't update themselves unless given a feed to test against (PORPOISE_UPDATE_FEED).
     /// Only test instances: a release always checks the feed it was built with.
-    private var feedOverride: String? { Settings.isTesting ? ProcessInfo.processInfo.environment["PORPOISE_UPDATE_FEED"] : nil }
+    private var feedOverride: String? { Settings.isTesting ? TestEnvironment.updateFeed.value() : nil }
 
     func start() {
         guard controller == nil, !Settings.isTesting || feedOverride != nil else { return }

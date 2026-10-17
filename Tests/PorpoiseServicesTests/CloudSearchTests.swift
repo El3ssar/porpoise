@@ -11,7 +11,7 @@ import Testing
     private func setup() throws -> (CloudAccounts, DemoCloudBackend, URL) {
         let backend = DemoCloudBackend()
         _ = backend.connect(.googleDrive, openBrowser: { _ in }, done: { _ in })
-        backend.finishSignIn(CloudAccount(id: "a1", email: "daniel@gmail.com", displayName: "Daniel"))
+        backend.finishSignIn(CloudAccount(id: "a1", email: "avery@example.com", displayName: "Avery"))
         let accounts = CloudAccounts()
         accounts.backend = backend
         return (accounts, backend, try #require(accounts.url("a1", root: .myDrive)))

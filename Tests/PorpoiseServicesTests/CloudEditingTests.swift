@@ -8,7 +8,7 @@ import Testing
 
 /// Changing Google Drive like a local disk: why a command is disabled, optimistic rows, Drive Trash with Undo.
 @MainActor @Suite(.isolatedSettings) struct CloudEditingTests {
-    let account = CloudAccount(id: "a1", email: "daniel@gmail.com", displayName: "Daniel")
+    let account = CloudAccount(id: "a1", email: "avery@example.com", displayName: "Avery")
     let folder = URL(string: "gdrive://a1/my-drive/F1/")!
     var report: URL { URL(string: "gdrive://a1/my-drive/F1/R1/")! }
     var notes: URL { URL(string: "gdrive://a1/my-drive/F1/N1/")! }

@@ -64,7 +64,7 @@ final class SSHProvider: RemoteProvider {
             ]
         if let p = port { a += ["-p", String(p)] }
         // Test runs keep host keys out of ~/.ssh/known_hosts.
-        if let kh = ProcessInfo.processInfo.environment["PORPOISE_KNOWN_HOSTS"] {
+        if let kh = TestEnvironment.knownHosts.value() {
             a += ["-o", "UserKnownHostsFile=\(kh)", "-o", "StrictHostKeyChecking=accept-new"]
         }
         return a
