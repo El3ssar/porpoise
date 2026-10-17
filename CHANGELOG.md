@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.8.2
 
+- **Dropbox files open and download again.** Opening, previewing or downloading a Dropbox file wrote nothing, because Porpoise misread the file details Dropbox sends with a download. Uploads and new folders had the same misreading.
+- **Leaner, cleaner release build.** The privileged helper is rebuilt from its exact sources (160 KB instead of 2.3 MB), and release builds no longer contain test-only code or paths from the build machine; every release is checked for this before it is published. macOS asks you once to approve the helper again.
 - **Drops onto tabs, the path bar and places behave like drops onto a folder.** Items from servers and cloud accounts can be dropped there too (they were silently ignored), the drop does what the pointer shows (a tab always asked with a menu, even with ⌥ held), and a folder that takes nothing shows so. Resting a drag on a tab or a path arrow opens it during in-app drags as well.
 - **The highlight under the pointer respects Reduce Motion.** It switches at once instead of fading.
 
