@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Smoother split view, a steady offline state, ⌘← / ⌘→.** Opening the split view in a Google Drive folder runs one
+  animation: the items fly over from the left pane once the right one has them, instead of first sliding in from the
+  right, vanishing and flying over. All item animations (split, filter, search, changes from elsewhere, resizing) now
+  come from one place, so they no longer run twice. On a flaky network the "You’re offline" bar no longer flickers:
+  it shows once the connection has really gone and goes once it's back. ⌘← and ⌘→ go Back and Forward, as ⌘[ and ⌘]
+  do; while you type in a field they keep moving to the start and end of the line.
 - **Google Drive stays fresh, works offline and edits in place.** Changes made in the browser or on another device
   glide into the open folder by themselves (rows appear, rename or leave in place; the selection and scroll position
   stay). Offline, Drive folders stay browsable from what was last seen ("You’re offline. Showing Google Drive as it was
