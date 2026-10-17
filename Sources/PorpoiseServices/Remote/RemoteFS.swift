@@ -117,6 +117,22 @@ public enum RemoteFS {
         return p
     }
 
+    /// Ancestors for path-based remote locations, outermost first and excluding the location itself. Both the
+    /// breadcrumb and Folders panel use this chain; cloud providers supply their opaque-ID ancestry separately.
+    public static func pathAncestors(of url: URL) -> [URL] {
+        let components = url.pathComponents.filter { $0 != "/" }
+        guard !components.isEmpty, var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return [] }
+        parts.path = "/"
+        guard let root = parts.url else { return [] }
+        var ancestors = [root]
+        var parent = root
+        for component in components.dropLast() {
+            parent = parent.appendingPathComponent(component, isDirectory: true)
+            ancestors.append(parent)
+        }
+        return ancestors
+    }
+
     /// Normalizes what users type: "user@host:/path" → sftp://user@host/path, "host:path" → sftp.
     public static func parseTyped(_ text: String) -> URL? {
         let t = text.trimmingCharacters(in: .whitespaces)

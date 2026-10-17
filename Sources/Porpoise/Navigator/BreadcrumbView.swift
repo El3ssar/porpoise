@@ -147,22 +147,12 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             return [(url, title)]
         }
         if PlacesModel.isCloud(url) { return cloudCrumbs() }
-        var c = URLComponents(url: url, resolvingAgainstBaseURL: false) ?? URLComponents()
-        c.path = "/"
-        let rootURL = c.url ?? url
-        let rootTitle: String
-        switch url.scheme {
-        case "network": rootTitle = "Network"
-        case "recent": rootTitle = url.path == "/files" ? "Recent Files" : "Recent Locations"
-        default: rootTitle = RemoteFS.provider(for: url)?.rootTitle(url) ?? (url.host ?? url.scheme ?? "")
+        let chain = RemoteFS.pathAncestors(of: url) + [url]
+        return chain.enumerated().map { index, folder in
+            if index == 0 { return (folder, RemoteFS.provider(for: folder)?.rootTitle(folder) ?? (folder.host ?? folder.scheme ?? "")) }
+            let name = folder.lastPathComponent
+            return (folder, name == "~" ? "Home" : name)
         }
-        var crumbs: [(url: URL, title: String)] = [(rootURL, rootTitle)]
-        var acc = rootURL
-        for comp in url.pathComponents where comp != "/" {
-            acc = acc.appendingPathComponent(comp, isDirectory: true)
-            crumbs.append((acc, comp == "~" ? "Home" : comp))
-        }
-        return crumbs
     }
 
     /// Cloud folders: the account, then its row (My Drive, Files, Shared with me…), then each folder by name, as
