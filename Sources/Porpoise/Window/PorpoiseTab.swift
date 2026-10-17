@@ -386,20 +386,11 @@ final class PorpoiseTab: NSView {
     }
 
     private static func name(of c: ViewContainer) -> String {
-        let u = c.url
-        if let p = PlacesModel.shared.title(for: u) { return p }
-        if u.scheme == "recent" { return u.path == "/files" ? "Recent Files" : "Recent Locations" }
-        if u.scheme == "network" { return "Network" }
-        if !u.isFileURL { return RemoteFS.displayName(for: u) }
-        return u.path == "/" ? "/" : u.lastPathComponent
+        LocationNaming.title(for: c.url)
     }
 
     var iconName: String {
-        let u = active.url
-        if u.isFileURL { return IconTheme.folderIconName(u) }
-        if u.scheme == "network" { return "network-workgroup" }
-        if u.scheme == "adb" { return "smartphone" }
-        return RemoteFS.isRemote(u) ? "folder-remote" : "document-open-recent"
+        LocationNaming.icon(for: active.url)
     }
 }
 

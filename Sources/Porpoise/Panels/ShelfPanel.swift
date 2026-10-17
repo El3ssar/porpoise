@@ -160,21 +160,18 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
         v.icon.image =
             file.map { Icons.shared.image(for: $0, size: 22) }
             ?? Icons.shared.image(url.isFileURL ? "unknown" : "folder-remote", size: 22) ?? NSImage()
-        v.name.stringValue = url.lastPathComponent
+        v.name.stringValue = LocationNaming.name(for: url)
         if let problem = state.problem {
             // What's wrong first: a long location is cut, not the problem.
-            v.detail.stringValue = problem + " — " + (item.url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
+            v.detail.stringValue = problem + " — " + LocationNaming.context(for: item.url)
             v.detail.lineBreakMode = .byTruncatingTail
             v.detail.textColor = Theme.negativeText
             v.name.textColor = .disabledControlTextColor
             v.icon.alphaValue = 0.4
         } else {
-            v.detail.stringValue =
-                url.isFileURL
-                ? (url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
-                : (url.host.map { "\(url.scheme ?? "") · \($0)" } ?? url.absoluteString)
+            v.detail.stringValue = LocationNaming.context(for: url)
         }
-        v.toolTip = url.isFileURL ? url.path : url.absoluteString
+        v.toolTip = LocationNaming.address(for: url)
         return v
     }
 
@@ -380,7 +377,7 @@ final class ShelfTableView: NSTableView {
         guard let urls = panel?.serviceURLs, !urls.isEmpty else { return false }
         pboard.clearContents()
         pboard.writeObjects(urls as [NSURL])
-        pboard.setString(urls.map(\.path).joined(separator: "\n"), forType: .string)
+        pboard.setString(LocationNaming.clipboardText(for: urls), forType: .string)
         return true
     }
 }

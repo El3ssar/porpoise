@@ -549,7 +549,7 @@ import Testing
     @Test func recentLocationsRememberTheChosenStyle() async throws {
         Settings.shared.rememberPerFolder = true
         let m = try await loaded(PlacesModel.recentLocationsURL)
-        #expect(m.isVirtual && m.props == ViewProperties.defaults(for: PlacesModel.recentLocationsURL))
+        #expect(m.kind.isVirtual && m.props == ViewProperties.defaults(for: PlacesModel.recentLocationsURL))
         m.props.mode = .compact
         m.saveProps()
         #expect(DirectoryModel(location: PlacesModel.recentLocationsURL).props.mode == .compact)

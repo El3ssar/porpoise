@@ -84,12 +84,8 @@ final class CommandPalette: NSWindowController, NSWindowDelegate, NSTableViewDat
                 NSApp.sendAction(selector, to: item.target, from: item)
             }
         }
-        func readable(_ url: URL) -> String {
-            var components = URLComponents(url: url, resolvingAgainstBaseURL: false); components?.password = nil;
-            return url.isFileURL ? url.path : components?.string ?? url.scheme ?? "Location"
-        }
         func location(_ url: URL, title: String, category: String, id: String) {
-            let candidate = CommandCandidate(id: id, title: title, subtitle: category + " · " + readable(url), keywords: category)
+            let candidate = CommandCandidate(id: id, title: title, subtitle: category + " · " + LocationNaming.address(for: url), keywords: category)
             entries[id] = Entry(candidate: candidate, shortcut: "") { [weak owner] in
                 if let owner {
                     owner.view.setURL(url); owner.window?.makeFirstResponder(owner.view.list)
@@ -105,7 +101,7 @@ final class CommandPalette: NSWindowController, NSWindowDelegate, NSTableViewDat
         }
         for (index, url) in RecentLocations.shared.urls.enumerated() {
             location(
-                url, title: url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent, category: "Recent location",
+                url, title: LocationNaming.title(for: url), category: "Recent location",
                 id: "recent:\(index):" + url.absoluteString)
         }
         var connections: Set<URL> = []
@@ -113,18 +109,18 @@ final class CommandPalette: NSWindowController, NSWindowDelegate, NSTableViewDat
             for tab in controller.tabs {
                 let id = "tab:" + String(describing: ObjectIdentifier(tab))
                 let candidate = CommandCandidate(
-                    id: id, title: tab.title, subtitle: "Open tab · " + readable(tab.active.url), keywords: "tab switch window")
+                    id: id, title: tab.title, subtitle: "Open tab · " + LocationNaming.address(for: tab.active.url), keywords: "tab switch window")
                 entries[id] = Entry(candidate: candidate, shortcut: "") { [weak controller, weak tab] in
                     guard let controller, let tab, let index = controller.tabs.firstIndex(where: { $0 === tab }) else { return }
                     controller.window?.makeKeyAndOrderFront(nil); controller.showTab(index)
                 }
                 for container in tab.containers {
-                    for url in container.history.entries where !url.isFileURL && RemoteFS.isRemote(url) { connections.insert(url) }
+                    for url in container.history.entries where LocationKind.of(url).isRemote { connections.insert(url) }
                 }
             }
         }
         for url in connections {
-            location(url, title: url.host ?? url.lastPathComponent, category: "Connection", id: "connection:" + url.absoluteString)
+            location(url, title: LocationNaming.connectionTitle(for: url), category: "Connection", id: "connection:" + url.absoluteString)
         }
     }
     private func update() {

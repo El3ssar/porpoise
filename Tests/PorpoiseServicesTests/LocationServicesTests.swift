@@ -379,6 +379,6 @@ import Testing
         m.reload()
         #expect(loads == 1 && !m.isLoading)
         #expect(m.loadError == "This Smart Folder's search could not be read.")
-        #expect(m.props.mode == .icons && m.rows.isEmpty && m.isVirtual)
+        #expect(m.props.mode == .icons && m.rows.isEmpty && m.kind.isVirtual)
     }
 }

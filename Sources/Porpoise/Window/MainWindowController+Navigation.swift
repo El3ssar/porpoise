@@ -12,7 +12,7 @@ extension MainWindowController {
             openCloudLink(url, in: target, newTab: newTab)
             return
         }
-        if !url.isFileURL && !RemoteFS.isRemote(url) && !NetworkMounts.needsMount(url) && !Self.virtualSchemes.contains(url.scheme ?? "") {
+        if !LocationKind.of(url).isSupported {
             target.messageBar.show("Porpoise can't open “\(url.scheme ?? "")://” locations.", error: true)
             target.needsLayout = true
             return
@@ -65,9 +65,6 @@ extension MainWindowController {
         }
     }
 
-    /// Locations the app lists itself rather than a file system (Network, Recent, Tags, Smart Folders).
-    private static let virtualSchemes: Set<String> = ["network", "recent", "tags", "smart"]
-
     func breadcrumbActivated(_ b: BreadcrumbView) {
         if tab.isSplit { tab.setActive(secondary: b === tab.navigators[1]); syncToActiveView() }
     }
@@ -99,7 +96,7 @@ extension MainWindowController {
     }
 
     func places(_ p: PlacesPanel, drop urls: [URL], onto url: URL) {
-        if url.standardizedFileURL == TrashInfo.folder.standardizedFileURL {
+        if LocationKind.of(url) == .trash {
             FileOperationsController.shared.trash(urls, window: window)
             return
         }

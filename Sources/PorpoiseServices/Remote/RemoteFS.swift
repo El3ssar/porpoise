@@ -49,8 +49,7 @@ public enum RemoteFS {
     static let mountSchemes: Set<String> = ["smb", "afp", "nfs", "webdav", "webdavs", "dav", "davs", "cifs", "vnc"]
 
     public static func isRemote(_ url: URL) -> Bool {
-        guard let s = url.scheme?.lowercased() else { return false }
-        return sshSchemes.contains(s) || ftpSchemes.contains(s) || s == "adb" || PlacesModel.isCloud(url)
+        LocationKind.of(url).isRemote
     }
 
     /// Guarded by `lock`.
@@ -170,11 +169,7 @@ public enum RemoteFS {
     }
 
     public static func displayName(for url: URL) -> String {
-        if let p = provider(for: url) as? CloudFileProvider {
-            return p.displayName(for: url) ?? p.descriptor.title
-        }
-        if url.path.isEmpty || url.path == "/" { return provider(for: url)?.rootTitle(url) ?? (url.host ?? "") }
-        return url.lastPathComponent
+        LocationNaming.name(for: url)
     }
 
     /// Throws unless `name` is a single path component (no "/", not "." or ".."); also rejects line

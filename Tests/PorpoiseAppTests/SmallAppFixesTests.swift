@@ -9,12 +9,11 @@ import Testing
 @MainActor @Suite(.serialized) struct SmallAppFixesTests {
     // B8: "Open Path" only where items are listed away from their folder.
     @Test func openPathOnlyWhereItemsAreListedElsewhere() {
-        #expect(MainWindowController.offersOpenPath(in: URL(string: "recent:/files")!, searching: false))
-        #expect(MainWindowController.offersOpenPath(in: URL(string: "tags:/Red")!, searching: false))
-        #expect(MainWindowController.offersOpenPath(in: URL(string: "smart:/Big.savedSearch")!, searching: false))
-        #expect(MainWindowController.offersOpenPath(in: URL(fileURLWithPath: NSHomeDirectory()), searching: true))
-        for folder in ["gdrive://acct/my-drive/f1", "dropbox://acct/id:x", "sftp://me@host/home/me/", "file:///Users"] {
-            #expect(!MainWindowController.offersOpenPath(in: URL(string: folder)!, searching: false), "\(folder)")
+        #expect(LocationKind.of(URL(string: "recent:/files")!).isResultList)
+        #expect(LocationKind.of(URL(string: "tags:/Red")!).isResultList)
+        #expect(LocationKind.of(URL(string: "smart:/Big.savedSearch")!).isResultList)
+        for folder in ["gdrive://acct/my-drive/f1", "dropbox://acct/id:x", "sftp://me@host/home/me/", "file:///Users", "network:/"] {
+            #expect(!LocationKind.of(URL(string: folder)!).isResultList, "\(folder)")
         }
     }
 

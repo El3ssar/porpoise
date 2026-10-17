@@ -138,7 +138,7 @@ extension MainWindowController {
             m.addItem(self.item("Open in New Tabs", "tab-new", #selector(ctxOpenInNewTabs(_:))))
             m.addItem(.separator())
         }
-        if Self.offersOpenPath(in: c.model.location, searching: c.model.isSearching) {
+        if c.model.isSearching || c.model.kind.isResultList {
             m.addItem(self.item("Open Path", "document-open-folder", #selector(ctxOpenPath(_:)), obj: item.url))
             m.addItem(self.item("Open Path in New Tab", "tab-new", #selector(ctxOpenPathTab(_:)), obj: item.url))
             m.addItem(.separator())
@@ -394,13 +394,5 @@ extension MainWindowController {
         p.prompt = "Open"
         p.message = "Choose an application to open the selected items"
         runPanel(p) { [weak self] app in self?.openSelection(with: app, urls: urls, remote: remote) }
-    }
-}
-
-extension MainWindowController {
-    /// "Open Path" goes to the folder an item is in: only where items are listed away from it (search results,
-    /// Recent Files, Tags, Smart Folders), not in a cloud or server folder, which is that folder already.
-    static func offersOpenPath(in location: URL, searching: Bool) -> Bool {
-        searching || ["recent", "tags", "smart"].contains(location.scheme ?? "")
     }
 }

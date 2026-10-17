@@ -432,7 +432,7 @@ public final class DirectoryModel {
         return base.isEmpty ? item.name : base
     }
 
-    public var isVirtual: Bool { !location.isFileURL }
+    public var kind: LocationKind { LocationKind.of(location) }
 
     // MARK: Loading
 
@@ -453,7 +453,7 @@ public final class DirectoryModel {
         blockedByPrivacy = false
         tagQuery = nil
         recentQuery = nil
-        if url.scheme == "tags" || url.scheme == "smart" {
+        if kind == .tag || kind == .smartFolder {
             isLoading = true
             let tag = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
             let finish: ([FileItem]) -> Void = { [weak self] list in
@@ -463,7 +463,7 @@ public final class DirectoryModel {
                 self.rebuild()
                 self.onLoaded?()
             }
-            if url.scheme == "smart" {
+            if kind == .smartFolder {
                 tagQuery = MetadataListQuery.smartFolder(URL(fileURLWithPath: url.path), done: finish)
                 if tagQuery == nil {
                     // Set before finishing, so onLoaded shows it.
@@ -475,7 +475,7 @@ public final class DirectoryModel {
             }
             return
         }
-        if url.scheme == "network" {
+        if kind == .network {
             NetworkBrowser.shared.start()
             items = NetworkBrowser.shared.items
             isLoading = false
@@ -574,7 +574,7 @@ public final class DirectoryModel {
             }
             return
         }
-        if url.scheme == "recent" {
+        if kind == .recentFiles || kind == .recentLocations {
             isLoading = true
             let finish: ([FileItem]) -> Void = { [weak self] list in
                 guard let self, token == self.loadToken else { return }
@@ -583,7 +583,7 @@ public final class DirectoryModel {
                 self.rebuild()
                 self.onLoaded?()
             }
-            if url.path == "/locations" {
+            if kind == .recentLocations {
                 finish(RecentLocations.shared.urls.compactMap { FileItem.load($0) })
             } else {
                 recentQuery = RecentFilesQuery { list in finish(list) }

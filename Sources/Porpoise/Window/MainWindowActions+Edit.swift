@@ -40,9 +40,8 @@ extension MainWindowController {
 
     /// Paths of local items; full URLs (sftp://…, recent:/…) for everything else.
     @objc func copyLocation(_ sender: Any?) {
-        let locations = actionTargets.map { $0.isFileURL ? $0.path : $0.absoluteString }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(locations.joined(separator: "\n"), forType: .string)
+        NSPasteboard.general.setString(LocationNaming.clipboardText(for: actionTargets), forType: .string)
         view.statusBar.showMessage("Copied the location to the clipboard.")
     }
 
