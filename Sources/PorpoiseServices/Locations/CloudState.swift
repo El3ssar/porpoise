@@ -1,12 +1,18 @@
 import Foundation
 import PorpoiseCore
 
-/// iCloud Drive / File Provider (Google Drive, OneDrive, Dropbox…) state of an item, as Finder shows it.
+/// iCloud Drive / File Provider (Google Drive, OneDrive, Dropbox…) state of an item, as Finder shows it; for the
+/// accounts Porpoise connects to, also whether it is kept downloaded.
 public enum CloudState: Equatable {
-    case local  // not a cloud item, or downloaded and in sync (no badge, like Finder)
+    case local  // not a cloud item, or downloaded and not kept (no badge, like Finder)
     case cloudOnly  // only in the cloud: Finder's cloud-with-arrow
-    case downloading
-    case uploading
+    /// 0…1, nil when not known.
+    case downloading(Double?)
+    /// Keep Downloaded: on this Mac and kept current.
+    case kept
+    case uploading(Double?)
+    /// Couldn't be downloaded or kept (the reason, for the tooltip).
+    case error(String)
 
     private static let keys: Set<URLResourceKey> = [
         .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey,
@@ -15,10 +21,26 @@ public enum CloudState: Equatable {
 
     static func of(_ url: URL) -> (state: CloudState, isCloud: Bool) {
         guard url.isFileURL, let v = try? url.resourceValues(forKeys: keys), v.isUbiquitousItem == true else { return (.local, false) }
-        if v.ubiquitousItemIsDownloading == true { return (.downloading, true) }
-        if v.ubiquitousItemIsUploading == true { return (.uploading, true) }
+        if v.ubiquitousItemIsDownloading == true { return (.downloading(nil), true) }
+        if v.ubiquitousItemIsUploading == true { return (.uploading(nil), true) }
         if v.ubiquitousItemDownloadingStatus == .notDownloaded { return (.cloudOnly, true) }
         return (.local, true)
+    }
+
+    /// Downloading or uploading: the badge is refreshed while it lasts.
+    public var isTransferring: Bool {
+        switch self {
+        case .downloading, .uploading: return true
+        default: return false
+        }
+    }
+
+    /// How far a transfer has come (nil: not transferring, or not known).
+    public var progress: Double? {
+        switch self {
+        case .downloading(let p), .uploading(let p): return p
+        default: return nil
+        }
     }
 
     public var symbol: String? {
@@ -26,7 +48,9 @@ public enum CloudState: Equatable {
         case .local: return nil
         case .cloudOnly: return "icloud.and.arrow.down"
         case .downloading: return "arrow.down.circle.dotted"
+        case .kept: return "arrow.down.circle.fill"
         case .uploading: return "icloud.and.arrow.up"
+        case .error: return "exclamationmark.icloud"
         }
     }
 
@@ -34,9 +58,29 @@ public enum CloudState: Equatable {
         switch self {
         case .local: return ""
         case .cloudOnly: return "In the cloud only. Click to download."
-        case .downloading: return "Downloading…"
-        case .uploading: return "Uploading…"
+        case .downloading(let p): return p.map { "Downloading… \(Int($0 * 100))%" } ?? "Downloading…"
+        case .kept: return "Kept downloaded on this Mac."
+        case .uploading(let p): return p.map { "Uploading… \(Int($0 * 100))%" } ?? "Uploading…"
+        case .error(let why): return why
         }
+    }
+}
+
+/// The one badge an item's icon shows: an edit in progress comes first, then problems, transfers, kept, cloud-only.
+public enum CloudBadgeKind: Equatable {
+    case none
+    case edit(CloudEditMark)
+    case cloud(CloudState)
+
+    public static func resolve(_ state: CloudState, edit: CloudEditMark?) -> CloudBadgeKind {
+        if let edit { return .edit(edit) }
+        return state == .local ? .none : .cloud(state)
+    }
+
+    /// The cloud state drawn, if any.
+    public var cloudState: CloudState? {
+        if case .cloud(let s) = self { return s }
+        return nil
     }
 }
 

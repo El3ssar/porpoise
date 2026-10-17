@@ -149,12 +149,17 @@ extension ItemListView {
         needsDisplay = true
     }
 
-    /// Finder: clicking the cloud badge of an item that is only in the cloud downloads it.
+    /// Finder: clicking the cloud badge of an item that is only in the cloud downloads it; a problem badge shows
+    /// Activity, where it's explained.
     private func downloadFromCloudBadge(at p: CGPoint) -> Bool {
-        guard let i = cloudRects.first(where: { $0.value.contains(p) })?.key, i < model.rows.count,
-            model.cloud(for: model.rows[i].item).state == .cloudOnly
-        else { return false }
-        CloudActions.download([model.rows[i].item.url])
+        guard let i = cloudRects.first(where: { $0.value.contains(p) })?.key, i < model.rows.count else { return false }
+        let state = model.cloud(for: model.rows[i].item).state
+        if case .error = state {
+            ActivityWindowController.shared.show()
+            return true
+        }
+        guard state == .cloudOnly else { return false }
+        CloudCommands.downloadNow([model.rows[i].item.url])
         model.refreshCloud()
         needsDisplay = true
         return true

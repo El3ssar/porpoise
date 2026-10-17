@@ -270,7 +270,7 @@ import Testing
         #expect(r.state == .local && !r.isCloud)
         #expect(CloudState.of(URL(string: "sftp://host/a")!).isCloud == false)
         #expect(CloudState.local.symbol == nil && CloudState.local.help.isEmpty)
-        for state in [CloudState.cloudOnly, .downloading, .uploading] {
+        for state in [CloudState.cloudOnly, .downloading(nil), .uploading(nil), .kept, .error("x")] {
             #expect(state.symbol != nil && !state.help.isEmpty)
         }
     }

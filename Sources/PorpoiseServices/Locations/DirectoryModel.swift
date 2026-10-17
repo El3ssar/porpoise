@@ -373,11 +373,20 @@ public final class DirectoryModel {
     /// Cloud badges (iCloud Drive, File Provider), cached like tags.
     private var cloudCache: [URL: (state: CloudState, isCloud: Bool)] = [:]
     public func cloud(for item: FileItem) -> (state: CloudState, isCloud: Bool) {
+        if let c = accountCloud(item) { return c }
         if let c = cloudCache[item.url] { return c }
         let c = CloudState.of(item.url)
         cloudCache[item.url] = c
         return c
     }
+    /// Items of connected accounts: their offline state, kept in memory by the offline service (no disk read).
+    /// Folders aren't badged cloud-only (most would be); they show kept, downloading or a problem.
+    private func accountCloud(_ item: FileItem) -> (state: CloudState, isCloud: Bool)? {
+        guard !item.url.isFileURL, let service = CloudOfflineHub.service, service.supports(item.url) else { return nil }
+        let state = service.state(for: item.url)
+        return (state == .cloudOnly && item.isBrowsableFolder ? .local : state, true)
+    }
+
     /// Re-reads the cloud states in the background; the ones known stay shown meanwhile (no flicker).
     public func refreshCloud() { readMetadata(of: Set(cloudCache.keys), tags: false) }
 
@@ -398,6 +407,7 @@ public final class DirectoryModel {
 
     /// Cloud state to draw: the cached one, or `.local` until it's read.
     public func shownCloud(for item: FileItem) -> (state: CloudState, isCloud: Bool) {
+        if let c = accountCloud(item) { return c }
         if let c = cloudCache[item.url] { return c }
         if item.url.isFileURL { want(item.url) }
         return (.local, false)

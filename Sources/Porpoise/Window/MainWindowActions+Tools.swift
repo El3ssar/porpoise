@@ -94,10 +94,27 @@ extension MainWindowController {
         view.list.needsDisplay = true
     }
 
-    @objc func cloudDownload(_ sender: Any?) { CloudActions.download(selectedURLs) }
+    @objc func cloudDownload(_ sender: Any?) { CloudCommands.downloadNow(selectedURLs) }
+
+    /// Keep Downloaded: a check item, so choosing it on kept items stops keeping them (their copies stay as downloads).
+    @objc func cloudKeep(_ sender: Any?) {
+        let items = view.model.selectedItems
+        guard !CloudCommands.stopKeepingIfAllKept(items.map(\.url)) else { return }
+        let c = view
+        KeepDownloadedSheet.run(
+            items, window: window, status: { text in if let text { c.statusBar.showMessage(text) } else { c.updateStatus() } },
+            failed: { c.messageBar.show($0, error: true) })
+    }
+
     @objc func cloudEvict(_ sender: Any?) {
-        let failed = CloudActions.evict(selectedURLs)
+        let urls = selectedURLs
+        let failed = CloudCommands.removeDownload(urls)
         guard !failed.isEmpty else { return }
+        // Accounts: a calm line says what stayed (unsent edits…); iCloud keeps its sheet.
+        if !urls.allSatisfy(\.isFileURL) {
+            view.messageBar.show(failed.prefix(3).joined(separator: " "), error: false)
+            return
+        }
         let a = NSAlert()
         a.messageText = "Some downloads could not be removed."
         a.informativeText = failed.prefix(6).joined(separator: "\n")
@@ -172,5 +189,26 @@ extension MainWindowController {
             }
         }
         do { try p.run() } catch { onFailure?(); reportError("\(failure) \(error.localizedDescription)", in: c) }
+    }
+}
+
+extension MainWindowController {
+    /// Download Now, Keep Downloaded and Remove Download in the File menu (the context menu builds its own): enabled as
+    /// the selection allows, Keep Downloaded checked when the selection is kept.
+    func validateCloud(_ item: NSMenuItem) -> Bool {
+        let model = view.model
+        let a = CloudCommands.available(for: model.selectedItems) { model.cloud(for: $0) }
+        // Disabled items say why (the context menu's own tooltips stay otherwise).
+        switch item.action {
+        case #selector(cloudDownload(_:)): return a.downloadNow
+        case #selector(cloudKeep(_:)):
+            item.state = a.keep == .on ? NSControl.StateValue.on : a.keep == .mixed ? .mixed : .off
+            if !a.keepEnabled { item.toolTip = a.reason }
+            return a.keep != nil && a.keepEnabled
+        case #selector(cloudEvict(_:)):
+            if !a.removeEnabled { item.toolTip = a.reason }
+            return a.removeDownload && a.removeEnabled
+        default: return false
+        }
     }
 }
