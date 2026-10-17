@@ -106,7 +106,18 @@ extension MainWindowController {
     }
 
     /// Into Google Drive's Trash: the rows go at once, the message bar offers Undo. Never a "delete permanently" question.
-    func trashCloud(_ urls: [URL]) {
+    func trashCloud(_ urls: [URL], confirmed: Bool = false) {
+        if !confirmed, !CloudAccounts.shared.supportsTrashUndo(urls) {
+            let alert = NSAlert()
+            alert.messageText = "Delete these items from \(urls.first.map { CloudAccounts.shared.providerTitle(for: $0) } ?? "the cloud")?"
+            alert.informativeText = "Porpoise cannot undo this deletion automatically. Recovery, when available, is through the service’s website."
+            alert.addButton(withTitle: "Delete"); alert.addButton(withTitle: "Cancel")
+            let finish: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+                if response == .alertFirstButtonReturn { self?.trashCloud(urls, confirmed: true) }
+            }
+            if let window { alert.beginSheetModal(for: window, completionHandler: finish) } else { finish(alert.runModal()) }
+            return
+        }
         let c =
             view.model.rows.contains { urls.contains($0.item.url) }
             ? view : (allContainers.first { $0.model.rows.contains { urls.contains($0.item.url) } } ?? view)
@@ -130,8 +141,12 @@ extension MainWindowController {
             var text = CloudAccounts.shared.trashMessage(trashed, names: names)
             if let error { text += ". \(kept.count) couldn’t be moved: \(error.localizedDescription)" }
             c.cloudTrashNotice = Set(trashed)
-            c.messageBar.show(text, error: false, action: "Undo") { [weak self] in
-                self?.undoCloudTrash(originals.filter { trashed.contains($0.url) }, folder: folder, in: c)
+            if CloudAccounts.shared.supportsTrashUndo(trashed) {
+                c.messageBar.show(text, error: false, action: "Undo") { [weak self] in
+                    self?.undoCloudTrash(originals.filter { trashed.contains($0.url) }, folder: folder, in: c)
+                }
+            } else {
+                c.messageBar.show(text, error: false)
             }
             c.needsLayout = true
         }
@@ -168,7 +183,7 @@ extension MainWindowController {
         switch item.action {
         case #selector(renameItem(_:)):
             guard !cloudSelection.isEmpty else { return nil }
-            why = cloudSelection.count > 1 ? "Rename Google Drive items one at a time." : accounts.denial(.rename, items: cloudSelection)
+            why = cloudSelection.count > 1 ? "Rename cloud items one at a time." : accounts.denial(.rename, items: cloudSelection)
         case #selector(moveToTrash(_:)), #selector(deleteItem(_:)):
             guard !cloudSelection.isEmpty else { return nil }
             why = accounts.denial(.trash, items: cloudSelection)
@@ -183,7 +198,7 @@ extension MainWindowController {
             why = accounts.denial(.addItems, folder: view.url)
         case #selector(createFile(_:)), #selector(createFromTemplate(_:)):
             guard inCloud else { return nil }
-            item.toolTip = "In Google Drive you can create folders. To add a file, copy or drag it here."
+            item.toolTip = "You can create folders here. To add a file, copy or drag it here."
             return false
         case #selector(paste(_:)):
             guard !FileOperationsController.shared.clipboardURLs.isEmpty else { item.toolTip = nil; return false }

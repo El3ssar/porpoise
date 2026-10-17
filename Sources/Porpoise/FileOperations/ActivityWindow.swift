@@ -54,7 +54,7 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
         observers.append(
             NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] _ in self?.syncSettings() })
         observers.append(
-            NotificationCenter.default.addObserver(forName: DriveEditing.changed, object: nil, queue: .main) { [weak self] _ in
+            NotificationCenter.default.addObserver(forName: CloudEditing.changed, object: nil, queue: .main) { [weak self] _ in
                 self?.scheduleReload()
             })
         reload()
@@ -263,7 +263,7 @@ final class ActivityWindowController: NSWindowController, NSTableViewDataSource,
     private func reload() {
         guard window?.isVisible == true || rows.isEmpty else { return }
         let next = Self.ordered(controller.activities)
-        let nextEdits = DriveEditing.shared.entries
+        let nextEdits = CloudEditing.shared.entries
         if next.map(\.id) == rows.map(\.id), nextEdits.map(\.id) == edits.map(\.id),
             nextEdits.map({ EditActivityRowView.isTall($0.mark) }) == edits.map({ EditActivityRowView.isTall($0.mark) })
         {
@@ -825,7 +825,7 @@ final class EditActivityRowView: NSView {
 
     private func run(_ action: String) {
         guard let e = entry else { return }
-        let editing = DriveEditing.shared
+        let editing = CloudEditing.shared
         switch action {
         case "keep", "copy": editing.keepBoth(e.id)
         case "open": editing.openBoth(e.id)
@@ -837,6 +837,6 @@ final class EditActivityRowView: NSView {
 
     @objc private func dismiss() {
         guard let e = entry else { return }
-        DriveEditing.shared.dismiss(e.id)
+        CloudEditing.shared.dismiss(e.id)
     }
 }

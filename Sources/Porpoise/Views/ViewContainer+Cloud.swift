@@ -74,8 +74,8 @@ extension ViewContainer {
     }
 
     /// Drive found changes made elsewhere in this account: the folder shows them in place (a search keeps its results).
-    func driveChanged(account: UUID) {
-        guard DriveLocation(url: model.location)?.accountID == account, !model.isSearching else { return }
+    func driveChanged(account: String) {
+        guard CloudAccounts.shared.backend?.accountID(for: model.location) == account, !model.isSearching else { return }
         // Coalesced: one poll can report several pages of changes.
         guard !driveReloadPending else { return }
         driveReloadPending = true

@@ -19,6 +19,15 @@ enum AccountsSettingsPage {
         }
         _ = f.note("Copying a Google document out of Drive saves an export; the original stays in Drive. Opening one opens it in your browser.")
         offlineSection(f)
+        f.section("Sign-in configuration")
+        for descriptor in CloudProviderDescriptor.catalog where descriptor.available {
+            if let configuration = descriptor.configuration {
+                f.text(configuration.label, Settings.store.string(forKey: configuration.key) ?? "") {
+                    Settings.store.set($0.trimmingCharacters(in: .whitespacesAndNewlines), forKey: configuration.key)
+                }
+            }
+        }
+        _ = f.note("Leave blank to use the application key included with this build.")
     }
 
     /// Offline copies: how much recently opened files may use, what each account keeps, and where.
@@ -133,7 +142,7 @@ final class AccountsView: NSView {
         let accounts = CloudAccounts.shared
         guard let id = selected, let a = accounts.account(id) else {
             let text = ConnectSheet.secondary(
-                "Connect Google Drive to browse My Drive, files shared with you and shared drives in Porpoise, like any other folder.")
+                "Connect a cloud account to browse your files and shared folders in Porpoise, like any other folder.")
             text.preferredMaxLayoutWidth = 320
             let connect = ClosureButton(title: "Connect…") { [weak self] _ in self?.addAccount() }
             detail.addArrangedSubview(text)
@@ -161,7 +170,7 @@ final class AccountsView: NSView {
 
         var checks: [NSView] = []
         for root in accounts.availableRows(id) {
-            let c = NSButton(checkboxWithTitle: root.title, target: self, action: #selector(toggleRow(_:)))
+            let c = NSButton(checkboxWithTitle: accounts.rootTitle(root, for: a.id), target: self, action: #selector(toggleRow(_:)))
             c.identifier = NSUserInterfaceItemIdentifier(root.rawValue)
             c.state = accounts.shows(root, for: id) ? .on : .off
             checks.append(c)
@@ -299,7 +308,8 @@ enum AccountActions {
         let places = CloudAccounts.shared.places(of: account.id)
         let a = NSAlert()
         a.messageText = "Remove \(account.email)?"
-        var info = "Porpoise signs out of this \(account.provider.title) account and forgets its cache. Nothing in your Drive changes."
+        var info =
+            "Porpoise signs out of this \(account.provider.title) account and forgets its cache. Your files in \(account.provider.title) stay as they are."
         let usage = CloudOfflineHub.service?.usage(account: account.id)
         if let line = CloudCommands.signOutLine(bytes: (usage?.kept ?? 0) + (usage?.recent ?? 0), provider: account.provider.title) {
             info += "\n\n" + line
@@ -322,9 +332,7 @@ enum AccountActions {
 
     /// The account's own web page (Drive in the browser, signed in as this account).
     static func openInBrowser(_ account: CloudAccount) {
-        var c = URLComponents(string: "https://drive.google.com/drive/my-drive")!
-        c.queryItems = [URLQueryItem(name: "authuser", value: account.email)]
-        if let u = c.url { NSWorkspace.shared.open(u) }
+        NSWorkspace.shared.open(account.provider.descriptor.webLink(account.provider.descriptor.homeURL, email: account.email))
     }
 
     /// Google Docs, Sheets, Slides…: web documents open in the browser, signed in as the account they're in.
@@ -337,9 +345,7 @@ enum AccountActions {
 
     /// `link` opened as `account` (Google's authuser), so a second signed-in account doesn't get it.
     static func webLink(_ link: URL, account: CloudAccount?) -> URL {
-        guard let account, var c = URLComponents(url: link, resolvingAgainstBaseURL: false) else { return link }
-        c.queryItems = (c.queryItems ?? []).filter { $0.name != "authuser" } + [URLQueryItem(name: "authuser", value: account.email)]
-        return c.url ?? link
+        account.map { $0.provider.descriptor.webLink(link, email: $0.email) } ?? link
     }
 
     static func rename(_ account: CloudAccount, window: NSWindow?) {

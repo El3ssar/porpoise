@@ -249,7 +249,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         observers.append(
             center.addObserver(forName: CloudAccounts.changed, object: nil, queue: .main) { [weak self] _ in self?.cloudAccountsChanged() })
         observers.append(
-            center.addObserver(forName: DriveEditing.changed, object: nil, queue: .main) { [weak self] _ in
+            center.addObserver(forName: CloudEditing.changed, object: nil, queue: .main) { [weak self] _ in
                 guard let self, PlacesModel.isCloud(self.model.location) || self.model.isSearching else { return }
                 self.list.needsDisplay = true
                 self.updateStatus()
@@ -262,8 +262,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 self.updateStatus()
             })
         observers.append(
-            center.addObserver(forName: DriveClient.changed, object: nil, queue: .main) { [weak self] n in
-                guard let self, let id = n.object as? UUID else { return }
+            center.addObserver(forName: CloudAccounts.remoteChanged, object: nil, queue: .main) { [weak self] n in
+                guard let self, let id = n.object as? String else { return }
                 self.driveChanged(account: id)
             })
         observers.append(

@@ -80,6 +80,12 @@ if [ -z "$GOOGLE_ID" ] && [ -f .google-oauth.json ]; then
   GOOGLE_ID=$(python3 -I -c 'import json,sys;d=json.load(open(sys.argv[1]));print(next(iter(d.values()))["client_id"])' .google-oauth.json)
   GOOGLE_SECRET=$(python3 -I -c 'import json,sys;d=json.load(open(sys.argv[1]));print(next(iter(d.values())).get("client_secret",""))' .google-oauth.json)
 fi
+# Public Dropbox app key only. Refresh credentials never enter the bundle.
+DROPBOX_KEYS=""
+if [ -n "${PORPOISE_DROPBOX_APP_KEY:-}" ]; then
+  DROPBOX_ESCAPED=$(python3 -I -c 'import os,html;print(html.escape(os.environ["PORPOISE_DROPBOX_APP_KEY"]))')
+  DROPBOX_KEYS="<key>DropboxAppKey</key><string>${DROPBOX_ESCAPED}</string>"
+fi
 GOOGLE_KEYS=""
 if [ -n "$GOOGLE_ID" ]; then
   GOOGLE_KEYS="<key>GoogleDriveClientID</key><string>${GOOGLE_ID}</string>"
@@ -106,6 +112,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>SUPublicEDKey</key><string>qctcUgleVjfezZBkULIqbQreyx/ft6H2ywz3R8KDLvc=</string>
   <key>SUEnableAutomaticChecks</key><true/>
   ${GOOGLE_KEYS}
+  ${DROPBOX_KEYS}
   <key>SUScheduledCheckInterval</key><integer>86400</integer>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHumanReadableCopyright</key><string>Porpoise — a file manager for macOS inspired by KDE Dolphin. GPL-3.0-or-later.</string>

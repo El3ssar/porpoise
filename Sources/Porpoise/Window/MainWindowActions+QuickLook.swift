@@ -20,8 +20,9 @@ extension MainWindowController: QLPreviewPanelDataSource, QLPreviewPanelDelegate
 
     @discardableResult func showDriveMediaQuickLook() -> Bool {
         guard quickLookURLs.count == 1, let url = quickLookURLs.first,
-            let drive = RemoteFS.provider(for: url) as? DriveProvider, let client = drive.client,
-            let file = drive.metadata(for: url), file.mimeType.hasPrefix("video/") || file.mimeType.hasPrefix("audio/"),
+            let cloud = RemoteFS.provider(for: url) as? CloudFileProvider,
+            let item = view.model.rows.first(where: { $0.item.url == url })?.item,
+            item.utType?.conforms(to: .audiovisualContent) == true,
             let window
         else { return false }
         if driveMediaQuickLook == nil {
@@ -33,34 +34,23 @@ extension MainWindowController: QLPreviewPanelDataSource, QLPreviewPanelDelegate
             }
             driveMediaQuickLook = panel
         }
-        driveMediaQuickLook?.show(file, client: client, relativeTo: window)
+        driveMediaQuickLook?.show(item, provider: cloud, relativeTo: window)
         return true
     }
 
     func prepareDriveQuickLook() {
         driveQuickLook?.cancel(); driveQuickLookLoading = []; driveQuickLookURLs = [:]
-        let urls = quickLookURLs.filter { $0.scheme == "gdrive" && driveQuickLookURLs[$0] == nil }
+        let urls = quickLookURLs.filter { PlacesModel.isCloud($0) && driveQuickLookURLs[$0] == nil }
         driveQuickLookLoading = Set(urls)
         driveQuickLook = Task { @MainActor [weak self] in
             for url in urls {
-                guard let drive = RemoteFS.provider(for: url) as? DriveProvider else { continue }
+                guard let cloud = RemoteFS.provider(for: url) as? CloudFileProvider else { continue }
                 do {
                     self?.view.statusBar.showMessage("Loading preview…")
-                    guard let client = drive.client else { throw DriveError.reconnect }
-                    let file: DriveFile
-                    if let cached = drive.metadata(for: url) {
-                        file = cached
-                    } else {
-                        guard let location = DriveLocation(url: url), case .folder(let id, _) = location.collection else {
-                            throw DriveError.invalidLocation
-                        }
-                        file = try await client.file(id, resourceKey: location.resourceKey)
-                    }
-                    _ = try await client.progressivePreview(file) { [weak self] local in
+                    _ = try await cloud.progressivePreview(url, context: .init()) { [weak self] local in
                         try Task.checkCancellation()
                         guard let self else { return }
-                        self.driveQuickLookURLs[url] = local
-                        QLPreviewPanel.shared().reloadData()
+                        self.driveQuickLookURLs[url] = local; QLPreviewPanel.shared().reloadData()
                     }
                     try Task.checkCancellation()
                     guard let self else { return }
@@ -85,7 +75,7 @@ extension MainWindowController: QLPreviewPanelDataSource, QLPreviewPanelDelegate
     func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! {
         // The selection can change between the count and this call.
         guard let url = quickLookURLs[safe: index] else { return nil }
-        if url.scheme == "gdrive" {
+        if PlacesModel.isCloud(url) {
             return driveQuickLookURLs[url].map { $0 as NSURL } ?? LoadingDrivePreview(loading: driveQuickLookLoading.contains(url))
         }
         return url as NSURL
