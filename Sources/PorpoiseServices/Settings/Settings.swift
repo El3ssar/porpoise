@@ -168,7 +168,7 @@ public final class Settings {
         {
             return p
         }
-        let special = url.isFileURL ? ViewProperties.defaults(for: url) : ViewProperties()
+        let special = ViewProperties.defaults(for: url)
         return special != ViewProperties() ? special : common
     }
 

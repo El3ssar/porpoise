@@ -27,7 +27,45 @@ import Testing
         m.props.setRoles([.owner, .sharedTime], for: .details)
         m.saveProps()
         #expect(DirectoryModel(location: shared).props == m.props)
-        #expect(DirectoryModel(location: folder).props == ViewProperties())
+        #expect(DirectoryModel(location: folder).props == ViewProperties.defaults(for: folder))
+    }
+
+    @Test func locationDefaultsRespectCommonAndSavedStyles() {
+        let account = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let locations: [(URL, ViewMode, ItemRole, [ItemRole])] = [
+            (folder, .icons, .name, [.owner, .size, .modificationTime]),
+            (shared, .details, .sharedTime, [.owner, .sharedTime, .size, .modificationTime]),
+            (DropboxLocation(accountID: account, itemID: "id:folder").url, .icons, .name, [.owner, .size, .modificationTime]),
+            (
+                DropboxLocation(accountID: account, itemID: "collection:shared").url, .details, .sharedTime,
+                [.owner, .sharedTime, .size, .modificationTime]
+            ),
+            (URL(string: "recent:/files")!, .details, .accessTime, [.path, .accessTime]),
+            (URL(string: "recent:/locations")!, .details, .name, [.path, .accessTime]),
+            (URL(string: "tags:/fixture")!, .details, .name, [.path, .accessTime]),
+            (URL(string: "smart:/tmp/fixture.savedSearch")!, .details, .name, [.path, .accessTime]),
+        ]
+        var common = ViewProperties(); common.mode = .compact; common.sortRole = .size
+        common.setRoles([.type], for: .details)
+        Settings.shared.save(common, for: URL(fileURLWithPath: "/tmp"))
+        for (url, mode, role, columns) in locations {
+            Settings.shared.rememberPerFolder = false
+            let model = DirectoryModel(location: url)
+            #expect(model.props == common)
+            Settings.shared.rememberPerFolder = true
+            model.reloadProps()
+            #expect(model.props.mode == mode && model.props.sortRole == role)
+            #expect(model.props.roles(for: .details) == columns)
+            let newestFirst = role == .accessTime || role == .sharedTime
+            #expect(model.props.sortOrder == (newestFirst ? .descending : .ascending))
+            #expect(model.props.foldersFirst == (mode != .details))
+            var saved = common; saved.mode = .icons; saved.sortRole = .name
+            model.props = saved; model.saveProps(); model.reloadProps()
+            #expect(model.props == saved)  // no built-in column or mode overwrites an explicit choice
+            #expect(Settings.shared.viewProperties(for: url, restoringDefaults: true) == ViewProperties.defaults(for: url))
+            Settings.shared.rememberPerFolder = false; model.reloadProps()
+            #expect(model.props == common)
+        }
     }
 
     @Test func sharedDatesSortGroupAndShow() {
