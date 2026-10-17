@@ -84,6 +84,7 @@ enum LocationContentSources {
     static func source(for url: URL) -> LocationContentSource {
         switch LocationKind.of(url) {
         case .tag, .smartFolder: return SpotlightListSource(location: url)
+        case .recentFiles, .recentLocations: return RecentSource(location: url)
         default: break
         }
         if let provider = RemoteFS.provider(for: url) {

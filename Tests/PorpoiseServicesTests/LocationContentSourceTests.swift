@@ -66,6 +66,16 @@ import Testing
         #expect(model.loadError == "This Smart Folder's search could not be read.")
         #expect(!model.isLoading && model.items.isEmpty && loaded == 1)
     }
+
+    @Test func recentLocationsListTheFoldersVisited() {
+        let recent = URL(string: "recent:/locations")!
+        let source = LocationContentSources.source(for: recent)
+        #expect(source is RecentSource && LocationContentSources.source(for: URL(string: "recent:/files")!) is RecentSource)
+        var listed: [FileItem]?
+        _ = source.load(recent, expanded: []) { listed = $0.items }
+        #expect(listed?.map(\.url) == RecentLocations.shared.urls.compactMap { FileItem.load($0)?.url })
+        #expect(!source.traits.prunesSelection && !source.traits.optimisticEdits && source.traits.watch == .none)
+    }
 }
 
 /// A server whose root holds "sub" (holding "inner") and whose "locked" folder refuses to be listed.

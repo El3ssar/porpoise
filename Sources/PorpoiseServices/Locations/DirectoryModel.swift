@@ -337,8 +337,6 @@ public final class DirectoryModel {
         reload()
     }
 
-    private var recentQuery: RecentFilesQuery?
-
     // MARK: Per-item metadata (read lazily for drawn items, cleared on reload)
 
     /// Finder tags of loaded items (cleared on reload or after tagging).
@@ -460,7 +458,6 @@ public final class DirectoryModel {
         // Every branch starts clean: an error or a query of the previous location must not leak into this one.
         loadError = nil
         blockedByPrivacy = false
-        recentQuery = nil
         if kind == .network {
             NetworkBrowser.shared.start()
             items = NetworkBrowser.shared.items
@@ -482,22 +479,6 @@ public final class DirectoryModel {
                     self.updateWatcher()
                     self.onLoaded?()
                 }
-            }
-            return
-        }
-        if kind == .recentFiles || kind == .recentLocations {
-            isLoading = true
-            let finish: ([FileItem]) -> Void = { [weak self] list in
-                guard let self, token == self.loadToken else { return }
-                self.items = list
-                self.isLoading = false
-                self.rebuild()
-                self.onLoaded?()
-            }
-            if kind == .recentLocations {
-                finish(RecentLocations.shared.urls.compactMap { FileItem.load($0) })
-            } else {
-                recentQuery = RecentFilesQuery { list in finish(list) }
             }
             return
         }
