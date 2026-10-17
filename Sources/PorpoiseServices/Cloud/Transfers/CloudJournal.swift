@@ -16,6 +16,9 @@ public final class CloudJournal<Record: CloudJournalRecord>: @unchecked Sendable
         try lock.withLock { guard active.insert(id).inserted else { throw CloudJournalError.busy } }
     }
     public func release(_ id: UUID) { _ = lock.withLock { active.remove(id) } }
+    public func partial(_ id: UUID) -> URL {
+        folder.appendingPathComponent("Downloads").appendingPathComponent(id.uuidString + ".part")
+    }
     private func url(_ id: UUID) -> URL { folder.appendingPathComponent(id.uuidString + ".json") }
     public func load(_ id: UUID) throws -> Record? {
         try lock.withLock {

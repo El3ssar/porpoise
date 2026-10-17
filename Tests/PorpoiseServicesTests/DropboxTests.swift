@@ -288,6 +288,22 @@ import Testing
         #expect(try await client.metadata(session.file.id).contentHash == second.sentHash)
     }
 
+    @Test func verifiedOfflinePartialAfterACrashDoesNotDownloadAgain() async throws {
+        let server = try FakeDropboxServer(); let client = try server.client()
+        let file = try await client.metadata("id:hello"), source = client.contentSource
+        let partial = server.fixture.scratch.url.appendingPathComponent("verified-partial")
+        let item = source.remoteItem(file)
+        try await source.download(item, to: partial, progress: { _, _ in })
+        let before = try await server.requests().filter { $0["route"] as? String == "files/download" }.count
+        #expect(before > 0)
+        try await source.download(item, to: partial, progress: { _, _ in })
+        let after = try await server.requests().filter { $0["route"] as? String == "files/download" }.count
+        #expect(after == before && (try? DropboxContentHash.hash(partial)) == file.contentHash)
+        try await server.configure(["files": [["id": file.id, "path": "/hello.txt", "text": "new revision"]]])
+        await #expect(throws: CloudContentError.changed) { try await source.download(item, to: partial, progress: { _, _ in }) }
+        #expect(try DropboxContentHash.hash(partial) == file.contentHash)
+    }
+
     @Test func cacheFallbackPaginationLoopsBackoffAndProviderErrors() async throws {
         let server = try FakeDropboxServer(); let client = try server.client()
         let files = try await client.list()
@@ -336,7 +352,7 @@ import Testing
         await #expect(throws: FileOperationError.self) {
             try await source.download(source.remoteItem(file), to: partial, checkpoint: { try gate.check() }, progress: { _, _ in })
         }
-        let sidecar = partial.appendingPathExtension("dropbox-operation"); #expect(FileManager.default.fileExists(atPath: sidecar.path))
+        let sidecar = partial.appendingPathExtension("cloud-operation"); #expect(FileManager.default.fileExists(atPath: sidecar.path))
         try await source.discardPartial(at: partial)
         #expect(!FileManager.default.fileExists(atPath: sidecar.path))
         try await source.discardPartial(at: partial)
