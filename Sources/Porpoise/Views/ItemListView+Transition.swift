@@ -69,8 +69,6 @@ enum TransitionKind: String {
 /// (the flight already moves the items there), so nothing animates twice.
 @MainActor final class ItemTransitions {
     private unowned let list: ItemListView
-    /// Reduce Motion (Accessibility › Display): changes show at once, nothing moves.
-    static var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     /// The transitions started since the view was made (the last 32), for the debug bridge and tests.
     private(set) var log: [TransitionKind] = []
     /// When each of them started (`CACurrentMediaTime`).
@@ -210,7 +208,7 @@ extension ItemListView {
         return i
     }
 
-    fileprivate var animates: Bool { window != nil && !ItemTransitions.reducesMotion() && model.rows.count <= Self.maxAnimatedRows }
+    fileprivate var animates: Bool { window != nil && !Animator.reducesMotion() && model.rows.count <= Self.maxAnimatedRows }
 
     /// Stops whatever runs (the view goes somewhere else): items are drawn where they are.
     func stopTransitions() {

@@ -53,6 +53,10 @@ final class TintedMaterialView: NSVisualEffectView {
 /// Simple per-frame animator (a 120 Hz timer in the common run loop modes, so it keeps running during
 /// event tracking such as live resize), used for custom-drawn transitions.
 final class Animator: NSObject {
+    /// Reduce Motion (Accessibility › Display): everything that animates jumps to its end. The one switch for the
+    /// app (tests set it, so a machine's own setting can't change what they see).
+    nonisolated(unsafe) static var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
     private var link: CADisplayLink?
     /// When the first frame was shown (nil until then).
     private var start: CFTimeInterval?
@@ -69,7 +73,7 @@ final class Animator: NSObject {
     ) {
         stop()
         // Reduce Motion (Accessibility › Display), or nothing to show it on: jump to the end state.
-        guard duration > 0, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+        guard duration > 0, !Animator.reducesMotion(),
             let screen = NSScreen.main ?? NSScreen.screens.first
         else {
             step(1)

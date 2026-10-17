@@ -678,7 +678,7 @@ final class ActivityProgressView: NSView {
         if isIndeterminate {
             let width = bounds.width * 0.3
             fill.frame = CGRect(x: (bounds.width - width) / 2, y: 0, width: width, height: 4)
-            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            if Animator.reducesMotion() {
                 fill.layer?.removeAnimation(forKey: "indeterminate")
             } else if fill.layer?.animation(forKey: "indeterminate") == nil {
                 let animation = CABasicAnimation(keyPath: "position.x")
@@ -693,7 +693,7 @@ final class ActivityProgressView: NSView {
         }
         fill.layer?.removeAnimation(forKey: "indeterminate")
         let target = CGRect(x: 0, y: 0, width: bounds.width * max(0, min(1, fraction)), height: 4)
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || fill.frame == .zero {
+        if Animator.reducesMotion() || fill.frame == .zero {
             fill.frame = target
         } else {
             NSAnimationContext.runAnimationGroup { context in

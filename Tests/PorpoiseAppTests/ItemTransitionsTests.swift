@@ -33,6 +33,10 @@ import Testing
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         for n in 1...6 { try Data("\(n)".utf8).write(to: folder.appendingPathComponent("file \(n).txt")) }
 
+        // What the machine is set to (CI's runner reduces motion) must not decide what this test sees.
+        let reduces = Animator.reducesMotion
+        Animator.reducesMotion = { false }
+        defer { Animator.reducesMotion = reduces }
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1000, height: 600), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -41,14 +45,21 @@ import Testing
         window.contentView = tab
         tab.frame = window.contentView?.bounds ?? .zero
         tab.primary.setMode(.icons)
-        for _ in 0..<100 where tab.primary.model.rows.count < 6 { try await settle(0.02) }
+        for _ in 0..<600 where tab.primary.model.rows.count < 6 { try await settle(0.05) }
         #expect(tab.primary.model.rows.count == 6)
         tab.layoutSubtreeIfNeeded()
 
         tab.openSplit()
         let right = try #require(tab.secondary)
-        // Settled: the flight landed and the pane has its real width (slower under coverage and a busy machine).
-        for _ in 0..<50 where !right.list.transitionHidden.isEmpty || right.list.layoutWidthOverride != nil { try await settle(0.1) }
+        // Settled: the right pane listed its folder, the flight landed and the pane has its real width (each is an
+        // event the test waits for, however slow the machine).
+        #expect(
+            tab.primary.list.transitions.animates, "window \(String(describing: tab.primary.list.window)), visible \(tab.primary.list.visibleRect)")
+        func settled() -> Bool {
+            right.model.rows.count == 6 && right.list.transitionHidden.isEmpty && right.list.layoutWidthOverride == nil
+                && right.list.transitions.log == [.splitOpen]
+        }
+        for _ in 0..<600 where !settled() { try await settle(0.05) }
         #expect(right.model.rows.count == 6)
         #expect(right.list.transitions.log == [.splitOpen])
         #expect(tab.primary.list.transitions.log.filter { $0 == .splitOpen }.count == 1)
@@ -72,9 +83,7 @@ import Testing
         #expect(t.log.last == .filter)
 
         // Reduce Motion: nothing moves.
-        let reduces = ItemTransitions.reducesMotion
-        ItemTransitions.reducesMotion = { true }
-        defer { ItemTransitions.reducesMotion = reduces }
+        Animator.reducesMotion = { true }
         t.change(.filter) {}
         #expect(t.log == [.splitOpen, .splitOpen, .filter] && !t.animates)
 
