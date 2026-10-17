@@ -295,16 +295,16 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
             rows.isEmpty && edits.isEmpty
             ? ""
             : [
-                edits.isEmpty ? nil : edits.count == 1 ? "1 file being edited" : "\(edits.count) files being edited",
-                active > 0 ? "\(active) running" : nil,
-                paused > 0 ? "\(paused) paused" : nil,
-                queued > 0 ? "\(queued) queued" : nil,
-                finished > 0 ? "\(finished) finished" : nil,
+                edits.isEmpty ? nil : edits.count == 1 ? "1 file being edited" : "\(FileFormat.count(edits.count)) files being edited",
+                active > 0 ? "\(FileFormat.count(active)) running" : nil,
+                paused > 0 ? "\(FileFormat.count(paused)) paused" : nil,
+                queued > 0 ? "\(FileFormat.count(queued)) queued" : nil,
+                finished > 0 ? "\(FileFormat.count(finished)) finished" : nil,
             ].compactMap { $0 }.joined(separator: " · ")
         if !historyPane.isHidden {
             history = controller.history.entries(matching: search.stringValue)
             historyTable.reloadData()
-            footer.text = "\(history.count) operations in history"
+            footer.text = "\(FileFormat.count(history.count)) operations in history"
         }
     }
 
@@ -334,7 +334,7 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
         case "date": text = e.date.formatted(date: .abbreviated, time: .shortened)
         case "operation": text = e.operation
         case "items":
-            let what = e.items == 1 ? (e.sources.first.map(Self.name) ?? "1 item") : "\(e.items) items"
+            let what = e.items == 1 ? (e.sources.first.map(Self.name) ?? "1 item") : FileFormat.itemCount(e.items)
             text = what + (e.destination.map { " → " + Self.name($0) } ?? "")
         default: text = e.outcome
         }
