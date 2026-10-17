@@ -8,10 +8,10 @@ extension PlacesPanel {
     func refreshCapacities() {
         guard !capacityQueryRunning else { capacityQueryPending = true; return }
         // Cloud accounts report their quota themselves (no file system to ask).
-        var quotas: [URL: VolumeCapacity] = [:]
+        var quotas: [URL: StorageCapacity] = [:]
         for a in PlacesModel.shared.accounts {
             guard let used = a.quotaUsed, let total = a.quotaTotal, total > 0, let first = a.entries.first else { continue }
-            quotas[first.url] = VolumeCapacity(free: max(0, total - used), total: total)
+            quotas[first.url] = StorageCapacity(used: used, total: total)
         }
         let volumes = rows.compactMap { row -> URL? in
             if case .entry(let e) = row.kind, e.isVolume, e.url.isFileURL { return e.url } else { return nil }
@@ -24,7 +24,7 @@ extension PlacesPanel {
                 guard let v = try? u.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]),
                     let total = v.volumeTotalCapacity, let free = v.volumeAvailableCapacityForImportantUsage
                 else { continue }
-                result[u] = VolumeCapacity(free: free, total: Int64(total))
+                result[u] = StorageCapacity(free: free, total: Int64(total))
             }
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -182,7 +182,7 @@ extension PlacesPanel {
         (title as NSString).draw(in: CGRect(x: tx, y: ty, width: r.width - tx - 14 - ejectW, height: lh + 3), withAttributes: attrs)
 
         if e.isVolume, let c = capacities[e.url], c.total > 0 {
-            drawCapacityBar(c, in: CGRect(x: tx, y: ty + lh + 4, width: r.width - tx - 16 - ejectW, height: 3))
+            CapacityBar.draw(fraction: c.fraction, in: CGRect(x: tx, y: ty + lh + 4, width: r.width - tx - 16 - ejectW, height: 3))
         }
         if e.isEjectable, let img = Icons.shared.image("media-eject", size: Metrics.ejectIconSize) {
             let s = Metrics.ejectIconSize
@@ -207,16 +207,6 @@ extension PlacesPanel {
         fill.setFill()
         let pill = CGRect(x: Metrics.pillInset, y: r.minY + 1, width: r.width - 2 * Metrics.pillInset, height: r.height - 2)
         NSBezierPath(roundedRect: pill, xRadius: Metrics.pillRadius, yRadius: Metrics.pillRadius).fill()
-    }
-
-    /// Capacity bar (KFilePlacesView draws one under device names), slim and rounded.
-    private func drawCapacityBar(_ c: VolumeCapacity, in bar: CGRect) {
-        Theme.windowText.withAlphaComponent(0.14).setFill()
-        NSBezierPath(roundedRect: bar, xRadius: 1.5, yRadius: 1.5).fill()
-        let used = CGFloat(c.total - c.free) / CGFloat(c.total)
-        (used > 0.95 ? Theme.negativeText : Theme.selectionAlternate.withAlphaComponent(0.85)).setFill()
-        let fill = CGRect(x: bar.minX, y: bar.minY, width: max(3, bar.width * used), height: bar.height)
-        NSBezierPath(roundedRect: fill, xRadius: 1.5, yRadius: 1.5).fill()
     }
 
     /// The line where a dragged folder or place would be inserted; also at the end of a section.

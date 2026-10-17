@@ -79,10 +79,7 @@ extension PlacesPanel {
 
     private func tooltip(for e: PlaceEntry?) -> String? {
         guard let e else { return nil }
-        if e.isVolume, let c = capacities[e.url] {
-            let usedPct = c.total > 0 ? Int(Double(c.total - c.free) / Double(c.total) * 100) : 0
-            return "\(FileFormat.size(c.free)) free out of \(FileFormat.size(c.total)) (\(usedPct)% used)"
-        }
+        if e.isVolume, let c = capacities[e.url] { return c.summary }
         if e.url.isFileURL { return e.url.path }
         if let account = CloudAccounts.shared.account(for: e.url) {
             // "Shared by Ana Ruiz · Google Drive · work", or just the account for its own rows and folders.

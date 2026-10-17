@@ -198,29 +198,14 @@ final class StatusBarView: NSView {
         }
     }
 
-    /// "786 GiB free" + a slim capsule showing used space (blue → amber → red as the disk fills).
+    /// "786 GiB free" + a capacity bar showing used space.
     private func drawDisk() {
         let attrs: [NSAttributedString.Key: Any] = [.font: Self.diskFont, .foregroundColor: Theme.windowTextInactive.withAlphaComponent(0.85)]
         let ts = (freeSpaceText as NSString).size(withAttributes: attrs)
         let cy = bounds.height / 2
         (freeSpaceText as NSString).draw(at: CGPoint(x: diskRect.minX, y: cy - ts.height / 2), withAttributes: attrs)
         let bar = CGRect(x: diskRect.maxX - Self.diskBarWidth, y: cy - 3, width: Self.diskBarWidth, height: 6)
-        let track = NSBezierPath(roundedRect: bar, xRadius: 3, yRadius: 3)
-        Theme.windowText.withAlphaComponent(0.13).setFill()
-        track.fill()
-        let used = max(0.04, min(1, usedFraction))
-        let fillRect = CGRect(x: bar.minX, y: bar.minY, width: bar.width * CGFloat(used), height: bar.height)
-        let colors: [NSColor] =
-            used > 0.9
-            ? [Theme.neutralText.mixed(with: .systemOrange, 0.6), Theme.negativeText]
-            : (used > 0.75 ? [Theme.selectionAlternate, .systemOrange] : [Theme.selection.lighter(150), Theme.selectionAlternate])
-        NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(roundedRect: fillRect, xRadius: 3, yRadius: 3).addClip()
-        NSGradient(colors: colors)?.draw(in: fillRect, angle: 0)
-        // Soft top highlight for a little depth.
-        NSColor.white.withAlphaComponent(NSAppearance.currentDrawing().isDark ? 0.18 : 0.35).setFill()
-        CGRect(x: fillRect.minX, y: fillRect.minY, width: fillRect.width, height: 1).fill()
-        NSGraphicsContext.restoreGraphicsState()
+        CapacityBar.draw(fraction: usedFraction, in: bar, look: .raised)
     }
 
     override func mouseDown(with event: NSEvent) {
