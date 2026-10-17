@@ -59,7 +59,7 @@ public enum TemplateExpansion {
         name: String, contents: Data
     ) {
         let name = expand(filenamePattern ?? template.filename, context: context)
-        guard FileActions.isValidName(name) else { throw FileOperationError.failed("The template produces an invalid file name.") }
+        guard FileName.isValid(name, for: .local) else { throw FileOperationError.failed("The template produces an invalid file name.") }
         var bodyContext = context; bodyContext.name = (name as NSString).deletingPathExtension
         let contents = template.textContents.map { Data(expand($0, context: bodyContext).utf8) } ?? template.contents
         return (name, contents)
