@@ -6,13 +6,13 @@ import Testing
 
 @testable import PorpoiseServices
 
-/// fd and ripgrep from build/search-tools (scripts/fetch-search-tools.sh), when they're there.
+/// fd from build/search-tools (scripts/fetch-search-tools.sh), when they're there.
 private let searchTools: FolderSearch.Tools? = {
     let dir = TestPaths.repo
         .appendingPathComponent("build/search-tools")
-    let fd = dir.appendingPathComponent("fd").path, rg = dir.appendingPathComponent("rg").path
+    let fd = dir.appendingPathComponent("fd").path
     let fm = FileManager.default
-    return fm.isExecutableFile(atPath: fd) && fm.isExecutableFile(atPath: rg) ? .init(fd: fd, rg: rg) : nil
+    return fm.isExecutableFile(atPath: fd) ? .init(fd: fd) : nil
 }()
 
 /// Apple's own apps: Spotlight indexes them on every Mac (when it's on), and they're never in the user's home.
@@ -43,7 +43,7 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
             return (runner, (result ?? []).map(\.name).sorted(), marked)
         }
 
-        /// Without fd and ripgrep the folder is walked: names in any case, at any depth.
+        /// Without fd the folder is walked: names in any case, at any depth.
         @Test func withoutToolsTheFolderIsWalkedForNames() async throws {
             let s = try Scratch()
             try s.file("deep/down/Budget 2026.txt", "x")
@@ -66,7 +66,7 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
             let tools = try #require(searchTools)
             let (_, names, marked) = try await finish { update in
                 let r = SearchRunner(text: "budget", scope: s.url, contents: true, update: update)
-                r.folderTools = FolderSearch.Tools(fd: tools.fd, rg: s.path("no-such-rg").path)
+                r.folderTools = FolderSearch.Tools(fd: s.path("no-such-fd").path)
                 return r
             }
             #expect(names == ["plan.md"] && !marked)
@@ -112,12 +112,14 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
             }
             #expect(names == ["plan.md"])
             #expect(marked)
-            #expect(runner.snippets[s.path("plan.md")] == "ask about the budget")
+            #expect(runner.snippets[URL(fileURLWithPath: FilePath.canonical(s.path("plan.md").path))] == "ask about the budget")
         }
 
-        @Test func spotlightPredicates() {
-            #expect(SearchRunner.predicate("a b", contents: false).predicateFormat == #"kMDItemFSName LIKE[cd] "*a b*""#)
-            let both = SearchRunner.predicate("x", contents: true).predicateFormat
+        @Test func spotlightPredicates() throws {
+            #expect(
+                SearchRunner.predicate(try SearchSpec("a b", contents: false)).predicateFormat
+                    == #"kMDItemFSName LIKE[cd] "*a*" AND kMDItemFSName LIKE[cd] "*b*""#)
+            let both = SearchRunner.predicate(try SearchSpec("x", contents: true)).predicateFormat
             #expect(both.contains("kMDItemTextContent LIKE[cd] \"*x*\"") && both.contains("kMDItemFSName LIKE[cd] \"*x*\""))
         }
 

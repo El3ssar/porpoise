@@ -6,14 +6,14 @@ import Testing
 
 @testable import PorpoiseServices
 
-/// The bundled fd and ripgrep, run for real on files in a scratch folder (scripts/fetch-search-tools.sh puts them in
+/// The bundled fd, run for real on files in a scratch folder (scripts/fetch-search-tools.sh puts them in
 /// build/search-tools; CI fetches them too).
 private let fetchedTools: FolderSearch.Tools? = {
     let dir = TestPaths.repo
         .appendingPathComponent("build/search-tools")
-    let fd = dir.appendingPathComponent("fd").path, rg = dir.appendingPathComponent("rg").path
+    let fd = dir.appendingPathComponent("fd").path
     let fm = FileManager.default
-    return fm.isExecutableFile(atPath: fd) && fm.isExecutableFile(atPath: rg) ? .init(fd: fd, rg: rg) : nil
+    return fm.isExecutableFile(atPath: fd) ? .init(fd: fd) : nil
 }()
 
 @MainActor @Suite(.enabled(if: fetchedTools != nil, "needs scripts/fetch-search-tools.sh"))
@@ -37,7 +37,7 @@ struct FolderSearchTests {
     ) {
         var result: ([FileItem], [URL: String])?
         var batches = 0
-        let search = FolderSearch(text: text, scope: s.url, contents: contents, limit: limit, tools: tools) { items, snippets, done in
+        let search = FolderSearch(spec: try SearchSpec(text, contents: contents), scope: s.url, limit: limit, tools: tools) { items, snippets, done in
             if done { result = (items, snippets) } else { batches += 1 }
         }
         search.start()
@@ -85,11 +85,11 @@ struct FolderSearchTests {
     @Test func linesOfGivenFiles() throws {
         let odd = try s.file("we\nird name.txt", "x\n  Budget: tight\n")
         let paths = [s.path("notes.txt").path, s.path("other.txt").path, odd.path, s.path("missing.txt").path]
-        let found = FolderSearch.lines(in: paths, containing: "budget", rg: tools.rg)
+        let found = FolderSearch.lines(in: paths, spec: try SearchSpec("budget", contents: true))
         #expect(found == [s.path("notes.txt").path: "the budget is due friday", odd.path: "Budget: tight"])
         // Many files: read a few hundred at a time, all of them.
         let many = try (0..<900).map { try s.file("many/f\($0).txt", "has budget \($0)").path }
-        #expect(FolderSearch.lines(in: many, containing: "BUDGET", rg: tools.rg).count == 900)
+        #expect(try FolderSearch.lines(in: many, spec: SearchSpec("BUDGET", contents: true)).count == 900)
     }
 
     @Test func snippetsStartNearTheTextAndStayShort() {
@@ -118,7 +118,7 @@ struct FolderSearchTests {
     @Test func aStoppedSearchSaysNothingMoreAndLeavesNoTool() async throws {
         for i in 0..<200 { try s.file("deep/\(i)/x/y/match-\(i).txt") }
         var calls = 0
-        let search = FolderSearch(text: "match", scope: s.url, contents: true, limit: 10_000, tools: tools) { _, _, _ in calls += 1 }
+        let search = FolderSearch(spec: try SearchSpec("match", contents: true), scope: s.url, limit: 10_000, tools: tools) { _, _, _ in calls += 1 }
         search.start()
         search.stop()
         try await Task.sleep(nanoseconds: 500_000_000)

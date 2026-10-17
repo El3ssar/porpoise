@@ -10,8 +10,7 @@ final class InformationPanel: NSView {
     private let preview = NSImageView()
     private let previewSpinner = NSProgressIndicator()
     private let previewStatus = NSTextField(wrappingLabelWithString: "")
-    private var drivePlayer: Task<Void, Never>?
-    private var driveStream: (any CloudPreviewStream)?
+    private var playbackSession: CloudPlaybackSession?
     private var drivePreview: Task<Void, Never>?
     private let nameLabel = NSTextField(wrappingLabelWithString: "")
     private let grid = NSStackView()
@@ -35,8 +34,6 @@ final class InformationPanel: NSView {
     /// The thumbnail, kept over the video until playback starts (no jump from thumbnail to first frame).
     private let poster = NSImageView()
     private var playObservation: NSKeyValueObservation?
-    private var loadingObservation: NSKeyValueObservation?
-    private var failureObservation: NSKeyValueObservation?
     private var playerWork: DispatchWorkItem?
     private var thumbnailObserver: NSObjectProtocol?
     private var windowCloseObserver: NSObjectProtocol?
@@ -95,8 +92,6 @@ final class InformationPanel: NSView {
         [thumbnailObserver, windowCloseObserver].compactMap { $0 }.forEach(NotificationCenter.default.removeObserver)
         playerWork?.cancel()
         drivePreview?.cancel()
-        drivePlayer?.cancel()
-        driveStream?.stop()
     }
 
     override func draw(_ dirty: NSRect) {}
@@ -440,8 +435,7 @@ final class InformationPanel: NSView {
     private func stopPlayer() {
         playerWork?.cancel()
         playerWork = nil
-        drivePlayer?.cancel(); drivePlayer = nil
-        driveStream?.stop(); driveStream = nil
+        playbackSession?.stop(); playbackSession = nil
         player.player?.pause()
         // Before releasing the player: the controls hold it weakly and must remove their time observer from it.
         controls.detach()
@@ -449,7 +443,6 @@ final class InformationPanel: NSView {
         player.isHidden = true
         controls.isHidden = true
         playObservation = nil
-        loadingObservation = nil; failureObservation = nil
         playerURL = nil
         poster.removeFromSuperview()
         VideoPreview.shared.stop(for: self)
@@ -474,18 +467,24 @@ final class InformationPanel: NSView {
         let work = DispatchWorkItem { [weak self] in
             guard let owner = self else { return }
             if let cloud = RemoteFS.provider(for: url) as? CloudFileProvider {
-                owner.drivePlayer = Task { @MainActor [weak owner] in
-                    do {
-                        let playback = try await cloud.playback(url)
-                        try Task.checkCancellation()
-                        guard let owner, owner.shownURLs == [url] else { playback.stream?.stop(); return }
-                        owner.driveStream = playback.stream; owner.startPlayer(with: playback.url)
-                    } catch {
-                        guard !Task.isCancelled, let owner, owner.shownURLs == [url] else { return }
-                        owner.previewStatus.stringValue = "Playback unavailable"
-                        owner.previewStatus.toolTip = error.localizedDescription
+                let session = CloudPlaybackSession(preferredForwardBufferDuration: 0, observesCached: false)
+                owner.playbackSession = session
+                session.onPlayer = { [weak owner] player, playable in
+                    guard let owner, owner.shownURLs == [url] else { return }
+                    owner.startPlayer(with: playable, player: player, cloud: true)
+                }
+                session.onStatus = { [weak owner] status in
+                    guard let owner, owner.shownURLs == [url] else { return }
+                    switch status {
+                    case .loading: break
+                    case .buffering: owner.previewSpinner.startAnimation(nil); owner.previewStatus.stringValue = "Buffering…"
+                    case .ready: owner.previewSpinner.stopAnimation(nil); owner.previewStatus.stringValue = ""
+                    case .unavailable(let error, _):
+                        owner.previewSpinner.stopAnimation(nil); owner.previewStatus.stringValue = "Playback unavailable"
+                        owner.previewStatus.toolTip = error?.localizedDescription
                     }
                 }
+                session.start { try await cloud.playback(url) }
                 return
             }
             VideoPreview.shared.playableURL(for: url, owner: owner) { [weak self] playable in
@@ -497,33 +496,13 @@ final class InformationPanel: NSView {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.playerDelay, execute: work)
     }
 
-    private func startPlayer(with playable: URL) {
-        let p = AVPlayer(url: playable)
+    private func startPlayer(with playable: URL, player supplied: AVPlayer? = nil, cloud: Bool = false) {
+        let p = supplied ?? AVPlayer(url: playable)
         p.automaticallyWaitsToMinimizeStalling = false
         player.player = p
-        if driveStream != nil {
-            loadingObservation = p.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] p, _ in
-                DispatchQueue.main.async {
-                    guard let self, self.player.player === p else { return }
-                    if p.timeControlStatus == .waitingToPlayAtSpecifiedRate {
-                        self.previewSpinner.startAnimation(nil); self.previewStatus.stringValue = "Buffering…"
-                    } else {
-                        self.previewSpinner.stopAnimation(nil); self.previewStatus.stringValue = ""
-                    }
-                }
-            }
-            failureObservation = p.currentItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
-                guard item.status == .failed else { return }
-                DispatchQueue.main.async {
-                    guard let self, self.player.player?.currentItem === item else { return }
-                    self.previewSpinner.stopAnimation(nil); self.previewStatus.stringValue = "Playback unavailable"
-                    self.previewStatus.toolTip = item.error?.localizedDescription
-                }
-            }
-        }
         // Songs play without a picture: the bar is all there is.
         player.isHidden = playerIsAudio
-        controls.attach(p, duration: playable.scheme == "http" && driveStream == nil ? VideoPreview.shared.streamDuration : nil)
+        controls.attach(p, duration: playable.scheme == "http" && !cloud ? VideoPreview.shared.streamDuration : nil)
         controls.onStateChange = { [weak self] in self?.updateControls() }
         needsLayout = true
         // The thumbnail stays over the video until it plays (with autoplay too: no black frame while it starts).
@@ -539,7 +518,7 @@ final class InformationPanel: NSView {
                 }
             }
         }
-        guard playable.scheme == "http", driveStream == nil else {
+        guard playable.scheme == "http", !cloud else {
             if Settings.shared.infoAutoPlay { p.play() }
             return
         }

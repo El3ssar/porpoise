@@ -26,7 +26,7 @@ extension MainWindowController: QLPreviewPanelDataSource, QLPreviewPanelDelegate
             let window
         else { return false }
         if driveMediaQuickLook == nil {
-            let panel = DriveMediaPreviewPanel()
+            let panel = CloudMediaPreviewPanel()
             panel.onArrow = { [weak self] event in
                 guard let self else { return }
                 self.view.list.keyDown(with: event)
