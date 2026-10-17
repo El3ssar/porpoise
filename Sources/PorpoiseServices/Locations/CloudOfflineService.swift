@@ -48,9 +48,10 @@ public protocol CloudOfflineService: AnyObject {
 
 extension CloudOfflineService {
     public func keep(for url: URL) -> CloudKeep { CloudKeep(details(for: url)) }
+    /// Bytes on this Mac (a pin still waiting to download has none).
     public func hasLocalCopy(_ url: URL) -> Bool {
         let d = details(for: url)
-        return d.downloaded || d.kept || d.inheritedFrom != nil || d.bytes > 0
+        return d.downloaded || d.bytes > 0
     }
 }
 
