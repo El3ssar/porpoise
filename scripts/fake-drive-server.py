@@ -395,6 +395,15 @@ class Handler(BaseHTTPRequestHandler):
             for parent, ids in children.items():
                 if f"'{parent}'" in q:
                     return self.reply({"files": [f for f in files if f["id"] in ids]})
+            if query.get("corpora") and q.replace(" ", "") == "trashed=false":
+                if query.get("driveId"):
+                    files = [f for f in files if f.get("driveId") == query["driveId"][0]]
+                size = int(query.get("pageSize", ["1000"])[0])
+                offset = int(query.get("pageToken", ["0"])[0])
+                result = {"files": files[offset:offset + size]}
+                if offset + size < len(files):
+                    result["nextPageToken"] = str(offset + size)
+                return self.reply(result)
             root_ids = fixtures.get("rootIDs", [f["id"] for f in files[:6]])
             root = [f for f in files if f["id"] in root_ids]
             if query.get("pageToken") == ["page-two"]:
