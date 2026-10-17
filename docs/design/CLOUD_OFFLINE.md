@@ -20,7 +20,7 @@ from "downloaded" any more, for every provider.
   "Download “X”?"). Clicking a cloud badge is Download. iCloud Drive keeps Finder's **Download Now** / **Remove
   Download**, with the same two states.
 - **Properties:** "On this Mac" reads "In Google Drive only", "Waiting to download", "Downloading 41 %",
-  "Downloading · 812 of 1,020 items", "On this Mac · 24.1 MB" (and "· with “Photos”" when a folder above is the one
+  "Downloading · 812 of 1,020 items", "Downloaded · 24.1 MB" (and "· with “Photos”" when a folder above is the one
   downloaded); the checkbox is **Keep on this Mac** (unchecking is Remove Download).
 - **Settings › Accounts › On this Mac:** "Recently opened files use up to …"; per account "3.1 GB downloaded · 820 MB
   of recently opened files"; "Files you download stay on this Mac until you choose Remove Download; they don’t count

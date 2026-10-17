@@ -125,12 +125,12 @@ public enum CloudCommands {
         var with = ""
         if case .inherited(let parent) = keep { with = " · with “\(parent)”" }
         if folder {
-            guard d.totalItems > 0 else { return "On this Mac" + with }
+            guard d.totalItems > 0 else { return "Downloaded" + with }
             if d.items < d.totalItems { return "Downloading · \(d.items.formatted()) of \(d.totalItems.formatted()) items" + with }
-            return "On this Mac · \(FileFormat.size(d.bytes)) in \(d.totalItems.formatted()) items" + with
+            return "Downloaded · \(FileFormat.size(d.bytes)) in \(d.totalItems.formatted()) items" + with
         }
         guard d.downloaded || d.bytes > 0 else { return "Waiting to download" + with }
         let export = d.export.map { " · as .\($0), read-only offline" } ?? ""
-        return "On this Mac" + (d.bytes > 0 ? " · \(FileFormat.size(d.bytes))" : "") + export + with
+        return "Downloaded" + (d.bytes > 0 ? " · \(FileFormat.size(d.bytes))" : "") + export + with
     }
 }

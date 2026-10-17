@@ -199,9 +199,9 @@ import Testing
         d.downloaded = true
         #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive") == "In Google Drive only")  // a cached copy
         d.kept = true
-        #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive") == "On this Mac")
+        #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive") == "Downloaded")
         d.bytes = 24_100_000
-        #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive").hasPrefix("On this Mac · "))
+        #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive").hasPrefix("Downloaded · "))
         d.export = "docx"
         #expect(CloudCommands.summaryText(d, folder: false, provider: "Google Drive").hasSuffix("as .docx, read-only offline"))
         var waiting = CloudOfflineDetails()
@@ -209,14 +209,14 @@ import Testing
         #expect(CloudCommands.summaryText(waiting, folder: false, provider: "Google Drive") == "Waiting to download")
         var f = CloudOfflineDetails()
         f.inheritedFrom = "Photos"
-        #expect(CloudCommands.summaryText(f, folder: true, provider: "Google Drive") == "On this Mac · with “Photos”")
+        #expect(CloudCommands.summaryText(f, folder: true, provider: "Google Drive") == "Downloaded · with “Photos”")
         f.items = 812
         f.totalItems = 1020
         f.bytes = 3_200_000_000
         #expect(
             CloudCommands.summaryText(f, folder: true, provider: "Google Drive") == "Downloading · 812 of \(1020.formatted()) items · with “Photos”")
         f.items = 1020
-        #expect(CloudCommands.summaryText(f, folder: true, provider: "Google Drive").hasPrefix("On this Mac · "))
+        #expect(CloudCommands.summaryText(f, folder: true, provider: "Google Drive").hasPrefix("Downloaded · "))
         f.progress = 0.41
         #expect(CloudCommands.summaryText(f, folder: true, provider: "Google Drive") == "Downloading 41 %")
         f.error = "Not enough space on this Mac."
