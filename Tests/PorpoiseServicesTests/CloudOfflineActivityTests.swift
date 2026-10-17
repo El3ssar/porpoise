@@ -47,18 +47,20 @@ import Testing
     }
     @Test func manualPauseResumeAndQuietCompletionUseNormalActivity() async throws {
         let scratch = try Scratch(), operations = operations(scratch)
-        var began = false, progressed = false
+        var release: (() -> Void)?
+        var enteredCheckpoint = false, progressed = false
         let task = Task {
             try await operations.cloudTask(title: "Keeping files", sources: []) { context in
-                began = true
-                try await Task.sleep(for: .milliseconds(30))
+                await withCheckedContinuation { continuation in release = { continuation.resume() } }
+                enteredCheckpoint = true
                 try await context.checkpoint(); progressed = true
                 return []
             }
         }
-        try await wait { began }
+        try await wait { release != nil }
         operations.pause(operations.activities[0])
-        try await Task.sleep(for: .milliseconds(80))
+        release?()
+        try await wait { enteredCheckpoint }
         #expect(!progressed && operations.activities[0].state == .paused)
         operations.resume(operations.activities[0])
         _ = try await task.value
