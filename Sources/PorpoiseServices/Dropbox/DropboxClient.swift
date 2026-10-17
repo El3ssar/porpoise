@@ -123,6 +123,7 @@ public final class DropboxClient: @unchecked Sendable {
     }
     public func list(_ path: String = "", onPage: @Sendable ([DropboxItem], Bool) async -> Void = { _, _ in }) async throws -> [DropboxItem] {
         do {
+            let since = metadataCache.generation
             var cursor: String?; var seen = Set<String>(); var files: [String: DropboxItem] = [:]
             repeat {
                 let page = try await listPage(path, cursor: cursor)
@@ -135,7 +136,7 @@ public final class DropboxClient: @unchecked Sendable {
                 guard seen.insert(page.cursor).inserted else { throw DropboxError.invalidResponse }
             } while true
             let result = files.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-            metadataCache.store(result, key: path)
+            metadataCache.store(result, key: path, since: since)
             // Nonrecursive listing cursors are kept separately from the whole-account change cursor.
             metadataCache.setCursor(cursor, scope: "listing:" + path)
             onFreshness?(); return result

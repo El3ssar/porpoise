@@ -52,6 +52,23 @@ struct CloudProviderMechanicsTests {
         #expect(CloudMetadataCache<Item>(directory: scratch.url).file(item.id) == nil)
     }
 
+    /// A listing fetched before a change made here lands after it: it doesn't put the old metadata back (a rename read
+    /// the old name right after it was made, under load).
+    @Test func aListingFetchedBeforeAChangeDoesNotUndoIt() throws {
+        let scratch = try Scratch()
+        let cache = CloudMetadataCache<Item>(directory: scratch.url)
+        let since = cache.generation
+        cache.remember([Item(id: "a", parent: "moved")])
+        cache.store([Item(id: "a", parent: "root"), Item(id: "b", parent: "root")], key: "root", since: since)
+        #expect(cache.file("a")?.parent == "moved" && cache.file("b")?.parent == "root")
+        #expect(cache.snapshot("root")?.files.first { $0.id == "a" }?.parent == "moved")
+        cache.apply([Item(id: "a", parent: "root")], removed: [], belongs: { _, _ in true }, since: since)
+        #expect(cache.file("a")?.parent == "moved")
+        // Fetched after the change: it's the newer one.
+        cache.store([Item(id: "a", parent: "later")], key: "root", since: cache.generation)
+        #expect(cache.file("a")?.parent == "later")
+    }
+
     @Test func credentialFactoriesIsolateProvidersEvenWithMatchingAccountAndAppIDs() throws {
         let account = UUID(), dropbox = CredentialStores.cloud(providerID: "dropbox"), box = CredentialStores.cloud(providerID: "box")
         try dropbox.save("first", clientID: "same-app", accountID: account)

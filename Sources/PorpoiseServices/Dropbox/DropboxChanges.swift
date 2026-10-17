@@ -20,6 +20,7 @@ public actor DropboxChangeFeed {
         var seen = Set<String>()
         repeat {
             let page: DropboxPage
+            let since = client.metadataCache.generation
             do { page = try await client.listPage(cursor: cursor, recursive: true) } catch DropboxError.api(409, let summary)
                 where summary.hasPrefix("reset") && cursor != nil
             {
@@ -46,7 +47,7 @@ public actor DropboxChangeFeed {
                 changed, removed: Array(removed),
                 belongs: { key, file in
                     file.parentPath == (paths[key] ?? key.lowercased())
-                }, retainExisting: { $0 == "shared" })
+                }, retainExisting: { $0 == "shared" }, since: since)
             client.emit(CloudChangeBatch(changed: changed.map { client.contentSource.remoteItem($0) }, removed: Array(removed)))
             // Publish the cursor only after this page is applied; replay after a crash is idempotent.
             client.metadataCache.setCursor(page.cursor, scope: "changes")
