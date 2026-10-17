@@ -12,6 +12,8 @@ import Testing
     private func setup() throws -> (CloudOffline, FakeContentSource, Scratch) {
         let source = FakeContentSource(), scratch = try Scratch()
         let facade = CloudOffline(accounts: CloudAccounts(), root: scratch.url, source: { source.ref(for: $0) == nil ? nil : source })
+        facade.operations = FileOperationsController()
+        facade.operations.history = OperationHistory(file: scratch.url.appendingPathComponent("history"))
         return (facade, source, scratch)
     }
     @Test func plansPinsSnapshotsRemoveAndWipe() async throws {
@@ -75,5 +77,47 @@ import Testing
         try await Task.sleep(for: .milliseconds(30))
         #expect(source.downloads < 20)
         #expect(facade.removeDownload([invalid]).isEmpty)
+    }
+}
+
+extension CloudOfflineTests {
+    @Test func changePagesShareOneQuietAccountActivityAndRemoveRejectsHeldFiles() async throws {
+        let (facade, source, scratch) = try setup(); _ = scratch
+        let first = source.add("one"), second = source.add("two")
+        let store = try facade.store(for: source)
+        try await wait { source.onChanges != nil }
+        let error: Error? = await withCheckedContinuation { continuation in
+            facade.keep(true, [source.url(for: first), source.url(for: second)]) { continuation.resume(returning: $0) }
+        }
+        #expect(error == nil && facade.operations.activities.count == 1)
+        source.delay = .milliseconds(100)
+        var maximumQuiet = 0
+        let observer = NotificationCenter.default.addObserver(
+            forName: FileOperationsController.activityChanged, object: facade.operations, queue: .main
+        ) { _ in
+            maximumQuiet = max(
+                maximumQuiet, facade.operations.activities.filter { $0.title.hasPrefix("Updating offline copies") && $0.state.isActive }.count)
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        let updated = source.add("one", text: "first update", revision: "r2")
+        source.onChanges?(.init(changed: [updated]))
+        try await wait { facade.operations.activities.contains { $0.title.hasPrefix("Updating offline copies") } }
+        let other = source.add("two", text: "second update", revision: "r2")
+        source.onChanges?(.init(changed: [other]))
+        let deadline = Date().addingTimeInterval(10)
+        while (await store.snapshot().entries["two"]?.item.revision != "r2"), Date() < deadline { try await Task.sleep(for: .milliseconds(5)) }
+        try await wait { facade.operations.activities.count == 1 }
+        #expect(await store.snapshot().entries["one"]?.item.revision == "r2")
+        #expect(await store.snapshot().entries["two"]?.item.revision == "r2")
+        #expect(maximumQuiet == 1)
+        facade.removalDenial = { $0 == source.url(for: updated) ? "Unsent changes" : nil }
+        #expect(facade.removeDownload([source.url(for: updated)]) == ["Unsent changes"])
+        #expect(facade.supports(source.url(for: updated)))
+        #expect(!facade.supports(URL(fileURLWithPath: "/tmp/local")))
+        var denied = updated; denied.canDownload = false; source.items["one"] = denied
+        #expect(facade.keepDenial(for: source.url(for: updated)) != nil)
+        facade.cacheLimit = 50
+        #expect(facade.cacheLimit == 50)
+        facade.wipe(account: source.accountID)
     }
 }

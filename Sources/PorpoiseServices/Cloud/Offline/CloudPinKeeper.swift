@@ -8,15 +8,18 @@ public actor CloudPinKeeper {
     private var paused = false
     private var working = false
     private var needsReconcile = false
+    private let background: (@Sendable ([CloudRemoteItem]) async throws -> Void)?
 
-    public init(store: CloudOfflineStore) { self.store = store; self.source = store.source }
+    public init(store: CloudOfflineStore, background: (@Sendable ([CloudRemoteItem]) async throws -> Void)? = nil) {
+        self.store = store; self.source = store.source; self.background = background
+    }
     public func start() async {
         source.onChanges = { [weak self] batch in Task { await self?.apply(batch) } }
         await reconcile()
     }
-    public func pause() { paused = true; retry?.cancel() }
+    public func pause() { paused = true; retry?.cancel(); retry = nil }
     public func resume() async { paused = false; await reconcile() }
-    public func stop() { paused = true; retry?.cancel(); source.onChanges = nil }
+    public func stop() { paused = true; retry?.cancel(); retry = nil; source.onChanges = nil }
 
     public func descendants(_ roots: [CloudItemRef]) async throws -> [CloudRemoteItem] {
         var pending = roots
@@ -49,13 +52,20 @@ public actor CloudPinKeeper {
         }
         return result
     }
-    public func download(_ items: [CloudRemoteItem]) async throws {
+    public func download(_ items: [CloudRemoteItem], context: CloudTransferContext = .init()) async throws {
         let files = items.filter { !$0.isFolder }
+        let tally = CloudOfflineProgress(items: files, context: context)
+        await tally.begin()
         do {
             try await withThrowingTaskGroup(of: Void.self) { group in
                 var next = 0
                 func enqueue(_ item: CloudRemoteItem) {
-                    group.addTask { [store] in _ = try await store.fetch(item) }
+                    group.addTask { [store] in
+                        _ = try await store.fetch(item, checkpoint: context.checkpoint) { bytes, _ in
+                            Task { await tally.update(item.ref.item, bytes: bytes) }
+                        }
+                        await tally.finish(item.ref.item)
+                    }
                 }
                 while next < min(2, files.count) { enqueue(files[next]); next += 1 }
                 while try await group.next() != nil {
@@ -85,7 +95,7 @@ public actor CloudPinKeeper {
             let snapshot = await store.snapshot()
             let kept = batch.changed.filter { snapshot.isKept($0.ref.item) }
             let expanded = try await descendants(kept.map(\.ref))
-            try await download(expanded)
+            try await update(expanded)
         } catch { scheduleRetry() }
     }
     public func reconcile() async {
@@ -107,9 +117,17 @@ public actor CloudPinKeeper {
                         try await store.forget([entry.item.ref])
                     }
                 }
-                try await download(items)
+                try await update(items)
             } catch { scheduleRetry() }
         } while needsReconcile && !paused
+    }
+    private func update(_ items: [CloudRemoteItem]) async throws {
+        let snapshot = await store.snapshot()
+        let needed = items.filter {
+            !$0.isFolder && (snapshot.entries[$0.ref.item]?.item.revision != $0.revision || snapshot.entries[$0.ref.item] == nil)
+        }
+        guard !needed.isEmpty else { return }
+        if let background { try await background(needed) } else { try await download(needed) }
     }
     private func scheduleRetry() {
         guard !paused, retry == nil else { return }
@@ -119,4 +137,23 @@ public actor CloudPinKeeper {
         }
     }
     private func retryNow() async { retry = nil; await reconcile() }
+}
+
+private actor CloudOfflineProgress {
+    private let items: [CloudRemoteItem]
+    private let context: CloudTransferContext
+    private var bytes: [String: Int64] = [:]
+    private var finished: Set<String> = []
+    init(items: [CloudRemoteItem], context: CloudTransferContext) { self.items = items; self.context = context }
+    func begin() { publish() }
+    func update(_ id: String, bytes count: Int64) { bytes[id] = max(bytes[id] ?? 0, count); publish() }
+    func finish(_ id: String) {
+        finished.insert(id)
+        if let size = items.first(where: { $0.ref.item == id })?.size { bytes[id] = size }
+        publish()
+    }
+    private func publish() {
+        context.progress(bytes.values.reduce(0, +), items.reduce(0) { $0 + ($1.size ?? bytes[$1.ref.item] ?? 0) })
+        context.items(finished.count, items.count)
+    }
 }

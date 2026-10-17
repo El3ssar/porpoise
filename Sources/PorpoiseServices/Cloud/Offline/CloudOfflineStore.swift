@@ -63,8 +63,14 @@ public actor CloudOfflineStore {
     }
     public func usage() -> CloudOfflineUsage { snapshot().usage }
     public func remember(_ items: [CloudRemoteItem]) throws {
-        for item in items {
-            guard item.ref.account == source.accountID else { throw CloudContentError.unsupported }; index.items[item.ref.item] = item
+        var pending = items, seen: Set<String> = []
+        while let item = pending.popLast() {
+            guard item.ref.account == source.accountID else { throw CloudContentError.unsupported }
+            guard seen.insert(item.ref.item).inserted else { continue }
+            index.items[item.ref.item] = item
+            for parent in item.parents where !seen.contains(parent) {
+                if let cached = source.cachedItem(CloudItemRef(account: source.accountID, item: parent)) { pending.append(cached) }
+            }
         }
         try persist()
     }
@@ -79,6 +85,7 @@ public actor CloudOfflineStore {
     }
     public func fetch(
         _ item: CloudRemoteItem, keep: Bool = false,
+        checkpoint: @escaping @Sendable () async throws -> Void = { try Task.checkCancellation() },
         progress report: @escaping @Sendable (Int64, Int64?) -> Void = { _, _ in }
     ) async throws -> URL {
         guard item.ref.account == source.accountID, !item.isFolder, item.canDownload else { throw CloudContentError.unsupported }
@@ -97,7 +104,7 @@ public actor CloudOfflineStore {
             if inFlight[item.ref.item]?.id == running.id { inFlight[item.ref.item] = nil }
         }
         let epoch = generation
-        let task = Task { try await self.performFetch(item, epoch: epoch, report: report) }
+        let task = Task { try await self.performFetch(item, epoch: epoch, checkpoint: checkpoint, report: report) }
         let flightID = UUID()
         inFlight[item.ref.item] = Flight(id: flightID, task: task)
         defer { if inFlight[item.ref.item]?.id == flightID { inFlight[item.ref.item] = nil } }
@@ -112,6 +119,7 @@ public actor CloudOfflineStore {
     }
     private func performFetch(
         _ item: CloudRemoteItem, epoch: Int,
+        checkpoint: @escaping @Sendable () async throws -> Void,
         report: @escaping @Sendable (Int64, Int64?) -> Void
     ) async throws -> URL {
         await acquire()
@@ -126,7 +134,7 @@ public actor CloudOfflineStore {
         let partial = folder.appendingPathComponent(".partial")
         progress[item.ref.item] = 0; errors[item.ref.item] = nil; publish()
         do {
-            try await source.download(item, to: partial) { [weak self] bytes, total in
+            try await source.download(item, to: partial, checkpoint: checkpoint) { [weak self] bytes, total in
                 report(bytes, total)
                 Task { await self?.setProgress(item.ref.item, bytes: bytes, total: total) }
             }

@@ -72,11 +72,22 @@ public protocol CloudContentSource: AnyObject, Sendable {
     func download(
         _ item: CloudRemoteItem, to partial: URL,
         progress: @escaping @Sendable (Int64, Int64?) -> Void) async throws
+    func download(
+        _ item: CloudRemoteItem, to partial: URL,
+        checkpoint: @escaping @Sendable () async throws -> Void,
+        progress: @escaping @Sendable (Int64, Int64?) -> Void) async throws
     var isOffline: Bool { get }
     var onChanges: (@Sendable (CloudChangeBatch) -> Void)? { get set }
 }
 
 extension CloudContentSource {
+    public func download(
+        _ item: CloudRemoteItem, to partial: URL,
+        checkpoint: @escaping @Sendable () async throws -> Void,
+        progress: @escaping @Sendable (Int64, Int64?) -> Void
+    ) async throws {
+        try await checkpoint(); try await download(item, to: partial, progress: progress); try await checkpoint()
+    }
     public var offlineDirectory: URL? { nil }
     public func holdsCopy(_ ref: CloudItemRef) async -> Bool { false }
 }

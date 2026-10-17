@@ -5,6 +5,7 @@ import PorpoiseCore
 public final class DriveContentSource: CloudContentSource, @unchecked Sendable {
     private weak var client: DriveClient?
     private let lock = NSLock()
+    private var rootAliases: Set<String> = ["root"]
     private var callback: (@Sendable (CloudChangeBatch) -> Void)?
     public let accountID: String
     public let providerTitle = "Google Drive"
@@ -33,9 +34,12 @@ public final class DriveContentSource: CloudContentSource, @unchecked Sendable {
     }
     public func remoteItem(_ file: DriveFile) -> CloudRemoteItem {
         let format = file.isGoogleDocument ? preset.format(for: file.mimeType) : nil
+        var aliases = lock.withLock { rootAliases }
+        if let root = client?.metadataCache.file("root")?.id { aliases.insert(root) }
         return CloudRemoteItem(
             ref: .init(account: accountID, item: file.id), name: file.name + (format.map { "." + $0.fileExtension } ?? ""),
-            parents: file.parents ?? [], isFolder: file.isFolder, size: file.isGoogleDocument ? nil : file.size.flatMap(Int64.init),
+            parents: (file.parents ?? []).map { aliases.contains($0) ? "root" : $0 }, isFolder: file.isFolder,
+            size: file.isGoogleDocument ? nil : file.size.flatMap(Int64.init),
             revision: file.headRevisionId ?? file.version, checksum: file.isGoogleDocument ? nil : file.md5Checksum.map(CloudChecksum.md5),
             export: format?.fileExtension,
             canDownload: file.isFolder ? file.operations.canBrowse : file.operations.canDownload || file.operations.canExport)
@@ -54,11 +58,12 @@ public final class DriveContentSource: CloudContentSource, @unchecked Sendable {
     }
     public func children(_ folder: CloudItemRef) async throws -> [CloudRemoteItem] {
         guard folder.account == accountID, let client else { throw CloudContentError.unsupported }
-        return try await client.list(
+        let files = try await client.list(
             DriveLocation(
                 accountID: client.accountID,
-                collection: folder.item == "root" ? .myDrive : .folder(folder.item))
-        ).map(remoteItem)
+                collection: folder.item == "root" ? .myDrive : .folder(folder.item)))
+        if folder.item == "root" { lock.withLock { rootAliases.formUnion(files.flatMap { $0.parents ?? [] }) } }
+        return files.map(remoteItem)
     }
     public func holdsCopy(_ ref: CloudItemRef) async -> Bool {
         guard let client else { return false }
@@ -66,6 +71,13 @@ public final class DriveContentSource: CloudContentSource, @unchecked Sendable {
     }
     public func download(
         _ item: CloudRemoteItem, to partial: URL,
+        progress: @escaping @Sendable (Int64, Int64?) -> Void
+    ) async throws {
+        try await download(item, to: partial, checkpoint: { try Task.checkCancellation() }, progress: progress)
+    }
+    public func download(
+        _ item: CloudRemoteItem, to partial: URL,
+        checkpoint: @escaping @Sendable () async throws -> Void,
         progress: @escaping @Sendable (Int64, Int64?) -> Void
     ) async throws {
         guard let client, item.ref.account == accountID else { throw CloudContentError.unsupported }
@@ -90,7 +102,7 @@ public final class DriveContentSource: CloudContentSource, @unchecked Sendable {
         do {
             let staged = try await client.downloadToStaging(
                 fresh, preset: preset, operationID: operation,
-                context: .init(progress: { bytes, total in progress(bytes, total) }))
+                context: .init(checkpoint: checkpoint, progress: { bytes, total in progress(bytes, total) }))
             guard remoteItem(staged.file).revision == item.revision else {
                 try? fm.removeItem(at: staged.url)
                 throw CloudContentError.changed

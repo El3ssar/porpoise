@@ -194,6 +194,7 @@ public final class DriveEditing {
                     return session.localURL
                 }
                 guard let session = opened ?? existing else { throw DriveError.invalidResponse }
+                await client.edits.retainCopy(session.id)
                 if existing != nil { Task { _ = try? await client.file(file.id) } }
                 guard let self else { return }
                 let entry = CloudEditEntry(

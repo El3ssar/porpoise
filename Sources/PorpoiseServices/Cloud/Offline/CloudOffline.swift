@@ -40,7 +40,14 @@ public struct CloudOfflineDetails: Equatable, Sendable {
 public final class CloudOffline: @unchecked Sendable {
     public static let shared = CloudOffline()
     public static let changed = Notification.Name("PorpoiseCloudOfflineChanged")
+    static let spaceChanged = Notification.Name("PorpoiseCloudOfflineSpaceChanged")
     public let accounts: CloudAccounts
+    public var operations = FileOperationsController.shared
+    public var removalDenial: (URL) -> String? = { _ in nil }
+    private var accountsWatch: NSObjectProtocol?
+    private var accountStatus: [String: CloudAccount.Status] = [:]
+    private var backgroundTasks: [String: Task<Void, Error>] = [:]
+    private var backgroundPending: [String: [String: CloudRemoteItem]] = [:]
     private let resolveSource: ((URL) -> CloudContentSource?)?
     public var root: URL
     /// Only recent copies count towards this limit. nil means no limit.
@@ -73,6 +80,53 @@ public final class CloudOffline: @unchecked Sendable {
         if let resolveSource { return resolveSource(url) }
         guard let id = accounts.backend?.accountID(for: url) else { return nil }
         return accounts.backend?.content(for: id)
+    }
+
+    public func activate() {
+        if accountsWatch == nil {
+            accountsWatch = NotificationCenter.default.addObserver(forName: CloudAccounts.changed, object: nil, queue: .main) { [weak self] _ in
+                self?.refreshAccounts()
+            }
+        }
+        refreshAccounts()
+    }
+    private func refreshAccounts() {
+        for account in accounts.accounts {
+            guard let source = accounts.backend?.content(for: account.id) else { continue }
+            let existed = stores[account.id] != nil
+            let cameOnline = accountStatus[account.id] != .ok && account.status == .ok
+            accountStatus[account.id] = account.status
+            _ = try? store(for: source)
+            if existed && cameOnline { Task { await keepers[account.id]?.resume() } }
+        }
+    }
+    deinit { if let accountsWatch { NotificationCenter.default.removeObserver(accountsWatch) } }
+
+    @MainActor private func backgroundUpdate(_ items: [CloudRemoteItem], source: CloudContentSource, store: CloudOfflineStore) async throws {
+        let id = source.accountID
+        for item in items { backgroundPending[id, default: [:]][item.ref.item] = item }
+        if let running = backgroundTasks[id] { try await running.value; return }
+        let task = Task { @MainActor in
+            let urls = items.map { source.url(for: $0) }
+            _ = try await operations.cloudTask(title: "Updating offline copies · \(items.count) files", sources: urls, quiet: true) { context in
+                let worker = CloudPinKeeper(store: store)
+                var completed: [URL] = []
+                while let pending = self.backgroundPending.removeValue(forKey: id), !pending.isEmpty {
+                    let batch = Array(pending.values)
+                    do { try await worker.download(batch, context: context) } catch {
+                        for item in batch where self.backgroundPending[id]?[item.ref.item] == nil {
+                            self.backgroundPending[id, default: [:]][item.ref.item] = item
+                        }
+                        throw error
+                    }
+                    completed += batch.map { source.url(for: $0) }
+                }
+                return completed
+            }
+        }
+        backgroundTasks[id] = task
+        defer { backgroundTasks[id] = nil }
+        try await task.value
     }
 
     public var cacheLimit: Int64? {
@@ -161,7 +215,10 @@ public final class CloudOffline: @unchecked Sendable {
             }
         }
         stores[id] = store
-        let keeper = CloudPinKeeper(store: store); keepers[id] = keeper
+        let keeper = CloudPinKeeper(store: store) { [weak self] items in
+            guard let self else { return }
+            try await self.backgroundUpdate(items, source: source, store: store)
+        }; keepers[id] = keeper
         Task {
             await store.publish(); await keeper.start()
         }
@@ -212,8 +269,15 @@ public final class CloudOffline: @unchecked Sendable {
                     let cached = refs.compactMap { source.cachedItem($0) }
                     try await store.remember(cached)
                     if pin == true { try await store.pin(refs) }
-                    let items = try await keepers[source.accountID]!.descendants(refs)
-                    try await keepers[source.accountID]!.download(items)
+                    let name = cached.first?.name ?? "files"
+                    let title = pin == true ? "Keeping “\(name)” downloaded" : "Downloading offline copies"
+                    let keeper = keepers[source.accountID]!
+                    _ = try await operations.cloudTask(title: title, sources: urls) { context in
+                        try await context.checkpoint()
+                        let items = try await keeper.descendants(refs)
+                        try await keeper.download(items, context: context)
+                        return items.filter { !$0.isFolder }.map { source.url(for: $0) }
+                    }
                 }
                 done(nil)
             } catch { done(error) }
@@ -225,8 +289,14 @@ public final class CloudOffline: @unchecked Sendable {
         var refused: [String] = []
         for url in urls {
             guard let source = source(for: url), let ref = source.ref(for: url), let store = try? store(for: source) else { continue }
+            if let reason = removalDenial(url) { refused.append(reason); continue }
             if let parent = details(for: url).inheritedFrom {
                 refused.append("Kept because “\(parent)” is kept downloaded."); continue
+            }
+            if let snapshot = snapshots[ref.account] {
+                for item in snapshot.items.values where isDescendant(item.ref.item, of: ref.item, snapshot: snapshot) {
+                    if let reason = removalDenial(source.url(for: item)) { refused.append(reason) }
+                }
             }
             Task { @MainActor in
                 do {
@@ -234,8 +304,12 @@ public final class CloudOffline: @unchecked Sendable {
                     let refs = snapshot.items.values.filter { item in
                         item.ref == ref || self.isDescendant(item.ref.item, of: ref.item, snapshot: snapshot)
                     }.map(\.ref)
+                    if await source.holdsCopy(ref) { throw CloudContentError.heldForEditing }
                     try await store.unpin([ref])
-                    try await store.remove(refs.isEmpty ? [ref] : refs, unpin: false)
+                    for child in refs.isEmpty ? [ref] : refs {
+                        do { try await store.remove([child], unpin: false) } catch CloudContentError.heldForEditing { continue }
+                    }
+                    NotificationCenter.default.post(name: Self.spaceChanged, object: nil)
                     await keepers[ref.account]?.resume()
                 } catch { NotificationCenter.default.post(name: Self.changed, object: [url], userInfo: ["error": error.localizedDescription]) }
             }
@@ -252,13 +326,17 @@ public final class CloudOffline: @unchecked Sendable {
     }
     public func removeRecent(account: String, done: @escaping (Error?) -> Void) {
         Task { @MainActor in
-            do { try await stores[account]?.removeRecent(); await keepers[account]?.resume(); done(nil) } catch { done(error) }
+            do {
+                try await stores[account]?.removeRecent(); NotificationCenter.default.post(name: Self.spaceChanged, object: nil);
+                await keepers[account]?.resume(); done(nil)
+            } catch { done(error) }
         }
     }
     public func wipe(account: String, done: @escaping (Error?) -> Void = { _ in }) {
         epochs[account] = nil
+        backgroundTasks.removeValue(forKey: account)?.cancel(); backgroundPending[account] = nil
         let store = stores.removeValue(forKey: account), keeper = keepers.removeValue(forKey: account)
-        snapshots[account] = nil; sources[account] = nil
+        snapshots[account] = nil; sources[account] = nil; accountStatus[account] = nil
         Task { @MainActor in
             await keeper?.stop()
             do { try await store?.wipe(); done(nil) } catch { done(error) }

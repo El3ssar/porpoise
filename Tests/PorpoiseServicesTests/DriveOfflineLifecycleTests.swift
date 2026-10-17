@@ -15,6 +15,10 @@ import Testing
         let account = try await accounts.connect { url in Task { _ = try? await URLSession.shared.data(from: url) } }
         let client = try #require(accounts.client(for: account.id))
         let backend = DriveCloudBackend(store: accounts, avatarFolder: scratch.url.appendingPathComponent("avatars"))
+        let previous = CloudAccounts.shared.backend
+        CloudAccounts.shared.backend = backend
+        CloudOffline.shared.activate()
+        defer { CloudAccounts.shared.backend = previous }
         let key = account.id.uuidString.lowercased()
         #expect(backend.content(for: "invalid") == nil)
         #expect(backend.content(for: key)?.accountID == key)

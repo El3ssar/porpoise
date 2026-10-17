@@ -45,6 +45,7 @@ public actor DriveEditStore {
     public func holdsCopy(_ id: String) -> Bool {
         sessions.values.contains { $0.file.id == id && (openSessions.contains($0.id) || (try? DriveClient.md5($0.localURL)) != $0.sentMD5) }
     }
+    public func retainCopy(_ id: UUID) { openSessions.insert(id) }
     public func releaseCopy(_ id: UUID) { openSessions.remove(id) }
     public func cachedSession(_ file: DriveFile) -> DriveEditSession? {
         sessions.values.first {
