@@ -364,5 +364,8 @@ private func stallSpotlight() -> () -> Void {
         m.refreshDetected()
         m.isActive = false
         #expect(m.detected.isEmpty)
+        // The app's own model polls only once the app says it's in front: in a test process, never (its adb runs
+        // landed in another test's recording adb).
+        #expect(!PlacesModel.shared.isActive)
     }
 }

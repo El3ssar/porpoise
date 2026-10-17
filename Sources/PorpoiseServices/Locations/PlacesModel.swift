@@ -189,6 +189,9 @@ public final class PlacesModel {
             url = dir.appendingPathComponent("places.json")
         }
         self.init(storeURL: url)
+        // The app's model polls phones once the app says it's in front (a test process never does: its adb runs
+        // would land in the tests' recording adb).
+        isActive = false
         DispatchQueue.main.async { self.refreshDetected() }
     }
 
