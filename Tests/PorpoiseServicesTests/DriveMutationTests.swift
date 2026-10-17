@@ -148,7 +148,7 @@ import Testing
         let result = await provider.trash([folder.url, denied])
         #expect(result.trashed == [folder.url] && result.failures[denied] != nil)
         try await provider.untrash(result.trashed)
-        #expect(try await client.file(DriveLocation(url: folder.url)!.collectionID).trashed == false)
+        #expect(try await client.file(DriveLocation(url: folder.url)!.folderIDOrRoot).trashed == false)
     }
 
     @Test func activityTransfersUseNamesWhileRetainingIDsAndSafeConflictRules() async throws {
@@ -175,7 +175,7 @@ import Testing
         await offThePool { download.run() }
         #expect(download.errors.isEmpty)
         #expect(try Data(contentsOf: output.appendingPathComponent("payload.txt")) == Data("payload".utf8))
-        #expect(try await client.file(DriveLocation(url: remote)!.collectionID, includeTrashed: true).trashed == true)
+        #expect(try await client.file(DriveLocation(url: remote)!.folderIDOrRoot, includeTrashed: true).trashed == true)
         let again = RemoteTransferJob(
             kind: .copy, sources: [local], destination: root,
             control: JobControl(), rule: .ask, options: .init())
@@ -195,8 +195,4 @@ import Testing
         #expect(replace.errors.isEmpty)
         #expect(FileManager.default.fileExists(atPath: local.path))
     }
-}
-
-private extension DriveLocation {
-    var collectionID: String { if case .folder(let id, _) = collection { return id }; return "root" }
 }

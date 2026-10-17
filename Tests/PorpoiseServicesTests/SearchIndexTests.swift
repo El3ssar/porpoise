@@ -20,11 +20,6 @@ import Testing
         service.configure(config)
         return service
     }
-    private func waitReady(_ index: SearchIndex) async throws {
-        let ready = await eventually(Self.liveWait) { !index.status.building && index.status.updated != nil }
-        let status = index.status
-        try #require(ready, "Index startup: \(status)")
-    }
     @Test func crawlerSkipsSymlinksAndExcludedTrees() throws {
         let s = try Scratch()
         try s.file("root/visible.txt")
@@ -43,7 +38,7 @@ import Testing
         try s.file("root/.git/objects/ignored.txt")
         let index = setup(s, content: true)
         defer { index.configure(IndexConfiguration()) }
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         let root = s.path("root")
         #expect(index.search("report ext:txt", scope: root)?.paths == [FilePath.canonical(s.path("root/report.txt").path)])
         #expect(
@@ -61,7 +56,7 @@ import Testing
         try s.folder("root")
         let index = setup(s)
         defer { index.configure(IndexConfiguration()) }
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         let started = Date()
         try s.file("root/new-needle.txt", "hello")
         try #require(await eventually(Self.liveWait) { index.search("needle", scope: s.path("root"))?.paths.count == 1 })
@@ -79,7 +74,7 @@ import Testing
         let restored = SearchIndex(directory: s.path("store"), defaults: MemoryDefaults())
         restored.configure(index.configuration)
         defer { restored.configure(IndexConfiguration()) }
-        try await waitReady(restored)
+        try await restored.waitUntilReady(timeout: Self.liveWait)
         #expect(restored.search("renamed", scope: s.path("root"))?.paths.isEmpty == true)
     }
 
@@ -87,7 +82,7 @@ import Testing
         let s = try Scratch(); try s.folder("root")
         let index = setup(s)
         defer { index.configure(IndexConfiguration()) }
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         var updates: [[String]] = []
         let runner = SearchRunner(text: "visible", scope: s.path("root"), contents: false) { items, done in
             if done { updates.append(items.map(\.name)) }
@@ -113,7 +108,7 @@ import Testing
         var config = IndexConfiguration(); config.enabled = true; config.roots = [s.path("root").path]
         index.configure(config)
         defer { index.configure(IndexConfiguration()) }
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         #expect(index.search("hidden-name", scope: s.path("root"))?.paths.isEmpty == true)
         try #require(await eventually(Self.liveWait) { FileManager.default.fileExists(atPath: s.path("root/index-store/manifest.json").path) })
         try s.file("root/after.txt")
@@ -129,7 +124,7 @@ import Testing
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path) }
         let index = setup(s)
         defer { index.configure(IndexConfiguration()) }
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         #expect(index.search("hidden", scope: s.path("root")) == nil)
         #expect(index.search("visible", scope: s.path("root/allowed"))?.paths.count == 1)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path)
@@ -138,7 +133,7 @@ import Testing
     @Test func offlineChangesReplayFromInitialSavedCursor() async throws {
         let s = try Scratch(); try s.file("root/original.txt")
         let index = setup(s)
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         try #require(await eventually(Self.liveWait) { FileManager.default.fileExists(atPath: s.path("store/manifest.json").path) })
         let configuration = index.configuration
         index.configure(IndexConfiguration())
@@ -146,14 +141,14 @@ import Testing
         let restored = SearchIndex(directory: s.path("store"), defaults: MemoryDefaults())
         restored.configure(configuration)
         defer { restored.configure(IndexConfiguration()) }
-        try await waitReady(restored)
+        try await restored.waitUntilReady(timeout: Self.liveWait)
         try #require(await eventually(Self.liveWait) { restored.search("offline-file", scope: s.path("root"))?.paths.count == 1 })
     }
     @Test func eventBurstsConvergeWithoutDuplicateResults() async throws {
         let s = try Scratch(); try s.folder("root")
         let index = setup(s)
         defer { index.configure(IndexConfiguration()) }
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         for n in 0..<128 { try s.file("root/burst-\(n).txt") }
         try #require(await eventually(Self.liveWait) { index.search("burst-", scope: s.path("root"))?.paths.count == 128 })
         #expect(index.status.count == 129)
@@ -174,7 +169,7 @@ import Testing
         let s = try Scratch(); try s.folder("root"); try s.file("outside.txt", "outside content")
         let index = setup(s)
         defer { index.configure(IndexConfiguration()) }
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         try s.symlink("root/new-link", to: s.path("outside.txt").path)
         try #require(await eventually(Self.liveWait) { index.search("new-link", scope: s.path("root"))?.paths.count == 1 })
         #expect(index.search("outside.txt", scope: s.path("root"))?.paths.isEmpty == true)

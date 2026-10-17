@@ -309,10 +309,6 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
 // MARK: Detected places
 
 @MainActor @Suite struct PlacesDetectionCoverageTests {
-    private func titles(_ m: PlacesModel, _ section: PlaceSection) -> [String] {
-        m.sections().first { $0.0 == section }?.1.map(\.title) ?? []
-    }
-
     /// Cloud folders and Android phones (adb replaced by a script) show up, and go when they're gone.
     @Test func cloudFoldersAndPhonesAreDetected() async throws {
         let s = try Scratch()
@@ -325,8 +321,8 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
         defer { m.isActive = false }  // no polling timer left behind
 
         m.refreshDetected()
-        #expect(titles(m, .remote).contains("Google Drive (me@example.com)"))
-        #expect(await eventually(30) { titles(m, .removable).contains("Galaxy S21") })
+        #expect(m.titles(in: .remote).contains("Google Drive (me@example.com)"))
+        #expect(await eventually(30) { m.titles(in: .removable).contains("Galaxy S21") })
         let phone = try #require(m.allEntries.first { $0.title == "Galaxy S21" })
         #expect(phone.url.absoluteString == "adb://R58N123/sdcard/" && phone.icon == "smartphone")
         #expect(adb.calls.first?.args == ["devices", "-l"])
@@ -339,7 +335,7 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
         m.isActive = false
         try adb.reply("List of devices attached\n")
         m.isActive = true
-        #expect(await eventually(30) { !titles(m, .removable).contains("Galaxy S21") })
+        #expect(await eventually(30) { !m.titles(in: .removable).contains("Galaxy S21") })
 
         // No longer bookmarked: detected again; and once the folder has gone, not at all.
         m.remove(try #require(m.userEntries.first { $0.title == "Drive" }))

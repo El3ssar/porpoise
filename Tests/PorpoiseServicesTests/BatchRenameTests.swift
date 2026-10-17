@@ -10,11 +10,8 @@ import UniformTypeIdentifiers
 @testable import PorpoiseServices
 
 @Suite(.isolatedSettings) struct BatchRenameTests {
-    private func entry(_ name: String, directory: Bool = false) -> BatchRenameEntry {
-        BatchRenameEntry(url: URL(fileURLWithPath: "/test/" + name), isDirectory: directory)
-    }
     @Test func orderedRulesRegexCapturesAndExtensions() throws {
-        let input = entry("IMG_2026.JPG")
+        let input = BatchRenameEntry.named("IMG_2026.JPG")
         let preset = BatchRenamePreset(
             name: "Photos",
             rules: [
@@ -27,27 +24,29 @@ import UniformTypeIdentifiers
         change.extensionMode = .includeInRules; change.rules = [.replace(find: ".JPG", with: ".png", regex: false, caseSensitive: false)]
         #expect(try BatchRename.name(input, index: 0, preset: change) == "IMG_2026.png")
         change.extensionMode = .change("png"); change.rules = []
-        #expect(try BatchRename.name(entry("folder.v1", directory: true), index: 0, preset: change) == "folder.v1")
+        #expect(try BatchRename.name(BatchRenameEntry.named("folder.v1", directory: true), index: 0, preset: change) == "folder.v1")
     }
     @Test func regexMetadataIsLiteralWhileCaptureGroupsStillExpand() throws {
-        var input = entry("a.txt"); input.metadata["title"] = "$1\\name"
+        var input = BatchRenameEntry.named("a.txt"); input.metadata["title"] = "$1\\name"
         let preset = BatchRenamePreset(name: "", rules: [.replace(find: "(a)", with: "{title}-$1", regex: true, caseSensitive: true)])
         #expect(try BatchRename.name(input, index: 0, preset: preset) == "$1\\name-a.txt")
     }
 
     @Test func unicodeCharacterPositionsAndAllCaseModes() throws {
-        let input = entry("👩🏽‍🚀e\u{301}X.txt")
+        let input = BatchRenameEntry.named("👩🏽‍🚀e\u{301}X.txt")
         let rules: [BatchRenameRule] = [.remove(position: 0, count: 1), .insert(text: "🚀", position: 1)]
         #expect(try BatchRename.name(input, index: 0, preset: BatchRenamePreset(name: "", rules: rules)) == "e\u{301}🚀X.txt")
         for (mode, result) in [
             (RenameCase.lower, "hello world"), (.upper, "HELLO WORLD"), (.title, "Hello World"), (.sentence, "Hello world"),
             (.unchanged, "hELLO wORLD"),
         ] {
-            #expect(try BatchRename.name(entry("hELLO wORLD"), index: 0, preset: BatchRenamePreset(name: "", rules: [.changeCase(mode)])) == result)
+            #expect(
+                try BatchRename.name(BatchRenameEntry.named("hELLO wORLD"), index: 0, preset: BatchRenamePreset(name: "", rules: [.changeCase(mode)]))
+                    == result)
         }
     }
     @Test func datesMetadataAndMissingMetadata() throws {
-        var input = entry("photo.jpg")
+        var input = BatchRenameEntry.named("photo.jpg")
         input.created = Date(timeIntervalSince1970: 0); input.modified = Date(timeIntervalSince1970: 86400);
         input.exifDate = Date(timeIntervalSince1970: 172800)
         input.metadata = ["width": "640", "height": "480", "artist": "Artist", "album": "Album", "title": "Title"]
@@ -56,7 +55,7 @@ import UniformTypeIdentifiers
         #expect(
             try BatchRename.name(input, index: 0, preset: preset, timeZone: TimeZone(secondsFromGMT: 0)!)
                 == "19700101-19700102-19700103-640x480-Artist-Album-Title.jpg")
-        #expect(throws: (any Error).self) { try BatchRename.name(entry("none"), index: 0, preset: preset) }
+        #expect(throws: (any Error).self) { try BatchRename.name(BatchRenameEntry.named("none"), index: 0, preset: preset) }
     }
     @Test func invalidRegexNumbersAndPositionsBlock() {
         let rules: [BatchRenameRule] = [
@@ -64,11 +63,13 @@ import UniformTypeIdentifiers
             .number(start: 1, step: 1, padding: 100, position: 0), .insert(text: "x", position: -2), .remove(position: -1, count: 1),
         ]
         for rule in rules {
-            #expect(throws: (any Error).self) { try BatchRename.name(entry("a"), index: 1, preset: BatchRenamePreset(name: "", rules: [rule])) }
+            #expect(throws: (any Error).self) {
+                try BatchRename.name(BatchRenameEntry.named("a"), index: 1, preset: BatchRenamePreset(name: "", rules: [rule]))
+            }
         }
     }
     @Test func collisionsCasePolicyAndUnicodeEquivalence() {
-        let entries = [entry("a"), entry("b")]
+        let entries = [BatchRenameEntry.named("a"), BatchRenameEntry.named("b")]
         let duplicate = BatchRename.plan(entries, names: [.success("same"), .success("SAME")], existing: ["/test": ["a", "b"]])
         #expect(!duplicate.canApply && duplicate.rows.allSatisfy { $0.problem != nil })
         let sensitive = BatchRename.plan(
@@ -77,20 +78,20 @@ import UniformTypeIdentifiers
         let unicode = BatchRename.plan(
             entries, names: [.success("café"), .success("cafe\u{301}")], existing: ["/test": ["a", "b"]], caseSensitive: ["/test": true])
         #expect(!unicode.canApply)
-        let occupant = BatchRename.plan([entry("a")], names: [.success("TAKEN")], existing: ["/test": ["a", "taken"]])
+        let occupant = BatchRename.plan([BatchRenameEntry.named("a")], names: [.success("TAKEN")], existing: ["/test": ["a", "taken"]])
         #expect(!occupant.canApply && occupant.rows[0].problem != nil)
         let unchanged = BatchRename.plan(entries, names: [.success("b"), .success("b")], existing: ["/test": ["a", "b"]])
         #expect(!unchanged.canApply)
     }
     @Test func invalidNamesAndNestedSelectionsBlock() {
         for name in ["", ".", "..", "a/b", "a\0b", String(repeating: "x", count: 256)] {
-            #expect(!BatchRename.plan([entry("a")], names: [.success(name)], existing: ["/test": ["a"]]).canApply)
+            #expect(!BatchRename.plan([BatchRenameEntry.named("a")], names: [.success(name)], existing: ["/test": ["a"]]).canApply)
         }
-        let nested = [entry("folder", directory: true), entry("folder/child")]
+        let nested = [BatchRenameEntry.named("folder", directory: true), BatchRenameEntry.named("folder/child")]
         #expect(!BatchRename.plan(nested, names: [.success("renamed"), .success("newchild")], existing: [:]).canApply)
     }
     @Test func pureSwapCyclePlanAndSafeTemporaryNames() {
-        let entries = [entry("a"), entry("b"), entry("c")]
+        let entries = [BatchRenameEntry.named("a"), BatchRenameEntry.named("b"), BatchRenameEntry.named("c")]
         let plan = BatchRename.plan(
             entries, names: [.success("b"), .success("c"), .success("a")], existing: ["/test": ["a", "b", "c", ".porpoise-rename-t-0"]], token: "../t"
         )

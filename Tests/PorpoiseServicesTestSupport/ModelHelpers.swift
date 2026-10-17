@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseCore
 import PorpoiseTestSupport
 import Testing
 
@@ -25,4 +26,32 @@ public func stallSpotlight() -> () -> Void {
     let release = DispatchSemaphore(value: 0)
     SpotlightQuery.queue.addOperation { _ = release.wait(timeout: .now() + 30) }
     return { release.signal() }
+}
+
+extension PlacesModel {
+    /// The titles of `section`'s entries, in order.
+    public func titles(in section: PlaceSection) -> [String] { sections().first { $0.0 == section }?.1.map(\.title) ?? [] }
+}
+
+extension BatchRenameEntry {
+    /// An entry for `name` in a folder that needn't exist.
+    public static func named(_ name: String, directory: Bool = false) -> BatchRenameEntry {
+        BatchRenameEntry(url: URL(fileURLWithPath: "/test/" + name), isDirectory: directory)
+    }
+}
+
+extension DriveLocation {
+    /// The folder's Drive ID, "root" for My Drive.
+    public var folderIDOrRoot: String {
+        if case .folder(let id, _) = collection { return id }
+        return "root"
+    }
+}
+
+extension SearchIndex {
+    /// Waits until the index has built (the test fails, with its status, when it hasn't within `timeout` seconds).
+    @MainActor public func waitUntilReady(timeout: TimeInterval = 30) async throws {
+        let ready = await eventually(timeout) { !self.status.building && self.status.updated != nil }
+        try #require(ready, "Index startup: \(status)")
+    }
 }
