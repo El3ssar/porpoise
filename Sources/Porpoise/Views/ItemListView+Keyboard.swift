@@ -153,15 +153,7 @@ extension ItemListView {
         } else {
             n = (m == .end) ? count - 1 : 0
         }
-        let url = model.rows[n].item.url
-        if extend, let anchor = model.anchorURL ?? model.currentURL, let a = model.index(of: anchor) {
-            model.selection = Set((min(a, n)...max(a, n)).map { model.rows[$0].item.url })
-            if model.anchorURL == nil { model.anchorURL = anchor }
-        } else {
-            model.selection = [url]
-            model.anchorURL = url
-        }
-        model.currentURL = url
+        selecting.move(to: n, extend: extend)
         scrollToItem(n)
         needsDisplay = true
     }
@@ -201,9 +193,7 @@ extension ItemListView {
     }
 
     func select(_ url: URL, scroll: Bool = true) {
-        model.selection = [url]
-        model.currentURL = url
-        model.anchorURL = url
+        selecting.select(url)
         if scroll, let i = model.index(of: url) { scrollToItem(i) }
         needsDisplay = true
     }

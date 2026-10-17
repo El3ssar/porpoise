@@ -22,6 +22,9 @@ final class AppsGridView: NSView, NSDraggingSource {
     private var hover: Int?
     private var mouseDownPoint: CGPoint?
     private var mouseDownIndex: Int?
+    private var mouseDownSelectedBefore = false
+    /// Clicks, Shift and Cmd, and moves of the current app, as in the folder view.
+    private var selecting: ItemSelectionController { ItemSelectionController(model: model) }
     private var running: Set<String> = []
     private var icons: [URL: NSImage] = [:]
     /// Each app's icon as drawn (its shadow included), rendered once per size for the screen's scale and colours:
@@ -291,23 +294,9 @@ final class AppsGridView: NSView, NSDraggingSource {
         scroll.reflectScrolledClipView(clip)
     }
 
-    override func scrollWheel(with event: NSEvent) {
-        guard event.modifierFlags.contains(.command) else { return super.scrollWheel(with: event) }
-        // Cmd+wheel / two-finger scroll zooms smoothly (trackpads) or by Dolphin's steps (mouse wheels).
-        let p = convert(event.locationInWindow, from: nil)
-        if event.hasPreciseScrollingDeltas {
-            let level = ZoomLevels.continuousLevel(for: iconSize) + Double(event.scrollingDeltaY) * 0.02
-            previewZoom(ZoomLevels.size(forContinuousLevel: level), anchor: p)
-        } else if event.scrollingDeltaY != 0 {
-            previewZoom(ZoomLevels.step(from: iconSize, by: event.scrollingDeltaY > 0 ? 1 : -1), anchor: p)
-        }
-    }
+    override func scrollWheel(with event: NSEvent) { if !zoomWithWheel(event) { super.scrollWheel(with: event) } }
 
-    override func magnify(with event: NSEvent) {
-        // Pinch: continuous zoom around the fingers, saved when the gesture ends.
-        let p = convert(event.locationInWindow, from: nil)
-        previewZoom(iconSize * (1 + event.magnification), anchor: p, commitAfter: event.phase == .ended || event.phase == .cancelled ? 0 : 0.5)
-    }
+    override func magnify(with event: NSEvent) { zoomWithPinch(event) }
 
     /// For tests: how far a running glide has come.
     var glideProgress: CGFloat? { transition != nil ? progress : nil }
@@ -602,18 +591,12 @@ final class AppsGridView: NSView, NSDraggingSource {
         mouseDownPoint = p
         mouseDownIndex = i
         guard let i else {
-            if !event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.shift) { model.selection = [] }
+            selecting.clickBackground(modifiers: event.modifierFlags)
             return
         }
-        let url = model.rows[i].item.url
-        if event.modifierFlags.contains(.command) {
-            if model.selection.contains(url) { model.selection.remove(url) } else { model.selection.insert(url) }
-        } else if event.modifierFlags.contains(.shift), let anchor = model.currentURL, let a = model.index(of: anchor) {
-            model.selection = Set(model.rows[min(a, i)...max(a, i)].map(\.item.url))
-        } else if !model.selection.contains(url) {
-            model.selection = [url]
-        }
-        model.currentURL = url
+        mouseDownSelectedBefore = model.selection.contains(model.rows[i].item.url)
+        // Shift: the range from the anchor (the app last clicked without Shift), not from the current app.
+        selecting.click(i, modifiers: event.modifierFlags)
         needsDisplay = true
         if event.clickCount == 2, let o = owner { o.host?.appsView(o, open: model.selectedItems) }
     }
@@ -629,10 +612,8 @@ final class AppsGridView: NSView, NSDraggingSource {
     override func mouseUp(with event: NSEvent) {
         // A plain click on one of several selected apps selects just that one.
         // The index is from mouseDown: an app installed or removed meanwhile can have changed the rows.
-        if mouseDownPoint != nil, let i = mouseDownIndex, i < model.rows.count,
-            event.modifierFlags.intersection([.command, .shift]).isEmpty, event.clickCount == 1
-        {
-            model.selection = [model.rows[i].item.url]
+        if mouseDownPoint != nil, let i = mouseDownIndex, event.modifierFlags.intersection([.command, .shift]).isEmpty, event.clickCount == 1 {
+            selecting.clickEnded(i, wasSelected: mouseDownSelectedBefore)
             needsDisplay = true
         }
         mouseDownPoint = nil
@@ -640,13 +621,7 @@ final class AppsGridView: NSView, NSDraggingSource {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let i = index(at: convert(event.locationInWindow, from: nil))
-        if let i {
-            let url = model.rows[i].item.url
-            if !model.selection.contains(url) { model.selection = [url] }
-            model.currentURL = url
-        } else {
-            model.selection = []
-        }
+        selecting.contextClick(i)
         needsDisplay = true
         guard let o = owner else { return nil }
         return o.host?.appsView(o, menuFor: i.map { model.rows[$0].item })
@@ -656,15 +631,20 @@ final class AppsGridView: NSView, NSDraggingSource {
 
     override func keyDown(with event: NSEvent) {
         let mods = event.modifierFlags.intersection([.command, .control, .option])
+        let shift = event.modifierFlags.contains(.shift)
         switch Int(event.keyCode) {
-        case 123: move(by: -1, extend: event.modifierFlags.contains(.shift)); return  // ←
-        case 124: move(by: 1, extend: event.modifierFlags.contains(.shift)); return  // →
+        case 123: move(extend: shift) { $0 - 1 }; return  // ←
+        case 124: move(extend: shift) { $0 + 1 }; return  // →
         case 126:  // ↑
             if mods.contains(.command) { break }
-            move(by: -columns, extend: event.modifierFlags.contains(.shift)); return
+            move(extend: shift) { $0 - self.columns }; return
         case 125:  // ↓, ⌘↓ opens
             if mods.contains(.command) { openSelection(); return }
-            move(by: columns, extend: event.modifierFlags.contains(.shift)); return
+            move(extend: shift) { $0 + self.columns }; return
+        case 115: move(extend: shift) { _ in 0 }; return  // Home
+        case 119: move(extend: shift, fromNone: model.rows.count - 1) { _ in self.model.rows.count - 1 }; return  // End
+        case 116: move(extend: shift) { $0 - self.pageStep }; return  // Page Up
+        case 121: move(extend: shift) { $0 + self.pageStep }; return  // Page Down
         case 36, 76: openSelection(); return  // Return
         case 49: if let o = owner { o.host?.appsViewQuickLook(o) }; return  // Space
         case 53: model.selection = []; needsDisplay = true; return  // Escape
@@ -680,18 +660,24 @@ final class AppsGridView: NSView, NSDraggingSource {
         super.keyDown(with: event)
     }
 
+    /// Page Up and Page Down: the rows shown, less one, in apps.
+    private var pageStep: Int {
+        let rows = visibleRect.height / cell.height
+        return columns * max(1, rows.isFinite ? Int(min(rows, 10_000)) - 1 : 1)
+    }
+
     private func openSelection() {
         let items = model.selectedItems
         if !items.isEmpty, let o = owner { o.host?.appsView(o, open: items) }
     }
 
-    private func move(by delta: Int, extend: Bool) {
+    /// Moves the current app to `target(current)`, kept within the apps (with none current: to `fromNone`); Shift
+    /// selects the range from the anchor, as in the folder view.
+    private func move(extend: Bool, fromNone: Int = 0, to target: (Int) -> Int) {
         guard !model.rows.isEmpty else { return }
         let cur = model.currentURL.flatMap { model.index(of: $0) }
-        let next = cur.map { min(max($0 + delta, 0), model.rows.count - 1) } ?? 0
-        let url = model.rows[next].item.url
-        if extend { model.selection.insert(url) } else { model.selection = [url] }
-        model.currentURL = url
+        let next = cur.map { min(max(target($0), 0), model.rows.count - 1) } ?? fromNone
+        selecting.move(to: next, extend: extend)
         scrollToVisible(cellRect(next).insetBy(dx: 0, dy: -12))
         needsDisplay = true
     }
