@@ -54,6 +54,7 @@ extension FileOperationsController {
         activity.start = { [weak self, weak activity] in
             guard let self, let activity, activity.state == .queued else { return }
             self.began(activity)
+            TrashService.shared.record([])
             self.ui?.jobStarted(activity)
             DispatchQueue.global(qos: .userInitiated).async {
                 runtime.run()

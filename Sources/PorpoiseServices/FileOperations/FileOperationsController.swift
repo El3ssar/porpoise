@@ -127,6 +127,7 @@ public final class FileOperationsController {
     ) {
         let kind = activity.kind, urls = activity.sources, folder = activity.destination
         began(activity)
+        TrashService.shared.record([])
         ui?.jobStarted(activity)
         job.onNoSpace = { [weak self, weak activity, weak job] bytes in
             guard let job else { return false }

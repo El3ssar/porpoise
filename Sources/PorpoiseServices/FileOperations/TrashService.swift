@@ -9,26 +9,30 @@ public final class TrashService: @unchecked Sendable {
     public init(moveToTrash: @escaping (URL) throws -> URL? = FileActions.trashItem) { self.moveToTrash = moveToTrash }
 
     public func trash(_ urls: [URL]) throws -> [(original: URL, inTrash: URL)] {
+        var pairs: [(original: URL, inTrash: URL)] = []
         do {
-            return try FileActions.trashAll(
+            let result = try FileActions.trashAll(
                 urls,
                 using: { url in
                     let target = try moveToTrash(url)
-                    if let target { record([(original: url, inTrash: target)]) }
+                    if let target { pairs.append((original: url, inTrash: target)) }
                     return target
                 })
+            record(result)
+            return result
         } catch {
-            // Prune successful rollbacks; retain origins if rollback could not restore an item.
-            record([])
+            // Core rolled back completed moves; retain origins if any rollback could not restore its item.
+            record(pairs.filter { FileJob.itemExists(at: $0.inTrash) })
             throw error
         }
     }
 
+    /// Empty batches prune stale entries once at a job/Undo boundary. Per-item writes never scan the whole Trash.
     public func record(_ pairs: [(original: URL, inTrash: URL)]) {
         Self.lock.withLock {
             var origins = Settings.store.dictionary(forKey: "trashOrigins") as? [String: String] ?? [:]
             for pair in pairs { origins[pair.inTrash.path] = pair.original.path }
-            origins = origins.filter { FileJob.itemExists(at: URL(fileURLWithPath: $0.key)) }
+            if pairs.isEmpty { origins = origins.filter { FileJob.itemExists(at: URL(fileURLWithPath: $0.key)) } }
             Settings.store.set(origins, forKey: "trashOrigins")
         }
     }
