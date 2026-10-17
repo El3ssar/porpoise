@@ -67,15 +67,16 @@ import Testing
 
     // B12: cloud and server places take drops; locations with no folder of their own don't.
     @Test func cloudAndServerPlacesTakeDrops() {
+        let dragged = [URL(fileURLWithPath: "/tmp/porpoise-dragged.txt")]
         withDemo { _ in
-            #expect(PlacesPanel.takesDrops(dropboxFolder))
-            #expect(PlacesPanel.takesDrops(URL(string: "gdrive://acct/my-drive/")!))
-            #expect(PlacesPanel.takesDrops(URL(string: "sftp://me@host/home/me/")!))
-            #expect(PlacesPanel.takesDrops(URL(fileURLWithPath: NSHomeDirectory())))
-            #expect(!PlacesPanel.takesDrops(URL(string: "recent:/files")!))
-            #expect(!PlacesPanel.takesDrops(URL(string: "smb://server/share")!))
+            #expect(PlacesPanel.takesDrops(dragged, into: dropboxFolder))
+            #expect(PlacesPanel.takesDrops(dragged, into: URL(string: "gdrive://acct/my-drive/")!))
+            #expect(PlacesPanel.takesDrops(dragged, into: URL(string: "sftp://me@host/home/me/")!))
+            #expect(PlacesPanel.takesDrops(dragged, into: URL(fileURLWithPath: NSHomeDirectory())))
+            #expect(!PlacesPanel.takesDrops(dragged, into: URL(string: "recent:/files")!))
+            #expect(!PlacesPanel.takesDrops(dragged, into: URL(string: "smb://server/share")!))
             // A place of an account that isn't connected takes nothing, as its folder wouldn't.
-            #expect(!PlacesPanel.takesDrops(URL(string: "gdrive://gone/my-drive/")!))
+            #expect(!PlacesPanel.takesDrops(dragged, into: URL(string: "gdrive://gone/my-drive/")!))
         }
     }
 
@@ -86,6 +87,6 @@ import Testing
         defer { CloudAccounts.shared.backend = previous }
         let shared = URL(string: "gdrive://acct/shared-with-me/")!
         demo.permissionsByURL[shared] = CloudPermissions(collection: .sharedWithMe)
-        #expect(!PlacesPanel.takesDrops(shared))
+        #expect(!PlacesPanel.takesDrops([URL(fileURLWithPath: "/tmp/porpoise-dragged.txt")], into: shared))
     }
 }

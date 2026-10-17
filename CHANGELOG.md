@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Drops onto tabs, the path bar and places behave like drops onto a folder.** Items from servers and cloud accounts can be dropped there too (they were silently ignored), the drop does what the pointer shows (a tab always asked with a menu, even with ⌥ held), and a folder that takes nothing shows so. Resting a drag on a tab or a path arrow opens it during in-app drags as well.
 - **The highlight under the pointer respects Reduce Motion.** It switches at once instead of fading.
 
 ## 0.8.1

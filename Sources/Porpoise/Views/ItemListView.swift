@@ -84,9 +84,7 @@ final class ItemListView: NSView {
     var renamingItem: FileItem?
     var dropTargetIndex: Int?
     var dropOnBackground = false
-    var dragOpenTimer: Timer?
-    /// URLs on the pasteboard of the drag in progress, read once per drag (`draggingUpdated` runs on every move).
-    var draggedURLCache: (sequence: Int, urls: [URL])?
+    let springLoader = SpringLoader()
 
     // MARK: Metrics
 
@@ -131,7 +129,7 @@ final class ItemListView: NSView {
         font = Settings.shared.labelFont
         lineHeight = Self.lineHeight(of: font)
         super.init(frame: .zero)
-        registerForDraggedTypes([.fileURL, .URL])
+        registerForDraggedTypes(DropTargetPolicy.types)
         observers.append(
             NotificationCenter.default.addObserver(forName: Thumbnails.ready, object: nil, queue: .main) { [weak self] n in
                 self?.thumbnailReady(n)
@@ -146,7 +144,7 @@ final class ItemListView: NSView {
 
     deinit {
         observers.forEach(NotificationCenter.default.removeObserver)
-        for t in [zoomCommitTimer, dragOpenTimer] { t?.invalidate() }
+        zoomCommitTimer?.invalidate()
         hoverClock.stop()
         zoomAnimator.stop()
         transitionAnimator.stop()

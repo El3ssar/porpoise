@@ -4,8 +4,6 @@ import PorpoiseServices
 
 /// Items beyond this many are dragged without their own drag image.
 private let maxDragImages = 200
-/// Spring-loaded folders: hovering a folder this long during a drag opens it.
-private let dragOpenDelay: TimeInterval = 0.75
 
 // MARK: - Drag source
 
@@ -14,30 +12,20 @@ extension ItemListView: NSDraggingSource {
         let url = model.rows[i].item.url
         if !model.selection.contains(url) { model.selection = [url] }
         let items = model.rows.enumerated().filter { model.selection.contains($0.element.item.url) }
-        let allURLs = items.map(\.element.item.url)
-        var dragItems: [NSDraggingItem] = []
-        for (n, (idx, r)) in items.enumerated() {
-            // Like Finder: a file URL per item, plus the classic file list on the first one for older apps.
-            let di = NSDraggingItem(pasteboardWriter: FileDragWriter(url: r.item.url, allURLs: n == 0 ? allURLs : nil))
-            if n < maxDragImages {
-                di.setDraggingFrame(iconRect(idx < frames.count ? idx : i), contents: Icons.shared.image(for: r.item, size: iconSize))
-            }
-            dragItems.append(di)
+        let drag = FileDragSource.items(items.map(\.element.item.url)) { n in
+            guard n < maxDragImages else { return nil }
+            let (idx, r) = items[n]
+            return (iconRect(idx < frames.count ? idx : i), Icons.shared.image(for: r.item, size: iconSize))
         }
-        let session = beginDraggingSession(with: dragItems, event: event, source: self)
-        session.animatesToStartingPositionsOnCancelOrFail = true
-        session.draggingFormation = .pile
+        FileDragSource.begin(drag, from: self, event: event)
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        // .delete lets items be dropped on the Trash in the Dock (we then move them to the Trash).
-        context == .outsideApplication ? [.copy, .move, .link, .generic, .delete] : [.copy, .move, .link, .generic]
+        FileDragSource.mask(for: context)
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        guard operation == .delete else { return }
-        let urls = (session.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
-        if !urls.isEmpty { FileOperationsController.shared.trash(urls, window: window, sound: .dragToTrash) }
+        FileDragSource.ended(session, operation: operation, window: window)
     }
 }
 
@@ -58,53 +46,25 @@ extension ItemListView {
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
         guard !model.isSearching else { return [] }
-        let urls = draggedURLs(sender)
         let (folder, idx) = dropFolder(at: convert(sender.draggingLocation, from: nil))
-        let target = folder.standardizedFileURL
-        // Nothing droppable, a folder onto itself, or items onto the folder they are already in.
-        let sameFolder = urls.allSatisfy { $0.deletingLastPathComponent().standardizedFileURL == target }
-        // Recent Files, Tags, Smart Folders and Network list items from elsewhere: only their folders take drops.
-        let virtualTarget = idx == nil && !folder.isFileURL && !RemoteFS.isRemote(folder)
-        // A cloud folder shared as view-only (or Shared with me itself) takes nothing: the forbidden cursor.
-        let closedCloud = PlacesModel.isCloud(folder) && CloudAccounts.shared.denial(.addItems, folder: folder) != nil
-        if urls.isEmpty || virtualTarget || closedCloud || urls.contains(where: { $0.standardizedFileURL == target })
-            || (sameFolder && idx == nil)
-        {
+        guard DropTargetPolicy.accepts(DropTargetPolicy.urls(sender), into: folder) else {
             setDropTarget(nil, background: false)
             return []
         }
         setDropTarget(idx, background: idx == nil)
-        if idx != nil && Settings.shared.openFoldersDuringDrag && dragOpenTimer == nil { scheduleDragOpen() }
-        return Self.operation(for: sender)
-    }
-
-    /// Opens the folder under the drag after a pause (in all run loop modes: the drag runs an event-tracking loop).
-    private func scheduleDragOpen() {
-        let t = Timer(timeInterval: dragOpenDelay, repeats: false) { [weak self] _ in
-            guard let self else { return }
-            self.dragOpenTimer = nil
-            guard let i = self.dropTargetIndex, i < self.model.rows.count, self.model.rows[i].item.isBrowsableFolder else { return }
+        // Resting on a folder opens it (Settings › Open folders during drag).
+        springLoader.hover(Settings.shared.openFoldersDuringDrag ? idx : nil) { [weak self] in
+            guard let self, let i = self.dropTargetIndex, i < self.model.rows.count, self.model.rows[i].item.isBrowsableFolder else { return }
             let folder = self.model.rows[i].item
             // The rows are about to change: the index must not mark an item of the new folder.
             self.setDropTarget(nil, background: false)
             self.delegate?.itemList(self, open: [folder], inNewTab: false)
         }
-        dragOpenTimer = t
-        RunLoop.main.add(t, forMode: .common)
-    }
-
-    static func operation(for sender: NSDraggingInfo) -> NSDragOperation {
-        let mods = NSEvent.modifierFlags
-        let mask = sender.draggingSourceOperationMask
-        if mods.contains(.command) && mods.contains(.option) { return .link }
-        if mods.contains(.option) { return .copy }
-        if mods.contains(.command) { return .move }
-        // No modifier: Dolphin asks with a menu; show the generic cursor.
-        return mask.contains(.generic) ? .generic : (mask.contains(.move) ? .move : .copy)
+        return DropTargetPolicy.operation(for: sender)
     }
 
     private func setDropTarget(_ i: Int?, background: Bool) {
-        if i != dropTargetIndex { dragOpenTimer?.invalidate(); dragOpenTimer = nil }
+        if i == nil { springLoader.cancel() }
         if i != dropTargetIndex || background != dropOnBackground {
             dropTargetIndex = i
             dropOnBackground = background
@@ -115,26 +75,17 @@ extension ItemListView {
     override func draggingExited(_ sender: NSDraggingInfo?) { setDropTarget(nil, background: false) }
 
     override func draggingEnded(_ sender: NSDraggingInfo) {
-        draggedURLCache = nil
+        DropTargetPolicy.dragEnded()
         setDropTarget(nil, background: false)
-    }
-
-    /// Local files, plus remote items dragged inside the app (sftp://, ftp://, adb://); read once per drag.
-    private func draggedURLs(_ sender: NSDraggingInfo) -> [URL] {
-        if let c = draggedURLCache, c.sequence == sender.draggingSequenceNumber { return c.urls }
-        let urls = ((sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL]) ?? [])
-            .filter { $0.isFileURL || RemoteFS.isRemote($0) }
-        draggedURLCache = (sender.draggingSequenceNumber, urls)
-        return urls
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let (folder, _) = dropFolder(at: convert(sender.draggingLocation, from: nil))
-        let urls = draggedURLs(sender)
+        let urls = DropTargetPolicy.urls(sender)
         setDropTarget(nil, background: false)
-        draggedURLCache = nil
+        DropTargetPolicy.dragEnded()
         guard !urls.isEmpty else { return false }
-        delegate?.itemList(self, drop: urls, onto: folder, operation: Self.operation(for: sender), event: nil)
+        delegate?.itemList(self, drop: urls, onto: folder, operation: DropTargetPolicy.operation(for: sender), event: nil)
         return true
     }
 }

@@ -439,5 +439,3 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         if s.tag < 0 { view.goBack(-s.tag) } else { view.goForward(s.tag) }
     }
 }
-
-/// Current modifier keys mapped to a drop operation (for drops onto non-view targets).
