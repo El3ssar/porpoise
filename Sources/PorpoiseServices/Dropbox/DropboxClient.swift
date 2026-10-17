@@ -57,7 +57,7 @@ public final class DropboxClient: @unchecked Sendable {
         let access: String
         do { access = try await tokens.accessToken(rejectedToken: rejectedToken) } catch is CloudOAuthSessionError { throw DropboxError.reconnect }
         request.setValue("Bearer " + access, forHTTPHeaderField: "Authorization")
-        if let namespaceID {
+        if let namespaceID, !route.hasPrefix("users/") {
             request.setValue(try dropboxHeader([".tag": "namespace_id", "namespace_id": namespaceID]), forHTTPHeaderField: "Dropbox-API-Path-Root")
         }
         if content {

@@ -59,7 +59,13 @@ struct DropboxConfigurationTests {
     }
 
     @Test func fixedLoopbackPortIsExactAndBusyPortFailsClosed() throws {
-        var first: CloudOAuthLoopback? = try CloudOAuthLoopback()
+        // A released ephemeral port can be immediately claimed by concurrent HTTP tests.
+        var first: CloudOAuthLoopback?
+        for _ in 0..<100 {
+            do {
+                first = try CloudOAuthLoopback(port: UInt16.random(in: 20000...40000)); break
+            } catch is CloudOAuthLoopback.PortInUse { continue }
+        }
         let port = UInt16(try #require(first?.redirectURL.port))
         #expect(throws: CloudOAuthLoopback.PortInUse.self) { _ = try CloudOAuthLoopback(port: port) }
         first = nil

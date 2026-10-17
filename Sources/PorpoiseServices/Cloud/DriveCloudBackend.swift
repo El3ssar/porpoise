@@ -7,8 +7,9 @@ import PorpoiseCore
 public final class DriveCloudBackend: CloudBackend {
     public var onChange: (() -> Void)?
     let store: DriveAccountStore
+    var quotaRefresh: CloudQuotaRefresh?
     private var watch: AnyCancellable?
-    /// Quota and shared drives per account, fetched after connecting and at launch.
+    /// Quota and shared drives per account, refreshed at launch, on reload and while active.
     private var details: [UUID: (used: Int64?, total: Int64?, drives: Int)] = [:]
     private var fetching: Set<UUID> = []
     /// Where account pictures are kept between launches.
@@ -18,6 +19,7 @@ public final class DriveCloudBackend: CloudBackend {
     public init(store: DriveAccountStore, avatarFolder: URL? = nil) {
         self.store = store
         self.avatarFolder = avatarFolder ?? Settings.cachesFolder.appendingPathComponent("avatars")
+        quotaRefresh = CloudQuotaRefresh { [weak self] in self?.refreshQuotas() }
         watch = store.objectWillChange.sink { [weak self] _ in
             // Published values change after this fires.
             DispatchQueue.main.async { self?.storeChanged() }
@@ -62,12 +64,17 @@ public final class DriveCloudBackend: CloudBackend {
         return MainActor.assumeIsolated { store.accounts.first { $0.id == id } }
     }
 
+    @MainActor func refreshQuotas(_ id: String? = nil) {
+        for account in store.accounts where id == nil || Self.key(account.id) == id { fetchDetails(account.id) }
+    }
+
     @MainActor private func fetchDetails(_ id: UUID) {
-        guard fetching.insert(id).inserted, let client = store.client(for: id) else { return }
+        guard let client = store.client(for: id), fetching.insert(id).inserted else { return }
         Task { @MainActor [weak self] in
             defer { self?.fetching.remove(id) }
             guard let info = try? await client.accountInfo() else { return }
             let drives = info.hasSharedDrives ? ((try? await client.list(DriveLocation(accountID: id, collection: .sharedDrives)).count) ?? 1) : 0
+            guard self?.store.client(for: id) === client else { return }
             self?.details[id] = (info.storageUsed, info.storageLimit, drives)
             self?.onChange?()
         }

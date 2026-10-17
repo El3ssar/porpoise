@@ -37,6 +37,46 @@ import Testing
 }
 
 @Suite(.serialized, .isolatedSettings) struct DropboxUIIntegrationTests {
+    @Test @MainActor func quotaFlowsThroughAccountSidebarAndRefreshes() async throws {
+        let fixture = try DropboxUIFixture(); defer { fixture.cleanup() }
+        let account = try await fixture.connect()
+        try await uiEventually { fixture.accounts.accounts.first?.quotaTotal == 15_000_000_000 }
+        #expect(fixture.accounts.accounts.first?.quotaUsed == 4_000_000_000)
+        let section = try #require(fixture.accounts.sections().first)
+        #expect(section.quotaUsed == 4_000_000_000 && section.quotaTotal == 15_000_000_000)
+        #expect(section.entries.first?.isVolume == true)
+        var changes = 0
+        let publish = fixture.backend.onChange
+        fixture.backend.onChange = {
+            changes += 1; publish?()
+        }
+        // A team account reports the shared pool, not the member's smaller usage.
+        try await fixture.server.configure([
+            "spaceUsage": [
+                "used": 100,
+                "allocation": [
+                    ".tag": "team", "used": 900, "allocated": 2000,
+                    "user_within_team_space_allocated": 500, "user_within_team_space_used_cached": 100,
+                ],
+            ]
+        ])
+        fixture.backend.checkForChanges(account.id)
+        try await uiEventually { fixture.accounts.accounts.first?.quotaUsed == 900 }
+        #expect(fixture.accounts.accounts.first?.quotaTotal == 2000)
+        #expect(fixture.accounts.sections().first?.quotaUsed == 900)
+        #expect(changes > 0)
+        // Returning to the foreground refreshes quota, and future allocation types keep capacity unknown.
+        fixture.backend.setActive(false)
+        try await fixture.server.configure(["spaceUsage": ["used": 250, "allocation": [".tag": "future"]]])
+        fixture.backend.setActive(true)
+        try await uiEventually { fixture.accounts.accounts.first?.quotaUsed == 250 }
+        #expect(fixture.accounts.accounts.first?.quotaTotal == nil)
+        #expect(fixture.accounts.sections().first?.entries.first?.isVolume == false)
+        let requests = try await fixture.server.requests().filter { $0["route"] as? String == "users/get_space_usage" }
+        #expect(requests.count >= 3)
+        #expect(requests.allSatisfy { $0["auth"] as? Bool == true && $0["namespace"] is NSNull })
+    }
+
     @Test @MainActor func descriptorConnectCompositionRootsAndSettingsNavigation() async throws {
         let fixture = try DropboxUIFixture(); defer { fixture.cleanup() }
         let account = try await fixture.connect()
@@ -51,7 +91,7 @@ import Testing
         let source = try #require(fixture.composite.content(for: root))
         #expect(source.ref(for: root)?.account.hasPrefix("dropbox:") == true)
         #expect(source.offlineDirectory?.path.hasPrefix(fixture.server.directory.path) == true)
-        #expect(fixture.accounts.account(for: root) == account)
+        #expect(fixture.accounts.account(for: root)?.id == account.id)
         #expect(fixture.composite.permissions(for: root)?.canAddChildren == true)
         #expect(CloudProviderDescriptor.descriptor(for: root)?.provider == .dropbox)
         #expect(CloudProvider.dropbox.descriptor.webLink(URL(string: "https://www.dropbox.com/home")!, email: account.email).query == nil)
