@@ -186,7 +186,7 @@ public enum RemoteParsing {
     /// A single, safe path component (see the type's note on untrusted names). Checked by scalar: a "/" followed
     /// by a combining mark is a single Character, which `contains("/")` doesn't find.
     public static func isSafeName(_ name: String) -> Bool {
-        !name.isEmpty && name != "." && name != ".." && !name.containsScalar("/") && !name.containsScalar("\0")
+        FileName.isValid(name, for: .component)
     }
 
     /// The name a remote item gets on this Mac (a cloud file downloaded or cached, a folder copied): always a single
@@ -195,11 +195,10 @@ public enum RemoteParsing {
     public static func localName(forRemote name: String) -> String? {
         var scalars = String.UnicodeScalarView()
         for s in name.unicodeScalars {
-            if s == "\0" || s == "\n" || s == "\r" { return nil }
             scalars.append(s == "/" ? ":" : s)
         }
         let local = String(scalars)
-        return isSafeName(local) ? local : nil
+        return FileName.isValid(local, for: .remote) && FileName.isValid(local, for: .local) ? local : nil
     }
 
     static func item(

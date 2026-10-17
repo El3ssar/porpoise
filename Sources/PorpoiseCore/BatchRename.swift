@@ -218,7 +218,7 @@ public enum BatchRename {
                 if !sources.insert(key(row.source.lastPathComponent, parent: parent)).inserted {
                     rows[i].problem = "The same source is selected more than once."
                 }
-                if !FileActions.isValidName(row.proposedName) || row.proposedName.utf8.count > 255 {
+                if !FileName.isValid(row.proposedName, for: .local) {
                     rows[i].problem = "Invalid filename (one component, up to 255 UTF-8 bytes)."
                 }
                 let k = key(row.proposedName, parent: parent)
