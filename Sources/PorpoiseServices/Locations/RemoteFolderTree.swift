@@ -155,17 +155,24 @@ public final class RemoteFolderTree {
         revealChain = []
     }
 
-    /// A trailing directory slash is presentation, while provider namespace and resource queries remain identity.
+    /// Directory slashes are presentation; query variants stay distinct unless their provider confirms identity.
     public static func sameLocation(_ a: URL, _ b: URL) -> Bool {
-        func key(_ url: URL) -> String {
+        func key(_ url: URL, includingQuery: Bool = true) -> String {
             guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url.absoluteString }
+            if !includingQuery { parts.query = nil }
             parts.scheme = parts.scheme?.lowercased()
             parts.host = parts.host?.lowercased()
             if parts.percentEncodedPath.isEmpty { parts.percentEncodedPath = "/" }
             while parts.percentEncodedPath.count > 1 && parts.percentEncodedPath.hasSuffix("/") { parts.percentEncodedPath.removeLast() }
             return parts.string ?? url.absoluteString
         }
-        return key(a) == key(b)
+        if key(a) == key(b) { return true }
+        // A service may omit redundant navigation context in its breadcrumb ancestors. Keep the path scope so
+        // aliases in different branches remain separate; only the provider can say whether query variants match.
+        guard key(a, includingQuery: false) == key(b, includingQuery: false), let provider = RemoteFS.provider(for: a) as? CloudFileProvider else {
+            return false
+        }
+        return provider.sameItem(a, b)
     }
 
     /// Coalesces all pages of one change notification burst and refreshes only expanded branches.

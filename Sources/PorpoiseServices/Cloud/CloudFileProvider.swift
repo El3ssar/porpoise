@@ -8,6 +8,8 @@ public protocol CloudFileProvider: RemoteProvider, Sendable {
     func refresh(_ folder: URL, onPage: @escaping @Sendable ([FileItem], Bool) async -> Void) async throws -> [FileItem]
     func prefetch(_ folders: [URL]) async
     func displayName(for url: URL) -> String?
+    /// Stable item identity when navigation URLs differ only by service-specific context (never lists or fetches).
+    func sameItem(_ lhs: URL, _ rhs: URL) -> Bool
     func preview(_ remote: URL, thumbnail: Bool) async throws -> URL
     func progressivePreview(_ remote: URL, context: CloudTransferContext, onPreview: @escaping @MainActor (URL) async throws -> Void) async throws
         -> URL
@@ -15,6 +17,7 @@ public protocol CloudFileProvider: RemoteProvider, Sendable {
     func transferItem(_ url: URL) throws -> FileItem
 }
 extension CloudFileProvider {
+    public func sameItem(_ lhs: URL, _ rhs: URL) -> Bool { lhs == rhs }
     public func refresh(_ folder: URL) async throws -> [FileItem] { try await refresh(folder, onPage: { _, _ in }) }
     public func preview(_ remote: URL) async throws -> URL { try await preview(remote, thumbnail: false) }
     public func progressivePreview(_ remote: URL, context: CloudTransferContext, onPreview: @escaping @MainActor (URL) async throws -> Void)
@@ -25,6 +28,13 @@ extension CloudFileProvider {
 }
 extension DriveProvider: CloudFileProvider {
     public var descriptor: CloudProviderDescriptor { CloudProvider.googleDrive.descriptor }
+    public func sameItem(_ lhs: URL, _ rhs: URL) -> Bool {
+        guard let a = DriveLocation(url: lhs), let b = DriveLocation(url: rhs), a.accountID == accountID, b.accountID == accountID else {
+            return false
+        }
+        if case .folder(let first, _) = a.collection, case .folder(let second, _) = b.collection { return first == second }
+        return a.collection == b.collection
+    }
     public func progressivePreview(_ remote: URL, context: CloudTransferContext, onPreview: @escaping @MainActor (URL) async throws -> Void)
         async throws -> URL
     {

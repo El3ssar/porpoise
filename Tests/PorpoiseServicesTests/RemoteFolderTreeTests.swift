@@ -81,6 +81,8 @@ import Testing
         defer { RemoteFS.registerCloud(nil, for: root) }
         let tree = RemoteFolderTree(url: root)
         #expect(tree.root.children == nil && tree.root.isExpandable)
+        #expect(provider.sameItem(root, root))
+        #expect(!provider.sameItem(root, DropboxLocation(accountID: client.accountID, namespaceID: "other-root").url))
         #expect(try await server.requests().isEmpty)
         tree.root.expand()
         #expect(tree.root.isLoading)
@@ -196,6 +198,38 @@ import Testing
         #expect(tree.root.children?.count == 2 && tree.find(parent)?.isExpanded == true)
         #expect(tree.root.children?.first { $0.name == "Sibling" }?.children == nil)
         #expect(tree.selected?.isExpanded == false)
+    }
+
+    @Test(.timeLimit(.minutes(1))) @MainActor func sharedDriveRevealMatchesAncestorsWithoutRedundantDriveQuery() async throws {
+        let scratch = try Scratch()
+        let fixtureURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/metadata.json")
+        var fixture = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as? [String: Any])
+        var files = try #require(fixture["files"] as? [[String: Any]])
+        files.append(["id": "deep-folder", "name": "Team folder", "mimeType": "application/vnd.google-apps.folder", "driveId": "shared-drive-a"])
+        fixture["files"] = files
+        fixture["children"] = ["shared-drive-a": ["deep-folder"], "deep-folder": []]
+        let localFixture = scratch.url.appendingPathComponent("shared.json")
+        try JSONSerialization.data(withJSONObject: fixture).write(to: localFixture)
+        let server = try FakeDriveServer(fixture: localFixture)
+        let (client, _, _) = try server.client()
+        let provider = DriveProvider(accountID: client.accountID, client: client)
+        RemoteFS.registerDrive(provider, accountID: client.accountID)
+        defer { RemoteFS.unregisterDrive(accountID: client.accountID) }
+        let target = DriveLocation(
+            accountID: client.accountID, collection: .folder("deep-folder", driveID: "shared-drive-a"),
+            navigationPath: ["shared-drives", "shared-drive-a", "deep-folder"]
+        ).url
+        let ancestors = CloudAncestry.fromPath(target)
+        #expect(ancestors.count == 2 && ancestors.allSatisfy { $0.query == nil } && target.query != nil)
+        let tree = RemoteFolderTree(url: try #require(ancestors.first))
+        tree.reveal(ancestors + [target])
+        try await until(tree) { tree.selected?.url == target }
+        #expect(tree.selected?.name == "Team folder" && tree.find(ancestors[1])?.isExpanded == true)
+        let path = try #require(tree.path(to: target))
+        #expect(path.count == 3 && path[1].url.query != nil)
+        #expect(!provider.sameItem(target, DriveLocation(accountID: UUID(), collection: .folder("deep-folder")).url))
+        #expect(!provider.sameItem(target, DriveLocation(accountID: client.accountID, collection: .folder("other")).url))
+        #expect(provider.sameItem(ancestors[0], ancestors[0]))
     }
 
     @Test func pathAncestorsShareServerRootAndKeepOpaqueNamespaceIdentity() throws {
