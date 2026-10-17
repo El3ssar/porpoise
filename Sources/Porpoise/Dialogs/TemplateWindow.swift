@@ -4,8 +4,7 @@ import PorpoiseServices
 import UniformTypeIdentifiers
 
 /// Editable source and resolved preview share one frozen date/context until the file is created.
-final class TemplateWindow: NSWindowController, NSWindowDelegate, NSTextFieldDelegate, NSTextViewDelegate {
-    private static var open: [TemplateWindow] = []
+final class TemplateWindow: SecondaryWindowController, NSTextFieldDelegate, NSTextViewDelegate {
     private let folder: URL
     private let done: (URL) -> Void
     private let store = TemplateStore.shared
@@ -28,15 +27,8 @@ final class TemplateWindow: NSWindowController, NSWindowDelegate, NSTextFieldDel
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 850, height: 650), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.title = "Create From Template"; window.isReleasedWhenClosed = false
-        super.init(window: window); window.delegate = self
-        let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
-        stack.translatesAutoresizingMaskIntoConstraints = false; window.contentView!.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor, constant: -20),
-            stack.topAnchor.constraint(equalTo: window.contentView!.topAnchor, constant: 18),
-            stack.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor, constant: -18),
-        ])
+        super.init(window: window)
+        let stack = contentStack(insets: NSEdgeInsets(top: 18, left: 20, bottom: 18, right: 20))
         let target = NSTextField(wrappingLabelWithString: "Create in: \(folder.path)"); target.maximumNumberOfLines = 2;
         stack.addArrangedSubview(target)
         picker.target = self; picker.action = #selector(changedTemplate); picker.setAccessibilityLabel("Template")
@@ -85,8 +77,6 @@ final class TemplateWindow: NSWindowController, NSWindowDelegate, NSTextFieldDel
         reload(); choose()
     }
     required init?(coder: NSCoder) { fatalError() }
-    func present() { Self.open.append(self); showWindow(nil); window?.makeKeyAndOrderFront(nil) }
-    func windowWillClose(_ notification: Notification) { Self.open.removeAll { $0 === self } }
     private func reload(select id: UUID? = nil) {
         templates = FileTemplate.builtins
         do {
@@ -130,7 +120,7 @@ final class TemplateWindow: NSWindowController, NSWindowDelegate, NSTextFieldDel
                 result.contents.count > 64 * 1024
                 ? "Preview shows the first 64 KiB; the complete contents will be created." : "Ready to create. Existing files are kept."
             if let storageWarning { status.stringValue += " " + storageWarning }
-            status.textColor = .secondaryLabelColor; create.isEnabled = true
+            status.textColor = Theme.windowTextInactive; create.isEnabled = true
         } catch {
             resolved.stringValue = ""; preview.string = ""; status.stringValue = error.localizedDescription; status.textColor = Theme.negativeText;
             create.isEnabled = false

@@ -4,17 +4,16 @@ import PorpoiseServices
 import UniformTypeIdentifiers
 
 /// Document-like comparison windows, independent of the browser's selection and lifecycle.
-final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate, NSMenuItemValidation {
-    private static var open: [FileDiffWindow] = []
+final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuDelegate, NSMenuItemValidation {
     private static let queue = DispatchQueue(label: "app.porpoise.file-diff", qos: .userInitiated, attributes: .concurrent)
-    static var current: FileDiffWindow? { (NSApp.keyWindow?.windowController as? FileDiffWindow) ?? open.last }
+    static var current: FileDiffWindow? { (NSApp.keyWindow?.windowController as? FileDiffWindow) ?? openWindows().last }
     static func present(left: URL, right: URL) {
         if left.isFileURL && right.isFileURL, let path = Settings.store.string(forKey: "fileDiff.defaultApp"),
             FileManager.default.fileExists(atPath: path)
         {
             FileDiffExternalTools.open(URL(fileURLWithPath: path), left: left, right: right) { error in NSAlert(error: error).runModal() }; return
         }
-        let controller = FileDiffWindow(left: left, right: right); open.append(controller); controller.showWindow(nil);
+        let controller = FileDiffWindow(left: left, right: right); controller.keepOpen(); controller.showWindow(nil);
         NSApp.activate(ignoringOtherApps: true); controller.window?.makeKeyAndOrderFront(nil)
     }
 
@@ -69,7 +68,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
 
     /// AppKit does not automatically protect NSWindowController documents when the app quits.
     static func confirmQuitIfNeeded(_ completion: @escaping (Bool) -> Void) -> Bool {
-        let dirty = open.filter { $0.dirty }
+        let dirty = openWindows(FileDiffWindow.self).filter { $0.dirty }
         guard !dirty.isEmpty else { return false }
         func ask(_ remaining: ArraySlice<FileDiffWindow>) {
             guard let first = remaining.first, let window = first.window else { completion(true); return }
@@ -487,7 +486,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         }; return false
     }
     func windowWillClose(_ notification: Notification) {
-        token.cancel(); observers.forEach(NotificationCenter.default.removeObserver); Self.open.removeAll { $0 === self }
+        token.cancel(); observers.forEach(NotificationCenter.default.removeObserver)
     }
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.appearance = window?.effectiveAppearance

@@ -4,7 +4,7 @@ import PorpoiseServices
 
 /// Window › Activity (⌥⌘J): every file operation of this session (queued, running, paused, ended) with pause,
 /// cancel, reorder and retry, and the history of earlier ones, searchable and exportable.
-final class ActivityWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
+final class ActivityWindowController: SecondaryWindowController, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
     /// A history entry's item: a path, or a remote location (a Google Drive item's name, not its id).
     static func name(_ s: String) -> String {
         if !s.hasPrefix("/"), let u = URL(string: s), u.scheme != nil { return Activity.name(u) }

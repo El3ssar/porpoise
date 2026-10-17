@@ -2,7 +2,7 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
-final class BatchRenameDialog: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
+final class BatchRenameDialog: SecondaryWindowController, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
     private let sources: [URL]
     private let done: ([URL]) -> Void
     private var snapshot: BatchRenameSnapshot?
@@ -36,26 +36,16 @@ final class BatchRenameDialog: NSWindowController, NSTableViewDataSource, NSTabl
         window.title = "Batch Rename"; window.minSize = NSSize(width: 900, height: 640)
         super.init(window: window)
         build()
-        Theme.whenChanged(self) { [weak self] in
-            self?.window?.backgroundColor = Theme.windowBackground.usingColorSpace(.sRGB) ?? Theme.windowBackground
-            self?.table.backgroundColor = Theme.viewBackground
-            self?.table.reloadData()
-        }
+        // Its rows' text colors are the palette's at the time they are made.
+        Theme.whenChanged(self) { [weak self] in self?.table.reloadData() }
         addRule(.replace(find: "", with: "", regex: false, caseSensitive: true))
         refreshSnapshot()
     }
     required init?(coder: NSCoder) { fatalError() }
 
     private func build() {
-        guard let content = window?.contentView else { return }
-        let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
-        stack.translatesAutoresizingMaskIntoConstraints = false; content.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 16),
-            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16),
-            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
-        ])
+        guard window?.contentView != nil else { return }
+        let stack = contentStack(insets: NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16))
         func add(_ view: NSView, stretch: Bool = true) {
             stack.addArrangedSubview(view)
             if stretch { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }

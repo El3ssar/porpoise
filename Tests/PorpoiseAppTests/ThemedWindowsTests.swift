@@ -46,4 +46,40 @@ import Testing
         Theme.dressIfThemed(controller.window!)
         #expect(controller.window?.titlebarAppearsTransparent == true)
     }
+
+    /// Secondary windows are themed by being one: those a hand-kept list missed (Create From Template, the media
+    /// preview) are dressed too, and a window opts out instead of in.
+    @Test @MainActor func secondaryWindowsAreThemedUnlessTheyOptOut() {
+        let template = TemplateWindow(folder: FileManager.default.temporaryDirectory) { _ in }
+        Theme.dressIfThemed(template.window!)
+        #expect(template.window?.titlebarAppearsTransparent == true)
+        let preview = DriveMediaPreviewPanel()
+        Theme.dressIfThemed(preview)
+        #expect(preview.titlebarAppearsTransparent)
+
+        final class OwnLook: SecondaryWindowController { override var isThemed: Bool { false } }
+        let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 100, height: 100), styleMask: [.titled], backing: .buffered, defer: true)
+        let own = OwnLook(window: window)
+        Theme.dressIfThemed(own.window!)
+        #expect(own.window?.titlebarAppearsTransparent == false)
+    }
+
+    /// A presented window keeps its controller until it closes; its content stack fills it inside the margins.
+    @Test @MainActor func secondaryWindowsStayOpenUntilClosedAndStackTheirContent() throws {
+        weak var kept: SecondaryWindowController?
+        do {
+            let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 300, height: 200), styleMask: [.titled], backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            let controller = SecondaryWindowController(window: window)
+            let stack = controller.contentStack(insets: NSEdgeInsets(top: 10, left: 12, bottom: 14, right: 16))
+            window.contentView?.layoutSubtreeIfNeeded()
+            #expect(stack.frame == CGRect(x: 12, y: 14, width: 300 - 28, height: 200 - 24))
+            controller.keepOpen(); controller.keepOpen()
+            #expect(SecondaryWindowController.openWindows().filter { $0 === controller }.count == 1)
+            kept = controller
+        }
+        let controller = try #require(kept)  // only the registry holds it
+        controller.window?.close()
+        #expect(!SecondaryWindowController.openWindows().contains { $0 === controller })
+    }
 }

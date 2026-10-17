@@ -27,8 +27,8 @@ extension ToolbarCommand {
 }
 
 /// Native customization edits the action layout; main windows keep their split-aligned breadcrumb implementation.
-final class ToolbarCustomizationWindow: NSWindowController, NSToolbarDelegate, NSWindowDelegate {
-    private static var current: ToolbarCustomizationWindow?
+final class ToolbarCustomizationWindow: SecondaryWindowController, NSToolbarDelegate, NSWindowDelegate {
+    private static var current: ToolbarCustomizationWindow? { openWindows().last }
     private let toolbar = NSToolbar(identifier: "PorpoiseCustomizableActions")
     private var settingsObserver: NSObjectProtocol?
     private var observation: NSKeyValueObservation?
@@ -39,8 +39,8 @@ final class ToolbarCustomizationWindow: NSWindowController, NSToolbarDelegate, N
     )
     static func show() {
         if let current { current.showWindow(nil); current.window?.makeKeyAndOrderFront(nil); current.toolbar.runCustomizationPalette(nil); return }
-        let controller = ToolbarCustomizationWindow(); current = controller
-        controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil)
+        let controller = ToolbarCustomizationWindow()
+        controller.present()
         controller.toolbar.runCustomizationPalette(nil)
     }
     private init() {
@@ -55,16 +55,9 @@ final class ToolbarCustomizationWindow: NSWindowController, NSToolbarDelegate, N
             self?.toolbar.itemIdentifiers = ToolbarCommand.defaults.map(\.toolbarIdentifier); self?.persist()
         }
         let customise = ClosureButton(title: "Customise…") { [weak self] _ in self?.toolbar.runCustomizationPalette(nil) }
-        let stack = NSStackView(views: [status, NSStackView(views: [customise, reset])]); stack.orientation = .vertical; stack.alignment = .leading;
-        stack.spacing = 18
-        stack.translatesAutoresizingMaskIntoConstraints = false; window.contentView?.addSubview(stack)
-        if let content = window.contentView {
-            NSLayoutConstraint.activate([
-                stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-                stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
-                stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
-            ])
-        }
+        contentStack(
+            NSStackView(views: [status, NSStackView(views: [customise, reset])]), insets: NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24),
+            spacing: 18, pinBottom: false)
         ready = true
         observation = toolbar.observe(\.itemIdentifiers, options: [.new]) { [weak self] _, _ in self?.schedulePersist() }
         settingsObserver = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
@@ -102,5 +95,5 @@ final class ToolbarCustomizationWindow: NSWindowController, NSToolbarDelegate, N
     }
     func toolbarWillAddItem(_ notification: Notification) { schedulePersist() }
     func toolbarDidRemoveItem(_ notification: Notification) { schedulePersist() }
-    func windowWillClose(_ notification: Notification) { persist(); Self.current = nil }
+    func windowWillClose(_ notification: Notification) { persist() }
 }

@@ -11,7 +11,7 @@ private final class PaletteTable: NSTableView {
 }
 
 /// Menu items retain their real targets, tags and represented objects. Execution restores the originating responder.
-final class CommandPalette: NSWindowController, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
+final class CommandPalette: SecondaryWindowController, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
     private static var current: CommandPalette?
     private struct Entry { let candidate: CommandCandidate; let shortcut: String; let run: () -> Void }
     private weak var origin: MainWindowController?
@@ -35,16 +35,7 @@ final class CommandPalette: NSWindowController, NSWindowDelegate, NSTableViewDat
         panel.title = "Command Palette"; panel.titleVisibility = .hidden; panel.titlebarAppearsTransparent = true
         panel.isFloatingPanel = true; panel.hidesOnDeactivate = true; panel.isReleasedWhenClosed = false
         super.init(window: panel); panel.delegate = self
-        let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
-        stack.translatesAutoresizingMaskIntoConstraints = false; panel.contentView?.addSubview(stack)
-        if let content = panel.contentView {
-            NSLayoutConstraint.activate([
-                stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
-                stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
-                stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 30),
-                stack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -14),
-            ])
-        }
+        let stack = contentStack(insets: NSEdgeInsets(top: 30, left: 16, bottom: 14, right: 16))
         func add(_ view: NSView) { stack.addArrangedSubview(view); view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
         field.placeholderString = "Search commands, places, recent folders and tabs…"; field.font = .systemFont(ofSize: 16); field.delegate = self;
         add(field)

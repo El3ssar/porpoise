@@ -3,7 +3,7 @@ import PorpoiseCore
 import PorpoiseServices
 
 /// "Configure Dolphin" as a native Mac settings window, with Dolphin's pages and options.
-final class SettingsWindowController: NSWindowController {
+final class SettingsWindowController: SecondaryWindowController {
     /// The Settings window, for the pages' sheets (whichever window happens to be key).
     private(set) static weak var window: NSWindow?
     /// Watches ~/.Trash while the Settings window exists.
