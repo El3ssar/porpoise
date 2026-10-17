@@ -34,25 +34,17 @@ extension DropboxClient {
         guard let rev = item.rev, let total = item.size, !range.isEmpty, range.lowerBound >= 0, range.upperBound <= total else {
             throw DropboxError.invalidResponse
         }
-        var request = try await request("files/download", arguments: ["path": "rev:" + rev], content: true, range: range)
-        for attempt in 0..<2 {
-            do {
-                let response = try await http.stream(request) { bytes, response in
-                    try Self.check(bytes, response)
-                    guard response.statusCode == 206, let header = response.value(forHTTPHeaderField: "Dropbox-API-Result"),
-                        let data = header.data(using: .utf8), let actual = try? JSONDecoder().decode(DropboxItem.self, from: data),
-                        actual.id == item.id, actual.rev == rev, actual.contentHash == item.contentHash, actual.size == total
-                    else { throw DropboxError.sourceChanged }
-                    try await receive(bytes, response)
-                }
-                reached(nil); return response
-            } catch DropboxError.reconnect where attempt == 0 {
-                request = try await self.request(
-                    "files/download", arguments: ["path": "rev:" + rev], content: true, range: range,
-                    rejectedToken: request.value(forHTTPHeaderField: "Authorization").map { String($0.dropFirst(7)) })
-            } catch { reached(error); throw error }
-        }
-        throw DropboxError.reconnect
+        let request = try request("files/download", arguments: ["path": "rev:" + rev], content: true, range: range)
+        do {
+            let (_, response) = try await authorized.send(request, idempotent: true) { bytes, response in
+                guard response.statusCode == 206, let header = response.value(forHTTPHeaderField: "Dropbox-API-Result"),
+                    let data = header.data(using: .utf8), let actual = try? JSONDecoder().decode(DropboxItem.self, from: data),
+                    actual.id == item.id, actual.rev == rev, actual.contentHash == item.contentHash, actual.size == total
+                else { throw DropboxError.sourceChanged }
+                try await receive(bytes, response)
+            }
+            reached(nil); return response
+        } catch { reached(error); throw error }
     }
     public func readRange(_ item: DropboxItem, range: Range<Int64>) async throws -> Data {
         guard range.count <= 1 << 20 else { throw DropboxError.invalidResponse }
