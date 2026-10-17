@@ -59,19 +59,22 @@ struct DropboxConfigurationTests {
         #expect(CloudProvider.dropbox.isAvailable == hasExternalKey)
     }
 
+    /// A listener on a fixed port takes exactly that port, and a second one on it fails rather than taking another. The
+    /// port stays held throughout: one released here would close asynchronously, and binding it again at once could
+    /// fail (#2649).
     @Test func fixedLoopbackPortIsExactAndBusyPortFailsClosed() throws {
-        // A released ephemeral port can be immediately claimed by concurrent HTTP tests.
-        var first: CloudOAuthLoopback?
+        var fixed: CloudOAuthLoopback?
+        var port: UInt16 = 0
         for _ in 0..<100 {
+            port = UInt16.random(in: 20000...40000)
             do {
-                first = try CloudOAuthLoopback(port: UInt16.random(in: 20000...40000)); break
+                fixed = try CloudOAuthLoopback(port: port); break
             } catch is CloudOAuthLoopback.PortInUse { continue }
         }
-        let port = UInt16(try #require(first?.redirectURL.port))
+        let listener = try #require(fixed)
+        #expect(listener.redirectURL.absoluteString == "http://127.0.0.1:\(port)/oauth/callback")
         #expect(throws: CloudOAuthLoopback.PortInUse.self) { _ = try CloudOAuthLoopback(port: port) }
-        first = nil
-        let fixed = try CloudOAuthLoopback(port: port)
-        #expect(fixed.redirectURL.absoluteString == "http://127.0.0.1:\(port)/oauth/callback")
+        withExtendedLifetime(listener) {}
     }
     /// The registered port first, then the next two in order; all three busy: a message that names them. Checked
     /// against a scripted set of busy ports: real sockets close asynchronously, so a port a test just released can
@@ -101,8 +104,16 @@ struct DropboxConfigurationTests {
 
     /// On real sockets: a port held by another listener is skipped. The held one is never released during the test.
     @Test func aRealBusyPortIsSkipped() throws {
-        let held = try CloudOAuthLoopback(port: 0)
-        let port = try #require(held.redirectURL.port.flatMap { UInt16(exactly: $0) })
+        // Below the ephemeral range, where parallel HTTP tests take their ports, so the next two are likely free.
+        var bound: CloudOAuthLoopback?
+        var port: UInt16 = 0
+        for _ in 0..<100 {
+            port = UInt16.random(in: 20000...40000)
+            do {
+                bound = try CloudOAuthLoopback(port: port); break
+            } catch is CloudOAuthLoopback.PortInUse { continue }
+        }
+        let held = try #require(bound)
         let listener = try DropboxConfiguration(appKey: "fixture", loopbackPort: port).makeLoopbackListener()
         #expect(listener.redirectURL.port != Int(port))
         withExtendedLifetime(held) {}
