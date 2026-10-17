@@ -52,7 +52,7 @@ enum CapacityBar {
         let colors: [NSColor]
         switch severity {
         case .normal: colors = [Theme.selection.lighter(150), Theme.selectionAlternate]
-        case .nearlyFull: colors = [Theme.selectionAlternate, color(.nearlyFull)]
+        case .nearlyFull: colors = [Theme.selectionAlternate, .systemOrange]  // amber in a gradient reads brown
         case .full: colors = [Theme.neutralText.mixed(with: .systemOrange, 0.6), color(.full)]
         }
         NSGraphicsContext.saveGraphicsState()
