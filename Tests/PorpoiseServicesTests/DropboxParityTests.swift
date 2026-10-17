@@ -1,0 +1,119 @@
+import Foundation
+import PorpoiseCore
+import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseServices
+
+/// Dropbox accounts and transfers behave as Drive's do: sign-in state, the account a refusal names, pausing, blocking
+/// calls and signing out.
+@Suite(.serialized, .isolatedSettings) struct DropboxParityTests {
+    @MainActor private final class Fixture {
+        let server: FakeDropboxServer
+        let suite = "porpoise-dropbox-parity-" + UUID().uuidString
+        let store: DropboxAccountStore
+        let backend: DropboxCloudBackend
+        let accounts = CloudAccounts()
+        init() throws {
+            Settings.store.set("fixture-app", forKey: "dropboxAppKey")
+            server = try FakeDropboxServer()
+            store = DropboxAccountStore(
+                defaults: UserDefaults(suiteName: suite)!, credentials: MemoryCredentials(), configuration: server.config,
+                directory: server.directory)
+            backend = DropboxCloudBackend(store: store)
+            accounts.backend = CompositeCloudBackend([.dropbox: backend])
+        }
+        func connect() async -> Result<CloudAccount, CloudConnectError> {
+            await withCheckedContinuation { continuation in
+                _ = accounts.connect(
+                    .dropbox, openBrowser: { url in Task { _ = try? await URLSession.shared.data(from: url) } },
+                    done: { continuation.resume(returning: $0) })
+            }
+        }
+        func cleanup() {
+            backend.setActive(false)
+            for account in store.accounts { RemoteFS.registerCloud(nil, for: DropboxLocation(accountID: account.id).url) }
+            UserDefaults().removePersistentDomain(forName: suite)
+        }
+    }
+
+    // B2: once Dropbox says to sign in again, a re-check scheduled before can't call the account OK.
+    @Test @MainActor func signInNeededStaysUntilSignedInAgain() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let account = try await fixture.connect().get()
+        let id = try #require(fixture.store.accounts.first?.id)
+        // A connection failure leaves a re-check scheduled; then Dropbox refuses the sign-in.
+        fixture.backend.reached(id, URLError(.notConnectedToInternet))
+        fixture.backend.reached(id, DropboxError.reconnect)
+        #expect(fixture.accounts.accounts.first { $0.id == account.id }?.status == .signInNeeded)
+        fixture.backend.settle(id)  // what the re-check timer runs
+        #expect(fixture.accounts.accounts.first { $0.id == account.id }?.status == .signInNeeded)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        #expect(fixture.accounts.accounts.first { $0.id == account.id }?.status == .signInNeeded)
+        // Signing in again gives the account a new sign-in: it is OK again.
+        let again: Result<Void, CloudConnectError> = await withCheckedContinuation { continuation in
+            _ = fixture.accounts.signInAgain(
+                account.id, openBrowser: { url in Task { _ = try? await URLSession.shared.data(from: url) } },
+                done: { continuation.resume(returning: $0) })
+        }
+        #expect((try? again.get()) != nil)
+        #expect(fixture.accounts.accounts.first { $0.id == account.id }?.status == .ok)
+    }
+
+    // B3: "already connected" names the account that matched, not the first one.
+    @Test @MainActor func alreadyConnectedNamesTheMatchingAccount() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        try await fixture.server.configure(["account": "dbid:first"])
+        let first = try await fixture.connect().get()
+        try await fixture.server.configure(["account": "dbid:second"])
+        let second = try await fixture.connect().get()
+        #expect(first.id != second.id && fixture.accounts.accounts.first?.id == first.id)
+        guard case .failure(.alreadyConnected(let named)) = await fixture.connect() else {
+            Issue.record("the same account was connected twice"); return
+        }
+        #expect(named.id == second.id)
+    }
+
+    // B4: a paused transfer stops waiting when it is interrupted (quit, sleep), as a Drive one does.
+    @Test func pausedThenInterruptedTransfersStop() async throws {
+        let server = try FakeDropboxServer()
+        let provider = DropboxProvider(client: try server.client())
+        let control = Shell.TransferControl(isPaused: { true }, isCancelled: { false }, isInterrupted: { true })
+        let context = Shell.withTransferControl(control) { provider.transferContext() }
+        let started = Date()
+        var thrown: Error?
+        do { try await context.checkpoint() } catch { thrown = error }
+        #expect(
+            {
+                if case .interrupted = thrown as? FileOperationError { return true }; return false
+            }())
+        #expect(Date().timeIntervalSince(started) < 2)
+        // The tools' own check too.
+        #expect({ do { try control.check(); return false } catch FileOperationError.interrupted { return true } catch { return false } }())
+    }
+
+    // B5: Dropbox's blocking calls know a cooperative-pool thread (where they assert, as Drive's do).
+    @Test func blockingCallsKnowTheCooperativePool() async throws {
+        #expect(CloudAwait.onCooperativeThread)
+        let onThread: Bool = await withCheckedContinuation { continuation in
+            Thread { continuation.resume(returning: CloudAwait.onCooperativeThread) }.start()
+        }
+        #expect(!onThread)
+        let value: Int = try await offThePool { try CloudAwait.run { 42 } }
+        #expect(value == 42)
+    }
+
+    // Signing out ends the sign-in at Dropbox too, not only here.
+    @Test @MainActor func signingOutRevokesTheToken() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let account = try await fixture.connect().get()
+        let error: Error? = await withCheckedContinuation { continuation in
+            fixture.accounts.remove(account.id) { continuation.resume(returning: $0) }
+        }
+        #expect(error == nil && fixture.store.accounts.isEmpty)
+        let stats = try await fixture.server.stats()
+        #expect(stats["revoked"] as? Int == 1)
+        let revoke = try await fixture.server.requests().filter { $0["route"] as? String == "auth/token/revoke" }
+        #expect(revoke.count == 1 && revoke.first?["auth"] as? Bool == true)
+    }
+}

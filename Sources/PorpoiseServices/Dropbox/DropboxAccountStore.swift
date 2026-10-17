@@ -1,7 +1,11 @@
 import Foundation
 import PorpoiseCore
 
-public enum DropboxConnectionError: Error, Equatable { case alreadyConnected, wrongAccount, busy, unsentEdits }
+public enum DropboxConnectionError: Error, Equatable {
+    /// The account signed in to is connected already (its id here).
+    case alreadyConnected(UUID)
+    case wrongAccount, busy, unsentEdits
+}
 
 /// Engine-only account lifecycle. UI registration/Connect sheet availability is a separate integration step.
 @MainActor public final class DropboxAccountStore {
@@ -79,7 +83,9 @@ public enum DropboxConnectionError: Error, Equatable { case alreadyConnected, wr
                 throw DropboxError.invalidResponse
             }
             if let expected, expected.accountID != profile.account_id { throw DropboxConnectionError.wrongAccount }
-            if expected == nil, accounts.contains(where: { $0.accountID == profile.account_id }) { throw DropboxConnectionError.alreadyConnected }
+            if expected == nil, let existing = accounts.first(where: { $0.accountID == profile.account_id }) {
+                throw DropboxConnectionError.alreadyConnected(existing.id)
+            }
             let account = DropboxAccount(
                 id: expected?.id ?? UUID(), accountID: profile.account_id, email: profile.email,
                 displayName: profile.name.display_name, rootNamespaceID: profile.root_info.root_namespace_id,
@@ -139,7 +145,10 @@ public enum DropboxConnectionError: Error, Equatable { case alreadyConnected, wr
                 if let error { continuation.resume(throwing: error) } else { continuation.resume() }
             }
         }
+        // An access token for Dropbox's revoke, read before the credentials are forgotten here.
+        let access = try? await client.tokens.accessToken()
         _ = try await client.tokens.disconnect()
+        if let access { await DropboxTokens.revoke(access, configuration: client.configuration, http: http) }
         for namespace in namespaces {
             let journal = CloudJournal<DropboxOperation>(folder: namespace.appendingPathComponent("Operations"))
             for record in try journal.all() where record.hasSession { try await client.tokens.removeSecret(record.operationID) }

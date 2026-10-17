@@ -56,8 +56,13 @@ extension DriveProvider: CloudFileProvider {
 
 /// Blocking compatibility is used only by DirectoryModel/FileOperations worker queues.
 public enum CloudAwait {
+    /// The current thread is one of Swift concurrency's cooperative pool.
+    static var onCooperativeThread: Bool { String(cString: __dispatch_queue_get_label(nil)).hasSuffix(".cooperative") }
     private final class Box<T>: @unchecked Sendable { var result: Result<T, Error>? }
+    /// Never on a thread of the cooperative pool: the work may need a pool thread (a token refresh), and with the few
+    /// the pool has blocked so (CI's 3-core runner), nothing runs again.
     public static func run<T>(_ work: @escaping @Sendable () async throws -> T) throws -> T {
+        assert(!onCooperativeThread, "A blocking provider call on a cooperative thread: call it from a thread of its own (tests: offThePool).")
         let semaphore = DispatchSemaphore(value: 0); let box = Box<T>()
         Task.detached {
             do { box.result = .success(try await work()) } catch { box.result = .failure(error) }; semaphore.signal()

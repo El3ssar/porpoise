@@ -19,7 +19,7 @@ public enum Shell {
             self.onStatus = onStatus
         }
         func check() throws {
-            while isPaused() && !isCancelled() { Thread.sleep(forTimeInterval: 0.02) }
+            while isPaused() && !isCancelled() && !isInterrupted() { Thread.sleep(forTimeInterval: 0.02) }
             if isInterrupted() { throw FileOperationError.interrupted }
             if isCancelled() { throw FileOperationError.cancelled }
         }
