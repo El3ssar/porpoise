@@ -230,7 +230,20 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
 
     private func remoteChain(to url: URL) -> [URL] {
         let ancestors = PlacesModel.isCloud(url) ? CloudAccounts.shared.ancestors(of: url) : RemoteFS.pathAncestors(of: url)
-        if ancestors.isEmpty, let known = remoteTree?.path(to: url) { return known.map(\.url) }
+        if ancestors.isEmpty {
+            if let known = remoteTree?.path(to: url) { return known.map(\.url) }
+            let accounts = CloudAccounts.shared
+            if PlacesModel.isCloud(url), !url.path.isEmpty, url.path != "/", let account = accounts.account(for: url) {
+                // The breadcrumb's account button opens this row too. An unknown parent chain stays unknown:
+                // reveal never invents a child if the top row's listing does not contain it.
+                let rows = account.provider.descriptor.roots.compactMap { accounts.url(account.id, root: $0.key) }
+                if !rows.contains(where: { RemoteFolderTree.sameLocation($0, url) }),
+                    let first = accounts.availableRows(account.id).first, let top = accounts.url(account.id, root: first)
+                {
+                    return [top, url]
+                }
+            }
+        }
         return ancestors + [url]
     }
 

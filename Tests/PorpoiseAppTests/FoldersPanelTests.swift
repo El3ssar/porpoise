@@ -68,6 +68,33 @@ extension AppearanceLayoutTests {
         #expect(originalRoot.children?.count == 2 && provider.count == 3)
     }
 
+    @Test(.timeLimit(.minutes(1))) @MainActor func unknownCloudParentsUseAccountTopWithoutInventingATreeChild() async throws {
+        _ = NSApplication.shared
+        let previousTesting = Settings.isTesting, previousBackend = CloudAccounts.shared.backend
+        Settings.isTesting = true
+        defer { CloudAccounts.shared.backend = previousBackend; Settings.isTesting = previousTesting }
+        let id = UUID()
+        let account = CloudAccount(id: id.uuidString.lowercased(), email: "tree@example.invalid", displayName: "Tree fixture")
+        let backend = DemoCloudBackend(accounts: [account])
+        CloudAccounts.shared.backend = backend
+        let root = backend.url(account.id, root: .myDrive)
+        let target = DriveLocation(accountID: id, collection: .folder("unresolved")).url
+        #expect(CloudAccounts.shared.ancestors(of: target).isEmpty)
+        #expect(RemoteFS.installTestingProvider(FolderPanelProvider(root: root), for: root))
+        defer { RemoteFS.registerCloud(nil, for: root) }
+        let panel = FoldersPanel(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
+        panel.currentURL = target
+        let outline = try #require((panel.subviews.first as? NSScrollView)?.documentView as? NSOutlineView)
+        for _ in 0..<500 where outline.numberOfRows < 3 { try await Task.sleep(for: .milliseconds(20)) }
+        let top = try #require(outline.item(atRow: 0) as? RemoteFolderTree.Node)
+        #expect(top.url == root && top.url != target)
+        #expect(top.children?.contains { RemoteFolderTree.sameLocation($0.url, target) } == false)
+        // A collection stays its own root even when it has no currently available sidebar row.
+        let collection = backend.url(account.id, root: .sharedDrives)
+        panel.currentURL = collection
+        #expect((outline.item(atRow: 0) as? RemoteFolderTree.Node)?.url == collection)
+    }
+
 }
 
 private final class FolderPanelProvider: RemoteProvider, @unchecked Sendable {
