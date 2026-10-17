@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Split view flights land at the right size.** When the two panes show items at different sizes (one zoomed in or out, in any view), the items flying between them grow or shrink smoothly on the way and land as exactly what the other pane shows, with no snap or blink at the end.
 Google Drive is in preview: until Google finishes reviewing Porpoise, only invited accounts can sign in.
 
 - **Download and Remove Download for Google Drive, as with iCloud.** A file or folder is either in the cloud only (a
