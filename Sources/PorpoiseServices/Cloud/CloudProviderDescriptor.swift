@@ -25,6 +25,8 @@ public struct CloudProviderDescriptor: Sendable {
     public var hasWebDocuments = false
     /// Hosts of the service's share links, which the location field hands over before treating text as a path.
     public var linkHosts: Set<String> = []
+    /// The service's own page about the account's storage (what the capacity bar opens in its folders).
+    public var storageURL: URL?
     public var configuration: (key: String, label: String)? {
         switch provider {
         case .googleDrive: return nil
@@ -51,7 +53,8 @@ public struct CloudProviderDescriptor: Sendable {
                     .init(key: .sharedDrives, title: "Shared drives", icon: "folder-network", counted: true),
                 ],
                 homeURL: URL(string: "https://drive.google.com/drive/my-drive")!, accountQuery: "authuser", supportsTrashUndo: true,
-                allowsDuplicateNames: true, hasWebDocuments: true, linkHosts: ["drive.google.com", "docs.google.com"]),
+                allowsDuplicateNames: true, hasWebDocuments: true, linkHosts: ["drive.google.com", "docs.google.com"],
+                storageURL: URL(string: "https://drive.google.com/settings/storage")),
             .init(
                 provider: .dropbox, title: "Dropbox", brand: "dropbox", scheme: "dropbox", available: configuration.isConfigured,
                 signInInstructions:
@@ -62,7 +65,7 @@ public struct CloudProviderDescriptor: Sendable {
                     .init(key: .sharedDrives, title: "Team space", icon: "folder-network", counted: false),
                 ],
                 homeURL: URL(string: "https://www.dropbox.com/home")!, accountQuery: nil, supportsTrashUndo: false,
-                linkHosts: ["www.dropbox.com", "dropbox.com"]),
+                linkHosts: ["www.dropbox.com", "dropbox.com"], storageURL: URL(string: "https://www.dropbox.com/account/plan")),
             .init(
                 provider: .oneDrive, title: "OneDrive", brand: "onedrive", scheme: nil, available: false, signInInstructions: "", roots: [],
                 homeURL: URL(string: "https://onedrive.live.com")!, accountQuery: nil, supportsTrashUndo: false),
