@@ -23,119 +23,48 @@ public struct DriveOAuthConfiguration: Sendable {
     }
 }
 
-public protocol DriveCredentialStore: Sendable {
-    func read(clientID: String, accountID: UUID) throws -> String?
-    func save(_ token: String, clientID: String, accountID: UUID) throws
-    func remove(clientID: String, accountID: UUID) throws
-}
+public typealias DriveCredentialStore = CloudCredentialStore
 
 public struct DriveKeychainCredentials: DriveCredentialStore, @unchecked Sendable {
-    private let api: any KeychainAPI
-    public init() { api = SystemKeychainAPI() }
-    init(api: any KeychainAPI) { self.api = api }
-    private func query(_ clientID: String, _ accountID: UUID) -> [String: Any] {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.porpoise.google-drive.\(clientID)",
-            kSecAttrAccount as String: accountID.uuidString,
-        ]
-        return query
-    }
+    private let store: CloudKeychainCredentials
+    public init() { store = CloudKeychainCredentials(providerID: "google-drive") }
+    init(api: any KeychainAPI) { store = CloudKeychainCredentials(providerID: "google-drive", api: api) }
     public func read(clientID: String, accountID: UUID) throws -> String? {
-        var q = query(clientID, accountID)
-        q[kSecReturnData as String] = true
-        q[kSecMatchLimit as String] = kSecMatchLimitOne
-        let (status, result) = api.copy(q)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess else { throw DriveError.keychain(status) }
-        guard let data = result as? Data, let token = String(data: data, encoding: .utf8) else { throw DriveError.invalidResponse }
-        return token
+        do { return try store.read(clientID: clientID, accountID: accountID) } catch { throw driveOAuthError(error) }
     }
     public func save(_ token: String, clientID: String, accountID: UUID) throws {
-        let q = query(clientID, accountID)
-        let data = Data(token.utf8)
-        let status = api.update(q, attributes: [kSecValueData as String: data])
-        if status == errSecSuccess { return }
-        guard status == errSecItemNotFound else { throw DriveError.keychain(status) }
-        var add = q
-        add[kSecValueData as String] = data
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let added = api.add(add)
-        guard added == errSecSuccess else { throw DriveError.keychain(added) }
+        do { try store.save(token, clientID: clientID, accountID: accountID) } catch { throw driveOAuthError(error) }
     }
     public func remove(clientID: String, accountID: UUID) throws {
-        let status = api.delete(query(clientID, accountID))
-        guard status == errSecSuccess || status == errSecItemNotFound else { throw DriveError.keychain(status) }
+        do { try store.remove(clientID: clientID, accountID: accountID) } catch { throw driveOAuthError(error) }
     }
 }
 
-struct DriveTokenResponse: Decodable, Sendable {
-    let access_token: String
-    let expires_in: Double
-    let refresh_token: String?
-    let token_type: String
-    var scope: String? = nil
-}
+typealias DriveTokenResponse = CloudOAuthToken
 
 /// A fresh transaction for each sign-in. Only a matching loopback path, state and one code are accepted.
 public struct DriveOAuthTransaction: Sendable {
-    public let verifier: String
-    public let state: String
+    private let pkce: CloudPKCE
+    public var verifier: String { pkce.verifier }
+    public var state: String { pkce.state }
     public let redirectURL: URL
     public let configuration: DriveOAuthConfiguration
-    /// Signing in again: the account's email, so Google offers that account straight away.
     public let loginHint: String?
-
     public init(configuration: DriveOAuthConfiguration, redirectURL: URL, loginHint: String? = nil) throws {
-        guard !configuration.clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw DriveError.configuration }
-        self.configuration = configuration
-        self.redirectURL = redirectURL
-        self.loginHint = loginHint
-        verifier = try Self.random()
-        state = try Self.random()
+        self.configuration = configuration; self.redirectURL = redirectURL; self.loginHint = loginHint
+        do { pkce = try CloudPKCE(clientID: configuration.clientID, redirectURL: redirectURL) } catch { throw driveOAuthError(error) }
     }
-
-    private static func random() throws -> String {
-        var bytes = [UInt8](repeating: 0, count: 32)
-        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        guard status == errSecSuccess else { throw DriveError.keychain(status) }
-        return base64URL(Data(bytes))
-    }
-
-    static func base64URL(_ data: Data) -> String {
-        data.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(
-            of: "=", with: "")
-    }
-
+    static func base64URL(_ data: Data) -> String { CloudPKCE.base64URL(data) }
     public var authorizationURL: URL {
-        var c = URLComponents(url: configuration.authorizationURL, resolvingAgainstBaseURL: false)!
-        c.queryItems = [
-            URLQueryItem(name: "client_id", value: configuration.clientID),
-            URLQueryItem(name: "redirect_uri", value: redirectURL.absoluteString),
-            URLQueryItem(name: "response_type", value: "code"),
+        var parameters = [
             URLQueryItem(name: "scope", value: "openid email profile https://www.googleapis.com/auth/drive"),
-            URLQueryItem(name: "access_type", value: "offline"),
-            URLQueryItem(name: "prompt", value: "consent"),
-            URLQueryItem(name: "state", value: state),
-            URLQueryItem(name: "code_challenge", value: Self.base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))),
-            URLQueryItem(name: "code_challenge_method", value: "S256"),
+            URLQueryItem(name: "access_type", value: "offline"), URLQueryItem(name: "prompt", value: "consent"),
         ]
-        if let loginHint { c.queryItems?.append(URLQueryItem(name: "login_hint", value: loginHint)) }
-        return c.url!
+        if let loginHint { parameters.append(URLQueryItem(name: "login_hint", value: loginHint)) }
+        return pkce.authorizationURL(configuration.authorizationURL, clientID: configuration.clientID, parameters: parameters)
     }
-
     public func code(from callback: URL) throws -> String {
-        guard callback.scheme == redirectURL.scheme, callback.host == redirectURL.host,
-            callback.port == redirectURL.port, callback.path == redirectURL.path,
-            let c = URLComponents(url: callback, resolvingAgainstBaseURL: false)
-        else { throw DriveError.oauthState }
-        let q = c.queryItems ?? []
-        guard q.filter({ $0.name == "state" }).count == 1, q.first(where: { $0.name == "state" })?.value == state else { throw DriveError.oauthState }
-        if q.contains(where: { $0.name == "error" }) { throw DriveError.oauthCancelled }
-        guard q.filter({ $0.name == "code" }).count == 1, let code = q.first(where: { $0.name == "code" })?.value, !code.isEmpty else {
-            throw DriveError.invalidResponse
-        }
-        return code
+        do { return try pkce.code(from: callback) } catch { throw driveOAuthError(error) }
     }
 
     func exchange(_ callback: URL, http: DriveHTTP) async throws -> DriveTokenResponse {
@@ -151,84 +80,38 @@ public struct DriveOAuthTransaction: Sendable {
 /// Access tokens remain in memory. Refreshes are coalesced per account, including after a 401.
 public actor DriveTokenManager {
     private let configuration: DriveOAuthConfiguration
-    private let accountID: UUID
-    private let credentials: any DriveCredentialStore
     private let http: DriveHTTP
-    private var access: String?
-    private var expiry = Date.distantPast
-    private var refreshTask: Task<DriveTokenResponse, Error>?
-    private var generation = 0
-    private var disconnected = false
-    private var grantedScope: String?
-
+    private let session: CloudOAuthSession
     public init(
         configuration: DriveOAuthConfiguration, accountID: UUID, credentials: any DriveCredentialStore = CredentialStores.drive(),
         http: DriveHTTP = DriveHTTP()
     ) {
-        self.configuration = configuration; self.accountID = accountID; self.credentials = credentials; self.http = http
-    }
-
-    func accept(_ token: DriveTokenResponse) throws {
-        guard token.token_type.lowercased() == "bearer", !token.access_token.isEmpty, token.expires_in > 0 else { throw DriveError.invalidResponse }
-        if let refresh = token.refresh_token, !refresh.isEmpty {
-            try credentials.save(refresh, clientID: configuration.clientID, accountID: accountID)
+        self.configuration = configuration; self.http = http
+        session = CloudOAuthSession(clientID: configuration.clientID, accountID: accountID, credentials: credentials) { refresh in
+            var values = ["client_id": configuration.clientID, "refresh_token": refresh, "grant_type": "refresh_token"]
+            values["client_secret"] = configuration.clientSecret
+            return try await Self.request(values, configuration: configuration, http: http)
         }
-        if let scope = token.scope { grantedScope = scope }
-        access = token.access_token
-        expiry = Date().addingTimeInterval(token.expires_in)
     }
-
+    func accept(_ token: DriveTokenResponse) async throws {
+        do { try await session.accept(token) } catch { throw driveOAuthError(error) }
+    }
     public func accessToken(rejectedToken: String? = nil) async throws -> String {
-        guard !disconnected else { throw DriveError.reconnect }
-        if let access, access != rejectedToken, expiry.timeIntervalSinceNow > 60 { return access }
-        if refreshTask == nil {
-            guard let refresh = try credentials.read(clientID: configuration.clientID, accountID: accountID) else { throw DriveError.reconnect }
-            let configuration = self.configuration, http = self.http
-            refreshTask = Task {
-                var values = ["client_id": configuration.clientID, "refresh_token": refresh, "grant_type": "refresh_token"]
-                values["client_secret"] = configuration.clientSecret
-                return try await Self.request(values, configuration: configuration, http: http)
-            }
-        }
-        let epoch = generation
-        do {
-            let token = try await refreshTask!.value
-            guard !disconnected, generation == epoch else { throw DriveError.reconnect }
-            try accept(token)
-            refreshTask = nil
-            return token.access_token
-        } catch {
-            if generation == epoch { refreshTask = nil; access = nil }
-            throw error
-        }
+        do { return try await session.accessToken(rejectedToken: rejectedToken) } catch { throw driveOAuthError(error) }
     }
-
     public func requireWriteScope() async throws {
         _ = try await accessToken()
-        guard grantedScope?.split(separator: " ").contains("https://www.googleapis.com/auth/drive") == true else { throw DriveError.needsWriteAccess }
+        guard await session.grantedScope?.split(separator: " ").contains("https://www.googleapis.com/auth/drive") == true else {
+            throw DriveError.needsWriteAccess
+        }
     }
-
-    func session(_ id: UUID) throws -> String? {
-        try credentials.read(clientID: configuration.clientID + ".upload-session", accountID: id)
-    }
-
-    func saveSession(_ value: String, id: UUID) throws {
-        try credentials.save(value, clientID: configuration.clientID + ".upload-session", accountID: id)
-    }
-
-    func removeSession(_ id: UUID) throws {
-        try credentials.remove(clientID: configuration.clientID + ".upload-session", accountID: id)
-    }
+    func session(_ id: UUID) async throws -> String? { try await session.secret(id) }
+    func saveSession(_ value: String, id: UUID) async throws { try await session.saveSecret(value, id: id) }
+    func removeSession(_ id: UUID) async throws { try await session.removeSecret(id) }
 
     /// Always forget local credentials, even if Google's revocation endpoint is unavailable.
     public func revoke() async throws {
-        generation += 1; disconnected = true
-        refreshTask?.cancel(); refreshTask = nil
-        let refresh = try credentials.read(clientID: configuration.clientID, accountID: accountID)
-        let token = refresh ?? access
-        access = nil; expiry = .distantPast
-        try credentials.remove(clientID: configuration.clientID, accountID: accountID)
-        guard let token else { return }
+        guard let token = try await session.disconnect() else { return }
         var request = URLRequest(url: configuration.revokeURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -246,5 +129,24 @@ public actor DriveTokenManager {
         try DriveHTTP.check(response.statusCode)
         guard let token = try? JSONDecoder().decode(DriveTokenResponse.self, from: data) else { throw DriveError.invalidResponse }
         return token
+    }
+}
+
+func driveOAuthError(_ error: Error) -> Error {
+    if let error = error as? CloudCredentialError {
+        switch error {
+        case .keychain(let status): return DriveError.keychain(status);
+        case .invalidResponse: return DriveError.invalidResponse
+        }
+    }
+    if error is CloudOAuthSessionError { return DriveError.reconnect }
+    guard let error = error as? CloudOAuthError else { return error }
+    switch error {
+    case .configuration: return DriveError.configuration
+    case .state: return DriveError.oauthState
+    case .cancelled: return DriveError.oauthCancelled
+    case .invalidResponse: return DriveError.invalidResponse
+    case .timeout: return DriveError.oauthTimeout
+    case .random(let status): return DriveError.keychain(status)
     }
 }

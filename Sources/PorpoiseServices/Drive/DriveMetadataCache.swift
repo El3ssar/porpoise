@@ -2,31 +2,16 @@ import CryptoKit
 import Foundation
 import PorpoiseCore
 
-/// Versioned, account-private metadata only. A damaged snapshot is discarded and rebuilt online.
-public final class DriveMetadataCache: @unchecked Sendable {
-    public struct Snapshot: Codable, Sendable {
-        public var files: [DriveFile]
-        public var savedAt: Date
-    }
-    private struct State: Codable {
-        var schema = 1
-        var files: [String: DriveFile] = [:]
-        var listings: [String: Snapshot] = [:]
-        var cursors: [String: String] = [:]
-    }
-    private let lock = NSLock()
-    private var state: State
-    public let directory: URL
-    private var path: URL { directory.appendingPathComponent("metadata.json") }
+extension DriveFile: CloudMetadataItem {}
 
+/// Drive's listing identity/membership policy over the shared, wire-compatible metadata cache.
+public final class DriveMetadataCache: @unchecked Sendable {
+    public typealias Snapshot = CloudMetadataCache<DriveFile>.Snapshot
+    public let directory: URL
+    private let storage: CloudMetadataCache<DriveFile>
     public init(accountID: UUID, directory: URL? = nil) {
         self.directory = directory ?? Self.root.appendingPathComponent(accountID.uuidString)
-        let path = self.directory.appendingPathComponent("metadata.json")
-        if let data = try? Data(contentsOf: path), let decoded = try? JSONDecoder().decode(State.self, from: data), decoded.schema == 1 {
-            state = decoded
-        } else {
-            state = State()
-        }
+        storage = CloudMetadataCache(directory: self.directory)
     }
     static var root: URL {
         if Settings.isTesting {
@@ -45,71 +30,23 @@ public final class DriveMetadataCache: @unchecked Sendable {
         case .folder(let id, _): return "folder:" + id
         }
     }
-    public func snapshot(_ location: DriveLocation) -> Snapshot? { lock.withLock { state.listings[key(location)] } }
-    public func file(_ id: String) -> DriveFile? { lock.withLock { state.files[id] } }
-    func remember(_ files: [DriveFile]) {
-        lock.withLock {
-            for file in files { state.files[file.id] = file }
-            persist()
-        }
-    }
-    func rememberRoot(_ file: DriveFile) {
-        lock.withLock {
-            state.files["root"] = file; persist()
-        }
-    }
-    func store(_ files: [DriveFile], at location: DriveLocation) {
-        lock.withLock {
-            state.listings[key(location)] = Snapshot(files: files, savedAt: Date())
-            for file in files { state.files[file.id] = file }
-            persist()
-        }
-    }
-    func cursor(_ scope: String) -> String? { lock.withLock { state.cursors[scope] } }
-    func setCursor(_ token: String?, scope: String) {
-        lock.withLock {
-            state.cursors[scope] = token; persist()
-        }
-    }
-    var sharedDriveIDs: [String] { lock.withLock { Array(Set(state.files.values.compactMap(\.driveId))).sorted() } }
-    func invalidate(_ location: DriveLocation? = nil) {
-        lock.withLock {
-            if let location { state.listings[key(location)] = nil } else { state.listings.removeAll() }
-            persist()
-        }
-    }
-    /// Patch cached folders, including old parents of moved items, while retaining browsable offline snapshots.
+    public func snapshot(_ location: DriveLocation) -> Snapshot? { storage.snapshot(key(location)) }
+    public func file(_ id: String) -> DriveFile? { storage.file(id) }
+    func remember(_ files: [DriveFile]) { storage.remember(files) }
+    func rememberRoot(_ file: DriveFile) { storage.alias("root", to: file) }
+    func store(_ files: [DriveFile], at location: DriveLocation) { storage.store(files, key: key(location)) }
+    func cursor(_ scope: String) -> String? { storage.cursor(scope) }
+    func setCursor(_ token: String?, scope: String) { storage.setCursor(token, scope: scope) }
+    var sharedDriveIDs: [String] { Array(Set(storage.files.compactMap(\.driveId))).sorted() }
+    func invalidate(_ location: DriveLocation? = nil) { storage.invalidate(location.map(key)) }
     func apply(_ files: [DriveFile], removed: [String]) {
-        lock.withLock {
-            for id in removed { state.files[id] = nil }
-            for file in files where !removed.contains(file.id) { state.files[file.id] = file }
-            for key in state.listings.keys {
-                guard var snapshot = state.listings[key] else { continue }
-                snapshot.files.removeAll { removed.contains($0.id) }
-                for file in files where !removed.contains(file.id) {
-                    let parent = key == "root" ? (state.files["root"]?.id ?? "root") : String(key.dropFirst("folder:".count))
-                    let inFolder = (file.parents ?? []).contains(parent) || (key == "root" && (file.parents ?? []).contains("root"))
-                    if let index = snapshot.files.firstIndex(where: { $0.id == file.id }) {
-                        if key == "shared" || key == "drives" || inFolder { snapshot.files[index] = file } else { snapshot.files.remove(at: index) }
-                    } else if inFolder {
-                        snapshot.files.append(file)
-                    }
-                }
-                state.listings[key] = snapshot
-            }
-            persist()
-        }
+        let root = storage.file("root")?.id ?? "root"
+        storage.apply(
+            files, removed: removed,
+            belongs: { key, file in
+                let parent = key == "root" ? root : String(key.dropFirst("folder:".count))
+                return (file.parents ?? []).contains(parent) || (key == "root" && (file.parents ?? []).contains("root"))
+            }, retainExisting: { $0 == "shared" || $0 == "drives" })
     }
-    public func clear() {
-        lock.withLock {
-            state = State(); try? FileManager.default.removeItem(at: path)
-        }
-    }
-    private func persist() {
-        do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            try JSONEncoder().encode(state).write(to: path, options: .atomic)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
-        } catch { /* Metadata is disposable; failed writes never discard an in-memory listing. */  }
-    }
+    public func clear() { storage.clear() }
 }

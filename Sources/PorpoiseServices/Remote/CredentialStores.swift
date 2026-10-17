@@ -26,6 +26,9 @@ public enum CredentialStores {
     private static let memory = MemoryCredentials()
     public static func drive() -> any DriveCredentialStore { drive(isolated: isIsolated) }
     static func drive(isolated: Bool) -> any DriveCredentialStore { isolated ? memory : DriveKeychainCredentials() }
+    public static func cloud(providerID: String) -> any CloudCredentialStore {
+        isIsolated ? ScopedCloudCredentials(base: memory, prefix: providerID + ".") : CloudKeychainCredentials(providerID: providerID)
+    }
     static func passwords() -> any PasswordCredentialStore { isIsolated ? memory : Keychain() }
 }
 
@@ -61,4 +64,12 @@ public final class MemoryCredentials: DriveCredentialStore, PasswordCredentialSt
     public func read(clientID: String, accountID: UUID) throws -> String? { read(.drive(clientID, accountID)) }
     public func save(_ token: String, clientID: String, accountID: UUID) throws { set(token, for: .drive(clientID, accountID)) }
     public func remove(clientID: String, accountID: UUID) throws { set(nil, for: .drive(clientID, accountID)) }
+}
+
+private struct ScopedCloudCredentials: CloudCredentialStore {
+    let base: any CloudCredentialStore
+    let prefix: String
+    func read(clientID: String, accountID: UUID) throws -> String? { try base.read(clientID: prefix + clientID, accountID: accountID) }
+    func save(_ token: String, clientID: String, accountID: UUID) throws { try base.save(token, clientID: prefix + clientID, accountID: accountID) }
+    func remove(clientID: String, accountID: UUID) throws { try base.remove(clientID: prefix + clientID, accountID: accountID) }
 }
