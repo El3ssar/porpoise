@@ -183,7 +183,7 @@ final class RemoteTransferJob {
         var existing = try item(target)
         var replace = false
         while let old = existing {
-            let bothFolders = incoming.isDirectory && !incoming.isSymlink && old.isDirectory && !old.isSymlink
+            let bothFolders = Self.isFolderPair(incoming, old)
             let names = Set(try children(folder).map(\.name))
             let suggestion = FileFormat.suggestedName(for: source.lastPathComponent, existing: names)
             let choice: ConflictResolution

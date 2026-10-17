@@ -207,6 +207,23 @@ import Testing
         #expect(controller.undoTitle == "Undo: Move")
     }
 
+    // B7: a copy Undo put in the Trash can be restored to where it was.
+    @MainActor @Test func aCopyUndoneCanBeRestoredToItsFormerLocation() async throws {
+        let original = try file("src/photo.jpg", "pixels")
+        let dst = disk.volume.appendingPathComponent("dst")
+        try FileManager.default.createDirectory(at: dst, withIntermediateDirectories: true)
+        _ = await controller.perform(.copy, [original], to: dst)
+        let copy = dst.appendingPathComponent("photo.jpg")
+        controller.undo(window: nil)
+        guard case .trashed(let pairs)? = controller.redoStack.last, let inTrash = pairs.first?.inTrash else {
+            Issue.record("Undo didn't put the copy in the Trash"); return
+        }
+        #expect(isInVolumeTrash(inTrash))
+        #expect(controller.originalLocation(of: inTrash)?.standardizedFileURL == copy.standardizedFileURL)
+        #expect(controller.restore([inTrash], window: nil).isEmpty)
+        #expect(try String(contentsOf: copy, encoding: .utf8) == "pixels")
+    }
+
     @MainActor @Test func undoingANewFolderTrashesIt() async throws {
         let folder = try FileActions.makeFolder(named: "New Folder", in: disk.volume)
         controller.pushUndo(.created([folder]))

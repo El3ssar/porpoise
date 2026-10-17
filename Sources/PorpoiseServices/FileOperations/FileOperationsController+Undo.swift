@@ -56,7 +56,11 @@ extension FileOperationsController {
     private func revert(_ r: UndoRecord) -> Result<UndoRecord?, Error> {
         do {
             let inverse = try FileActions.undo(r)
-            if let inverse { Self.notifyChanged(Self.urls(of: inverse)) }
+            if let inverse {
+                // Items Undo put in the Trash can go back where they were (Restore to Former Location).
+                recordTrash(inverse)
+                Self.notifyChanged(Self.urls(of: inverse))
+            }
             return .success(inverse)
         } catch {
             return .failure(error)
