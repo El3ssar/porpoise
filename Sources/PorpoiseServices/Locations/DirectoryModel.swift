@@ -926,7 +926,11 @@ public final class DirectoryModel {
                 rows.indices.map { (identity(ofRow: $0), $0) },
                 uniquingKeysWith: { first, _ in first })
         }
-        return rowIndexByPath?[FilePath.key(url)]
+        if let index = rowIndexByPath?[FilePath.key(url)] { return index }
+        // Drive permits redundant drive/resource context for the same opaque item. The provider owns that
+        // equivalence; Dropbox's namespaces (and remote authorities) must never collapse by path alone.
+        guard !url.isFileURL, let provider = RemoteFS.provider(for: location) as? CloudFileProvider else { return nil }
+        return rows.firstIndex { provider.sameItem(url, $0.item.url) }
     }
 
     /// In row order. Without copying every row's item first: the status bar asks on every selection change.
