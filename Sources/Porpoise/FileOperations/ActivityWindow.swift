@@ -389,7 +389,7 @@ final class ActivityRowView: NSView {
     private let status = NSTextField(labelWithString: "")
     private let statusBadge = NSImageView()
     private let icon = NSImageView()
-    private let bar = ActivityProgressView()
+    private let bar = ThinProgressView()
     private let buttons = NSStackView()
     private weak var activity: Activity?
     private weak var parentWindow: NSWindow?
@@ -650,58 +650,6 @@ private final class ActivityFooterView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         Theme.hairline.setFill()
         CGRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
-    }
-}
-
-final class ActivityProgressView: NSView {
-    var fraction: Double = 0 { didSet { needsLayout = true } }
-    var isIndeterminate = false {
-        didSet {
-            if isIndeterminate != oldValue { fill.layer?.removeAnimation(forKey: "indeterminate"); needsLayout = true }
-        }
-    }
-    private let fill = NSView()
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        layer?.cornerRadius = 2
-        layer?.masksToBounds = true
-        fill.wantsLayer = true
-        fill.layer?.cornerRadius = 2
-        addSubview(fill)
-    }
-    required init?(coder: NSCoder) { fatalError() }
-    override func layout() {
-        super.layout()
-        layer?.backgroundColor = Theme.windowText.withAlphaComponent(0.14).cgColor
-        fill.layer?.backgroundColor = Theme.activeText.cgColor
-        if isIndeterminate {
-            let width = bounds.width * 0.3
-            fill.frame = CGRect(x: (bounds.width - width) / 2, y: 0, width: width, height: 4)
-            if Animator.reducesMotion() {
-                fill.layer?.removeAnimation(forKey: "indeterminate")
-            } else if fill.layer?.animation(forKey: "indeterminate") == nil {
-                let animation = CABasicAnimation(keyPath: "position.x")
-                animation.fromValue = -width / 2
-                animation.toValue = bounds.width + width / 2
-                animation.duration = 1.2
-                animation.repeatCount = .infinity
-                animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                fill.layer?.add(animation, forKey: "indeterminate")
-            }
-            return
-        }
-        fill.layer?.removeAnimation(forKey: "indeterminate")
-        let target = CGRect(x: 0, y: 0, width: bounds.width * max(0, min(1, fraction)), height: 4)
-        if Animator.reducesMotion() || fill.frame == .zero {
-            fill.frame = target
-        } else {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.16
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                fill.animator().frame = target
-            }
-        }
     }
 }
 

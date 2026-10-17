@@ -50,8 +50,7 @@ final class FileOperationsDialogs: FileOperationsUI {
         a.alertStyle = .warning
         a.messageText = errs.count == 1 ? errs[0] : "\(errs.count) items could not be processed."
         if errs.count > 1 { a.informativeText = errs.prefix(8).joined(separator: "\n") }
-        // A job can outlive its window; its errors then show on their own instead of on a closed window.
-        if let w = window as? NSWindow, w.isVisible { a.beginSheetModal(for: w) } else { a.runModal() }
+        a.runSheet(for: window as? NSWindow)  // a job can outlive its window
     }
 
     func resolveConflict(_ info: ConflictInfo, kind: FileOperationKind) -> ConflictAnswer {
@@ -98,7 +97,8 @@ final class FileOperationsDialogs: FileOperationsUI {
         alert.addButton(withTitle: "Try Again"); alert.addButton(withTitle: "Stop")
         let key = ObjectIdentifier(job)
         diskFullAlerts[key] = alert
-        let owner = window as? NSWindow
+        // A sheet (it's dismissed when the job ends), on the job's window while that is on screen, else on Activity.
+        let owner = (window as? NSWindow).flatMap { $0.isVisible ? $0 : nil }
         if owner == nil { ActivityWindowController.shared.show() }
         guard let owner = owner ?? ActivityWindowController.shared.window else { completion(false); return }
         alert.beginSheetModal(for: owner) { [weak self] response in

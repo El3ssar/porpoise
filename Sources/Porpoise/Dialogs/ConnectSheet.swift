@@ -523,13 +523,13 @@ final class AccountCard: NSView {
     }
 }
 
-/// "4.1 GB of 15 GB used" with a thin bar (blue → amber → red as it fills).
+/// "4.1 GB of 15 GB used" with a capacity bar.
 enum QuotaBar {
     static func make(used: Int64?, total: Int64?) -> NSView? {
         guard let used else { return nil }
         let label = ConnectSheet.secondary(text(used: used, total: total))
         guard let total, total > 0 else { return label }
-        let bar = Bar(fraction: Double(used) / Double(total))
+        let bar = CapacityBarView(fraction: StorageCapacity(used: used, total: total).fraction)
         bar.widthAnchor.constraint(equalToConstant: 200).isActive = true
         bar.heightAnchor.constraint(equalToConstant: 4).isActive = true
         let v = NSStackView(views: [bar, label])
@@ -537,25 +537,6 @@ enum QuotaBar {
         v.alignment = .leading
         v.spacing = 3
         return v
-    }
-
-    /// The sidebar's capacity bar look: accent, amber past 80 %, red past 95 %.
-    final class Bar: NSView {
-        let fraction: Double
-        init(fraction: Double) {
-            self.fraction = min(1, max(0, fraction))
-            super.init(frame: .zero)
-        }
-        required init?(coder: NSCoder) { fatalError() }
-        override func draw(_ dirtyRect: NSRect) {
-            let r = bounds
-            Theme.windowText.withAlphaComponent(0.14).setFill()
-            NSBezierPath(roundedRect: r, xRadius: r.height / 2, yRadius: r.height / 2).fill()
-            let color: NSColor = fraction > 0.95 ? Theme.negativeText : fraction > 0.8 ? Theme.transferChanged : Theme.selectionAlternate
-            color.setFill()
-            let fill = CGRect(x: r.minX, y: r.minY, width: max(r.height, r.width * fraction), height: r.height)
-            NSBezierPath(roundedRect: fill, xRadius: r.height / 2, yRadius: r.height / 2).fill()
-        }
     }
 
     static func text(used: Int64, total: Int64?) -> String {

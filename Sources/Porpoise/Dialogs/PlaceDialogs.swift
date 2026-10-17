@@ -24,7 +24,7 @@ enum PlaceEditDialog {
             let label = f1.stringValue.trimmingCharacters(in: .whitespaces)
             done(label.isEmpty ? defaultLabel(for: u) : label, u)
         }
-        if let w = window { a.beginSheetModal(for: w, completionHandler: handler) } else { handler(a.runModal()) }
+        a.runSheet(for: window, handler)
     }
 
     /// The typed location: unchanged text (or none) keeps the old URL, so virtual places such as "recent:/files" or

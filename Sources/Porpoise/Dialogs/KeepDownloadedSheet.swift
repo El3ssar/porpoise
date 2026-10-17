@@ -7,15 +7,12 @@ import PorpoiseServices
 enum KeepDownloadedSheet {
     /// Download for any selection (menus, the cloud badge).
     static func download(
-        _ items: [FileItem], window: NSWindow?, status: @escaping (String?) -> Void = { _ in },
-        failed: @escaping (String) -> Void = { message in
-            let a = NSAlert()
-            a.messageText = message
-            a.runModal()
-        }
+        _ items: [FileItem], window: NSWindow?, status: @escaping (String?) -> Void = { _ in }, failed: ((String) -> Void)? = nil
     ) {
         let remote = Set(CloudCommands.downloadNow(items.map(\.url)))
         guard !remote.isEmpty else { return }
+        // Unless the caller shows it otherwise, a failure is said on the window the download was asked from.
+        let failed = failed ?? { [weak window] in Prompt.message($0, on: window) }
         run(items.filter { remote.contains($0.url) }, window: window, status: status, failed: failed)
     }
 
@@ -54,7 +51,7 @@ enum KeepDownloadedSheet {
                     if plan.fits, r == .alertFirstButtonReturn { service.keep(urls) }
                     if !plan.fits, r == .alertSecondButtonReturn { (NSApp.delegate as? AppDelegate)?.showSettings(page: "Accounts") }
                 }
-                if let window { a.beginSheetModal(for: window, completionHandler: answer) } else { answer(a.runModal()) }
+                a.runSheet(for: window, answer)
             }
         }
     }

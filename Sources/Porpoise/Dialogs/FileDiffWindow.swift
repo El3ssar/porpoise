@@ -35,7 +35,8 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
     private let dimensions = NSTextField(labelWithString: ""), pixelsChanged = NSTextField(labelWithString: "")
     private let blendLeft = NSTextField(labelWithString: ""), blendRight = NSTextField(labelWithString: "")
     private let facts = NSTextField(labelWithString: "Reading files…")
-    private let loading = FileDiffProgressView()
+    private let loading = ThinProgressView(
+        thickness: 2, label: "File comparison progress", track: { Theme.separator }, fill: { Theme.accent })
     private let progressText = NSTextField(labelWithString: "Reading files…")
     private let cancelComparison = ClosureButton(title: "Cancel") { _ in }
     private let cancelCapsule = GlassGroup(cornerRadius: 12)
@@ -153,7 +154,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         identicalDetail.font = .systemFont(ofSize: 12); identicalDetail.textColor = Theme.viewTextInactive; identicalDetail.alignment = .center
         message.font = .systemFont(ofSize: 15, weight: .semibold); message.textColor = Theme.viewText; message.alignment = .center;
         message.maximumNumberOfLines = 2
-        loading.isIndeterminate = true; loading.startAnimation(nil)
+        loading.isIndeterminate = true
         progressText.font = .systemFont(ofSize: 12); progressText.textColor = Theme.viewTextInactive; progressText.alignment = .center
         cancelCapsule.content.addSubview(cancelComparison); cancelComparison.isBordered = false
         cancelComparison.font = .systemFont(ofSize: 13); cancelComparison.keyEquivalent = "\u{1b}"; cancelComparison.keyEquivalentModifierMask = []
@@ -289,10 +290,8 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
                     else { return }
                     DispatchQueue.main.async { [weak self] in
                         guard let self, !token.isCancelled, self.busy else { return }
-                        self.loading.stopAnimation(nil); self.loading.isIndeterminate = false
-                        self.loading.minValue = 0; self.loading.maxValue = 100
-                        self.loading.doubleValue = Double(bytes) / Double(max(1, total)) * 100
-                        self.loading.needsDisplay = true
+                        self.loading.isIndeterminate = false
+                        self.loading.fraction = Double(bytes) / Double(max(1, total))
                         self.progressText.stringValue = "Reading \(name)… \(FileFormat.size(Int64(bytes))) of \(FileFormat.size(Int64(total)))"
                         self.facts.stringValue = self.progressText.stringValue
                     }
@@ -324,14 +323,14 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
     }
     private func fail(_ error: Error) {
         busy = false; facts.stringValue = error.localizedDescription; message.stringValue = "Couldn’t compare these files"; message.isHidden = false;
-        loading.stopAnimation(nil); loading.isHidden = true; progressText.isHidden = true; cancelCapsule.isHidden = true
+        loading.isHidden = true; progressText.isHidden = true; cancelCapsule.isHidden = true
     }
     private func rediff() {
         guard ready else { return }
         generation += 1; let version = generation
         guard let a = leftText, let b = rightText else { busy = false; updateVisibility(); return }
         busy = true; facts.stringValue = "Comparing…"; progressText.stringValue = "Comparing…";
-        loading.isIndeterminate = true; loading.startAnimation(nil); updateVisibility()
+        loading.isIndeterminate = true; updateVisibility()
         let whitespace = ignore.state == .on, inline = textMode.selectedSegment == 1
         Self.queue.async { [weak self] in
             let difference = TextDifference(left: a, right: b, ignoreWhitespace: whitespace)
@@ -355,7 +354,7 @@ final class FileDiffWindow: NSWindowController, NSWindowDelegate, NSMenuDelegate
         let count = textCanvas.presentation?.difference.changes.count ?? 0
         openWith.isEnabled = ready && !busy
         previous.isEnabled = mode == 0 && count > 0 && !busy; next.isEnabled = previous.isEnabled
-        loading.isHidden = !busy; progressText.isHidden = !busy; cancelCapsule.isHidden = !busy; if !busy { loading.stopAnimation(nil) }
+        loading.isHidden = !busy; progressText.isHidden = !busy; cancelCapsule.isHidden = !busy
         let identical = mode == 0 && !busy && ready && textCanvas.presentation != nil && count == 0
         message.isHidden = !identical; identicalIcon.isHidden = !identical; identicalDetail.isHidden = !identical
         message.stringValue = "The files are identical"

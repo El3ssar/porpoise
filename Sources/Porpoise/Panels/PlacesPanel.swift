@@ -41,7 +41,6 @@ final class PlacesPanel: NSView {
 
     enum RowKind { case header(PlaceSection), entry(PlaceEntry) }
     struct Row { let kind: RowKind; let y: CGFloat; let height: CGFloat }
-    struct VolumeCapacity { let free: Int64; let total: Int64 }
 
     var rows: [Row] = []
 
@@ -136,7 +135,7 @@ final class PlacesPanel: NSView {
     var tracking: NSTrackingArea?
 
     /// Volume capacities, refreshed off the main thread (they can be slow, or hang on network volumes).
-    var capacities: [URL: VolumeCapacity] = [:]
+    var capacities: [URL: StorageCapacity] = [:]
     var capacityQueryRunning = false
     var capacityQueryPending = false
     static let capacityQueue = DispatchQueue(label: "porpoise.places.capacity", qos: .utility)

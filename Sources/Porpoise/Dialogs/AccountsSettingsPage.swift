@@ -306,20 +306,13 @@ enum AccountActions {
     static func signInAgain(_ id: String, window: NSWindow?) {
         _ = CloudAccounts.shared.signInAgain(id, openBrowser: ConnectSheet.openBrowser) { result in
             if case .success = result { NSApp.activate() }
-            if case .failure(.failed(let message)) = result {
-                let a = NSAlert()
-                a.messageText = "Couldn’t sign in again"
-                a.informativeText = message
-                if let window { a.beginSheetModal(for: window) } else { a.runModal() }
-            }
+            if case .failure(.failed(let message)) = result { Prompt.message("Couldn’t sign in again", detail: message, on: window) }
         }
     }
 
     /// Asks once, naming the places that point into the account (they go too), then signs out.
     static func confirmRemove(_ account: CloudAccount, window: NSWindow?) {
         let places = CloudAccounts.shared.places(of: account.id)
-        let a = NSAlert()
-        a.messageText = "Remove \(account.email)?"
         var info =
             "Porpoise signs out of this \(account.provider.title) account and forgets its cache. Your files in \(account.provider.title) stay as they are."
         let usage = CloudOfflineHub.service?.usage(account: account.id)
@@ -330,16 +323,11 @@ enum AccountActions {
             let names = places.prefix(5).map { "“\($0.title)”" }.joined(separator: ", ")
             info += "\n\nThese places point into it and are removed too: \(names)\(places.count > 5 ? "…" : "")."
         }
-        a.informativeText = info
-        a.addButton(withTitle: "Remove")
-        a.addButton(withTitle: "Cancel")
-        a.buttons.first?.hasDestructiveAction = true
-        let done: (NSApplication.ModalResponse) -> Void = { r in
-            guard r == .alertFirstButtonReturn else { return }
+        Prompt.confirm("Remove \(account.email)?", detail: info, confirm: "Remove", destructive: true, on: window) { confirmed in
+            guard confirmed else { return }
             for p in places { PlacesModel.shared.remove(p) }
             CloudAccounts.shared.remove(account.id) { _ in }
         }
-        if let window { a.beginSheetModal(for: window, completionHandler: done) } else { done(a.runModal()) }
     }
 
     /// The account's own web page (Drive in the browser, signed in as this account).
@@ -361,19 +349,10 @@ enum AccountActions {
     }
 
     static func rename(_ account: CloudAccount, window: NSWindow?) {
-        let a = NSAlert()
-        a.messageText = "Rename Account"
-        a.informativeText = "Shown after “\(account.provider.title)” in the sidebar when you have more than one account."
-        let field = NSTextField(string: CloudAccounts.shared.label(account.id))
-        field.frame = CGRect(x: 0, y: 0, width: 260, height: 24)
-        a.accessoryView = field
-        a.addButton(withTitle: "Rename")
-        a.addButton(withTitle: "Cancel")
-        a.window.initialFirstResponder = field
-        let done: (NSApplication.ModalResponse) -> Void = { r in
-            if r == .alertFirstButtonReturn { CloudAccounts.shared.setLabel(account.id, field.stringValue) }
-        }
-        if let window { a.beginSheetModal(for: window, completionHandler: done) } else { done(a.runModal()) }
+        Prompt.text(
+            "Rename Account", detail: "Shown after “\(account.provider.title)” in the sidebar when you have more than one account.",
+            value: CloudAccounts.shared.label(account.id), confirm: "Rename", on: window
+        ) { CloudAccounts.shared.setLabel(account.id, $0) }
     }
 }
 
