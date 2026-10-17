@@ -12,6 +12,9 @@ public final class DriveCloudBackend: CloudBackend {
     /// Quota and shared drives per account, refreshed at launch, on reload and while active.
     private var details: [UUID: (used: Int64?, total: Int64?, drives: Int)] = [:]
     private var fetching: Set<UUID> = []
+    /// Pasted folders' parents being read, and parents this account can't read (above a folder shared with it).
+    private var ancestorFetches: Set<String> = []
+    private var unreachableParents: Set<String> = []
     /// Where account pictures are kept between launches.
     private let avatarFolder: URL
 
@@ -136,6 +139,48 @@ public final class DriveCloudBackend: CloudBackend {
         case .sharedDrives: collection = .sharedDrives
         }
         return DriveLocation(accountID: uuid(id) ?? UUID(), collection: collection).url
+    }
+
+    /// Locations carry their folders (my-drive/<id>/<id>/), except a pasted folder link (folder/<id>): its parents
+    /// are read from Drive, and the chain shows once they are (`remoteChanged`). Until then it's empty, never guessed.
+    public func ancestors(of url: URL) -> [URL] {
+        guard url.pathComponents.dropFirst().first == "folder", let location = DriveLocation(url: url),
+            case .folder(let id, _) = location.collection
+        else { return CloudAncestry.fromPath(url) }
+        return MainActor.assumeIsolated {
+            guard let client = store.client(for: location.accountID) else { return [] }
+            switch DriveAncestry.resolve(id, account: location.accountID, file: client.cachedFile(id:), unreachable: unreachableParents) {
+            case .found(let urls): return urls
+            case .missing:
+                fetchAncestors(of: id, client: client, account: location.accountID)
+                return []
+            }
+        }
+    }
+
+    /// Reads the files the chain still needs, one after another, then tells the screens.
+    @MainActor private func fetchAncestors(of id: String, client: DriveClient, account: UUID) {
+        let key = Self.key(account) + "/" + id
+        guard ancestorFetches.insert(key).inserted else { return }
+        Task { @MainActor [weak self] in
+            defer { self?.ancestorFetches.remove(key) }
+            for _ in 0..<64 {
+                guard let self else { return }
+                guard
+                    case .missing(let next) = DriveAncestry.resolve(
+                        id, account: account, file: client.cachedFile(id:), unreachable: self.unreachableParents)
+                else { break }
+                do { _ = try await client.file(next) } catch {
+                    // A parent this account can't read: the folder below it was shared with it. The item itself, or
+                    // being offline: try again the next time the location is drawn.
+                    guard next != id, next != "root", (error as? DriveError) == .notFound || (error as? DriveError) == .permissionDenied else {
+                        return
+                    }
+                    self.unreachableParents.insert(next)
+                }
+            }
+            NotificationCenter.default.post(name: CloudAccounts.remoteChanged, object: Self.key(account))
+        }
     }
 
     public func accountID(for url: URL) -> String? { DriveLocation(url: url).map { Self.key($0.accountID) } }
