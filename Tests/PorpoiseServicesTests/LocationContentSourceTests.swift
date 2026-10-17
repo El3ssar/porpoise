@@ -54,6 +54,18 @@ import Testing
         let refused = try await listing(source, root.appendingPathComponent("locked"))
         #expect(refused.error == .provider("Server said no") && refused.items.isEmpty)
     }
+
+    @Test func anUnreadableSmartFolderSaysSo() async throws {
+        let smart = URL(string: "smart:/nonexistent-\(UUID().uuidString).savedSearch")!
+        #expect(LocationContentSources.source(for: smart) is SpotlightListSource)
+        #expect(LocationContentSources.source(for: URL(string: "tags:/fixture")!) is SpotlightListSource)
+        let model = DirectoryModel(location: smart, prefetchFolders: false)
+        var loaded = 0
+        model.onLoaded = { loaded += 1 }
+        model.reload()
+        #expect(model.loadError == "This Smart Folder's search could not be read.")
+        #expect(!model.isLoading && model.items.isEmpty && loaded == 1)
+    }
 }
 
 /// A server whose root holds "sub" (holding "inner") and whose "locked" folder refuses to be listed.

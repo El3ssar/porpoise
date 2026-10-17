@@ -82,6 +82,10 @@ final class LocationLoad {
 enum LocationContentSources {
     /// The source that lists `url`.
     static func source(for url: URL) -> LocationContentSource {
+        switch LocationKind.of(url) {
+        case .tag, .smartFolder: return SpotlightListSource(location: url)
+        default: break
+        }
         if let provider = RemoteFS.provider(for: url) {
             if let cloud = provider as? CloudFileProvider { return CloudSource(location: url, provider: cloud) }
             return ProviderSource(location: url, provider: provider)

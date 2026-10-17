@@ -338,7 +338,6 @@ public final class DirectoryModel {
     }
 
     private var recentQuery: RecentFilesQuery?
-    private var tagQuery: MetadataListQuery?
 
     // MARK: Per-item metadata (read lazily for drawn items, cleared on reload)
 
@@ -461,30 +460,7 @@ public final class DirectoryModel {
         // Every branch starts clean: an error or a query of the previous location must not leak into this one.
         loadError = nil
         blockedByPrivacy = false
-        tagQuery = nil
         recentQuery = nil
-        if kind == .tag || kind == .smartFolder {
-            isLoading = true
-            let tag = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
-            let finish: ([FileItem]) -> Void = { [weak self] list in
-                guard let self, token == self.loadToken else { return }
-                self.items = list
-                self.isLoading = false
-                self.rebuild()
-                self.onLoaded?()
-            }
-            if kind == .smartFolder {
-                tagQuery = MetadataListQuery.smartFolder(URL(fileURLWithPath: url.path), done: finish)
-                if tagQuery == nil {
-                    // Set before finishing, so onLoaded shows it.
-                    loadError = "This Smart Folder's search could not be read."
-                    finish([])
-                }
-            } else {
-                tagQuery = MetadataListQuery.tagged(tag, done: finish)
-            }
-            return
-        }
         if kind == .network {
             NetworkBrowser.shared.start()
             items = NetworkBrowser.shared.items
@@ -590,7 +566,8 @@ public final class DirectoryModel {
         if let vanished = listing.vanished {
             locationVanished = vanished && lastLoaded?.standardizedFileURL == url.standardizedFileURL
         }
-        if listing.error == nil { lastLoaded = url }
+        // Only where a vanished folder can be told apart (a folder on this Mac) is the last folder that listed kept.
+        if listing.error == nil, listing.vanished != nil { lastLoaded = url }
         let alive = Set(allLoadedURLs())
         if traits.prunesSelection, keepSelection { selection = selection.intersection(alive) }
         if traits.clearsCurrentItem, let c = currentURL, !alive.contains(c) { currentURL = nil }
