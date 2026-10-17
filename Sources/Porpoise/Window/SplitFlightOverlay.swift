@@ -27,26 +27,15 @@ final class SplitFlightOverlay: NSView {
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    /// Where a copy is drawn at `progress` `p`: position and size both go from its original to its cell.
-    static func frame(from: CGRect, to: CGRect, progress p: CGFloat) -> CGRect {
-        CGRect(
-            x: from.minX + (to.minX - from.minX) * p, y: from.minY + (to.minY - from.minY) * p,
-            width: from.width + (to.width - from.width) * p, height: from.height + (to.height - from.height) * p)
-    }
-
-    /// How much of the landing picture shows at `p`: the leaving one holds through the start, the landing one has
-    /// taken over well before the end (both are drawn at the copy's size, so neither looks stretched for long).
-    static func landingShare(_ p: CGFloat) -> CGFloat {
-        let x = min(1, max(0, (p - 0.15) / 0.6))
-        return x * x * (3 - 2 * x)
-    }
-
     override func draw(_ dirty: NSRect) {
         let p = progress
-        let share = Self.landingShare(p)
+        // How much of the landing picture shows: the leaving one holds through the start, the landing one has taken
+        // over well before the end (both are drawn at the copy's size, so neither looks stretched for long).
+        let share = Motion.smoothstep(0.15, 0.75, p)
         for (n, f) in flights.enumerated() {
             guard let from = source(f.key), let to = target(f.key) else { continue }
-            let r = Self.frame(from: from, to: to, progress: p)
+            // Position and size both go from the original to its cell.
+            let r = Motion.lerp(from, to, p)
             if n == 0 { drawnSizes.append(r.size) }
             if f.landing == nil || share < 1 {
                 NSImage(cgImage: f.image, size: from.size).draw(

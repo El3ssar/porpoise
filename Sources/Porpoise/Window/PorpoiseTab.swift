@@ -53,7 +53,6 @@ final class PorpoiseTab: NSView {
     private(set) var lastFlight: FlightRecord? { didSet { flightsLanded += 1 } }
     /// How many flights have landed (a test waits for the next one).
     private(set) var flightsLanded = 0
-    private static let flightDuration: TimeInterval = 0.42
     /// The right list's width once the split has opened: which of its items fly in (in Compact, items flow in
     /// columns, and the still narrow pane would show only the first).
     private var openingRightWidth: CGFloat?
@@ -62,9 +61,6 @@ final class PorpoiseTab: NSView {
 
     /// Narrowest a pane can be dragged (QSplitter keeps views usable).
     private static let minPaneWidth: CGFloat = 160
-    private static let openDuration: TimeInterval = 0.28
-    private static let closeDuration: TimeInterval = 0.24
-    private static let resetDuration: TimeInterval = 0.2
 
     var active: ViewContainer { activeIsSecondary ? (secondary ?? primary) : primary }
     var inactive: ViewContainer? { secondary == nil ? nil : (activeIsSecondary ? primary : secondary) }
@@ -138,7 +134,7 @@ final class PorpoiseTab: NSView {
     func resetSplitterSizes() {
         guard secondary != nil else { return }
         Self.lastFraction = 0.5
-        animateFraction(to: 0.5, duration: Self.resetDuration, curve: Animator.easeOutCubic)
+        animateFraction(to: 0.5, duration: Motion.splitReset, curve: Animator.easeOutCubic)
     }
 
     private func animateFraction(
@@ -178,7 +174,7 @@ final class PorpoiseTab: NSView {
             // Only Icons rearranges with the width; Details and Compact just follow it smoothly.
             if primary.list.mode == .icons {
                 let width = primary.listWidth(forPaneWidth: leftWidth)
-                primary.list.transitions.change(.splitOpen, duration: Self.openDuration) { primary.list.layoutWidthOverride = width }
+                primary.list.transitions.change(.splitOpen, duration: Motion.splitOpen) { primary.list.layoutWidthOverride = width }
             }
             // The right pane is laid out at its coming width whatever its mode (its mode may only be known once its
             // listing is there): the flight lands on cells that stay put while the pane widens.
@@ -189,7 +185,7 @@ final class PorpoiseTab: NSView {
         // Laid out now, at the edge: the flight below may start at once, and picks the items it brings in from what the
         // pane will show.
         s.layoutSubtreeIfNeeded()
-        animateFraction(to: Self.lastFraction, duration: Self.openDuration, curve: Animator.easeOutCubic) { [weak self] in
+        animateFraction(to: Self.lastFraction, duration: Motion.splitOpen, curve: Animator.easeOutCubic) { [weak self] in
             guard let self else { return }
             self.primary.list.transitions.releaseWidth()
             if self.flightOverlay == nil { self.secondary?.list.transitions.releaseWidth() }
@@ -216,7 +212,7 @@ final class PorpoiseTab: NSView {
         let keys = list.candidateIndexes(in: shown).map(list.key(ofRow:)).filter { images[$0] != nil }
         let landing = list.transitions.landingPictures(keys)
         list.transitions.flightStarts(hiding: Set(keys))
-        fly(keys, images: images, landing: landing, from: primary.list, to: list, duration: Self.flightDuration) {
+        fly(keys, images: images, landing: landing, from: primary.list, to: list, duration: Motion.flight) {
             [weak self, weak list] done in
             // The pane keeps its coming width until both the flight and its slide are over (whichever ends last
             // releases it: the slide's end does when the flight is gone by then).
@@ -236,7 +232,7 @@ final class PorpoiseTab: NSView {
         let landing = remaining.transitions.landingPictures(Array(keys))
         closing.transitions.flightLeaves(Set(keys))
         remaining.transitions.flightArrives(Set(keys))
-        fly(Array(keys), images: images, landing: landing, from: closing, to: remaining, duration: Self.closeDuration) {
+        fly(Array(keys), images: images, landing: landing, from: closing, to: remaining, duration: Motion.splitClose) {
             [weak self, weak remaining] done in
             if let remaining { remaining.transitions.flightLanded(Set(keys)) { done() } } else { done() }
             if self?.closesWhenLanded == true { self?.finishClosing() }
@@ -323,11 +319,11 @@ final class PorpoiseTab: NSView {
             if zombie.list.mode == .icons { zombie.list.layoutWidthOverride = zombie.list.visibleWidth }
             if primary.list.mode == .icons {
                 let width = primary.listWidth(forPaneWidth: bounds.width)
-                primary.list.transitions.change(.splitClose, duration: Self.closeDuration) { primary.list.layoutWidthOverride = width }
+                primary.list.transitions.change(.splitClose, duration: Motion.splitClose) { primary.list.layoutWidthOverride = width }
             }
             flyItems(backFrom: zombie.list, to: primary.list)
         }
-        animateFraction(to: closeSecondary ? 1 : 0, duration: Self.closeDuration, curve: Animator.easeInCubic) { [weak self] in
+        animateFraction(to: closeSecondary ? 1 : 0, duration: Motion.splitClose, curve: Animator.easeInCubic) { [weak self] in
             guard let self else { return }
             if flightOverlay != nil, flightAnimator.isRunning { closesWhenLanded = true } else { finishClosing() }
         }
