@@ -1,14 +1,11 @@
 import Foundation
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseServices
 
 @MainActor @Suite(.serialized, .isolatedSettings) struct CloudOfflineTests {
-    private func wait(_ test: () -> Bool) async throws {
-        for _ in 0..<200 where !test() { try await Task.sleep(for: .milliseconds(5)) }
-        #expect(test())
-    }
     private func setup() throws -> (CloudOffline, FakeContentSource, Scratch) {
         let source = FakeContentSource(), scratch = try Scratch()
         let facade = CloudOffline(accounts: CloudAccounts(), root: scratch.url, source: { source.ref(for: $0) == nil ? nil : source })
@@ -21,7 +18,7 @@ import Testing
         _ = scratch
         let folder = source.add("folder", folder: true), item = source.add("one", parent: "folder")
         let url = source.url(for: folder), fileURL = source.url(for: item)
-        let plan: CloudKeepPlan = try await withCheckedThrowingContinuation { continuation in
+        let plan: CloudKeepPlan = try await awaitCallback { continuation in
             facade.plan(keep: [url, url]) { continuation.resume(with: $0) }
         }
         #expect(plan.bytes == 5 && plan.items == 1 && plan.fits && !plan.needsConfirmation)
@@ -30,46 +27,46 @@ import Testing
         // Not downloaded yet: the folder is in the cloud only, like its file.
         #expect(facade.state(for: url) == .cloudOnly)
         #expect(facade.state(for: fileURL) == .cloudOnly)
-        let error: Error? = await withCheckedContinuation { continuation in
+        let error: Error? = try await awaitCallback { continuation in
             facade.keep(true, [url]) { continuation.resume(returning: $0) }
         }
         #expect(error == nil)
-        try await wait { facade.details(for: fileURL).downloaded }
+        await expectEventually { facade.details(for: fileURL).downloaded }
         #expect(facade.details(for: fileURL).kept)
         #expect(facade.details(for: fileURL).inheritedFrom == folder.name)
         #expect(facade.details(for: url).bytes == 5 && facade.details(for: url).items == 1)
         #expect(facade.usage(account: source.accountID).kept == 5)
         #expect(!facade.removeDownload([fileURL]).isEmpty)
-        let stopped: Error? = await withCheckedContinuation { continuation in
+        let stopped: Error? = try await awaitCallback { continuation in
             facade.keep(false, [url]) { continuation.resume(returning: $0) }
         }
         #expect(stopped == nil)
-        try await wait { !facade.details(for: fileURL).kept }
+        await expectEventually { !facade.details(for: fileURL).kept }
         #expect(facade.usage(account: source.accountID).recent == 5)
         facade.recentLimit = 0
-        try await wait { !facade.details(for: fileURL).downloaded }
+        await expectEventually { !facade.details(for: fileURL).downloaded }
         facade.recentLimit = nil
-        let downloaded: Error? = await withCheckedContinuation { continuation in
+        let downloaded: Error? = try await awaitCallback { continuation in
             facade.downloadNow([fileURL]) { continuation.resume(returning: $0) }
         }
         #expect(downloaded == nil)
-        try await wait { facade.details(for: fileURL).downloaded }
+        await expectEventually { facade.details(for: fileURL).downloaded }
         // A copy that is only cached (not downloaded with Download) doesn't change the item's state.
         #expect(facade.state(for: fileURL) == .cloudOnly)
         facade.removeRecent(account: source.accountID)
-        try await wait { !facade.details(for: fileURL).downloaded }
+        await expectEventually { !facade.details(for: fileURL).downloaded }
         facade.wipe(account: source.accountID)
-        try await wait { facade.usage(account: source.accountID).recent == 0 }
+        await expectEventually { facade.usage(account: source.accountID).recent == 0 }
         #expect(facade.details(for: URL(fileURLWithPath: "/tmp/local")).downloaded == false)
     }
     @Test func invalidActionsReturnErrorsAndCancellationIsSafe() async throws {
         let (facade, source, scratch) = try setup(); _ = scratch
         let invalid = URL(fileURLWithPath: "/tmp/local")
-        let result: Result<CloudKeepPlan, Error> = await withCheckedContinuation { continuation in
+        let result: Result<CloudKeepPlan, Error> = try await awaitCallback { continuation in
             facade.plan(keep: [invalid]) { continuation.resume(returning: $0) }
         }
         if case .success = result { Issue.record("Local paths must not use the account store") }
-        let error: Error? = await withCheckedContinuation { continuation in
+        let error: Error? = try await awaitCallback { continuation in
             facade.downloadNow([invalid]) { continuation.resume(returning: $0) }
         }
         #expect(error as? CloudContentError == .unsupported)
@@ -77,8 +74,7 @@ import Testing
         for n in 0..<20 { _ = source.add("item-\(n)", parent: "folder") }
         let cancel = facade.keep(true, [source.url(for: folder)])
         cancel()
-        try await Task.sleep(for: .milliseconds(30))
-        #expect(source.downloads < 20)
+        await expectStays(for: 0.03) { source.downloads < 20 }
         #expect(facade.removeDownload([invalid]).isEmpty)
     }
 }
@@ -88,8 +84,8 @@ extension CloudOfflineTests {
         let (facade, source, scratch) = try setup(); _ = scratch
         let first = source.add("one"), second = source.add("two")
         let store = try facade.store(for: source)
-        try await wait { source.onChanges != nil }
-        let error: Error? = await withCheckedContinuation { continuation in
+        await expectEventually { source.onChanges != nil }
+        let error: Error? = try await awaitCallback { continuation in
             facade.keep(true, [source.url(for: first), source.url(for: second)]) { continuation.resume(returning: $0) }
         }
         #expect(error == nil && facade.operations.activities.count == 1)
@@ -104,12 +100,11 @@ extension CloudOfflineTests {
         defer { NotificationCenter.default.removeObserver(observer) }
         let updated = source.add("one", text: "first update", revision: "r2")
         source.onChanges?(.init(changed: [updated]))
-        try await wait { facade.operations.activities.contains { $0.title.hasPrefix("Updating offline copies") } }
+        await expectEventually { facade.operations.activities.contains { $0.title.hasPrefix("Updating offline copies") } }
         let other = source.add("two", text: "second update", revision: "r2")
         source.onChanges?(.init(changed: [other]))
-        let deadline = Date().addingTimeInterval(10)
-        while (await store.snapshot().entries["two"]?.item.revision != "r2"), Date() < deadline { try await Task.sleep(for: .milliseconds(5)) }
-        try await wait { facade.operations.activities.count == 1 }
+        _ = await poll(timeout: 10) { await store.snapshot().entries["two"]?.item.revision == "r2" }
+        await expectEventually { facade.operations.activities.count == 1 }
         #expect(await store.snapshot().entries["one"]?.item.revision == "r2")
         #expect(await store.snapshot().entries["two"]?.item.revision == "r2")
         #expect(maximumQuiet == 1)
@@ -132,32 +127,32 @@ extension CloudOfflineTests {
         let url = source.url(for: item)
         let service: CloudOfflineService = facade
         source.isOffline = true
-        let error: Error? = await withCheckedContinuation { continuation in
+        let error: Error? = try await awaitCallback { continuation in
             facade.keep(true, [url]) { continuation.resume(returning: $0) }
         }
         #expect(error != nil)
-        try await wait { facade.details(for: url).kept }
+        await expectEventually { facade.details(for: url).kept }
         #expect(service.keep(for: url) == .direct)
         #expect(!service.hasLocalCopy(url) && service.state(for: url) == .cloudOnly)
         source.isOffline = false; source.delay = .milliseconds(100)
         let download = Task {
-            await withCheckedContinuation { continuation in
+            try await awaitCallback { continuation in
                 facade.downloadNow([url]) { continuation.resume(returning: $0) }
             }
         }
-        try await wait {
+        await expectEventually {
             if case .downloading = service.state(for: url) { return true }; return false
         }
-        #expect(await download.value == nil)
-        try await wait { service.state(for: url) == .local }
+        #expect(try await download.value == nil)
+        await expectEventually { service.state(for: url) == .local }
         #expect(service.hasLocalCopy(url))
         let bad = source.add("bad")
         source.bytes["bad"] = Data("wrong bytes".utf8)
-        let failure: Error? = await withCheckedContinuation { continuation in
+        let failure: Error? = try await awaitCallback { continuation in
             facade.downloadNow([source.url(for: bad)]) { continuation.resume(returning: $0) }
         }
         #expect(failure as? CloudContentError == .checksum)
-        try await wait {
+        await expectEventually {
             if case .error = service.state(for: source.url(for: bad)) { return true }; return false
         }
         #expect(!service.hasLocalCopy(source.url(for: bad)))

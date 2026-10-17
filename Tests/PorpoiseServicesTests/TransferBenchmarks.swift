@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -65,7 +66,7 @@ struct TransferBenchmarks {
                             c.journals = JournalStore(folder: s.path("journals-" + UUID().uuidString))
                             c.history = OperationHistory(file: s.path("history-" + UUID().uuidString))
                             c.prepareJob = { $0.allowsClone = tool == "Porpoise" }
-                            let result = await c.perform(.copy, sources, to: destination)
+                            let result = try await c.perform(.copy, sources, to: destination)
                             guard result.count == sources.count, c.activities.last?.errors.isEmpty == true else {
                                 throw CocoaError(.fileWriteUnknown)
                             }
@@ -129,7 +130,7 @@ struct TransferBenchmarks {
             c.journals = JournalStore(folder: s.path("remote-journals"))
             c.history = OperationHistory(file: s.path("remote-history"))
             let started = ProcessInfo.processInfo.systemUptime
-            _ = await c.perform(.copy, [largeFile], to: server.url(destination.path, isDirectory: true))
+            _ = try await c.perform(.copy, [largeFile], to: server.url(destination.path, isDirectory: true))
             let elapsed = ProcessInfo.processInfo.systemUptime - started
             let error = c.activities.last?.errors.first
             try record(.init(fixture: "large loopback SSH", tool: "Porpoise", seconds: elapsed, bytes: 10_000_000_000, files: 1, error: error))

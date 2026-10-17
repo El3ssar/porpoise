@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 import UniformTypeIdentifiers
@@ -11,9 +12,6 @@ import UniformTypeIdentifiers
 /// Batch rename's error paths: what a snapshot refuses, plans that don't match it, sources that change during the
 /// batch, and rows the planner can't name.
 @Suite(.isolatedSettings) struct BatchRenameCoverageTests {
-    private func entry(_ name: String, directory: Bool = false) -> BatchRenameEntry {
-        BatchRenameEntry(url: URL(fileURLWithPath: "/test/" + name), isDirectory: directory)
-    }
     private func rename(_ to: String) -> BatchRenamePreset { BatchRenamePreset(name: "", rules: [.template(to)]) }
 
     @Test func snapshotRefusesRemoteAndMissingItems() throws {
@@ -148,17 +146,19 @@ import UniformTypeIdentifiers
     }
 
     @Test func plannerReportsMissingFailedAndRepeatedNames() {
-        let entries = [entry("a"), entry("b"), entry("c")]
+        let entries = [BatchRenameEntry.named("a"), BatchRenameEntry.named("b"), BatchRenameEntry.named("c")]
         let short = BatchRename.plan(entries, names: [.success("x")], existing: ["/test": ["a", "b", "c"]])
         #expect(short.rows[1].problem == "No proposed name." && short.rows[2].problem == "No proposed name.")
         #expect(short.rows[1].proposedName == "b" && !short.canApply && short.steps.isEmpty)
         let failed = BatchRename.plan(
-            [entry("a")], names: [.failure(BatchRenameError.invalid("width metadata is missing"))], existing: ["/test": ["a"]])
+            [BatchRenameEntry.named("a")], names: [.failure(BatchRenameError.invalid("width metadata is missing"))], existing: ["/test": ["a"]])
         #expect(failed.rows[0].problem == "width metadata is missing" && failed.rows[0].proposedName == "a")
-        let twice = BatchRename.plan([entry("a"), entry("A")], names: [.success("x"), .success("y")], existing: ["/test": ["a"]])
+        let twice = BatchRename.plan(
+            [BatchRenameEntry.named("a"), BatchRenameEntry.named("A")], names: [.success("x"), .success("y")], existing: ["/test": ["a"]])
         #expect(twice.rows[1].problem == "The same source is selected more than once." && !twice.canApply)
         let sensitive = BatchRename.plan(
-            [entry("a"), entry("A")], names: [.success("x"), .success("y")], existing: ["/test": ["a", "A"]], caseSensitive: ["/test": true])
+            [BatchRenameEntry.named("a"), BatchRenameEntry.named("A")], names: [.success("x"), .success("y")], existing: ["/test": ["a", "A"]],
+            caseSensitive: ["/test": true])
         #expect(sensitive.canApply && sensitive.changes.map(\.proposedName) == ["x", "y"])
         let mixed = BatchRename.plan(entries, names: [.success("a"), .success("B"), .success("c")], existing: ["/test": ["a", "b", "c"]])
         #expect(mixed.changes.map(\.proposedName) == ["B"] && mixed.steps.count == 2)
@@ -171,10 +171,11 @@ import UniformTypeIdentifiers
                 .replace(find: "", with: "zzz", regex: false, caseSensitive: true), .insert(text: "{unknown}{name", position: -1),
                 .remove(position: 99, count: 3), .number(start: -3, step: 1, padding: 3, position: 0),
             ])
-        #expect(try BatchRename.name(entry("file.txt"), index: 0, preset: preset) == "-003file{unknown}{name.txt")
+        #expect(try BatchRename.name(BatchRenameEntry.named("file.txt"), index: 0, preset: preset) == "-003file{unknown}{name.txt")
         #expect(throws: BatchRenameError.self) {
             try BatchRename.name(
-                entry("a"), index: 2, preset: BatchRenamePreset(name: "", rules: [.number(start: 0, step: Int.max, padding: 0, position: 0)]))
+                BatchRenameEntry.named("a"), index: 2,
+                preset: BatchRenamePreset(name: "", rules: [.number(start: 0, step: Int.max, padding: 0, position: 0)]))
         }
         #expect(BatchRenameError.invalid("message").errorDescription == "message")
     }

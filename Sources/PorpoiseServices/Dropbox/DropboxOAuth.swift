@@ -10,9 +10,11 @@ public struct DropboxConfiguration: Sendable {
     public var loopbackPorts: [UInt16] {
         loopbackPort == 0 ? [0] : (0...2).compactMap { UInt16(exactly: Int(loopbackPort) + $0) }
     }
-    public func makeLoopbackListener() throws -> CloudOAuthLoopback {
+    public func makeLoopbackListener() throws -> CloudOAuthLoopback { try makeLoopbackListener(bind: CloudOAuthLoopback.init(port:)) }
+    /// The first of `loopbackPorts` that `bind` takes, in order; all busy: `portsBusy`.
+    func makeLoopbackListener<Listener>(bind: (UInt16) throws -> Listener) throws -> Listener {
         for port in loopbackPorts {
-            do { return try CloudOAuthLoopback(port: port) } catch is CloudOAuthLoopback.PortInUse { continue }
+            do { return try bind(port) } catch is CloudOAuthLoopback.PortInUse { continue }
         }
         throw DropboxCallbackError.portsBusy(loopbackPorts)
     }

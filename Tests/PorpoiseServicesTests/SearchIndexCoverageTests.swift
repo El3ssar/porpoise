@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -30,9 +31,6 @@ import Testing
     private func canonical(_ s: Scratch, _ relative: String) -> URL {
         URL(fileURLWithPath: FilePath.canonical(s.path(relative).path))
     }
-    private func waitReady(_ index: SearchIndex) async throws {
-        try #require(await eventually(Self.liveWait) { !index.status.building && index.status.updated != nil })
-    }
     /// The saved manifest's patch count for the first root, nil while there is no manifest.
     private func savedPatches(_ s: Scratch) -> Int? {
         guard let data = try? Data(contentsOf: s.path("store/manifest.json")),
@@ -55,7 +53,7 @@ import Testing
         index.start()
         let early = index.statusText
         #expect(early == "Index building…" || early.hasPrefix("Index: "))
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         #expect(index.statusText.hasPrefix("Index: 2 items, updated "))
         #expect(!index.statusText.contains(" · "))
         #expect(index.search("saved-name", scope: s.path("root"))?.paths.count == 1)
@@ -89,7 +87,7 @@ import Testing
         let index = SearchIndex(directory: s.path("store"), defaults: defaults.store)
         index.configure(configuration(s))
         defer { index.configure(IndexConfiguration()) }
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         #expect(index.status.warning == "Some folders unreadable; regular search used for those scopes")
         #expect(index.statusText.hasSuffix(" · Some folders unreadable; regular search used for those scopes"))
         #expect(!index.hasReadySnapshot(for: canonical(s, "root")))
@@ -106,7 +104,7 @@ import Testing
         let first = Defaults()
         let index = SearchIndex(directory: s.path("store"), defaults: first.store)
         index.configure(config)
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         try #require(await eventually(Self.liveWait) { savedPatches(s) != nil })
         index.configure(IndexConfiguration())
         let manifestURL = s.path("store/manifest.json")
@@ -124,7 +122,7 @@ import Testing
             let defaults = Defaults()
             let restored = SearchIndex(directory: s.path("store"), defaults: defaults.store)
             restored.configure(config)
-            try await waitReady(restored)
+            try await restored.waitUntilReady(timeout: Self.liveWait)
             #expect(restored.search("kept", scope: s.path("root"))?.paths.count == 1)
             // The rebuilt snapshot is saved over the damaged one before the next round damages it again.
             try #require(await eventually(Self.liveWait) { (try? Data(contentsOf: manifestURL)) != damage })
@@ -140,7 +138,7 @@ import Testing
         let index = SearchIndex(directory: s.path("store"), defaults: defaults.store)
         index.configure(configuration(s))
         defer { index.configure(IndexConfiguration()) }
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         try #require(await eventually(Self.liveWait) { index.status.warning?.hasPrefix("Index could not be saved: ") == true })
         #expect(index.statusText.contains(" · Index could not be saved: "))
         #expect(index.search("a.txt", scope: s.path("root"))?.paths.count == 1)
@@ -159,13 +157,13 @@ import Testing
         defer { index.configure(IndexConfiguration()) }
         // The nested roots fold into the root that holds them.
         #expect(index.configuration.roots == [FilePath.canonical(s.path("root").path), FilePath.canonical(s.path("second").path)])
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         #expect(index.search("nested", scope: s.path("root"))?.paths.count == 1)
         #expect(index.search("other", scope: s.path("second"))?.paths.count == 1)
         // A root that is itself excluded contributes nothing.
         config.roots = [s.path("root/private").path]
         index.configure(config)
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         #expect(index.status.count == 0)
         #expect(index.search("hidden", scope: s.path("root/private")) == nil)
     }
@@ -179,7 +177,7 @@ import Testing
         config.content = true
         index.configure(config)
         defer { index.configure(IndexConfiguration()) }
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         let root = s.path("root")
         let all = index.search("shared phrase", scope: root, contents: true)
         #expect(all?.paths.count == 3)
@@ -202,7 +200,7 @@ import Testing
         let index = SearchIndex(directory: s.path("store"), defaults: defaults.store)
         index.configure(configuration(s))
         defer { index.configure(IndexConfiguration()) }
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         let result = index.search("\"unclosed", scope: s.path("root"))
         #expect(result?.paths.isEmpty == true)
         #expect(result?.error == "Invalid search: unclosed quote")
@@ -216,7 +214,7 @@ import Testing
         let index = SearchIndex(directory: s.path("store"), defaults: defaults.store)
         index.configure(configuration(s))
         defer { index.configure(IndexConfiguration()) }
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         try s.file("root/patched.txt")
         // A new file is saved as a patch over the base.
         try #require(await eventually(Self.liveWait) { (savedPatches(s) ?? 0) > 0 })
@@ -234,7 +232,7 @@ import Testing
         let first = Defaults()
         let index = SearchIndex(directory: s.path("store"), defaults: first.store)
         index.configure(configuration(s))
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         try #require(await eventually(Self.liveWait) { savedPatches(s) != nil })
         let config = index.configuration
         index.configure(IndexConfiguration())
@@ -244,7 +242,7 @@ import Testing
         let restored = SearchIndex(directory: s.path("store"), defaults: second.store)
         restored.configure(config)
         defer { restored.configure(IndexConfiguration()) }
-        try await waitReady(restored)
+        try await restored.waitUntilReady(timeout: Self.liveWait)
         try #require(
             await eventually(Self.liveWait) { restored.search("replayed-", scope: s.path("root"))?.paths.count == 200 })
         try #require(await eventually(Self.liveWait) { restored.status.count == 203 })
@@ -257,7 +255,7 @@ import Testing
         let index = SearchIndex(directory: s.path("store"), defaults: defaults.store)
         index.configure(configuration(s))
         defer { index.configure(IndexConfiguration()) }
-        try await waitReady(index)
+        try await index.waitUntilReady(timeout: Self.liveWait)
         // Small rounds keep each event batch small, so every new file becomes its own patch until 1024 of them.
         var created = 0
         for _ in 0..<33 {

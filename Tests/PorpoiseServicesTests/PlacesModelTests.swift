@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -8,10 +9,6 @@ import Testing
 /// (its lookup cache) are main-thread only.
 @MainActor @Suite struct PlacesModelTests {
     let home = FileManager.default.homeDirectoryForCurrentUser
-
-    private func titles(_ m: PlacesModel, _ section: PlaceSection) -> [String] {
-        m.sections().first { $0.0 == section }?.1.map(\.title) ?? []
-    }
 
     private func entry(_ m: PlacesModel, _ title: String) throws -> PlaceEntry {
         try #require(m.userEntries.first { $0.title == title })
@@ -42,13 +39,13 @@ import Testing
         let s = try Scratch()
         let m = PlacesModel(storeURL: s.path("places.json"))
         #expect(
-            titles(m, .places) == [
+            m.titles(in: .places) == [
                 "Home", "Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos",
                 "Applications", "Trash",
             ])
-        #expect(titles(m, .remote).contains("Network"))
-        #expect(titles(m, .recent) == ["Recent Files", "Recent Locations"])
-        #expect(titles(m, .tags) == ["Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Gray"])
+        #expect(m.titles(in: .remote).contains("Network"))
+        #expect(m.titles(in: .recent) == ["Recent Files", "Recent Locations"])
+        #expect(m.titles(in: .tags) == ["Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Gray"])
         #expect(m.title(for: home) == "Home")
         #expect(m.contains(URL(fileURLWithPath: "/Applications")))
         #expect(m.title(for: URL(string: "smart:/x/Big%20Files.savedSearch")!) == "Big Files")
@@ -63,8 +60,8 @@ import Testing
         m.add(work)
         m.add(work)  // once only
         m.add(URL(string: "sftp://server.local/srv")!)
-        #expect(titles(m, .places).suffix(3) == ["Applications", "Work", "Trash"])
-        #expect(titles(m, .remote).last == "server.local")
+        #expect(m.titles(in: .places).suffix(3) == ["Applications", "Work", "Trash"])
+        #expect(m.titles(in: .remote).last == "server.local")
         #expect(try entry(m, "Work").icon == "folder")
         #expect(try entry(m, "server.local").icon == "folder-remote")
 
@@ -77,18 +74,18 @@ import Testing
         let store = s.path("places.json")
         let m = PlacesModel(storeURL: store)
         m.update(try entry(m, "Music"), title: "Songs", url: s.url)
-        #expect(m.title(for: s.url) == "Songs" && !titles(m, .places).contains("Music"))
+        #expect(m.title(for: s.url) == "Songs" && !m.titles(in: .places).contains("Music"))
 
         m.setHidden(try entry(m, "Pictures"), true)
-        #expect(!titles(m, .places).contains("Pictures"))
+        #expect(!m.titles(in: .places).contains("Pictures"))
         m.showHidden = true
-        #expect(titles(m, .places).contains("Pictures"))
+        #expect(m.titles(in: .places).contains("Pictures"))
         m.showHidden = false
 
         let videos = try entry(m, "Videos")
         #expect(m.isUserEntry(videos))
         m.remove(videos)
-        #expect(!m.isUserEntry(videos) && !titles(m, .places).contains("Videos"))
+        #expect(!m.isUserEntry(videos) && !m.titles(in: .places).contains("Videos"))
         m.remove(videos)  // already gone: nothing happens
 
         let reloaded = PlacesModel(storeURL: store)
@@ -103,9 +100,9 @@ import Testing
         let recent = try entry(m, "Recent Files")
 
         m.move(trash, before: home, endOf: .places)
-        #expect(titles(m, .places).prefix(2) == ["Trash", "Home"])
+        #expect(m.titles(in: .places).prefix(2) == ["Trash", "Home"])
         m.move(trash, before: nil, endOf: .places)
-        #expect(titles(m, .places).last == "Trash")
+        #expect(m.titles(in: .places).last == "Trash")
 
         #expect(!m.canMove(docs, before: recent, endOf: .recent))  // another section
         #expect(!m.canMove(docs, before: nil, endOf: .recent))

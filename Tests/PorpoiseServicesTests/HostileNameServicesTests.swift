@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -27,16 +28,10 @@ import Testing
     }
 
     @discardableResult
-    private func populate(_ folder: String) throws -> URL {
-        let dir = try scratch.folder(folder)
-        for (i, n) in names.enumerated() { try Data("\(i)".utf8).write(to: dir.appendingPathComponent(n)) }
-        return dir
-    }
-
     /// SSHProvider's listing script, run the way ssh runs it (the login shell reads `sh -c QUOTED`), on a folder of
     /// hostile names, and parsed back. Plain macOS tools, so this is the BSD `stat` branch a macOS server takes.
     @Test func sshListingScriptRoundTrips() throws {
-        let dir = try populate("$(echo PWNED) folder\n'x'")
+        let dir = try scratch.populate("$(echo PWNED) folder\n'x'")
         try scratch.folder("$(echo PWNED) folder\n'x'/sub dir\n")
         try scratch.symlink("$(echo PWNED) folder\n'x'/link\r", to: "target with spaces")
         let ssh = SSHProvider(url: remote("/"))
@@ -63,7 +58,7 @@ import Testing
 
     /// Paths under the remote home ("/~/…") become `"$HOME"/'…'`.
     @Test func homeRelativeShellPaths() throws {
-        try populate("home/in home")
+        try scratch.populate("home/in home")
         let ssh = SSHProvider(url: remote("/"))
         let script = SSHProvider.listScript(ssh.shellPath(remote("/~/in home")))
         let r = try runTool("/bin/sh", ["-c", script], env: ["PATH": "/usr/bin:/bin", "HOME": scratch.path("home").path])
@@ -76,7 +71,7 @@ import Testing
     /// The administrator script's quoting, run for real without the administrator part: AppleScript literal around a
     /// shell line of quoted arguments. Each hostile name is copied with /bin/cp and arrives intact.
     @Test func administratorScriptQuotingRunsTheRightCommand() throws {
-        let src = try populate("admin-src")
+        let src = try scratch.populate("admin-src")
         let dst = try scratch.folder("admin-dst")
         let commands =
             names.map { ["/bin/cp", "--", src.appendingPathComponent($0).path, dst.appendingPathComponent($0).path] }

@@ -1,48 +1,11 @@
 import CryptoKit
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseServices
-
-final class MemoryDriveCredentials: DriveCredentialStore, @unchecked Sendable {
-    private let lock = NSLock()
-    private var values: [String: String] = [:]
-    func read(clientID: String, accountID: UUID) throws -> String? { lock.withLock { values["\(clientID)/\(accountID)"] } }
-    func save(_ token: String, clientID: String, accountID: UUID) throws { lock.withLock { values["\(clientID)/\(accountID)"] = token } }
-    func remove(clientID: String, accountID: UUID) throws { _ = lock.withLock { values.removeValue(forKey: "\(clientID)/\(accountID)") } }
-}
-
-/// Each test owns its local process and ephemeral port. No live account, real Keychain or external network.
-final class FakeDriveServer {
-    private let fixtureServer: LocalFixtureServer
-    var process: Process { fixtureServer.process }
-    var scratch: Scratch { fixtureServer.scratch }
-    var base: URL { fixtureServer.base }
-    init(fixture: URL? = nil, latencyMS: Int = 0, bandwidthMbps: Int = 0, connectionMbps: Int = 0) throws {
-        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        do {
-            fixtureServer = try LocalFixtureServer(
-                script: repo.appendingPathComponent("scripts/fake-drive-server.py"), fixture: fixture,
-                arguments: [
-                    "--latency-ms", String(latencyMS), "--bandwidth-mbps", String(bandwidthMbps), "--connection-mbps", String(connectionMbps),
-                ])
-        } catch { throw DriveError.invalidResponse }
-    }
-    func stop() { fixtureServer.stop() }
-    var config: DriveOAuthConfiguration {
-        DriveOAuthConfiguration(
-            clientID: "fixture-client", authorizationURL: base.appendingPathComponent("auth"), tokenURL: base.appendingPathComponent("token"),
-            revokeURL: base.appendingPathComponent("revoke"), profileURL: base.appendingPathComponent("userinfo"))
-    }
-    func client(id: UUID = UUID(), refresh: String = "fixture-refresh") throws -> (DriveClient, DriveTokenManager, MemoryDriveCredentials) {
-        let credentials = MemoryDriveCredentials()
-        try credentials.save(refresh, clientID: config.clientID, accountID: id)
-        let tokens = DriveTokenManager(configuration: config, accountID: id, credentials: credentials)
-        return (DriveClient(accountID: id, tokens: tokens, baseURL: base.appendingPathComponent("drive/v3/")), tokens, credentials)
-    }
-}
 
 @Suite(.serialized) struct DriveTests {
     @Test func realHTTPPagingSharedCollectionsShortcutsAndExports() async throws {
@@ -183,7 +146,7 @@ final class FakeDriveServer {
 @Suite(.serialized) struct DriveAccountTests {
     @MainActor @Test func browserOAuthPersistenceDuplicateReauthorizationAndRemoval() async throws {
         let server = try FakeDriveServer()
-        let credentials = MemoryDriveCredentials()
+        let credentials = MemoryCredentials()
         let suite = "porpoise-drive-test-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -191,7 +154,7 @@ final class FakeDriveServer {
             defaults: defaults, credentials: credentials, configuration: server.config, baseURL: server.base.appendingPathComponent("drive/v3/"))
         store.clientIDOverride = "  override-client  "
         #expect(store.clientIDOverride == "override-client")
-        let browser: @MainActor (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
+        let browser = openInFakeBrowser
         let account = try await store.connect(openBrowser: browser)
         defer { RemoteFS.unregisterDrive(accountID: account.id) }
         #expect(account.email == "alex@example.invalid" && store.accounts == [account])
@@ -215,7 +178,7 @@ final class FakeDriveServer {
 
     @MainActor @Test func customFixturesConnectTwoDistinctAccounts() async throws {
         let scratch = try Scratch()
-        let original = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/metadata.json")
+        let original = FakeDriveServer.fixture("metadata.json")
         var fixture = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: original)) as? [String: Any])
         fixture["profiles"] = [
             ["sub": "one", "email": "one@example.invalid", "name": "One"],
@@ -227,10 +190,10 @@ final class FakeDriveServer {
         let suite = "porpoise-drive-test-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let credentials = MemoryDriveCredentials()
+        let credentials = MemoryCredentials()
         let store = DriveAccountStore(
             defaults: defaults, credentials: credentials, configuration: server.config, baseURL: server.base.appendingPathComponent("drive/v3/"))
-        let browser: @MainActor (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
+        let browser = openInFakeBrowser
         let one = try await store.connect(openBrowser: browser)
         let two = try await store.connect(openBrowser: browser)
         defer { RemoteFS.unregisterDrive(accountID: one.id); RemoteFS.unregisterDrive(accountID: two.id) }
@@ -246,13 +209,13 @@ final class FakeDriveServer {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let missing = DriveAccountStore(
-            defaults: defaults, credentials: MemoryDriveCredentials(), configuration: DriveOAuthConfiguration(clientID: ""))
+            defaults: defaults, credentials: MemoryCredentials(), configuration: DriveOAuthConfiguration(clientID: ""))
         await #expect(throws: DriveError.configuration) {
             try await missing.connect { _ in Issue.record("Browser must not open without configuration") }
         }
         #expect(!missing.connecting)
         let server = try FakeDriveServer()
-        let store = DriveAccountStore(defaults: defaults, credentials: MemoryDriveCredentials(), configuration: server.config)
+        let store = DriveAccountStore(defaults: defaults, credentials: MemoryCredentials(), configuration: server.config)
         let task = Task { @MainActor in try await store.connect { _ in } }
         for _ in 0..<100 where !store.connecting { await Task.yield() }
         // A second sign-in while one waits in the browser: said so (it read as "cancelled" before).
@@ -276,7 +239,7 @@ struct DriveTransportTests {
     @Test func requestFlagsResourceKeysRefreshCoalescingAnd401Retry() async throws {
         let log = DriveRequestLog()
         let id = UUID()
-        let credentials = MemoryDriveCredentials()
+        let credentials = MemoryCredentials()
         try credentials.save("refresh", clientID: "client", accountID: id)
         let http = DriveHTTP { request in
             await log.append(request)
@@ -328,7 +291,7 @@ struct DriveTransportTests {
         ] {
             #expect(!error.localizedDescription.isEmpty)
         }
-        let id = UUID(), credentials = MemoryDriveCredentials()
+        let id = UUID(), credentials = MemoryCredentials()
         let manager = DriveTokenManager(configuration: DriveOAuthConfiguration(clientID: "test"), accountID: id, credentials: credentials)
         try await manager.accept(DriveTokenResponse(access_token: "access", expires_in: 3600, refresh_token: nil, token_type: "Bearer"))
         for body in [
@@ -350,7 +313,7 @@ struct DriveTransportTests {
 @MainActor @Suite(.isolatedSettings) struct DriveDirectoryTests {
     @Test func publishesPagesAndCancelsStaleNavigation() async throws {
         let id = UUID()
-        let credentials = MemoryDriveCredentials()
+        let credentials = MemoryCredentials()
         let tokens = DriveTokenManager(configuration: DriveOAuthConfiguration(clientID: "test"), accountID: id, credentials: credentials)
         try await tokens.accept(DriveTokenResponse(access_token: "access", expires_in: 3600, refresh_token: nil, token_type: "Bearer"))
         let log = DriveRequestLog()

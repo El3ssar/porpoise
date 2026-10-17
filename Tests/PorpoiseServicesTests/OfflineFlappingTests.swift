@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -35,16 +36,12 @@ import Testing
     }
 
     @Test func aFlappingServerShowsOfflineOnceAndRecoversOnce() async throws {
-        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/ui-demo.json")
+        let fixture = FakeDriveServer.fixture("ui-demo.json")
         let server = try FakeDriveServer(fixture: fixture), scratch = try Scratch()
         defer { server.stop() }
-        let defaults = MemoryDefaults()
-        let store = DriveAccountStore(
-            defaults: defaults, credentials: MemoryDriveCredentials(), configuration: server.config,
-            baseURL: server.base.appendingPathComponent("drive/v3/"))
-        let backend = DriveCloudBackend(store: store, avatarFolder: scratch.url.appendingPathComponent("avatars"))
-        let browser: (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
-        let connected = await withCheckedContinuation { c in _ = backend.connect(.googleDrive, openBrowser: browser) { c.resume(returning: $0) } }
+        let (backend, store) = server.backend(scratch: scratch)
+        let browser = openInFakeBrowser
+        let connected = try await awaitCallback { c in _ = backend.connect(.googleDrive, openBrowser: browser) { c.resume(returning: $0) } }
         guard case .success(let account) = connected, let id = UUID(uuidString: account.id), let client = store.client(for: id) else {
             Issue.record("sign-in failed")
             return
@@ -55,14 +52,13 @@ import Testing
             let status = backend.accounts.first { $0.id == account.id }?.status ?? .ok
             if status != shown.last ?? .ok { shown.append(status) }
         }
-        let flap = DriveMutationTests()
         // Down for 300 ms, up for 100 ms, over and over for about 3 s, reading folders all the while.
         for n in 0..<30 {
-            try await flap.control(server, ["offline": n % 4 != 3])
+            try await server.control(["offline": n % 4 != 3])
             _ = try? await client.list(DriveLocation(accountID: id))
             try await Task.sleep(for: .milliseconds(100))
         }
-        try await flap.control(server, ["offline": false])
+        try await server.control(["offline": false])
         for _ in 0..<50 where shown.last != .ok {
             _ = try? await client.list(DriveLocation(accountID: id))
             try await Task.sleep(for: .milliseconds(100))

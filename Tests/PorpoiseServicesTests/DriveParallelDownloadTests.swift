@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -8,18 +9,18 @@ import Testing
 
 @Suite(.serialized) struct DriveParallelDownloadTests {
     private func fixture(_ scratch: Scratch, size: Int) throws -> URL {
-        let url = scratch.url.appendingPathComponent("fixture.json")
-        let digest = Insecure.MD5.hash(data: Data(repeating: 120, count: size)).map { String(format: "%02x", $0) }.joined()
-        try JSONSerialization.data(withJSONObject: [
-            "files": [
-                [
-                    "id": "big", "name": "big.bin", "mimeType": "application/octet-stream", "size": String(size),
-                    "version": "1", "md5Checksum": digest, "capabilities": ["canDownload": true],
-                ]
-            ],
-            "generatedMedia": ["big": size],
-        ]).write(to: url)
-        return url
+        let digest = FakeDriveServer.generatedMediaMD5(size: size)
+        return try FakeDriveServer.writeFixture(
+            in: scratch,
+            [
+                "files": [
+                    [
+                        "id": "big", "name": "big.bin", "mimeType": "application/octet-stream", "size": String(size),
+                        "version": "1", "md5Checksum": digest, "capabilities": ["canDownload": true],
+                    ]
+                ],
+                "generatedMedia": ["big": size],
+            ])
     }
 
     @Test func rangesCompleteAndWarmStagingDoesNotTransferAgain() async throws {
@@ -42,22 +43,20 @@ import Testing
         let server = try FakeDriveServer(fixture: fixture(scratch, size: 64 << 20), connectionMbps: 200)
         let client = try checks.client(server, folder: scratch.url.appendingPathComponent("journal"))
         let file = try await client.file("big"), id = UUID()
-        try await checks.control(server, ["dropDownloadAfterBytes": 10 << 20])
+        try await server.control(["dropDownloadAfterBytes": 10 << 20])
         await #expect(throws: (any Error).self) { try await client.downloadToStaging(file, operationID: id) }
         let record = try #require(try client.mutationJournal.load(id))
         #expect(record.phase != .done && record.downloadRanges?.count == 4)
-        let beforeData = try await URLSession.shared.data(from: server.base.appendingPathComponent("__stats")).0
-        let before = try #require(try JSONSerialization.jsonObject(with: beforeData) as? [String: Any])
+        let before = try await server.stats()
         let beforeCount = try #require(before["ranges"] as? [String]).count
         let result = try await client.downloadToStaging(file, operationID: id)
         #expect(try DriveClient.md5(result.url) == file.md5Checksum)
-        let afterData = try await URLSession.shared.data(from: server.base.appendingPathComponent("__stats")).0
-        let after = try #require(try JSONSerialization.jsonObject(with: afterData) as? [String: Any])
+        let after = try await server.stats()
         let resumed = try #require(after["ranges"] as? [String]).dropFirst(beforeCount)
         let missing = try #require(record.downloadRanges).filter { $0.offset < $0.end }.map { "bytes=\($0.offset)-\($0.end - 1)" }
         #expect(Set(resumed) == Set(missing))
         let cancelledID = UUID()
-        try await checks.control(server, ["dropDownloadAfterBytes": 1 << 20])
+        try await server.control(["dropDownloadAfterBytes": 1 << 20])
         await #expect(throws: (any Error).self) { try await client.downloadToStaging(file, operationID: cancelledID) }
         try await client.cancelTransfer(cancelledID)
         let cancelled = try #require(try client.mutationJournal.load(cancelledID))
@@ -78,7 +77,7 @@ import Testing
             let server = try FakeDriveServer(fixture: url)
             let client = try checks.client(server, folder: scratch.url.appendingPathComponent("journal"))
             let file = try await client.file("big"), id = UUID()
-            if changedRevision { try await checks.control(server, ["changeRevisionDuringDownload": true]) }
+            if changedRevision { try await server.control(["changeRevisionDuringDownload": true]) }
             await #expect(throws: (any Error).self) { try await client.downloadToStaging(file, operationID: id) }
             #expect(try client.mutationJournal.load(id)?.phase != .done)
         }

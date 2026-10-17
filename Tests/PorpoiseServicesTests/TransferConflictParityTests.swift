@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -81,7 +82,7 @@ import Testing
             backend.setActive(false)
             for account in store.accounts { RemoteFS.registerCloud(nil, for: DropboxLocation(accountID: account.id).url) }
         }
-        let account = try await store.connect(openBrowser: { url in Task { _ = try? await URLSession.shared.data(from: url) } })
+        let account = try await store.connect(openBrowser: openInFakeBrowser)
         _ = backend.accounts
         let folder = DropboxLocation(accountID: account.id, itemID: "id:folder", namespaceID: account.rootNamespaceID).url
         let provider = try #require(RemoteFS.provider(for: folder))
@@ -150,7 +151,7 @@ import Testing
             backend.setActive(false)
             for account in store.accounts { RemoteFS.registerCloud(nil, for: DropboxLocation(accountID: account.id).url) }
         }
-        let account = try await store.connect(openBrowser: { url in Task { _ = try? await URLSession.shared.data(from: url) } })
+        let account = try await store.connect(openBrowser: openInFakeBrowser)
         _ = backend.accounts
         let folder = DropboxLocation(accountID: account.id, itemID: "id:folder", namespaceID: account.rootNamespaceID).url
         let local = scratch.url.appendingPathComponent("nested.txt")

@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -14,7 +15,7 @@ import Testing
         c.copy([a, b], cut: true)
         #expect(c.cutURLs == [a, b])
 
-        let pasted = await c.paste(into: try s.folder("dst"))
+        let pasted = try await c.paste(into: try s.folder("dst"))
         #expect(pasted.map(\.lastPathComponent) == ["a.txt", "b.txt"])
         #expect(s.listing("src").isEmpty && s.listing("dst") == ["a.txt", "b.txt"])
         #expect(c.cutURLs.isEmpty && c.clipboardURLs.isEmpty)
@@ -27,8 +28,8 @@ import Testing
         let c = makeController(ScriptedUI())
         c.copy([f], cut: false)
         #expect(c.cutURLs.isEmpty)
-        _ = await c.paste(into: try s.folder("one"))
-        _ = await c.paste(into: try s.folder("two"))
+        _ = try await c.paste(into: try s.folder("one"))
+        _ = try await c.paste(into: try s.folder("two"))
         #expect(s.read("one/f.txt") == "f" && s.read("two/f.txt") == "f" && s.read("src/f.txt") == "f")
         #expect(c.clipboardURLs == [f])
     }
@@ -39,7 +40,7 @@ import Testing
         let c = makeController(ScriptedUI())
         c.copy([mine], cut: true)
         c.clipboard.write([theirs])  // another app copies something
-        _ = await c.paste(into: try s.folder("dst"))
+        _ = try await c.paste(into: try s.folder("dst"))
         #expect(s.listing("src") == ["mine.txt", "theirs.txt"] && s.listing("dst") == ["theirs.txt"])
     }
 

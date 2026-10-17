@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -9,18 +10,6 @@ import Testing
 /// corners of local listings: an expanded folder that vanished, a media folder already in Icons, duplicate rows.
 @MainActor @Suite(.isolatedSettings) struct DirectoryModelCoverageTests {
     let fm = FileManager.default
-
-    private func names(_ m: DirectoryModel) -> [String] { m.rows.map(\.item.name) }
-
-    private func loaded(_ url: URL, timeout: TimeInterval = 10, _ setUp: (DirectoryModel) -> Void = { _ in }) async throws
-        -> DirectoryModel
-    {
-        let m = DirectoryModel(location: url)
-        setUp(m)
-        m.reload()
-        try #require(await eventually(timeout) { !m.isLoading })
-        return m
-    }
 
     static let listing = """
         total 24
@@ -42,12 +31,12 @@ import Testing
         try adb.reply(Self.listing)
 
         var loads = 0
-        let m = try await loaded(root) {
+        let m = try await DirectoryModel.loaded(root) {
             $0.props.mode = .details
             $0.onLoaded = { loads += 1 }
         }
         #expect(m.kind == .device && m.loadError == nil && loads == 1)
-        #expect(names(m) == ["DCIM", "photo.jpg"])
+        #expect(m.rowNames == ["DCIM", "photo.jpg"])
 
         // An expanded remote folder is listed by the provider too, and again on every reload.
         let dcim = try #require(m.rows.first { $0.item.name == "DCIM" }?.item.url)
@@ -69,7 +58,7 @@ import Testing
     // MARK: Virtual locations
 
     @Test func aTagNobodyUsesListsNothing() async throws {
-        let m = try await loaded(FinderTags.url(for: "porpoise-coverage-\(UUID().uuidString)"), timeout: 60)
+        let m = try await DirectoryModel.loaded(FinderTags.url(for: "porpoise-coverage-\(UUID().uuidString)"), timeout: 60)
         #expect(m.kind.isVirtual && m.items.isEmpty && m.rows.isEmpty && m.loadError == nil)
         #expect(m.props.mode == .icons && m.props.sortRole == .name)
     }
@@ -78,7 +67,7 @@ import Testing
     @Test func searchResultsSortedByTagsShowAtOnce() async throws {
         let s = try Scratch()
         let a = try #require(FileItem.load(try s.file("a.txt"))), b = try #require(FileItem.load(try s.file("b.txt")))
-        let m = try await loaded(s.url)
+        let m = try await DirectoryModel.loaded(s.url)
         m.props.sortRole = .tags
         var shown = false
         m.sortSearchResults([b, a]) { apply in
@@ -94,7 +83,7 @@ import Testing
         RecentLocations.shared.visit(gone)
         RecentLocations.shared.visit(kept)
         try fm.removeItem(at: gone)
-        let m = try await loaded(PlacesModel.recentLocationsURL)
+        let m = try await DirectoryModel.loaded(PlacesModel.recentLocationsURL)
         #expect(m.items.contains { $0.url == kept })
         #expect(!m.items.contains { $0.url == gone })
     }
@@ -104,12 +93,12 @@ import Testing
     @Test func anExpandedFolderThatVanishedListsNothing() async throws {
         let s = try Scratch()
         try s.file("sub/child.txt"); try s.file("top.txt")
-        let m = try await loaded(s.url) { $0.props.mode = .details }
+        let m = try await DirectoryModel.loaded(s.url) { $0.props.mode = .details }
         m.setExpanded(s.path("sub"), true)
-        #expect(await eventually { names(m).contains("child.txt") })
+        #expect(await eventually { m.rowNames.contains("child.txt") })
         try fm.removeItem(at: s.path("sub"))
         m.reload()
-        #expect(await eventually { !m.isLoading && names(m) == ["top.txt"] })
+        #expect(await eventually { !m.isLoading && m.rowNames == ["top.txt"] })
     }
 
     @Test func anUnreadableFolderExpandsToNothing() async throws {
@@ -117,14 +106,14 @@ import Testing
         try s.file("locked/secret.txt")
         chmod(s.path("locked").path, 0o000)
         defer { chmod(s.path("locked").path, 0o755) }
-        let m = try await loaded(s.url) { $0.props.mode = .details }
+        let m = try await DirectoryModel.loaded(s.url) { $0.props.mode = .details }
         let locked = try #require(m.rows.first?.item.url)
         var changes = 0
         m.onChange = { changes += 1 }
         m.setExpanded(locked, true)
         let shown = changes
         #expect(await eventually { changes > shown })  // its listing came back (empty)
-        #expect(names(m) == ["locked"] && m.rows.first?.isExpanded == true)
+        #expect(m.rowNames == ["locked"] && m.rows.first?.isExpanded == true)
     }
 
     /// "Icons for media folders" has nothing to do in a media folder already shown as icons with previews.
@@ -134,7 +123,7 @@ import Testing
         Settings.shared.dynamicView = true
         var p = ViewProperties(); p.mode = .icons; p.previews = true; p.sortRole = .size
         Settings.shared.save(p, for: s.url)
-        let m = try await loaded(s.url)
+        let m = try await DirectoryModel.loaded(s.url)
         #expect(m.props.mode == .icons && m.props.previews && m.props.sortRole == .size)
         m.saveProps()
         #expect(Settings.shared.viewProperties(for: s.url).mode == .icons)
@@ -145,7 +134,7 @@ import Testing
         let s = try Scratch()
         let f = try s.file("sub/x.txt")
         let it = try #require(FileItem.load(f))
-        let m = try await loaded(s.url)
+        let m = try await DirectoryModel.loaded(s.url)
         m.searchResults = [it, it]
         #expect(m.rows.count == 2)
         #expect(m.index(of: f) == 0)

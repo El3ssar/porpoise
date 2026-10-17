@@ -1,64 +1,10 @@
 import CryptoKit
 import Foundation
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseServices
-
-final class FakeContentSource: CloudContentSource, @unchecked Sendable {
-    let accountID = "fixture"
-    let providerTitle = "Fixture Cloud"
-    private let lock = NSLock()
-    var isOffline = false
-    var onChanges: (@Sendable (CloudChangeBatch) -> Void)?
-    var items: [String: CloudRemoteItem] = [:]
-    var bytes: [String: Data] = [:]
-    var downloads = 0
-    var active = 0
-    var maximum = 0
-    var offsets: [Int] = []
-    var failAfterPartial = false
-    var delay: Duration = .milliseconds(2)
-    func add(_ id: String, parent: String? = nil, folder: Bool = false, text: String = "hello", revision: String = "r1") -> CloudRemoteItem {
-        let data = Data(text.utf8)
-        let item = CloudRemoteItem(
-            ref: .init(account: accountID, item: id), name: id + ".txt", parents: parent.map { [$0] } ?? [],
-            isFolder: folder, size: folder ? nil : Int64(data.count), revision: revision,
-            checksum: folder ? nil : .md5(Insecure.MD5.hash(data: data).map { String(format: "%02x", $0) }.joined()))
-        lock.withLock {
-            items[id] = item; bytes[id] = data
-        }
-        return item
-    }
-    func ref(for url: URL) -> CloudItemRef? { url.scheme == "fixture" ? .init(account: accountID, item: url.lastPathComponent) : nil }
-    func url(for item: CloudRemoteItem) -> URL { URL(string: "fixture://fixture/" + item.ref.item)! }
-    func cachedItem(_ ref: CloudItemRef) -> CloudRemoteItem? { lock.withLock { items[ref.item] } }
-    func item(_ ref: CloudItemRef) async throws -> CloudRemoteItem {
-        guard !isOffline else { throw CloudContentError.offline }
-        guard let item = cachedItem(ref) else { throw CloudContentError.notFound }
-        return item
-    }
-    func children(_ folder: CloudItemRef) async throws -> [CloudRemoteItem] {
-        lock.withLock { items.values.filter { $0.parents.contains(folder.item) } }
-    }
-    func download(_ item: CloudRemoteItem, to partial: URL, progress: @escaping @Sendable (Int64, Int64?) -> Void) async throws {
-        let data = lock.withLock { () -> Data in
-            downloads += 1; active += 1; maximum = max(maximum, active); return bytes[item.ref.item]!
-        }
-        defer { lock.withLock { active -= 1 } }
-        let offset = (try? partial.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        lock.withLock { offsets.append(offset) }
-        if failAfterPartial {
-            try data.prefix(2).write(to: partial); failAfterPartial = false; throw CancellationError()
-        }
-        try await Task.sleep(for: delay)
-        if !FileManager.default.fileExists(atPath: partial.path) { _ = FileManager.default.createFile(atPath: partial.path, contents: nil) }
-        let handle = try FileHandle(forWritingTo: partial); defer { try? handle.close() }
-        try handle.seekToEnd(); try handle.write(contentsOf: data.dropFirst(offset))
-        try handle.synchronize()
-        progress(Int64(data.count), Int64(data.count))
-    }
-}
 
 struct CloudOfflineStoreTests {
     func store(
@@ -122,12 +68,12 @@ struct CloudOfflineStoreTests {
     }
     @Test func lowSpacePausesAndResumesWithoutLosingPin() async throws {
         let source = FakeContentSource(), scratch = try Scratch(), item = source.add("one")
-        let space = LockedOfflineSpace()
-        let store = try store(source, scratch, free: { space.get() })
+        let space = Locked(Int64(0))
+        let store = try store(source, scratch, free: { (space.value, 20_000_000_000) })
         await #expect(throws: CloudContentError.lowSpace) { try await store.fetch(item, keep: true) }
         #expect(source.downloads == 0)
         #expect(await store.snapshot().pins.contains("one"))
-        space.set(10_000_000_000)
+        space.change { $0 = 10_000_000_000 }
         _ = try await store.fetch(item)
         #expect(source.downloads == 1)
         try await store.wipe()
@@ -161,13 +107,6 @@ struct CloudOfflineStoreTests {
         #expect(try Data(contentsOf: copy) == Data("hello".utf8))
         await #expect(throws: CloudContentError.checksum) { try await store.adopt(file: input, as: item) }
     }
-}
-
-final class LockedOfflineSpace: @unchecked Sendable {
-    private let lock = NSLock()
-    private var available: Int64 = 0
-    func get() -> (Int64, Int64) { lock.withLock { (available, 20_000_000_000) } }
-    func set(_ value: Int64) { lock.withLock { available = value } }
 }
 
 extension CloudOfflineStoreTests {
@@ -225,7 +164,7 @@ extension CloudOfflineStoreTests {
         source.delay = .milliseconds(100)
         let store = try store(source, scratch)
         let firstFetch = Task { try await store.fetch(first) }
-        for _ in 0..<100 where source.active == 0 { try await Task.sleep(for: .milliseconds(1)) }
+        _ = await poll(timeout: 5) { source.active != 0 }
         #expect(source.active == 1)
         let updated = source.add("one", text: "updated", revision: "r2")
         async let a = store.fetch(updated)
@@ -246,7 +185,7 @@ extension CloudOfflineStoreTests {
         source.delay = .milliseconds(100)
         let store = try store(source, scratch, free: { (2_000_000_008, 20_000_000_000) })
         let running = Task { try await store.fetch(first) }
-        for _ in 0..<100 where source.active == 0 { try await Task.sleep(for: .milliseconds(1)) }
+        _ = await poll(timeout: 5) { source.active != 0 }
         #expect(source.active == 1)
         await #expect(throws: CloudContentError.lowSpace) { try await store.fetch(second, keep: true) }
         #expect(await store.state(second.ref) == .error(CloudContentError.lowSpace.localizedDescription))
@@ -269,7 +208,7 @@ extension CloudOfflineStoreTests {
         #expect(!FileManager.default.fileExists(atPath: object.path))
         source.delay = .seconds(5)
         let task = Task { try await store.fetch(item, keep: true) }
-        for _ in 0..<100 where source.active == 0 { try await Task.sleep(for: .milliseconds(1)) }
+        _ = await poll(timeout: 5) { source.active != 0 }
         try await store.wipe()
         await #expect(throws: CancellationError.self) { try await task.value }
         #expect(!FileManager.default.fileExists(atPath: store.directory.path))

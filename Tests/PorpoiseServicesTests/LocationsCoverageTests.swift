@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -7,7 +8,7 @@ import Testing
 
 /// fd and ripgrep from build/search-tools (scripts/fetch-search-tools.sh), when they're there.
 private let searchTools: FolderSearch.Tools? = {
-    let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = TestPaths.repo
         .appendingPathComponent("build/search-tools")
     let fd = dir.appendingPathComponent("fd").path, rg = dir.appendingPathComponent("rg").path
     let fm = FileManager.default
@@ -16,13 +17,6 @@ private let searchTools: FolderSearch.Tools? = {
 
 /// Apple's own apps: Spotlight indexes them on every Mac (when it's on), and they're never in the user's home.
 private let systemApps = URL(fileURLWithPath: "/System/Applications")
-
-/// Holds the Spotlight queue until the returned function is called (a Spotlight that never answers).
-private func stallSpotlight() -> () -> Void {
-    let release = DispatchSemaphore(value: 0)
-    SpotlightQuery.queue.addOperation { _ = release.wait(timeout: .now() + 30) }
-    return { release.signal() }
-}
 
 // MARK: Search
 
@@ -315,10 +309,6 @@ private func stallSpotlight() -> () -> Void {
 // MARK: Detected places
 
 @MainActor @Suite struct PlacesDetectionCoverageTests {
-    private func titles(_ m: PlacesModel, _ section: PlaceSection) -> [String] {
-        m.sections().first { $0.0 == section }?.1.map(\.title) ?? []
-    }
-
     /// Cloud folders and Android phones (adb replaced by a script) show up, and go when they're gone.
     @Test func cloudFoldersAndPhonesAreDetected() async throws {
         let s = try Scratch()
@@ -331,8 +321,8 @@ private func stallSpotlight() -> () -> Void {
         defer { m.isActive = false }  // no polling timer left behind
 
         m.refreshDetected()
-        #expect(titles(m, .remote).contains("Google Drive (me@example.com)"))
-        #expect(await eventually(30) { titles(m, .removable).contains("Galaxy S21") })
+        #expect(m.titles(in: .remote).contains("Google Drive (me@example.com)"))
+        #expect(await eventually(30) { m.titles(in: .removable).contains("Galaxy S21") })
         let phone = try #require(m.allEntries.first { $0.title == "Galaxy S21" })
         #expect(phone.url.absoluteString == "adb://R58N123/sdcard/" && phone.icon == "smartphone")
         #expect(adb.calls.first?.args == ["devices", "-l"])
@@ -345,7 +335,7 @@ private func stallSpotlight() -> () -> Void {
         m.isActive = false
         try adb.reply("List of devices attached\n")
         m.isActive = true
-        #expect(await eventually(30) { !titles(m, .removable).contains("Galaxy S21") })
+        #expect(await eventually(30) { !m.titles(in: .removable).contains("Galaxy S21") })
 
         // No longer bookmarked: detected again; and once the folder has gone, not at all.
         m.remove(try #require(m.userEntries.first { $0.title == "Drive" }))

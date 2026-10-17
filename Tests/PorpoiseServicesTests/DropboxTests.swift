@@ -1,46 +1,11 @@
 import CryptoKit
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseServices
-
-final class FakeDropboxServer {
-    let fixture: LocalFixtureServer
-    var base: URL { fixture.base }
-    var directory: URL { fixture.scratch.url.appendingPathComponent("Engine") }
-    init(latencyMS: Int = 0, connectionMbps: Int = 0, bandwidthMbps: Int = 0) throws {
-        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        fixture = try LocalFixtureServer(
-            script: repo.appendingPathComponent("scripts/fake-dropbox-server.py"),
-            arguments: [
-                "--latency-ms", String(latencyMS), "--connection-mbps", String(connectionMbps), "--bandwidth-mbps", String(bandwidthMbps),
-            ])
-    }
-    var config: DropboxConfiguration {
-        DropboxConfiguration(
-            appKey: "fixture-app", loopbackPort: 0, authorizationURL: base.appendingPathComponent("auth"),
-            tokenURL: base.appendingPathComponent("token"),
-            apiURL: base.appendingPathComponent("2"), contentURL: base.appendingPathComponent("2"), notifyURL: base.appendingPathComponent("2"))
-    }
-    func client(id: UUID = UUID(), namespace: String? = nil, directory: URL? = nil) throws -> DropboxClient {
-        let credentials = MemoryCredentials(); try credentials.save("fixture-refresh", clientID: config.appKey, accountID: id)
-        return DropboxClient(
-            accountID: id, configuration: config, tokens: DropboxTokens.session(configuration: config, accountID: id, credentials: credentials),
-            namespaceID: namespace, directory: directory ?? self.directory)
-    }
-    func configure(_ values: [String: Any]) async throws {
-        var request = URLRequest(url: base.appendingPathComponent("config")); request.httpMethod = "POST"
-        request.httpBody = try JSONSerialization.data(withJSONObject: values)
-        let (_, response) = try await URLSession.shared.data(for: request); #expect((response as? HTTPURLResponse)?.statusCode == 200)
-    }
-    func stats() async throws -> [String: Any] {
-        let (bytes, _) = try await URLSession.shared.data(from: base.appendingPathComponent("stats"))
-        return try #require(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
-    }
-    func requests() async throws -> [[String: Any]] { try await stats()["requests"] as? [[String: Any]] ?? [] }
-}
 
 @Suite(.serialized) struct DropboxTests {
     @Test func opaqueLocationsHeaderEncodingAndContentHashVectors() throws {
@@ -104,18 +69,18 @@ final class FakeDropboxServer {
         let server = try FakeDropboxServer(); let client = try server.client()
         _ = try await client.list(); _ = try await client.list("id:folder")
         let source = client.contentSource
-        let batch = BatchBox(); source.onChanges = { batch.add($0) }
+        let batch = Locked([CloudChangeBatch]()); source.onChanges = { batch.append($0) }
         try await client.changes.check()
         let initialCursor = try #require(client.metadataCache.cursor("changes"))
         try await server.configure(["files": [["id": "id:new", "path": "/Folder/new.txt", "text": "new"]], "remove": ["/hello.txt"]])
         #expect(try await client.changes.pollOnce())
         #expect(client.metadataCache.file("id:hello") == nil)
         #expect(client.metadataCache.snapshot("id:folder")?.files.contains { $0.id == "id:new" } == true)
-        #expect(batch.values.contains { $0.removed.contains("id:hello") })
+        #expect(batch.value.contains { $0.removed.contains("id:hello") })
         #expect(client.metadataCache.cursor("changes") != initialCursor)
         #expect(try await !client.changes.pollOnce())
         client.metadataCache.setCursor("expired", scope: "changes")
-        try await client.changes.check(); #expect(batch.values.contains { $0.reset })
+        try await client.changes.check(); #expect(batch.value.contains { $0.reset })
         client.metadataCache.setCursor("expired-longpoll", scope: "changes")
         #expect(try await client.changes.pollOnce())
         try await server.configure(["remove": ["/Folder", "/Folder/nested.txt", "/Folder/new.txt"]])
@@ -358,7 +323,7 @@ final class FakeDropboxServer {
             DropboxConfiguration.selected(defaults: defaults, environment: ["PORPOISE_DROPBOX_APP_KEY": "env-key"], testing: true).appKey == "env-key"
         )
         let store = DropboxAccountStore(defaults: defaults, credentials: credentials, configuration: server.config, directory: scratch.url)
-        let browser: @MainActor (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
+        let browser = openInFakeBrowser
         let account = try await store.connect(openBrowser: browser)
         #expect(account.hasTeamSpace && account.email == "fixture@example.invalid")
         #expect(try credentials.read(clientID: server.config.appKey, accountID: account.id) == "fixture-refresh")
@@ -390,11 +355,6 @@ final class FakeDropboxServer {
     }
 }
 
-private final class BatchBox: @unchecked Sendable {
-    private let lock = NSLock(); private var batches: [CloudChangeBatch] = []
-    func add(_ batch: CloudChangeBatch) { lock.withLock { batches.append(batch) } }
-    var values: [CloudChangeBatch] { lock.withLock { batches } }
-}
 private final class ProgressStop: @unchecked Sendable {
     private let lock = NSLock(); private var stop = false
     func progress(_ bytes: Int64) { lock.withLock { if bytes >= 20 << 20 { stop = true } } }

@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -10,7 +11,7 @@ import Testing
 @MainActor @Suite(.serialized, .isolatedSettings) struct DriveEditingTests {
     private func setup() async throws -> (FakeDriveServer, DriveClient, DriveEditing, FileItem, Scratch) {
         let server = try DriveMutationTests().server(), scratch = try Scratch()
-        let credentials = MemoryDriveCredentials()
+        let credentials = MemoryCredentials()
         let id = UUID()
         try credentials.save("fixture-refresh", clientID: server.config.clientID, accountID: id)
         let tokens = DriveTokenManager(configuration: server.config, accountID: id, credentials: credentials)
@@ -28,11 +29,6 @@ import Testing
         editing.savedShownFor = 0.2
         let item = try #require(rows.first { $0.url.lastPathComponent == "binary-a" })
         return (server, client, editing, item, scratch)
-    }
-
-    private func wait(_ sourceLocation: SourceLocation = #_sourceLocation, _ condition: () -> Bool) async throws {
-        for _ in 0..<200 where !condition() { try await Task.sleep(for: .milliseconds(20)) }
-        #expect(condition(), sourceLocation: sourceLocation)
     }
 
     /// Every mark the row went through, as it changed: "Saved" shows for a moment only (0.2 s here), and a busy
@@ -65,7 +61,7 @@ import Testing
         #expect(editing.canEdit(item))
         var result: Bool?
         editing.open(item) { result = $0 }
-        try await wait { result != nil }
+        await expectEventually { result != nil }
         #expect(result == true && opened.count == 1)
         let entry = try #require(editing.entry(for: item.url))
         #expect(entry.mark == .editing && entry.title == "Editing “\(entry.name)”" && opened[0] == entry.localURL)
@@ -73,11 +69,11 @@ import Testing
 
         // The other app saves: sent once the writes settle, "Saved", then back to "Editing".
         try Data("edited in another app".utf8).write(to: entry.localURL)
-        try await wait { marks.saves == 1 }
+        await expectEventually { marks.saves == 1 }
         #expect(posts.contains { $0.0.hasPrefix("Saved “") && !$0.1 })
         let saved = try await client.file("binary-a")
         #expect(try await client.download(saved).data == Data("edited in another app".utf8))
-        try await wait { editing.mark(for: item.url) == .editing }
+        await expectEventually { editing.mark(for: item.url) == .editing }
         #expect(editing.entry(for: item.url)?.detail.hasPrefix("Changes save to Google Drive · last saved ") == true)
 
         // Opened again: the same copy, no second session.
@@ -99,11 +95,11 @@ import Testing
         editing.openFile = { opened.append($0) }
         editing.post = { posts.append(($0, $1)) }
         editing.open(item)
-        try await wait { editing.entry(for: item.url) != nil }
+        await expectEventually { editing.entry(for: item.url) != nil }
         let entry = try #require(editing.entry(for: item.url))
-        try await DriveMutationTests().control(server, ["conflictOnSave": true])
+        try await server.control(["conflictOnSave": true])
         try Data("mine".utf8).write(to: entry.localURL)
-        try await wait { editing.mark(for: item.url) == .conflict }
+        await expectEventually { editing.mark(for: item.url) == .conflict }
         let conflicted = try #require(editing.entry(for: item.url))
         #expect(conflicted.mark == .conflict && conflicted.mark.needsAttention && conflicted.conflictURL != nil)
         #expect(conflicted.title.hasSuffix("changed in Google Drive while you edited it"))
@@ -117,7 +113,7 @@ import Testing
         #expect(opened.suffix(2) == [entry.localURL, try #require(conflicted.conflictURL)])
         let saves = marks.saves
         editing.keepBoth(entry.id)
-        try await wait { marks.saves > saves }
+        await expectEventually { marks.saves > saves }
         #expect(editing.entries.first?.conflictURL == nil)
         #expect(try await client.download(client.file("binary-a")).data == Data("remote edit".utf8))
         #expect(posts.contains { $0.0.hasPrefix("Kept both versions of") })
@@ -134,20 +130,20 @@ import Testing
             RemoteFS.unregisterDrive(accountID: client.accountID)
         }
         editing.open(item)
-        try await wait { editing.entry(for: item.url) != nil }
+        await expectEventually { editing.entry(for: item.url) != nil }
         let entry = try #require(editing.entry(for: item.url))
-        try await DriveMutationTests().control(server, ["conflictOnSave": true])
+        try await server.control(["conflictOnSave": true])
         try Data("mine wins".utf8).write(to: entry.localURL)
-        try await wait { editing.mark(for: item.url) == .conflict }
+        await expectEventually { editing.mark(for: item.url) == .conflict }
         editing.replaceWithMine(entry.id)
-        try await wait { marks.saves == 1 }
+        await expectEventually { marks.saves == 1 }
         #expect(try await client.download(client.file("binary-a")).data == Data("mine wins".utf8))
 
         // Offline: kept, listed as unsent, sent when the connection is back.
-        try await wait { editing.mark(for: item.url) == .editing }
+        await expectEventually { editing.mark(for: item.url) == .editing }
         client.setOffline(true)
         try Data("written offline".utf8).write(to: entry.localURL)
-        try await wait {
+        await expectEventually {
             if case .unsent = editing.mark(for: item.url) { return true }
             return false
         }
@@ -156,7 +152,7 @@ import Testing
         #expect(unsent.mark.note("Google Drive") == "Not in Google Drive yet · kept on this Mac")
         client.setOffline(false)
         editing.retryUnsent()
-        try await wait { marks.saves == 2 }
+        await expectEventually { marks.saves == 2 }
         #expect(try await client.download(client.file("binary-a")).data == Data("written offline".utf8))
 
         // A save that never went (the app quit first) is listed after a relaunch and sent.
@@ -165,9 +161,9 @@ import Testing
         let relaunchedMarks = Marks(relaunched)
         relaunched.client = editing.client
         relaunched.restore(accounts: [client.accountID])
-        try await wait { relaunched.entry(for: item.url) != nil }
+        await expectEventually { relaunched.entry(for: item.url) != nil }
         #expect(relaunched.entries.count == 1)
-        try await wait { relaunchedMarks.saves == 1 }
+        await expectEventually { relaunchedMarks.saves == 1 }
         #expect(try await client.download(client.file("binary-a")).data == Data("before the quit".utf8))
     }
 
@@ -183,11 +179,11 @@ import Testing
         editing.post = { posts.append(($0, $1)) }
         #expect(editing.canEdit(item))
         editing.open(item)
-        try await wait { editing.entry(for: item.url) != nil }
+        await expectEventually { editing.entry(for: item.url) != nil }
         #expect(posts.contains { $0.0.hasSuffix("you can keep your changes as a copy in Google Drive.") })
         let entry = try #require(editing.entry(for: item.url))
         try Data("kept here".utf8).write(to: entry.localURL)
-        try await wait { editing.mark(for: item.url) == .needsCopy }
+        await expectEventually { editing.mark(for: item.url) == .needsCopy }
         let waiting = try #require(editing.entry(for: item.url))
         #expect(waiting.title == "Your changes to “\(waiting.name)” are on this Mac" && waiting.mark.needsAttention)
         #expect(posts.contains { $0.0.contains("Save them as a copy in Google Drive") && $0.1 })
@@ -196,7 +192,7 @@ import Testing
         #expect(original != Data("kept here".utf8))
         let saves = marks.saves
         editing.keepBoth(entry.id)
-        try await wait { marks.saves > saves }
+        await expectEventually { marks.saves > saves }
         let copy = try #require(editing.entries.first)
         #expect(copy.name.hasSuffix("(edited on Mac).txt"))
         #expect(try await client.download(client.file(copy.fileID)).data == Data("kept here".utf8))

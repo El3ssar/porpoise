@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -23,10 +24,10 @@ import Testing
             backend = DropboxCloudBackend(store: store)
             accounts.backend = CompositeCloudBackend([.dropbox: backend])
         }
-        func connect() async -> Result<CloudAccount, CloudConnectError> {
-            await withCheckedContinuation { continuation in
+        func connect() async throws -> Result<CloudAccount, CloudConnectError> {
+            try await awaitCallback { continuation in
                 _ = accounts.connect(
-                    .dropbox, openBrowser: { url in Task { _ = try? await URLSession.shared.data(from: url) } },
+                    .dropbox, openBrowser: openInFakeBrowser,
                     done: { continuation.resume(returning: $0) })
             }
         }
@@ -53,9 +54,9 @@ import Testing
         #expect(fixture.accounts.accounts.first { $0.id == account.id }?.status == .ok)
         fixture.store.status.record(id, DropboxError.reconnect, signInNeeded: true)
         // Signing in again gives the account a new sign-in: it is OK again.
-        let again: Result<Void, CloudConnectError> = await withCheckedContinuation { continuation in
+        let again: Result<Void, CloudConnectError> = try await awaitCallback { continuation in
             _ = fixture.accounts.signInAgain(
-                account.id, openBrowser: { url in Task { _ = try? await URLSession.shared.data(from: url) } },
+                account.id, openBrowser: openInFakeBrowser,
                 done: { continuation.resume(returning: $0) })
         }
         #expect((try? again.get()) != nil)
@@ -70,7 +71,7 @@ import Testing
         try await fixture.server.configure(["account": "dbid:second"])
         let second = try await fixture.connect().get()
         #expect(first.id != second.id && fixture.accounts.accounts.first?.id == first.id)
-        guard case .failure(.alreadyConnected(let named)) = await fixture.connect() else {
+        guard case .failure(.alreadyConnected(let named)) = try await fixture.connect() else {
             Issue.record("the same account was connected twice"); return
         }
         #expect(named.id == second.id)
@@ -97,7 +98,7 @@ import Testing
     // B5: Dropbox's blocking calls know a cooperative-pool thread (where they assert, as Drive's do).
     @Test func blockingCallsKnowTheCooperativePool() async throws {
         #expect(CloudAwait.onCooperativeThread)
-        let onThread: Bool = await withCheckedContinuation { continuation in
+        let onThread: Bool = try await awaitCallback { continuation in
             Thread { continuation.resume(returning: CloudAwait.onCooperativeThread) }.start()
         }
         #expect(!onThread)
@@ -109,7 +110,7 @@ import Testing
     @Test @MainActor func signingOutRevokesTheToken() async throws {
         let fixture = try Fixture(); defer { fixture.cleanup() }
         let account = try await fixture.connect().get()
-        let error: Error? = await withCheckedContinuation { continuation in
+        let error: Error? = try await awaitCallback { continuation in
             fixture.accounts.remove(account.id) { continuation.resume(returning: $0) }
         }
         #expect(error == nil, "signing out failed: \(String(describing: error))")
@@ -127,7 +128,7 @@ import Testing
         let account = try await fixture.connect().get()
         let uuid = try #require(fixture.store.accounts.first?.id)
         try await fixture.server.configure(["failRoute": "auth/token/revoke"])
-        let error: Error? = await withCheckedContinuation { continuation in
+        let error: Error? = try await awaitCallback { continuation in
             fixture.accounts.remove(account.id) { continuation.resume(returning: $0) }
         }
         #expect(error == nil, "signing out failed: \(String(describing: error))")

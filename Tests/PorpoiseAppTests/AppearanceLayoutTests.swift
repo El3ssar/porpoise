@@ -1,6 +1,8 @@
 import AppKit
 import PorpoiseCore
 import PorpoiseServices
+import PorpoiseServicesTestSupport
+import PorpoiseTestSupport
 import Testing
 
 @testable import Porpoise
@@ -20,11 +22,8 @@ import Testing
     @Test(.isolatedSettings) @MainActor func closingAuxiliaryWindowDoesNotQuitAnOrderedOutBrowser() throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
-        let suite = "app.porpoise.lifetime-test.\(UUID().uuidString)"
         let delegate = AppDelegate.shared
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
+        let scratch = try Scratch(), folder = scratch.url
         delegate.newWindow(at: folder)
         let browser = try #require(delegate.windows.last)
         defer { if delegate.windows.contains(where: { $0 === browser }) { browser.window?.close() } }

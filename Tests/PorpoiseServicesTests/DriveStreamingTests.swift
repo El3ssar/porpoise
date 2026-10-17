@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -8,18 +9,18 @@ import Testing
 
 @Suite(.serialized) struct DriveStreamingTests {
     private func fixture(_ scratch: Scratch, size: Int, checksum: String? = nil) throws -> URL {
-        let url = scratch.url.appendingPathComponent("fixture.json")
-        let digest = checksum ?? Insecure.MD5.hash(data: Data(repeating: 120, count: size)).map { String(format: "%02x", $0) }.joined()
-        try JSONSerialization.data(withJSONObject: [
-            "files": [
-                [
-                    "id": "movie", "name": "movie.mp4", "mimeType": "video/mp4",
-                    "size": String(size), "version": "1", "headRevisionId": "revision-1", "md5Checksum": digest,
-                    "capabilities": ["canDownload": true],
-                ]
-            ], "generatedMedia": ["movie": size],
-        ]).write(to: url)
-        return url
+        let digest = checksum ?? FakeDriveServer.generatedMediaMD5(size: size)
+        return try FakeDriveServer.writeFixture(
+            in: scratch,
+            [
+                "files": [
+                    [
+                        "id": "movie", "name": "movie.mp4", "mimeType": "video/mp4",
+                        "size": String(size), "version": "1", "headRevisionId": "revision-1", "md5Checksum": digest,
+                        "capabilities": ["canDownload": true],
+                    ]
+                ], "generatedMedia": ["movie": size],
+            ])
     }
 
     @Test func disconnectedStreamResumesFromDurableCheckpoint() async throws {
@@ -27,7 +28,7 @@ import Testing
         let server = try FakeDriveServer(fixture: fixture(scratch, size: 24 << 20))
         let client = try DriveMutationTests().client(server, folder: scratch.url.appendingPathComponent("journal"))
         let file = try await client.file("movie"), operation = UUID()
-        try await DriveMutationTests().control(server, ["dropDownloadAfterBytes": 12 << 20])
+        try await server.control(["dropDownloadAfterBytes": 12 << 20])
         await #expect(throws: (any Error).self) { try await client.downloadToStaging(file, operationID: operation) }
         let record = try #require(try client.mutationJournal.load(operation))
         // The engine checkpoints after 8 MiB OR two seconds. A loaded runner may durably
@@ -38,8 +39,7 @@ import Testing
         #expect(try Data(contentsOf: partial) == Data(repeating: 120, count: Int(record.offset)))
         let result = try await client.downloadToStaging(file, operationID: operation)
         #expect(try DriveClient.md5(result.url) == file.md5Checksum)
-        let stats = try await URLSession.shared.data(from: server.base.appendingPathComponent("__stats")).0
-        let requests = try #require((try JSONSerialization.jsonObject(with: stats) as? [String: Any])?["requests"] as? [String])
+        let requests = try #require(try await server.stats()["requests"] as? [String])
         #expect(requests.filter { $0.contains("alt=media") }.count == 2)
     }
 
@@ -47,7 +47,7 @@ import Testing
         let scratch = try Scratch(), checks = DriveMutationTests()
         let server = try FakeDriveServer(fixture: fixture(scratch, size: 2 << 20))
         let client = try checks.client(server, folder: scratch.url.appendingPathComponent("journal"))
-        try await checks.control(server, ["changeRevisionDuringDownload": true])
+        try await server.control(["changeRevisionDuringDownload": true])
         let operation = UUID()
         await #expect(throws: DriveMutationError.sourceChanged) { try await client.downloadToStaging(client.file("movie"), operationID: operation) }
         #expect(try client.mutationJournal.load(operation)?.phase != .done)
@@ -93,7 +93,7 @@ import Testing
         #expect(operations.activities.last?.title == "Opening “movie.mp4”")
         server.stop()
         RemoteOpener.open(item, using: { opened.append($0) })
-        for _ in 0..<20 where opened.count != 2 { try await Task.sleep(for: .milliseconds(5)) }
+        _ = await poll(timeout: 5) { opened.count == 2 }
         #expect(opened.count == 2 && opened.first == opened.last && operations.activities.count == 1)
         await client.clearCaches()
     }

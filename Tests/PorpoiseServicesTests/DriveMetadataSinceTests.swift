@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -38,7 +39,7 @@ import Testing
     /// else happens, until released.
     private func client(holding holds: @escaping @Sendable (URLRequest) -> Bool) throws -> (FakeDriveServer, DriveClient, Hold, Scratch) {
         let server = try DriveMutationTests().server(), scratch = try Scratch()
-        let credentials = MemoryDriveCredentials()
+        let credentials = MemoryCredentials()
         let id = UUID()
         try credentials.save("fixture-refresh", clientID: server.config.clientID, accountID: id)
         let tokens = DriveTokenManager(configuration: server.config, accountID: id, credentials: credentials)

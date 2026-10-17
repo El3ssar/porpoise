@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -27,26 +28,10 @@ struct ActivityTests {
         }
     }
 
-    /// A file of `size` pseudo-random bytes.
-    func randomFile(_ name: String, size: Int, seed: UInt64 = 1) throws -> URL {
-        var g = SeededGenerator(seed: seed)
-        var d = Data(count: size)
-        d.withUnsafeMutableBytes { b in
-            let words = b.bindMemory(to: UInt64.self)
-            for i in 0..<words.count { words[i] = g.next() }
-        }
-        let u = s.path(name)
-        try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try d.write(to: u)
-        return u
-    }
-
-    func waitUntil(_ timeout: TimeInterval = 20, _ check: () -> Bool) async -> Bool { await eventually(timeout, check) }
-
     // MARK: Resuming after a relaunch
 
     @Test func interruptedCopyResumesAfterRelaunchWithIdenticalBytes() async throws {
-        let src = try randomFile("src/big.bin", size: 48 << 20)
+        let src = try s.randomFile("src/big.bin", size: 48 << 20)
         let small = try s.file("src/small.txt", "small")
         let dst = try s.folder("dst")
         // Hold the worker at an observable byte boundary. A loaded main queue can otherwise
@@ -65,10 +50,10 @@ struct ActivityTests {
         }
         c.run(.copy, [small, src], to: dst, window: nil)
         let a = try #require(c.activities.last)
-        #expect(await waitUntil { (a.progress?.doneBytes ?? 0) > 16 << 20 })
+        #expect(await poll(timeout: 20) { (a.progress?.doneBytes ?? 0) > 16 << 20 })
         // Quitting: the job stops where it is.
         c.interruptAll()
-        #expect(await waitUntil { a.state == .interrupted })
+        #expect(await poll(timeout: 20) { a.state == .interrupted })
         #expect(c.journals.all().count == 1)
         #expect(FileManager.default.fileExists(atPath: dst.appendingPathComponent("small.txt").path))
         #expect(!FileManager.default.fileExists(atPath: dst.appendingPathComponent("big.bin").path))
@@ -87,7 +72,7 @@ struct ActivityTests {
         #expect(plan.summary.hasPrefix("Copying to “dst” was interrupted: 1 item is left ("))
         var finished = false
         next.recover(plan, window: nil) { _ in finished = true }
-        #expect(await waitUntil { finished })
+        #expect(await poll(timeout: 20) { finished })
         #expect(try Data(contentsOf: dst.appendingPathComponent("big.bin")) == Data(contentsOf: src))
         #expect(try FileManager.default.contentsOfDirectory(atPath: dst.path).sorted() == ["big.bin", "small.txt"])
         #expect(next.journals.all().isEmpty)
@@ -96,13 +81,13 @@ struct ActivityTests {
     }
 
     @Test func changesMadeMeanwhileAreDetected() async throws {
-        let src = try randomFile("src/big.bin", size: 32 << 20, seed: 2)
+        let src = try s.randomFile("src/big.bin", size: 32 << 20, seed: 2)
         let dst = try s.folder("dst")
         c.run(.copy, [src], to: dst, window: nil)
         let a = try #require(c.activities.last)
-        #expect(await waitUntil { (a.progress?.doneBytes ?? 0) > 8 << 20 })
+        #expect(await poll(timeout: 20) { (a.progress?.doneBytes ?? 0) > 8 << 20 })
         c.interruptAll()
-        #expect(await waitUntil { a.state == .interrupted })
+        #expect(await poll(timeout: 20) { a.state == .interrupted })
         var plan = try #require(c.recoveryPlans().first)
         let staging = try #require(plan.resumePoints[src]?.staging)
 
@@ -114,7 +99,7 @@ struct ActivityTests {
         #expect(plan.notes.first?.hasPrefix("The partial copy of “big.bin” was changed meanwhile") == true)
         var finished = false
         c.recover(plan, window: nil) { _ in finished = true }
-        #expect(await waitUntil { finished })
+        #expect(await poll(timeout: 20) { finished })
         #expect(try Data(contentsOf: dst.appendingPathComponent("big.bin")) == Data(contentsOf: src))
         #expect(try String(contentsOf: staging, encoding: .utf8) == "not ours")
     }
@@ -183,8 +168,8 @@ struct ActivityTests {
 
     @Test func copiesQueueBehindTheConcurrencyLimit() async throws {
         c.concurrency = 1
-        let one = try randomFile("src/one.bin", size: 24 << 20, seed: 3)
-        let two = try randomFile("src/two.bin", size: 12 << 20, seed: 4)
+        let one = try s.randomFile("src/one.bin", size: 24 << 20, seed: 3)
+        let two = try s.randomFile("src/two.bin", size: 12 << 20, seed: 4)
         let three = try s.file("src/three.txt", "3")
         let dst = try s.folder("dst")
         c.run(.copy, [one], to: dst, window: nil)
@@ -198,7 +183,7 @@ struct ActivityTests {
         #expect(c.activities.map(\.id) == [a.id, d.id, b.id])
         c.cancel(b)
         #expect(!c.activities.contains { $0 === b })
-        #expect(await waitUntil { d.state == .completed })
+        #expect(await poll(timeout: 20) { d.state == .completed })
         #expect(a.state == .completed)
         #expect(!FileManager.default.fileExists(atPath: dst.appendingPathComponent("two.bin").path))
         #expect(c.journals.all().isEmpty)
@@ -206,40 +191,40 @@ struct ActivityTests {
         c.run(.copy, [one], to: try s.folder("dst2"), window: nil)
         c.run(.delete, [try s.file("junk.txt", "")], window: nil)
         #expect(c.activities.last?.state == .running)
-        #expect(await waitUntil { c.activities.allSatisfy(\.state.isEnded) })
+        #expect(await poll(timeout: 20) { c.activities.allSatisfy(\.state.isEnded) })
         c.clearEnded()
         #expect(c.activities.isEmpty)
     }
 
     @Test func pauseAndResumeThroughTheController() async throws {
-        let src = try randomFile("src/p.bin", size: 32 << 20, seed: 5)
+        let src = try s.randomFile("src/p.bin", size: 32 << 20, seed: 5)
         let dst = try s.folder("dst")
         c.run(.copy, [src], to: dst, window: nil)
         let a = try #require(c.activities.last)
-        #expect(await waitUntil { (a.progress?.doneBytes ?? 0) > 4 << 20 })
+        #expect(await poll(timeout: 20) { (a.progress?.doneBytes ?? 0) > 4 << 20 })
         #expect(a.canPause && a.pauseUnavailable == nil)
         c.pause(a)
         #expect(a.state == .paused && a.statusText.hasPrefix("Paused — "))
-        try await Task.sleep(nanoseconds: 300_000_000)
-        let held = a.job?.isPaused
-        #expect(held == true)
+        // The job holds: paused, and still paused a moment later.
+        #expect(await poll(timeout: 20) { a.job?.isPaused == true })
+        await expectStays(for: 0.3) { a.job?.isPaused == true }
         c.resume(a)
         #expect(a.state == .running)
-        #expect(await waitUntil { a.state == .completed })
+        #expect(await poll(timeout: 20) { a.state == .completed })
         #expect(try Data(contentsOf: dst.appendingPathComponent("p.bin")) == Data(contentsOf: src))
     }
 
     @Test func quittingDoesNotStartTheNextQueuedCopy() async throws {
         c.concurrency = 1
-        let big = try randomFile("src/shutdown.bin", size: 32 << 20)
+        let big = try s.randomFile("src/shutdown.bin", size: 32 << 20)
         let waiting = try s.file("src/waiting.txt", "leave queued")
         let dst = try s.folder("dst")
         c.run(.copy, [big], to: dst, window: nil)
         c.run(.copy, [waiting], to: dst, window: nil)
         let first = c.activities[0], second = c.activities[1]
-        #expect(await waitUntil { (first.progress?.doneBytes ?? 0) > 0 })
+        #expect(await poll(timeout: 20) { (first.progress?.doneBytes ?? 0) > 0 })
         c.interruptAll()
-        #expect(await waitUntil { first.state == .interrupted })
+        #expect(await poll(timeout: 20) { first.state == .interrupted })
         #expect(second.state == .queued)
         #expect(!FileManager.default.fileExists(atPath: dst.appendingPathComponent("waiting.txt").path))
         #expect(c.journals.all().count == 2)
@@ -251,14 +236,14 @@ struct ActivityTests {
         let dst = try s.folder("dst")
         c.run(.copy, [ok, missing], to: dst, window: nil)
         let a = try #require(c.activities.last)
-        #expect(await waitUntil { a.state.isEnded })
+        #expect(await poll(timeout: 20) { a.state.isEnded })
         #expect(a.state == .completed && a.failedSources == [missing] && a.errors.count == 1)
         #expect(a.statusText == "Done, with 1 error")
         try s.file("src/later.txt", "now here")
         c.retry(a, window: nil)
         let b = try #require(c.activities.last)
         #expect(b.sources == [missing])
-        #expect(await waitUntil { b.state == .completed })
+        #expect(await poll(timeout: 20) { b.state == .completed })
         #expect(try String(contentsOf: dst.appendingPathComponent("later.txt"), encoding: .utf8) == "now here")
     }
 
@@ -270,7 +255,7 @@ struct ActivityTests {
         let dst = try s.folder("dst")
         c.run(.copy, [s.path("src/folder"), file], to: dst, window: nil)
         let a = try #require(c.activities.last)
-        #expect(await waitUntil { a.state == .completed && a.verification != nil })
+        #expect(await poll(timeout: 20) { a.state == .completed && a.verification != nil })
         let v = try #require(a.verification)
         #expect(v.ok && v.files == 3 && v.bytes == 6)
         #expect(a.statusText == "Done. Verified 3 files (6 B): identical to the originals.")
@@ -283,7 +268,7 @@ struct ActivityTests {
         let f = try s.file("src/report, final.txt", "x")
         let dst = try s.folder("Backup")
         c.run(.copy, [f], to: dst, window: nil)
-        #expect(await waitUntil { c.history.entries().count == 1 })
+        #expect(await poll(timeout: 20) { c.history.entries().count == 1 })
         let e = try #require(c.history.entries().first)
         #expect(e.operation == "Copying" && e.outcome == "Completed" && e.items == 1 && e.destination == dst.path)
         #expect(c.history.entries(matching: "backup copying").count == 1)

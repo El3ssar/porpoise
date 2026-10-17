@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -28,14 +29,14 @@ import Testing
         // First visit: the saved listing paints at once, no animation (nothing was shown before).
         model.reload()
         #expect(model.items == rows && model.isRefreshing && animated == 0)
-        for _ in 0..<100 where model.isRefreshing { try await Task.sleep(for: .milliseconds(20)) }
+        _ = await poll(timeout: 5) { !model.isRefreshing }
         #expect(!model.isRefreshing)
         #expect(!model.isRefreshing && animated == 0)
         let selected = try #require(rows.first { $0.name == "report.txt" }).url
         model.selection = [selected]
 
         // Changed in the browser: the next look at the folder animates the difference and keeps the selection.
-        let fixtureURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/metadata.json")
+        let fixtureURL = FakeDriveServer.fixture("metadata.json")
         var changed = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as? [String: Any])
         var files = try #require(changed["files"] as? [[String: Any]])
         files[2]["name"] = "Updated report.txt"
@@ -47,14 +48,14 @@ import Testing
         loaded = 0
         model.reload()
         #expect(model.isRefreshing && animated == 0)
-        for _ in 0..<100 where model.isRefreshing { try await Task.sleep(for: .milliseconds(20)) }
+        _ = await poll(timeout: 5) { !model.isRefreshing }
         #expect(!model.isRefreshing)
         #expect(animated == 1 && loaded == 2)
         #expect(model.items.contains { $0.name == "Updated report.txt" } && model.selection == [selected])
 
         // Nothing new: no animation at all.
         model.reload()
-        for _ in 0..<100 where model.isRefreshing { try await Task.sleep(for: .milliseconds(20)) }
+        _ = await poll(timeout: 5) { !model.isRefreshing }
         #expect(!model.isRefreshing)
         #expect(animated == 1)
 
@@ -68,7 +69,7 @@ import Testing
         _ = try await provider.refresh(root)
         model.reload()
         #expect(animated == 2 && model.items.contains { $0.name == "Final report.txt" })
-        for _ in 0..<100 where model.isRefreshing { try await Task.sleep(for: .milliseconds(20)) }
+        _ = await poll(timeout: 5) { !model.isRefreshing }
         #expect(!model.isRefreshing)
     }
 

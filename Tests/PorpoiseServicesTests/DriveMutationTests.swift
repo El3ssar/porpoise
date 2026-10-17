@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -7,15 +8,10 @@ import Testing
 
 @Suite(.serialized) struct DriveMutationTests {
     func server() throws -> FakeDriveServer {
-        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/mutations.json")
+        let fixture = FakeDriveServer.fixture("mutations.json")
         return try FakeDriveServer(fixture: fixture)
     }
-    func control(_ server: FakeDriveServer, _ values: [String: Any]) async throws {
-        var request = URLRequest(url: server.base.appendingPathComponent("__control"))
-        request.httpMethod = "POST"; request.httpBody = try JSONSerialization.data(withJSONObject: values)
-        _ = try await URLSession.shared.data(for: request)
-    }
-    func client(_ server: FakeDriveServer, folder: URL, id: UUID = UUID(), credentials: MemoryDriveCredentials = .init()) throws
+    func client(_ server: FakeDriveServer, folder: URL, id: UUID = UUID(), credentials: MemoryCredentials = .init()) throws
         -> DriveClient
     {
         try credentials.save("fixture-refresh", clientID: server.config.clientID, accountID: id)
@@ -28,7 +24,7 @@ import Testing
         let server = try server(), scratch = try Scratch()
         let client = try client(server, folder: scratch.url)
         let op = UUID()
-        try await control(server, ["dropCreateResponse": true])
+        try await server.control(["dropCreateResponse": true])
         let folder = try await client.createFolder(name: "Destination", parentID: "root", operationID: op)
         let retried = try await client.createFolder(name: "Destination", parentID: "root", operationID: op)
         #expect(folder.id == retried.id)
@@ -50,7 +46,7 @@ import Testing
     @Test func serverCopyLostResponseNeverDuplicatesAndCapabilitiesAreFresh() async throws {
         let server = try server(), scratch = try Scratch()
         let client = try client(server, folder: scratch.url)
-        try await control(server, ["dropCreateResponse": true])
+        try await server.control(["dropCreateResponse": true])
         let op = UUID()
         let copy = try await client.copy("binary-a", to: "root", name: "Copy", operationID: op)
         #expect(try await client.copy("binary-a", to: "root", name: "Copy", operationID: op).id == copy.id)
@@ -71,11 +67,11 @@ import Testing
     @Test func quotaBackoffAndScopeUpgrade() async throws {
         let server = try server(), scratch = try Scratch()
         let client = try client(server, folder: scratch.url)
-        try await control(server, ["mutationFaults": [429, 429, 0]])
+        try await server.control(["mutationFaults": [429, 429, 0]])
         #expect(try await client.createFolder(name: "After throttle", parentID: "root").isFolder)
-        try await control(server, ["mutationFaults": [403]])
+        try await server.control(["mutationFaults": [403]])
         await #expect(throws: DriveError.permissionDenied) { try await client.rename("binary-a", to: "Denied") }
-        try await control(server, ["scope": "https://www.googleapis.com/auth/drive.readonly"])
+        try await server.control(["scope": "https://www.googleapis.com/auth/drive.readonly"])
         let readonly = try self.client(server, folder: scratch.url.appendingPathComponent("readonly"))
         await #expect(throws: DriveError.needsWriteAccess) { try await readonly.createFolder(name: "Denied", parentID: "root") }
         // Unknown grants are conservatively treated as old grants too.
@@ -87,13 +83,13 @@ import Testing
 
     @Test func uploadDropAfterChunkRecoversWithNewClientAndIdenticalBytes() async throws {
         let server = try server(), scratch = try Scratch()
-        let id = UUID(), credentials = MemoryDriveCredentials()
+        let id = UUID(), credentials = MemoryCredentials()
         let client = try client(server, folder: scratch.url.appendingPathComponent("journal"), id: id, credentials: credentials)
         let source = scratch.url.appendingPathComponent("large.bin")
         let bytes = Data((0..<800_001).map { UInt8($0 % 251) })
         try bytes.write(to: source)
         let op = UUID()
-        try await control(server, ["dropUploadResponse": true])
+        try await server.control(["dropUploadResponse": true])
         do { _ = try await client.upload(source, parentID: "root", operationID: op); Issue.record("Expected connection drop") } catch {}
         let before = try #require(try client.mutationJournal.load(op))
         #expect(before.offset == 0 && before.hasSession && before.phase == .transferring)
@@ -117,7 +113,7 @@ import Testing
         let bytes = Data(repeating: 42, count: 600_000)
         try bytes.write(to: source)
         let uploaded = try await client.upload(source, parentID: "root")
-        let op = UUID(), calls = CheckpointCounter()
+        let op = UUID(), calls = Checkpoints()
         let context = DriveTransferContext(checkpoint: { if await calls.next() == 2 { throw FileOperationError.interrupted } })
         await #expect(throws: FileOperationError.self) { try await client.downloadToStaging(uploaded, operationID: op, context: context) }
         #expect(try client.mutationJournal.load(op)?.offset == 0)
@@ -152,7 +148,7 @@ import Testing
         let result = await provider.trash([folder.url, denied])
         #expect(result.trashed == [folder.url] && result.failures[denied] != nil)
         try await provider.untrash(result.trashed)
-        #expect(try await client.file(DriveLocation(url: folder.url)!.collectionID).trashed == false)
+        #expect(try await client.file(DriveLocation(url: folder.url)!.folderIDOrRoot).trashed == false)
     }
 
     @Test func activityTransfersUseNamesWhileRetainingIDsAndSafeConflictRules() async throws {
@@ -179,7 +175,7 @@ import Testing
         await offThePool { download.run() }
         #expect(download.errors.isEmpty)
         #expect(try Data(contentsOf: output.appendingPathComponent("payload.txt")) == Data("payload".utf8))
-        #expect(try await client.file(DriveLocation(url: remote)!.collectionID, includeTrashed: true).trashed == true)
+        #expect(try await client.file(DriveLocation(url: remote)!.folderIDOrRoot, includeTrashed: true).trashed == true)
         let again = RemoteTransferJob(
             kind: .copy, sources: [local], destination: root,
             control: JobControl(), rule: .ask, options: .init())
@@ -199,9 +195,4 @@ import Testing
         #expect(replace.errors.isEmpty)
         #expect(FileManager.default.fileExists(atPath: local.path))
     }
-}
-
-private actor CheckpointCounter { var count = 0; func next() -> Int { count += 1; return count } }
-private extension DriveLocation {
-    var collectionID: String { if case .folder(let id, _) = collection { return id }; return "root" }
 }

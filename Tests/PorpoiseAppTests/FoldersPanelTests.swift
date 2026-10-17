@@ -1,6 +1,8 @@
 import AppKit
 import PorpoiseCore
 import PorpoiseServices
+import PorpoiseServicesTestSupport
+import PorpoiseTestSupport
 import Testing
 
 @testable import Porpoise
@@ -19,13 +21,13 @@ extension AppearanceLayoutTests {
         panel.currentURL = root
         let scroll = try #require(panel.subviews.first as? NSScrollView)
         let outline = try #require(scroll.documentView as? NSOutlineView)
-        for _ in 0..<500 where outline.numberOfRows < 2 { try await Task.sleep(for: .milliseconds(20)) }
+        _ = await poll(timeout: 10) { outline.numberOfRows >= 2 }
         let folder = try #require(outline.item(atRow: 1) as? RemoteFolderTree.Node)
         #expect(folder.name == "Visible folder" && folder.children == nil)
         #expect(outline.isExpandable(folder))
         #expect(provider.count == 1)
         outline.expandItem(folder)
-        for _ in 0..<500 where outline.numberOfRows < 4 { try await Task.sleep(for: .milliseconds(20)) }
+        _ = await poll(timeout: 10) { outline.numberOfRows >= 4 }
         #expect(outline.numberOfRows == 4 && provider.count == 2)
         #expect(outline.isItemExpanded(folder))
         let nested = try #require(outline.item(atRow: 2) as? RemoteFolderTree.Node)
@@ -52,7 +54,7 @@ extension AppearanceLayoutTests {
         let target = root.appendingPathComponent("opaque/nested", isDirectory: true)
         panel.currentURL = target
         let outline = try #require((panel.subviews.first as? NSScrollView)?.documentView as? NSOutlineView)
-        for _ in 0..<500 where outline.numberOfRows < 4 { try await Task.sleep(for: .milliseconds(20)) }
+        _ = await poll(timeout: 10) { outline.numberOfRows >= 4 }
         let originalRoot = try #require(outline.item(atRow: 0) as? RemoteFolderTree.Node)
         #expect(originalRoot.url == root)
         let selected = try #require(outline.item(atRow: outline.selectedRow) as? RemoteFolderTree.Node)
@@ -61,7 +63,7 @@ extension AppearanceLayoutTests {
         #expect(sibling.children == nil && provider.count == 2)
         let otherTarget = sibling.url.appendingPathComponent("nested", isDirectory: true)
         panel.currentURL = otherTarget
-        for _ in 0..<500 where outline.numberOfRows < 5 { try await Task.sleep(for: .milliseconds(20)) }
+        _ = await poll(timeout: 10) { outline.numberOfRows >= 5 }
         #expect(outline.item(atRow: 0) as? RemoteFolderTree.Node === originalRoot)
         let nextSelection = try #require(outline.item(atRow: outline.selectedRow) as? RemoteFolderTree.Node)
         #expect(RemoteFolderTree.sameLocation(nextSelection.url, otherTarget))
@@ -85,7 +87,7 @@ extension AppearanceLayoutTests {
         let panel = FoldersPanel(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
         panel.currentURL = target
         let outline = try #require((panel.subviews.first as? NSScrollView)?.documentView as? NSOutlineView)
-        for _ in 0..<500 where outline.numberOfRows < 3 { try await Task.sleep(for: .milliseconds(20)) }
+        _ = await poll(timeout: 10) { outline.numberOfRows >= 3 }
         let top = try #require(outline.item(atRow: 0) as? RemoteFolderTree.Node)
         #expect(top.url == root && top.url != target)
         #expect(top.children?.contains { RemoteFolderTree.sameLocation($0.url, target) } == false)

@@ -1,4 +1,6 @@
 import Foundation
+import PorpoiseServicesTestSupport
+import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseServices
@@ -19,7 +21,7 @@ struct CloudQuotaTests {
         var calls = 0
         var refresh: CloudQuotaRefresh!
         // Wait for the observed refresh, rather than measuring main-actor scheduling under a full parallel suite.
-        await withCheckedContinuation { continuation in
+        try await awaitCallback { continuation in
             refresh = CloudQuotaRefresh(interval: 0.01) {
                 calls += 1
                 if calls == 3 { continuation.resume() }

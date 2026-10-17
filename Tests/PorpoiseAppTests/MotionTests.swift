@@ -1,4 +1,6 @@
 import AppKit
+import PorpoiseServicesTestSupport
+import PorpoiseTestSupport
 import Testing
 
 @testable import Porpoise
@@ -28,7 +30,7 @@ import Testing
         animator.run(duration: 0.05, step: { _ in }) {
             animator.run(duration: 0.05, step: { steps.append($0) }) { second = true }
         }
-        for _ in 0..<300 where !second { try await Task.sleep(for: .milliseconds(10)) }
+        _ = await poll(timeout: 5) { second }
         #expect(second && steps.last == 1)
     }
 
@@ -36,9 +38,7 @@ import Testing
     @Test func hoverFadesUnlessMotionIsReduced() async throws {
         let reduces = Animator.reducesMotion
         defer { Animator.reducesMotion = reduces }
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-hover-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
+        let scratch = try Scratch(), folder = scratch.url
         for n in 1...3 { try Data("\(n)".utf8).write(to: folder.appendingPathComponent("file \(n).txt")) }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -46,7 +46,7 @@ import Testing
         let tab = PorpoiseTab(url: folder)
         window.contentView = tab
         let list = tab.primary.list
-        for _ in 0..<600 where list.model.rows.count < 3 { try await Task.sleep(for: .milliseconds(10)) }
+        _ = await poll(timeout: 6) { list.model.rows.count >= 3 }
         list.layoutSubtreeIfNeeded()
         let url = list.model.rows[0].item.url
 
@@ -59,9 +59,9 @@ import Testing
         Animator.reducesMotion = { false }
         list.hoverIndex = 0
         #expect((list.hoverAlpha[url] ?? 0) < 1)
-        for _ in 0..<300 where list.hoverAlpha[url] != 1 { try await Task.sleep(for: .milliseconds(10)) }
+        _ = await poll(timeout: 5) { list.hoverAlpha[url] == 1 }
         #expect(list.hoverAlpha[url] == 1)
-        for _ in 0..<300 where list.hoverClock.isRunning { try await Task.sleep(for: .milliseconds(10)) }
+        _ = await poll(timeout: 5) { !list.hoverClock.isRunning }
         #expect(!list.hoverClock.isRunning)
     }
 }

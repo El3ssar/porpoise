@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 import os
@@ -103,10 +104,10 @@ let testFFmpeg: String? = {
     return dirs.map { "\($0)/ffmpeg" }.first { FileManager.default.isExecutableFile(atPath: $0) }
 }()
 
-private let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+private let repoRoot = TestPaths.repo
 
 /// One-second test clips (160×120, a test picture and a tone), one per codec and container the tests need.
-private let clips = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Videos")
+private let clips = TestPaths.fixtures.appendingPathComponent("Videos")
 
 /// Probing and streaming with a real ffmpeg on tiny generated videos. Streams go to a scratch folder.
 @Suite(.serialized, .enabled(if: testFFmpeg != nil, "needs ffmpeg: scripts/build-ffmpeg.sh, or one on PATH"))
@@ -169,34 +170,15 @@ final class VideoPreviewStreamTests {
 
     // MARK: Streaming
 
-    /// `playableURL`, waiting for its answer (nil after 30 s, so a regression fails instead of hanging).
-    @MainActor func playable(_ p: VideoPreview, _ url: URL, owner: AnyObject) async -> URL? {
-        await withCheckedContinuation { c in
-            let once = Once()
-            p.playableURL(for: url, owner: owner) { u in if once.claim() { c.resume(returning: u) } }
-            // Beyond the preview's own worst case: probe, then copy, then convert, 10s each.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 60) { if once.claim() { c.resume(returning: nil) } }
-        }
-    }
-
-    final class Once: @unchecked Sendable {
-        private let lock = NSLock()
-        private var done = false
-        func claim() -> Bool { lock.lock(); defer { lock.unlock() }; if done { return false }; done = true; return true }
+    /// `playableURL`, waiting for its answer. It fails after 60 s instead of hanging: beyond the preview's own worst
+    /// case (probe, then copy, then convert, 10 s each).
+    @MainActor func playable(_ p: VideoPreview, _ url: URL, owner: AnyObject) async throws -> URL? {
+        try await awaitCallback(timeout: 60) { c in p.playableURL(for: url, owner: owner) { c.resume(returning: $0) } }
     }
 
     func fetch(_ url: URL) async throws -> (Int, Data) {
         let (data, resp) = try await URLSession.shared.data(from: url)
         return ((resp as? HTTPURLResponse)?.statusCode ?? 0, data)
-    }
-
-    /// Waits up to 15 s for `condition` (slow when the machine is busy), without holding a cooperative pool thread.
-    func eventually(_ condition: () -> Bool) async -> Bool {
-        for _ in 0..<300 {
-            if condition() { return true }
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-        return condition()
     }
 
     func sessionFolders() -> [URL] {
@@ -216,7 +198,7 @@ final class VideoPreviewStreamTests {
         let p = VideoPreview()
         let owner = NSObject()
         defer { p.stop(); p.server.stop() }
-        let url = try #require(await playable(p, v, owner: owner))
+        let url = try #require(try await playable(p, v, owner: owner))
         #expect(url.scheme == "http" && url.host == "127.0.0.1" && url.lastPathComponent == "index.m3u8")
         let (status, list) = try await fetch(url)
         #expect(status == 200)
@@ -238,7 +220,7 @@ final class VideoPreviewStreamTests {
         let v = try video("plain.mp4", "h264.mp4")
         let p = VideoPreview()
         defer { p.stop(); p.server.stop() }
-        #expect(await playable(p, v, owner: NSObject()) == v)
+        #expect(try await playable(p, v, owner: NSObject()) == v)
         #expect(sessionFolders().isEmpty)
     }
 
@@ -247,7 +229,7 @@ final class VideoPreviewStreamTests {
         let p = VideoPreview()
         let owner = NSObject(), other = NSObject()
         defer { p.stop(); p.server.stop() }
-        let url = try #require(await playable(p, v, owner: owner))
+        let url = try #require(try await playable(p, v, owner: owner))
         #expect(sessionFolders().count == 1)
         await MainActor.run { p.stop(for: other) }
         #expect(try await fetch(url).0 == 200)
@@ -255,9 +237,9 @@ final class VideoPreviewStreamTests {
         await MainActor.run { p.stop(for: owner) }
         // ffmpeg is ended and its folder removed once it has exited.
         #expect(
-            await eventually { sessionFolders().isEmpty },
+            await poll(timeout: 15) { sessionFolders().isEmpty },
             "left: \(sessionFolders().map { "\($0.lastPathComponent): \((try? FileManager.default.contentsOfDirectory(atPath: $0.path)) ?? [])" })")
-        #expect(await eventually { !ffmpegRunning(on: v) })
+        #expect(await poll(timeout: 15) { !ffmpegRunning(on: v) })
         #expect(try await fetch(url).0 == 404)
     }
 
@@ -270,20 +252,20 @@ final class VideoPreviewStreamTests {
         await MainActor.run {
             p.playableURL(for: first, owner: NSObject()) { _ in firstAnswered.withLock { $0 = true } }
         }
-        let url = try #require(await playable(p, second, owner: NSObject()))
+        let url = try #require(try await playable(p, second, owner: NSObject()))
         #expect(url.lastPathComponent == "index.m3u8")
         try await Task.sleep(for: .milliseconds(300))
         #expect(!firstAnswered.withLock { $0 })  // the older request never calls back
-        #expect(await eventually { !ffmpegRunning(on: first) })
-        #expect(await eventually { sessionFolders().count == 1 })
+        #expect(await poll(timeout: 15) { !ffmpegRunning(on: first) })
+        #expect(await poll(timeout: 15) { sessionFolders().count == 1 })
     }
 
     @Test func unplayableFilesGiveNil() async throws {
         let p = VideoPreview()
         defer { p.stop(); p.server.stop() }
         let junk = try scratch.file("junk.mkv", String(repeating: "x", count: 10_000))
-        #expect(await playable(p, junk, owner: NSObject()) == nil)
-        #expect(await playable(p, scratch.path("missing.avi"), owner: NSObject()) == nil)
+        #expect(try await playable(p, junk, owner: NSObject()) == nil)
+        #expect(try await playable(p, scratch.path("missing.avi"), owner: NSObject()) == nil)
     }
 
     @Test func withoutFFmpegNothingStreams() async throws {
@@ -292,7 +274,7 @@ final class VideoPreviewStreamTests {
         defer { VideoPreview.testFFmpeg = testFFmpeg }
         let p = VideoPreview()
         defer { p.stop(); p.server.stop() }
-        #expect(await playable(p, v, owner: NSObject()) == nil)
+        #expect(try await playable(p, v, owner: NSObject()) == nil)
         #expect(VideoPreview.probe(v).duration == nil)
     }
 
@@ -326,7 +308,7 @@ struct StreamSessionTests {
     }
 
     private func gone(_ url: URL) async -> Bool {
-        for _ in 0..<200 where FileManager.default.fileExists(atPath: url.path) { try? await Task.sleep(for: .milliseconds(25)) }
+        _ = await poll(timeout: 5) { !FileManager.default.fileExists(atPath: url.path) }
         // Still gone a moment later: nothing wrote it back.
         try? await Task.sleep(for: .milliseconds(300))
         return !FileManager.default.fileExists(atPath: url.path)

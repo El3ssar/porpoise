@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -33,7 +34,7 @@ struct TransferExperienceTests {
             }
         }
         let controller = makeController(ui)
-        _ = await controller.perform(.copy, [source], to: s.path("dst"))
+        _ = try await controller.perform(.copy, [source], to: s.path("dst"))
         #expect(mainQueueRan)
         #expect(s.read("dst/report") == "incoming")
         #expect(controller.activities.last?.job?.comparisonOptions.method == .content)
@@ -46,7 +47,7 @@ struct TransferExperienceTests {
         let ui = ScriptedUI()
         ui.asyncConflict = { _, job, _ in DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { job.cancel() } }
         let controller = makeController(ui)
-        _ = await controller.perform(.copy, [source], to: s.path("dst"))
+        _ = try await controller.perform(.copy, [source], to: s.path("dst"))
         #expect(ui.didCancelConflict)
         #expect(controller.activities.last?.state == .cancelled)
         #expect(s.read("dst/report") == "old")
@@ -107,7 +108,7 @@ struct TransferExperienceTests {
         }
         let ui = ScriptedUI(conflicts: [ConflictAnswer(rule.resolution!, applyToAll: true)])
         let c = makeController(ui)
-        _ = await c.perform(.copy, [newer, older, equal], to: s.path("dst"))
+        _ = try await c.perform(.copy, [newer, older, equal], to: s.path("dst"))
         #expect(ui.conflicts.count == 1)
         #expect(ui.conflicts.first?.remainingConflicts == 3)
         #expect(s.read("dst/newer") == "new and larger")
@@ -121,7 +122,7 @@ struct TransferExperienceTests {
         try s.file("dst/a.txt", "existing")
         Settings.shared.transferConflictRule = .keepBoth
         let ui = ScriptedUI()
-        _ = await makeController(ui).perform(.copy, [a], to: s.path("dst"))
+        _ = try await makeController(ui).perform(.copy, [a], to: s.path("dst"))
         #expect(ui.conflicts.isEmpty)
         #expect(s.read("dst/a.txt") == "existing")
         #expect(s.read("dst/a (1).txt") == "incoming")
@@ -137,7 +138,7 @@ struct TransferExperienceTests {
         let before = JobJournal.Fingerprint(dst)
         Settings.shared.transferConflictRule = .different
         let c = makeController(ScriptedUI())
-        _ = await c.perform(.copy, [src], to: s.path("dst"))
+        _ = try await c.perform(.copy, [src], to: s.path("dst"))
         #expect(JobJournal.Fingerprint(dst) == before)
         #expect(c.activities.last?.progress?.skippedIdenticalItems == 1)
         #expect(c.activities.last?.statusText.contains("Skipped 1 identical") == true)
@@ -152,7 +153,7 @@ struct TransferExperienceTests {
         Settings.shared.transferConflictRule = .different
         Settings.shared.transferCompareMethod = .content
         let c = makeController(ScriptedUI())
-        _ = await c.perform(.copy, [src], to: s.path("dst"))
+        _ = try await c.perform(.copy, [src], to: s.path("dst"))
         #expect(s.read("dst/report") == "new!")
         #expect(c.activities.last?.progress?.replacedItems == 1)
         #expect(c.activities.last?.progress?.copiedItems == 1)
@@ -169,7 +170,7 @@ struct TransferExperienceTests {
         let inode = JobJournal.Fingerprint(existing)?.inode
         Settings.shared.transferConflictRule = .different
         let c = makeController(ScriptedUI())
-        _ = await c.perform(.copy, [s.path("src/folder")], to: s.path("dst"))
+        _ = try await c.perform(.copy, [s.path("src/folder")], to: s.path("dst"))
         #expect(s.read("dst/folder/changed") == "incoming-longer")
         #expect(JobJournal.Fingerprint(existing)?.inode == inode)
         #expect(c.activities.last?.progress?.skippedIdenticalItems == 1)

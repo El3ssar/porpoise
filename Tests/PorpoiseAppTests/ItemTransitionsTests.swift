@@ -1,6 +1,8 @@
 import AppKit
 import PorpoiseCore
 import PorpoiseServices
+import PorpoiseServicesTestSupport
+import PorpoiseTestSupport
 import Testing
 
 @testable import Porpoise
@@ -18,10 +20,7 @@ import Testing
 
     @Test func aSplitRunsOneTransitionPerPaneAndChangesWaitForIt() async throws {
         _ = NSApplication.shared
-        let suite = "app.porpoise.transitions-test.\(UUID().uuidString)"
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let scratch = try Scratch(), folder = scratch.url
         for n in 1...6 { try Data("\(n)".utf8).write(to: folder.appendingPathComponent("file \(n).txt")) }
 
         // What the machine is set to (CI's runner reduces motion) must not decide what this test sees.
@@ -89,15 +88,10 @@ import Testing
     @Test(arguments: [ViewMode.icons, .compact, .details], [true, false])
     func flightsTurnIntoTheLandingPanesSize(mode: ViewMode, bigger: Bool) async throws {
         _ = NSApplication.shared
-        let suite = "app.porpoise.flight-test.\(UUID().uuidString)"
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
+        let scratch = try Scratch(), folder = scratch.url
         let reduces = Animator.reducesMotion
         Animator.reducesMotion = { false }
-        defer {
-            Animator.reducesMotion = reduces
-            try? FileManager.default.removeItem(at: folder)
-        }
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { Animator.reducesMotion = reduces }
         for n in 1...4 { try Data("\(n)".utf8).write(to: folder.appendingPathComponent("file \(n).txt")) }
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1000, height: 600), styleMask: [.titled, .resizable], backing: .buffered, defer: false)

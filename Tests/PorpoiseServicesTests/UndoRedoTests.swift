@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -12,7 +13,7 @@ import Testing
         let a = try s.file("inbox/a.txt", "a"), b = try s.file("inbox/b.txt", "b")
         let ui = ScriptedUI()
         let c = makeController(ui)
-        _ = await c.perform(.move, [a, b], to: try s.folder("archive"))
+        _ = try await c.perform(.move, [a, b], to: try s.folder("archive"))
         #expect(c.undoTitle == "Undo: Move" && c.redoTitle == nil)
 
         c.undo(window: nil)
@@ -56,7 +57,7 @@ import Testing
         let f = try s.file("src/plan.txt", "plan")
         let ui = ScriptedUI()
         let c = makeController(ui)
-        _ = await c.perform(.move, [f], to: try s.folder("dst"))
+        _ = try await c.perform(.move, [f], to: try s.folder("dst"))
         try s.file("src/plan.txt", "someone else's")  // the original name is taken meanwhile
 
         c.undo(window: nil)
@@ -74,7 +75,7 @@ import Testing
         let f = try s.file("src/plan.txt", "plan")
         let ui = ScriptedUI()
         let c = makeController(ui)
-        _ = await c.perform(.move, [f], to: try s.folder("dst"))
+        _ = try await c.perform(.move, [f], to: try s.folder("dst"))
         c.undo(window: nil)
         try s.file("dst/plan.txt", "squatter")
         c.redo(window: nil)
@@ -86,17 +87,17 @@ import Testing
         let s = try Scratch()
         let ui = ScriptedUI()
         let c = makeController(ui)
-        _ = await c.perform(.move, [try s.file("a")], to: try s.folder("dst"))
+        _ = try await c.perform(.move, [try s.file("a")], to: try s.folder("dst"))
         c.undo(window: nil)
         #expect(c.canRedo)
-        _ = await c.perform(.move, [try s.file("b")], to: s.path("dst"))
+        _ = try await c.perform(.move, [try s.file("b")], to: s.path("dst"))
         #expect(!c.canRedo && c.undoTitle == "Undo: Move")
     }
 
     @Test func undoNotifiesTheFoldersItTouched() async throws {
         let s = try Scratch()
         let c = makeController(ScriptedUI())
-        _ = await c.perform(.move, [try s.file("src/a")], to: try s.folder("dst"))
+        _ = try await c.perform(.move, [try s.file("src/a")], to: try s.folder("dst"))
         let paths = Locked(Set<String>())
         let token = NotificationCenter.default.addObserver(forName: FileOperationsController.foldersChanged, object: nil, queue: nil) {
             let changed = $0.userInfo?["paths"] as? Set<String> ?? []
@@ -112,7 +113,7 @@ import Testing
         let ui = ScriptedUI(conflicts: [ConflictAnswer(.skip)])
         let c = makeController(ui)
         try s.file("dst/a", "old")
-        _ = await c.perform(.copy, [try s.file("src/a", "new")], to: s.path("dst"))
+        _ = try await c.perform(.copy, [try s.file("src/a", "new")], to: s.path("dst"))
         #expect(!c.canUndo && c.undoTitle == nil)
     }
 }

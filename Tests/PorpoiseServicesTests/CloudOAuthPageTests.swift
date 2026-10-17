@@ -1,4 +1,6 @@
 import Foundation
+import PorpoiseServicesTestSupport
+import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseServices
@@ -45,7 +47,7 @@ import Testing
 
     /// The inline icon is the app's: same shapes as Resources/AppIcon.svg.
     @Test func iconIsTheAppIcon() throws {
-        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let repo = TestPaths.repo
         let svg = try String(contentsOf: repo.appendingPathComponent("Resources/AppIcon.svg"), encoding: .utf8)
         let shapes = svg.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { $0.hasPrefix("<path") || $0.hasPrefix("<rect") || $0.hasPrefix("<stop") || $0.hasPrefix("<feDropShadow") }

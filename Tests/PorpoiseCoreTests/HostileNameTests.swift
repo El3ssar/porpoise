@@ -16,12 +16,6 @@ import Testing
 
     /// One file per name in `folder`, each holding its own index (so contents prove which file is which).
     @discardableResult
-    private func populate(_ folder: String) throws -> URL {
-        let dir = try scratch.folder(folder)
-        for (i, n) in names.enumerated() { try Data("\(i)".utf8).write(to: dir.appendingPathComponent(n)) }
-        return dir
-    }
-
     /// Names as stored on disk, read with readdir(3): no Foundation conversion in between. (Foundation itself
     /// writes names decomposed, so "é" in a name created through it is stored as "e" + U+0301.)
     private func nameBytes(in dir: URL) throws -> Set<[UInt8]> {
@@ -81,7 +75,7 @@ import Testing
     }
 
     @Test func listingAndLoadingKeepNamesExactly() throws {
-        let dir = try populate("list")
+        let dir = try scratch.populate("list")
         let items = try DirectoryLister.list(dir)
         #expect(items.count == names.count)
         #expect(Set(items.map { bytes($0.name) }) == (try nameBytes(in: dir)))
@@ -116,7 +110,7 @@ import Testing
     }
 
     @Test func copyMoveAndRenameKeepNamesAndContents() throws {
-        let src = try populate("src")
+        let src = try scratch.populate("src")
         let dst = try scratch.folder("dst"), moved = try scratch.folder("moved")
         let urls = names.map { src.appendingPathComponent($0) }
 
@@ -175,7 +169,7 @@ import Testing
     /// Pasting into the same folder makes "name copy…": for the longest names there is no room, which must be an
     /// error naming the file, not a crash or a truncated or mangled name.
     @Test func duplicatesInTheSameFolder() throws {
-        let dir = try populate("dup")
+        let dir = try scratch.populate("dup")
         let job = FileJob(kind: .copy, sources: names.map { dir.appendingPathComponent($0) }, destinationFolder: dir)
         _ = try job.run()
         #expect(!job.errors.isEmpty)
@@ -204,7 +198,7 @@ import Testing
 
     /// Sorting: everything comes back once, and the order doesn't depend on the input order.
     @Test func sortingIsAPermutationAndIndependentOfInputOrder() throws {
-        let dir = try populate("sort")
+        let dir = try scratch.populate("sort")
         try scratch.folder("sort/-a folder\n")
         let items = try DirectoryLister.list(dir)
         var rng = SeededGenerator(seed: 7)
@@ -243,7 +237,7 @@ import Testing
 
     /// Quoted paths used as real paths by a shell: `cat` reads the right file for every name.
     @Test func quotedPathsReachTheRightFiles() throws {
-        let dir = try populate("cat")
+        let dir = try scratch.populate("cat")
         let script = names.map { "cat -- \(RemoteParsing.quote(dir.appendingPathComponent($0).path)); printf '\\0'" }.joined(separator: "\n")
         let r = try runTool("/bin/sh", ["-c", script])
         #expect(r.status == 0, "\(String(decoding: r.err, as: UTF8.self))")
@@ -275,7 +269,7 @@ import Testing
 
     /// Percent-encoded requests for hostile names find exactly that file; dot files and backslashes are refused.
     @Test func servedFilesForHostileNames() throws {
-        let root = try populate("served/root/s").deletingLastPathComponent()
+        let root = try scratch.populate("served/root/s").deletingLastPathComponent()
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
         for n in names {
             let enc = try #require(n.addingPercentEncoding(withAllowedCharacters: allowed))

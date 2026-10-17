@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import SQLite3
 import Testing
@@ -197,24 +198,18 @@ import Testing
 /// Status bar messages.
 @Suite struct StatusCenterTests {
     @Test func postsMessagesAndErrors() async {
-        let received = Received()
+        let received = Locked([(String?, Bool?)]())
         let token = NotificationCenter.default.addObserver(forName: StatusCenter.message, object: nil, queue: nil) { n in
-            received.add(n.object as? String, error: n.userInfo?["error"] as? Bool)
+            received.append((n.object as? String, n.userInfo?["error"] as? Bool))
         }
         defer { NotificationCenter.default.removeObserver(token) }
         let tag = UUID().uuidString
         StatusCenter.post("hello \(tag)")
         StatusCenter.error("broken \(tag)")
-        let mine = received.items.filter { $0.0?.hasSuffix(tag) == true }
+        let mine = received.value.filter { $0.0?.hasSuffix(tag) == true }
         #expect(mine.count == 2)
         #expect(mine.first?.0 == "hello \(tag)" && mine.first?.1 == nil)
         #expect(mine.last?.0 == "broken \(tag)" && mine.last?.1 == true)
     }
 
-    final class Received: @unchecked Sendable {
-        private let lock = NSLock()
-        private var _items: [(String?, Bool?)] = []
-        var items: [(String?, Bool?)] { lock.lock(); defer { lock.unlock() }; return _items }
-        func add(_ s: String?, error: Bool?) { lock.lock(); _items.append((s, error)); lock.unlock() }
-    }
 }

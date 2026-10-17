@@ -7,25 +7,25 @@ import Testing
 /// A real OpenSSH server on 127.0.0.1, run as the current user with its own host key, client key and known_hosts,
 /// all in a scratch folder. Its sessions get a scratch HOME, so neither side reads or writes anything in ~/.ssh,
 /// and the login shell's own startup files are the scratch home's (none).
-final class SSHServer: @unchecked Sendable {
-    static var isAvailable: Bool { FileManager.default.isExecutableFile(atPath: "/usr/sbin/sshd") }
+public final class SSHServer: @unchecked Sendable {
+    public static var isAvailable: Bool { FileManager.default.isExecutableFile(atPath: "/usr/sbin/sshd") }
 
     /// The one server of the running suite (see `Trait.sshServer`).
-    @TaskLocal static var current: SSHServer?
+    @TaskLocal public static var current: SSHServer?
 
-    let scratch: Scratch
-    let port: Int
+    public let scratch: Scratch
+    public let port: Int
     /// The remote user's HOME; tests work in folders made inside it.
-    let home: URL
+    public let home: URL
     /// Holds the shared connection's socket. Socket paths are limited to 104 bytes, more than a scratch folder's
     /// path allows, so this is a short folder directly in $TMPDIR, removed by `stop()`.
-    let controlDir: URL
+    public let controlDir: URL
     private let pidFile: URL
     private let log: URL
     private var providers: [SSHProvider] = []
     private let lock = NSLock()
 
-    init() throws {
+    public init() throws {
         scratch = try Scratch("sshd")
         home = try scratch.folder("home")
         pidFile = scratch.path("sshd.pid")
@@ -68,7 +68,7 @@ final class SSHServer: @unchecked Sendable {
     private var serverPID: pid_t? { scratch.read("sshd.pid").flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) } }
 
     /// Stops the server (sessions still open end with it) and removes the socket folder.
-    func stop() {
+    public func stop() {
         // Shared connections outlive the listener: end them first, or their sessions linger for minutes.
         lock.lock(); let all = providers; lock.unlock()
         all.forEach { $0.disconnect() }
@@ -82,7 +82,7 @@ final class SSHServer: @unchecked Sendable {
     }
 
     /// A provider that connects with this server's keys only: no ~/.ssh/config, agent, user keys or known_hosts.
-    func provider() -> SSHProvider {
+    public func provider() -> SSHProvider {
         let p = SSHProvider(
             url: url("/"),
             isolation: .init(
@@ -96,7 +96,7 @@ final class SSHServer: @unchecked Sendable {
     }
 
     /// sftp:// URL of a path on this server.
-    func url(_ path: String, isDirectory: Bool = false) -> URL {
+    public func url(_ path: String, isDirectory: Bool = false) -> URL {
         var c = URLComponents()
         c.scheme = "sftp"
         c.user = NSUserName()
@@ -107,10 +107,10 @@ final class SSHServer: @unchecked Sendable {
         return isDirectory ? u.appendingPathComponent("", isDirectory: true) : u
     }
 
-    func url(_ local: URL) -> URL { url(local.path) }
+    public func url(_ local: URL) -> URL { url(local.path) }
 
     /// A fresh, empty folder in the remote home for one test.
-    func folder(_ name: String = #function) throws -> URL {
+    public func folder(_ name: String = #function) throws -> URL {
         let safe = name.filter { $0.isLetter || $0.isNumber }
         let u = home.appendingPathComponent(safe)
         try? FileManager.default.removeItem(at: u)
@@ -119,7 +119,7 @@ final class SSHServer: @unchecked Sendable {
     }
 
     /// How many logins the server has accepted.
-    var logins: Int { (scratch.read("sshd.log") ?? "").components(separatedBy: "Accepted publickey").count - 1 }
+    public var logins: Int { (scratch.read("sshd.log") ?? "").components(separatedBy: "Accepted publickey").count - 1 }
 
     private static func keygen(_ path: URL) throws {
         let r = try Shell.run("/usr/bin/ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", "porpoise-test", "-f", path.path])
@@ -141,15 +141,15 @@ final class SSHServer: @unchecked Sendable {
         return Int(UInt16(bigEndian: addr.sin_port))
     }
 
-    struct Failure: Error, CustomStringConvertible {
-        let description: String
-        init(_ d: String) { description = d }
+    public struct Failure: Error, CustomStringConvertible {
+        public let description: String
+        public init(_ d: String) { description = d }
     }
 }
 
 /// Runs a suite with one `SSHServer`, started before its first test and stopped after its last, also when tests fail.
-struct SSHServerTrait: SuiteTrait, TestScoping {
-    func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
+public struct SSHServerTrait: SuiteTrait, TestScoping {
+    public func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
         let server = try SSHServer()
         defer { server.stop() }
         try await SSHServer.$current.withValue(server) { try await function() }
@@ -157,5 +157,5 @@ struct SSHServerTrait: SuiteTrait, TestScoping {
 }
 
 extension Trait where Self == SSHServerTrait {
-    static var sshServer: Self { Self() }
+    public static var sshServer: Self { Self() }
 }

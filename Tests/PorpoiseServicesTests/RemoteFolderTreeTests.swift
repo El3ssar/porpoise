@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -8,7 +9,7 @@ import Testing
 @Suite(.serialized) struct RemoteFolderTreeTests {
     @MainActor private func until(_ tree: RemoteFolderTree, _ ready: @escaping () -> Bool) async throws {
         if ready() { return }
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        try await awaitCallback { (continuation: Callback<Void>) in
             var completed = false
             let timeout = DispatchWorkItem {
                 guard !completed else { return }
@@ -50,10 +51,7 @@ import Testing
         #expect(folder.children?.isEmpty == true && !folder.isExpandable)
         #expect(provider.cachedListing(folder.url)?.count == 2)
         func change(_ file: [String: Any]) async throws {
-            var request = URLRequest(url: server.base.appendingPathComponent("__control"))
-            request.httpMethod = "POST"
-            request.httpBody = try JSONSerialization.data(withJSONObject: ["remoteChanges": [["fileId": "folder-a", "file": file]]])
-            _ = try await URLSession.shared.data(for: request)
+            try await server.control(["remoteChanges": [["fileId": "folder-a", "file": file]]])
         }
         try await change(["name": "Renamed Atlas"])
         provider.invalidate(folder: root)
@@ -138,7 +136,7 @@ import Testing
     }
     @Test(.timeLimit(.minutes(1))) @MainActor func deepDriveRevealKeepsCollectionRootParentsAndSiblings() async throws {
         let scratch = try Scratch()
-        let fixtureURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/metadata.json")
+        let fixtureURL = FakeDriveServer.fixture("metadata.json")
         var fixture = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as? [String: Any])
         var files = try #require(fixture["files"] as? [[String: Any]])
         for (id, name) in [("deep-folder", ".hidden target"), ("folder-sibling", "Other project")] {
@@ -202,7 +200,7 @@ import Testing
 
     @Test(.timeLimit(.minutes(1))) @MainActor func sharedDriveRevealMatchesAncestorsWithoutRedundantDriveQuery() async throws {
         let scratch = try Scratch()
-        let fixtureURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/metadata.json")
+        let fixtureURL = FakeDriveServer.fixture("metadata.json")
         var fixture = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as? [String: Any])
         var files = try #require(fixture["files"] as? [[String: Any]])
         files.append(["id": "deep-folder", "name": "Team folder", "mimeType": "application/vnd.google-apps.folder", "driveId": "shared-drive-a"])

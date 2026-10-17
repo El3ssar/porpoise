@@ -1,16 +1,12 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseServices
 
 @MainActor @Suite(.serialized) struct CloudOfflineActivityTests {
-    private func wait(_ condition: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(10)
-        while !condition(), Date() < deadline { try await Task.sleep(for: .milliseconds(5)) }
-        #expect(condition())
-    }
     private func operations(_ scratch: Scratch) -> FileOperationsController {
         let operations = FileOperationsController()
         operations.history = OperationHistory(file: scratch.url.appendingPathComponent("history"))
@@ -29,7 +25,7 @@ import Testing
                 return [url]
             }
         }
-        try await wait { operations.activities.last?.state == .paused }
+        await expectEventually { operations.activities.last?.state == .paused }
         #expect(operations.activities.count == 1 && operations.activities[0].canPause)
         NotificationCenter.default.post(name: CloudOffline.spaceChanged, object: nil)
         #expect(try await task.value == [url])
@@ -40,7 +36,7 @@ import Testing
     @Test func cancellingDiskPauseEndsWithoutWaitingForTheTimer() async throws {
         let scratch = try Scratch(), operations = operations(scratch)
         let task = Task { try await operations.cloudTask(title: "Keeping files", sources: []) { _ in throw CloudContentError.lowSpace } }
-        try await wait { operations.activities.last?.state == .paused }
+        await expectEventually { operations.activities.last?.state == .paused }
         operations.cancel(operations.activities[0])
         await #expect(throws: CancellationError.self) { try await task.value }
         #expect(operations.activities[0].state == .cancelled)
@@ -57,10 +53,10 @@ import Testing
                 return []
             }
         }
-        try await wait { release != nil }
+        await expectEventually { release != nil }
         operations.pause(operations.activities[0])
         release?()
-        try await wait { enteredCheckpoint }
+        await expectEventually { enteredCheckpoint }
         #expect(!progressed && operations.activities[0].state == .paused)
         operations.resume(operations.activities[0])
         _ = try await task.value
@@ -89,7 +85,7 @@ extension CloudOfflineActivityTests {
                 return []
             }
         }
-        try await wait { attempts == 2 }
+        await expectEventually { attempts == 2 }
         if attempts < 2 { task.cancel() }
         _ = try await task.value
         #expect(attempts == 2 && operations.activities.last?.state == .completed)

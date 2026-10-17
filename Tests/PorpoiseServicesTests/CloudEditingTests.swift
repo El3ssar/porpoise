@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -239,17 +240,10 @@ import Testing
 
 /// Optimistic rows survive listings that arrive before the service answers, keep the selection, and roll back.
 @MainActor @Suite(.isolatedSettings) struct OptimisticListingTests {
-    private func loaded(_ url: URL) async throws -> DirectoryModel {
-        let m = DirectoryModel(location: url)
-        m.reload()
-        try #require(await eventually { !m.isLoading })
-        return m
-    }
-
     @Test func editsShowAtOnceSurviveReloadsAndRollBack() async throws {
         let s = try Scratch()
         let a = try s.file("alpha.txt"), b = try s.file("beta.txt")
-        let m = try await loaded(s.url)
+        let m = try await DirectoryModel.loaded(s.url)
         m.selection = [a, b]
         let alpha = try #require(m.items.first { $0.url == a })
         let new = FileItem(url: s.url.appendingPathComponent("new folder"), name: "New Folder", isDirectory: true)
@@ -270,7 +264,7 @@ import Testing
     @Test func confirmedEditsStayUntilTheNextListing() async throws {
         let s = try Scratch()
         let a = try s.file("alpha.txt")
-        let m = try await loaded(s.url)
+        let m = try await DirectoryModel.loaded(s.url)
         m.currentURL = a
         let id = m.applyEdit(ListingEdit(folder: s.url, removed: [a]))
         #expect(m.rows.isEmpty && m.currentURL == nil)

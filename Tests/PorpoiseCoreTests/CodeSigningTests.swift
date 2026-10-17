@@ -33,13 +33,8 @@ struct CodeSigningTests {
     }
 
     private func sign(_ url: URL, identifier: String?) throws {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-        p.arguments = ["--force", "--sign", "-"] + (identifier.map { ["--identifier", $0] } ?? []) + [url.path]
-        p.standardError = FileHandle.nullDevice
-        try p.run()
-        p.waitUntilExit()
-        try #require(p.terminationStatus == 0, "codesign failed")
+        let r = try runTool("/usr/bin/codesign", ["--force", "--sign", "-"] + (identifier.map { ["--identifier", $0] } ?? []) + [url.path])
+        try #require(r.status == 0, "codesign failed: \(String(decoding: r.err, as: UTF8.self))")
     }
 
     @Test func anIntactBundlePasses() {

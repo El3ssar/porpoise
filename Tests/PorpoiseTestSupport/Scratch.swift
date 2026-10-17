@@ -184,3 +184,26 @@ public final class DiskImage {
         }
     }
 }
+
+extension Scratch {
+    /// A file of `size` pseudo-random bytes (the same for the same seed, different for each seed).
+    public func randomFile(_ name: String, size: Int, seed: UInt64 = 1) throws -> URL {
+        var g = SeededGenerator(seed: seed)
+        var d = Data(count: size)
+        d.withUnsafeMutableBytes { b in
+            let words = b.bindMemory(to: UInt64.self)
+            for i in 0..<words.count { words[i] = g.next() }
+        }
+        let u = path(name)
+        try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try d.write(to: u)
+        return u
+    }
+
+    /// The folder `folder`, with a small file for each of `names` (by default the hostile ones).
+    public func populate(_ folder: String, with names: [String] = HostileNames.all) throws -> URL {
+        let dir = try self.folder(folder)
+        for (i, n) in names.enumerated() { try Data("\(i)".utf8).write(to: dir.appendingPathComponent(n)) }
+        return dir
+    }
+}

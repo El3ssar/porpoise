@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -7,12 +8,12 @@ import Testing
 
 @Suite(.serialized) struct DriveSpeedTests {
     private func fixture(_ scratch: Scratch, files: [[String: Any]], children: [String: [String]] = [:]) throws -> URL {
-        let url = scratch.url.appendingPathComponent("fixture.json")
-        try JSONSerialization.data(withJSONObject: [
-            "files": files, "children": children, "rootIDs": files.filter { $0["shortcutDetails"] != nil }.map { $0["id"]! },
-            "profile": ["sub": "speed", "email": "speed@example.invalid", "name": "Speed fixture"], "drives": [],
-        ]).write(to: url)
-        return url
+        return try FakeDriveServer.writeFixture(
+            in: scratch,
+            [
+                "files": files, "children": children, "rootIDs": files.filter { $0["shortcutDetails"] != nil }.map { $0["id"]! },
+                "profile": ["sub": "speed", "email": "speed@example.invalid", "name": "Speed fixture"], "drives": [],
+            ])
     }
 
     @Test func latencyCacheAndBoundedShortcuts() async throws {
@@ -70,7 +71,7 @@ import Testing
         #expect(elapsed < 0.016)
         let selected = try #require(rows.first { $0.name == "report.txt" }).url
         model.selection = [selected]
-        let fixtureURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/metadata.json")
+        let fixtureURL = FakeDriveServer.fixture("metadata.json")
         var changed = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as? [String: Any])
         var changedFiles = try #require(changed["files"] as? [[String: Any]])
         changedFiles[2]["name"] = "Updated report.txt"
@@ -84,14 +85,14 @@ import Testing
         // Cache callbacks run immediately, then the complete background diff arrives later.
         model.reload()
         completed = false
-        for _ in 0..<100 where !completed { try await Task.sleep(for: .milliseconds(50)) }
+        _ = await poll(timeout: 5) { completed }
         #expect(completed)
         #expect(model.items.contains { $0.name == "Updated report.txt" })
         #expect(model.selection == [selected] && model.expanded.contains(folder.url))
         server.stop()
         model.reload()
         completed = false
-        for _ in 0..<100 where !completed { try await Task.sleep(for: .milliseconds(20)) }
+        _ = await poll(timeout: 5) { completed }
         #expect(completed && model.loadError == nil && !model.items.isEmpty)
         model.prefetch(folder)
         model.prefetch(nil)
@@ -117,8 +118,7 @@ import Testing
         let thumbnail = try await client.thumbnail(file)
         #expect(try Data(contentsOf: thumbnail).starts(with: [137, 80, 78, 71]))
         #expect(try await client.thumbnail(file) == thumbnail)
-        let stats = try await URLSession.shared.data(from: server.base.appendingPathComponent("__stats")).0
-        let requests = try #require((try JSONSerialization.jsonObject(with: stats) as? [String: Any])?["requests"] as? [String])
+        let requests = try #require(try await server.stats()["requests"] as? [String])
         #expect(requests.filter { $0 == "/thumbnail/image" }.count == 1)
         let native = try await client.file("native")
         #expect(try await client.thumbnail(native).pathExtension == "pdf")
@@ -143,12 +143,15 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: first.path) && FileManager.default.fileExists(atPath: second.path))
         await #expect(throws: DriveError.invalidResponse) { try await cache.file(key: "bad", name: "..") { Data() } }
         await #expect(throws: DriveError.invalidResponse) { try await cache.file(key: "large", name: "large") { Data(count: 7) } }
+        let started = Flag()
         let pending = Task {
             try await cache.file(key: "pending", name: "pending") {
+                started.set()
                 try await Task.sleep(for: .milliseconds(100)); return Data([1])
             }
         }
-        try await Task.sleep(for: .milliseconds(30))
+        // Cleared while the fetch is under way.
+        _ = await poll(timeout: 5) { started.isSet }
         await cache.clear()
         await #expect(throws: CancellationError.self) { try await pending.value }
     }

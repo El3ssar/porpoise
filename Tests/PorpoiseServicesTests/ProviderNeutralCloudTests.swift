@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -23,14 +24,14 @@ import Testing
             accounts.backend = CompositeCloudBackend([.dropbox: backend])
         }
         func connect() async throws -> CloudAccount {
-            try await withCheckedThrowingContinuation { continuation in
+            try await awaitCallback { continuation in
                 _ = accounts.connect(
-                    .dropbox, openBrowser: { url in Task { _ = try? await URLSession.shared.data(from: url) } },
+                    .dropbox, openBrowser: openInFakeBrowser,
                     done: { continuation.resume(with: $0.mapError { $0 as Error }) })
             }
         }
-        func resolve(_ text: String) async -> CloudLinkResult {
-            await withCheckedContinuation { continuation in accounts.resolveLink(text) { continuation.resume(returning: $0) } }
+        func resolve(_ text: String) async throws -> CloudLinkResult {
+            try await awaitCallback { continuation in accounts.resolveLink(text) { continuation.resume(returning: $0) } }
         }
         func cleanup() {
             backend.setActive(false)
@@ -76,15 +77,15 @@ import Testing
         try await fixture.server.configure(["links": [folderLink: "id:folder", fileLink: "id:hello"], "foreignLinks": [foreign]])
         let root = try #require(fixture.accounts.url(account.id, root: .myDrive))
         let uuid = try #require(DropboxLocation(url: root)?.accountID)
-        guard case .folder(let folder) = await fixture.resolve(folderLink) else { Issue.record("not a folder"); return }
+        guard case .folder(let folder) = try await fixture.resolve(folderLink) else { Issue.record("not a folder"); return }
         #expect(DropboxLocation(url: folder)?.itemID == "id:folder" && DropboxLocation(url: folder)?.accountID == uuid)
         #expect(RemoteFS.displayName(for: folder) == "Folder")
         #expect(fixture.accounts.info(for: folder)?.name == "Folder")  // read once, so the folder shows its name
-        guard case .file(let file) = await fixture.resolve(fileLink) else { Issue.record("not a file"); return }
+        guard case .file(let file) = try await fixture.resolve(fileLink) else { Issue.record("not a file"); return }
         #expect(DropboxLocation(url: file)?.itemID == "id:hello")
-        #expect(await fixture.resolve(foreign) == .noAccess)
-        #expect(await fixture.resolve("https://www.dropbox.com/scl/fi/gone/x?rlkey=4") == .noAccess)
-        #expect(await fixture.resolve("https://drive.google.com/drive/folders/x") == .notALink)
+        #expect(try await fixture.resolve(foreign) == .noAccess)
+        #expect(try await fixture.resolve("https://www.dropbox.com/scl/fi/gone/x?rlkey=4") == .noAccess)
+        #expect(try await fixture.resolve("https://drive.google.com/drive/folders/x") == .notALink)
     }
 
     // B10: Dropbox locations name only the item; its folders come from the service.

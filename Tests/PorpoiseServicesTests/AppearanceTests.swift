@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -71,11 +72,7 @@ import Testing
         // Ask an actual shell to round-trip the quoted argument: no substitution may run. The second path's quote
         // carries a combining mark, which makes "'\u{301}" one Character: a Character-based replace left it unescaped.
         for path in [path, "/tmp/x'\u{301}; echo injected #"] {
-            let process = Process(), pipe = Pipe()
-            process.executableURL = URL(fileURLWithPath: "/bin/sh")
-            process.arguments = ["-c", "printf %s " + TerminalCommandTemplate.quote(path)]
-            process.standardOutput = pipe; try process.run()
-            let output = pipe.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
+            let output = try runTool("/bin/sh", ["-c", "printf %s " + TerminalCommandTemplate.quote(path)]).out
             #expect(String(decoding: output, as: UTF8.self) == path)
         }
     }

@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -8,7 +9,6 @@ import Testing
 
 @Suite(.serialized) struct DriveStreamingPreviewTests {
     private func fixture(_ scratch: Scratch, media: URL? = nil) throws -> URL {
-        let url = scratch.url.appendingPathComponent("fixture.json")
         var json: [String: Any] = [
             "files": [
                 [
@@ -19,13 +19,7 @@ import Testing
             "generatedMedia": ["movie": 64 << 20],
         ]
         if let media { json["mediaFiles"] = ["movie": media.path] }
-        try JSONSerialization.data(withJSONObject: json).write(to: url)
-        return url
-    }
-
-    private func stats(_ server: FakeDriveServer) async throws -> [String: Any] {
-        let data = try await URLSession.shared.data(from: server.base.appendingPathComponent("__stats")).0
-        return try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        return try FakeDriveServer.writeFixture(in: scratch, json)
     }
 
     @Test func rangesAreBoundedSecretAndStopCancels() async throws {
@@ -49,18 +43,18 @@ import Testing
         #expect((try await URLSession.shared.data(from: wrong).1 as? HTTPURLResponse)?.statusCode == 404)
         request.httpMethod = "HEAD"
         #expect(try await URLSession.shared.data(for: request).0.isEmpty)
-        #expect(try await stats(server)["mediaBytes"] as? Int == 334)
-        #expect(try await (stats(server)["requests"] as? [String])?.contains { $0.contains("/revisions/revision-1?alt=media") } == true)
+        #expect(try await server.stats()["mediaBytes"] as? Int == 334)
+        #expect(try await (server.stats()["requests"] as? [String])?.contains { $0.contains("/revisions/revision-1?alt=media") } == true)
         let load = Task { try await URLSession.shared.data(from: stream.url) }
         for _ in 0..<100 {
-            if try await (stats(server)["ranges"] as? [String])?.count ?? 0 > 1 { break }
+            if try await (server.stats()["ranges"] as? [String])?.count ?? 0 > 1 { break }
             try await Task.sleep(for: .milliseconds(10))
         }
         stream.stop()
         await #expect(throws: (any Error).self) { try await load.value }
-        let before = try await stats(server)["mediaBytes"] as? Int
+        let before = try await server.stats()["mediaBytes"] as? Int
         try await Task.sleep(for: .milliseconds(400))
-        let after = try await stats(server)["mediaBytes"] as? Int
+        let after = try await server.stats()["mediaBytes"] as? Int
         #expect((after ?? 0) - (before ?? 0) <= 1 << 20)
     }
 
@@ -78,7 +72,7 @@ import Testing
     func playerStartsBeforeTenPercentFetched() async throws {
         let scratch = try Scratch(), media = scratch.url.appendingPathComponent("movie.mp4")
         let ffmpeg = try #require(testFFmpeg)
-        let clip = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Videos/h264-aac.mkv")
+        let clip = TestPaths.fixtures.appendingPathComponent("Videos/h264-aac.mkv")
         let result = try Shell.run(
             ffmpeg,
             [
@@ -108,7 +102,7 @@ import Testing
         }
         #expect(item.status != .failed, "\(String(describing: item.error))")
         #expect(player.currentTime().seconds >= 0.05)
-        let bytes = try #require(try await stats(server)["mediaBytes"] as? Int)
+        let bytes = try #require(try await server.stats()["mediaBytes"] as? Int)
         print("STREAM_PLAYING seconds=\(Date().timeIntervalSince(start)) bytes=\(bytes) total=67108864 fraction=\(Double(bytes) / Double(64 << 20))")
         #expect(bytes < (64 << 20) / 10)
     }

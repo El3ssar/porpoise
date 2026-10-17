@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -43,34 +44,25 @@ final class RemoteOpenerTests {
         return (item, onServer)
     }
 
-    /// Waits for `condition`, generously: uploads to the real sshd can be slow on a busy CI machine.
-    private func waitUntil(_ what: Comment, timeout: Double = 30, _ condition: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition() {
-            guard Date() < deadline else { Issue.record("timed out waiting: \(what)"); return }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-    }
-
     private func read(_ url: URL) -> String? { try? String(contentsOf: url, encoding: .utf8) }
 
     @Test func opensADownloadedCopyAndUploadsEverySave() async throws {
         let (item, onServer) = try remoteFile("notes it's.txt", "v1")
         RemoteOpener.open(item)
-        try await waitUntil("opened") { opened.count == 1 }
+        await expectEventually("opened", timeout: 30) { opened.count == 1 }
         let local = try #require(opened.first)
         #expect(local.path.hasPrefix(cache.url.path + "/"))
         #expect(read(local) == "v1")
 
         // Saved in place.
         try Data("v2".utf8).write(to: local)
-        try await waitUntil("first upload") { read(onServer) == "v2" }
+        await expectEventually("first upload", timeout: 30) { read(onServer) == "v2" }
 
         // Saved the way most editors do: a new file replaces the old one. The watch follows it.
         try Data("v3".utf8).write(to: local, options: .atomic)
-        try await waitUntil("upload after the file was replaced") { read(onServer) == "v3" }
+        await expectEventually("upload after the file was replaced", timeout: 30) { read(onServer) == "v3" }
         try Data("v4".utf8).write(to: local, options: .atomic)
-        try await waitUntil("upload after a second replacement") { read(onServer) == "v4" }
+        await expectEventually("upload after a second replacement", timeout: 30) { read(onServer) == "v4" }
         #expect(messages.contains("Uploaded changes to “notes it's.txt”."))
     }
 
@@ -79,7 +71,7 @@ final class RemoteOpenerTests {
     @Test func aReplacementBeforeTheWatchMovesIsUploaded() async throws {
         let (item, onServer) = try remoteFile("busy.txt", "v1")
         RemoteOpener.open(item)
-        try await waitUntil("opened") { opened.count == 1 }
+        await expectEventually("opened", timeout: 30) { opened.count == 1 }
         let local = opened[0]
         let lock = NSLock()
         var held: [() -> Void] = []
@@ -87,14 +79,14 @@ final class RemoteOpenerTests {
         defer { RemoteOpener.rewatchOnMain = { DispatchQueue.main.async(execute: $0) } }
 
         try Data("v2".utf8).write(to: local, options: .atomic)
-        try await waitUntil("first upload") { read(onServer) == "v2" }
+        await expectEventually("first upload", timeout: 30) { read(onServer) == "v2" }
         // Replaced again while the re-watch waits.
         try Data("v3".utf8).write(to: local, options: .atomic)
         RemoteOpener.rewatchOnMain = { DispatchQueue.main.async(execute: $0) }
         let blocks = lock.withLock { held }
         try #require(!blocks.isEmpty)  // one per event the replaced file got
         blocks.forEach { $0() }
-        try await waitUntil("upload of the replacement made before the watch moved") { read(onServer) == "v3" }
+        await expectEventually("upload of the replacement made before the watch moved", timeout: 30) { read(onServer) == "v3" }
     }
 
     /// A file that can't be downloaded: an error in the status bar, nothing opened.
@@ -105,7 +97,7 @@ final class RemoteOpenerTests {
         RemoteFS.use(FTPProvider(url: root, curl: curl.path), for: root)
         defer { RemoteFS.use(nil, for: root) }
         RemoteOpener.open(FileItem(url: root.appendingPathComponent("dir/unreachable.txt"), name: "unreachable.txt", isDirectory: false))
-        try await waitUntil("error") { messages.contains { $0.hasPrefix("Could not open “unreachable.txt”") } }
+        await expectEventually("error", timeout: 30) { messages.contains { $0.hasPrefix("Could not open “unreachable.txt”") } }
         #expect(messages.contains { $0.hasPrefix("Could not open “unreachable.txt”") && $0.contains("FTP error 9") })
         #expect(opened.isEmpty)
     }
@@ -114,14 +106,14 @@ final class RemoteOpenerTests {
         let (item, onServer) = try remoteFile("draft.txt", "server")
         let folder = onServer.deletingLastPathComponent()
         RemoteOpener.open(item)
-        try await waitUntil("opened") { opened.count == 1 }
+        await expectEventually("opened", timeout: 30) { opened.count == 1 }
         let local = opened[0]
 
         // The server refuses the upload: the folder can't be written.
         #expect(chmod(folder.path, 0o555) == 0)
         defer { chmod(folder.path, 0o755) }
         try Data("my edits".utf8).write(to: local)
-        try await waitUntil("failed upload") { messages.contains { $0.hasPrefix("Could not upload “draft.txt”") } }
+        await expectEventually("failed upload", timeout: 30) { messages.contains { $0.hasPrefix("Could not upload “draft.txt”") } }
         #expect(read(onServer) == "server")
 
         // Opened again: the local copy with the edits, at once, without downloading over it.
@@ -134,29 +126,29 @@ final class RemoteOpenerTests {
         // Once a save gets through, the copy is in sync and opening downloads again.
         chmod(folder.path, 0o755)
         try Data("my edits, saved again".utf8).write(to: local)
-        try await waitUntil("upload") { read(onServer) == "my edits, saved again" }
-        try await waitUntil("marked as synced") { messages.contains("Uploaded changes to “draft.txt”.") }
+        await expectEventually("upload", timeout: 30) { read(onServer) == "my edits, saved again" }
+        await expectEventually("marked as synced", timeout: 30) { messages.contains("Uploaded changes to “draft.txt”.") }
         try Data("changed on the server".utf8).write(to: onServer)
         RemoteOpener.open(item)
-        try await waitUntil("opened a third time") { opened.count == 3 }
+        await expectEventually("opened a third time", timeout: 30) { opened.count == 3 }
         #expect(read(opened[2]) == "changed on the server")
     }
 
     @Test func reopeningASyncedCopyDownloadsItWithoutUploadingBack() async throws {
         let (item, onServer) = try remoteFile("synced.txt", "v1")
         RemoteOpener.open(item)
-        try await waitUntil("opened") { opened.count == 1 }
+        await expectEventually("opened", timeout: 30) { opened.count == 1 }
         // Opened again with nothing to upload: the earlier watch took the old copy's deletion for a save.
         try Data("v2".utf8).write(to: onServer)
         RemoteOpener.open(item)
-        try await waitUntil("opened again") { opened.count == 2 }
+        await expectEventually("opened again", timeout: 30) { opened.count == 2 }
         #expect(read(opened[1]) == "v2")
         try await Task.sleep(for: .seconds(1.5))  // longer than the upload delay
         #expect(!messages.contains("Uploaded changes to “synced.txt”."))
         // Still in sync: a third open downloads the server's newer version instead of reopening the copy.
         try Data("v3".utf8).write(to: onServer)
         RemoteOpener.open(item)
-        try await waitUntil("opened a third time") { opened.count == 3 }
+        await expectEventually("opened a third time", timeout: 30) { opened.count == 3 }
         #expect(read(opened[2]) == "v3")
     }
 

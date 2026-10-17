@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -8,7 +9,7 @@ import Testing
 /// The bundled fd and ripgrep, run for real on files in a scratch folder (scripts/fetch-search-tools.sh puts them in
 /// build/search-tools; CI fetches them too).
 private let fetchedTools: FolderSearch.Tools? = {
-    let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = TestPaths.repo
         .appendingPathComponent("build/search-tools")
     let fd = dir.appendingPathComponent("fd").path, rg = dir.appendingPathComponent("rg").path
     let fm = FileManager.default

@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -66,7 +67,7 @@ extension DriveMutationTests {
         let shared = DriveLocation(accountID: client.accountID, collection: .folder("shared-drive-a", driveID: "shared-drive-a")).url
         let cross = await run(.move, uploaded, shared)
         #expect(cross.errors.isEmpty && cross.results.count == 1)
-        #expect(try await client.file(DriveLocation(url: uploaded)!.itemIDForTest, includeTrashed: true).trashed == true)
+        #expect(try await client.file(DriveLocation(url: uploaded)!.folderIDOrRoot, includeTrashed: true).trashed == true)
     }
 
     @Test @MainActor func recoveryPlanOffersResumptionAndDiscardWithoutSourceLoss() async throws {
@@ -87,7 +88,7 @@ extension DriveMutationTests {
         let plans = controller.recoveryPlans()
         let plan = try #require(plans.first { $0.id == record.operationID })
         #expect(plan.sources == [source] && plan.destination == root)
-        let results: [URL] = await withCheckedContinuation { continuation in
+        let results: [URL] = try await awaitCallback { continuation in
             controller.recover(plan, window: nil) { continuation.resume(returning: $0) }
         }
         #expect(results.count == 1 && controller.recoveryPlans().isEmpty)
@@ -99,10 +100,6 @@ extension DriveMutationTests {
         controller.discard(uncertain)
         #expect(controller.recoveryPlans().isEmpty && FileManager.default.fileExists(atPath: source.path))
     }
-}
-
-private extension DriveLocation {
-    var itemIDForTest: String { if case .folder(let id, _) = collection { return id }; return "root" }
 }
 
 extension DriveMutationTests {

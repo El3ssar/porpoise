@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -8,34 +9,18 @@ import Testing
 /// Google Drive changes as the app makes them, through DriveCloudBackend, against the fake Drive server and the UI
 /// editing fixture (owned items, a folder shared as Editor, items shared as Viewer).
 @MainActor @Suite(.serialized, .isolatedSettings) struct DriveCloudBackendEditingTests {
-    private static let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(
-        "Fixtures/Drive/ui-edit.json")
-    private let browser: (URL) -> Void = { url in Task { _ = try? await URLSession.shared.data(from: url) } }
+    private static let fixture = FakeDriveServer.fixture("ui-edit.json")
+    private let browser = openInFakeBrowser
 
     private func connected(_ server: FakeDriveServer, scratch: Scratch) async throws -> (DriveCloudBackend, DriveAccountStore, CloudAccount) {
-        let defaults = MemoryDefaults()
-        let store = DriveAccountStore(
-            defaults: defaults, credentials: MemoryDriveCredentials(), configuration: server.config,
-            baseURL: server.base.appendingPathComponent("drive/v3/"))
-        let b = DriveCloudBackend(store: store, avatarFolder: scratch.url.appendingPathComponent("avatars"))
-        let result = await withCheckedContinuation { c in _ = b.connect(.googleDrive, openBrowser: browser) { c.resume(returning: $0) } }
+        let (b, store) = server.backend(scratch: scratch)
+        let result = try await awaitCallback { c in _ = b.connect(.googleDrive, openBrowser: browser) { c.resume(returning: $0) } }
         guard case .success(let account) = result else { throw CloudEditError.notSupported }
         return (b, store, account)
     }
 
-    private func control(_ server: FakeDriveServer, _ values: [String: Any]) async throws {
-        var request = URLRequest(url: server.base.appendingPathComponent("__control"))
-        request.httpMethod = "POST"
-        request.httpBody = try JSONSerialization.data(withJSONObject: values)
-        _ = try await URLSession.shared.data(for: request)
-    }
-
-    private func eventually(_ condition: () -> Bool) async {
-        for _ in 0..<200 where !condition() { try? await Task.sleep(nanoseconds: 20_000_000) }
-    }
-
-    private func call<T>(_ start: (@escaping (T) -> Void) -> Void) async -> T {
-        await withCheckedContinuation { c in start { c.resume(returning: $0) } }
+    private func call<T>(_ start: (@escaping (T) -> Void) -> Void) async throws -> T {
+        try await awaitCallback { c in start { c.resume(returning: $0) } }
     }
 
     @Test func permissionsFollowDriveCapabilitiesAndRoles() async throws {
@@ -43,7 +28,7 @@ import Testing
         let scratch = try Scratch()
         let (b, store, account) = try await connected(server, scratch: scratch)
         defer { for a in store.accounts { RemoteFS.unregisterDrive(accountID: a.id) } }
-        await eventually { b.accounts.first?.canWrite == true }
+        await expectEventually { b.accounts.first?.canWrite == true }
         #expect(b.accounts.first?.canWrite == true)
 
         let myDrive = b.url(account.id, root: .myDrive)
@@ -84,16 +69,16 @@ import Testing
         let renamed = try await call { done in b.rename(created.url, to: "Q4 Plan") { done($0) } }.get()
         #expect(renamed.name == "Q4 Plan" && renamed.url == created.url)
 
-        let trashed = await call { done in b.trash([created.url]) { done(($0, $1)) } }
+        let trashed = try await call { done in b.trash([created.url]) { done(($0, $1)) } }
         #expect(trashed.0 == [created.url] && trashed.1 == nil)
         #expect(try await !drive.refresh(myDrive).contains { $0.url == created.url })
-        let restored = await call { done in b.untrash([created.url]) { done(($0, $1)) } }
+        let restored = try await call { done in b.untrash([created.url]) { done(($0, $1)) } }
         #expect(restored.0 == [created.url] && restored.1 == nil)
         #expect(try await drive.refresh(myDrive).contains { $0.url == created.url })
 
         // A refusal comes back in the message bar's words.
-        try await control(server, ["mutationFaults": [403]])
-        let refused = await call { done in b.rename(created.url, to: "X") { done($0) } }
+        try await server.control(["mutationFaults": [403]])
+        let refused = try await call { done in b.rename(created.url, to: "X") { done($0) } }
         guard case .failure(let error) = refused else { Issue.record("expected a refusal"); return }
         #expect(error.localizedDescription == "Google Drive didn’t allow it: your access to this item may have changed.")
     }
@@ -108,18 +93,18 @@ import Testing
         #expect(text(.invalidResponse) == DriveError.invalidResponse.localizedDescription)
     }
 
-    @Test func missingAccountsFailCalmly() async {
+    @Test func missingAccountsFailCalmly() async throws {
         let store = DriveAccountStore(
-            defaults: MemoryDefaults(), credentials: MemoryDriveCredentials())
+            defaults: MemoryDefaults(), credentials: MemoryCredentials())
         let b = DriveCloudBackend(store: store, avatarFolder: FileManager.default.temporaryDirectory)
         let gone = URL(string: "gdrive://\(UUID().uuidString.lowercased())/my-drive/")!
-        let created = await call { done in b.createFolder(named: "x", in: gone) { done($0) } }
+        let created = try await call { done in b.createFolder(named: "x", in: gone) { done($0) } }
         if case .success = created { Issue.record("expected failure") }
-        let trashed = await call { done in b.trash([gone]) { done(($0, $1)) } }
+        let trashed = try await call { done in b.trash([gone]) { done(($0, $1)) } }
         #expect(trashed.0.isEmpty && trashed.1 != nil)
-        let none = await call { done in b.trash([]) { done(($0, $1)) } }
+        let none = try await call { done in b.trash([]) { done(($0, $1)) } }
         #expect(none.1 != nil)
-        let restored = await call { done in b.untrash([gone]) { done(($0, $1)) } }
+        let restored = try await call { done in b.untrash([gone]) { done(($0, $1)) } }
         #expect(restored.0.isEmpty && restored.1 != nil)
         #expect(b.permissions(for: gone) == nil)
     }

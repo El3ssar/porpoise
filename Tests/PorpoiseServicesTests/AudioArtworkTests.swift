@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
@@ -6,7 +7,7 @@ import Testing
 
 /// Covers are read from real files: half a second of tone, with and without an embedded picture.
 struct AudioArtworkTests {
-    private let audio = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Audio")
+    private let audio = TestPaths.fixtures.appendingPathComponent("Audio")
 
     @Test func readsTheEmbeddedCover() async throws {
         let data = try #require(await AudioArtwork.load(audio.appendingPathComponent("tone-cover.m4a")))

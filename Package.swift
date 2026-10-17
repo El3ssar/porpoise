@@ -30,10 +30,17 @@ let package = Package(
         .executableTarget(name: "DriveRecoveryProbe", dependencies: ["PorpoiseCore", "PorpoiseServices"], path: "Tests/DriveRecoveryProbe"),
         // Shared by the test targets: throwaway folders and disk images that clean up after themselves.
         .target(name: "PorpoiseTestSupport", path: "Tests/PorpoiseTestSupport"),
+        // What the Services and App tests share: settings isolation, waiting, the fake servers and fakes.
+        .target(
+            name: "PorpoiseServicesTestSupport", dependencies: ["PorpoiseCore", "PorpoiseServices", "PorpoiseTestSupport"],
+            path: "Tests/PorpoiseServicesTestSupport"),
         .testTarget(name: "PorpoiseCoreTests", dependencies: ["PorpoiseCore", "PorpoiseTestSupport"]),
-        .testTarget(name: "PorpoiseAppTests", dependencies: ["Porpoise", "PorpoiseCore", "PorpoiseServices", "PorpoiseTestSupport"]),
         .testTarget(
-            name: "PorpoiseServicesTests", dependencies: ["PorpoiseServices", "PorpoiseCore", "PorpoiseTestSupport"],
+            name: "PorpoiseAppTests",
+            dependencies: ["Porpoise", "PorpoiseCore", "PorpoiseServices", "PorpoiseTestSupport", "PorpoiseServicesTestSupport"]),
+        .testTarget(
+            name: "PorpoiseServicesTests",
+            dependencies: ["PorpoiseServices", "PorpoiseCore", "PorpoiseTestSupport", "PorpoiseServicesTestSupport"],
             exclude: ["Fixtures"]),
     ],
     swiftLanguageModes: [.v5]

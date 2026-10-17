@@ -1,5 +1,7 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServicesTestSupport
+import PorpoiseTestSupport
 import Testing
 
 @testable import Porpoise
