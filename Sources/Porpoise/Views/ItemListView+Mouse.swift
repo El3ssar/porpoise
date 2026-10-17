@@ -79,25 +79,36 @@ extension ItemListView {
         return textWidth(name) > nameTextRect(i).width ? name : nil
     }
 
-    /// Hover highlight fades (Breeze animates hover; ~120 ms in, ~200 ms out).
+    /// Hover highlights fade in and out (`Motion.hoverIn`, `.hoverOut`), each row from where it is, so moving across
+    /// rows hands the highlight over smoothly. With Reduce Motion they just switch.
     private func startHoverAnimation() {
-        guard hoverTimer == nil else { return }
-        let t = Timer(timeInterval: 1.0 / 90, repeats: true) { [weak self] t in
-            guard let self else { t.invalidate(); return }
-            let rows = self.model.rows
-            let target = self.hoverIndex.flatMap { $0 < rows.count ? rows[$0].item.url : nil }
-            var done = true
-            for (u, a) in self.hoverAlpha {
-                let goal: CGFloat = u == target ? 1 : 0
-                let next = goal > a ? min(1, a + 0.13) : max(0, a - 0.08)
-                if next == 0 && goal == 0 { self.hoverAlpha.removeValue(forKey: u) } else { self.hoverAlpha[u] = next }
-                if next != goal { done = false }
-                if let i = self.model.index(of: u), i < self.frames.count { self.setNeedsDisplay(self.highlightRect(i).insetBy(dx: -30, dy: -4)) }
-            }
-            if done { t.invalidate(); self.hoverTimer = nil }
+        if Animator.reducesMotion() {
+            hoverClock.stop()
+            stepHover(by: 1)
+            return
         }
-        hoverTimer = t
-        RunLoop.main.add(t, forMode: .common)
+        guard !hoverClock.isRunning else { return }
+        var last = CACurrentMediaTime()
+        hoverClock.run { [weak self] now in
+            defer { last = now }
+            return self?.stepHover(by: CGFloat(max(0, now - last))) ?? false
+        }
+    }
+
+    /// Moves each hover highlight `seconds` further toward its goal (a whole fade: 1 with Reduce Motion); true while
+    /// some are still on their way.
+    @discardableResult private func stepHover(by seconds: CGFloat) -> Bool {
+        let rows = model.rows
+        let target = hoverIndex.flatMap { $0 < rows.count ? rows[$0].item.url : nil }
+        var moving = false
+        for (u, a) in hoverAlpha {
+            let goal: CGFloat = u == target ? 1 : 0
+            let next = goal > a ? min(1, a + seconds / Motion.hoverIn) : max(0, a - seconds / Motion.hoverOut)
+            if next == 0 && goal == 0 { hoverAlpha.removeValue(forKey: u) } else { hoverAlpha[u] = next }
+            if next != goal { moving = true }
+            if let i = model.index(of: u), i < frames.count { setNeedsDisplay(highlightRect(i).insetBy(dx: -30, dy: -4)) }
+        }
+        return moving
     }
 }
 

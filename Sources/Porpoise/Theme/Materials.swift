@@ -50,23 +50,15 @@ final class TintedMaterialView: NSVisualEffectView {
     }
 }
 
-/// Simple per-frame animator (a 120 Hz timer in the common run loop modes, so it keeps running during
-/// event tracking such as live resize), used for custom-drawn transitions.
+/// Runs a custom-drawn transition: a progress from 0 to 1 over a duration, eased, one step per frame shown
+/// (`FrameClock`).
 final class Animator: NSObject {
     /// Reduce Motion (Accessibility › Display): everything that animates jumps to its end. The one switch for the
     /// app (tests set it, so a machine's own setting can't change what they see).
     nonisolated(unsafe) static var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
-    private var link: CADisplayLink?
-    /// When the first frame was shown (nil until then).
-    private var start: CFTimeInterval?
-    private var duration: TimeInterval = 0
-    private var curve: (Double) -> Double = Animator.easeOutCubic
-    private var step: ((Double) -> Void)?
+    private let clock = FrameClock()
     private var completion: (() -> Void)?
-    /// The end state is shown for one frame before the completion runs (see `run`).
-    private var showsEnd = false
-    private var ended = false
 
     /// Runs `step(progress)` with progress eased 0→1 over `duration`, replacing any running animation
     /// (whose completion is then not called). Steps follow the display's refresh: one per frame shown.
@@ -78,54 +70,47 @@ final class Animator: NSObject {
         step: @escaping (Double) -> Void, completion: (() -> Void)? = nil
     ) {
         stop()
+        self.completion = completion
+        // The clock starts with the first frame: work done right after `run` (a new split pane being set up) would
+        // otherwise use up part of the animation before anything is drawn, and it would seem to jump.
+        var start: CFTimeInterval?
+        var ended = false
         // Reduce Motion (Accessibility › Display), or nothing to show it on: jump to the end state.
         guard duration > 0, !Animator.reducesMotion(),
-            let screen = NSScreen.main ?? NSScreen.screens.first
+            clock.run({ [weak self] now in
+                guard let self else { return false }
+                if ended { return self.finish() }
+                let begin = start ?? now
+                start = begin
+                let p = min(1, (now - begin) / duration)
+                step(curve(p))
+                guard p >= 1 else { return true }
+                if showsEnd {
+                    ended = true
+                    return true
+                }
+                return self.finish()
+            })
         else {
+            self.completion = nil
             step(1)
             completion?()
             return
         }
-        self.duration = duration
-        self.curve = curve
-        self.step = step
-        self.completion = completion
-        self.showsEnd = showsEnd
-        ended = false
-        start = nil
-        let l = screen.displayLink(target: self, selector: #selector(tick(_:)))
-        l.add(to: .main, forMode: .common)
-        link = l
     }
 
-    @objc private func tick(_ l: CADisplayLink) {
-        if ended {
-            let done = completion
-            stop()
-            done?()
-            return
-        }
-        // The clock starts with the first frame: work done right after `run` (a new split pane being set up) would
-        // otherwise use up part of the animation before anything is drawn, and it would seem to jump.
-        let now = l.timestamp
-        let begin = start ?? now
-        start = begin
-        let p = min(1, (now - begin) / duration)
-        step?(curve(p))
-        guard p >= 1 else { return }
-        if showsEnd {
-            ended = true
-            return
-        }
+    /// Ends the clock and calls the completion; false, so the clock stops.
+    private func finish() -> Bool {
         let done = completion
         stop()
         done?()
+        return false
     }
 
-    var isRunning: Bool { link != nil }
+    var isRunning: Bool { clock.isRunning }
 
     /// Fades `view` to `alpha`: at once with Reduce Motion.
-    static func fade(_ view: NSView, to alpha: CGFloat, duration: TimeInterval = 0.18) {
+    static func fade(_ view: NSView, to alpha: CGFloat, duration: TimeInterval = Motion.fade) {
         guard !reducesMotion() else { view.alphaValue = alpha; return }
         NSAnimationContext.runAnimationGroup {
             $0.duration = duration
@@ -135,9 +120,7 @@ final class Animator: NSObject {
 
     /// Ends the animation where it is, without its completion.
     func stop() {
-        link?.invalidate()
-        link = nil
-        step = nil
+        clock.stop()
         completion = nil
     }
 

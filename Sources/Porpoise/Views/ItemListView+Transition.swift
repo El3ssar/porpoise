@@ -211,7 +211,8 @@ enum TransitionKind: String {
 }
 
 extension ItemListView {
-    static let transitionDuration: TimeInterval = 0.3
+    /// AppsGridView's glides, until it joins `Motion` (after R-9).
+    static let transitionDuration = Motion.glide
     /// Beyond this many rows a change is shown at once: every frame would draw a large view.
     private static let maxAnimatedRows = 3000
 
@@ -317,7 +318,7 @@ extension ItemListView {
             return false
         }
         transition = ItemTransition(from: before, leaving: [])
-        runTransition(duration: 0.3)
+        runTransition(duration: Motion.glide)
         return true
     }
 
@@ -340,7 +341,7 @@ extension ItemListView {
         let reflowed = mode == .icons ? columns != shape.0 : rowsPerColumn != shape.1
         if reflowed, !before.isEmpty, frames.count == count {
             transition = ItemTransition(from: before.mapValues { $0.offsetBy(dx: dx, dy: dy) }, leaving: [])
-            runTransition(duration: 0.3)
+            runTransition(duration: Motion.glide)
             return true
         }
         if var t = transition, dx != 0 || dy != 0 {
@@ -376,10 +377,7 @@ extension ItemListView {
     func shownFrame(_ i: Int) -> CGRect {
         let target = frames[i]
         guard let t = transition, let from = t.from[key(ofRow: i)] else { return target }
-        let p = t.progress
-        return CGRect(
-            x: from.minX + (target.minX - from.minX) * p, y: from.minY + (target.minY - from.minY) * p,
-            width: target.width, height: target.height)
+        return CGRect(origin: Motion.lerp(from.origin, target.origin, t.progress), size: target.size)
     }
 
     /// Rows to draw in `rect`. During a transition: every row on its way, picked by where it's drawn at this
@@ -407,20 +405,16 @@ extension ItemListView {
             // The old look travels with the new one: it holds through the first part, the new one takes over in the
             // second (a plain crossfade shows the new look's small parts too early, like a row's icon in a big cell).
             let p = t.progress
-            let smooth = { (a: CGFloat, b: CGFloat) -> CGFloat in
-                let x = min(1, max(0, (p - a) / (b - a))); return x * x * (3 - 2 * x)
-            }
             let old = CGRect(origin: target.origin, size: m.size)
             NSImage(cgImage: m.image, size: m.size).draw(
-                in: old, from: .zero, operation: .sourceOver, fraction: 1 - smooth(0.25, 0.8), respectFlipped: true, hints: nil)
-            ctx.setAlpha(smooth(0.35, 0.9))
+                in: old, from: .zero, operation: .sourceOver, fraction: 1 - Motion.smoothstep(0.25, 0.8, p), respectFlipped: true, hints: nil)
+            ctx.setAlpha(Motion.smoothstep(0.35, 0.9, p))
         }
         if t.from[k] == nil {
             let a = t.appearProgress(k)
             guard a > 0 else { return }
             if mode == .icons {
-                // Grows from 82 % while fading in.
-                let s = 0.82 + 0.18 * a
+                let s = Motion.appearScale(a)
                 ctx.translateBy(x: target.midX, y: target.midY)
                 ctx.scaleBy(x: s, y: s)
                 ctx.translateBy(x: -target.midX, y: -target.midY)
@@ -436,9 +430,9 @@ extension ItemListView {
     /// Items that went away, drawn from the snapshot: they fade out quickly under the others (and shrink, in Icons).
     func drawLeavingItems() {
         guard let t = transition, let ctx = NSGraphicsContext.current?.cgContext else { return }
-        let a = max(0, 1 - t.progress * 1.6)
+        let (a, shrink) = Motion.leave(t.progress)
         guard a > 0.01 else { return }
-        let s: CGFloat = mode == .icons ? 1 - 0.18 * t.progress : 1
+        let s: CGFloat = mode == .icons ? shrink : 1
         for l in t.leaving {
             ctx.saveGState()
             ctx.translateBy(x: l.rect.midX, y: l.rect.midY)
