@@ -87,12 +87,22 @@ public final class DiskImage {
     /// DiskImages' APFS formatter shares OS state with attach/detach. Concurrent lifecycle commands
     /// sporadically fail creation with ENOTEMPTY. The file lock below also coordinates separate test processes.
     private static let commandLock = NSLock()
+    /// Formatting (`hdiutil create -fs APFS`: attach, newfs, eject) fails with "Directory not empty" whenever any disk
+    /// image on the Mac is attached or detached meanwhile, by another worktree's tests (some without the lock below),
+    /// the system or anything else, which no lock here can hold back. So each name and size is formatted once, into
+    /// a template kept in the temporary folder, and every fixture is an APFS clone of it: instant, and never formatted.
+    /// Larger images (benchmarks) are created as they are needed, not kept.
+    private static let largestTemplate = 256
 
     public init(name: String = "PorpoiseTest", megabytes: Int = 20, in scratch: Scratch) throws {
         self.scratch = scratch
         image = scratch.path("\(name).dmg")
         volume = scratch.path("mnt-\(name)")
-        try Self.hdiutil(["create", "-size", "\(megabytes)m", "-fs", "APFS", "-volname", name, image.path])
+        if megabytes <= Self.largestTemplate {
+            try FileManager.default.copyItem(at: Self.template(name: name, megabytes: megabytes), to: image)
+        } else {
+            try Self.hdiutil(["create", "-size", "\(megabytes)m", "-fs", "APFS", "-volname", name, image.path])
+        }
         try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
         do {
             try Self.hdiutil(["attach", "-quiet", "-nobrowse", "-mountpoint", volume.path, image.path])
@@ -104,6 +114,30 @@ public final class DiskImage {
     }
 
     deinit { try? Self.hdiutil(["detach", "-quiet", "-force", volume.path]) }
+
+    /// The formatted, never attached image every fixture of that name and size is cloned from; made the first time.
+    private static func template(name: String, megabytes: Int) throws -> URL {
+        let fm = FileManager.default
+        let folder = fm.temporaryDirectory.appendingPathComponent("porpoise-disk-image-templates-\(getuid())", isDirectory: true)
+        let template = folder.appendingPathComponent("\(name)-\(megabytes)m.dmg")
+        if fm.fileExists(atPath: template.path) { return template }
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        let made = folder.appendingPathComponent("making-\(UUID().uuidString).dmg")
+        defer { try? fm.removeItem(at: made) }
+        // Made only once per machine, but even then something else may attach or detach an image meanwhile: the
+        // formatter's own failure for that is tried again (only that one).
+        for attempt in 1...3 {
+            do {
+                try hdiutil(["create", "-size", "\(megabytes)m", "-fs", "APFS", "-volname", name, made.path])
+                break
+            } catch let error as CocoaError where attempt < 3 && "\(error.userInfo)".contains("Directory not empty") {
+                try? fm.removeItem(at: made)
+            }
+        }
+        // Another process may have made it meanwhile: either one is the same empty volume.
+        guard rename(made.path, template.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        return template
+    }
 
     /// Runs hdiutil, giving up after a minute (a stuck disk image must fail the test, not hang the run).
     fileprivate static func hdiutil(_ args: [String]) throws {

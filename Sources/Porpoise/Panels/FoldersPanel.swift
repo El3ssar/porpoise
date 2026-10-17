@@ -87,20 +87,13 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     }
 
     override init(frame: NSRect) {
-        // Test instances root at their own home folder (or a temporary one), never the user's real home: its
-        // protected folders raise privacy prompts that block open().
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let testHome =
-            Settings.shared.homeURL.standardizedFileURL == home.standardizedFileURL
-            ? FileManager.default.temporaryDirectory : Settings.shared.homeURL
-        root = Node(Settings.isTesting ? testHome : home)
+        // The root `resetRoot()` sets below; nothing is listed before then.
+        root = Node(Self.home)
         super.init(frame: frame)
         let col = NSTableColumn(identifier: .init("name"))
         outline.addTableColumn(col)
         outline.outlineTableColumn = col
         outline.headerView = nil
-        outline.dataSource = self
-        outline.delegate = self
         outline.rowHeight = 24
         outline.indentationPerLevel = 14
         outline.backgroundColor = .clear
@@ -116,6 +109,11 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
         addSubview(scroll)
+        // Connected last: changing the outline's style or columns reloads it, and a reload before it sits in its
+        // scroll view lists the whole root and makes a cell for every row (in test instances that root was the
+        // temporary folder: 20,000+ folders, over a minute of CPU at launch).
+        outline.dataSource = self
+        outline.delegate = self
         settingsObserver = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
             // Rebuilding collapses the tree, so only for the panel's own settings.
             if Self.settingKeys.contains(n.object as? String) { self?.resetRoot() }
@@ -138,8 +136,20 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
 
     private var showHidden: Bool { Settings.shared.foldersShowHidden }
 
+    /// The home the tree starts from. Test instances use their own (a test home, or an empty folder of their own),
+    /// never the user's: its protected folders raise privacy prompts that block open(). Not the temporary folder
+    /// itself, which may hold tens of thousands of folders.
+    private static var home: URL {
+        let real = FileManager.default.homeDirectoryForCurrentUser
+        guard Settings.isTesting else { return real }
+        if Settings.shared.homeURL.standardizedFileURL != real.standardizedFileURL { return Settings.shared.homeURL }
+        let own = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-test-home-\(getuid())", isDirectory: true)
+        try? FileManager.default.createDirectory(at: own, withIntermediateDirectories: true)
+        return own
+    }
+
     private static func isInHome(_ url: URL) -> Bool {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = Self.home.path
         return url.path == home || url.path.hasPrefix(home + "/")
     }
 
@@ -147,7 +157,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
 
     private func resetRoot() {
         let inHome = currentURL.map(Self.isInHome) ?? true
-        root = Node(Settings.shared.foldersLimitToHome && inHome ? FileManager.default.homeDirectoryForCurrentUser : URL(fileURLWithPath: "/"))
+        root = Node(Settings.shared.foldersLimitToHome && inHome ? Self.home : URL(fileURLWithPath: "/"))
         outline.reloadData()
         outline.expandItem(nil)
         followCurrent()
@@ -156,7 +166,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     /// Expands down to the current folder and selects it.
     private func followCurrent() {
         guard let target = currentURL, target.isFileURL else { return }
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        let home = Self.home
         if Settings.shared.foldersLimitToHome && (root.url.path == home.path) != Self.isInHome(target) { resetRoot(); return }
         var chain: [URL] = []
         // The tree holds real folders: /tmp/x is shown as /private/tmp/x (symlinks are not folders here).

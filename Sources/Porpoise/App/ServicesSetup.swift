@@ -44,6 +44,7 @@ extension AppDelegate {
             nc.addObserver(forName: n, object: nil, queue: .main) { _ in PlacesModel.shared.refreshDevices() }
         }
         // Phones are polled while Porpoise is in front only.
+        PlacesModel.shared.isActive = NSApp.isActive
         for (n, active) in [(NSApplication.didBecomeActiveNotification, true), (NSApplication.didResignActiveNotification, false)] {
             NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { _ in PlacesModel.shared.isActive = active }
         }
