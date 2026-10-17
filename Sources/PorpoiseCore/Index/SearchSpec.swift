@@ -33,7 +33,8 @@ public struct SearchSpec: @unchecked Sendable {
 
     /// Spotlight can express folded literal terms, but unsupported metadata/regex operators must fall through.
     public var supportsSpotlight: Bool {
-        query.paths.isEmpty && query.extensions.isEmpty && query.directory == nil && query.minimumSize == nil && query.maximumSize == nil
+        !query.terms.isEmpty && query.paths.isEmpty && query.extensions.isEmpty && query.directory == nil && query.minimumSize == nil
+            && query.maximumSize == nil
             && query.after == nil && query.before == nil && query.regex == nil
             && !query.terms.contains { $0.rangeOfCharacter(from: CharacterSet(charactersIn: "*?[]\\")) != nil }
     }

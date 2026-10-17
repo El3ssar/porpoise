@@ -57,7 +57,7 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
         hereButton.toolTip = "Limit the search to “\(scopeFolder?.lastPathComponent ?? "")” and its subfolders"
     }
 
-    /// Where the index covers the scope, the field says so and suggests its syntax.
+    /// Local searches share operator syntax; a ready index also advertises instant results.
     private func updatePlaceholder() {
         if let service = cloudService {
             field.placeholderString = contents ? "Search names and contents in \(service)…" : "Search \(service)…"
@@ -68,7 +68,10 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
         let indexed = !contents && (scope.map { SearchIndex.shared.hasReadySnapshot(for: $0) } ?? false)
         field.placeholderString = contents ? "Search names and contents…" : indexed ? "Search the index — try ext:pdf size:>10mb dm:today" : "Search…"
         field.toolTip =
-            indexed ? SearchIndex.shared.statusText + "\nOperators: " + IndexQuery.operators.joined(separator: " ") + " · ⌥⎋ completes them" : nil
+            contents
+            ? nil
+            : (indexed ? SearchIndex.shared.statusText + "\n" : "") + "Operators: " + IndexQuery.operators.joined(separator: " ")
+                + " · ⌥⎋ completes them"
     }
     private var debounce: Timer?
     /// Typing waits this long before searching.

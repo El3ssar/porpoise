@@ -340,10 +340,10 @@ import Testing
         #expect(try await search("nothing-matches-\(tag)", in: s.url, spotlight: false).isEmpty)
     }
 
-    @Test func spotlightPredicates() {
-        #expect(SearchRunner.predicate("report", contents: false).predicateFormat == #"kMDItemFSName LIKE[cd] "*report*""#)
+    @Test func spotlightPredicates() throws {
+        #expect(SearchRunner.predicate(try SearchSpec("report", contents: false)).predicateFormat == #"kMDItemFSName LIKE[cd] "*report*""#)
         #expect(
-            SearchRunner.predicate("x", contents: true).predicateFormat
+            SearchRunner.predicate(try SearchSpec("x", contents: true)).predicateFormat
                 == #"kMDItemTextContent LIKE[cd] "*x*" OR kMDItemFSName LIKE[cd] "*x*""#)
     }
 

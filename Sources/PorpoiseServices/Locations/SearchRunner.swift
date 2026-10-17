@@ -1,12 +1,12 @@
 import Foundation
 import PorpoiseCore
 
-/// Runs a search. In a folder: the bundled fd and ripgrep, streaming results as they find them (hidden and
+/// Runs a search. In a folder: bundled fd and the shared matcher, streaming results as they find them (hidden and
 /// unindexed folders included). Everywhere: Spotlight, like Dolphin's Baloo search, with live results; where it finds
 /// nothing or doesn't answer, the folders are searched as above. Without the tools, a simple walk of the folders.
 public final class SearchRunner: NSObject {
     private let update: ([FileItem], Bool) -> Void
-    private let text: String
+    private let spec: SearchSpec?
     private let scope: URL
     private let contents: Bool
     private let everywhere: Bool
@@ -30,7 +30,7 @@ public final class SearchRunner: NSObject {
     private var generation = 0
     /// Spotlight's latest results as last shown, shown again when their lines come in (main queue).
     private var shown: (items: [FileItem], done: Bool)?
-    /// Files already given to ripgrep for their lines, so each is read once (main queue).
+    /// Files already read for their matching lines, so each is read once (main queue).
     private var asked: Set<URL> = []
 
     /// How long Spotlight may take to gather before the simple search takes over.
@@ -54,7 +54,7 @@ public final class SearchRunner: NSObject {
 
     /// `everywhere`: the scope is everything the user has (Spotlight's index); otherwise one folder.
     public init(text: String, scope: URL, contents: Bool, everywhere: Bool = false, update: @escaping ([FileItem], Bool) -> Void) {
-        self.text = text
+        do { spec = try SearchSpec(text, contents: contents) } catch { spec = nil; queryError = error.localizedDescription }
         self.scope = scope
         self.contents = contents
         self.everywhere = everywhere
@@ -62,15 +62,18 @@ public final class SearchRunner: NSObject {
         super.init()
     }
 
-    /// The Spotlight predicate for `text`: names, and with `contents` the text inside files too.
-    static func predicate(_ text: String, contents: Bool) -> NSPredicate {
-        let pattern = "*\(text)*"
-        return contents
-            ? NSPredicate(format: "kMDItemTextContent LIKE[cd] %@ OR kMDItemFSName LIKE[cd] %@", pattern, pattern)
-            : NSPredicate(format: "kMDItemFSName LIKE[cd] %@", pattern)
+    /// Only predicates that can express the shared specification are sent to Spotlight.
+    static func predicate(_ spec: SearchSpec) -> NSPredicate {
+        let predicates = spec.query.terms.map { NSPredicate(format: "kMDItemFSName LIKE[cd] %@", "*\($0)*") }
+        let names = predicates.count == 1 ? predicates[0] : NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+        guard spec.contents else { return names }
+        return NSCompoundPredicate(orPredicateWithSubpredicates: [
+            NSPredicate(format: "kMDItemTextContent LIKE[cd] %@", "*\(spec.text)*"), names,
+        ])
     }
 
     public func start() {
+        guard spec != nil else { update([], true); return }
         if usesIndex && indexObserver == nil {
             indexObserver = NotificationCenter.default.addObserver(forName: SearchIndex.changed, object: index, queue: .main) { [weak self] _ in
                 self?.refreshIndex()
@@ -89,7 +92,7 @@ public final class SearchRunner: NSObject {
         let firstSearch = !usedIndex
         loadQueue.async { [weak self] in
             guard let self, !work.isCancelled else { return }
-            guard let result = self.index.search(self.text, scope: self.scope, contents: self.contents, cancelled: { work.isCancelled }) else {
+            guard let spec = self.spec, let result = self.index.search(spec, scope: self.scope, cancelled: { work.isCancelled }) else {
                 DispatchQueue.main.async { [weak self] in
                     guard let self, !work.isCancelled else { return }
                     // An uncovered scope keeps its existing fd/rg/Spotlight search rather than restarting it.
@@ -145,9 +148,10 @@ public final class SearchRunner: NSObject {
         usedIndex = false
         indexedItems = nil
         queryError = nil
-        guard usesSpotlight, everywhere else { searchFolders(); return }
+        guard let spec else { update([], true); return }
+        guard usesSpotlight, everywhere, spec.supportsSpotlight else { searchFolders(); return }
         let q = SpotlightQuery(
-            predicate: Self.predicate(text, contents: contents), scopes: [scope], limit: Self.maxSpotlightResults, live: true,
+            predicate: Self.predicate(spec), scopes: [scope], limit: Self.maxSpotlightResults, live: true,
             timeout: gatheringTimeout
         ) { [weak self] event in self?.handle(event) }
         spotlight = q
@@ -195,19 +199,19 @@ public final class SearchRunner: NSObject {
         }
     }
 
-    /// Spotlight found files by their contents but doesn't say where: their lines are read with ripgrep (on a thread
+    /// Spotlight found files by their contents but doesn't say where: their lines are read with the shared matcher (on a thread
     /// of its own), and the results shown again with them, as a search of a folder shows them.
     private func fetchLines(for items: [FileItem]) {
-        guard contents, let rg = folderTools?.rg else { return }
-        let text = text
+        guard contents else { return }
+        guard let spec else { return }
         let new = items.filter {
-            !asked.contains($0.url) && !$0.isDirectory && $0.name.range(of: text, options: [.caseInsensitive, .diacriticInsensitive]) == nil
+            !asked.contains($0.url) && !$0.isDirectory && !spec.nameMatches($0.name)
         }
         guard !new.isEmpty else { return }
         asked.formUnion(new.map(\.url))
         let g = generation
         Thread { [weak self] in
-            let found = FolderSearch.lines(in: new.map(\.url.path), containing: text, rg: rg)
+            let found = FolderSearch.lines(in: new.map(\.url.path), spec: spec)
             DispatchQueue.main.async {
                 // Stopped (or the folders searched instead) meanwhile: nothing to show. Newer results: these lines
                 // still belong to their files.
@@ -222,8 +226,9 @@ public final class SearchRunner: NSObject {
 
     /// The folder itself searched: with the bundled tools, else walked.
     private func searchFolders() {
+        guard let spec else { update([], true); return }
         guard let tools = folderTools else { return simpleSearch() }
-        let s = FolderSearch(text: text, scope: scope, contents: contents, limit: Self.maxFolderResults, tools: tools) {
+        let s = FolderSearch(spec: spec, scope: scope, limit: Self.maxFolderResults, tools: tools) {
             [weak self] items, snippets, done in
             self?.snippets = snippets
             self?.update(items, done)
@@ -240,30 +245,33 @@ public final class SearchRunner: NSObject {
 
     /// Dolphin's "Simple search" (filenamesearch:/): walks the folder tree.
     private func simpleSearch() {
-        let needle = text.lowercased()
+        guard let spec else { update([], true); return }
         let scope = scope
         let contents = contents
         fallbackWork?.cancel()
         let work = DispatchWorkItem {}
         fallbackWork = work
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var out: [FileItem] = []
+        loadQueue.async { [weak self] in
+            var out: [FileItem] = [], lines: [URL: String] = [:]
             let e = FileManager.default.enumerator(at: scope, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsPackageDescendants])
             var n = 0
             while let u = e?.nextObject() as? URL {
                 if work.isCancelled { return }
                 n += 1
                 if n > Self.maxSimpleVisited { break }
-                var hit = u.lastPathComponent.lowercased().contains(needle)
-                if !hit && contents, let d = try? Data(contentsOf: u, options: .mappedIfSafe), d.count < Self.maxContentSearchSize,
-                    let s = String(data: d, encoding: .utf8)
+                guard let item = FileItem.load(u), !(contents && item.isBrowsableFolder),
+                    spec.metadataMatches(path: u.path, isDirectory: item.isDirectory, size: item.size, modified: item.modificationDate)
+                else { continue }
+                if spec.nameMatches(item.name) {
+                    out.append(item)
+                } else if contents, let value = IndexFileText.read(u.path, limit: Self.maxContentSearchSize),
+                    let line = value.split(separator: "\n", omittingEmptySubsequences: false).first(where: { spec.contentMatches(String($0)) })
                 {
-                    hit = s.lowercased().contains(needle)
+                    out.append(item); lines[u] = FolderSearch.snippet(String(line), around: spec.text)
                 }
-                if hit, let it = FileItem.load(u), !(contents && it.isBrowsableFolder) { out.append(it) }
                 if out.count >= Self.maxSimpleResults { break }
             }
-            DispatchQueue.main.async { if !work.isCancelled { self?.update(out, true) } }
+            DispatchQueue.main.async { if !work.isCancelled { self?.snippets = lines; self?.update(out, true) } }
         }
     }
 

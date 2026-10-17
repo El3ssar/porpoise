@@ -1,30 +1,28 @@
 import Foundation
 import PorpoiseCore
 
-/// Searches a folder with the bundled fd (names) and ripgrep (contents). Results stream in while the tools run:
-/// they're read on threads of their own, loaded off the main thread, and handed over in batches.
+/// Discovers candidate paths with bundled fd, then applies the shared search specification.
+/// Names and bounded content matches stream in batches from a worker thread.
 final class FolderSearch: @unchecked Sendable {
     struct Tools {
         let fd: String
-        let rg: String
     }
 
     /// The tools in Contents/Helpers (fetched by scripts/fetch-search-tools.sh). Only those: other versions on the
     /// PATH might take other options. Without them the search walks the folders itself.
     static var tools: Tools? {
         let helpers = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers")
-        let fd = helpers.appendingPathComponent("fd").path, rg = helpers.appendingPathComponent("rg").path
-        guard FileManager.default.isExecutableFile(atPath: fd), FileManager.default.isExecutableFile(atPath: rg) else { return nil }
-        return Tools(fd: fd, rg: rg)
+        let fd = helpers.appendingPathComponent("fd").path
+        guard FileManager.default.isExecutableFile(atPath: fd) else { return nil }
+        return Tools(fd: fd)
     }
 
     /// How often found items are handed over while the search runs: often at first, so the first results show at
     /// once, then less often, as each batch makes the view sort and lay out everything found so far again.
     static func batchInterval(found: Int) -> TimeInterval { found < 300 ? 0.12 : found < 2000 ? 0.3 : 0.6 }
 
-    private let text: String
+    private let spec: SearchSpec
     private let scope: URL
-    private let contents: Bool
     private let limit: Int
     private let tools: Tools
     private let update: ([FileItem], [URL: String], Bool) -> Void
@@ -48,38 +46,22 @@ final class FolderSearch: @unchecked Sendable {
     /// `update(items, snippets, done)` runs on the main queue with everything found so far, and for the files found
     /// by their contents only (not their names), the line that contains the text.
     init(
-        text: String, scope: URL, contents: Bool, limit: Int, tools: Tools, update: @escaping ([FileItem], [URL: String], Bool) -> Void
+        spec: SearchSpec, scope: URL, limit: Int, tools: Tools, update: @escaping ([FileItem], [URL: String], Bool) -> Void
     ) {
-        self.text = text
-        self.scope = scope
-        self.contents = contents
-        self.limit = limit
-        self.tools = tools
-        self.update = update
+        self.spec = spec; self.scope = scope; self.limit = limit; self.tools = tools; self.update = update
     }
 
-    /// The command lines: names with fd; with `contents`, files containing the text with ripgrep too. Both look for
-    /// the text as it is (no pattern syntax), in any case, in hidden and ignored files as well, and print paths
-    /// followed by NUL so any name comes through whole (ripgrep then prints the file's first matching line, cut short
-    /// when long; binary files are skipped).
+    /// fd discovers broad candidates. The shared folded/operator predicate runs before the result limit,
+    /// since fd's literal matching cannot express diacritic folding or all of the query operators.
     var commands: [[String]] {
-        let names = [
-            tools.fd, "--hidden", "--no-ignore", "--ignore-case", "--fixed-strings", "--absolute-path", "--print0",
-            "--max-results", String(limit), "--", text, scope.path,
-        ]
-        let inside = [
-            tools.rg, "--max-count", "1", "--null", "--no-heading", "--with-filename", "--no-line-number", "--color", "never",
-            "--max-columns", "2000", "--max-columns-preview", "--ignore-case", "--fixed-strings", "--hidden", "--no-ignore",
-            "--max-filesize", "5M", "--no-messages", "--", text, scope.path,
-        ]
-        return contents ? [names, inside] : [names]
+        [[tools.fd, "--hidden", "--no-ignore", "--absolute-path", "--print0", "--", "", scope.path]]
     }
 
     func start() {
         // A fast first tool may finish while the next Process is still launching. Keep startup counted until
         // every launch has been attempted, so that reader cannot publish an early empty completion.
         lock.withLock { running += 1 }
-        for (n, command) in commands.enumerated() {
+        for command in commands {
             let p = Process()
             // Below the app's own work: a big search keeps the cores busy, the window stays smooth.
             p.qualityOfService = .utility
@@ -99,8 +81,7 @@ final class FolderSearch: @unchecked Sendable {
                 running += 1
             }
             // A thread of its own: blocking reads on shared dispatch threads can starve (see Shell).
-            let withLines = n == 1
-            Thread { [self] in read(out.fileHandleForReading, of: p, withLines: withLines) }.start()
+            Thread { [self] in read(out.fileHandleForReading, of: p) }.start()
         }
         let finished = lock.withLock {
             running -= 1; return running == 0
@@ -116,25 +97,19 @@ final class FolderSearch: @unchecked Sendable {
         for p in ps where p.isRunning { p.terminate() }
     }
 
-    /// Reads "path NUL" records, or with `withLines` "path NUL line LF" (ripgrep).
-    private func read(_ handle: FileHandle, of process: Process, withLines: Bool) {
+    /// Reads NUL-delimited paths, including names with embedded line breaks.
+    private func read(_ handle: FileHandle, of process: Process) {
         var rest = Data()
         while let chunk = try? handle.read(upToCount: 64 * 1024), !chunk.isEmpty {
             rest.append(chunk)
-            var paths: [(path: String, line: String?)] = []
+            var paths: [String] = []
             // Records are read through a cursor and dropped once per chunk: removing each from the front of the
             // buffer moved the rest of it every time (quadratic in the records per chunk).
             var start = rest.startIndex
             while let nul = rest[start...].firstIndex(of: 0) {
                 let path = String(decoding: rest[start..<nul], as: UTF8.self)
-                guard withLines else {
-                    paths.append((path, nil))
-                    start = rest.index(after: nul)
-                    continue
-                }
-                guard let lf = rest[nul...].firstIndex(of: 10) else { break }  // the line isn't all here yet
-                paths.append((path, String(decoding: rest[rest.index(after: nul)..<lf], as: UTF8.self)))
-                start = rest.index(after: lf)
+                paths.append(path)
+                start = rest.index(after: nul)
             }
             rest.removeSubrange(rest.startIndex..<start)
             add(paths)
@@ -155,17 +130,23 @@ final class FolderSearch: @unchecked Sendable {
     }
 
     /// Loads the new paths (here, off the main thread) and schedules a batch.
-    private func add(_ paths: [(path: String, line: String?)]) {
-        let new = lock.withLock { paths.filter { !$0.path.isEmpty && seen.insert($0.path).inserted } }.filter { !isInsidePackage($0.path) }
+    private func add(_ paths: [String]) {
+        let new = lock.withLock { paths.filter { !$0.isEmpty && seen.insert($0).inserted } }.filter { !isInsidePackage($0) }
         var items: [FileItem] = []
         var lines: [URL: String] = [:]
-        for (path, line) in new {
-            // A search of contents finds files: folders have none (apps and other packages are items, and stay).
-            guard let item = FileItem.load(URL(fileURLWithPath: path)), !(contents && item.isBrowsableFolder) else { continue }
-            items.append(item)
-            // Only files whose names don't match get a line: they're the content matches.
-            if let line, item.name.range(of: text, options: [.caseInsensitive, .diacriticInsensitive]) == nil {
-                lines[item.url] = Self.snippet(line, around: text)
+        let available = lock.withLock { max(0, limit - found.count) }
+        for path in new {
+            if items.count >= available || lock.withLock({ stopped }) { break }
+            guard spec.contents || spec.nameMatches((path as NSString).lastPathComponent),
+                let item = FileItem.load(URL(fileURLWithPath: path)), !(spec.contents && item.isBrowsableFolder),
+                spec.metadataMatches(path: path, isDirectory: item.isDirectory, size: item.size, modified: item.modificationDate)
+            else { continue }
+            if spec.nameMatches(item.name) {
+                items.append(item)
+            } else if spec.contents, let value = IndexFileText.read(path, limit: 5_000_000),
+                let line = value.split(separator: "\n", omittingEmptySubsequences: false).first(where: { spec.contentMatches(String($0)) })
+            {
+                items.append(item); lines[item.url] = Self.snippet(String(line), around: spec.text)
             }
         }
         let (schedule, full, count) = lock.withLock { () -> (Bool, Bool, Int) in
@@ -182,35 +163,14 @@ final class FolderSearch: @unchecked Sendable {
         }
     }
 
-    /// For files found some other way (Spotlight), the first line of each that contains `text`, read with ripgrep
-    /// (blocking: call it off the main thread). Files without such a line (Spotlight also matches words in other forms,
-    /// or text it extracted from documents) are left out.
-    static func lines(in paths: [String], containing text: String, rg: String) -> [String: String] {
+    /// Shared bounded text verification also gives Spotlight results their first matching line.
+    static func lines(in paths: [String], spec: SearchSpec) -> [String: String] {
         var out: [String: String] = [:]
-        // A few hundred at a time, well within the length of a command line.
-        for chunk in stride(from: 0, to: paths.count, by: 400).map({ Array(paths[$0..<min($0 + 400, paths.count)]) }) {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: rg)
-            p.arguments =
-                [
-                    "--max-count", "1", "--null", "--no-heading", "--with-filename", "--no-line-number", "--color", "never",
-                    "--max-columns", "2000", "--max-columns-preview", "--ignore-case", "--fixed-strings", "--max-filesize", "5M",
-                    "--no-messages", "--", text,
-                ] + chunk
-            p.qualityOfService = .utility
-            let pipe = Pipe()
-            p.standardOutput = pipe
-            p.standardError = FileHandle.nullDevice
-            p.standardInput = FileHandle.nullDevice
-            guard (try? p.run()) != nil else { break }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            p.waitUntilExit()
-            var rest = data[...]
-            while let nul = rest.firstIndex(of: 0), let lf = rest[nul...].firstIndex(of: 10) {
-                let path = String(decoding: rest[rest.startIndex..<nul], as: UTF8.self)
-                out[path] = snippet(String(decoding: rest[rest.index(after: nul)..<lf], as: UTF8.self), around: text)
-                rest = rest[rest.index(after: lf)...]
-            }
+        for path in paths {
+            guard let value = IndexFileText.read(path, limit: 5_000_000),
+                let line = value.split(separator: "\n", omittingEmptySubsequences: false).first(where: { spec.contentMatches(String($0)) })
+            else { continue }
+            out[path] = snippet(String(line), around: spec.text)
         }
         return out
     }

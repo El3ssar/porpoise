@@ -344,14 +344,21 @@ public final class SearchIndex: @unchecked Sendable {
         _ text: String, scope: URL, contents: Bool = false, limit: Int = 5000,
         cancelled: () -> Bool = { false }
     ) -> (paths: [String], snippets: [String: String], error: String?)? {
+        do { return search(try SearchSpec(text, contents: contents), scope: scope, limit: limit, cancelled: cancelled) } catch {
+            return ([], [:], error.localizedDescription)
+        }
+    }
+
+    public func search(
+        _ spec: SearchSpec, scope: URL, limit: Int = 5000, cancelled: () -> Bool = { false }
+    ) -> (paths: [String], snippets: [String: String], error: String?)? {
+        let contents = spec.contents, text = spec.text, query = spec.query
         let (config, snapshot, building) = lock.withLock { (current, roots, state.building) }
         let scope = FilePath.canonical(scope.path)
         let hasHoles = snapshot.flatMap(\.holes).contains { FilePath.contains(path: $0, in: scope) || FilePath.contains(path: scope, in: $0) }
         guard config.enabled, !building, !hasHoles, !excluded(scope, config: config),
             snapshot.contains(where: { FilePath.contains(path: scope, in: $0.path) && Self.sameVolume(scope, $0.path) }), !contents || config.content
         else { return nil }
-        let query: IndexQuery
-        do { query = try contents ? IndexQuery(literal: text) : IndexQuery(text) } catch { return ([], [:], error.localizedDescription) }
         var found: [String] = [], snippets: [String: String] = [:]
         for root in snapshot where FilePath.contains(path: scope, in: root.path) || FilePath.contains(path: root.path, in: scope) {
             let excludedPaths = root.patches.map(\.path)
@@ -368,7 +375,7 @@ public final class SearchIndex: @unchecked Sendable {
                         guard !exclusions.contains(where: { FilePath.contains(path: p, in: $0) }), !found.contains(p),
                             let value = IndexFileText.read(p, limit: 5_000_000),
                             let line = value.split(separator: "\n", omittingEmptySubsequences: false).first(where: {
-                                IndexQuery.fold(String($0)).contains(IndexQuery.fold(text))
+                                spec.contentMatches(String($0))
                             })
                         else { continue }
                         found.append(p); snippets[p] = FolderSearch.snippet(String(line), around: text)
