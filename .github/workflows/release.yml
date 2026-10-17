@@ -124,6 +124,8 @@ jobs:
       - name: Build the app and disk image
         env:
           PORPOISE_VERSION: ${{ steps.version.outputs.version }}
+          # No debug bridge or test switches in what is shipped (checked on the disk image below).
+          PORPOISE_RELEASE: '1'
           # Google Drive's OAuth desktop client (not confidential for installed apps, but kept out of the repo).
           PORPOISE_DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
           PORPOISE_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
@@ -135,9 +137,24 @@ jobs:
           if [ -n "$PORPOISE_DROPBOX_APP_KEY" ]; then /usr/libexec/PlistBuddy -c 'Print :DropboxAppKey' build/Porpoise.app/Contents/Info.plist >/dev/null; fi
           codesign --verify --deep --strict build/Porpoise.app
           codesign -dvv build/Porpoise.app 2>&1 | grep -q "Authority=Porpoise Signing" || { echo "::error::App is not signed with Porpoise Signing"; exit 1; }
-          scripts/make-dmg.sh
+          scripts/make-dmg.sh --no-build
           cp "build/Porpoise-$PORPOISE_VERSION.dmg" build/Porpoise.dmg
           shasum -a 256 "build/Porpoise-$PORPOISE_VERSION.dmg" | tee build/SHA256SUMS.txt
+
+      # The disk image as published: no paths in a home folder, no debug bridge, no PORPOISE_* test switches.
+      - name: Check the disk image
+        run: scripts/check-release.sh "build/Porpoise-${{ steps.version.outputs.version }}.dmg"
+
+      # Installed helpers are replaced (one more approval by the user) only when its code hash changes: published with
+      # each release, and compared with the previous one's here.
+      - name: Record the helper's code hash
+        run: |
+          NEW=$(cat build/helper-cdhash.txt)
+          [[ "$NEW" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::No helper code hash from make-app.sh"; exit 1; }
+          OLD=$(gh release download --pattern helper-cdhash.txt --output - 2>/dev/null || true)
+          if [ -z "$OLD" ]; then echo "::notice::Helper code hash $NEW (the previous release didn't record one)"
+          elif [ "$OLD" != "$NEW" ]; then echo "::warning::The helper changed ($OLD -> $NEW): users approve it again on first use"
+          else echo "Helper unchanged: $NEW"; fi
 
       # In-app updates: Sparkle reads appcast.xml from the latest release and checks the disk image's EdDSA
       # signature against the public key built into Porpoise (SUPublicEDKey).
@@ -169,7 +186,7 @@ jobs:
           V: ${{ steps.version.outputs.version }}
         run: |
           gh release create "v$V" \
-            "build/Porpoise-$V.dmg" build/Porpoise.dmg build/SHA256SUMS.txt build/appcast.xml \
+            "build/Porpoise-$V.dmg" build/Porpoise.dmg build/SHA256SUMS.txt build/appcast.xml build/helper-cdhash.txt \
             --target "$(git rev-parse HEAD)" --title "Porpoise $V" --notes-file build/notes.md --latest
 
       - name: Remove the keychain
