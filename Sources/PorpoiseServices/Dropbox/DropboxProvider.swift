@@ -30,6 +30,13 @@ public final class DropboxProvider: CloudFileProvider, @unchecked Sendable {
         }
         for client in clients { Task { if active { await client.changes.start() } else { await client.changes.stop() } } }
     }
+    /// Stops every namespace's change feed and waits for them (before the account's folder goes).
+    public func stopFeeds() async {
+        let clients = lock.withLock {
+            active = false; return Array(namespaces.values) + [client]
+        }
+        for client in clients { await client.changes.stop() }
+    }
     public func checkForChanges() async throws {
         let clients = lock.withLock { Array(namespaces.values) + [client] }
         for client in clients { try await client.changes.check() }

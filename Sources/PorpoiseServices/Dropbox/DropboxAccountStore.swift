@@ -148,14 +148,27 @@ public enum DropboxConnectionError: Error, Equatable {
         // An access token for Dropbox's revoke, read before the credentials are forgotten here.
         let access = try? await client.tokens.accessToken()
         _ = try await client.tokens.disconnect()
-        if let access { await DropboxTokens.revoke(access, configuration: client.configuration, http: http) }
+        // Not waited for: a slow or failed revoke never holds up or fails signing out here.
+        if let access {
+            Task.detached { [configuration = client.configuration, http] in
+                await DropboxTokens.revoke(access, configuration: configuration, http: http)
+            }
+        }
         for namespace in namespaces {
             let journal = CloudJournal<DropboxOperation>(folder: namespace.appendingPathComponent("Operations"))
             for record in try journal.all() where record.hasSession { try await client.tokens.removeSecret(record.operationID) }
         }
         // Only this account's private engine data is removed. No provider is registered in the UI yet.
-        if FileManager.default.fileExists(atPath: owned.path) { try FileManager.default.removeItem(at: owned) }
+        try Self.remove(owned)
         clients[id] = nil; saved.removeAll { $0.account.id == id }; try persist()
+    }
+    /// Removes a folder, again if something was still being written into it as it went (a late listing).
+    private static func remove(_ folder: URL) throws {
+        let fm = FileManager.default
+        for attempt in 1...3 {
+            guard fm.fileExists(atPath: folder.path) else { return }
+            do { try fm.removeItem(at: folder); return } catch  where attempt < 3 { Thread.sleep(forTimeInterval: 0.05) }
+        }
     }
     private func persist() throws {
         defaults.set(try JSONEncoder().encode(saved), forKey: "dropboxAccounts"); accounts = saved.map(\.account); onChange?()

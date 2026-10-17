@@ -107,7 +107,13 @@ public final class DropboxCloudBackend: CloudBackend {
     }
     public func remove(_ id: String, done: @escaping (Error?) -> Void) {
         guard let account = account(id) else { done(nil); return }
-        Task { @MainActor in do { try await store.disconnect(account.id); install(); done(nil) } catch { done(error) } }
+        Task { @MainActor in
+            do {
+                // Nothing may still write into the account's folder while it is removed.
+                await providers[account.id]?.stopFeeds()
+                try await store.disconnect(account.id); install(); done(nil)
+            } catch { done(error) }
+        }
     }
     public func url(_ id: String, root: CloudRoot) -> URL {
         guard let account = account(id) else { return URL(string: "cloud-disconnected:///")! }
