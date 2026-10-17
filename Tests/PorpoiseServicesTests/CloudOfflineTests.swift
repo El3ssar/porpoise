@@ -74,8 +74,7 @@ import Testing
         for n in 0..<20 { _ = source.add("item-\(n)", parent: "folder") }
         let cancel = facade.keep(true, [source.url(for: folder)])
         cancel()
-        try await Task.sleep(for: .milliseconds(30))
-        #expect(source.downloads < 20)
+        await expectStays(for: 0.03) { source.downloads < 20 }
         #expect(facade.removeDownload([invalid]).isEmpty)
     }
 }
@@ -104,8 +103,7 @@ extension CloudOfflineTests {
         await expectEventually { facade.operations.activities.contains { $0.title.hasPrefix("Updating offline copies") } }
         let other = source.add("two", text: "second update", revision: "r2")
         source.onChanges?(.init(changed: [other]))
-        let deadline = Date().addingTimeInterval(10)
-        while (await store.snapshot().entries["two"]?.item.revision != "r2"), Date() < deadline { try await Task.sleep(for: .milliseconds(5)) }
+        _ = await poll(timeout: 10) { await store.snapshot().entries["two"]?.item.revision == "r2" }
         await expectEventually { facade.operations.activities.count == 1 }
         #expect(await store.snapshot().entries["one"]?.item.revision == "r2")
         #expect(await store.snapshot().entries["two"]?.item.revision == "r2")

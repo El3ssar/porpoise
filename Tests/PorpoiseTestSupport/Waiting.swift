@@ -36,3 +36,19 @@ public func expectEventually(
     if try await poll(timeout: timeout, isolation: isolation, condition) { return }
     Issue.record(comment ?? "Timed out after \(timeout) s", sourceLocation: sourceLocation)
 }
+
+/// Checks that `condition` holds for the whole of the next `seconds` (nothing more happens: no bytes while paused, no
+/// new results), recording an issue at the caller the first time it doesn't. Named so these windows are easy to find.
+public func expectStays(
+    for seconds: TimeInterval, _ comment: Comment? = nil, isolation: isolated (any Actor)? = #isolation,
+    sourceLocation: SourceLocation = #_sourceLocation, _ condition: () async throws -> Bool
+) async rethrows {
+    let end = Date().addingTimeInterval(seconds)
+    repeat {
+        guard try await condition() else {
+            Issue.record(comment ?? "Changed within \(seconds) s", sourceLocation: sourceLocation)
+            return
+        }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    } while Date() < end
+}

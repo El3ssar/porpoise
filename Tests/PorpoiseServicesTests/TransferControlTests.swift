@@ -83,10 +83,15 @@ struct TransferControlTests {
         func bytes() -> Int { ((try? Data(contentsOf: output)) ?? Data()).count }
         try #require(await eventually(5) { bytes() >= 11 })
         job.pause()
-        try await Task.sleep(for: .milliseconds(150))
+        // Writes already on their way land; then nothing more comes while paused. The tool writes every 20 ms, so
+        // 300 ms without a byte means it has stopped (a busy runner can leave a running tool unscheduled for less).
+        _ = await poll(timeout: 10) {
+            let before = bytes()
+            try? await Task.sleep(for: .milliseconds(300))
+            return bytes() == before
+        }
         let held = bytes()
-        try await Task.sleep(for: .milliseconds(200))
-        #expect(bytes() == held)
+        await expectStays(for: 0.2) { bytes() == held }
         job.resume()
         try #require(await eventually(5) { bytes() > held + 2 })
         job.pause()

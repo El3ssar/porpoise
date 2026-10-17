@@ -143,12 +143,15 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: first.path) && FileManager.default.fileExists(atPath: second.path))
         await #expect(throws: DriveError.invalidResponse) { try await cache.file(key: "bad", name: "..") { Data() } }
         await #expect(throws: DriveError.invalidResponse) { try await cache.file(key: "large", name: "large") { Data(count: 7) } }
+        let started = Flag()
         let pending = Task {
             try await cache.file(key: "pending", name: "pending") {
+                started.set()
                 try await Task.sleep(for: .milliseconds(100)); return Data([1])
             }
         }
-        try await Task.sleep(for: .milliseconds(30))
+        // Cleared while the fetch is under way.
+        _ = await poll(timeout: 5) { started.isSet }
         await cache.clear()
         await #expect(throws: CancellationError.self) { try await pending.value }
     }

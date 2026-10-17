@@ -205,9 +205,9 @@ struct ActivityTests {
         #expect(a.canPause && a.pauseUnavailable == nil)
         c.pause(a)
         #expect(a.state == .paused && a.statusText.hasPrefix("Paused — "))
-        try await Task.sleep(nanoseconds: 300_000_000)
-        let held = a.job?.isPaused
-        #expect(held == true)
+        // The job holds: paused, and still paused a moment later.
+        #expect(await poll(timeout: 20) { a.job?.isPaused == true })
+        await expectStays(for: 0.3) { a.job?.isPaused == true }
         c.resume(a)
         #expect(a.state == .running)
         #expect(await poll(timeout: 20) { a.state == .completed })

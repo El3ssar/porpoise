@@ -133,8 +133,7 @@ final class RemoteTransferCoverageTests {
                     && names.contains { $0.hasPrefix(".porpoise-transfer-") }
             })
         c.pause(activity)
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(activity.state == .paused)
+        await expectEventually(timeout: 20) { activity.state == .paused }
         let first = JobJournal.Fingerprint(dir.appendingPathComponent("first.txt"))
         c.cancel(activity)
         #expect(await eventually(20) { activity.state == .cancelled })
