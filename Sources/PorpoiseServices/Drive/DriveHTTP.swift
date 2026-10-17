@@ -36,33 +36,12 @@ public enum DriveError: LocalizedError, Equatable {
 
 /// Injectable at the HTTP boundary: fake-server tests exercise the same paging/auth code as production.
 public struct DriveHTTP: Sendable {
-    public typealias Send = @Sendable (URLRequest) async throws -> (Data, HTTPURLResponse)
-    private let send: Send
-    private let usesNetworkStream: Bool
-
-    public init(
-        send: Send? = nil
-    ) {
-        usesNetworkStream = send == nil
-        self.send =
-            send ?? { request in
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard let response = response as? HTTPURLResponse else { throw DriveError.invalidResponse }
-                return (data, response)
-            }
-    }
-
-    public func response(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        try Task.checkCancellation()
-        return try await send(request)
-    }
-
-    /// Injected transports retain their response seam; production consumes bounded network buffers.
+    public typealias Send = CloudHTTPTransport.Send
+    let transport: CloudHTTPTransport
+    public init(send: Send? = nil) { transport = CloudHTTPTransport(send: send, invalidResponse: { DriveError.invalidResponse }) }
+    public func response(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) { try await transport.response(request) }
     func stream(_ request: URLRequest, consume: (Data, HTTPURLResponse) async throws -> Void) async throws -> HTTPURLResponse {
-        if usesNetworkStream { return try await HTTPFileStream.receive(request, consume: consume) }
-        let (data, response) = try await self.response(request)
-        try await consume(data, response)
-        return response
+        try await transport.stream(request, consume: consume)
     }
 
     public func data(_ request: URLRequest) async throws -> Data {
@@ -82,11 +61,5 @@ public struct DriveHTTP: Sendable {
         }
     }
 
-    static func form(_ values: [String: String]) -> Data {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
-        return Data(
-            values.sorted { $0.key < $1.key }.map {
-                "\($0.key.addingPercentEncoding(withAllowedCharacters: allowed)!)=\($0.value.addingPercentEncoding(withAllowedCharacters: allowed)!)"
-            }.joined(separator: "&").utf8)
-    }
+    static func form(_ values: [String: String]) -> Data { CloudHTTPTransport.form(values) }
 }

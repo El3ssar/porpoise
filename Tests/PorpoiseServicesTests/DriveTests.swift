@@ -16,47 +16,21 @@ final class MemoryDriveCredentials: DriveCredentialStore, @unchecked Sendable {
 
 /// Each test owns its local process and ephemeral port. No live account, real Keychain or external network.
 final class FakeDriveServer {
-    let process = Process()
-    let scratch: Scratch
-    let base: URL
+    private let fixtureServer: LocalFixtureServer
+    var process: Process { fixtureServer.process }
+    var scratch: Scratch { fixtureServer.scratch }
+    var base: URL { fixtureServer.base }
     init(fixture: URL? = nil, latencyMS: Int = 0, bandwidthMbps: Int = 0, connectionMbps: Int = 0) throws {
-        scratch = try Scratch()
-        let portFile = scratch.url.appendingPathComponent("port")
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        process.arguments = [repo.appendingPathComponent("scripts/fake-drive-server.py").path, "--port", "0", "--port-file", portFile.path]
-        process.arguments! += [
-            "--latency-ms", String(latencyMS), "--bandwidth-mbps", String(bandwidthMbps), "--connection-mbps", String(connectionMbps),
-        ]
-        if let fixture { process.arguments! += ["--fixture", fixture.path] }
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        let deadline = Date().addingTimeInterval(5)
-        while !FileManager.default.fileExists(atPath: portFile.path), Date() < deadline, process.isRunning { Thread.sleep(forTimeInterval: 0.01) }
-        guard let port = try? String(contentsOf: portFile, encoding: .utf8), Int(port) != nil else {
-            process.terminate(); throw DriveError.invalidResponse
-        }
-        base = URL(string: "http://127.0.0.1:\(port)")!
+        do {
+            fixtureServer = try LocalFixtureServer(
+                script: repo.appendingPathComponent("scripts/fake-drive-server.py"), fixture: fixture,
+                arguments: [
+                    "--latency-ms", String(latencyMS), "--bandwidth-mbps", String(bandwidthMbps), "--connection-mbps", String(connectionMbps),
+                ])
+        } catch { throw DriveError.invalidResponse }
     }
-    /// Foundation waitUntilExit can wait forever after its process monitor already reaped the fixture.
-    /// waitpid provides bounded teardown and never touches a process that is no longer our child.
-    func stop() {
-        guard process.isRunning else { return }
-        let pid = process.processIdentifier
-        var status: Int32 = 0
-        if waitpid(pid, &status, WNOHANG) != 0 { return }
-        process.terminate()
-        for _ in 0..<200 {
-            if waitpid(pid, &status, WNOHANG) != 0 { return }
-            usleep(10_000)
-        }
-        if waitpid(pid, &status, WNOHANG) == 0 {
-            kill(pid, SIGKILL)
-            _ = waitpid(pid, &status, 0)
-        }
-    }
-    deinit { stop() }
+    func stop() { fixtureServer.stop() }
     var config: DriveOAuthConfiguration {
         DriveOAuthConfiguration(
             clientID: "fixture-client", authorizationURL: base.appendingPathComponent("auth"), tokenURL: base.appendingPathComponent("token"),
