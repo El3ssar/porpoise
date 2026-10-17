@@ -136,6 +136,31 @@ import Testing
         #expect(fixture.accounts.ancestors(of: nested) == [root, DropboxLocation(accountID: uuid, itemID: "id:folder", namespaceID: ns).url])
     }
 
+    @Test @MainActor func aDropboxItemNotReadYetIsReadThenItsFolders() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let account = try await fixture.connect()
+        let root = try #require(fixture.accounts.url(account.id, root: .myDrive))
+        let home = try #require(DropboxLocation(url: root)); let uuid = home.accountID, ns = home.namespaceID
+        let provider = try #require(RemoteFS.provider(for: root) as? DropboxProvider)
+        fixture.backend.setActive(false)
+        let client = try provider.scoped(root)
+        await client.changes.stop()
+        client.metadataCache.clear()
+        // Nothing is known about the item (a raw location): it is read, then its folder; each step tells the views.
+        let nested = DropboxLocation(accountID: uuid, itemID: "id:nested", namespaceID: ns).url
+        var notices = 0
+        let token = NotificationCenter.default.addObserver(forName: CloudAccounts.remoteChanged, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { notices += 1 }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        #expect(fixture.accounts.ancestors(of: nested) == [root])
+        let folder = DropboxLocation(accountID: uuid, itemID: "id:folder", namespaceID: ns).url
+        let deadline = Date().addingTimeInterval(10)
+        while fixture.accounts.ancestors(of: nested) != [root, folder], Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        #expect(fixture.accounts.ancestors(of: nested) == [root, folder])
+        #expect(notices >= 2)
+    }
+
     // Drive (and the demo service): the ancestry is in the location.
     @Test func pathLocationsCarryTheirAncestry() {
         let demo = DemoCloudBackend()

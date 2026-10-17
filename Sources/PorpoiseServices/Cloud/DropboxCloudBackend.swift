@@ -189,7 +189,11 @@ public final class DropboxCloudBackend: CloudBackend {
             !location.itemID.isEmpty, !location.itemID.hasPrefix("collection:")
         else { return [] }
         let root = DropboxLocation(accountID: location.accountID, namespaceID: location.namespaceID).url
-        guard let path = client.metadataCache.file(location.itemID)?.pathLower else { return [root] }
+        guard let path = client.metadataCache.file(location.itemID)?.pathLower else {
+            // Not read yet (a location opened directly): the item is read, then its folders.
+            fetchAncestors([location.itemID], client: client, account: location.accountID)
+            return [root]
+        }
         let names = path.split(separator: "/").dropLast()
         let paths = names.indices.map { i in "/" + names[...i].joined(separator: "/") }
         let wanted = Set(paths)
