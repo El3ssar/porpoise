@@ -118,7 +118,7 @@ extension DriveClient {
             try await context.checkpoint()
             guard JobJournal.Fingerprint(local) == fingerprint else { throw DriveMutationError.sourceChanged }
             try input.seek(toOffset: UInt64(record.offset))
-            let data = try input.read(upToCount: Int(min(256 * 1024, total - record.offset))) ?? Data()
+            let data = try input.read(upToCount: Int(min(8 * 1024 * 1024, total - record.offset))) ?? Data()
             let range = total == 0 ? "bytes */0" : "bytes \(record.offset)-\(record.offset + Int64(data.count) - 1)/\(total)"
             let (body, response) = try await mutationResponse(
                 session, method: "PUT", body: data, headers: ["Content-Range": range, "Content-Type": "application/octet-stream"], context: context)

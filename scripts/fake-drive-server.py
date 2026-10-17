@@ -38,7 +38,21 @@ class Handler(BaseHTTPRequestHandler):
         for key, value in (headers or {}).items():
             self.send_header(key, value)
         self.end_headers()
-        self.wfile.write(data)
+        drop_after = self.server.fixtures.pop("dropDownloadAfterBytes", None) if content_type == "application/octet-stream" else None
+        if drop_after is not None:
+            self.wfile.write(data[:drop_after]); self.wfile.flush()
+            self.connection.shutdown(socket.SHUT_RDWR); self.connection.close()
+            return
+        if content_type == "application/octet-stream" and self.server.bandwidth_mbps:
+            started = time.monotonic()
+            for offset in range(0, len(data), 256 * 1024):
+                self.wfile.write(data[offset:offset + 256 * 1024])
+                self.wfile.flush()
+                delay = (min(offset + 256 * 1024, len(data)) / (self.server.bandwidth_mbps * 125000)) - (time.monotonic() - started)
+                if delay > 0:
+                    time.sleep(delay)
+        else:
+            self.wfile.write(data)
 
     def mutation_fault(self):
         faults = self.server.fixtures.get("mutationFaults", [])
@@ -250,9 +264,22 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(item)
 
     def do_GET(self):
+        media = "alt=media" in self.path
+        if media:
+            with self.server.profile_lock:
+                self.server.active_media += 1
+                self.server.max_active_media = max(self.server.max_active_media, self.server.active_media)
+        try:
+            self.get()
+        finally:
+            if media:
+                with self.server.profile_lock:
+                    self.server.active_media -= 1
+
+    def get(self):
         if self.path == "/__stats":
             with self.server.profile_lock:
-                return self.reply({"requests": self.server.requests})
+                return self.reply({"requests": self.server.requests, "maxConcurrentMedia": self.server.max_active_media})
         if self.path.startswith("/drive/") or self.path.startswith("/thumbnail/"):
             with self.server.profile_lock:
                 self.server.requests.append(self.path)
@@ -372,18 +399,31 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path.endswith("/export") or query.get("alt") == ["media"]:
                 if item_id == "denied":
                     return self.reply({}, 403)
+                if fixtures.pop("changeRevisionDuringDownload", False):
+                    item["version"] = str(int(item.get("version", "1")) + 1)
+                generated = fixtures.get("generatedMedia", {}).get(item_id)
                 media = fixtures.get("media", {}).get(item_id)
+                if generated is not None:
+                    requested = self.headers.get("Range")
+                    start, end = 0, generated - 1
+                    if requested:
+                        left, right = requested.removeprefix("bytes=").split("-")
+                        start, end = int(left), min(int(right) if right else end, end)
+                    return self.reply(b"x" * (end - start + 1), 206 if requested else 200, "application/octet-stream",
+                                      {"Content-Range": f"bytes {start}-{end}/{generated}"} if requested else {})
                 if media:
                     data = base64.b64decode(media)
                     requested = self.headers.get("Range")
                     if requested:
-                        start, end = map(int, requested.removeprefix("bytes=").split("-"))
+                        left, right = requested.removeprefix("bytes=").split("-")
+                        start, end = int(left), int(right) if right else len(data) - 1
                         return self.reply(data[start:end + 1], 206, "application/octet-stream", {"Content-Range": f"bytes {start}-{min(end, len(data)-1)}/{len(data)}"})
                     return self.reply(data, content_type="application/octet-stream")
                 data = b"fixture bytes"
                 requested = self.headers.get("Range")
                 if requested:
-                    start, end = map(int, requested.removeprefix("bytes=").split("-"))
+                    left, right = requested.removeprefix("bytes=").split("-")
+                    start, end = int(left), int(right) if right else len(data) - 1
                     return self.reply(data[start:end + 1], 206, "application/octet-stream", {"Content-Range": f"bytes {start}-{min(end, len(data)-1)}/{len(data)}"})
                 return self.reply(data, content_type="application/octet-stream")
             return self.reply(item, headers={"ETag": self.etag(item)} if not fixtures.get("omitETag") else {})
@@ -392,6 +432,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--bandwidth-mbps", type=float, default=0)
     parser.add_argument("--latency-ms", type=int, default=0)
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--port-file", type=Path)
@@ -400,6 +441,7 @@ def main():
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     server.fixtures = json.loads(args.fixture.read_text().replace("{base}", f"http://127.0.0.1:{server.server_port}"))
     server.latency_ms = args.latency_ms
+    server.bandwidth_mbps = args.bandwidth_mbps
     server.requests = []
     server.sessions = {}
     server.changes = []
@@ -407,6 +449,8 @@ def main():
     server.mutation_lock = Lock()
     server.profile_counter = 0
     server.profile_lock = Lock()
+    server.active_media = 0
+    server.max_active_media = 0
     if args.port_file:
         ready = args.port_file.with_suffix(".ready")
         ready.write_text(str(server.server_port))

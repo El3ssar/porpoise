@@ -46,7 +46,7 @@ extension DriveMutationTests {
         for mode in ["chunk", "commit"] {
             let folder = scratch.url.appendingPathComponent(mode), op = UUID()
             let source = scratch.url.appendingPathComponent(mode + ".bin")
-            let bytes = Data((0..<700_003).map { UInt8($0 % 233) })
+            let bytes = Data(repeating: 0x53, count: (8 << 20) + 700_003)
             try bytes.write(to: source)
             #expect(
                 try await probe(server, folder: folder, account: account, operation: op, mode: mode, kind: "upload", value: source.path)
@@ -164,7 +164,7 @@ extension DriveMutationTests {
         try Data(repeating: 4, count: 600_000).write(to: source)
         let remote = try await client.upload(source, parentID: "root")
         let download = UUID(), calls = CancellationCheckpoints()
-        let context = DriveTransferContext(checkpoint: { if await calls.next() == 3 { throw FileOperationError.cancelled } })
+        let context = DriveTransferContext(checkpoint: { if await calls.next() == 2 { throw FileOperationError.cancelled } })
         await #expect(throws: FileOperationError.self) { try await client.downloadToStaging(remote, operationID: download, context: context) }
         let partial = client.mutationJournal.folder.appendingPathComponent("Downloads/\(download.uuidString).part")
         #expect(FileManager.default.fileExists(atPath: partial.path))
@@ -174,7 +174,7 @@ extension DriveMutationTests {
         await #expect(throws: FileOperationError.self) {
             try await client.downloadToStaging(
                 remote, operationID: changed,
-                context: .init(checkpoint: { if await next.next() == 3 { throw FileOperationError.cancelled } }))
+                context: .init(checkpoint: { if await next.next() == 2 { throw FileOperationError.cancelled } }))
         }
         let changedPartial = client.mutationJournal.folder.appendingPathComponent("Downloads/\(changed.uuidString).part")
         try Data("user modification".utf8).write(to: changedPartial)

@@ -4,7 +4,8 @@ import PorpoiseCore
 extension DriveClient {
     /// Only idempotent requests may be replayed on quota responses; a lost mutation response goes to reconciliation.
     func mutationResponse(
-        _ url: URL, method: String = "GET", body: Data? = nil, headers: [String: String] = [:], context: DriveTransferContext? = nil
+        _ url: URL, method: String = "GET", body: Data? = nil, headers: [String: String] = [:], context: DriveTransferContext? = nil,
+        receive: ((Data, HTTPURLResponse) async throws -> Void)? = nil
     ) async throws -> (
         Data, HTTPURLResponse
     ) {
@@ -38,7 +39,21 @@ extension DriveClient {
             try Task.checkCancellation()
             try await context?.checkpoint()
             let data: Data, response: HTTPURLResponse
-            do { (data, response) = try await http.response(request) } catch let error as URLError {
+            do {
+                if let receive {
+                    var errorBody = Data()
+                    response = try await http.stream(request) { chunk, head in
+                        if (200..<300).contains(head.statusCode) {
+                            try await receive(chunk, head)
+                        } else {
+                            errorBody.append(chunk.prefix(max(0, 65536 - errorBody.count)))
+                        }
+                    }
+                    data = errorBody
+                } else {
+                    (data, response) = try await http.response(request)
+                }
+            } catch let error as URLError {
                 if error.code != .cancelled { context?.status("Waiting for network") }
                 throw error
             }

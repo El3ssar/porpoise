@@ -19,13 +19,13 @@ final class FakeDriveServer {
     let process = Process()
     let scratch: Scratch
     let base: URL
-    init(fixture: URL? = nil, latencyMS: Int = 0) throws {
+    init(fixture: URL? = nil, latencyMS: Int = 0, bandwidthMbps: Int = 0) throws {
         scratch = try Scratch()
         let portFile = scratch.url.appendingPathComponent("port")
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
         process.arguments = [repo.appendingPathComponent("scripts/fake-drive-server.py").path, "--port", "0", "--port-file", portFile.path]
-        process.arguments! += ["--latency-ms", String(latencyMS)]
+        process.arguments! += ["--latency-ms", String(latencyMS), "--bandwidth-mbps", String(bandwidthMbps)]
         if let fixture { process.arguments! += ["--fixture", fixture.path] }
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice

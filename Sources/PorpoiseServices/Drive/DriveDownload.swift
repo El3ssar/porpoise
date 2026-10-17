@@ -5,8 +5,14 @@ extension DriveClient {
     /// A private, job-owned partial. Ranges are accepted only for the recorded revision and exact response range.
     public func downloadToStaging(
         _ file: DriveFile, preset: DriveExportPreset = .office, operationID: UUID = UUID(), context: DriveTransferContext = .init()
-    ) async throws -> (url: URL, name: String) {
-        let target = try await resolve(self.file(file.id, resourceKey: file.resourceKey))
+    ) async throws -> (url: URL, name: String, file: DriveFile) {
+        let snapshotSize = file.size.flatMap(Int64.init)
+        let snapshot =
+            !file.isGoogleDocument && file.shortcutDetails == nil && file.version != nil && file.md5Checksum != nil
+            && snapshotSize.map { $0 >= 0 && $0 < 8 * 1024 * 1024 } == true
+        let source: DriveFile
+        if snapshot { source = file } else { source = try await self.file(file.id, resourceKey: file.resourceKey) }
+        let target = try await resolve(source)
         guard target.operations.canDownload || target.operations.canExport else { throw DriveError.permissionDenied }
         try mutationJournal.claim(operationID)
         defer { mutationJournal.release(operationID) }
@@ -31,7 +37,7 @@ extension DriveClient {
         if record.phase == .done, record.destinationURL == partial,
             JobJournal.Fingerprint(partial) == record.fingerprint
         {
-            return (partial, name)
+            return (partial, name, target)
         }
         if !FileManager.default.fileExists(atPath: partial.path) {
             guard record.offset == 0 else { throw DriveMutationError.sourceChanged }
@@ -57,30 +63,65 @@ extension DriveClient {
             record.offset = Int64(result.data.count)
         } else {
             guard let total = target.size.flatMap(Int64.init), total >= 0 else { throw DriveError.invalidResponse }
-            while record.offset < total {
-                try await context.checkpoint()
-                let fresh = try await self.file(target.id, resourceKey: target.resourceKey)
-                guard fresh.version == target.version, fresh.md5Checksum == target.md5Checksum, fresh.size == target.size else {
-                    throw DriveMutationError.sourceChanged
+            let start = record.offset
+            let ranged = total >= 8 * 1024 * 1024 || start > 0
+            var received = start
+            var buffered = Data()
+            var checkpointAt = Date()
+            var progressAt = Date.distantPast
+            context.progress(received, total)
+            do {
+                if received < total {
+                    let (_, response) = try await mutationResponse(
+                        mutationURL("files/\(target.id)", query: [URLQueryItem(name: "alt", value: "media")]),
+                        headers: ranged ? ["Range": "bytes=\(start)-\(total - 1)"] : [:], context: context,
+                        receive: { data, response in
+                            guard
+                                ranged
+                                    ? response.statusCode == 206
+                                        && response.value(forHTTPHeaderField: "Content-Range") == "bytes \(start)-\(total - 1)/\(total)"
+                                    : response.statusCode == 200,
+                                received + Int64(data.count) <= total
+                            else { throw DriveError.invalidResponse }
+                            try await context.checkpoint()
+                            buffered.append(data)
+                            received += Int64(data.count)
+                            if buffered.count >= 1024 * 1024 {
+                                try output.write(contentsOf: buffered)
+                                buffered.removeAll(keepingCapacity: true)
+                            }
+                            if received - record.offset >= 8 * 1024 * 1024 || Date().timeIntervalSince(checkpointAt) >= 2 {
+                                try output.write(contentsOf: buffered); buffered.removeAll(keepingCapacity: true)
+                                try output.synchronize()
+                                record.offset = received; record.fingerprint = JobJournal.Fingerprint(partial)
+                                try self.mutationJournal.save(record); checkpointAt = Date()
+                            }
+                            if received == total || Date().timeIntervalSince(progressAt) >= 0.1 {
+                                context.progress(received, total); progressAt = Date()
+                            }
+                        })
+                    guard response.statusCode == (ranged ? 206 : 200), received == total else { throw DriveError.invalidResponse }
                 }
-                let end = min(total - 1, record.offset + 256 * 1024 - 1)
-                let (data, response) = try await mutationResponse(
-                    mutationURL("files/\(target.id)", query: [URLQueryItem(name: "alt", value: "media")]),
-                    headers: ["Range": "bytes=\(record.offset)-\(end)"], context: context)
-                guard response.statusCode == 206, data.count == end - record.offset + 1,
-                    response.value(forHTTPHeaderField: "Content-Range") == "bytes \(record.offset)-\(end)/\(total)"
-                else { throw DriveError.invalidResponse }
-                try output.write(contentsOf: data); try output.synchronize()
-                record.offset += Int64(data.count); record.fingerprint = JobJournal.Fingerprint(partial); try mutationJournal.save(record)
-                context.progress(record.offset, total)
+            } catch {
+                // Keep only durable bytes. Cleanup and resume can still authenticate the owned partial.
+                try output.truncate(atOffset: UInt64(record.offset)); try output.synchronize()
+                record.fingerprint = JobJournal.Fingerprint(partial); try mutationJournal.save(record)
+                throw error
             }
+            try output.write(contentsOf: buffered); try output.synchronize()
+            record.offset = received; record.fingerprint = JobJournal.Fingerprint(partial)
+            try mutationJournal.save(record)
             if let checksum = target.md5Checksum, try Self.md5(partial) != checksum { throw DriveError.invalidResponse }
         }
         let fresh = try await self.file(target.id, resourceKey: target.resourceKey)
-        guard fresh.version == record.revision else { throw DriveMutationError.sourceChanged }
+        guard fresh.version == record.revision, fresh.headRevisionId == target.headRevisionId, fresh.md5Checksum == target.md5Checksum,
+            fresh.size == target.size
+        else {
+            throw DriveMutationError.sourceChanged
+        }
         record.destinationURL = partial; record.fingerprint = JobJournal.Fingerprint(partial); record.phase = .done
         try mutationJournal.save(record)
         context.progress(record.offset, record.offset)
-        return (partial, name)
+        return (partial, name, fresh)
     }
 }
