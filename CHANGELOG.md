@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Storage bars agree.** The sidebar, Settings › Accounts and the status bar now color a disk or account the same way: amber past 80 % used, red past 95 %. A 92 %-full disk used to be blue in the sidebar, amber in Settings and red in the status bar.
+- **Questions that come late are no longer lost.** An alert that arrives after its window was closed or hidden (a sign-in finishing in the browser, a counted download, a full disk during a copy) now shows on its own or in Activity, instead of on a window you can't see.
+- **Reduce Motion is respected in more places.** The Compare Files progress band and the Info panel's video controls no longer animate when Reduce Motion is on.
 - **A Google Drive rename no longer comes back under its old name.** A listing, lookup or search that started before a rename made in Porpoise and finished after it no longer puts the old name back in the folder or the cache.
 - **Google Drive edit sessions are private to you.** The small records Porpoise keeps of files you are editing in other apps are now readable only by your account, as Dropbox's already were.
 
