@@ -178,6 +178,25 @@ import Testing
         #expect(tree.find(target) === selected)
     }
 
+    @Test(.timeLimit(.minutes(1))) @MainActor func deepDropboxRevealUsesSuppliedParentsRatherThanFlatIDPaths() async throws {
+        let server = try FakeDropboxServer()
+        let client = try server.client(namespace: "team-root")
+        let deep = try await client.createFolder(name: "Child", parent: "/Folder")
+        _ = try await client.createFolder(name: "Sibling")
+        let root = DropboxLocation(accountID: client.accountID, namespaceID: "team-root").url
+        let parent = DropboxLocation(accountID: client.accountID, itemID: "id:folder", namespaceID: "team-root").url
+        let target = DropboxLocation(accountID: client.accountID, itemID: deep.id, namespaceID: "team-root").url
+        RemoteFS.registerCloud(DropboxProvider(client: client), for: root)
+        defer { RemoteFS.registerCloud(nil, for: root) }
+        let tree = RemoteFolderTree(url: root)
+        tree.reveal([root, parent, target])
+        try await until(tree) { tree.selected?.url == target && !tree.root.isLoading }
+        #expect(tree.root.url == root && tree.selected?.name == "Child")
+        #expect(tree.root.children?.count == 2 && tree.find(parent)?.isExpanded == true)
+        #expect(tree.root.children?.first { $0.name == "Sibling" }?.children == nil)
+        #expect(tree.selected?.isExpanded == false)
+    }
+
     @Test func pathAncestorsShareServerRootAndKeepOpaqueNamespaceIdentity() throws {
         let target = URL(string: "sftp://user@example.invalid:2222/first/second/deep/")!
         #expect(RemoteFS.pathAncestors(of: target).map(\.path) == ["/", "/first", "/first/second"])
