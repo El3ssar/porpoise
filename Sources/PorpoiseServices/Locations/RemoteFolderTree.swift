@@ -55,19 +55,24 @@ public final class RemoteFolderTree {
             // An initial failure is still retryable on the next expansion. Keep any usable previous snapshot.
             if !listing.items.isEmpty || listing.loadError == nil && !listing.isLoading {
                 let old = Dictionary((children ?? []).map { ($0.url, $0) }, uniquingKeysWith: { a, _ in a })
-                children = listing.items.filter { $0.isBrowsableFolder && (tree.showHidden || !$0.isHidden && !$0.name.hasPrefix(".")) }
-                    .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-                    .map { item in
-                        let node = old[item.url] ?? Node(url: item.url, name: item.name, tree: tree)
-                        node.name = item.name
-                        return node
-                    }
+                children = listing.items.filter { item in
+                    item.isBrowsableFolder
+                        && (tree.showHidden || !item.isHidden && !item.name.hasPrefix(".")
+                            || tree.visiblePath.contains { RemoteFolderTree.sameLocation($0, item.url) })
+                }
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                .map { item in
+                    let node = old[item.url] ?? Node(url: item.url, name: item.name, tree: tree)
+                    node.name = item.name
+                    return node
+                }
             }
+            tree.advanceReveal()
             tree.onChange?(self)
         }
 
         fileprivate func find(_ target: URL) -> Node? {
-            if target == url { return self }
+            if RemoteFolderTree.sameLocation(target, url) { return self }
             return children?.lazy.compactMap { $0.find(target) }.first
         }
 
@@ -81,6 +86,11 @@ public final class RemoteFolderTree {
     public private(set) var root: Node!
     public var onChange: ((Node) -> Void)?
     public var showHidden = false
+    public private(set) var selected: Node?
+    private var revealChain: [URL] = []
+    private var visiblePath: [URL] = []
+    private var revealRefreshes: Set<URL> = []
+    private var advancingReveal = false
     private var observers: [NSObjectProtocol] = []
     private var refreshPending = false
 
@@ -108,6 +118,47 @@ public final class RemoteFolderTree {
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 
     public func find(_ url: URL) -> Node? { root.find(url) }
+
+    /// Reveals the shared breadcrumb chain, including this tree's stable root and the target. Listings arrive
+    /// asynchronously; each completed page advances the pending chain without inventing missing parent nodes.
+    public func reveal(_ chain: [URL]) {
+        guard let first = chain.first, Self.sameLocation(first, root.url) else { return }
+        revealChain = chain
+        visiblePath = chain
+        revealRefreshes = []
+        selected = nil
+        advanceReveal()
+        onChange?(root)
+    }
+
+    private func advanceReveal() {
+        guard !advancingReveal, !revealChain.isEmpty else { return }
+        advancingReveal = true
+        defer { advancingReveal = false }
+        var node = root!
+        for target in revealChain.dropFirst() {
+            node.expand()
+            if let next = node.children?.first(where: { Self.sameLocation($0.url, target) }) {
+                node = next
+            } else {
+                if !node.isLoading, node.message == nil, revealRefreshes.insert(node.url).inserted { node.refresh() }
+                return
+            }
+        }
+        selected = node
+        revealChain = []
+    }
+
+    /// A trailing directory slash is presentation, while provider namespace and resource queries remain identity.
+    public static func sameLocation(_ a: URL, _ b: URL) -> Bool {
+        func key(_ url: URL) -> String {
+            guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url.absoluteString }
+            if parts.percentEncodedPath.isEmpty { parts.percentEncodedPath = "/" }
+            while parts.percentEncodedPath.count > 1 && parts.percentEncodedPath.hasSuffix("/") { parts.percentEncodedPath.removeLast() }
+            return parts.string ?? url.absoluteString
+        }
+        return key(a) == key(b)
+    }
 
     /// Coalesces all pages of one change notification burst and refreshes only expanded branches.
     public func reload() { root.refreshBranch() }

@@ -134,4 +134,61 @@ import Testing
         try await until(tree) { !tree.root.isLoading && tree.root.children != nil }
         #expect(tree.root.message == nil)
     }
+    @Test(.timeLimit(.minutes(1))) @MainActor func deepDriveRevealKeepsCollectionRootParentsAndSiblings() async throws {
+        let scratch = try Scratch()
+        let fixtureURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Drive/metadata.json")
+        var fixture = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as? [String: Any])
+        var files = try #require(fixture["files"] as? [[String: Any]])
+        for (id, name) in [("deep-folder", ".hidden target"), ("folder-sibling", "Other project")] {
+            files.append(["id": id, "name": name, "mimeType": "application/vnd.google-apps.folder"])
+        }
+        fixture["files"] = files
+        fixture["rootIDs"] = ["folder-a", "folder-sibling", "binary-b"]
+        fixture["children"] = ["folder-a": ["deep-folder", "binary-a"], "deep-folder": [], "folder-sibling": []]
+        let localFixture = scratch.url.appendingPathComponent("deep.json")
+        try JSONSerialization.data(withJSONObject: fixture).write(to: localFixture)
+        let server = try FakeDriveServer(fixture: localFixture)
+        let (client, _, _) = try server.client()
+        let root = DriveLocation(accountID: client.accountID).url
+        let parent = DriveLocation(accountID: client.accountID, collection: .folder("folder-a"), navigationPath: ["my-drive", "folder-a"]).url
+        let target = DriveLocation(
+            accountID: client.accountID, collection: .folder("deep-folder"), navigationPath: ["my-drive", "folder-a", "deep-folder"]
+        ).url
+        RemoteFS.registerDrive(DriveProvider(accountID: client.accountID, client: client), accountID: client.accountID)
+        defer { RemoteFS.unregisterDrive(accountID: client.accountID) }
+        let tree = RemoteFolderTree(url: root)
+        let originalRoot = tree.root
+        // Missing cached parents first gives just the row root. The descriptor later publishes the complete chain.
+        tree.reveal([root, target])
+        try await until(tree) { !tree.root.isLoading && tree.root.children != nil }
+        #expect(tree.selected == nil && tree.root === originalRoot)
+        tree.reveal([root, parent, target])
+        try await until(tree) { tree.selected?.url == target && !tree.root.isLoading }
+        let selected = try #require(tree.selected)
+        #expect(tree.root === originalRoot && selected.name == ".hidden target")
+        #expect(tree.find(parent)?.isExpanded == true && tree.root.isExpanded)
+        let sibling = try #require(tree.root.children?.first { $0.name == "Other project" })
+        #expect(sibling.children == nil)
+        tree.reveal([root, sibling.url])
+        #expect(tree.selected === sibling && tree.root === originalRoot)
+        tree.reveal([root, parent, target])
+        #expect(tree.selected === selected && tree.root === originalRoot)
+        tree.reload()
+        try await until(tree) { !tree.root.isLoading && tree.find(parent)?.isLoading == false }
+        #expect(tree.find(target) === selected)
+    }
+
+    @Test func pathAncestorsShareServerRootAndKeepOpaqueNamespaceIdentity() throws {
+        let target = URL(string: "sftp://user@example.invalid:2222/first/second/deep/")!
+        #expect(RemoteFS.pathAncestors(of: target).map(\.path) == ["/", "/first", "/first/second"])
+        #expect(RemoteFS.pathAncestors(of: target).allSatisfy { $0.host == target.host && $0.user == "user" && $0.port == 2222 })
+        #expect(RemoteFS.pathAncestors(of: URL(string: "sftp://example.invalid/")!).isEmpty)
+        #expect(RemoteFolderTree.sameLocation(target, URL(string: "sftp://user@example.invalid:2222/first/second/deep")!))
+        let account = UUID()
+        let a = DropboxLocation(accountID: account, itemID: "id:opaque/slash", namespaceID: "one").url
+        let b = DropboxLocation(accountID: account, itemID: "id:opaque/slash", namespaceID: "two").url
+        #expect(!RemoteFolderTree.sameLocation(a, b))
+        #expect(!RemoteFolderTree.sameLocation(a, DropboxLocation(accountID: account, itemID: "id:opaque/slash/", namespaceID: "one").url))
+    }
+
 }
