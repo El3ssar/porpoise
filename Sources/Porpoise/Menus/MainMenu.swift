@@ -157,9 +157,11 @@ extension AppDelegate {
         go.addItem(sep())
         go.addItem(mi("Up", #selector(W.goUp(_:)), K.up, .option, icon: "go-up"))
         go.addItem(mi("Up", #selector(W.goUp(_:)), K.up, .command, icon: "go-up").hiddenAlternate())
-        // Back/Forward on ⌘[ / ⌘] like Finder (⌫ also goes back); ⌥← / ⌥→ switch split panes.
+        // Back/Forward on ⌘[ / ⌘] like Finder, and on ⌘← / ⌘→ (⌫ also goes back); ⌥← / ⌥→ switch split panes.
         go.addItem(mi("Back", #selector(W.goBack(_:)), "[", .command, icon: "go-previous"))
+        go.addItem(mi("Back", #selector(W.goBack(_:)), K.left, .command, icon: "go-previous").hiddenAlternate())
         go.addItem(mi("Forward", #selector(W.goForward(_:)), "]", .command, icon: "go-next"))
+        go.addItem(mi("Forward", #selector(W.goForward(_:)), K.right, .command, icon: "go-next").hiddenAlternate())
         go.addItem(mi("Home", #selector(W.goHome(_:)), K.home, .option, icon: "go-home"))
         go.addItem(mi("Home", #selector(W.goHome(_:)), "h", [.command, .shift], icon: "go-home").hiddenAlternate())
         for (i, t) in W.goTargets.enumerated() { go.addItem(mi(t.title, #selector(W.goToTarget(_:)), t.key, t.mods, icon: t.icon, tag: i)) }

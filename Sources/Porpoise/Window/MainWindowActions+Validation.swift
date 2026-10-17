@@ -6,17 +6,21 @@ import PorpoiseServices
 
 extension MainWindowController: NSMenuItemValidation {
 
+    /// The key `event` belongs to the field being typed in rather than to `item`'s shortcut.
+    static func typingKeeps(_ item: NSMenuItem, _ event: NSEvent) -> Bool {
+        let key = item.keyEquivalent
+        guard !key.isEmpty, event.charactersIgnoringModifiers?.lowercased() == key.lowercased() else { return false }
+        if KeyEquivalent.movesInText(key) { return true }
+        return !item.keyEquivalentModifierMask.contains(.command) && !KeyEquivalent.isFunctionKey(key)
+    }
+
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         guard tabs.indices.contains(current) else { return false }
-        // Shortcuts without ⌘ (⌫, ⌥←, ⌥1…) must not steal keys while typing in a field or the terminal.
+        // Shortcuts without ⌘ (⌫, ⌥←, ⌥1…), and any on a key that moves the insertion point (⌘← Back, ⌘↑ Up), must not
+        // steal keys while typing in a field or the terminal.
         // Only key presses are affected: the same items stay usable from an open menu.
         // Only for the key actually pressed: the command palette asks about every item while ⌘⇧P is the event.
-        if let event = NSApp.currentEvent, event.type == .keyDown, isTypingFocus, !item.keyEquivalent.isEmpty,
-            event.charactersIgnoringModifiers?.lowercased() == item.keyEquivalent.lowercased(),
-            !item.keyEquivalentModifierMask.contains(.command), !KeyEquivalent.isFunctionKey(item.keyEquivalent)
-        {
-            return false
-        }
+        if let event = NSApp.currentEvent, event.type == .keyDown, isTypingFocus, Self.typingKeeps(item, event) { return false }
         let p = view.model.props
         let ops = FileOperationsController.shared
         if let r = validateCloudItem(item) { return r }

@@ -166,7 +166,7 @@ Dolphin's shortcuts with Ctrl → ⌘, plus Finder's.
 
 | Action | Key |
 |---|---|
-| Back / Forward / Up | ⌫ or ⌘[ / ⌘] / ⌘↑ |
+| Back / Forward / Up | ⌫, ⌘[ or ⌘← / ⌘] or ⌘→ / ⌘↑ (in a text field, ⌘← ⌘→ ⌘↑ keep moving the insertion point) |
 | Switch split pane | ⌥← / ⌥→ |
 | Open | Return, ⌘O or ⌘↓ |
 | Move to Trash / Delete permanently | ⌘⌫ / ⌘⌥⌫ |

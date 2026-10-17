@@ -36,6 +36,9 @@ public final class DriveAccountStore: ObservableObject {
     @Published public private(set) var writeAccess: [UUID: Bool] = [:]
     public func hasWriteAccess(_ accountID: UUID) -> Bool { writeAccess[accountID] == true }
     private var managers: [UUID: DriveTokenManager] = [:]
+    /// Whether each account's requests get through, steadied so a flaky network doesn't flicker the offline state.
+    private var reachability: [UUID: OfflineHysteresis] = [:]
+    private var reachabilityChecks: [UUID: DispatchWorkItem] = [:]
 
     public init(
         defaults: UserDefaults = Settings.store, credentials: any DriveCredentialStore = CredentialStores.drive(),
@@ -85,20 +88,10 @@ public final class DriveAccountStore: ObservableObject {
         let manager = authenticated ?? DriveTokenManager(configuration: config, accountID: account.id, credentials: credentials, http: http)
         (RemoteFS.provider(for: DriveLocation(accountID: account.id).url) as? DriveProvider)?.invalidate()
         let client = DriveClient(accountID: account.id, tokens: manager, http: http, baseURL: baseURL) { [weak self] error in
-            Task { @MainActor [weak self] in
-                guard let self, self.clients[account.id] != nil else { return }
-                if let error {
-                    if (error as? DriveError) == .reconnect {
-                        self.states[account.id] = .needsSignIn
-                    } else if error is URLError {
-                        self.states[account.id] = .offline
-                    }
-                } else {
-                    self.states[account.id] = .connected
-                }
-            }
+            Task { @MainActor [weak self] in self?.reached(account.id, error) }
         }
         states[account.id] = .connected
+        reachability[account.id] = OfflineHysteresis()
         client.startPolling()
         writeAccess[account.id] = nil
         Task { @MainActor [weak self] in
@@ -185,11 +178,50 @@ public final class DriveAccountStore: ObservableObject {
         } catch { failure = error }
         (RemoteFS.provider(for: DriveLocation(accountID: account.id).url) as? DriveProvider)?.invalidate()
         await clients[account.id]?.clearCaches()
-        managers[account.id] = nil; clients[account.id] = nil; states[account.id] = nil
+        managers[account.id] = nil; clients[account.id] = nil; states[account.id] = nil; reachability[account.id] = nil
         RemoteFS.unregisterDrive(accountID: account.id)
         saved.removeAll { $0.account.id == account.id }
         try persist()
         if let failure { lastError = failure.localizedDescription; throw failure }
         lastError = nil
+    }
+}
+
+extension DriveAccountStore {
+    /// A request's result (nil: it succeeded). Only a request that never reached Drive counts against the connection;
+    /// the state changes only when it really changes (each change is published to every window).
+    @MainActor fileprivate func reached(_ id: UUID, _ error: Error?) {
+        guard clients[id] != nil else { return }
+        if (error as? DriveError) == .reconnect {
+            if states[id] != .needsSignIn { states[id] = .needsSignIn }
+            return
+        }
+        let reached: Bool
+        switch error {
+        case nil: reached = true
+        case let e as URLError: guard e.code != .cancelled else { return }; reached = false
+        // Not tried: the client already knows it's offline.
+        case .some(let e as DriveError) where e == .offline: return
+        default: reached = true
+        }
+        if error == nil, states[id] == .needsSignIn { states[id] = .connected }
+        _ = reachability[id]?.record(reached: reached, at: Date())
+        settleReachability(id)
+    }
+
+    @MainActor fileprivate func settleReachability(_ id: UUID) {
+        guard var gate = reachability[id] else { return }
+        let now = Date()
+        _ = gate.update(at: now)
+        reachability[id] = gate
+        if states[id] != .needsSignIn {
+            let state: DriveAccountState = gate.isOffline ? .offline : .connected
+            if states[id] != state { states[id] = state }
+        }
+        reachabilityChecks.removeValue(forKey: id)?.cancel()
+        guard let next = gate.nextCheck(after: now) else { return }
+        let check = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.settleReachability(id) } }
+        reachabilityChecks[id] = check
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0.05, next.timeIntervalSince(now)), execute: check)
     }
 }

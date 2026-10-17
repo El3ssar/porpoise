@@ -59,7 +59,9 @@ extension ViewContainer {
         guard PlacesModel.isCloud(model.location), let account = CloudAccounts.shared.account(for: model.location) else { return }
         switch account.status {
         case .offline:
-            if offlineNotice == nil, messageBar.isHidden || !messageBar.isError { showCloudState(retry: false) }
+            // The listing's own failure (shown before the account was known to be offline) gives way to the calm line.
+            let listingError = model.loadError.map { messageBar.text == $0 } ?? false
+            if offlineNotice == nil, messageBar.isHidden || !messageBar.isError || listingError { showCloudState(retry: false) }
         case .ok, .signInNeeded:
             guard offlineNotice != nil else { return }
             offlineNotice = nil

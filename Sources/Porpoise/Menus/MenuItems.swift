@@ -20,6 +20,16 @@ enum KeyEquivalent {
 
     private static func character(_ code: Int) -> String { String(utf16CodeUnits: [unichar(code)], count: 1) }
 
+    /// The arrows, Home, End, Page Up and Page Down: with or without ⌘ they move the insertion point in a text field
+    /// (⌘← to the line's start), so a shortcut on them must not fire while one is edited.
+    static func movesInText(_ key: String) -> Bool {
+        guard let u = key.utf16.first else { return false }
+        return [
+            NSUpArrowFunctionKey, NSDownArrowFunctionKey, NSLeftArrowFunctionKey, NSRightArrowFunctionKey, NSHomeFunctionKey,
+            NSEndFunctionKey, NSPageUpFunctionKey, NSPageDownFunctionKey,
+        ].contains(Int(u))
+    }
+
     /// F1…F12: keys that never type text, so they may fire while a text field has focus.
     static func isFunctionKey(_ key: String) -> Bool {
         guard let u = key.utf16.first else { return false }

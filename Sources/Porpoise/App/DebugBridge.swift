@@ -101,6 +101,17 @@ final class DebugBridge: NSObject {
                 }
             }
         case "perfbench": perfBench(arg)
+        case "transitions":
+            // transitions <file>: the transitions each pane of the front tab ran (ItemTransitions.log), one pane a line.
+            let panes = wc.map { [$0.tab.primary] + ($0.tab.secondary.map { [$0] } ?? []) } ?? []
+            let lines = panes.map { c in
+                "\(c === wc?.tab.primary ? "primary" : "secondary") \(c.url.absoluteString) rows=\(c.model.rows.count) "
+                    + MainActor.assumeIsolated {
+                        let t = c.list.transitions
+                        return zip(t.log, t.logTimes).map { "\($0.rawValue)@\(Int((CACurrentMediaTime() - $1) * 1000))ms" }.joined(separator: ",")
+                    }
+            }
+            try? lines.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
         case "animprobe":
             // animprobe <file>: runs a 0.3 s animation and writes how many frames it got (the display's ticks).
             var ticks = 0
