@@ -193,8 +193,12 @@ final class PorpoiseTab: NSView {
         let keys = list.candidateIndexes(in: shown).map(list.key(ofRow:)).filter { images[$0] != nil }
         list.transitions.flightStarts(hiding: Set(keys))
         fly(keys, images: images, from: primary.list, to: list, duration: Self.flightDuration) { [weak self, weak list] done in
-            list?.transitions.flightLanded(Set(keys)) { done() }
-            if self?.animator.isRunning == false { list?.transitions.releaseWidth() }
+            // The pane keeps its coming width until both the flight and its slide are over (whichever ends last
+            // releases it: the slide's end does when the flight is gone by then).
+            list?.transitions.flightLanded(Set(keys)) {
+                done()
+                if self?.animator.isRunning == false { list?.transitions.releaseWidth() }
+            }
         }
     }
 

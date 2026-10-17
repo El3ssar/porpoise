@@ -47,7 +47,8 @@ import Testing
 
         tab.openSplit()
         let right = try #require(tab.secondary)
-        try await settle(1)
+        // Settled: the flight landed and the pane has its real width (slower under coverage and a busy machine).
+        for _ in 0..<50 where !right.list.transitionHidden.isEmpty || right.list.layoutWidthOverride != nil { try await settle(0.1) }
         #expect(right.model.rows.count == 6)
         #expect(right.list.transitions.log == [.splitOpen])
         #expect(tab.primary.list.transitions.log.filter { $0 == .splitOpen }.count == 1)
