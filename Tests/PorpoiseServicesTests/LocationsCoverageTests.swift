@@ -64,6 +64,20 @@ private func stallSpotlight() -> () -> Void {
             #expect(!marked)
         }
 
+        /// A tool that can't start doesn't mean nothing is there: the folder is walked instead.
+        @Test(.enabled(if: searchTools != nil, "needs scripts/fetch-search-tools.sh"))
+        func aToolThatCannotStartFallsBackToTheWalk() async throws {
+            let s = try Scratch()
+            try s.file("plan.md", "ask about the budget")
+            let tools = try #require(searchTools)
+            let (_, names, marked) = try await finish { update in
+                let r = SearchRunner(text: "budget", scope: s.url, contents: true, update: update)
+                r.folderTools = FolderSearch.Tools(fd: tools.fd, rg: s.path("no-such-rg").path)
+                return r
+            }
+            #expect(names == ["plan.md"] && !marked)
+        }
+
         /// Walking with contents: files whose text matches too, and no folders (they have no contents).
         @Test func withoutToolsContentsAreReadAndFoldersLeftOut() async throws {
             let s = try Scratch()

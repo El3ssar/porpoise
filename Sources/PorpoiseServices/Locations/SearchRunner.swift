@@ -228,6 +228,12 @@ public final class SearchRunner: NSObject {
             self?.snippets = snippets
             self?.update(items, done)
         }
+        // A tool that couldn't run doesn't mean nothing is there: the folder is walked instead.
+        s.onFailure = { [weak self, weak s] in
+            guard let self, let s, self.folderSearch === s else { return }
+            self.folderSearch = nil
+            self.simpleSearch()
+        }
         folderSearch = s
         s.start()
     }

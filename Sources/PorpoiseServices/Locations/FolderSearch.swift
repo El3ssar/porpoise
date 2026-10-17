@@ -40,6 +40,10 @@ final class FolderSearch: @unchecked Sendable {
     /// Folders known to be packages (or not), so each is asked once.
     private var isPackage: [String: Bool] = [:]
     private var stopped = false
+    /// A tool couldn't start, or was killed: what it would have found is missing, so the search isn't over.
+    private var failed = false
+    /// Instead of the last update when a tool failed (the caller searches some other way).
+    var onFailure: (() -> Void)?
 
     /// `update(items, snippets, done)` runs on the main queue with everything found so far, and for the files found
     /// by their contents only (not their names), the line that contains the text.
@@ -82,7 +86,11 @@ final class FolderSearch: @unchecked Sendable {
             p.standardOutput = out
             p.standardError = FileHandle.nullDevice
             p.standardInput = FileHandle.nullDevice
-            do { try p.run() } catch { continue }
+            do { try p.run() } catch {
+                NSLog("Folder search: \((command[0] as NSString).lastPathComponent) didn't start: \(error)")
+                lock.withLock { failed = true }
+                continue
+            }
             lock.withLock {
                 processes.append(p)
                 running += 1
@@ -128,6 +136,12 @@ final class FolderSearch: @unchecked Sendable {
         }
         process.waitUntilExit()
         let last = lock.withLock {
+            // Killed, not by `stop()`: its results are cut short. (ripgrep's 1 and 2 are "nothing" and "some folders
+            // unreadable": results all the same.)
+            if process.terminationReason == .uncaughtSignal && !stopped {
+                NSLog("Folder search: \(process.executableURL?.lastPathComponent ?? "tool") ended by signal \(process.terminationStatus)")
+                failed = true
+            }
             running -= 1
             return running == 0
         }
@@ -240,6 +254,7 @@ final class FolderSearch: @unchecked Sendable {
 
     private func finish() {
         if lock.withLock({ stopped && found.count < limit }) { return }  // stopped from outside: nothing more to say
+        if lock.withLock({ failed }), let onFailure { return onFailure() }
         flush(done: true)
     }
 }
