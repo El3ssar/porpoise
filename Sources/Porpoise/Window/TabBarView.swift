@@ -8,7 +8,9 @@ protocol TabBarDelegate: AnyObject {
     func tabBarNewTab(_ bar: TabBarView, duplicate index: Int?)
     func tabBar(_ bar: TabBarView, move from: Int, to: Int)
     func tabBar(_ bar: TabBarView, menuFor index: Int) -> NSMenu?
-    func tabBar(_ bar: TabBarView, drop urls: [URL], onto index: Int)
+    /// The folder tab `index` shows (where items dropped on it go).
+    func tabBar(_ bar: TabBarView, folderAt index: Int) -> URL?
+    func tabBar(_ bar: TabBarView, drop urls: [URL], onto index: Int, operation: NSDragOperation)
     func tabBar(_ bar: TabBarView, detach index: Int)
 }
 
@@ -27,7 +29,7 @@ final class TabBarView: NSView {
     private var hoverPlus = false
     private var dragging: (index: Int, startX: CGFloat, offset: CGFloat)?
     private var tracking: NSTrackingArea?
-    private var dropTimer: Timer?
+    private let springLoader = SpringLoader()
     private var dropTab: Int?
 
     override var isFlipped: Bool { true }
@@ -49,7 +51,7 @@ final class TabBarView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        registerForDraggedTypes([.fileURL])
+        registerForDraggedTypes(DropTargetPolicy.types)
         setAccessibilityRole(.tabGroup)
     }
 
@@ -239,7 +241,7 @@ final class TabBarView: NSView {
         return delegate?.tabBar(self, menuFor: i)
     }
 
-    // Dragging files over a tab switches to it after 800 ms (Dolphin).
+    // Dragging items over a tab switches to it after a pause (Dolphin); dropped on it, they go to its folder.
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { draggingUpdated(sender) }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -247,28 +249,36 @@ final class TabBarView: NSView {
         if i != dropTab {
             dropTab = i
             needsDisplay = true
-            dropTimer?.invalidate()
-            if let i, i != selected {
-                dropTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: false) { [weak self] _ in
-                    guard let self else { return }
-                    self.delegate?.tabBar(self, select: i)
-                }
-            }
         }
-        return i == nil ? [] : ItemListView.operation(for: sender)
+        springLoader.hover(i == selected ? nil : i) { [weak self] in
+            guard let self, let i else { return }
+            self.delegate?.tabBar(self, select: i)
+        }
+        guard let i, let folder = delegate?.tabBar(self, folderAt: i), DropTargetPolicy.accepts(DropTargetPolicy.urls(sender), into: folder)
+        else { return [] }
+        return DropTargetPolicy.operation(for: sender)
     }
 
-    override func draggingExited(_ sender: NSDraggingInfo?) {
+    override func draggingExited(_ sender: NSDraggingInfo?) { endDrop() }
+
+    override func draggingEnded(_ sender: NSDraggingInfo) {
+        DropTargetPolicy.dragEnded()
+        endDrop()
+    }
+
+    private func endDrop() {
         dropTab = nil
-        dropTimer?.invalidate()
+        springLoader.cancel()
         needsDisplay = true
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        defer { dropTab = nil; dropTimer?.invalidate(); needsDisplay = true }
-        guard let i = tab(at: convert(sender.draggingLocation, from: nil)) else { return false }
-        let urls = (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
-        delegate?.tabBar(self, drop: urls, onto: i)
+        defer { endDrop() }
+        let urls = DropTargetPolicy.urls(sender)
+        guard let i = tab(at: convert(sender.draggingLocation, from: nil)), let folder = delegate?.tabBar(self, folderAt: i),
+            DropTargetPolicy.accepts(urls, into: folder)
+        else { return false }
+        delegate?.tabBar(self, drop: urls, onto: i, operation: DropTargetPolicy.operation(for: sender))
         return true
     }
 }

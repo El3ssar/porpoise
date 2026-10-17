@@ -69,8 +69,8 @@ extension MainWindowController {
         if tab.isSplit { tab.setActive(secondary: b === tab.navigators[1]); syncToActiveView() }
     }
 
-    func breadcrumb(_ b: BreadcrumbView, drop urls: [URL], onto folder: URL) {
-        FileOperationsController.shared.handleDrop(urls, onto: folder, operation: dropOperationForCurrentModifiers(), in: b)
+    func breadcrumb(_ b: BreadcrumbView, drop urls: [URL], onto folder: URL, operation: NSDragOperation) {
+        FileOperationsController.shared.handleDrop(urls, onto: folder, operation: operation, in: b)
     }
 
     // MARK: PlacesPanelDelegate
@@ -95,23 +95,15 @@ extension MainWindowController {
         }
     }
 
-    func places(_ p: PlacesPanel, drop urls: [URL], onto url: URL) {
+    func places(_ p: PlacesPanel, drop urls: [URL], onto url: URL, operation: NSDragOperation) {
         if LocationKind.of(url) == .trash {
             FileOperationsController.shared.trash(urls, window: window)
             return
         }
-        FileOperationsController.shared.handleDrop(urls, onto: url, operation: dropOperationForCurrentModifiers(), in: places)
+        FileOperationsController.shared.handleDrop(urls, onto: url, operation: operation, in: places)
     }
 
     func places(_ p: PlacesPanel, emptyTrash: Void) { FileOperationsController.shared.emptyTrash(window: window) }
     func places(_ p: PlacesPanel, properties url: URL) { PropertiesWindow.show(urls: [url]) }
     func placesWantsViewFocus(_ p: PlacesPanel) { window?.makeFirstResponder(view.list) }
-}
-
-private func dropOperationForCurrentModifiers() -> NSDragOperation {
-    let m = NSEvent.modifierFlags
-    if m.contains(.command) && m.contains(.option) { return .link }
-    if m.contains(.option) { return .copy }
-    if m.contains(.command) { return .move }
-    return .generic
 }

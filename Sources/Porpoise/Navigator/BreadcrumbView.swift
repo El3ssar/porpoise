@@ -5,7 +5,7 @@ import PorpoiseServices
 protocol BreadcrumbDelegate: AnyObject {
     func breadcrumb(_ b: BreadcrumbView, navigateTo url: URL, newTab: Bool)
     func breadcrumbActivated(_ b: BreadcrumbView)
-    func breadcrumb(_ b: BreadcrumbView, drop urls: [URL], onto folder: URL)
+    func breadcrumb(_ b: BreadcrumbView, drop urls: [URL], onto folder: URL, operation: NSDragOperation)
 }
 
 /// KDE's KUrlNavigator: breadcrumb buttons with subfolder arrows, switching to an editable path field.
@@ -51,12 +51,11 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     private var dropHover: Int?
     private var field: PathField?
     private var tracking: NSTrackingArea?
-    /// Opens an arrow's subfolder menu when a drag rests on it (spring-loading).
-    private var arrowOpenTimer: Timer?
+    /// Opens an arrow's subfolder menu when a drag rests on it, sooner than a folder opens.
+    private let arrowSpringLoader = SpringLoader(delay: 0.3)
     private var completion = CompletionSource()
 
     private static let maxMenuEntries = 400
-    private static let springLoadDelay: TimeInterval = 0.3
 
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
@@ -65,7 +64,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        registerForDraggedTypes([.fileURL])
+        registerForDraggedTypes(DropTargetPolicy.types)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Location")
         // A cloud folder's ancestry and names can arrive after the folder itself.
@@ -663,40 +662,44 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
         let p = convert(sender.draggingLocation, from: nil)
         let i = segmentIndex(at: p)
-        // Updates also arrive periodically while the pointer rests, so the timer starts only on a new segment.
         if i != dropHover {
             dropHover = i
             needsDisplay = true
-            arrowOpenTimer?.invalidate()
-            arrowOpenTimer = nil
-            if let i, case .arrow(let u) = segments[i].kind {
-                arrowOpenTimer = Timer.scheduledTimer(withTimeInterval: Self.springLoadDelay, repeats: false) { [weak self] _ in
-                    guard let self, self.dropHover == i, let r = self.segments[safe: i]?.rect else { return }
-                    self.showSubfolderMenu(of: u, at: r)
-                }
-            }
         }
-        // Files can be dropped onto folders, local or remote (not onto Recent, Tags…).
-        guard let i, case .crumb(let u, _, _) = segments[i].kind, LocationKind.of(u).acceptsDrops else { return [] }
-        return ItemListView.operation(for: sender)
+        let arrow: URL? = i.flatMap { if case .arrow(let u) = segments[$0].kind { return u } else { return nil } }
+        arrowSpringLoader.hover(arrow == nil ? nil : i) { [weak self] in
+            guard let self, let i, let u = arrow, self.dropHover == i, let r = self.segments[safe: i]?.rect else { return }
+            self.showSubfolderMenu(of: u, at: r)
+        }
+        guard let u = crumbFolder(i), DropTargetPolicy.accepts(DropTargetPolicy.urls(sender), into: u) else { return [] }
+        return DropTargetPolicy.operation(for: sender)
+    }
+
+    /// The folder of the crumb at segment `i` (not an arrow, nor the editable field).
+    private func crumbFolder(_ i: Int?) -> URL? {
+        guard let i, case .crumb(let u, _, _) = segments[safe: i]?.kind else { return nil }
+        return u
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) { endDropHover() }
 
+    override func draggingEnded(_ sender: NSDraggingInfo) {
+        DropTargetPolicy.dragEnded()
+        endDropHover()
+    }
+
     private func endDropHover() {
         dropHover = nil
-        arrowOpenTimer?.invalidate()
-        arrowOpenTimer = nil
+        arrowSpringLoader.cancel()
         needsDisplay = true
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let p = convert(sender.draggingLocation, from: nil)
         endDropHover()
-        guard let i = segmentIndex(at: p), case .crumb(let u, _, _) = segments[i].kind, LocationKind.of(u).acceptsDrops else { return false }
-        let urls = (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
-        guard !urls.isEmpty else { return false }
-        delegate?.breadcrumb(self, drop: urls, onto: u)
+        let urls = DropTargetPolicy.urls(sender)
+        guard let u = crumbFolder(segmentIndex(at: p)), DropTargetPolicy.accepts(urls, into: u) else { return false }
+        delegate?.breadcrumb(self, drop: urls, onto: u, operation: DropTargetPolicy.operation(for: sender))
         return true
     }
 }

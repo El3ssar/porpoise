@@ -35,7 +35,7 @@ extension PlacesPanel {
         if sender.draggingPasteboard.types?.contains(.placeEntry) == true { return setDrop(nil, insert: nil) }
         let cloudFolders = !Self.cloudFolders(sender.draggingPasteboard).isEmpty
         let allFolders = cloudFolders || draggedURLsAreFolders(sender)
-        if let i, let e = entry(at: i), Self.takesDrops(e.url), !Self.droppedURLs(sender.draggingPasteboard).isEmpty {
+        if let i, let e = entry(at: i), Self.takesDrops(DropTargetPolicy.urls(sender), into: e.url) {
             // Near the row edges with folders: insert as new place; in the middle: drop onto the place.
             let r = rect(of: i)
             if allFolders && !PlacesModel.shared.isLocked && (p.y < r.minY + Metrics.dropEdge || p.y > r.maxY - Metrics.dropEdge) {
@@ -43,7 +43,7 @@ extension PlacesPanel {
                 return .link
             }
             setDrop(i, insert: nil)
-            return ItemListView.operation(for: sender)
+            return DropTargetPolicy.operation(for: sender)
         }
         if cloudFolders {
             // Cloud folders become places where they are dropped between rows.
@@ -89,6 +89,8 @@ extension PlacesPanel {
         dragFolderCheck = nil
     }
 
+    override func draggingEnded(_ sender: NSDraggingInfo) { DropTargetPolicy.dragEnded() }
+
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         defer { setDrop(nil, insert: nil); dragFolderCheck = nil }
         let pb = sender.draggingPasteboard
@@ -102,10 +104,10 @@ extension PlacesPanel {
             PlacesModel.shared.move(moving, before: d.target, endOf: d.section)
             return true
         }
-        if let e = entry(at: dropIndex), Self.takesDrops(e.url) {
-            let urls = Self.droppedURLs(pb)
-            guard !urls.isEmpty else { return false }
-            delegate?.places(self, drop: urls, onto: e.url)
+        if let e = entry(at: dropIndex) {
+            let urls = DropTargetPolicy.urls(sender)
+            guard Self.takesDrops(urls, into: e.url) else { return false }
+            delegate?.places(self, drop: urls, onto: e.url, operation: DropTargetPolicy.operation(for: sender))
             return true
         }
         let clouds = Self.cloudFolders(pb)
@@ -149,17 +151,10 @@ extension PlacesPanel {
         return PlacesModel.shared.userEntries.first { $0.title == title && $0.url.absoluteString == url }
     }
 
-    /// A place items can be dropped into: a folder on this Mac, or on a server or cloud account that allows adding
-    /// to it (not Shared with me, nor a folder shared as view-only).
-    static func takesDrops(_ url: URL) -> Bool {
-        if url.isFileURL { return true }
-        guard RemoteFS.isRemote(url) else { return false }
-        return !PlacesModel.isCloud(url) || CloudAccounts.shared.denial(.addItems, folder: url) == nil
-    }
-
-    /// What can be dropped onto a place: files on this Mac, and items on servers and cloud accounts.
-    private static func droppedURLs(_ pb: NSPasteboard) -> [URL] {
-        ((pb.readObjects(forClasses: [NSURL.self]) as? [URL]) ?? []).filter { $0.isFileURL || RemoteFS.isRemote($0) }
+    /// Whether the place at `url` takes `urls`: a folder the items can go into (`DropTargetPolicy`), or the Trash,
+    /// which moves them there.
+    static func takesDrops(_ urls: [URL], into url: URL) -> Bool {
+        LocationKind.of(url) == .trash ? !urls.isEmpty && urls.allSatisfy(\.isFileURL) : DropTargetPolicy.accepts(urls, into: url)
     }
 
     private static func fileURLs(_ pb: NSPasteboard) -> [URL] {

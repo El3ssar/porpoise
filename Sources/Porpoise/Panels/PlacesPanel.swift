@@ -4,7 +4,7 @@ import PorpoiseServices
 
 protocol PlacesPanelDelegate: AnyObject {
     func places(_ p: PlacesPanel, open url: URL, newTab: Bool, splitView: Bool)
-    func places(_ p: PlacesPanel, drop urls: [URL], onto url: URL)
+    func places(_ p: PlacesPanel, drop urls: [URL], onto url: URL, operation: NSDragOperation)
     func places(_ p: PlacesPanel, emptyTrash: Void)
     func places(_ p: PlacesPanel, properties url: URL)
     func placesWantsViewFocus(_ p: PlacesPanel)

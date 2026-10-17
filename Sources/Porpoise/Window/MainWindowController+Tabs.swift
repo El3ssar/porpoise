@@ -83,8 +83,10 @@ extension MainWindowController {
         current = tabs.firstIndex { $0 === wasCurrent } ?? to
         updateTabBar()
     }
-    func tabBar(_ bar: TabBarView, drop urls: [URL], onto index: Int) {
-        FileOperationsController.shared.handleDrop(urls, onto: tabs[index].active.url, operation: .generic, in: tabBar)
+    func tabBar(_ bar: TabBarView, folderAt index: Int) -> URL? { tabs.indices.contains(index) ? tabs[index].active.url : nil }
+    func tabBar(_ bar: TabBarView, drop urls: [URL], onto index: Int, operation: NSDragOperation) {
+        guard tabs.indices.contains(index) else { return }
+        FileOperationsController.shared.handleDrop(urls, onto: tabs[index].active.url, operation: operation, in: tabBar)
     }
     func tabBar(_ bar: TabBarView, detach index: Int) {
         guard tabs.count > 1, tabs.indices.contains(index) else { return }

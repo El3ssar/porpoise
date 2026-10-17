@@ -700,33 +700,24 @@ final class AppsGridView: NSView, NSDraggingSource {
 
     private func beginDrag(_ event: NSEvent) {
         let items = model.rows.enumerated().filter { model.selection.contains($0.element.item.url) }
-        let urls = items.map(\.element.item.url)
-        let dragItems = items.enumerated().map { n, pair -> NSDraggingItem in
-            let di = NSDraggingItem(pasteboardWriter: FileDragWriter(url: pair.element.item.url, allURLs: n == 0 ? urls : nil))
-            di.setDraggingFrame(iconRect(pair.offset), contents: icon(for: pair.element.item))
-            return di
-        }
-        guard !dragItems.isEmpty else { return }
-        let s = beginDraggingSession(with: dragItems, event: event, source: self)
-        s.animatesToStartingPositionsOnCancelOrFail = true
-        s.draggingFormation = .pile
+        let drag = FileDragSource.items(items.map(\.element.item.url)) { n in (iconRect(items[n].offset), icon(for: items[n].element.item)) }
+        FileDragSource.begin(drag, from: self, event: event)
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        context == .outsideApplication ? [.copy, .move, .link, .generic, .delete] : [.copy, .move, .link, .generic]
+        FileDragSource.mask(for: context)
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        guard operation == .delete else { return }
-        let urls = (session.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
-        if !urls.isEmpty { FileOperationsController.shared.trash(urls, window: window, sound: .dragToTrash) }
+        FileDragSource.ended(session, operation: operation, window: window)
     }
 
     // MARK: Drop target (install: drop an app from a disk image or Downloads)
 
     private func droppedApps(_ sender: NSDraggingInfo) -> [URL] {
-        let urls = (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
-        return urls.filter { $0.pathExtension == "app" && $0.deletingLastPathComponent().standardizedFileURL != AppLibrary.location }
+        DropTargetPolicy.urls(sender).filter {
+            $0.isFileURL && $0.pathExtension == "app" && $0.deletingLastPathComponent().standardizedFileURL != AppLibrary.location
+        }
     }
 
     private func installOperation(_ sender: NSDraggingInfo, _ apps: [URL]) -> NSDragOperation {
@@ -739,6 +730,7 @@ final class AppsGridView: NSView, NSDraggingSource {
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { installOperation(sender, droppedApps(sender)) }
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { installOperation(sender, droppedApps(sender)) }
+    override func draggingEnded(_ sender: NSDraggingInfo) { DropTargetPolicy.dragEnded() }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let apps = droppedApps(sender)
