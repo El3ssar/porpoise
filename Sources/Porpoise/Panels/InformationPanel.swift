@@ -290,7 +290,8 @@ final class InformationPanel: NSView {
         let big = Self.previewSize
         preview.image = Icons.shared.image(for: item, size: big)
         guard Settings.shared.infoShowPreview, Thumbnails.wantsPreview(item) else { return }
-        if let cloud = RemoteFS.provider(for: item.url) as? CloudFileProvider {
+        // A cloud file's large preview arrives in steps; a video's or a song's is its thumbnail, cached like any other.
+        if PreviewSource.isProgressive(item.url), item.utType?.conforms(to: .audiovisualContent) != true {
             previewSpinner.startAnimation(nil)
             previewStatus.stringValue = "Loading preview…"
             drivePreview = Task { @MainActor [weak self] in
@@ -312,17 +313,13 @@ final class InformationPanel: NSView {
                         guard !Task.isCancelled, let self, self.shownURLs == [item.url] else { return }
                         if let image { self.preview.image = local.pathExtension == "pdf" ? Thumbnails.paperPreview(image) : image }
                     }
-                    if item.utType?.conforms(to: .audiovisualContent) == true {
-                        if let thumbnail = try? await cloud.preview(item.url, thumbnail: true) { try await paint(thumbnail) }
-                    } else {
-                        let context = CloudTransferContext(progress: { [weak self] bytes, total in
-                            Task { @MainActor in
-                                guard let self, self.shownURLs == [item.url] else { return }
-                                self.previewStatus.stringValue = total > 0 ? "Loading \(min(100, bytes * 100 / total))%" : "Loading preview…"
-                            }
-                        })
-                        _ = try await cloud.progressivePreview(item.url, context: context, onPreview: paint)
-                    }
+                    let context = CloudTransferContext(progress: { [weak self] bytes, total in
+                        Task { @MainActor in
+                            guard let self, self.shownURLs == [item.url] else { return }
+                            self.previewStatus.stringValue = total > 0 ? "Loading \(min(100, bytes * 100 / total))%" : "Loading preview…"
+                        }
+                    })
+                    try await PreviewSource.progressive(item.url, context: context, onPreview: paint)
                     guard !Task.isCancelled, let self, self.shownURLs == [item.url] else { return }
                     self.previewSpinner.stopAnimation(nil); self.previewStatus.stringValue = ""
                 } catch {

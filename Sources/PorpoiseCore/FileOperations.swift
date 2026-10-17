@@ -110,6 +110,41 @@ public struct CloudChange: Sendable, Equatable {
     }
 }
 
+/// A change made on a server or a device (SFTP, FTP, adb), as Undo sees it. Nothing there has a trash, so only an
+/// item still empty is ever removed again.
+public struct RemoteChange: Sendable, Equatable {
+    public enum Kind: Sendable, Equatable {
+        case renamed(from: URL, to: URL)
+        /// A new, empty folder or file: undone by removing it while it is still empty.
+        case created(URL, folder: Bool)
+        /// An empty folder or file removed by Undo: redone by creating it again.
+        case removed(URL, folder: Bool)
+    }
+    public var kind: Kind
+    public var label: String
+
+    public init(_ kind: Kind, label: String) {
+        self.kind = kind
+        self.label = label
+    }
+
+    public var urls: [URL] {
+        switch kind {
+        case .renamed(let from, let to): return [from, to]
+        case .created(let url, _), .removed(let url, _): return [url]
+        }
+    }
+
+    /// The record for Redo once this one is undone.
+    public var inverse: RemoteChange {
+        switch kind {
+        case .renamed(let from, let to): return RemoteChange(.renamed(from: to, to: from), label: label)
+        case .created(let url, let folder): return RemoteChange(.removed(url, folder: folder), label: label)
+        case .removed(let url, let folder): return RemoteChange(.created(url, folder: folder), label: label)
+        }
+    }
+}
+
 public enum UndoRecord: Sendable {
     case created([URL])  // undo: trash these (copies, links, new folders/files)
     case moved([(from: URL, to: URL)])  // undo: move back
@@ -119,10 +154,13 @@ public enum UndoRecord: Sendable {
     case batchRenamed([RenameMove])
     /// Google Drive and other services: undone through the service, not the file system.
     case cloud(CloudChange)
+    /// Servers and devices: undone through their provider.
+    case remote(RemoteChange)
 
     public var label: String {
         switch self {
         case .cloud(let change): return change.label
+        case .remote(let change): return change.label
         case .created: return "Create"
         case .moved: return "Move"
         case .trashed: return "Move to Trash"
@@ -986,8 +1024,8 @@ public enum FileActions {
         -> UndoRecord?
     {
         switch record {
-        case .cloud:
-            // The service undoes these (FileOperationsController asks it), never the file system.
+        case .cloud, .remote:
+            // The service or the server undoes these (FileOperationsController asks it), never the file system.
             throw CocoaError(.featureUnsupported)
         case .created(let urls):
             // Items deleted since then have nothing left to undo.

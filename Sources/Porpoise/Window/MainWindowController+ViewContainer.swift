@@ -161,21 +161,6 @@ extension MainWindowController {
     func rename(_ item: FileItem, to name: String, in c: ViewContainer) {
         let old = item.url
         if PlacesModel.isCloud(old) { renameCloud(item, to: name, in: c); return }
-        if let p = RemoteFS.provider(for: old) {
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    try p.rename(old, to: name)
-                    DispatchQueue.main.async {
-                        c.pendingSelect = old.deletingLastPathComponent().appendingPathComponent(name); c.reload()
-                    }
-                } catch {
-                    DispatchQueue.main.async {
-                        c.messageBar.show(error.localizedDescription, error: true); c.needsLayout = true
-                    }
-                }
-            }
-            return
-        }
         let newExt = (name as NSString).pathExtension
         if Settings.shared.confirmRenameType, !item.isBrowsableFolder, newExt.lowercased() != item.fileExtension.lowercased(),
             !item.fileExtension.isEmpty
@@ -195,10 +180,26 @@ extension MainWindowController {
             a.addButton(withTitle: "Cancel")
             guard a.runModal() == .alertFirstButtonReturn else { return }
         }
+        if !old.isFileURL {
+            // A server: the name is checked against its folder and the rename can be undone, as on this Mac.
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = Result { try LocationOperations(for: old).rename(old, to: name) }
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let renamed):
+                        if let undo = renamed.undo { FileOperationsController.shared.pushUndo(undo) }
+                        c.pendingSelect = renamed.url; c.reload()
+                    case .failure(let error):
+                        c.messageBar.show(error.localizedDescription, error: true); c.needsLayout = true
+                    }
+                }
+            }
+            return
+        }
         do {
-            let new = try FileActions.rename(old, to: name)
-            FileOperationsController.shared.pushUndo(.renamed(from: old, to: new))
-            c.pendingSelect = new
+            let renamed = try LocationOperations(for: old).rename(old, to: name)
+            if let undo = renamed.undo { FileOperationsController.shared.pushUndo(undo) }
+            c.pendingSelect = renamed.url
             c.reload()
         } catch  where FileErrorKind.classify(error) == .permission {
             // Root-owned item or folder: authenticate, as Finder does.
