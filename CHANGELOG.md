@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **The highlight under the pointer respects Reduce Motion.** It switches at once instead of fading.
+
 ## 0.8.1
 
 - **Copy conflicts behave the same everywhere.** Copying to this Mac, a server, Google Drive or Dropbox follows one set of rules: a Google Drive shortcut to a folder is no longer merged into a folder of the same name, a file and a folder never replace each other (Keep Both is offered), and Dropbox counts identical files it skipped.

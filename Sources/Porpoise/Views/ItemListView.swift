@@ -69,7 +69,7 @@ final class ItemListView: NSView {
     var hoverOnMarker = false
     /// Hover highlight opacity per item while it fades in or out.
     var hoverAlpha: [URL: CGFloat] = [:]
-    var hoverTimer: Timer?
+    let hoverClock = FrameClock()
     var trackingArea: NSTrackingArea?
     var rubberBand: CGRect?
     var rubberStart: CGPoint?
@@ -146,7 +146,8 @@ final class ItemListView: NSView {
 
     deinit {
         observers.forEach(NotificationCenter.default.removeObserver)
-        for t in [hoverTimer, zoomCommitTimer, dragOpenTimer] { t?.invalidate() }
+        for t in [zoomCommitTimer, dragOpenTimer] { t?.invalidate() }
+        hoverClock.stop()
         zoomAnimator.stop()
         transitionAnimator.stop()
     }
