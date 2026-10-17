@@ -91,7 +91,8 @@ final class ConnectSheet: NSWindowController {
         case .already(let id): content = connectedPage(id, already: true)
         case .failed(let provider, let message): content = failedPage(provider, message)
         }
-        let box = NSView()
+        let box = ThemedBackgroundView()
+        box.wantsLayer = true
         box.translatesAutoresizingMaskIntoConstraints = false
         box.addSubview(content)
         content.translatesAutoresizingMaskIntoConstraints = false
@@ -103,6 +104,7 @@ final class ConnectSheet: NSWindowController {
             box.widthAnchor.constraint(equalToConstant: 600),
         ])
         window?.contentView = box
+        if let window { Theme.dress(window) }
         box.layoutSubtreeIfNeeded()
         window?.setContentSize(box.fittingSize)
     }
@@ -439,9 +441,9 @@ final class ConnectTile: NSControl {
         let r = bounds.insetBy(dx: 0.5, dy: 0.5)
         let path = NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10)
         let base: CGFloat = pressing ? 0.16 : (hovering && available ? 0.11 : 0.06)
-        NSColor.labelColor.withAlphaComponent(base).setFill()
+        Theme.windowText.withAlphaComponent(base).setFill()
         path.fill()
-        NSColor.labelColor.withAlphaComponent(0.08).setStroke()
+        Theme.windowText.withAlphaComponent(0.08).setStroke()
         path.lineWidth = 1
         path.stroke()
         let alpha: CGFloat = available ? 1 : 0.4
@@ -457,13 +459,13 @@ final class ConnectTile: NSControl {
         p.alignment = .center
         p.lineBreakMode = .byTruncatingTail
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.labelColor.withAlphaComponent(alpha * 0.9),
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: Theme.windowText.withAlphaComponent(alpha * 0.9),
             .paragraphStyle: p,
         ]
         (title as NSString).draw(in: CGRect(x: 4, y: 48, width: r.width - 8, height: 15), withAttributes: attrs)
         if !available {
             let small: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 9), .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: p,
+                .font: NSFont.systemFont(ofSize: 9), .foregroundColor: Theme.windowTextInactive, .paragraphStyle: p,
             ]
             ("Coming soon" as NSString).draw(in: CGRect(x: 4, y: 62, width: r.width - 8, height: 12), withAttributes: small)
         }
@@ -473,7 +475,7 @@ final class ConnectTile: NSControl {
     private static func tinted(_ image: NSImage) -> NSImage {
         NSImage(size: image.size, flipped: false) { r in
             image.draw(in: r)
-            NSColor.labelColor.set()
+            Theme.windowText.set()
             r.fill(using: .sourceAtop)
             return true
         }
@@ -486,7 +488,7 @@ final class AccountCard: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 8
-        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.05).cgColor
+        layer?.backgroundColor = Theme.windowText.withAlphaComponent(0.05).cgColor
         let pic = NSImageView(image: BrandMarks.avatar(avatar, name: a.displayName, email: a.email, size: avatarSize))
         pic.widthAnchor.constraint(equalToConstant: avatarSize).isActive = true
         pic.heightAnchor.constraint(equalToConstant: avatarSize).isActive = true
@@ -516,7 +518,7 @@ final class AccountCard: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.05).cgColor
+            layer?.backgroundColor = Theme.windowText.withAlphaComponent(0.05).cgColor
         }
     }
 }
@@ -547,7 +549,7 @@ enum QuotaBar {
         required init?(coder: NSCoder) { fatalError() }
         override func draw(_ dirtyRect: NSRect) {
             let r = bounds
-            NSColor.labelColor.withAlphaComponent(0.14).setFill()
+            Theme.windowText.withAlphaComponent(0.14).setFill()
             NSBezierPath(roundedRect: r, xRadius: r.height / 2, yRadius: r.height / 2).fill()
             let color: NSColor = fraction > 0.95 ? Theme.negativeText : fraction > 0.8 ? Theme.transferChanged : Theme.selectionAlternate
             color.setFill()

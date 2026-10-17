@@ -63,7 +63,7 @@ final class FormBuilder: NSObject {
 
     private static func setEnabled(_ v: NSView, _ on: Bool) {
         if let t = v as? NSTextField, !t.isEditable {
-            t.textColor = on ? .labelColor : .disabledControlTextColor
+            t.textColor = on ? Theme.windowText : Theme.disabledText
         } else if let c = v as? NSControl {
             c.isEnabled = on
         }
@@ -235,7 +235,7 @@ final class FormBuilder: NSObject {
     @discardableResult
     func note(_ text: String) -> NSTextField {
         let l = NSTextField(wrappingLabelWithString: text)
-        l.textColor = .secondaryLabelColor
+        l.textColor = Theme.windowTextInactive
         l.preferredMaxLayoutWidth = grouped ? 440 : 520
         contentStack.addArrangedSubview(indented(l))
         return l
@@ -275,7 +275,7 @@ final class FormBuilder: NSObject {
         let text = NSTextField(wrappingLabelWithString: "")
         text.preferredMaxLayoutWidth = 300
         text.widthAnchor.constraint(equalToConstant: 300).isActive = true  // the buttons line up
-        text.textColor = .secondaryLabelColor
+        text.textColor = Theme.windowTextInactive
         let b = ClosureButton(title: button()) { _ in }
         let refresh = { [weak icon, weak text, weak b] in
             let (ok, msg) = state()
@@ -356,8 +356,9 @@ private final class FormSectionView: NSStackView {
     }
     override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-            layer?.borderColor = NSColor.separatorColor.cgColor
+            // The palette's view color in its frame, as the main window's views.
+            layer?.backgroundColor = Theme.viewBackground.cgColor
+            layer?.borderColor = Theme.frame.cgColor
         }
     }
 }

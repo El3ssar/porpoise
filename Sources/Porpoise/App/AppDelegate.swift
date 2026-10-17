@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// follows by itself, layers are given their new colors.
     private func followLook() {
         NSApp.appearance = Theme.appearance
+        Theme.dressWindows()
         lookObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { _, _ in
             DispatchQueue.main.async { Theme.lookChanged() }
         }
