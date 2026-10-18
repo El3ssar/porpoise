@@ -271,6 +271,13 @@ import Testing
 
     /// Keep sockets open so admission and slot reclamation are observed, rather than relying on request timing.
     @Test func capsConnectionsAndReclaimsCancelledSlots() async throws {
+        // This fixture deliberately keeps unanswered heads open. Its control must resume independently of
+        // the cooperative pool, before the server correctly expires those heads under a heavily loaded run.
+        let executor = QueueTaskExecutor(label: "porpoise.test-connection-cap", qos: .userInitiated)
+        try await Task(executorPreference: executor) { try await Self.checkConnectionCap() }.value
+    }
+
+    private static func checkConnectionCap() async throws {
         let f = try Fixture(); defer { f.stop() }
         f.server.connectionLimit = 2
         let first = try Self.openSocket(port: f.port)
