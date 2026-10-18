@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.7
+
+- **Big folders stay fast.** In a folder of 100,000 files, Compact view resizes and zooms instantly (it took about 0.7 s each time), changing an unrelated setting no longer rebuilds every open folder, the tag menu for a large selection opens at once, and folders list about three times faster. Folder search is about 90 times faster and uses a tenth of the memory.
+- **The Folders panel and previews never wait.** Expanding a folder with 100,000 files in the Folders panel is instant, folder previews are prepared in the background, and the Applications view keeps its icons within a fixed memory budget (it could grow to gigabytes at large sizes).
+- **Quicker copies and moves.** Verifying a 1 GB copy uses a few megabytes instead of 2 GB, moving hundreds of thousands of items on the same disk starts at once instead of "Preparing" for seconds, moving to the Trash no longer slows down per item, and copying many files to a server lists each folder once instead of once per file.
+- **Properties shows at once** and fills in details as they arrive.
+
 ## 0.8.6
 
 - **Search indexing stays quiet while you work.** With indexing on and a busy folder (a build, apps saving their state), each new change cost the index more than the last, so it could keep a core busy for as long as the changes went on. Each change now costs the same, however many came before. Build folders (.build, DerivedData) and the Mac's own system and app data (your Library, apart from cloud drives, and the Trash) are left out by default; on a developer's Mac they were nearly all of the changes the index followed. Both can be switched back on in Settings › Search. Indexes are rebuilt once after the update.
