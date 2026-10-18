@@ -11,12 +11,16 @@ public final class FakeDriveServer {
     public var scratch: Scratch { fixtureServer.scratch }
     public var base: URL { fixtureServer.base }
 
-    public init(fixture: URL? = nil, latencyMS: Int = 0, bandwidthMbps: Int = 0, connectionMbps: Int = 0) throws {
+    /// `holdMedia`: the fake holds each media GET until that many are in flight at once (30 s at most, then it lets all
+    /// through), so `maxConcurrentMedia` shows a concurrent client's concurrency however slow the machine; 0 holds none.
+    /// `control(["holdRequests": n, "holdPath": "/files/x-"])` arms the same gate later, for any Drive GET path.
+    public init(fixture: URL? = nil, latencyMS: Int = 0, bandwidthMbps: Int = 0, connectionMbps: Int = 0, holdMedia: Int = 0) throws {
         do {
             fixtureServer = try LocalFixtureServer(
                 script: TestPaths.script("fake-drive-server.py"), fixture: fixture,
                 arguments: [
                     "--latency-ms", String(latencyMS), "--bandwidth-mbps", String(bandwidthMbps), "--connection-mbps", String(connectionMbps),
+                    "--hold-media", String(holdMedia),
                 ])
         } catch { throw DriveError.invalidResponse }
     }
@@ -72,7 +76,7 @@ public final class FakeDriveServer {
         _ = try await URLSession.shared.data(for: request)
     }
 
-    /// What the fake has seen (`__stats`: requests, ranges, media bytes, the most concurrent media requests…).
+    /// What the fake has seen (`__stats`: requests, ranges, media bytes, the most concurrent media and Drive requests…).
     public func stats() async throws -> [String: Any] {
         let data = try await URLSession.shared.data(from: base.appendingPathComponent("__stats")).0
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw DriveError.invalidResponse }

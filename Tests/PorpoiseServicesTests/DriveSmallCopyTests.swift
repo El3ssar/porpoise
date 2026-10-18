@@ -24,7 +24,8 @@ struct DriveSmallCopyTests {
             "files": files, "rootIDs": files.map { $0["id"]! },
             "generatedMedia": Dictionary(uniqueKeysWithValues: (0..<12).map { ("small-\($0)", 4096) }),
         ]).write(to: fixture)
-        let server = try FakeDriveServer(fixture: fixture, latencyMS: 50)
+        // The fake holds the first media GETs until two overlap: a concurrent copy always shows it, a serial one can't.
+        let server = try FakeDriveServer(fixture: fixture, latencyMS: 50, holdMedia: 2)
         let (_, tokens, _) = try server.client()
         let client = DriveClient(
             accountID: UUID(), tokens: tokens, baseURL: server.base.appendingPathComponent("drive/v3/"),

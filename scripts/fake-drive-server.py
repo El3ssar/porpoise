@@ -21,7 +21,7 @@ import uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock, Thread
+from threading import Condition, Lock, Thread
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 FIXTURE = Path(__file__).resolve().parents[1] / "Tests/PorpoiseServicesTests/Fixtures/Drive/metadata.json"
@@ -48,6 +48,15 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data[:drop_after]); self.wfile.flush(); account(min(len(data), drop_after))
             self.connection.shutdown(socket.SHUT_RDWR); self.connection.close()
             return
+        pause_after = self.server.fixtures.pop("pauseDownloadAfterBytes", None) if content_type == "application/octet-stream" else None
+        if pause_after is not None:
+            # Sends the first bytes, then waits for `__control {"resumeDownload": true}` (30 s at most): a test sees the
+            # transfer under way however slow the machine.
+            self.wfile.write(data[:pause_after]); self.wfile.flush(); account(min(len(data), pause_after))
+            deadline = time.monotonic() + 30
+            while not self.server.fixtures.pop("resumeDownload", False) and time.monotonic() < deadline:
+                time.sleep(0.01)
+            data = data[pause_after:]
         if content_type == "application/octet-stream" and (self.server.bandwidth_mbps or self.server.connection_mbps):
             started = time.monotonic()
             for offset in range(0, len(data), 256 * 1024):
@@ -306,21 +315,61 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         media = "alt=media" in self.path
-        if media:
-            with self.server.profile_lock:
+        drive = self.path.startswith("/drive/")
+        with self.server.profile_lock:
+            if media:
                 self.server.active_media += 1
                 self.server.max_active_media = max(self.server.max_active_media, self.server.active_media)
+            if drive:
+                self.server.active_requests += 1
+                self.server.max_active_requests = max(self.server.max_active_requests, self.server.active_requests)
+        held = self.hold_until_concurrent()
         try:
             self.get()
         finally:
-            if media:
-                with self.server.profile_lock:
+            with self.server.profile_lock:
+                if media:
                     self.server.active_media -= 1
+                if drive:
+                    self.server.active_requests -= 1
+                if held:
+                    self.server.hold_active = max(0, self.server.hold_active - 1)
+
+    def hold_until_concurrent(self):
+        """`--hold-media N`, or `__control {"holdRequests": N, "holdPath": "/files/x-"}`: holds each GET whose path
+        contains the match ("alt=media", or `holdPath`, default "/drive/") until N of them are in flight at once, so a
+        concurrent client is seen as concurrent however slow the machine. Once N have met, `__control {"releaseHold":
+        true}` came, or the fallback (`--hold-timeout`/`holdTimeout`, 30 s) runs out for a client that never overlaps,
+        the gate stays open for good.
+        Returns whether this request counts toward the gate."""
+        with self.server.hold:
+            if "holdRequests" in self.server.fixtures:
+                self.server.hold_target = int(self.server.fixtures.pop("holdRequests"))
+                self.server.hold_match = self.server.fixtures.pop("holdPath", "/drive/")
+                self.server.hold_timeout = float(self.server.fixtures.pop("holdTimeout", self.server.hold_timeout))
+                self.server.hold_open = False
+                self.server.hold_active = 0
+                self.server.fixtures.pop("releaseHold", None)
+            if not self.server.hold_target or not self.server.hold_match or self.server.hold_match not in self.path:
+                return False
+            self.server.hold_active += 1
+            self.server.hold.notify_all()
+            deadline = time.monotonic() + self.server.hold_timeout
+            while not self.server.hold_open and self.server.hold_active < self.server.hold_target and time.monotonic() < deadline:
+                if self.server.fixtures.pop("releaseHold", False):
+                    break
+                self.server.hold.wait(0.05)
+            self.server.hold_open = True
+            self.server.hold.notify_all()
+            return True
 
     def get(self):
         if self.path == "/__stats":
             with self.server.profile_lock:
-                return self.reply({"requests": self.server.requests, "ranges": self.server.ranges, "mediaBytes": self.server.media_bytes, "maxConcurrentMedia": self.server.max_active_media})
+                return self.reply({
+                    "requests": self.server.requests, "ranges": self.server.ranges, "mediaBytes": self.server.media_bytes,
+                    "maxConcurrentMedia": self.server.max_active_media, "maxConcurrentRequests": self.server.max_active_requests,
+                })
         if self.path.startswith("/drive/") or self.path.startswith("/thumbnail/"):
             with self.server.profile_lock:
                 self.server.requests.append(self.path)
@@ -534,6 +583,8 @@ def main():
     parser.add_argument("--connection-mbps", type=float, default=0)
     parser.add_argument("--bandwidth-mbps", type=float, default=0)
     parser.add_argument("--latency-ms", type=int, default=0)
+    parser.add_argument("--hold-media", type=int, default=0, help="hold media GETs until this many are in flight at once")
+    parser.add_argument("--hold-timeout", type=float, default=30, help="seconds before a held request gives up waiting")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--port-file", type=Path)
     parser.add_argument("--fixture", type=Path, default=FIXTURE)
@@ -557,6 +608,14 @@ def main():
     server.profile_lock = Lock()
     server.active_media = 0
     server.max_active_media = 0
+    server.active_requests = 0
+    server.max_active_requests = 0
+    server.hold = Condition(server.profile_lock)
+    server.hold_target = args.hold_media
+    server.hold_match = "alt=media" if args.hold_media else None
+    server.hold_open = False
+    server.hold_active = 0
+    server.hold_timeout = args.hold_timeout
     if args.port_file:
         ready = args.port_file.with_suffix(".ready")
         ready.write_text(str(server.server_port))
