@@ -1,0 +1,83 @@
+Another instance of SwiftPM (PID: 15094) is already running using '/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build', waiting until that process has finished execution...Building for debugging...
+[Computing dependencies]
+[Provisioning 1 / 22]
+[Using on-disk description]
+[2 / 6] PorpoiseCore
+[3 / 7] PorpoiseCore
+[8 / 12] PorpoiseFileSystem
+[9 / 13] PorpoiseFileSystem
+[12 / 16] PorpoiseServices
+[13 / 17] PorpoiseServices
+[19 / 23] SwiftTerm
+[20 / 23] Porpoise-product
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Sources/Porpoise/Views/ItemListView+Transition.swift:118:71: warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+116 |     /// false when the change only adds items (nothing to fade out), which is quicker to start.
+117 |     func change(
+118 |         _ kind: TransitionKind, duration: TimeInterval = ItemListView.transitionDuration,
+    |                                                                       `- warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+119 |         curve: @escaping (Double) -> Double = Animator.easeOutCubic, cascade: Bool = false, pictures: Bool = true, _ apply: () -> Void
+120 |     ) {
+    :
+214 | extension ItemListView {
+215 |     /// AppsGridView's glides, until it joins `Motion` (after R-9).
+216 |     static let transitionDuration = Motion.glide
+    |                `- note: static property declared here
+217 |     /// Beyond this many rows a change is shown at once: every frame would draw a large view.
+218 |     private static let maxAnimatedRows = 3000
+[21 / 24] Porpoise-product
+[23 / 27] Porpoise
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Sources/Porpoise/Views/ItemListView+Transition.swift:118:71: warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+116 |     /// false when the change only adds items (nothing to fade out), which is quicker to start.
+117 |     func change(
+118 |         _ kind: TransitionKind, duration: TimeInterval = ItemListView.transitionDuration,
+    |                                                                       `- warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+119 |         curve: @escaping (Double) -> Double = Animator.easeOutCubic, cascade: Bool = false, pictures: Bool = true, _ apply: () -> Void
+120 |     ) {
+    :
+214 | extension ItemListView {
+215 |     /// AppsGridView's glides, until it joins `Motion` (after R-9).
+216 |     static let transitionDuration = Motion.glide
+    |                `- note: static property declared here
+217 |     /// Beyond this many rows a change is shown at once: every frame would draw a large view.
+218 |     private static let maxAnimatedRows = 3000
+[24 / 28] Porpoise
+[29 / 33] PorpoiseServicesTestSupport
+[32 / 36] PorpoiseCore
+[35 / 38] PorpoiseFileSystem
+[36 / 40] PorpoiseServices
+[37 / 40] PorpoiseServices
+[38 / 41] PorpoiseServices
+[41 / 46] Porpoise-product
+[43 / 48] Porpoise-product
+[48 / 53] Porpoise-product
+[50 / 54] Porpoise-product
+[52 / 57] Porpoise
+[55 / 59] Porpoise
+[57 / 61] Porpoise
+[62 / 66] Porpoise
+[64 / 67] Porpoise
+[65 / 68] PorpoiseServicesTestSupport
+[67 / 69] PorpoiseAppTests-product
+[70 / 71] PorpoiseAppTests-product
+[72 / 72] PorpoiseAppTests-product
+[74 / 78] PorpoiseCoreTests-product
+[78 / 82] PorpoiseCoreTests-product
+[84 / 86] PorpoiseCoreTests-product
+[88 / 90] PorpoiseFileSystemTests-product
+[91 / 92] PorpoiseFileSystemTests-product
+[96 / 97] PorpoiseServicesTests-product
+[97 / 101] PorpoiseServicesTests-product
+[101 / 105] PorpoiseServicesTests-product
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseServicesTests/HostileNameServicesTests.swift:30:5: warning: '@discardableResult' declared on a function returning 'Void' is unnecessary
+ 28 |     }
+ 29 | 
+ 30 |     @discardableResult
+    |     `- warning: '@discardableResult' declared on a function returning 'Void' is unnecessary
+ 31 |     /// SSHProvider's listing script, run the way ssh runs it (the login shell reads `sh -c QUOTED`), on a folder of
+ 32 |     /// hostile names, and parsed back. Plain macOS tools, so this is the BSD `stat` branch a macOS server takes.
+[107 / 109] PorpoiseServicesTests-product
+[109 / 109] PorpoiseServicesTests-product
+[111 / 117] DriveRecoveryProbe-product
+[117 / 118] IndexBenchmark-product
+[120 / 120] DriveRecoveryProbe-product
+Build complete! (104,95 sec)

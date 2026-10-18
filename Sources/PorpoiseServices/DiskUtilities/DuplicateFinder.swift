@@ -15,12 +15,27 @@ public enum DuplicateFinder {
         in scan: DiskScan, cancellation: DiskCancellation = DiskCancellation(),
         progress: (DiskProgress) -> Void = { _ in }
     ) throws -> Result {
-        var result = Result(), seen: Set<DiskIdentity> = [], sizes: [Int64: [DiskEntry]] = [:], done = 0
+        var result = Result(), unique: [DiskIdentity: Int] = [:], sizes: [Int64: [DiskEntry]] = [:], done = 0
         result.errors = scan.errors
-        for file in scan.entries.sorted(by: { $0.url.path < $1.url.path }) where !file.directory && !file.symlink && file.size > 0 {
-            if seen.insert(file.identity).inserted { sizes[file.size, default: []].append(file) } else { result.hardLinksIgnored += 1 }
+        for (index, file) in scan.entries.enumerated() where !file.directory && !file.symlink && file.size > 0 {
+            try cancellation.check()
+            if let previous = unique[file.identity] {
+                result.hardLinksIgnored += 1
+                if file.url.path < scan.entries[previous].url.path { unique[file.identity] = index }
+            } else {
+                unique[file.identity] = index
+            }
         }
-        for files in sizes.values where files.count > 1 {
+        for index in unique.values {
+            try cancellation.check()
+            let file = scan.entries[index]; sizes[file.size, default: []].append(file)
+        }
+        unique = [:]
+        // Singleton sizes cannot contain duplicates; release them before reading file contents.
+        sizes = try sizes.filter {
+            try cancellation.check(); return $0.value.count > 1
+        }
+        for files in sizes.values {
             var partials: [String: [DiskEntry]] = [:]
             for file in files {
                 try cancellation.check()

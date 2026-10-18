@@ -1,0 +1,2 @@
+UsageTree(1000000 entries): 0.93 s, footprint +195 MB (nodes 1000001)
+sort by url.path per comparison: 14.49 s; precomputed utf8 keys: 8.16 s (1000000)

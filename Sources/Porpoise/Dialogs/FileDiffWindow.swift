@@ -48,6 +48,8 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
     private let undo = UndoManager()
     private var token = DiskCancellation()
     private var generation = 0
+    private var diffCancellation = DiskCancellation()
+    private let diffQueue = DispatchQueue(label: "app.porpoise.text-diff", qos: .userInitiated, autoreleaseFrequency: .workItem)
     private var leftFile: ComparedFile?, rightFile: ComparedFile?
     private var copies: FileComparisonCopies?
     private var readOnly: Bool { !leftURL.isFileURL || !rightURL.isFileURL }
@@ -327,21 +329,33 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
     }
     private func rediff() {
         guard ready else { return }
+        diffCancellation.cancel()
+        let cancellation = DiskCancellation(isCancelled: { [token] in token.isCancelled }); diffCancellation = cancellation
         generation += 1; let version = generation
         guard let a = leftText, let b = rightText else { busy = false; updateVisibility(); return }
         busy = true; facts.stringValue = "Comparing…"; progressText.stringValue = "Comparing…";
         loading.isIndeterminate = true; updateVisibility()
         let whitespace = ignore.state == .on, inline = textMode.selectedSegment == 1
-        Self.queue.async { [weak self] in
-            let difference = TextDifference(left: a, right: b, ignoreWhitespace: whitespace)
-            let presentation = FileDiffPresentation(difference, inline: inline)
-            DispatchQueue.main.async {
-                guard let self, self.generation == version, !self.token.isCancelled else { return }
-                self.textCanvas.presentation = presentation; self.textCanvas.inline = inline; self.busy = false
-                self.focused = min(self.focused, max(0, presentation.starts.count - 1)); self.textCanvas.focused = self.focused;
-                self.textCanvas.updateCopyButtons()
-                self.resizeText(); self.updateVisibility(); self.root.layoutSubtreeIfNeeded()
-                if !presentation.starts.isEmpty { self.focus(self.focused) }
+        diffQueue.async { [weak self] in
+            do {
+                let difference = try TextDifference(left: a, right: b, ignoreWhitespace: whitespace, checkCancellation: cancellation.check)
+                let presentation = try FileDiffPresentation(difference, inline: inline, checkCancellation: cancellation.check)
+                try cancellation.check()
+                DispatchQueue.main.async {
+                    guard let self, self.generation == version, !cancellation.isCancelled else { return }
+                    self.textCanvas.presentation = presentation; self.textCanvas.inline = inline; self.busy = false
+                    self.focused = min(self.focused, max(0, presentation.starts.count - 1)); self.textCanvas.focused = self.focused;
+                    self.textCanvas.updateCopyButtons()
+                    self.resizeText(); self.updateVisibility(); self.root.layoutSubtreeIfNeeded()
+                    if !presentation.starts.isEmpty { self.focus(self.focused) }
+                }
+            } catch is CancellationError {
+                // A newer request or window close owns the UI.
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.generation == version, !cancellation.isCancelled else { return }
+                    self.fail(error)
+                }
             }
         }
     }
@@ -487,7 +501,7 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
         }; return false
     }
     func windowWillClose(_ notification: Notification) {
-        token.cancel(); observers.forEach(NotificationCenter.default.removeObserver)
+        token.cancel(); diffCancellation.cancel(); observers.forEach(NotificationCenter.default.removeObserver)
     }
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.appearance = window?.effectiveAppearance

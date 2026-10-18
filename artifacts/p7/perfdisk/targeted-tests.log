@@ -1,0 +1,123 @@
+Building for debugging...
+[Computing dependencies]
+[Pre-planning 1 / 561]
+[Planning 1 / 561]
+[Planning deferred tasks]
+[Starting]
+[4 / 38]
+[6 / 33] PorpoiseCore
+[9 / 36] SwiftTerm
+[9 / 34] PorpoiseCore
+[13 / 37] PorpoiseCore
+[15 / 36] PorpoiseServices
+[17 / 38] PorpoiseServices
+[23 / 41] PorpoiseServices
+[24 / 41] PorpoiseServices
+[24 / 42] Porpoise
+[32 / 50] Porpoise
+[32 / 50] Porpoise-product
+[34 / 52] Porpoise-product
+[34 / 52] Porpoise
+[36 / 54] Porpoise-product
+[36 / 54] Porpoise
+[36 / 54] Porpoise-product
+[36 / 54] Porpoise
+[36 / 54] Porpoise-product
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Sources/Porpoise/Views/ItemListView+Transition.swift:118:71: warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+116 |     /// false when the change only adds items (nothing to fade out), which is quicker to start.
+117 |     func change(
+118 |         _ kind: TransitionKind, duration: TimeInterval = ItemListView.transitionDuration,
+    |                                                                       `- warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+119 |         curve: @escaping (Double) -> Double = Animator.easeOutCubic, cascade: Bool = false, pictures: Bool = true, _ apply: () -> Void
+120 |     ) {
+    :
+214 | extension ItemListView {
+215 |     /// AppsGridView's glides, until it joins `Motion` (after R-9).
+216 |     static let transitionDuration = Motion.glide
+    |                `- note: static property declared here
+217 |     /// Beyond this many rows a change is shown at once: every frame would draw a large view.
+218 |     private static let maxAnimatedRows = 3000
+[37 / 56] Porpoise
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Sources/Porpoise/Views/ItemListView+Transition.swift:118:71: warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+116 |     /// false when the change only adds items (nothing to fade out), which is quicker to start.
+117 |     func change(
+118 |         _ kind: TransitionKind, duration: TimeInterval = ItemListView.transitionDuration,
+    |                                                                       `- warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+119 |         curve: @escaping (Double) -> Double = Animator.easeOutCubic, cascade: Bool = false, pictures: Bool = true, _ apply: () -> Void
+120 |     ) {
+    :
+214 | extension ItemListView {
+215 |     /// AppsGridView's glides, until it joins `Motion` (after R-9).
+216 |     static let transitionDuration = Motion.glide
+    |                `- note: static property declared here
+217 |     /// Beyond this many rows a change is shown at once: every frame would draw a large view.
+218 |     private static let maxAnimatedRows = 3000
+[41 / 56] Porpoise
+[42 / 57] Porpoise
+[43 / 56] Porpoise
+[43 / 56] Porpoise-product
+[44 / 56] Porpoise-product
+[45 / 57] Porpoise-product
+[49 / 58] PorpoiseAppTests-product
+error: SwiftCompile normal arm64 /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/UtilityPerformanceTests.swift failed with a nonzero exit code. Command line:     cd /Users/daniel/Projects/porpoise/.hteam/worktrees
+    builtin-SwiftPerFileCompile UtilityPerformanceTests.swift
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/UtilityPerformanceTests.swift:26:17: error: type 'Int32' cannot be used as a boolean; test for '!= 0' instead
+24 |         let schedulingMS = (ProcessInfo.processInfo.systemUptime - start) * 1000
+25 |         #expect(dialog.testPlan == nil && !dialog.testCanApply)
+26 |         #expect(await poll(timeout: 30) { dialog.testPlan != nil })
+   |                 `- error: type 'Int32' cannot be used as a boolean; test for '!= 0' instead
+27 |         #expect(dialog.testPlan?.rows.map(\.proposedName) == synchronous.rows.map(\.proposedName))
+28 |         #expect(dialog.testCanApply)
+
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/UtilityPerformanceTests.swift:26:27: error: extraneous argument label 'timeout:' in call
+24 |         let schedulingMS = (ProcessInfo.processInfo.systemUptime - start) * 1000
+25 |         #expect(dialog.testPlan == nil && !dialog.testCanApply)
+26 |         #expect(await poll(timeout: 30) { dialog.testPlan != nil })
+   |                           `- error: extraneous argument label 'timeout:' in call
+27 |         #expect(dialog.testPlan?.rows.map(\.proposedName) == synchronous.rows.map(\.proposedName))
+28 |         #expect(dialog.testCanApply)
+
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/UtilityPerformanceTests.swift:26:67: error: missing argument for parameter #3 in call
+24 |         let schedulingMS = (ProcessInfo.processInfo.systemUptime - start) * 1000
+25 |         #expect(dialog.testPlan == nil && !dialog.testCanApply)
+26 |         #expect(await poll(timeout: 30) { dialog.testPlan != nil })
+   |                                                                   `- error: missing argument for parameter #3 in call
+27 |         #expect(dialog.testPlan?.rows.map(\.proposedName) == synchronous.rows.map(\.proposedName))
+28 |         #expect(dialog.testCanApply)
+
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk/usr/include/sys/poll.h:113:12: note: 'poll' declared here
+111 |  * traditional SVR4 code will look to find it.
+112 |  */
+113 | extern int poll(struct pollfd *, nfds_t, int) __DARWIN_ALIAS_C(poll);
+    |            `- note: 'poll' declared here
+114 | 
+115 | __END_DECLS
+
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/UtilityPerformanceTests.swift:26:37: error: cannot convert value of type 'Int' to expected argument type 'UnsafeMutablePointer<pollfd>'
+24 |         let schedulingMS = (ProcessInfo.processInfo.systemUptime - start) * 1000
+25 |         #expect(dialog.testPlan == nil && !dialog.testCanApply)
+26 |         #expect(await poll(timeout: 30) { dialog.testPlan != nil })
+   |                                     `- error: cannot convert value of type 'Int' to expected argument type 'UnsafeMutablePointer<pollfd>'
+27 |         #expect(dialog.testPlan?.rows.map(\.proposedName) == synchronous.rows.map(\.proposedName))
+28 |         #expect(dialog.testCanApply)
+
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/UtilityPerformanceTests.swift:26:41: error: trailing closure passed to parameter of type 'nfds_t' (aka 'UInt32') that does not accept a closure
+24 |         let schedulingMS = (ProcessInfo.processInfo.systemUptime - start) * 1000
+25 |         #expect(dialog.testPlan == nil && !dialog.testCanApply)
+26 |         #expect(await poll(timeout: 30) { dialog.testPlan != nil })
+   |                                         `- error: trailing closure passed to parameter of type 'nfds_t' (aka 'UInt32') that does not accept a closure
+27 |         #expect(dialog.testPlan?.rows.map(\.proposedName) == synchronous.rows.map(\.proposedName))
+28 |         #expect(dialog.testCanApply)
+
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk/usr/include/sys/poll.h:113:12: note: 'poll' declared here
+111 |  * traditional SVR4 code will look to find it.
+112 |  */
+113 | extern int poll(struct pollfd *, nfds_t, int) __DARWIN_ALIAS_C(poll);
+    |            `- note: 'poll' declared here
+114 | 
+115 | __END_DECLS
+Failed frontend command:
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend -frontend -c /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Intermediates.noindex/Porpoise.build/Debug/PorpoiseAppTests-p.build/DerivedSources/test_entry_point.swift /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/ActivityRowsTests.swift /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/AppearanceLayoutTests.swift /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/ChromeKitTests.swift /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/DropTargetTests.swift /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/FoldersPanelTests.swift /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/HistoryShortcutTests.swift /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/ItemSelectionControllerTests.swift /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/ItemTransitionsTests.swift /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/LocationPolicyTests.swift /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/LocationViewSettingsTests.swift /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/MotionTests.swift /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/ProviderNeutralUITests.swift /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/SmallAppFixesTests.swift /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/ThemedWindowsTests.swift -primary-file /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/UtilityPerformanceTests.swift -emit-dependencies-path /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Intermediates.noindex/Porpoise.build/Debug/PorpoiseAppTests-p.build/Objects-normal/arm64/UtilityPerformanceTests.d -emit-const-values-path /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Intermediates.noindex/Porpoise.build/Debug/PorpoiseAppTests-p.build/Objects-normal/arm64/UtilityPerformanceTests.swiftconstvalues -emit-reference-dependencies-path /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Intermediates.noindex/Porpoise.build/Debug/PorpoiseAppTests-p.build/Objects-normal/arm64/UtilityPerformanceTests.swiftdeps -serialize-diagnostics-path /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Intermediates.noindex/Porpoise.build/Debug/PorpoiseAppTests-p.build/Objects-normal/arm64/UtilityPerformanceTests.dia -target arm64-apple-macos15.0 -module-can-import-version Testing 2084 0 -module-can-import-version XCTest 25229 0 -disable-cross-import-overlay-search -swift-module-cross-import Testing /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks/Testing.framework/Modules/Testing.swiftcrossimport/AppKit.swiftoverlay -swift-module-cross-import Testing /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks/Testing.framework/Modules/Testing.swiftcrossimport/CoreGraphics.swiftoverlay -swift-module-cross-import Testing /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks/Testing.framework/Modules/Testing.swiftcrossimport/CoreImage.swiftoverlay -swift-module-cross-import Testing /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks/Testing.framework/Modules/Testing.swiftcrossimport/CoreTransferable.swiftoverlay -swift-module-cross-import Testing /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks/Testing.framework/Modules/Testing.swiftcrossimport/Foundation.swiftoverlay -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libFoundationMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#FoundationMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libObservationMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#ObservationMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libPreviewsMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#PreviewsMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libSwiftMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#SwiftMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libSwiftUIMacros.dylib\#/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#SwiftUIMacros -load-resolved-plugin /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib\#\#TestingMacros -disable-implicit-swift-modules -Xcc -fno-implicit-modules -Xcc -fno-implicit-module-maps -explicit-swift-module-map-file /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Intermediates.noindex/Porpoise.build/Debug/PorpoiseAppTests-p.build/Objects-normal/arm64/PorpoiseAppTests-dependencies-1.json -Xllvm -aarch64-use-tbi -enable-objc-interop -stack-check -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -I /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Products/Debug -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Products/Debug/PackageFrameworks -F /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Products/Debug -F /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -module-cache-path /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Intermediates.noindex/SwiftExplicitPrecompiledModules -no-color-diagnostics -Xcc -fno-color-diagnostics -enable-testing -g -debug-info-format\=dwarf -dwarf-version\=5 -swift-version 5 -Onone -D SWIFT_PACKAGE -D DEBUG -D Xcode -serialize-debugging-options -enable-experimental-feature DebugDescriptionMacro -empty-abi-descriptor -validate-clang-modules-once -clang-build-session-file /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/ModuleCache.noindex/Session.modulevalidation -Xcc -working-directory -Xcc /Users/daniel/Projects/porpoise/.hteam/worktrees -enable-anonymous-context-mangled-names -file-compilation-dir /Users/daniel/Projects/porpoise/.hteam/worktrees -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -Xcc -ivfsstatcache -Xcc /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/SDKStatCaches.noindex/macosx27.0-26A425-80c5bbf1d171475443272936d42f90a37231f6df4def33e022ae2eb8f782df1a.sdkstatcache -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -Xcc -I/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Products/Debug/include -Xcc -I/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Intermediates.noindex/Porpoise.build/Debug/PorpoiseAppTests-p.build/DerivedSources-normal/arm64 -Xcc -I/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Intermediates.noindex/Porpoise.build/Debug/PorpoiseAppTests-p.build/DerivedSources/arm64 -Xcc -I/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Intermediates.noindex/Porpoise.build/Debug/PorpoiseAppTests-p.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -no-auto-bridging-header-chaining -module-name PorpoiseAppTests -package-name porpoise_perfdisk -const-gather-protocols-file /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Intermediates.noindex/Porpoise.build/Debug/PorpoiseAppTests-p.build/Objects-normal/arm64/PorpoiseAppTests_const_extract_protocols.json -disable-clang-spi -clang-target arm64-apple-macos27.0 -target-sdk-version 27.0 -target-sdk-name macosx27.0 -in-process-plugin-server-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/libSwiftInProcPluginServer.dylib -parse-as-library -o /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Intermediates.noindex/Porpoise.build/Debug/PorpoiseAppTests-p.build/Objects-normal/arm64/UtilityPerformanceTests.o -debug-module-path /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out/Intermediates.noindex/Porpoise.build/Debug/PorpoiseAppTests-p.build/Objects-normal/arm64/PorpoiseAppTests.swiftmodule -index-unit-output-path /Porpoise.build/Debug/PorpoiseAppTests-p.build/Objects-normal/arm64/UtilityPerformanceTests.o -index-store-path /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build/out -index-system-modules
+[51 / 60] PorpoiseAppTests-product
+error: Build failed
+error: fatalError

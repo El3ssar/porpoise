@@ -71,6 +71,18 @@ public enum BatchRenameService {
             caseSensitive: snapshot.caseSensitive)
     }
 
+    /// Latest-only preview jobs can stop between names and collision-planning rows.
+    public static func preview(_ snapshot: BatchRenameSnapshot, preset: BatchRenamePreset, cancellation: DiskCancellation) throws -> BatchRenamePlan {
+        var names: [Result<String, Error>] = []
+        names.reserveCapacity(snapshot.entries.count)
+        for (index, entry) in snapshot.entries.enumerated() {
+            try cancellation.check()
+            names.append(Result { try BatchRename.name(entry, index: index, preset: preset) })
+        }
+        return try BatchRename.plan(
+            snapshot.entries, names: names, existing: snapshot.existing, caseSensitive: snapshot.caseSensitive, checkCancellation: cancellation.check)
+    }
+
     public static func execute(_ plan: BatchRenamePlan, snapshot: BatchRenameSnapshot) throws -> BatchRenameResult {
         try execute(plan, snapshot: snapshot, move: moveExclusively)
     }

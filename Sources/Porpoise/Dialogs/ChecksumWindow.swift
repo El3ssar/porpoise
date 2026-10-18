@@ -45,7 +45,10 @@ final class ChecksumWindow: DiskUtilityWindow {
                         failures.append("\(file.url.path): \(error.localizedDescription)")
                     }
                 }
-                return (found, failures)
+                // The scanner is unordered; keep the visible checksum list in lexical path order.
+                // Extract each key once instead of recomputing URL.path for every comparison.
+                let ordered = found.map { ($0.0.path, $0) }.sorted { $0.0 < $1.0 }.map(\.1)
+                return (ordered, failures)
             },
             done: { [weak self] found, failures in
                 guard let self else { return }; self.results = found; self.errors = failures; self.reload()

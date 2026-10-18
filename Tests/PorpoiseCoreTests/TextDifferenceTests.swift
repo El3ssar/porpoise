@@ -46,6 +46,28 @@ struct TextDifferenceTests {
         #expect(d.copying(0, toRight: false) == "a\nnew\nz\n")
         #expect(d.copying(8, toRight: true) == nil)
     }
+    @Test func cancellationStopsLineSplittingAndMatching() throws {
+        let a = (0..<10000).map { "left-\($0)\n" }.joined()
+        let b = (0..<10000).map { "right-\($0)\n" }.joined()
+        for stop in [1, 10, 200, 300] {
+            var checks = 0
+            #expect(throws: CancellationError.self) {
+                _ = try TextDifference(
+                    left: a, right: b, ignoreWhitespace: true,
+                    checkCancellation: {
+                        checks += 1
+                        if checks == stop { throw CancellationError() }
+                    })
+            }
+            #expect(checks == stop)
+        }
+        let ordinary = TextDifference(left: a, right: b)
+        let cancellable = try TextDifference(left: a, right: b, checkCancellation: { try DiskCancellation().check() })
+        #expect(ordinary.changes == cancellable.changes)
+        #expect(throws: CancellationError.self) {
+            _ = try WordDifference.ranges("old word", "new word", checkCancellation: { throw CancellationError() })
+        }
+    }
     private func reconstruct(_ a: String, _ b: String) {
         let d = TextDifference(left: a, right: b)
         var lines = d.left

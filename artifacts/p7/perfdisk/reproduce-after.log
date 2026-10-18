@@ -1,0 +1,2 @@
+UsageTree(1000000 entries): 14.71 s, RSS +405 MB (nodes 1000001)
+sort by url.path per comparison: 149.26 s; precomputed utf8 keys: 41.15 s (1000000)

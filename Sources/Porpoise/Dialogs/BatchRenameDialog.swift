@@ -18,6 +18,12 @@ final class BatchRenameDialog: SecondaryWindowController, NSTableViewDataSource,
     private let apply = NSButton(title: "Rename", target: nil, action: nil)
     private let cancel = NSButton(title: "Cancel", target: nil, action: nil)
     private var busy = false
+    private let previewQueue = DispatchQueue(label: "app.porpoise.rename-preview", qos: .userInitiated, autoreleaseFrequency: .workItem)
+    private var previewWork: DispatchWorkItem?
+    private var previewCancellation = DiskCancellation()
+    private var previewGeneration = 0
+    private var snapshotGeneration = 0
+    private var finished = false
 
     static func run(_ sources: [URL], window: NSWindow?, done: @escaping ([URL]) -> Void) {
         let controller = BatchRenameDialog(sources, done: done)
@@ -29,7 +35,7 @@ final class BatchRenameDialog: SecondaryWindowController, NSTableViewDataSource,
         }
     }
 
-    private init(_ sources: [URL], done: @escaping ([URL]) -> Void) {
+    init(_ sources: [URL], snapshot: BatchRenameSnapshot? = nil, done: @escaping ([URL]) -> Void) {
         self.sources = sources; self.done = done
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 960, height: 680), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
@@ -39,7 +45,7 @@ final class BatchRenameDialog: SecondaryWindowController, NSTableViewDataSource,
         // Its rows' text colors are the palette's at the time they are made.
         Theme.whenChanged(self) { [weak self] in self?.table.reloadData() }
         addRule(.replace(find: "", with: "", regex: false, caseSensitive: true))
-        refreshSnapshot()
+        if let snapshot { self.snapshot = snapshot; updatePreview() } else { refreshSnapshot() }
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -142,12 +148,14 @@ final class BatchRenameDialog: SecondaryWindowController, NSTableViewDataSource,
     }
     private func refreshSnapshot() {
         guard !busy else { return }
+        invalidatePreview()
+        snapshotGeneration += 1; let version = snapshotGeneration
         snapshot = nil; plan = nil; apply.isEnabled = false; status.stringValue = "Reading files and metadata…"
         let sources = sources
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Result { try BatchRenameService.snapshot(sources) }
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self, !self.finished, self.snapshotGeneration == version else { return }
                 switch result {
                 case .success(let snapshot): self.snapshot = snapshot; self.updatePreview()
                 case .failure(let error): self.status.stringValue = error.localizedDescription; self.status.textColor = Theme.negativeText
@@ -155,21 +163,49 @@ final class BatchRenameDialog: SecondaryWindowController, NSTableViewDataSource,
             }
         }
     }
+    private func invalidatePreview() {
+        previewGeneration += 1; previewWork?.cancel(); previewCancellation.cancel(); previewWork = nil
+    }
     private func updatePreview() {
-        guard !busy, let snapshot else { return }
+        guard !busy, !finished else { return }
+        invalidatePreview()
+        plan = nil; apply.isEnabled = false
+        guard let snapshot else { return }
         do {
-            let plan = BatchRenameService.preview(snapshot, preset: try preset()); self.plan = plan
-            let errors = plan.rows.filter { $0.problem != nil }.count
-            status.stringValue =
-                errors > 0
-                ? "\(errors) blocked row(s). Resolve collisions or invalid names before renaming."
-                : "\(plan.changes.count) of \(plan.rows.count) items will change. The whole batch can be undone in one step."
-            status.textColor = errors > 0 ? Theme.negativeText : Theme.viewTextInactive
-            apply.isEnabled = plan.canApply
+            let preset = try preset(), version = previewGeneration
+            let cancellation = DiskCancellation(); previewCancellation = cancellation
+            status.stringValue = "Updating preview…"; status.textColor = Theme.viewTextInactive
+            let work = DispatchWorkItem { [weak self] in
+                do {
+                    let plan = try BatchRenameService.preview(snapshot, preset: preset, cancellation: cancellation)
+                    let errors = plan.rows.filter { $0.problem != nil }.count
+                    let changes = plan.changes.count, canApply = plan.canApply
+                    try cancellation.check()
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, !self.finished, self.previewGeneration == version, !cancellation.isCancelled else { return }
+                        self.plan = plan
+                        self.status.stringValue =
+                            errors > 0
+                            ? "\(errors) blocked row(s). Resolve collisions or invalid names before renaming."
+                            : "\(changes) of \(plan.rows.count) items will change. The whole batch can be undone in one step."
+                        self.status.textColor = errors > 0 ? Theme.negativeText : Theme.viewTextInactive
+                        self.apply.isEnabled = canApply
+                        self.table.reloadData()
+                    }
+                } catch is CancellationError {
+                    // A newer input or a closed dialog owns the preview now.
+                } catch {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, !self.finished, self.previewGeneration == version else { return }
+                        self.status.stringValue = error.localizedDescription; self.status.textColor = Theme.negativeText
+                    }
+                }
+            }
+            previewWork = work
+            previewQueue.asyncAfter(deadline: .now() + 0.15, execute: work)
         } catch {
-            plan = nil; apply.isEnabled = false; status.stringValue = error.localizedDescription; status.textColor = Theme.negativeText
+            status.stringValue = error.localizedDescription; status.textColor = Theme.negativeText; table.reloadData()
         }
-        table.reloadData()
     }
     @objc private func extensionChanged() { extensionText.isEnabled = extensionMenu.indexOfSelectedItem == 2; updatePreview() }
     func controlTextDidChange(_ obj: Notification) { updatePreview() }
@@ -204,11 +240,18 @@ final class BatchRenameDialog: SecondaryWindowController, NSTableViewDataSource,
     }
     @objc private func cancelRename() { guard !busy else { return }; finish() }
     private func finish() {
+        finished = true; invalidatePreview(); snapshotGeneration += 1
         guard let window else { return }
-        if let parent = window.sheetParent { parent.endSheet(window) } else { NSApp.stopModal(); window.orderOut(nil) }
+        if let parent = window.sheetParent {
+            parent.endSheet(window)
+        } else {
+            if NSApp.modalWindow === window { NSApp.stopModal() }
+            window.orderOut(nil)
+        }
     }
     @objc private func applyRename() {
         guard !busy, let plan, plan.canApply, let snapshot else { return }
+        invalidatePreview()
         busy = true; apply.isEnabled = false; cancel.isEnabled = false; status.stringValue = "Renaming…"
         window?.makeFirstResponder(nil)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -226,6 +269,14 @@ final class BatchRenameDialog: SecondaryWindowController, NSTableViewDataSource,
             }
         }
     }
+    #if PORPOISE_TEST_HOOKS
+    func testPreviewExtension(_ value: String) {
+        extensionMenu.selectItem(at: 2); extensionText.stringValue = value; extensionChanged()
+    }
+    var testPlan: BatchRenamePlan? { plan }
+    var testCanApply: Bool { apply.isEnabled }
+    func testFinish() { finish() }
+    #endif
     func numberOfRows(in tableView: NSTableView) -> Int { plan?.rows.count ?? sources.count }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row index: Int) -> NSView? {
         let row = plan?.rows[safe: index]

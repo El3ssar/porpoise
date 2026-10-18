@@ -46,6 +46,31 @@ struct DiskUtilityCoreTests {
         #expect(tree.hardLinkAliases == 1)
         #expect(tree.nodes.first { $0.url?.lastPathComponent == "a" }?.logical == 100)
     }
+    @Test func unorderedUsageLinksNestedParentsAndLexicalHardLinkOwner() {
+        func entry(_ path: String, _ inode: UInt64, directory: Bool = false, symlink: Bool = false) -> DiskEntry {
+            DiskEntry(
+                url: URL(fileURLWithPath: path), identity: DiskIdentity(device: 1, inode: inode), directory: directory,
+                symlink: symlink, size: 7, allocated: 16, modified: .distantPast)
+        }
+        let entries = [
+            entry("/fixture/z/alias", 9), entry("/fixture/a/b/file", 9), entry("/fixture/a/b", 3, directory: true),
+            entry("/fixture/z/link", 10, symlink: true), entry("/fixture/z/own", 11), entry("/fixture", 1, directory: true),
+            entry("/fixture/z", 4, directory: true), entry("/fixture/a", 2, directory: true),
+        ]
+        for order in [entries, Array(entries.reversed()), entries.shuffled()] {
+            var scan = DiskScan(); scan.entries = order
+            let tree = UsageTree(scan)
+            #expect(tree.nodes[0].logical == 14); #expect(tree.nodes[0].allocated == 32); #expect(tree.nodes[0].files == 2)
+            #expect(tree.hardLinkAliases == 1)
+            for path in ["/fixture/a", "/fixture/a/b", "/fixture/a/b/file", "/fixture/z"] {
+                #expect(tree.nodes.first { $0.url?.path == path }?.logical == 7)
+            }
+            #expect(tree.nodes.first { $0.url?.path == "/fixture/z/alias" }?.files == 0)
+        }
+        var rootScan = DiskScan(); rootScan.entries = [entry("/file", 2), entry("/", 1, directory: true)]
+        #expect(UsageTree(rootScan).nodes[0].logical == 7)
+        #expect(UsageTree(DiskScan()).nodes.count == 1)
+    }
     @Test func keepRulesAndCloneFamiliesAreDeterministic() {
         func file(_ path: String, date: Double, inode: UInt64, clone: UInt64? = nil) -> DuplicateFile {
             DuplicateFile(

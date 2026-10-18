@@ -88,7 +88,6 @@ public enum PhysicalTreeScanner {
             }
         }
         result.cancelled = cancellation.isCancelled
-        result.entries.sort { $0.url.path < $1.url.path }
         progress(DiskProgress(files: entryCount, bytes: bytes, path: ""))
         return result
     }

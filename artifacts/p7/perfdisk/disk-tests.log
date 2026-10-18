@@ -1,0 +1,210 @@
+Building for debugging...
+[Computing dependencies]
+[Pre-planning 1 / 561]
+[Planning 342 / 561]
+[Planning deferred tasks]
+[Starting]
+[1 / 5]
+[2 / 6] PorpoiseCore
+[3 / 7] PorpoiseCore
+[9 / 13] PorpoiseFileSystem
+[10 / 14] PorpoiseFileSystem
+[14 / 18] PorpoiseServices
+[15 / 19] PorpoiseServices
+[20 / 24] SwiftTerm
+[21 / 24] Porpoise-product
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Sources/Porpoise/Views/ItemListView+Transition.swift:118:71: warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+116 |     /// false when the change only adds items (nothing to fade out), which is quicker to start.
+117 |     func change(
+118 |         _ kind: TransitionKind, duration: TimeInterval = ItemListView.transitionDuration,
+    |                                                                       `- warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+119 |         curve: @escaping (Double) -> Double = Animator.easeOutCubic, cascade: Bool = false, pictures: Bool = true, _ apply: () -> Void
+120 |     ) {
+    :
+214 | extension ItemListView {
+215 |     /// AppsGridView's glides, until it joins `Motion` (after R-9).
+216 |     static let transitionDuration = Motion.glide
+    |                `- note: static property declared here
+217 |     /// Beyond this many rows a change is shown at once: every frame would draw a large view.
+218 |     private static let maxAnimatedRows = 3000
+[22 / 25] Porpoise-product
+[24 / 28] Porpoise
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Sources/Porpoise/Views/ItemListView+Transition.swift:118:71: warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+116 |     /// false when the change only adds items (nothing to fade out), which is quicker to start.
+117 |     func change(
+118 |         _ kind: TransitionKind, duration: TimeInterval = ItemListView.transitionDuration,
+    |                                                                       `- warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+119 |         curve: @escaping (Double) -> Double = Animator.easeOutCubic, cascade: Bool = false, pictures: Bool = true, _ apply: () -> Void
+120 |     ) {
+    :
+214 | extension ItemListView {
+215 |     /// AppsGridView's glides, until it joins `Motion` (after R-9).
+216 |     static let transitionDuration = Motion.glide
+    |                `- note: static property declared here
+217 |     /// Beyond this many rows a change is shown at once: every frame would draw a large view.
+218 |     private static let maxAnimatedRows = 3000
+[25 / 29] Porpoise
+[31 / 35] PorpoiseServicesTestSupport
+[34 / 38] PorpoiseCore
+[37 / 41] PorpoiseFileSystem
+[41 / 45] PorpoiseServices
+[42 / 45] PorpoiseServices
+[43 / 46] PorpoiseServices
+[43 / 49] Porpoise-product
+[46 / 51] Porpoise-product
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Sources/Porpoise/FileOperations/FileOperationsDialogs.swift:227:43: warning: coercion of implicitly unwrappable value of type 'NSApplication?' to 'Any' does not unwrap optional
+225 |             owner?.view.statusBar.showMessage(ActivityPresentation.summary(activity), duration: 4)
+226 |             NSAccessibility.post(
+227 |                 element: owner?.window ?? NSApp, notification: .announcementRequested,
+    |                                           |- warning: coercion of implicitly unwrappable value of type 'NSApplication?' to 'Any' does not unwrap optional
+    |                                           |- note: provide a default value to avoid this warning
+    |                                           |- note: force-unwrap the value to avoid this warning
+    |                                           `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+228 |                 userInfo: [.announcement: activity.title + ". " + activity.statusText, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+229 |         }
+
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk/System/Library/Frameworks/AppKit.framework/Headers/NSApplication.h:196:58: note: implicitly unwrapped var 'NSApp' declared here
+194 | @interface NSApplication : NSResponder <NSUserInterfaceValidations, NSMenuItemValidation, NSAccessibilityElement, NSAccessibility>
+195 | 
+196 | APPKIT_EXTERN __kindof NSApplication * _Null_unspecified NSApp NS_SWIFT_UI_ACTOR;
+    |                                                          `- note: implicitly unwrapped var 'NSApp' declared here
+197 | 
+198 | @property (class, readonly, strong) __kindof NSApplication *sharedApplication;
+[47 / 52] Porpoise-product
+[49 / 53] Porpoise-product
+[51 / 56] Porpoise
+[54 / 58] Porpoise
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Sources/Porpoise/FileOperations/FileOperationsDialogs.swift:227:43: warning: coercion of implicitly unwrappable value of type 'NSApplication?' to 'Any' does not unwrap optional
+225 |             owner?.view.statusBar.showMessage(ActivityPresentation.summary(activity), duration: 4)
+226 |             NSAccessibility.post(
+227 |                 element: owner?.window ?? NSApp, notification: .announcementRequested,
+    |                                           |- warning: coercion of implicitly unwrappable value of type 'NSApplication?' to 'Any' does not unwrap optional
+    |                                           |- note: provide a default value to avoid this warning
+    |                                           |- note: force-unwrap the value to avoid this warning
+    |                                           `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+228 |                 userInfo: [.announcement: activity.title + ". " + activity.statusText, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+229 |         }
+
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk/System/Library/Frameworks/AppKit.framework/Headers/NSApplication.h:196:58: note: implicitly unwrapped var 'NSApp' declared here
+194 | @interface NSApplication : NSResponder <NSUserInterfaceValidations, NSMenuItemValidation, NSAccessibilityElement, NSAccessibility>
+195 | 
+196 | APPKIT_EXTERN __kindof NSApplication * _Null_unspecified NSApp NS_SWIFT_UI_ACTOR;
+    |                                                          `- note: implicitly unwrapped var 'NSApp' declared here
+197 | 
+198 | @property (class, readonly, strong) __kindof NSApplication *sharedApplication;
+[55 / 59] Porpoise
+[57 / 60] Porpoise
+[58 / 61] PorpoiseServicesTestSupport
+[60 / 62] PorpoiseAppTests-product
+[71 / 73] PorpoiseAppTests-product
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseAppTests/ItemTransitionsTests.swift:16:26: warning: instance method 'run' is unavailable from asynchronous contexts; run(until:) cannot be used from async contexts.; this is an error in the Swift 6 language mode
+ 14 |         let end = Date().addingTimeInterval(seconds)
+ 15 |         while Date() < end {
+ 16 |             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+    |                          `- warning: instance method 'run' is unavailable from asynchronous contexts; run(until:) cannot be used from async contexts.; this is an error in the Swift 6 language mode
+ 17 |             try await Task.sleep(for: .milliseconds(10))
+ 18 |         }
+
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk/System/Library/Frameworks/Foundation.framework/Headers/NSRunLoop.h:125:1: note: 'run(until:)' declared here
+123 | ///
+124 | /// If no input sources or timers are attached to the run loop, this method exits immediately; otherwise, it runs the receiver in the ``RunLoop/Mode/default`` mode by repeatedly invoking ``RunLoop/run(mode:before:)`` until the specified expiration date.
+125 | - (void)runUntilDate:(NSDate *)limitDate NS_SWIFT_UNAVAILABLE_FROM_ASYNC("run(until:) cannot be used from async contexts.");
+    | `- note: 'run(until:)' declared here
+126 | 
+127 | /// Runs the loop once, blocking for input in the specified mode until a given date.
+[75 / 76] PorpoiseAppTests-product
+[76 / 77] PorpoiseAppTests-product
+[77 / 77] PorpoiseAppTests-product
+[79 / 83] PorpoiseCoreTests-product
+[82 / 86] PorpoiseCoreTests-product
+[88 / 90] PorpoiseCoreTests-product
+[92 / 94] PorpoiseFileSystemTests-product
+[95 / 96] PorpoiseFileSystemTests-product
+[99 / 101] PorpoiseServicesTests-product
+[101 / 103] PorpoiseServicesTests-product
+[103 / 105] PorpoiseServicesTests-product
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Tests/PorpoiseServicesTests/HostileNameServicesTests.swift:30:5: warning: '@discardableResult' declared on a function returning 'Void' is unnecessary
+ 28 |     }
+ 29 | 
+ 30 |     @discardableResult
+    |     `- warning: '@discardableResult' declared on a function returning 'Void' is unnecessary
+ 31 |     /// SSHProvider's listing script, run the way ssh runs it (the login shell reads `sh -c QUOTED`), on a folder of
+ 32 |     /// hostile names, and parsed back. Plain macOS tools, so this is the BSD `stat` branch a macOS server takes.
+[107 / 108] PorpoiseServicesTests-product
+[109 / 109] PorpoiseServicesTests-product
+[111 / 117] IndexBenchmark-product
+[116 / 118] DriveRecoveryProbe-product
+[117 / 118] DriveRecoveryProbe-product
+[120 / 120] DriveRecoveryProbe-product
+Build complete! (76,28 sec)
+◇ Test run started.
+↳ Testing Library Version: 2084
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite AppCleanupScannerTests started.
+◇ Suite DiskUtilityServiceTests started.
+◇ Suite AppCleanupTrashTests started.
+◇ Test realLibraryMatchingAndSharedContainerExclusion() started.
+◇ Test metadataMatchingAndUnsafePathsAreExcluded() started.
+◇ Test signedMainAndHelperGroupClaimsAreDiscoveredInVendorSubfolders() started.
+◇ Test unsignedCatalogKeepsUnverifiableGroupOwnership() started.
+◇ Test cancellingReviewLeavesApplicationAndRelatedFilesAlone() started.
+◇ Test hashCancellationAndConcurrentChangesAreRejected() started.
+◇ Test APFSClonesAreReportedWithoutTreatingThemAsHardLinks() started.
+◇ Test duplicatesStagePartialThenFullAndIgnoreEmptyLinks() started.
+◇ Test selectedMountedVolumesAreScannedButNotCrossedImplicitly() started.
+◇ Test growingFilesAreBoundedByTheirInitialLength() started.
+◇ Test reviewedSelectionUsesOnlyDiskImagesTrashAndUndoRestoresAllItems() started.
+◇ Test launchAgentOwnershipAndUnreadableFoldersAreHandledConservatively() started.
+◇ Test equalPartialHashesStillRequireMatchingMiddleBytes() started.
+◇ Test bulkInventoryMatchesStatAndCountsPhysicalHardLinks() started.
+◇ Test manifestVerificationReportsMismatchMissingAndUnsafePaths() started.
+◇ Test unreadableDirectoriesAreExplicitAndCacheCanBeInvalidated() started.
+◇ Test manifestVerificationHandlesOddRealNamesAndRejectsSymlinkEscapes() started.
+APFS clone family ids: [Optional(66741111), Optional(66741111)]
+✔ Test growingFilesAreBoundedByTheirInitialLength() passed after 0.018 seconds.
+✔ Test APFSClonesAreReportedWithoutTreatingThemAsHardLinks() passed after 0.018 seconds.
+✔ Test duplicatesStagePartialThenFullAndIgnoreEmptyLinks() passed after 0.018 seconds.
+✔ Test hashCancellationAndConcurrentChangesAreRejected() passed after 0.018 seconds.
+✔ Test equalPartialHashesStillRequireMatchingMiddleBytes() passed after 0.018 seconds.
+✔ Test unsignedCatalogKeepsUnverifiableGroupOwnership() passed after 0.018 seconds.
+✔ Test cancellingReviewLeavesApplicationAndRelatedFilesAlone() passed after 0.019 seconds.
+✔ Test bulkInventoryMatchesStatAndCountsPhysicalHardLinks() passed after 0.019 seconds.
+✔ Test metadataMatchingAndUnsafePathsAreExcluded() passed after 0.021 seconds.
+✔ Test manifestVerificationHandlesOddRealNamesAndRejectsSymlinkEscapes() passed after 0.021 seconds.
+✔ Test manifestVerificationReportsMismatchMissingAndUnsafePaths() passed after 0.031 seconds.
+✔ Test realLibraryMatchingAndSharedContainerExclusion() passed after 0.032 seconds.
+✔ Test unreadableDirectoriesAreExplicitAndCacheCanBeInvalidated() passed after 0.033 seconds.
+✔ Test launchAgentOwnershipAndUnreadableFoldersAreHandledConservatively() passed after 0.039 seconds.
+✔ Test signedMainAndHelperGroupClaimsAreDiscoveredInVendorSubfolders() passed after 0.093 seconds.
+✔ Suite AppCleanupScannerTests passed after 0.093 seconds.
+✔ Test selectedMountedVolumesAreScannedButNotCrossedImplicitly() passed after 7.764 seconds.
+✔ Suite DiskUtilityServiceTests passed after 7.764 seconds.
+✔ Test reviewedSelectionUsesOnlyDiskImagesTrashAndUndoRestoresAllItems() passed after 8.507 seconds.
+✔ Suite AppCleanupTrashTests passed after 8.507 seconds.
+✔ Test run with 17 tests in 3 suites passed after 8.507 seconds.
+◇ Test run started.
+↳ Testing Library Version: 2084
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite DiskUtilityCoreTests started.
+◇ Suite AppCleanupRulesTests started.
+◇ Test treemapPreservesAreaAndBounds() started.
+◇ Test standardHashVectorsAndIncrementalUpdates() started.
+◇ Test usageCountsHardLinksOnlyOnceAndAggregatesParents() started.
+◇ Test keepRulesAndCloneFamiliesAreDeterministic() started.
+◇ Test unorderedUsageLinksNestedParentsAndLexicalHardLinkOwner() started.
+◇ Test manifestsAcceptGNUAndBSDAndRoundTripOddNames() started.
+◇ Test groupsNeedExclusiveVerifiedEntitlements() started.
+◇ Test otherInstalledCopyAndAmbiguousNamesAreKept() started.
+◇ Test wholeIdentifiersAndNamesOnly() started.
+✔ Test keepRulesAndCloneFamiliesAreDeterministic() passed after 0.001 seconds.
+✔ Test treemapPreservesAreaAndBounds() passed after 0.001 seconds.
+✔ Test otherInstalledCopyAndAmbiguousNamesAreKept() passed after 0.001 seconds.
+✔ Test usageCountsHardLinksOnlyOnceAndAggregatesParents() passed after 0.001 seconds.
+✔ Test unorderedUsageLinksNestedParentsAndLexicalHardLinkOwner() passed after 0.001 seconds.
+✔ Test wholeIdentifiersAndNamesOnly() passed after 0.001 seconds.
+✔ Test standardHashVectorsAndIncrementalUpdates() passed after 0.001 seconds.
+✔ Test groupsNeedExclusiveVerifiedEntitlements() passed after 0.001 seconds.
+✔ Suite AppCleanupRulesTests passed after 0.001 seconds.
+✔ Test manifestsAcceptGNUAndBSDAndRoundTripOddNames() passed after 0.003 seconds.
+✔ Suite DiskUtilityCoreTests passed after 0.003 seconds.
+✔ Test run with 9 tests in 2 suites passed after 0.003 seconds.
