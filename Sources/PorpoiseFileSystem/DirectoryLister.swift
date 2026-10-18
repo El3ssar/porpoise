@@ -15,9 +15,15 @@ public enum DirectoryLister {
         items.reserveCapacity(entries.count)
         for entry in entries {
             if cancelled() { throw CancellationError() }
-            let url = folder.appendingPathComponent(entry.lastPathComponent)
-            let item = (try? entry.resourceValues(forKeys: FileItem.resourceKeySet)).flatMap { FileItem.load(url, values: $0) } ?? FileItem.load(url)
-            if let item { items.append(item) }
+            let name = entry.lastPathComponent
+            guard let values = try? entry.resourceValues(forKeys: FileItem.resourceKeySet), let isDirectory = values.isDirectory,
+                values.isSymbolicLink == false
+            else {
+                if let item = FileItem.load(folder.appendingPathComponent(name)) { items.append(item) }
+                continue
+            }
+            // Told whether it's a folder, the URL doesn't stat the entry again to find out.
+            if let item = FileItem.load(folder.appendingPathComponent(name, isDirectory: isDirectory), values: values) { items.append(item) }
         }
         return items
     }
