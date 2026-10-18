@@ -308,7 +308,7 @@ import Testing
             keys == [
                 "startup", "homeURL", "fullPathTitle", "appLibraryView", "appLibraryIconSize", "filterBar", "alwaysTabBar", "tabClose", "tabStyle",
                 "tabsAtEnd", "closeSplit", "splitStartup", "singleWindow", "pvImages", "pvVideos", "pvDocs", "pvText", "pvFonts",
-                "pvFolders", "pvMax", "pvRemote", "statusBar2", "zoomSlider2", "editableUrl", "fullPathUrl", "confirmTrash",
+                "pvFolders", "pvMax", "pvRemote", "statusBar2", "zoomSlider2", "editableUrl", "fullPathUrl", "confirmTrash", "reviewAppLeftovers",
                 "confirmDelete", "confirmEmptyTrash", "confirmCloseTabs", "confirmTerminal", "confirmOpenMany",
                 "confirmRenameType", "confirmRenameHide", "confirmTerminals", "execAction", "appearance", "perFolder", "selectionMarker",
                 "renameInline", "toolTips", "autoExpand", "dblClickBg2", "dynamicView", "browseArchives", "allExtensions",

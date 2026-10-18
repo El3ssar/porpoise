@@ -188,6 +188,7 @@ extension AppDelegate {
         tools.addItem(mi("Disk Usage…", #selector(W.showDiskUsage(_:)), icon: "drive-harddisk"))
         tools.addItem(mi("Find Duplicates…", #selector(W.showDuplicates(_:)), icon: "edit-copy"))
         tools.addItem(mi("Compress", #selector(W.compress(_:)), icon: "archive-insert"))
+        tools.addItem(mi("Remove App and Leftovers…", #selector(W.removeAppAndLeftovers(_:)), icon: "trash-empty"))
         tools.addItem(mi("Empty Trash", #selector(W.emptyTrash(_:)), K.backspace, [.command, .shift], icon: "trash-empty"))
         main.addItem(.submenu("Tools", icon: nil, tools))
 

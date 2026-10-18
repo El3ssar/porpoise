@@ -221,6 +221,7 @@ final class SettingsWindowController: SecondaryWindowController {
             f.note("Copy, move, paste and drop use this comparison when resolving name clashes.")
             f.section("Ask for confirmation when")
             f.check("Moving files or folders to the Trash", s.confirmTrash) { s.confirmTrash = $0 }
+            f.check("Moving an app to the Trash: review its leftover files", s.reviewAppLeftovers) { s.reviewAppLeftovers = $0 }
             f.check("Deleting files or folders", s.confirmDelete) { s.confirmDelete = $0 }
             f.check("Emptying the Trash", s.confirmEmptyTrash) { s.confirmEmptyTrash = $0 }
             f.check("Renaming changes a file's type", s.confirmRenameType) { s.confirmRenameType = $0 }

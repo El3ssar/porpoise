@@ -171,6 +171,9 @@ extension MainWindowController {
         }
         m.addItem(.separator())
         m.addItem(self.item("Move to Trash", "user-trash", #selector(moveToTrash(_:))))
+        if sel.contains(where: { FileOperationsController.isApplication($0.url) }) {
+            m.addItem(self.item("Remove App and Leftovers…", "trash-empty", #selector(removeAppAndLeftovers(_:))))
+        }
         // ⇧ turns Move to Trash into Delete (Settings › Context Menu can show it permanently).
         let del = self.item("Delete", "edit-delete", #selector(deleteItem(_:)), mods: .shift)
         del.isAlternate = true
