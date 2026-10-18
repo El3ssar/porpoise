@@ -341,8 +341,6 @@ public actor CloudOfflineStore {
         guard writeScheduled, !invalidated, FileManager.default.fileExists(atPath: directory.path) else { return }
         try? write()
     }
-    /// Writes a pending index now (tests).
-    func flush() throws { if writeScheduled { try write() } }
 }
 
 /// APFS clones retain independent inodes and copy-on-write bytes. Other filesystems get an ordinary copy.
