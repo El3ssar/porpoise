@@ -7,9 +7,15 @@ service is needed.
 
 ## Create and configure the application
 
-1. In the [Microsoft Entra admin center](https://entra.microsoft.com), open **Applications → App registrations → New
-   registration**. App registrations live in an Entra tenant (directory). Whether a tenant is available to you at no
-   cost is a decision to check before registering, as Porpoise's policy is not to depend on paid services.
+1. Get a Microsoft Entra tenant. Microsoft no longer lets an application be registered outside a directory: a
+   personal Microsoft account needs a tenant first ([Create a Microsoft Entra tenant](https://learn.microsoft.com/entra/identity-platform/quickstart-create-new-tenant)).
+   - If the account already has one (through Microsoft 365 or Azure), sign in to the
+     [Microsoft Entra admin center](https://entra.microsoft.com): the tenant's name shows under your account name.
+   - Otherwise create a [free Azure account](https://azure.microsoft.com/pricing/purchase-options/azure-account), which
+     comes with a tenant on the Entra ID Free tier. Registering an application and signing users in to it cost
+     nothing, and Porpoise uses no paid Azure resource. Sign-up verifies identity by phone and card; whether that is
+     acceptable is the operator's decision.
+   Then open **Entra ID → App registrations → New registration**, and name the application (for example "Porpoise").
 2. Choose **Accounts in any organizational directory and personal Microsoft accounts** (sign-in audience
    `AzureADandPersonalMicrosoftAccount`). Porpoise signs in through the `common` endpoint, so both kinds of account work.
 3. Add the redirect URI under the **Mobile and desktop applications** platform:
@@ -48,8 +54,10 @@ Porpoise resolves the first nonblank value in this order:
 3. `OneDriveClientID` in the app's Info.plist.
 
 Values are trimmed. Without a resolved ID the OneDrive tile stays **Coming soon**. To embed the ID in a local build,
-use `PORPOISE_ONEDRIVE_CLIENT_ID='…' scripts/make-app.sh` or the git-ignored `.onedrive-client-id` file. The release
-workflow does not pass one yet; that is a separate, operator-approved change.
+use `PORPOISE_ONEDRIVE_CLIENT_ID='…' scripts/make-app.sh` or the git-ignored `.onedrive-client-id` file. For releases,
+set the repository Actions secret `ONEDRIVE_CLIENT_ID`; `release.yml` passes it as `PORPOISE_ONEDRIVE_CLIENT_ID` and
+checks that the bundle carries it. It is the public application ID, never a secret value. An unset secret leaves
+OneDrive unavailable in that release.
 
 ## What the engine does on the wire
 
