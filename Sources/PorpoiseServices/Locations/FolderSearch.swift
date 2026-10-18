@@ -31,13 +31,14 @@ final class FolderSearch: @unchecked Sendable {
     private let lock = NSLock()
     private var processes: [Process] = []
     private var running = 0
-    private var seen: Set<String> = []
     private var found: [FileItem] = []
     /// The first line containing the text, for each file found by its contents.
     private var snippets: [URL: String] = [:]
     private var flushPending = false
     /// Folders known to be packages (or not), so each is asked once.
     private var isPackage: [String: Bool] = [:]
+    /// The scope's real path, resolved once, off the main thread (it was resolved again for every path fd printed).
+    private var canonicalScope: String?
     private var stopped = false
     /// A tool couldn't start, or was killed: what it would have found is missing, so the search isn't over.
     private var failed = false
@@ -129,9 +130,17 @@ final class FolderSearch: @unchecked Sendable {
         if last { DispatchQueue.main.async { [self] in finish() } }
     }
 
-    /// Loads the new paths (here, off the main thread) and schedules a batch.
+    /// Loads the new paths (here, off the main thread) and schedules a batch. fd prints each path once.
     private func add(_ paths: [String]) {
-        let new = lock.withLock { paths.filter { !$0.isEmpty && seen.insert($0).inserted } }.filter { !isInsidePackage($0) }
+        // The reader thread runs until fd is done: what Foundation autoreleases goes after each chunk.
+        autoreleasepool { addChunk(paths) }
+    }
+
+    private func addChunk(_ paths: [String]) {
+        // The name is checked first: the package check resolves the path, and fd prints every entry in the scope.
+        let new = paths.filter {
+            !$0.isEmpty && (spec.contents || spec.nameMatches(($0 as NSString).lastPathComponent)) && !isInsidePackage($0)
+        }
         var items: [FileItem] = []
         var lines: [URL: String] = [:]
         let available = lock.withLock { max(0, limit - found.count) }
@@ -167,7 +176,7 @@ final class FolderSearch: @unchecked Sendable {
     static func lines(in paths: [String], spec: SearchSpec) -> [String: String] {
         var out: [String: String] = [:]
         for path in paths {
-            guard let value = IndexFileText.read(path, limit: 5_000_000),
+            guard let value = autoreleasepool(invoking: { IndexFileText.read(path, limit: 5_000_000) }),
                 let line = value.split(separator: "\n", omittingEmptySubsequences: false).first(where: { spec.contentMatches(String($0)) })
             else { continue }
             out[path] = snippet(String(line), around: spec.text)
@@ -190,7 +199,14 @@ final class FolderSearch: @unchecked Sendable {
     /// Whether `path` is inside an app or another package below the scope: those are single items (as in Finder),
     /// and their insides aren't results. The package itself is, when its name matches.
     private func isInsidePackage(_ path: String) -> Bool {
-        let root = FilePath.canonical(scope.path), resolved = FilePath.canonical(path)
+        let root =
+            lock.withLock { canonicalScope }
+            ?? {
+                let root = FilePath.canonical(scope.path)
+                lock.withLock { canonicalScope = root }
+                return root
+            }()
+        let resolved = FilePath.canonical(path)
         guard resolved != root, FilePath.contains(path: resolved, in: root) else { return false }
         var dir = (resolved as NSString).deletingLastPathComponent
         while dir.count > root.count, dir.hasPrefix(root) {
