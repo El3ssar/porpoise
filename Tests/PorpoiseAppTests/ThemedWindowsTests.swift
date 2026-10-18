@@ -31,11 +31,81 @@ import Testing
         #expect(custom.textColor == .systemRed)  // given on purpose
         #expect(field.textColor == Theme.viewText && field.backgroundColor?.usingColorSpace(.sRGB) == Theme.fieldBackground.usingColorSpace(.sRGB))
         let accent = try #require(Theme.accent.usingColorSpace(.sRGB))
-        #expect(check.bezelColor?.usingColorSpace(.sRGB) == accent && segments.selectedSegmentBezelColor?.usingColorSpace(.sRGB) == accent)
+        #expect(check.image is ChoiceImage && check.alternateImage is ChoiceImage)
+        #expect(segments.selectedSegmentBezelColor?.usingColorSpace(.sRGB) == accent)
         #expect(check.attributedTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == Theme.windowText)
         #expect(push.bezelColor == nil)  // only the default button takes the accent
         #expect(!table.usesAlternatingRowBackgroundColors)
         #expect(Theme.isChoice(check) && Theme.isChoice(NSButton(radioButtonWithTitle: "R", target: nil, action: nil)) && !Theme.isChoice(push))
+    }
+
+    /// Checkboxes and radio buttons, header rows and Settings' tabs are drawn in the palette (macOS ignores our accent on
+    /// them), and stay AppKit's controls: the same roles for VoiceOver, the same state.
+    @Test @MainActor func systemDrawnControlsTakeThePalette() throws {
+        let root = NSView()
+        let check = NSButton(checkboxWithTitle: "Check", target: nil, action: nil)
+        check.state = .on
+        let radio = NSButton(radioButtonWithTitle: "Radio", target: nil, action: nil)
+        let table = NSTableView()
+        let column = NSTableColumn(identifier: .init("name"))
+        column.title = "Name"
+        column.sortDescriptorPrototype = NSSortDescriptor(key: "name", ascending: true)
+        table.addTableColumn(column)
+        table.headerView = NSTableHeaderView()
+        for v in [check, radio, table] as [NSView] { root.addSubview(v) }
+
+        Theme.dress(root)
+        Theme.dress(root)  // again, as on a change of palette: nothing is made twice
+
+        let checkImage = try #require(check.image as? ChoiceImage)
+        Theme.dress(root)
+        #expect(check.image === checkImage && radio.image is ChoiceImage && radio.alternateImage is ChoiceImage)
+        #expect(check.cell?.accessibilityRole() == .checkBox && radio.cell?.accessibilityRole() == .radioButton && check.state == .on)
+        #expect(table.headerView is ThemedHeaderView && column.headerCell is ThemedHeaderCell && column.headerCell.stringValue == "Name")
+
+        // Each box draws, off and on, in the palette.
+        for radio in [false, true] {
+            for on in [false, true] {
+                let cg = try #require(ChoiceImage(radio: radio, on: on).cgImage(forProposedRect: nil, context: nil, hints: nil))
+                let rep = NSBitmapImageRep(cgImage: cg)
+                let middle = try #require(rep.colorAt(x: rep.pixelsWide / 2, y: rep.pixelsHigh / 2)?.usingColorSpace(.sRGB))
+                #expect(middle.alphaComponent > 0.9)
+            }
+        }
+
+        // A pop-up keeps its menu, selection and handler when it starts drawing in the palette.
+        var chosen = -1
+        let popUp = ClosurePopup { chosen = $0.indexOfSelectedItem }
+        popUp.addItems(withTitles: ["A", "B", "C"])
+        popUp.selectItem(at: 2)
+        root.addSubview(popUp)
+        Theme.dress(root)
+        Theme.dress(root)
+        #expect(popUp.cell is ThemedPopUpButtonCell && popUp.numberOfItems == 3 && popUp.indexOfSelectedItem == 2)
+        popUp.selectItem(at: 1)
+        popUp.sendAction(popUp.action, to: popUp.target)
+        #expect(chosen == 1 && popUp.cell?.accessibilityRole() == .popUpButton)
+
+        let tabs = ThemedTabViewController()
+        tabs.tabStyle = .toolbar
+        for (title, symbol) in [("One", "folder"), ("Two", "keyboard")] {
+            let item = NSTabViewItem(viewController: NSViewController())
+            item.viewController?.view = NSView()
+            item.label = title
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+            tabs.addTabViewItem(item)
+        }
+        let window = NSWindow(contentViewController: tabs)
+        window.isReleasedWhenClosed = false
+        let buttons = tabs.tabButtons
+        #expect(buttons.map(\.title) == ["One", "Two"])
+        #expect(buttons.map(\.isSelected) == [true, false])
+        #expect(buttons.allSatisfy { $0.accessibilityRole() == .radioButton && $0.accessibilityLabel() == $0.title })
+        buttons[1].performClick(nil)  // as a click, the keyboard or the » menu does
+        #expect(tabs.selectedTabViewItemIndex == 1 && buttons.map(\.isSelected) == [false, true])
+        #expect(buttons[1].accessibilityValue() as? Int == 1)
+        #expect(window.toolbar?.items.allSatisfy { $0.menuFormRepresentation?.title == $0.label } == true)
+        window.close()
     }
 
     @Test @MainActor func onlyTheAppsSecondaryWindowsAreDressed() {
