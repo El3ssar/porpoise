@@ -196,7 +196,11 @@ import Testing
         let downloaded = try await client.download(copy)
         #expect(try Data(contentsOf: downloaded) == bytes)
         let ranges = try await stats()["copyRanges"] as? [[Int]] ?? []
-        #expect(ranges == Array(repeating: [[0, (5 << 20) - 1], [5 << 20, (9 << 20) - 1]], count: 3).flatMap { $0 })
+        let part: Int = 5 << 20
+        let end: Int = 9 << 20
+        let perCopy: [[Int]] = [[0, part - 1], [part, end - 1]]
+        let expected: [[Int]] = perCopy + perCopy + perCopy
+        #expect(ranges == expected)
         try await configure(["changeCopySource": true])
         do {
             try await client.copy(copy, to: "failed.bin")
