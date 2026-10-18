@@ -164,6 +164,30 @@ struct ActivityTests {
         #expect(c.journals.all().isEmpty)
     }
 
+    /// A journal is begun without the caller waiting for its sources to be looked at or the file written; what follows
+    /// (the job's checkpoints, its removal, a read) still comes after it.
+    @Test func journalsAreWrittenOffTheCallersThreadInOrder() throws {
+        let store = JournalStore(folder: s.path("ordered-journals"))
+        let source = try s.file("ordered/a.txt", "a")
+        let target = s.path("ordered-out/a.txt")
+        let id = UUID(), gone = UUID()
+        let started = Date()
+        store.begin {
+            Thread.sleep(forTimeInterval: 0.3)  // many sources
+            return JobJournal(id: id, kind: .copy, sources: [source], destination: target.deletingLastPathComponent())
+        }
+        #expect(Date().timeIntervalSince(started) < 0.2)
+        store.record(.placed(index: 0, target: target), id: id)  // as the job's worker does, right away
+        store.begin { JobJournal(id: gone, kind: .copy, sources: [source], destination: nil) }
+        store.remove(gone)  // a queued job cancelled before it was written
+        let journals = store.all()
+        #expect(journals.map(\.id) == [id])
+        #expect(journals.first?.items.first?.state == .placed)
+        store.remove(id)
+        store.flush()
+        #expect(((try? FileManager.default.contentsOfDirectory(atPath: s.path("ordered-journals").path)) ?? []).isEmpty)
+    }
+
     // MARK: Queue, pause, retry
 
     @Test func copiesQueueBehindTheConcurrencyLimit() async throws {

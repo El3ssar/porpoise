@@ -88,7 +88,9 @@ public struct JobJournal: Codable, Equatable, Sendable {
 /// The journals on disk (Application Support/Porpoise/Jobs). Thread-safe: jobs write from their own threads.
 public final class JournalStore: @unchecked Sendable {
     public let folder: URL
-    private let lock = NSLock()
+    /// Every read and write, in the order they were asked for: a journal begun from the main thread is written here, not
+    /// there, and a job's checkpoints, its removal and a later read still follow it.
+    private let queue = DispatchQueue(label: "app.porpoise.jobs.journal", qos: .userInitiated)
     private var handles: [UUID: FileHandle] = [:]
 
     public init(folder: URL) { self.folder = folder }
@@ -110,7 +112,7 @@ public final class JournalStore: @unchecked Sendable {
     /// Append small checkpoints instead of re-encoding the entire source list for every completed file.
     /// The baseline remains compatible with existing version-1 journals; replay occurs under the same lock.
     public func record(_ event: JobEvent, id: UUID) {
-        lock.withLock {
+        queue.sync {
             guard FileManager.default.fileExists(atPath: url(id).path) else { return }
             let fingerprint: JobJournal.Fingerprint?
             if case .copied(_, let point) = event { fingerprint = JobJournal.Fingerprint(point.staging) } else { fingerprint = nil }
@@ -140,18 +142,31 @@ public final class JournalStore: @unchecked Sendable {
     }
 
     public func save(_ journal: JobJournal) {
-        lock.withLock {
-            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            let enc = JSONEncoder()
-            enc.outputFormatting = [.sortedKeys]
-            try? handles.removeValue(forKey: journal.id)?.close()
-            try? enc.encode(journal).write(to: url(journal.id), options: .atomic)
-            try? FileManager.default.removeItem(at: eventsURL(journal.id))
-        }
+        queue.sync { write(journal) }
+    }
+
+    /// Begins a job's journal without waiting: `make` (which looks at every source) runs and the journal is written on the
+    /// journal's queue, before the job's first checkpoint, its removal or any read.
+    public func begin(_ make: @escaping @Sendable () -> JobJournal) {
+        queue.async { self.write(make()) }
+    }
+
+    /// Waits until every journal asked for is written (before quitting).
+    public func flush() {
+        queue.sync {}
+    }
+
+    private func write(_ journal: JobJournal) {
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        try? handles.removeValue(forKey: journal.id)?.close()
+        try? enc.encode(journal).write(to: url(journal.id), options: .atomic)
+        try? FileManager.default.removeItem(at: eventsURL(journal.id))
     }
 
     public func remove(_ id: UUID) {
-        lock.withLock {
+        queue.async { [self] in
             try? handles.removeValue(forKey: id)?.close()
             try? FileManager.default.removeItem(at: url(id))
             try? FileManager.default.removeItem(at: eventsURL(id))
@@ -160,7 +175,7 @@ public final class JournalStore: @unchecked Sendable {
 
     /// Every journal that can be read (newer versions and damaged files are left alone).
     public func all() -> [JobJournal] {
-        lock.withLock {
+        queue.sync {
             let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
             return files.filter { $0.pathExtension == "json" }.compactMap { u in
                 guard let d = try? Data(contentsOf: u), let j = try? JSONDecoder().decode(JobJournal.self, from: d),

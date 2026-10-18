@@ -46,8 +46,8 @@ public final class Activity: Identifiable {
     public var fraction: Double { progress?.fraction ?? 0 }
     /// Starts it (queued jobs wait for a free slot).
     var start: (() -> Void)?
-    /// The journal kept while it runs, for resuming after a relaunch (local jobs).
-    var journal: JobJournal?
+    /// Whether a journal is kept while it runs (under its id), for resuming after a relaunch (local jobs).
+    var isJournaled = false
     /// Where each completed top-level item went (for verification).
     var placed: [Int: URL] = [:]
     /// Copies and moves wait their turn; trashing, deleting and links start at once.
@@ -131,16 +131,23 @@ extension FileOperationsController {
     func enqueue(_ activity: Activity) {
         activities.append(activity)
         if let job = activity.job, activity.isQueued || activity.kind == .delete || activity.kind == .trash {
-            var journal = JobJournal(id: activity.id, kind: activity.kind, sources: activity.sources, destination: activity.destination)
-            // Items resumed from an earlier journal keep their partial copies.
-            for (i, item) in journal.items.enumerated() {
-                if let point = job.resumePoints[item.source] {
-                    journal.items[i].staging = point.staging
-                    journal.items[i].offset = point.offset
+            // Looking at every source and writing the journal waits for nothing here: it happens on the journal's queue.
+            let (id, kind, sources, destination) = (activity.id, activity.kind, activity.sources, activity.destination)
+            let resumePoints = job.resumePoints
+            let created = Date()
+            activity.isJournaled = true
+            journals.begin {
+                var journal = JobJournal(id: id, kind: kind, sources: sources, destination: destination)
+                journal.created = created
+                // Items resumed from an earlier journal keep their partial copies.
+                for (i, item) in journal.items.enumerated() {
+                    if let point = resumePoints[item.source] {
+                        journal.items[i].staging = point.staging
+                        journal.items[i].offset = point.offset
+                    }
                 }
+                return journal
             }
-            activity.journal = journal
-            journals.save(journal)
         }
         if !isInterrupting && (!activity.isQueued || runningQueued < concurrency) {
             activity.start?()
@@ -196,7 +203,7 @@ extension FileOperationsController {
         if activity.control.isInterrupted {
             activity.state = .interrupted  // the journal stays, for next time
         } else {
-            activity.journal.map { journals.remove($0.id) }
+            if activity.isJournaled { journals.remove(activity.id) }
             if activity.control.isCancelled {
                 activity.state = .cancelled
             } else if !errors.isEmpty && (job?.results.isEmpty ?? activity.remoteResults.isEmpty) && activity.kind != .delete
@@ -282,7 +289,7 @@ extension FileOperationsController {
         switch activity.state {
         case .queued:
             activities.removeAll { $0 === activity }
-            activity.journal.map { journals.remove($0.id) }
+            if activity.isJournaled { journals.remove(activity.id) }
             activityDidChange()
         default:
             activity.control.cancel()
@@ -334,5 +341,8 @@ extension FileOperationsController {
         }) && Date() < end {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
+        // Every queued and interrupted job's journal, and every ended job's entry, is on disk before the app goes.
+        journals.flush()
+        history.flush()
     }
 }
