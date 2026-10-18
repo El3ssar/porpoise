@@ -1,14 +1,24 @@
 name: CI
 on:
   push:
-    branches: [main]
+    branches: [main, 'ci/**']
+    paths-ignore: ['CHANGELOG.md', 'CONTRIBUTING.md', 'README.md', 'docs/**']
   pull_request:
+  workflow_dispatch:
+    inputs:
+      release_benchmark:
+        description: 'Only benchmark release packaging (ad hoc signing, no secrets or publication)'
+        type: boolean
+        default: false
 # A newer push to the same branch or pull request makes an older run pointless: cancel it instead of queueing.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ inputs.release_benchmark && 'packaging' || 'checks' }}
   cancel-in-progress: true
+permissions:
+  contents: read
 jobs:
-  build-and-test:
+  tests:
+    if: ${{ !inputs.release_benchmark }}
     runs-on: macos-26
     timeout-minutes: 40
     steps:
@@ -19,22 +29,22 @@ jobs:
       # last commit, then restore the previous run's .build: only what changed since is compiled again.
       - name: Restore file times
         uses: chetan/git-restore-mtime-action@d186aca54f8760da4dec55313195e51ed3ebb0b3 # v2
+      - name: Toolchain identity
+        id: toolchain
+        run: echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Restore build cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .build
-          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ github.sha }}
-          restore-keys: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-
+          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-tests-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ github.sha }}
+          restore-keys: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-tests-${{ hashFiles('Package.resolved', 'Package.swift') }}-
       - name: Workflow integrity
-        run: python3 scripts/test-workflow-pins.py
+        run: python3 scripts/test-workflow-pins.py && python3 scripts/test-ci-proof.py
       - name: Format
         run: swift format lint --strict -r Sources/PorpoiseCore Sources/PorpoiseFileSystem Sources/PorpoiseHelperKit Sources/PorpoiseServices Sources/Porpoise Sources/PorpoiseHelper Tests
       # The committed helper is rebuilt whenever what it's built from changes, and has no home folder paths in it.
       - name: Helper is current
         run: scripts/build-helper.sh --check
-      # The app as released (the test support targets use @testable imports, which only build in debug).
-      - name: Build
-        run: swift build -c release --product Porpoise
       # The ffmpeg Porpoise ships, for the video preview tests (cached with the release workflow's).
       - name: ffmpeg source identity
         id: ffmpeg-source
@@ -57,3 +67,84 @@ jobs:
         run: scripts/test-with-watchdog.sh --enable-code-coverage
       - name: Coverage of the logic layers
         run: python3 scripts/coverage.py --min 92
+
+  # The optimized shipping compile and the entire instrumented test suite use independent runners.
+  shipping-build:
+    if: ${{ !inputs.release_benchmark }}
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Restore file times
+        uses: chetan/git-restore-mtime-action@d186aca54f8760da4dec55313195e51ed3ebb0b3 # v2
+      - name: Toolchain identity
+        id: toolchain
+        run: echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Restore shipping build cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .build
+          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
+          restore-keys: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-
+      # Match make-app.sh's release compiler flags, including removal of build-machine paths.
+      - name: Build shipping app
+        run: swift build -c release --arch arm64 -Xswiftc -file-prefix-map -Xswiftc "$PWD=." -Xcc "-ffile-prefix-map=$PWD=." --product Porpoise
+
+  # Preserve the existing required-check name: it must cover both parallel jobs.
+  build-and-test:
+    if: always() && !inputs.release_benchmark
+    needs: [tests, shipping-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI gate
+        env:
+          TESTS: ${{ needs.tests.result }}
+          SHIPPING: ${{ needs.shipping-build.result }}
+        run: test "$TESTS" = success && test "$SHIPPING" = success
+
+  # Explicitly requested timing probe: production build flags and DMG scans, without publishing or credentials.
+  release-benchmark:
+    if: github.event_name == 'workflow_dispatch' && inputs.release_benchmark
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Restore file times
+        uses: chetan/git-restore-mtime-action@d186aca54f8760da4dec55313195e51ed3ebb0b3 # v2
+      - name: Toolchain identity
+        id: toolchain
+        run: echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Restore shipping build cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .build
+          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
+          restore-keys: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-
+      - name: ffmpeg source identity
+        id: ffmpeg-source
+        run: echo "sha=$(scripts/build-ffmpeg.sh --source-sha)" >> "$GITHUB_OUTPUT"
+      - name: Restore ffmpeg
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            build/ffmpeg/ffmpeg
+            build/ffmpeg/ffmpeg.sha256
+            build/ffmpeg-src/ffmpeg-*/COPYING.*
+          key: ffmpeg-verified-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-source.outputs.sha }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      - name: Verify or build ffmpeg
+        run: scripts/build-ffmpeg.sh
+      - name: Build app and disk image
+        env:
+          PORPOISE_RELEASE: '1'
+          PORPOISE_VERSION: '0.0.0'
+        run: |
+          scripts/make-app.sh
+          codesign --verify --deep --strict build/Porpoise.app
+          scripts/make-dmg.sh --no-build
+      - name: Check disk image
+        run: scripts/check-release.sh build/Porpoise-0.0.0.dmg
