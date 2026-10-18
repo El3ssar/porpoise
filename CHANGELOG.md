@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.5
 
 - **Google Drive saves edits in place.** A file opened from Google Drive in another app now goes back to Drive as a new version of the same file each time you save, as with Dropbox; the "Save as a Copy in Google Drive" step is gone. If the file changed in Drive meanwhile, nothing is overwritten: both versions are kept and Activity offers Keep Both, Open Both or Replace with Mine.
 
