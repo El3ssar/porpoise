@@ -164,4 +164,32 @@ import Testing
         #expect(job.errors.isEmpty, "\(job.errors)")
         #expect(job.progress.skippedIdenticalItems == 1, "\(job.progress) \(job.results)")
     }
+
+    @MainActor private func oneDriveFolder() async throws -> (URL, () -> Void) {
+        Settings.store.set("fixture-client", forKey: "oneDriveClientID")
+        let fixture = try OneDriveParityTests.Fixture()
+        let account = try await fixture.store.connect(openBrowser: openInFakeBrowser)
+        _ = fixture.backend.accounts
+        let folder = OneDriveLocation(accountID: account.id, itemID: "FIXTURE!folder", driveID: account.driveID).url
+        return (folder, { fixture.cleanup(); _ = fixture.server })
+    }
+
+    @MainActor @Test func oneDriveRunsTheSameConflictCases() async throws {
+        let (folder, cleanup) = try await oneDriveFolder(); defer { cleanup() }
+        let provider = try #require(RemoteFS.provider(for: folder))
+        let source = try #require(try await offThePool { try provider.list(folder).first { $0.name == "nested.txt" } })
+        try await Self.exerciseRules(source: source, bytes: Data("Nested fixture.".utf8), scratch: Scratch())
+    }
+
+    // Identical files skipped in OneDrive are counted, as everywhere else.
+    @MainActor @Test func oneDriveCountsIdenticalFilesItSkips() async throws {
+        let (folder, cleanup) = try await oneDriveFolder(); defer { cleanup() }
+        let scratch = try Scratch(), local = scratch.url.appendingPathComponent("nested.txt")
+        try Data("Nested fixture.".utf8).write(to: local)
+        let job = RemoteTransferJob(
+            kind: .copy, sources: [local], destination: folder, control: JobControl(), rule: .different, options: .init(method: .content))
+        await offThePool { job.run() }
+        #expect(job.errors.isEmpty, "\(job.errors)")
+        #expect(job.progress.skippedIdenticalItems == 1, "\(job.progress) \(job.results)")
+    }
 }
