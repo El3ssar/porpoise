@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Unpacked archives show up in Porpoise.** With Porpoise as the default file browser, opening a zip (from the Dock's Downloads stack, say) lands Porpoise in its folder with the unpacked item selected, whether Porpoise was running or not, instead of showing the home folder or the last session. Archive Utility doesn't tell other file browsers what it unpacked, so Porpoise looks for what was just added next to the archive.
+
 ## 0.9.0
 
 - **Box is on its way.** The Box connection is built and tested, and shows as Coming soon until its app registration is in place (see docs/box/SETUP.md).
