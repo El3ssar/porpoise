@@ -76,6 +76,9 @@ public enum RemoteFS {
         if provider != nil, let location = DropboxLocation(url: root) {
             CloudTransferJournal.allow(account: "dropbox:" + location.accountID.uuidString.lowercased())
         }
+        if provider != nil, let location = OneDriveLocation(url: root) {
+            CloudTransferJournal.allow(account: "onedrive:" + location.accountID.uuidString.lowercased())
+        }
         use(provider, for: root)
     }
 

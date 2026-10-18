@@ -27,7 +27,10 @@ extension AppDelegate {
             CloudAccounts.shared.backend = DemoCloudBackend()
         } else {
             CloudAccounts.shared.backend = MainActor.assumeIsolated {
-                CompositeCloudBackend([.googleDrive: DriveCloudBackend(store: .shared), .dropbox: DropboxCloudBackend(store: .shared)])
+                CompositeCloudBackend([
+                    .googleDrive: DriveCloudBackend(store: .shared), .dropbox: DropboxCloudBackend(store: .shared),
+                    .oneDrive: OneDriveCloudBackend(store: .shared),
+                ])
             }
         }
         // Test instances can show offline states set by hand (the bridge's `cloud offline`).

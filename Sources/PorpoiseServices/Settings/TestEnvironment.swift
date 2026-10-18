@@ -8,7 +8,8 @@ import Foundation
 /// them; the release workflow checks the final disk image for that.
 public enum TestEnvironment: CaseIterable, Sendable {
     case defaultsSuite, bridge, testIndexDirectory, resources, templateDir, knownHosts, forceOnboarding, updateFeed
-    case cloudDemo, offlineDemo, cloudBrowser, driveFake, dropboxFake, dropboxAppKey, googleClientID, googleClientSecret
+    case cloudDemo, offlineDemo, cloudBrowser, driveFake, dropboxFake, dropboxAppKey, oneDriveFake, oneDriveClientID, googleClientID,
+        googleClientSecret
     case cleanupApps, cleanupLibrary, transferDelay, transferPreparationDelay, fileDiffReadDelayMs
 
     /// The variable's value in `environment` (the process's own by default); always nil in a release.
@@ -39,6 +40,8 @@ public enum TestEnvironment: CaseIterable, Sendable {
         case .driveFake: "PORPOISE_DRIVE_FAKE"
         case .dropboxFake: "PORPOISE_DROPBOX_FAKE"
         case .dropboxAppKey: "PORPOISE_DROPBOX_APP_KEY"
+        case .oneDriveFake: "PORPOISE_ONEDRIVE_FAKE"
+        case .oneDriveClientID: "PORPOISE_ONEDRIVE_CLIENT_ID"
         case .googleClientID: "PORPOISE_GOOGLE_CLIENT_ID"
         case .googleClientSecret: "PORPOISE_GOOGLE_CLIENT_SECRET"
         case .cleanupApps: "PORPOISE_CLEANUP_APPS"

@@ -92,6 +92,12 @@ public final class CloudEditCoordinator {
         if let location = DriveLocation(url: url), case .folder(let id, _) = location.collection {
             return entries.first { $0.provider == .googleDrive && $0.account == location.accountID && $0.fileID == id }
         }
+        if let location = OneDriveLocation(url: url) {
+            return entries.first {
+                $0.provider == .oneDrive && $0.account == location.accountID && $0.fileID == location.itemID
+                    && OneDriveLocation(url: $0.location)?.driveID == location.driveID
+            }
+        }
         if let location = DropboxLocation(url: url) {
             return entries.first {
                 $0.provider == .dropbox && $0.account == location.accountID && $0.fileID == location.itemID
@@ -142,6 +148,22 @@ public final class CloudEditCoordinator {
                 return try await client.open(client.metadata(entry.fileID))
             })
     }
+    private func oneDrive(_ client: OneDriveClient, file: OneDriveItem? = nil) -> CloudEditBinding {
+        let account = client.accountID, drive = client.driveID
+        return CloudEditBinding(
+            store: client.edits, file: file, account: account, provider: .oneDrive, namespace: drive,
+            offline: { [weak client] in client?.isOffline ?? true }, name: { $0.name },
+            location: { OneDriveLocation(accountID: account, itemID: $0.id, driveID: $0.driveID ?? drive).url },
+            copyPath: { [weak client] file in
+                guard let client, let parent = file.parentID else { throw OneDriveError.reconnect }
+                let files = try await client.list(parent == client.rootID ? "" : parent)
+                return FileFormat.suggestedName(for: file.name, existing: Set(files.map(\.name)))
+            },
+            compare: { [weak client] entry in
+                guard let client else { throw OneDriveError.reconnect }
+                return try await client.open(client.metadata(entry.fileID))
+            })
+    }
     private func binding(_ item: FileItem, checkAccount: Bool = true) -> CloudEditBinding? {
         guard !item.isBrowsableFolder else { return nil }
         if let provider = RemoteFS.provider(for: item.url) as? DriveProvider,
@@ -155,6 +177,12 @@ public final class CloudEditCoordinator {
             (!checkAccount || CloudAccounts.shared.accountDenial(for: item.url) == nil), let client = try? provider.scoped(item.url)
         {
             return dropbox(client, file: file)
+        }
+        if let provider = RemoteFS.provider(for: item.url) as? OneDriveProvider,
+            let file = provider.metadata(item.url), file.revision != nil, file.canDownload,
+            (!checkAccount || CloudAccounts.shared.accountDenial(for: item.url) == nil), let client = try? provider.scoped(item.url)
+        {
+            return oneDrive(client, file: file)
         }
         return nil
     }
@@ -289,6 +317,10 @@ public final class CloudEditCoordinator {
     /// Backend registration is independent of launch recovery; tests may explicitly restore Drive accounts.
     public func restore(_ client: DropboxClient) {
         register(dropbox(client))
+        if restoresAtLaunch { restoreRegistered() }
+    }
+    public func restore(_ client: OneDriveClient) {
+        register(oneDrive(client))
         if restoresAtLaunch { restoreRegistered() }
     }
     private func register(_ binding: CloudEditBinding) {
