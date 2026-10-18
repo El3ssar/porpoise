@@ -1,0 +1,148 @@
+Another instance of SwiftPM (PID: 32916) is already running using '/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build', waiting until that process has finished execution...Building for debugging...
+[Computing dependencies]
+[Using on-disk description]
+[1 / 79]
+[1 / 59]
+[10 / 25] PorpoiseFileSystemTests-product
+[10 / 23] SwiftTerm
+[11 / 28] SwiftTerm
+[13 / 30] SwiftTerm
+[14 / 31] SwiftTerm
+[20 / 32] Porpoise
+[22 / 34] Porpoise-product
+[24 / 36] SwiftTerm
+[26 / 36] SwiftTerm
+[26 / 37] Porpoise
+[26 / 37] Porpoise-product
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Sources/Porpoise/Views/ItemListView+Transition.swift:118:71: warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+116 |     /// false when the change only adds items (nothing to fade out), which is quicker to start.
+117 |     func change(
+118 |         _ kind: TransitionKind, duration: TimeInterval = ItemListView.transitionDuration,
+    |                                                                       `- warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+119 |         curve: @escaping (Double) -> Double = Animator.easeOutCubic, cascade: Bool = false, pictures: Bool = true, _ apply: () -> Void
+120 |     ) {
+    :
+214 | extension ItemListView {
+215 |     /// AppsGridView's glides, until it joins `Motion` (after R-9).
+216 |     static let transitionDuration = Motion.glide
+    |                `- note: static property declared here
+217 |     /// Beyond this many rows a change is shown at once: every frame would draw a large view.
+218 |     private static let maxAnimatedRows = 3000
+[26 / 37] Porpoise
+[27 / 37] Porpoise
+[29 / 38] Porpoise
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Sources/Porpoise/Views/ItemListView+Transition.swift:118:71: warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+116 |     /// false when the change only adds items (nothing to fade out), which is quicker to start.
+117 |     func change(
+118 |         _ kind: TransitionKind, duration: TimeInterval = ItemListView.transitionDuration,
+    |                                                                       `- warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+119 |         curve: @escaping (Double) -> Double = Animator.easeOutCubic, cascade: Bool = false, pictures: Bool = true, _ apply: () -> Void
+120 |     ) {
+    :
+214 | extension ItemListView {
+215 |     /// AppsGridView's glides, until it joins `Motion` (after R-9).
+216 |     static let transitionDuration = Motion.glide
+    |                `- note: static property declared here
+217 |     /// Beyond this many rows a change is shown at once: every frame would draw a large view.
+218 |     private static let maxAnimatedRows = 3000
+[29 / 38] Porpoise-product
+[33 / 42] Porpoise-product
+[34 / 42] Porpoise-product
+[35 / 42] Porpoise-product
+[38 / 44] PorpoiseAppTests-product
+[41 / 45] PorpoiseAppTests-product
+[45 / 47] PorpoiseAppTests-product
+Build complete! (55,31 sec)
+Keychain denial tripwire active pid=65509
+Keychain denial tripwire active pid=65509
+Another instance of SwiftPM (PID: 60150) is already running using '/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/.build', waiting until that process has finished execution...warning: 'porpoise-perfdisk': Keychain denial tripwire active pid=85948
+Keychain denial tripwire active pid=85948
+Keychain denial tripwire active pid=85980
+Keychain denial tripwire active pid=86001
+Keychain denial tripwire active pid=86003
+warning: 'swiftterm': Keychain denial tripwire active pid=86110
+Keychain denial tripwire active pid=86110
+Keychain denial tripwire active pid=86139
+Keychain denial tripwire active pid=86154
+Keychain denial tripwire active pid=86156
+warning: 'sparkle': Keychain denial tripwire active pid=86112
+Keychain denial tripwire active pid=86112
+Keychain denial tripwire active pid=86137
+Keychain denial tripwire active pid=86200
+Keychain denial tripwire active pid=86202
+Building for debugging...
+[Computing dependencies]
+[Using on-disk description]
+[7 / 75]
+[12 / 81] PorpoiseTestSupport
+[21 / 72] SwiftTerm
+[23 / 74] PorpoiseCore
+[29 / 74] PorpoiseFileSystem
+[31 / 75] PorpoiseFileSystem
+[36 / 74] PorpoiseServices
+[38 / 76] PorpoiseServices
+[38 / 76] SwiftTerm
+[42 / 74] SwiftTerm
+[44 / 74] SwiftTerm
+[44 / 74] PorpoiseServices
+[51 / 77] PorpoiseServices
+[52 / 77] PorpoiseServices
+[54 / 77] PorpoiseServicesTestSupport
+[58 / 69] IndexBenchmark-product
+[58 / 69] PorpoiseServicesTests-product
+[60 / 70] PorpoiseServicesTests-product
+[60 / 71] Porpoise
+[64 / 75] Porpoise
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Sources/Porpoise/Views/ItemListView+Transition.swift:118:71: warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+116 |     /// false when the change only adds items (nothing to fade out), which is quicker to start.
+117 |     func change(
+118 |         _ kind: TransitionKind, duration: TimeInterval = ItemListView.transitionDuration,
+    |                                                                       `- warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+119 |         curve: @escaping (Double) -> Double = Animator.easeOutCubic, cascade: Bool = false, pictures: Bool = true, _ apply: () -> Void
+120 |     ) {
+    :
+214 | extension ItemListView {
+215 |     /// AppsGridView's glides, until it joins `Motion` (after R-9).
+216 |     static let transitionDuration = Motion.glide
+    |                `- note: static property declared here
+217 |     /// Beyond this many rows a change is shown at once: every frame would draw a large view.
+218 |     private static let maxAnimatedRows = 3000
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfdisk/Sources/Porpoise/Views/ItemListView+Transition.swift:118:71: warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+116 |     /// false when the change only adds items (nothing to fade out), which is quicker to start.
+117 |     func change(
+118 |         _ kind: TransitionKind, duration: TimeInterval = ItemListView.transitionDuration,
+    |                                                                       `- warning: main actor-isolated static property 'transitionDuration' can not be referenced from a nonisolated context
+119 |         curve: @escaping (Double) -> Double = Animator.easeOutCubic, cascade: Bool = false, pictures: Bool = true, _ apply: () -> Void
+120 |     ) {
+    :
+214 | extension ItemListView {
+215 |     /// AppsGridView's glides, until it joins `Motion` (after R-9).
+216 |     static let transitionDuration = Motion.glide
+    |                `- note: static property declared here
+217 |     /// Beyond this many rows a change is shown at once: every frame would draw a large view.
+218 |     private static let maxAnimatedRows = 3000
+[70 / 79] Porpoise-product
+[71 / 79] Porpoise-product
+[75 / 81] PorpoiseAppTests-product
+[78 / 82] PorpoiseAppTests-product
+[82 / 84] PorpoiseAppTests-product
+[85 / 85] DriveRecoveryProbe-product
+Build complete! (24,45 sec)
+Keychain denial tripwire active pid=87730
+Keychain denial tripwire active pid=87739
+Keychain denial tripwire active pid=87743
+Keychain denial tripwire active pid=87748
+Keychain denial tripwire active pid=87754
+◇ Test run started.
+↳ Testing Library Version: 2084
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite UtilityPerformanceTests started.
+◇ Test renamePreviewPublishesLatestInputAndStopsOnClose() started.
+◇ Test treemapReusesGeometryUntilBoundsOrItemsChange() started.
+◇ Test presentationCancellationStopsCommonAndChangedRows() started.
+Rename 10000 rows: synchronous preview 1539.0303749591112 ms; 3 input changes scheduled on main 0.18624996300786734 ms
+✔ Test renamePreviewPublishesLatestInputAndStopsOnClose() passed after 2.964 seconds.
+✔ Test treemapReusesGeometryUntilBoundsOrItemsChange() passed after 3.015 seconds.
+✔ Test presentationCancellationStopsCommonAndChangedRows() passed after 3.020 seconds.
+✔ Suite UtilityPerformanceTests passed after 3.020 seconds.
+✔ Test run with 3 tests in 1 suite passed after 3.020 seconds.
