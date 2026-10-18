@@ -60,6 +60,34 @@ struct NameIndexTests {
         nested.append(name: "/parent/search-term/leaf", directory: true)
         #expect(try nested.search(IndexQuery("search-term")).isEmpty)
     }
+    @Test func subtreeCountsWhenEntriesInterleave() {
+        // Added breadth-first, unlike a crawl: a folder's entries aren't one run of ids.
+        var index = NameIndex()
+        let root = index.append(name: "/mixed", directory: true)
+        let a = index.append(name: "a", parent: root, directory: true)
+        let b = index.append(name: "b", parent: root, directory: true)
+        index.append(name: "a1", parent: a)
+        index.append(name: "b1", parent: b)
+        let a2 = index.append(name: "a2", parent: a, directory: true)
+        index.append(name: "a2x", parent: a2)
+        #expect(index.contiguousSubtreeCount(Int(a)) == nil)
+        #expect(index.countUnderPath("/mixed/a") == 4)
+        #expect(index.countUnderPath("/mixed/b") == 2)
+        #expect(index.countUnderPath("/mixed/a/a2") == 2)
+        #expect(index.countUnderPath("/mixed") == 7)
+    }
+    @Test func writtenSnapshotMatchesEncoding() throws {
+        let original = fixture()
+        #expect(original.encoded().count == original.encodedSize)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-test-index-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("a.idx")
+        try original.write(to: file)
+        try original.write(to: file)  // replaces it
+        #expect(try Data(contentsOf: file) == original.encoded())
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["a.idx"])
+    }
     @Test func cancellationAndLimit() throws {
         var index = NameIndex()
         let root = index.append(name: "/fixture", directory: true)

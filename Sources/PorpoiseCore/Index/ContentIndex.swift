@@ -144,14 +144,25 @@ public final class ContentIndex: @unchecked Sendable {
 
     // MARK: Saving
 
-    func encode(into d: inout Data) {
+    func encode(into d: inout Data) { encode { d.append(contentsOf: $0) } }
+
+    /// The encoding, in pieces passed to `emit` in order.
+    func encode(_ emit: (UnsafeRawBufferPointer) -> Void) {
         lock.withLock {
             freeze()
-            NameIndex.put(UInt64(keys.count), &d)
-            NameIndex.put(UInt64(postings.count), &d)
-            keys.withUnsafeBytes { d.append(contentsOf: $0) }
-            offsets.withUnsafeBytes { d.append(contentsOf: $0) }
-            d.append(contentsOf: postings)
+            withUnsafeBytes(of: UInt64(keys.count)) { emit($0) }
+            withUnsafeBytes(of: UInt64(postings.count)) { emit($0) }
+            keys.withUnsafeBytes(emit)
+            offsets.withUnsafeBytes(emit)
+            postings.withUnsafeBytes(emit)
+        }
+    }
+
+    /// Bytes `encode` writes.
+    var encodedSize: Int {
+        lock.withLock {
+            freeze()
+            return 16 + keys.count * 4 + offsets.count * 4 + postings.count
         }
     }
 
