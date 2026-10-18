@@ -78,6 +78,11 @@ public final class S3Provider: RemoteProvider, @unchecked Sendable {
                 try upload(child, folder: folder.replacingKey(key + "/"), ancestors: ancestors)
             }
         } else {
+            if client.location.endpoint.host?.hasSuffix(".r2.cloudflarestorage.com") == true,
+                let size = JobJournal.Fingerprint(local)?.size, size > client.multipartCopyThreshold
+            {
+                throw RemoteError.unsupported("R2 cannot safely publish staged files above 5 GiB. The local source was kept.")
+            }
             let context = transferContext()
             try CloudAwait.run {
                 let existing = try self.client.journal.all().first { $0.kind == "upload" && $0.key == key && $0.localURL == local }

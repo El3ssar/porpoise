@@ -137,11 +137,14 @@ public final class S3Client: @unchecked Sendable {
     func copy(_ object: S3Object, to key: String, replacing revision: String? = nil, context: CloudTransferContext = .init()) async throws {
         try await context.checkpoint()
         guard object.size >= 0, object.size <= 10000 * (5 * 1024 * 1024 * 1024) else { throw S3Error.invalidLocation }
+        let r2 = location.endpoint.host?.hasSuffix(".r2.cloudflarestorage.com") == true
+        if r2 && object.size > multipartCopyThreshold {
+            throw RemoteError.unsupported("R2 does not support source revision conditions on multipart copies. The source was kept.")
+        }
         let occupied = try await exists(key)
         guard (revision != nil || !occupied), try await list(prefix: key + "/", recursive: true).isEmpty else {
             throw RemoteError.exists(key)
         }
-        let r2 = location.endpoint.host?.hasSuffix(".r2.cloudflarestorage.com") == true
         let condition =
             r2
             ? (revision == nil ? "cf-copy-destination-if-none-match" : "cf-copy-destination-if-match")

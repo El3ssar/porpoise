@@ -240,6 +240,23 @@ import Testing
         })
         let client = S3Client(location: location, directory: server.scratch.url, transport: transport)
         try await client.copy(S3Object(key: "source", size: 3, etag: "source-etag"), to: "target")
+        let blocked = S3Client(
+            location: location, directory: server.scratch.url,
+            transport: CloudHTTPTransport(send: { _ in
+                Issue.record("Unsupported R2 multipart copy must not make requests"); throw S3Error.invalidResponse
+            }))
+        do {
+            try await blocked.copy(S3Object(key: "source", size: 6 * 1024 * 1024 * 1024, etag: "source-etag"), to: "target")
+            Issue.record("Expected unsupported R2 source conditions")
+        } catch RemoteError.unsupported(_) {}
+        let scratch = try Scratch(), sparse = try scratch.file("large.bin", "")
+        let handle = try FileHandle(forWritingTo: sparse)
+        try handle.truncate(atOffset: 6 * 1024 * 1024 * 1024); try handle.close()
+        let provider = S3Provider(client: blocked)
+        do {
+            try await offThePool { try provider.upload(sparse, into: location.url) }
+            Issue.record("Expected oversized R2 upload refusal before staging")
+        } catch RemoteError.unsupported(_) {}
     }
     @Test func folderCopyMoveAndInvalidNames() async throws {
         let provider = provider, location = location
