@@ -1,7 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.8.3
 
+- **Server renames and new items never replace what's there.** Renaming or creating an item on a server or cloud account under a name already taken is refused instead of replacing the existing item, and Undo and Redo of those changes go through the server.
+- **The Folders panel and pasted Drive links.** A server's folder tree reloads only when that server changes (it reloaded every server's tree, and listed folders twice), and a pasted Google Drive folder link shows its real parent folders, up to My Drive, a shared drive or the folder shared with you, in the location bar, Properties and the tree.
+- **Search finds the same things everywhere.** A folder search gives the same results whether the folder is indexed or not, with the same operators, accents ignored the same way.
+- **Activity and numbers.** Activity rows and the compact transfer list read the same; sizes, counts and dates follow your language settings everywhere.
+- **Leaner inside.** The app is reorganized into smaller parts with clear boundaries (most of this release is invisible). The privileged helper is rebuilt from its own small part, so macOS asks you once to approve it again.
 - **Every secondary window follows the app theme.** Create From Template, Batch Rename, Customise Toolbar and the Command Palette used the system's colors; they now take the theme's, like Settings and Properties.
 - **Selecting in Applications works like in a folder.** Shift-click selects from the app you last clicked, Shift with the arrow keys selects a range (going back shrinks it again), and Home, End, Page Up and Page Down move through the apps.
 
