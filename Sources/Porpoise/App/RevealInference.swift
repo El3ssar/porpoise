@@ -9,8 +9,10 @@ import UniformTypeIdentifiers
 /// request. (Unsandboxed apps' reveals arrive as 'odoc' with the items, handled by application(_:open:).)
 enum RevealInference {
     static let archiveUtility = "com.apple.archiveutility"
-    /// How long before the request the item may have been added: the request follows right after.
-    static let window: TimeInterval = 30
+    /// How long before a reopen the item may have been added: Archive Utility asks right after moving it in.
+    static let reopenWindow: TimeInterval = 30
+    /// The same at launch, where who asked is unknown: just the time it takes Porpoise to start.
+    static let launchWindow: TimeInterval = 10
 
     /// The app that sent `event`: the running app with the sender's pid, else the one named in the quarantine info
     /// LaunchServices attaches for a sandboxed sender (which may have quit already).
@@ -28,17 +30,13 @@ enum RevealInference {
         guard event.eventClass == AEEventClass(kCoreEventClass), event.eventID == AEEventID(kAEReopenApplication),
             sender(of: event) == archiveUtility
         else { return nil }
-        return recentItem(in: folders, now: now, besideArchive: true) ?? recentItem(in: folders, now: now, besideArchive: false)
+        return unpackedItem(in: folders, now: now, within: reopenWindow)
     }
 
-    /// What a launch without documents asks to reveal. LaunchServices sends the launch, so who asked is unknown: an item
-    /// just added beside an archive just opened, or Archive Utility still running, tells it was Archive Utility.
-    static func launchItem(
-        folders: [URL], archiveUtilityRunning: Bool = !NSRunningApplication.runningApplications(withBundleIdentifier: archiveUtility).isEmpty,
-        now: Date = Date()
-    ) -> URL? {
-        recentItem(in: folders, now: now, besideArchive: true)
-            ?? (archiveUtilityRunning ? recentItem(in: folders, now: now, besideArchive: false) : nil)
+    /// What a launch without documents asks to reveal. LaunchServices sends the launch, so who asked is unknown: only an
+    /// item unpacked seconds ago tells it was Archive Utility.
+    static func launchItem(folders: [URL], now: Date = Date()) -> URL? {
+        unpackedItem(in: folders, now: now, within: launchWindow)
     }
 
     /// Where unpacked items are looked for: Archive Utility's usual places, then the folders Porpoise shows (or showed).
@@ -51,10 +49,10 @@ enum RevealInference {
         return (usual + shown.filter(\.isFileURL)).filter { seen.insert($0.standardizedFileURL.path).inserted }
     }
 
-    /// The item added last to one of `folders`, at most `window` seconds before `now`; with `besideArchive`, only one
-    /// added after an archive in its folder was opened.
-    static func recentItem(in folders: [URL], now: Date = Date(), besideArchive: Bool) -> URL? {
-        let since = now.addingTimeInterval(-window)
+    /// The item added last to one of `folders`, at most `within` seconds before `now`, and only one added after an
+    /// archive next to it was opened (unpacking it); nil when there is none, so nothing is guessed.
+    static func unpackedItem(in folders: [URL], now: Date = Date(), within: TimeInterval) -> URL? {
+        let since = now.addingTimeInterval(-within)
         let keys: Set<URLResourceKey> = [.addedToDirectoryDateKey, .attributeModificationDateKey, .contentTypeKey]
         // Date added; where the volume keeps none, the last metadata change (moving the item in counts).
         func added(_ u: URL) -> Date? {
@@ -72,12 +70,11 @@ enum RevealInference {
             let fresh = items.compactMap { u in added(u).map { (url: u, added: $0) } }
                 .filter { $0.added >= since && $0.added <= now.addingTimeInterval(5) }
             guard let newest = fresh.max(by: { $0.added < $1.added }) else { continue }
-            if besideArchive {
-                // Opened before the item came (up to an hour of unpacking), not after.
-                let opened = items.filter { $0 != newest.url && isArchive($0) }.compactMap(lastUsed)
-                guard opened.contains(where: { $0 <= newest.added.addingTimeInterval(2) && $0 >= newest.added.addingTimeInterval(-3600) })
-                else { continue }
-            }
+            // The archive was opened before the item came (up to an hour of unpacking; 2 s for dates added kept to
+            // the second), not after.
+            let opened = items.filter { $0 != newest.url && isArchive($0) }.compactMap(lastUsed)
+            guard opened.contains(where: { $0 <= newest.added.addingTimeInterval(2) && $0 >= newest.added.addingTimeInterval(-3600) })
+            else { continue }
             if best.map({ newest.added > $0.added }) ?? true { best = newest }
         }
         return best?.url

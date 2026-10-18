@@ -34,13 +34,18 @@ import Testing
         let zip = folder.appendingPathComponent("Photos.zip")
         try Data("PK".utf8).write(to: zip)
         if let date {
-            var ts = timespec(tv_sec: Int(date.timeIntervalSince1970), tv_nsec: 0)
-            #expect(setxattr(zip.path, "com.apple.lastuseddate#PS", &ts, MemoryLayout<timespec>.size, 0, 0) == 0)
+            markOpened(zip, at: date)
             #expect(abs(RevealInference.lastUsed(zip)!.timeIntervalSince(date)) < 1)
         }
         let out = folder.appendingPathComponent("Photos", isDirectory: true)
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
         return out
+    }
+
+    /// What LaunchServices records when it opens a document.
+    private func markOpened(_ u: URL, at date: Date) {
+        var ts = timespec(tv_sec: Int(date.timeIntervalSince1970), tv_nsec: 0)
+        #expect(setxattr(u.path, "com.apple.lastuseddate#PS", &ts, MemoryLayout<timespec>.size, 0, 0) == 0)
     }
 
     private func same(_ a: URL?, _ b: URL) -> Bool { a?.resolvingSymlinksInPath().path == b.resolvingSymlinksInPath().path }
@@ -71,15 +76,41 @@ import Testing
         let reopen = try sandboxedReopen(from: RevealInference.archiveUtility)
         #expect(RevealInference.sender(of: reopen) == RevealInference.archiveUtility)
         #expect(same(RevealInference.reopenItem(reopen, folders: [folder]), out))
-        // Even with the unpacked item elsewhere than the archive (Archive Utility's "Save expanded files" setting).
-        try FileManager.default.removeItem(at: folder.appendingPathComponent("Photos.zip"))
-        #expect(same(RevealInference.reopenItem(reopen, folders: [folder]), out))
         // Long after, nothing is: the reopen just reopens.
         #expect(RevealInference.reopenItem(reopen, folders: [folder], now: Date().addingTimeInterval(120)) == nil)
     }
 
-    // Other reopens (the Dock, other sandboxed apps) aren't reveals, even right after something was unpacked.
-    @Test func otherReopensRevealNothing() throws {
+    // Nothing is guessed: without an archive opened before it, next to it, a just-added item isn't revealed.
+    @Test func onlyAnItemUnpackedNextToItsArchiveIsRevealed() throws {
+        let reopen = try sandboxedReopen(from: RevealInference.archiveUtility)
+        let zip = folder.appendingPathComponent("Photos.zip")
+        // No archive was opened (a download that just finished, say).
+        try unpacked(openedAt: nil)
+        #expect(RevealInference.reopenItem(reopen, folders: [folder]) == nil)
+        #expect(RevealInference.launchItem(folders: [folder]) == nil)
+        // The archive was opened after the item came, or long before.
+        for opened in [Date().addingTimeInterval(60), Date().addingTimeInterval(-7200)] {
+            markOpened(zip, at: opened)
+            #expect(RevealInference.reopenItem(reopen, folders: [folder]) == nil)
+            #expect(RevealInference.launchItem(folders: [folder]) == nil)
+        }
+        // A document opened there isn't an archive.
+        try FileManager.default.removeItem(at: zip)
+        let doc = folder.appendingPathComponent("Notes.txt")
+        try Data("hi".utf8).write(to: doc)
+        markOpened(doc, at: Date().addingTimeInterval(-5))
+        #expect(RevealInference.reopenItem(reopen, folders: [folder]) == nil)
+        // An archive in another folder doesn't count either.
+        let other = folder.appendingPathComponent("Other", isDirectory: true)
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        let elsewhere = other.appendingPathComponent("Photos.zip")
+        try Data("PK".utf8).write(to: elsewhere)
+        markOpened(elsewhere, at: Date().addingTimeInterval(-5))
+        #expect(RevealInference.unpackedItem(in: [folder], within: 30) == nil)
+    }
+
+    // Other events (the Dock's reopen, other sandboxed apps, an explicit open) never get a guessed item.
+    @Test func otherEventsRevealNothing() throws {
         try unpacked()
         let dock = event("aevt", "rapp")
         dock.setParam(NSAppleEventDescriptor(boolean: true), forKeyword: SystemIntegration.fourCC("frnt"))
@@ -87,32 +118,30 @@ import Testing
         #expect(RevealInference.sender(of: dock) == nil)
         #expect(RevealInference.reopenItem(dock, folders: [folder]) == nil)
         #expect(RevealInference.reopenItem(try sandboxedReopen(from: "com.apple.Safari"), folders: [folder]) == nil)
-        // Only reopens: a launch from Archive Utility goes through launchItem.
-        #expect(RevealInference.reopenItem(event("aevt", "oapp"), folders: [folder]) == nil)
+        // An 'odoc' names its items itself (application(_:open:)), even one Archive Utility sent; a launch goes
+        // through launchItem.
+        for (c, id) in [("aevt", "odoc"), ("aevt", "oapp")] {
+            let e = event(c, id)
+            e.setParam(
+                try sandboxedReopen(from: RevealInference.archiveUtility).paramDescriptor(forKeyword: SystemIntegration.fourCC("qtnp"))!,
+                forKeyword: SystemIntegration.fourCC("qtnp"))
+            #expect(RevealInference.reopenItem(e, folders: [folder]) == nil)
+            #expect(!AppDelegate.shared.revealUnpacked(after: e))
+        }
         #expect(!AppDelegate.shared.revealUnpacked(after: dock) && !AppDelegate.shared.revealUnpacked(after: nil))
     }
 
-    // Cold launch: LaunchServices sends the launch, so only the unpacked item beside the archive just opened (or Archive
-    // Utility still running) tells it was a reveal; then it is shown instead of the last session.
+    // Cold launch: LaunchServices sends the launch, so only an item unpacked seconds ago beside the archive just opened
+    // tells it was a reveal; then it is shown instead of the last session.
     @Test func launchRevealsOnlyWhatWasJustUnpacked() throws {
         let out = try unpacked()
-        #expect(same(RevealInference.launchItem(folders: [folder], archiveUtilityRunning: false), out))
-        #expect(RevealInference.launchItem(folders: [folder], archiveUtilityRunning: false, now: Date().addingTimeInterval(120)) == nil)
+        #expect(same(RevealInference.launchItem(folders: [folder]), out))
+        // Seconds, not the half minute a running Porpoise allows.
+        #expect(RevealInference.launchItem(folders: [folder], now: Date().addingTimeInterval(20)) == nil)
         // Hidden items aren't what was unpacked.
         let hidden = folder.appendingPathComponent(".partial", isDirectory: true)
         try FileManager.default.createDirectory(at: hidden, withIntermediateDirectories: true)
-        #expect(same(RevealInference.launchItem(folders: [folder], archiveUtilityRunning: false), out))
-    }
-
-    @Test func launchWithoutAnOpenedArchiveRestoresTheSession() throws {
-        let out = try unpacked(openedAt: nil)
-        #expect(RevealInference.launchItem(folders: [folder], archiveUtilityRunning: false) == nil)
-        #expect(same(RevealInference.launchItem(folders: [folder], archiveUtilityRunning: true), out))
-        // An archive opened after the item came didn't produce it.
-        let zip = folder.appendingPathComponent("Photos.zip")
-        var ts = timespec(tv_sec: Int(Date().timeIntervalSince1970) + 60, tv_nsec: 0)
-        setxattr(zip.path, "com.apple.lastuseddate#PS", &ts, MemoryLayout<timespec>.size, 0, 0)
-        #expect(RevealInference.launchItem(folders: [folder], archiveUtilityRunning: false) == nil)
+        #expect(same(RevealInference.launchItem(folders: [folder]), out))
     }
 
     @Test func foldersAreTheUsualPlacesThenTheShownOnes() {
