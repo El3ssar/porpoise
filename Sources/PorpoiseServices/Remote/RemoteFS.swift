@@ -107,6 +107,13 @@ public enum RemoteFS {
         for p in all { (p as? SSHProvider)?.disconnect() }
     }
 
+    /// Retires shared ssh connections after a sleep or a network change: new commands connect afresh, running ones
+    /// finish on the old connection if it still works.
+    public static func retireSharedConnections() {
+        let all = lock.withLock { Array(providers.values) }
+        for p in all { (p as? SSHProvider)?.retire() }
+    }
+
     public static func provider(for url: URL) -> RemoteProvider? {
         guard let s = url.scheme?.lowercased(), isRemote(url) else { return nil }
         let key = Self.key(url)

@@ -1,9 +1,9 @@
 import Foundation
 import Network
 
-/// Drops shared SSH connections that a sleep or a network change left dead, so the next command connects afresh
-/// instead of waiting for the dead one to time out. Commands that were running when it broke are retried by their
-/// provider (ReconnectPolicy), so jobs carry on.
+/// Retires shared SSH connections after a sleep or a network change, so the next command connects afresh instead of
+/// waiting for a dead one to time out; commands still running on a working one finish there. Commands cut off by a
+/// connection that broke are retried by their provider (ReconnectPolicy), so jobs carry on.
 public final class ConnectionMonitor: @unchecked Sendable {
     public static let shared = ConnectionMonitor()
 
@@ -15,12 +15,12 @@ public final class ConnectionMonitor: @unchecked Sendable {
     /// What is done when connections should be dropped (tests count instead).
     let drop: () -> Void
 
-    init(drop: @escaping () -> Void = { RemoteFS.disconnectAll() }) { self.drop = drop }
+    init(drop: @escaping () -> Void = { RemoteFS.retireSharedConnections() }) { self.drop = drop }
 
     /// Starts watching the network (once; the app calls it at launch).
     public func start() {
-        queue.async {
-            guard self.monitor == nil else { return }
+        queue.async { [weak self] in
+            guard let self, self.monitor == nil else { return }
             let m = NWPathMonitor()
             m.pathUpdateHandler = { [weak self] path in
                 self?.pathChanged(satisfied: path.status == .satisfied, interfaces: path.availableInterfaces.map(\.name))

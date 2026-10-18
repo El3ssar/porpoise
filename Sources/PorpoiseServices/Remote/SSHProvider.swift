@@ -82,6 +82,12 @@ final class SSHProvider: RemoteProvider {
         _ = try? Shell.run(ssh, baseArgs + ["-O", "exit", "--", target], timeout: 3)
     }
 
+    /// Retires the shared connection: it takes no new commands, so the next one connects afresh, while commands still
+    /// running on it (a transfer on a network that still works) finish. A connection that is dead ends with them.
+    func retire() {
+        _ = try? Shell.run(ssh, baseArgs + ["-O", "stop", "--", target], timeout: 3)
+    }
+
     private var baseArgs: [String] {
         // ssh keeps the first value it gets for an option, so the isolation's come first.
         var a =

@@ -131,6 +131,28 @@ struct SSHConnectionTests {
         #expect(waits == 2)
     }
 
+    @Test func aRetiredConnectionLetsItsCommandFinishAndTheNextOneConnectsAfresh() throws {
+        let dir = try server.folder()
+        let p = server.provider()
+        _ = try p.list(server.url(dir.path, isDirectory: true))
+        let before = server.logins
+        // A command still running on the old connection when it is retired finishes there.
+        nonisolated(unsafe) var running: Data?
+        let done = DispatchSemaphore(value: 0)
+        Thread.detachNewThread {
+            running = try? p.exec("sleep 1; echo finished")
+            done.signal()
+        }
+        Thread.sleep(forTimeInterval: 0.3)
+        RemoteFS.use(p, for: server.url("/"))
+        defer { RemoteFS.use(nil, for: server.url("/")) }
+        RemoteFS.retireSharedConnections()
+        _ = try p.list(server.url(dir.path, isDirectory: true))
+        #expect(server.logins == before + 1)
+        #expect(done.wait(timeout: .now() + 10) == .success)
+        #expect(running.map { String(decoding: $0, as: UTF8.self) } == "finished\n")
+    }
+
     @Test func aFirstConnectionThatFailsIsNotRetried() throws {
         let p = SSHProvider(
             url: URL(string: "sftp://127.0.0.1:1/")!,
