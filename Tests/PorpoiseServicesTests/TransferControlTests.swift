@@ -54,9 +54,11 @@ struct TransferControlTests {
     @Test func aRunningToolPausesWithoutRestartingAndCancelsCleanly() async throws {
         let s = try Scratch("tool-pause")
         let output = s.path("output")
+        let pidFile = s.path("pid")
         let script = try s.file(
             "stream.sh",
             """
+            echo $$ > '\(pidFile.path)'
             printf 'started\\n'
             while :; do
                 printf x
@@ -82,19 +84,23 @@ struct TransferControlTests {
             }
         }
         func bytes() -> Int { ((try? Data(contentsOf: output)) ?? Data()).count }
-        try #require(await eventually(5) { bytes() >= 11 })
-        job.pause()
-        // Writes already on their way land; then nothing more comes while paused. The tool writes every 20 ms, so
-        // 300 ms without a byte means it has stopped (a busy runner can leave a running tool unscheduled for less).
-        _ = await poll(timeout: 10) {
-            let before = bytes()
-            try? await Task.sleep(for: .milliseconds(300))
-            return bytes() == before
+        try #require(await eventually { bytes() >= 11 })
+        let pid = try String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        /// The tool's process state from ps ("T…" once stopped by a signal), read off the cooperative pool.
+        func state() async -> String {
+            await offThePool {
+                let r = try? Shell.run("/bin/ps", ["-o", "stat=", "-p", pid], timeout: 60)
+                return String(decoding: r?.out ?? Data(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
         }
+        job.pause()
+        // The tool is stopped (SIGSTOP), however long the controller took to notice: its shell writes with a
+        // builtin, so every byte it wrote is in the file by then, and nothing more comes while paused.
+        await expectEventually("the paused tool was never stopped") { await state().hasPrefix("T") }
         let held = bytes()
         await expectStays(for: 0.2) { bytes() == held }
         job.resume()
-        try #require(await eventually(5) { bytes() > held + 2 })
+        try #require(await eventually { bytes() > held + 2 })
         job.pause()
         try await Task.sleep(for: .milliseconds(100))
         job.cancel()

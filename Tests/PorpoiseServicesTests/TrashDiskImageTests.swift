@@ -167,7 +167,7 @@ import Testing
         #expect(ui.questions.map(\.message) == ["Permanently delete “remote.txt”?"])
         // Counted: the remote delete has no FileJob, and when both finish in one main-queue turn a second wait for
         // the next would start after the last.
-        await expectEventually(timeout: 20) { ui.finishedActivities == 2 }
+        await expectEventually { ui.finishedActivities == 2 }
         #expect(lastTrashed.map(\.original) == [f])
         #expect(ui.errors.count == 1)  // the remote one: nothing provides "unknown://"
     }

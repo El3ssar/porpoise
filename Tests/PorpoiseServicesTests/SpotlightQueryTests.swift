@@ -15,14 +15,17 @@ import Testing
         let s = try Scratch()
         let resume = stallSpotlight()
         defer { resume() }
+        // Queued behind the stall (the queue runs one operation at a time, in order): it runs only once Spotlight
+        // "answers".
+        let pastStall = Locked(false)
+        SpotlightQuery.queue.addOperation { pastStall.change { $0 = true } }
         var events: [String] = []
         let q = SpotlightQuery(predicate: nothing(in: s.url), scopes: [s.url], limit: 10, timeout: 0.3) { event in
             if case .unavailable = event { events.append("unavailable") } else { events.append("other") }
         }
-        let started = Date()
         q.start()
-        #expect(Date().timeIntervalSince(started) < 0.1)  // start() returned at once
-        #expect(await eventually(30) { events == ["unavailable"] })  // generous: a busy main queue delays the timeout
+        #expect(!pastStall.value)  // start() returned while Spotlight still hadn't answered: it didn't wait for it
+        #expect(await eventually { events == ["unavailable"] })
         resume()
         try await Task.sleep(nanoseconds: 300_000_000)
         #expect(events == ["unavailable"])  // nothing more once it gave up
@@ -49,7 +52,7 @@ import Testing
         runner.gatheringTimeout = 0.3
         runner.start()
         defer { runner.stop() }
-        #expect(await eventually(10) { result != nil })
+        #expect(await eventually { result != nil })
         #expect(result?.map(\.name) == ["\(tag).txt"])
     }
 

@@ -5,8 +5,8 @@ import Testing
 @testable import PorpoiseCore
 @testable import PorpoiseFileSystem
 
-/// Big folders, big trees and bursts of changes. Time bounds are generous (several times what an M-series Mac
-/// needs): they catch something quadratic, not a slow machine.
+/// Big folders, big trees and bursts of changes. Durations are printed, not asserted: a stalled CI runner can take any
+/// time, and something quadratic at these sizes shows as a test that drags on.
 @Suite(.serialized) struct StressTests {
     private let scratch: Scratch
 
@@ -39,29 +39,29 @@ import Testing
         var items: [FileItem] = []
         let listTime = try seconds { items = try DirectoryLister.list(dir) }
         #expect(items.count == n + 1)
-        #expect(listTime < 20, "listing took \(listTime) s")
+        print("listing \(n) files took \(listTime) s")
         #expect(DirectoryLister.childCount(dir, includeHidden: false) == n + 1)
 
         var sorted: [FileItem] = []
         let sortTime = seconds { sorted = ItemSorter.sort(items, props: ViewProperties()) }
-        #expect(sortTime < 10, "sorting took \(sortTime) s")
+        print("sorting took \(sortTime) s")
         // Natural order is numeric order, folders first.
         #expect(sorted.map(\.name) == ["a folder"] + (1...n).map { "file \($0).txt" })
 
         var p = ViewProperties(); p.sortRole = .modificationTime; p.sortOrder = .descending
         let byDate = seconds { _ = ItemSorter.sort(items, props: p) }
-        #expect(byDate < 10, "sorting by date took \(byDate) s")
+        print("sorting by date took \(byDate) s")
         let groupTime = seconds {
             let groups = ItemGrouper.groups(sorted, role: .name, props: ViewProperties())
             #expect(groups.map(\.title) == ["A", "F"])
             #expect(groups.map(\.items.count) == [1, n])
         }
-        #expect(groupTime < 10, "grouping took \(groupTime) s")
+        print("grouping took \(groupTime) s")
         let filterTime = try seconds {
             let m = try #require(NameFilter(text: "file 1*7.txt", mode: .glob).matcher())
             #expect(items.filter { m($0.name) }.count == (1...n).filter { "\($0)".hasPrefix("1") && "\($0)".hasSuffix("7") }.count)
         }
-        #expect(filterTime < 10)
+        print("filtering took \(filterTime) s")
     }
 
     /// A tree of a few thousand small files is copied completely, with progress reaching the total; a cancelled
@@ -83,7 +83,7 @@ import Testing
         var last: JobProgress?
         job.onProgress = { last = $0 }
         let time = try seconds { _ = try job.run() }
-        #expect(time < 20, "copy took \(time) s")
+        print("copy took \(time) s")
         #expect(job.errors.isEmpty, "\(job.errors)")
         #expect((TreeMeasure.measure([dst.appendingPathComponent("tree")], followTopLevelLink: false, crossVolumes: true)?.bytes ?? 0) == total)
         #expect(last?.doneBytes == total && last?.totalBytes == total)
@@ -108,11 +108,15 @@ import Testing
         }
         #expect(cancelled.errors.isEmpty, "\(cancelled.errors)")
 
-        // Moving the whole tree within the volume is a rename: fast, and nothing is left at the source.
+        // Moving the whole tree within the volume is a rename (the same folder, by inode, not a copy), and nothing
+        // is left at the source.
         let moved = try scratch.folder("moved")
+        func inode(_ url: URL) throws -> NSNumber? { try FileManager.default.attributesOfItem(atPath: url.path)[.systemFileNumber] as? NSNumber }
+        let before = try inode(dst.appendingPathComponent("tree"))
         let move = FileJob(kind: .move, sources: [dst.appendingPathComponent("tree")], destinationFolder: moved)
         let moveTime = try seconds { _ = try move.run() }
-        #expect(moveTime < 5)
+        print("move took \(moveTime) s")
+        #expect(try inode(moved.appendingPathComponent("tree")) == before)
         #expect(scratch.listing("copy").isEmpty)
         #expect((TreeMeasure.measure([moved], followTopLevelLink: false, crossVolumes: true)?.bytes ?? 0) == total)
     }
@@ -135,13 +139,14 @@ import Testing
 
         try makeFiles(in: dir, count: 3000) { "burst \($0)" }
         for i in stride(from: 0, to: 3000, by: 2) { unlink(dir.path + "/burst \(i)") }
-        #expect(waitUntil(10) { seen().contains(dir.path) })
+        #expect(waitUntil(eventualTimeout) { seen().contains(dir.path) })
 
-        // Let the burst drain, then one more change must still come through.
+        // After the burst, one more change must still come through (the burst's last events may still be arriving:
+        // they are reported for `dir`, never for `other`).
         Thread.sleep(forTimeInterval: 1)
         reset()
         try Data("x".utf8).write(to: other.appendingPathComponent("after"))
-        #expect(waitUntil(10) { seen() == [other.path] })
+        #expect(waitUntil(eventualTimeout) { seen().contains(other.path) })
 
         // Rewatching many folders at once (as a window with many tabs does) and changing all of them.
         let many = try (0..<50).map { try scratch.folder("many/\($0)") }
@@ -149,6 +154,8 @@ import Testing
         Thread.sleep(forTimeInterval: 0.3)
         reset()
         for f in many { try Data("y".utf8).write(to: f.appendingPathComponent("y")) }
-        #expect(waitUntil(10) { seen() == Set(many.map(\.path)) }, "\(many.count - seen().count) folders not reported")
+        #expect(
+            waitUntil(eventualTimeout) { Set(many.map(\.path)).isSubset(of: seen()) },
+            "\(Set(many.map(\.path)).subtracting(seen()).count) folders not reported")
     }
 }

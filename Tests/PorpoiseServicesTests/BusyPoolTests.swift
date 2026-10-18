@@ -20,10 +20,12 @@ import os
     .serialized,
     .enabled(if: ProcessInfo.processInfo.environment["PORPOISE_TESTS_ALONE"] == "1", "runs alone: scripts/test-with-watchdog.sh"))
 struct BusyPoolTests {
-    /// Range responses must keep moving independently of the pool: their send-idle deadline is real time.
+    /// Range responses must keep moving independently of the pool: their send-idle deadline is real time. A response
+    /// waiting for a held cooperative thread never moves, so it fails by that deadline, or by the wait below; the
+    /// deadline is long so that the spinning cores alone can't trip it.
     @MainActor @Test(arguments: Self.priorities) func aRangeResponseFinishesWhileEveryCooperativeThreadIsTaken(_ priority: TaskPriority) throws {
         let server = LocalFileServer()
-        server.sendTimeout = 0.5
+        server.sendTimeout = 30
         defer { server.stop() }
         let url = try #require(
             server.start(
@@ -96,7 +98,7 @@ struct BusyPoolTests {
             }
         }
         defer { release.set() }
-        for _ in 0..<blockers { try #require(occupied.wait(timeout: .now() + 10) == .success) }
+        for _ in 0..<blockers { try #require(occupied.wait(timeout: .now() + 60) == .success) }
         let finished = DispatchSemaphore(value: 0)
         let received = OSAllocatedUnfairLock(initialState: Data())
         // The completion handler does not need a cooperative thread; neither may the server's response task.
@@ -108,7 +110,8 @@ struct BusyPoolTests {
         }
         request.resume()
         defer { request.cancel() }
-        #expect(finished.wait(timeout: .now() + 5) == .success)
+        // Work that needs a held thread never ends while they are held: a long wait costs only a failing test.
+        #expect(finished.wait(timeout: .now() + 60) == .success)
         #expect(received.withLock { $0 } == bytes)
     }
 
@@ -137,7 +140,7 @@ struct BusyPoolTests {
         index.configure(config)
         defer { index.configure(IndexConfiguration()) }
         // Was "Index queued for crawl" for as long as the cores stayed busy.
-        #expect(await eventually(15) { !index.status.building && index.status.updated != nil }, "\(index.status)")
+        #expect(await eventually { !index.status.building && index.status.updated != nil }, "\(index.status)")
         release()
         #expect(index.search("a", scope: s.path("root"))?.paths.count == 1)
     }
@@ -153,7 +156,7 @@ struct BusyPoolTests {
         let release = occupyEveryCore()
         defer { release() }
         m.refreshDetected()
-        #expect(await eventually(15) { m.detected.contains { $0.title == "Pixel 9" } })
+        #expect(await eventually { m.detected.contains { $0.title == "Pixel 9" } })
     }
 
     /// Asking AVFoundation whether a file plays needs no free cooperative thread: synchronous work may hold them all
@@ -174,7 +177,7 @@ struct BusyPoolTests {
         for _ in 0..<blockers { Task.detached { hold(release) } }
         defer { for _ in 0..<blockers { release.signal() } }
         p.playableURL(for: file, owner: NSObject()) { _ in answered.signal() }
-        #expect(answered.wait(timeout: .now() + 15) == .success)
+        #expect(answered.wait(timeout: .now() + 60) == .success)
     }
 }
 

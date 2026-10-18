@@ -65,13 +65,13 @@ struct CodeSigningTests {
     @Test func aRunningProcessIsCheckedThroughItsBundle() throws {
         let p = Process()
         p.executableURL = app.appendingPathComponent("Contents/MacOS/main")
-        p.arguments = ["30"]
+        p.arguments = ["600"]  // outlives every wait below; ended by the defer
         try p.run()
         defer { p.terminate(); p.waitUntilExit() }
         #expect(CodeSigning.isIntact(pid: p.processIdentifier, requirement: requirement))
         // Right after launch macOS may still be checking the bundle, and a write into it fails with EIO for a moment.
         let data = app.appendingPathComponent("Contents/Resources/data.txt")
-        try #require(waitUntil(10) { (try? Data("changed".utf8).write(to: data)) != nil }, "couldn't change the running bundle")
+        try #require(waitUntil(eventualTimeout) { (try? Data("changed".utf8).write(to: data)) != nil }, "couldn't change the running bundle")
         #expect(!CodeSigning.isIntact(pid: p.processIdentifier, requirement: requirement))
     }
 

@@ -56,7 +56,7 @@ import Testing
             "/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild",
         ]
         for case let path? in candidates where FileManager.default.isExecutableFile(atPath: path) {
-            guard let r = try? Shell.run("/usr/bin/codesign", ["-dv", path], timeout: 30) else { continue }
+            guard let r = try? Shell.run("/usr/bin/codesign", ["-dv", path], timeout: 120) else { continue }
             if r.err.split(separator: "\n").contains(where: { $0.hasPrefix("TeamIdentifier=") && !$0.hasSuffix("not set") }) {
                 return path
             }
@@ -79,7 +79,7 @@ import Testing
         _ = try s.file("Plain.app/Contents/Info.plist", "<plist/>")
         _ = try s.folder("Adhoc.app/Contents/MacOS")
         try FileManager.default.copyItem(atPath: "/usr/bin/true", toPath: s.path("Adhoc.app/Contents/MacOS/Adhoc").path)
-        _ = try Shell.run("/usr/bin/codesign", ["--force", "-s", "-", s.path("Adhoc.app/Contents/MacOS/Adhoc").path], timeout: 30)
+        _ = try Shell.run("/usr/bin/codesign", ["--force", "-s", "-", s.path("Adhoc.app/Contents/MacOS/Adhoc").path], timeout: 120)
         #expect(check(in: s.url) == nil)
         #expect(Settings.store.object(forKey: "appManagement") == nil)  // nothing checked, nothing kept
         #expect(s.listing().sorted() == ["Adhoc.app", "Plain.app", "notes.txt"])

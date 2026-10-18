@@ -119,7 +119,7 @@ import Testing
     func signedTool(_ s: Scratch, _ name: String, identifier: String) throws -> URL {
         let u = s.path(name)
         try FileManager.default.copyItem(atPath: "/usr/bin/true", toPath: u.path)
-        let r = try Shell.run("/usr/bin/codesign", ["--force", "-s", "-", "-i", identifier, u.path], timeout: 30)
+        let r = try Shell.run("/usr/bin/codesign", ["--force", "-s", "-", "-i", identifier, u.path], timeout: 120)
         try #require(r.status == 0, "codesign: \(r.err)")
         return u
     }
@@ -148,7 +148,7 @@ import Testing
             <plist version="1.0"><dict><key>CFBundleIdentifier</key><string>app.porpoise.test.helper</string>
             <key>CFBundleExecutable</key><string>Helper</string></dict></plist>
             """)
-        let r = try Shell.run("/usr/bin/codesign", ["--force", "-s", "-", s.path("Helper.app").path], timeout: 30)
+        let r = try Shell.run("/usr/bin/codesign", ["--force", "-s", "-", s.path("Helper.app").path], timeout: 120)
         try #require(r.status == 0, "codesign: \(r.err)")
         #expect(PrivilegedHelper.codeHash(s.path("Helper.app"))?.count == 40)
     }
@@ -159,7 +159,7 @@ import Testing
         #expect(PrivilegedHelper.codeHash(s.path("missing")) == nil)
         let stripped = s.path("stripped")
         try FileManager.default.copyItem(atPath: "/usr/bin/true", toPath: stripped.path)
-        _ = try Shell.run("/usr/bin/codesign", ["--remove-signature", stripped.path], timeout: 30)
+        _ = try Shell.run("/usr/bin/codesign", ["--remove-signature", stripped.path], timeout: 120)
         #expect(PrivilegedHelper.codeHash(stripped) == nil)
     }
 
