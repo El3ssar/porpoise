@@ -21,7 +21,7 @@ import os
     .enabled(if: ProcessInfo.processInfo.environment["PORPOISE_TESTS_ALONE"] == "1", "runs alone: scripts/test-with-watchdog.sh"))
 struct BusyPoolTests {
     /// Range responses must keep moving independently of the pool: their send-idle deadline is real time.
-    @MainActor @Test func aRangeResponseFinishesWhileEveryCooperativeThreadIsTaken() throws {
+    @MainActor @Test(arguments: Self.priorities) func aRangeResponseFinishesWhileEveryCooperativeThreadIsTaken(_ priority: TaskPriority) throws {
         let server = LocalFileServer()
         server.sendTimeout = 0.5
         defer { server.stop() }
@@ -30,14 +30,19 @@ struct BusyPoolTests {
                 source: .init(
                     size: 10, contentType: "video/mp4",
                     read: { _ in
-                        try await Task.sleep(for: .milliseconds(10))
+                        // A 10 ms asynchronous read, completed from a queue of its own like a network one. Not
+                        // Task.sleep or a global queue: those wait for the threads the busy priority holds.
+                        await withCheckedContinuation { continuation in
+                            Self.readQueue.asyncAfter(deadline: .now() + 0.01) { continuation.resume() }
+                        }
                         return Data(repeating: 42, count: 10)
                     })))
-        try expectResponseWhileCooperativePoolIsTaken(url, bytes: Data(repeating: 42, count: 10))
+        try expectResponseWhileCooperativePoolIsTaken(url, bytes: Data(repeating: 42, count: 10), priority: priority)
     }
 
     /// Real token lookup and HTTP streaming must retain the response executor through their suspension points.
-    @MainActor @Test func aDriveRangeFinishesWhileEveryCooperativeThreadIsTaken() async throws {
+    @MainActor @Test(arguments: Self.priorities)
+    func aDriveRangeFinishesWhileEveryCooperativeThreadIsTaken(_ priority: TaskPriority) async throws {
         let scratch = try Scratch()
         let fixture = try FakeDriveServer.writeFixture(
             in: scratch,
@@ -49,19 +54,44 @@ struct BusyPoolTests {
         let client = try DriveMutationTests().client(upstream, folder: scratch.path("journal"))
         let stream = try client.streamingPreview(try await client.file("movie"))
         defer { stream.stop() }
-        try expectResponseWhileCooperativePoolIsTaken(stream.url, bytes: Data(repeating: 120, count: 10))
+        try expectResponseWhileCooperativePoolIsTaken(stream.url, bytes: Data(repeating: 120, count: 10), priority: priority)
     }
 
-    @MainActor private func expectResponseWhileCooperativePoolIsTaken(_ url: URL, bytes: Data) throws {
+    /// A read that has to renew the account's token first: the coalesced refresh is a task of its own, and must not
+    /// wait for a cooperative thread either (W-138).
+    @MainActor @Test(arguments: Self.priorities)
+    func aDriveRangeRenewsItsTokenWhileEveryCooperativeThreadIsTaken(_ priority: TaskPriority) async throws {
+        let scratch = try Scratch()
+        let fixture = try FakeDriveServer.writeFixture(
+            in: scratch,
+            [
+                "files": [["id": "movie", "name": "movie.mp4", "mimeType": "video/mp4", "size": "10", "version": "1"]],
+                "generatedMedia": ["movie": 10],
+            ])
+        let upstream = try FakeDriveServer(fixture: fixture, latencyMS: 30)
+        let file = try await DriveMutationTests().client(upstream, folder: scratch.path("journal")).file("movie")
+        // Another client of the account: no token yet, so the range read itself refreshes it.
+        let reader = try DriveMutationTests().client(upstream, folder: scratch.path("reader"))
+        let stream = try reader.streamingPreview(file)
+        defer { stream.stop() }
+        try expectResponseWhileCooperativePoolIsTaken(stream.url, bytes: Data(repeating: 120, count: 10), priority: priority)
+    }
+
+    /// Each priority has its own cooperative workers, and each one stalled a different part: dispatch creates the range
+    /// Task (and so the token refresh it starts) at low priority, while URLSession's delegate calls waited for a high
+    /// one (W-138).
+    static let priorities: [TaskPriority] = [.low, .medium, .high]
+    private static let readQueue = DispatchQueue(label: "busy-pool-read")
+
+    @MainActor private func expectResponseWhileCooperativePoolIsTaken(_ url: URL, bytes: Data, priority: TaskPriority) throws {
         let release = Flag()
         let occupied = DispatchSemaphore(value: 0)
         let blockers =
             ProcessInfo.processInfo.environment["LIBDISPATCH_COOPERATIVE_POOL_STRICT"] == "1"
             ? 1 : ProcessInfo.processInfo.activeProcessorCount
-        // Dispatch creates the original range Task at low priority. Loading only the medium-priority pool
-        // misses this failure because each QoS has its own workers. Spin without advertising a blocking wait.
+        // Every worker of the priority, spinning without advertising a blocking wait.
         for _ in 0..<blockers {
-            Task.detached(priority: .low) {
+            Task.detached(priority: priority) {
                 occupied.signal(); while !release.isSet {}
             }
         }
