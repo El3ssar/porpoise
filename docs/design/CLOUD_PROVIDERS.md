@@ -132,3 +132,50 @@ Wire contracts were checked against Dropbox's primary references:
 [sharing schema](https://github.com/dropbox/dropbox-api-spec/blob/main/sharing.stone),
 [content hash](https://docs.dropboxapi.com/dropbox-api/docs/technical-reference/content-hash), and
 [team files](https://docs.dropboxapi.com/dropbox-api/docs/team-files).
+
+## OneDrive engine (Microsoft Graph)
+
+`OneDriveClient`, `OneDriveAccountStore`, `OneDriveProvider` and `OneDriveCloudBackend` follow the Dropbox adapter on the
+same mechanics; `CompositeCloudBackend` composes all three providers. Registration and the public client ID are in
+[OneDrive setup](../onedrive/SETUP.md). Without a client ID the tile stays Coming soon.
+
+- Identity: `OneDriveLocation` is `onedrive://<account>/<item ID>?drive=<drive ID>`, each opaque ID one escaped value.
+  An empty item is the drive's root; the root's real ID is learned from Graph and names the same item. Items others
+  shared live in their owner's drive and are read through a per-drive client with the same sign-in, its own cache,
+  journal and offline directory. `OneDriveItem` decodes a `remoteItem` as its target and never keeps a download URL.
+- Revisions and checksums: the revision is the `cTag` (content only; a rename keeps it), else the `eTag`. Content is
+  verified by QuickXorHash (`CloudChecksum.quickXor`), checked against rclone's independent vectors.
+- Changes: the drive's delta feed, started from `token=latest`; the opaque next/delta link is the cursor, committed after
+  each page applies. 410 (`resyncRequired`) resets and reconciles pins. A deleted folder removes its cached descendants
+  (Business may report only the folder). Graph has no long poll for a desktop app: the wait reads the delta link (a read
+  changes nothing) every `pollInterval`.
+- Downloads: the shared range engine over the pre-authenticated download URL, without the bearer; an expired URL is
+  fetched again once. Exact 206/Content-Range, then size, QuickXorHash and a fresh revision before publication.
+- Uploads: an upload session for any nonempty file (an empty one is a single PUT), 10 MiB chunks (a multiple of the
+  required 320 KiB), the session URL in the credential store, durable offsets, a lost chunk reconciled from
+  `nextExpectedRanges`, an expired session restarted from zero. New names use `conflictBehavior=fail`; replacement and
+  edit save-back send `If-Match` with the baseline revision. A lost final response stays `uncertain`.
+- Mutations: create, rename/move (PATCH, `conflictBehavior=fail`) and delete (`If-Match`) are journaled and never
+  replayed after a lost response. Copy is Graph's long-running action: the monitor URL is journaled, so an interrupted
+  copy is followed, not started twice. Deleted items go to OneDrive's recycle bin, but there is no in-app Undo;
+  folders need explicit confirmation, as in Dropbox.
+- Search is Graph's `search(q=…)` (names and contents; no names-only option), scoped to a folder or the drive.
+  Shared with me is `/me/drive/sharedWithMe`; share links resolve through `/shares/u!…/driveItem`, read only, never
+  redeemed. Quota is the drive's `quota`.
+
+The fixture is `scripts/fake-graph-server.py`: rotated refresh tokens, paging and delta links (and a foreign-host link),
+resync, a second drive for shared items, share links, thumbnails, pre-authenticated URLs that record any bearer sent to
+them, 320 KiB fragment checks, `nextExpectedRanges`, `If-Match` and conflict-behavior checks, lost responses, corrupt,
+truncated and changing downloads, and throttling. OneDriveTests, OneDriveParityTests, ProviderNeutralOneDriveTests,
+OneDriveUIIntegrationTests, OneDriveTransferIntegrationTests, OneDriveConfigurationTests and the OneDrive cases of
+TransferConflictParityTests are the Dropbox and Drive provider checks against it.
+
+Wire contracts were checked against Microsoft's references:
+[driveItem](https://learn.microsoft.com/graph/api/resources/driveitem),
+[delta](https://learn.microsoft.com/graph/api/driveitem-delta),
+[upload sessions](https://learn.microsoft.com/graph/api/driveitem-createuploadsession),
+[copy and long-running actions](https://learn.microsoft.com/graph/long-running-actions-overview),
+[shares](https://learn.microsoft.com/graph/api/shares-get),
+[throttling](https://learn.microsoft.com/graph/throttling),
+[QuickXorHash](https://learn.microsoft.com/onedrive/developer/code-snippets/quickxorhash) and
+[redirect URIs](https://learn.microsoft.com/entra/identity-platform/reply-url).
