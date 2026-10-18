@@ -138,7 +138,7 @@ Wire contracts were checked against Dropbox's primary references:
 ## OneDrive engine (Microsoft Graph)
 
 `OneDriveClient`, `OneDriveAccountStore`, `OneDriveProvider` and `OneDriveCloudBackend` follow the Dropbox adapter on the
-same mechanics; `CompositeCloudBackend` composes all three providers. Registration and the public client ID are in
+same mechanics; `CompositeCloudBackend` composes the providers. Registration and the public client ID are in
 [OneDrive setup](../onedrive/SETUP.md). Without a client ID the tile stays Coming soon.
 
 - Identity: `OneDriveLocation` is `onedrive://<account>/<item ID>?drive=<drive ID>`, each opaque ID one escaped value.
@@ -181,3 +181,60 @@ Wire contracts were checked against Microsoft's references:
 [throttling](https://learn.microsoft.com/graph/throttling),
 [QuickXorHash](https://learn.microsoft.com/onedrive/developer/code-snippets/quickxorhash) and
 [redirect URIs](https://learn.microsoft.com/entra/identity-platform/reply-url).
+
+## Box engine
+
+`BoxClient`, `BoxAccountStore`, `BoxProvider` and `BoxCloudBackend` follow the OneDrive adapter on the same mechanics;
+`CompositeCloudBackend` composes all four providers. Registration, the client ID and secret, and why a desktop build
+carries Box's client secret are in [Box setup](../box/SETUP.md). Without both values the tile stays Coming soon.
+
+- Identity: `BoxLocation` is `box://<account>/<item ID>?type=<file|folder|web_link>`, the opaque ID one escaped segment.
+  Box has no endpoint for an item of unknown type, so the type travels with the location (an item without one is looked
+  up as a file, then as a folder). An empty item is the root folder, Box's `0`. There is one sidebar root, All Files:
+  items shared with the person appear there once accepted, and Box has no separate list of them.
+- Revisions and checksums: the revision is `file_version.id` (content only; a rename keeps it), and the `etag` (changed
+  by any change) is the precondition for changing an item. Content is verified by SHA-1 (`CloudChecksum.sha1`).
+- Changes: the user's event stream from `stream_position=now`; the opaque position is the cursor, committed after each
+  page applies, and the stream is read until a page brings nothing. Events can repeat and are applied idempotently. A
+  trashed folder's event removes its cached descendants. An unknown or expired position (400/410) resets and reconciles
+  pins. The wait is Box's long poll: `OPTIONS /events` names a realtime URL, read without the bearer, that answers
+  `new_change` or `reconnect`.
+- Downloads: `/files/{id}/content` answers 302 with a pre-authenticated URL. The engine reads the redirect through
+  `CloudHTTPTransport.withoutRedirects`, so the bearer never follows it, then uses the shared range engine on that URL
+  without the bearer. A 202 (not ready) waits for Retry-After, and an expired URL is fetched again once. Exact
+  206/Content-Range, then size, SHA-1 and a fresh revision before publication.
+- Uploads: under 20,000,000 bytes, one multipart request with `Content-MD5` (Box's SHA-1). Above that, a chunked session:
+  the server-chosen part size, a `Digest` per part, confirmed parts journaled, a lost part reconciled from the session's
+  part list, an expired session restarted from zero, and a commit with the whole file's digest that waits out 202. The
+  session ID is in the credential store. A new name is refused by Box (409), never replaced. A new version and edit
+  save-back send `If-Match` with the baseline etag. A lost final response stays `uncertain`.
+- Mutations: create, rename/move (`PUT` with `If-Match`), copy (synchronous) and delete (`If-Match`; folders
+  `recursive=true`) are journaled and never replayed after a lost response. Deleting moves items to Box's trash, so the
+  descriptor offers Undo. `untrash` restores through `POST /files|folders/{id}`, which Box refuses (409) when the name is
+  taken meanwhile.
+- Search is `/search`, by name only unless contents are asked for, scoped with `ancestor_folder_ids`; the cursor is the
+  next offset. Shared links resolve through `/shared_items` (the link in the `BoxApi` header) and are offered only when
+  the account can open the item itself. Quota is `/users/me`'s `space_used` and `space_amount`; an unlimited plan's
+  999,999,999,999,999 means no total.
+
+The fixture is `scripts/fake-box-server.py`: single-use refresh tokens and a required client secret, revocation, marker
+paging (and a repeated marker), the event stream with repeats, paging and trashed folders, the realtime long poll,
+redirects to pre-authenticated download URLs that record any bearer sent to them, 202 not-ready answers, multipart
+uploads with digest checks, chunked sessions with part-size, digest and part-list checks, `If-Match` and name-conflict
+checks, trash and restore, shared links, thumbnails and placeholder redirects, lost responses, corrupt, truncated and
+changing downloads, and throttling. BoxTests, BoxUIIntegrationTests and the Box cases of TransferConflictParityTests are
+the OneDrive provider checks against it.
+
+Wire contracts were checked against Box's references:
+[OAuth 2.0](https://developer.box.com/guides/authentication/oauth2/without-sdk/),
+[token](https://developer.box.com/reference/post-oauth2-token/),
+[file](https://developer.box.com/reference/resources/file/),
+[folder items](https://developer.box.com/reference/get-folders-id-items/),
+[download](https://developer.box.com/reference/get-files-id-content/),
+[uploads](https://developer.box.com/guides/uploads/),
+[chunked uploads](https://developer.box.com/guides/uploads/chunked/),
+[events](https://developer.box.com/guides/events/user-events/for-user/),
+[long polling](https://developer.box.com/guides/events/user-events/polling/),
+[trash restore](https://developer.box.com/reference/post-files-id/),
+[shared items](https://developer.box.com/reference/get-shared-items/) and
+[scopes](https://developer.box.com/guides/api-calls/permissions-and-errors/scopes/).
