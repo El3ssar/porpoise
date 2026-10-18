@@ -28,7 +28,7 @@ public enum HostKeyFingerprint {
 
     /// The environment variable that gives the ssh prompt helper the fingerprint the user accepted: it answers ssh's
     /// "continue connecting (yes/no/[fingerprint])?" with it, and ssh accepts only a key with that fingerprint.
-    public static let answerVariable = "PORPOISE_HOSTKEY_ANSWER"
+    public static let answerVariable = "SSH_ASKPASS_ACCEPTED_FINGERPRINT"
 
     /// The `known_hosts` name of a host: "host", or "[host]:port" when the port isn't 22.
     public static func knownHostsName(host: String, port: Int?) -> String {
