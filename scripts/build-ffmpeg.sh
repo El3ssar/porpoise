@@ -9,12 +9,13 @@ SRC=build/ffmpeg-src
 OUT=$PWD/build/ffmpeg
 [ -x "$OUT/ffmpeg" ] && [ "${1:-}" != "--force" ] && { echo "ffmpeg already built"; exit 0; }
 mkdir -p "$SRC" "$OUT"
-# configure, not just the folder: a CI cache restores the folder with only the licence files, and tar can stop halfway.
+# Cached archives are always checked, including cache hits. CI forces a fresh extraction and build, so it never
+# executes a cached binary or compiles an unchecked cached source tree.
+[ -f "$SRC/ffmpeg-$VER.tar.xz" ] || curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$VER.tar.xz" -o "$SRC/ffmpeg-$VER.tar.xz"
+[ "$VER" = 8.0 ] && SHA=${FFMPEG_SHA256:-b2751fccb6cc4c77708113cd78b561059b6fa904b24162fa0be2d60273d27b8e} || SHA=${FFMPEG_SHA256:?set FFMPEG_SHA256 for ffmpeg $VER}
+echo "$SHA  $SRC/ffmpeg-$VER.tar.xz" | shasum -a 256 -c - >/dev/null || { echo "ffmpeg-$VER.tar.xz doesn't match its checksum"; exit 1; }
+if [ "${1:-}" = --force ]; then rm -rf "$SRC/ffmpeg-$VER"; fi
 if [ ! -x "$SRC/ffmpeg-$VER/configure" ]; then
-  [ -f "$SRC/ffmpeg-$VER.tar.xz" ] || curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$VER.tar.xz" -o "$SRC/ffmpeg-$VER.tar.xz"
-  # The source goes into signed releases: check it's exactly the published tarball.
-  [ "$VER" = 8.0 ] && SHA=${FFMPEG_SHA256:-b2751fccb6cc4c77708113cd78b561059b6fa904b24162fa0be2d60273d27b8e} || SHA=${FFMPEG_SHA256:?set FFMPEG_SHA256 for ffmpeg $VER}
-  echo "$SHA  $SRC/ffmpeg-$VER.tar.xz" | shasum -a 256 -c - >/dev/null || { echo "ffmpeg-$VER.tar.xz doesn't match its checksum"; rm -f "$SRC/ffmpeg-$VER.tar.xz"; exit 1; }
   tar -xJf "$SRC/ffmpeg-$VER.tar.xz" -C "$SRC"
 fi
 cd "$SRC/ffmpeg-$VER"
