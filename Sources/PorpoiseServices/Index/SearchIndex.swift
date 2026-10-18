@@ -12,8 +12,47 @@ public struct IndexConfiguration: Codable, Equatable, Sendable {
     ]
     public var excludeGitObjects = true
     public var excludeNodeModules = true
+    /// Build folders (`buildFolderNames`): a build rewrites thousands of files in them, many times a minute while
+    /// someone works (most of what a folder of projects reports).
+    public var excludeBuildOutput = true
+    public static let buildFolderNames = [".build", "DerivedData"]
+    /// Folders macOS and apps keep writing to (`systemFolders`). Indexed, they report changes all the time (most of
+    /// what a home folder reports) and hold nothing people look for.
+    public var excludeSystemFolders = true
     public var content = false
     public init() {}
+    /// Saved before a setting existed, a configuration gets that setting's default.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = IndexConfiguration()
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? defaults.enabled
+        roots = try c.decodeIfPresent([String].self, forKey: .roots) ?? defaults.roots
+        exclusions = try c.decodeIfPresent([String].self, forKey: .exclusions) ?? defaults.exclusions
+        excludeGitObjects = try c.decodeIfPresent(Bool.self, forKey: .excludeGitObjects) ?? defaults.excludeGitObjects
+        excludeNodeModules = try c.decodeIfPresent(Bool.self, forKey: .excludeNodeModules) ?? defaults.excludeNodeModules
+        excludeBuildOutput = try c.decodeIfPresent(Bool.self, forKey: .excludeBuildOutput) ?? defaults.excludeBuildOutput
+        excludeSystemFolders = try c.decodeIfPresent(Bool.self, forKey: .excludeSystemFolders) ?? defaults.excludeSystemFolders
+        content = try c.decodeIfPresent(Bool.self, forKey: .content) ?? defaults.content
+    }
+
+    static let home = FilePath.canonical(FileManager.default.homeDirectoryForCurrentUser.path)
+    static let library = home + "/Library"
+    /// In the Library, what people keep there themselves: cloud drives (iCloud Drive, and Dropbox, Google Drive or
+    /// OneDrive through File Provider). Everything else in it is the system's and apps' own.
+    static let libraryKept: Set<String> = ["CloudStorage", "Mobile Documents"]
+    /// Shown in Settings.
+    public static let systemFolders = ["~/Library (except cloud drives)", "~/.Trash"]
+    /// Whether `path` is in one of `systemFolders`. A root chosen inside one is indexed all the same.
+    func inSystemFolder(_ path: String) -> Bool {
+        guard excludeSystemFolders else { return false }
+        if FilePath.contains(path: path, in: Self.home + "/.Trash") {
+            return !roots.contains { FilePath.contains(path: $0, in: Self.home + "/.Trash") }
+        }
+        guard path.hasPrefix(Self.library + "/") else { return false }
+        let name = path.dropFirst(Self.library.count + 1).prefix { $0 != "/" }
+        let folder = Self.library + "/" + name
+        return !Self.libraryKept.contains(String(name)) && !roots.contains { FilePath.contains(path: $0, in: folder) }
+    }
 }
 
 /// All mutation is serialized; immutable snapshots can be scanned on any query thread. Cancellation is synchronous.
@@ -51,6 +90,10 @@ public final class SearchIndex: @unchecked Sendable {
         var file = UUID().uuidString + ".idx"
     }
     private struct Manifest: Codable {
+        /// Raised when what an index holds for the same configuration changes: an older snapshot is built again.
+        /// 2: build output and system folders excluded (none before 0.8.6).
+        static let current = 2
+        var version: Int? = Manifest.current
         var configuration: IndexConfiguration
         var eventID: UInt64
         var updated: Date
@@ -63,11 +106,37 @@ public final class SearchIndex: @unchecked Sendable {
         var holes: [String]
     }
     private struct PatchFile: Codable { var path: String; var file: String; var shadowed: Int }
-    private struct PendingBuild {
+    /// Reported changes not applied yet. Always changed where it is stored (`pendingBuild?.add(…)`): a copy taken
+    /// first (`if var pending = pendingBuild`) shares the set with the stored one, so adding to it copied the whole set
+    /// on every batch, and a long stream of changes cost more for each new one (v0.8.5).
+    struct Changes {
         var generation: Int
         var paths = Set<String>()
         var event: UInt64 = 0
         var rescan = false
+        /// Past this many paths they are replaced by their folders (see `fold`), keeping a long stream's memory bounded.
+        private(set) var foldAt = Changes.foldLimit
+        static let foldLimit = 4096
+        init(generation: Int) { self.generation = generation }
+        mutating func add(_ new: [String], event: UInt64, rescan: Bool, roots: [String]) {
+            self.event = max(self.event, event)
+            self.rescan = self.rescan || rescan
+            paths.formUnion(new)
+            if paths.count > foldAt { fold(roots: roots) }
+        }
+        /// Each path becomes the folder holding it, walked again whole when the changes are applied, as an update
+        /// does with many changes anyway. Only a folder inside a root: never the root, for what changed directly in it.
+        /// The next fold waits until the set has doubled, so folding costs a constant amount per change even when it
+        /// cannot shrink the set.
+        mutating func fold(roots: [String]) {
+            paths = Set(
+                paths.map { p in
+                    guard let slash = p.lastIndex(of: "/") else { return p }
+                    let folder = String(p[..<slash])
+                    return roots.contains { folder != $0 && FilePath.contains(path: folder, in: $0) } ? folder : p
+                })
+            foldAt = max(Changes.foldLimit, paths.count * 2)
+        }
     }
     // A process-wide limit, rather than one pool per SearchIndex. Control queues never wait for these jobs.
     // One crawl at a time, on a serial queue of its own: such a queue always gets a thread. On the shared pool, utility
@@ -89,10 +158,10 @@ public final class SearchIndex: @unchecked Sendable {
     /// instead of checking and listing every file of the index on every update.
     private var savedFiles: Set<String>?
     private let crawlQueue: OperationQueue
-    private var pendingBuild: PendingBuild?
+    private var pendingBuild: Changes?
     /// Changes reported while an update was waiting or running, applied together by the next one: a busy tree
     /// reports changes many times a second, and each update walks the changed folders again and saves the index.
-    private var queuedChanges: (paths: Set<String>, event: UInt64, rescan: Bool, generation: Int)?
+    private var queuedChanges: Changes?
     /// How long reported changes wait to be applied together.
     var updateDelay: TimeInterval = 0.25
     private let lock = NSLock()
@@ -160,7 +229,7 @@ public final class SearchIndex: @unchecked Sendable {
             startupMessage("Index loading snapshot", generation: generation)
             if !rebuild,
                 let manifest = try? JSONDecoder().decode(Manifest.self, from: Data(contentsOf: directory.appendingPathComponent("manifest.json"))),
-                manifest.configuration == selected
+                manifest.version == Manifest.current, manifest.configuration == selected
             {
                 do {
                     let loaded = try manifest.roots.map { root in
@@ -179,7 +248,7 @@ public final class SearchIndex: @unchecked Sendable {
             startupMessage("Index starting watcher", generation: generation)
             guard watch(selected, generation: generation) else { return }  // Start before crawling so changes during the walk are replayed.
             startupMessage("Index queued for crawl", generation: generation)
-            pendingBuild = PendingBuild(generation: generation)
+            pendingBuild = Changes(generation: generation)
             var built: [Root] = []
             let crawlLock = NSLock(), group = DispatchGroup()
             for path in selected.roots {
@@ -234,8 +303,11 @@ public final class SearchIndex: @unchecked Sendable {
     }
     private func excluded(_ path: String, config: IndexConfiguration) -> Bool {
         FilePath.contains(path: path, in: storagePath) || config.exclusions.contains { FilePath.contains(path: path, in: $0) }
+            || config.inSystemFolder(path)
             || (config.excludeGitObjects && (path.hasSuffix("/.git/objects") || path.contains("/.git/objects/")))
             || (config.excludeNodeModules && path.split(separator: "/").contains("node_modules"))
+            || (config.excludeBuildOutput
+                && IndexConfiguration.buildFolderNames.contains { path.hasSuffix("/" + $0) || path.contains("/" + $0 + "/") })
     }
     private func crawl(_ path: String, config: IndexConfiguration, generation: Int) -> (table: NameIndex, holes: [String]) {
         guard !excluded(path, config: config) else { return (NameIndex(), []) }
@@ -249,7 +321,10 @@ public final class SearchIndex: @unchecked Sendable {
         return (table, holes)
     }
     private func watch(_ config: IndexConfiguration, generation: Int) -> Bool {
-        events = IndexEvents(roots: config.roots, since: eventID) { [weak self] paths, id, rescan in
+        // The index's own saves first: an index of the home folder would otherwise hear every one of them.
+        var quiet = [storagePath] + config.exclusions
+        if config.excludeSystemFolders { quiet.append(IndexConfiguration.home + "/.Trash") }
+        events = IndexEvents(roots: config.roots, since: eventID, excluding: quiet) { [weak self] paths, id, rescan in
             self?.queue.async { [weak self] in self?.enqueue(paths, event: id, rescan: rescan, config: config, generation: generation) }
         }
         guard events?.available == true else {
@@ -265,37 +340,44 @@ public final class SearchIndex: @unchecked Sendable {
     private func enqueue(_ paths: [String], event: UInt64, rescan: Bool, config: IndexConfiguration, generation: Int) {
         guard valid(generation) else { return }
         // During the first crawl, changes are only noted (cheap), and the index isn't ready until they're applied.
-        if let pending = pendingBuild, pending.generation == generation {
+        if pendingBuild?.generation == generation {
             return refresh(paths, event: event, rescan: rescan, config: config, generation: generation)
         }
-        if var queued = queuedChanges, queued.generation == generation {
-            queued.paths.formUnion(paths)
-            queued.event = max(queued.event, event)
-            queued.rescan = queued.rescan || rescan
-            queuedChanges = queued
+        // Excluded changes go now: a busy excluded folder must not keep a growing set of changes waiting.
+        let paths = rescan ? paths : paths.filter { !excluded($0, config: config) }
+        if queuedChanges?.generation == generation {
+            queuedChanges?.add(paths, event: event, rescan: rescan, roots: config.roots)
             return
         }
-        queuedChanges = (Set(paths), event, rescan, generation)
+        guard !paths.isEmpty || rescan else { eventID = max(eventID, event); return }
+        queuedChanges = Changes(generation: generation)
+        queuedChanges?.add(paths, event: event, rescan: rescan, roots: config.roots)
         queue.asyncAfter(deadline: .now() + updateDelay) { [weak self] in
             guard let self, let queued = self.queuedChanges, queued.generation == generation else { return }
             self.queuedChanges = nil
             self.refresh(Array(queued.paths), event: queued.event, rescan: queued.rescan, config: config, generation: generation)
         }
     }
+    /// Takes changes in as the watcher reports them, returning once they have been (tests).
+    func receive(_ paths: [String], event: UInt64) {
+        let (config, generation) = lock.withLock { (current, revision) }
+        // Synchronous work runs on the calling thread, outside the queue's own autorelease pools.
+        autoreleasepool { queue.sync { enqueue(paths, event: event, rescan: false, config: config, generation: generation) } }
+    }
+    /// How many changed paths wait for the next update (tests).
+    var queuedPaths: Int { queue.sync { queuedChanges?.paths.count ?? 0 } }
     private func refresh(_ paths: [String], event: UInt64, rescan: Bool, config: IndexConfiguration, generation: Int) {
         guard valid(generation) else { return }
         // Our manifest and snapshot writes must never feed back into the index.
         let paths = paths.map(FilePath.entry).filter { rescan || !excluded($0, config: config) }
-        if var pending = pendingBuild, pending.generation == generation {
-            pending.event = max(pending.event, event)
-            pending.rescan = pending.rescan || rescan
-            if !pending.rescan {
-                pending.paths.formUnion(paths)
-                if pending.paths.count > 1024 { pending.rescan = true }
+        if pendingBuild?.generation == generation {
+            pendingBuild?.add(paths, event: event, rescan: rescan, roots: config.roots)
+            if pendingBuild?.rescan == true || pendingBuild?.paths.count ?? 0 > 1024 {
+                pendingBuild?.rescan = true
+                pendingBuild?.paths = Set(config.roots)
             }
-            if pending.rescan { pending.paths = Set(config.roots) }
-            pendingBuild = pending
-            lock.withLock { if revision == generation { state.pendingChanges = pending.paths.count } }
+            let count = pendingBuild?.paths.count ?? 0
+            lock.withLock { if revision == generation { state.pendingChanges = count } }
             return
         }
         guard !paths.isEmpty else { eventID = max(eventID, event); return }

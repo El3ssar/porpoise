@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Search indexing stays quiet while you work.** With indexing on and a busy folder (a build, apps saving their state), each new change cost the index more than the last, so it could keep a core busy for as long as the changes went on. Each change now costs the same, however many came before. Build folders (.build, DerivedData) and the Mac's own system and app data (your Library, apart from cloud drives, and the Trash) are left out by default; on a developer's Mac they were nearly all of the changes the index followed. Both can be switched back on in Settings › Search. Indexes are rebuilt once after the update.
+
 ## 0.8.5
 
 - **Google Drive saves edits in place.** A file opened from Google Drive in another app now goes back to Drive as a new version of the same file each time you save, as with Dropbox; the "Save as a Copy in Google Drive" step is gone. If the file changed in Drive meanwhile, nothing is overwritten: both versions are kept and Activity offers Keep Both, Open Both or Replace with Mine.

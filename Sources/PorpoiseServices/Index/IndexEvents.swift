@@ -1,9 +1,11 @@
 import CoreServices
 import Foundation
+import PorpoiseCore
 
 /// Owns its stream for exactly the stream lifetime.
 final class IndexEvents {
     static var currentEventID: UInt64 { FSEventsGetCurrentEventId() }
+    static let exclusionLimit = 8
     private var stream: FSEventStreamRef?
     var available: Bool { stream != nil }
     private let queue = DispatchQueue(label: "app.porpoise.index-events", qos: .utility, autoreleaseFrequency: .workItem)
@@ -15,7 +17,9 @@ final class IndexEvents {
         init(_ callback: @escaping ([String], UInt64, Bool) -> Void) { self.callback = callback }
     }
 
-    init(roots: [String], since: UInt64, callback: @escaping ([String], UInt64, Bool) -> Void) {
+    /// FSEvents reports nothing in `excluding`, up to `exclusionLimit` folders inside the roots (more are ignored here,
+    /// and filtered by the caller).
+    init(roots: [String], since: UInt64, excluding: [String] = [], callback: @escaping ([String], UInt64, Bool) -> Void) {
         let handler = Handler(callback)
         var context = FSEventStreamContext(
             version: 0, info: Unmanaged.passUnretained(handler).toOpaque(),
@@ -50,6 +54,8 @@ final class IndexEvents {
                 if !changed.isEmpty { handler.callback(changed, last, rescan) }
             }, &context, roots as CFArray, since == 0 ? FSEventStreamEventId(kFSEventStreamEventIdSinceNow) : since, 0.1, flags)
         if let stream {
+            let excluded = excluding.filter { path in roots.contains { $0 != path && FilePath.contains(path: path, in: $0) } }
+            if !excluded.isEmpty { FSEventStreamSetExclusionPaths(stream, Array(excluded.prefix(Self.exclusionLimit)) as CFArray) }
             FSEventStreamSetDispatchQueue(stream, queue)
             if !FSEventStreamStart(stream) { FSEventStreamInvalidate(stream); FSEventStreamRelease(stream); self.stream = nil }
         }
