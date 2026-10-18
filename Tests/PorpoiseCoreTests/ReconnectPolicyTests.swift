@@ -20,6 +20,8 @@ import Testing
         #expect(!ReconnectPolicy.isConnectionLoss(sshStatus: 255, stderr: "user@h: Permission denied (publickey)."))
         #expect(!ReconnectPolicy.isConnectionLoss(sshStatus: 255, stderr: "Host key verification failed."))
         #expect(!ReconnectPolicy.isConnectionLoss(sshStatus: 255, stderr: "Bad configuration option: x"))
+        #expect(ReconnectPolicy.isConnectionLoss(sshStatus: 255, stderr: " \n"))
+        #expect(!ReconnectPolicy.isConnectFailure(sshStatus: 255, stderr: ""))
         // Only failures before the server was reached are safe for commands that mustn't run twice.
         #expect(ReconnectPolicy.isConnectFailure(sshStatus: 255, stderr: "ssh: connect to host h port 22: Connection refused"))
         #expect(ReconnectPolicy.isConnectFailure(sshStatus: 255, stderr: "ssh: connect to host h port 22: Operation timed out"))

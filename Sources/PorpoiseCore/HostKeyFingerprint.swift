@@ -7,7 +7,9 @@ public enum HostKeyFingerprint {
     /// The fingerprint of a public key in its one-line form ("ssh-ed25519 AAAA… comment", as in a .pub file,
     /// known_hosts after the host field, or ssh-keyscan's output after the host); nil when it isn't one.
     public static func of(publicKeyLine line: String) -> String? {
-        let words = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+        // The first line only: the word after the type must be the whole blob.
+        let first = line.split(whereSeparator: \.isNewline).first ?? ""
+        let words = first.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
         // The base64 blob follows the key type; a known_hosts line has the host names first.
         guard let typeIndex = words.firstIndex(where: isKeyType), typeIndex + 1 < words.count,
             let blob = Data(base64Encoded: words[typeIndex + 1])

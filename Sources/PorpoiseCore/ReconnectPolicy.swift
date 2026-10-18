@@ -27,6 +27,8 @@ public struct ReconnectPolicy: Sendable {
     public static func isConnectionLoss(sshStatus status: Int32, stderr: String) -> Bool {
         guard status == sshErrorStatus else { return false }
         let e = stderr.lowercased()
+        // A shared connection that died under a command ends it with no message at all.
+        if e.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
         // A key the server refused or a changed host key is an answer, not a lost connection.
         if e.contains("permission denied") || e.contains("host key verification failed") || e.contains("identification has changed") {
             return false

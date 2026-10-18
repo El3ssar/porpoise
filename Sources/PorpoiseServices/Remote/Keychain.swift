@@ -7,7 +7,13 @@ import Security
 struct Keychain: PasswordCredentialStore {
     let api: any KeychainAPI
     init(api: any KeychainAPI = SystemKeychainAPI()) { self.api = api }
-    private static func proto(_ scheme: String) -> CFString { scheme == "ftps" ? kSecAttrProtocolFTPS : kSecAttrProtocolFTP }
+    static func proto(_ scheme: String) -> CFString {
+        switch scheme {
+        case "ftps": return kSecAttrProtocolFTPS
+        case "smb": return kSecAttrProtocolSMB
+        default: return kSecAttrProtocolFTP
+        }
+    }
 
     func password(server: String, account: String, scheme: String) -> String? {
         let base: [String: Any] = [

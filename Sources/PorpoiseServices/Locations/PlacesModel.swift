@@ -192,13 +192,20 @@ public final class PlacesModel {
         DispatchQueue.main.async { self.refreshDetected() }
     }
 
-    /// A model kept in `storeURL` (tests use their own file).
-    init(storeURL: URL?) {
+    /// A model kept in `storeURL` (tests use their own file), listing `profiles`' saved connections.
+    init(storeURL: URL?, profiles: ConnectionProfiles = .shared) {
         self.storeURL = storeURL
+        self.profiles = profiles
         load()
         refreshDevices()
         ready = true
+        profilesObserver = NotificationCenter.default.addObserver(forName: ConnectionProfiles.changed, object: profiles, queue: nil) {
+            [weak self] _ in self?.post()
+        }
     }
+
+    private let profiles: ConnectionProfiles
+    private var profilesObserver: NSObjectProtocol?
 
     // MARK: Entries
 
@@ -207,7 +214,13 @@ public final class PlacesModel {
         let bookmarked = Set(userEntries.map(\.url.standardizedFileURL))
         return cloudEntries.filter { !bookmarked.contains($0.url.standardizedFileURL) } + phoneEntries
     }
-    public var allEntries: [PlaceEntry] { userEntries + detected + accounts.flatMap(\.entries) + tagEntries + devices }
+    public var allEntries: [PlaceEntry] { userEntries + detected + savedConnections + accounts.flatMap(\.entries) + tagEntries + devices }
+
+    /// Saved connections (Connections window), at the end of Remote; one also bookmarked is shown once.
+    var savedConnections: [PlaceEntry] {
+        let bookmarked = Set(userEntries.map(\.url))
+        return profiles.placeEntries.filter { !bookmarked.contains($0.url) }
+    }
 
     /// Entries grouped by section, honoring hidden flags.
     public func sections() -> [(PlaceSection, [PlaceEntry])] {

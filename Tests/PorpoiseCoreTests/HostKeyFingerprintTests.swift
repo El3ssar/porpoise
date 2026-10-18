@@ -12,6 +12,7 @@ import Testing
         #expect(HostKeyFingerprint.of(publicKeyLine: Self.key) == Self.fingerprint)
         // known_hosts and ssh-keyscan lines have the host first.
         #expect(HostKeyFingerprint.of(publicKeyLine: "[127.0.0.1]:2222 " + Self.key) == Self.fingerprint)
+        #expect(HostKeyFingerprint.of(publicKeyLine: Self.key + "\nssh-rsa AAAA\n") == Self.fingerprint)
         #expect(HostKeyFingerprint.of(publicKeyLine: "not a key") == nil)
         #expect(HostKeyFingerprint.of(publicKeyLine: "ssh-rsa") == nil)
         #expect(HostKeyFingerprint.of(publicKeyLine: "ssh-rsa !!!notbase64") == nil)

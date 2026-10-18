@@ -25,18 +25,46 @@ final class SSHProvider: RemoteProvider {
     }()
 
     /// What tests change: extra ssh options (their own key and known_hosts instead of ~/.ssh), the folder for the
-    /// shared connection's socket, and no password prompt.
+    /// shared connection's socket, and no password prompt (or a script of their own as the prompt).
     struct Isolation {
         var options: [String]
         var controlDir: URL
+        var askPass: String? = nil
     }
     let isolation: Isolation?
+    /// Where the connection's saved profile (jump hosts, key) is looked up.
+    private let profiles: ConnectionProfiles
+    private let reconnect: ReconnectPolicy
+    /// Sleeps between reconnection tries; tests record instead.
+    var wait: (TimeInterval) -> Void = SSHProvider.waitUnlessCancelled
 
-    init(url: URL, isolation: Isolation? = nil) {
+    /// Whether a command ever reached the server: only then is a lost connection worth trying again.
+    private var connected: Bool {
+        get { stateLock.withLock { everConnected } }
+        set { stateLock.withLock { everConnected = newValue } }
+    }
+    private var everConnected = false
+    private let stateLock = NSLock()
+
+    init(
+        url: URL, isolation: Isolation? = nil, profiles: ConnectionProfiles = .shared, reconnect: ReconnectPolicy = ReconnectPolicy()
+    ) {
         user = url.user
         host = url.host ?? "localhost"
         port = url.port
         self.isolation = isolation
+        self.profiles = profiles
+        self.reconnect = reconnect
+    }
+
+    /// The server's address as a URL, which is how a saved profile is matched.
+    private var serverURL: URL? {
+        var c = URLComponents()
+        c.scheme = "sftp"
+        c.host = host
+        c.port = port
+        c.user = user
+        return c.url
     }
 
     private var target: String { user.map { "\($0)@\(host)" } ?? host }
@@ -57,7 +85,7 @@ final class SSHProvider: RemoteProvider {
     private var baseArgs: [String] {
         // ssh keeps the first value it gets for an option, so the isolation's come first.
         var a =
-            (isolation?.options ?? []) + [
+            (isolation?.options ?? []) + (serverURL.map(profiles.sshOptions(for:)) ?? []) + [
                 "-o", "ControlMaster=auto", "-o", "ControlPath=\(controlPath)",
                 "-o", "ControlPersist=\(Self.controlPersist)", "-o", "ConnectTimeout=\(Self.connectTimeout)",
                 "-o", "LogLevel=ERROR", "-o", "ServerAliveInterval=30",
@@ -71,8 +99,11 @@ final class SSHProvider: RemoteProvider {
     }
 
     private var env: [String: String] {
-        if isolation != nil { return [:] }
-        return ["SSH_ASKPASS": AskPass.scriptPath, "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": ":0"]
+        guard let isolation else {
+            return HostKeys.agentEnvironment().merging(["SSH_ASKPASS": AskPass.scriptPath, "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": ":0"]) { $1 }
+        }
+        guard let ask = isolation.askPass else { return [:] }
+        return ["SSH_ASKPASS": ask, "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": ":0"]
     }
 
     /// Remote path as a shell word; "/~/x" (or empty) is relative to the remote home.
@@ -86,18 +117,79 @@ final class SSHProvider: RemoteProvider {
     /// The remote root or home folder, which must never be deleted wholesale.
     private func isTopFolder(_ url: URL) -> Bool { ["", "/", "/~", "/~/"].contains(url.path) }
 
-    /// Runs `script` with the remote `sh`.
-    private func run(_ script: String, stdin: Data? = nil, stdinFile: URL? = nil, stdoutFile: URL? = nil) throws -> Shell.Result {
+    /// ssh's failure when the connection was lost, carried through the reconnection tries.
+    private struct Lost: Error {
+        let result: Shell.Result
+        let beforeStart: Bool
+    }
+
+    /// Runs `script` with the remote `sh`. A lost connection (sleep, a network change) is made again and the command
+    /// run again, if the connection worked before: any command that is `idempotent` (safe to run twice), the others
+    /// only when ssh never reached the server.
+    private func run(
+        _ script: String, stdin: Data? = nil, stdinFile: URL? = nil, stdoutFile: URL? = nil, idempotent: Bool = true
+    ) throws -> Shell.Result {
         // A host or user starting with "-" would be read as an ssh option (-oProxyCommand=… runs commands locally).
         guard !host.hasPrefix("-"), !(user ?? "").hasPrefix("-") else { throw RemoteError.failed("Invalid server name “\(target)”.") }
-        let args = baseArgs + ["--", target, "sh -c " + RemoteParsing.quote(script)]
-        return try Shell.run(ssh, args, env: env, stdin: stdin, stdoutFile: stdoutFile, stdinFile: stdinFile)
+        do {
+            return try reconnect.run(
+                connectedBefore: { connected }, isLoss: { ($0 as? Lost).map { idempotent || $0.beforeStart } ?? false },
+                wait: wait, reconnect: { disconnect() }
+            ) {
+                let r = try attempt(script, stdin: stdin, stdinFile: stdinFile, stdoutFile: stdoutFile)
+                if ReconnectPolicy.isConnectionLoss(sshStatus: r.status, stderr: r.err) {
+                    throw Lost(result: r, beforeStart: ReconnectPolicy.isConnectFailure(sshStatus: r.status, stderr: r.err))
+                }
+                if r.status != ReconnectPolicy.sshErrorStatus { connected = true }
+                return r
+            }
+        } catch let lost as Lost {
+            return lost.result
+        }
+    }
+
+    /// One run of `script`. When the server's key changed, the user is shown its new fingerprint; if they accept it,
+    /// the old key is removed and the command runs again, letting ssh record only a key with that same fingerprint.
+    private func attempt(_ script: String, stdin: Data?, stdinFile: URL?, stdoutFile: URL?) throws -> Shell.Result {
+        let command = ["--", target, "sh -c " + RemoteParsing.quote(script)]
+        let r = try Shell.run(ssh, baseArgs + command, env: env, stdin: stdin, stdoutFile: stdoutFile, stdinFile: stdinFile)
+        guard r.status == ReconnectPolicy.sshErrorStatus, let change = HostKeyFingerprint.change(inSSHError: r.err) else { return r }
+        let name = HostKeyFingerprint.knownHostsName(host: host, port: port)
+        guard let file = change.knownHostsFile, Self.confirmChangedHostKey(name, change) else {
+            throw RemoteError.failed("The key of \(name) has changed (now \(change.fingerprint)), and it wasn't accepted.")
+        }
+        try HostKeys.remove(name: name, from: file)
+        // Asked again, ssh takes the accepted fingerprint as the answer only if the key it's shown has exactly that one.
+        let approve = ["-o", "BatchMode=no", "-o", "StrictHostKeyChecking=ask"]
+        var approveEnv = env
+        approveEnv[HostKeyFingerprint.answerVariable] = change.fingerprint
+        if approveEnv["SSH_ASKPASS"] == nil { approveEnv["SSH_ASKPASS"] = AskPass.scriptPath; approveEnv["SSH_ASKPASS_REQUIRE"] = "force" }
+        return try Shell.run(ssh, approve + baseArgs + command, env: approveEnv, stdin: stdin, stdoutFile: stdoutFile, stdinFile: stdinFile)
+    }
+
+    /// Asks whether to accept a server's new key (host as known_hosts names it, what ssh reported); the app shows the
+    /// fingerprint. Runs on the main thread. Refuses until the app sets it.
+    nonisolated(unsafe) public static var confirmHostKeyChange: (String, HostKeyFingerprint.Change) -> Bool = { _, _ in false }
+
+    private static func confirmChangedHostKey(_ name: String, _ change: HostKeyFingerprint.Change) -> Bool {
+        if Thread.isMainThread { return confirmHostKeyChange(name, change) }
+        return DispatchQueue.main.sync { confirmHostKeyChange(name, change) }
+    }
+
+    /// Sleeps `seconds` in short steps, ending early when the transfer it runs for is cancelled.
+    static func waitUnlessCancelled(_ seconds: TimeInterval) {
+        let control = Shell.currentTransferControl
+        let end = Date().addingTimeInterval(seconds)
+        while Date() < end {
+            if control?.isCancelled() == true || control?.isInterrupted() == true { return }
+            Thread.sleep(forTimeInterval: min(0.1, max(0, end.timeIntervalSinceNow)))
+        }
     }
 
     /// Runs `script` and returns its output; a non-zero exit becomes an error with ssh's message.
     @discardableResult
-    func exec(_ script: String, stdin: Data? = nil) throws -> Data {
-        let r = try run(script, stdin: stdin)
+    func exec(idempotent: Bool = true, _ script: String, stdin: Data? = nil) throws -> Data {
+        let r = try run(script, stdin: stdin, idempotent: idempotent)
         try check(r, fallback: "ssh to \(host) failed (\(r.status)).")
         return r.out
     }
@@ -189,22 +281,22 @@ final class SSHProvider: RemoteProvider {
 
     func makeFolder(_ remote: URL) throws { try exec("mkdir -p -- \(shellPath(remote))") }
 
-    func removeEmptyFolder(_ remote: URL) throws { try exec("rmdir -- \(shellPath(remote))") }
+    func removeEmptyFolder(_ remote: URL) throws { try exec(idempotent: false, "rmdir -- \(shellPath(remote))") }
 
     func rename(_ remote: URL, to newName: String) throws {
         try RemoteFS.checkName(newName)
         let src = shellPath(remote), dst = shellPath(remote.deletingLastPathComponent().appendingPathComponent(newName))
-        let r = try run("if [ -e \(dst) ] || [ -L \(dst) ]; then exit \(Self.existsStatus); fi; mv -- \(src) \(dst)")
+        let r = try run("if [ -e \(dst) ] || [ -L \(dst) ]; then exit \(Self.existsStatus); fi; mv -- \(src) \(dst)", idempotent: false)
         if r.status == Self.existsStatus { throw RemoteError.exists(newName) }
         try check(r, fallback: "Could not rename “\(remote.lastPathComponent)”.")
     }
 
     /// The trailing "/" makes mv/cp fail instead of renaming when the destination folder is missing.
     func move(_ remote: [URL], into folder: URL) throws {
-        try exec("mv -- " + remote.map(shellPath).joined(separator: " ") + " " + shellPath(folder) + "/")
+        try exec(idempotent: false, "mv -- " + remote.map(shellPath).joined(separator: " ") + " " + shellPath(folder) + "/")
     }
 
     func copy(_ remote: [URL], into folder: URL) throws {
-        try exec("cp -R -p -- " + remote.map(shellPath).joined(separator: " ") + " " + shellPath(folder) + "/")
+        try exec(idempotent: false, "cp -R -p -- " + remote.map(shellPath).joined(separator: " ") + " " + shellPath(folder) + "/")
     }
 }

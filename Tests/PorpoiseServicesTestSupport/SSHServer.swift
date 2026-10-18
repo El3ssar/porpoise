@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseCore
 import PorpoiseTestSupport
 import Testing
 
@@ -57,6 +58,12 @@ public final class SSHServer: @unchecked Sendable {
 
             """)
 
+        try start()
+    }
+
+    /// Starts sshd (again, after `killAbruptly()`), on the same port with the same keys.
+    public func start() throws {
+        try? FileManager.default.removeItem(at: pidFile)
         // sshd forks into the background once it listens; the child writes the pid file right after.
         let r = try Shell.run("/usr/sbin/sshd", ["-f", scratch.path("sshd_config").path, "-E", log.path])
         guard r.status == 0 else { throw Failure("sshd did not start: \(r.err) \(scratch.read("sshd.log") ?? "")") }
@@ -81,16 +88,52 @@ public final class SSHServer: @unchecked Sendable {
         try? FileManager.default.removeItem(at: controlDir)
     }
 
+    /// Ends the listener and every session at once, as a network loss would (`start()` brings it back).
+    public func killAbruptly() {
+        guard let pid = serverPID else { return }
+        // The sessions are sshd's children; ending them drops their connections without a goodbye.
+        _ = try? Shell.run("/usr/bin/pkill", ["-KILL", "-P", String(pid)])
+        Darwin.kill(pid, SIGKILL)
+        let deadline = Date().addingTimeInterval(3)
+        while Darwin.kill(pid, 0) == 0 && Date() < deadline { usleep(20_000) }
+    }
+
+    /// The known_hosts file the client trusts this server's key in.
+    public var knownHosts: URL { scratch.path("known_hosts") }
+    /// The client's own key.
+    public var clientKey: URL { scratch.path("client_key") }
+
+    /// An ssh client configuration with this server's keys only, for `-F`: unlike command-line options, ssh hands it on
+    /// to the ssh it runs to reach a jump host.
+    public func clientConfig(batch: Bool = true) throws -> URL {
+        try scratch.file(
+            batch ? "client_config" : "client_config_ask",
+            """
+            Host *
+              IdentityFile \(clientKey.path)
+              IdentitiesOnly yes
+              IdentityAgent none
+              BatchMode \(batch ? "yes" : "no")
+              UserKnownHostsFile \(knownHosts.path)
+              GlobalKnownHostsFile /dev/null
+              StrictHostKeyChecking yes
+
+            """)
+    }
+
     /// A provider that connects with this server's keys only: no ~/.ssh/config, agent, user keys or known_hosts.
-    public func provider() -> SSHProvider {
+    public func provider(
+        profiles: ConnectionProfiles = ConnectionProfiles(storeURL: nil), reconnect: ReconnectPolicy = .never, askPass: String? = nil,
+        options: [String]? = nil
+    ) -> SSHProvider {
         let p = SSHProvider(
             url: url("/"),
             isolation: .init(
-                options: [
-                    "-F", "/dev/null", "-i", scratch.path("client_key").path, "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none",
-                    "-o", "BatchMode=yes", "-o", "UserKnownHostsFile=\(scratch.path("known_hosts").path)",
+                options: options ?? [
+                    "-F", "/dev/null", "-i", clientKey.path, "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none",
+                    "-o", "BatchMode=yes", "-o", "UserKnownHostsFile=\(knownHosts.path)",
                     "-o", "GlobalKnownHostsFile=/dev/null", "-o", "StrictHostKeyChecking=yes",
-                ], controlDir: controlDir))
+                ], controlDir: controlDir, askPass: askPass), profiles: profiles, reconnect: reconnect)
         lock.lock(); providers.append(p); lock.unlock()
         return p
     }
