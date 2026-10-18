@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 public enum FileChecksumError: Error, LocalizedError {
     case changed(String), notRegular(String), unsafeReview, noKeeper, notDownloaded(String)

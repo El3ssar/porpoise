@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// Explicit opt-in: no volume or folder is crawled until it appears in this configuration.
 public struct IndexConfiguration: Codable, Equatable, Sendable {

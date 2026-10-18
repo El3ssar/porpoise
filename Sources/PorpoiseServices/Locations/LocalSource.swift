@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// A folder on this Mac, listed off the main thread: it may be huge or on a slow mount.
 final class LocalSource: LocationContentSource {

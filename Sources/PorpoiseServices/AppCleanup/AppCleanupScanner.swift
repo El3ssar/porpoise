@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 import Security
 
 public struct CleanupCandidate: Sendable {

@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// A job that didn't finish last time (Porpoise quit, crashed or the Mac lost power), checked against the disk as it
 /// is now: what can be resumed, what changed meanwhile.

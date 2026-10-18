@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// One controlled remote batch. Only completed staged files become visible at their final names.
 /// All methods run on its worker thread, except the shared thread-safe controls.

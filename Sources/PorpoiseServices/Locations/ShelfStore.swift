@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// One reference on a shelf: a local file (followed through renames and moves by a bookmark) or a remote location.
 public struct ShelfItem: Codable, Equatable, Identifiable, Sendable {

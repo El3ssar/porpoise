@@ -6,14 +6,14 @@
 # a rebuilt one, even from the same source, is installed again (one more approval). So run this only when its inputs
 # (below) change, then commit the result: CI fails while Resources/Helper/inputs.sha256 doesn't match them.
 #
-# The helper is compiled from exactly its inputs (not all of PorpoiseCore), with no paths from this machine in it.
+# The helper links only PorpoiseHelperKit, with no paths from this machine in it.
 # Usage: scripts/build-helper.sh [--check]   (--check: only verify the committed helper against its inputs)
 set -euo pipefail
 cd "$(dirname "$0")/.."
-# What it uses of PorpoiseCore: compiling fails when one is missing.
-CORE=(Sources/PorpoiseCore/{CodeSigning,Escaping,FilePath,HelperProtocol,HelperRequests}.swift)
+# All of HelperKit, which has no dependency on Core, FileSystem, Services or the UI.
+KIT=(Sources/PorpoiseHelperKit/*.swift)
 HELPER=(Sources/PorpoiseHelper/*.swift)
-INPUTS=(scripts/build-helper.sh "${HELPER[@]}" "${CORE[@]}")
+INPUTS=(scripts/build-helper.sh "${HELPER[@]}" "${KIT[@]}")
 APP="Resources/Helper/Porpoise Helper.app"
 if [ "${1:-}" = "--check" ]; then
     ok=0
@@ -25,10 +25,10 @@ fi
 [ -f build/AppIcon.icns ] || { echo "run scripts/make-app.sh once first (it makes build/AppIcon.icns)"; exit 1; }
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
-SWIFTC=(xcrun swiftc -O -swift-version 5 -target arm64-apple-macos15.0 -file-prefix-map "$PWD=." -file-prefix-map "$WORK=.")
-"${SWIFTC[@]}" -wmo -parse-as-library -module-name PorpoiseCore -emit-module -emit-module-path "$WORK/PorpoiseCore.swiftmodule" \
-    -c -o "$WORK/PorpoiseCore.o" "${CORE[@]}"
-"${SWIFTC[@]}" -wmo -module-name PorpoiseHelper -I "$WORK" "${HELPER[@]}" "$WORK/PorpoiseCore.o" -o "$WORK/PorpoiseHelper"
+SWIFTC=(xcrun swiftc -O -swift-version 5 -package-name Porpoise -target arm64-apple-macos15.0 -file-prefix-map "$PWD=." -file-prefix-map "$WORK=.")
+"${SWIFTC[@]}" -wmo -parse-as-library -module-name PorpoiseHelperKit -emit-module -emit-module-path "$WORK/PorpoiseHelperKit.swiftmodule" \
+    -c -o "$WORK/PorpoiseHelperKit.o" "${KIT[@]}"
+"${SWIFTC[@]}" -wmo -module-name PorpoiseHelper -I "$WORK" "${HELPER[@]}" "$WORK/PorpoiseHelperKit.o" -o "$WORK/PorpoiseHelper"
 strip -S "$WORK/PorpoiseHelper"
 rm -rf "$APP" Resources/Helper/PorpoiseHelper
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

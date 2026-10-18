@@ -40,8 +40,8 @@ public enum ShellChoice: String, Codable, CaseIterable, Sendable {
     case login, zsh, bash, fish, nu, custom
     public var title: String { self == .login ? "Login shell" : self == .custom ? "Custom" : rawValue }
     public func executable(
-        custom: String, environment: [String: String] = ProcessInfo.processInfo.environment,
-        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+        custom: String, environment: [String: String],
+        isExecutable: (String) -> Bool
     ) -> String {
         if self == .custom { return custom }
         if self == .login { return environment["SHELL"] ?? "/bin/zsh" }

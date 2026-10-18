@@ -4,18 +4,6 @@ import Testing
 
 /// This process's own signature: a test binary is signed ad hoc by the linker (no certificate), so it has no leaf
 /// certificate and no requirement can be built from it; a certificate-signed build gets a SHA-1 and a requirement.
-@Suite struct OwnSignatureTests {
-    @Test func requirementFollowsTheOwnCertificate() {
-        let hash = CodeSigning.ownLeafCertificateHash()
-        let requirement = CodeSigning.requirement(identifier: "app.porpoise.test")
-        #expect((hash == nil) == (requirement == nil))
-        if let hash {
-            #expect(hash.count == 40 && hash.allSatisfy { $0.isHexDigit && !$0.isLowercase })
-            #expect(requirement == #"identifier "app.porpoise.test" and certificate leaf = H""# + hash + "\"")
-        }
-        #expect(CodeSigning.ownLeafCertificateHash() == hash)  // stable
-    }
-}
 
 /// Konsole color schemes as shipped and as written by hand.
 @Suite struct KonsoleSchemeCoverageTests {

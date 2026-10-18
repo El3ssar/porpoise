@@ -1,5 +1,5 @@
 import Foundation
-import PorpoiseCore
+import PorpoiseHelperKit
 
 /// Runs as root under launchd. Does single file operations for Porpoise (see PorpoiseHelperProtocol). It runs only
 /// while needed: launchd starts it when Porpoise connects, and it quits as soon as Porpoise is done.

@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// The user's own Trash (Dolphin's trash:/), and Finder's "Remove items from the Trash after 30 days" preference.
 public enum TrashInfo {

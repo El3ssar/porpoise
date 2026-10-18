@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseFileSystem
 import PorpoiseServices
 
 /// Panels › Shelf (F8): references collected from any folder, search or server, kept until an operation runs on

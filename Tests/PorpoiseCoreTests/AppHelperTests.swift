@@ -26,11 +26,4 @@ import Testing
         #expect(PathMath.commonFolder(of: [u("/a/b/c.txt")]).hasDirectoryPath)
     }
 
-    @Test func sameFileKeyIgnoresPrivateAndKeepsRemoteURLsWhole() throws {
-        #expect(FilePath.key(URL(fileURLWithPath: "/private/tmp/x")) == FilePath.entry("/tmp/x"))
-        #expect(FilePath.key(URL(fileURLWithPath: "/tmp/x")) == FilePath.entry("/tmp/x"))
-        #expect(FilePath.key(URL(fileURLWithPath: "/privateer/x")) == "/privateer/x")
-        let remote = try #require(URL(string: "sftp://me@host/private/tmp/x"))
-        #expect(FilePath.key(remote) == "sftp://me@host/private/tmp/x")
-    }
 }

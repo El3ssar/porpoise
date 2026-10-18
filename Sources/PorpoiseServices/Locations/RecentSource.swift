@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// Recent Files (Spotlight's last-used dates) and Recent Locations (the folders visited).
 final class RecentSource: LocationContentSource {

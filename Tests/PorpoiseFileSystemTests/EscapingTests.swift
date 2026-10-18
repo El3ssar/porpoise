@@ -1,0 +1,61 @@
+import Foundation
+import PorpoiseTestSupport
+import Testing
+
+@testable import PorpoiseCore
+@testable import PorpoiseFileSystem
+
+@Suite(.serialized) struct EscapingTests {
+
+    // MARK: Preview server paths
+
+    private let fm = FileManager.default
+    private let secret = "S3CRET"
+    private let scratch: Scratch
+
+    init() throws { scratch = try Scratch("Escaping") }
+
+    /// root/stream/index.m3u8, a secret file next to root, and symlinks inside root pointing in and out.
+    private func setup() throws -> URL {
+        let base = scratch.url
+        let root = base.appendingPathComponent("root")
+        try fm.createDirectory(at: root.appendingPathComponent("stream"), withIntermediateDirectories: true)
+        try Data("#EXTM3U".utf8).write(to: root.appendingPathComponent("stream/index.m3u8"))
+        try Data("x".utf8).write(to: root.appendingPathComponent("stream/seg 1.m4s"))
+        try Data("private".utf8).write(to: base.appendingPathComponent("secret.txt"))
+        try fm.createSymbolicLink(at: root.appendingPathComponent("stream/out"), withDestinationURL: base.appendingPathComponent("secret.txt"))
+        try fm.createSymbolicLink(at: root.appendingPathComponent("stream/in"), withDestinationURL: root.appendingPathComponent("stream/index.m3u8"))
+        return root.resolvingSymlinksInPath()
+    }
+
+    @Test func servesFilesInsideTheRoot() throws {
+        let root = try setup()
+        #expect(Escaping.servedFile(for: "/S3CRET/stream/index.m3u8", root: root, secret: secret)?.lastPathComponent == "index.m3u8")
+        #expect(Escaping.servedFile(for: "/S3CRET/stream/seg%201.m4s?t=1", root: root, secret: secret)?.lastPathComponent == "seg 1.m4s")
+        #expect(Escaping.servedFile(for: "/S3CRET//stream//index.m3u8", root: root, secret: secret) != nil)
+        #expect(Escaping.servedFile(for: "/S3CRET/stream/in", root: root, secret: secret) != nil)  // symlink staying inside
+    }
+
+    @Test func refusesEverythingElse() throws {
+        let root = try setup()
+        let bad = [
+            "/stream/index.m3u8",  // no secret
+            "/WRONG/stream/index.m3u8",
+            "/S3CRET/../secret.txt",
+            "/S3CRET/stream/../../secret.txt",
+            "/S3CRET/%2e%2e/secret.txt",  // percent-encoded ..
+            "/S3CRET/stream%2F..%2F..%2Fsecret.txt",  // encoded slashes
+            "/S3CRET/%252e%252e/secret.txt",  // double encoding stays literal (and missing)
+            "/S3CRET/stream/out",  // symlink leading out of the root
+            "/S3CRET/stream",  // a folder
+            "/S3CRET/",
+            "/S3CRET/stream/index.m3u8%00.jpg",
+            "/S3CRET/stream/..\\..\\secret.txt",
+            "/S3CRET/stream/%ZZ",  // invalid encoding
+            "",
+        ]
+        for target in bad {
+            #expect(Escaping.servedFile(for: target, root: root, secret: secret) == nil, "\(target)")
+        }
+    }
+}

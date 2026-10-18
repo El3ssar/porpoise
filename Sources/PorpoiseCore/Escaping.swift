@@ -25,10 +25,10 @@ public enum Escaping {
 extension String {
     /// Whether the text has `c` as a code point. String's own `contains` compares Characters, and a combining mark
     /// after "/", a quote or a dot makes one Character of the two: "a/\u{301}b".contains("/") is false.
-    func containsScalar(_ c: Unicode.Scalar) -> Bool { unicodeScalars.contains(c) }
+    package func containsScalar(_ c: Unicode.Scalar) -> Bool { unicodeScalars.contains(c) }
 
     /// The parts between `c` code points, empty ones left out (see `containsScalar` for why not `split`).
-    func scalarComponents(separatedBy c: Unicode.Scalar) -> [String] {
+    package func scalarComponents(separatedBy c: Unicode.Scalar) -> [String] {
         unicodeScalars.split(separator: c).map { String(String.UnicodeScalarView($0)) }
     }
 }

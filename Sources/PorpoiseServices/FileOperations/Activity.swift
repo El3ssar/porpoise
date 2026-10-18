@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// One job as the Activity window shows it: waiting in the queue, running, paused, waiting for an answer, or ended.
 /// Main thread only.

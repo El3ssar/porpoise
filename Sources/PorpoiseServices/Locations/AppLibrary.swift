@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// The Applications folder shown as an app library (Launchpad style): every app from /Applications, Apple's own
 /// apps in /System/Applications and ~/Applications in one grid. Its listing uses the same view-settings resolver as every other location.

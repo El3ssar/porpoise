@@ -1,5 +1,7 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
+import PorpoiseHelperKit
 
 // MARK: Permission denied → unlock your own items, or authenticate (as Finder does)
 
