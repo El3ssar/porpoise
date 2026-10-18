@@ -13,39 +13,70 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     private var settingsObserver: NSObjectProtocol?
     private var ancestryObservers: [NSObjectProtocol] = []
     private var followPending = false
+    /// A follow stopped at a folder whose listing is running; it resumes when the listing arrives.
+    private var followWaiting = false
+    /// Folders are listed here, never in outline callbacks: a folder of 100,000 files took seconds.
+    private let listingQueue = DispatchQueue(label: "porpoise.folders.listing", qos: .userInitiated, attributes: .concurrent)
 
     private static let cellID = NSUserInterfaceItemIdentifier("folder")
     /// Settings this panel depends on (nil: all settings were reset).
     private static let settingKeys: Set<String?> = ["foldersHome", "foldersHidden", nil]
     /// Entries looked at when guessing whether a folder has subfolders (it decides the disclosure triangle).
     private static let expandabilityScanLimit = 200
+    /// A listing that takes longer than this shows "Loading…" on its folder.
+    private static let loadingLabelDelay: TimeInterval = 0.15
 
-    /// A folder in the tree; children are listed lazily and cached until the tree is rebuilt.
+    /// A folder in the tree; children are listed lazily (on a worker queue) and cached until the tree is rebuilt.
     final class Node {
         let url: URL
         private(set) var children: [Node]?
         private var expandable: Bool?
         /// Children from before `invalidate()`, reused so their expansion state survives a re-list.
         private var staleChildren: [Node]?
+        /// The listing running for this node; a result from any other (older) listing is dropped.
+        private var listing: Int?
+        private static var listings = 0
+        /// The missing child a re-list was made for: one re-list per missing folder, not one per follow.
+        var relistedFor: String?
         init(_ url: URL) { self.url = url }
+
+        var isLoading: Bool { listing != nil }
 
         var name: String {
             guard url.path == "/" else { return url.lastPathComponent }
             return (try? url.resourceValues(forKeys: [.volumeLocalizedNameKey]).volumeLocalizedName) ?? "/"
         }
 
+        /// Lists the children here and now (benchmarks and tests; the panel lists on its worker queue).
         func load(showHidden: Bool) -> [Node] {
             if let c = children { return c }
+            return apply(Self.sortedSubfolderNames(of: url, showHidden: showHidden))
+        }
+
+        /// Marks a listing as started; pass the token back to `finishListing`.
+        func beginListing() -> Int {
+            Self.listings += 1
+            listing = Self.listings
+            return Self.listings
+        }
+
+        /// Takes the names a listing found, unless a newer listing or `invalidate()` replaced it.
+        func finishListing(_ token: Int, _ names: [String]) -> Bool {
+            guard listing == token else { return false }
+            listing = nil
+            _ = apply(names)
+            return true
+        }
+
+        private func apply(_ names: [String]) -> [Node] {
             let old = Dictionary((staleChildren ?? []).map { ($0.url.lastPathComponent, $0) }, uniquingKeysWith: { a, _ in a })
-            let c = Self.subfolderNames(of: url, showHidden: showHidden, limit: nil)
-                .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-                .map { old[$0] ?? Node(url.appendingPathComponent($0)) }
+            let c = names.map { old[$0] ?? Node(url.appendingPathComponent($0)) }
             children = c
             staleChildren = nil
             return c
         }
 
-        /// Cheap check (first entries only) unless the children are already known.
+        /// Cheap check (first entries only, bounded before any full listing) unless the children are already known.
         func isExpandable(showHidden: Bool) -> Bool {
             if let c = children { return !c.isEmpty }
             if let e = expandable { return e }
@@ -55,8 +86,8 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         }
 
         /// Adds a hidden subfolder that the view is in (or under), so the tree can show the way there.
-        func reveal(_ name: String, showHidden: Bool) -> Node {
-            var c = load(showHidden: showHidden)
+        func reveal(_ name: String) -> Node {
+            var c = children ?? []
             if let n = c.first(where: { $0.url.lastPathComponent == name }) { return n }
             let n = Node(url.appendingPathComponent(name))
             c.append(n)
@@ -65,21 +96,38 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
             return n
         }
 
-        /// Forgets the cached listing (the folder changed on disk).
+        /// Forgets the cached listing (the folder changed on disk); a listing still running is dropped.
         func invalidate() {
             staleChildren = children ?? staleChildren
             children = nil
             expandable = nil
+            listing = nil
+        }
+
+        /// Subfolder names in the tree's order. Safe off the main thread: it only reads the file system.
+        static func sortedSubfolderNames(of url: URL, showHidden: Bool) -> [String] {
+            subfolderNames(of: url, showHidden: showHidden, limit: nil).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         }
 
         /// Names of real subfolders (packages such as .app bundles are files here, as in the view). Hidden ones are
-        /// dot folders and folders hidden in Finder (~/Library, /usr…), as in the view.
+        /// dot folders and folders hidden in Finder (~/Library, /usr…), as in the view. `limit` caps the entries
+        /// looked at, in directory order; only entries the directory reports as folders (or doesn't type) are
+        /// stat'ed, so a folder of files costs one pass over its names.
         private static func subfolderNames(of url: URL, showHidden: Bool, limit: Int?, firstOnly: Bool = false) -> [String] {
-            var names = (try? FileManager.default.contentsOfDirectory(atPath: url.path)) ?? []
-            if !showHidden { names.removeAll { $0.hasPrefix(".") } }
-            if let limit { names = Array(names.prefix(limit)) }
+            guard let dir = opendir(url.path) else { return [] }
+            defer { closedir(dir) }
             var out: [String] = []
-            for n in names {
+            var seen = 0
+            while let e = readdir(dir) {
+                if let limit, seen >= limit { break }
+                let type = e.pointee.d_type
+                let n = withUnsafeBytes(of: e.pointee.d_name) { raw in
+                    FileManager.default.string(
+                        withFileSystemRepresentation: raw.baseAddress!.assumingMemoryBound(to: CChar.self), length: Int(e.pointee.d_namlen))
+                }
+                if n == "." || n == ".." || (!showHidden && n.hasPrefix(".")) { continue }
+                seen += 1
+                guard type == DT_DIR || type == DT_UNKNOWN else { continue }
                 let v = try? url.appendingPathComponent(n).resourceValues(forKeys: [.isDirectoryKey, .isPackageKey, .isHiddenKey])
                 guard v?.isDirectory == true, v?.isPackage != true, showHidden || v?.isHidden != true else { continue }
                 out.append(n)
@@ -215,11 +263,14 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
             u = u.deletingLastPathComponent()
         }
         var parent: Node?
+        followWaiting = false
         for c in chain {
-            guard let n = child(of: parent, at: c) else { break }
+            guard case .found(let n) = child(of: parent, at: c) else { break }
             if let p = parent { outline.expandItem(p) }
             parent = n
         }
+        // A listing on the way runs this again; the selection stays as it is meanwhile.
+        if followWaiting { return }
         guard let n = parent, case let row = outline.row(forItem: n), row >= 0 else {
             outline.deselectAll(nil)
             return
@@ -291,25 +342,62 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         return URL(fileURLWithPath: String(cString: r))
     }
 
-    /// The child folder at `url`; re-lists the parent once when it's missing (created since it was listed).
-    private func child(of parent: Node?, at url: URL) -> Node? {
+    private enum Lookup { case found(Node), listing, missing }
+
+    /// The child folder at `url`; re-lists the parent once when it's missing (created since it was listed). While
+    /// the parent's listing runs, the follow waits for it (`followWaiting`).
+    private func child(of parent: Node?, at url: URL) -> Lookup {
         let p = parent ?? root
-        if let n = p.load(showHidden: showHidden).first(where: { $0.url.path == url.path }) { return n }
-        p.invalidate()
-        if let n = p.load(showHidden: showHidden).first(where: { $0.url.path == url.path }) {
-            outline.reloadItem(parent, reloadChildren: true)
-            return n
+        guard let listed = p.children else {
+            startListing(p)
+            followWaiting = true
+            return .listing
+        }
+        if let n = listed.first(where: { $0.url.path == url.path }) { return .found(n) }
+        if p.relistedFor != url.path {
+            p.relistedFor = url.path
+            p.invalidate()
+            startListing(p)
+            followWaiting = true
+            return .listing
         }
         // A hidden folder (/Volumes, /private, ~/.config…) on the way to the view's folder is shown anyway, as the
         // path there would otherwise be missing from the tree.
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
             outline.reloadItem(parent, reloadChildren: true)
-            return nil
+            return .missing
         }
-        let n = p.reveal(url.lastPathComponent, showHidden: showHidden)
+        let n = p.reveal(url.lastPathComponent)
         outline.reloadItem(parent, reloadChildren: true)
-        return n
+        return .found(n)
+    }
+
+    /// The children known so far; starts listing them when they aren't known yet.
+    private func children(of node: Node) -> [Node] {
+        if let c = node.children { return c }
+        startListing(node)
+        return []
+    }
+
+    /// Lists `node` on the worker queue and shows the result. A result for a tree that was rebuilt meanwhile (or
+    /// for a listing `invalidate()` dropped) is thrown away.
+    private func startListing(_ node: Node) {
+        guard !node.isLoading else { return }
+        let token = node.beginListing()
+        let url = node.url, hidden = showHidden, tree = root
+        listingQueue.async {
+            let names = Node.sortedSubfolderNames(of: url, showHidden: hidden)
+            DispatchQueue.main.async { [weak self, weak node] in
+                guard let self, let node, self.root === tree, self.remoteTree == nil, node.finishListing(token, names) else { return }
+                self.outline.reloadItem(node === self.root ? nil : node, reloadChildren: true)
+                if self.followWaiting { self.followCurrent() }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.loadingLabelDelay) { [weak self, weak node] in
+            guard let self, let node, node.isLoading, node !== self.root, self.outline.row(forItem: node) >= 0 else { return }
+            self.outline.reloadItem(node)
+        }
     }
 
     // MARK: Outline data
@@ -318,14 +406,14 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         if remoteTree != nil {
             return item == nil ? 1 : (item as? RemoteFolderTree.Node)?.children?.count ?? 0
         }
-        return ((item as? Node) ?? root).load(showHidden: showHidden).count
+        return children(of: (item as? Node) ?? root).count
     }
 
     func outlineView(_ o: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
         if let tree = remoteTree {
             return item == nil ? tree.root! : (item as! RemoteFolderTree.Node).children![index]
         }
-        return ((item as? Node) ?? root).load(showHidden: showHidden)[index]
+        return children(of: (item as? Node) ?? root)[index]
     }
 
     func outlineView(_ o: NSOutlineView, isItemExpandable item: Any) -> Bool {
@@ -342,9 +430,11 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
             v.toolTip = n.message
             v.setAccessibilityLabel(n.name + (n.isLoading ? ", loading" : ""))
         } else {
-            v.textField?.stringValue = (item as? Node)?.name ?? ""
+            let n = item as? Node
+            let loading = n?.isLoading == true
+            v.textField?.stringValue = (n?.name ?? "") + (loading ? " — Loading…" : "")
             v.toolTip = nil
-            v.setAccessibilityLabel(nil)
+            v.setAccessibilityLabel(loading ? (n?.name ?? "") + ", loading" : nil)
         }
         return v
     }

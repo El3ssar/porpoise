@@ -30,9 +30,31 @@ final class AppsGridView: NSView, NSDraggingSource {
     /// Each app's icon as drawn (its shadow included), rendered once per size for the screen's scale and colours:
     /// drawing the icon file itself on every frame of a resize or zoom resampled and colour-matched its 1024 px picture
     /// each time. Keyed by the size rendered (see `renderSize`).
-    private var tiles: [CGFloat: [URL: NSImage]] = [:] { didSet { if tiles.isEmpty { tileSizes = [] } } }
+    private var tiles: [CGFloat: [URL: NSImage]] = [:] {
+        didSet {
+            if tiles.isEmpty {
+                tileSizes = []
+                tileUse = [:]
+                tileBytes = 0
+            }
+        }
+    }
     /// The sizes in `tiles`, oldest first: a few are kept, to stand in while a new size renders.
     private var tileSizes: [CGFloat] = []
+    /// Tiles are kept up to this many bytes of pixels: a 256 pt tile is 1.6 MB at 2x, so a count of sizes isn't a
+    /// bound (six sizes of a few hundred apps could hold gigabytes).
+    static let tileBudget = 96 << 20
+    private struct TileKey: Hashable {
+        let size: CGFloat
+        let url: URL
+    }
+    /// Each tile's pixel bytes and the frame that last drew it: the ones drawn longest ago go first, never the ones
+    /// the frame being drawn uses.
+    private var tileUse: [TileKey: (frame: Int, bytes: Int)] = [:]
+    private var tileBytes = 0
+    private var frameNumber = 0
+    /// For tests: the pixel bytes the tiles hold.
+    var retainedTileBytes: Int { tileBytes }
     /// Until when the frame being drawn may render tiles. A zoom step needs every visible tile again (about 1.5 ms
     /// each, mostly the icon file's picture at the new size): they come over a few frames, the nearest size already
     /// rendered standing in, scaled, so no frame is held up.
@@ -141,6 +163,7 @@ final class AppsGridView: NSView, NSDraggingSource {
         updateTrackingAreas()
         targets = Dictionary(model.rows.enumerated().map { ($1.item.url, cellRect($0)) }, uniquingKeysWith: { a, _ in a })
         shownItems = Dictionary(model.rows.map { ($0.item.url, $0.item) }, uniquingKeysWith: { a, _ in a })
+        pruneToListing()
         guard animated, !before.isEmpty, window != nil else { return }
         glide(from: before, items: beforeItems, duration: Self.duration)
     }
@@ -385,12 +408,16 @@ final class AppsGridView: NSView, NSDraggingSource {
     /// The app's tile at `size`, or, when this frame has no time left to render it, the one of the nearest size
     /// rendered (the larger one first), with the size it has.
     private func tile(for item: FileItem, size: CGFloat) -> (image: NSImage, size: CGFloat) {
-        if let t = tiles[size]?[item.url] { return (t, size) }
+        if let t = tiles[size]?[item.url] {
+            tileUse[TileKey(size: size, url: item.url)]?.frame = frameNumber
+            return (t, size)
+        }
         if CACurrentMediaTime() > renderDeadline,
             let near = tileSizes.filter({ tiles[$0]?[item.url] != nil }).min(by: { Self.standInCost($0, size) < Self.standInCost($1, size) }),
             let t = tiles[near]?[item.url]
         {
             tilesPending = true
+            tileUse[TileKey(size: near, url: item.url)]?.frame = frameNumber
             return (t, near)
         }
         return (renderTile(for: item, size: size), size)
@@ -427,10 +454,43 @@ final class AppsGridView: NSView, NSDraggingSource {
         let t = NSImage(cgImage: cg, size: NSSize(width: side, height: side))
         if tiles[size] == nil {
             tileSizes.append(size)
-            if tileSizes.count > 6 { tiles[tileSizes.removeFirst()] = nil }
+            if tileSizes.count > 6, let old = tiles[tileSizes[0]] {
+                for url in old.keys { removeTile(TileKey(size: tileSizes[0], url: url)) }
+            }
         }
         tiles[size, default: [:]][item.url] = t
+        tileUse[TileKey(size: size, url: item.url)] = (frameNumber, px * px * 4)
+        tileBytes += px * px * 4
+        if tileBytes > Self.tileBudget { evictTiles() }
         return t
+    }
+
+    /// Over the budget: drops the tiles drawn longest ago, down to three quarters of it (so that it doesn't run on
+    /// every tile rendered). Tiles the frame being drawn uses stay, even over the budget: they are on screen.
+    private func evictTiles() {
+        for (key, use) in tileUse.sorted(by: { $0.value.frame < $1.value.frame }) {
+            guard tileBytes > Self.tileBudget * 3 / 4, use.frame < frameNumber else { break }
+            removeTile(key)
+        }
+    }
+
+    private func removeTile(_ key: TileKey) {
+        guard let use = tileUse.removeValue(forKey: key) else { return }
+        tileBytes -= use.bytes
+        tiles[key.size]?[key.url] = nil
+        if tiles[key.size]?.isEmpty == true {
+            tiles[key.size] = nil
+            tileSizes.removeAll { $0 == key.size }
+        }
+    }
+
+    /// Forgets the icons, names and tiles of apps no longer in the library (uninstalled, or another folder shown).
+    private func pruneToListing() {
+        guard !icons.isEmpty || !names.isEmpty || !tileUse.isEmpty else { return }
+        let listed = Set(model.items.map(\.url) + (model.searchResults ?? []).map(\.url) + model.rows.map(\.item.url))
+        icons = icons.filter { listed.contains($0.key) }
+        names = names.filter { listed.contains($0.key) }
+        for key in tileUse.keys where !listed.contains(key.url) { removeTile(key) }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -440,6 +500,7 @@ final class AppsGridView: NSView, NSDraggingSource {
         // Tiles that this frame has no time to render are drawn from another size, and rendered over the next frames.
         renderDeadline = CACurrentMediaTime() + 0.003
         tilesPending = false
+        frameNumber += 1
         defer {
             renderDeadline = .infinity
             if tilesPending { DispatchQueue.main.async { [weak self] in self?.needsDisplay = true } }
@@ -450,13 +511,24 @@ final class AppsGridView: NSView, NSDraggingSource {
                 l.item, cell: l.cell, look: look, selected: false, hovered: false, focused: focused,
                 alpha: max(0, 1 - p * 1.6), scale: 1 - 0.18 * p, dirty: dirtyRect)
         }
-        for (i, row) in model.rows.enumerated() {
-            let item = row.item
+        for i in drawnIndexes(dirtyRect) {
+            let item = model.rows[i].item
             let place = placement(item.url, target: cellRect(i))
             drawItem(
                 item, cell: place.cell, look: look, selected: model.selection.contains(item.url), hovered: hover == i,
                 focused: focused, alpha: place.alpha, scale: place.scale, dirty: dirtyRect)
         }
+    }
+
+    /// The apps that can touch `dirty`: the rows of cells it crosses, or all of them while apps glide (a gliding
+    /// app is drawn away from its cell).
+    private func drawnIndexes(_ dirty: CGRect) -> Range<Int> {
+        let count = model.rows.count
+        guard transition == nil else { return 0..<count }
+        let h = cell.height
+        let first = max(0, Int(floor(dirty.minY / h))) * columns
+        let last = (max(0, Int(floor(dirty.maxY / h))) + 1) * columns
+        return min(first, count)..<min(last, count)
     }
 
     /// What every app is drawn with at the size shown, worked out once per frame.

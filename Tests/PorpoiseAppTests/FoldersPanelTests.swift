@@ -97,6 +97,70 @@ extension AppearanceLayoutTests {
         #expect((outline.item(atRow: 0) as? RemoteFolderTree.Node)?.url == collection)
     }
 
+    /// The folder with symlinks resolved, as the Folders panel shows it (/private/var, not /var).
+    private func realFolder(_ url: URL) -> URL {
+        guard let r = realpath(url.path, nil) else { return url }
+        defer { free(r) }
+        return URL(fileURLWithPath: String(cString: r))
+    }
+
+    @Test(.isolatedSettings, .timeLimit(.minutes(1))) @MainActor func foldersPanelListsLocalFoldersOffTheMainThread() async throws {
+        _ = NSApplication.shared
+        let scratch = try Scratch(), home = realFolder(scratch.url)
+        let fm = FileManager.default
+        let target = home.appendingPathComponent("a/b/c", isDirectory: true)
+        let files = home.appendingPathComponent("files", isDirectory: true)
+        let hidden = home.appendingPathComponent(".hidden/inside", isDirectory: true)
+        for dir in [target, files, hidden, home.appendingPathComponent("a/sibling")] {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        for i in 0..<3000 { fm.createFile(atPath: files.appendingPathComponent("file-\(i).txt").path, contents: nil) }
+        // A package is a file here: a folder holding only one has no disclosure triangle.
+        try fm.createDirectory(at: files.appendingPathComponent("Tool.app/Contents"), withIntermediateDirectories: true)
+        Settings.shared.homeURL = home
+        let panel = FoldersPanel(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
+        let outline = try #require((panel.subviews.first as? NSScrollView)?.documentView as? NSOutlineView)
+        func url(_ row: Int) -> URL? { (outline.item(atRow: row) as? FoldersPanel.Node)?.url }
+
+        // The view's folder: the tree is listed level by level on the worker queue and follows it down.
+        panel.currentURL = target
+        await expectEventually { url(outline.selectedRow)?.path == target.path }
+        let rows = (0..<outline.numberOfRows).compactMap { url($0)?.lastPathComponent }
+        #expect(rows == ["a", "b", "c", "sibling", "files"])
+
+        // A folder of files: the outline's callbacks answer at once (no listing in them), the triangle from a few entries.
+        let node = try #require(
+            (0..<outline.numberOfRows).lazy.compactMap { outline.item(atRow: $0) as? FoldersPanel.Node }.first { $0.url.path == files.path })
+        #expect(!outline.isExpandable(node))
+        let cold = FoldersPanel.Node(files)
+        #expect(panel.outlineView(outline, numberOfChildrenOfItem: cold) == 0)
+        #expect(cold.isLoading)
+        await expectEventually { cold.children != nil }
+        #expect(cold.children?.isEmpty == true)
+
+        // Expanding a folder not listed yet: it opens at once and its children come when listed.
+        let sibling = try #require(
+            (0..<outline.numberOfRows).lazy.compactMap { outline.item(atRow: $0) as? FoldersPanel.Node }.first {
+                $0.url.lastPathComponent == "sibling"
+            })
+        try fm.createDirectory(at: sibling.url.appendingPathComponent("deep"), withIntermediateDirectories: true)
+        sibling.invalidate()
+        outline.reloadItem(sibling, reloadChildren: true)
+        outline.expandItem(sibling)
+        await expectEventually { outline.row(forItem: sibling.children?.first) == outline.row(forItem: sibling) + 1 }
+        #expect(outline.isItemExpanded(sibling) && sibling.children?.map(\.url.lastPathComponent) == ["deep"])
+
+        // A folder made after its parent was listed: the parent is listed again, once, and the tree reaches it.
+        let later = home.appendingPathComponent("a/later", isDirectory: true)
+        try fm.createDirectory(at: later, withIntermediateDirectories: true)
+        panel.currentURL = later
+        await expectEventually { url(outline.selectedRow)?.path == later.path }
+        // A hidden folder on the way to the view's folder is shown anyway.
+        panel.currentURL = hidden
+        await expectEventually { url(outline.selectedRow)?.path == hidden.path }
+        #expect(url(outline.row(forItem: outline.parent(forItem: outline.item(atRow: outline.selectedRow))))?.lastPathComponent == ".hidden")
+    }
+
 }
 
 private final class FolderPanelProvider: RemoteProvider, @unchecked Sendable {
