@@ -436,6 +436,72 @@ import Testing
         await #expect(throws: BoxError.reconnect) { try await fresh.metadata("21") }
     }
 
+    @Test func providerBlockingCallsBrowseTransferAndChangeItems() async throws {
+        let server = try FakeBoxServer(); let client = try server.client(); let provider = BoxProvider(client: client)
+        let root = BoxLocation(accountID: client.accountID).url
+        let rows = try await offThePool { try provider.list(root) }
+        #expect(rows.map(\.name) == ["Bookmark", "Folder", "hello.txt", "other.txt"])
+        let folder = try #require(rows.first { $0.name == "Folder" }), hello = try #require(rows.first { $0.name == "hello.txt" })
+        #expect(folder.isDirectory && BoxLocation(url: folder.url)?.kind == .folder && provider.displayName(for: root) == "All Files")
+        #expect(provider.displayName(for: hello.url) == "hello.txt" && provider.rootTitle(root) == "All Files")
+        #expect(provider.sameItem(hello.url, BoxLocation(accountID: client.accountID, itemID: "21").url))
+        #expect(!provider.sameItem(hello.url, folder.url))
+        #expect(throws: BoxError.invalidLocation) { try provider.location(BoxLocation(accountID: UUID()).url) }
+        #expect(throws: BoxError.invalidLocation) { try provider.folderID(hello.url) }
+        #expect(throws: BoxError.invalidLocation) { try provider.makeFolder(root) }
+        #expect(try await offThePool { try provider.transferItem(hello.url) }.name == "hello.txt")
+        await provider.prefetch([folder.url]); #expect(provider.cachedListing(folder.url)?.map(\.name) == ["nested.txt"])
+        #expect(try await provider.preview(hello.url, thumbnail: true).lastPathComponent == "thumbnail.jpg")
+        let output = try server.fixture.scratch.folder("output")
+        let file = try await offThePool { try provider.download(hello.url, into: output) }
+        #expect(try String(contentsOf: file, encoding: .utf8) == "Hello from the Box fixture.")
+        let tree = try await offThePool { try provider.download(folder.url, into: output) }
+        #expect(try String(contentsOf: tree.appendingPathComponent("nested.txt"), encoding: .utf8) == "Nested fixture.")
+        let upload = try server.fixture.scratch.folder("Upload"); _ = try server.fixture.scratch.file("Upload/inside.txt", "inside")
+        try await offThePool { try provider.upload(upload, into: root) }
+        let uploaded = try #require(try await provider.refresh(root).first { $0.name == "Upload" })
+        #expect(try await provider.refresh(uploaded.url).map(\.name) == ["inside.txt"])
+        try await offThePool { try provider.rename(hello.url, to: "renamed.txt") }
+        try await offThePool { try provider.copy([hello.url], into: folder.url) }
+        try await offThePool { try provider.move([hello.url], into: uploaded.url) }
+        #expect(Set(try await provider.refresh(uploaded.url).map(\.name)) == ["inside.txt", "renamed.txt"])
+        #expect(try await provider.refresh(folder.url).contains { $0.name == "renamed.txt" })
+        try await offThePool { try provider.delete([uploaded.url]) }
+        #expect(try await !provider.refresh(root).contains { $0.name == "Upload" })
+        // Transfer bookkeeping: an unknown operation has nothing to recover or cancel.
+        #expect(try await offThePool { try provider.recoverTransfer(UUID(), in: root) } == nil)
+        try await offThePool { try provider.cancelTransferredOperation(UUID(), at: root) }
+        #expect(provider.recoveryTransferJournals.count == 1 && provider.supportsNativeTransferFolders)
+        #expect(try provider.transferAccount(root) == client.contentSource.accountID)
+        let other = try #require(try await provider.refresh(root).first { $0.name == "other.txt" })
+        #expect(try provider.transferRepresentation(other.url, destinationAccount: nil).name == "other.txt")
+        let snapshot = try provider.transferSnapshot(other.url)
+        try await offThePool { try provider.removeTransferredSource(other.url, snapshot: snapshot, revision: nil) }
+        #expect(try await !provider.refresh(root).contains { $0.name == "other.txt" })
+        let nested = BoxLocation(accountID: client.accountID, itemID: "22", kind: .file).url
+        let playback = try await provider.playback(nested); #expect(playback.stream != nil); playback.stream?.stop()
+        #expect(try await provider.progressivePreview(nested, context: .init()) { _ in }.isFileURL)
+        // The Activity transfer steps, each with a verified receipt.
+        let made = try await offThePool { try provider.createTransferFolder(named: "Made", in: root, operationID: UUID()) }
+        let payload = try server.fixture.scratch.file("payload.txt", "payload")
+        let sent = try await offThePool {
+            try provider.uploadTransfer(payload, in: made.url, named: "payload.txt", replacing: nil, expectedRevision: nil, operationID: UUID())
+        }
+        let revision = try #require(provider.transferRevision(sent.url))
+        _ = try server.fixture.scratch.file("payload.txt", "payload, again")
+        let replaced = try await offThePool {
+            try provider.uploadTransfer(
+                payload, in: made.url, named: "payload.txt", replacing: sent.url, expectedRevision: revision, operationID: UUID())
+        }
+        #expect(replaced.url == sent.url && provider.transferRevision(sent.url) != revision)
+        let copied = try await offThePool {
+            try provider.nativeTransfer(sent.url, into: root, named: "payload copy.txt", move: false, operationID: UUID())
+        }
+        #expect(copied?.sourceRemoved == false)
+        let local = try await offThePool { try provider.downloadTransfer(sent.url, into: output, operationID: UUID()) }
+        #expect(try String(contentsOf: local, encoding: .utf8) == "payload, again")
+    }
+
     @Test func sharedLinksResolveOnlyWhatTheAccountCanOpen() async throws {
         let server = try FakeBoxServer(); let client = try server.client()
         let link = URL(string: "https://app.box.com/s/fixturelink")!
