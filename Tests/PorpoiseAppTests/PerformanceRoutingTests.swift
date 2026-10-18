@@ -114,6 +114,12 @@ import Testing
         #expect(controller.localItems.isEmpty)
         await expectEventually { !controller.localItems.isEmpty }
         #expect(controller.localItems == [item])
+        func buttons(_ view: NSView) -> [NSButton] {
+            (view as? NSButton).map { [$0] } ?? view.subviews.flatMap(buttons)
+        }
+        let content = try #require(controller.window?.contentView)
+        let locked = try #require(buttons(content).first { $0.title == "Locked" })
+        #expect(locked.image is ChoiceImage)
         controller.window?.close()
     }
 

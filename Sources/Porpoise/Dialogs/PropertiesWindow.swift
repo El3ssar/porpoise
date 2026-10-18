@@ -145,6 +145,8 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
             p.isHidden = i != 0
             content.addSubview(p)
         }
+        // Async pages can arrive after the window became key, after the normal theme hook already ran.
+        if let window { Theme.dressIfThemed(window) }
     }
 
     @objc private func switchPage(_ s: NSSegmentedControl) {
