@@ -47,7 +47,9 @@ extension OneDriveProvider: CloudTransferProvider {
             guard let replacing else { return try await client.upload(local, to: parent, named: name, operationID: operationID, context: context) }
             guard let expectedRevision, try self.scoped(replacing) === client else { throw OneDriveError.sourceChanged }
             let current = try await client.metadata(self.location(replacing).itemID)
-            guard current.revision == expectedRevision, current.name == name else { throw OneDriveError.sourceChanged }
+            guard current.name == name else { throw OneDriveError.sourceChanged }
+            // Changed since the conflict was chosen: the destination isn't the one agreed to replace.
+            guard current.revision == expectedRevision else { throw OneDriveError.conflict }
             return try await client.upload(local, to: parent, named: name, replacing: current, operationID: operationID, context: context)
         }
         return try transferReceipt(file, client: client)

@@ -42,6 +42,15 @@ public final class OneDriveProvider: CloudFileProvider, @unchecked Sendable {
             modificationDate: file.modified.flatMap { FileFormat.iso8601($0) },
             contentType: file.isFolder ? "public.folder" : nil, isWritable: true)
     }
+    /// One item, however it's named: no drive is the account's own, and the root's real ID is the root.
+    public func sameItem(_ lhs: URL, _ rhs: URL) -> Bool {
+        guard let a = try? location(lhs), let b = try? location(rhs) else { return lhs == rhs }
+        func normal(_ l: OneDriveLocation) -> (String, String) {
+            let scoped = drive(l.driveID)
+            return (scoped.driveID, l.itemID == scoped.rootID ? "" : l.itemID)
+        }
+        return normal(a) == normal(b)
+    }
     public func metadata(_ url: URL) -> OneDriveItem? {
         guard let location = try? location(url), let scoped = try? scoped(url) else { return nil }
         return scoped.metadataCache.file(location.itemID)
