@@ -21,6 +21,9 @@ public actor CloudOAuthSession {
     private var generation = 0
     private var disconnected = false
     public private(set) var grantedScope: String?
+    /// The coalesced refresh is a task of its own, so it doesn't inherit its first caller's executor: on a queue it
+    /// always gets a thread, as a preview range read waiting on it must answer within its idle deadline (W-138).
+    private static let refresher = QueueTaskExecutor(label: "porpoise.oauth-refresh", qos: .userInitiated)
     public init(
         clientID: String, accountID: UUID, credentials: any CloudCredentialStore,
         refresh: @escaping @Sendable (String) async throws -> CloudOAuthToken
@@ -41,7 +44,7 @@ public actor CloudOAuthSession {
         if refreshTask == nil {
             guard let token = try credentials.read(clientID: clientID, accountID: accountID) else { throw CloudOAuthSessionError.reconnect }
             let refresh = self.refresh
-            refreshTask = Task { try await refresh(token) }
+            refreshTask = Task(executorPreference: Self.refresher) { try await refresh(token) }
         }
         let epoch = generation
         do {

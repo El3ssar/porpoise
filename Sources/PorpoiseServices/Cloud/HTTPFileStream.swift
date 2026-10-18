@@ -16,6 +16,10 @@ final class HTTPFileStream: @unchecked Sendable {
         configuration.urlCache = nil; configuration.urlCredentialStorage = nil
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 1
+        // Its own thread, never Swift's cooperative ones: a plain queue's delegate calls waited for one, and with
+        // every cooperative thread taken (a full test run on CI's 3-core runner) a range response's upstream head
+        // came after the preview server's ten-second idle deadline had closed the response (W-138).
+        queue.underlyingQueue = DispatchQueue(label: "porpoise.http-file-stream", qos: .userInitiated)
         return URLSession(configuration: configuration, delegate: streams, delegateQueue: queue)
     }()
 
