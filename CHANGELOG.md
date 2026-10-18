@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.4
+
+- **Much lighter on memory.** With search indexing on and a busy folder tree, Porpoise could grow to 2 GB or more within minutes; temporary objects of the index are now released as it goes. A busy 8-minute session went from 1.5–2.5 GB to about 360 MB, and a typical session stays around 225–350 MB. Icon caches are capped by size.
+- **Theme everywhere.** Checkboxes, radio buttons, pop-up menus, table headers and the Settings tabs use the app's colors in light and dark.
+- **Small fixes.** An Activity row for a file being opened no longer says "Copied 0 items"; the conflict note goes away after Keep Both; Google Drive search results show the right path; copy history is written without holding up the window; the Folders panel never shows an older listing over a newer one.
+- **Safer tools.** A downloaded Android adb is used only if it carries Google's signature, video conversion runs sandboxed without network access, and the built-in media server limits its connections and drops idle ones. Video conversion falls back to software encoding on Macs without a hardware encoder.
+- **OneDrive is on its way.** The OneDrive connection is built and tested, and shows as Coming soon until its Microsoft app registration is in place.
+
 ## 0.8.3
 
 - **Server renames and new items never replace what's there.** Renaming or creating an item on a server or cloud account under a name already taken is refused instead of replacing the existing item, and Undo and Redo of those changes go through the server.
