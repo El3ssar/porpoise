@@ -10,12 +10,19 @@ final class Icons {
     static let shared = Icons()
 
     /// Rendered icons by name, pixel size and state (and app icons by path). Bounded: continuous zoom asks for
-    /// many sizes, and browsing /Applications for many app icons.
+    /// many sizes, and browsing /Applications (or any folder, with native icons) for many icons by path. By bytes
+    /// too: each holds the bitmap it was last drawn as, a megabyte at the biggest sizes.
     private let cache: NSCache<NSString, NSImage> = {
         let c = NSCache<NSString, NSImage>()
         c.countLimit = 3000
+        c.totalCostLimit = 96 << 20
         return c
     }()
+
+    /// `looks`: bitmaps it holds once drawn (two for icons that follow light and dark), each at the screen's scale.
+    private func store(_ image: NSImage, _ key: NSString, size: CGFloat, looks: Int = 1) {
+        cache.setObject(image, forKey: key, cost: max(1, Int(size * size)) * 4 * 4 * looks)
+    }
     /// Resolved Finder alias targets (nil: unresolvable).
     private let aliasTargets: NSCache<NSString, AliasTarget> = {
         let c = NSCache<NSString, AliasTarget>()
@@ -65,7 +72,7 @@ final class Icons {
             (NSAppearance.currentDrawing().isDark ? darkImg : lightImg).draw(in: r)
             return true
         }
-        cache.setObject(img, forKey: key)
+        store(img, key, size: size, looks: 2)
         return img
     }
 
@@ -74,10 +81,12 @@ final class Icons {
     private let flattened: NSCache<NSImage, Flattened> = {
         let c = NSCache<NSImage, Flattened>()
         c.countLimit = 1000
+        c.totalCostLimit = 64 << 20
         return c
     }()
     private final class Flattened {
         var images: [String: NSImage] = [:]
+        var bytes = 0
     }
 
     /// `image` as a bitmap of `scale` pixels per point, in the look it's drawn in now (cached).
@@ -98,7 +107,8 @@ final class Icons {
         guard let cg = ctx.makeImage() else { return image }
         let flat = NSImage(cgImage: cg, size: image.size)
         box.images[look] = flat
-        flattened.setObject(box, forKey: image)
+        box.bytes += px * py * 4
+        flattened.setObject(box, forKey: image, cost: box.bytes)
         return flat
     }
 
@@ -257,7 +267,7 @@ final class Icons {
             var image = NSWorkspace.shared.icon(forFile: item.url.path)
             if item.isBrowsableFolder { image = folderImage(image, size: size, dark: Theme.isDark) }
             image.size = NSSize(width: size, height: size)
-            cache.setObject(image, forKey: key)
+            store(image, key, size: size)
             return image
         }
         // Finder aliases look like their original (the view adds the link emblem).
@@ -267,7 +277,7 @@ final class Icons {
             if let img = cache.object(forKey: key) { return img }
             let img = NSWorkspace.shared.icon(forFile: item.url.path)
             img.size = NSSize(width: size, height: size)
-            cache.setObject(img, forKey: key)
+            store(img, key, size: size)
             return img
         }
         let name = iconName(for: item)
@@ -278,7 +288,7 @@ final class Icons {
                 if let img = cache.object(forKey: key as NSString) { return img }
                 let img = NSWorkspace.shared.icon(for: t)
                 img.size = NSSize(width: size, height: size)
-                cache.setObject(img, forKey: key as NSString)
+                store(img, key as NSString, size: size)
                 return img
             }
             return image("application-octet-stream", size: size, selected: selected) ?? NSImage()

@@ -9,7 +9,7 @@ final class SaveWatcher: @unchecked Sendable {
     private let changed: () -> Void
     private let save: () -> Void
     private let reattach: (@escaping () -> Void) -> Void
-    private let events = DispatchQueue(label: "porpoise.save-watch")
+    private let events = DispatchQueue(label: "porpoise.save-watch", autoreleaseFrequency: .workItem)
     private let lock = NSRecursiveLock()
     private var source: DispatchSourceFileSystemObject?
     private var pending: DispatchWorkItem?

@@ -44,7 +44,7 @@ final class LocalFileServer: @unchecked Sendable {
     private var port: UInt16?
     private var root: URL?
     private let secret = UUID().uuidString
-    private let queue = DispatchQueue(label: "porpoise.preview-server")
+    private let queue = DispatchQueue(label: "porpoise.preview-server", autoreleaseFrequency: .workItem)
     /// How long a connection may take to send its request head.
     private var requestTimeout: TimeInterval = 10
     var headTimeout: TimeInterval {

@@ -31,6 +31,9 @@ public enum IndexCrawler {
                 walk.run(top)
                 for path in walk.unreadable.sorted() { unreadable(path) }
                 if cancelled() { return index }
+                let size = top.treeSize()
+                index.reserveCapacity(
+                    entries: size.entries, foldedBytes: size.foldedBytes, nameBytes: size.nameBytes, namedEntries: size.namedEntries)
                 add(top, under: rootId, to: &index)
                 if content { index.prepareContent() }
                 return index
@@ -38,19 +41,25 @@ public enum IndexCrawler {
         }
     }
 
-    /// Adds `listing` and everything below it, depth-first: each entry, then its folder's contents.
+    /// Adds `listing` and everything below it, depth-first: each entry, then its folder's contents. Each folder's
+    /// listing is let go of once it's in the index, so the walk's copy of the tree shrinks as the index grows.
     static func add(_ listing: Listing, under parent: UInt32, to index: inout NameIndex) {
         var stack: [(Listing, Int, UInt32)] = [(listing, 0, parent)]
         while !stack.isEmpty {
             let (l, i, p) = stack.removeLast()
-            guard i < l.entries.count else { continue }
+            guard i < l.entries.count else {
+                l.release()
+                continue
+            }
             stack.append((l, i + 1, p))
             let e = l.entries[i]
             let name = Array(l.bytes[Int(e.nameStart)..<Int(e.nameStart + e.nameLength)])
             let folded = e.foldedStart < 0 ? nil : Array(l.bytes[Int(e.foldedStart)..<Int(e.foldedStart) + Int(e.foldedLength)])
+            var grams: [UInt32]?
+            if e.grams >= 0 { swap(&grams, &l.grams[Int(e.grams)]) }
             let id = index.append(
                 parent: p, name: name, folded: folded, size: e.size, mtime: e.mtime, directory: e.directory, symlink: e.symlink,
-                contentGrams: e.grams >= 0 ? l.grams[Int(e.grams)] : nil)
+                contentGrams: grams)
             if e.sub >= 0 { stack.append((l.subfolders[Int(e.sub)], 0, id)) }
         }
     }
@@ -76,8 +85,36 @@ public enum IndexCrawler {
         var bytes: [UInt8] = []
         var entries: [Entry] = []
         var subfolders: [Listing] = []
-        var grams: [[UInt32]] = []
+        /// nil once added to the index.
+        var grams: [[UInt32]?] = []
         init(path: String) { self.path = path }
+
+        /// Entries below this folder and the bytes of their names: what the index needs room for.
+        func treeSize() -> (entries: Int, foldedBytes: Int, nameBytes: Int, namedEntries: Int) {
+            var size = (entries: 0, foldedBytes: 0, nameBytes: 0, namedEntries: 0)
+            var pending = [self]
+            while let l = pending.popLast() {
+                size.entries += l.entries.count
+                for e in l.entries {
+                    if e.foldedStart < 0 {
+                        size.foldedBytes += Int(e.nameLength)
+                    } else {
+                        size.foldedBytes += Int(e.foldedLength)
+                        size.nameBytes += Int(e.nameLength)
+                        size.namedEntries += 1
+                    }
+                }
+                pending.append(contentsOf: l.subfolders)
+            }
+            return size
+        }
+
+        func release() {
+            bytes = []
+            entries = []
+            subfolders = []
+            grams = []
+        }
     }
 
     /// The folders still to read, shared by the threads reading them.

@@ -693,7 +693,8 @@ public final class FileJob: @unchecked Sendable {
             let children = try fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
             childCounts[url] = children.count
             for child in children {
-                bytes += try inventory(child, target: target?.appendingPathComponent(child.lastPathComponent))
+                // A job is one long work item: what Foundation autoreleases per file goes after each.
+                bytes += try autoreleasepool { try inventory(child, target: target?.appendingPathComponent(child.lastPathComponent)) }
                 files += fileCounts[child] ?? 0
             }
         } else {

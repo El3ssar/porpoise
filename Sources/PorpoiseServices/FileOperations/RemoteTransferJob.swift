@@ -150,7 +150,8 @@ final class RemoteTransferJob {
         if item.isDirectory && !item.isSymlink {
             progressLock.withLock { progress.totalFolders += 1 }
             for child in try children(url) {
-                let next = try inventory(child.url)
+                // A transfer is one long work item: what Foundation autoreleases per file goes after each.
+                let next = try autoreleasepool { try inventory(child.url) }
                 count.bytes += next.bytes; count.files += next.files
             }
         } else {
@@ -271,7 +272,7 @@ final class RemoteTransferJob {
         if sources.contains(source), let incoming = try item(source) { publishIncoming(source, item: incoming, target: target) }
         var firstFailure: Error?
         for child in try children(source) {
-            do { _ = try transfer(child.url, into: target) } catch {
+            do { _ = try autoreleasepool { try transfer(child.url, into: target) } } catch {
                 if control.isCancelled || control.isInterrupted { throw error }
                 if firstFailure == nil { firstFailure = error }
             }

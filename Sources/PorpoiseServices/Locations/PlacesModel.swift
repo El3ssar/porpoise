@@ -394,7 +394,7 @@ public final class PlacesModel {
     /// adb runs here: a serial queue of its own always gets a thread, where utility work on the shared pool got none
     /// while other work kept every core busy. One per model: a slow adb for one (up to `adbPollTimeout`) never holds
     /// back another's.
-    private let adbQueue = DispatchQueue(label: "app.porpoise.adb-poll", qos: .utility)
+    private let adbQueue = DispatchQueue(label: "app.porpoise.adb-poll", qos: .utility, autoreleaseFrequency: .workItem)
     private func pollPhones() {
         guard !adbPollInFlight else { return }
         adbPollInFlight = true

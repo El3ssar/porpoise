@@ -7,7 +7,7 @@ final class QueueTaskExecutor: TaskExecutor, @unchecked Sendable {
     private let queue: DispatchQueue
 
     init(label: String, qos: DispatchQoS) {
-        queue = DispatchQueue(label: label, qos: qos)
+        queue = DispatchQueue(label: label, qos: qos, autoreleaseFrequency: .workItem)
     }
 
     func enqueue(_ job: consuming ExecutorJob) {

@@ -11,7 +11,7 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
     private var closeObserver: NSObjectProtocol?
     /// Set when the window closes, so the background size count stops early.
     var sizeCount = DiskCancellation()
-    let sizeQueue = DispatchQueue(label: "app.porpoise.properties-size", qos: .userInitiated)
+    let sizeQueue = DispatchQueue(label: "app.porpoise.properties-size", qos: .userInitiated, autoreleaseFrequency: .workItem)
     lazy var recalculateButton = NSButton(title: "Recalculate", target: self, action: #selector(recalculate(_:)))
 
     /// Local files, and one cloud item (Google Drive: its sharing instead of permissions). Other remote and virtual

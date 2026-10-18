@@ -65,6 +65,19 @@ public struct NameIndex: @unchecked Sendable {
             mtime: UInt32(clamping: Int64(modified.isFinite ? modified : 0)), flags: f, grams: grams)
     }
 
+    /// Makes room for `entries` more entries with these many bytes of folded names and of names as written (each
+    /// without its NUL), so a crawl's table is allocated once rather than grown by doubling.
+    public mutating func reserveCapacity(entries: Int, foldedBytes: Int, nameBytes: Int, namedEntries: Int) {
+        parents.reserveCapacity(count + entries)
+        foldedStarts.reserveCapacity(count + entries)
+        nameStarts.reserveCapacity(count + entries)
+        sizes.reserveCapacity(count + entries)
+        mtimes.reserveCapacity(count + entries)
+        flags.reserveCapacity(count + entries)
+        folded.reserveCapacity(folded.count + foldedBytes + entries)
+        names.reserveCapacity(names.count + nameBytes + namedEntries)
+    }
+
     /// Adds an entry whose name is already folded (`folded` nil: the name is its own folded form). The crawler's way.
     @discardableResult
     public mutating func append(
@@ -208,7 +221,20 @@ public struct NameIndex: @unchecked Sendable {
     /// The number of entries at and below `path`.
     public func countUnderPath(_ path: String) -> Int {
         guard let id = id(of: path) else { return 0 }
-        return subtreeMap([id]).reduce(0) { $0 + Int($1) }
+        return contiguousSubtreeCount(id) ?? subtreeMap([id]).reduce(0) { $0 + Int($1) }
+    }
+
+    /// The entries at and below `id` when they are one run of ids starting at it (a crawl adds each subtree that
+    /// way), else nil. Index updates ask this for every changed folder: a map of the whole table each time was
+    /// megabytes allocated and thrown away per folder.
+    func contiguousSubtreeCount(_ id: Int) -> Int? {
+        parents.withUnsafeBufferPointer { par in
+            var end = id + 1
+            while end < par.count, par[end] != Self.noParent, Int(par[end]) >= id { end += 1 }
+            // Nothing after the run may hang below it (parents always come before their children).
+            for j in end..<par.count where par[j] != Self.noParent && Int(par[j]) >= id && Int(par[j]) < end { return nil }
+            return end - id
+        }
     }
 
     // MARK: Content
@@ -275,18 +301,51 @@ public struct NameIndex: @unchecked Sendable {
 
     /// "PORPIDX2", the entry count and the folded arena's size, then the columns, the names and the content index.
     public func encoded() -> Data {
-        var d = Data(Self.magic)
-        Self.put(UInt64(count).littleEndian, &d)
-        Self.put(UInt64(folded.count).littleEndian, &d)
-        for column in [parents, foldedStarts, nameStarts] { column.withUnsafeBytes { d.append(contentsOf: $0) } }
-        sizes.withUnsafeBytes { d.append(contentsOf: $0) }
-        mtimes.withUnsafeBytes { d.append(contentsOf: $0) }
-        d.append(contentsOf: flags)
-        d.append(contentsOf: folded)
-        Self.put(UInt64(names.count).littleEndian, &d)
-        d.append(contentsOf: names)
-        content.encode(into: &d)
+        var d = Data()
+        d.reserveCapacity(encodedSize)
+        encode { d.append(contentsOf: $0) }
         return d
+    }
+
+    /// Writes what `encoded` returns to `url` (atomically) a column at a time: a snapshot of a big tree is tens of
+    /// megabytes, too much to assemble in memory first.
+    public func write(to url: URL) throws {
+        let temporary = url.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).tmp")
+        guard FileManager.default.createFile(atPath: temporary.path, contents: nil) else { throw CocoaError(.fileWriteUnknown) }
+        do {
+            let handle = try FileHandle(forWritingTo: temporary)
+            var failure: Error?
+            encode { bytes in
+                guard failure == nil, bytes.count > 0 else { return }
+                let chunk = Data(bytesNoCopy: UnsafeMutableRawPointer(mutating: bytes.baseAddress!), count: bytes.count, deallocator: .none)
+                do { try handle.write(contentsOf: chunk) } catch { failure = error }
+            }
+            try handle.close()
+            if let failure { throw failure }
+            guard rename(temporary.path, url.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        } catch {
+            try? FileManager.default.removeItem(at: temporary)
+            throw error
+        }
+    }
+
+    /// Bytes `encoded` returns.
+    var encodedSize: Int { 8 + 8 + 8 + count * 25 + folded.count + 8 + names.count + content.encodedSize }
+
+    /// The encoding, in pieces passed to `emit` in order.
+    private func encode(_ emit: (UnsafeRawBufferPointer) -> Void) {
+        func put<T>(_ v: T) { withUnsafeBytes(of: v) { emit($0) } }
+        Self.magic.withUnsafeBytes(emit)
+        put(UInt64(count).littleEndian)
+        put(UInt64(folded.count).littleEndian)
+        for column in [parents, foldedStarts, nameStarts] { column.withUnsafeBytes(emit) }
+        sizes.withUnsafeBytes(emit)
+        mtimes.withUnsafeBytes(emit)
+        flags.withUnsafeBytes(emit)
+        folded.withUnsafeBytes(emit)
+        put(UInt64(names.count).littleEndian)
+        names.withUnsafeBytes(emit)
+        content.encode(emit)
     }
 
     /// Data may be memory mapped. Every offset and parent is checked before the scanner may use it.

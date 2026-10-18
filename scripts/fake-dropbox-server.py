@@ -10,13 +10,14 @@ import base64
 import copy
 import hashlib
 import json
+import os
 import re
 import socket
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 BLOCK = 4 << 20
@@ -375,6 +376,19 @@ class Server(ThreadingHTTPServer):
         return self.items.get(path) or next((i for i in self.items.values() if i['path_lower'] == path.lower()), None)
 
 
+def exit_with_parent():
+    """Stop when whatever started this server goes away: a test run that is killed or exits without tearing down
+    its fixtures must not leave the server running for hours."""
+    parent = os.getppid()
+
+    def watch():
+        while os.getppid() == parent:
+            time.sleep(0.5)
+        os._exit(0)
+
+    Thread(target=watch, daemon=True).start()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=0)
@@ -402,6 +416,7 @@ def main():
         ready = args.port_file.with_suffix(".ready")
         ready.write_text(str(server.server_address[1]))
         ready.replace(args.port_file)
+    exit_with_parent()
     server.serve_forever()
 
 

@@ -6,7 +6,7 @@ final class IndexEvents {
     static var currentEventID: UInt64 { FSEventsGetCurrentEventId() }
     private var stream: FSEventStreamRef?
     var available: Bool { stream != nil }
-    private let queue = DispatchQueue(label: "app.porpoise.index-events", qos: .utility)
+    private let queue = DispatchQueue(label: "app.porpoise.index-events", qos: .utility, autoreleaseFrequency: .workItem)
 
     /// What the stream calls. The stream holds it (retained with the stream, released when the stream goes), so a
     /// callback that starts while IndexEvents is being freed on another queue never touches the freed object.

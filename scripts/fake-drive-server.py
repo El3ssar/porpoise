@@ -12,6 +12,7 @@ import struct
 import time
 import zlib
 import json
+import os
 import copy
 import hashlib
 import re
@@ -20,7 +21,7 @@ import uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 FIXTURE = Path(__file__).resolve().parents[1] / "Tests/PorpoiseServicesTests/Fixtures/Drive/metadata.json"
@@ -484,6 +485,19 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply({}, 404)
 
 
+def exit_with_parent():
+    """Stop when whatever started this server goes away: a test run that is killed or exits without tearing down
+    its fixtures must not leave the server running for hours."""
+    parent = os.getppid()
+
+    def watch():
+        while os.getppid() == parent:
+            time.sleep(0.5)
+        os._exit(0)
+
+    Thread(target=watch, daemon=True).start()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--connection-mbps", type=float, default=0)
@@ -517,6 +531,7 @@ def main():
         ready.replace(args.port_file)
     else:
         print(f"Fake Drive: http://127.0.0.1:{server.server_port}", flush=True)
+    exit_with_parent()
     server.serve_forever()
 
 

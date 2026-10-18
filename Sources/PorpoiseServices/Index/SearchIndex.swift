@@ -73,7 +73,10 @@ public final class SearchIndex: @unchecked Sendable {
     // One crawl at a time, on a serial queue of its own: such a queue always gets a thread. On the shared pool, utility
     // work got none while other work kept every core busy, and crawls stayed queued (CI's 3-core runner). Each crawl
     // reads folders on several threads itself, the calling one included.
-    private static let crawlThread = DispatchQueue(label: "app.porpoise.index-crawls", qos: .utility)  // held: see below
+    // Each work item drains its own autorelease pool: a serial queue kept busy by a changing tree never returns its
+    // thread to the pool, and the URLs, paths and file caches Foundation autoreleases piled up (2.5 GB in 8 minutes).
+    // Held: see below.
+    private static let crawlThread = DispatchQueue(label: "app.porpoise.index-crawls", qos: .utility, autoreleaseFrequency: .workItem)
     private static let crawlers: OperationQueue = {
         let queue = OperationQueue()
         queue.name = "app.porpoise.index-crawls"
@@ -81,9 +84,17 @@ public final class SearchIndex: @unchecked Sendable {
         queue.underlyingQueue = crawlThread  // unowned(unsafe): the static above keeps it alive
         return queue
     }()
-    private let queue = DispatchQueue(label: "app.porpoise.index", qos: .utility)
+    private let queue = DispatchQueue(label: "app.porpoise.index", qos: .utility, autoreleaseFrequency: .workItem)
+    /// Snapshot files known to be in `directory`: saving writes only new ones and removes only those it replaced,
+    /// instead of checking and listing every file of the index on every update.
+    private var savedFiles: Set<String>?
     private let crawlQueue: OperationQueue
     private var pendingBuild: PendingBuild?
+    /// Changes reported while an update was waiting or running, applied together by the next one: a busy tree
+    /// reports changes many times a second, and each update walks the changed folders again and saves the index.
+    private var queuedChanges: (paths: Set<String>, event: UInt64, rescan: Bool, generation: Int)?
+    /// How long reported changes wait to be applied together.
+    var updateDelay: TimeInterval = 0.25
     private let lock = NSLock()
     private var current = IndexConfiguration()
     private var state = Status()
@@ -143,6 +154,8 @@ public final class SearchIndex: @unchecked Sendable {
             guard valid(generation) else { return }
             events = nil
             pendingBuild = nil
+            queuedChanges = nil
+            savedFiles = nil
             guard selected.enabled, !selected.roots.isEmpty, valid(generation) else { notify(); return }
             startupMessage("Index loading snapshot", generation: generation)
             if !rebuild,
@@ -227,14 +240,17 @@ public final class SearchIndex: @unchecked Sendable {
     private func crawl(_ path: String, config: IndexConfiguration, generation: Int) -> (table: NameIndex, holes: [String]) {
         guard !excluded(path, config: config) else { return (NameIndex(), []) }
         var holes: [String] = []
-        let table = IndexCrawler.crawl(
-            path, exclusions: config.exclusions, content: config.content, cancelled: { !self.valid(generation) },
-            unreadable: { holes.append($0) }, skip: { self.excluded($0, config: config) })
+        // One update can walk many folders: what Foundation autoreleases on the way goes after each.
+        let table = autoreleasepool {
+            IndexCrawler.crawl(
+                path, exclusions: config.exclusions, content: config.content, cancelled: { !self.valid(generation) },
+                unreadable: { holes.append($0) }, skip: { self.excluded($0, config: config) })
+        }
         return (table, holes)
     }
     private func watch(_ config: IndexConfiguration, generation: Int) -> Bool {
         events = IndexEvents(roots: config.roots, since: eventID) { [weak self] paths, id, rescan in
-            self?.queue.async { [weak self] in self?.refresh(paths, event: id, rescan: rescan, config: config, generation: generation) }
+            self?.queue.async { [weak self] in self?.enqueue(paths, event: id, rescan: rescan, config: config, generation: generation) }
         }
         guard events?.available == true else {
             lock.withLock {
@@ -244,6 +260,27 @@ public final class SearchIndex: @unchecked Sendable {
             notify(); return false
         }
         return true
+    }
+    /// Collects reported changes; the first schedules the update that applies them all.
+    private func enqueue(_ paths: [String], event: UInt64, rescan: Bool, config: IndexConfiguration, generation: Int) {
+        guard valid(generation) else { return }
+        // During the first crawl, changes are only noted (cheap), and the index isn't ready until they're applied.
+        if let pending = pendingBuild, pending.generation == generation {
+            return refresh(paths, event: event, rescan: rescan, config: config, generation: generation)
+        }
+        if var queued = queuedChanges, queued.generation == generation {
+            queued.paths.formUnion(paths)
+            queued.event = max(queued.event, event)
+            queued.rescan = queued.rescan || rescan
+            queuedChanges = queued
+            return
+        }
+        queuedChanges = (Set(paths), event, rescan, generation)
+        queue.asyncAfter(deadline: .now() + updateDelay) { [weak self] in
+            guard let self, let queued = self.queuedChanges, queued.generation == generation else { return }
+            self.queuedChanges = nil
+            self.refresh(Array(queued.paths), event: queued.event, rescan: queued.rescan, config: config, generation: generation)
+        }
     }
     private func refresh(_ paths: [String], event: UInt64, rescan: Bool, config: IndexConfiguration, generation: Int) {
         guard valid(generation) else { return }
@@ -270,9 +307,12 @@ public final class SearchIndex: @unchecked Sendable {
                     .map { Self.outsidePackages($0, root: root) })
             if touched.isEmpty { continue }
             if touched.count > 64 {
+                // Many changes: their folders instead, walked again whole. Never the root for what changed directly in
+                // it (a settings file saved in the home folder): that would walk the whole tree again for one file.
                 touched = Set(
                     touched.map { p in
-                        p == copy[r].path ? p : (p as NSString).deletingLastPathComponent
+                        let folder = (p as NSString).deletingLastPathComponent
+                        return p == root || folder == root ? p : folder
                     })
             }
             if rescan || touched.contains(copy[r].path) {
@@ -315,17 +355,22 @@ public final class SearchIndex: @unchecked Sendable {
     private func persist(_ config: IndexConfiguration, snapshot: [Root]) {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            // The folder is listed once (the first save, or after a failed one): files left by an older index go then.
+            var saved = try savedFiles ?? Set(FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasSuffix(".idx") })
+            savedFiles = nil
             var files: [RootFile] = []
             for root in snapshot {
                 let base = root.file
-                if !FileManager.default.fileExists(atPath: directory.appendingPathComponent(base).path) {
-                    try root.base.encoded().write(to: directory.appendingPathComponent(base), options: .atomic)
+                if !saved.contains(base) {
+                    try root.base.write(to: directory.appendingPathComponent(base))
+                    saved.insert(base)
                 }
                 var patches: [PatchFile] = []
                 for patch in root.patches {
                     let file = patch.file
-                    if !FileManager.default.fileExists(atPath: directory.appendingPathComponent(file).path) {
-                        try patch.table.encoded().write(to: directory.appendingPathComponent(file), options: .atomic)
+                    if !saved.contains(file) {
+                        try patch.table.write(to: directory.appendingPathComponent(file))
+                        saved.insert(file)
                     }
                     patches.append(PatchFile(path: patch.path, file: file, shadowed: patch.shadowed))
                 }
@@ -334,8 +379,8 @@ public final class SearchIndex: @unchecked Sendable {
             let manifest = Manifest(configuration: config, eventID: eventID, updated: Date(), roots: files)
             try JSONEncoder().encode(manifest).write(to: directory.appendingPathComponent("manifest.json"), options: .atomic)
             let keep = Set(files.flatMap { [$0.base] + $0.patches.map(\.file) })
-            for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            where url.pathExtension == "idx" && !keep.contains(url.lastPathComponent) { try? FileManager.default.removeItem(at: url) }
+            for file in saved.subtracting(keep) { try? FileManager.default.removeItem(at: directory.appendingPathComponent(file)) }
+            savedFiles = keep
         } catch { lock.withLock { state.warning = "Index could not be saved: \(error.localizedDescription)" } }
     }
     private func notify() { DispatchQueue.main.async { NotificationCenter.default.post(name: Self.changed, object: self) } }

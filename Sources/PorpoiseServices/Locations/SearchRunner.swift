@@ -26,7 +26,7 @@ public final class SearchRunner: NSObject {
     /// Results already read from disk (Spotlight reports the growing list again on every progress/update). Only
     /// touched on `loadQueue`: reading them on the main thread made typing in the search field stutter.
     private var loaded: [String: FileItem] = [:]
-    private let loadQueue = DispatchQueue(label: "app.porpoise.search-results", qos: .userInitiated)
+    private let loadQueue = DispatchQueue(label: "app.porpoise.search-results", qos: .userInitiated, autoreleaseFrequency: .workItem)
     /// The newest batch of Spotlight results; older ones still loading are dropped (main queue).
     private var generation = 0
     /// Spotlight's latest results as last shown, shown again when their lines come in (main queue).
