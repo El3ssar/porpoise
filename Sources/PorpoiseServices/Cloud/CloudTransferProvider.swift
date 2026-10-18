@@ -32,6 +32,7 @@ extension CloudChecksum {
         case .sha256: return "sha256"
         case .dropbox: return "dropbox"
         case .quickXor: return "quickXor"
+        case .sha1: return "sha1"
         }
     }
 }

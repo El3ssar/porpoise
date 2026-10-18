@@ -52,17 +52,19 @@ extension CloudChecksum {
         if case .quickXor(let expected) = self { return try CloudContentHash.quickXor(url) == expected }
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
-        var md5 = Insecure.MD5(); var sha = SHA256()
+        var md5 = Insecure.MD5(); var sha = SHA256(); var sha1 = Insecure.SHA1()
         while let bytes = try handle.read(upToCount: 1 << 20), !bytes.isEmpty {
             switch self {
             case .md5: md5.update(data: bytes)
             case .sha256: sha.update(data: bytes)
+            case .sha1: sha1.update(data: bytes)
             case .dropbox, .quickXor: throw CloudContentError.unsupported
             }
         }
         switch self {
         case .md5(let expected): return md5.finalize().map { String(format: "%02x", $0) }.joined() == expected.lowercased()
         case .sha256(let expected): return sha.finalize().map { String(format: "%02x", $0) }.joined() == expected.lowercased()
+        case .sha1(let expected): return sha1.finalize().map { String(format: "%02x", $0) }.joined() == expected.lowercased()
         case .dropbox, .quickXor: throw CloudContentError.unsupported
         }
     }

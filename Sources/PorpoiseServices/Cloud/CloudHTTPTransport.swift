@@ -16,6 +16,17 @@ public struct CloudHTTPTransport: Sendable {
     }
     /// No disk cache, cookies or credential storage: account data (file names, owners) never lands in Cache.db.
     static let session = URLSession(configuration: .ephemeral)
+    /// The same, answering a redirect with the redirect itself: a bearer sent to an API host never follows it elsewhere.
+    static let unredirected = URLSession(configuration: .ephemeral, delegate: RefuseRedirects(), delegateQueue: nil)
+    /// This transport, giving 3xx responses back instead of following them (an injected one is used as it is).
+    public var withoutRedirects: CloudHTTPTransport {
+        guard network else { return self }
+        return CloudHTTPTransport(send: { request in
+            let (data, response) = try await Self.unredirected.data(for: request)
+            guard let response = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+            return (data, response)
+        })
+    }
     public func response(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         try Task.checkCancellation(); return try await send(request)
     }
@@ -39,4 +50,11 @@ public struct CloudHTTPTransport: Sendable {
                 "\($0.key.addingPercentEncoding(withAllowedCharacters: allowed)!)=\($0.value.addingPercentEncoding(withAllowedCharacters: allowed)!)"
             }.joined(separator: "&").utf8)
     }
+}
+
+private final class RefuseRedirects: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) { completionHandler(nil) }
 }
