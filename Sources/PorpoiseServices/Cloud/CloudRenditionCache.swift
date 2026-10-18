@@ -7,6 +7,8 @@ public actor CloudRenditionCache {
     private let directory: URL
     private let byteLimit: Int
     private var generation = 0
+    /// Bytes in the folder: counted once, then kept as files are added. The folder is walked again only to evict.
+    private var bytes: Int?
 
     private let invalidResponse: @Sendable () -> Error
     public init(directory: URL, byteLimit: Int = 200 << 20, invalidResponse: @escaping @Sendable () -> Error = { CloudTransferError.invalidResponse })
@@ -17,7 +19,7 @@ public actor CloudRenditionCache {
     public func epoch() -> Int { generation }
 
     public func clear() {
-        generation += 1
+        generation += 1; bytes = nil
         try? FileManager.default.removeItem(at: directory)
     }
 
@@ -31,7 +33,7 @@ public actor CloudRenditionCache {
         guard data.count <= byteLimit else { throw invalidResponse() }
         try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: target, options: .atomic)
-        trim(keeping: target)
+        trim(keeping: target, added: data.count)
         return target
     }
 
@@ -61,11 +63,15 @@ public actor CloudRenditionCache {
         defer { try? FileManager.default.removeItem(at: partial) }
         try FileManager.default.copyItem(at: source, to: partial)
         try FileManager.default.moveItem(at: partial, to: target)
-        trim(keeping: target)
+        trim(keeping: target, added: size)
         return target
     }
 
-    private func trim(keeping target: URL) {
+    private func trim(keeping target: URL, added: Int) {
+        if let known = bytes {
+            bytes = known + added
+            if known + added <= byteLimit { return }
+        }
         let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]
         guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: keys) else { return }
         var files: [(URL, Int, Date)] = []
@@ -74,9 +80,11 @@ public actor CloudRenditionCache {
             files.append((url, values.fileSize ?? 0, values.contentModificationDate ?? .distantPast))
         }
         var bytes = files.reduce(0) { $0 + $1.1 }
+        // Counted afresh: right unless something is evicted (a folder can hold more than the file it's evicted for).
+        self.bytes = bytes
         for (url, size, _) in files.sorted(by: { $0.2 < $1.2 }) where bytes > byteLimit && url != target {
             try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
-            bytes -= size
+            bytes -= size; self.bytes = nil
         }
     }
 }

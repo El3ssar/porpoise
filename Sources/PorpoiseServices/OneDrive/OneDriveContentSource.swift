@@ -69,8 +69,10 @@ public final class OneDriveContentSource: CloudContentSource, @unchecked Sendabl
         let operation = try sidecar.operation()
         let staging = try await client.download(fresh, operationID: operation, context: .init(checkpoint: checkpoint, progress: { progress($0, $1) }))
         try await checkpoint()
-        if FileManager.default.fileExists(atPath: partial.path) { try FileManager.default.removeItem(at: partial) }
-        try cloudClone(staging, to: partial)
+        let fm = FileManager.default
+        if fm.fileExists(atPath: partial.path) { try fm.removeItem(at: partial) }
+        // Moved, not copied: a verified .part left in the journal's Downloads kept every offline copy's bytes twice.
+        do { try fm.moveItem(at: staging, to: partial) } catch { try cloudClone(staging, to: partial); try fm.removeItem(at: staging) }
         try sidecar.remove()
     }
     public func discardPartial(at partial: URL) async throws {

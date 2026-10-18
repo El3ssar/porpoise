@@ -22,7 +22,7 @@ public final class DriveCloudBackend: CloudBackend {
     public init(store: DriveAccountStore, avatarFolder: URL? = nil) {
         self.store = store
         self.avatarFolder = avatarFolder ?? Settings.cachesFolder.appendingPathComponent("avatars")
-        quotaRefresh = CloudQuotaRefresh { [weak self] in self?.refreshQuotas() }
+        quotaRefresh = CloudQuotaRefresh { [weak self] in self?.refreshQuotas(recount: false) }
         watch = store.objectWillChange.sink { [weak self] _ in
             // Published values change after this fires.
             DispatchQueue.main.async { self?.storeChanged() }
@@ -61,16 +61,26 @@ public final class DriveCloudBackend: CloudBackend {
         return MainActor.assumeIsolated { store.accounts.first { $0.id == id } }
     }
 
-    @MainActor func refreshQuotas(_ id: String? = nil) {
-        for account in store.accounts where id == nil || Self.key(account.id) == id { fetchDetails(account.id) }
+    /// `recount`: list the shared drives again too. The timer that refreshes quotas while active doesn't: that listing
+    /// is every shared drive, every 45 seconds. Coming to the front and reloading do.
+    @MainActor func refreshQuotas(_ id: String? = nil, recount: Bool = true) {
+        for account in store.accounts where id == nil || Self.key(account.id) == id { fetchDetails(account.id, recount: recount) }
     }
 
-    @MainActor private func fetchDetails(_ id: UUID) {
+    @MainActor private func fetchDetails(_ id: UUID, recount: Bool = true) {
         guard let client = store.client(for: id), fetching.insert(id).inserted else { return }
+        let known = recount ? nil : details[id]?.drives
         Task { @MainActor [weak self] in
             defer { self?.fetching.remove(id) }
             guard let info = try? await client.accountInfo() else { return }
-            let drives = info.hasSharedDrives ? ((try? await client.list(DriveLocation(accountID: id, collection: .sharedDrives)).count) ?? 1) : 0
+            var drives = 0
+            if info.hasSharedDrives {
+                if let known, known > 0 {
+                    drives = known
+                } else {
+                    drives = (try? await client.list(DriveLocation(accountID: id, collection: .sharedDrives)).count) ?? 1
+                }
+            }
             guard self?.store.client(for: id) === client else { return }
             self?.details[id] = (info.storageUsed, info.storageLimit, drives)
             self?.onChange?()
