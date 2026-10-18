@@ -199,6 +199,23 @@ import Testing
         #expect(!m.isKnownEmpty(item("empty")))
     }
 
+    /// A change in the folder takes item counts again only for the folders whose date changed; theirs follow it.
+    @Test func aChangeInTheFolderCountsChangedFoldersAgain() async throws {
+        Settings.shared.folderSizeMode = .itemCount
+        let s = try Scratch()
+        try s.file("busy/a"); try s.file("calm/a"); try s.file("calm/b")
+        let m = try await DirectoryModel.loaded(s.url)
+        let count = { (name: String) in m.rows.first { $0.item.name == name }.flatMap { m.folderCounts[$0.item.url] } }
+        #expect(await eventually { count("busy") == 1 && count("calm") == 2 })
+        try s.file("busy/b"); try s.file("top.txt")
+        #expect(await eventually { m.rows.count == 3 && count("busy") == 2 })
+        #expect(count("calm") == 2)
+        // Many changes in a row (reloads are spaced out): the listing ends up with the last of them.
+        for n in 0..<20 { try s.file("busy/more-\(n)"); try s.file("top-\(n).txt") }
+        #expect(await eventually { m.rows.count == 23 && count("busy") == 22 })
+        #expect(count("calm") == 2)
+    }
+
     /// A folder shown and then deleted is reported as gone (the view moves up); one that never loaded isn't.
     @Test func aDeletedFolderIsReportedAsVanished() async throws {
         let s = try Scratch()
