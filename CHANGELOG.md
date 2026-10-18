@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Indexed search finds every empty folder.** A search for empty folders (`folder: size:0`) could miss a folder that changed after the index was built, and listed the folder being searched among its own results.
+- **Animations finish while the display sleeps.** With the screen asleep (or shared remotely with the display off), an animation such as the split view opening could wait until the display woke before ending.
+
 ## 0.8.7
 
 - **Big folders stay fast.** In a folder of 100,000 files, Compact view resizes and zooms instantly (it took about 0.7 s each time), changing an unrelated setting no longer rebuilds every open folder, the tag menu for a large selection opens at once, and folders list about three times faster. Folder search is about 90 times faster and uses a tenth of the memory.
