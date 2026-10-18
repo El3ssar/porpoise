@@ -13,7 +13,7 @@ final class SettingsWindowController: SecondaryWindowController {
     /// The pages' builders, kept so their observers live (and are removed) with the window.
     private var builders: [FormBuilder] = []
     init() {
-        let tabs = NSTabViewController()
+        let tabs = ThemedTabViewController()
         tabs.tabStyle = .toolbar
         var builders: [FormBuilder] = []
         func page(_ title: String, _ symbol: String, _ build: (FormBuilder) -> Void) {

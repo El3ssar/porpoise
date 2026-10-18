@@ -41,6 +41,7 @@ extension Theme {
         window.effectiveAppearance.performAsCurrentDrawingAppearance {
             window.titlebarAppearsTransparent = true
             window.backgroundColor = windowBackground.usingColorSpace(.sRGB) ?? windowBackground
+            (window.contentViewController as? ThemedTabViewController)?.tintTabs()
             if let tabs = window.contentViewController as? NSTabViewController {
                 // Pages not shown now are outside the window's views.
                 for item in tabs.tabViewItems { if let view = item.viewController?.view { dress(view) } }
@@ -72,7 +73,7 @@ extension Theme {
         case let slider as NSSlider:
             slider.trackFillColor = resolvedAccent
         case let popUp as NSPopUpButton:
-            _ = popUp  // macOS draws it; its menu follows the light or dark look
+            ThemedPopUpButtonCell.adopt(popUp)  // its menu follows the light or dark look
         case let button as NSButton: dress(button)
         case let box as NSBox where box.boxType == .custom:
             if isSystem(box.fillColor, Self.backgroundColors) { box.fillColor = viewBackground }
@@ -84,6 +85,7 @@ extension Theme {
                 table.usesAlternatingRowBackgroundColors = false
                 table.backgroundColor = resolved(viewBackground)
             }
+            dressHeader(table)
         case let scroll as NSScrollView:
             if scroll.drawsBackground, isSystem(scroll.backgroundColor, Self.backgroundColors) { scroll.backgroundColor = viewBackground }
         case let clip as NSClipView:
@@ -114,12 +116,7 @@ extension Theme {
 
     private static func dress(_ button: NSButton) {
         if isChoice(button) {
-            if button.bezelColor != resolvedAccent {
-                button.bezelColor = resolvedAccent
-                // Its box is an image made in the accent of the time it was first drawn: drop it, it's made again.
-                button.image = nil
-                button.alternateImage = nil
-            }
+            dressChoice(button)
             // The title in the palette's text color, unless it was given its own.
             let title = button.attributedTitle
             let color = title.length > 0 ? title.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor : nil
@@ -133,13 +130,9 @@ extension Theme {
         }
     }
 
-    /// A checkbox or radio button: ours say so; others are borderless with the box before the title, its image (once
-    /// drawn) the system's own.
+    /// A checkbox or radio button, as it tells VoiceOver.
     static func isChoice(_ button: NSButton) -> Bool {
-        if let ours = button as? ClosureButton { return ours.isToggle }
-        guard !button.isBordered, button.imagePosition == .imageLeading else { return false }
-        guard let image = button.image else { return true }
-        return image.representations.contains { String(describing: type(of: $0)).contains("CoreUI") }
+        [.checkBox, .radioButton].contains(button.cell?.accessibilityRole())
     }
 
     static let primaryText: [NSColor] = [.labelColor, .controlTextColor, .textColor, .headerTextColor, .windowFrameTextColor]

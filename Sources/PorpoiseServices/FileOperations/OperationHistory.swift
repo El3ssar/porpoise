@@ -48,7 +48,8 @@ public final class OperationHistory: @unchecked Sendable {
     static let limit = 5000
 
     public let file: URL
-    private let lock = NSLock()
+    /// Every read and write, in order: a job's entry is written here, not on the main thread that ends it.
+    private let queue = DispatchQueue(label: "app.porpoise.history", qos: .utility)
     private var cache: [HistoryEntry]?
 
     public init(file: URL) { self.file = file }
@@ -70,7 +71,7 @@ public final class OperationHistory: @unchecked Sendable {
     }
 
     public func append(_ entry: HistoryEntry) {
-        lock.withLock {
+        queue.async { [self] in
             var all = load()
             all.append(entry)
             if all.count > Self.limit + Self.limit / 5 {
@@ -90,17 +91,22 @@ public final class OperationHistory: @unchecked Sendable {
                 }
             }
             cache = all
+            DispatchQueue.main.async { NotificationCenter.default.post(name: Self.changed, object: self) }
         }
-        DispatchQueue.main.async { NotificationCenter.default.post(name: Self.changed, object: self) }
+    }
+
+    /// Waits until every entry asked for is written (before quitting).
+    public func flush() {
+        queue.sync {}
     }
 
     /// Newest first, those matching every word of `search` (any field).
     public func entries(matching search: String = "") -> [HistoryEntry] {
-        lock.withLock { load() }.reversed().filter { $0.matches(search) }
+        queue.sync { load() }.reversed().filter { $0.matches(search) }
     }
 
     public func clear() {
-        lock.withLock {
+        queue.sync {
             try? FileManager.default.removeItem(at: file)
             cache = []
         }
@@ -131,7 +137,7 @@ public final class OperationHistory: @unchecked Sendable {
         return e
     }()
 
-    /// Lock held.
+    /// On the queue.
     private func load() -> [HistoryEntry] {
         if let cache { return cache }
         let dec = JSONDecoder()
@@ -142,7 +148,7 @@ public final class OperationHistory: @unchecked Sendable {
         return all
     }
 
-    /// Lock held.
+    /// On the queue.
     private func write(_ all: [HistoryEntry]) {
         let data = all.compactMap { try? Self.encoder.encode($0) }.reduce(into: Data()) { $0 += $1 + Data([10]) }
         try? data.write(to: file, options: .atomic)

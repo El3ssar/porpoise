@@ -86,6 +86,11 @@ public struct ActivityPresentation {
     }
 
     public static func summary(_ activity: Activity) -> String {
+        // Opening a cloud file downloads it: nothing was copied anywhere the person chose.
+        if activity.state == .completed, activity.openingName != nil, activity.errors.isEmpty {
+            let bytes = activity.progress?.doneBytes ?? 0
+            return bytes > 0 ? "Downloaded \(FileFormat.size(bytes))" : "Downloaded"
+        }
         guard activity.state == .completed, activity.kind == .copy || activity.kind == .move,
             let progress = activity.progress
         else {

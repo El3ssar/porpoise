@@ -849,7 +849,10 @@ public final class DirectoryModel {
             guard let d = item.date(for: role) else { return "" }
             return s.dateStyle == .relative ? FileFormat.relativeDate(d) : FileFormat.longDate(d)
         case .type: return item.typeDescription
-        case .path: return item.url.deletingLastPathComponent().path
+        case .path:
+            // A Drive item's address names it by id, not by the folders it is in ("/folder", "/my-drive").
+            if DriveLocation(url: item.url) != nil { return "Google Drive" }
+            return item.url.deletingLastPathComponent().path
         case .extension_: return item.fileExtension
         case .permissions:
             let sym = FileFormat.permissions(item.posixPermissions, isDirectory: item.isDirectory)

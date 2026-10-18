@@ -88,6 +88,11 @@ struct ActivityPresentationTests {
         let range = try #require(ActivityPresentation.quotedRange(in: a.title))
         #expect((a.title as NSString).substring(with: range) == "“😀résumé”")
         #expect(ActivityPresentation.quotedRange(in: "No quoted name") == nil)
+        a.state = .completed
+        a.progress?.doneBytes = 0
+        #expect(ActivityPresentation.summary(a) == "Downloaded")  // not "Copied 0 items"
+        a.progress?.doneBytes = 2048
+        #expect(ActivityPresentation.summary(a) == "Downloaded \(FileFormat.size(2048))")
         a.cloudTitle = "Custom cloud operation"
         #expect(ActivityPresentation(a).title == "Custom cloud operation")
         let many = Activity(kind: .trash, sources: a.sources + a.sources, destination: nil, job: nil)
