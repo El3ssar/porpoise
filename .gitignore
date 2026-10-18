@@ -9,3 +9,4 @@ Tests/UI/__pycache__/
 .google-oauth.json
 .dropbox-app-key
 .onedrive-client-id
+.box-oauth

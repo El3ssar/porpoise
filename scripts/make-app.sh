@@ -109,6 +109,17 @@ if [ -n "${PORPOISE_ONEDRIVE_CLIENT_ID:-}" ]; then
   ONEDRIVE_ESCAPED=$(python3 -I -c 'import os,html;print(html.escape(os.environ["PORPOISE_ONEDRIVE_CLIENT_ID"]))')
   ONEDRIVE_KEYS="<key>OneDriveClientID</key><string>${ONEDRIVE_ESCAPED}</string>"
 fi
+# Box OAuth 2.0 application: Box's token endpoint requires its client secret even for a desktop app, so (like
+# Google's desktop client) it ships in the bundle and identifies the application only. From PORPOISE_BOX_CLIENT_ID and
+# PORPOISE_BOX_CLIENT_SECRET, or the git-ignored .box-oauth (client ID on the first line, secret on the second).
+BOX_KEYS=""
+if [ -z "${PORPOISE_BOX_CLIENT_ID:-}" ] && [ -f .box-oauth ]; then
+  PORPOISE_BOX_CLIENT_ID=$(sed -n 1p .box-oauth | tr -d '[:space:]'); export PORPOISE_BOX_CLIENT_ID
+  PORPOISE_BOX_CLIENT_SECRET=$(sed -n 2p .box-oauth | tr -d '[:space:]'); export PORPOISE_BOX_CLIENT_SECRET
+fi
+if [ -n "${PORPOISE_BOX_CLIENT_ID:-}" ] && [ -n "${PORPOISE_BOX_CLIENT_SECRET:-}" ]; then
+  BOX_KEYS=$(python3 -I -c 'import os,html;e=os.environ;print("<key>BoxClientID</key><string>%s</string><key>BoxClientSecret</key><string>%s</string>" % (html.escape(e["PORPOISE_BOX_CLIENT_ID"]), html.escape(e["PORPOISE_BOX_CLIENT_SECRET"])))')
+fi
 GOOGLE_KEYS=""
 if [ -n "$GOOGLE_ID" ]; then
   GOOGLE_KEYS="<key>GoogleDriveClientID</key><string>${GOOGLE_ID}</string>"
@@ -137,6 +148,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   ${GOOGLE_KEYS}
   ${DROPBOX_KEYS}
   ${ONEDRIVE_KEYS}
+  ${BOX_KEYS}
   <key>SUScheduledCheckInterval</key><integer>86400</integer>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHumanReadableCopyright</key><string>Porpoise — a file manager for macOS inspired by KDE Dolphin. GPL-3.0-or-later.</string>

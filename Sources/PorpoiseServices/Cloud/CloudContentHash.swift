@@ -70,3 +70,14 @@ extension CloudContentHash {
     }
     public static func quickXor(_ bytes: Data) -> String { var hash = QuickXorHash(); hash.update(bytes); return hash.finalize() }
 }
+
+extension CloudContentHash {
+    /// SHA-1 in lowercase hex (Box's `sha1`), read incrementally.
+    public static func sha1(_ url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url); defer { try? handle.close() }
+        var hash = Insecure.SHA1()
+        while let bytes = try handle.read(upToCount: 1 << 20), !bytes.isEmpty { hash.update(data: bytes) }
+        return hash.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+    public static func sha1(_ bytes: Data) -> String { Insecure.SHA1.hash(data: bytes).map { String(format: "%02x", $0) }.joined() }
+}

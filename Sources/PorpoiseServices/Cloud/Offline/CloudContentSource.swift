@@ -7,7 +7,7 @@ public struct CloudItemRef: Hashable, Codable, Sendable {
 }
 
 public enum CloudChecksum: Hashable, Codable, Sendable {
-    case md5(String), sha256(String), dropbox(String), quickXor(String)
+    case md5(String), sha256(String), dropbox(String), quickXor(String), sha1(String)
 }
 
 public struct CloudRemoteItem: Codable, Sendable, Equatable {

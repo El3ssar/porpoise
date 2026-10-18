@@ -30,7 +30,7 @@ import Testing
         #expect(!CloudAccounts.looksLikeLink("http://1drv.ms/f/s!AbCdEf"))
         #expect(CloudProviderDescriptor.linkProvider("https://1drv.ms/u/s!x")?.provider == .oneDrive)
         #expect(CloudProviderDescriptor.descriptor(for: url)?.provider == .oneDrive)
-        #expect(CloudProvider.oneDrive.descriptor.configuration?.key == "oneDriveClientID")
+        #expect(CloudProvider.oneDrive.descriptor.configurations.map(\.key) == ["oneDriveClientID"])
     }
 
     @Test @MainActor func linksOpenWithTheAccountThatSeesThem() async throws {

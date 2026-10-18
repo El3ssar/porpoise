@@ -29,12 +29,13 @@ public struct CloudProviderDescriptor: Sendable {
     public var storageURL: URL?
     /// The path of the root listing what others shared, which shows as Details by when it was shared.
     public var sharedListPath: String?
-    public var configuration: (key: String, label: String)? {
+    /// The Settings fields for the user's own application registration (Settings › Accounts), in order.
+    public var configurations: [(key: String, label: String)] {
         switch provider {
-        case .googleDrive: return nil
-        case .dropbox: return ("dropboxAppKey", "Dropbox app key:")
-        case .oneDrive: return ("oneDriveClientID", "OneDrive application (client) ID:")
-        default: return nil
+        case .googleDrive: return []
+        case .dropbox: return [("dropboxAppKey", "Dropbox app key:")]
+        case .oneDrive: return [("oneDriveClientID", "OneDrive application (client) ID:")]
+        case .box: return [("boxClientID", "Box client ID:"), ("boxClientSecret", "Box client secret:")]
         }
     }
     public func root(_ key: CloudRoot) -> Root { roots.first { $0.key == key } ?? Root(key: key, title: key.title, icon: key.icon, counted: false) }
@@ -44,14 +45,15 @@ public struct CloudProviderDescriptor: Sendable {
         return c.url ?? link
     }
     /// Looked up several times per drawn cloud row: built again only when what it reads changes (the settings store,
-    /// the two app registrations, test mode). The environment and the app's Info.plist don't change while it runs.
+    /// the app registrations, test mode). The environment and the app's Info.plist don't change while it runs.
     public static var catalog: [CloudProviderDescriptor] {
         let key = CatalogKey(
             store: ObjectIdentifier(Settings.store), dropbox: Settings.store.string(forKey: "dropboxAppKey"),
-            oneDrive: Settings.store.string(forKey: "oneDriveClientID"), testing: Settings.isTesting)
+            oneDrive: Settings.store.string(forKey: "oneDriveClientID"), box: Settings.store.string(forKey: "boxClientID"),
+            boxSecret: Settings.store.string(forKey: "boxClientSecret"), testing: Settings.isTesting)
         return catalogLock.withLock {
             if let cachedCatalog, cachedCatalog.key == key { return cachedCatalog.catalog }
-            let catalog = catalog(dropbox: .selected(), oneDrive: .selected())
+            let catalog = catalog(dropbox: .selected(), oneDrive: .selected(), box: .selected())
             cachedCatalog = (key, catalog)
             return catalog
         }
@@ -60,12 +62,14 @@ public struct CloudProviderDescriptor: Sendable {
         var store: ObjectIdentifier
         var dropbox: String?
         var oneDrive: String?
+        var box: String?
+        var boxSecret: String?
         var testing: Bool
     }
     private static let catalogLock = NSLock()
     nonisolated(unsafe) private static var cachedCatalog: (key: CatalogKey, catalog: [CloudProviderDescriptor])?
     public static func catalog(
-        dropbox configuration: DropboxConfiguration, oneDrive: OneDriveConfiguration = .selected()
+        dropbox configuration: DropboxConfiguration, oneDrive: OneDriveConfiguration = .selected(), box: BoxConfiguration = .selected()
     ) -> [CloudProviderDescriptor] {
         [
             .init(
@@ -103,9 +107,13 @@ public struct CloudProviderDescriptor: Sendable {
                 homeURL: URL(string: "https://onedrive.live.com")!, accountQuery: nil, supportsTrashUndo: false,
                 linkHosts: ["1drv.ms", "onedrive.live.com"], storageURL: URL(string: "https://onedrive.live.com/?v=managestorage"),
                 sharedListPath: "/collection:shared"),
+            // Items shared with the person are in All Files once accepted: Box has no separate list of them.
             .init(
-                provider: .box, title: "Box", brand: "box", scheme: nil, available: false, signInInstructions: "", roots: [],
-                homeURL: URL(string: "https://app.box.com")!, accountQuery: nil, supportsTrashUndo: false),
+                provider: .box, title: "Box", brand: "box", scheme: "box", available: box.isConfigured,
+                signInInstructions: "Sign in to Box and allow Porpoise to access your files. Then come back here. Nothing is typed into Porpoise.",
+                roots: [.init(key: .myDrive, title: "All Files", icon: "folder-cloud", counted: false)],
+                homeURL: URL(string: "https://app.box.com/folder/0")!, accountQuery: nil, supportsTrashUndo: true,
+                linkHosts: ["app.box.com", "box.com", "www.box.com"], storageURL: URL(string: "https://app.box.com/account")),
         ]
     }
     /// The service whose share link `text` is (an https link on one of its `linkHosts`).

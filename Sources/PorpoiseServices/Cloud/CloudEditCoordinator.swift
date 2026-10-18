@@ -96,6 +96,9 @@ public final class CloudEditCoordinator {
                     && OneDriveLocation(url: $0.location)?.driveID == location.driveID
             }
         }
+        if let location = BoxLocation(url: url) {
+            return entries.first { $0.provider == .box && $0.account == location.accountID && $0.fileID == location.apiID }
+        }
         if let location = DropboxLocation(url: url) {
             return entries.first {
                 $0.provider == .dropbox && $0.account == location.accountID && $0.fileID == location.itemID
@@ -159,6 +162,22 @@ public final class CloudEditCoordinator {
                 return try await client.open(client.metadata(entry.fileID))
             })
     }
+    private func box(_ client: BoxClient, file: BoxItem? = nil) -> CloudEditBinding {
+        let account = client.accountID
+        return CloudEditBinding(
+            store: client.edits, file: file, account: account, provider: .box,
+            offline: { [weak client] in client?.isOffline ?? true }, name: { $0.name },
+            location: { BoxLocation(accountID: account, itemID: $0.id, kind: $0.kind).url },
+            copyPath: { [weak client] file in
+                guard let client, let parent = file.parentID else { throw BoxError.reconnect }
+                let files = try await client.list(parent)
+                return FileFormat.suggestedName(for: file.name, existing: Set(files.map(\.name)))
+            },
+            compare: { [weak client] entry in
+                guard let client else { throw BoxError.reconnect }
+                return try await client.open(client.metadata(entry.fileID, kind: .file))
+            })
+    }
     private func binding(_ item: FileItem, checkAccount: Bool = true) -> CloudEditBinding? {
         guard !item.isBrowsableFolder else { return nil }
         if let provider = RemoteFS.provider(for: item.url) as? DriveProvider,
@@ -178,6 +197,12 @@ public final class CloudEditCoordinator {
             (!checkAccount || CloudAccounts.shared.accountDenial(for: item.url) == nil), let client = try? provider.scoped(item.url)
         {
             return oneDrive(client, file: file)
+        }
+        if let provider = RemoteFS.provider(for: item.url) as? BoxProvider,
+            let file = provider.metadata(item.url), file.revision != nil, file.etag != nil, file.canDownload,
+            (!checkAccount || CloudAccounts.shared.accountDenial(for: item.url) == nil)
+        {
+            return box(provider.client, file: file)
         }
         return nil
     }
@@ -307,6 +332,10 @@ public final class CloudEditCoordinator {
     }
     public func restore(_ client: OneDriveClient) {
         register(oneDrive(client))
+        if restoresAtLaunch { restoreRegistered() }
+    }
+    public func restore(_ client: BoxClient) {
+        register(box(client))
         if restoresAtLaunch { restoreRegistered() }
     }
     private func register(_ binding: CloudEditBinding) {

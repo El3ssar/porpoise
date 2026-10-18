@@ -32,7 +32,7 @@ enum AccountsSettingsPage {
         offlineSection(f)
         f.section("Sign-in configuration")
         for descriptor in CloudProviderDescriptor.catalog {
-            if let configuration = descriptor.configuration {
+            for configuration in descriptor.configurations {
                 f.text(configuration.label, Settings.store.string(forKey: configuration.key) ?? "") {
                     Settings.store.set($0.trimmingCharacters(in: .whitespacesAndNewlines), forKey: configuration.key)
                 }
