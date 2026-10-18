@@ -16,7 +16,7 @@ public enum LocationKind: Equatable, Sendable {
         if url.isFileURL { return url.standardizedFileURL.path == trashPath ? .trash : .local }
         let scheme = url.scheme?.lowercased() ?? ""
         if let provider = cloudProviders[scheme] { return .cloud(provider) }
-        if RemoteFS.sshSchemes.contains(scheme) || RemoteFS.ftpSchemes.contains(scheme) { return .remote }
+        if scheme == "s3" || RemoteFS.sshSchemes.contains(scheme) || RemoteFS.ftpSchemes.contains(scheme) { return .remote }
         if RemoteFS.mountSchemes.contains(scheme) { return .networkShare }
         switch scheme {
         case "adb": return .device

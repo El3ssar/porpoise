@@ -18,6 +18,7 @@ public struct CloudAuthorizedClient: Sendable {
     public typealias Receive = (Data, HTTPURLResponse) async throws -> Void
 
     public let transport: CloudHTTPTransport
+    let authorize: (@Sendable (URLRequest) throws -> URLRequest)?
     let token: Token
     let classify: Classify
     let attempts: Int
@@ -27,8 +28,10 @@ public struct CloudAuthorizedClient: Sendable {
 
     public init(
         transport: CloudHTTPTransport, token: @escaping Token, classify: @escaping Classify, attempts: Int = 5,
-        wait: @escaping @Sendable (TimeInterval) async throws -> Void = CloudAuthorizedClient.defaultWait
+        wait: @escaping @Sendable (TimeInterval) async throws -> Void = CloudAuthorizedClient.defaultWait,
+        authorize: (@Sendable (URLRequest) throws -> URLRequest)? = nil
     ) {
+        self.authorize = authorize
         self.transport = transport; self.token = token; self.classify = classify; self.attempts = max(1, attempts); self.wait = wait
     }
 
@@ -45,7 +48,11 @@ public struct CloudAuthorizedClient: Sendable {
         while true {
             try Task.checkCancellation()
             try await before?()
-            request.setValue("Bearer " + bearer, forHTTPHeaderField: "Authorization")
+            if let authorize {
+                request = try authorize(request)
+            } else {
+                request.setValue("Bearer " + bearer, forHTTPHeaderField: "Authorization")
+            }
             let (body, response) = try await exchange(request, receive: receive)
             if response.statusCode == 401, !renewed {
                 renewed = true

@@ -24,6 +24,10 @@ public enum RemoteOpener {
     /// URL (sftp://host/../../x) can't point outside the cache: the file there is replaced on download.
     static func cacheFolder(for remote: URL) -> URL {
         var folder = RemoteFS.cacheRoot.appendingPathComponent(remote.scheme ?? "x").appendingPathComponent(remote.host ?? "h")
+        if let location = S3Location(url: remote) {
+            let identity = "\(location.accountID)|\(location.endpoint)|\(location.region)"
+            folder.appendPathComponent(S3Signer.hash(Data(identity.utf8)))
+        }
         for c in remote.deletingLastPathComponent().pathComponents where RemoteParsing.isSafeName(c) {
             folder.appendPathComponent(c)
         }

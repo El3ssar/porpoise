@@ -57,7 +57,8 @@ public enum RemoteFS {
     private static let lock = NSLock()
 
     private static func key(_ url: URL) -> String {
-        "\(url.scheme?.lowercased() ?? "")://\(url.user ?? "")@\(url.host ?? "")#\(url.port ?? 0)"
+        if let location = S3Location(url: url) { return "s3:\(location.accountID):\(location.endpoint):\(location.region):\(location.bucket)" }
+        return "\(url.scheme?.lowercased() ?? "")://\(url.user ?? "")@\(url.host ?? "")#\(url.port ?? 0)"
     }
 
     /// Makes `url`'s host use `provider` (nil: a new one on next use). For tests, which connect their own way.
@@ -112,7 +113,9 @@ public enum RemoteFS {
         lock.lock(); defer { lock.unlock() }
         if let p = providers[key] { return p }
         let p: RemoteProvider
-        if s == "gdrive" {
+        if s == "s3" {
+            guard let location = S3Location(url: url) else { return nil }; p = S3Provider(location: location)
+        } else if s == "gdrive" {
             guard let accountID = url.host.flatMap(UUID.init(uuidString:)) else { return nil }
             p = DriveProvider(accountID: accountID, client: nil)
         } else if PlacesModel.isCloud(url) {
