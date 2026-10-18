@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Line coverage of the logic layers (PorpoiseCore, PorpoiseServices) after `swift test --enable-code-coverage`.
+"""Line coverage of the logic layers (Core, FileSystem, HelperKit, Services) after `swift test --enable-code-coverage`.
 
 usage: scripts/coverage.py [--min PERCENT]
 
@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-LAYERS = ("PorpoiseCore/", "PorpoiseServices/")
+LAYERS = ("PorpoiseCore/", "PorpoiseFileSystem/", "PorpoiseHelperKit/", "PorpoiseServices/")
 
 
 def main() -> None:
@@ -41,6 +41,11 @@ def main() -> None:
         sys.exit("no coverage data: run `swift test --enable-code-coverage` first")
     for name, count, covered in sorted(rows, key=lambda r: r[2] / max(r[1], 1)):
         print(f"{100 * covered / max(count, 1):6.1f}%  {count:5d} lines  {name}")
+    for layer in LAYERS:
+        layer_rows = [r for r in rows if r[0].startswith(layer)]
+        count = sum(r[1] for r in layer_rows)
+        covered = sum(r[2] for r in layer_rows)
+        print(f"\n{100 * covered / max(count, 1):.1f}% of {count} lines in {layer.rstrip('/')}")
     total, covered = sum(r[1] for r in rows), sum(r[2] for r in rows)
     percent = 100 * covered / total
     print(f"\n{percent:.1f}% of {total} lines in {', '.join(l.rstrip('/') for l in LAYERS)}")

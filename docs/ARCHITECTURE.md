@@ -1,22 +1,34 @@
 # Architecture
 
-Porpoise is four SwiftPM targets in three layers, plus the privileged helper.
+Porpoise separates shared contracts, local filesystem IO, helper security and app orchestration into four logic targets.
 
-```
-Porpoise (app)          AppKit: windows, views, menus, dialogs
-   │
-   ▼
-PorpoiseServices        everything else the app does: files, remotes, settings, system
-   │
-   ▼
-PorpoiseCore            pure models and algorithms        ◀── PorpoiseHelper (root daemon)
+```mermaid
+graph TD
+  App[Porpoise] --> Services[PorpoiseServices]
+  App --> FS[PorpoiseFileSystem]
+  App --> Core[PorpoiseCore]
+  Services --> Core
+  Services --> FS
+  Services --> Kit[PorpoiseHelperKit]
+  FS --> Core
+  FS --> Kit
+  Helper[PorpoiseHelper] --> Kit
 ```
 
 ## Layers
 
-**PorpoiseCore** (`Sources/PorpoiseCore`). Foundation only, no state of its own: `FileItem` and listing, sorting and
-grouping, view properties, `FileJob` (copy/move/trash/delete with conflicts, undo records), parsers for remote listings
-and Konsole colour schemes, escaping, the helper's XPC protocol and its request checks (`HelperRequests`).
+**PorpoiseCore** (`Sources/PorpoiseCore`). Shared value models, parsers, formatting, index/query algorithms,
+conflict policy and synchronization contracts. It performs no filesystem IO, process execution or code-signing
+checks. `FileItem` is a value; `FilePath` stores a resolved identity and provides lexical containment. Both
+Core and HelperKit are leaves with no project-target dependencies.
+
+**PorpoiseFileSystem** (`Sources/PorpoiseFileSystem`). Local metadata/listing, path resolution, physical traversal,
+`FileJob` (copy/move/trash/delete with conflicts), Undo, verification, FSEvents and filesystem containment checks.
+It depends on Core and uses HelperKit's strict existing-path resolver. It has no Services, AppKit or SwiftUI dependency.
+
+**PorpoiseHelperKit** (`Sources/PorpoiseHelperKit`). The helper's XPC protocol, caller/request validation, code-signing
+checks and strict libc `realpath` primitive. The privileged executable links only this target. Its Objective-C
+protocol name is preserved across the module move for installed helper compatibility.
 
 **PorpoiseServices** (`Sources/PorpoiseServices`). The app's behaviour without its looks. It may use Foundation,
 AVFoundation, Network, NetFS, Security, ServiceManagement, CryptoKit, UniformTypeIdentifiers, AudioToolbox and SQLite3,
@@ -38,20 +50,20 @@ integration, updates, test bridge), `Window`, `Views`, `Panels`, `Bars`, `Naviga
 and `FileOperations` (the drop menu, jobs panel, conflict dialog and `FileOperationsDialogs`).
 
 **PorpoiseHelper** (`Sources/PorpoiseHelper`). The launchd daemon, run as root. It only accepts Porpoise's signature
-and hands every request to `HelperRequests` in PorpoiseCore. Its binary is committed in `Resources/Helper`; see
+and hands every request to `HelperRequests` in PorpoiseHelperKit. Its binary is committed in `Resources/Helper`; see
 CONTRIBUTING.md before changing anything it uses.
 
 ## Rules
 
-- Dependencies point down only: app → services → core. The helper depends on core alone.
-- No AppKit in services or core. When a service needs the user (a question, a login, opening a file), it goes through
+- Dependencies point down only as shown above. The helper depends on HelperKit alone.
+- No AppKit or SwiftUI in any logic target. When a service needs the user (a question, a login, opening a file), it goes through
   a small hook the app fills in `App/ServicesSetup.swift`: `FileOperationsController.ui` and `.clipboard`,
   `RemoteFS.askLogin`, `RemoteOpener.openFile`. Volume notifications are forwarded to `PlacesModel.refreshDevices()`.
 - Services post `Notification`s (`Settings.changed`, `FileOperationsController.foldersChanged`, `PlacesModel.changed`,
   `StatusCenter.message`…); views observe them. Services never hold views.
 - `public` only for what the app uses. Settings keys, file formats (places.json, trash origins), bundle and helper
   identifiers and DebugBridge commands are part of users' data and the tests: don't change them.
-- Core and services are where tests go: anything that can be decided without a window belongs there.
+- Core, FileSystem, HelperKit and Services are where tests go: anything that can be decided without a window belongs there.
 - `Settings.isTesting` (set from `PORPOISE_DEFAULTS_SUITE`) keeps test runs away from the system: no helper, no sounds,
   no places.json, a private pasteboard.
 
@@ -64,7 +76,7 @@ File › Move to Trash (⌘⌫):
 2. **Service.** `trash` sorts remote items (deleted after a `Confirmation`), apps on the system volume (a notice) and
    local items, asks if Settings say so, then `run(.trash, …)`. Every question goes to `ui.confirm`, which
    `FileOperationsDialogs` shows as an alert; the window is passed through untouched.
-3. **Job.** `run` creates a `FileJob` (core), reports it to `ui.jobStarted` (the jobs panel), and runs it on a
+3. **Job.** `run` creates a `FileJob` (FileSystem), reports it to `ui.jobStarted` (the jobs panel), and runs it on a
    background queue. Progress goes to `ui.jobProgressed`; a name conflict blocks the job while the main thread asks
    `ui.resolveConflict` (the conflict dialog).
 4. **Results.** On the main queue: `notifyChanged` posts `foldersChanged` (views reload), the undo record is pushed and

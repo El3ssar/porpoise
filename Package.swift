@@ -22,7 +22,7 @@ let package = Package(
         .target(name: "PorpoiseHelperKit"),
         .target(name: "PorpoiseFileSystem", dependencies: ["PorpoiseCore", "PorpoiseHelperKit"]),
         .executableTarget(
-            name: "IndexBenchmark", dependencies: ["PorpoiseCore", "PorpoiseFileSystem", "PorpoiseServices"], path: "Benchmarks/IndexBenchmark"),
+            name: "IndexBenchmark", dependencies: ["PorpoiseCore", "PorpoiseServices"], path: "Benchmarks/IndexBenchmark"),
         // Everything the app does that isn't drawing on screen: no AppKit or SwiftUI here.
         .target(name: "PorpoiseServices", dependencies: ["PorpoiseCore", "PorpoiseFileSystem", "PorpoiseHelperKit"], swiftSettings: testHooks),
         .executableTarget(
@@ -36,7 +36,7 @@ let package = Package(
         .executableTarget(name: "PorpoiseHelper", dependencies: ["PorpoiseHelperKit"]),
         // Fake-server-only subprocess used to verify durable journals across actual process death.
         .executableTarget(
-            name: "DriveRecoveryProbe", dependencies: ["PorpoiseCore", "PorpoiseFileSystem", "PorpoiseServices"], path: "Tests/DriveRecoveryProbe"),
+            name: "DriveRecoveryProbe", dependencies: ["PorpoiseCore", "PorpoiseServices"], path: "Tests/DriveRecoveryProbe"),
         // Shared by the test targets: throwaway folders and disk images that clean up after themselves.
         .target(name: "PorpoiseTestSupport", path: "Tests/PorpoiseTestSupport"),
         // What the Services and App tests share: settings isolation, waiting, the fake servers and fakes.
