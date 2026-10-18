@@ -3,6 +3,7 @@ import PorpoiseCore
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
+import os
 
 @testable import PorpoiseServices
 
@@ -19,6 +20,68 @@ import Testing
     .serialized,
     .enabled(if: ProcessInfo.processInfo.environment["PORPOISE_TESTS_ALONE"] == "1", "runs alone: scripts/test-with-watchdog.sh"))
 struct BusyPoolTests {
+    /// Range responses must keep moving independently of the pool: their send-idle deadline is real time.
+    @MainActor @Test func aRangeResponseFinishesWhileEveryCooperativeThreadIsTaken() throws {
+        let server = LocalFileServer()
+        server.sendTimeout = 0.5
+        defer { server.stop() }
+        let url = try #require(
+            server.start(
+                source: .init(
+                    size: 10, contentType: "video/mp4",
+                    read: { _ in
+                        try await Task.sleep(for: .milliseconds(10))
+                        return Data(repeating: 42, count: 10)
+                    })))
+        try expectResponseWhileCooperativePoolIsTaken(url, bytes: Data(repeating: 42, count: 10))
+    }
+
+    /// Real token lookup and HTTP streaming must retain the response executor through their suspension points.
+    @MainActor @Test func aDriveRangeFinishesWhileEveryCooperativeThreadIsTaken() async throws {
+        let scratch = try Scratch()
+        let fixture = try FakeDriveServer.writeFixture(
+            in: scratch,
+            [
+                "files": [["id": "movie", "name": "movie.mp4", "mimeType": "video/mp4", "size": "10", "version": "1"]],
+                "generatedMedia": ["movie": 10],
+            ])
+        let upstream = try FakeDriveServer(fixture: fixture, latencyMS: 30)
+        let client = try DriveMutationTests().client(upstream, folder: scratch.path("journal"))
+        let stream = try client.streamingPreview(try await client.file("movie"))
+        defer { stream.stop() }
+        try expectResponseWhileCooperativePoolIsTaken(stream.url, bytes: Data(repeating: 120, count: 10))
+    }
+
+    @MainActor private func expectResponseWhileCooperativePoolIsTaken(_ url: URL, bytes: Data) throws {
+        let release = Flag()
+        let occupied = DispatchSemaphore(value: 0)
+        let blockers =
+            ProcessInfo.processInfo.environment["LIBDISPATCH_COOPERATIVE_POOL_STRICT"] == "1"
+            ? 1 : ProcessInfo.processInfo.activeProcessorCount
+        // Dispatch creates the original range Task at low priority. Loading only the medium-priority pool
+        // misses this failure because each QoS has its own workers. Spin without advertising a blocking wait.
+        for _ in 0..<blockers {
+            Task.detached(priority: .low) {
+                occupied.signal(); while !release.isSet {}
+            }
+        }
+        defer { release.set() }
+        for _ in 0..<blockers { try #require(occupied.wait(timeout: .now() + 10) == .success) }
+        let finished = DispatchSemaphore(value: 0)
+        let received = OSAllocatedUnfairLock(initialState: Data())
+        // The completion handler does not need a cooperative thread; neither may the server's response task.
+        let request = URLSession.shared.dataTask(with: url) { data, response, error in
+            if error == nil, (response as? HTTPURLResponse)?.statusCode == 200 {
+                received.withLock { $0 = data ?? Data() }
+            }
+            finished.signal()
+        }
+        request.resume()
+        defer { request.cancel() }
+        #expect(finished.wait(timeout: .now() + 5) == .success)
+        #expect(received.withLock { $0 } == bytes)
+    }
+
     /// Keeps a default-QoS GCD worker spinning per core until the returned function is called.
     private func occupyEveryCore() -> () -> Void {
         let stop = Flag()

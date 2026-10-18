@@ -16,6 +16,9 @@ final class LocalFileServer: @unchecked Sendable {
     private static let maxRequestSize = 16_384
     private static let chunkSize = 1 << 20
     private static let startTimeout: TimeInterval = 2
+    /// Range tasks must start and resume before their real-time idle deadline even when the shared cooperative
+    /// pool is occupied. This also carries the executor preference through the provider's asynchronous read.
+    private static let responder = QueueTaskExecutor(label: "porpoise.preview-response", qos: .userInitiated)
 
     struct RangeSource: Sendable {
         let size: Int64
@@ -175,7 +178,7 @@ final class LocalFileServer: @unchecked Sendable {
         if ranged { head += "Content-Range: bytes \(range.lowerBound)-\(range.upperBound - 1)/\(source.size)\r\n" }
         head += "\r\n"
         let id = ObjectIdentifier(c)
-        let task = Task { [weak self] in
+        let task = Task(executorPreference: Self.responder) { [weak self] in
             guard let self else { c.cancel(); return }
             do {
                 try await self.send(c, data: Data(head.utf8))
