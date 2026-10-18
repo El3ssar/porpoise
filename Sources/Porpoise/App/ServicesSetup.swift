@@ -33,7 +33,7 @@ extension AppDelegate {
             CloudAccounts.shared.backend = MainActor.assumeIsolated {
                 CompositeCloudBackend([
                     .googleDrive: DriveCloudBackend(store: .shared), .dropbox: DropboxCloudBackend(store: .shared),
-                    .oneDrive: OneDriveCloudBackend(store: .shared),
+                    .oneDrive: OneDriveCloudBackend(store: .shared), .box: BoxCloudBackend(store: .shared),
                 ])
             }
         }
