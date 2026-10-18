@@ -7,6 +7,45 @@ import Testing
 @testable import PorpoiseServices
 
 @Suite(.serialized) struct RemoteFolderTreeTests {
+    /// A canceled request can still report a buffered page or a URLSession cancellation error after reload.
+    @MainActor @Test func anObsoletePartialLoadCannotFinishTheReplacement() throws {
+        let root = URL(string: "dropbox://\(UUID().uuidString)/")!
+        let source = ControlledSource(location: root)
+        let tree = RemoteFolderTree(url: root, source: { _ in source })
+        let old = FileItem(url: root.appendingPathComponent("old"), name: "Old", isDirectory: true)
+        let fresh = FileItem(url: root.appendingPathComponent("fresh"), name: "Fresh", isDirectory: true)
+        tree.root.expand()
+        try #require(source.deliveries.count == 1)
+        source.deliveries[0](LocationListing(part: .page, items: [old], complete: false))
+        tree.reload()
+        try #require(source.deliveries.count == 2)
+        source.deliveries[0](LocationListing(part: .end, error: .provider(URLError(.cancelled).localizedDescription)))
+        #expect(tree.root.isLoading && tree.root.message == nil)
+        source.deliveries[0](LocationListing(part: .page, items: [fresh]))
+        #expect(tree.root.children?.map(\.name) == ["Old"])
+        source.deliveries[1](LocationListing(part: .page, items: [fresh]))
+        source.deliveries[1](LocationListing(part: .end, items: [fresh]))
+        #expect(!tree.root.isLoading && tree.root.message == nil)
+        #expect(tree.root.children?.map(\.name) == ["Fresh"])
+        tree.root.collapse()
+        tree.reload()
+        source.deliveries[1](LocationListing(part: .page, items: [old]))
+        source.deliveries[1](LocationListing(part: .end, items: [old]))
+        #expect(tree.root.children == nil && !tree.root.isLoading && tree.root.isExpandable)
+    }
+
+    private final class ControlledSource: LocationContentSource {
+        let location: URL
+        var traits: LocationTraits { LocationTraits(paintsCache: true) }
+        var deliveries: [(LocationListing) -> Void] = []
+        init(location: URL) { self.location = location }
+        func load(_ folder: URL, expanded: Set<URL>, deliver: @escaping (LocationListing) -> Void) -> LocationLoad {
+            deliveries.append(deliver)
+            // Buffered callbacks can outlive cancellation; the consumer must reject an obsolete request.
+            return LocationLoad()
+        }
+    }
+
     @MainActor private func until(_ tree: RemoteFolderTree, _ ready: @escaping () -> Bool) async throws {
         if ready() { return }
         try await awaitCallback { (continuation: Callback<Void>) in
