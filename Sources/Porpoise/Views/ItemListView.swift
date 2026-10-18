@@ -52,6 +52,17 @@ final class ItemListView: NSView {
 
     /// Widths of strings in `font`: Compact layout measures every name, so zooming a big folder must not re-measure.
     var textWidthCache: [String: CGFloat] = [:]
+    /// The widest Compact label belongs to the current rows, not to the pane's dimensions or icon size.
+    var compactTextMeasurement: CompactTextMeasurement?
+    struct CompactTextMeasurement {
+        var revision: UInt64
+        let roles: [ItemRole]
+        let relativeMinute: Int?
+        let width: CGFloat
+    }
+    #if PORPOISE_TEST_HOOKS
+    var textMeasurementCount = 0
+    #endif
     /// Wrapped and elided Icons-mode labels, used by drawing and by hit testing on every mouse move.
     var iconsLabelCache: [IconsLabelKey: (label: NSAttributedString, size: CGSize)] = [:]
 
@@ -135,8 +146,8 @@ final class ItemListView: NSView {
                 self?.thumbnailReady(n)
             })
         observers.append(
-            NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] _ in
-                self?.settingsChanged()
+            NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
+                self?.settingsChanged(key: n.object as? String)
             })
     }
 
@@ -174,13 +185,27 @@ final class ItemListView: NSView {
 
     private static func lineHeight(of font: NSFont) -> CGFloat { ceil(font.ascender - font.descender + font.leading) + 1 }
 
-    private func settingsChanged() {
+    /// Model settings are routed by the container. Pure drawing/geometry settings never rebuild its rows.
+    private func settingsChanged(key: String?) {
+        let layoutKeys: Set<String> = [
+            "labelFont", "labelFontSize", "labelWidth", "maxLines", "compactMax", "expandable",
+            "allExtensions", "dateStyle", "permStyle", "appearancePreferences",
+        ]
+        let drawingKeys: Set<String> = [
+            "appearance", "selectionMarker", "elideMiddle", "entireRow", "pvImages", "pvVideos", "pvDocs",
+            "pvText", "pvFonts", "pvFolders", "pvMax", "pvRemote",
+        ]
+        let changesLayout = key.map(layoutKeys.contains) ?? true
+        guard changesLayout || key.map(drawingKeys.contains) == true else { return }
+        guard changesLayout else { needsDisplay = true; return }
         let f = Settings.shared.labelFont
         if f != font {
             font = f
             lineHeight = Self.lineHeight(of: f)
             textWidthCache = [:]
+            compactTextMeasurement = nil
         }
+        if key.map({ ["allExtensions", "dateStyle", "permStyle"].contains($0) }) ?? true { compactTextMeasurement = nil }
         // The number of label lines may have changed too; refilling this for the visible items is cheap.
         iconsLabelCache = [:]
         relayout()
