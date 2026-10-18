@@ -13,7 +13,7 @@ public final class ConnectionProfiles: @unchecked Sendable {
     private var loaded = false
 
     /// Profiles kept in `storeURL`; nil keeps them in memory (tests).
-    init(storeURL: URL?) { self.storeURL = storeURL }
+    public init(storeURL: URL?) { self.storeURL = storeURL }
 
     private struct File: Codable {
         var version: Int
@@ -107,10 +107,11 @@ public final class ConnectionProfiles: @unchecked Sendable {
     /// ~/.ssh/config Host adds only what the user set on top, since ssh reads the rest from the file.
     public func sshOptions(for url: URL) -> [String] {
         guard let p = profile(for: url), p.kind == .sftp else { return [] }
-        return Self.sshOptions(p)
+        return Self.sshOptions(for: p)
     }
 
-    static func sshOptions(_ p: ConnectionProfile) -> [String] {
+    /// The ssh options `p` adds (see `sshOptions(for:)` of a URL).
+    public static func sshOptions(for p: ConnectionProfile) -> [String] {
         var a: [String] = []
         if !p.jumpHosts.isEmpty { a += ["-J", p.jumpHosts.joined(separator: ",")] }
         if let key = p.identityFile?.trimmingCharacters(in: .whitespaces), !key.isEmpty {

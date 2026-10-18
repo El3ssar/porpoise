@@ -174,6 +174,7 @@ extension AppDelegate {
         go.addItem(sep())
         go.addItem(mi("Go to Folder…", #selector(W.goToFolder(_:)), "g", [.command, .shift], icon: "document-open-folder"))
         go.addItem(mi("Connect to Server…", #selector(W.connectToServer(_:)), "k", icon: "folder-network"))
+        go.addItem(mi("Connections…", #selector(W.showConnections(_:)), "k", [.command, .option], icon: "network-server"))
         go.addItem(sep())
         go.addItem(dynamicSubmenu("Places", icon: "compass"))
         main.addItem(.submenu("Go", icon: nil, go))

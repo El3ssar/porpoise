@@ -54,7 +54,7 @@ struct SSHConnectionTests {
                 "-o", "StrictHostKeyChecking=yes",
             ])
         _ = try p.list(server.url(try server.folder().path, isDirectory: true))
-        #expect(ConnectionProfiles.sshOptions(profiles.profiles[0]) == ["-i", server.clientKey.path, "-o", "IdentitiesOnly=yes"])
+        #expect(ConnectionProfiles.sshOptions(for: profiles.profiles[0]) == ["-i", server.clientKey.path, "-o", "IdentitiesOnly=yes"])
     }
 
     @Test func logsInWithTheAgentsKey() throws {
@@ -195,10 +195,10 @@ struct SSHConnectionTests {
 
         // Refused: nothing changes.
         nonisolated(unsafe) var shown: [(String, HostKeyFingerprint.Change)] = []
-        SSHProvider.confirmHostKeyChange = {
+        RemoteFS.confirmHostKeyChange = {
             shown.append(($0, $1)); return false
         }
-        defer { SSHProvider.confirmHostKeyChange = { _, _ in false } }
+        defer { RemoteFS.confirmHostKeyChange = { _, _ in false } }
         let refusing = server.provider(askPass: try answeringAskPass(), options: ["-F", config])
         #expect(throws: (any Error).self) { try refusing.list(server.url(dir.path, isDirectory: true)) }
         #expect(shown.count == 1)
@@ -208,7 +208,7 @@ struct SSHConnectionTests {
         #expect(HostKeys.known(name: "[127.0.0.1]:\(server.port)", in: [server.knownHosts.path]).map(\.fingerprint) != [realFingerprint])
 
         // Accepted: the old key goes, and the server's (the fingerprint shown) is recorded.
-        SSHProvider.confirmHostKeyChange = { _, _ in true }
+        RemoteFS.confirmHostKeyChange = { _, _ in true }
         let accepting = server.provider(askPass: try answeringAskPass(), options: ["-F", config])
         _ = try accepting.list(server.url(dir.path, isDirectory: true))
         #expect(HostKeys.known(name: "[127.0.0.1]:\(server.port)", in: [server.knownHosts.path]).map(\.fingerprint) == [realFingerprint])

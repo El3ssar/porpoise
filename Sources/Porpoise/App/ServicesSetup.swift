@@ -6,6 +6,9 @@ extension AppDelegate {
     func connectServices() {
         if !Settings.isTesting || TestEnvironment.testIndexDirectory.isSet { SearchIndex.shared.start() }
         RemoteFS.askLogin = FTPLoginPrompt.ask
+        RemoteFS.confirmHostKeyChange = HostKeyChangePrompt.ask
+        // Shared ssh connections that a sleep or a network change left dead are dropped, so the next command reconnects.
+        ConnectionMonitor.shared.start()
         FileOperationsController.shared.ui = FileOperationsDialogs()
         FileOperationsController.shared.clipboard = SystemClipboard()
         RemoteOpener.openFile = { NSWorkspace.shared.open($0) }
@@ -49,6 +52,7 @@ extension AppDelegate {
             CloudOffline.shared.activate()
         }
         let nc = NSWorkspace.shared.notificationCenter
+        nc.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in ConnectionMonitor.shared.systemDidWake() }
         for n in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {
             nc.addObserver(forName: n, object: nil, queue: .main) { _ in PlacesModel.shared.refreshDevices() }
         }

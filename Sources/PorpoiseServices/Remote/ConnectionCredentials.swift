@@ -25,6 +25,11 @@ public final class ConnectionCredentials: @unchecked Sendable {
         s3Override = s3
     }
 
+    /// Secrets kept in this process only (tests and review apps).
+    public static func inMemory(s3: (any S3SecretStore)? = nil) -> ConnectionCredentials {
+        ConnectionCredentials(passwords: MemoryCredentials(), s3: s3)
+    }
+
     enum Failure: LocalizedError {
         case noUser, noS3Store, noAccessKey
         var errorDescription: String? {

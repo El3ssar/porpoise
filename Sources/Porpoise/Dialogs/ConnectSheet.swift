@@ -247,7 +247,10 @@ final class ConnectSheet: SecondaryWindowController {
 
     @objc private func connectServer(_ sender: Any?) {
         guard let form, let url = form.url() else { NSSound.beep(); return }
-        if form.addToPlaces { PlacesModel.shared.add(url, title: form.name) }
+        if form.addToPlaces {
+            // Servers the connection manager knows become saved connections (editable in Connections); others a place.
+            if let profile = form.profile() { ConnectionProfiles.shared.save(profile) } else { PlacesModel.shared.add(url, title: form.name) }
+        }
         finish()
         open(url)
     }
@@ -628,6 +631,24 @@ final class ServerForm {
         case "ftp", "ftps": return 21
         default: return Self.otherKinds.first { $0.scheme == scheme }?.port ?? 0
         }
+    }
+
+    /// The fields as a saved connection, for the kinds the Connections window manages.
+    func profile() -> ConnectionProfile? {
+        let kind: ConnectionProfile.Kind
+        switch scheme {
+        case "sftp": kind = .sftp
+        case "ftp": kind = .ftp
+        case "ftps": kind = .ftps
+        case "smb": kind = .smb
+        default: return nil
+        }
+        let host = server.stringValue.trimmingCharacters(in: .whitespaces)
+        let u = user.stringValue.trimmingCharacters(in: .whitespaces)
+        let p = ConnectionProfile(
+            name: name ?? host, kind: kind, host: host, port: Int(port.stringValue).flatMap { $0 == defaultPort ? nil : $0 },
+            user: u.isEmpty ? nil : u, path: folder.stringValue.trimmingCharacters(in: .whitespaces))
+        return p.problem == nil ? p : nil
     }
 
     /// The address the fields describe (nil without a server).

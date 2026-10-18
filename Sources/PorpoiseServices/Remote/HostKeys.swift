@@ -12,6 +12,7 @@ public enum HostKeys {
     /// The settings ssh would use for `host` (an address or a ~/.ssh/config alias): keyword (lowercased) to values.
     public struct Effective: Equatable, Sendable {
         public var values: [String: [String]]
+        public init(values: [String: [String]]) { self.values = values }
         public func first(_ key: String) -> String? { values[key]?.first }
         public var hostName: String? { first("hostname") }
         public var user: String? { first("user") }

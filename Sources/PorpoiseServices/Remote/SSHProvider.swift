@@ -167,13 +167,9 @@ final class SSHProvider: RemoteProvider {
         return try Shell.run(ssh, approve + baseArgs + command, env: approveEnv, stdin: stdin, stdoutFile: stdoutFile, stdinFile: stdinFile)
     }
 
-    /// Asks whether to accept a server's new key (host as known_hosts names it, what ssh reported); the app shows the
-    /// fingerprint. Runs on the main thread. Refuses until the app sets it.
-    nonisolated(unsafe) public static var confirmHostKeyChange: (String, HostKeyFingerprint.Change) -> Bool = { _, _ in false }
-
     private static func confirmChangedHostKey(_ name: String, _ change: HostKeyFingerprint.Change) -> Bool {
-        if Thread.isMainThread { return confirmHostKeyChange(name, change) }
-        return DispatchQueue.main.sync { confirmHostKeyChange(name, change) }
+        if Thread.isMainThread { return RemoteFS.confirmHostKeyChange(name, change) }
+        return DispatchQueue.main.sync { RemoteFS.confirmHostKeyChange(name, change) }
     }
 
     /// Sleeps `seconds` in short steps, ending early when the transfer it runs for is cancelled.
