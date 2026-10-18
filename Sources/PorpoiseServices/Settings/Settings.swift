@@ -76,6 +76,8 @@ public final class Settings {
 
     // Interface › Confirmations
     @Pref("confirmTrash") public var confirmTrash: Bool = false
+    /// Moving an app to the Trash opens App Cleanup's review of its leftover files (off: Finder's plain Move to Trash).
+    @Pref("reviewAppLeftovers") public var reviewAppLeftovers: Bool = false
     @Pref("confirmDelete") public var confirmDelete: Bool = true
     @Pref("confirmEmptyTrash") public var confirmEmptyTrash: Bool = true
     @Pref("confirmCloseTabs") public var confirmCloseTabs: Bool = true

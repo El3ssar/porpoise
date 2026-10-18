@@ -178,6 +178,12 @@ extension MainWindowController {
         FileOperationsController.shared.trash(selectedURLs, window: window)
     }
 
+    /// Opt-in App Cleanup: reviews the selected apps' Library files (all unchecked) before moving them to the Trash.
+    @objc func removeAppAndLeftovers(_ sender: Any?) {
+        guard selectedURLs.contains(where: FileOperationsController.isApplication) else { return }
+        FileOperationsController.shared.trash(selectedURLs, window: window, reviewingLeftovers: true)
+    }
+
     @objc func deleteItem(_ sender: Any?) {
         guard hasSelection else { enterSelectionMode(prompt: "Select the files and folders that should be permanently deleted."); return }
         FileOperationsController.shared.delete(selectedURLs, window: window)

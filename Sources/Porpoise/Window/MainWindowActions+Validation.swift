@@ -50,6 +50,8 @@ extension MainWindowController: NSMenuItemValidation {
         case #selector(moveToTrash(_:)), #selector(deleteItem(_:)):
             // With nothing selected these open selection mode too (Dolphin).
             return !hasSelection || selectionIsManageable
+        case #selector(removeAppAndLeftovers(_:)):
+            return selectedURLs.contains(where: FileOperationsController.isApplication)
         case #selector(copy(_:)), #selector(copyLocation(_:)):
             return true
         case #selector(properties(_:)):

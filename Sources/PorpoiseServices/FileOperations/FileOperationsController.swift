@@ -198,7 +198,10 @@ public final class FileOperationsController {
     }
 
     /// Moves items to the Trash; `sound` is Finder's: "move to trash", or "drag to trash" for the Dock's Trash.
-    public func trash(_ urls: [URL], window: AnyObject?, sound: FinderSound = .moveToTrash) {
+    /// Apps go to the Trash like any other item, as in Finder: their support files stay unless the user asks for
+    /// `reviewingLeftovers` (Remove App and Leftovers…) or turned on `Settings.reviewAppLeftovers`; either first
+    /// reviews related Library files.
+    public func trash(_ urls: [URL], window: AnyObject?, sound: FinderSound = .moveToTrash, reviewingLeftovers: Bool = false) {
         guard !urls.isEmpty else { return }
         let cloud = urls.filter(PlacesModel.isCloud)
         if !cloud.isEmpty { ui?.trashCloud(cloud, window: window) }
@@ -225,8 +228,7 @@ public final class FileOperationsController {
         }
         let local = urls.filter { $0.isFileURL && !AppLibrary.isBuiltIn($0) }
         guard !local.isEmpty else { return }
-        let applications = local.filter { $0.pathExtension.lowercased() == "app" }
-        if !applications.isEmpty, let ui, ui.reviewsAppCleanup {
+        if reviewingLeftovers || Settings.shared.reviewAppLeftovers, local.contains(where: Self.isApplication), let ui, ui.reviewsAppCleanup {
             ui.reviewAppCleanup(local, window: window) { related in
                 guard let related else { return }
                 self.trashLocal(Array(Set(local + related)), window: window, sound: sound, allowDeleteFallback: false, confirmed: true)
@@ -234,6 +236,11 @@ public final class FileOperationsController {
             return
         }
         trashLocal(local, window: window, sound: sound, allowDeleteFallback: true)
+    }
+
+    /// A local app whose leftovers Remove App and Leftovers… can review (not one of macOS's own).
+    public static func isApplication(_ url: URL) -> Bool {
+        url.isFileURL && url.pathExtension.lowercased() == "app" && !AppLibrary.isBuiltIn(url)
     }
 
     private func trashLocal(_ local: [URL], window: AnyObject?, sound: FinderSound, allowDeleteFallback: Bool, confirmed: Bool = false) {
