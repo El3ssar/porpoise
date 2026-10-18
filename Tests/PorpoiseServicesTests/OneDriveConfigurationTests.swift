@@ -42,9 +42,10 @@ struct OneDriveConfigurationTests {
         let production = OneDriveConfiguration(clientID: "id")
         #expect([production.authorizationURL, production.tokenURL, production.graphURL].allSatisfy { $0.scheme == "https" })
         #expect(production.isGraph(URL(string: "https://graph.microsoft.com/v1.0/me/drive/root/delta?token=x")!))
-        for other in ["https://graph.microsoft.com.example.com/v1.0", "http://graph.microsoft.com/v1.0", "https://u:p@graph.microsoft.com/",
-            "https://my.sharepoint.com/download"]
-        {
+        for other in [
+            "https://graph.microsoft.com.example.com/v1.0", "http://graph.microsoft.com/v1.0", "https://u:p@graph.microsoft.com/",
+            "https://my.sharepoint.com/download",
+        ] {
             #expect(!production.isGraph(URL(string: other)!), "\(other)")
         }
     }

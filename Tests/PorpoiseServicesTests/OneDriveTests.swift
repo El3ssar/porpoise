@@ -106,7 +106,9 @@ import Testing
         #expect(initial.contains("delta"))
         // The first check starts from token=latest: it doesn't read the whole drive.
         #expect(try await server.requests().contains { ($0["route"] as? String)?.hasSuffix("/root/delta") == true })
-        try await server.configure(["files": [["id": "FIXTURE!new", "name": "new.txt", "parent": "FIXTURE!folder", "text": "new"]], "remove": ["FIXTURE!hello"]])
+        try await server.configure([
+            "files": [["id": "FIXTURE!new", "name": "new.txt", "parent": "FIXTURE!folder", "text": "new"]], "remove": ["FIXTURE!hello"],
+        ])
         #expect(try await client.changes.pollOnce())
         #expect(client.metadataCache.file("FIXTURE!hello") == nil)
         #expect(client.metadataCache.snapshot("FIXTURE!folder")?.files.contains { $0.id == "FIXTURE!new" } == true)
@@ -202,7 +204,9 @@ import Testing
     @Test func rangedDownloadIntegrityResumeSingleAndParallelNumbers() async throws {
         let server = try FakeGraphServer(connectionMbps: 128, bandwidthMbps: 512)
         let client = try server.client()
-        try await server.configure(["files": [["id": "FIXTURE!large", "name": "large.bin", "size": 32 << 20], ["id": "FIXTURE!empty", "name": "empty", "size": 0]]])
+        try await server.configure([
+            "files": [["id": "FIXTURE!large", "name": "large.bin", "size": 32 << 20], ["id": "FIXTURE!empty", "name": "empty", "size": 0]]
+        ])
         let file = try await client.metadata("FIXTURE!large")
         let start = Date(); let single = try await client.download(file, maximumConnections: 1); let singleTime = Date().timeIntervalSince(start)
         let parallelStart = Date(); let parallel = try await client.download(file); let parallelTime = Date().timeIntervalSince(parallelStart)
@@ -362,7 +366,9 @@ import Testing
         #expect(Date().timeIntervalSince(busy) < 5)  // Retry-After: 0 is honored
         // Classification: throttled and unavailable are retried, a failed change isn't.
         func status(_ code: Int) -> HTTPURLResponse { HTTPURLResponse(url: server.base, statusCode: code, httpVersion: nil, headerFields: nil)! }
-        for code in [429, 503] { if case .retry = OneDriveClient.classify(Data(), status(code), idempotent: false) {} else { Issue.record("\(code)") } }
+        for code in [429, 503] {
+            if case .retry = OneDriveClient.classify(Data(), status(code), idempotent: false) {} else { Issue.record("\(code)") }
+        }
         if case .fail = OneDriveClient.classify(Data(), status(500), idempotent: false) {} else { Issue.record("500 change") }
         if case .retry = OneDriveClient.classify(Data(), status(500), idempotent: true) {} else { Issue.record("500 read") }
         try await server.configure(["failRoute": "", "denyToken": true])
@@ -406,8 +412,11 @@ import Testing
         defaults.set(" settings-id ", forKey: "oneDriveClientID")
         #expect(OneDriveConfiguration.selected(defaults: defaults, environment: [:]).clientID == "settings-id")
         #expect(
-            OneDriveConfiguration.selected(defaults: defaults, environment: ["PORPOISE_ONEDRIVE_CLIENT_ID": "env-id"], testing: true).clientID == "env-id")
-        #expect(OneDriveConfiguration.selected(defaults: defaults, environment: ["PORPOISE_ONEDRIVE_CLIENT_ID": "env-id"], testing: false).clientID == "settings-id")
+            OneDriveConfiguration.selected(defaults: defaults, environment: ["PORPOISE_ONEDRIVE_CLIENT_ID": "env-id"], testing: true).clientID
+                == "env-id")
+        #expect(
+            OneDriveConfiguration.selected(defaults: defaults, environment: ["PORPOISE_ONEDRIVE_CLIENT_ID": "env-id"], testing: false).clientID
+                == "settings-id")
         let store = OneDriveAccountStore(defaults: defaults, credentials: credentials, configuration: server.config, directory: scratch.url)
         let account = try await store.connect(openBrowser: openInFakeBrowser)
         #expect(account.email == "fixture@example.invalid" && account.driveID == FakeGraphServer.drive && account.userID == "fixture-user")
@@ -441,8 +450,12 @@ import Testing
             #expect(left.isEmpty, "\(left)")
         }
         #expect((try await server.stats())["secretSent"] as? Bool == false)
-        #expect(CloudProviderDescriptor.catalog(dropbox: .init(appKey: ""), oneDrive: .init(clientID: "id")).first { $0.provider == .oneDrive }?.available == true)
-        #expect(CloudProviderDescriptor.catalog(dropbox: .init(appKey: ""), oneDrive: .init(clientID: " ")).first { $0.provider == .oneDrive }?.available == false)
+        #expect(
+            CloudProviderDescriptor.catalog(dropbox: .init(appKey: ""), oneDrive: .init(clientID: "id")).first { $0.provider == .oneDrive }?.available
+                == true)
+        #expect(
+            CloudProviderDescriptor.catalog(dropbox: .init(appKey: ""), oneDrive: .init(clientID: " ")).first { $0.provider == .oneDrive }?.available
+                == false)
     }
 }
 

@@ -87,7 +87,10 @@ import Testing
         let started = Date()
         var thrown: Error?
         do { try await context.checkpoint() } catch { thrown = error }
-        #expect({ if case .interrupted = thrown as? FileOperationError { return true }; return false }())
+        #expect(
+            {
+                if case .interrupted = thrown as? FileOperationError { return true }; return false
+            }())
         #expect(Date().timeIntervalSince(started) < 2)
     }
 

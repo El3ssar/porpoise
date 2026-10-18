@@ -171,7 +171,12 @@ import Testing
         let account = try await fixture.store.connect(openBrowser: openInFakeBrowser)
         _ = fixture.backend.accounts
         let folder = OneDriveLocation(accountID: account.id, itemID: "FIXTURE!folder", driveID: account.driveID).url
-        return (folder, { fixture.cleanup(); _ = fixture.server })
+        return (
+            folder,
+            {
+                fixture.cleanup(); _ = fixture.server
+            }
+        )
     }
 
     @MainActor @Test func oneDriveRunsTheSameConflictCases() async throws {
