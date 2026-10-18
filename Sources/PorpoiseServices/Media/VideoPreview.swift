@@ -1,5 +1,7 @@
 import AVFoundation
 import Foundation
+import PorpoiseCore
+import PorpoiseFileSystem
 
 /// Video for the Information panel in any format and size. AVFoundation plays what it can directly; anything else
 /// (MKV, WebM, AVI, WMV, FLV…) goes through ffmpeg into a live HLS stream, repackaged (fast, no quality loss) when the
@@ -13,11 +15,11 @@ public final class VideoPreview {
     ]
     public static func isVideoExtension(_ ext: String) -> Bool { videoExtensions.contains(ext.lowercased()) }
 
-    /// The ffmpeg bundled in Contents/Helpers (built by scripts/build-ffmpeg.sh); a system one only as a fallback.
+    /// Only the ffmpeg bundled in Contents/Helpers (built by scripts/build-ffmpeg.sh).
     public static var ffmpeg: String? {
         if let t = testFFmpeg { return t }
         let bundled = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/ffmpeg").path
-        return FileManager.default.isExecutableFile(atPath: bundled) ? bundled : Shell.which("ffmpeg")
+        return FileManager.default.isExecutableFile(atPath: bundled) ? bundled : nil
     }
 
     /// Tests: the ffmpeg to use, and where streams go (instead of the user's Caches folder).
@@ -122,8 +124,12 @@ public final class VideoPreview {
             /// Runs ffmpeg; true once the stream has its first part.
             func run(_ codecs: (video: String, audio: String)) -> Bool {
                 let p = Process()
-                p.executableURL = URL(fileURLWithPath: ffmpeg)
-                p.arguments = Self.streamArguments(input: url, codecs: codecs, output: playlist)
+                p.executableURL = URL(fileURLWithPath: "/usr/bin/sandbox-exec")
+                p.arguments = Self.sandboxArguments(
+                    executable: ffmpeg, input: url, output: dir,
+                    arguments: Self.streamArguments(
+                        input: URL(fileURLWithPath: FilePath.canonical(url.path)), codecs: codecs,
+                        output: URL(fileURLWithPath: FilePath.canonical(playlist.path))))
                 p.standardInput = FileHandle.nullDevice
                 p.standardOutput = FileHandle.nullDevice
                 p.standardError = FileHandle.nullDevice
@@ -188,10 +194,50 @@ public final class VideoPreview {
     /// FLV and the like the copy can't be played, so their streams are converted (the codecs come back empty).
     static func probe(_ url: URL) -> (codecs: (video: String, audio: String), duration: Double?) {
         guard let ff = ffmpeg,
-            let r = try? Shell.run(ff, ["-hide_banner", "-nostdin", "-i", "file:" + url.path], timeout: probeTimeout)
+            let r = try? Shell.run(
+                "/usr/bin/sandbox-exec",
+                sandboxArguments(
+                    executable: ff, input: url, output: nil,
+                    arguments: ["-hide_banner", "-nostdin", "-i", "file:" + FilePath.canonical(url.path)]),
+                timeout: probeTimeout)
         else { return (("", ""), nil) }
         let copyable = parseContainer(r.err).contains { $0 == "matroska" || $0 == "webm" || $0 == "mov" || $0 == "mp4" }
         return (copyable ? parseCodecs(r.err) : ("", ""), parseDuration(r.err))
+    }
+
+    /// Paths are parameters, never interpolated into the profile's Scheme source. Probing has no writable folder.
+    /// Apple media services and IOSurface support the hardware codecs; no network operation is allowed.
+    static func sandboxArguments(executable: String, input: URL, output: URL?, arguments: [String]) -> [String] {
+        var profile = """
+            (version 1)
+            (deny default)
+            (allow process-exec (literal (param "EXECUTABLE")))
+            (allow signal (target self))
+            (allow sysctl-read)
+            (allow mach-lookup (global-name-prefix "com.apple."))
+            (allow iokit-open (iokit-user-client-class "IOSurfaceRootUserClient"))
+            (allow file-read-metadata)
+            (allow file-test-existence
+                (path-ancestors (param "INPUT")) (path-ancestors (param "EXECUTABLE")))
+            (allow file-read* (subpath "/System") (subpath "/usr/lib") (subpath "/usr/share")
+                (subpath "/Library/Apple") (literal "/dev/null") (literal "/dev/urandom")
+                (literal "/") (literal (param "EXECUTABLE")) (literal (param "INPUT")))
+            (allow file-write* (literal "/dev/null"))
+            """
+        #if PORPOISE_TEST_HOOKS
+        // Script fixtures stand in for ffmpeg; production permits only the bundled executable.
+        profile += "\n(allow process-exec file-read* (literal \"/bin/sh\") (literal \"/bin/bash\"))"
+        #endif
+        if output != nil {
+            profile += "\n(allow file-read* file-write* (subpath (param \"OUTPUT\")))"
+            profile += "\n(allow file-test-existence (path-ancestors (param \"OUTPUT\")))"
+        }
+        var args = [
+            "-D", "EXECUTABLE=" + FilePath.canonical(executable),
+            "-D", "INPUT=" + FilePath.canonical(input.path),
+        ]
+        if let output { args += ["-D", "OUTPUT=" + FilePath.canonical(output.path)] }
+        return args + ["-p", profile, FilePath.canonical(executable)] + arguments
     }
 
     /// "Input #0, matroska,webm, from …" → ["matroska", "webm"].

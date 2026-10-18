@@ -143,6 +143,15 @@ final class VideoPreviewStreamTests {
         #expect(abs((info.duration ?? 0) - 1) < 0.2)
     }
 
+    @Test func probesVideoThroughDirectorySymlinks() throws {
+        _ = try scratch.folder("original")
+        let file = try video("original/video.mkv", "h264-aac.mkv")
+        try scratch.symlink("alias", to: file.deletingLastPathComponent().path)
+        let info = VideoPreview.probe(scratch.path("alias/video.mkv"))
+        #expect(info.codecs == ("h264", "aac"))
+        #expect(abs((info.duration ?? 0) - 1) < 0.2)
+    }
+
     @Test func probesAVIAsConvertOnly() throws {
         // AVI can't carry a copied stream: the codecs come back empty so it is converted.
         let v = try video("mpeg4.avi", "mpeg4.avi")
