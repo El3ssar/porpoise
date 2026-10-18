@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.8.6
 
 - **Search indexing stays quiet while you work.** With indexing on and a busy folder (a build, apps saving their state), each new change cost the index more than the last, so it could keep a core busy for as long as the changes went on. Each change now costs the same, however many came before. Build folders (.build, DerivedData) and the Mac's own system and app data (your Library, apart from cloud drives, and the Trash) are left out by default; on a developer's Mac they were nearly all of the changes the index followed. Both can be switched back on in Settings › Search. Indexes are rebuilt once after the update.
+- **Faster disk tools and cloud folders.** Disk Usage of a million files takes 1.5 s instead of 25 s, App Cleanup matches in milliseconds, and Batch Rename and Compare Files drop stale work as you type. Cloud folders redraw without rescanning their downloads, Dropbox's first sync no longer slows down with folder size, and finished partial downloads no longer pile up on disk.
 
 ## 0.8.5
 
