@@ -48,6 +48,8 @@ extension CloudChecksum {
     /// Hash incrementally: full-file downloads must never require full-file resident memory.
     func verify(_ url: URL) throws -> Bool {
         if case .dropbox(let expected) = self { return try CloudContentHash.dropbox(url) == expected.lowercased() }
+        // Base64: compared exactly, never case-folded.
+        if case .quickXor(let expected) = self { return try CloudContentHash.quickXor(url) == expected }
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var md5 = Insecure.MD5(); var sha = SHA256()
