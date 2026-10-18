@@ -63,6 +63,9 @@ public final class FileJob: @unchecked Sendable {
     private var progress: JobProgress
     /// Tree sizes by item, walked once: the total, a skip, a same-volume move and a copy's end all need them.
     private var sizes: [URL: Int64] = [:]
+    private var renameOnly: Set<URL> = []
+    private var longestInsidePaths: [URL: Int] = [:]
+    private var folderNames: [URL: Set<String>] = [:]
     private var lastPublish = Date.distantPast
     private var sticky: ConflictResolution?
     private var created: [URL] = []
@@ -112,7 +115,19 @@ public final class FileJob: @unchecked Sendable {
         publish(force: true)
         if kind == .copy || kind == .move {
             for source in sources {
-                do { _ = try inventory(source, target: destinationFolder?.appendingPathComponent(source.lastPathComponent)) } catch FileOperationError
+                do {
+                    let target = destinationFolder?.appendingPathComponent(source.lastPathComponent)
+                    if kind == .move, let target, !Self.itemExists(at: target), Self.sameVolume(source, target.deletingLastPathComponent()) {
+                        // A rename has no byte-transfer work. Count the selected item without opening its tree.
+                        try checkpoint()
+                        renameOnly.insert(source)
+                        sizes[source] = 0
+                        fileCounts[source] = 1
+                        progress.totalFiles += 1
+                    } else {
+                        _ = try inventory(source, target: target)
+                    }
+                } catch FileOperationError
                     .cancelled
                 { return nil } catch FileOperationError.interrupted { return nil } catch
                 { /* The actual operation reports unreadable/missing sources. */  }
@@ -244,6 +259,13 @@ public final class FileJob: @unchecked Sendable {
         if kind == .move && FilePath.sameItem(folder.appendingPathComponent(src.lastPathComponent), src) {
             return src
         }
+        if renameOnly.remove(src) != nil,
+            Self.itemExists(at: folder.appendingPathComponent(src.lastPathComponent)) || !Self.sameVolume(src, folder)
+        {
+            // A target or mount may have changed since preparation; recover the full conflict/copy inventory.
+            sizes[src] = nil; fileCounts[src] = nil; progress.totalFiles -= 1
+            _ = try inventory(src, target: folder.appendingPathComponent(src.lastPathComponent))
+        }
         guard let (target, placement) = try resolveTarget(for: src, in: folder) else { return nil }
         let tracksIncoming = depth == 0 && onIncoming != nil && (kind == .copy || kind == .move)
         if tracksIncoming { pendingIncoming = (src, target, Date(), progress.doneBytes, false) }
@@ -261,6 +283,7 @@ public final class FileJob: @unchecked Sendable {
             }
             let result = try place(src, at: target, replacing: placement == .replace)
             completedTransfers[src] = result
+            folderNames[folder]?.insert(result.lastPathComponent)
             return result
         } catch FileOperationError.cancelled {
             throw FileOperationError.cancelled
@@ -280,6 +303,7 @@ public final class FileJob: @unchecked Sendable {
             target = folder.appendingPathComponent(FileFormat.duplicateName(for: src.lastPathComponent, existing: names(in: folder)))
         }
         while Self.itemExists(at: target) {
+            folderNames[folder]?.insert(target.lastPathComponent)
             if isCancelled { throw FileOperationError.cancelled }
             let srcItem = FileItem.load(src)
             let dstItem = FileItem.load(target)
@@ -349,7 +373,10 @@ public final class FileJob: @unchecked Sendable {
         let copying = kind != .link && !sameVolumeMove
         let top = depth == 0
         // A path too long for a hidden name next to it is written in place, as before.
-        var dest = replacing ? Self.stagingURL(for: target) : copying ? Self.copyStagingURL(for: target, of: src) ?? target : target
+        var dest =
+            replacing
+            ? Self.stagingURL(for: target)
+            : copying ? Self.copyStagingURL(for: target, of: src, insideLength: longestInsidePaths[src]) ?? target : target
         var resumeFrom: Int64 = 0
         if copying, top, let point = resumePoints[src], Self.itemExists(at: point.staging) {
             dest = point.staging
@@ -519,7 +546,7 @@ public final class FileJob: @unchecked Sendable {
         for child in children {
             try checkpoint()
             do {
-                _ = try transfer(child, into: target)
+                _ = try autoreleasepool { try transfer(child, into: target) }
             } catch FileOperationError.cancelled {
                 throw FileOperationError.cancelled
             } catch FileOperationError.interrupted {
@@ -603,7 +630,10 @@ public final class FileJob: @unchecked Sendable {
     // MARK: Helpers
 
     private func names(in folder: URL) -> Set<String> {
-        Set((try? fm.contentsOfDirectory(atPath: folder.path)) ?? [])
+        if let cached = folderNames[folder] { return cached }
+        let names = Set((try? fm.contentsOfDirectory(atPath: folder.path)) ?? [])
+        folderNames[folder] = names
+        return names
     }
 
     /// Exists, including dangling symlinks (which `fileExists` reports as missing).
@@ -614,16 +644,18 @@ public final class FileJob: @unchecked Sendable {
 
     /// Hidden sibling a new copy is written to, within the limits on names and paths (nil when the folder's path
     /// leaves no room).
-    static func copyStagingURL(for target: URL, of src: URL) -> URL? {
+    static func copyStagingURL(for target: URL, of src: URL, insideLength: Int? = nil) -> URL? {
         var name = Substring(target.lastPathComponent)
         while name.utf8.count > 200 { name = name.dropLast() }
         let url = target.deletingLastPathComponent().appendingPathComponent(".\(name).porpoise-\(UUID().uuidString.prefix(8))")
         // A folder's insides get longer paths under the hidden name: its deepest one must still fit.
-        var inside = 0
+        var inside = insideLength ?? 0
         var st = stat()
-        if lstat(src.path, &st) == 0, st.st_mode & S_IFMT == S_IFDIR {
+        if insideLength == nil, lstat(src.path, &st) == 0, st.st_mode & S_IFMT == S_IFDIR {
             let e = FileManager.default.enumerator(atPath: src.path)
-            while let rel = e?.nextObject() as? String { inside = max(inside, rel.utf8.count + 1) }
+            while let length = autoreleasepool(invoking: { (e?.nextObject() as? String).map { $0.utf8.count + 1 } }) {
+                inside = max(inside, length)
+            }
         }
         return url.path.utf8.count + inside < Int(PATH_MAX) - 1 ? url : nil
     }
@@ -658,8 +690,12 @@ public final class FileJob: @unchecked Sendable {
         var hasher = ChecksumHasher(.sha256)
         while true {
             try checkpoint()
-            guard let data = try file.read(upToCount: 1 << 20), !data.isEmpty else { break }
-            hasher.update(data)
+            let count = try autoreleasepool {
+                let data = try file.read(upToCount: 1 << 20) ?? Data()
+                hasher.update(data)
+                return data.count
+            }
+            if count == 0 { break }
         }
         guard fstat(file.fileDescriptor, &after) == 0, before.st_ino == after.st_ino, before.st_size == after.st_size,
             before.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec, before.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec
@@ -692,11 +728,14 @@ public final class FileJob: @unchecked Sendable {
             progress.totalFolders += 1
             let children = try fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
             childCounts[url] = children.count
+            var longest = 0
             for child in children {
                 // A job is one long work item: what Foundation autoreleases per file goes after each.
                 bytes += try autoreleasepool { try inventory(child, target: target?.appendingPathComponent(child.lastPathComponent)) }
                 files += fileCounts[child] ?? 0
+                longest = max(longest, child.lastPathComponent.utf8.count + 1 + (longestInsidePaths[child] ?? 0))
             }
+            longestInsidePaths[url] = longest
         } else {
             progress.totalFiles += 1
             progress.totalBytes += bytes
