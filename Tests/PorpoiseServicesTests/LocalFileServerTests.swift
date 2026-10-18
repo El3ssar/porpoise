@@ -301,10 +301,23 @@ import Testing
         defer { close(fd) }
         var small: Int32 = 1024
         setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &small, socklen_t(MemoryLayout<Int32>.size))
-        await expectEventually(timeout: 5) { f.server.activeConnectionCount == 1 }
         let request = Data("GET /\(f.secret)/stream/huge.mp4 HTTP/1.1\r\nHost: localhost\r\n\r\n".utf8)
-        _ = request.withUnsafeBytes { send(fd, $0.baseAddress, $0.count, 0) }
-        // Read nothing: the kernel's send buffer fills and the idle deadline must reclaim the slot.
+        #expect(request.withUnsafeBytes { send(fd, $0.baseAddress, $0.count, 0) } == request.count)
+        // Send before suspending: a busy cooperative pool can resume us after the request-head timeout has
+        // correctly closed an idle connection. Wait for the response on a separate queue, proving admission
+        // and a body send, rather than trying to observe a transient connection count before sending.
+        let head: Data = await withCheckedContinuation { continuation in
+            DispatchQueue(label: "porpoise.test-stalled-body").async {
+                var data = Data()
+                var byte: UInt8 = 0
+                while !data.suffix(4).elementsEqual(Data("\r\n\r\n".utf8)), recv(fd, &byte, 1, 0) == 1 {
+                    data.append(byte)
+                }
+                continuation.resume(returning: data)
+            }
+        }
+        #expect(String(decoding: head, as: UTF8.self).hasPrefix("HTTP/1.1 200 OK\r\n"))
+        // Read no body: the kernel's send buffer fills and the idle deadline must reclaim the slot.
         await expectEventually(timeout: 5) { f.server.activeConnectionCount == 0 }
     }
 
