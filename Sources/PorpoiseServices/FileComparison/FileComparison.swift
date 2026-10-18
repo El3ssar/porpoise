@@ -44,13 +44,17 @@ public struct ComparedFile: Sendable {
         // Bounded full decoding. Larger inputs remain usable through streaming byte comparison and Info.
         if readText && size <= 128 * 1024 * 1024 {
             let handle = try FileHandle(forReadingFrom: url); defer { try? handle.close() }
-            var data = Data(); data.reserveCapacity(Int(size)); progress(0, size)
+            let expectedSize = size
+            var data = Data(); data.reserveCapacity(Int(expectedSize)); progress(0, expectedSize)
             while true {
                 try cancellation.check()
-                let chunk = try handle.read(upToCount: 1 << 20) ?? Data()
-                if chunk.isEmpty { break }
-                guard data.count + chunk.count <= 128 * 1024 * 1024 else { throw CocoaError(.fileReadTooLarge) }
-                data.append(chunk); progress(UInt64(data.count), size)
+                let count = try autoreleasepool {
+                    let chunk = try handle.read(upToCount: 1 << 20) ?? Data()
+                    guard data.count + chunk.count <= 128 * 1024 * 1024 else { throw CocoaError(.fileReadTooLarge) }
+                    data.append(chunk); progress(UInt64(data.count), expectedSize)
+                    return chunk.count
+                }
+                if count == 0 { break }
             }
             if data.prefix(8192).contains(0) { text = nil } else { text = String(data: data, encoding: .utf8) }
         } else {
@@ -67,13 +71,17 @@ public enum FileComparison {
         var offset: UInt64 = 0
         while true {
             try cancellation.check()
-            let x = try a.read(upToCount: 1 << 20) ?? Data(), y = try b.read(upToCount: 1 << 20) ?? Data()
-            if x != y {
-                let common = min(x.count, y.count)
-                for i in 0..<common where x[i] != y[i] { return offset + UInt64(i) }
-                return offset + UInt64(common)
+            let chunk: (count: Int, difference: UInt64?) = try autoreleasepool {
+                let x = try a.read(upToCount: 1 << 20) ?? Data(), y = try b.read(upToCount: 1 << 20) ?? Data()
+                if x != y {
+                    let common = min(x.count, y.count)
+                    for i in 0..<common where x[i] != y[i] { return (x.count, offset + UInt64(i)) }
+                    return (x.count, offset + UInt64(common))
+                }
+                return (x.count, nil)
             }
-            if x.isEmpty { return nil }; offset += UInt64(x.count)
+            if let difference = chunk.difference { return difference }
+            if chunk.count == 0 { return nil }; offset += UInt64(chunk.count)
         }
     }
 }

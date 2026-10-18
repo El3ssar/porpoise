@@ -30,7 +30,7 @@ public enum CopyVerification {
     }
 
     /// Compares `copy` with `original` (a file, or a folder with everything in it). Symlinks are compared by
-    /// their target. `cancelled` is asked between files.
+    /// their target. `cancelled` is asked between files and read chunks.
     public static func verify(_ original: URL, _ copy: URL, cancelled: () -> Bool = { false }) -> Result {
         var result = Result()
         compare(original, copy, path: "", into: &result, cancelled: cancelled)
@@ -51,7 +51,9 @@ public enum CopyVerification {
             for n in ca.subtracting(cb).sorted() { r.mismatches.append(.init(path: join(path, n), reason: "missing in the copy")) }
             for n in cb.subtracting(ca).sorted() { r.mismatches.append(.init(path: join(path, n), reason: "not in the original")) }
             for n in ca.intersection(cb).sorted() {
-                compare(a.appendingPathComponent(n), b.appendingPathComponent(n), path: join(path, n), into: &r, cancelled: cancelled)
+                autoreleasepool {
+                    compare(a.appendingPathComponent(n), b.appendingPathComponent(n), path: join(path, n), into: &r, cancelled: cancelled)
+                }
             }
         case S_IFLNK:
             let la = try? FileManager.default.destinationOfSymbolicLink(atPath: a.path)
@@ -64,7 +66,9 @@ public enum CopyVerification {
                 return r.mismatches.append(
                     .init(path: path, reason: "\(FileFormat.size(Int64(sb.st_size))) instead of \(FileFormat.size(Int64(sa.st_size)))"))
             }
-            guard let da = digest(a), let db = digest(b) else { return r.mismatches.append(.init(path: path, reason: "could not be read")) }
+            let da = digest(a, cancelled: cancelled), db = cancelled() ? nil : digest(b, cancelled: cancelled)
+            if cancelled() { return }
+            guard let da, let db else { return r.mismatches.append(.init(path: path, reason: "could not be read")) }
             if da != db { r.mismatches.append(.init(path: path, reason: "different contents (SHA-256)")) }
         default:
             break
@@ -74,11 +78,23 @@ public enum CopyVerification {
     private static func join(_ a: String, _ b: String) -> String { a.isEmpty ? b : a + "/" + b }
 
     /// SHA-256 of a file, read in 1 MB pieces.
-    static func digest(_ url: URL) -> String? {
+    static func digest(_ url: URL, cancelled: () -> Bool = { false }) -> String? {
         guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? h.close() }
         var hasher = ChecksumHasher(.sha256)
-        while let chunk = try? h.read(upToCount: 1 << 20), !chunk.isEmpty { hasher.update(chunk) }
-        return hasher.finalize()
+        do {
+            while true {
+                if cancelled() { return nil }
+                let count = try autoreleasepool {
+                    let chunk = try h.read(upToCount: 1 << 20) ?? Data()
+                    hasher.update(chunk)
+                    return chunk.count
+                }
+                if count == 0 { break }
+            }
+            return hasher.finalize()
+        } catch {
+            return nil
+        }
     }
 }

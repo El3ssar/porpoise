@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
@@ -284,6 +285,23 @@ struct ActivityTests {
         #expect(v.ok && v.files == 3 && v.bytes == 6)
         #expect(a.statusText == "Done. Verified 3 files (6 B): identical to the originals.")
         #expect(c.history.entries().first?.verification == v.summary)
+    }
+
+    @Test func cancellingVerificationDoesNotReportAPartialResultAsVerified() async throws {
+        Settings.shared.verifyCopies = true
+        let source = try s.file("source", size: 8 << 20), target = try s.file("target", size: 8 << 20)
+        let job = FileJob(kind: .copy, sources: [source], destinationFolder: s.url)
+        job.control.finish()
+        let activity = Activity(kind: .copy, sources: [source], destination: s.url, job: job)
+        activity.placed = [0: target]
+        c.ended(activity, errors: [])
+        #expect(activity.state == .verifying)
+        c.cancel(activity)
+        #expect(await poll(timeout: 10) { activity.state == .cancelled })
+        #expect(activity.verification == nil)
+        c.resume(activity)
+        #expect(await poll(timeout: 10) { activity.state == .completed && activity.verification != nil })
+        #expect(activity.verification?.ok == true)
     }
 
     // MARK: History
