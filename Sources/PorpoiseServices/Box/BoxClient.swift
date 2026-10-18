@@ -222,8 +222,8 @@ public final class BoxClient: @unchecked Sendable {
     public func quota() async throws -> Quota {
         struct Me: Decodable { var space_used: Int64?; var space_amount: Int64? }
         let me: Me = try await get(api("users/me", query: [.init(name: "fields", value: "space_used,space_amount")]))
-        // Unlimited plans report an enormous amount; treat anything past 1 EB as no limit.
-        return Quota(used: me.space_used, total: me.space_amount.flatMap { $0 > 0 && $0 < 1 << 60 ? $0 : nil })
+        // Unlimited plans report 999,999,999,999,999 bytes: no limit.
+        return Quota(used: me.space_used, total: me.space_amount.flatMap { $0 > 0 && $0 < 999_999_999_999_999 ? $0 : nil })
     }
     public var contentSource: BoxContentSource {
         lock.withLock {

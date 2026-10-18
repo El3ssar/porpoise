@@ -68,7 +68,7 @@ struct BoxEvents: Decodable {
 
 /// Events whose item has left where it was listed: trashed, deleted, or (for a share) no longer reachable.
 private let boxRemovals: Set<String> = ["ITEM_TRASH", "ITEM_DELETE", "ITEM_UNSHARED", "COLLAB_REMOVE", "ITEM_REMOVED"]
-/// How many events one page asks for; a full page means more may follow.
+/// How many events one page asks for (Box's most).
 let boxEventLimit = 500
 
 private func boxChangePage(_ client: BoxClient, cursor: String) async throws -> CloudChangePage {
@@ -81,7 +81,8 @@ private func boxChangePage(_ client: BoxClient, cursor: String) async throws -> 
                 .init(name: "limit", value: String(boxEventLimit)),
             ]))
     guard let next = page.position else { throw BoxError.invalidResponse }
-    let hasMore = (page.count ?? page.entries.count) >= boxEventLimit && next != cursor
+    // Box may give fewer than asked while more follow: the stream is read until a page brings nothing.
+    let hasMore = !page.entries.isEmpty && next != cursor
     return CloudChangePage(
         cursor: next, hasMore: hasMore,
         apply: {
