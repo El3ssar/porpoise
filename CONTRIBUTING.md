@@ -68,6 +68,29 @@ swift test --enable-code-coverage
 python3 scripts/coverage.py
 ```
 
+### CI and release validation
+
+CI runs the optimized shipping build and the **entire** instrumented test suite on separate macOS runners.
+The test job still runs the watchdog's isolated BusyPool/MemoryBudget pass, all test targets, workflow integrity,
+formatting, helper freshness, and the combined logic-layer coverage gate (92%). No changed-module selection is
+used. A successful CI workflow means both jobs passed. `ci/**` branches and manual CI dispatch support timing
+experiments without pushing main. Pull requests always run CI so required checks are reported.
+
+Main pushes changing only `CHANGELOG.md`, `CONTRIBUTING.md`, `README.md`, or `docs/**` skip CI; the website has its
+own workflow. All other paths, including licenses, resources, scripts, tests and workflows, require full CI.
+Before release, `scripts/ci-proof.py` looks through the latest 100 main-push CI runs. It accepts a successful run
+from this repository only when its commit is an ancestor and `git diff --no-renames` shows no differences outside
+that exact documentation allowlist. A newer failed or running attempt supersedes an older success for the same
+commit. PR/dispatch/other-branch runs cannot certify a release. No matching proof or an API error runs full local
+release validation, including coverage; releases never wait for a second documentation-only CI run.
+
+Test and shipping SwiftPM caches are separate and keyed by OS, architecture, toolchain/OS version, manifest and
+lockfile, then commit, with compatible earlier commits as fallbacks. The release reuses the shipping cache with
+exactly the same compiler flags as CI. SwiftPM still validates its build graph; release signing, path stripping,
+DMG scans and Sparkle verification always run. CI and releases share the ffmpeg cache keyed by source SHA-256
+and build-script hash. Every restored binary is checked against its recorded SHA-256; a missing or mismatched
+digest rebuilds from checksum-verified source. `scripts/build-ffmpeg.sh --force` remains available for a fresh build.
+
 Without a signing identity, `make-app.sh` signs the app ad hoc. That's fine for development, but macOS forgets
 privacy grants (Full Disk Access) on every rebuild. Run `./scripts/setup-signing.sh` once to get a stable local
 identity. It's git-ignored and only used on your Mac.
