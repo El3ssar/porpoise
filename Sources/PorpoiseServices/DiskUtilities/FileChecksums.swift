@@ -40,9 +40,11 @@ public enum FileChecksums {
         var hash = ChecksumHasher(algorithm), total: Int64 = 0
         func read(_ count: Int) throws -> Int {
             try cancellation.check()
-            let data = try handle.read(upToCount: count) ?? Data()
-            hash.update(data); total += Int64(data.count); progress(total)
-            return data.count
+            return try autoreleasepool {
+                let data = try handle.read(upToCount: count) ?? Data()
+                hash.update(data); total += Int64(data.count); progress(total)
+                return data.count
+            }
         }
         func readExactly(_ count: Int64) throws {
             var remaining = count

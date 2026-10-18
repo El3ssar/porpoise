@@ -6,6 +6,46 @@ import PorpoiseFileSystem
 public final class TrashService: @unchecked Sendable {
     public static let shared = TrashService()
     private static let lock = NSLock()
+    private static let persistence = DispatchQueue(label: "porpoise.trash-origins", qos: .utility)
+    private static var cached: Ledger?
+
+    private final class Ledger {
+        let store: UserDefaults
+        var origins: [String: String]
+        var dirty = false
+        var writeScheduled = false
+        var pruning = false
+        init(store: UserDefaults) {
+            self.store = store
+            origins = store.dictionary(forKey: "trashOrigins") as? [String: String] ?? [:]
+        }
+    }
+
+    /// Called with `lock` held. Settings isolation can replace the store between test runs.
+    private static func ledger() -> Ledger {
+        if let cached, cached.store === Settings.store { return cached }
+        let value = Ledger(store: Settings.store)
+        cached = value
+        return value
+    }
+
+    private static func persist(_ ledger: Ledger) {
+        // One writer holds the lock so an older snapshot cannot overwrite a newer flush.
+        guard ledger.dirty else { return }
+        ledger.store.set(ledger.origins, forKey: "trashOrigins")
+        ledger.dirty = false
+    }
+
+    private static func scheduleWrite(_ ledger: Ledger) {
+        guard !ledger.writeScheduled else { return }
+        ledger.writeScheduled = true
+        persistence.asyncAfter(deadline: .now() + 0.25) {
+            lock.withLock {
+                ledger.writeScheduled = false
+                persist(ledger)
+            }
+        }
+    }
     private let moveToTrash: (URL) throws -> URL?
     public init(moveToTrash: @escaping (URL) throws -> URL? = FileActions.trashItem) { self.moveToTrash = moveToTrash }
 
@@ -28,19 +68,48 @@ public final class TrashService: @unchecked Sendable {
         }
     }
 
-    /// Empty batches prune stale entries once at a job/Undo boundary. Per-item writes never scan the whole Trash.
+    /// Origins are immediately available to Restore. Disk writes coalesce across a batch of jobs.
+    /// Empty batches request an off-main prune; they never scan Trash on the caller's thread.
     public func record(_ pairs: [(original: URL, inTrash: URL)]) {
         Self.lock.withLock {
-            var origins = Settings.store.dictionary(forKey: "trashOrigins") as? [String: String] ?? [:]
-            for pair in pairs { origins[pair.inTrash.path] = pair.original.path }
-            if pairs.isEmpty { origins = origins.filter { FileJob.itemExists(at: URL(fileURLWithPath: $0.key)) } }
-            Settings.store.set(origins, forKey: "trashOrigins")
+            let ledger = Self.ledger()
+            if pairs.isEmpty {
+                guard !ledger.pruning else { return }
+                ledger.pruning = true
+                Self.persistence.async {
+                    let snapshot = Self.lock.withLock { ledger.origins }
+                    let stale = snapshot.filter { entry in
+                        autoreleasepool { !FileJob.itemExists(at: URL(fileURLWithPath: entry.key)) }
+                    }
+                    Self.lock.withLock {
+                        for (path, original) in stale where ledger.origins[path] == original {
+                            // An item could have returned to this path while the prune was scanning.
+                            if !FileJob.itemExists(at: URL(fileURLWithPath: path)) {
+                                ledger.origins[path] = nil; ledger.dirty = true
+                            }
+                        }
+                        ledger.pruning = false
+                        Self.persist(ledger)
+                    }
+                }
+            } else {
+                for pair in pairs { ledger.origins[pair.inTrash.path] = pair.original.path }
+                ledger.dirty = true
+                Self.scheduleWrite(ledger)
+            }
         }
+    }
+
+    /// Job completion/quit can make the coalesced ledger durable before returning.
+    public func flush() {
+        let ledger = Self.lock.withLock { Self.ledger() }
+        // Prunes requested before this job boundary finish before its durable snapshot.
+        Self.persistence.sync { Self.lock.withLock { Self.persist(ledger) } }
     }
 
     public func originalLocation(of url: URL) -> URL? {
         Self.lock.withLock {
-            (Settings.store.dictionary(forKey: "trashOrigins") as? [String: String])?[url.path].map { URL(fileURLWithPath: $0) }
+            Self.ledger().origins[url.path].map { URL(fileURLWithPath: $0) }
         }
     }
 

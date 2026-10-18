@@ -38,6 +38,8 @@ public final class Activity: Identifiable {
     /// The job doing the work (nil for remote transfers, which have their own loop).
     public internal(set) var job: FileJob?
     public let control: JobControl
+    var verificationControl: JobControl?
+    var verificationCancelled = false
     var remoteComparisonMethod: TransferCompareMethod = .sizeAndDate
     var remoteRemaining: [URL] = []
     var remoteResults: [URL] = []
@@ -234,20 +236,27 @@ extension FileOperationsController {
     /// Compares each copy with its original off the main thread, then records the result.
     private func verify(_ activity: Activity) {
         activity.state = .verifying
+        activity.verificationCancelled = false
+        let control = JobControl()
+        activity.verificationControl = control
         let pairs = activity.placed.sorted { $0.key < $1.key }.map { (activity.sources[$0.key], $0.value) }
         DispatchQueue.global(qos: .utility).async {
             var total = CopyVerification.Result()
             for (src, copy) in pairs {
-                let r = CopyVerification.verify(src, copy)
+                if control.isCancelled { break }
+                let r = CopyVerification.verify(src, copy, cancelled: { control.isCancelled })
                 total.files += r.files
                 total.bytes += r.bytes
                 total.mismatches += r.mismatches.map {
                     .init(path: copy.lastPathComponent + ($0.path.isEmpty ? "" : "/" + $0.path), reason: $0.reason)
                 }
             }
+            control.finish()
             DispatchQueue.main.async {
-                activity.verification = total
-                activity.state = .completed
+                activity.verificationControl = nil
+                activity.verificationCancelled = control.isCancelled
+                activity.verification = control.isCancelled ? nil : total
+                activity.state = control.isInterrupted ? .interrupted : control.isCancelled ? .cancelled : .completed
                 self.record(activity)
                 self.activityDidChange()
             }
@@ -292,7 +301,7 @@ extension FileOperationsController {
             if activity.isJournaled { journals.remove(activity.id) }
             activityDidChange()
         default:
-            activity.control.cancel()
+            (activity.verificationControl ?? activity.control).cancel()
             remoteCancel[activity.id]?()
         }
     }
@@ -310,6 +319,11 @@ extension FileOperationsController {
 
     /// Runs the failed items again.
     public func retry(_ activity: Activity, window: AnyObject?) {
+        if activity.verificationCancelled {
+            verify(activity)
+            activityDidChange()
+            return
+        }
         if let retry = activity.retryTransfer { retry(); return }
         let again: [URL]
         if activity.state == .cancelled || activity.state == .interrupted {
@@ -333,16 +347,18 @@ extension FileOperationsController {
         isInterrupting = true
         let running = activities.filter { $0.state.isActive }
         for a in running {
-            if !a.control.hasEnded { a.control.interrupt() }
+            let control = a.verificationControl ?? a.control
+            if !control.hasEnded { control.interrupt() }
         }
         let end = Date().addingTimeInterval(timeout)
         while running.contains(where: {
-            !$0.control.hasEnded
+            !($0.verificationControl ?? $0.control).hasEnded
         }) && Date() < end {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
         // Every queued and interrupted job's journal, and every ended job's entry, is on disk before the app goes.
         journals.flush()
         history.flush()
+        TrashService.shared.flush()
     }
 }

@@ -64,6 +64,7 @@ extension FileOperationsController {
     /// stack for another try (e.g. after the user frees the original name). The stacks are changed by the
     /// callers before any alert: a job finishing during the alert pushes onto them.
     private func revert(_ r: UndoRecord) -> Result<UndoRecord?, Error> {
+        defer { TrashService.shared.flush() }
         do {
             TrashService.shared.record([])
             let inverse = try FileActions.undo(r, trash: TrashService.shared.trash)

@@ -34,6 +34,9 @@ final class RemoteTransferJob {
     var activeLimit: Int64 = 0
     var activeLegs: Int64 = 1
     var listings: [URL: [FileItem]] = [:]
+    var listingIndices: [URL: [String: FileItem]] = [:]
+    var publishedNames: [URL: Set<String>] = [:]
+    var stageFolders: [URL: URL] = [:]
     var lastPublish = Date.distantPast
 
     init(
@@ -55,6 +58,7 @@ final class RemoteTransferJob {
         // requests and all small-copy children before credentials or caches are removed.
         var ownsAccounts = false
         defer {
+            cleanupStages()
             onNotice(nil)
             if ownsControl { control.finish() }
             if ownsAccounts { CloudTransferJournal.shared.release(cloudBatchID) }
@@ -134,13 +138,21 @@ final class RemoteTransferJob {
             throw RemoteError.unsupported("Unsupported location: \(folder.scheme ?? "unknown")")
         }
         listings[folder] = items
+        publishedNames[folder] = nil
+        listingIndices[folder] = Dictionary(items.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
         return items
     }
 
     func item(_ url: URL) throws -> FileItem? {
         if url.isFileURL { return FileItem.load(url) }
         if let cloud = RemoteFS.provider(for: url) as? CloudTransferProvider { return try cloud.transferItem(url) }
-        return try children(url.deletingLastPathComponent()).first { $0.name == url.lastPathComponent }
+        let folder = url.deletingLastPathComponent()
+        if listings[folder] == nil || publishedNames[folder]?.contains(url.lastPathComponent) == true {
+            // Upload metadata is provider-dependent. Repeated names must compare against authoritative
+            // destination dates/permissions, rather than assuming the source's metadata was preserved.
+            _ = try children(folder, fresh: true)
+        }
+        return listingIndices[folder]?[url.lastPathComponent]
     }
 
     func inventory(_ url: URL) throws -> (bytes: Int64, files: Int) {
@@ -202,6 +214,7 @@ final class RemoteTransferJob {
                 try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
             }
             if totals[source]?.files == 0 { progressLock.withLock { progress.copiedItems += 1 } }
+            remember(incoming, at: target)
             return try merge(source, into: target)
         }
         guard !incoming.isSymlink else { throw RemoteError.unsupported("Remote link transfers are not supported by this provider.") }
@@ -213,6 +226,7 @@ final class RemoteTransferJob {
         }
         while true {
             do { try stagedFile(source, to: target, replacing: replace, modified: incoming.modificationDate); break } catch {
+                cleanupStages()
                 guard FileErrorKind.classify(error) == .noSpace, let onNoSpace else {
                     throw error
                 }
@@ -227,8 +241,50 @@ final class RemoteTransferJob {
         if replace { progressLock.withLock { progress.replacedItems += 1 } }
         completed[source] = target
         finishProgress(source)
-        listings[folder] = nil
+        remember(incoming, at: target)
         return target
+    }
+
+    /// Keep path-based destination metadata current without relisting after every published file.
+    private func remember(_ incoming: FileItem, at target: URL) {
+        let folder = target.deletingLastPathComponent()
+        guard listings[folder] != nil else { return }
+        let item = FileItem(
+            url: target, name: target.lastPathComponent, isDirectory: incoming.isDirectory, isSymlink: incoming.isSymlink,
+            size: incoming.size, modificationDate: incoming.modificationDate)
+        if listingIndices[folder]?[item.name] == nil {
+            listings[folder]?.append(item)
+        } else if let index = listings[folder]?.firstIndex(where: { $0.name == item.name }) {
+            listings[folder]?[index] = item
+        }
+        listingIndices[folder]?[item.name] = item
+        publishedNames[folder, default: []].insert(item.name)
+    }
+
+    private func stagingFolder(for target: URL) throws -> URL {
+        let folder = target.deletingLastPathComponent()
+        if let stage = stageFolders[folder] { return stage }
+        let stage = folder.appendingPathComponent(".porpoise-transfer-" + UUID().uuidString)
+        if let provider = RemoteFS.provider(for: target) {
+            try provider.makeFolder(stage)
+        } else {
+            try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: false)
+        }
+        stageFolders[folder] = stage
+        return stage
+    }
+
+    private func cleanupStages() {
+        Shell.withoutTransferControl {
+            for stage in stageFolders.values {
+                if let provider = RemoteFS.provider(for: stage) {
+                    try? provider.delete([stage])
+                } else {
+                    try? FileManager.default.removeItem(at: stage)
+                }
+            }
+        }
+        stageFolders.removeAll()
     }
 
     /// The shared remote prompt flow: providers supply metadata and IO, never their own conflict rules.
@@ -335,11 +391,11 @@ final class RemoteTransferJob {
             downloaded = try RemoteFS.provider(for: source)?.download(source, into: scratch) ?? source
         }
         if let provider = RemoteFS.provider(for: target) {
-            let stageFolder = target.deletingLastPathComponent().appendingPathComponent(".porpoise-transfer-" + UUID().uuidString)
-            try provider.makeFolder(stageFolder)
-            defer { Shell.withoutTransferControl { try? provider.delete([stageFolder]) } }
-            try provider.upload(downloaded, into: stageFolder)
+            let stageFolder = try stagingFolder(for: target)
             var staged = stageFolder.appendingPathComponent(downloaded.lastPathComponent)
+            var published = false
+            defer { if !published { Shell.withoutTransferControl { try? provider.delete([staged]) } } }
+            try provider.upload(downloaded, into: stageFolder)
             if staged.lastPathComponent != target.lastPathComponent {
                 try provider.rename(staged, to: target.lastPathComponent)
                 staged = stageFolder.appendingPathComponent(target.lastPathComponent)
@@ -354,21 +410,25 @@ final class RemoteTransferJob {
                     }
                     try publishing.publishTransferFile(staged, to: target, modified: options.method == .sizeAndDate ? modified : nil)
                 } else {
-                    guard try children(target.deletingLastPathComponent(), fresh: true).allSatisfy({ $0.name != target.lastPathComponent }) else {
-                        throw RemoteError.exists(target.lastPathComponent)
+                    let exists: Bool
+                    if let checking = provider as? RemoteTransferTargetChecking {
+                        exists = try checking.transferTargetExists(target)
+                    } else {
+                        exists = try children(target.deletingLastPathComponent(), fresh: true).contains { $0.name == target.lastPathComponent }
                     }
+                    guard !exists else { throw RemoteError.exists(target.lastPathComponent) }
                     try provider.move([staged], into: target.deletingLastPathComponent())
                 }
+                published = true
                 try beforeSourceRemoval?()
                 if kind == .move { try removeOriginal(source) }
             }
         } else {
             guard target.isFileURL else { throw RemoteError.unsupported("Unsupported destination.") }
-            let stageFolder = target.deletingLastPathComponent().appendingPathComponent(".porpoise-transfer-" + UUID().uuidString)
-            try FileManager.default.createDirectory(at: stageFolder, withIntermediateDirectories: false)
+            let stageFolder = try stagingFolder(for: target)
             var removeStage = true
-            defer { if removeStage { try? FileManager.default.removeItem(at: stageFolder) } }
             let staged = stageFolder.appendingPathComponent(downloaded.lastPathComponent)
+            defer { if removeStage { try? FileManager.default.removeItem(at: staged) } }
             let copy = FileJob(kind: .copy, sources: [downloaded], destinationFolder: stageFolder)
             var previous: Int64 = 0
             copy.onProgress = { [weak copy] snapshot in
@@ -400,6 +460,7 @@ final class RemoteTransferJob {
                 } catch {
                     guard renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 else {
                         removeStage = false
+                        stageFolders[target.deletingLastPathComponent()] = nil
                         throw RemoteError.failed(
                             "The previous item could not be restored automatically. Its staging folder is kept at “\(stageFolder.path)”. \(error.localizedDescription)"
                         )

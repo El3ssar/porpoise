@@ -162,9 +162,11 @@ public final class FileOperationsController {
             var record: UndoRecord?
             var fatal: Error?
             do { record = try job.run() } catch { fatal = error }
+            TrashService.shared.flush()
             DispatchQueue.main.async {
                 Self.notifyChanged(urls + (folder.map { [$0] } ?? []) + job.results)
-                self.ui?.jobFinished(activity)
+                let backgroundRetry = (kind == .trash || kind == .delete) && !job.denied.isEmpty && !job.isCancelled
+                if !backgroundRetry { self.ui?.jobFinished(activity) }
                 if let r = record { self.pushUndo(r) }
                 let errs = job.errors + (fatal.map { [($0 as? LocalizedError)?.errorDescription ?? $0.localizedDescription] } ?? [])
                 self.ended(activity, errors: errs)
@@ -184,6 +186,7 @@ public final class FileOperationsController {
                 }
                 if !job.denied.isEmpty && !job.isCancelled {
                     self.retryDenied(kind, job.denied, targets: job.deniedTargets, to: folder, window: window) { more in
+                        if backgroundRetry { self.ui?.jobFinished(activity) }
                         if record != nil || !more.isEmpty { sound?.play() }
                         done?(job.results + more)
                     }

@@ -2,7 +2,7 @@ import Foundation
 import PorpoiseCore
 
 /// Android over adb. `adb shell` runs its argument with the device's sh, so paths are single-quoted.
-final class ADBProvider: RemoteProvider {
+final class ADBProvider: RemoteProvider, RemoteTransferTargetChecking {
     let serial: String
     private var model: String?
     /// Printed by our rename script when the target exists (older adb doesn't pass exit codes on).
@@ -88,6 +88,15 @@ final class ADBProvider: RemoteProvider {
         let dst = q(remote.deletingLastPathComponent().appendingPathComponent(newName))
         let out = try shell("if [ -e \(dst) ]; then echo \(Self.existsMarker); else mv \(q(remote)) \(dst); fi")
         if out.contains(Self.existsMarker) { throw RemoteError.exists(newName) }
+    }
+
+    func transferTargetExists(_ target: URL) throws -> Bool {
+        let parent = q(target.deletingLastPathComponent()), target = q(target)
+        let output = try shell(
+            "if [ -d \(parent) ] && [ -r \(parent) ] && [ -x \(parent) ]; then "
+                + "if [ -e \(target) ] || [ -L \(target) ]; then printf yes; else printf no; fi; fi")
+        guard output == "yes" || output == "no" else { throw RemoteError.failed("Could not check the destination folder.") }
+        return output == "yes"
     }
 
     func move(_ remote: [URL], into folder: URL) throws {
