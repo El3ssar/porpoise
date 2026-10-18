@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import PorpoiseCore
 import PorpoiseFileSystem
@@ -13,17 +14,27 @@ extension FileOperationsController {
         _ kind: FileOperationKind, _ urls: [URL], targets: [URL: URL], to folder: URL?,
         window: AnyObject?, done: @escaping ([URL]) -> Void
     ) {
-        var remaining = urls
-        var unlocked: [URL] = []
-        if kind == .delete || kind == .trash {
-            let (left, trashed) = unlockOwnItems(urls, kind: kind)
-            remaining = left
-            unlocked = trashed.map(\.1) + (kind == .delete ? urls.filter { !left.contains($0) } : [])
-            if !trashed.isEmpty {
-                let r = UndoRecord.trashed(trashed.map { (original: $0.0, inTrash: $0.1) })
-                pushUndo(r)
+        guard kind == .delete || kind == .trash else {
+            return finishRetryDenied(kind, urls, remaining: urls, unlocked: [], targets: targets, to: folder, window: window, done: done)
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let (remaining, trashed) = self.unlockOwnItems(urls, kind: kind)
+            TrashService.shared.flush()
+            DispatchQueue.main.async {
+                if !trashed.isEmpty {
+                    self.pushUndo(.trashed(trashed.map { (original: $0.0, inTrash: $0.1) }))
+                }
+                let unlocked = trashed.map(\.1) + (kind == .delete ? urls.filter { !remaining.contains($0) } : [])
+                self.finishRetryDenied(
+                    kind, urls, remaining: remaining, unlocked: unlocked, targets: targets, to: folder, window: window, done: done)
             }
         }
+    }
+
+    private func finishRetryDenied(
+        _ kind: FileOperationKind, _ urls: [URL], remaining: [URL], unlocked: [URL], targets: [URL: URL], to folder: URL?,
+        window: AnyObject?, done: @escaping ([URL]) -> Void
+    ) {
         guard !remaining.isEmpty else { Self.notifyChanged(urls); done(unlocked); return }
 
         let plan = Self.administratorCommands(kind, remaining, targets: targets, to: folder)
@@ -83,10 +94,7 @@ extension FileOperationsController {
         let remaining = urls.filter { u in
             let owner = (try? fm.attributesOfItem(atPath: u.path)[.ownerAccountID] as? NSNumber)?.uint32Value
             guard owner == getuid() else { return true }
-            // On a link, the link itself: -R doesn't follow one given by name, and -h stands for it otherwise.
-            let scope = kind == .delete ? ["-R"] : ["-h"]
-            _ = try? Shell.run("/usr/bin/chflags", scope + ["nouchg", u.path])
-            _ = try? Shell.run("/bin/chmod", scope + ["u+w", u.path])
+            Self.unlockForRemoval(u, recursively: kind == .delete)
             do {
                 if kind == .delete {
                     try fm.removeItem(at: u)
@@ -99,6 +107,23 @@ extension FileOperationsController {
             }
         }
         return (remaining, trashed)
+    }
+
+    /// lstat/lchflags/lchmod act on links themselves; recursive deletion never unlocks a link's target.
+    static func unlockForRemoval(_ url: URL, recursively: Bool) {
+        func unlock(_ path: String) {
+            var info = stat()
+            guard lstat(path, &info) == 0 else { return }
+            _ = lchflags(path, info.st_flags & ~UInt32(UF_IMMUTABLE))
+            _ = lchmod(path, (info.st_mode & 0o7777) | mode_t(S_IWUSR))
+        }
+        unlock(url.path)
+        var info = stat()
+        guard recursively, lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else { return }
+        let enumerator = FileManager.default.enumerator(atPath: url.path)
+        while let relative = autoreleasepool(invoking: { enumerator?.nextObject() as? String }) {
+            autoreleasepool { unlock(url.appendingPathComponent(relative).path) }
+        }
     }
 
     static func permissionVerb(_ kind: FileOperationKind) -> String {
