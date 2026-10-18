@@ -15,14 +15,14 @@ struct JobControlTests {
             do { try control.checkpoint() } catch { outcome.withLock { result = error as? FileOperationError } }
             done.signal()
         }.start()
-        #expect(entered.wait(timeout: .now() + 5) == .success)
+        #expect(entered.wait(timeout: .now() + 60) == .success)
         #expect(control.isPaused && !control.hasEnded)
         switch action {
         case "cancel": control.cancel()
         case "interrupt": control.interrupt()
         default: control.resume()
         }
-        #expect(done.wait(timeout: .now() + 5) == .success)
+        #expect(done.wait(timeout: .now() + 60) == .success)
         let error = outcome.withLock { result }
         if action == "cancel" { if case .cancelled? = error {} else { Issue.record("Expected cancellation") } }
         if action == "interrupt" { if case .interrupted? = error {} else { Issue.record("Expected interruption") } }

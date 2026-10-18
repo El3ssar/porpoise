@@ -17,7 +17,7 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock, Thread
+from threading import Condition, Lock, Thread
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 BLOCK = 4 << 20
@@ -52,12 +52,28 @@ class Handler(BaseHTTPRequestHandler):
             with self.server.lock:
                 self.server.active_downloads += 1
                 self.server.stats['maxConcurrentDownloads'] = max(self.server.stats['maxConcurrentDownloads'], self.server.active_downloads)
+            self.hold_until_concurrent()
         try:
             self.send_body(data, binary)
         finally:
             if binary:
                 with self.server.lock:
                     self.server.active_downloads -= 1
+
+    def hold_until_concurrent(self):
+        """POST /config {"holdDownloads": N}: holds each download (after its headers) until N are being sent at once, so
+        a parallel client is seen as parallel however slow the machine. Once N have met, or the fallback (`holdTimeout`,
+        30 s) runs out for a client that never overlaps, the gate stays open until it is armed again."""
+        s = self.server
+        with s.hold:
+            if not s.hold_target or s.hold_open:
+                return
+            s.hold.notify_all()
+            deadline = time.monotonic() + s.hold_timeout
+            while not s.hold_open and s.active_downloads < s.hold_target and time.monotonic() < deadline:
+                s.hold.wait(0.05)
+            s.hold_open = True
+            s.hold.notify_all()
 
     def send_body(self, data, binary):
         started = time.monotonic()
@@ -118,6 +134,10 @@ class Handler(BaseHTTPRequestHandler):
         if route == '/config':
             config = json.loads(raw)
             with self.server.lock:
+                if 'holdDownloads' in config:
+                    self.server.hold_target = int(config.pop('holdDownloads'))
+                    self.server.hold_timeout = float(config.pop('holdTimeout', 30))
+                    self.server.hold_open = False
                 self.server.config.update(config)
                 if config.pop('resetConcurrency', False):
                     self.server.stats['maxConcurrentDownloads'] = 0
@@ -418,6 +438,7 @@ def main():
     server.cursors = {}; server.search_cursors = {}; server.config = {}; server.bandwidth_next = 0
     server.stats = {'requests': [], 'tokens': 0, 'secretSent': False, 'bytes': 0, 'maxConcurrentDownloads': 0}
     server.active_downloads = 0
+    server.hold = Condition(server.lock); server.hold_target = 0; server.hold_timeout = 30; server.hold_open = False
     for key in ('latency_ms', 'bandwidth_mbps', 'connection_mbps'):
         setattr(server, key, getattr(args, key))
     fixture = json.loads(args.fixture.read_text()) if args.fixture else {'files': [

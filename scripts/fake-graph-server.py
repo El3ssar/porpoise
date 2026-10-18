@@ -2,7 +2,7 @@
 """Loopback-only Microsoft Graph (OneDrive) and identity-platform fixture. No real account, credentials or captures.
 
 Supports --latency-ms, --bandwidth-mbps (aggregate), --connection-mbps (per response), and private test controls
-POST /config, GET /stats. Request diagnostics omit bearer values, refresh tokens and upload-session URLs.
+POST /config (including holdDownloads/resetConcurrency), GET /stats (including maxConcurrentDownloads). Request diagnostics omit bearer values, refresh tokens and upload-session URLs.
 Wire shapes follow https://learn.microsoft.com/graph/api/resources/driveitem and the driveItem API pages; all content is
 synthetic. Pre-authenticated URLs (download, upload session, copy monitor, thumbnails) live under their own paths and
 record whether a bearer was (wrongly) sent with them.
@@ -18,7 +18,7 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock, Thread
+from threading import Condition, Lock, Thread
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit
 
 DRIVE = 'fixture-drive!A1'
@@ -71,6 +71,35 @@ class Handler(BaseHTTPRequestHandler):
         for key, header in (headers or {}).items():
             self.send_header(key, header)
         self.end_headers()
+        if binary:
+            # How many downloads are being sent at once: what parallel downloading is checked by, not wall-clock time.
+            with self.server.lock:
+                self.server.active_downloads += 1
+                self.server.stats['maxConcurrentDownloads'] = max(self.server.stats['maxConcurrentDownloads'], self.server.active_downloads)
+            self.hold_until_concurrent()
+        try:
+            self.send_body(data, binary)
+        finally:
+            if binary:
+                with self.server.lock:
+                    self.server.active_downloads -= 1
+
+    def hold_until_concurrent(self):
+        """POST /config {"holdDownloads": N}: holds each download (after its headers) until N are being sent at once, so
+        a parallel client is seen as parallel however slow the machine. Once N have met, or the fallback (`holdTimeout`,
+        30 s) runs out for a client that never overlaps, the gate stays open until it is armed again."""
+        s = self.server
+        with s.hold:
+            if not s.hold_target or s.hold_open:
+                return
+            s.hold.notify_all()
+            deadline = time.monotonic() + s.hold_timeout
+            while not s.hold_open and s.active_downloads < s.hold_target and time.monotonic() < deadline:
+                s.hold.wait(0.05)
+            s.hold_open = True
+            s.hold.notify_all()
+
+    def send_body(self, data, binary):
         started = time.monotonic()
         for offset in range(0, len(data), 256 << 10):
             chunk = data[offset:offset + (256 << 10)]
@@ -132,6 +161,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/config':
             config = json.loads(raw)
             with s.lock:
+                if 'holdDownloads' in config:
+                    s.hold_target = int(config.pop('holdDownloads'))
+                    s.hold_timeout = float(config.pop('holdTimeout', 30))
+                    s.hold_open = False
+                if config.pop('resetConcurrency', False):
+                    s.stats['maxConcurrentDownloads'] = 0
                 s.config.update(config)
                 for file in config.get('files', []):
                     s.add(file)
@@ -531,7 +566,9 @@ def main():
     server.lock = Lock(); server.items = {}; server.contents = {}; server.hashes = {}; server.events = []; server.sessions = {}; server.links = {}
     server.cursors = {}; server.pages = {}; server.monitors = {}; server.config = {}; server.bandwidth_next = 0
     server.refresh = 'fixture-refresh'; server.generation = 0
-    server.stats = {'requests': [], 'tokens': 0, 'secretSent': False, 'bytes': 0, 'scopes': [], 'authorize': []}
+    server.stats = {'requests': [], 'tokens': 0, 'secretSent': False, 'bytes': 0, 'scopes': [], 'authorize': [], 'maxConcurrentDownloads': 0}
+    server.active_downloads = 0
+    server.hold = Condition(server.lock); server.hold_target = 0; server.hold_timeout = 30; server.hold_open = False
     for key in ('latency_ms', 'bandwidth_mbps', 'connection_mbps'):
         setattr(server, key, getattr(args, key))
     server.add({'id': 'ROOT!101', 'drive': DRIVE, 'parent': None, 'name': 'root', 'folder': True, 'root': True})

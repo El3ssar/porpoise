@@ -29,7 +29,7 @@ import Testing
         // First visit: the saved listing paints at once, no animation (nothing was shown before).
         model.reload()
         #expect(model.items == rows && model.isRefreshing && animated == 0)
-        _ = await poll(timeout: 5) { !model.isRefreshing }
+        _ = await poll { !model.isRefreshing }
         #expect(!model.isRefreshing)
         #expect(!model.isRefreshing && animated == 0)
         let selected = try #require(rows.first { $0.name == "report.txt" }).url
@@ -48,14 +48,14 @@ import Testing
         loaded = 0
         model.reload()
         #expect(model.isRefreshing && animated == 0)
-        _ = await poll(timeout: 5) { !model.isRefreshing }
+        _ = await poll { !model.isRefreshing }
         #expect(!model.isRefreshing)
         #expect(animated == 1 && loaded == 2)
         #expect(model.items.contains { $0.name == "Updated report.txt" } && model.selection == [selected])
 
         // Nothing new: no animation at all.
         model.reload()
-        _ = await poll(timeout: 5) { !model.isRefreshing }
+        _ = await poll { !model.isRefreshing }
         #expect(!model.isRefreshing)
         #expect(animated == 1)
 
@@ -69,7 +69,7 @@ import Testing
         _ = try await provider.refresh(root)
         model.reload()
         #expect(animated == 2 && model.items.contains { $0.name == "Final report.txt" })
-        _ = await poll(timeout: 5) { !model.isRefreshing }
+        _ = await poll { !model.isRefreshing }
         #expect(!model.isRefreshing)
     }
 

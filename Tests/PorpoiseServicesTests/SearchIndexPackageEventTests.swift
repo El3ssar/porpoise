@@ -18,13 +18,13 @@ import Testing
         config.roots = [s.path("root").path]
         index.configure(config)
         defer { index.configure(IndexConfiguration()) }
-        try #require(await eventually(30) { !index.status.building && index.status.updated != nil })
+        try #require(await eventually { !index.status.building && index.status.updated != nil })
 
         try s.file("root/Test.app/Contents/inner-new.txt")
         try s.file("root/outer-new.txt")
-        try #require(await eventually(30) { index.search("outer-new", scope: s.path("root"))?.paths.count == 1 })
+        try #require(await eventually { index.search("outer-new", scope: s.path("root"))?.paths.count == 1 })
         // Both changes were reported together or the package's first: by now it has been handled.
-        try #require(await eventually(30) { index.search("Test", scope: s.path("root"))?.paths.count == 1 })
+        try #require(await eventually { index.search("Test", scope: s.path("root"))?.paths.count == 1 })
         #expect(index.search("inner-new", scope: s.path("root"))?.paths.isEmpty == true)
         #expect(index.search("old", scope: s.path("root"))?.paths.isEmpty == true)
     }

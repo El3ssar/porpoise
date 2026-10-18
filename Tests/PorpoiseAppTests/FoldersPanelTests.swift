@@ -7,8 +7,11 @@ import Testing
 
 @testable import Porpoise
 
+// Each test has a settings store of its own (`.isolatedSettings`): another test's settings reset (Settings.changed
+// with no key) rebuilt the panel's tree mid-test and listed the root again, so the request counts below were off.
+// The time limits leave room for the 60 s waits on CI's runner.
 extension AppearanceLayoutTests {
-    @Test(.timeLimit(.minutes(1))) @MainActor func foldersPanelExpandsNetworkNodesLazilyAndFollowsNavigation() async throws {
+    @Test(.isolatedSettings, .timeLimit(.minutes(5))) @MainActor func foldersPanelExpandsNetworkNodesLazilyAndFollowsNavigation() async throws {
         _ = NSApplication.shared
         let previous = Settings.isTesting
         Settings.isTesting = true
@@ -21,13 +24,13 @@ extension AppearanceLayoutTests {
         panel.currentURL = root
         let scroll = try #require(panel.subviews.first as? NSScrollView)
         let outline = try #require(scroll.documentView as? NSOutlineView)
-        _ = await poll(timeout: 10) { outline.numberOfRows >= 2 }
+        await expectEventually { outline.numberOfRows >= 2 }
         let folder = try #require(outline.item(atRow: 1) as? RemoteFolderTree.Node)
         #expect(folder.name == "Visible folder" && folder.children == nil)
         #expect(outline.isExpandable(folder))
         #expect(provider.count == 1)
         outline.expandItem(folder)
-        _ = await poll(timeout: 10) { outline.numberOfRows >= 4 }
+        await expectEventually { outline.numberOfRows >= 4 }
         #expect(outline.numberOfRows == 4 && provider.count == 2)
         #expect(outline.isItemExpanded(folder))
         let nested = try #require(outline.item(atRow: 2) as? RemoteFolderTree.Node)
@@ -41,7 +44,7 @@ extension AppearanceLayoutTests {
         panel.currentURL = FileManager.default.temporaryDirectory
         #expect(!(outline.item(atRow: 0) is RemoteFolderTree.Node))
     }
-    @Test(.timeLimit(.minutes(1))) @MainActor func deepRemoteNavigationKeepsServerRootAndUnvisitedSiblings() async throws {
+    @Test(.isolatedSettings, .timeLimit(.minutes(5))) @MainActor func deepRemoteNavigationKeepsServerRootAndUnvisitedSiblings() async throws {
         _ = NSApplication.shared
         let previous = Settings.isTesting
         Settings.isTesting = true
@@ -54,7 +57,7 @@ extension AppearanceLayoutTests {
         let target = root.appendingPathComponent("opaque/nested", isDirectory: true)
         panel.currentURL = target
         let outline = try #require((panel.subviews.first as? NSScrollView)?.documentView as? NSOutlineView)
-        _ = await poll(timeout: 10) { outline.numberOfRows >= 4 }
+        await expectEventually { outline.numberOfRows >= 4 }
         let originalRoot = try #require(outline.item(atRow: 0) as? RemoteFolderTree.Node)
         #expect(originalRoot.url == root)
         let selected = try #require(outline.item(atRow: outline.selectedRow) as? RemoteFolderTree.Node)
@@ -63,14 +66,14 @@ extension AppearanceLayoutTests {
         #expect(sibling.children == nil && provider.count == 2)
         let otherTarget = sibling.url.appendingPathComponent("nested", isDirectory: true)
         panel.currentURL = otherTarget
-        _ = await poll(timeout: 10) { outline.numberOfRows >= 5 }
+        await expectEventually { outline.numberOfRows >= 5 }
         #expect(outline.item(atRow: 0) as? RemoteFolderTree.Node === originalRoot)
         let nextSelection = try #require(outline.item(atRow: outline.selectedRow) as? RemoteFolderTree.Node)
         #expect(RemoteFolderTree.sameLocation(nextSelection.url, otherTarget))
         #expect(originalRoot.children?.count == 2 && provider.count == 3)
     }
 
-    @Test(.timeLimit(.minutes(1))) @MainActor func unknownCloudParentsUseAccountTopWithoutInventingATreeChild() async throws {
+    @Test(.isolatedSettings, .timeLimit(.minutes(5))) @MainActor func unknownCloudParentsUseAccountTopWithoutInventingATreeChild() async throws {
         _ = NSApplication.shared
         let previousTesting = Settings.isTesting, previousBackend = CloudAccounts.shared.backend
         Settings.isTesting = true
@@ -87,7 +90,7 @@ extension AppearanceLayoutTests {
         let panel = FoldersPanel(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
         panel.currentURL = target
         let outline = try #require((panel.subviews.first as? NSScrollView)?.documentView as? NSOutlineView)
-        _ = await poll(timeout: 10) { outline.numberOfRows >= 3 }
+        await expectEventually { outline.numberOfRows >= 3 }
         let top = try #require(outline.item(atRow: 0) as? RemoteFolderTree.Node)
         #expect(top.url == root && top.url != target)
         #expect(top.children?.contains { RemoteFolderTree.sameLocation($0.url, target) } == false)
@@ -104,7 +107,7 @@ extension AppearanceLayoutTests {
         return URL(fileURLWithPath: String(cString: r))
     }
 
-    @Test(.isolatedSettings, .timeLimit(.minutes(1))) @MainActor func foldersPanelListsLocalFoldersOffTheMainThread() async throws {
+    @Test(.isolatedSettings, .timeLimit(.minutes(5))) @MainActor func foldersPanelListsLocalFoldersOffTheMainThread() async throws {
         _ = NSApplication.shared
         let scratch = try Scratch(), home = realFolder(scratch.url)
         let fm = FileManager.default

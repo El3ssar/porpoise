@@ -132,8 +132,7 @@ import Testing
         _ = try await client.metadata("id:nested")
         let nested = DropboxLocation(accountID: uuid, itemID: "id:nested", namespaceID: ns).url
         #expect(fixture.accounts.ancestors(of: nested) == [root])
-        let deadline = Date().addingTimeInterval(10)
-        while fixture.accounts.ancestors(of: nested).count < 2, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        await expectEventually { fixture.accounts.ancestors(of: nested).count >= 2 }
         #expect(fixture.accounts.ancestors(of: nested) == [root, DropboxLocation(accountID: uuid, itemID: "id:folder", namespaceID: ns).url])
     }
 
@@ -156,11 +155,8 @@ import Testing
         defer { NotificationCenter.default.removeObserver(token) }
         #expect(fixture.accounts.ancestors(of: nested) == [root])
         let folder = DropboxLocation(accountID: uuid, itemID: "id:folder", namespaceID: ns).url
-        let deadline = Date().addingTimeInterval(10)
         // The folder is in the cache a moment before the views are told.
-        while fixture.accounts.ancestors(of: nested) != [root, folder] || notices < 2, Date() < deadline {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
+        await expectEventually { fixture.accounts.ancestors(of: nested) == [root, folder] && notices >= 2 }
         #expect(fixture.accounts.ancestors(of: nested) == [root, folder])
         #expect(notices >= 2)
     }

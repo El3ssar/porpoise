@@ -52,7 +52,8 @@ import Testing
             let fd = socket(AF_INET, SOCK_STREAM, 0)
             guard fd >= 0 else { throw POSIXError(.EIO) }
             defer { close(fd) }
-            var tv = timeval(tv_sec: 10, tv_usec: 0)
+            // Long: a stalled machine must not cut a response short on our side.
+            var tv = timeval(tv_sec: 60, tv_usec: 0)
             setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
             var one: Int32 = 1
             setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
@@ -158,7 +159,8 @@ import Testing
         let results = try await withThrowingTaskGroup(of: Bool.self) { group in
             for i in 0..<24 {
                 group.addTask {
-                    let r = try f.get(i % 2 == 0 ? "/\(f.secret)/stream/big.mp4" : "/\(f.secret)/stream/index.m3u8")
+                    // Each blocking socket read on its own thread, not a cooperative-pool one.
+                    let r = try await offThePool { try f.get(i % 2 == 0 ? "/\(f.secret)/stream/big.mp4" : "/\(f.secret)/stream/index.m3u8") }
                     return r.status == 200 && (i % 2 == 1 || r.body == f.big)
                 }
             }
@@ -251,7 +253,7 @@ import Testing
         f.server.headTimeout = 0.5
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         defer { close(fd) }
-        var tv = timeval(tv_sec: 10, tv_usec: 0)
+        var tv = timeval(tv_sec: 60, tv_usec: 0)
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
@@ -262,11 +264,9 @@ import Testing
         }
         try #require(ok == 0)
         _ = "GET /\(f.secret)/stream/index.m3u8 HTTP/1.1\r\n".withCString { send(fd, $0, strlen($0), 0) }  // no blank line
-        let started = Date()
         var byte: UInt8 = 0
         let n = recv(fd, &byte, 1, 0)
-        #expect(n == 0)  // closed by the server, not timed out on our side
-        #expect(Date().timeIntervalSince(started) < 5)
+        #expect(n == 0)  // closed by the server, not timed out on our side (that would be -1)
     }
 
     /// Keep sockets open so admission and slot reclamation are observed, rather than relying on request timing.
@@ -283,14 +283,14 @@ import Testing
         let first = try Self.openSocket(port: f.port)
         let second = try Self.openSocket(port: f.port)
         defer { close(first); close(second) }
-        await expectEventually(timeout: 5) { f.server.activeConnectionCount == 2 }
+        await expectEventually { f.server.activeConnectionCount == 2 }
         let rejected = try Self.openSocket(port: f.port)
         defer { close(rejected) }
         var byte: UInt8 = 0
         #expect(recv(rejected, &byte, 1, 0) == 0)
         #expect(f.server.activeConnectionCount == 2)
         shutdown(first, SHUT_RDWR)
-        await expectEventually(timeout: 5) { f.server.activeConnectionCount == 1 }
+        await expectEventually { f.server.activeConnectionCount == 1 }
         #expect(try f.get("/\(f.secret)/stream/index.m3u8").status == 200)
         f.stop()
         #expect(recv(second, &byte, 1, 0) == 0)
@@ -325,7 +325,7 @@ import Testing
         }
         #expect(String(decoding: head, as: UTF8.self).hasPrefix("HTTP/1.1 200 OK\r\n"))
         // Read no body: the kernel's send buffer fills and the idle deadline must reclaim the slot.
-        await expectEventually(timeout: 5) { f.server.activeConnectionCount == 0 }
+        await expectEventually { f.server.activeConnectionCount == 0 }
     }
 
     @Test func stalledRangeRequestsAreClosed() async throws {
@@ -349,13 +349,13 @@ import Testing
         repeat { received = recv(fd, &response, response.count, 0) } while received > 0
         // The deadline also covers a read task that has not yet been scheduled under load.
         #expect(received == 0)
-        await expectEventually(timeout: 5) { server.activeConnectionCount == 0 }
+        await expectEventually { server.activeConnectionCount == 0 }
     }
 
     private static func openSocket(port: UInt16) throws -> Int32 {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { throw POSIXError(.EIO) }
-        var timeout = timeval(tv_sec: 5, tv_usec: 0)
+        var timeout = timeval(tv_sec: 60, tv_usec: 0)
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         var address = sockaddr_in()
         address.sin_family = sa_family_t(AF_INET)
@@ -397,7 +397,7 @@ import Testing
         #expect(Self.canConnect(family: AF_INET, address: "127.0.0.1", port: f.port))
         f.stop()
         // Cancelling is asynchronous: give it a moment.
-        await expectEventually(timeout: 5) { !Self.canConnect(family: AF_INET, address: "127.0.0.1", port: f.port) }
+        await expectEventually { !Self.canConnect(family: AF_INET, address: "127.0.0.1", port: f.port) }
     }
 
     static func canConnect(family: Int32, address: String, port: UInt16) -> Bool {

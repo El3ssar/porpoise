@@ -99,10 +99,7 @@ import Testing
         defer { NotificationCenter.default.removeObserver(token) }
         #expect(fixture.accounts.ancestors(of: nested) == [root])
         let folder = OneDriveLocation(accountID: uuid, itemID: "FIXTURE!folder", driveID: FakeGraphServer.drive).url
-        let deadline = Date().addingTimeInterval(10)
-        while fixture.accounts.ancestors(of: nested) != [root, folder] || notices < 2, Date() < deadline {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
+        await expectEventually { fixture.accounts.ancestors(of: nested) == [root, folder] && notices >= 2 }
         #expect(fixture.accounts.ancestors(of: nested) == [root, folder])
         #expect(notices >= 2)
     }

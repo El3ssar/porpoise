@@ -49,7 +49,7 @@ import Testing
     /// The chain of a pasted link, once its parents are read: empty first (never guessed) unless they were read before.
     func chain(_ backend: DriveCloudBackend, _ url: URL, readBefore: Bool = false) async throws -> [String] {
         if !readBefore { #expect(backend.ancestors(of: url).isEmpty) }
-        try #require(await eventually(20) { !backend.ancestors(of: url).isEmpty })
+        try #require(await eventually { !backend.ancestors(of: url).isEmpty })
         return backend.ancestors(of: url).map { u in
             let c = URLComponents(url: u, resolvingAgainstBaseURL: false)
             return (c?.percentEncodedPath ?? "") + (c?.percentEncodedQuery.map { "?" + $0 } ?? "")
@@ -91,7 +91,7 @@ import Testing
             let ancestors = backend.ancestors(of: link)
             let tree = RemoteFolderTree(url: ancestors[0])
             tree.reveal(ancestors + [link])
-            try #require(await eventually(20) { tree.selected != nil }, "\(item)")
+            try #require(await eventually { tree.selected != nil }, "\(item)")
             let shown = tree.selected.flatMap { tree.path(to: $0.url) }?.dropFirst().map(\.name)
             #expect(shown == names, "\(item)")
         }

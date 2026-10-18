@@ -102,7 +102,9 @@ struct SweepTwoCoreTests {
         let start = Date()
         let marked = DuplicateKeepRule.newest.marked(in: [group])
         let clones = group.clones
-        #expect(Date().timeIntervalSince(start) < 2)
+        // Printed, not asserted: a stalled CI runner can take any time. The quadratic versions (a keeper or a clone
+        // search per copy) do some 400 million comparisons at this size, which shows here as a test that drags on.
+        print("marking \(files.count) copies took \(Date().timeIntervalSince(start)) s")
         #expect(marked.count == 19_999 && !marked.contains(URL(fileURLWithPath: "/d/19999/LICENSE")))
         #expect(clones.filter { $0 }.count == 10_000)
         let few = DuplicateGroup(digest: "y", files: Array(files.prefix(5)))

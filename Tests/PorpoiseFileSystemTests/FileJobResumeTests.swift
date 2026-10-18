@@ -43,13 +43,12 @@ struct FileJobResumeTests {
         return done
     }
 
-    /// A job that never gets where the test waits for fails that test, quickly, instead of holding a pool thread.
+    /// A job that never gets where the test waits for fails that test instead of holding a pool thread: the wait
+    /// returns (the known issue is its recorded failure) rather than blocking for good.
     @Test func aWaitThatNeverEndsFailsInsteadOfHanging() {
-        let start = Date()
         withKnownIssue {
             try wait(for: DispatchSemaphore(value: 0), "never signalled", seconds: 0.2)
         }
-        #expect(Date().timeIntervalSince(start) < 10)
     }
 
     @Test func interruptedThenResumedCopyIsIdentical() throws {
@@ -219,6 +218,9 @@ struct FileJobResumeTests {
         _ = try job.run()
         let seconds = ProcessInfo.processInfo.systemUptime - started
         #expect(job.errors.isEmpty)
+        // An item shows only from a progress publish, and publishes are at least `publishInterval` (0.25 s) apart,
+        // so a run of `seconds` shows at most 4 per second plus one, each hidden once. The bound grows with the
+        // measured time, so a stalled machine loosens it and can't fail it; a show per file (1000 events) would.
         #expect(events <= 2 + 8 * Int(ceil(seconds)))
     }
 

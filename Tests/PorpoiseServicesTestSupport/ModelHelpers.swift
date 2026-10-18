@@ -7,9 +7,9 @@ import Testing
 
 extension DirectoryModel {
     /// A model of `url`, set up by `setUp` and loaded (the test fails when it isn't within `timeout` seconds).
-    @MainActor public static func loaded(_ url: URL, timeout: TimeInterval = 10, _ setUp: (DirectoryModel) -> Void = { _ in }) async throws
-        -> DirectoryModel
-    {
+    @MainActor public static func loaded(
+        _ url: URL, timeout: TimeInterval = eventualTimeout, _ setUp: (DirectoryModel) -> Void = { _ in }
+    ) async throws -> DirectoryModel {
         let m = DirectoryModel(location: url)
         setUp(m)
         m.reload()
@@ -21,10 +21,11 @@ extension DirectoryModel {
     public var rowNames: [String] { rows.map(\.item.name) }
 }
 
-/// Holds the Spotlight queue until the returned function is called (a Spotlight that never answers), at most 30 s.
+/// Holds the Spotlight queue until the returned function is called (a Spotlight that never answers), at most 300 s.
 public func stallSpotlight() -> () -> Void {
     let release = DispatchSemaphore(value: 0)
-    SpotlightQuery.queue.addOperation { _ = release.wait(timeout: .now() + 30) }
+    // The fallback only frees the queue if a test never resumes it; it must outlast any stall of a slow runner.
+    SpotlightQuery.queue.addOperation { _ = release.wait(timeout: .now() + 300) }
     return { release.signal() }
 }
 
@@ -50,7 +51,7 @@ extension DriveLocation {
 
 extension SearchIndex {
     /// Waits until the index has built (the test fails, with its status, when it hasn't within `timeout` seconds).
-    @MainActor public func waitUntilReady(timeout: TimeInterval = 30) async throws {
+    @MainActor public func waitUntilReady(timeout: TimeInterval = eventualTimeout) async throws {
         let ready = await eventually(timeout) { !self.status.building && self.status.updated != nil }
         try #require(ready, "Index startup: \(status)")
     }

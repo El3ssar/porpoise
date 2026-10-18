@@ -143,9 +143,10 @@ import Testing
         ])
         let file = try await client.metadata("id:large")
         // How many ranges are downloaded at once, not how long they took: a shared runner's timing says little (W-127).
+        // For the parallel download the fake holds each range until two are in flight (a serial client gets 1).
         let start = Date(); let single = try await client.download(file, maximumConnections: 1); let singleTime = Date().timeIntervalSince(start)
         #expect(try await server.stats()["maxConcurrentDownloads"] as? Int == 1)
-        try await server.configure(["resetConcurrency": true])
+        try await server.configure(["resetConcurrency": true, "holdDownloads": 2])
         let parallelStart = Date(); let parallel = try await client.download(file); let parallelTime = Date().timeIntervalSince(parallelStart)
         #expect(try await server.stats()["maxConcurrentDownloads"] as? Int ?? 0 >= 2)
         #expect(try DropboxContentHash.hash(single) == DropboxContentHash.hash(parallel))
@@ -210,12 +211,12 @@ import Testing
         let start = Date(); let preview = try client.streamingPreview(item, contentType: "text/plain")
         defer { preview.stop() }
         let instant = Date().timeIntervalSince(start)
+        // Created at once: nothing was downloaded to make it.
         #expect(try await server.requests().allSatisfy { $0["route"] as? String != "files/download" })
         var request = URLRequest(url: preview.url); request.setValue("bytes=0-4", forHTTPHeaderField: "Range")
         let readStart = Date(); let (bytes, response) = try await URLSession.shared.data(for: request)
         let first = Date().timeIntervalSince(readStart)
         #expect(bytes == Data("Hello".utf8) && (response as? HTTPURLResponse)?.statusCode == 206)
-        #expect(instant < 0.25)
         let thumbnail = try await client.thumbnail(item)
         #expect(try Data(contentsOf: thumbnail) == Data("fixture-thumbnail".utf8))
         #expect(try await client.thumbnail(item) == thumbnail)

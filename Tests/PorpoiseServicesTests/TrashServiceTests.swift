@@ -32,7 +32,7 @@ import Testing
         let service = TrashService()
         service.record([(s.path("original/exists"), existing), (s.path("original/gone"), missing)])
         service.record([])
-        #expect(await eventually(5) { service.originalLocation(of: missing) == nil })
+        #expect(await eventually { service.originalLocation(of: missing) == nil })
         #expect(service.originalLocation(of: existing) == s.path("original/exists"))
         service.flush()
         #expect((Settings.store.dictionary(forKey: "trashOrigins") as? [String: String])?.count == 1)

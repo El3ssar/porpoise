@@ -13,3 +13,8 @@ public func offThePool<T>(_ work: @escaping () throws -> T) async throws -> T {
 public func offThePool<T>(_ work: @escaping () -> T) async -> T {
     await withCheckedContinuation { c in Thread { c.resume(returning: work()) }.start() }
 }
+
+/// Whether this process was launched with a cooperative pool of one thread per priority (scripts/ci-like.sh sets
+/// `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`). Read once: libdispatch reads the variable at launch, and the tests that
+/// start ffmpeg take it out of the environment so that ffmpeg doesn't inherit it.
+public let cooperativePoolIsStrict = ProcessInfo.processInfo.environment["LIBDISPATCH_COOPERATIVE_POOL_STRICT"] == "1"

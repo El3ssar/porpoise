@@ -22,7 +22,7 @@ import Testing
         }
     }
 
-    @Test(.isolatedSettings, .timeLimit(.minutes(1))) @MainActor func folderPreviewNeverListsWhileDrawing() async throws {
+    @Test(.isolatedSettings, .timeLimit(.minutes(5))) @MainActor func folderPreviewNeverListsWhileDrawing() async throws {
         _ = NSApplication.shared
         let scratch = try Scratch(), fm = FileManager.default
         let folderURL = scratch.url.appendingPathComponent("photos", isDirectory: true)
@@ -51,7 +51,7 @@ import Testing
         await expectEventually { ready == 2 }
     }
 
-    @Test(.isolatedSettings, .timeLimit(.minutes(2))) @MainActor func appsGridTilesStayWithinTheirByteBudget() throws {
+    @Test(.isolatedSettings, .timeLimit(.minutes(5))) @MainActor func appsGridTilesStayWithinTheirByteBudget() throws {
         _ = NSApplication.shared
         let scratch = try Scratch()
         let model = DirectoryModel(location: scratch.url, prefetchFolders: false)

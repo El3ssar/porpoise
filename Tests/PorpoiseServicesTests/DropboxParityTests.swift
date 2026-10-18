@@ -78,19 +78,18 @@ import Testing
     }
 
     // B4: a paused transfer stops waiting when it is interrupted (quit, sleep), as a Drive one does.
-    @Test func pausedThenInterruptedTransfersStop() async throws {
+    @Test(.timeLimit(.minutes(5))) func pausedThenInterruptedTransfersStop() async throws {
         let server = try FakeDropboxServer()
         let provider = DropboxProvider(client: try server.client())
         let control = Shell.TransferControl(isPaused: { true }, isCancelled: { false }, isInterrupted: { true })
         let context = Shell.withTransferControl(control) { provider.transferContext() }
-        let started = Date()
+        // Still paused, for good: the checkpoint returns only because it doesn't wait out a pause once interrupted.
         var thrown: Error?
         do { try await context.checkpoint() } catch { thrown = error }
         #expect(
             {
                 if case .interrupted = thrown as? FileOperationError { return true }; return false
             }())
-        #expect(Date().timeIntervalSince(started) < 2)
         // The tools' own check too.
         #expect({ do { try control.check(); return false } catch FileOperationError.interrupted { return true } catch { return false } }())
     }
@@ -116,9 +115,7 @@ import Testing
         #expect(error == nil, "signing out failed: \(String(describing: error))")
         #expect(fixture.store.accounts.isEmpty)
         // The revoke goes on its own, after signing out here has finished.
-        let deadline = Date().addingTimeInterval(10)
-        while try await fixture.server.stats()["revoked"] as? Int != 1, Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
-        #expect(try await fixture.server.stats()["revoked"] as? Int == 1)
+        try await expectEventually { try await fixture.server.stats()["revoked"] as? Int == 1 }
         let revoke = try await fixture.server.requests().filter { $0["route"] as? String == "auth/token/revoke" }
         #expect(revoke.count == 1 && revoke.first?["auth"] as? Bool == true)
     }
@@ -133,10 +130,6 @@ import Testing
         }
         #expect(error == nil, "signing out failed: \(String(describing: error))")
         #expect(fixture.store.accounts.isEmpty && fixture.store.client(for: uuid) == nil)
-        let deadline = Date().addingTimeInterval(10)
-        while try await fixture.server.requests().contains(where: { $0["route"] as? String == "auth/token/revoke" }) == false, Date() < deadline {
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
-        #expect(try await fixture.server.requests().contains { $0["route"] as? String == "auth/token/revoke" })
+        try await expectEventually { try await fixture.server.requests().contains { $0["route"] as? String == "auth/token/revoke" } }
     }
 }

@@ -57,9 +57,12 @@ class Handler(BaseHTTPRequestHandler):
             while not self.server.fixtures.pop("resumeDownload", False) and time.monotonic() < deadline:
                 time.sleep(0.01)
             data = data[pause_after:]
-        if content_type == "application/octet-stream" and (self.server.bandwidth_mbps or self.server.connection_mbps):
+        capped = "mediaByteCap" in self.server.fixtures and "alt=media" in self.path
+        if content_type == "application/octet-stream" and (self.server.bandwidth_mbps or self.server.connection_mbps or capped):
             started = time.monotonic()
             for offset in range(0, len(data), 256 * 1024):
+                if capped:
+                    self.within_media_cap(min(256 * 1024, len(data) - offset))
                 self.wfile.write(data[offset:offset + 256 * 1024])
                 self.wfile.flush()
                 account(min(256 * 1024, len(data) - offset))
@@ -76,6 +79,18 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.wfile.write(data)
             account(len(data))
+
+    def within_media_cap(self, count):
+        """`__control {"mediaByteCap": n}`: media bytes past the first n wait until `{"mediaByteCap": null}` lifts the
+        cap (120 s at most), so a test sees what a client does with only n bytes, however slow the machine."""
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            with self.server.profile_lock:
+                cap = self.server.fixtures.get("mediaByteCap")
+                if cap is None or self.server.media_bytes_capped + count <= cap:
+                    self.server.media_bytes_capped += count
+                    return
+            time.sleep(0.01)
 
     def mutation_fault(self):
         faults = self.server.fixtures.get("mutationFaults", [])
@@ -608,6 +623,7 @@ def main():
     server.profile_lock = Lock()
     server.active_media = 0
     server.max_active_media = 0
+    server.media_bytes_capped = 0
     server.active_requests = 0
     server.max_active_requests = 0
     server.hold = Condition(server.profile_lock)

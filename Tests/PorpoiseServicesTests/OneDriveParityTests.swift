@@ -59,9 +59,7 @@ import Testing
         let client = try #require(fixture.store.client(for: id))
         _ = try await client.tokens.disconnect()
         await #expect(throws: OneDriveError.reconnect) { try await client.metadata("FIXTURE!hello") }
-        let deadline = Date().addingTimeInterval(5)
-        while fixture.accounts.accounts.first?.status != .signInNeeded, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
-        #expect(fixture.accounts.accounts.first?.status == .signInNeeded)
+        await expectEventually { fixture.accounts.accounts.first?.status == .signInNeeded }
     }
 
     // "Already connected" names the account that matched, not the first one.
@@ -79,19 +77,18 @@ import Testing
     }
 
     // A paused transfer stops waiting when it is interrupted (quit, sleep), as a Drive one does.
-    @Test func pausedThenInterruptedTransfersStop() async throws {
+    @Test(.timeLimit(.minutes(5))) func pausedThenInterruptedTransfersStop() async throws {
         let server = try FakeGraphServer()
         let provider = OneDriveProvider(client: try server.client())
         let control = Shell.TransferControl(isPaused: { true }, isCancelled: { false }, isInterrupted: { true })
         let context = Shell.withTransferControl(control) { provider.transferContext() }
-        let started = Date()
+        // Still paused, for good: the checkpoint returns only because it doesn't wait out a pause once interrupted.
         var thrown: Error?
         do { try await context.checkpoint() } catch { thrown = error }
         #expect(
             {
                 if case .interrupted = thrown as? FileOperationError { return true }; return false
             }())
-        #expect(Date().timeIntervalSince(started) < 2)
     }
 
     // The account shows its quota, from the drive, as Drive's and Dropbox's do.
@@ -99,8 +96,7 @@ import Testing
         let fixture = try Fixture(); defer { fixture.cleanup() }
         try await fixture.server.configure(["quota": ["used": 123, "total": 456]])
         let account = try await fixture.connect().get()
-        let deadline = Date().addingTimeInterval(5)
-        while fixture.accounts.accounts.first?.quotaTotal == nil, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        await expectEventually { fixture.accounts.accounts.first?.quotaTotal != nil }
         let shown = try #require(fixture.accounts.accounts.first { $0.id == account.id })
         #expect(shown.quotaUsed == 123 && shown.quotaTotal == 456 && shown.provider == .oneDrive)
     }

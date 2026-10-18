@@ -22,10 +22,12 @@ public struct CloudAuthorizedClient: Sendable {
     let classify: Classify
     let attempts: Int
     let wait: @Sendable (TimeInterval) async throws -> Void
+    /// How a pause before sending again is spent: sleeping. Tests pass a recorder to see each pause without waiting.
+    public static let defaultWait: @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }
 
     public init(
         transport: CloudHTTPTransport, token: @escaping Token, classify: @escaping Classify, attempts: Int = 5,
-        wait: @escaping @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }
+        wait: @escaping @Sendable (TimeInterval) async throws -> Void = CloudAuthorizedClient.defaultWait
     ) {
         self.transport = transport; self.token = token; self.classify = classify; self.attempts = max(1, attempts); self.wait = wait
     }

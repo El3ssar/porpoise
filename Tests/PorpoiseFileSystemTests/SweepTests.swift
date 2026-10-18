@@ -23,7 +23,7 @@ import Testing
         defer { watcher.stop() }
         Thread.sleep(forTimeInterval: 0.3)
         try Data("x".utf8).write(to: dir.appendingPathComponent("new.txt"))
-        let got = waitUntil(30) {  // FSEvents can take seconds on a busy machine
+        let got = waitUntil(eventualTimeout) {  // FSEvents can take seconds on a busy machine
             lock.lock(); defer { lock.unlock() }; return !hits.isEmpty
         }
         #expect(got)

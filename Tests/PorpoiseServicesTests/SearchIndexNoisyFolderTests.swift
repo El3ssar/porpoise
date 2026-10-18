@@ -37,7 +37,7 @@ import Testing
         // Changes in them are dropped as they arrive.
         try s.file("root/app/.build/debug/fresh-object.o")
         try s.file("root/app/Sources/fresh-source.swift")
-        #expect(await eventually(30) { index.search("fresh-source", scope: s.path("root"))?.paths.count == 1 })
+        #expect(await eventually { index.search("fresh-source", scope: s.path("root"))?.paths.count == 1 })
         #expect(index.search("fresh-object", scope: s.path("root"))?.paths.isEmpty == true)
         config.excludeBuildOutput = false
         index.configure(config)
@@ -100,7 +100,7 @@ import Testing
         index.configure(config)
         try await index.waitUntilReady()
         let manifest = s.path("store/manifest.json")
-        #expect(await eventually(30) { FileManager.default.fileExists(atPath: manifest.path) })
+        #expect(await eventually { FileManager.default.fileExists(atPath: manifest.path) })
         index.configure(IndexConfiguration())
         // As 0.8.5 wrote it: no version, no new switches, the build folder indexed.
         var json = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: manifest)) as? [String: Any])

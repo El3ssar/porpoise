@@ -29,9 +29,7 @@ import Testing
         }
         // Waited for off the cooperative pool: blocking one of its few threads here (CI's runner has 3) held up every
         // other test in the run, and with them whatever was keeping the workers busy.
-        let finished = await withCheckedContinuation { c in
-            Thread { c.resume(returning: group.wait(timeout: .now() + 60) == .success) }.start()
-        }
+        let finished = await offThePool { group.wait(timeout: .now() + eventualTimeout) == .success }
         try #require(finished, "scans never finished: \(lock.withLock { counts.count }) of \(callers)")
         #expect(counts == Array(repeating: 1 + 4 + 20, count: callers))
     }

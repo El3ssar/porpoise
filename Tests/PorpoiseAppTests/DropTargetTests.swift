@@ -110,7 +110,7 @@ private final class TabDrops: TabBarDelegate {
         var opened = 0
         loader.hover(1) { opened += 1 }
         loader.hover(1) { opened += 1 }  // updates while resting leave the pause alone
-        let end = Date().addingTimeInterval(2)
+        let end = Date().addingTimeInterval(eventualTimeout)
         while opened == 0 && Date() < end { RunLoop.main.run(mode: .eventTracking, before: Date().addingTimeInterval(0.01)) }
         #expect(opened == 1)
         loader.hover(2) { opened += 10 }

@@ -127,20 +127,20 @@ final class RemoteTransferCoverageTests {
         c.run(.copy, [small, big], to: remoteFolder(dir), window: nil)
         let activity = try #require(c.activities.last)
         #expect(
-            await eventually(20) {
+            await eventually {
                 let names = (try? self.fm.contentsOfDirectory(atPath: dir.path)) ?? []
                 return self.fm.fileExists(atPath: dir.appendingPathComponent("first.txt").path)
                     && names.contains { $0.hasPrefix(".porpoise-transfer-") }
             })
         c.pause(activity)
-        await expectEventually(timeout: 20) { activity.state == .paused }
+        await expectEventually { activity.state == .paused }
         let first = JobJournal.Fingerprint(dir.appendingPathComponent("first.txt"))
         c.cancel(activity)
-        #expect(await eventually(20) { activity.state == .cancelled })
+        #expect(await eventually { activity.state == .cancelled })
         #expect(try fm.contentsOfDirectory(atPath: dir.path) == ["first.txt"])
         c.resume(activity)
         let resumed = try #require(c.activities.last)
-        #expect(await eventually(30) { resumed.state.isEnded })
+        #expect(await eventually { resumed.state.isEnded })
         #expect(resumed.state == .completed)
         #expect(JobJournal.Fingerprint(dir.appendingPathComponent("first.txt")) == first)
         #expect(JobJournal.Fingerprint(dir.appendingPathComponent("large.bin"))?.size == 256 << 20)

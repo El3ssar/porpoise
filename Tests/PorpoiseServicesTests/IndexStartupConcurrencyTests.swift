@@ -49,13 +49,14 @@ import Testing
             }
             configurations.append(config)
         }
-        try #require(await eventually(30) { indexes.allSatisfy { $0.status.message == "Index queued for crawl" } })
+        try #require(await eventually { indexes.allSatisfy { $0.status.message == "Index queued for crawl" } })
         // No crawl job can run. A control queue that joins those jobs can never start this new generation.
         for (index, config) in zip(indexes, configurations) { index.configure(config) }
-        try #require(await eventually(30) { indexes.allSatisfy { $0.status.message == "Index queued for crawl" } })
+        try #require(await eventually { indexes.allSatisfy { $0.status.message == "Index queued for crawl" } })
         #expect(indexes.allSatisfy { $0.status.building && $0.status.updated == nil })
         workers.isSuspended = false
-        try #require(await eventually(60) { indexes.allSatisfy { !$0.status.building && $0.status.updated != nil } })
+        // Forty crawls, one after another on one queue: on CI's busy runner that took over a minute.
+        try #require(await eventually(300) { indexes.allSatisfy { !$0.status.building && $0.status.updated != nil } })
         for (n, index) in indexes.enumerated() {
             for root in configurations[n].roots {
                 #expect(index.search("new-key", scope: URL(fileURLWithPath: root))?.paths.count == 1)
@@ -76,16 +77,16 @@ import Testing
         }
         var config = IndexConfiguration(); config.enabled = true; config.roots = [root.path]
         index.configure(config)
-        try #require(await eventually(30) { index.status.message == "Index queued for crawl" })
+        try #require(await eventually { index.status.message == "Index queued for crawl" })
         try scratch.file("root/during-crawl.txt", "new")
         // A real FSEvent is consumed while the crawl cannot start. It must neither publish an empty index nor
         // advance the saved cursor past unapplied changes.
-        try #require(await eventually(30) { index.status.pendingChanges > 0 })
+        try #require(await eventually { index.status.pendingChanges > 0 })
         #expect(index.status.building && index.status.updated == nil)
         #expect(index.search("during-crawl", scope: root) == nil)
         #expect(!FileManager.default.fileExists(atPath: scratch.path("store/manifest.json").path))
         workers.isSuspended = false
-        try #require(await eventually(30) { !index.status.building && index.status.updated != nil })
+        try #require(await eventually { !index.status.building && index.status.updated != nil })
         #expect(index.status.pendingChanges == 0)
         #expect(index.search("during-crawl", scope: root)?.paths.count == 1)
     }

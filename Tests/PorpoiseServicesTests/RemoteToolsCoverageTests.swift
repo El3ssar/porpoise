@@ -64,7 +64,7 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
 
     /// The install's message (nil when it worked).
     private func install(verifying verify: @escaping (URL) -> Bool = { _ in true }) async throws -> String? {
-        try await awaitCallback(timeout: 30) { c in AndroidTools.install(verifying: verify) { c.resume(returning: $0) } }
+        try await awaitCallback { c in AndroidTools.install(verifying: verify) { c.resume(returning: $0) } }
     }
 
     @Test func installsTheDownloadedToolsAndPrefersThem() async throws {
@@ -80,7 +80,7 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         #expect(scratch.read("support/platform-tools/README") == "tools")
         #expect(!FileManager.default.fileExists(atPath: support.appendingPathComponent("platform-tools/old-file").path))
         // Nothing left of the staging folder (removed just after the callback is sent).
-        #expect(await eventually(10) { scratch.listing("support") == ["platform-tools"] })
+        #expect(await eventually { scratch.listing("support") == ["platform-tools"] })
         // Porpoise's own copy comes first.
         #expect(AndroidTools.adbPath == adb.path)
         #expect(AndroidTools.isInstalled)
@@ -94,7 +94,7 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         let result = try await install(verifying: AndroidTools.isTrustedADB)
         #expect(result?.contains("could not be verified") == true)
         #expect(scratch.read("support/platform-tools/old-file") == "keep")
-        #expect(await eventually(10) { scratch.listing("support") == ["platform-tools"] })
+        #expect(await eventually { scratch.listing("support") == ["platform-tools"] })
         #expect(!AndroidTools.isTrustedADB(URL(fileURLWithPath: "/usr/bin/true")))
         #expect(!AndroidTools.isTrustedADB(scratch.path("missing")))
     }
@@ -111,7 +111,7 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         try serve("noadb.zip")
         let result = try await install()
         #expect(result == "The downloaded archive could not be unpacked.")
-        #expect(await eventually(10) { scratch.listing("support").isEmpty })
+        #expect(await eventually { scratch.listing("support").isEmpty })
     }
 
     @Test func anArchiveThatIsNotAZipIsNotInstalled() async throws {
@@ -119,7 +119,7 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         try serve("broken.zip")
         let result = try await install()
         #expect(result == "The downloaded archive could not be unpacked.")
-        #expect(await eventually(10) { scratch.listing("support").isEmpty })
+        #expect(await eventually { scratch.listing("support").isEmpty })
     }
 
     @Test func aFolderThatCannotBeMadeIsReported() async throws {
@@ -158,7 +158,7 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         #expect(scratch.read("adb.log") == nil)
 
         AndroidTools.startedServer = true
-        let acknowledged: Bool = try await awaitCallback(timeout: 30) { c in
+        let acknowledged: Bool = try await awaitCallback { c in
             source.setEventHandler {
                 var byte: UInt8 = 0
                 if read(fd, &byte, 1) == 1 { c.resume(returning: true) }
@@ -170,16 +170,20 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         #expect(contents == "kill-server\n", "adb.log: \(String(reflecting: contents))")
     }
 
-    @Test func quittingDoesNotWaitForAHangingADB() throws {
+    @Test func quittingDoesNotWaitForAHangingADB() async throws {
         _ = try scratch.folder("support/platform-tools")
-        _ = try script(scratch, "support/platform-tools/adb", "exec /bin/sleep 30")
+        // An adb that never ends by itself: quitting returning at all shows it didn't wait for it.
+        _ = try script(scratch, "support/platform-tools/adb", "exec /bin/sleep 86400")
         AndroidTools.willUseServer()
         let saved = AndroidTools.startedServer
         defer { AndroidTools.startedServer = saved }
         AndroidTools.startedServer = true
-        let start = Date()
-        AndroidTools.stopServerIfOurs()
-        #expect(Date().timeIntervalSince(start) < 10)
+        try await awaitCallback("quitting waited for the hanging adb") { (c: Callback<Void>) in
+            Thread {
+                AndroidTools.stopServerIfOurs()
+                c.resume()
+            }.start()
+        }
     }
 
     @Test func anADBThatCannotRunIsIgnored() throws {

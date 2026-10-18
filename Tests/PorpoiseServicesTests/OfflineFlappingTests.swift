@@ -52,16 +52,23 @@ import Testing
             let status = backend.accounts.first { $0.id == account.id }?.status ?? .ok
             if status != shown.last ?? .ok { shown.append(status) }
         }
+        // The status's time moves on only as the test says, 100 ms a request: a stall of the machine between two requests
+        // can't pass for the network having come back (or for a long wait while it's down).
+        var now = Date()
+        store.status.clock = { now }
         // Down for 300 ms, up for 100 ms, over and over for about 3 s, reading folders all the while.
         for n in 0..<30 {
             try await server.control(["offline": n % 4 != 3])
             _ = try? await client.list(DriveLocation(accountID: id))
-            try await Task.sleep(for: .milliseconds(100))
+            try await Task.sleep(for: .milliseconds(100))  // the result reaches the status (on the main actor) first
+            now += 0.1
         }
         try await server.control(["offline": false])
-        for _ in 0..<50 where shown.last != .ok {
+        let end = Date().addingTimeInterval(eventualTimeout)
+        while shown.last != .ok && Date() < end {
             _ = try? await client.list(DriveLocation(accountID: id))
             try await Task.sleep(for: .milliseconds(100))
+            now += 0.1
         }
         #expect(shown == [.offline, .ok])
     }

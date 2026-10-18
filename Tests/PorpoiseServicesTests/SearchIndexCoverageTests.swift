@@ -11,7 +11,7 @@ import Testing
 /// Status strings, readiness, saved settings, unreadable entries and the refresh paths that re-walk a whole root.
 @MainActor struct SearchIndexCoverageTests {
     /// Crawls and FSEvents can take seconds in a full parallel run: waits end as soon as their condition holds.
-    static let liveWait: TimeInterval = 30
+    static let liveWait: TimeInterval = eventualTimeout
 
     /// A private settings domain, removed when the test ends.
     final class Defaults {

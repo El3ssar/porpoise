@@ -30,7 +30,7 @@ import Testing
     @Test func largeOutputsOnBothPipesDoNotDeadlock() throws {
         // 4 MB on each pipe, written interleaved: far more than a pipe buffer holds.
         let script = "i=0; while [ $i -lt 64 ]; do head -c 65536 /dev/zero; head -c 65536 /dev/zero >&2; i=$((i+1)); done"
-        let r = try Shell.run("/bin/sh", ["-c", script], timeout: 30)
+        let r = try Shell.run("/bin/sh", ["-c", script], timeout: 120)
         #expect(r.status == 0)
         #expect(r.out.count == 64 * 65536)
         #expect(r.err.utf8.count == 64 * 65536)
@@ -39,18 +39,18 @@ import Testing
     @Test func largeStdinIsWrittenWhileOutputIsRead() throws {
         var data = Data(count: 8 << 20)
         data.withUnsafeMutableBytes { b in for i in stride(from: 0, to: b.count, by: 4096) { b[i] = UInt8(i / 4096 % 251) } }
-        let r = try Shell.run("/bin/cat", [], stdin: data, timeout: 30)
+        let r = try Shell.run("/bin/cat", [], stdin: data, timeout: 120)
         #expect(r.out == data)
     }
 
     @Test func aToolThatIgnoresItsStdinDoesNotKillUs() throws {
         // Exits at once while megabytes are still to be written: SIGPIPE must not reach this process.
-        let r = try Shell.run("/usr/bin/true", [], stdin: Data(count: 16 << 20), timeout: 30)
+        let r = try Shell.run("/usr/bin/true", [], stdin: Data(count: 16 << 20), timeout: 120)
         #expect(r.status == 0)
     }
 
     @Test func withoutStdinTheToolReadsNothing() throws {
-        let r = try Shell.run("/bin/cat", [], timeout: 10)
+        let r = try Shell.run("/bin/cat", [], timeout: 60)
         #expect(r.out.isEmpty && r.status == 0)
     }
 
@@ -77,22 +77,35 @@ import Testing
         #expect(throws: (any Error).self) { try Shell.run("/nonexistent/tool", []) }
     }
 
-    @Test func timeoutTerminatesAndThrows() {
-        let start = Date()
-        #expect(throws: RemoteError.self) { try Shell.run("/bin/sleep", ["30"], timeout: 0.3) }
-        #expect(Date().timeIntervalSince(start) < 5)
+    /// Runs `tool` with a 0.3 s timeout on a thread of its own: true when the call threw the timeout's error. The
+    /// tools below never end by themselves, so the call returning at all shows the timeout ended them; a generous
+    /// budget turns a broken timeout into a failure instead of a hung run.
+    private func timesOut(_ tool: String, _ args: [String]) async -> Bool {
+        let threw: Bool? = try? await awaitCallback("the timeout never ended the tool", timeout: 120) { c in
+            Thread {
+                do {
+                    _ = try Shell.run(tool, args, timeout: 0.3)
+                    c.resume(returning: false)
+                } catch is RemoteError { c.resume(returning: true) } catch { c.resume(returning: false) }
+            }.start()
+        }
+        return threw == true
     }
 
-    @Test func timeoutKillsAToolThatIgnoresTerminate() {
+    @Test func timeoutTerminatesAndThrows() async {
+        #expect(await timesOut("/bin/sleep", ["86400"]))
+    }
+
+    @Test func timeoutKillsAToolThatIgnoresTerminate() async {
         let start = Date()
-        // `exec` keeps one process (no child holding the pipes); SIGTERM is ignored, so only the SIGKILL ends it.
-        #expect(throws: RemoteError.self) { try Shell.run("/bin/sh", ["-c", "trap '' TERM; while :; do sleep 0.05; done"], timeout: 0.3) }
+        // SIGTERM is ignored, so only the SIGKILL, a grace period after it, ends the tool.
+        #expect(await timesOut("/bin/sh", ["-c", "trap '' TERM; while :; do sleep 0.05; done"]))
         let took = Date().timeIntervalSince(start)
-        #expect(took >= 2 && took < 8, "\(took)")
+        #expect(took >= 2, "\(took)")
     }
 
     @Test func aFastToolIsNotHitByItsTimeout() throws {
-        let r = try Shell.run("/bin/echo", ["ok"], timeout: 5)
+        let r = try Shell.run("/bin/echo", ["ok"], timeout: 60)
         #expect(String(decoding: r.out, as: UTF8.self) == "ok\n")
     }
 

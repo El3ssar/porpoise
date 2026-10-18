@@ -53,7 +53,7 @@ struct MemoryBudgetTests {
         }
         let last = "root/d0/sub/last-change-\(UUID().uuidString).txt"
         try s.file(last)
-        #expect(await eventually(30) { index.search("last-change", scope: s.path("root"))?.paths.count == 1 }, "\(index.status)")
+        #expect(await eventually { index.search("last-change", scope: s.path("root"))?.paths.count == 1 }, "\(index.status)")
         try await Task.sleep(nanoseconds: 1_000_000_000)
         let grown = Self.bytesInUse() - before
         // 6 000 changes to a 48 000-file tree: before W-125 malloc kept 79 MB more; since, 2 to 8 MB.
@@ -80,22 +80,24 @@ struct MemoryBudgetTests {
         // As FSEvents reports them: real paths (/private/var, not /var).
         let real = try #require(index.configuration.roots.first)
         let bursts = 50, perBurst = 1000, batch = 5
+        // CPU time of this thread, which takes the changes in (`receive` runs them on the caller): unlike the clock,
+        // it doesn't count the time a busy machine leaves the thread waiting for a core.
         var seconds: [Double] = []
         var settled = 0
         var event: UInt64 = 1
         for b in 0..<bursts {
             let paths = (0..<perBurst).map { real + "/d\(($0 + b) % 200)/f\(b)-\($0).txt" }
-            let start = DispatchTime.now().uptimeNanoseconds
+            let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             for first in stride(from: 0, to: perBurst, by: batch) {
                 index.receive(Array(paths[first..<first + batch]), event: event)
                 event += 1
             }
-            seconds.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1e9)
+            seconds.append(Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e9)
             if b == 9 { settled = Self.bytesInUse() }
         }
         // Ten bursts each, so that the occasional fold is counted in both.
         let early = seconds[2..<12].reduce(0, +) / 10, late = seconds[40..<50].reduce(0, +) / 10
-        #expect(late < early * 2, "a burst took \(early)s early in the stream and \(late)s late")
+        #expect(late < early * 2, "a burst took \(early) s of CPU early in the stream and \(late) s late")
         #expect(index.queuedPaths <= SearchIndex.Changes.foldLimit * 2, "\(index.queuedPaths) changed paths wait")
         let grown = Self.bytesInUse() - settled
         #expect(grown < 3 << 20, "malloc grew by \(grown >> 10) KB over the last 40 000 changes")

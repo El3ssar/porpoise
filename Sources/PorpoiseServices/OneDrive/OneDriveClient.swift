@@ -14,6 +14,8 @@ public final class OneDriveClient: @unchecked Sendable {
     public let journal: CloudJournal<OneDriveOperation>
     public let renditions: CloudRenditionCache
     public let directory: URL
+    /// How the pause before a retry is spent (`CloudAuthorizedClient.defaultWait`; tests record it instead).
+    let retryWait: @Sendable (TimeInterval) async throws -> Void
     let links = OneDriveLinks()
     private let lock = NSLock()
     private var offline = false
@@ -43,10 +45,10 @@ public final class OneDriveClient: @unchecked Sendable {
     }
     public init(
         accountID: UUID, configuration: OneDriveConfiguration, tokens: CloudOAuthSession, driveID: String, directory: URL,
-        http: CloudHTTPTransport = .init()
+        http: CloudHTTPTransport = .init(), retryWait: @escaping @Sendable (TimeInterval) async throws -> Void = CloudAuthorizedClient.defaultWait
     ) {
         self.accountID = accountID; self.configuration = configuration; self.tokens = tokens; self.driveID = driveID
-        self.directory = directory; self.http = http
+        self.directory = directory; self.http = http; self.retryWait = retryWait
         let scoped = directory.appendingPathComponent(cloudObjectKey(driveID))
         metadataCache = CloudMetadataCache(directory: scoped.appendingPathComponent("Metadata"))
         journal = CloudJournal(folder: scoped.appendingPathComponent("Operations"))
@@ -82,7 +84,7 @@ public final class OneDriveClient: @unchecked Sendable {
             transport: http,
             token: { [tokens] rejected in
                 do { return try await tokens.accessToken(rejectedToken: rejected) } catch is CloudOAuthSessionError { throw OneDriveError.reconnect }
-            }, classify: { body, response, idempotent in Self.classify(body, response, idempotent: idempotent) })
+            }, classify: { body, response, idempotent in Self.classify(body, response, idempotent: idempotent) }, wait: retryWait)
     }
     /// Throttled (429) and unavailable (503, with Retry-After) are sent again; another server error only for reads.
     /// https://learn.microsoft.com/graph/throttling
@@ -199,7 +201,8 @@ public final class OneDriveClient: @unchecked Sendable {
     public func driveClient(_ driveID: String) -> OneDriveClient {
         guard driveID != self.driveID else { return self }
         let client = OneDriveClient(
-            accountID: accountID, configuration: configuration, tokens: tokens, driveID: driveID, directory: directory, http: http)
+            accountID: accountID, configuration: configuration, tokens: tokens, driveID: driveID, directory: directory, http: http,
+            retryWait: retryWait)
         client.onReachability = onReachability; client.onFreshness = onFreshness; return client
     }
     /// A 256-pixel rendition, fetched from the pre-authenticated URL Graph names, without the bearer.

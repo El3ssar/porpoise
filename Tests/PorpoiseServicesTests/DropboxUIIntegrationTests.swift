@@ -41,7 +41,7 @@ import Testing
     @Test @MainActor func quotaFlowsThroughAccountSidebarAndRefreshes() async throws {
         let fixture = try DropboxUIFixture(); defer { fixture.cleanup() }
         let account = try await fixture.connect()
-        await expectEventually(timeout: 5) { fixture.accounts.accounts.first?.quotaTotal == 15_000_000_000 }
+        await expectEventually { fixture.accounts.accounts.first?.quotaTotal == 15_000_000_000 }
         #expect(fixture.accounts.accounts.first?.quotaUsed == 4_000_000_000)
         let section = try #require(fixture.accounts.sections().first)
         #expect(section.quotaUsed == 4_000_000_000 && section.quotaTotal == 15_000_000_000)
@@ -62,7 +62,7 @@ import Testing
             ]
         ])
         fixture.backend.checkForChanges(account.id)
-        await expectEventually(timeout: 5) { fixture.accounts.accounts.first?.quotaUsed == 900 }
+        await expectEventually { fixture.accounts.accounts.first?.quotaUsed == 900 }
         #expect(fixture.accounts.accounts.first?.quotaTotal == 2000)
         #expect(fixture.accounts.sections().first?.quotaUsed == 900)
         #expect(changes > 0)
@@ -70,7 +70,7 @@ import Testing
         fixture.backend.setActive(false)
         try await fixture.server.configure(["spaceUsage": ["used": 250, "allocation": [".tag": "future"]]])
         fixture.backend.setActive(true)
-        await expectEventually(timeout: 5) { fixture.accounts.accounts.first?.quotaUsed == 250 }
+        await expectEventually { fixture.accounts.accounts.first?.quotaUsed == 250 }
         #expect(fixture.accounts.accounts.first?.quotaTotal == nil)
         #expect(fixture.accounts.sections().first?.entries.first?.isVolume == false)
         let requests = try await fixture.server.requests().filter { $0["route"] as? String == "users/get_space_usage" }
@@ -228,7 +228,7 @@ import Testing
             _ = facade.keep(true, [file.url]) { continuation.resume(returning: $0) }
         }
         #expect(kept == nil)
-        await expectEventually(timeout: 5) { facade.usage(account: account.id).kept == item.size }
+        await expectEventually { facade.usage(account: account.id).kept == item.size }
         #expect(facade.state(for: file.url) == .local)
         let wiped: Error? = try await awaitCallback { continuation in facade.wipe(account: account.id) { continuation.resume(returning: $0) } }
         #expect(wiped == nil && facade.usage(account: account.id).kept == 0)
@@ -256,20 +256,20 @@ import Testing
         let entry = try #require(editing.entries.first); let local = try #require(opened)
         #expect(entry.provider == .dropbox && entry.detail.contains("Dropbox") && editing.contains(entry.id))
         try Data("local edit".utf8).write(to: local)
-        await expectEventually(timeout: 5) { editing.entries.first?.mark == .saved }
+        await expectEventually { editing.entries.first?.mark == .saved }
         let client = try provider.scoped(file.url)
         #expect(try await client.metadata(entry.fileID).contentHash == DropboxContentHash.hash(local))
         try await fixture.server.configure(["files": [["id": entry.fileID, "path": "/hello.txt", "text": "another writer"]]])
         try Data("mine".utf8).write(to: local)
-        await expectEventually(timeout: 5) { editing.entries.first?.mark == .conflict }
+        await expectEventually { editing.entries.first?.mark == .conflict }
         editing.dismiss(entry.id); #expect(editing.contains(entry.id))
         editing.replace(entry.id)
-        await expectEventually(timeout: 5) { editing.entries.first?.mark == .saved }
+        await expectEventually { editing.entries.first?.mark == .saved }
         #expect(try await client.metadata(entry.fileID).contentHash == DropboxContentHash.hash(local))
         var launched: [URL] = []; editing.openFile = { launched.append($0) }; editing.openBoth(entry.id)
-        await expectEventually(timeout: 5) { launched.count == 2 }
+        await expectEventually { launched.count == 2 }
         editing.keepBoth(entry.id)
-        await expectEventually(timeout: 5) { editing.entries.first?.fileID != entry.fileID }
+        await expectEventually { editing.entries.first?.fileID != entry.fileID }
         #expect(try await client.list().filter { $0.name.hasPrefix("hello") }.count == 2)
         editing.dismiss(entry.id); #expect(editing.entries.isEmpty)
         editing.restore(client)
@@ -289,25 +289,21 @@ import Testing
         editing.restore(client)
         #expect(editing.entries.isEmpty)
         editing.restoresAtLaunch = true
-        await expectEventually(timeout: 5) { editing.contains(session.id) }
+        await expectEventually { editing.contains(session.id) }
         #expect(editing.entries.first?.mark.needsAttention == true)
         #expect(editing.entry(for: row.url)?.id == session.id)
         client.reached(nil)
         NotificationCenter.default.post(name: CloudAccounts.changed, object: nil)
-        await expectEventually(timeout: 5) { editing.entries.first?.mark == .saved }
+        await expectEventually { editing.entries.first?.mark == .saved }
         #expect(try await client.metadata(session.file.id).contentHash == DropboxContentHash.hash(session.localURL))
         // The recovered copy is watched too, including successive atomic editor saves.
         try Data("after relaunch".utf8).write(to: session.localURL, options: .atomic)
-        await expectEventually(timeout: 5) {
+        await expectEventually {
             (try? DropboxContentHash.hash(session.localURL)) != session.sentHash && editing.entries.first?.mark == .saved
         }
-        await expectEventually(timeout: 5) { editing.entries.first?.lastSaved != nil }
+        await expectEventually { editing.entries.first?.lastSaved != nil }
         let expected = try DropboxContentHash.hash(session.localURL)
-        for _ in 0..<100 {
-            if try await client.metadata(session.file.id).contentHash == expected { break }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        #expect(try await client.metadata(session.file.id).contentHash == expected)
+        try await expectEventually { try await client.metadata(session.file.id).contentHash == expected }
     }
 
     @Test @MainActor func failedDropboxReplacementPostsAndKeepsConflict() async throws {
@@ -318,16 +314,16 @@ import Testing
         let editing = CloudEditCoordinator(); editing.saveDelay = 0.02
         var messages: [String] = []; editing.post = { text, _ in messages.append(text) }
         editing.open(file)
-        await expectEventually(timeout: 5) { !editing.entries.isEmpty }
+        await expectEventually { !editing.entries.isEmpty }
         let entry = try #require(editing.entries.first)
         try await fixture.server.configure(["files": [["id": entry.fileID, "path": "/hello.txt", "text": "remote"]]])
         try Data("mine".utf8).write(to: entry.localURL)
-        await expectEventually(timeout: 5) { editing.entries.first?.mark == .conflict }
+        await expectEventually { editing.entries.first?.mark == .conflict }
         // Really unreachable: marking the client offline lasted only until a request already under way (the change
         // feed's, after the remote edit) came back and marked it online, and then the replacement went through.
         fixture.server.fixture.stop()
         editing.replaceWithMine(entry.id)
-        await expectEventually(timeout: 5) { messages.contains { $0.hasPrefix("Couldn’t do that") } }
+        await expectEventually { messages.contains { $0.hasPrefix("Couldn’t do that") } }
         #expect(editing.entries.first?.mark == .conflict)
         #expect(try Data(contentsOf: entry.localURL) == Data("mine".utf8))
     }
