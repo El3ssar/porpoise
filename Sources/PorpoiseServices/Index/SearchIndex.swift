@@ -63,11 +63,37 @@ public final class SearchIndex: @unchecked Sendable {
         var holes: [String]
     }
     private struct PatchFile: Codable { var path: String; var file: String; var shadowed: Int }
-    private struct PendingBuild {
+    /// Reported changes not applied yet. Always changed where it is stored (`pendingBuild?.add(…)`): a copy taken
+    /// first (`if var pending = pendingBuild`) shares the set with the stored one, so adding to it copied the whole set
+    /// on every batch, and a long stream of changes cost more for each new one (v0.8.5).
+    struct Changes {
         var generation: Int
         var paths = Set<String>()
         var event: UInt64 = 0
         var rescan = false
+        /// Past this many paths they are replaced by their folders (see `fold`), keeping a long stream's memory bounded.
+        private(set) var foldAt = Changes.foldLimit
+        static let foldLimit = 4096
+        init(generation: Int) { self.generation = generation }
+        mutating func add(_ new: [String], event: UInt64, rescan: Bool, roots: [String]) {
+            self.event = max(self.event, event)
+            self.rescan = self.rescan || rescan
+            paths.formUnion(new)
+            if paths.count > foldAt { fold(roots: roots) }
+        }
+        /// Each path becomes the folder holding it, walked again whole when the changes are applied, as an update
+        /// does with many changes anyway. Only a folder inside a root: never the root, for what changed directly in it.
+        /// The next fold waits until the set has doubled, so folding costs a constant amount per change even when it
+        /// cannot shrink the set.
+        mutating func fold(roots: [String]) {
+            paths = Set(
+                paths.map { p in
+                    guard let slash = p.lastIndex(of: "/") else { return p }
+                    let folder = String(p[..<slash])
+                    return roots.contains { folder != $0 && FilePath.contains(path: folder, in: $0) } ? folder : p
+                })
+            foldAt = max(Changes.foldLimit, paths.count * 2)
+        }
     }
     // A process-wide limit, rather than one pool per SearchIndex. Control queues never wait for these jobs.
     // One crawl at a time, on a serial queue of its own: such a queue always gets a thread. On the shared pool, utility
@@ -89,10 +115,10 @@ public final class SearchIndex: @unchecked Sendable {
     /// instead of checking and listing every file of the index on every update.
     private var savedFiles: Set<String>?
     private let crawlQueue: OperationQueue
-    private var pendingBuild: PendingBuild?
+    private var pendingBuild: Changes?
     /// Changes reported while an update was waiting or running, applied together by the next one: a busy tree
     /// reports changes many times a second, and each update walks the changed folders again and saves the index.
-    private var queuedChanges: (paths: Set<String>, event: UInt64, rescan: Bool, generation: Int)?
+    private var queuedChanges: Changes?
     /// How long reported changes wait to be applied together.
     var updateDelay: TimeInterval = 0.25
     private let lock = NSLock()
@@ -179,7 +205,7 @@ public final class SearchIndex: @unchecked Sendable {
             startupMessage("Index starting watcher", generation: generation)
             guard watch(selected, generation: generation) else { return }  // Start before crawling so changes during the walk are replayed.
             startupMessage("Index queued for crawl", generation: generation)
-            pendingBuild = PendingBuild(generation: generation)
+            pendingBuild = Changes(generation: generation)
             var built: [Root] = []
             let crawlLock = NSLock(), group = DispatchGroup()
             for path in selected.roots {
@@ -265,37 +291,44 @@ public final class SearchIndex: @unchecked Sendable {
     private func enqueue(_ paths: [String], event: UInt64, rescan: Bool, config: IndexConfiguration, generation: Int) {
         guard valid(generation) else { return }
         // During the first crawl, changes are only noted (cheap), and the index isn't ready until they're applied.
-        if let pending = pendingBuild, pending.generation == generation {
+        if pendingBuild?.generation == generation {
             return refresh(paths, event: event, rescan: rescan, config: config, generation: generation)
         }
-        if var queued = queuedChanges, queued.generation == generation {
-            queued.paths.formUnion(paths)
-            queued.event = max(queued.event, event)
-            queued.rescan = queued.rescan || rescan
-            queuedChanges = queued
+        // Excluded changes go now: a busy excluded folder must not keep a growing set of changes waiting.
+        let paths = rescan ? paths : paths.filter { !excluded($0, config: config) }
+        if queuedChanges?.generation == generation {
+            queuedChanges?.add(paths, event: event, rescan: rescan, roots: config.roots)
             return
         }
-        queuedChanges = (Set(paths), event, rescan, generation)
+        guard !paths.isEmpty || rescan else { eventID = max(eventID, event); return }
+        queuedChanges = Changes(generation: generation)
+        queuedChanges?.add(paths, event: event, rescan: rescan, roots: config.roots)
         queue.asyncAfter(deadline: .now() + updateDelay) { [weak self] in
             guard let self, let queued = self.queuedChanges, queued.generation == generation else { return }
             self.queuedChanges = nil
             self.refresh(Array(queued.paths), event: queued.event, rescan: queued.rescan, config: config, generation: generation)
         }
     }
+    /// Takes changes in as the watcher reports them, returning once they have been (tests).
+    func receive(_ paths: [String], event: UInt64) {
+        let (config, generation) = lock.withLock { (current, revision) }
+        // Synchronous work runs on the calling thread, outside the queue's own autorelease pools.
+        autoreleasepool { queue.sync { enqueue(paths, event: event, rescan: false, config: config, generation: generation) } }
+    }
+    /// How many changed paths wait for the next update (tests).
+    var queuedPaths: Int { queue.sync { queuedChanges?.paths.count ?? 0 } }
     private func refresh(_ paths: [String], event: UInt64, rescan: Bool, config: IndexConfiguration, generation: Int) {
         guard valid(generation) else { return }
         // Our manifest and snapshot writes must never feed back into the index.
         let paths = paths.map(FilePath.entry).filter { rescan || !excluded($0, config: config) }
-        if var pending = pendingBuild, pending.generation == generation {
-            pending.event = max(pending.event, event)
-            pending.rescan = pending.rescan || rescan
-            if !pending.rescan {
-                pending.paths.formUnion(paths)
-                if pending.paths.count > 1024 { pending.rescan = true }
+        if pendingBuild?.generation == generation {
+            pendingBuild?.add(paths, event: event, rescan: rescan, roots: config.roots)
+            if pendingBuild?.rescan == true || pendingBuild?.paths.count ?? 0 > 1024 {
+                pendingBuild?.rescan = true
+                pendingBuild?.paths = Set(config.roots)
             }
-            if pending.rescan { pending.paths = Set(config.roots) }
-            pendingBuild = pending
-            lock.withLock { if revision == generation { state.pendingChanges = pending.paths.count } }
+            let count = pendingBuild?.paths.count ?? 0
+            lock.withLock { if revision == generation { state.pendingChanges = count } }
             return
         }
         guard !paths.isEmpty else { eventID = max(eventID, event); return }
