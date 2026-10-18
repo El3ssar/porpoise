@@ -187,40 +187,30 @@ import Testing
         client = nil
         await #expect(throws: DriveError.reconnect) { try await edits.open(file) }
     }
-    @Test func unverifiedProductionConditionalSaveCannotSendBytes() async throws {
+    @Test func saveBackProbeRoundTripsInItsOwnFolderAndTrashesIt() async throws {
         let server = try DriveMutationTests().server(), scratch = try Scratch()
-        let credentials = MemoryCredentials(), id = UUID()
-        let tokens = DriveTokenManager(configuration: server.config, accountID: id, credentials: credentials)
-        let client = DriveClient(
-            accountID: id, tokens: tokens,
-            http: DriveHTTP { _ in
-                Issue.record("Unverified production edit must not issue a request"); throw DriveError.offline
-            },
-            metadataDirectory: scratch.url)
-        let file = DriveFile(id: "binary-a", name: "safe.txt", mimeType: "text/plain")
-        await #expect(throws: DriveError.safeUpdateUnavailable) { try await client.saveEdit(scratch.url, baseline: file) }
-    }
-    @Test func conditionalProbeIsOptInAndUsesOnlyItsDisposableFixtureFile() async throws {
-        let server = try DriveMutationTests().server(), scratch = try Scratch()
-        func run(enabled: Bool) async throws -> (Int32, Data) {
-            var env = ProcessInfo.processInfo.environment
-            env["PORPOISE_DRIVE_LIVE_PROBE"] = enabled ? "1" : nil
-            env["PORPOISE_DRIVE_PROBE_TOKEN"] = "fixture-access"
-            env["PORPOISE_DRIVE_PROBE_BASE_URL"] = server.base.appendingPathComponent("drive/v3").absoluteString
-            // Its output is drained while it runs (read only after it exits, a big one would fill the pipe and hang it).
-            let r = try await offThePool { try runTool("/usr/bin/python3", [TestPaths.script("drive-conditional-probe.py").path], env: env) }
-            return (r.status, r.out)
-        }
-        #expect(try await run(enabled: false).0 == 2)
-        let result = try await run(enabled: true)
-        #expect(result.0 == 0)
-        let report = try #require(try JSONSerialization.jsonObject(with: result.1) as? [String: Any])
-        #expect(report["etagReturned"] as? Bool == true && report["mismatchRejected"] as? Bool == true)
-        #expect(report["trashed"] as? Bool == true)
         let client = try make(server, scratch.url)
-        #expect(try await client.file("binary-a").name == "report.txt")
-        #expect(
-            try await client.list(DriveLocation(accountID: client.accountID)).allSatisfy { !$0.name.hasPrefix("Porpoise conditional-save probe") })
+        let report = await DriveSaveBackProbe(client: client).run()
+        #expect(report.passed, "\(report.steps)")
+        // As on live Drive: v3 ignores If-Match, which is why saves go through v2's etag.
+        #expect(report.steps["staleIfMatch"] == "200" && report.steps["staleBytesKept"] == "overwritten")
+        #expect(try await client.list(DriveLocation(accountID: client.accountID)).allSatisfy { $0.name != "Porpoise Probe" })
+        #expect(!String(decoding: try JSONEncoder().encode(report), as: UTF8.self).contains("revision-"))
+    }
+    @Test func saveRefusesAStaleOrMissingEtagWithoutSendingBytes() async throws {
+        let server = try DriveMutationTests().server(), scratch = try Scratch()
+        let client = try make(server, scratch.url)
+        let file = try await client.file("binary-a")
+        let local = scratch.url.appendingPathComponent("edit.txt")
+        try Data("mine".utf8).write(to: local)
+        try await server.control(["omitETag": true])
+        await #expect(throws: DriveMutationError.conflict) { try await client.saveEdit(local, baseline: file) }
+        try await server.control(["omitETag": false, "conflictOnSave": true])
+        await #expect(throws: DriveMutationError.conflict) { try await client.saveEdit(local, baseline: file) }
+        #expect(try await client.download(client.file("binary-a")).data == Data("remote edit".utf8))
+        let current = try await client.file("binary-a")
+        #expect(try await client.saveEdit(local, baseline: current).headRevisionId != current.headRevisionId)
+        #expect(try await client.download(client.file("binary-a")).data == Data("mine".utf8))
     }
     @Test func searchIsPagedEscapedScopedAndSupportsFullText() async throws {
         let server = try DriveMutationTests().server(), scratch = try Scratch()

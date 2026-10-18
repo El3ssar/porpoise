@@ -78,6 +78,9 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def changed(self, item, removed=False):
+        log = self.server.revision_log.setdefault(item["id"], [])
+        if item.get("headRevisionId") and (not log or log[-1]["id"] != item["headRevisionId"]):
+            log.append({"id": item["headRevisionId"], "md5Checksum": item.get("md5Checksum")})
         self.server.changes.append({"fileId": item["id"], "removed": removed, "file": copy.deepcopy(item)})
 
     def etag(self, item):
@@ -96,13 +99,7 @@ class Handler(BaseHTTPRequestHandler):
                 item = next((f for f in self.server.fixtures["files"] if f["id"] == item_id), None)
                 if not item:
                     return self.reply({}, 404)
-                if self.server.fixtures.pop("conflictOnSave", False):
-                    item["version"] = str(int(item.get("version", "1")) + 1)
-                    item["headRevisionId"] = "remote-conflict"
-                    self.server.fixtures.setdefault("media", {})[item_id] = base64.b64encode(b"remote edit").decode()
-                    self.changed(item)
-                if not self.headers.get("If-Match") or self.headers["If-Match"] != self.etag(item):
-                    return self.reply({}, 412)
+                # Like live Drive v3: no ETag, and If-Match is ignored (W-122 probe).
                 if self.mutation_fault():
                     return
                 item.update(size=str(len(body)), md5Checksum=hashlib.md5(body).hexdigest(),
@@ -148,6 +145,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def put(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        parsed = urlsplit(self.path)
+        if parsed.path.startswith("/upload/drive/v2/files/"):
+            return self.v2_media(parsed.path.rsplit("/", 1)[-1], body)
         upload_mbps = self.server.fixtures.get("uploadMbps", 0)
         delay = self.server.fixtures.get("uploadLatencyMS", 0) / 1000
         if upload_mbps:
@@ -189,6 +189,27 @@ class Handler(BaseHTTPRequestHandler):
         if session.get("done"):
             return self.reply(session["done"])
         return self.reply(b"", 308, "application/octet-stream", {"Range": f"bytes=0-{len(session['data']) - 1}"})
+
+    def v2_media(self, item_id, body):
+        """Drive v2 media update: refuses a stale resource etag with 412, as live Drive does."""
+        item = next((f for f in self.server.fixtures["files"] if f["id"] == item_id), None)
+        if not item:
+            return self.reply({}, 404)
+        if self.server.fixtures.pop("conflictOnSave", False):
+            item["version"] = str(int(item.get("version", "1")) + 1)
+            item["headRevisionId"] = "remote-conflict"
+            self.server.fixtures.setdefault("media", {})[item_id] = base64.b64encode(b"remote edit").decode()
+            self.changed(item)
+        if not self.headers.get("If-Match") or self.headers["If-Match"] != self.etag(item):
+            return self.reply({}, 412)
+        if self.mutation_fault():
+            return
+        item.update(size=str(len(body)), md5Checksum=hashlib.md5(body).hexdigest(),
+                    version=str(int(item.get("version", "1")) + 1), headRevisionId="revision-" + uuid.uuid4().hex,
+                    modifiedTime=datetime.now(timezone.utc).isoformat())
+        self.server.fixtures.setdefault("media", {})[item_id] = base64.b64encode(body).decode()
+        self.changed(item)
+        return self.reply({"id": item["id"], "md5Checksum": item["md5Checksum"], "etag": self.etag(item)})
 
     def do_POST(self):
         parsed = urlsplit(self.path)
@@ -413,7 +434,17 @@ class Handler(BaseHTTPRequestHandler):
             if len(root) > 2:
                 page["nextPageToken"] = "page-two"
             return self.reply(page)
+        if parsed.path.startswith("/drive/v2/files/"):
+            item = next((f for f in fixtures["files"] if f["id"] == parsed.path.rsplit("/", 1)[-1]), None)
+            if not item:
+                return self.reply({}, 404)
+            tagged = {"id": item["id"], "headRevisionId": item.get("headRevisionId"), "md5Checksum": item.get("md5Checksum")}
+            if not fixtures.get("omitETag"):
+                tagged["etag"] = self.etag(item)
+            return self.reply(tagged)
         prefix = "/drive/v3/files/"
+        if parsed.path.startswith(prefix) and parsed.path.endswith("/revisions"):
+            return self.reply({"revisions": self.server.revision_log.get(parsed.path[len(prefix):].split("/")[0], [])})
         if parsed.path.startswith(prefix):
             if "/revisions/" in parsed.path:
                 item_id, revision_id = parsed.path.split("/files/")[1].split("/revisions/")
@@ -481,7 +512,7 @@ class Handler(BaseHTTPRequestHandler):
                     start, end = int(left), int(right) if right else len(data) - 1
                     return self.reply(data[start:end + 1], 206, "application/octet-stream", {"Content-Range": f"bytes {start}-{min(end, len(data)-1)}/{len(data)}"})
                 return self.reply(data, content_type="application/octet-stream")
-            return self.reply(item, headers={"ETag": self.etag(item)} if not fixtures.get("omitETag") else {})
+            return self.reply(item)
         return self.reply({}, 404)
 
 
@@ -520,6 +551,7 @@ def main():
     server.sessions = {}
     server.changes = []
     server.revisions = {}
+    server.revision_log = {}
     server.mutation_lock = Lock()
     server.profile_counter = 0
     server.profile_lock = Lock()

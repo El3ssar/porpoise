@@ -151,9 +151,16 @@ extension DebugBridge {
             case "replace": CloudEditing.shared.replaceWithMine(e.id)
             default: CloudEditing.shared.save(e.id)
             }
-        case "copyonly":
-            // copyonly on|off: as on real Drive until conditional saves are verified (saves wait for Save as a Copy).
-            DriveEditing.shared.savesVersions = rest == "on" ? { _ in false } : { $0.canSaveEdits }
+        case "driveprobe":
+            // driveprobe <report.json>: the live save-back probe on the first Drive account (outcomes only, no IDs).
+            guard let account = CloudAccounts.shared.accounts.first(where: { $0.provider == .googleDrive }),
+                let id = UUID(uuidString: account.id), let client = CloudEditCoordinator.shared.client(id)
+            else { try? Data("{\"error\":\"no Drive account\"}".utf8).write(to: URL(fileURLWithPath: rest)); return }
+            Task {
+                let report = await DriveSaveBackProbe(client: client).run()
+                let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                try? encoder.encode(report).write(to: URL(fileURLWithPath: rest))
+            }
         case "download": AppDelegate.shared.windows.first?.cloudDownload(nil)
         case "evict": AppDelegate.shared.windows.first?.cloudEvict(nil)
         case "accounts":

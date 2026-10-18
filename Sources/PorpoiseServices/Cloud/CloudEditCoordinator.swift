@@ -6,7 +6,6 @@ private struct CloudEditBinding {
     var key: String
     var provider: CloudProvider
     var offline: () -> Bool
-    var canSave: () -> Bool
     var cached: () async -> CloudEditEntry?
     var open: (CloudTransferContext) async throws -> CloudEditEntry
     var pending: () async -> [CloudEditEntry]
@@ -19,13 +18,13 @@ private struct CloudEditBinding {
 
     init<E: CloudEditEngine>(
         store: CloudEditSessionStore<E>, file: E.File?, account: UUID, provider: CloudProvider, namespace: String? = nil,
-        offline: @escaping () -> Bool, canSave: @escaping () -> Bool = { true },
+        offline: @escaping () -> Bool,
         name: @escaping (E.File) -> String, location: @escaping (E.File) -> URL,
         copyPath: @escaping (E.File) async throws -> String,
         compare: @escaping (CloudEditEntry) async throws -> URL? = { $0.conflictURL }
     ) {
         key = "\(provider):\(account):\(namespace ?? "")"
-        self.provider = provider; self.offline = offline; self.canSave = canSave; self.compare = compare
+        self.provider = provider; self.offline = offline; self.compare = compare
         func entry(_ session: CloudEditSession<E.File>) -> CloudEditEntry {
             CloudEditEntry(
                 id: session.id, account: account, fileID: store.engine.identity(session.file), name: name(session.file),
@@ -61,7 +60,6 @@ public final class CloudEditCoordinator {
     public var client: (UUID) -> DriveClient? = { id in
         (RemoteFS.provider(for: DriveLocation(accountID: id).url) as? DriveProvider)?.client
     }
-    public var savesVersions: (DriveClient) -> Bool = { $0.canSaveEdits }
     public var saveDelay: TimeInterval = 0.8
     public var savedShownFor: TimeInterval = 4
     public var operations: FileOperationsController = .shared
@@ -125,11 +123,8 @@ public final class CloudEditCoordinator {
         let account = client.accountID
         return CloudEditBinding(
             store: client.edits, file: file, account: account, provider: .googleDrive,
-            offline: { [weak client] in client?.isOffline ?? true },
-            canSave: { [weak self, weak client] in
-                guard let client else { return true }
-                return self?.savesVersions(client) ?? client.canSaveEdits
-            }, name: { $0.name }, location: { $0.location(accountID: account).url }, copyPath: { _ in "copy" })
+            offline: { [weak client] in client?.isOffline ?? true }, name: { $0.name }, location: { $0.location(accountID: account).url },
+            copyPath: { _ in "copy" })
     }
     private func dropbox(_ client: DropboxClient, file: DropboxItem? = nil) -> CloudEditBinding {
         let account = client.accountID, namespace = client.namespaceID
@@ -206,10 +201,7 @@ public final class CloudEditCoordinator {
                 if entry.mark == .saved { entry.mark = .editing }
                 entry.location = item.url
                 self.add(entry, binding: binding); launch(entry.localURL); self.watch(entry.id)
-                self.post(
-                    binding.canSave()
-                        ? "Editing “\(entry.name)”: changes you save go to \(binding.provider.title)."
-                        : "Editing “\(entry.name)”: when you save, you can keep your changes as a copy in \(binding.provider.title).", false)
+                self.post("Editing “\(entry.name)”: changes you save go to \(binding.provider.title).", false)
                 done(true)
             } catch {
                 if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
@@ -231,12 +223,6 @@ public final class CloudEditCoordinator {
         guard let entry = entries.first(where: { $0.id == id }), let binding = bindings[id], entry.mark != .conflict,
             FileManager.default.fileExists(atPath: entry.localURL.path)
         else { return }
-        guard binding.canSave() else {
-            if entry.mark != .needsCopy {
-                set(id) { $0.mark = .needsCopy }
-                post("Your changes to “\(entry.name)” are kept on this Mac. Save them as a copy in \(entry.provider.title) from Activity.", true)
-            }; return
-        }
         guard saving.insert(id).inserted else { saveAgain.insert(id); return }
         set(id) { $0.mark = .saving }
         Task { @MainActor [weak self] in
@@ -282,7 +268,7 @@ public final class CloudEditCoordinator {
     public func replaceWithMine(_ id: UUID) { resolve(id, "Saved your version of", copy: false) }
     public func replace(_ id: UUID) { replaceWithMine(id) }
     private func resolve(_ id: UUID, _ message: String, copy: Bool) {
-        guard let entry = entries.first(where: { $0.id == id }), (copy || entry.mark == .conflict || entry.mark == .needsCopy),
+        guard let entry = entries.first(where: { $0.id == id }), (copy || entry.mark == .conflict),
             let binding = bindings[id], saving.insert(id).inserted
         else { return }
         set(id) { $0.mark = .saving }

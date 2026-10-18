@@ -116,14 +116,13 @@ struct ActivityPresentationTests {
 
     @Test func cloudEditActionsKeepProviderHelpAndStateTogether() {
         #expect(EditActivityAction.actions(for: .conflict) == [.keepBoth, .openBoth, .replace])
-        #expect(EditActivityAction.actions(for: .needsCopy) == [.copy])
         #expect(EditActivityAction.actions(for: .unsent("Offline")) == [.send])
         for mark: CloudEditMark in [.editing, .saving, .saved] { #expect(EditActivityAction.actions(for: mark) == [.show]) }
         for action in EditActivityAction.allCases {
             #expect(!action.title(service: "Dropbox").isEmpty && !action.help(service: "Dropbox").isEmpty)
             #expect(!action.title(service: "Dropbox").contains("Google") && !action.help(service: "Dropbox").contains("Google"))
         }
-        #expect(EditActivityAction.copy.title(service: "Dropbox") == "Save as a Copy in Dropbox")
+        #expect(EditActivityAction.allCases.allSatisfy { !$0.title(service: "Dropbox").contains("Copy") })
         #expect(EditActivityAction.send.help(service: "Dropbox").contains("Dropbox"))
     }
 }
