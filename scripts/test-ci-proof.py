@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Exercise release CI provenance against real git trees, without GitHub access."""
+import ast
 import importlib.util
+import re
 import os
 from pathlib import Path
 import subprocess
@@ -45,6 +47,11 @@ class ProofTests(unittest.TestCase):
                       head_repository={'full_name': self.repository}, status='completed', conclusion='success')
         record.update(changes)
         return record
+
+    def test_ci_skip_paths_match_proof_allowlist(self):
+        workflow = (HERE.parent / '.github/workflows/ci.yml').read_text()
+        ignored = ast.literal_eval(re.search(r'paths-ignore: (\[.*\])', workflow)[1])
+        self.assertEqual(set(ignored), proof.DOC_FILES | {'docs/**'})
 
     def test_exact_tree_and_documentation_descendant(self):
         self.assertTrue(proof.equivalent(self.base))
