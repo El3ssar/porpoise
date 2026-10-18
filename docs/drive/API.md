@@ -56,7 +56,7 @@ Internal URLs: `gdrive://<account UUID>/my-drive`, `/shared-with-me`, `/shared-d
 
 The fake server fixtures are sanitized representative wire responses (not recorded from a live account); live API/OAuth verification waits for the operator's client ID.
 
-The existing DirectoryModel publishes Drive pages incrementally and cancels the in-flight listing on navigation/reload. Legacy synchronous RemoteProvider.list remains for expansion/transfers. RemoteOpener opens independent copies for Drive, with no save-back watcher.
+The existing DirectoryModel publishes Drive pages incrementally and cancels the in-flight listing on navigation/reload. Legacy synchronous RemoteProvider.list remains for expansion/transfers. Files opened for editing go through `CloudEditing`: each save is checked against the head revision and sent as v2 media with `If-Match` on the v2 resource etag (v3 ignores If-Match on live Drive); a 412 becomes a conflict that keeps both versions. `DriveSaveBackProbe` (debug bridge `cloud driveprobe <report.json>`) verifies this on a signed-in account.
 
 ## UI integration follow-up
 

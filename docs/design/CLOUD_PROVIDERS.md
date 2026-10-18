@@ -45,6 +45,8 @@ The app integration for a new provider is a separate change from its transport/e
 7. Upload through the provider's resumable session protocol. Persist confirmed offsets in the journal and secrets in
    the credential store. Reconcile server offsets after an uncertain append. Conditional edit save-back must supply
    the provider's revision precondition atomically; never silently retry as an unconditional overwrite.
+   Verify the precondition against the live service, not only the fake: live Drive v3 returns no ETag and ignores
+   If-Match, so Drive save-back sends the media through v2 with its resource etag (412 when stale).
 8. Implement `CloudContentSource` and emit `CloudChangeBatch` for every applied change page. All full-file open,
    preview, edit baselines and offline pins use its one shared store. Use `CloudRenditionCache` only for renditions.
 9. Add an engine adapter for listing, mutations, search and freshness. Wrap operations in existing Activity/controller
