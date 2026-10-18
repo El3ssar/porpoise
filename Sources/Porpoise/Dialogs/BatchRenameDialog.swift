@@ -242,7 +242,12 @@ final class BatchRenameDialog: SecondaryWindowController, NSTableViewDataSource,
     private func finish() {
         finished = true; invalidatePreview(); snapshotGeneration += 1
         guard let window else { return }
-        if let parent = window.sheetParent { parent.endSheet(window) } else { NSApp.stopModal(); window.orderOut(nil) }
+        if let parent = window.sheetParent {
+            parent.endSheet(window)
+        } else {
+            if NSApp.modalWindow === window { NSApp.stopModal() }
+            window.orderOut(nil)
+        }
     }
     @objc private func applyRename() {
         guard !busy, let plan, plan.canApply, let snapshot else { return }
