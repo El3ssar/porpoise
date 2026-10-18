@@ -2,8 +2,9 @@
 # Runs `swift test` with the given arguments. If it runs longer than $TEST_TIMEOUT seconds (default 900), prints
 # the stacks of the test processes (what they're waiting on) and fails, instead of hanging until CI gives up.
 # The tests are built first, outside that time: on a slow runner compiling alone can take minutes.
-# Tests that take what the whole process shares (every core, every cooperative thread: BusyPoolTests) run first in a
-# pass of their own, so that no other test stands still while they do; not when the arguments pick tests themselves.
+# Tests that take what the whole process shares (every core, every cooperative thread: BusyPoolTests) or measure it
+# (its memory: MemoryBudgetTests) run first in a pass of their own, so that no other test stands still or allocates
+# while they do; not when the arguments pick tests themselves.
 set -uo pipefail
 # A test that traps takes the whole process down with its buffered output: afterwards, where it trapped is printed
 # from macOS's crash report.
@@ -49,7 +50,7 @@ watched() {
 
 status=0
 if ((alone)); then
-    PORPOISE_TESTS_ALONE=1 watched "$@" --filter BusyPoolTests || status=$?
+    PORPOISE_TESTS_ALONE=1 watched "$@" --filter "BusyPoolTests|MemoryBudgetTests" || status=$?
 fi
 # The whole run last (also after a failure above): its coverage is the one scripts/coverage.py reads.
 watched "$@" || status=$?
