@@ -1,0 +1,40 @@
+Keychain denial tripwire active pid=53660
+Keychain denial tripwire active pid=53660
+warning: 'porpoise-perfapp': Keychain denial tripwire active pid=53685
+Keychain denial tripwire active pid=53685
+Keychain denial tripwire active pid=53688
+Keychain denial tripwire active pid=53689
+Keychain denial tripwire active pid=53690
+warning: 'swiftterm': Keychain denial tripwire active pid=53725
+Keychain denial tripwire active pid=53725
+Keychain denial tripwire active pid=53729
+Keychain denial tripwire active pid=53733
+Keychain denial tripwire active pid=53736
+warning: 'sparkle': Keychain denial tripwire active pid=53726
+Keychain denial tripwire active pid=53726
+Keychain denial tripwire active pid=53730
+Keychain denial tripwire active pid=53737
+Keychain denial tripwire active pid=53738
+Keychain denial tripwire active pid=53851
+Keychain denial tripwire active pid=53854
+Keychain denial tripwire active pid=53856
+Keychain denial tripwire active pid=53858
+Keychain denial tripwire active pid=53860
+◇ Test run started.
+↳ Testing Library Version: 2084
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite PerformanceRoutingTests started.
+◇ Test compactResizeAndSavedZoomReuseMeasurementsUntilContentChanges() started.
+✔ Test compactResizeAndSavedZoomReuseMeasurementsUntilContentChanges() passed after 1.615 seconds.
+◇ Test textSettingsStillInvalidateCompactLabels() started.
+✔ Test textSettingsStillInvalidateCompactLabels() passed after 0.001 seconds.
+◇ Test unrelatedPreferencesDoNotRebuildVisibleOrHiddenPanes() started.
+✔ Test unrelatedPreferencesDoNotRebuildVisibleOrHiddenPanes() passed after 0.018 seconds.
+◇ Test tagMenuReadsOffMainAndStopsAtEmptyIntersection() started.
+✔ Test tagMenuReadsOffMainAndStopsAtEmptyIntersection() passed after 0.582 seconds.
+◇ Test asynchronousTagsPreserveTheCommonTagChecks() started.
+✔ Test asynchronousTagsPreserveTheCommonTagChecks() passed after 0.019 seconds.
+◇ Test propertiesUsesKnownItemsAndCompletesAfterConstruction() started.
+✔ Test propertiesUsesKnownItemsAndCompletesAfterConstruction() passed after 0.051 seconds.
+✔ Suite PerformanceRoutingTests passed after 2.288 seconds.
+✔ Test run with 6 tests in 1 suite passed after 2.288 seconds.

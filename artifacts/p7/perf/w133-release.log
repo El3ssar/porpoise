@@ -1,0 +1,126 @@
+Fetching https://github.com/sparkle-project/Sparkle from cache
+Fetched https://github.com/sparkle-project/Sparkle from cache (0.54s)
+Computing version for https://github.com/sparkle-project/Sparkle
+Computed https://github.com/sparkle-project/Sparkle at 2.10.0 (0.89s)
+Creating working copy for https://github.com/sparkle-project/Sparkle
+Working copy of https://github.com/sparkle-project/Sparkle resolved at 2.10.0
+Fetching binary artifact https://github.com/sparkle-project/Sparkle/releases/download/2.10.0/Sparkle-for-Swift-Package-Manager.zip from cache
+Fetched https://github.com/sparkle-project/Sparkle/releases/download/2.10.0/Sparkle-for-Swift-Package-Manager.zip from cache (0.36s)
+Building for production...
+[Pre-planning 1 / 386]
+[Planning deferred tasks]
+[71 / 150]
+[75 / 150]
+[78 / 154] PorpoiseHelperKit
+[80 / 226]
+[87 / 233]
+[95 / 233]
+[101 / 233]
+[108 / 233]
+[115 / 233]
+[118 / 233]
+[123 / 233]
+[128 / 233]
+[131 / 233]
+[138 / 233]
+[143 / 233]
+[145 / 233]
+[151 / 233]
+[154 / 233]
+[155 / 233]
+[158 / 233]
+[160 / 233] PorpoiseTestSupport
+[161 / 233] PorpoiseHelperKit
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/Tests/PorpoiseTestSupport/Callbacks.swift:39:26: warning: 'withCheckedThrowingContinuation(isolation:function:_:)' is deprecated: Replaced by nonisolated(nonsending) overload [#DeprecatedDeclaration]
+37 | ) async throws -> T {
+38 |     do {
+39 |         return try await withCheckedThrowingContinuation(isolation: isolation) { (c: CheckedContinuation<T, Error>) in
+   |                          `- warning: 'withCheckedThrowingContinuation(isolation:function:_:)' is deprecated: Replaced by nonisolated(nonsending) overload [#DeprecatedDeclaration]
+40 |             let callback = Callback<T> { c.resume(with: $0) }
+41 |             DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { callback.finish(.failure(CallbackTimedOut())) }
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[161 / 233] PorpoiseTestSupport
+[165 / 233] PorpoiseTestSupport
+[170 / 233] SwiftTermBuildInfoGenerator-product
+[179 / 234] SwiftTerm
+[181 / 235]
+[183 / 235] PorpoiseHelper-product
+[185 / 235] SwiftTerm
+[186 / 236]
+[190 / 273]
+[193 / 273]
+[196 / 273]
+[199 / 273]
+[201 / 273]
+[203 / 273]
+[205 / 273]
+[207 / 273]
+[208 / 273]
+[211 / 273]
+[213 / 273]
+[215 / 273]
+[216 / 273]
+[217 / 273]
+[218 / 273]
+[219 / 273]
+[221 / 273]
+[223 / 273]
+[224 / 273] PorpoiseHelper-product
+[232 / 274]
+[234 / 275] PorpoiseCore
+[240 / 276]
+[244 / 292]
+[246 / 292]
+[248 / 292]
+[249 / 292]
+[251 / 292]
+[253 / 292]
+[255 / 292]
+[256 / 292] PorpoiseCore
+[257 / 292] SwiftTerm
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/Sources/PorpoiseServices/FileOperations/FileOperationsController+Undo.swift:105:46: warning: 'weak' ownership of capture 'self' differs from implicitly-captured strong reference in outer scope [#ImplicitStrongCapture]
+101 |     ) {
+102 |         stacksChanged()
+103 |         DispatchQueue.global(qos: .userInitiated).async {
+    |                                                         |- note: 'self' implicitly strongly captured here
+    |                                                         `- note: add 'self' as a capture list item to silence
+104 |             let result = Result { try LocationOperations.revert(change) }
+105 |             DispatchQueue.main.async { [weak self] in
+    |                                              |- warning: 'weak' ownership of capture 'self' differs from implicitly-captured strong reference in outer scope [#ImplicitStrongCapture]
+    |                                              `- note: explicitly assign the capture list item to silence
+106 |                 switch result {
+107 |                 case .success:
+
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/Sources/PorpoiseServices/Locations/PreviewSource.swift:23:72: warning: capture of 'provider' with non-Sendable type 'any RemoteProvider' in a '@Sendable' closure [#SendableClosureCaptures]
+21 |                 let dir = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-preview-\(UUID().uuidString)")
+22 |                 do {
+23 |                     continuation.resume(returning: LocalFile(file: try provider.download(url, into: dir), cleanup: dir))
+   |                                                                        `- warning: capture of 'provider' with non-Sendable type 'any RemoteProvider' in a '@Sendable' closure [#SendableClosureCaptures]
+24 |                 } catch {
+25 |                     try? FileManager.default.removeItem(at: dir)
+
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/Sources/PorpoiseServices/Remote/RemoteFS.swift:5:17: note: protocol 'RemoteProvider' does not conform to the 'Sendable' protocol
+  3 |
+  4 | /// A remote file system reachable through a command-line tool (Dolphin's KIO workers, the Mac way).
+  5 | public protocol RemoteProvider: AnyObject {
+    |                 `- note: protocol 'RemoteProvider' does not conform to the 'Sendable' protocol
+  6 |     func list(_ folder: URL) throws -> [FileIt[264 / 292] PorpoiseServices
+em]
+  7 |     /// Copies a remote file or folder into a local folder; returns the local URL. Fails rather than
+
+/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/Sources/PorpoiseServices/Locations/PreviewSource.swift:44:25: warning: result of call to 'progressivePreview(_:context:onPreview:)' is unused [#NoUsage]
+42 |     ) async throws {
+43 |         guard let cloud = RemoteFS.provider(for: url) as? CloudFileProvider else { throw CocoaError(.featureUnsupported) }
+44 |         try await cloud.progressivePreview(url, context: context, onPreview: onPreview)
+   |                         `- warning: result of call to 'progressivePreview(_:context:onPreview:)' is unused [#NoUsage]
+45 |     }
+46 |
+
+[#ImplicitStrongCapture]: <https://docs.swift.org/compiler/documentation/diagnostics/implicit-strong-capture>
+[#NoUsage]: <https://docs.swift.org/compiler/documentation/diagnostics/no-usage>
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+error: /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/Tests/PorpoiseServicesTestSupport/FakeContentSource.swift:5:18 unable to resolve Swift module dependency to a compatible module: 'PorpoiseServices'
+error: SwiftDriver PorpoiseServicesTestSupport normal arm64 com.apple.xcode.tools.swift.compiler failed with a nonzero exit code. Command line:     cd /Users/daniel/Projects/porpoise/.hteam/worktrees
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -parse-as-library -module-name PorpoiseServicesTestSupport -O -whole-module-optimization @/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/Intermediates.noindex/Porpoise.build/Release/PorpoiseServicesTestSupport-t.build/Objects-normal/arm64/PorpoiseServicesTestSupport.SwiftFileList -DSWIFT_PACKAGE -DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE -DXcode -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -target arm64-apple-macos15.0 -g -module-cache-path /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/ModuleCache.noindex -Xfrontend -serialize-debugging-options -swift-version 5 -I /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/Products/Release -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/Products/Release/PackageFrameworks -F /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/Products/Release -F /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -c -num-threads 10 -Xcc -ivfsstatcache -Xcc /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/SDKStatCaches.noindex/macosx27.0-26A425-80c5bbf1d171475443272936d42f90a37231f6df4def33e022ae2eb8f782df1a.sdkstatcache -output-file-map /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/Intermediates.noindex/Porpoise.build/Release/PorpoiseServicesTestSupport-t.build/Objects-normal/arm64/PorpoiseServicesTestSupport-OutputFileMap.json -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/ModuleCache.noindex -sdk-module-cache-path /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/SDKExplicitPrecompiledModules -emit-dependencies -emit-module -emit-module-path /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/Intermediates.noindex/Porpoise.build/Release/PorpoiseServicesTestSupport-t.build/Objects-normal/arm64/PorpoiseServicesTestSupport.swiftmodule -serialize-diagnostics -dependency-scan-serialize-diagnostics-path /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/Intermediates.noindex/Porpoise.build/Release/PorpoiseServicesTestSupport-t.build/Objects-normal/arm64/PorpoiseServicesTestSupport-dependency-scan.dia -validate-clang-modules-once -clang-build-session-file /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/ModuleCache.noindex/Session.modulevalidation -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -package-name porpoise_perfapp -emit-const-values -const-gather-protocols-list /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/Intermediates.noindex/Porpoise.build/Release/PorpoiseServicesTestSupport-t.build/Objects-normal/arm64/PorpoiseServicesTestSupport_const_extract_protocols.json -Xcc -I/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/Products/Release/include -Xcc -I/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/Intermediates.noindex/Porpoise.build/Release/PorpoiseServicesTestSupport-t.build/DerivedSources-normal/arm64 -Xcc -I/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/Intermediates.noindex/Porpoise.build/Release/PorpoiseServicesTestSupport-t.build/DerivedSources/arm64 -Xcc -I/Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/Intermediates.noindex/Porpoise.build/Release/PorpoiseServicesTestSupport-t.build/DerivedSources -Xcc -DSWIFT_PACKAGE -emit-objc-header -emit-objc-header-path /Users/daniel/Projects/porpoise/.hteam/worktrees/porpoise-perfapp/.build/release-validation/out/Intermediates.noindex/Porpoise.build/Release/PorpoiseServicesTestSupport-t.build/Objects-normal/arm64/PorpoiseServicesTestSupport-Swift.h -working-directory /Users/daniel/Projects/porpoise/.hteam/worktrees -no-emit-module-separately-wmo
+error: Build failed

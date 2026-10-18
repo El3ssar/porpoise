@@ -49,8 +49,11 @@ public final class DirectoryModel {
     }
     public private(set) var location: URL
     public private(set) var items: [FileItem] = []  // top level, unsorted, including hidden
+    /// Changes whenever the visible rows are replaced, for constant-time view cache invalidation.
+    public private(set) var rowsRevision: UInt64 = 0
     public private(set) var rows: [Row] = [] {
         didSet {
+            rowsRevision &+= 1
             rowIndex = nil; rowIndexByPath = nil; rowFileKeys = nil
         }
     }

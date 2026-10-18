@@ -93,12 +93,7 @@ extension ItemListView {
         let top = margin + groupH
         let availH = max(h, visibleHeight - top - margin - scroller)
         rowsPerColumn = max(1, Int(availH / h))
-        var widest: CGFloat = 0
-        for r in rows {
-            // As drawn: the shown name, and the roles in the label font.
-            widest = max(widest, textWidth(model.displayName(for: r.item)))
-            for role in roles { widest = max(widest, textWidth(model.text(for: role, of: r.item))) }
-        }
+        let widest = compactWidestText(roles: roles)
         let text = CompactColumns.textWidth(
             widest: widest, iconSize: iconSize, charWidth: textWidth("x"), maxChars: Settings.shared.compactMaxWidth,
             minimum: 5 * lineHeight)
@@ -127,6 +122,27 @@ extension ItemListView {
             }
         }
         return NSSize(width: max(width, x + margin), height: visibleHeight)
+    }
+
+    /// Geometry changes reuse one scalar. A new listing/rename/filter, changed roles or loaded metadata rebuild it.
+    private func compactWidestText(roles: [ItemRole]) -> CGFloat {
+        let minute =
+            Settings.shared.dateStyle == .relative
+                && roles.contains(where: {
+                    [.modificationTime, .creationTime, .accessTime, .sharedTime].contains($0)
+                }) ? Int(Date().timeIntervalSince1970 / 60) : nil
+        if var cached = compactTextMeasurement, cached.roles == roles, cached.relativeMinute == minute {
+            // commitZoom synchronously rebuilds identical rows while saving only their icon size.
+            if committingZoom { cached.revision = model.rowsRevision; compactTextMeasurement = cached }
+            if cached.revision == model.rowsRevision { return cached.width }
+        }
+        var widest: CGFloat = 0
+        for row in model.rows {
+            widest = max(widest, textWidth(model.displayName(for: row.item)))
+            for role in roles { widest = max(widest, textWidth(model.text(for: role, of: row.item))) }
+        }
+        compactTextMeasurement = CompactTextMeasurement(revision: model.rowsRevision, roles: roles, relativeMinute: minute, width: widest)
+        return widest
     }
 
     /// Details: one row per item; Name takes the width the other columns leave, unless the user sized it.
@@ -206,6 +222,9 @@ extension ItemListView {
     func textWidth(_ s: String) -> CGFloat {
         if let w = textWidthCache[s] { return w }
         if textWidthCache.count > 50_000 { textWidthCache = [:] }
+        #if PORPOISE_TEST_HOOKS
+        textMeasurementCount += 1
+        #endif
         let w = (s as NSString).size(withAttributes: [.font: font]).width
         textWidthCache[s] = w
         return w

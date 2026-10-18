@@ -6,6 +6,19 @@ import PorpoiseServices
 /// KPropertiesDialog.
 final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
     private let urls: [URL]
+    private let knownItems: [FileItem]
+    private(set) var localItems: [FileItem] = []
+    private var localInformation: LocalInformation?
+    private let informationCancellation = DiskCancellation()
+    private let informationQueue = DispatchQueue(label: "app.porpoise.properties-info", qos: .userInitiated, autoreleaseFrequency: .workItem)
+    private var pageSelector: NSView?
+    private struct LocalInformation: Sendable {
+        let items: [FileItem]
+        let locked: Bool
+        let hiddenExtension: Bool
+        let comment: String
+        let freeSpace: String?
+    }
     private var nameField: NSTextField?
     let sizeLabel = NSTextField(labelWithString: "Calculating…")
     private var closeObserver: NSObjectProtocol?
@@ -23,7 +36,7 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
         }
         let urls = urls.filter(\.isFileURL)
         guard !urls.isEmpty else { NSSound.beep(); return }
-        PropertiesWindow(urls: urls).present()
+        PropertiesWindow(urls: urls, items: items).present()
     }
 
     /// The cloud item shown (nil: local items).
@@ -31,8 +44,9 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
 
     convenience init(cloud url: URL, item: FileItem?) { self.init(urls: [url], cloud: (url, item)) }
 
-    init(urls: [URL], cloud: (url: URL, item: FileItem?)? = nil) {
+    init(urls: [URL], cloud: (url: URL, item: FileItem?)? = nil, items: [FileItem] = []) {
         self.urls = urls
+        knownItems = items
         cloudItem = cloud
         let w = PropertiesPanel(
             contentRect: CGRect(x: 0, y: 0, width: 440, height: 660), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
@@ -47,20 +61,75 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
         closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
             guard let self else { return }
             self.sizeCount.cancel()
+            self.informationCancellation.cancel()
             if self.cloudItem == nil { self.commitName() }
             if let o = self.closeObserver { NotificationCenter.default.removeObserver(o) }
         }
+        if cloud == nil { readLocalInformation() }
     }
 
     required init?(coder: NSCoder) { fatalError() }
+    deinit { informationCancellation.cancel() }
 
     private var pages: [NSView] = []
 
+    /// Read missing file metadata and volume information on a private queue. The window already exists, with
+    /// a loading page; large selections do not make its initializer stat every path before it can appear.
+    private func readLocalInformation() {
+        let urls = urls, known = knownItems, cancellation = informationCancellation
+        informationQueue.async { [weak self] in
+            let byURL = Dictionary(known.map { ($0.url, $0) }, uniquingKeysWith: { first, _ in first })
+            var items: [FileItem] = []
+            for url in urls {
+                guard !cancellation.isCancelled else { return }
+                let item = byURL[url] ?? autoreleasepool { FileItem.load(url) }
+                if let item { items.append(item) }
+            }
+            guard !cancellation.isCancelled else { return }
+            let locked = urls.allSatisfy { url in
+                !cancellation.isCancelled && (try? url.resourceValues(forKeys: [.isUserImmutableKey]).isUserImmutable) == true
+            }
+            let single = urls.count == 1
+            let hidden = single && (try? urls[0].resourceValues(forKeys: [.hasHiddenExtensionKey]).hasHiddenExtension) == true
+            let comment = single ? FinderComment.read(urls[0]) : ""
+            var freeSpace: String?
+            if single, let volume = try? urls[0].resourceValues(forKeys: [.volumeURLKey]).volume,
+                let values = try? volume.resourceValues(forKeys: [
+                    .volumeLocalizedNameKey, .volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey,
+                ]),
+                let free = values.volumeAvailableCapacityForImportantUsage, let total = values.volumeTotalCapacity
+            {
+                freeSpace =
+                    "\(FileFormat.size(free)) free of \(FileFormat.size(Int64(total))) on “\(values.volumeLocalizedName ?? volume.lastPathComponent)”"
+            }
+            let information = LocalInformation(items: items, locked: locked, hiddenExtension: hidden, comment: comment, freeSpace: freeSpace)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !cancellation.isCancelled else { return }
+                self.localInformation = information
+                self.localItems = information.items
+                self.build()
+            }
+        }
+    }
+
     private func build() {
         guard let content = window?.contentView else { return }
+        pages.forEach { $0.removeFromSuperview() }
+        pageSelector?.removeFromSuperview()
         // Cloud items: one General page; Unix permissions mean nothing there, sharing is shown instead.
-        let single = urls.count == 1 && cloudItem == nil
-        pages = cloudItem.map { [cloudGeneralView($0.url, item: $0.item)] } ?? ([generalView()] + (single ? [permissionsView()] : []))
+        let ready = cloudItem != nil || localInformation != nil
+        let single = urls.count == 1 && cloudItem == nil && ready
+        if let cloudItem {
+            pages = [cloudGeneralView(cloudItem.url, item: cloudItem.item)]
+        } else if ready {
+            pages = [generalView()] + (single ? [permissionsView()] : [])
+        } else {
+            let loading = NSView(frame: CGRect(x: 0, y: 0, width: 400, height: 600))
+            let label = label("Reading file information…")
+            label.frame = CGRect(x: 20, y: 530, width: 360, height: 30)
+            loading.addSubview(label)
+            pages = [loading]
+        }
         let seg = NSSegmentedControl(
             labels: single ? ["General", "Permissions"] : ["General"], trackingMode: .selectOne,
             target: self, action: #selector(switchPage(_:)))
@@ -69,12 +138,15 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
         seg.frame.origin = CGPoint(x: (content.bounds.width - seg.frame.width) / 2, y: content.bounds.height - seg.frame.height - 14)
         seg.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin]
         content.addSubview(seg)
+        pageSelector = seg
         for (i, p) in pages.enumerated() {
             p.frame = CGRect(x: 20, y: 10, width: content.bounds.width - 40, height: seg.frame.minY - 20)
             p.autoresizingMask = [.width, .height]
             p.isHidden = i != 0
             content.addSubview(p)
         }
+        // Async pages can arrive after the window became key, after the normal theme hook already ran.
+        if let window { Theme.dressIfThemed(window) }
     }
 
     @objc private func switchPage(_ s: NSSegmentedControl) {
@@ -131,7 +203,7 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
     private func generalView() -> NSView {
         let v = NSView(frame: CGRect(x: 0, y: 0, width: 400, height: 600))
         var y: CGFloat = 572
-        let items = urls.compactMap(FileItem.load)
+        let items = localItems
         let icon = NSImageView(frame: CGRect(x: 20, y: y - 40, width: 64, height: 64))
         icon.autoresizingMask = [.minYMargin]
         icon.image = items.count == 1 ? Icons.shared.image(for: items[0], size: 64) : Icons.shared.image("document-multiple", size: 64)
@@ -182,18 +254,7 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
         ])
         row("Size:", sizeRow, y: &y, in: v)
         countSize()
-        if items.count == 1, let volURL = try? urls[0].resourceValues(forKeys: [.volumeURLKey]).volume,
-            let vol = try? volURL.resourceValues(forKeys: [
-                .volumeLocalizedNameKey, .volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey,
-            ]),
-            let free = vol.volumeAvailableCapacityForImportantUsage, let total = vol.volumeTotalCapacity
-        {
-            row(
-                "Free space:",
-                label(
-                    "\(FileFormat.size(free)) free of \(FileFormat.size(Int64(total))) on “\(vol.volumeLocalizedName ?? volURL.lastPathComponent)”"),
-                y: &y, in: v)
-        }
+        if let freeSpace = localInformation?.freeSpace { row("Free space:", label(freeSpace), y: &y, in: v) }
         y -= 8
         if items.count == 1 {
             let it = items[0]
@@ -223,17 +284,17 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
             row("Tags:", tags, y: &y, in: v)
             let locked = NSButton(checkboxWithTitle: "Locked", target: self, action: #selector(lockedChanged(_:)))
             locked.toolTip = "Prevents the item from being changed, renamed or moved to the Trash (Finder's Locked flag)"
-            locked.state = urls.allSatisfy({ (try? $0.resourceValues(forKeys: [.isUserImmutableKey]).isUserImmutable) == true }) ? .on : .off
+            locked.state = localInformation?.locked == true ? .on : .off
             locked.frame.size = CGSize(width: 240, height: 20)
             row("", locked, y: &y, in: v)
             if items.count == 1 && !items[0].isBrowsableFolder && !items[0].fileExtension.isEmpty {
                 let hide = NSButton(checkboxWithTitle: "Hide extension", target: self, action: #selector(hideExtChanged(_:)))
-                hide.state = (try? urls[0].resourceValues(forKeys: [.hasHiddenExtensionKey]).hasHiddenExtension) == true ? .on : .off
+                hide.state = localInformation?.hiddenExtension == true ? .on : .off
                 hide.frame.size = CGSize(width: 240, height: 20)
                 row("", hide, y: &y, in: v)
             }
             if items.count == 1 {
-                let c = NSTextField(string: FinderComment.read(urls[0]))
+                let c = NSTextField(string: localInformation?.comment ?? "")
                 c.placeholderString = "Add comments"
                 c.frame.size = CGSize(width: 270, height: 24)
                 c.target = self
@@ -286,7 +347,7 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
     private func permissionsView() -> NSView {
         // As tall as the General page, rows from the top (not floating in the middle of the window).
         let v = NSView(frame: CGRect(x: 0, y: 0, width: 400, height: 600))
-        guard let it = FileItem.load(urls[0]) else { return v }
+        guard let it = localItems.first else { return v }
         var y: CGFloat = 550
         let groups = [("Owner:", 6), ("Group:", 3), ("Others:", 0)]
         var popups: [NSPopUpButton] = []

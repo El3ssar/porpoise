@@ -146,6 +146,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
         model.onMetadataLoaded = { [weak self] in
             guard let self else { return }
+            if self.model.props.roles(for: .compact).contains(.tags) { self.list.compactTextMeasurement = nil }
             // A Tags column or label sizes itself to the tags just read.
             if self.model.props.roles(for: self.model.props.mode).contains(.tags) { self.list.relayout() } else { self.list.needsDisplay = true }
         }
@@ -213,27 +214,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         let center = NotificationCenter.default
         observers.append(
             center.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
-                guard let self else { return }
-                self.statusBar.mode = Settings.shared.statusBarMode
-                self.needsLayout = true
-                // The library zoomed (here or in another window): only the libraries follow.
-                if n.object == nil || n.object as? String == "appLibraryIconSize" { self.apps?.grid.savedSizeChanged() }
-                switch n.object as? String {
-                case "appLibraryIconSize": return
-                // Restore Defaults (no key), common vs. per-folder style, media folders: show the style that now applies.
-                case nil, "perFolder", "dynamicView", "appearanceIconSizes": self.model.reloadProps()
-                case "appLibraryView":
-                    if self.url.standardizedFileURL == AppLibrary.location {
-                        self.model.filter =
-                            Settings.shared.appLibraryView ? NameFilter(text: self.apps?.field.stringValue ?? "") : self.filterBar.filter
-                        self.model.reloadProps()
-                        self.model.reload()
-                    }
-                case "folderDepth": self.model.resetFolderSizes()
-                case "expandable": if !Settings.shared.detailsExpandableFolders { self.model.collapseAll() }
-                default: break
-                }
-                self.model.rebuild()
+                self?.settingsChanged(key: n.object as? String)
             })
         observers.append(
             center.addObserver(forName: StatusCenter.message, object: nil, queue: .main) { [weak self] n in
@@ -473,6 +454,35 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     func reload() { model.reload() }
 
+    /// Keep unrelated preferences out of the listing/re-layout path, including panes in hidden tabs.
+    private func settingsChanged(key: String?) {
+        switch key {
+        case nil:
+            statusBar.mode = Settings.shared.statusBarMode
+            apps?.grid.savedSizeChanged()
+            model.reloadProps()
+            model.rebuild()
+            needsLayout = true
+        case "perFolder", "dynamicView", "appearanceIconSizes": model.reloadProps()
+        case "appLibraryIconSize": apps?.grid.savedSizeChanged()
+        case "appLibraryView":
+            guard url.standardizedFileURL == AppLibrary.location else { return }
+            model.filter = Settings.shared.appLibraryView ? NameFilter(text: apps?.field.stringValue ?? "") : filterBar.filter
+            model.reloadProps()
+            model.reload()
+        case "sorting", "hideBackup": model.rebuild()
+        case "folderDepth", "folderSize":
+            model.resetFolderSizes()
+            model.rebuild()
+        case "expandable":
+            if !Settings.shared.detailsExpandableFolders { model.collapseAll() }
+        case "statusBar2", "zoomSlider2":
+            statusBar.mode = Settings.shared.statusBarMode
+            updateStatus()
+        default: break
+        }
+    }
+
     // MARK: Status
 
     /// Called once, after the next load finishes (the split view flies items in when the new pane has them).
@@ -485,6 +495,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     }
 
     private func modelChanged() {
+        // Folder counts can arrive without replacing rows; a Size label may have become wider.
+        if !list.committingZoom, model.props.roles(for: .compact).contains(.size) { list.compactTextMeasurement = nil }
         if showsApps { apps?.reload() }
         list.relayout()
         list.transitions.itemsDelivered(loading: model.isLoading)
