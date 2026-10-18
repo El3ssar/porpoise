@@ -13,20 +13,59 @@ public final class FakeContentSource: CloudContentSource, @unchecked Sendable {
     public var onChanges: (@Sendable (CloudChangeBatch) -> Void)?
     public var items: [String: CloudRemoteItem] = [:]
     public var bytes: [String: Data] = [:]
-    public var downloads = 0
-    public var active = 0
-    public var maximum = 0
-    public var offsets: [Int] = []
+    private var downloadCount = 0
+    private var activeCount = 0
+    private var maximumCount = 0
+    private var recordedOffsets: [Int] = []
+    public var downloads: Int { lock.withLock { downloadCount } }
+    public var active: Int { lock.withLock { activeCount } }
+    public var maximum: Int { lock.withLock { maximumCount } }
+    public var offsets: [Int] { lock.withLock { recordedOffsets } }
+    /// Emitted only after the download owns its immutable byte snapshot, before a hold can suspend it.
+    public let capturedDownloads: AsyncStream<CloudRemoteItem>
+    private let captured: AsyncStream<CloudRemoteItem>.Continuation
     public var failAfterPartial = false
     public var delay: Duration = .milliseconds(2)
     private var holds = false
+    private var heldDownloads: [UUID: CheckedContinuation<Void, Error>] = [:]
     /// While true, downloads that have taken their bytes wait before writing them: a test's download stays under way
-    /// (and `active`) until it sets this back, however slowly the test gets to run.
+    /// (and `active`) until it sets this back or cancels the download, however slowly the test gets to run.
     public var holdsDownloads: Bool {
         get { lock.withLock { holds } }
-        set { lock.withLock { holds = newValue } }
+        set {
+            let waiting: [CheckedContinuation<Void, Error>] = lock.withLock {
+                holds = newValue
+                guard !newValue else { return [] }
+                let waiting = Array(heldDownloads.values)
+                heldDownloads.removeAll()
+                return waiting
+            }
+            for continuation in waiting { continuation.resume() }
+        }
     }
-    public init() {}
+    public init() {
+        let events = AsyncStream<CloudRemoteItem>.makeStream(bufferingPolicy: .bufferingNewest(32))
+        capturedDownloads = events.stream; captured = events.continuation
+    }
+    deinit { captured.finish() }
+
+    private func waitForRelease() async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                let ready: Result<Void, Error>? = lock.withLock {
+                    if Task.isCancelled { return .failure(CancellationError()) }
+                    if !holds { return .success(()) }
+                    heldDownloads[id] = continuation
+                    return nil
+                }
+                if let ready { continuation.resume(with: ready) }
+            }
+        } onCancel: {
+            let continuation = self.lock.withLock { self.heldDownloads.removeValue(forKey: id) }
+            continuation?.resume(throwing: CancellationError())
+        }
+    }
     public func add(_ id: String, parent: String? = nil, folder: Bool = false, text: String = "hello", revision: String = "r1") -> CloudRemoteItem {
         let data = Data(text.utf8)
         let item = CloudRemoteItem(
@@ -51,12 +90,13 @@ public final class FakeContentSource: CloudContentSource, @unchecked Sendable {
     }
     public func download(_ item: CloudRemoteItem, to partial: URL, progress: @escaping @Sendable (Int64, Int64?) -> Void) async throws {
         let data = lock.withLock { () -> Data in
-            downloads += 1; active += 1; maximum = max(maximum, active); return bytes[item.ref.item]!
+            downloadCount += 1; activeCount += 1; maximumCount = max(maximumCount, activeCount); return bytes[item.ref.item]!
         }
-        defer { lock.withLock { active -= 1 } }
-        while holdsDownloads { try await Task.sleep(for: .milliseconds(5)) }
+        defer { lock.withLock { activeCount -= 1 } }
+        captured.yield(item)
+        try await waitForRelease()
         let offset = (try? partial.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        lock.withLock { offsets.append(offset) }
+        lock.withLock { recordedOffsets.append(offset) }
         if failAfterPartial {
             try data.prefix(2).write(to: partial); failAfterPartial = false; throw CancellationError()
         }

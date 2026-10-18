@@ -160,18 +160,20 @@ extension CloudOfflineStoreTests {
 }
 
 extension CloudOfflineStoreTests {
-    @Test func aNewRevisionWaitsForOldFlightAndStillDeduplicates() async throws {
+    @Test(.timeLimit(.minutes(1))) func aNewRevisionWaitsForOldFlightAndStillDeduplicates() async throws {
         let source = FakeContentSource(), scratch = try Scratch(), first = source.add("one")
+        var captures = source.capturedDownloads.makeAsyncIterator()
         source.holdsDownloads = true
         let store = try store(source, scratch)
         let firstFetch = Task { try await store.fetch(first) }
-        // The first download has taken r1's bytes before r2 replaces them (they did not, once a 5 s wait ran out).
-        await expectEventually { source.active == 1 }
+        defer { firstFetch.cancel(); source.holdsDownloads = false }
+        // Only the fake's byte-capture event permits replacing r1. A timed-out poll used to continue anyway,
+        // swapping in r2 before the queued r1 flight had started, and triggering a real checksum rejection.
+        try #require(await captures.next() == first)
         let updated = source.add("one", text: "updated", revision: "r2")
         async let a = store.fetch(updated)
         async let b = store.fetch(updated)
         // Both wait for the first flight, then share one download (whether or not they came while it ran).
-        try await Task.sleep(for: .milliseconds(100))
         source.holdsDownloads = false
         _ = try await firstFetch.value
         let (one, two) = try await (a, b)
@@ -183,13 +185,15 @@ extension CloudOfflineStoreTests {
 }
 
 extension CloudOfflineStoreTests {
-    @Test func concurrentDownloadsReserveSpaceUntilTheirCopyCommits() async throws {
+    @Test(.timeLimit(.minutes(1))) func concurrentDownloadsReserveSpaceUntilTheirCopyCommits() async throws {
         let source = FakeContentSource(), scratch = try Scratch()
+        var captures = source.capturedDownloads.makeAsyncIterator()
         let first = source.add("first"), second = source.add("second")
         source.holdsDownloads = true
         let store = try store(source, scratch, free: { (2_000_000_008, 20_000_000_000) })
         let running = Task { try await store.fetch(first) }
-        await expectEventually { source.active == 1 }
+        defer { running.cancel(); source.holdsDownloads = false }
+        try #require(await captures.next() == first)
         await #expect(throws: CloudContentError.lowSpace) { try await store.fetch(second, keep: true) }
         #expect(await store.state(second.ref) == .error(CloudContentError.lowSpace.localizedDescription))
         source.holdsDownloads = false
@@ -201,18 +205,21 @@ extension CloudOfflineStoreTests {
 }
 
 extension CloudOfflineStoreTests {
-    @Test func removalAndWipeDrainFlightsAndDeletePartialBytes() async throws {
+    @Test(.timeLimit(.minutes(1))) func removalAndWipeDrainFlightsAndDeletePartialBytes() async throws {
         let source = FakeContentSource(), scratch = try Scratch(), item = source.add("one")
+        var captures = source.capturedDownloads.makeAsyncIterator()
         let store = try store(source, scratch)
         source.failAfterPartial = true
         await #expect(throws: CancellationError.self) { try await store.fetch(item, keep: true) }
+        try #require(await captures.next() == item)
         let object = store.directory.appendingPathComponent("objects").appendingPathComponent(cloudObjectKey(item.ref.item))
         #expect(FileManager.default.fileExists(atPath: object.path))
         try await store.remove([item.ref])
         #expect(!FileManager.default.fileExists(atPath: object.path))
         source.holdsDownloads = true
         let task = Task { try await store.fetch(item, keep: true) }
-        await expectEventually { source.active == 1 }
+        defer { task.cancel(); source.holdsDownloads = false }
+        try #require(await captures.next() == item)
         try await store.wipe()
         await #expect(throws: CancellationError.self) { try await task.value }
         #expect(!FileManager.default.fileExists(atPath: store.directory.path))
