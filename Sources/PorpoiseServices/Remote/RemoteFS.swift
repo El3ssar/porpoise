@@ -107,6 +107,13 @@ public enum RemoteFS {
         for p in all { (p as? SSHProvider)?.disconnect() }
     }
 
+    /// Retires shared ssh connections after a sleep or a network change: new commands connect afresh, running ones
+    /// finish on the old connection if it still works.
+    public static func retireSharedConnections() {
+        let all = lock.withLock { Array(providers.values) }
+        for p in all { (p as? SSHProvider)?.retire() }
+    }
+
     public static func provider(for url: URL) -> RemoteProvider? {
         guard let s = url.scheme?.lowercased(), isRemote(url) else { return nil }
         let key = Self.key(url)
@@ -169,6 +176,10 @@ public enum RemoteFS {
         }
         return nil
     }
+
+    /// Asks whether to accept an SSH server's new key, on the main thread: the server as known_hosts names it, and
+    /// what ssh reported (the new key's fingerprint). Refuses until the app sets it.
+    nonisolated(unsafe) public static var confirmHostKeyChange: (_ server: String, _ change: HostKeyFingerprint.Change) -> Bool = { _, _ in false }
 
     /// Asks for an FTP login on the main thread (host, the user name known so far); nil when cancelled. Set by the app.
     nonisolated(unsafe) public static var askLogin: (_ host: String, _ user: String?) -> (user: String, password: String)? = { _, _ in nil }

@@ -3,6 +3,9 @@
 ## Unreleased
 
 - **S3-compatible storage locations.** Browse buckets and prefixes, copy and move objects, and transfer files with resumable multipart uploads using AWS S3, MinIO, Backblaze B2 or Cloudflare R2 endpoints. Access keys stay in Keychain.
+- **Saved connections.** Go › Connections… (⌥⌘K) keeps your SFTP, FTP/FTPS, SMB and S3-compatible servers, each one row in the sidebar's Remote section. Passwords and S3 secret keys go to the Keychain, never into settings or addresses. Hosts in ~/.ssh/config can be imported with their jump hosts; a connection can also have its own jump hosts and key file, and ssh-agent keys are used. Each connection shows where ssh will take it, the server key this Mac knows, the agent's keys, and plainly what that kind of server can and can't do. Servers added with Connect to Server's "Add to Places" are saved as connections.
+- **Reconnects on its own.** After sleep or a network change, SFTP and FTP connections are made again and the command that was cut off runs again, so copies and other jobs carry on. Commands that mustn't run twice (rename, move) are only retried when the server was never reached.
+- **A changed server key asks first.** When an SSH server presents a different key than the one this Mac knows, Porpoise shows the new key's fingerprint and connects only if you trust it; ssh then accepts exactly that key.
 
 ## 0.8.7
 

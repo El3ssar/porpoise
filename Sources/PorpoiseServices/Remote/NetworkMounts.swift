@@ -14,7 +14,11 @@ public enum NetworkMounts {
         openOptions[kNAUIOptionKey] = kNAUIOptionAllowUI
         let mountOptions = NSMutableDictionary()
         var request: AsyncRequestID?
-        let status = NetFSMountURLAsync(u as CFURL, nil, nil, nil, openOptions, mountOptions, &request, DispatchQueue.main) {
+        // A saved connection's login, from the Keychain; without one, macOS asks (and finds what Finder saved).
+        let saved = login(for: url)
+        let status = NetFSMountURLAsync(
+            u as CFURL, nil, saved?.user as CFString?, saved?.password as CFString?, openOptions, mountOptions, &request, DispatchQueue.main
+        ) {
             status, _, mountpoints in
             if status == 0, let mp = (mountpoints as? [String])?.first {
                 // Keep the path inside the share (smb://host/share/sub/dir → /Volumes/share/sub/dir).
@@ -33,6 +37,14 @@ public enum NetworkMounts {
         if status != 0 && status != Int32(EINPROGRESS) && request == nil {
             completion(.failure(RemoteError.failed("Could not connect to \(u.host ?? "") (error \(status)).")))
         }
+    }
+
+    /// The user and password of the saved connection `url` is in, when its password is in the Keychain.
+    static func login(
+        for url: URL, profiles: ConnectionProfiles = .shared, credentials: ConnectionCredentials = .shared
+    ) -> (user: String, password: String)? {
+        guard let p = profiles.profile(for: url), p.kind == .smb, let user = p.user, let password = credentials.password(for: p) else { return nil }
+        return (user, password)
     }
 
     /// The URL NetFS is given: WebDAV variants become http(s), as NetFS expects, and cifs becomes smb.

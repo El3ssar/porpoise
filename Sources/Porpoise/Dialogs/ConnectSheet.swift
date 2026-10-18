@@ -42,7 +42,7 @@ final class ConnectSheet: SecondaryWindowController {
             }
         }
 
-        var isAvailable: Bool { self != .s3 }
+        var isAvailable: Bool { true }
     }
 
     private(set) var page: Page = .pick
@@ -124,7 +124,10 @@ final class ConnectSheet: SecondaryWindowController {
             views: ServerKind.allCases.map { k in
                 let t = ConnectTile(title: k.title, image: Self.symbol(k.symbol), available: k.isAvailable)
                 t.identifier = NSUserInterfaceItemIdentifier("tile-" + k.rawValue)
-                t.onClick = { [weak self] in self?.show(.server(k)) }
+                t.onClick = { [weak self] in
+                    // S3 has keys and an endpoint rather than a server form: it's set up as a saved connection.
+                    if k == .s3 { self?.addS3Connection() } else { self?.show(.server(k)) }
+                }
                 return t
             })
         servers.spacing = 8
@@ -245,9 +248,18 @@ final class ConnectSheet: SecondaryWindowController {
         return stack
     }
 
+    private func addS3Connection() {
+        let open = self.open
+        finish()
+        ConnectionsWindow.show(adding: .s3, open: open)
+    }
+
     @objc private func connectServer(_ sender: Any?) {
         guard let form, let url = form.url() else { NSSound.beep(); return }
-        if form.addToPlaces { PlacesModel.shared.add(url, title: form.name) }
+        if form.addToPlaces {
+            // Servers the connection manager knows become saved connections (editable in Connections); others a place.
+            if let profile = form.profile() { ConnectionProfiles.shared.save(profile) } else { PlacesModel.shared.add(url, title: form.name) }
+        }
         finish()
         open(url)
     }
@@ -628,6 +640,24 @@ final class ServerForm {
         case "ftp", "ftps": return 21
         default: return Self.otherKinds.first { $0.scheme == scheme }?.port ?? 0
         }
+    }
+
+    /// The fields as a saved connection, for the kinds the Connections window manages.
+    func profile() -> ConnectionProfile? {
+        let kind: ConnectionProfile.Kind
+        switch scheme {
+        case "sftp": kind = .sftp
+        case "ftp": kind = .ftp
+        case "ftps": kind = .ftps
+        case "smb": kind = .smb
+        default: return nil
+        }
+        let host = server.stringValue.trimmingCharacters(in: .whitespaces)
+        let u = user.stringValue.trimmingCharacters(in: .whitespaces)
+        let p = ConnectionProfile(
+            name: name ?? host, kind: kind, host: host, port: Int(port.stringValue).flatMap { $0 == defaultPort ? nil : $0 },
+            user: u.isEmpty ? nil : u, path: folder.stringValue.trimmingCharacters(in: .whitespaces))
+        return p.problem == nil ? p : nil
     }
 
     /// The address the fields describe (nil without a server).

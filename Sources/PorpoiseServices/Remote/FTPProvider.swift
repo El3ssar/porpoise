@@ -11,13 +11,27 @@ final class FTPProvider: RemoteProvider {
     private var password: String?
     private let curl: String
     private let credentialStore: any PasswordCredentialStore
+    private let reconnect: ReconnectPolicy
+    /// Sleeps between reconnection tries; tests record instead.
+    var wait: (TimeInterval) -> Void = SSHProvider.waitUnlessCancelled
+    /// Whether a command ever reached the server: only then is a lost connection worth trying again.
+    private var connected: Bool {
+        get { stateLock.withLock { everConnected } }
+        set { stateLock.withLock { everConnected = newValue } }
+    }
+    private var everConnected = false
+    private let stateLock = NSLock()
 
     /// curl's exit code for a refused login (CURLE_LOGIN_DENIED).
     private static let loginDenied: Int32 = 67
     private static let connectTimeout = 15
 
     /// Tests pass their own `curl` (which records what it gets) and a memory credential store.
-    init(url: URL, curl: String = "/usr/bin/curl", credentialStore: any PasswordCredentialStore = CredentialStores.passwords()) {
+    init(
+        url: URL, curl: String = "/usr/bin/curl", credentialStore: any PasswordCredentialStore = CredentialStores.passwords(),
+        reconnect: ReconnectPolicy = ReconnectPolicy()
+    ) {
+        self.reconnect = reconnect
         scheme = url.scheme?.lowercased() ?? "ftp"
         host = url.host ?? ""
         port = url.port
@@ -68,17 +82,38 @@ final class FTPProvider: RemoteProvider {
         return out
     }
 
-    /// Runs curl; on a login failure asks for credentials once (and keeps them in the Keychain).
+    /// curl's failure when the connection was lost, carried through the reconnection tries.
+    private struct Lost: Error {
+        let result: Shell.Result
+    }
+
+    /// Runs curl; on a login failure asks for credentials once (and keeps them in the Keychain). Each run is a new
+    /// connection, so after a lost one (sleep, a network change) curl runs again, if the server was reached before:
+    /// any `idempotent` command, the others only when curl never connected.
     @discardableResult
-    private func curlRun(_ args: [String], stdoutFile: URL? = nil, retry: Bool = true) throws -> Data {
+    private func curlRun(_ args: [String], stdoutFile: URL? = nil, retry: Bool = true, idempotent: Bool = true) throws -> Data {
         let login = credentials
         // --globoff: a local file named "report[1].pdf" or "{a,b}" is a name, not a pattern (URLs are percent-encoded).
         var all = ["-s", "-S", "--globoff", "--connect-timeout", String(Self.connectTimeout)]
         if scheme == "ftps" { all += ["--ssl-reqd"] }
         if login != nil { all += ["--config", "-"] }
-        let r = try Shell.run(curl, all + args, stdin: login, stdoutFile: stdoutFile)
+        let r: Shell.Result
+        do {
+            r = try reconnect.run(
+                connectedBefore: { connected },
+                isLoss: { ($0 as? Lost).map { idempotent || ReconnectPolicy.isConnectFailure(curlStatus: $0.result.status) } ?? false },
+                wait: wait
+            ) {
+                let r = try Shell.run(curl, all + args, stdin: login, stdoutFile: stdoutFile)
+                if ReconnectPolicy.isConnectionLoss(curlStatus: r.status) { throw Lost(result: r) }
+                connected = true
+                return r
+            }
+        } catch let lost as Lost {
+            r = lost.result
+        }
         if r.status == Self.loginDenied || r.err.contains("530"), retry, askCredentials() {
-            return try curlRun(args, stdoutFile: stdoutFile, retry: false)
+            return try curlRun(args, stdoutFile: stdoutFile, retry: false, idempotent: idempotent)
         }
         if r.status != 0 {
             let msg = r.err.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -89,7 +124,7 @@ final class FTPProvider: RemoteProvider {
 
     /// Raw FTP commands (`-Q`); the listing curl fetches afterwards is discarded.
     private func command(_ commands: String...) throws {
-        try curlRun(commands.flatMap { ["-Q", $0] } + ["-o", "/dev/null", base("/")])
+        try curlRun(commands.flatMap { ["-Q", $0] } + ["-o", "/dev/null", base("/")], idempotent: false)
     }
 
     private func askCredentials() -> Bool {
