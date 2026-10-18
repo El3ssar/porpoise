@@ -197,4 +197,39 @@ import Testing
         #expect(job.errors.isEmpty, "\(job.errors)")
         #expect(job.progress.skippedIdenticalItems == 1, "\(job.progress) \(job.results)")
     }
+
+    @MainActor private func boxFolder() async throws -> (URL, () -> Void) {
+        let server = try FakeBoxServer(), suite = "porpoise-box-parity-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let store = BoxAccountStore(defaults: defaults, credentials: MemoryCredentials(), configuration: server.config, directory: server.directory)
+        let backend = BoxCloudBackend(store: store)
+        let account = try await store.connect(openBrowser: openInFakeBrowser)
+        _ = backend.accounts
+        return (
+            BoxLocation(accountID: account.id, itemID: "11", kind: .folder).url,
+            {
+                backend.setActive(false); RemoteFS.registerCloud(nil, for: BoxLocation(accountID: account.id).url)
+                defaults.removePersistentDomain(forName: suite); _ = server
+            }
+        )
+    }
+
+    @MainActor @Test func boxRunsTheSameConflictCases() async throws {
+        let (folder, cleanup) = try await boxFolder(); defer { cleanup() }
+        let provider = try #require(RemoteFS.provider(for: folder))
+        let source = try #require(try await offThePool { try provider.list(folder).first { $0.name == "nested.txt" } })
+        try await Self.exerciseRules(source: source, bytes: Data("Nested fixture.".utf8), scratch: Scratch())
+    }
+
+    // Identical files skipped in Box are counted, as everywhere else.
+    @MainActor @Test func boxCountsIdenticalFilesItSkips() async throws {
+        let (folder, cleanup) = try await boxFolder(); defer { cleanup() }
+        let scratch = try Scratch(), local = scratch.url.appendingPathComponent("nested.txt")
+        try Data("Nested fixture.".utf8).write(to: local)
+        let job = RemoteTransferJob(
+            kind: .copy, sources: [local], destination: folder, control: JobControl(), rule: .different, options: .init(method: .content))
+        await offThePool { job.run() }
+        #expect(job.errors.isEmpty, "\(job.errors)")
+        #expect(job.progress.skippedIdenticalItems == 1, "\(job.progress) \(job.results)")
+    }
 }
