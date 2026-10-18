@@ -79,14 +79,16 @@ import Testing
         #expect(fixture.composite.permissions(for: root)?.canAddChildren == true && fixture.composite.permissions(for: root)?.canTrash == false)
         #expect(CloudProviderDescriptor.descriptor(for: root)?.provider == .box)
         #expect(fixture.composite.content(for: "absent") == nil && fixture.composite.savedAt(for: root) == nil)
+        // Asked of Box itself: the composite asks its backends in no set order, and the demo Drive one answers any link.
         let link = "https://app.box.com/s/fixturelink"
         try await fixture.server.configure(["links": [link: "11"]])
         let folder: CloudLinkResult = try await awaitCallback { continuation in
-            fixture.composite.resolveLink(link) { continuation.resume(returning: $0) }
+            fixture.backend.resolveLink(link) { continuation.resume(returning: $0) }
         }
-        #expect(folder == .folder(BoxLocation(accountID: try provider.location(root).accountID, itemID: "11", kind: .folder).url))
+        let expected = BoxLocation(accountID: try provider.location(root).accountID, itemID: "11", kind: .folder).url
+        #expect(folder == .folder(expected), "\(folder)")
         let none: CloudLinkResult = try await awaitCallback { continuation in
-            fixture.composite.resolveLink("https://app.box.com/s/unknown") { continuation.resume(returning: $0) }
+            fixture.backend.resolveLink("https://app.box.com/s/unknown") { continuation.resume(returning: $0) }
         }
         #expect(none == .noAccess)
         let notALink: CloudLinkResult = try await awaitCallback { continuation in
