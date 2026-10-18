@@ -20,6 +20,10 @@ extension AppDelegate {
                 ActivityWindowController.shared.show()
             }
             w.view.needsLayout = true
+            EditDecisionMessage.shown(on: w.view.messageBar)
+        }
+        NotificationCenter.default.addObserver(forName: CloudEditing.changed, object: nil, queue: .main) { _ in
+            EditDecisionMessage.closeIfDecided()
         }
         CloudEditing.shared.restoresAtLaunch = true
         // Test instances can show made-up cloud accounts (no network, no browser).
@@ -63,5 +67,28 @@ extension AppDelegate {
             Theme.lookChanged()
             for w in NSApp.windows { w.contentView?.redrawAll() }
         }
+    }
+}
+
+/// The message bar line about an edit waiting for a decision (a conflict, a copy to save): it goes by itself once the
+/// decision is made in Activity, instead of pointing there for nothing.
+enum EditDecisionMessage {
+    private static weak var bar: MessageBar?
+    private static var text = ""
+
+    /// Whether an edit waits for a decision now.
+    static var isWaiting: Bool { CloudEditing.shared.entries.contains { $0.mark == .conflict || $0.mark == .needsCopy } }
+
+    /// `bar` shows a line just posted: remembered if it is about a decision waiting.
+    static func shown(on bar: MessageBar) {
+        guard isWaiting else { return }
+        self.bar = bar
+        text = bar.text
+    }
+
+    static func closeIfDecided() {
+        guard let bar, !bar.isHidden, bar.text == text, !isWaiting else { return }
+        bar.dismiss()
+        self.bar = nil
     }
 }
