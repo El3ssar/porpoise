@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.1
+
+- **Apps go to the Trash as in Finder.** Moving an app to the Trash (menu, ⌘⌫, the app grid, or dragging it to the Dock's Trash) no longer opens the Application Cleanup window: the app goes straight to the Trash, with Undo, and its support files are left alone. To review its leftover Library files as well, choose **Remove App and Leftovers…** from the Tools or context menu, or turn on Settings › Confirmations › "Moving an app to the Trash: review its leftover files" to be asked every time.
+
 ## 0.9.0
 
 - **Box is on its way.** The Box connection is built and tested, and shows as Coming soon until its app registration is in place (see docs/box/SETUP.md).

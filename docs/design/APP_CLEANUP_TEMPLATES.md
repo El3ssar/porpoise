@@ -1,7 +1,10 @@
 # Application cleanup and Create New templates
 
-Application cleanup is part of the shared Trash action, including the app grid, context menus and drag to Trash.
-The review lists original selected items and related files, with a size and a reason for every match. Related files
+Application cleanup is opt-in. Move to Trash (menus, ⌘⌫, the app grid, drag to the Dock's Trash) moves an app like any
+other item, as Finder does, with no window and its support files kept. **Remove App and Leftovers…** (Tools menu,
+and the context menu when the selection holds an app that isn't part of macOS) calls
+`FileOperationsController.trash(_:window:reviewingLeftovers: true)`, which opens the review first. The Confirmations
+switch `reviewAppLeftovers` (off by default) makes every Trash of an app review the same way. The review lists original selected items and related files, with a size and a reason for every match. Related files
 start unchecked. Cancel preserves the whole local selection. The review's final button is the Trash confirmation;
 selected paths are checked again immediately before the ordinary file-operation job starts. There is no permanent
 delete fallback for this job. Normal and authenticated Trash operations retain Undo records.

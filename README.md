@@ -93,7 +93,9 @@ Use **Edit › Undo** to restore them.
 
 ## Application cleanup and templates
 
-Move an app to Trash to review related Library files, with sizes and matching reasons. Related files start unchecked;
+Move to Trash treats an app as Finder does: it goes straight to the Trash and its support files stay. To clean up
+after it, choose **Remove App and Leftovers…** (Tools or context menu; Settings › Confirmations can ask on every app
+deletion) and review related Library files, with sizes and matching reasons. Related files start unchecked;
 shared app groups, ambiguous names and files claimed by other installed apps are kept. The selected app and reviewed
 files move to Trash with Undo; this cleanup never offers permanent deletion.
 
