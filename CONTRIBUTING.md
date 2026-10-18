@@ -73,7 +73,7 @@ python3 scripts/coverage.py
 CI runs the optimized shipping build and the **entire** instrumented test suite on separate macOS runners.
 The test job still runs the watchdog's isolated BusyPool/MemoryBudget pass, all test targets, workflow integrity,
 formatting, helper freshness, and the combined logic-layer coverage gate (92%). No changed-module selection is
-used. A successful CI workflow means both jobs passed. `ci/**` branches and manual CI dispatch support timing
+used. The existing `build-and-test` status aggregates both jobs and fails if either fails or is cancelled. `ci/**` branches and manual CI dispatch support timing
 experiments without pushing main. For a nonpublishing release packaging probe, run
 `gh workflow run ci.yml --ref ci/<branch> -f release_benchmark=true` after its shipping job has populated the cache.
 This probe uses production compile flags, ad hoc signing and the DMG scan, with no release credentials.

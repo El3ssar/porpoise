@@ -12,12 +12,12 @@ on:
         default: false
 # A newer push to the same branch or pull request makes an older run pointless: cancel it instead of queueing.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ inputs.release_benchmark && 'packaging' || 'checks' }}
   cancel-in-progress: true
 permissions:
   contents: read
 jobs:
-  build-and-test:
+  tests:
     if: ${{ !inputs.release_benchmark }}
     runs-on: macos-26
     timeout-minutes: 40
@@ -91,6 +91,19 @@ jobs:
       # Match make-app.sh's release compiler flags, including removal of build-machine paths.
       - name: Build shipping app
         run: swift build -c release --arch arm64 -Xswiftc -file-prefix-map -Xswiftc "$PWD=." -Xcc "-ffile-prefix-map=$PWD=." --product Porpoise
+
+  # Preserve the existing required-check name: it must cover both parallel jobs.
+  build-and-test:
+    if: always() && !inputs.release_benchmark
+    needs: [tests, shipping-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI gate
+        env:
+          TESTS: ${{ needs.tests.result }}
+          SHIPPING: ${{ needs.shipping-build.result }}
+        run: test "$TESTS" = success && test "$SHIPPING" = success
 
   # Explicitly requested timing probe: production build flags and DMG scans, without publishing or credentials.
   release-benchmark:
