@@ -49,8 +49,51 @@ struct CloudProviderMechanicsTests {
         let moved = Item(id: item.id, parent: "other")
         reopened.apply([moved], removed: [], belongs: { $0 == $1.parent })
         #expect(reopened.snapshot("root")?.files == [] && reopened.file(item.id) == moved)
+        reopened.flush()  // Its pending write would replace the broken file.
         try Data("broken".utf8).write(to: scratch.url.appendingPathComponent("metadata.json"))
         #expect(CloudMetadataCache<Item>(directory: scratch.url).file(item.id) == nil)
+    }
+
+    /// Updates write the file later, once, off the lock; a cache opened on the folder sees them anyway, a cleared
+    /// cache stays cleared, and a folder removed meanwhile is not made again.
+    @Test func metadataWritesAreDeferredAndCoalesced() throws {
+        let scratch = try Scratch(), file = scratch.url.appendingPathComponent("metadata.json")
+        let cache = CloudMetadataCache<Item>(directory: scratch.url)
+        for index in 0..<50 { cache.learn([Item(id: "\(index)", parent: "root")], since: cache.generation) }
+        cache.setCursor("c1", scope: "root")
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(CloudMetadataCache<Item>(directory: scratch.url).file("49") == Item(id: "49", parent: "root"))
+        let written = try FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate] as? Date
+        // Nothing changes: the same cursor again, a listing that isn't there.
+        cache.setCursor("c1", scope: "root"); cache.invalidate("missing"); cache.flush()
+        #expect(try FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate] as? Date == written)
+        cache.remember([Item(id: "late", parent: "root")]); cache.clear()
+        cache.flush()
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        let gone = scratch.url.appendingPathComponent("gone")
+        let orphan = CloudMetadataCache<Item>(directory: gone)
+        orphan.remember([Item(id: "a", parent: "root")])
+        try FileManager.default.removeItem(at: gone)
+        orphan.flush()
+        #expect(!FileManager.default.fileExists(atPath: gone.path))
+    }
+
+    /// A page of many changes patches every listing the way one change at a time would.
+    @Test func applyingManyChangesPatchesListingsLikeOneAtATime() throws {
+        let scratch = try Scratch()
+        let bulk = CloudMetadataCache<Item>(directory: scratch.url.appendingPathComponent("bulk"))
+        let single = CloudMetadataCache<Item>(directory: scratch.url.appendingPathComponent("single"))
+        let listed = (0..<30).map { Item(id: "\($0)", parent: $0 % 2 == 0 ? "a" : "b") }
+        for cache in [bulk, single] {
+            cache.store(listed.filter { $0.parent == "a" }, key: "a"); cache.store(listed.filter { $0.parent == "b" }, key: "b")
+        }
+        let changes = (0..<20).map { Item(id: "\($0 * 2)", parent: $0 % 3 == 0 ? "b" : "a") } + [Item(id: "new", parent: "a")]
+        bulk.apply(changes, removed: ["5", "7"], belongs: { $0 == $1.parent })
+        single.apply([], removed: ["5", "7"], belongs: { $0 == $1.parent })
+        for change in changes { single.apply([change], removed: [], belongs: { $0 == $1.parent }) }
+        #expect(bulk.snapshot("a")?.files == single.snapshot("a")?.files)
+        #expect(bulk.snapshot("b")?.files == single.snapshot("b")?.files)
+        #expect(bulk.snapshot("a")?.files.last?.id == "new" && bulk.snapshot("b")?.files.contains { $0.id == "5" } == false)
     }
 
     /// A listing fetched before a change made here lands after it: it doesn't put the old metadata back (a rename read

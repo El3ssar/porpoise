@@ -179,6 +179,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         RemoteFS.disconnectAll()
         AndroidTools.stopServerIfOurs()
         saveSession()
+        CloudStateWriter.shared.flushAll()
     }
 
     // MARK: - Opening folders and revealing files
