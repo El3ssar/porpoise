@@ -99,6 +99,16 @@ if [ -n "${PORPOISE_DROPBOX_APP_KEY:-}" ]; then
   DROPBOX_ESCAPED=$(python3 -I -c 'import os,html;print(html.escape(os.environ["PORPOISE_DROPBOX_APP_KEY"]))')
   DROPBOX_KEYS="<key>DropboxAppKey</key><string>${DROPBOX_ESCAPED}</string>"
 fi
+# Public OneDrive (Microsoft Entra) application ID only: a public client, no secret. Likewise from
+# PORPOISE_ONEDRIVE_CLIENT_ID or the git-ignored .onedrive-client-id.
+ONEDRIVE_KEYS=""
+if [ -z "${PORPOISE_ONEDRIVE_CLIENT_ID:-}" ] && [ -f .onedrive-client-id ]; then
+  PORPOISE_ONEDRIVE_CLIENT_ID=$(tr -d '[:space:]' < .onedrive-client-id); export PORPOISE_ONEDRIVE_CLIENT_ID
+fi
+if [ -n "${PORPOISE_ONEDRIVE_CLIENT_ID:-}" ]; then
+  ONEDRIVE_ESCAPED=$(python3 -I -c 'import os,html;print(html.escape(os.environ["PORPOISE_ONEDRIVE_CLIENT_ID"]))')
+  ONEDRIVE_KEYS="<key>OneDriveClientID</key><string>${ONEDRIVE_ESCAPED}</string>"
+fi
 GOOGLE_KEYS=""
 if [ -n "$GOOGLE_ID" ]; then
   GOOGLE_KEYS="<key>GoogleDriveClientID</key><string>${GOOGLE_ID}</string>"
@@ -126,6 +136,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>SUEnableAutomaticChecks</key><true/>
   ${GOOGLE_KEYS}
   ${DROPBOX_KEYS}
+  ${ONEDRIVE_KEYS}
   <key>SUScheduledCheckInterval</key><integer>86400</integer>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHumanReadableCopyright</key><string>Porpoise — a file manager for macOS inspired by KDE Dolphin. GPL-3.0-or-later.</string>
