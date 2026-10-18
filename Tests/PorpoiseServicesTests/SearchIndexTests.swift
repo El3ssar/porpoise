@@ -79,6 +79,23 @@ import Testing
         #expect(restored.search("renamed", scope: s.path("root"))?.paths.isEmpty == true)
     }
 
+    /// A change in a folder walks that folder again from itself, as a patch; it still has no size, as in the first
+    /// crawl. On CI a folder's creation event arrived after the first crawl, and `folder: size:0` lost it (W-139).
+    @Test func aFolderWalkedAgainForAChangeStillMatchesSizeZero() async throws {
+        let s = try Scratch()
+        try s.folder("root/sub/Late.PDF")
+        let index = setup(s)
+        defer { index.configure(IndexConfiguration()) }
+        try await index.waitUntilReady(timeout: Self.liveWait)
+        let folders = Set(["root/sub", "root/sub/Late.PDF"].map { FilePath.canonical(s.path($0).path) })
+        #expect(Set(index.search("folder: size:0", scope: s.path("root"))?.paths ?? []) == folders)
+        // As FSEvents reports them: real paths (/private/var, not /var).
+        let real = try #require(index.configuration.roots.first), updated = index.status.updated
+        index.receive([real + "/sub"], event: 1)
+        try #require(await eventually(Self.liveWait) { index.status.updated != updated })
+        #expect(Set(index.search("folder: size:0", scope: s.path("root"))?.paths ?? []) == folders)
+    }
+
     @Test func runningSearchRefreshesWhenIndexedFileAppearsAndStopsCleanly() async throws {
         let s = try Scratch(); try s.folder("root")
         let index = setup(s)

@@ -28,6 +28,19 @@ struct IndexCrawlerTests {
         #expect(index.path(0) == s.path("root").path)
     }
 
+    /// A folder walked as a patch root (after a change event) records the size a full walk gives it, 0, not lstat's
+    /// directory size: `size:0` found it only when its creation event arrived before the first crawl (CI, W-139).
+    @Test func aFolderHasNoSizeWhetherItIsTheRootOrInside() throws {
+        let s = try Scratch()
+        try s.file("root/Café.PDF/inside.txt", "text")
+        let whole = IndexCrawler.crawl(s.path("root").path, exclusions: [])
+        let patch = IndexCrawler.crawl(s.path("root/Café.PDF").path, exclusions: [])
+        let id = try #require((0..<whole.count).first { whole.name($0) == "Café.PDF" })
+        #expect(whole.size(id) == 0)
+        #expect(patch.isDirectory(0) && patch.size(0) == 0)
+        #expect(patch.size(1) == 4)
+    }
+
     @Test func packagesAreOneItem() throws {
         let s = try Scratch()
         try s.file("root/Thing.app/Contents/Info.plist", "")
