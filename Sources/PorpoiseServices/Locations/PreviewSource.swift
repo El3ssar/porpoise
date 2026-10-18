@@ -45,5 +45,5 @@ public enum PreviewSource {
     }
 
     /// Server downloads for previews, one at a time.
-    private static let downloads = DispatchQueue(label: "porpoise.remote-previews", qos: .utility)
+    private static let downloads = DispatchQueue(label: "porpoise.remote-previews", qos: .utility, autoreleaseFrequency: .workItem)
 }

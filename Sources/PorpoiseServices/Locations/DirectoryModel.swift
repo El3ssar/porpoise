@@ -361,7 +361,7 @@ public final class DirectoryModel {
 
     public var onMetadataLoaded: (() -> Void)?
     private var metadataWanted: Set<URL> = []
-    private static let metadataQueue = DispatchQueue(label: "app.porpoise.item-metadata", qos: .userInitiated)
+    private static let metadataQueue = DispatchQueue(label: "app.porpoise.item-metadata", qos: .userInitiated, autoreleaseFrequency: .workItem)
 
     /// Tags to draw: the cached ones, or none until they're read.
     public func shownTags(for item: FileItem) -> [FinderTags.Tag] {
@@ -630,7 +630,7 @@ public final class DirectoryModel {
 
     /// Folder sizes are counted here, one model after another: a serial queue of its own always gets a thread,
     /// where utility work on the shared pool got none while other work kept every core busy.
-    private static let countQueue = DispatchQueue(label: "app.porpoise.folder-counts", qos: .utility)
+    private static let countQueue = DispatchQueue(label: "app.porpoise.folder-counts", qos: .utility, autoreleaseFrequency: .workItem)
 
     private func requestFolderCounts() {
         guard Settings.shared.folderSizeMode != .none, source.traits.folderCounts else { return }
@@ -651,10 +651,13 @@ public final class DirectoryModel {
         Self.countQueue.async { [weak self] in
             var res: [URL: Int] = [:]
             for u in urls where !cancellation.isCancelled {
-                if mode == .contentSize {
-                    res[u] = Int(Self.contentSize(u, maxDepth: depth, cancellation: cancellation))
-                } else {
-                    res[u] = DirectoryLister.childCount(u, includeHidden: hidden) ?? -1
+                // A folder's size can mean walking a big tree: what Foundation autoreleases on the way goes after each.
+                autoreleasepool {
+                    if mode == .contentSize {
+                        res[u] = Int(Self.contentSize(u, maxDepth: depth, cancellation: cancellation))
+                    } else {
+                        res[u] = DirectoryLister.childCount(u, includeHidden: hidden) ?? -1
+                    }
                 }
             }
             DispatchQueue.main.async {

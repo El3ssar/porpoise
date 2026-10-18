@@ -18,7 +18,7 @@ public enum RemoteOpener {
     /// main queue would).
     nonisolated(unsafe) static var rewatchOnMain: (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }
     /// Uploads run one at a time, so an older save can never land on the server after a newer one.
-    private static let uploadQueue = DispatchQueue(label: "porpoise.remote-upload")
+    private static let uploadQueue = DispatchQueue(label: "porpoise.remote-upload", autoreleaseFrequency: .workItem)
 
     /// Mirror of the remote folder inside the cache. "." and ".." components are dropped so a crafted
     /// URL (sftp://host/../../x) can't point outside the cache: the file there is replaced on download.

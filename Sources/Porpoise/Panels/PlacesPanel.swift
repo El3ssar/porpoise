@@ -138,7 +138,7 @@ final class PlacesPanel: NSView {
     var capacities: [URL: StorageCapacity] = [:]
     var capacityQueryRunning = false
     var capacityQueryPending = false
-    static let capacityQueue = DispatchQueue(label: "porpoise.places.capacity", qos: .utility)
+    static let capacityQueue = DispatchQueue(label: "porpoise.places.capacity", qos: .utility, autoreleaseFrequency: .workItem)
 
     var ejecting: Set<URL> = []
 

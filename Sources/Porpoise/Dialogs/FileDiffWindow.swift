@@ -5,7 +5,8 @@ import UniformTypeIdentifiers
 
 /// Document-like comparison windows, independent of the browser's selection and lifecycle.
 final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuDelegate, NSMenuItemValidation {
-    private static let queue = DispatchQueue(label: "app.porpoise.file-diff", qos: .userInitiated, attributes: .concurrent)
+    private static let queue = DispatchQueue(
+        label: "app.porpoise.file-diff", qos: .userInitiated, attributes: .concurrent, autoreleaseFrequency: .workItem)
     static var current: FileDiffWindow? { (NSApp.keyWindow?.windowController as? FileDiffWindow) ?? openWindows().last }
     static func present(left: URL, right: URL) {
         if left.isFileURL && right.isFileURL, let path = Settings.store.string(forKey: "fileDiff.defaultApp"),

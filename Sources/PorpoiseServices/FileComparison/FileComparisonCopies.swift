@@ -10,7 +10,7 @@ public final class FileComparisonCopies {
     private var keepCache = false
     /// External apps may read lazily after this viewer closes; keep their copies in the normal cache.
     public func keepForExternalApplication() { keepCache = true }
-    private static let cleanup = DispatchQueue(label: "app.porpoise.comparison-cache-cleanup", qos: .utility)
+    private static let cleanup = DispatchQueue(label: "app.porpoise.comparison-cache-cleanup", qos: .utility, autoreleaseFrequency: .workItem)
 
     /// Blocking downloads: call on a private worker queue. `cacheParent` lets tests isolate their fixtures.
     public init(left: URL, right: URL, cacheParent: URL? = nil, cancellation: DiskCancellation = DiskCancellation()) throws {
