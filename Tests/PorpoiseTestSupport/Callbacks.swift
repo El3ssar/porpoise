@@ -32,7 +32,7 @@ extension Callback where T == Void {
 /// issue at the caller after `timeout` seconds and throws `CallbackTimedOut`, instead of hanging the whole run until
 /// the watchdog kills it (one hang hides every other result).
 public func awaitCallback<T>(
-    _ comment: Comment? = nil, timeout: TimeInterval = 60, isolation: isolated (any Actor)? = #isolation,
+    _ comment: Comment? = nil, timeout: TimeInterval = eventualTimeout, isolation: isolated (any Actor)? = #isolation,
     sourceLocation: SourceLocation = #_sourceLocation, _ start: (Callback<T>) throws -> Void
 ) async throws -> T {
     do {

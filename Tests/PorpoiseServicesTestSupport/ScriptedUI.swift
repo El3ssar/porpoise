@@ -81,7 +81,7 @@ public final class ScriptedUI: FileOperationsUI {
 
     /// Waits until the next job reports it has finished; a job that never comes fails the test after `timeout`
     /// instead of hanging the run (a time limit can't interrupt a continuation).
-    @MainActor public func nextJobFinished(timeout: TimeInterval = 20, sourceLocation: SourceLocation = #_sourceLocation) async {
+    @MainActor public func nextJobFinished(timeout: TimeInterval = eventualTimeout, sourceLocation: SourceLocation = #_sourceLocation) async {
         let id = UUID()
         await withCheckedContinuation { c in
             waiting[id] = c
