@@ -102,4 +102,50 @@ struct OneDriveConfigurationTests {
         #expect(provider.sameItem(root, OneDriveLocation(accountID: client.accountID, itemID: "ROOT!101", driveID: FakeGraphServer.drive).url))
         #expect(!provider.sameItem(root, folder.url))
     }
+
+    // The file manager's synchronous provider calls (download, upload, rename, move, copy, delete), off the pool.
+    @Test func providerOperationsRoundTripFilesAndFolders() async throws {
+        let server = try FakeGraphServer(); let client = try server.client(), scratch = try Scratch()
+        let provider = OneDriveProvider(client: client)
+        let root = OneDriveLocation(accountID: client.accountID).url
+        RemoteFS.registerCloud(provider, for: root)
+        defer { RemoteFS.registerCloud(nil, for: root) }
+        let listing = try await offThePool { try provider.list(root) }
+        let folder = try #require(listing.first { $0.name == "Folder" }), hello = try #require(listing.first { $0.name == "hello.txt" })
+        #expect(provider.displayName(for: root) == "My files" && provider.rootTitle(folder.url) == "Folder")
+        #expect(try await offThePool { try provider.transferItem(hello.url) }.name == "hello.txt")
+        let out = try scratch.folder("out")
+        let file = try await offThePool { try provider.download(hello.url, into: out) }
+        #expect(try String(contentsOf: file, encoding: .utf8) == "Hello from the OneDrive fixture.")
+        let tree = try await offThePool { try provider.download(folder.url, into: out) }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: tree.path) == ["nested.txt"])
+        let upload = try scratch.folder("Upload"); _ = try scratch.file("Upload/inner.txt", "inner");
+        let single = try scratch.file("single.txt", "one")
+        try await offThePool {
+            try provider.upload(upload, into: root); try provider.upload(single, into: folder.url)
+        }
+        let after = try await offThePool { try provider.list(root) }
+        let uploaded = try #require(after.first { $0.name == "Upload" })
+        #expect(try await offThePool { try provider.list(uploaded.url) }.map(\.name) == ["inner.txt"])
+        #expect(try await offThePool { try provider.list(folder.url) }.contains { $0.name == "single.txt" })
+        try await offThePool { try provider.rename(hello.url, to: "renamed.txt") }
+        #expect(provider.metadata(hello.url)?.name == "renamed.txt")
+        try await offThePool {
+            try provider.copy([hello.url], into: uploaded.url); try provider.move([hello.url], into: folder.url)
+        }
+        #expect(provider.metadata(hello.url)?.parentID == folder.url.lastPathComponent.removingPercentEncoding)
+        #expect(try await offThePool { try provider.list(uploaded.url) }.contains { $0.name == "renamed.txt" })
+        let other = try #require(after.first { $0.name == "other.txt" })
+        try await offThePool { try provider.delete([other.url]) }
+        await #expect(throws: OneDriveError.notFound) { try await client.metadata("FIXTURE!other") }
+        #expect(throws: OneDriveError.invalidLocation) { try provider.makeFolder(root) }
+        #expect(throws: OneDriveError.invalidLocation) { try provider.location(DropboxLocation(accountID: client.accountID).url) }
+        let shared = OneDriveLocation(accountID: client.accountID, itemID: "collection:shared", driveID: FakeGraphServer.drive).url
+        #expect(throws: OneDriveError.invalidLocation) { try provider.folderID(shared) }
+        #expect(provider.displayName(for: shared) == "Shared with me")
+        await provider.prefetch([uploaded.url]); #expect(provider.cachedListing(uploaded.url) != nil)
+        let image = try await provider.preview(hello.url, thumbnail: true)
+        #expect(try Data(contentsOf: image) == Data("fixture-thumbnail".utf8))
+        provider.setActive(true); try await provider.checkForChanges(); await provider.stopFeeds()
+    }
 }
