@@ -9,8 +9,10 @@ import PorpoiseFileSystem
 /// - Every URL starts with a random secret, so other local users/processes can't read the stream.
 /// - Serves regular files strictly inside `root`: "..", hidden components and symlinks leading out are refused.
 /// - Files are memory-mapped and sent in chunks, never read whole into memory.
-/// - A connection that hasn't sent its request within `headTimeout` is closed (none stays open idle).
-final class LocalFileServer {
+/// - At most eight connections are admitted, including incomplete requests.
+/// - Request heads and idle responses have separate deadlines; stopping closes every admitted connection.
+// Connection state is confined to `queue`; callers serialize start/stop (the preview owner or a test fixture).
+final class LocalFileServer: @unchecked Sendable {
     private static let maxRequestSize = 16_384
     private static let chunkSize = 1 << 20
     private static let startTimeout: TimeInterval = 2
@@ -22,13 +24,30 @@ final class LocalFileServer {
     }
     private var source: RangeSource?
     private var flights: [ObjectIdentifier: (NWConnection, Task<Void, Never>)] = [:]
+    private var connections: [ObjectIdentifier: NWConnection] = [:]
+    private var idleTimers: [ObjectIdentifier: DispatchWorkItem] = [:]
+    private var maxConnections = 8
+    private var sendIdleTimeout: TimeInterval = 10
+    var connectionLimit: Int {
+        get { queue.sync { maxConnections } }
+        set { queue.sync { maxConnections = newValue } }
+    }
+    var sendTimeout: TimeInterval {
+        get { queue.sync { sendIdleTimeout } }
+        set { queue.sync { sendIdleTimeout = newValue } }
+    }
+    var activeConnectionCount: Int { queue.sync { connections.count } }
     private var listener: NWListener?
     private var port: UInt16?
     private var root: URL?
     private let secret = UUID().uuidString
     private let queue = DispatchQueue(label: "porpoise.preview-server")
     /// How long a connection may take to send its request head.
-    var headTimeout: TimeInterval = 10
+    private var requestTimeout: TimeInterval = 10
+    var headTimeout: TimeInterval {
+        get { queue.sync { requestTimeout } }
+        set { queue.sync { requestTimeout = newValue } }
+    }
 
     /// Starts once (later calls just update the root) and returns the base URL to put paths under.
     func start(root: URL) -> URL? {
@@ -67,6 +86,10 @@ final class LocalFileServer {
             source = nil
             for (connection, task) in flights.values { task.cancel(); connection.cancel() }
             flights.removeAll()
+            for c in connections.values { c.cancel() }
+            connections.removeAll()
+            for timer in idleTimers.values { timer.cancel() }
+            idleTimers.removeAll()
         }
         listener?.cancel()
         listener = nil
@@ -77,8 +100,20 @@ final class LocalFileServer {
 
     private func serve(_ c: NWConnection) {
         c.start(queue: queue)
+        guard connections.count < maxConnections else { c.cancel(); return }
+        let id = ObjectIdentifier(c)
+        connections[id] = c
+        c.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .cancelled, .failed:
+                self?.connections.removeValue(forKey: id)
+                self?.idleTimers.removeValue(forKey: id)?.cancel()
+                self?.flights.removeValue(forKey: id)?.1.cancel()
+            default: break
+            }
+        }
         let answered = Flag()
-        queue.asyncAfter(deadline: .now() + headTimeout) { if !answered.isSet { c.cancel() } }
+        queue.asyncAfter(deadline: .now() + requestTimeout) { [weak c] in if !answered.isSet { c?.cancel() } }
         receiveHead(c, buffer: Data(), answered: answered)
     }
 
@@ -101,6 +136,9 @@ final class LocalFileServer {
     }
 
     private func respond(_ c: NWConnection, request: Data) {
+        guard connections[ObjectIdentifier(c)] != nil else { return }
+        // Bound the response even while an upstream read task is waiting to be scheduled.
+        armSendDeadline(c)
         let line = String(decoding: request.prefix(while: { $0 != 13 && $0 != 10 }), as: UTF8.self)
         let parts = line.split(separator: " ")
         guard parts.count >= 2 else { return send(c, status: "400 Bad Request") }
@@ -116,8 +154,8 @@ final class LocalFileServer {
         let head =
             "HTTP/1.1 200 OK\r\nContent-Type: \(Self.contentType(file.pathExtension))\r\nContent-Length: \(data.count)\r\n"
             + "Cache-Control: no-cache\r\nConnection: close\r\n\r\n"
-        c.send(
-            content: Data(head.utf8),
+        sendContent(
+            c, data: Data(head.utf8),
             completion: .contentProcessed { [weak self] error in
                 guard error == nil, method == "GET", let self else { c.cancel(); return }
                 self.sendBody(c, data, from: 0)
@@ -138,8 +176,9 @@ final class LocalFileServer {
         head += "\r\n"
         let id = ObjectIdentifier(c)
         let task = Task { [weak self] in
+            guard let self else { c.cancel(); return }
             do {
-                try await Self.send(c, data: Data(head.utf8))
+                try await self.send(c, data: Data(head.utf8))
                 if !headOnly {
                     var offset = range.lowerBound
                     while offset < range.upperBound {
@@ -148,30 +187,44 @@ final class LocalFileServer {
                         let data = try await source.read(offset..<end)
                         guard data.count == end - offset else { throw DriveError.invalidResponse }
                         try Task.checkCancellation()
-                        try await Self.send(c, data: data)
+                        try await self.send(c, data: data)
                         offset = end
                     }
                 }
             } catch { /* Closing an incomplete response makes AVPlayer surface the load error. */  }
             c.cancel()
-            self?.queue.async { [weak self] in self?.flights.removeValue(forKey: id) }
         }
         flights[id] = (c, task)
-        c.stateUpdateHandler = { state in
-            switch state {
-            case .cancelled, .failed: task.cancel()
-            default: break
-            }
-        }
     }
 
-    private static func send(_ c: NWConnection, data: Data) async throws {
+    /// Every send, including the response head, is bounded. Progress replaces the idle deadline.
+    private func sendContent(_ c: NWConnection, data: Data, completion: NWConnection.SendCompletion) {
+        let id = ObjectIdentifier(c)
+        guard connections[id] != nil else { c.cancel(); return }
+        armSendDeadline(c)
+        c.send(content: data, completion: completion)
+    }
+
+    private func armSendDeadline(_ c: NWConnection) {
+        let id = ObjectIdentifier(c)
+        idleTimers.removeValue(forKey: id)?.cancel()
+        let timer = DispatchWorkItem { [weak c] in c?.cancel() }
+        idleTimers[id] = timer
+        queue.asyncAfter(deadline: .now() + sendIdleTimeout, execute: timer)
+    }
+
+    private func send(_ c: NWConnection, data: Data) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            c.send(
-                content: data,
-                completion: .contentProcessed { error in
-                    if let error { continuation.resume(throwing: error) } else { continuation.resume() }
-                })
+            queue.async {
+                guard self.connections[ObjectIdentifier(c)] != nil else {
+                    continuation.resume(throwing: CancellationError()); return
+                }
+                self.sendContent(
+                    c, data: data,
+                    completion: .contentProcessed { error in
+                        if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+                    })
+            }
         }
     }
 
@@ -194,8 +247,8 @@ final class LocalFileServer {
     private func sendBody(_ c: NWConnection, _ data: Data, from offset: Int) {
         guard offset < data.count else { c.cancel(); return }
         let end = min(offset + Self.chunkSize, data.count)
-        c.send(
-            content: data.subdata(in: offset..<end),
+        sendContent(
+            c, data: data.subdata(in: offset..<end),
             completion: .contentProcessed { [weak self] error in
                 guard error == nil, let self else { c.cancel(); return }
                 self.sendBody(c, data, from: end)
@@ -204,7 +257,7 @@ final class LocalFileServer {
 
     private func send(_ c: NWConnection, status: String) {
         let head = "HTTP/1.1 \(status)\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-        c.send(content: Data(head.utf8), completion: .contentProcessed { _ in c.cancel() })
+        sendContent(c, data: Data(head.utf8), completion: .contentProcessed { _ in c.cancel() })
     }
 
     private func resolve(_ target: String) -> URL? {
