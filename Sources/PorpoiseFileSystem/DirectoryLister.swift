@@ -2,16 +2,22 @@ import Foundation
 import PorpoiseCore
 
 public enum DirectoryLister {
-    /// Lists a folder (all entries, including hidden ones; the model decides what to show).
-    public static func list(_ folder: URL) throws -> [FileItem] {
+    /// Lists a folder (all entries, including hidden ones; the model decides what to show). `cancelled` is asked
+    /// between entries: a listing nobody waits for any more (a newer one started) stops early and throws.
+    public static func list(_ folder: URL, cancelled: () -> Bool = { false }) throws -> [FileItem] {
         // Names from URLs: the String-based listing drops a leading U+FEFF, which would lose the file. The URL-based
         // one doesn't follow a symlink to a folder, so it is given the real folder; items keep `folder` as named.
-        let names = try FileManager.default.contentsOfDirectory(at: folder.resolvingSymlinksInPath(), includingPropertiesForKeys: nil)
-            .map(\.lastPathComponent)
+        // The attributes come with the listing (one getattrlistbulk pass): asking for each entry's afterwards took
+        // about four times as long.
+        let entries = try FileManager.default.contentsOfDirectory(
+            at: folder.resolvingSymlinksInPath(), includingPropertiesForKeys: FileItem.resourceKeys)
         var items: [FileItem] = []
-        items.reserveCapacity(names.count)
-        for n in names {
-            if let item = FileItem.load(folder.appendingPathComponent(n)) { items.append(item) }
+        items.reserveCapacity(entries.count)
+        for entry in entries {
+            if cancelled() { throw CancellationError() }
+            let url = folder.appendingPathComponent(entry.lastPathComponent)
+            let item = (try? entry.resourceValues(forKeys: FileItem.resourceKeySet)).flatMap { FileItem.load(url, values: $0) } ?? FileItem.load(url)
+            if let item { items.append(item) }
         }
         return items
     }

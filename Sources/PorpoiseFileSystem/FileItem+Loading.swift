@@ -8,11 +8,18 @@ extension FileItem {
         .fileSizeKey, .totalFileAllocatedSizeKey, .contentModificationDateKey, .creationDateKey,
         .contentAccessDateKey, .contentTypeKey, .isReadableKey, .isWritableKey,
     ]
+    /// Built once: hashing the keys for every item showed up in listings.
+    static let resourceKeySet = Set(resourceKeys)
 
     /// Reads an item from disk. Symlinks report their target's type (like Dolphin), but keep `isSymlink`.
     public static func load(_ url: URL) -> FileItem? {
-        let keys = Set(resourceKeys)
-        guard let v = try? url.resourceValues(forKeys: keys) else { return nil }
+        guard let v = try? url.resourceValues(forKeys: resourceKeySet) else { return nil }
+        return load(url, values: v)
+    }
+
+    /// `load`, from values already read (a listing fetches them for all its entries at once).
+    static func load(_ url: URL, values v: URLResourceValues) -> FileItem? {
+        let keys = resourceKeySet
         // The file system's spelling (case, a volume's name for "/"), except that Foundation drops a leading U+FEFF
         // from names it reads: then the URL's own name is the real one.
         let last = url.lastPathComponent
