@@ -139,7 +139,8 @@ extension CloudOfflineStoreTests {
         #expect(try CloudChecksum.sha256(sha).verify(input))
         #expect(try !CloudChecksum.sha256("wrong").verify(input))
         #expect(try !CloudChecksum.dropbox("x").verify(input))
-        #expect(throws: CloudContentError.unsupported) { try CloudChecksum.quickXor("x").verify(input) }
+        #expect(try !CloudChecksum.quickXor("x").verify(input))  // OneDrive's: verified, as the others are
+        #expect(try CloudChecksum.quickXor(CloudContentHash.quickXor(Data("hello".utf8))).verify(input))
         var other = item; other.ref.account = "other"
         await #expect(throws: CloudContentError.unsupported) { try await store.fetch(other) }
         await #expect(throws: CloudContentError.unsupported) { try await store.remember([other]) }
