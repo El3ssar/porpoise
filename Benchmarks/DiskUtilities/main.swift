@@ -42,10 +42,13 @@ let treeTime = now() - t
 precondition(tree.nodes.count == n + 1 && tree.nodes[0].files == n - dirs)
 precondition(tree.nodes[0].logical == Int64(n - dirs) * 4096)
 print(String(format: "UsageTree(%d entries): %.2f s, RSS +%.0f MB (nodes %d)", n, treeTime, residentMB() - f0, tree.nodes.count))
-t = now()
-_ = scan.entries.sorted { $0.url.path < $1.url.path }
-let s1 = now() - t
-t = now()
-let keyed = scan.entries.map { ($0.url.path, $0) }.sorted { $0.0.utf8.lexicographicallyPrecedes($1.0.utf8) }
-let s2 = now() - t
-print(String(format: "sort by url.path per comparison: %.2f s; precomputed utf8 keys: %.2f s (%d)", s1, s2, keyed.count))
+fflush(stdout)
+if ProcessInfo.processInfo.environment["DISK_BENCHMARK_CONTROLS"] != "0" {
+    t = now()
+    _ = scan.entries.sorted { $0.url.path < $1.url.path }
+    let s1 = now() - t
+    t = now()
+    let keyed = scan.entries.map { ($0.url.path, $0) }.sorted { $0.0.utf8.lexicographicallyPrecedes($1.0.utf8) }
+    let s2 = now() - t
+    print(String(format: "sort by url.path per comparison: %.2f s; precomputed utf8 keys: %.2f s (%d)", s1, s2, keyed.count))
+}

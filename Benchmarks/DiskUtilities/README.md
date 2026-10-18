@@ -5,7 +5,7 @@ Benchmarks/DiskUtilities/run.sh 9e234a3  # P7 baseline
 Benchmarks/DiskUtilities/run.sh          # current implementation
 ```
 
-The million-entry fixture follows the SERVICES sweep: 1000 directories, 999000 files, long cache paths, shuffled traversal order. The archived driver adds a fixed PRNG seed (42) and asserts node/file/byte totals. The first timing measures UsageTree alone; subsequent comparator timings are independent controls. RSS is `mach_task_basic_info.resident_size`, decimal MB; it is not peak physical footprint. `DISK_BENCHMARK_COUNT` overrides the entry count. Shared-host load can substantially change wall times.
+The million-entry fixture follows the SERVICES sweep: 1000 directories, 999000 files, long cache paths, shuffled traversal order. The archived driver adds a fixed PRNG seed (42) and asserts node/file/byte totals. The first timing measures UsageTree alone; subsequent comparator timings are independent controls. RSS is `mach_task_basic_info.resident_size`, decimal MB; it is not peak physical footprint. `DISK_BENCHMARK_COUNT` overrides the entry count; `DISK_BENCHMARK_CONTROLS=0` skips the independent comparator controls after the tree timing. Shared-host load can substantially change wall times.
 
 Other probes:
 
