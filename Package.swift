@@ -19,33 +19,44 @@ let package = Package(
     ],
     targets: [
         .target(name: "PorpoiseCore"),
-        .executableTarget(name: "IndexBenchmark", dependencies: ["PorpoiseCore", "PorpoiseServices"], path: "Benchmarks/IndexBenchmark"),
+        .target(name: "PorpoiseHelperKit"),
+        .target(name: "PorpoiseFileSystem", dependencies: ["PorpoiseCore", "PorpoiseHelperKit"]),
+        .executableTarget(
+            name: "IndexBenchmark", dependencies: ["PorpoiseCore", "PorpoiseServices"], path: "Benchmarks/IndexBenchmark"),
         // Everything the app does that isn't drawing on screen: no AppKit or SwiftUI here.
-        .target(name: "PorpoiseServices", dependencies: ["PorpoiseCore"], swiftSettings: testHooks),
+        .target(name: "PorpoiseServices", dependencies: ["PorpoiseCore", "PorpoiseFileSystem", "PorpoiseHelperKit"], swiftSettings: testHooks),
         .executableTarget(
             name: "Porpoise",
             dependencies: [
-                "PorpoiseCore", "PorpoiseServices", .product(name: "SwiftTerm", package: "SwiftTerm"),
+                "PorpoiseCore", "PorpoiseFileSystem", "PorpoiseServices", .product(name: "SwiftTerm", package: "SwiftTerm"),
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             swiftSettings: testHooks
         ),
-        .executableTarget(name: "PorpoiseHelper", dependencies: ["PorpoiseCore"]),
+        .executableTarget(name: "PorpoiseHelper", dependencies: ["PorpoiseHelperKit"]),
         // Fake-server-only subprocess used to verify durable journals across actual process death.
-        .executableTarget(name: "DriveRecoveryProbe", dependencies: ["PorpoiseCore", "PorpoiseServices"], path: "Tests/DriveRecoveryProbe"),
+        .executableTarget(
+            name: "DriveRecoveryProbe", dependencies: ["PorpoiseCore", "PorpoiseServices"], path: "Tests/DriveRecoveryProbe"),
         // Shared by the test targets: throwaway folders and disk images that clean up after themselves.
         .target(name: "PorpoiseTestSupport", path: "Tests/PorpoiseTestSupport"),
         // What the Services and App tests share: settings isolation, waiting, the fake servers and fakes.
         .target(
-            name: "PorpoiseServicesTestSupport", dependencies: ["PorpoiseCore", "PorpoiseServices", "PorpoiseTestSupport"],
+            name: "PorpoiseServicesTestSupport", dependencies: ["PorpoiseFileSystem", "PorpoiseCore", "PorpoiseServices", "PorpoiseTestSupport"],
             path: "Tests/PorpoiseServicesTestSupport"),
         .testTarget(name: "PorpoiseCoreTests", dependencies: ["PorpoiseCore", "PorpoiseTestSupport"]),
         .testTarget(
+            name: "PorpoiseFileSystemTests", dependencies: ["PorpoiseFileSystem", "PorpoiseCore", "PorpoiseTestSupport"]),
+        .testTarget(name: "PorpoiseHelperKitTests", dependencies: ["PorpoiseHelperKit", "PorpoiseTestSupport"]),
+        .testTarget(
             name: "PorpoiseAppTests",
-            dependencies: ["Porpoise", "PorpoiseCore", "PorpoiseServices", "PorpoiseTestSupport", "PorpoiseServicesTestSupport"]),
+            dependencies: [
+                "Porpoise", "PorpoiseFileSystem", "PorpoiseCore", "PorpoiseServices", "PorpoiseTestSupport", "PorpoiseServicesTestSupport",
+            ]),
         .testTarget(
             name: "PorpoiseServicesTests",
-            dependencies: ["PorpoiseServices", "PorpoiseCore", "PorpoiseTestSupport", "PorpoiseServicesTestSupport"],
+            dependencies: [
+                "PorpoiseServices", "PorpoiseFileSystem", "PorpoiseHelperKit", "PorpoiseCore", "PorpoiseTestSupport", "PorpoiseServicesTestSupport",
+            ],
             exclude: ["Fixtures"]),
     ],
     swiftLanguageModes: [.v5]

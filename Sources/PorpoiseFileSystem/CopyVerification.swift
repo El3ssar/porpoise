@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseCore
 
 /// Checks a copy against its original after the fact: the same files, sizes and SHA-256 digests.
 public enum CopyVerification {

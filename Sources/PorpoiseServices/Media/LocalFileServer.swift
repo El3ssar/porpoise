@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// Minimal read-only HTTP/1.1 file server for the preview stream (AVPlayer only streams HLS over HTTP).
 ///

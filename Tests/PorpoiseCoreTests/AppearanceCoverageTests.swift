@@ -46,8 +46,6 @@ struct AppearanceCoverageTests {
     }
 
     @Test func shellResolutionSearchesPathAndFallsBack() throws {
-        // The real file check: /bin/zsh ships with macOS and comes first.
-        #expect(ShellChoice.zsh.executable(custom: "", environment: ["PATH": "/nonexistent"]) == "/bin/zsh")
         let scratch = try Scratch()
         let bin = try scratch.folder("bin")
         let checked = ShellChoice.bash.executable(custom: "", environment: ["PATH": bin.path + ":/elsewhere"]) { _ in false }

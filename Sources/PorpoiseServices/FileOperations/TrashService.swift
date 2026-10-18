@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// One origin ledger and Trash route for jobs, Undo, authorization retries and replacement disposal.
 public final class TrashService: @unchecked Sendable {

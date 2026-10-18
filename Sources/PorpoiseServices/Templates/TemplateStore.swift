@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// Each personal template is a portable JSON file; file names are IDs, never user-provided paths.
 public final class TemplateStore {

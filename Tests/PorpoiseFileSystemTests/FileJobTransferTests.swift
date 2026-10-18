@@ -3,6 +3,7 @@ import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseCore
+@testable import PorpoiseFileSystem
 
 /// What copies, moves and links carry along: nested folders, symlinks, metadata and awkward names.
 @Suite struct FileJobTransferTests {

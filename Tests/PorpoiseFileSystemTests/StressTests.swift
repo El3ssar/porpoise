@@ -3,6 +3,7 @@ import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseCore
+@testable import PorpoiseFileSystem
 
 /// Big folders, big trees and bursts of changes. Time bounds are generous (several times what an M-series Mac
 /// needs): they catch something quadratic, not a slow machine.

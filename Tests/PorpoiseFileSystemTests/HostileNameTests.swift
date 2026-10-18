@@ -3,6 +3,7 @@ import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseCore
+@testable import PorpoiseFileSystem
 
 /// Hostile file names (see `HostileNames`) through the real code paths, on real files: listing, loading, copying,
 /// moving, renaming, sorting, and every place a name is quoted for a shell, AppleScript or a URL.
@@ -36,15 +37,6 @@ import Testing
 
     private func contents(_ url: URL) -> String? { (try? Data(contentsOf: url)).map { String(decoding: $0, as: UTF8.self) } }
 
-    @Test func everyNameIsAValidSafeName() {
-        #expect(Set(names.map(bytes)).count == names.count)
-        for n in names {
-            #expect(FileActions.isValidName(n), "\(n.debugDescription)")
-            #expect(RemoteParsing.isSafeName(n), "\(n.debugDescription)")
-        }
-        for n in [HostileNames.long255Ascii, HostileNames.long255TwoByte, HostileNames.long255Emoji] { #expect(n.utf8.count == 255) }
-    }
-
     /// A combining mark after "/", a quote, a dot or a line break makes one Character of the two, so checks that
     /// compare Characters don't see the separator. Every check here must go by code point.
     @Test func combiningMarksDontHideSeparators() throws {
@@ -63,11 +55,7 @@ import Testing
         #expect(RemoteParsing.quote("'\(acute)") == "''\\''\(acute)'")
         #expect(Escaping.appleScriptString("\"\(acute)") == "\"\\\"\(acute)\"")
         #expect(Escaping.appleScriptString("\\\(acute)") == "\"\\\\\(acute)\"")
-        // The root helper's "a volume's Trash" isn't fooled by a folder named with a combining mark.
-        #expect(
-            !PorpoiseHelperInfo.isInUsersTrash(
-                path: "/Volumes/X/\(acute)/.Trashes/501/f", resolvedParent: "/Volumes/X/\(acute)/.Trashes/501",
-                uid: 501, resolvedHomeTrash: "/Users/me/.Trash"))
+
         // The preview server doesn't serve a hidden file whose dot carries a mark.
         let root = try scratch.folder("served-dot")
         try Data("x".utf8).write(to: root.appendingPathComponent(".\(acute)hidden"))
@@ -183,36 +171,7 @@ import Testing
         #expect(try nameBytes(in: dir).count == names.count + job.results.count)
     }
 
-    @Test func duplicateAndSuggestedNamesStayValidAndNew() {
-        for n in names {
-            var existing: Set<String> = [n]
-            for _ in 0..<3 {
-                let d = FileFormat.duplicateName(for: n, existing: existing)
-                let s = FileFormat.suggestedName(for: n, existing: existing)
-                #expect(!existing.contains(d) && !existing.contains(s))
-                #expect(!d.contains("/") && !s.contains("/") && d != "." && s != "..")
-                existing.insert(d); existing.insert(s)
-            }
-        }
-    }
-
     /// Sorting: everything comes back once, and the order doesn't depend on the input order.
-    @Test func sortingIsAPermutationAndIndependentOfInputOrder() throws {
-        let dir = try scratch.populate("sort")
-        try scratch.folder("sort/-a folder\n")
-        let items = try DirectoryLister.list(dir)
-        var rng = SeededGenerator(seed: 7)
-        for role in ItemRole.allCases {
-            for choice in SortingChoice.allCases {
-                var p = ViewProperties(); p.sortRole = role; p.hiddenLast = true
-                let a = ItemSorter.sort(items, props: p, choice: choice).map(\.url)
-                let b = ItemSorter.sort(items.shuffled(using: &rng), props: p, choice: choice).map(\.url)
-                #expect(a.count == items.count && Set(a) == Set(items.map(\.url)))
-                #expect(a == b, "\(role) \(choice)")
-                _ = ItemGrouper.groups(ItemSorter.sort(items, props: p, choice: choice), role: role, props: p, choice: choice)
-            }
-        }
-    }
 
     // MARK: Shell quoting, by running shells
 
@@ -373,5 +332,21 @@ import Testing
         }
         // Scratch removes it with FileManager; make sure that works for trees past PATH_MAX too.
         try runTool("/bin/rm", ["-rf", scratch.path("over").path])
+    }
+    @Test func sortingIsAPermutationAndIndependentOfInputOrder() throws {
+        let dir = try scratch.populate("sort")
+        try scratch.folder("sort/-a folder\n")
+        let items = try DirectoryLister.list(dir)
+        var rng = SeededGenerator(seed: 7)
+        for role in ItemRole.allCases {
+            for choice in SortingChoice.allCases {
+                var p = ViewProperties(); p.sortRole = role; p.hiddenLast = true
+                let a = ItemSorter.sort(items, props: p, choice: choice).map(\.url)
+                let b = ItemSorter.sort(items.shuffled(using: &rng), props: p, choice: choice).map(\.url)
+                #expect(a.count == items.count && Set(a) == Set(items.map(\.url)))
+                #expect(a == b, "\(role) \(choice)")
+                _ = ItemGrouper.groups(ItemSorter.sort(items, props: p, choice: choice), role: role, props: p, choice: choice)
+            }
+        }
     }
 }

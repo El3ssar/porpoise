@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// Discovers candidate paths with bundled fd, then applies the shared search specification.
 /// Names and bounded content matches stream in batches from a worker thread.

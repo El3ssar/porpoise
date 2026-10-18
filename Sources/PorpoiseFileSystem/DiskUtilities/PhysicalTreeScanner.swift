@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import PorpoiseCore
 
 public struct DiskProgress: Sendable {
     public var files: Int

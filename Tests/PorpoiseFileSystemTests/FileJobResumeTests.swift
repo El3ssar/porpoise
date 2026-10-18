@@ -3,6 +3,7 @@ import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseCore
+@testable import PorpoiseFileSystem
 
 /// Pausing, interrupting and resuming copies, on real files.
 struct FileJobResumeTests {

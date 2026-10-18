@@ -1,5 +1,5 @@
 import Foundation
-import PorpoiseCore
+import PorpoiseHelperKit
 import PorpoiseTestSupport
 import Testing
 

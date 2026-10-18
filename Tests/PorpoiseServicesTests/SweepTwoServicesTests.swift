@@ -1,5 +1,7 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
+import PorpoiseHelperKit
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing

@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 import UniformTypeIdentifiers
 
 /// One visible row: an item plus its tree depth (Details view's expandable folders).

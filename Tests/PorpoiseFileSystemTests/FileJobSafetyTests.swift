@@ -3,6 +3,7 @@ import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseCore
+@testable import PorpoiseFileSystem
 
 /// Data-safety behavior of FileJob and FileActions: conflicts, overwrite, merge, undo, permissions.
 @Suite(.serialized) struct FileJobSafetyTests {

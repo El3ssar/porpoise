@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// App-wide file operations: clipboard (cut/copy/paste), jobs and their progress, undo/redo, the Trash.
 /// Mirrors KIO's job tracker + FileUndoManager. Main thread only; questions and progress go through `ui`.

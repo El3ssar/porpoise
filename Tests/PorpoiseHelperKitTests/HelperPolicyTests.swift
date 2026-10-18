@@ -2,7 +2,7 @@ import Foundation
 import PorpoiseTestSupport
 import Testing
 
-@testable import PorpoiseCore
+@testable import PorpoiseHelperKit
 
 /// The root helper hands items over only inside the asking user's own Trash.
 @Suite struct HelperPolicyTests {

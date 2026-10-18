@@ -1,3 +1,5 @@
+import PorpoiseFileSystem
+
 // Compiled only into test and local builds (PORPOISE_TEST_HOOKS): a release has no debug bridge.
 #if PORPOISE_TEST_HOOKS
 

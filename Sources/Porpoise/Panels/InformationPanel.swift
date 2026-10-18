@@ -1,6 +1,7 @@
 import AVKit
 import AppKit
 import PorpoiseCore
+import PorpoiseFileSystem
 import PorpoiseServices
 import QuickLookThumbnailing
 

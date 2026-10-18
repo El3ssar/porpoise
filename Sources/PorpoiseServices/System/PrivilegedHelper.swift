@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseHelperKit
 import Security
 import ServiceManagement
 

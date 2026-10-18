@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 // MARK: Trash origins ("Restore to Former Location")
 

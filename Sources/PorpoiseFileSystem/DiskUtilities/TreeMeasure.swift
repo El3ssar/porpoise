@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseCore
 
 /// One physical-node policy for displayed folder sizes and transfer size fallbacks. No file contents are read.
 public enum TreeMeasure {

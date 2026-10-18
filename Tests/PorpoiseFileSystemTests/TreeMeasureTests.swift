@@ -3,6 +3,7 @@ import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseCore
+@testable import PorpoiseFileSystem
 
 struct TreeMeasureTests {
     @Test func overlappingRootsAndHardLinksAreMeasuredOnceWithIncrementalProgress() throws {

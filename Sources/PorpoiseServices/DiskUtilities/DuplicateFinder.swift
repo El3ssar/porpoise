@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 public enum DuplicateFinder {
     public struct Result: Sendable {

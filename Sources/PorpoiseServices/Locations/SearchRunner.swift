@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// Runs a search. In a folder: bundled fd and the shared matcher, streaming results as they find them (hidden and
 /// unindexed folders included). Everywhere: Spotlight, like Dolphin's Baloo search, with live results; where it finds

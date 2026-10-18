@@ -3,7 +3,7 @@ import Foundation
 /// Porpoise's privileged helper: a launchd daemon, installed once with the administrator's approval into
 /// /Library/PrivilegedHelperTools, that does the file operations macOS only lets an administrator do, such as moving
 /// apps that belong to the system to the Trash. It answers only to Porpoise signed with the same certificate as itself.
-@objc public protocol PorpoiseHelperProtocol {
+@objc(_TtP12PorpoiseCore22PorpoiseHelperProtocol_) public protocol PorpoiseHelperProtocol {
     func version(reply: @escaping (String) -> Void)
     /// Runs one of the file tools in `allowedTools` (no shell) with `arguments` (the tool first). Replies nil on
     /// success, or what went wrong.
@@ -34,7 +34,7 @@ public enum PorpoiseHelperInfo {
     /// `resolvedParent` is the item's folder with symlinks resolved (the helper passes the real one).
     public static func isInUsersTrash(path: String, resolvedParent: String, uid: UInt32, resolvedHomeTrash: String) -> Bool {
         let name = (path as NSString).lastPathComponent
-        guard !name.isEmpty, name != ".", name != "..", !name.containsScalar("/") else { return false }
+        guard !name.isEmpty, name != ".", name != "..", !name.unicodeScalars.contains("/") else { return false }
         if resolvedParent == resolvedHomeTrash { return true }
         // By code point: split(separator:) compares Characters, and "X/\u{301}" (a combining mark after the slash)
         // would stay one part, letting "/Volumes/X/\u{301}/.Trashes/501" pass for a volume's Trash.

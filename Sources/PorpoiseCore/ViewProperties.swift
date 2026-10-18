@@ -171,10 +171,10 @@ public struct ViewProperties: Codable, Equatable, Sendable {
     public var effectiveGroupRole: ItemRole? { groupSameAsSort ? sortRole : groupRole }
 
     /// Dolphin's defaults for special folders on this Mac (other locations' come from their content source).
-    public static func defaults(for url: URL) -> ViewProperties {
+    public static func defaults(for url: URL, home: URL) -> ViewProperties {
         var p = ViewProperties()
         guard url.isFileURL else { return p }
-        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+        let home = home.standardizedFileURL.path
         let path = url.standardizedFileURL.path
         if path == home + "/.Trash" {
             p.mode = .details

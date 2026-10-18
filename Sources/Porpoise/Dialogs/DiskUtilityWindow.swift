@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseFileSystem
 import PorpoiseServices
 
 /// Common native table/progress shell. Every window owns and cancels its background task.

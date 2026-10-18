@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseFileSystem
 import PorpoiseServices
 
 /// "Configure Dolphin" as a native Mac settings window, with Dolphin's pages and options.

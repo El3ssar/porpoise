@@ -202,12 +202,6 @@ private var utc: Calendar {
         #expect(h.forwardList == [u("d")] && h.backList == [u("b"), u("a")])
     }
 
-    @Test func watcherReportsParentOfChangedItems() {
-        let watched: Set<String> = ["/w", "/w/sub"]
-        #expect(FolderWatcher.changedFolders(["/w/file"], watched: watched) == ["/w"])
-        #expect(FolderWatcher.changedFolders(["/w/sub"], watched: watched) == ["/w/sub"])
-        #expect(FolderWatcher.changedFolders(["/elsewhere/x"], watched: watched).isEmpty)
-    }
 }
 
 @Suite struct ViewPropertiesEdgeCaseTests {

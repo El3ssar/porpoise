@@ -11,7 +11,9 @@ what you expected and what happened. Screenshots help a lot.
 
 | Path | What |
 |---|---|
-| `Sources/PorpoiseCore` | Pure models and algorithms: items, sorting/grouping, view properties, file jobs, parsers, helper checks |
+| `Sources/PorpoiseCore` | Shared values and algorithms: items, sorting/grouping, view properties, operation contracts, parsers, in-memory index |
+| `Sources/PorpoiseFileSystem` | Local IO: listing/metadata, path resolution, file jobs/Undo, traversal, FSEvents and verification |
+| `Sources/PorpoiseHelperKit` | Helper protocol, security/request checks and strict existing-path resolution; no project dependencies |
 | `Sources/PorpoiseServices` | Everything but drawing, no AppKit: settings, file operations, locations and places, remotes, previews, system |
 | `Sources/Porpoise/App` | App delegate, `ServicesSetup` (what the services ask of the app), system integration, updates, test bridge |
 | `Sources/Porpoise/Window` | Main window controller and its extensions (panels, tabs, menu actions), toolbar, tab bar |
@@ -40,8 +42,9 @@ open build/Porpoise.app
 
 ### Tests
 
-`swift test` runs two suites: `PorpoiseCoreTests` (models and algorithms) and `PorpoiseServicesTests` (file
-operations, locations, remotes, previews, the helper's checks). They work on real files, not mocks:
+`swift test` runs `PorpoiseCoreTests` (models and algorithms), `PorpoiseFileSystemTests` (local IO),
+`PorpoiseHelperKitTests` (unprivileged helper/security checks), `PorpoiseServicesTests` (orchestration, locations,
+remotes and previews), and `PorpoiseAppTests` (app integration). Filesystem tests use real throwaway files:
 
 - **Scratch folders.** `PorpoiseTestSupport` gives each test a `Scratch` folder in `$TMPDIR` and, where a second
   volume matters (moves across volumes, a volume's own Trash), a `DiskImage`: a small APFS image attached without
@@ -106,7 +109,7 @@ configuration and its files then stay isolated from the user's index.
 
 Swift 6 toolchain in Swift 5 language mode, AppKit. The layout is `swift format`'s, configured in `.swift-format`;
 CI checks it, and `swift format -i -r Sources Tests` applies it. Keep functions small, comment the *why*, and match
-the surrounding code. Logic belongs in `PorpoiseCore` or `PorpoiseServices`, where it's tested; the app target
+the surrounding code. Logic belongs in `PorpoiseCore`, `PorpoiseFileSystem`, `PorpoiseHelperKit` or `PorpoiseServices`, where it's tested; the app target
 draws and wires things up (see `docs/ARCHITECTURE.md`). Behaviour should follow KDE Dolphin unless the Mac way is clearly better.
 
 ## Releasing (maintainers)
@@ -135,7 +138,7 @@ Porpoise installs its helper once, with the administrator's approval, as `/Libra
 with the launchd job `/Library/LaunchDaemons/app.porpoise.helper.plist` (outside the app, so updates don't touch it). The
 user then switches on "Porpoise Helper" under Full Disk Access, next to Porpoise (setup walks through both).
 `Resources/Helper/Porpoise Helper.app` is committed and shipped unchanged in every release: as long as it's the same,
-installed copies stay current. Only when its inputs change (`Sources/PorpoiseHelper` and the PorpoiseCore files listed in
+installed copies stay current. Only when its inputs change (`Sources/PorpoiseHelper` and the PorpoiseHelperKit files listed in
 `scripts/build-helper.sh`), run `./scripts/build-helper.sh` and commit `Resources/Helper`; users then approve the update
 once, the next time it's needed. CI fails while `Resources/Helper/inputs.sha256` doesn't match the inputs, or when the
 binary contains a home folder path (`scripts/build-helper.sh --check`). Each release publishes the signed helper's code

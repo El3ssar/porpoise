@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// "Recent Files": Spotlight's last-used dates (the Mac's equivalent of recentlyused:/files).
 final class RecentFilesQuery {

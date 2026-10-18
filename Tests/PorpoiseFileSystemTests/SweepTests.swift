@@ -3,6 +3,7 @@ import PorpoiseTestSupport
 import Testing
 
 @testable import PorpoiseCore
+@testable import PorpoiseFileSystem
 
 /// FolderWatcher with real FSEvents, and FileJob/FileActions cases found in the file-operations sweep.
 @Suite(.serialized) struct FolderWatcherLiveTests {

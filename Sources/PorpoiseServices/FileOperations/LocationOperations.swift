@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// Why a file action on a location was refused, in the user's words.
 public enum LocationOperationError: LocalizedError, Equatable {
