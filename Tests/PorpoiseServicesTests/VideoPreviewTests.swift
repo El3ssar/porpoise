@@ -274,16 +274,19 @@ final class VideoPreviewStreamTests {
         #expect(try await fetch(url).0 == 404)
     }
 
-    @Test func aNewerRequestWins() async throws {
+    @MainActor @Test func aNewerRequestWins() async throws {
         let first = try video("first.avi", "mpeg4.avi")
         let second = try video("second.avi", "mpeg4.avi")
         let p = VideoPreview()
         defer { p.stop(); p.server.stop() }
         let firstAnswered = OSAllocatedUnfairLock(initialState: false)
-        await MainActor.run {
+        // Both asked in one turn of the main actor: a newer request that came seconds later (a stalled test) would
+        // rightly find the first stream already answered.
+        let answer: URL? = try await awaitCallback { c in
             p.playableURL(for: first, owner: NSObject()) { _ in firstAnswered.withLock { $0 = true } }
+            p.playableURL(for: second, owner: NSObject()) { c.resume(returning: $0) }
         }
-        let url = try #require(try await playable(p, second, owner: NSObject()))
+        let url = try #require(answer)
         #expect(url.lastPathComponent == "index.m3u8")
         try await Task.sleep(for: .milliseconds(300))
         #expect(!firstAnswered.withLock { $0 })  // the older request never calls back
