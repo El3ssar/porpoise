@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Google Drive saves edits in place.** A file opened from Google Drive in another app now goes back to Drive as a new version of the same file each time you save, as with Dropbox; the "Save as a Copy in Google Drive" step is gone. If the file changed in Drive meanwhile, nothing is overwritten: both versions are kept and Activity offers Keep Both, Open Both or Replace with Mine.
+
 ## 0.8.4
 
 - **Much lighter on memory.** With search indexing on and a busy folder tree, Porpoise could grow to 2 GB or more within minutes; temporary objects of the index are now released as it goes. A busy 8-minute session went from 1.5–2.5 GB to about 360 MB, and a typical session stays around 225–350 MB. Icon caches are capped by size.

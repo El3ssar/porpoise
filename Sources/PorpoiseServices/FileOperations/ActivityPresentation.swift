@@ -159,14 +159,13 @@ public enum ActivityAction: CaseIterable, Equatable, Sendable {
 }
 
 public enum EditActivityAction: CaseIterable, Equatable, Sendable {
-    case keepBoth, openBoth, replace, send, copy, show
+    case keepBoth, openBoth, replace, send, show
     public func title(service: String) -> String {
         switch self {
         case .keepBoth: return "Keep Both"
         case .openBoth: return "Open Both"
         case .replace: return "Replace with Mine"
         case .send: return "Send Now"
-        case .copy: return "Save as a Copy in \(service)"
         case .show: return "Show in Folder"
         }
     }
@@ -176,14 +175,12 @@ public enum EditActivityAction: CaseIterable, Equatable, Sendable {
         case .openBoth: return "Open your version and \(service)’s side by side to compare them"
         case .replace: return "Make your version the current one; \(service)’s stays in the file’s version history"
         case .send: return "Try sending your saved changes to \(service) again"
-        case .copy: return "Add your version next to the original as a separate file"
         case .show: return "Show the file in its \(service) folder"
         }
     }
     public static func actions(for mark: CloudEditMark) -> [Self] {
         switch mark {
         case .conflict: return [.keepBoth, .openBoth, .replace]
-        case .needsCopy: return [.copy]
         case .unsent: return [.send]
         default: return [.show]
         }

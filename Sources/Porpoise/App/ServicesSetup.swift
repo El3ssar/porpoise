@@ -77,7 +77,7 @@ enum EditDecisionMessage {
     private static var text = ""
 
     /// Whether an edit waits for a decision now.
-    static var isWaiting: Bool { CloudEditing.shared.entries.contains { $0.mark == .conflict || $0.mark == .needsCopy } }
+    static var isWaiting: Bool { CloudEditing.shared.entries.contains { $0.mark == .conflict } }
 
     /// `bar` shows a line just posted: remembered if it is about a decision waiting.
     static func shown(on bar: MessageBar) {

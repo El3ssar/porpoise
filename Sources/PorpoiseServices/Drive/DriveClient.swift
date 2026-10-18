@@ -30,7 +30,6 @@ public final class DriveClient: @unchecked Sendable {
     }
     private var offline = false
     public var isOffline: Bool { lock.withLock { offline } }
-    public var canSaveEdits: Bool { baseURL.scheme == "http" && baseURL.host == "127.0.0.1" }
     func setOffline(_ value: Bool) {
         let returned = lock.withLock {
             let returned = offline && !value; offline = value; return returned

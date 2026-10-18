@@ -149,7 +149,7 @@ final class ActivityRowView: NSView {
 final class EditActivityRowView: NSView {
     static let conflictHeight: CGFloat = 92
     /// Rows with a choice to make: the explanation on two lines, the buttons under it.
-    static func isTall(_ mark: CloudEditMark) -> Bool { mark == .conflict || mark == .needsCopy }
+    static func isTall(_ mark: CloudEditMark) -> Bool { mark == .conflict }
     private let title = NSTextField(labelWithString: "")
     private let detail = NSTextField(wrappingLabelWithString: "")
     private let icon = NSImageView()
@@ -250,7 +250,7 @@ final class EditActivityRowView: NSView {
         guard let e = entry else { return }
         let editing = CloudEditing.shared
         switch action {
-        case .keepBoth, .copy: editing.keepBoth(e.id)
+        case .keepBoth: editing.keepBoth(e.id)
         case .openBoth: editing.openBoth(e.id)
         case .replace: editing.replaceWithMine(e.id)
         case .send: editing.save(e.id)

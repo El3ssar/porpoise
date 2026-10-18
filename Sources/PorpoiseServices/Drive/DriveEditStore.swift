@@ -83,33 +83,37 @@ extension CloudEditSessionStore where Engine == DriveEditEngine {
 }
 
 extension DriveClient {
-    /// One conditional publication; no gap between revision validation and server-side replacement.
+    /// One conditional publication; no gap between revision validation and server-side replacement. Live Drive v3
+    /// neither returns an ETag nor honours If-Match (W-122 probe: a stale one is accepted), so the media goes through
+    /// v2, whose resource etag is refused with 412 once anything changed the file.
     func saveEdit(_ local: URL, baseline: DriveFile) async throws -> DriveFile {
-        // Live v3 conditional semantics must be established with a disposable account before enabling publication.
-        guard canSaveEdits else { throw DriveError.safeUpdateUnavailable }
         try await tokens.requireWriteScope()
-        var url = URLComponents(url: baseURL.appendingPathComponent("files/\(baseline.id)"), resolvingAgainstBaseURL: false)!
-        url.queryItems = [URLQueryItem(name: "fields", value: Self.fields), URLQueryItem(name: "supportsAllDrives", value: "true")]
-        let (data, response) = try await mutationResponse(url.url!)
-        let fresh = try decode(DriveFile.self, data)
-        guard let revision = baseline.headRevisionId, fresh.headRevisionId == revision,
-            let etag = response.value(forHTTPHeaderField: "ETag"), !etag.isEmpty,
-            fresh.operations.canWrite, !fresh.isGoogleDocument
+        let fresh = try await file(baseline.id)
+        struct Tagged: Decodable { let id: String?; let etag: String?; let headRevisionId: String?; let md5Checksum: String? }
+        let (data, _) = try await mutationResponse(v2FileURL(baseline.id, fields: "etag,headRevisionId"))
+        let tagged = try decode(Tagged.self, data)
+        guard let revision = baseline.headRevisionId, fresh.headRevisionId == revision, tagged.headRevisionId == revision,
+            let etag = tagged.etag, !etag.isEmpty, fresh.operations.canWrite, !fresh.isGoogleDocument
         else { throw DriveMutationError.conflict }
-        var upload = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
-        upload.path = "/upload/" + upload.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/files/" + baseline.id
-        upload.queryItems = [
-            URLQueryItem(name: "uploadType", value: "media"), URLQueryItem(name: "supportsAllDrives", value: "true"),
-            URLQueryItem(name: "fields", value: Self.fields),
-        ]
         do {
             let (result, _) = try await mutationResponse(
-                upload.url!, method: "PATCH", body: Data(contentsOf: local),
+                v2FileURL(baseline.id, fields: "id,md5Checksum", upload: true), method: "PUT", body: Data(contentsOf: local),
                 headers: ["Content-Type": fresh.mimeType, "If-Match": etag])
-            let file = try decode(DriveFile.self, result)
-            guard file.id == baseline.id, file.md5Checksum == (try Self.md5(local)) else { throw DriveError.invalidResponse }
-            remember([file]); invalidateMutation(parents: file.parents ?? [])
-            return file
+            let sent = try decode(Tagged.self, result)
+            guard sent.id == baseline.id, sent.md5Checksum == (try Self.md5(local)) else { throw DriveError.invalidResponse }
         } catch DriveError.http(412) { throw DriveMutationError.conflict }
+        let file = try await file(baseline.id)
+        invalidateMutation(parents: file.parents ?? [])
+        return file
+    }
+    /// The v2 resource for `id` (or its media upload) beside the v3 base URL.
+    func v2FileURL(_ id: String, fields: String, upload: Bool = false) -> URL {
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
+        let v2 = components.path.replacingOccurrences(of: "/drive/v3", with: "/drive/v2").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        components.path = (upload ? "/upload/" : "/") + v2 + "/files/" + id
+        components.queryItems =
+            [URLQueryItem(name: "supportsAllDrives", value: "true"), URLQueryItem(name: "fields", value: fields)]
+            + (upload ? [URLQueryItem(name: "uploadType", value: "media")] : [])
+        return components.url!
     }
 }

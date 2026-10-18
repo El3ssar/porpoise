@@ -12,8 +12,6 @@ public enum CloudEditMark: Equatable, Sendable {
     case unsent(String)
     /// Changed in the cloud while it was edited here: both versions are kept until the user chooses.
     case conflict
-    /// Saved here, on a service that can't yet take it as a new version safely: kept until saved as a copy in the cloud.
-    case needsCopy
 
     /// The badge on the item's icon.
     public var symbol: String {
@@ -23,7 +21,6 @@ public enum CloudEditMark: Equatable, Sendable {
         case .saved: return "checkmark.circle.fill"
         case .unsent: return "icloud.slash.fill"
         case .conflict: return "exclamationmark.triangle.fill"
-        case .needsCopy: return "doc.on.doc.fill"
         }
     }
 
@@ -35,14 +32,13 @@ public enum CloudEditMark: Equatable, Sendable {
         case .saved: return "Saved to \(service)"
         case .unsent: return "Not in \(service) yet · kept on this Mac"
         case .conflict: return "Changed in \(service) meanwhile · review in Activity"
-        case .needsCopy: return "Saved on this Mac · save it as a copy in \(service)"
         }
     }
 
     /// Worth the user's attention (drawn in the warning color).
     public var needsAttention: Bool {
         switch self {
-        case .conflict, .unsent, .needsCopy: return true
+        case .conflict, .unsent: return true
         default: return false
         }
     }
@@ -70,7 +66,6 @@ public struct CloudEditEntry: Equatable, Sendable {
         switch mark {
         case .conflict: return "“\(name)” changed in \(provider.title) while you edited it"
         case .unsent: return "1 unsent edit to “\(name)”"
-        case .needsCopy: return "Your changes to “\(name)” are on this Mac"
         default: return "Editing “\(name)”"
         }
     }
@@ -85,8 +80,6 @@ public struct CloudEditEntry: Equatable, Sendable {
         case .saved: return "Saved to \(provider.title)"
         case .unsent(let why): return "\(why) Your changes are kept on this Mac and sent when they can be."
         case .conflict: return "Both versions are kept. Keep both as separate files, compare them, or make yours the current version."
-        case .needsCopy:
-            return "\(provider.title) can’t take them as a new version of the file yet. Save them as a copy next to it; the original stays as it is."
         }
     }
 }

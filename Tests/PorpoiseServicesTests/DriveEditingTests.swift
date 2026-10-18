@@ -167,44 +167,12 @@ import Testing
         #expect(try await client.download(client.file("binary-a")).data == Data("before the quit".utf8))
     }
 
-    @Test func whereDriveCantTakeVersionsSavesWaitForACopy() async throws {
-        let (server, client, editing, item, _) = try await setup()
-        let marks = Marks(editing)
-        defer {
-            server.stop()
-            RemoteFS.unregisterDrive(accountID: client.accountID)
-        }
-        editing.savesVersions = { _ in false }
-        var posts: [(String, Bool)] = []
-        editing.post = { posts.append(($0, $1)) }
-        #expect(editing.canEdit(item))
-        editing.open(item)
-        await expectEventually { editing.entry(for: item.url) != nil }
-        #expect(posts.contains { $0.0.hasSuffix("you can keep your changes as a copy in Google Drive.") })
-        let entry = try #require(editing.entry(for: item.url))
-        try Data("kept here".utf8).write(to: entry.localURL)
-        await expectEventually { editing.mark(for: item.url) == .needsCopy }
-        let waiting = try #require(editing.entry(for: item.url))
-        #expect(waiting.title == "Your changes to “\(waiting.name)” are on this Mac" && waiting.mark.needsAttention)
-        #expect(posts.contains { $0.0.contains("Save them as a copy in Google Drive") && $0.1 })
-        // Nothing went to Drive; the copy goes next to the original, which stays as it was.
-        let original = try await client.download(client.file("binary-a")).data
-        #expect(original != Data("kept here".utf8))
-        let saves = marks.saves
-        editing.keepBoth(entry.id)
-        await expectEventually { marks.saves > saves }
-        let copy = try #require(editing.entries.first)
-        #expect(copy.name.hasSuffix("(edited on Mac).txt"))
-        #expect(try await client.download(client.file(copy.fileID)).data == Data("kept here".utf8))
-        #expect(try await client.download(client.file("binary-a")).data == original)
-    }
-
     @Test func marksSayWhatsGoingOn() {
         #expect(FileFormat.noted("Report.pdf", "edited on Mac") == "Report (edited on Mac).pdf")
         #expect(FileFormat.noted("backup.tar.gz", "x") == "backup (x).tar.gz" && FileFormat.noted("Notes", "x") == "Notes (x)")
-        let all: [CloudEditMark] = [.editing, .saving, .saved, .unsent("x"), .conflict, .needsCopy]
-        #expect(Set(all.map(\.symbol)).count == 6)
-        #expect(all.filter(\.needsAttention) == [.unsent("x"), .conflict, .needsCopy])
+        let all: [CloudEditMark] = [.editing, .saving, .saved, .unsent("x"), .conflict]
+        #expect(Set(all.map(\.symbol)).count == 5)
+        #expect(all.filter(\.needsAttention) == [.unsent("x"), .conflict])
         #expect(CloudEditMark.saving.note("Google Drive") == "Saving to Google Drive…")
         #expect(DriveEditing.mark(.saved) == .saved && DriveEditing.mark(.saved, fresh: true) == .editing)
         #expect(DriveEditing.mark(.unsent("Later.")) == .unsent("Later.") && DriveEditing.mark(.saving) == .saving)
