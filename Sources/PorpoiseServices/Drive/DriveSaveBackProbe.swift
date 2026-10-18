@@ -47,7 +47,9 @@ public struct DriveSaveBackProbe {
                 step("v2oldEtagAfterChange", await status(of: { try await v2Put(created.id, Data("late".utf8), ifMatch: etag) }))
                 step("v2etagChanges", try await v2Metadata(created.id).etag != etag ? "ok" : "same")
             }
-            guard report.steps["v2staleIfMatch"] == "412" else { throw ProbeStop() }
+            // Saves send the etag they read, so a superseded real etag is what must be refused; a malformed one only
+            // has to leave the bytes alone (live Drive answers it with 500, the fake with 412).
+            guard report.steps["v2oldEtagAfterChange"] == "412", report.steps["v2staleBytesKept"] == "ok" else { throw ProbeStop() }
 
             // Edit: another app saves atomically (new inode via rename), then the save goes back as a new revision.
             let store = client.edits
@@ -102,8 +104,8 @@ public struct DriveSaveBackProbe {
             "conflict", "conflictRemoteKept", "keepBoth", "docsReadOnly",
         ]
         report.passed =
-            expected.allSatisfy { report.steps[$0] == "ok" } && report.steps["v2staleIfMatch"] == "412"
-            && report.steps["v2matchIfMatch"] == "200" && report.steps["v2oldEtagAfterChange"] == "412"
+            expected.allSatisfy { report.steps[$0] == "ok" } && report.steps["v2matchIfMatch"] == "200"
+            && report.steps["v2oldEtagAfterChange"] == "412"
             && report.steps["cleanup"] == "trashed"
         return report
     }
