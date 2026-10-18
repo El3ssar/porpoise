@@ -2,22 +2,34 @@ import Foundation
 
 /// Streams network buffers with backpressure. The consumer finishes each buffer before the task resumes.
 /// Kept provider-neutral so other cloud transports can use the same bounded-memory HTTP path.
-final class HTTPFileStream: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+final class HTTPFileStream: @unchecked Sendable {
     enum Event { case response(HTTPURLResponse), data(Data) }
-    private var continuation: AsyncThrowingStream<Event, Error>.Continuation!
-    private var session: URLSession!
-    private var task: URLSessionDataTask!
+    fileprivate var continuation: AsyncThrowingStream<Event, Error>.Continuation!
 
-    static func receive(_ request: URLRequest, consume: (Data, HTTPURLResponse) async throws -> Void) async throws -> HTTPURLResponse {
-        let delegate = HTTPFileStream()
-        let events = AsyncThrowingStream<Event, Error> { delegate.continuation = $0 }
+    /// One session for every stream: its connections are reused (a ranged download makes many requests to one host),
+    /// where a session per request opened a connection, TLS included, each time. Like the ephemeral session per
+    /// request it replaces, it keeps no cookies, cache or credentials.
+    private static let streams = Streams()
+    private static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil; configuration.httpShouldSetCookies = false
+        configuration.urlCache = nil; configuration.urlCredentialStorage = nil
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 1
-        delegate.session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: queue)
-        delegate.task = delegate.session.dataTask(with: request)
-        defer { delegate.session.invalidateAndCancel() }
+        return URLSession(configuration: configuration, delegate: streams, delegateQueue: queue)
+    }()
+
+    static func receive(_ request: URLRequest, consume: (Data, HTTPURLResponse) async throws -> Void) async throws -> HTTPURLResponse {
+        let stream = HTTPFileStream()
+        let events = AsyncThrowingStream<Event, Error> { stream.continuation = $0 }
+        let task = session.dataTask(with: request)
+        streams.add(stream, for: task)
+        defer {
+            task.cancel()
+            streams.remove(task)
+        }
         return try await withTaskCancellationHandler {
-            delegate.task.resume()
+            task.resume()
             var response: HTTPURLResponse?
             for try await event in events {
                 try Task.checkCancellation()
@@ -26,33 +38,44 @@ final class HTTPFileStream: NSObject, URLSessionDataDelegate, @unchecked Sendabl
                 case .data(let data):
                     guard let response else { throw URLError(.badServerResponse) }
                     try await consume(data, response)
-                    delegate.task.resume()
+                    task.resume()
                 }
             }
             guard let response else { throw URLError(.badServerResponse) }
             return response
         } onCancel: {
-            delegate.task.cancel()
+            task.cancel()
         }
     }
 
-    func urlSession(
-        _ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
-        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
-    ) {
-        guard let response = response as? HTTPURLResponse else {
-            completionHandler(.cancel); continuation.finish(throwing: URLError(.badServerResponse)); return
+    /// The shared session's delegate: hands each task's events to its stream.
+    private final class Streams: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+        private let lock = NSLock()
+        private var streams: [Int: HTTPFileStream] = [:]
+        func add(_ stream: HTTPFileStream, for task: URLSessionTask) { lock.withLock { streams[task.taskIdentifier] = stream } }
+        func remove(_ task: URLSessionTask) { _ = lock.withLock { streams.removeValue(forKey: task.taskIdentifier) } }
+        private func stream(_ task: URLSessionTask) -> HTTPFileStream? { lock.withLock { streams[task.taskIdentifier] } }
+
+        func urlSession(
+            _ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+            completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+        ) {
+            guard let stream = stream(dataTask) else { completionHandler(.cancel); return }
+            guard let response = response as? HTTPURLResponse else {
+                completionHandler(.cancel); stream.continuation.finish(throwing: URLError(.badServerResponse)); return
+            }
+            stream.continuation.yield(.response(response))
+            completionHandler(.allow)
         }
-        continuation.yield(.response(response))
-        completionHandler(.allow)
-    }
 
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        dataTask.suspend()
-        continuation.yield(.data(data))
-    }
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+            dataTask.suspend()
+            stream(dataTask)?.continuation.yield(.data(data))
+        }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error { continuation.finish(throwing: error) } else { continuation.finish() }
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            guard let stream = stream(task) else { return }
+            if let error { stream.continuation.finish(throwing: error) } else { stream.continuation.finish() }
+        }
     }
 }

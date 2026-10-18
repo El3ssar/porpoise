@@ -55,20 +55,26 @@ private func oneDriveChangePage(_ client: OneDriveClient, cursor: String) async 
         apply: {
             var current = Dictionary(client.metadataCache.files.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             var updates: [String: OneDriveItem] = [:]; var removed = Set<String>()
+            // Each folder's children, made at the first deletion and kept as entries move; a link is checked when used.
+            var children: [String: [String]]?
             // Ordered: a deleted folder's descendants may not be listed (OneDrive for Business); they go with it.
             for var entry in page.value {
                 if entry.driveID == nil { entry.driveID = client.driveID }
                 if entry.isDeleted {
+                    if children == nil { children = oneDriveChildren(current.values) }
                     var gone = [entry.id]
                     while let id = gone.popLast() {
                         guard current[id] != nil || id == entry.id else { continue }
                         current[id] = nil; updates[id] = nil; removed.insert(id)
-                        gone += current.values.filter { $0.parentID == id }.map(\.id)
+                        gone += (children?[id] ?? []).filter { current[$0]?.parentID == id }
                     }
-                } else if entry.isRoot {
-                    client.metadataCache.alias("", to: entry); current[entry.id] = entry
                 } else {
-                    current[entry.id] = entry; updates[entry.id] = entry; removed.remove(entry.id)
+                    if let parent = entry.parentID { children?[parent, default: []].append(entry.id) }
+                    if entry.isRoot {
+                        client.metadataCache.alias("", to: entry); current[entry.id] = entry
+                    } else {
+                        current[entry.id] = entry; updates[entry.id] = entry; removed.remove(entry.id)
+                    }
                 }
             }
             let changed = client.metadataCache.learn(Array(updates.values), since: since)
@@ -78,4 +84,11 @@ private func oneDriveChangePage(_ client: OneDriveClient, cursor: String) async 
                 retainExisting: { $0 == "collection:shared" }, since: since)
             client.emit(CloudChangeBatch(changed: changed.map { client.contentSource.remoteItem($0) }, removed: actualRemoved))
         })
+}
+
+/// Each folder's children's IDs, by the folder's ID.
+func oneDriveChildren<Items: Sequence>(_ items: Items) -> [String: [String]] where Items.Element == OneDriveItem {
+    var children: [String: [String]] = [:]
+    for item in items { if let parent = item.parentID { children[parent, default: []].append(item.id) } }
+    return children
 }

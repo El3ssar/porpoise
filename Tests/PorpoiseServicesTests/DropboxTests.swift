@@ -290,6 +290,9 @@ import Testing
         try await source.download(item, to: partial, progress: { _, _ in })
         let before = try await server.requests().filter { $0["route"] as? String == "files/download" }.count
         #expect(before > 0)
+        // The verified bytes moved into place: no completed .part stays in the journal.
+        let downloads = client.journal.partial(UUID()).deletingLastPathComponent()
+        #expect(((try? FileManager.default.contentsOfDirectory(atPath: downloads.path)) ?? []).allSatisfy { !$0.hasSuffix(".part") })
         try await source.download(item, to: partial, progress: { _, _ in })
         let after = try await server.requests().filter { $0["route"] as? String == "files/download" }.count
         #expect(after == before && (try? DropboxContentHash.hash(partial)) == file.contentHash)

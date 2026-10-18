@@ -44,20 +44,8 @@ private func dropboxChangePage(_ client: DropboxClient, cursor: String?) async t
     return CloudChangePage(
         cursor: page.cursor, hasMore: page.hasMore,
         apply: {
-            var current = Dictionary(client.metadataCache.files.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-            var updates: [String: DropboxItem] = [:]; var removed = Set<String>()
-            // Events are ordered. A move can report the old path deleted and the same ID at its new path.
-            for entry in page.entries {
-                if entry.tag == "deleted", let path = entry.pathLower {
-                    let ids = current.values.filter { $0.pathLower == path || $0.pathLower?.hasPrefix(path + "/") == true }.map(\.id)
-                    for id in ids { current[id] = nil; updates[id] = nil; removed.insert(id) }
-                } else if entry.tag != "deleted" {
-                    let replaced = current.values.filter { $0.pathLower == entry.pathLower && $0.id != entry.id }.map(\.id)
-                    for id in replaced { current[id] = nil; updates[id] = nil; removed.insert(id) }
-                    current[entry.id] = entry; updates[entry.id] = entry; removed.remove(entry.id)
-                }
-            }
-            let changed = client.metadataCache.learn(Array(updates.values), since: since)
+            let (updates, removed) = dropboxPageChanges(page.entries, cached: client.metadataCache.files)
+            let changed = client.metadataCache.learn(updates, since: since)
             let paths = Dictionary(client.metadataCache.files.map { ($0.id, $0.pathLower ?? "") }, uniquingKeysWith: { a, _ in a })
             let actualRemoved = client.metadataCache.apply(
                 changed, removed: Array(removed),
@@ -66,4 +54,61 @@ private func dropboxChangePage(_ client: DropboxClient, cursor: String?) async t
                 }, retainExisting: { $0 == "shared" }, since: since)
             client.emit(CloudChangeBatch(changed: changed.map { client.contentSource.remoteItem($0) }, removed: actualRemoved))
         })
+}
+
+/// What a page of changes does to the cached items: the items it adds or changes, and the IDs it removes. Events are
+/// ordered; a move can report the old path deleted and the same ID at its new path. Looks paths up in an index, so
+/// a page costs O(cached + page), not O(cached × page).
+func dropboxPageChanges(_ entries: [DropboxItem], cached: [DropboxItem]) -> (updates: [DropboxItem], removed: Set<String>) {
+    var current = Dictionary(cached.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    var paths = DropboxPathIndex()
+    for item in current.values { paths.insert(item.id, at: item.pathLower) }
+    var updates: [String: DropboxItem] = [:]; var removed = Set<String>()
+    func remove(_ id: String) {
+        if let item = current.removeValue(forKey: id) { paths.remove(id, at: item.pathLower) }
+        updates[id] = nil; removed.insert(id)
+    }
+    for entry in entries {
+        if entry.tag == "deleted", let path = entry.pathLower {
+            for id in paths.subtree(path) { remove(id) }
+        } else if entry.tag != "deleted" {
+            for id in paths.ids(at: entry.pathLower) where id != entry.id { remove(id) }
+            if let old = current[entry.id] { paths.remove(entry.id, at: old.pathLower) }
+            current[entry.id] = entry; paths.insert(entry.id, at: entry.pathLower)
+            updates[entry.id] = entry; removed.remove(entry.id)
+        }
+    }
+    return (Array(updates.values), removed)
+}
+
+/// Item IDs by lowercased path, and each path's children, ancestors included even when they aren't cached: what's
+/// under a deleted folder without a scan of the account.
+struct DropboxPathIndex {
+    private var ids: [String?: Set<String>] = [:]
+    private var children: [String: Set<String>] = [:]
+    func ids(at path: String?) -> Set<String> { ids[path] ?? [] }
+    mutating func insert(_ id: String, at path: String?) {
+        ids[path, default: []].insert(id)
+        guard var child = path else { return }
+        while let slash = child.lastIndex(of: "/"), slash > child.startIndex {
+            let parent = String(child[..<slash])
+            // Linked before: so are its ancestors.
+            guard children[parent, default: []].insert(child).inserted else { break }
+            child = parent
+        }
+    }
+    /// Links to children stay: a path without IDs is skipped when walked.
+    mutating func remove(_ id: String, at path: String?) {
+        ids[path]?.remove(id)
+        if ids[path]?.isEmpty == true { ids[path] = nil }
+    }
+    /// The IDs at `path` and anywhere under it.
+    func subtree(_ path: String) -> [String] {
+        var result: [String] = [], pending = [path]
+        while let next = pending.popLast() {
+            result += ids[next] ?? []
+            pending += children[next] ?? []
+        }
+        return result
+    }
 }

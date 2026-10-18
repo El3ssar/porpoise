@@ -47,11 +47,8 @@ public final class DriveMetadataCache: @unchecked Sendable {
             }, retainExisting: { $0 == "shared" || $0 == "drives" }, since: since)
     }
     func invalidateScope(_ scope: String) {
-        if scope == "user" { storage.invalidate("root"); storage.invalidate("shared") }
-        storage.invalidate("folder:" + scope)
-        for file in storage.files where scope == "user" ? file.driveId == nil : file.driveId == scope {
-            storage.invalidate("folder:" + file.id)
-        }
+        let folders = storage.files.lazy.filter { scope == "user" ? $0.driveId == nil : $0.driveId == scope }.map { "folder:" + $0.id }
+        storage.invalidate(keys: (scope == "user" ? ["root", "shared"] : []) + ["folder:" + scope] + folders)
     }
     public func clear() { storage.clear() }
 }

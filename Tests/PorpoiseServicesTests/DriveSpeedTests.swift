@@ -134,6 +134,19 @@ import Testing
         #expect(client.cachedFile(for: file.location(accountID: client.accountID).url) == nil)
     }
 
+    /// The cache keeps a running total between walks: it still evicts down to its limit, oldest first.
+    @Test func runningTotalStillEvictsToTheLimit() async throws {
+        let scratch = try Scratch(), folder = scratch.url.appendingPathComponent("cache")
+        let cache = DriveMediaCache(accountID: UUID(), directory: folder, byteLimit: 6)
+        var files: [URL] = []
+        for n in 0..<10 {
+            files.append(try await cache.file(key: "k\(n)", name: "f\(n)") { Data([UInt8(n), 0]) })
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: Double(n - 100))], ofItemAtPath: files[n].path)
+        }
+        let kept = files.filter { FileManager.default.fileExists(atPath: $0.path) }
+        #expect(kept == Array(files.suffix(3)))
+    }
+
     @Test func diskLRUAndUnsafeNames() async throws {
         let scratch = try Scratch()
         let cache = DriveMediaCache(accountID: UUID(), directory: scratch.url.appendingPathComponent("cache"), byteLimit: 6)

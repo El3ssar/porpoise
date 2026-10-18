@@ -31,7 +31,7 @@ public final class DropboxContentSource: CloudContentSource, @unchecked Sendable
     }
     public func remoteItem(_ item: DropboxItem) -> CloudRemoteItem {
         let parent = item.parentPath
-        let parentID = client?.metadataCache.files.first { $0.isFolder && $0.pathLower == parent }?.id ?? (parent.isEmpty ? "" : parent)
+        let parentID = client?.folderIDs[parent] ?? (parent.isEmpty ? "" : parent)
         return CloudRemoteItem(
             ref: .init(account: accountID, item: item.id), name: item.name, parents: [parentID],
             isFolder: item.isFolder, size: item.size, revision: item.rev,
@@ -72,8 +72,10 @@ public final class DropboxContentSource: CloudContentSource, @unchecked Sendable
         let operation = try sidecar.operation()
         let staging = try await client.download(fresh, operationID: operation, context: .init(checkpoint: checkpoint, progress: { progress($0, $1) }))
         try await checkpoint()
-        if FileManager.default.fileExists(atPath: partial.path) { try FileManager.default.removeItem(at: partial) }
-        try cloudClone(staging, to: partial)
+        let fm = FileManager.default
+        if fm.fileExists(atPath: partial.path) { try fm.removeItem(at: partial) }
+        // Moved, not copied: a verified .part left in the journal's Downloads kept every offline copy's bytes twice.
+        do { try fm.moveItem(at: staging, to: partial) } catch { try cloudClone(staging, to: partial); try fm.removeItem(at: staging) }
         try sidecar.remove()
     }
     public func discardPartial(at partial: URL) async throws {

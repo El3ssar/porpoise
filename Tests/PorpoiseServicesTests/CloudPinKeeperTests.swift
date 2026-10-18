@@ -91,3 +91,35 @@ extension CloudPinKeeperTests {
         await keeper.stop()
     }
 }
+
+extension CloudPinKeeperTests {
+    /// Changes elsewhere in the account don't grow the index; changes under a kept folder, and to known items, do.
+    /// Keeping a folder of 50 sends a handful of snapshots, not one per change and progress report.
+    @Test func changesOutsideKeptFoldersStayOutAndSnapshotsAreCoalesced() async throws {
+        let source = FakeContentSource(), scratch = try Scratch()
+        let folder = source.add("folder", folder: true)
+        for n in 0..<50 { _ = source.add("file-\(n)", parent: "folder") }
+        let published = Counter()
+        let store = try CloudOfflineStore(
+            source: source, directory: scratch.url.appendingPathComponent("Offline"), recentLimit: nil,
+            freeSpace: { (100_000_000_000, 200_000_000_000) }, changed: { _ in published.add() })
+        let keeper = CloudPinKeeper(store: store)
+        try await store.remember([folder]); try await store.pin([folder.ref])
+        await keeper.reconcile()
+        #expect(await store.snapshot().entries.count == 50)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        #expect(published.value < 25)
+        let elsewhere = source.add("elsewhere", parent: "other"), added = source.add("added", parent: "folder")
+        await keeper.apply(.init(changed: [elsewhere, added]))
+        let snapshot = await store.snapshot()
+        #expect(snapshot.items["elsewhere"] == nil && snapshot.entries["added"] != nil)
+        await keeper.stop()
+    }
+}
+
+private final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    var value: Int { lock.withLock { count } }
+    func add() { lock.withLock { count += 1 } }
+}

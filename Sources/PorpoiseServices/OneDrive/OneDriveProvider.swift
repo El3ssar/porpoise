@@ -69,7 +69,7 @@ public final class OneDriveProvider: CloudFileProvider, @unchecked Sendable {
         let location = try location(folder); let scoped = try scoped(folder)
         if location.itemID == "collection:shared" {
             let files = try await scoped.sharedWithMe()
-            for file in files { drive(file.driveID).metadataCache.remember([file]) }
+            for (driveID, shared) in Dictionary(grouping: files, by: \.driveID) { drive(driveID).metadataCache.remember(shared) }
             let result = files.map { item($0, client: scoped) }; await onPage(result, true); return result
         }
         return try await scoped.list(location.itemID) { files, done in await onPage(files.map { self.item($0, client: scoped) }, done) }.map {

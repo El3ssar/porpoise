@@ -161,3 +161,43 @@ extension CloudOfflineTests {
         facade.wipe(account: source.accountID)
     }
 }
+
+/// Folder totals computed once per snapshot match walking every item's parents for each folder.
+@Test func folderTotalsMatchAWalkPerFolder() {
+    func item(_ id: String, _ parents: [String], folder: Bool = false, size: Int64? = nil) -> CloudRemoteItem {
+        CloudRemoteItem(ref: .init(account: "a", item: id), name: id, parents: parents, isFolder: folder, size: size)
+    }
+    var items: [String: CloudRemoteItem] = [:]
+    for folder in ["top", "mid", "low", "other"] {
+        items[folder] = item(folder, folder == "top" ? [] : folder == "mid" ? ["top"] : ["mid"], folder: true)
+    }
+    items["loop"] = item("loop", ["loop2"], folder: true); items["loop2"] = item("loop2", ["loop"], folder: true)
+    for n in 0..<40 {
+        let parent = ["top", "mid", "low", "other", "loop"][n % 5]
+        items["f\(n)"] = item("f\(n)", n % 7 == 0 ? [parent, "other"] : [parent], size: Int64(n * 10))
+    }
+    var entries: [String: CloudOfflineEntry] = [:], progress: [String: Double] = [:], errors: [String: String] = [:]
+    for n in stride(from: 0, to: 40, by: 3) {
+        entries["f\(n)"] = CloudOfflineEntry(item: items["f\(n)"]!, path: "objects/\(n)", size: Int64(n * 10), lastUsed: Date())
+    }
+    progress["f4"] = 0.5; progress["f9"] = 0.25; errors["f13"] = "failed"
+    let snapshot = CloudOfflineSnapshot(entries: entries, items: items, pins: ["top"], progress: progress, errors: errors)
+    let all = CloudFolderTotals.all(snapshot)
+    for folder in ["top", "mid", "low", "other", "loop", "loop2", "f1"] {
+        let ids = snapshot.items.keys.filter { id in
+            var queue = snapshot.items[id]?.parents ?? [], seen: Set<String> = []
+            while let parent = queue.popLast() {
+                if parent == folder { return true }
+                if seen.insert(parent).inserted { queue += snapshot.items[parent]?.parents ?? [] }
+            }
+            return false
+        }
+        var expected = CloudFolderTotals()
+        for id in ids { expected.add(id, snapshot) }
+        let got = all[folder] ?? CloudFolderTotals()
+        #expect(got.bytes == expected.bytes && got.items == expected.items, "\(folder)")
+        #expect(got.totalBytes == expected.totalBytes && got.totalItems == expected.totalItems, "\(folder)")
+        #expect(got.downloading == expected.downloading && abs(got.received - expected.received) < 0.001, "\(folder)")
+        #expect((got.error == nil) == (expected.error == nil), "\(folder)")
+    }
+}

@@ -43,7 +43,27 @@ public struct CloudProviderDescriptor: Sendable {
         c.queryItems = (c.queryItems ?? []).filter { $0.name != accountQuery } + [.init(name: accountQuery, value: email)]
         return c.url ?? link
     }
-    public static var catalog: [CloudProviderDescriptor] { catalog(dropbox: .selected(), oneDrive: .selected()) }
+    /// Looked up several times per drawn cloud row: built again only when what it reads changes (the settings store,
+    /// the two app registrations, test mode). The environment and the app's Info.plist don't change while it runs.
+    public static var catalog: [CloudProviderDescriptor] {
+        let key = CatalogKey(
+            store: ObjectIdentifier(Settings.store), dropbox: Settings.store.string(forKey: "dropboxAppKey"),
+            oneDrive: Settings.store.string(forKey: "oneDriveClientID"), testing: Settings.isTesting)
+        return catalogLock.withLock {
+            if let cachedCatalog, cachedCatalog.key == key { return cachedCatalog.catalog }
+            let catalog = catalog(dropbox: .selected(), oneDrive: .selected())
+            cachedCatalog = (key, catalog)
+            return catalog
+        }
+    }
+    private struct CatalogKey: Equatable {
+        var store: ObjectIdentifier
+        var dropbox: String?
+        var oneDrive: String?
+        var testing: Bool
+    }
+    private static let catalogLock = NSLock()
+    nonisolated(unsafe) private static var cachedCatalog: (key: CatalogKey, catalog: [CloudProviderDescriptor])?
     public static func catalog(
         dropbox configuration: DropboxConfiguration, oneDrive: OneDriveConfiguration = .selected()
     ) -> [CloudProviderDescriptor] {
