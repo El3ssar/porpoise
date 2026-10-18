@@ -68,13 +68,20 @@ enum SystemIntegration {
 
     final class RevealHandler: NSObject {
         static let shared = RevealHandler()
+        /// Where the items go (the app's windows; replaced in tests).
+        var reveal: ([URL]) -> Void = { AppDelegate.shared.reveal($0) }
+
         @objc func handle(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
-            guard let direct = event.paramDescriptor(forKeyword: keyDirectObject) else { return }
-            var urls: [URL] = []
-            let n = direct.numberOfItems
-            if n == 0 { if let u = direct.fileURLValue { urls.append(u) } } else { urls = (1...n).compactMap { direct.atIndex($0)?.fileURLValue } }
+            let urls = Self.items(of: event)
             guard !urls.isEmpty else { return }
-            AppDelegate.shared.reveal(urls)
+            reveal(urls)
+        }
+
+        /// The files of the event's direct object: one, or a list.
+        static func items(of event: NSAppleEventDescriptor) -> [URL] {
+            guard let direct = event.paramDescriptor(forKeyword: keyDirectObject) else { return [] }
+            let n = direct.numberOfItems
+            return n == 0 ? [direct.fileURLValue].compactMap { $0 } : (1...n).compactMap { direct.atIndex($0)?.fileURLValue }
         }
     }
 

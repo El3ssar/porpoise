@@ -30,7 +30,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         #if PORPOISE_TEST_HOOKS
         if Settings.isTesting { DebugBridge.shared.start() }
         #endif
-        let args = Self.folderArguments()
+        var args = Self.folderArguments()
+        // Launched by Archive Utility to reveal what it unpacked: macOS doesn't say what (see RevealInference).
+        if args.isEmpty, windows.isEmpty, SystemIntegration.isDefaultBrowser,
+            NSAppleEventManager.shared().currentAppleEvent?.eventID == AEEventID(kAEOpenApplication),
+            let item = RevealInference.launchItem(folders: RevealInference.folders(shown: savedSessionFolders))
+        {
+            args = [(item.deletingLastPathComponent(), item)]
+        }
         // First launch: the onboarding assistant comes first; the browser window opens when it's done.
         if args.isEmpty, windows.isEmpty, OnboardingWindowController.shouldShow {
             OnboardingWindowController.show { [weak self] in self?.openInitialWindows(args) }
@@ -114,7 +121,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return !windows.isEmpty
     }
 
+    /// The folders of the last session's tabs.
+    private var savedSessionFolders: [URL] {
+        let session = Settings.store.array(forKey: Self.sessionKey) as? [[[String: String]]] ?? []
+        return session.joined().compactMap { $0["url"].flatMap(URL.init(string:)) }
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Archive Utility revealing what it unpacked arrives as a bare reopen (see RevealInference).
+        if revealUnpacked(after: NSAppleEventManager.shared().currentAppleEvent) { return false }
         // Minimized windows are brought back by AppKit; a new one only when there is none.
         if !flag && windows.isEmpty { newWindow(at: Settings.shared.homeURL) }
         return true
@@ -197,6 +212,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             windows.last?.view.pendingSelect = first
         }
         NSApp.activate()
+    }
+
+    /// Reveals what Archive Utility just unpacked when `event` is its reopen; false when it isn't.
+    func revealUnpacked(after event: NSAppleEventDescriptor?) -> Bool {
+        let shown = windows.flatMap(\.sessionState).compactMap { $0["url"].flatMap(URL.init(string:)) }
+        guard let event, let item = RevealInference.reopenItem(event, folders: RevealInference.folders(shown: shown)) else { return false }
+        reveal([item])
+        return true
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

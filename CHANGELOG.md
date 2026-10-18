@@ -3,6 +3,7 @@
 ## 0.9.1
 
 - **Apps go to the Trash as in Finder.** Moving an app to the Trash (menu, ⌘⌫, the app grid, or dragging it to the Dock's Trash) no longer opens the Application Cleanup window: the app goes straight to the Trash, with Undo, and its support files are left alone. To review its leftover Library files as well, choose **Remove App and Leftovers…** from the Tools or context menu, or turn on Settings › Confirmations › "Moving an app to the Trash: review its leftover files" to be asked every time.
+- **Unpacked archives show up in Porpoise.** With Porpoise as the default file browser, opening a zip (from the Dock's Downloads stack, say) lands Porpoise in its folder with the unpacked item selected, whether Porpoise was running or not, instead of showing the home folder or the last session. Archive Utility doesn't tell other file browsers what it unpacked, so Porpoise looks for what was just added next to the archive.
 
 ## 0.9.0
 
