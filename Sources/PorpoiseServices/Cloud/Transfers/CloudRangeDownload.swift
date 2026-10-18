@@ -88,10 +88,13 @@ private final class CloudRangeWriter<Record: CloudRangeDownloadRecord>: @uncheck
         }
         if record.downloadRanges == nil {
             // Four streams for medium files, increasing with file size up to eight.
-            let count = min(max(1, maximumConnections), min(8, max(4, Int((total - 1) / (64 << 20) + 1))))
-            let width = total / Int64(count) + (total % Int64(count) == 0 ? 0 : 1)
+            let desired = min(max(1, maximumConnections), min(8, max(4, Int((total - 1) / (64 << 20) + 1))))
+            let count = Int(min(total, Int64(desired)))
+            let width = total / Int64(count), remainder = total % Int64(count)
             record.downloadRanges = (0..<count).map { index in
-                let start = Int64(index) * width, end = index == count - 1 ? total : Int64(index + 1) * width
+                let index = Int64(index)
+                let start = index * width + min(index, remainder)
+                let end = start + width + (index < remainder ? 1 : 0)
                 return .init(start: start, end: end, offset: min(end, max(start, record.offset)))
             }
         }

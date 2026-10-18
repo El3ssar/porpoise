@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **S3-compatible storage locations.** Browse buckets and prefixes, copy and move objects, and transfer files with resumable multipart uploads using AWS S3, MinIO, Backblaze B2 or Cloudflare R2 endpoints. Access keys stay in Keychain.
+
 ## 0.8.7
 
 - **Indexed search finds every empty folder.** A search for empty folders (`folder: size:0`) could miss a folder that changed after the index was built, and listed the folder being searched among its own results.

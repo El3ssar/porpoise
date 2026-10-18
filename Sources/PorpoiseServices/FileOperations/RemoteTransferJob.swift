@@ -382,6 +382,16 @@ final class RemoteTransferJob {
         _ source: URL, to target: URL, replacing: Bool, modified: Date?, beforeSourceRemoval: (() throws -> Void)? = nil,
         sourceDownloadOperationID: UUID? = nil, sourceRemovalHandled: Bool = false
     ) throws {
+        if let native = RemoteFS.provider(for: target) as? RemoteTransferNativeCopy {
+            let preserved = replacing && options.method == .sizeAndDate ? modified : nil
+            if let result = try native.copyTransferFile(source, to: target, replacing: replacing, modified: preserved) {
+                try Shell.withoutTransferControl {
+                    try beforeSourceRemoval?()
+                    if kind == .move && !sourceRemovalHandled { try result.removeSource() }
+                }
+                return
+            }
+        }
         let scratch = try Self.temporaryFolder()
         defer { try? FileManager.default.removeItem(at: scratch) }
         let downloaded: URL

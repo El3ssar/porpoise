@@ -45,3 +45,14 @@ extension SSHProvider: RemoteTransferTargetChecking {
         return output == Data("yes".utf8)
     }
 }
+
+/// A verified native copy; the engine calls the revision-bound removal only when moving its source.
+public struct RemoteTransferNativeCopyResult {
+    public let removeSource: () throws -> Void
+    public init(removeSource: @escaping () throws -> Void) { self.removeSource = removeSource }
+}
+/// Optional server-side file copy. Return nil for another connection, letting the shared engine stream it.
+/// Conflict resolution and deciding when to remove a moved source remain with the engine.
+public protocol RemoteTransferNativeCopy: RemoteProvider {
+    func copyTransferFile(_ source: URL, to target: URL, replacing: Bool, modified: Date?) throws -> RemoteTransferNativeCopyResult?
+}
