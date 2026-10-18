@@ -80,20 +80,22 @@ import Testing
         RemoteFS.registerDrive(provider, accountID: client.accountID)
         defer { RemoteFS.unregisterDrive(accountID: client.accountID) }
         let item = try await client.file("movie").fileItem(accountID: client.accountID)
+        // The fake sends the first MiB and then waits, so the running transfer's progress is there to see.
+        try await server.control(["pauseDownloadAfterBytes": 1 << 20])
         var opened: [URL] = []
         RemoteOpener.open(item, using: { opened.append($0) })
-        var sawProgress = false
-        for _ in 0..<500 where opened.isEmpty {
-            if let activity = operations.activities.last, activity.state == .running, (activity.progress?.doneBytes ?? 0) > 0 {
-                sawProgress = true
-            }
-            try await Task.sleep(for: .milliseconds(10))
+        let sawProgress = await eventually {
+            guard let activity = operations.activities.last else { return false }
+            return activity.state == .running && (activity.progress?.doneBytes ?? 0) > 0
         }
+        #expect(opened.isEmpty)
+        try await server.control(["resumeDownload": true])
+        _ = await eventually { !opened.isEmpty }
         #expect(sawProgress && opened.count == 1 && operations.activities.last?.state == .completed)
         #expect(operations.activities.last?.title == "Opening “movie.mp4”")
         server.stop()
         RemoteOpener.open(item, using: { opened.append($0) })
-        _ = await poll(timeout: 5) { opened.count == 2 }
+        _ = await poll { opened.count == 2 }
         #expect(opened.count == 2 && opened.first == opened.last && operations.activities.count == 1)
         await client.clearCaches()
     }
@@ -107,10 +109,13 @@ import Testing
         operations.history = OperationHistory(file: scratch.url.appendingPathComponent("history"))
         provider.openingOperations = operations
         let remote = DriveLocation(accountID: client.accountID, collection: .folder("movie")).url
+        // The fake holds the metadata lookup until the test has looked at the Activity.
+        try await server.control(["holdRequests": 99, "holdPath": "/files/movie"])
         let opening = Task { try await provider.preview(remote) }
-        for _ in 0..<100 where operations.activities.isEmpty { await Task.yield() }
+        try #require(await eventually { !operations.activities.isEmpty })
         #expect(operations.activities.last?.state == .running)
         #expect(provider.metadata(for: remote) == nil)
+        try await server.control(["releaseHold": true])
         _ = try await opening.value
         #expect(operations.activities.last?.state == .completed)
         await client.clearCaches()

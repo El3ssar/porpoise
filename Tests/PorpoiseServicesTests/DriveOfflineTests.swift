@@ -64,13 +64,13 @@ import Testing
                 ],
             ])
         try await client.pollChanges()
-        await expectEventually(timeout: 30) { await store.snapshot().entries["kept-0"]?.item.revision == "revision-2" }
+        await expectEventually { await store.snapshot().entries["kept-0"]?.item.revision == "revision-2" }
         try await server.control(["remoteChanges": [["file": ["id": "kept-1", "trashed": true]]]])
         try await client.pollChanges()
-        await expectEventually(timeout: 30) { await store.snapshot().entries.count == 199 }
+        await expectEventually { await store.snapshot().entries.count == 199 }
         try await server.control(["remoteChanges": [["fileId": "kept-2", "removed": true]], "changeFaults": [410]])
         try await client.pollChanges()
-        await expectEventually(timeout: 30) { await store.snapshot().entries.count == 198 }
+        await expectEventually { await store.snapshot().entries.count == 198 }
         let count = try self.files(store.directory.appendingPathComponent("objects"))
         #expect(count == 198)
         print(

@@ -46,10 +46,8 @@ import Testing
         #expect(try await server.stats()["mediaBytes"] as? Int == 334)
         #expect(try await (server.stats()["requests"] as? [String])?.contains { $0.contains("/revisions/revision-1?alt=media") } == true)
         let load = Task { try await URLSession.shared.data(from: stream.url) }
-        for _ in 0..<100 {
-            if try await (server.stats()["ranges"] as? [String])?.count ?? 0 > 1 { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        // Stopped while the whole-file load is under way upstream.
+        try await expectEventually { try await (server.stats()["ranges"] as? [String])?.count ?? 0 > 1 }
         stream.stop()
         await #expect(throws: (any Error).self) { try await load.value }
         let before = try await server.stats()["mediaBytes"] as? Int
@@ -95,14 +93,16 @@ import Testing
         let player = AVPlayer(playerItem: item)
         player.automaticallyWaitsToMinimizeStalling = false
         defer { player.pause(); player.replaceCurrentItem(with: nil) }
+        // The fake serves only the first tenth of the file until the player plays: it must start with that, however
+        // long the machine takes (a slow start used to give the player time to fetch more).
+        try await server.control(["mediaByteCap": (64 << 20) / 10])
         let start = Date()
         player.play()
-        for _ in 0..<400 where player.currentTime().seconds < 0.05 && item.status != .failed {
-            try await Task.sleep(for: .milliseconds(25))
-        }
+        _ = await poll(every: 0.025) { player.currentTime().seconds >= 0.05 || item.status == .failed }
         #expect(item.status != .failed, "\(String(describing: item.error))")
         #expect(player.currentTime().seconds >= 0.05)
         let bytes = try #require(try await server.stats()["mediaBytes"] as? Int)
+        try await server.control(["mediaByteCap": NSNull()])
         print("STREAM_PLAYING seconds=\(Date().timeIntervalSince(start)) bytes=\(bytes) total=67108864 fraction=\(Double(bytes) / Double(64 << 20))")
         #expect(bytes < (64 << 20) / 10)
     }

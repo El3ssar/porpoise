@@ -99,6 +99,9 @@ private extension Array where Element == String {
 
 /// The ffmpeg under test: the one Porpoise ships (scripts/build-ffmpeg.sh), else one on PATH. CI builds Porpoise's.
 let testFFmpeg: String? = {
+    // scripts/ci-like.sh gives this process a cooperative pool of one thread; ffmpeg, which inherits the setting,
+    // crashes with it in its sandbox. Its own pool is not what the run constrains (the variable was read at launch).
+    if getenv("LIBDISPATCH_COOPERATIVE_POOL_STRICT") != nil { unsetenv("LIBDISPATCH_COOPERATIVE_POOL_STRICT") }
     let built = repoRoot.appendingPathComponent("build/ffmpeg/ffmpeg").path
     if FileManager.default.isExecutableFile(atPath: built) { return built }
     let dirs = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init) + ["/opt/homebrew/bin", "/usr/local/bin"]
@@ -190,7 +193,7 @@ final class VideoPreviewStreamTests {
         let result = try Shell.run(
             "/usr/bin/sandbox-exec",
             VideoPreview.sandboxArguments(
-                executable: try #require(testFFmpeg), input: input, output: output, arguments: arguments), timeout: 30)
+                executable: try #require(testFFmpeg), input: input, output: output, arguments: arguments), timeout: 120)
         #expect(result.status == 0, "\(result.err)")
         let contents = try String(contentsOf: playlist, encoding: .utf8)
         #expect(contents.contains(".m4s"))
@@ -264,9 +267,9 @@ final class VideoPreviewStreamTests {
         await MainActor.run { p.stop(for: owner) }
         // ffmpeg is ended and its folder removed once it has exited.
         #expect(
-            await poll(timeout: 15) { sessionFolders().isEmpty },
+            await poll { sessionFolders().isEmpty },
             "left: \(sessionFolders().map { "\($0.lastPathComponent): \((try? FileManager.default.contentsOfDirectory(atPath: $0.path)) ?? [])" })")
-        #expect(await poll(timeout: 15) { !ffmpegRunning(on: v) })
+        #expect(await poll { !ffmpegRunning(on: v) })
         #expect(try await fetch(url).0 == 404)
     }
 
@@ -283,8 +286,8 @@ final class VideoPreviewStreamTests {
         #expect(url.lastPathComponent == "index.m3u8")
         try await Task.sleep(for: .milliseconds(300))
         #expect(!firstAnswered.withLock { $0 })  // the older request never calls back
-        #expect(await poll(timeout: 15) { !ffmpegRunning(on: first) })
-        #expect(await poll(timeout: 15) { sessionFolders().count == 1 })
+        #expect(await poll { !ffmpegRunning(on: first) })
+        #expect(await poll { sessionFolders().count == 1 })
     }
 
     @Test func unplayableFilesGiveNil() async throws {
@@ -335,7 +338,7 @@ struct StreamSessionTests {
     }
 
     private func gone(_ url: URL) async -> Bool {
-        _ = await poll(timeout: 5) { !FileManager.default.fileExists(atPath: url.path) }
+        _ = await poll { !FileManager.default.fileExists(atPath: url.path) }
         // Still gone a moment later: nothing wrote it back.
         try? await Task.sleep(for: .milliseconds(300))
         return !FileManager.default.fileExists(atPath: url.path)
@@ -349,7 +352,7 @@ struct StreamSessionTests {
         #expect(session.attach(p))
         session.stop()
         #expect(await gone(dir))
-        #expect(!p.isRunning)
+        #expect(await poll { !p.isRunning })
     }
 
     /// The race that left folders behind: the stop comes before ffmpeg is handed to the session.
@@ -361,6 +364,6 @@ struct StreamSessionTests {
         let p = try writer(into: dir)
         #expect(!session.attach(p))
         #expect(await gone(dir))
-        p.waitUntilExit()
+        await offThePool { p.waitUntilExit() }
     }
 }

@@ -35,6 +35,8 @@ struct DriveTransferSpeedTests {
             if label == "300MiB", ProcessInfo.processInfo.environment["PORPOISE_TRANSFER_BENCHMARK_SMALL_ONLY"] == "1" { continue }
             let start = Date()
             if label == "200small" {
+                // The fake holds the batch's first media GETs until two overlap: its concurrency check can't miss by timing.
+                try await server.control(["holdRequests": 2, "holdPath": "alt=media"])
                 let provider = DriveProvider(accountID: client.accountID, client: client)
                 RemoteFS.registerDrive(provider, accountID: client.accountID)
                 defer { RemoteFS.unregisterDrive(accountID: client.accountID) }

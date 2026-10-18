@@ -19,7 +19,7 @@ extension DriveMutationTests {
         let context = DriveTransferContext(status: { value in if let value { status.append(value) } })
         let task = Task { try await throttled.mutationResponse(server.base, context: context) }
         // The task may wait for a pool thread on a busy runner: wait for the notice, not for a fixed time.
-        await expectEventually(timeout: 30) { status.value.contains("Slowed down by Google, retrying") }
+        await expectEventually { status.value.contains("Slowed down by Google, retrying") }
         task.cancel()
         await #expect(throws: CancellationError.self) { try await task.value }
         let offline = DriveClient(

@@ -34,16 +34,21 @@ import Testing
         let baseline = try await client.list(DriveLocation(accountID: client.accountID))
         for file in baseline { _ = try await client.resolve(file) }
         let before = Date().timeIntervalSince(start)
+        // The fake holds the shortcut resolutions until two overlap: a bounded-parallel refresh shows it, a serial one can't.
+        try await server.control(["holdRequests": 2, "holdPath": "/files/target-"])
         let coldStart = Date()
         let rows = try await provider.refresh(root)
         let cold = Date().timeIntervalSince(coldStart)
         #expect(rows.count == 50 && rows.allSatisfy(\.isBrowsableFolder))
+        let concurrent = try #require(try await server.stats()["maxConcurrentRequests"] as? Int)
+        #expect(concurrent > 1 && concurrent <= 8)
+        let requestCount = try #require(try await server.stats()["requests"] as? [String]).count
         let cacheStart = Date()
         #expect(provider.cachedListing(root) == rows)
         let warm = Date().timeIntervalSince(cacheStart)
-        print("DRIVE_SPEED 300ms/request: sequential=\(before)s bounded=\(cold)s cached=\(warm * 1000)ms")
-        #expect(cold < before / 2)
-        #expect(warm < 0.016)
+        print("DRIVE_SPEED 300ms/request: sequential=\(before)s bounded=\(cold)s cached=\(warm * 1000)ms concurrent=\(concurrent)")
+        // The cached listing asks the server nothing.
+        #expect(try #require(try await server.stats()["requests"] as? [String]).count == requestCount)
         provider.invalidate(folder: root)
         #expect(provider.cachedListing(root) == nil)
         #expect(provider.cachedListing(DriveLocation(accountID: UUID()).url) == nil)
@@ -66,9 +71,9 @@ import Testing
         model.setExpanded(folder.url, true)
         #expect(model.items == rows && !model.isLoading)
         #expect(model.rows.contains { $0.depth == 1 })
+        // Painted and expanded synchronously from the cache (the checks above ran with no suspension in between).
         let elapsed = Date().timeIntervalSince(start)
         print("DRIVE_SPEED cached DirectoryModel paint + prefetched expansion=\(elapsed * 1000)ms, blocking requests=0")
-        #expect(elapsed < 0.016)
         let selected = try #require(rows.first { $0.name == "report.txt" }).url
         model.selection = [selected]
         let fixtureURL = FakeDriveServer.fixture("metadata.json")
@@ -85,14 +90,14 @@ import Testing
         // Cache callbacks run immediately, then the complete background diff arrives later.
         model.reload()
         completed = false
-        _ = await poll(timeout: 5) { completed }
+        _ = await poll { completed }
         #expect(completed)
         #expect(model.items.contains { $0.name == "Updated report.txt" })
         #expect(model.selection == [selected] && model.expanded.contains(folder.url))
         server.stop()
         model.reload()
         completed = false
-        _ = await poll(timeout: 5) { completed }
+        _ = await poll { completed }
         #expect(completed && model.loadError == nil && !model.items.isEmpty)
         model.prefetch(folder)
         model.prefetch(nil)
@@ -156,16 +161,18 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: first.path) && FileManager.default.fileExists(atPath: second.path))
         await #expect(throws: DriveError.invalidResponse) { try await cache.file(key: "bad", name: "..") { Data() } }
         await #expect(throws: DriveError.invalidResponse) { try await cache.file(key: "large", name: "large") { Data(count: 7) } }
-        let started = Flag()
+        let started = Flag(), release = Flag()
         let pending = Task {
             try await cache.file(key: "pending", name: "pending") {
                 started.set()
-                try await Task.sleep(for: .milliseconds(100)); return Data([1])
+                while !release.isSet { try await Task.sleep(for: .milliseconds(10)) }
+                return Data([1])
             }
         }
-        // Cleared while the fetch is under way.
-        _ = await poll(timeout: 5) { started.isSet }
+        // Cleared while the fetch is under way (it finishes only once the clear is done).
+        #expect(await poll { started.isSet })
         await cache.clear()
+        release.set()
         await #expect(throws: CancellationError.self) { try await pending.value }
     }
 }

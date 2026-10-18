@@ -215,7 +215,7 @@ import Testing
         let server = try FakeDriveServer()
         let store = DriveAccountStore(defaults: defaults, credentials: MemoryCredentials(), configuration: server.config)
         let task = Task { @MainActor in try await store.connect { _ in } }
-        for _ in 0..<100 where !store.connecting { await Task.yield() }
+        try #require(await eventually { store.connecting })
         // A second sign-in while one waits in the browser: said so (it read as "cancelled" before).
         await #expect(throws: CloudConnectionError.busy) { try await store.connect { _ in } }
         task.cancel()
@@ -315,10 +315,12 @@ struct DriveTransportTests {
         let tokens = DriveTokenManager(configuration: DriveOAuthConfiguration(clientID: "test"), accountID: id, credentials: credentials)
         try await tokens.accept(DriveTokenResponse(access_token: "access", expires_in: 3600, refresh_token: nil, token_type: "Bearer"))
         let log = DriveRequestLog()
+        // The second page waits until the test lets it go (after navigating away), however slow the machine.
+        let release = Flag()
         let http = DriveHTTP { request in
             await log.append(request)
             let paged = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.contains { $0.name == "pageToken" }
-            if paged { try await Task.sleep(for: .seconds(1)) }
+            if paged { while !release.isSet { try await Task.sleep(for: .milliseconds(10)) } }
             let body =
                 paged
                 ? #"{"files":[{"id":"late","name":"Late","mimeType":"text/plain"}]}"#
@@ -337,6 +339,7 @@ struct DriveTransportTests {
         try Data().write(to: local.url.appendingPathComponent("Local"))
         model.setLocation(local.url)
         try #require(await eventually { !model.isLoading && model.items.map(\.name) == ["Local"] })
+        release.set()
         try await Task.sleep(for: .milliseconds(100))
         #expect(model.location == local.url && model.items.map(\.name) == ["Local"])
         model.setLocation(root)
