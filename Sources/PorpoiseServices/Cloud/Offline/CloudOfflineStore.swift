@@ -18,12 +18,14 @@ public actor CloudOfflineStore {
     private var invalidated = false
     private var removing: Set<String> = []
     private var limit: Int64?
-    /// A snapshot is sent at most every `publishDelay`, and the index written at most every `writeDelay`: downloads
-    /// report progress per chunk and walks remember per folder, and each used to post and rewrite everything.
+    /// A snapshot is sent at most once per `publishPacing` (150 ms), and the index written at most every `writeDelay`:
+    /// downloads report progress per chunk and walks remember per folder, and each used to post and rewrite everything.
     private var publishScheduled = false
     private var writeScheduled = false
-    private let publishDelay: UInt64 = 150_000_000
+    private let publishPacing: @Sendable () async -> Void
     private let writeDelay: UInt64 = 1_000_000_000
+    /// The production coalescing window for snapshots. Tests pass a gate instead, to close the window when they choose.
+    public static let defaultPublishPacing: @Sendable () async -> Void = { try? await Task.sleep(nanoseconds: 150_000_000) }
     private let freeSpace: @Sendable () -> (available: Int64, total: Int64)
     private let held: @Sendable (CloudItemRef) async -> Bool
     private let changed: @Sendable (CloudOfflineSnapshot) -> Void
@@ -32,10 +34,11 @@ public actor CloudOfflineStore {
         source: CloudContentSource, directory: URL, recentLimit: Int64? = 5_000_000_000,
         freeSpace: (@Sendable () -> (available: Int64, total: Int64))? = nil,
         held: @escaping @Sendable (CloudItemRef) async -> Bool = { _ in false },
-        changed: @escaping @Sendable (CloudOfflineSnapshot) -> Void = { _ in }
+        changed: @escaping @Sendable (CloudOfflineSnapshot) -> Void = { _ in },
+        publishPacing: @escaping @Sendable () async -> Void = CloudOfflineStore.defaultPublishPacing
     ) throws {
         self.source = source; self.directory = directory; self.limit = recentLimit
-        self.held = held; self.changed = changed
+        self.held = held; self.changed = changed; self.publishPacing = publishPacing
         self.freeSpace =
             freeSpace ?? {
                 let values = try? directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey])
@@ -68,7 +71,7 @@ public actor CloudOfflineStore {
         guard !publishScheduled else { return }
         publishScheduled = true
         Task {
-            try? await Task.sleep(nanoseconds: publishDelay)
+            await publishPacing()
             publishNow()
         }
     }

@@ -94,21 +94,26 @@ extension CloudPinKeeperTests {
 
 extension CloudPinKeeperTests {
     /// Changes elsewhere in the account don't grow the index; changes under a kept folder, and to known items, do.
-    /// Keeping a folder of 50 sends a handful of snapshots, not one per change and progress report.
+    /// Keeping a folder of 50 sends one snapshot per coalescing window, not one per change and progress report: the
+    /// test holds the window open for the whole keep, so exactly one snapshot follows when it closes.
     @Test func changesOutsideKeptFoldersStayOutAndSnapshotsAreCoalesced() async throws {
         let source = FakeContentSource(), scratch = try Scratch()
         let folder = source.add("folder", folder: true)
         for n in 0..<50 { _ = source.add("file-\(n)", parent: "folder") }
-        let published = Counter()
+        let published = Counter(), window = PublishWindow()
         let store = try CloudOfflineStore(
             source: source, directory: scratch.url.appendingPathComponent("Offline"), recentLimit: nil,
-            freeSpace: { (100_000_000_000, 200_000_000_000) }, changed: { _ in published.add() })
+            freeSpace: { (100_000_000_000, 200_000_000_000) }, changed: { _ in published.add() },
+            publishPacing: { await window.wait() })
         let keeper = CloudPinKeeper(store: store)
         try await store.remember([folder]); try await store.pin([folder.ref])
         await keeper.reconcile()
         #expect(await store.snapshot().entries.count == 50)
-        try await Task.sleep(nanoseconds: 300_000_000)
-        #expect(published.value < 25)
+        await expectEventually { window.waiting == 1 }
+        #expect(published.value == 0)
+        window.close()
+        await expectEventually { published.value == 1 }
+        #expect(window.closed == 1)
         let elsewhere = source.add("elsewhere", parent: "other"), added = source.add("added", parent: "folder")
         await keeper.apply(.init(changed: [elsewhere, added]))
         let snapshot = await store.snapshot()
@@ -122,4 +127,34 @@ private final class Counter: @unchecked Sendable {
     private var count = 0
     var value: Int { lock.withLock { count } }
     func add() { lock.withLock { count += 1 } }
+}
+
+/// Coalescing windows the test closes: each `wait` (one window) lasts until `close`, after which every later window
+/// closes at once (so nothing is left suspended after the test).
+private final class PublishWindow: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isClosed = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var ended = 0
+    /// Windows still open.
+    var waiting: Int { lock.withLock { waiters.count } }
+    /// Windows that closed (`wait` returned).
+    var closed: Int { lock.withLock { ended } }
+    func wait() async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            let now = lock.withLock {
+                if isClosed { ended += 1; return true }
+                waiters.append(c); return false
+            }
+            if now { c.resume() }
+        }
+    }
+    func close() {
+        let pending = lock.withLock {
+            isClosed = true; ended += waiters.count
+            defer { waiters = [] }
+            return waiters
+        }
+        for c in pending { c.resume() }
+    }
 }
