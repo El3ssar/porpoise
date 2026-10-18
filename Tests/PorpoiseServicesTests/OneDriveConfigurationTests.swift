@@ -94,8 +94,7 @@ struct OneDriveConfigurationTests {
         #expect(tree.root.children == nil && tree.root.isExpandable)
         #expect(try await server.requests().isEmpty)
         tree.root.expand()
-        let deadline = Date().addingTimeInterval(10)
-        while tree.root.isLoading || tree.root.children == nil, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        await expectEventually { !tree.root.isLoading && tree.root.children != nil }
         let folder = try #require(tree.root.children?.first { $0.name == "Folder" })
         #expect(OneDriveLocation(url: folder.url)?.driveID == FakeGraphServer.drive)
         // The root's real ID names the root too.

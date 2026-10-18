@@ -109,10 +109,11 @@ import Testing
         let read = Script([(429, ["Retry-After": "0"]), (200, [:])])
         let reader = DriveClient(
             accountID: UUID(), tokens: tokens, http: .init { read.answer($0) }, baseURL: server.base,
-            mutationJournal: .init(folder: scratch.url.appendingPathComponent("a")))
-        let started = Date()
+            mutationJournal: .init(folder: scratch.url.appendingPathComponent("a")),
+            retryWait: { delay in read.lock.withLock { read.waits.append(delay) } })
         _ = try await reader.request("about")
-        #expect(read.count == 2 && Date().timeIntervalSince(started) < 0.9)
+        // The pause was the 0 s asked for (plus jitter), not the 1 s of a backoff that ignored it.
+        #expect(read.count == 2 && read.waits.count == 1 && (0...0.06).contains(read.waits[0]))
         let download = Script([(503, ["Retry-After": "0"]), (200, [:])])
         let downloader = DriveClient(
             accountID: UUID(), tokens: tokens, http: .init { download.answer($0) }, baseURL: server.base,

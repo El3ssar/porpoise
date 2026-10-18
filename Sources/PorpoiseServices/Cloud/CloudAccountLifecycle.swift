@@ -40,6 +40,9 @@ extension CloudConnectError {
     public var onChange: () -> Void = {}
     private var gates: [UUID: OfflineHysteresis] = [:]
     private var checks: [UUID: DispatchWorkItem] = [:]
+    /// What time it is for the steadying. Tests move it on themselves, so what they see doesn't depend on how fast
+    /// the machine runs (a stall between two requests looked like a network that had come back).
+    var clock: () -> Date = Date.init
 
     public init() {}
 
@@ -79,14 +82,14 @@ extension CloudConnectError {
         default: reached = true
         }
         if error == nil, statuses[id] == .signInNeeded { set(id, .ok) }
-        _ = gates[id]?.record(reached: reached, at: Date())
+        _ = gates[id]?.record(reached: reached, at: clock())
         settle(id)
     }
 
     /// What the steadied connection says now, and when to look again.
     func settle(_ id: UUID) {
         guard var gate = gates[id] else { return }
-        let now = Date()
+        let now = clock()
         _ = gate.update(at: now)
         gates[id] = gate
         if statuses[id] != .signInNeeded { set(id, gate.isOffline ? .offline : .ok) }

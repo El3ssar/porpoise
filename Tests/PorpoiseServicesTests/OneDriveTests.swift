@@ -208,10 +208,14 @@ import Testing
             "files": [["id": "FIXTURE!large", "name": "large.bin", "size": 32 << 20], ["id": "FIXTURE!empty", "name": "empty", "size": 0]]
         ])
         let file = try await client.metadata("FIXTURE!large")
+        // How many ranges are downloaded at once, not how long they took: a shared runner's timing says little (W-127).
+        // For the parallel download the fake holds each range until two are in flight (a serial client gets 1).
         let start = Date(); let single = try await client.download(file, maximumConnections: 1); let singleTime = Date().timeIntervalSince(start)
+        #expect(try await server.stats()["maxConcurrentDownloads"] as? Int == 1)
+        try await server.configure(["resetConcurrency": true, "holdDownloads": 2])
         let parallelStart = Date(); let parallel = try await client.download(file); let parallelTime = Date().timeIntervalSince(parallelStart)
+        #expect(try await server.stats()["maxConcurrentDownloads"] as? Int ?? 0 >= 2)
         #expect(try OneDriveContentHash.hash(single) == OneDriveContentHash.hash(parallel))
-        #expect(parallelTime < singleTime * 0.85)
         print("OneDrive 32MiB connection128/aggregate512 Mbps: single=\(singleTime)s parallel=\(parallelTime)s")
         let downloads = try await server.requests().filter { $0["route"] as? String == "/download" }
         #expect(!downloads.isEmpty && downloads.allSatisfy { $0["auth"] as? Bool == false && $0["range"] is String })
@@ -251,12 +255,12 @@ import Testing
         let start = Date(); let preview = try client.streamingPreview(item, contentType: "text/plain")
         defer { preview.stop() }
         let instant = Date().timeIntervalSince(start)
+        // Created at once: nothing was downloaded to make it.
         #expect(try await server.requests().allSatisfy { $0["route"] as? String != "/download" })
         var request = URLRequest(url: preview.url); request.setValue("bytes=0-4", forHTTPHeaderField: "Range")
         let readStart = Date(); let (bytes, response) = try await URLSession.shared.data(for: request)
         let first = Date().timeIntervalSince(readStart)
         #expect(bytes == Data("Hello".utf8) && (response as? HTTPURLResponse)?.statusCode == 206)
-        #expect(instant < 0.25)
         let thumbnail = try await client.thumbnail(item)
         #expect(try Data(contentsOf: thumbnail) == Data("fixture-thumbnail".utf8))
         #expect(try await client.thumbnail(item) == thumbnail)
@@ -363,10 +367,14 @@ import Testing
         try await server.configure(["pageSize": 1, "repeatNextLink": true])
         await #expect(throws: OneDriveError.invalidResponse) { try await client.list() }
         try await server.configure(["repeatNextLink": false, "failRoute": "FIXTURE!other"])
-        let busy = Date()
-        await #expect(throws: OneDriveError.self) { try await client.metadata("FIXTURE!other") }
+        let waits = Locked([TimeInterval]())
+        let busy = OneDriveClient(
+            accountID: client.accountID, configuration: server.config, tokens: client.tokens, driveID: FakeGraphServer.drive,
+            directory: server.directory, retryWait: { waits.append($0) })
+        await #expect(throws: OneDriveError.self) { try await busy.metadata("FIXTURE!other") }
         #expect(try await server.requests().filter { ($0["route"] as? String)?.hasSuffix("FIXTURE!other") == true }.count == 5)
-        #expect(Date().timeIntervalSince(busy) < 5)  // Retry-After: 0 is honored
+        // Retry-After: 0 is honored: each pause is 0 s plus jitter, not the 1, 2, 4, 8 s backoff.
+        #expect(waits.value.count == 4 && waits.value.allSatisfy { (0...0.06).contains($0) })
         // Classification: throttled and unavailable are retried, a failed change isn't.
         func status(_ code: Int) -> HTTPURLResponse { HTTPURLResponse(url: server.base, statusCode: code, httpVersion: nil, headerFields: nil)! }
         for code in [429, 503] {

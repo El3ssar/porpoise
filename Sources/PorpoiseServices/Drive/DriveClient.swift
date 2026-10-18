@@ -48,6 +48,8 @@ public final class DriveClient: @unchecked Sendable {
     let tokens: DriveTokenManager
     let http: DriveHTTP
     let baseURL: URL
+    /// How the pause before a retry is spent (`CloudAuthorizedClient.defaultWait`; tests record it instead).
+    let retryWait: @Sendable (TimeInterval) async throws -> Void
     private let report: @Sendable (Error?) -> Void
     let lock = NSLock()
     var cache: [String: DriveFile] = [:]
@@ -57,8 +59,10 @@ public final class DriveClient: @unchecked Sendable {
     public init(
         accountID: UUID, tokens: DriveTokenManager, http: DriveHTTP = DriveHTTP(),
         baseURL: URL = URL(string: "https://www.googleapis.com/drive/v3/")!, mutationJournal: DriveMutationJournal = .shared,
-        metadataDirectory: URL? = nil, report: @escaping @Sendable (Error?) -> Void = { _ in }
+        metadataDirectory: URL? = nil, report: @escaping @Sendable (Error?) -> Void = { _ in },
+        retryWait: @escaping @Sendable (TimeInterval) async throws -> Void = CloudAuthorizedClient.defaultWait
     ) {
+        self.retryWait = retryWait
         self.offlineDirectory = metadataDirectory?.appendingPathComponent("Offline")
         self.mediaCache = DriveMediaCache(accountID: accountID, directory: metadataDirectory?.appendingPathComponent("Previews"))
         self.metadataCache = DriveMetadataCache(accountID: accountID, directory: metadataDirectory)
@@ -131,7 +135,8 @@ public final class DriveClient: @unchecked Sendable {
     func authorized(mutation: Bool) -> CloudAuthorizedClient {
         CloudAuthorizedClient(
             transport: http.transport, token: { [tokens] rejected in try await tokens.accessToken(rejectedToken: rejected) },
-            classify: { body, response, idempotent in Self.classify(body, response, idempotent: idempotent, mutation: mutation) })
+            classify: { body, response, idempotent in Self.classify(body, response, idempotent: idempotent, mutation: mutation) },
+            wait: retryWait)
     }
 
     /// Busy (429, or a rate limit given as 403) is sent again; a server error only when that can't do anything twice.
