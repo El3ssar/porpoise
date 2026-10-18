@@ -1,0 +1,4 @@
+fixture*/
+*.dylib
+build.log
+patterns.txt
