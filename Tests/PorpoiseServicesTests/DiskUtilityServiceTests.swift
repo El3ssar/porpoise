@@ -30,6 +30,19 @@ struct DiskUtilityServiceTests {
         let shallow = PhysicalTreeScanner.scan([s.path("root")], maxDepth: 1)
         #expect(!shallow.entries.contains { $0.url.lastPathComponent == "café.txt" })
     }
+    @Test func duplicateHardLinkRepresentativeIsIndependentOfScanOrder() throws {
+        let scratch = try Scratch()
+        try scratch.file("z-alias", "same"); try scratch.file("copy", "same")
+        try FileManager.default.linkItem(at: scratch.path("z-alias"), to: scratch.path("a-owner"))
+        let entries = try ["z-alias", "copy", "a-owner"].map { try PhysicalTreeScanner.entry(scratch.path($0)) }
+        for order in [entries, Array(entries.reversed())] {
+            var scan = DiskScan(); scan.entries = order
+            let result = try DuplicateFinder.find(in: scan)
+            #expect(result.hardLinksIgnored == 1)
+            #expect(result.groups.count == 1)
+            #expect(result.groups.first?.files.map(\.entry.url.lastPathComponent) == ["a-owner", "copy"])
+        }
+    }
     @Test func manifestVerificationReportsMismatchMissingAndUnsafePaths() throws {
         let s = try Scratch(); try s.file("a.txt", "abc"); try s.file("other", "outside")
         let digest = try FileChecksums.digest(s.path("a.txt"))

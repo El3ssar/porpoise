@@ -56,21 +56,57 @@ public struct UsageTree: Sendable {
     public let hardLinkAliases: Int
     public init(_ scan: DiskScan) {
         var nodes = [UsageNode(url: nil, parent: nil, directory: true)]
-        var paths: [String: Int] = [:], seen: Set<DiskIdentity> = [], aliases = 0
-        // Depth first in the logical tree; stable path ordering assigns hard-link bytes deterministically.
-        for entry in scan.entries.sorted(by: { $0.url.path < $1.url.path }) {
-            let id = nodes.count, parent = paths[entry.url.deletingLastPathComponent().path] ?? 0
-            var node = UsageNode(url: entry.url, parent: parent, directory: entry.directory)
-            if !entry.directory && !entry.symlink {
-                if seen.insert(entry.identity).inserted {
-                    node.logical = entry.size; node.allocated = entry.allocated; node.files = 1
-                } else {
+        nodes.reserveCapacity(scan.entries.count + 1)
+        var directories: [String: Int] = [:], owners: [DiskIdentity: Int] = [:], aliases = 0
+        // Scans arrive in parallel traversal order. Index only directories; a million file paths
+        // need neither a global sort nor a retained path dictionary.
+        for entry in scan.entries {
+            let id = nodes.count
+            var node = UsageNode(url: entry.url, parent: 0, directory: entry.directory)
+            if entry.directory {
+                directories[entry.url.path] = id
+            } else if !entry.symlink {
+                if let previous = owners[entry.identity] {
                     aliases += 1
+                    // Preserve the lexical hard-link owner independently of traversal order.
+                    if entry.url.path < nodes[previous].url!.path {
+                        nodes[previous].logical = 0; nodes[previous].allocated = 0; nodes[previous].files = 0
+                        owners[entry.identity] = id
+                        node.logical = entry.size; node.allocated = entry.allocated; node.files = 1
+                    }
+                } else {
+                    owners[entry.identity] = id
+                    node.logical = entry.size; node.allocated = entry.allocated; node.files = 1
                 }
             }
-            nodes.append(node); nodes[parent].children.append(id); paths[entry.url.path] = id
+            nodes.append(node)
         }
-        for id in nodes.indices.reversed() where id != 0 {
+        for id in 1..<nodes.count {
+            let path = nodes[id].url!.path
+            let slash = path.lastIndex(of: "/")!
+            let parentPath = slash == path.startIndex ? "/" : String(path[..<slash])
+            // A selected filesystem root has no parent within the scan.
+            let parent = path == "/" ? 0 : (directories[parentPath] ?? 0)
+            nodes[id].parent = parent
+            nodes[parent].children.append(id)
+        }
+        // Parent IDs need not precede children. Walk directories in preorder and aggregate in
+        // reverse; file totals go straight to their parent and require no traversal stack.
+        var folders = [0], index = 0
+        while index < folders.count {
+            let id = folders[index]
+            for child in nodes[id].children {
+                if nodes[child].directory {
+                    folders.append(child)
+                } else {
+                    nodes[id].logical += nodes[child].logical
+                    nodes[id].allocated += nodes[child].allocated
+                    nodes[id].files += nodes[child].files
+                }
+            }
+            index += 1
+        }
+        for id in folders.reversed() where id != 0 {
             let parent = nodes[id].parent!
             nodes[parent].logical += nodes[id].logical; nodes[parent].allocated += nodes[id].allocated; nodes[parent].files += nodes[id].files
         }

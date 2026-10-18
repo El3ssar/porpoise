@@ -33,6 +33,16 @@ struct AppCleanupRulesTests {
         groups: ["group.test.private", "group.test.shared"])
     let other = CleanupApplication(
         url: URL(fileURLWithPath: "/Applications/Other.app"), bundleID: "com.test.other", name: "Other", groups: ["group.test.shared"])
+    @Test func preparedMatchingPreservesUnicodeAndSelectedOrder() {
+        let unicode = CleanupApplication(url: app.url, bundleID: "com.test.CAFÉ", name: "Straße", groups: ["GROUP.café"])
+        let second = CleanupApplication(url: other.url, bundleID: unicode.bundleID, name: unicode.name)
+        let matcher = AppCleanupRules.Matcher(selected: [unicode, second], installed: [unicode, second])
+        #expect(matcher.match(name: "COM.TEST.cafe\u{301}", category: .support)?.application == unicode)
+        #expect(matcher.match(name: "STRASSE", category: .support)?.application == unicode)
+        #expect(matcher.match(name: "group.CAFE\u{301}", category: .groups)?.application == unicode)
+        let shared = AppCleanupRules.Matcher(selected: [unicode], installed: [unicode, second])
+        #expect(shared.match(name: "com.test.cafe\u{301}", category: .support) == nil)
+    }
     @Test func wholeIdentifiersAndNamesOnly() {
         #expect(
             AppCleanupRules.match(name: "com.test.example.plist", category: .preferences, selected: [app], installed: [app, other])?.reason

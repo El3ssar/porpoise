@@ -34,34 +34,57 @@ public enum AppCleanupRules {
         selected: [CleanupApplication], installed: [CleanupApplication], groupOwnershipComplete: Bool = true,
         associatedBundleIDs: Set<String> = []
     ) -> CleanupMatch? {
-        if category == .preferences || category == .agents {
-            guard name.hasSuffix(".plist") else { return nil }
+        Matcher(selected: selected, installed: installed, groupOwnershipComplete: groupOwnershipComplete).match(
+            name: name, identifier: identifier, category: category, associatedBundleIDs: associatedBundleIDs)
+    }
+
+    /// Prepared once for a scan/revalidation. Whole-name folding preserves the POSIX
+    /// case-insensitive comparison while avoiding an entries × installed-apps search.
+    public struct Matcher: Sendable {
+        private static let locale = Locale(identifier: "en_US_POSIX")
+        private var selectedIDs: [String: CleanupApplication] = [:]
+        private var selectedNames: [String: CleanupApplication] = [:]
+        private var selectedGroups: [String: CleanupApplication] = [:]
+        private var otherIDs = Set<String>(), otherNames = Set<String>(), otherGroups = Set<String>()
+        private let groupOwnershipComplete: Bool
+        private static func key(_ value: String) -> String {
+            value.folding(options: .caseInsensitive, locale: locale).precomposedStringWithCanonicalMapping
         }
-        if category == .savedState, !name.hasSuffix(".savedState") { return nil }
-        let id = identifier ?? category.identifier(name)
-        let filenameID = category.identifier(name)
-        let selectedPaths = Set(selected.map { $0.url.standardizedFileURL.path })
-        let others = installed.filter { !selectedPaths.contains($0.url.standardizedFileURL.path) }
-        let sameName: (String, String) -> Bool = {
-            $0.compare($1, options: [.caseInsensitive], locale: Locale(identifier: "en_US_POSIX")) == .orderedSame
+        public init(selected: [CleanupApplication], installed: [CleanupApplication], groupOwnershipComplete: Bool = true) {
+            self.groupOwnershipComplete = groupOwnershipComplete
+            let paths = Set(selected.map { $0.url.standardizedFileURL.path })
+            for app in selected {
+                let id = Self.key(app.bundleID), name = Self.key(app.name)
+                if !id.isEmpty, selectedIDs[id] == nil { selectedIDs[id] = app }
+                if selectedNames[name] == nil { selectedNames[name] = app }
+                for group in app.groups where selectedGroups[Self.key(group)] == nil { selectedGroups[Self.key(group)] = app }
+            }
+            for app in installed where !paths.contains(app.url.standardizedFileURL.path) {
+                otherIDs.insert(Self.key(app.bundleID)); otherNames.insert(Self.key(app.name))
+                otherGroups.formUnion(app.groups.map(Self.key))
+            }
         }
-        if category == .groups {
-            guard groupOwnershipComplete, !others.contains(where: { app in app.groups.contains { sameName($0, id) || sameName($0, filenameID) } }),
-                let app = selected.first(where: { app in app.groups.contains { sameName($0, id) } })
+        public func match(
+            name: String, identifier: String? = nil, category: CleanupCategory, associatedBundleIDs: Set<String> = []
+        ) -> CleanupMatch? {
+            if category == .preferences || category == .agents {
+                guard name.hasSuffix(".plist") else { return nil }
+            }
+            if category == .savedState, !name.hasSuffix(".savedState") { return nil }
+            let rawID = identifier ?? category.identifier(name)
+            let id = Self.key(rawID), filenameID = Self.key(category.identifier(name))
+            if category == .groups {
+                guard groupOwnershipComplete, !otherGroups.contains(id), !otherGroups.contains(filenameID), let app = selectedGroups[id]
+                else { return nil }
+                return CleanupMatch(application: app, reason: "App-group entitlement: \(rawID)")
+            }
+            guard !otherIDs.contains(id), !otherIDs.contains(filenameID), !otherNames.contains(id), !otherNames.contains(filenameID),
+                !associatedBundleIDs.contains(where: { otherIDs.contains(Self.key($0)) })
             else { return nil }
-            return CleanupMatch(application: app, reason: "App-group entitlement: \(id)")
+            if let app = selectedIDs[id] { return CleanupMatch(application: app, reason: "Bundle identifier: \(app.bundleID)") }
+            // Containers require bundle metadata rather than friendly folder names.
+            guard category != .containers, let app = selectedNames[id] else { return nil }
+            return CleanupMatch(application: app, reason: "Exact application name: \(app.name)")
         }
-        guard
-            !others.contains(where: { other in
-                sameName(other.bundleID, id) || sameName(other.bundleID, filenameID) || sameName(other.name, id) || sameName(other.name, filenameID)
-                    || associatedBundleIDs.contains { sameName($0, other.bundleID) }
-            })
-        else { return nil }
-        if let app = selected.first(where: { !$0.bundleID.isEmpty && sameName($0.bundleID, id) }) {
-            return CleanupMatch(application: app, reason: "Bundle identifier: \(app.bundleID)")
-        }
-        // Containers are identified by their bundle metadata, never by a friendly folder name.
-        guard category != .containers, let app = selected.first(where: { sameName($0.name, id) }) else { return nil }
-        return CleanupMatch(application: app, reason: "Exact application name: \(app.name)")
     }
 }

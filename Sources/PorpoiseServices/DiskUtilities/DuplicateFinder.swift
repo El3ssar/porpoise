@@ -15,11 +15,18 @@ public enum DuplicateFinder {
         in scan: DiskScan, cancellation: DiskCancellation = DiskCancellation(),
         progress: (DiskProgress) -> Void = { _ in }
     ) throws -> Result {
-        var result = Result(), seen: Set<DiskIdentity> = [], sizes: [Int64: [DiskEntry]] = [:], done = 0
+        var result = Result(), unique: [DiskIdentity: DiskEntry] = [:], sizes: [Int64: [DiskEntry]] = [:], done = 0
         result.errors = scan.errors
-        for file in scan.entries.sorted(by: { $0.url.path < $1.url.path }) where !file.directory && !file.symlink && file.size > 0 {
-            if seen.insert(file.identity).inserted { sizes[file.size, default: []].append(file) } else { result.hardLinksIgnored += 1 }
+        for file in scan.entries where !file.directory && !file.symlink && file.size > 0 {
+            try cancellation.check()
+            if let previous = unique[file.identity] {
+                result.hardLinksIgnored += 1
+                if file.url.path < previous.url.path { unique[file.identity] = file }
+            } else {
+                unique[file.identity] = file
+            }
         }
+        for file in unique.values { sizes[file.size, default: []].append(file) }
         for files in sizes.values where files.count > 1 {
             var partials: [String: [DiskEntry]] = [:]
             for file in files {
