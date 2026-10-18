@@ -18,6 +18,12 @@ public actor CloudOfflineStore {
     private var invalidated = false
     private var removing: Set<String> = []
     private var limit: Int64?
+    /// A snapshot is sent at most every `publishDelay`, and the index written at most every `writeDelay`: downloads
+    /// report progress per chunk and walks remember per folder, and each used to post and rewrite everything.
+    private var publishScheduled = false
+    private var writeScheduled = false
+    private let publishDelay: UInt64 = 150_000_000
+    private let writeDelay: UInt64 = 1_000_000_000
     private let freeSpace: @Sendable () -> (available: Int64, total: Int64)
     private let held: @Sendable (CloudItemRef) async -> Bool
     private let changed: @Sendable (CloudOfflineSnapshot) -> Void
@@ -58,7 +64,18 @@ public actor CloudOfflineStore {
     public func snapshot() -> CloudOfflineSnapshot {
         CloudOfflineSnapshot(entries: index.entries, items: index.items, pins: index.pins, progress: progress, errors: errors)
     }
-    public func publish() { changed(snapshot()) }
+    public func publish() {
+        guard !publishScheduled else { return }
+        publishScheduled = true
+        Task {
+            try? await Task.sleep(nanoseconds: publishDelay)
+            publishNow()
+        }
+    }
+    private func publishNow() {
+        publishScheduled = false
+        changed(snapshot())
+    }
     public func state(_ ref: CloudItemRef) -> CloudOfflineState {
         if let reason = errors[ref.item] { return .error(reason) }
         if let fraction = progress[ref.item] { return .downloading(fraction) }
@@ -79,6 +96,24 @@ public actor CloudOfflineStore {
         }
         try persist()
     }
+    /// Provider changes: only items the index knows, or that a pin keeps (with their folders). The rest of the
+    /// account would grow the index, and every walk over it, with what nobody keeps.
+    public func update(_ items: [CloudRemoteItem]) throws {
+        let relevant = items.filter { index.items[$0.ref.item] != nil || isKeptThroughParents($0) }
+        guard !relevant.isEmpty else { return }
+        try remember(relevant)
+    }
+    private func isKeptThroughParents(_ item: CloudRemoteItem) -> Bool {
+        var seen: Set<String> = []
+        var pending = [item.ref.item]
+        while let id = pending.popLast() {
+            guard seen.insert(id).inserted else { continue }
+            if index.pins.contains(id) { return true }
+            let known = id == item.ref.item ? item : index.items[id] ?? source.cachedItem(CloudItemRef(account: source.accountID, item: id))
+            pending += known?.parents ?? []
+        }
+        return false
+    }
     public func localCopy(_ ref: CloudItemRef, revision: String?) throws -> URL? {
         guard !invalidated, ref.account == source.accountID, var entry = index.entries[ref.item], entry.item.revision == revision else { return nil }
         let url = directory.appendingPathComponent(entry.path)
@@ -97,11 +132,11 @@ public actor CloudOfflineStore {
         guard item.ref.account == source.accountID, !item.isFolder, item.canDownload else { throw CloudContentError.unsupported }
         index.items[item.ref.item] = item
         if keep { index.pins.insert(item.ref.item) }
-        try persist()
+        try persist(now: keep)
         if index.entries[item.ref.item]?.item.export == item.export,
             let copy = try localCopy(item.ref, revision: item.revision)
         {
-            try persist(); return copy
+            return copy
         }
         while let running = inFlight[item.ref.item] {
             let result = try await running.task.value
@@ -190,7 +225,8 @@ public actor CloudOfflineStore {
         index.items[item.ref.item] = item
         index.entries[item.ref.item] = CloudOfflineEntry(item: item, path: relative, size: size, lastUsed: Date())
         errors[item.ref.item] = nil
-        try persist()
+        // Bytes the index doesn't name are never removed: write before anything else can happen.
+        try persist(now: true)
         if let previous, previous.path != relative {
             try? fm.removeItem(at: directory.appendingPathComponent(previous.path).deletingLastPathComponent())
         }
@@ -201,13 +237,15 @@ public actor CloudOfflineStore {
     public func pin(_ refs: [CloudItemRef]) throws {
         guard !invalidated else { throw CancellationError() }
         for ref in refs where ref.account == source.accountID { index.pins.insert(ref.item) }
-        try persist()
+        try persist(now: true)
     }
     public func unpin(_ refs: [CloudItemRef]) async throws {
         for ref in refs where ref.account == source.accountID { index.pins.remove(ref.item) }
-        try persist(); try await trim()
+        try persist(now: true); try await trim()
     }
     public func remove(_ refs: [CloudItemRef], unpin: Bool = true) async throws {
+        // Removed bytes heal on relaunch (entries without bytes are dropped); a removed pin is intent.
+        let intent = unpin && refs.contains { index.pins.contains($0.item) }
         for ref in refs where ref.account == source.accountID {
             guard removing.insert(ref.item).inserted else { throw CancellationError() }
             defer { removing.remove(ref.item) }
@@ -224,7 +262,7 @@ public actor CloudOfflineStore {
             try? FileManager.default.removeItem(at: directory.appendingPathComponent("objects").appendingPathComponent(cloudObjectKey(ref.item)))
             errors[ref.item] = nil
         }
-        try persist()
+        try persist(now: intent)
     }
     private func discardPartials(_ id: String) async throws {
         let object = directory.appendingPathComponent("objects").appendingPathComponent(cloudObjectKey(id))
@@ -234,12 +272,14 @@ public actor CloudOfflineStore {
     }
     /// Provider removals drop metadata and pin intent as well as bytes. Held edits remain available for conflict UI.
     public func forget(_ refs: [CloudItemRef]) async throws {
+        var intent = false
         for ref in refs where ref.account == source.accountID {
             if await held(ref) { continue }
             try await remove([ref], unpin: false)
-            index.items[ref.item] = nil; index.pins.remove(ref.item)
+            index.items[ref.item] = nil
+            if index.pins.remove(ref.item) != nil { intent = true }
         }
-        try persist()
+        try persist(now: intent)
     }
     public func setRecentLimit(_ bytes: Int64?) async throws { limit = bytes; try await trim() }
     public func removeRecent() async throws {
@@ -273,15 +313,36 @@ public actor CloudOfflineStore {
         try FileManager.default.removeItem(at: directory)
         publish()
     }
-    private func persist() throws {
+    /// `now`: what the user asked for (pins) and bytes just committed are written before returning; the rest (what
+    /// was remembered, last use, evictions) a moment later, once for everything that changes meanwhile.
+    private func persist(now: Bool = false) throws {
         guard !invalidated else { throw CancellationError() }
+        if now {
+            try write()
+        } else if !writeScheduled {
+            writeScheduled = true
+            Task {
+                try? await Task.sleep(nanoseconds: writeDelay)
+                writeIfScheduled()
+            }
+        }
+        publish()
+    }
+    private func write() throws {
+        writeScheduled = false
         let fm = FileManager.default
         try fm.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let url = directory.appendingPathComponent("index.json")
         try JSONEncoder().encode(index).write(to: url, options: .atomic)
         try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-        publish()
     }
+    /// A store wiped, or a folder removed meanwhile (an account, a test's scratch folder), is not written again.
+    private func writeIfScheduled() {
+        guard writeScheduled, !invalidated, FileManager.default.fileExists(atPath: directory.path) else { return }
+        try? write()
+    }
+    /// Writes a pending index now (tests).
+    func flush() throws { if writeScheduled { try write() } }
 }
 
 /// APFS clones retain independent inodes and copy-on-write bytes. Other filesystems get an ordinary copy.

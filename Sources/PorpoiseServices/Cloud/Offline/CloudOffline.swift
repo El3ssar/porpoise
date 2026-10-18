@@ -35,7 +35,8 @@ public struct CloudOfflineDetails: Equatable, Sendable {
     public init() {}
 }
 
-/// Provider-neutral, main-queue surface. Notifications carry affected URLs in userInfo["urls"].
+/// Provider-neutral, main-queue surface. A new snapshot posts `changed` without URLs (anything in the account may
+/// have changed); a failed removal names its URL.
 /// The facade owns account stores; UI consumers never need a Drive client or filesystem path.
 public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
     public static let shared = CloudOffline()
@@ -59,7 +60,11 @@ public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
     }
     private var stores: [String: CloudOfflineStore] = [:]
     private var keepers: [String: CloudPinKeeper] = [:]
-    private var snapshots: [String: CloudOfflineSnapshot] = [:]
+    private var snapshots: [String: CloudOfflineSnapshot] = [:] {
+        didSet { folderTotals = [:] }
+    }
+    /// Per account, what each folder holds: computed once per snapshot, not per drawn row.
+    private var folderTotals: [String: [String: CloudFolderTotals]] = [:]
     private var sources: [String: CloudContentSource] = [:]
     private var owners: [String: String] = [:]
     private var epochs: [String: UUID] = [:]
@@ -158,34 +163,20 @@ public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
         result.progress = snapshot.progress[ref.item]
         result.error = snapshot.errors[ref.item]
         result.export = item?.export
-        let ids: Set<String>
+        let totals: CloudFolderTotals
         if item?.isFolder == true {
-            ids = Set(
-                snapshot.items.keys.filter { id in
-                    var queue = snapshot.items[id]?.parents ?? []; var seen: Set<String> = []
-                    while let parent = queue.popLast() {
-                        if parent == ref.item { return true }
-                        if seen.insert(parent).inserted { queue += snapshot.items[parent]?.parents ?? [] }
-                    }
-                    return false
-                })
+            if folderTotals[ref.account] == nil { folderTotals[ref.account] = CloudFolderTotals.all(snapshot) }
+            totals = folderTotals[ref.account]?[ref.item] ?? CloudFolderTotals()
         } else {
-            ids = [ref.item]
+            totals = CloudFolderTotals(adding: ref.item, snapshot)
         }
-        for id in ids {
-            if let entry = snapshot.entries[id] { result.bytes += entry.size; result.items += 1 }
-            if let child = snapshot.items[id], !child.isFolder { result.totalBytes += child.size ?? 0; result.totalItems += 1 }
-        }
+        result.bytes = totals.bytes; result.items = totals.items
+        result.totalBytes = totals.totalBytes; result.totalItems = totals.totalItems
         if item?.isFolder == true {
             result.downloaded = result.items > 0
-            if result.error == nil { result.error = ids.compactMap { snapshot.errors[$0] }.first }
-            if ids.contains(where: { snapshot.progress[$0] != nil }) {
-                let received = ids.reduce(0.0) { value, id in
-                    let child = snapshot.items[id]
-                    if let fraction = snapshot.progress[id] { return value + fraction * Double(child?.size ?? 0) }
-                    return value + Double(snapshot.entries[id]?.size ?? 0)
-                }
-                result.progress = result.totalBytes > 0 ? min(1, received / Double(result.totalBytes)) : nil
+            if result.error == nil { result.error = totals.error }
+            if totals.downloading {
+                result.progress = result.totalBytes > 0 ? min(1, totals.received / Double(result.totalBytes)) : nil
             }
         }
         return result
@@ -231,8 +222,7 @@ public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
             DispatchQueue.main.async {
                 guard let self, self.epochs[id] == epoch else { return }
                 self.snapshots[id] = snapshot
-                let urls = snapshot.items.values.map { source.url(for: $0) }
-                NotificationCenter.default.post(name: Self.changed, object: urls, userInfo: ["urls": urls])
+                NotificationCenter.default.post(name: Self.changed, object: nil)
             }
         }
         stores[id] = store
@@ -374,5 +364,45 @@ public final class CloudOffline: CloudOfflineService, @unchecked Sendable {
             }
             done(failure); NotificationCenter.default.post(name: Self.changed, object: nil)
         }
+    }
+}
+
+/// What a folder's descendants hold in one snapshot: `details(for:)` of a folder.
+struct CloudFolderTotals {
+    var bytes: Int64 = 0
+    var items = 0
+    var totalBytes: Int64 = 0
+    var totalItems = 0
+    var error: String?
+    var downloading = false
+    /// Bytes downloaded so far, counting partial downloads by their fraction.
+    var received = 0.0
+
+    init() {}
+    /// One item's own share.
+    init(adding id: String, _ snapshot: CloudOfflineSnapshot) { add(id, snapshot) }
+    mutating func add(_ id: String, _ snapshot: CloudOfflineSnapshot) {
+        let child = snapshot.items[id]
+        if let entry = snapshot.entries[id] { bytes += entry.size; items += 1 }
+        if let child, !child.isFolder { totalBytes += child.size ?? 0; totalItems += 1 }
+        if error == nil { error = snapshot.errors[id] }
+        if let fraction = snapshot.progress[id] {
+            downloading = true; received += fraction * Double(child?.size ?? 0)
+        } else {
+            received += Double(snapshot.entries[id]?.size ?? 0)
+        }
+    }
+    /// Every folder's totals: each item is added to each of its ancestors once (O(items × depth) per snapshot).
+    static func all(_ snapshot: CloudOfflineSnapshot) -> [String: CloudFolderTotals] {
+        var totals: [String: CloudFolderTotals] = [:]
+        for id in snapshot.items.keys {
+            var queue = snapshot.items[id]?.parents ?? [], seen: Set<String> = []
+            while let parent = queue.popLast() {
+                guard seen.insert(parent).inserted else { continue }
+                totals[parent, default: CloudFolderTotals()].add(id, snapshot)
+                queue += snapshot.items[parent]?.parents ?? []
+            }
+        }
+        return totals
     }
 }

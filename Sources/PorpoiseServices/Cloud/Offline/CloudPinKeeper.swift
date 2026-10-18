@@ -42,12 +42,14 @@ public actor CloudPinKeeper {
                 for try await pair in group { values.append(pair) }
                 return values
             }
+            var walked: [CloudRemoteItem] = []
             for (item, children) in fresh {
                 if item.name.isEmpty { continue }
                 result.append(item)
-                try await store.remember([item] + children)
+                walked += [item] + children
                 pending += children.map(\.ref).filter { !seen.contains($0) }
             }
+            if !walked.isEmpty { try await store.remember(walked) }
         }
         return result
     }
@@ -79,7 +81,7 @@ public actor CloudPinKeeper {
     }
     public func apply(_ batch: CloudChangeBatch) async {
         do {
-            try await store.remember(batch.changed)
+            try await store.update(batch.changed)
             let before = await store.snapshot()
             var removed = Set(batch.removed)
             var grew = true
