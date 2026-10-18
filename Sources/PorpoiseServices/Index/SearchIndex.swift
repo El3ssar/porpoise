@@ -12,8 +12,47 @@ public struct IndexConfiguration: Codable, Equatable, Sendable {
     ]
     public var excludeGitObjects = true
     public var excludeNodeModules = true
+    /// Build folders (`buildFolderNames`): a build rewrites thousands of files in them, many times a minute while
+    /// someone works (most of what a folder of projects reports).
+    public var excludeBuildOutput = true
+    public static let buildFolderNames = [".build", "DerivedData"]
+    /// Folders macOS and apps keep writing to (`systemFolders`). Indexed, they report changes all the time (most of
+    /// what a home folder reports) and hold nothing people look for.
+    public var excludeSystemFolders = true
     public var content = false
     public init() {}
+    /// Saved before a setting existed, a configuration gets that setting's default.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = IndexConfiguration()
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? defaults.enabled
+        roots = try c.decodeIfPresent([String].self, forKey: .roots) ?? defaults.roots
+        exclusions = try c.decodeIfPresent([String].self, forKey: .exclusions) ?? defaults.exclusions
+        excludeGitObjects = try c.decodeIfPresent(Bool.self, forKey: .excludeGitObjects) ?? defaults.excludeGitObjects
+        excludeNodeModules = try c.decodeIfPresent(Bool.self, forKey: .excludeNodeModules) ?? defaults.excludeNodeModules
+        excludeBuildOutput = try c.decodeIfPresent(Bool.self, forKey: .excludeBuildOutput) ?? defaults.excludeBuildOutput
+        excludeSystemFolders = try c.decodeIfPresent(Bool.self, forKey: .excludeSystemFolders) ?? defaults.excludeSystemFolders
+        content = try c.decodeIfPresent(Bool.self, forKey: .content) ?? defaults.content
+    }
+
+    static let home = FilePath.canonical(FileManager.default.homeDirectoryForCurrentUser.path)
+    static let library = home + "/Library"
+    /// In the Library, what people keep there themselves: cloud drives (iCloud Drive, and Dropbox, Google Drive or
+    /// OneDrive through File Provider). Everything else in it is the system's and apps' own.
+    static let libraryKept: Set<String> = ["CloudStorage", "Mobile Documents"]
+    /// Shown in Settings.
+    public static let systemFolders = ["~/Library (except cloud drives)", "~/.Trash"]
+    /// Whether `path` is in one of `systemFolders`. A root chosen inside one is indexed all the same.
+    func inSystemFolder(_ path: String) -> Bool {
+        guard excludeSystemFolders else { return false }
+        if FilePath.contains(path: path, in: Self.home + "/.Trash") {
+            return !roots.contains { FilePath.contains(path: $0, in: Self.home + "/.Trash") }
+        }
+        guard path.hasPrefix(Self.library + "/") else { return false }
+        let name = path.dropFirst(Self.library.count + 1).prefix { $0 != "/" }
+        let folder = Self.library + "/" + name
+        return !Self.libraryKept.contains(String(name)) && !roots.contains { FilePath.contains(path: $0, in: folder) }
+    }
 }
 
 /// All mutation is serialized; immutable snapshots can be scanned on any query thread. Cancellation is synchronous.
@@ -51,6 +90,10 @@ public final class SearchIndex: @unchecked Sendable {
         var file = UUID().uuidString + ".idx"
     }
     private struct Manifest: Codable {
+        /// Raised when what an index holds for the same configuration changes: an older snapshot is built again.
+        /// 2: build output and system folders excluded (none before 0.8.6).
+        static let current = 2
+        var version: Int? = Manifest.current
         var configuration: IndexConfiguration
         var eventID: UInt64
         var updated: Date
@@ -186,7 +229,7 @@ public final class SearchIndex: @unchecked Sendable {
             startupMessage("Index loading snapshot", generation: generation)
             if !rebuild,
                 let manifest = try? JSONDecoder().decode(Manifest.self, from: Data(contentsOf: directory.appendingPathComponent("manifest.json"))),
-                manifest.configuration == selected
+                manifest.version == Manifest.current, manifest.configuration == selected
             {
                 do {
                     let loaded = try manifest.roots.map { root in
@@ -260,8 +303,11 @@ public final class SearchIndex: @unchecked Sendable {
     }
     private func excluded(_ path: String, config: IndexConfiguration) -> Bool {
         FilePath.contains(path: path, in: storagePath) || config.exclusions.contains { FilePath.contains(path: path, in: $0) }
+            || config.inSystemFolder(path)
             || (config.excludeGitObjects && (path.hasSuffix("/.git/objects") || path.contains("/.git/objects/")))
             || (config.excludeNodeModules && path.split(separator: "/").contains("node_modules"))
+            || (config.excludeBuildOutput
+                && IndexConfiguration.buildFolderNames.contains { path.hasSuffix("/" + $0) || path.contains("/" + $0 + "/") })
     }
     private func crawl(_ path: String, config: IndexConfiguration, generation: Int) -> (table: NameIndex, holes: [String]) {
         guard !excluded(path, config: config) else { return (NameIndex(), []) }
@@ -275,7 +321,10 @@ public final class SearchIndex: @unchecked Sendable {
         return (table, holes)
     }
     private func watch(_ config: IndexConfiguration, generation: Int) -> Bool {
-        events = IndexEvents(roots: config.roots, since: eventID) { [weak self] paths, id, rescan in
+        // The index's own saves first: an index of the home folder would otherwise hear every one of them.
+        var quiet = [storagePath] + config.exclusions
+        if config.excludeSystemFolders { quiet.append(IndexConfiguration.home + "/.Trash") }
+        events = IndexEvents(roots: config.roots, since: eventID, excluding: quiet) { [weak self] paths, id, rescan in
             self?.queue.async { [weak self] in self?.enqueue(paths, event: id, rescan: rescan, config: config, generation: generation) }
         }
         guard events?.available == true else {

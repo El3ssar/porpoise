@@ -33,6 +33,13 @@ enum IndexSettingsPage {
         }
         f.check("Exclude .git objects", index.configuration.excludeGitObjects) { value in change { $0.excludeGitObjects = value } }
         f.check("Exclude node_modules", index.configuration.excludeNodeModules) { value in change { $0.excludeNodeModules = value } }
+        f.check(
+            "Exclude build output (" + IndexConfiguration.buildFolderNames.joined(separator: ", ") + ")", index.configuration.excludeBuildOutput
+        ) { value in change { $0.excludeBuildOutput = value } }
+        f.check(
+            "Exclude system and app data (" + IndexConfiguration.systemFolders.joined(separator: ", ") + ")", index.configuration.excludeSystemFolders
+        ) { value in change { $0.excludeSystemFolders = value } }
+        f.note("Apps and builds keep rewriting these folders; following them costs the index time and battery all day.")
         f.check("Accelerate content searches (uses more storage)", index.configuration.content) { value in change { $0.content = value } }
         f.note(
             "The content index covers UTF-8 text files up to 1 MB (which files hold which three-letter sequences); candidates are checked against the current file. Other files up to 5 MB are searched directly. Content searches treat the query as literal text."
