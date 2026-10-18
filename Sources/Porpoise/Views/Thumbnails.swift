@@ -92,6 +92,17 @@ final class Thumbnails {
     /// Files a folder's preview is made from, per folder version: listing them is disk I/O, and drawing asks
     /// again on every repaint until all their previews are ready.
     private var folderCandidates: [String: [FileItem]] = [:]
+    /// Folder versions whose candidates are being listed. Never while drawing: a folder can hold 100,000 files.
+    private var folderScans = Set<String>()
+    /// Bumped by `resetFolderPreviews()`: a listing started before is thrown away.
+    private var folderGeneration = 0
+    private static let folderScanQueue: OperationQueue = {
+        let q = OperationQueue()
+        q.name = "porpoise.thumbnails.folders"
+        q.qualityOfService = .utility
+        q.maxConcurrentOperationCount = 2
+        return q
+    }()
 
     func folderPreview(for item: FileItem, size: CGFloat) -> NSImage? {
         guard Settings.shared.previewFolders, item.isBrowsableFolder, item.url.isFileURL, size >= 32 else { return nil }
@@ -100,7 +111,8 @@ final class Thumbnails {
         let key = "\(version)|\(Int(size))"
         if let img = folderCache.object(forKey: key as NSString) { return img }
         if folderNone.contains(key) { return nil }
-        let candidates = folderPreviewCandidates(item, version: version)
+        // Still listing: the last preview made at another size meanwhile, else the plain folder.
+        guard let candidates = folderPreviewCandidates(item, version: version) else { return folderLatest.object(forKey: version as NSString) }
         var thumbs: [NSImage] = []
         var waiting = false
         for c in candidates where thumbs.count < 4 {
@@ -150,17 +162,40 @@ final class Thumbnails {
     }
 
     /// Up to 8 previewable files among the first 80 visible entries (in name order), cached per folder version.
-    private func folderPreviewCandidates(_ folder: FileItem, version: String) -> [FileItem] {
+    /// Nil while they are listed on a worker queue; `ready` is posted for the folder when they are known.
+    private func folderPreviewCandidates(_ folder: FileItem, version: String) -> [FileItem]? {
         if let c = folderCandidates[version] { return c }
-        let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.url.path)) ?? []).filter { !$0.hasPrefix(".") }.sorted {
-            $0.localizedStandardCompare($1) == .orderedAscending
+        guard folderScans.insert(version).inserted else { return nil }
+        let url = folder.url, generation = folderGeneration
+        Self.folderScanQueue.addOperation { [weak self] in
+            let files = Self.firstNames(in: url, count: 80).compactMap { FileItem.load(url.appendingPathComponent($0)) }.filter { !$0.isDirectory }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, generation == self.folderGeneration else { return }
+                self.folderScans.remove(version)
+                if self.folderCandidates.count > Self.maxRemembered / 10 { self.folderCandidates.removeAll() }
+                self.folderCandidates[version] = Array(files.filter(Self.wantsPreview).prefix(8))
+                NotificationCenter.default.post(name: Thumbnails.ready, object: url)
+            }
         }
-        let found = Array(
-            names.prefix(80).compactMap { FileItem.load(folder.url.appendingPathComponent($0)) }
-                .filter { !$0.isDirectory && Self.wantsPreview($0) }.prefix(8))
-        if folderCandidates.count > Self.maxRemembered / 10 { folderCandidates.removeAll() }
-        folderCandidates[version] = found
-        return found
+        return nil
+    }
+
+    /// The first `count` visible names in name order (Finder's), without sorting them all.
+    static func firstNames(in folder: URL, count: Int) -> [String] {
+        var first: [String] = []
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [] where !name.hasPrefix(".") {
+            if first.count == count {
+                guard name.localizedStandardCompare(first[count - 1]) == .orderedAscending else { continue }
+                first.removeLast()
+            }
+            var lo = 0, hi = first.count
+            while lo < hi {
+                let mid = (lo + hi) / 2
+                if first[mid].localizedStandardCompare(name) == .orderedAscending { lo = mid + 1 } else { hi = mid }
+            }
+            first.insert(name, at: lo)
+        }
+        return first
     }
 
     func hasFailed(_ item: FileItem, _ size: CGFloat) -> Bool { failed.contains(key(item, size)) }
@@ -171,6 +206,8 @@ final class Thumbnails {
         folderLatest.removeAllObjects()
         folderNone = []
         folderCandidates = [:]
+        folderScans = []
+        folderGeneration += 1
     }
 
     /// A frame a few seconds in (or the first one for short clips), scaled to fit `size` pixels.
