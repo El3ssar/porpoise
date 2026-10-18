@@ -4,8 +4,11 @@ import importlib.util
 import pathlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
+
+sys.dont_write_bytecode = True
 
 HERE = pathlib.Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('pins', HERE / 'check-workflow-pins.py')
