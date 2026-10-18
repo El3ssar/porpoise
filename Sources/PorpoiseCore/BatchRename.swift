@@ -190,7 +190,16 @@ public enum BatchRename {
         _ entries: [BatchRenameEntry], names: [Result<String, Error>], existing: [String: [String]], caseSensitive: [String: Bool] = [:],
         token: String = UUID().uuidString
     ) -> BatchRenamePlan {
-        var rows = entries.enumerated().map { index, entry -> BatchRenameRow in
+        plan(entries, names: names, existing: existing, caseSensitive: caseSensitive, token: token, checkCancellation: {})
+    }
+
+    public static func plan(
+        _ entries: [BatchRenameEntry], names: [Result<String, Error>], existing: [String: [String]], caseSensitive: [String: Bool] = [:],
+        token: String = UUID().uuidString, checkCancellation: () throws -> Void
+    ) rethrows -> BatchRenamePlan {
+        try checkCancellation()
+        var rows = try entries.enumerated().map { index, entry -> BatchRenameRow in
+            try checkCancellation()
             guard index < names.count else {
                 return BatchRenameRow(source: entry.url, proposedName: entry.url.lastPathComponent, problem: "No proposed name.")
             }
@@ -205,15 +214,24 @@ public enum BatchRename {
             return caseSensitive[parent] == true ? n : n.folding(options: .caseInsensitive, locale: Locale(identifier: "en_US_POSIX"))
         }
         var occupiedNames: [String: Set<String>] = [:]
-        let groups = Dictionary(grouping: rows.indices) { rows[$0].source.deletingLastPathComponent().path }
+        let groups = try Dictionary(grouping: rows.indices) {
+            try checkCancellation(); return rows[$0].source.deletingLastPathComponent().path
+        }
         for (parent, indices) in groups {
-            let selected = Set(indices.map { key(rows[$0].source.lastPathComponent, parent: parent) })
+            let selected = try Set(
+                indices.map {
+                    try checkCancellation(); return key(rows[$0].source.lastPathComponent, parent: parent)
+                })
             var targets: [String: [Int]] = [:]
-            let allNames = Set((existing[parent] ?? []).map { key($0, parent: parent) })
+            let allNames = try Set(
+                (existing[parent] ?? []).map {
+                    try checkCancellation(); return key($0, parent: parent)
+                })
             occupiedNames[parent] = allNames
             let occupied = allNames.subtracting(selected)
             var sources: Set<String> = []
             for i in indices {
+                try checkCancellation()
                 let row = rows[i]
                 if !sources.insert(key(row.source.lastPathComponent, parent: parent)).inserted {
                     rows[i].problem = "The same source is selected more than once."
@@ -234,6 +252,7 @@ public enum BatchRename {
             entries[$0].url.path.precomposedStringWithCanonicalMapping
         }
         for i in rows.indices {
+            try checkCancellation()
             var parent = rows[i].source.deletingLastPathComponent()
             while parent.path != "/" && !parent.path.isEmpty {
                 if let ancestors = selectedDirectories[parent.path.precomposedStringWithCanonicalMapping] {
@@ -250,6 +269,7 @@ public enum BatchRename {
         var staged: [RenameMove] = [], final: [RenameMove] = []
         var reserved = Set(rows.map { $0.target.path.precomposedStringWithCanonicalMapping.lowercased() })
         for (index, row) in changed.enumerated() {
+            try checkCancellation()
             let parent = row.source.deletingLastPathComponent()
             var name = ".porpoise-rename-\(token)-\(index)"
             let used = occupiedNames[parent.path] ?? []

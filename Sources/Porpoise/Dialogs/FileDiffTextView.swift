@@ -14,28 +14,41 @@ struct FileDiffPresentation {
     let rows: [FileDiffRow]
     let starts: [Int]
     init(_ d: TextDifference, inline: Bool) {
+        self.init(d, inline: inline, checkCancellation: {})
+    }
+    init(_ d: TextDifference, inline: Bool, checkCancellation: () throws -> Void) rethrows {
+        try checkCancellation()
         difference = d
         var rows: [FileDiffRow] = [], starts: [Int] = [], l = 0, r = 0
         for (index, c) in d.changes.enumerated() {
-            while l < c.left.lowerBound && r < c.right.lowerBound { rows.append(FileDiffRow(left: l, right: r)); l += 1; r += 1 }
+            try checkCancellation()
+            while l < c.left.lowerBound && r < c.right.lowerBound {
+                if l % 256 == 0 { try checkCancellation() }; rows.append(FileDiffRow(left: l, right: r)); l += 1; r += 1
+            }
             starts.append(rows.count)
             if inline {
                 for i in c.left {
+                    try checkCancellation()
                     let j = c.right.lowerBound + i - c.left.lowerBound
-                    let spans = j < c.right.upperBound ? WordDifference.ranges(d.left[i], d.right[j]).left : []
+                    let spans =
+                        j < c.right.upperBound ? try WordDifference.ranges(d.left[i], d.right[j], checkCancellation: checkCancellation).left : []
                     rows.append(FileDiffRow(left: i, change: index, leftWords: spans))
                 }
                 for j in c.right {
+                    try checkCancellation()
                     let i = c.left.lowerBound + j - c.right.lowerBound
-                    let spans = i < c.left.upperBound ? WordDifference.ranges(d.left[i], d.right[j]).right : []
+                    let spans =
+                        i < c.left.upperBound ? try WordDifference.ranges(d.left[i], d.right[j], checkCancellation: checkCancellation).right : []
                     rows.append(FileDiffRow(right: j, change: index, rightWords: spans))
                 }
             } else {
                 for k in 0..<max(c.left.count, c.right.count) {
+                    try checkCancellation()
                     let x = c.left.lowerBound + k, y = c.right.lowerBound + k
                     var row = FileDiffRow(left: x < c.left.upperBound ? x : nil, right: y < c.right.upperBound ? y : nil, change: index)
                     if let x = row.left, let y = row.right {
-                        let spans = WordDifference.ranges(d.left[x], d.right[y]); row.leftWords = spans.left; row.rightWords = spans.right
+                        let spans = try WordDifference.ranges(d.left[x], d.right[y], checkCancellation: checkCancellation);
+                        row.leftWords = spans.left; row.rightWords = spans.right
                     }
                     rows.append(row)
                 }
@@ -43,6 +56,7 @@ struct FileDiffPresentation {
             l = c.left.upperBound; r = c.right.upperBound
         }
         while l < d.left.count || r < d.right.count {
+            if l % 256 == 0 { try checkCancellation() }
             rows.append(FileDiffRow(left: l < d.left.count ? l : nil, right: r < d.right.count ? r : nil)); l += 1; r += 1
         }
         self.rows = rows; self.starts = starts

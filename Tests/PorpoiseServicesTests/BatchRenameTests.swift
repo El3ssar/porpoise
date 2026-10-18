@@ -27,6 +27,24 @@ import UniformTypeIdentifiers
         change.extensionMode = .change("png"); change.rules = []
         #expect(try BatchRename.name(BatchRenameEntry.named("folder.v1", directory: true), index: 0, preset: change) == "folder.v1")
     }
+    @Test func previewCancellationStopsNamesAndCollisionPlanning() throws {
+        let scratch = try Scratch()
+        let sources = try (0..<20).map { try scratch.file("item-\($0).txt", "") }
+        let snapshot = try BatchRenameService.snapshot(sources, mediaMetadata: false)
+        let preset = BatchRenamePreset(name: "", rules: [.insert(text: "new-", position: 0)])
+        let normal = BatchRenameService.preview(snapshot, preset: preset)
+        let live = try BatchRenameService.preview(snapshot, preset: preset, cancellation: DiskCancellation())
+        #expect(normal.rows.map(\.proposedName) == live.rows.map(\.proposedName)); #expect(live.canApply)
+        for stop in [1, 5, 25, 60, 100] {
+            var checks = 0
+            let cancellation = DiskCancellation(checkpoint: {
+                checks += 1
+                if checks == stop { throw CancellationError() }
+            })
+            #expect(throws: CancellationError.self) { _ = try BatchRenameService.preview(snapshot, preset: preset, cancellation: cancellation) }
+            #expect(checks == stop)
+        }
+    }
     @Test func regexMetadataIsLiteralWhileCaptureGroupsStillExpand() throws {
         var input = BatchRenameEntry.named("a.txt"); input.metadata["title"] = "$1\\name"
         let preset = BatchRenamePreset(name: "", rules: [.replace(find: "(a)", with: "{title}-$1", regex: true, caseSensitive: true)])

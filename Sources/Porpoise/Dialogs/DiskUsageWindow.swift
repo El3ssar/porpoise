@@ -95,21 +95,32 @@ final class DiskUsageWindow: DiskUtilityWindow {
     }
 }
 
-private final class DiskTreemapView: NSView {
-    var items: [(Int, String, Int64)] = [] { didSet { needsDisplay = true } }
+final class DiskTreemapView: NSView {
+    var items: [(Int, String, Int64)] = [] {
+        didSet {
+            itemIndices = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.0, $0.offset) })
+            layoutBounds = nil; needsDisplay = true
+        }
+    }
+    private var itemIndices: [Int: Int] = [:]
+    private var layoutBounds: CGRect?
+    private(set) var layoutCount = 0
     var activate: ((Int) -> Void)?
     private var tiles: [UsageTreemap.Tile] = []
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
         Theme.windowBackground.setFill(); bounds.fill()
-        tiles = UsageTreemap.layout(items.map { ($0.0, $0.2) }, in: bounds.insetBy(dx: 2, dy: 2))
+        if layoutBounds != bounds {
+            tiles = UsageTreemap.layout(items.map { ($0.0, $0.2) }, in: bounds.insetBy(dx: 2, dy: 2))
+            layoutBounds = bounds; layoutCount += 1
+        }
         for (i, tile) in tiles.enumerated() {
             let rect = tile.rect.insetBy(dx: 1, dy: 1)
             NSColor(calibratedHue: CGFloat((i * 37) % 100) / 100, saturation: 0.48, brightness: 0.65, alpha: 1).setFill()
             NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
-            if rect.width > 65 && rect.height > 32, let item = items.first(where: { $0.0 == tile.id }) {
+            if rect.width > 65 && rect.height > 32, let index = itemIndices[tile.id] {
                 let style = NSMutableParagraphStyle(); style.lineBreakMode = .byTruncatingMiddle
-                let text = item.1 + "\n" + FileFormat.size(item.2)
+                let text = items[index].1 + "\n" + FileFormat.size(items[index].2)
                 (text as NSString).draw(
                     in: rect.insetBy(dx: 6, dy: 5),
                     withAttributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.white, .paragraphStyle: style])
