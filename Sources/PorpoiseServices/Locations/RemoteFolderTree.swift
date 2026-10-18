@@ -17,6 +17,7 @@ public final class RemoteFolderTree {
         private var items: [FileItem]?
         private var load: LocationLoad?
         private var listed = false
+        private var loadGeneration = 0
         private weak var tree: RemoteFolderTree?
 
         fileprivate init(url: URL, name: String, tree: RemoteFolderTree) {
@@ -39,14 +40,17 @@ public final class RemoteFolderTree {
         /// Lists the folder: a saved listing shows at once and the service's answer replaces it; a failure after a
         /// saved listing (or an earlier one) keeps what was shown.
         private func list() {
+            loadGeneration += 1
+            let generation = loadGeneration
             load?.cancel()
             message = nil
-            let source = LocationContentSources.source(for: url)
+            guard let tree else { return }
+            let source = tree.source(url)
             let cached = source.traits.paintsCache ? source.cached(url) : nil
             if let cached { items = cached }
             isLoading = true
             load = source.load(url, expanded: []) { [weak self] listing in
-                guard let self else { return }
+                guard let self, self.loadGeneration == generation else { return }
                 switch listing.part {
                 case .whole:
                     self.isLoading = false
@@ -75,6 +79,7 @@ public final class RemoteFolderTree {
                 tree?.onChange?(self)
             } else {
                 // A collapsed branch is read again only on expansion; no speculative network work.
+                loadGeneration += 1
                 load?.cancel(); load = nil
                 listed = false
                 items = nil
@@ -131,8 +136,14 @@ public final class RemoteFolderTree {
     private var advancingReveal = false
     private var observers: [NSObjectProtocol] = []
     private var refreshPending = false
+    private let source: (URL) -> LocationContentSource
 
-    public init(url: URL) {
+    public convenience init(url: URL) {
+        self.init(url: url, source: LocationContentSources.source(for:))
+    }
+
+    init(url: URL, source: @escaping (URL) -> LocationContentSource) {
+        self.source = source
         root = Node(url: url, name: RemoteFS.displayName(for: url), tree: self)
         let center = NotificationCenter.default
         observers.append(
