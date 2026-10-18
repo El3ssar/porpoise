@@ -130,7 +130,10 @@ import Testing
         try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: readOnly.path)
         let listed = try DirectoryLister.list(s.url).sorted { $0.name < $1.name }
         let loaded = try fm.contentsOfDirectory(atPath: s.url.path).map { try load(s.url.appendingPathComponent($0)) }.sorted { $0.name < $1.name }
-        #expect(listed.count == 7 && listed == loaded)
+        // Every field but the access date, which a read in between may move on (a bundle's type is looked up inside
+        // it, a link is followed); a failure names the fields that differ.
+        let different = differences(listed, loaded, ignoring: ["accessDate"])
+        #expect(listed.count == 7 && different.isEmpty, "\(different)")
         // Through a symlink to the folder: the items keep the path as given.
         let viaLink = try DirectoryLister.list(s.path("folder link"))
         #expect(viaLink.isEmpty)
@@ -145,4 +148,15 @@ import Testing
         #expect(throws: CancellationError.self) { try DirectoryLister.list(s.url, cancelled: { true }) }
         #expect(try DirectoryLister.list(s.url, cancelled: { false }).count == 2)
     }
+}
+
+/// The fields that differ between two lists of the same items, per item, other than `ignoring` (a failure says which,
+/// not only that something does).
+func differences(_ a: [FileItem], _ b: [FileItem], ignoring: Set<String> = []) -> [String] {
+    zip(a, b).flatMap { x, y in
+        zip(Mirror(reflecting: x).children, Mirror(reflecting: y).children).compactMap { l, r in
+            let field = l.label ?? "?"
+            return ignoring.contains(field) || "\(l.value)" == "\(r.value)" ? nil : "\(x.name).\(field): \(l.value) != \(r.value)"
+        }
+    } + (a.count == b.count ? [] : ["\(a.count) items != \(b.count)"])
 }
