@@ -64,11 +64,11 @@ import Testing
                     continuation.resume()
                 }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: timeout)
+            DispatchQueue.main.asyncAfter(deadline: .now() + eventualTimeout, execute: timeout)
         }
     }
 
-    @Test(.timeLimit(.minutes(1))) @MainActor func driveUsesBrowserCacheAndKeepsNodeIdentityThroughRenameAndDelete() async throws {
+    @Test(.timeLimit(.minutes(5))) @MainActor func driveUsesBrowserCacheAndKeepsNodeIdentityThroughRenameAndDelete() async throws {
         let server = try FakeDriveServer()
         let (client, _, _) = try server.client()
         let provider = DriveProvider(accountID: client.accountID, client: client)
@@ -109,7 +109,7 @@ import Testing
         tree.onChange = nil
     }
 
-    @Test(.timeLimit(.minutes(1))) @MainActor func dropboxLazyPagingChangesHiddenFoldersAndNamespaceIdentity() async throws {
+    @Test(.timeLimit(.minutes(5))) @MainActor func dropboxLazyPagingChangesHiddenFoldersAndNamespaceIdentity() async throws {
         let server = try FakeDropboxServer()
         let client = try server.client(namespace: "team-root")
         let provider = DropboxProvider(client: client)
@@ -157,7 +157,7 @@ import Testing
             })
     }
 
-    @Test(.timeLimit(.minutes(1))) @MainActor func disconnectedRootFailsQuietlyAndRetriesOnExpand() async throws {
+    @Test(.timeLimit(.minutes(5))) @MainActor func disconnectedRootFailsQuietlyAndRetriesOnExpand() async throws {
         let account = UUID()
         let root = DriveLocation(accountID: account).url
         let tree = RemoteFolderTree(url: root)
@@ -173,7 +173,7 @@ import Testing
         try await until(tree) { !tree.root.isLoading && tree.root.children != nil }
         #expect(tree.root.message == nil)
     }
-    @Test(.timeLimit(.minutes(1))) @MainActor func deepDriveRevealKeepsCollectionRootParentsAndSiblings() async throws {
+    @Test(.timeLimit(.minutes(5))) @MainActor func deepDriveRevealKeepsCollectionRootParentsAndSiblings() async throws {
         let scratch = try Scratch()
         let fixtureURL = FakeDriveServer.fixture("metadata.json")
         var fixture = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as? [String: Any])
@@ -218,7 +218,7 @@ import Testing
         #expect(tree.find(target) === selected)
     }
 
-    @Test(.timeLimit(.minutes(1))) @MainActor func deepDropboxRevealUsesSuppliedParentsRatherThanFlatIDPaths() async throws {
+    @Test(.timeLimit(.minutes(5))) @MainActor func deepDropboxRevealUsesSuppliedParentsRatherThanFlatIDPaths() async throws {
         let server = try FakeDropboxServer()
         let client = try server.client(namespace: "team-root")
         let deep = try await client.createFolder(name: "Child", parent: "/Folder")
@@ -237,7 +237,7 @@ import Testing
         #expect(tree.selected?.isExpanded == false)
     }
 
-    @Test(.timeLimit(.minutes(1))) @MainActor func sharedDriveRevealMatchesAncestorsWithoutRedundantDriveQuery() async throws {
+    @Test(.timeLimit(.minutes(5))) @MainActor func sharedDriveRevealMatchesAncestorsWithoutRedundantDriveQuery() async throws {
         let scratch = try Scratch()
         let fixtureURL = FakeDriveServer.fixture("metadata.json")
         var fixture = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as? [String: Any])

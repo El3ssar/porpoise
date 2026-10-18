@@ -11,7 +11,7 @@ import Testing
 @MainActor struct SearchIndexTests {
     /// Crawls and FSEvents can take seconds on a busy machine (a full parallel run): waits are generous, and end as
     /// soon as their condition holds.
-    static let liveWait: TimeInterval = 30
+    static let liveWait: TimeInterval = eventualTimeout
     private func setup(_ scratch: Scratch, content: Bool = false) -> SearchIndex {
         let defaults = MemoryDefaults()
         let service = SearchIndex(directory: scratch.path("store"), defaults: defaults)
@@ -72,7 +72,7 @@ import Testing
         try #require(await eventually(Self.liveWait) { index.search("renamed", scope: s.path("root"))?.paths.isEmpty == true })
         // A new service loads the on-disk snapshot, including tombstones. An update is searchable before it is saved,
         // and an older save's manifest may already exist: wait for the queue, which saves before it takes more work.
-        #expect(index.queuedPaths == 0)
+        try #require(await eventually(Self.liveWait) { index.queuedPaths == 0 })
         #expect(FileManager.default.fileExists(atPath: s.path("store/manifest.json").path))
         let restored = SearchIndex(directory: s.path("store"), defaults: MemoryDefaults())
         restored.configure(index.configuration)

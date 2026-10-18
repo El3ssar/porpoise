@@ -43,6 +43,9 @@ enum Motion {
 final class FrameClock: NSObject {
     /// Tests: false leaves only the timer, as with a sleeping display.
     nonisolated(unsafe) static var followsDisplay = true
+    /// Tests: each tick after a run's first moves its time on by exactly this much, whatever the clock says, so an
+    /// animation goes through the same frames however slow the machine is (nil, the default: real time).
+    nonisolated(unsafe) static var frameStep: CFTimeInterval?
     /// How long the display may go without a frame before the timer stands in, and how often it then ticks.
     static let quiet: CFTimeInterval = 0.1
     static let fallbackInterval: TimeInterval = 1.0 / 30
@@ -85,8 +88,12 @@ final class FrameClock: NSObject {
 
     private func deliver(_ now: CFTimeInterval) {
         guard let tick, let running = timer else { return stop() }
-        // A frame's time may trail the timer's last tick as the display wakes: time never runs back.
-        lastTime = max(lastTime, now)
+        if let step = Self.frameStep {
+            lastTime = lastTime == 0 ? now : lastTime + step
+        } else {
+            // A frame's time may trail the timer's last tick as the display wakes: time never runs back.
+            lastTime = max(lastTime, now)
+        }
         // `tick` may have started the clock again (an animation's completion starting the next): only this run ends.
         if !tick(lastTime), running === timer { stop() }
     }

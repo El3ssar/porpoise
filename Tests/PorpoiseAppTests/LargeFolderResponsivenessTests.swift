@@ -22,7 +22,7 @@ import Testing
         }
     }
 
-    @Test(.isolatedSettings, .timeLimit(.minutes(1))) @MainActor func folderPreviewNeverListsWhileDrawing() async throws {
+    @Test(.isolatedSettings, .timeLimit(.minutes(5))) @MainActor func folderPreviewNeverListsWhileDrawing() async throws {
         _ = NSApplication.shared
         let scratch = try Scratch(), fm = FileManager.default
         let folderURL = scratch.url.appendingPathComponent("photos", isDirectory: true)

@@ -26,7 +26,7 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
 @MainActor @Suite(.serialized) struct SpotlightUsingCoverageTests {
     @MainActor @Suite struct SearchRunnerCoverageTests {
         /// Runs `runner` until it says it's done; the names it found, sorted.
-        private func finish(_ make: (@escaping ([FileItem], Bool) -> Void) -> SearchRunner, timeout: TimeInterval = 45) async throws -> (
+        private func finish(_ make: (@escaping ([FileItem], Bool) -> Void) -> SearchRunner, timeout: TimeInterval = eventualTimeout) async throws -> (
             runner: SearchRunner, names: [String], markedContentMatches: Bool
         ) {
             var result: [FileItem]?
@@ -176,7 +176,7 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
                     r.gatheringTimeout = 20
                     r.folderTools = searchTools
                     return r
-                }, timeout: 60)
+                })
             #expect(names.contains("Terminal.app"))
             #expect(runner.snippets[systemApps.appendingPathComponent("Utilities/Terminal.app")] == nil)
         }
@@ -213,7 +213,7 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
                 handler: record(log))
             q.start()
             defer { q.stop() }
-            #expect(await eventually(30) { finished(log) })
+            #expect(await eventually { finished(log) })
             #expect(log.events.filter { $0 == "gathered" || $0 == "unavailable" }.count == 1)
             if log.events.last == "gathered" {
                 #expect(log.paths == [systemApps.appendingPathComponent("Calculator.app").path])
@@ -226,7 +226,7 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
                 predicate: NSPredicate(format: "kMDItemFSName LIKE[cd] %@", "*.app"), scopes: [systemApps], limit: 2, live: true,
                 timeout: 20, handler: record(log))
             q.start()
-            #expect(await eventually(30) { finished(log) })
+            #expect(await eventually { finished(log) })
             q.stop()
             #expect(log.paths.count <= 2)
             if log.events.contains("gathered") { #expect(log.paths.count == 2) }
@@ -243,14 +243,14 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
                 timeout: 20, handler: record(log))
             q.start()
             defer { q.stop() }
-            #expect(await eventually(30) { finished(log) })
+            #expect(await eventually { finished(log) })
             guard log.events.last == "gathered" else { return }  // Spotlight is off here: no updates to report
             // What NSMetadataQuery posts on its queue when an item changes.
             SpotlightQuery.queue.addOperation {
                 NotificationCenter.default.post(
                     name: .NSMetadataQueryDidUpdate, object: q.query, userInfo: [NSMetadataQueryUpdateChangedItemsKey: []])
             }
-            #expect(await eventually(10) { log.events.last == "updated" })
+            #expect(await eventually { log.events.last == "updated" })
         }
 
         /// Recent Files: when Spotlight doesn't answer, the list is shown empty (after the default wait).
@@ -259,7 +259,7 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
             defer { resume() }
             var files: [FileItem]?
             let q = RecentFilesQuery { files = $0 }
-            #expect(await eventually(15) { files != nil })
+            #expect(await eventually { files != nil })
             #expect(files?.isEmpty == true)
             _ = q
         }
@@ -278,7 +278,7 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
         }
         defer { NotificationCenter.default.removeObserver(token) }
         action()
-        return await eventually(10) { seen.value.contains(FilePath.entry(path)) }
+        return await eventually { seen.value.contains(FilePath.entry(path)) }
     }
 
     /// Files that aren't in the cloud: nothing to download, but the views are told to look again.
@@ -325,7 +325,7 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
 
         m.refreshDetected()
         #expect(m.titles(in: .remote).contains("Google Drive (me@example.com)"))
-        #expect(await eventually(30) { m.titles(in: .removable).contains("Galaxy S21") })
+        #expect(await eventually { m.titles(in: .removable).contains("Galaxy S21") })
         let phone = try #require(m.allEntries.first { $0.title == "Galaxy S21" })
         #expect(phone.url.absoluteString == "adb://R58N123/sdcard/" && phone.icon == "smartphone")
         #expect(adb.calls.first?.args == ["devices", "-l"])
@@ -338,7 +338,7 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
         m.isActive = false
         try adb.reply("List of devices attached\n")
         m.isActive = true
-        #expect(await eventually(30) { !m.titles(in: .removable).contains("Galaxy S21") })
+        #expect(await eventually { !m.titles(in: .removable).contains("Galaxy S21") })
 
         // No longer bookmarked: detected again; and once the folder has gone, not at all.
         m.remove(try #require(m.userEntries.first { $0.title == "Drive" }))

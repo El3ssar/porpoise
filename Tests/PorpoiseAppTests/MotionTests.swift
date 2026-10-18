@@ -30,21 +30,23 @@ import Testing
         animator.run(duration: 0.05, step: { _ in }) {
             animator.run(duration: 0.05, step: { steps.append($0) }) { second = true }
         }
-        _ = await poll(timeout: 5) { second }
+        await expectEventually { second }
         #expect(second && steps.last == 1)
     }
 
     /// A display that gives no frames (asleep) still lets animations end: the clock's timer ticks instead (W-139).
+    /// Fixed frames, so a stalled machine still shows the steps between the first and the last.
     @Test func animationsEndWithoutDisplayFrames() async throws {
         let reduces = Animator.reducesMotion
         Animator.reducesMotion = { false }
         FrameClock.followsDisplay = false
-        defer { Animator.reducesMotion = reduces; FrameClock.followsDisplay = true }
+        FrameClock.frameStep = 1.0 / 60
+        defer { Animator.reducesMotion = reduces; FrameClock.followsDisplay = true; FrameClock.frameStep = nil }
         let animator = Animator()
         var steps: [Double] = []
         var done = false
         animator.run(duration: 0.2, step: { steps.append($0) }) { done = true }
-        _ = await poll(timeout: 5) { done }
+        await expectEventually { done }
         #expect(done && steps.last == 1 && steps.count >= 3)
         #expect(zip(steps, steps.dropFirst()).allSatisfy { $0 <= $1 })
     }
@@ -64,7 +66,7 @@ import Testing
         let tab = PorpoiseTab(url: folder)
         window.contentView = tab
         let list = tab.primary.list
-        _ = await poll(timeout: 6) { list.model.rows.count >= 3 }
+        try #require(await poll { list.model.rows.count >= 3 })
         list.layoutSubtreeIfNeeded()
         let url = list.model.rows[0].item.url
 
@@ -77,9 +79,9 @@ import Testing
         Animator.reducesMotion = { false }
         list.hoverIndex = 0
         #expect((list.hoverAlpha[url] ?? 0) < 1)
-        _ = await poll(timeout: 5) { list.hoverAlpha[url] == 1 }
+        await expectEventually { list.hoverAlpha[url] == 1 }
         #expect(list.hoverAlpha[url] == 1)
-        _ = await poll(timeout: 5) { !list.hoverClock.isRunning }
+        await expectEventually { !list.hoverClock.isRunning }
         #expect(!list.hoverClock.isRunning)
     }
 }

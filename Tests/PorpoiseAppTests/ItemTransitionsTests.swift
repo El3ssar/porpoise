@@ -18,6 +18,24 @@ import Testing
         }
     }
 
+    /// Runs the main run loop (the panes list and animate there) until `condition` holds, for as long as a slow
+    /// runner needs (`eventualTimeout` by the clock, not a number of turns). True when it came true.
+    @discardableResult private func settle(until condition: () -> Bool) async throws -> Bool {
+        let end = Date().addingTimeInterval(eventualTimeout)
+        while !condition() {
+            guard Date() < end else { return false }
+            try await settle(0.05)
+        }
+        return true
+    }
+
+    /// Animations step through fixed frames (`FrameClock.frameStep`): a stalled machine still draws every one of
+    /// them, instead of jumping from the first to the last.
+    private func fixedFrames() -> () -> Void {
+        FrameClock.frameStep = 1.0 / 60
+        return { FrameClock.frameStep = nil }
+    }
+
     @Test func aSplitRunsOneTransitionPerPaneAndChangesWaitForIt() async throws {
         _ = NSApplication.shared
         let scratch = try Scratch(), folder = scratch.url
@@ -27,6 +45,8 @@ import Testing
         let reduces = Animator.reducesMotion
         Animator.reducesMotion = { false }
         defer { Animator.reducesMotion = reduces }
+        let realTime = fixedFrames()
+        defer { realTime() }
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1000, height: 600), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -35,7 +55,7 @@ import Testing
         window.contentView = tab
         tab.frame = window.contentView?.bounds ?? .zero
         tab.primary.setMode(.icons)
-        for _ in 0..<600 where tab.primary.model.rows.count < 6 { try await settle(0.05) }
+        try await settle { tab.primary.model.rows.count >= 6 }
         #expect(tab.primary.model.rows.count == 6)
         tab.layoutSubtreeIfNeeded()
 
@@ -49,7 +69,7 @@ import Testing
             right.model.rows.count == 6 && right.list.transitionHidden.isEmpty && right.list.layoutWidthOverride == nil
                 && right.list.transitions.log == [.splitOpen]
         }
-        for _ in 0..<600 where !settled() { try await settle(0.05) }
+        try await settle(until: settled)
         #expect(right.model.rows.count == 6)
         #expect(right.list.transitions.log == [.splitOpen])
         #expect(tab.primary.list.transitions.log.filter { $0 == .splitOpen }.count == 1)
@@ -78,7 +98,7 @@ import Testing
         #expect(t.log == [.splitOpen, .splitOpen, .filter] && !t.animates)
 
         tab.closeSplit(closeActive: true)
-        try await settle(0.6)
+        try await settle { tab.secondary == nil && tab.primary.list.layoutWidthOverride == nil }
         #expect(tab.secondary == nil && tab.primary.list.layoutWidthOverride == nil)
     }
 
@@ -92,6 +112,8 @@ import Testing
         let reduces = Animator.reducesMotion
         Animator.reducesMotion = { false }
         defer { Animator.reducesMotion = reduces }
+        let realTime = fixedFrames()
+        defer { realTime() }
         for n in 1...4 { try Data("\(n)".utf8).write(to: folder.appendingPathComponent("file \(n).txt")) }
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1000, height: 600), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
@@ -101,15 +123,13 @@ import Testing
         window.contentView = tab
         tab.frame = window.contentView?.bounds ?? .zero
         tab.primary.setMode(mode)
-        for _ in 0..<600 where tab.primary.model.rows.count < 4 { try await settle(0.05) }
+        try await settle { tab.primary.model.rows.count >= 4 }
         tab.layoutSubtreeIfNeeded()
         // A slow runner may take seconds to load the pane and start its flight: wait for it to land, and for the
         // pane to settle, never for a fixed time.
         func flown(after landed: Int) async throws -> PorpoiseTab.FlightRecord? {
-            for _ in 0..<600 where tab.flightsLanded == landed { try await settle(0.05) }
-            for _ in 0..<600 where tab.secondary.map({ !$0.list.transitionHidden.isEmpty || $0.list.layoutWidthOverride != nil }) ?? false {
-                try await settle(0.05)
-            }
+            try await settle { tab.flightsLanded > landed }
+            try await settle { !(tab.secondary.map({ !$0.list.transitionHidden.isEmpty || $0.list.layoutWidthOverride != nil }) ?? false) }
             return tab.flightsLanded > landed ? tab.lastFlight : nil
         }
 
@@ -126,7 +146,7 @@ import Testing
         landed = tab.flightsLanded
         tab.closeSplit(closeActive: true)
         _ = try await flown(after: landed)
-        for _ in 0..<600 where tab.closing != nil { try await settle(0.05) }
+        try await settle { tab.closing == nil }
 
         landed = tab.flightsLanded
         tab.openSplit()

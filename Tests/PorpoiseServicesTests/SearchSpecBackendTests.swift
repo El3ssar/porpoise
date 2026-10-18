@@ -24,7 +24,7 @@ import Testing
         var config = IndexConfiguration(); config.enabled = true; config.content = true; config.roots = [root.path]
         index.configure(config)
         defer { index.configure(IndexConfiguration()) }
-        await expectEventually(timeout: 30) { !index.status.building && index.status.updated != nil }
+        await expectEventually { !index.status.building && index.status.updated != nil }
         let toolsDirectory = TestPaths.repo.appendingPathComponent("build/search-tools")
         let tools = FolderSearch.Tools(fd: toolsDirectory.appendingPathComponent("fd").path)
         try #require(FileManager.default.isExecutableFile(atPath: tools.fd), "fetch-search-tools.sh is required")
@@ -48,7 +48,7 @@ import Testing
                 runner.index = index; runner.usesIndex = backend == 0; runner.usesSpotlight = false
                 runner.folderTools = backend == 1 ? tools : nil
                 runner.start()
-                await expectEventually(timeout: 30) { result != nil }
+                await expectEventually { result != nil }
                 #expect(Set(result?.map(\.name) ?? []) == expected, "query=\(text), contents=\(contents), backend=\(backend)")
                 #expect(runner.queryError == nil)
                 if contents, text == "café" {

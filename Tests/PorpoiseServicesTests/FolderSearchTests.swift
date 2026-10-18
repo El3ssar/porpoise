@@ -41,7 +41,7 @@ struct FolderSearchTests {
             if done { result = (items, snippets) } else { batches += 1 }
         }
         search.start()
-        try #require(await eventually(10) { result != nil })
+        try #require(await eventually { result != nil })
         let (items, snippets) = result ?? ([], [:])
         return (items.map(\.name).sorted(), batches, Dictionary(uniqueKeysWithValues: snippets.map { ($0.key.lastPathComponent, $0.value) }))
     }
@@ -133,7 +133,7 @@ struct FolderSearchTests {
         runner.folderTools = tools
         runner.start()
         defer { runner.stop() }
-        #expect(await eventually(10) { result != nil })
+        #expect(await eventually { result != nil })
         // The walk would skip nothing either, but only fd finds the name with a line break whole.
         #expect(result?.map(\.name).sorted() == ["Q3 Report.pdf", "Reports", "line\nbreak report.txt", "report-draft.md"].sorted())
     }

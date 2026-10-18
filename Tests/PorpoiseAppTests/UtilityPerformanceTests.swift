@@ -24,7 +24,7 @@ import Testing
         for ext in ["old", "older", "latest"] { dialog.testPreviewExtension(ext) }
         let schedulingMS = (ProcessInfo.processInfo.systemUptime - start) * 1000
         #expect(dialog.testPlan == nil && !dialog.testCanApply)
-        #expect(await poll(timeout: 30) { dialog.testPlan != nil })
+        #expect(await poll { dialog.testPlan != nil })
         #expect(dialog.testPlan?.rows.map(\.proposedName) == synchronous.rows.map(\.proposedName))
         #expect(dialog.testCanApply)
         dialog.testPreviewExtension("closed")

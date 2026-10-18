@@ -17,7 +17,7 @@ import Testing
         config.enabled = indexEnabled; config.roots = [s.path("root").path]
         index.configure(config)
         defer { index.configure(IndexConfiguration()) }
-        if indexEnabled { try #require(await eventually(30) { !index.status.building && index.status.updated != nil }) }
+        if indexEnabled { try #require(await eventually { !index.status.building && index.status.updated != nil }) }
         var updates: [(Int, Bool)] = []
         let runner = SearchRunner(text: "no", scope: s.path("root"), contents: false) { items, done in
             updates.append((items.count, done))
@@ -27,7 +27,7 @@ import Testing
         runner.folderTools = nil
         runner.start()
         defer { runner.stop() }
-        try #require(await eventually(30) { updates.last?.1 == true })
+        try #require(await eventually { updates.last?.1 == true })
         try #require(updates.last?.0 == 80)
         let initial = updates.count
         for _ in 0..<4 {
@@ -48,26 +48,26 @@ import Testing
         config.enabled = true; config.roots = [s.path("root").path]
         index.configure(config)
         defer { index.configure(IndexConfiguration()) }
-        try #require(await eventually(30) { !index.status.building && index.status.updated != nil })
+        try #require(await eventually { !index.status.building && index.status.updated != nil })
         var batches: [(items: [FileItem], done: Bool)] = []
         let runner = SearchRunner(text: "no", scope: s.path("root/sub"), contents: false) { items, done in batches.append((items, done)) }
         runner.index = index; runner.start()
         defer { runner.stop() }
-        try #require(await eventually(30) { batches.last?.done == true })
+        try #require(await eventually { batches.last?.done == true })
         let initial = batches.count
         let updated = index.status.updated
         try s.file("root/unrelated.txt", "another folder changed")
-        try #require(await eventually(30) { index.status.updated != updated })
+        try #require(await eventually { index.status.updated != updated })
         try await Task.sleep(for: .milliseconds(300))
         #expect(batches.count == initial)
 
         try s.file("root/sub/no-0.txt", "modified")
-        try #require(await eventually(30) { batches.last?.items.first(where: { $0.name == "no-0.txt" })?.size == 8 })
+        try #require(await eventually { batches.last?.items.first(where: { $0.name == "no-0.txt" })?.size == 8 })
         #expect(batches.last?.items.count == 80)
         try s.file("root/sub/no-new.txt")
-        try #require(await eventually(30) { batches.last?.items.count == 81 })
+        try #require(await eventually { batches.last?.items.count == 81 })
         try FileManager.default.removeItem(at: s.path("root/sub/no-new.txt"))
-        try #require(await eventually(30) { batches.last?.items.count == 80 })
+        try #require(await eventually { batches.last?.items.count == 80 })
         #expect(batches.dropFirst(initial).allSatisfy { $0.done && $0.items.count >= 80 })
         let settled = batches.count
         try await Task.sleep(for: .milliseconds(500))

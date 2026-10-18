@@ -102,7 +102,7 @@ import Testing
         let item = try #require(FileItem.load(archive))
         var result: Result<URL, Error>?
         ArchiveBrowser.extractedFolder(for: item, in: cache) { result = $0 }
-        try #require(await eventually(30) { result != nil })  // a regression fails here instead of hanging
+        try #require(await eventually { result != nil })  // a regression fails here instead of hanging
         return try #require(result)
     }
 
@@ -319,7 +319,7 @@ import Testing
         runner.usesSpotlight = spotlight
         runner.start()
         defer { runner.stop() }
-        try #require(await eventually(20) { result != nil })
+        try #require(await eventually { result != nil })
         return (result ?? []).map(\.name).sorted()
     }
 
