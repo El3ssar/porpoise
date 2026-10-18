@@ -26,3 +26,22 @@ extension SSHProvider: RemoteTransferPublishing {
 public protocol RemoteTransferMetadata: RemoteProvider {
     func transferModificationDate(_ remote: URL) throws -> Date
 }
+
+/// A live, point lookup before publication, without downloading a whole destination listing.
+/// Providers without this capability retain the authoritative fresh-listing check.
+public protocol RemoteTransferTargetChecking: RemoteProvider {
+    func transferTargetExists(_ target: URL) throws -> Bool
+}
+
+extension SSHProvider: RemoteTransferTargetChecking {
+    public func transferTargetExists(_ target: URL) throws -> Bool {
+        let parent = shellPath(target.deletingLastPathComponent()), path = shellPath(target)
+        let output = try exec(
+            "[ -d \(parent) ] && [ -r \(parent) ] && [ -x \(parent) ] || exit 1; "
+                + "if [ -e \(path) ] || [ -L \(path) ]; then printf yes; else printf no; fi")
+        guard output == Data("yes".utf8) || output == Data("no".utf8) else {
+            throw RemoteError.failed("Could not check the destination folder.")
+        }
+        return output == Data("yes".utf8)
+    }
+}
