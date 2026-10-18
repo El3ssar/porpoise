@@ -72,6 +72,7 @@ import os
         for codecs in [("", ""), ("mpeg4", "mp3"), ("vp9", "aac"), ("H264", "AAC")] {
             let a = VideoPreview.streamArguments(input: input, codecs: codecs, output: output)
             #expect(a.contains(subsequence: ["-c:v", "h264_videotoolbox"]), "\(codecs)")
+            #expect(a.contains(subsequence: ["-allow_sw", "1"]))
             #expect(a.contains(subsequence: ["-pix_fmt", "yuv420p"]))
             #expect(a.contains("scale='min(1920,iw)':-2"))
         }
@@ -178,6 +179,23 @@ final class VideoPreviewStreamTests {
     }
 
     // MARK: Streaming
+
+    /// Exercise the VM/no-hardware path even on a Mac with a hardware encoder, without widening its sandbox.
+    @Test func softwareEncodingStaysInsideSandbox() throws {
+        let input = try video("software.avi", "mpeg4-aac.avi")
+        let output = try scratch.folder("software-output")
+        let playlist = output.appendingPathComponent("index.m3u8")
+        var arguments = VideoPreview.streamArguments(input: input, codecs: ("", ""), output: playlist)
+        arguments.insert(contentsOf: ["-require_sw", "1"], at: arguments.count - 1)
+        let result = try Shell.run(
+            "/usr/bin/sandbox-exec",
+            VideoPreview.sandboxArguments(
+                executable: try #require(testFFmpeg), input: input, output: output, arguments: arguments), timeout: 30)
+        #expect(result.status == 0, "\(result.err)")
+        let contents = try String(contentsOf: playlist, encoding: .utf8)
+        #expect(contents.contains(".m4s"))
+        #expect(contents.contains("#EXT-X-ENDLIST"))
+    }
 
     /// `playableURL`, waiting for its answer. It fails after 60 s instead of hanging: beyond the preview's own worst
     /// case (probe, then copy, then convert, 10 s each).

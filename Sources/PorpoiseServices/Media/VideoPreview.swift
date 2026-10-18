@@ -169,7 +169,8 @@ public final class VideoPreview {
         return my == token && FileManager.default.fileExists(atPath: playlist.path)
     }
 
-    /// ffmpeg arguments: copy H.264/HEVC and AAC as they are, convert anything else with VideoToolbox.
+    /// Copy H.264/HEVC and AAC as they are; otherwise prefer hardware, allowing VideoToolbox's software encoder
+    /// when hardware is unavailable (virtual machines) or busy. Both run inside the same sandbox.
     /// The input is given as "file:" so a name that looks like a protocol ("concat:…") is read literally.
     static func streamArguments(input: URL, codecs: (video: String, audio: String), output: URL) -> [String] {
         var args = [
@@ -179,7 +180,7 @@ public final class VideoPreview {
         switch codecs.video {
         case "h264": args += ["-c:v", "copy"]
         case "hevc": args += ["-c:v", "copy", "-tag:v", "hvc1"]
-        default: args += ["-c:v", "h264_videotoolbox", "-b:v", "8M", "-pix_fmt", "yuv420p", "-vf", "scale='min(1920,iw)':-2"]
+        default: args += ["-c:v", "h264_videotoolbox", "-allow_sw", "1", "-b:v", "8M", "-pix_fmt", "yuv420p", "-vf", "scale='min(1920,iw)':-2"]
         }
         args += codecs.audio == "aac" ? ["-c:a", "copy"] : ["-c:a", "aac_at", "-b:a", "192k", "-ac", "2"]
         args += [
