@@ -94,6 +94,21 @@ DMG scans and Sparkle verification always run. CI and releases share the ffmpeg 
 and build-script hash. Every restored binary is checked against its recorded SHA-256; a missing or mismatched
 digest rebuilds from checksum-verified source. `scripts/build-ffmpeg.sh --force` remains available for a fresh build.
 
+Measured on 2026-10-18 with identical application/test sources on `ci/ciperf`:
+
+| Run | CI critical path, including the aggregate gate |
+| --- | ---: |
+| [Prior serial CI](https://github.com/El3ssar/porpoise/actions/runs/39166419453) | 12:02 |
+| [First parallel run, empty new SwiftPM caches](https://github.com/El3ssar/porpoise/actions/runs/39170433264) | 9:57 |
+| [Warm parallel run](https://github.com/El3ssar/porpoise/actions/runs/39171598510) | 4:30 |
+
+The warm run reduced this measured wall time by 63%; all 1,489 main and 9 isolated tests passed and combined
+coverage stayed at 93.7% of 36,527 lines. These are individual runner observations, including cache upload and
+the final gate, rather than a statistical latency guarantee. The [nonpublishing packaging probe](https://github.com/El3ssar/porpoise/actions/runs/39171385028)
+passed in 1:46 including DMG scanning: the cached shipping build took 10.26 seconds (previous release: 342.60),
+and ffmpeg verification took under a second (previous source build: 4:00). Ad hoc packaging excludes production
+identity import, Sparkle signing and publication, so it is separate evidence from an actual published release.
+
 Without a signing identity, `make-app.sh` signs the app ad hoc. That's fine for development, but macOS forgets
 privacy grants (Full Disk Access) on every rebuild. Run `./scripts/setup-signing.sh` once to get a stable local
 identity. It's git-ignored and only used on your Mac.
