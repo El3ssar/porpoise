@@ -34,8 +34,26 @@ import Testing
         #expect(second && steps.last == 1)
     }
 
-    /// The hover highlight fades in over a few frames; with Reduce Motion it is there at once.
-    @Test func hoverFadesUnlessMotionIsReduced() async throws {
+    /// A display that gives no frames (asleep) still lets animations end: the clock's timer ticks instead (W-139).
+    @Test func animationsEndWithoutDisplayFrames() async throws {
+        let reduces = Animator.reducesMotion
+        Animator.reducesMotion = { false }
+        FrameClock.followsDisplay = false
+        defer { Animator.reducesMotion = reduces; FrameClock.followsDisplay = true }
+        let animator = Animator()
+        var steps: [Double] = []
+        var done = false
+        animator.run(duration: 0.2, step: { steps.append($0) }) { done = true }
+        _ = await poll(timeout: 5) { done }
+        #expect(done && steps.last == 1 && steps.count >= 3)
+        #expect(zip(steps, steps.dropFirst()).allSatisfy { $0 <= $1 })
+    }
+
+    /// The hover highlight fades in over a few frames; with Reduce Motion it is there at once. With no display frames
+    /// it fades in all the same.
+    @Test(arguments: [true, false]) func hoverFadesUnlessMotionIsReduced(followsDisplay: Bool) async throws {
+        FrameClock.followsDisplay = followsDisplay
+        defer { FrameClock.followsDisplay = true }
         let reduces = Animator.reducesMotion
         defer { Animator.reducesMotion = reduces }
         let scratch = try Scratch(), folder = scratch.url

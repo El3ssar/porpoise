@@ -494,7 +494,8 @@ public final class SearchIndex: @unchecked Sendable {
             for (number, chunk) in chunks.enumerated() {
                 let exclusions = number == 0 ? excludedPaths : []
                 let ids = chunk.table.search(query, scope: scope, limit: limit, excluding: exclusions, cancelled: cancelled)
-                found.append(contentsOf: ids.map { chunk.table.path($0) })
+                // The folder searched is not one of its results, as in a folder walk.
+                found.append(contentsOf: ids.map { chunk.table.path($0) }.filter { $0 != scope })
                 if contents {
                     // Bloom candidates are always verified against current bytes. Unindexed files are included.
                     for id in chunk.table.contentCandidates(text, scope: scope, cancelled: cancelled) {

@@ -23,10 +23,11 @@ public enum IndexCrawler {
                     device: rootStat.st_dev, content: content, cancelled: cancelled, skip: { skip($0) || excluded($0) })
                 let top = Listing(path: root)
                 let grams = mode == S_IFREG && content && rootStat.st_size <= Walk.contentLimit ? Walk.grams(root) : nil
+                // A folder has no size, as in a full walk (getattrlistbulk gives folders no data length), not lstat's.
                 let rootId = index.append(
                     parent: NameIndex.noParent, name: Array(root.utf8), folded: Array(IndexQuery.fold((root as NSString).lastPathComponent).utf8),
-                    size: Int64(rootStat.st_size), mtime: UInt32(clamping: rootStat.st_mtimespec.tv_sec), directory: mode == S_IFDIR,
-                    symlink: mode == S_IFLNK, contentGrams: grams)
+                    size: mode == S_IFDIR ? 0 : Int64(rootStat.st_size), mtime: UInt32(clamping: rootStat.st_mtimespec.tv_sec),
+                    directory: mode == S_IFDIR, symlink: mode == S_IFLNK, contentGrams: grams)
                 guard mode == S_IFDIR else { return index }
                 walk.run(top)
                 for path in walk.unreadable.sorted() { unreadable(path) }

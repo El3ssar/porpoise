@@ -37,33 +37,67 @@ enum Motion {
 }
 
 /// Calls `tick` once per frame the display shows (in the common run loop modes, so it keeps going during live resize
-/// and other event tracking), with the frame's time, until `tick` returns false or `stop` is called.
+/// and other event tracking), with the frame's time, until `tick` returns false or `stop` is called. A display that
+/// sleeps (or a window on one that shows nothing) gives no frames: a timer then ticks instead, so animations still
+/// end and their completions still run.
 final class FrameClock: NSObject {
+    /// Tests: false leaves only the timer, as with a sleeping display.
+    nonisolated(unsafe) static var followsDisplay = true
+    /// How long the display may go without a frame before the timer stands in, and how often it then ticks.
+    static let quiet: CFTimeInterval = 0.1
+    static let fallbackInterval: TimeInterval = 1.0 / 30
+
     private var link: CADisplayLink?
+    private var timer: Timer?
     private var tick: ((CFTimeInterval) -> Bool)?
+    private var lastFrame: CFTimeInterval = 0, lastTime: CFTimeInterval = 0
 
     /// False when there is no screen to follow (nothing runs then).
     @discardableResult func run(_ tick: @escaping (CFTimeInterval) -> Bool) -> Bool {
         stop()
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return false }
         self.tick = tick
-        let l = screen.displayLink(target: self, selector: #selector(frame(_:)))
-        l.add(to: .main, forMode: .common)
-        link = l
+        lastFrame = CACurrentMediaTime()
+        lastTime = 0
+        if Self.followsDisplay {
+            let l = screen.displayLink(target: self, selector: #selector(frame(_:)))
+            l.add(to: .main, forMode: .common)
+            link = l
+        }
+        // Display link timestamps and CACurrentMediaTime share one clock, so `tick` sees one timeline either way.
+        let t = Timer(timeInterval: Self.fallbackInterval, repeats: true) { [weak self] t in
+            MainActor.assumeIsolated {
+                guard let self, t === self.timer else { return t.invalidate() }
+                let now = CACurrentMediaTime()
+                if now - self.lastFrame >= Self.quiet { self.deliver(now) }
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
         return true
     }
 
     @objc private func frame(_ l: CADisplayLink) {
-        guard l === link, let tick else { return l.invalidate() }
-        // `tick` may have started the clock again (an animation's completion starting the next): only this run ends.
-        if !tick(l.timestamp), l === link { stop() }
+        guard l === link else { return l.invalidate() }
+        lastFrame = CACurrentMediaTime()
+        deliver(l.timestamp)
     }
 
-    var isRunning: Bool { link != nil }
+    private func deliver(_ now: CFTimeInterval) {
+        guard let tick, let running = timer else { return stop() }
+        // A frame's time may trail the timer's last tick as the display wakes: time never runs back.
+        lastTime = max(lastTime, now)
+        // `tick` may have started the clock again (an animation's completion starting the next): only this run ends.
+        if !tick(lastTime), running === timer { stop() }
+    }
+
+    var isRunning: Bool { timer != nil }
 
     func stop() {
         link?.invalidate()
         link = nil
+        timer?.invalidate()
+        timer = nil
         tick = nil
     }
 }
