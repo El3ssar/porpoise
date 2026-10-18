@@ -7,9 +7,23 @@ import Testing
 @testable import PorpoiseServices
 
 @MainActor struct IndexStartupConcurrencyTests {
+    /// Held: an operation queue doesn't keep its underlying queue.
+    private static let crawlThread = DispatchQueue(label: "IndexStartupConcurrencyTests.crawls", qos: .utility)
+
+    /// A suspended stand-in for the index's crawl queue, on a serial queue of its own like the real one. On the shared
+    /// pool its crawl got no thread while other tests kept every core busy (CI's 3-core runner), and the index never
+    /// finished building (W-127).
+    private static func crawlWorkers() -> OperationQueue {
+        let workers = OperationQueue()
+        workers.maxConcurrentOperationCount = 1
+        workers.underlyingQueue = crawlThread
+        workers.isSuspended = true
+        return workers
+    }
+
     @Test func fortyMultiRootIndexesReconfigureWhileOneWorkerPoolIsSuspended() async throws {
         let scratch = try Scratch()
-        let workers = OperationQueue(); workers.maxConcurrentOperationCount = 1; workers.isSuspended = true
+        let workers = Self.crawlWorkers()
         var indexes: [SearchIndex] = []
         var configurations: [IndexConfiguration] = []
         var suites: [String] = []
@@ -53,7 +67,7 @@ import Testing
 
     @Test func eventsDuringSuspendedInitialCrawlStayBufferedUntilSnapshotIsReady() async throws {
         let scratch = try Scratch(); let root = try scratch.folder("root")
-        let workers = OperationQueue(); workers.maxConcurrentOperationCount = 1; workers.isSuspended = true
+        let workers = Self.crawlWorkers()
         let suite = "IndexStartupEvents.\(UUID())"
         let index = SearchIndex(directory: scratch.path("store"), defaults: try #require(UserDefaults(suiteName: suite)), crawlQueue: workers)
         defer {

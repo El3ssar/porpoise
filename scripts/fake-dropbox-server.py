@@ -47,6 +47,19 @@ class Handler(BaseHTTPRequestHandler):
         for key, value in (headers or {}).items():
             self.send_header(key, value)
         self.end_headers()
+        if binary:
+            # How many downloads are being sent at once: what parallel downloading is checked by, not wall-clock time.
+            with self.server.lock:
+                self.server.active_downloads += 1
+                self.server.stats['maxConcurrentDownloads'] = max(self.server.stats['maxConcurrentDownloads'], self.server.active_downloads)
+        try:
+            self.send_body(data, binary)
+        finally:
+            if binary:
+                with self.server.lock:
+                    self.server.active_downloads -= 1
+
+    def send_body(self, data, binary):
         started = time.monotonic()
         for offset in range(0, len(data), 256 << 10):
             chunk = data[offset:offset + (256 << 10)]
@@ -106,6 +119,8 @@ class Handler(BaseHTTPRequestHandler):
             config = json.loads(raw)
             with self.server.lock:
                 self.server.config.update(config)
+                if config.pop('resetConcurrency', False):
+                    self.server.stats['maxConcurrentDownloads'] = 0
                 for file in config.get('files', []):
                     self.server.add(file)
                 for path in config.get('remove', []):
@@ -401,7 +416,8 @@ def main():
     server = Server(('127.0.0.1', args.port), Handler)
     server.lock = Lock(); server.items = {}; server.contents = {}; server.events = []; server.sessions = {}; server.deleted = {}
     server.cursors = {}; server.search_cursors = {}; server.config = {}; server.bandwidth_next = 0
-    server.stats = {'requests': [], 'tokens': 0, 'secretSent': False, 'bytes': 0}
+    server.stats = {'requests': [], 'tokens': 0, 'secretSent': False, 'bytes': 0, 'maxConcurrentDownloads': 0}
+    server.active_downloads = 0
     for key in ('latency_ms', 'bandwidth_mbps', 'connection_mbps'):
         setattr(server, key, getattr(args, key))
     fixture = json.loads(args.fixture.read_text()) if args.fixture else {'files': [

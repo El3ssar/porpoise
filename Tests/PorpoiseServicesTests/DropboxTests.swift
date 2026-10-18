@@ -142,10 +142,13 @@ import Testing
             "files": [["id": "id:large", "path": "/large.bin", "size": 32 << 20], ["id": "id:empty", "path": "/empty", "size": 0]]
         ])
         let file = try await client.metadata("id:large")
+        // How many ranges are downloaded at once, not how long they took: a shared runner's timing says little (W-127).
         let start = Date(); let single = try await client.download(file, maximumConnections: 1); let singleTime = Date().timeIntervalSince(start)
+        #expect(try await server.stats()["maxConcurrentDownloads"] as? Int == 1)
+        try await server.configure(["resetConcurrency": true])
         let parallelStart = Date(); let parallel = try await client.download(file); let parallelTime = Date().timeIntervalSince(parallelStart)
+        #expect(try await server.stats()["maxConcurrentDownloads"] as? Int ?? 0 >= 2)
         #expect(try DropboxContentHash.hash(single) == DropboxContentHash.hash(parallel))
-        #expect(parallelTime < singleTime * 0.85)
         print("Dropbox 32MiB connection128/aggregate512 Mbps: single=\(singleTime)s parallel=\(parallelTime)s")
         let empty = try await client.metadata("id:empty"); let emptyID = UUID()
         let emptyURL = try await client.download(empty, operationID: emptyID)
