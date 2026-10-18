@@ -42,7 +42,7 @@ final class ConnectSheet: SecondaryWindowController {
             }
         }
 
-        var isAvailable: Bool { self != .s3 }
+        var isAvailable: Bool { true }
     }
 
     private(set) var page: Page = .pick
@@ -124,7 +124,10 @@ final class ConnectSheet: SecondaryWindowController {
             views: ServerKind.allCases.map { k in
                 let t = ConnectTile(title: k.title, image: Self.symbol(k.symbol), available: k.isAvailable)
                 t.identifier = NSUserInterfaceItemIdentifier("tile-" + k.rawValue)
-                t.onClick = { [weak self] in self?.show(.server(k)) }
+                t.onClick = { [weak self] in
+                    // S3 has keys and an endpoint rather than a server form: it's set up as a saved connection.
+                    if k == .s3 { self?.addS3Connection() } else { self?.show(.server(k)) }
+                }
                 return t
             })
         servers.spacing = 8
@@ -243,6 +246,12 @@ final class ConnectSheet: SecondaryWindowController {
         stack.views.last?.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         DispatchQueue.main.async { [weak self] in self?.window?.makeFirstResponder(f.server) }
         return stack
+    }
+
+    private func addS3Connection() {
+        let open = self.open
+        finish()
+        ConnectionsWindow.show(adding: .s3, open: open)
     }
 
     @objc private func connectServer(_ sender: Any?) {

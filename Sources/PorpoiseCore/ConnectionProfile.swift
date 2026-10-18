@@ -96,6 +96,12 @@ public struct ConnectionProfile: Codable, Equatable, Identifiable, Sendable {
             }
             if scheme == "http", !Self.isLoopback(e.host ?? "") { return "Use https for an endpoint that isn't on this Mac." }
             if scheme != "http" && scheme != "https" { return "The endpoint must start with https://." }
+            if !(e.path.isEmpty || e.path == "/") || e.query != nil || e.user != nil {
+                return "Enter only the endpoint's address, such as https://s3.amazonaws.com (the bucket goes below)."
+            }
+            if let r = region, r.isEmpty || !r.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }) {
+                return "The region is a name such as us-east-1."
+            }
             return nil
         }
         let s = server

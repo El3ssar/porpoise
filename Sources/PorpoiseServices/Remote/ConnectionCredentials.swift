@@ -9,14 +9,24 @@ public protocol S3SecretStore: Sendable {
     func removeSecret(accountID: UUID) throws
 }
 
+/// The S3 module's credentials (`S3Credentials`), under the account the profile's URL names.
+struct S3KeychainSecrets: S3SecretStore {
+    func saveSecret(accessKeyID: String, secretAccessKey: String, accountID: UUID) throws {
+        try S3Credentials.save(S3AccessKeys(accessKeyID: accessKeyID, secretAccessKey: secretAccessKey), accountID: accountID)
+    }
+    func hasSecret(accountID: UUID) -> Bool { (try? S3Credentials.read(accountID: accountID)) != nil }
+    func removeSecret(accountID: UUID) throws { try S3Credentials.remove(accountID: accountID) }
+}
+
 /// A profile's secret, in the Keychain: FTP, FTPS and SMB passwords as internet passwords under the server, user and
 /// protocol (where Finder and the FTP connection find them too), S3 secret keys through the S3 store.
 public final class ConnectionCredentials: @unchecked Sendable {
     public static let shared = ConnectionCredentials(passwords: CredentialStores.passwords())
 
     let passwords: any PasswordCredentialStore
-    /// Set by the S3 module when it registers; nil leaves S3 profiles without a way to keep their key.
-    nonisolated(unsafe) public static var s3Store: (any S3SecretStore)?
+    /// Where S3 keys are kept: the S3 module's own store, so its connections find them. nil leaves S3 profiles without
+    /// a way to keep their key.
+    nonisolated(unsafe) public static var s3Store: (any S3SecretStore)? = S3KeychainSecrets()
     private let s3Override: (any S3SecretStore)?
     private var s3: (any S3SecretStore)? { s3Override ?? Self.s3Store }
 

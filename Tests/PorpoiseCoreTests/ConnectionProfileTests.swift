@@ -73,6 +73,8 @@ import Testing
         (ConnectionProfile(name: "a", kind: .s3, bucket: "bucket", endpoint: "x"), "endpoint"),
         (ConnectionProfile(name: "a", kind: .s3, bucket: "bucket", endpoint: "http://s3.example.com"), "https"),
         (ConnectionProfile(name: "a", kind: .s3, bucket: "bucket", endpoint: "ftp://s3.example.com"), "https"),
+        (ConnectionProfile(name: "a", kind: .s3, bucket: "bucket", endpoint: "https://s3.example.com/bucket"), "address"),
+        (ConnectionProfile(name: "a", kind: .s3, bucket: "bucket", endpoint: "https://s3.example.com", region: "eu west"), "region"),
     ])
     func problems(_ p: ConnectionProfile, _ word: String) {
         #expect(p.problem?.contains(word) == true, "\(p.problem ?? "nil")")

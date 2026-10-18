@@ -67,9 +67,8 @@ import Testing
 
     @Test @MainActor func everyKindShowsItsFields() throws {
         let w = window(ConnectionProfiles(storeURL: nil), .inMemory())
-        w.addProfile(nil)
+        w.addProfile(kind: .s3)
         let form = try #require(w.form)
-        form.choose(.s3)
         #expect(form.labels == ["Type:", "Name:", "Endpoint:", "Region:", "Bucket:", "Prefix:", "Access key ID:", "Secret key:"])
         form.type(["Bucket:": "my-bucket", "Endpoint:": "https://s3.example.com", "Access key ID:": "AKIA1"])
         #expect(form.draft.url?.scheme == "s3" && form.draft.accessKeyID == "AKIA1")
@@ -78,6 +77,30 @@ import Testing
         form.choose(.sftp)
         form.type(["Server:": "h", "Jump hosts:": "a, b ,", "Key file:": "~/.ssh/k"])
         #expect(form.draft.jumpHosts == ["a", "b"] && form.draft.identityFile == "~/.ssh/k" && form.draft.bucket == nil)
+        w.close()
+    }
+
+    /// The S3 key is kept by the S3 module, under the account in the profile's URL, which S3Location reads.
+    @Test @MainActor func anS3ConnectionsKeyIsWhereTheS3ProviderLooks() throws {
+        let profiles = ConnectionProfiles(storeURL: nil)
+        let w = window(profiles, .shared)
+        w.addProfile(kind: .s3)
+        let form = try #require(w.form)
+        form.type([
+            "Name:": "Backups", "Endpoint:": "http://127.0.0.1:9000", "Region:": "eu-west-1", "Bucket:": "backups", "Prefix:": "daily",
+            "Access key ID:": "AKIATEST", "Secret key:": "s3-secret-for-test",
+        ])
+        #expect(w.saveForm())
+        let p = try #require(profiles.profiles.first)
+        let url = try #require(p.url)
+        let location = try #require(S3Location(url: url))
+        #expect(location.bucket == "backups" && location.key == "daily/" && location.region == "eu-west-1")
+        #expect(location.endpoint.absoluteString == "http://127.0.0.1:9000" && location.accountID == p.id)
+        let keys = try S3Credentials.read(accountID: location.accountID)
+        #expect(keys.accessKeyID == "AKIATEST" && keys.secretAccessKey == "s3-secret-for-test")
+        #expect(ConnectionCredentials.shared.hasSecret(for: p))
+        profiles.remove(p.id)
+        #expect(throws: (any Error).self) { try S3Credentials.read(accountID: p.id) }
         w.close()
     }
 

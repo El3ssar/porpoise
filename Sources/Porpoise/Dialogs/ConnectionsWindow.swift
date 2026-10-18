@@ -24,14 +24,20 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
     private var selectedID: UUID?
     private var changeObserver: NSObjectProtocol?
 
-    static func show(open: @escaping (URL) -> Void) {
-        if let w = current, w.window?.isVisible == true {
+    /// Shows the window; with `adding`, a new connection of that kind to fill in.
+    @discardableResult
+    static func show(adding kind: ConnectionProfile.Kind? = nil, open: @escaping (URL) -> Void) -> ConnectionsWindow {
+        let w: ConnectionsWindow
+        if let shown = current, shown.window?.isVisible == true {
+            w = shown
             w.window?.makeKeyAndOrderFront(nil)
-            return
+        } else {
+            w = ConnectionsWindow(profiles: .shared, credentials: .shared, open: open)
+            current = w
+            w.present()
         }
-        let w = ConnectionsWindow(profiles: .shared, credentials: .shared, open: open)
-        current = w
-        w.present()
+        if let kind { w.addProfile(kind: kind) }
+        return w
     }
 
     init(
@@ -253,8 +259,10 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
 
     var rowCount: Int { table.numberOfRows }
 
-    @objc func addProfile(_ sender: Any?) {
-        let p = ConnectionProfile(name: "New Connection", kind: .sftp)
+    @objc func addProfile(_ sender: Any?) { addProfile(kind: .sftp) }
+
+    func addProfile(kind: ConnectionProfile.Kind) {
+        let p = ConnectionProfile(name: "New Connection", kind: kind)
         table.deselectAll(nil)
         select(p.id, unsaved: p)
         if let f = form { window?.makeFirstResponder(f.firstField) }
