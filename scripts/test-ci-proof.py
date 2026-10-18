@@ -95,6 +95,22 @@ class ProofTests(unittest.TestCase):
             with self.subTest(change=change):
                 self.assertIsNone(proof.find_proof([self.run_record(**change)], self.repository))
 
+    def test_api_failure_and_malformed_response_require_full_checks(self):
+        binary = Path('bin/gh')
+        binary.parent.mkdir()
+        output = Path('output').resolve()
+        environment = dict(os.environ, PATH=str(binary.parent.resolve()) + os.pathsep + os.environ['PATH'],
+                           GITHUB_OUTPUT=str(output), GITHUB_REPOSITORY=self.repository)
+        for body in ['exit 1', "printf 'invalid JSON'"]:
+            with self.subTest(body=body):
+                binary.write_text('#!/bin/sh\n' + body + '\n')
+                binary.chmod(0o755)
+                output.write_text('')
+                result = subprocess.run([sys.executable, str(HERE / 'ci-proof.py')],
+                                        env=environment, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(output.read_text(), 'passed=false\n')
+
     def test_newest_attempt_blocks_older_success(self):
         for state in [dict(conclusion='failure'), dict(status='in_progress', conclusion=None)]:
             self.assertIsNone(proof.find_proof([self.run_record(**state), self.run_record()], self.repository))
