@@ -70,8 +70,10 @@ import Testing
             })
         try FileManager.default.removeItem(at: s.path("root/renamed.txt"))
         try #require(await eventually(Self.liveWait) { index.search("renamed", scope: s.path("root"))?.paths.isEmpty == true })
-        // A new service loads the on-disk snapshot, including tombstones.
-        try #require(await eventually(Self.liveWait) { FileManager.default.fileExists(atPath: s.path("store/manifest.json").path) })
+        // A new service loads the on-disk snapshot, including tombstones. An update is searchable before it is saved,
+        // and an older save's manifest may already exist: wait for the queue, which saves before it takes more work.
+        #expect(index.queuedPaths == 0)
+        #expect(FileManager.default.fileExists(atPath: s.path("store/manifest.json").path))
         let restored = SearchIndex(directory: s.path("store"), defaults: MemoryDefaults())
         restored.configure(index.configuration)
         defer { restored.configure(IndexConfiguration()) }
