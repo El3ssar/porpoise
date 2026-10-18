@@ -100,8 +100,8 @@ extension OneDriveClient {
             try self.request(self.graph(self.itemPath(item.id)), method: "DELETE", headers: ["If-Match": tag])
         }
         var gone = [item.id], ids: [String] = []
-        let files = metadataCache.files
-        while let id = gone.popLast() { ids.append(id); gone += files.filter { $0.parentID == id }.map(\.id) }
+        let children = oneDriveChildren(metadataCache.files)
+        while let id = gone.popLast() { ids.append(id); gone += children[id] ?? [] }
         metadataCache.apply([], removed: ids, belongs: { _, _ in false })
         emit(CloudChangeBatch(removed: ids)); metadataCache.invalidate(); onFreshness?()
         return removed

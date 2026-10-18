@@ -120,6 +120,16 @@ public final class DropboxClient: @unchecked Sendable {
         if item.tag != "deleted" { metadataCache.remember([item]) }
         return item
     }
+    /// Cached folders' IDs by lowercased path (the first, if two share one), rebuilt when the cache changes.
+    var folderIDs: [String: String] {
+        metadataCache.derived("folderIDs") { files in
+            var ids: [String: String] = [:]
+            for file in files.values where file.isFolder {
+                if let path = file.pathLower, ids[path] == nil { ids[path] = file.id }
+            }
+            return ids
+        }
+    }
     public func listPage(_ path: String = "", cursor: String? = nil, recursive: Bool = false) async throws -> DropboxPage {
         let page: DropboxPage
         if let cursor {
@@ -134,10 +144,17 @@ public final class DropboxClient: @unchecked Sendable {
         do {
             let since = metadataCache.generation
             var cursor: String?; var files: [String: DropboxItem] = [:]
+            // IDs by path: a deleted entry names a path, not an ID.
+            var paths: [String?: Set<String>] = [:]
             try await CloudPager.each(repeated: DropboxError.invalidResponse) { (next: String?) in
                 let page = try await listPage(path, cursor: next)
                 for item in page.entries {
-                    if item.tag == "deleted" { files = files.filter { $0.value.pathLower != item.pathLower } } else { files[item.id] = item }
+                    if item.tag == "deleted" {
+                        for id in paths.removeValue(forKey: item.pathLower) ?? [] { files[id] = nil }
+                    } else {
+                        if let old = files[item.id] { paths[old.pathLower]?.remove(item.id) }
+                        files[item.id] = item; paths[item.pathLower, default: []].insert(item.id)
+                    }
                 }
                 cursor = page.cursor
                 await onPage(Array(files.values), !page.hasMore)

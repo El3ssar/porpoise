@@ -31,7 +31,7 @@ public final class DropboxContentSource: CloudContentSource, @unchecked Sendable
     }
     public func remoteItem(_ item: DropboxItem) -> CloudRemoteItem {
         let parent = item.parentPath
-        let parentID = client?.metadataCache.files.first { $0.isFolder && $0.pathLower == parent }?.id ?? (parent.isEmpty ? "" : parent)
+        let parentID = client?.folderIDs[parent] ?? (parent.isEmpty ? "" : parent)
         return CloudRemoteItem(
             ref: .init(account: accountID, item: item.id), name: item.name, parents: [parentID],
             isFolder: item.isFolder, size: item.size, revision: item.rev,

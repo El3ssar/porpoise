@@ -21,6 +21,9 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     /// tens of MB on every lookup held readers, navigation included, for seconds.
     private var dirty = false
     private var madeDirectory = false
+    /// Bumped by every change: what a `derived` value was computed from.
+    private var revision: UInt64 = 0
+    private var derivedValues: [String: (revision: UInt64, value: Any)] = [:]
     /// Bumped by each `remember` (what a change made here returned). A listing or a page of changes fetched before
     /// then is older than what it remembered: it passes the generation it started at, and doesn't put that back.
     private var current: UInt64 = 0
@@ -43,6 +46,16 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     public func snapshot(_ key: String) -> Snapshot? { lock.withLock { state.listings[key] } }
     public func file(_ id: String) -> Item? { lock.withLock { state.files[id] } }
     public var files: [Item] { lock.withLock { Array(state.files.values) } }
+    /// A value computed from every cached file (an index by path, say), kept until the cache next changes, so that
+    /// lookups between changes don't each scan the account.
+    public func derived<Value>(_ name: String, _ build: ([String: Item]) -> Value) -> Value {
+        lock.withLock {
+            if let cached = derivedValues[name], cached.revision == revision, let value = cached.value as? Value { return value }
+            let value = build(state.files)
+            derivedValues[name] = (revision, value)
+            return value
+        }
+    }
     public func remember(_ files: [Item]) {
         guard !files.isEmpty else { return }
         lock.withLock {
@@ -150,7 +163,7 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     }
     public func clear() {
         lock.withLock {
-            state = State(); dirty = false
+            state = State(); dirty = false; revision &+= 1
         }
         CloudStateWriter.shared.discard(path.path) { [path] in try? FileManager.default.removeItem(at: path) }
     }
@@ -158,6 +171,7 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     public func flush() { CloudStateWriter.shared.flush(path.path) }
     /// Under the lock: marks the state changed and schedules one write for everything that changes meanwhile.
     private func persist() {
+        revision &+= 1
         if !madeDirectory {
             madeDirectory = true
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
