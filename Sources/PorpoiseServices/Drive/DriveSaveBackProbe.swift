@@ -41,7 +41,9 @@ public struct DriveSaveBackProbe {
                 step("staleIfMatch", await status(of: { try await mediaPatch(created, Data("stale".utf8), ifMatch: "\"porpoise-stale\"") }))
                 step("staleBytesKept", try await bytes(created.id) == Data("first version\n".utf8) ? "ok" : "overwritten")
                 // The v2 endpoint keeps resource etags; check whether it refuses a stale one and takes the current one.
-                _ = try await client.upload(source, parentID: parent, replacingID: created.id)
+                // Restore the first bytes with a plain v3 write: a revision-checked replace can see Drive's previous head for a
+                // moment after a write and refuse (live run 3).
+                try await mediaPatch(try await client.file(created.id), Data("first version\n".utf8), ifMatch: nil)
                 let v2 = try await v2Metadata(created.id)
                 step("v2etag", v2.etag?.isEmpty == false ? "returned" : "missing")
                 step("v2staleIfMatch", await status(of: { try await v2Put(created.id, Data("stale".utf8), ifMatch: "\"porpoise-stale\"") }))
