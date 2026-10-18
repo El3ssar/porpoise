@@ -100,8 +100,9 @@ private extension Array where Element == String {
 /// The ffmpeg under test: the one Porpoise ships (scripts/build-ffmpeg.sh), else one on PATH. CI builds Porpoise's.
 let testFFmpeg: String? = {
     // scripts/ci-like.sh gives this process a cooperative pool of one thread; ffmpeg, which inherits the setting,
-    // crashes with it in its sandbox. Its own pool is not what the run constrains (the variable was read at launch).
-    if getenv("LIBDISPATCH_COOPERATIVE_POOL_STRICT") != nil { unsetenv("LIBDISPATCH_COOPERATIVE_POOL_STRICT") }
+    // crashes with it in its sandbox. Its own pool is not what the run constrains (the variable was read at launch;
+    // `cooperativePoolIsStrict` keeps what it said).
+    if cooperativePoolIsStrict { unsetenv("LIBDISPATCH_COOPERATIVE_POOL_STRICT") }
     let built = repoRoot.appendingPathComponent("build/ffmpeg/ffmpeg").path
     if FileManager.default.isExecutableFile(atPath: built) { return built }
     let dirs = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init) + ["/opt/homebrew/bin", "/usr/local/bin"]

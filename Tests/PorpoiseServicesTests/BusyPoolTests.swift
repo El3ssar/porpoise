@@ -88,9 +88,7 @@ struct BusyPoolTests {
     @MainActor private func expectResponseWhileCooperativePoolIsTaken(_ url: URL, bytes: Data, priority: TaskPriority) throws {
         let release = Flag()
         let occupied = DispatchSemaphore(value: 0)
-        let blockers =
-            ProcessInfo.processInfo.environment["LIBDISPATCH_COOPERATIVE_POOL_STRICT"] == "1"
-            ? 1 : ProcessInfo.processInfo.activeProcessorCount
+        let blockers = cooperativePoolIsStrict ? 1 : ProcessInfo.processInfo.activeProcessorCount
         // Every worker of the priority, spinning without advertising a blocking wait.
         for _ in 0..<blockers {
             Task.detached(priority: priority) {
