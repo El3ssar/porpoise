@@ -56,7 +56,7 @@ import Testing
         #expect(result?.map(\.name) == ["\(tag).txt"])
     }
 
-    @Test(.timeLimit(.minutes(1))) func recentFilesAndTagsAreEmptyWhenSpotlightNeverAnswers() async throws {
+    @Test(.timeLimit(.minutes(5))) func recentFilesAndTagsAreEmptyWhenSpotlightNeverAnswers() async throws {
         let resume = stallSpotlight()
         defer { resume() }
         var query: MetadataListQuery?

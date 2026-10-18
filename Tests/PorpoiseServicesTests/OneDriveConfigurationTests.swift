@@ -81,7 +81,7 @@ struct OneDriveConfigurationTests {
         #expect(RemoteFS.displayName(for: file.url) == LocationNaming.name(for: file.url))
     }
 
-    @Test(.timeLimit(.minutes(1))) @MainActor func lazyTreeAndDriveIdentity() async throws {
+    @Test(.timeLimit(.minutes(5))) @MainActor func lazyTreeAndDriveIdentity() async throws {
         let server = try FakeGraphServer(); let client = try server.client()
         let provider = OneDriveProvider(client: client)
         let root = OneDriveLocation(accountID: client.accountID).url

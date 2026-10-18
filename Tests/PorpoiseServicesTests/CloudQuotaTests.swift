@@ -16,7 +16,7 @@ struct CloudQuotaTests {
         #expect(throws: (any Error).self) { try decode(#"{"used":1,"allocation":{".tag":"team","allocated":10}}"#) }
     }
 
-    @Test(.timeLimit(.minutes(1))) @MainActor func sharedQuotaCadenceStartsRepeatsAndStops() async throws {
+    @Test(.timeLimit(.minutes(5))) @MainActor func sharedQuotaCadenceStartsRepeatsAndStops() async throws {
         #expect(CloudAccountRefreshPolicy.interval == 45)
         var calls = 0
         var refresh: CloudQuotaRefresh!

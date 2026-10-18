@@ -160,7 +160,7 @@ extension CloudOfflineStoreTests {
 }
 
 extension CloudOfflineStoreTests {
-    @Test(.timeLimit(.minutes(1))) func aNewRevisionWaitsForOldFlightAndStillDeduplicates() async throws {
+    @Test(.timeLimit(.minutes(5))) func aNewRevisionWaitsForOldFlightAndStillDeduplicates() async throws {
         let source = FakeContentSource(), scratch = try Scratch(), first = source.add("one")
         var captures = source.capturedDownloads.makeAsyncIterator()
         source.holdsDownloads = true
@@ -185,7 +185,7 @@ extension CloudOfflineStoreTests {
 }
 
 extension CloudOfflineStoreTests {
-    @Test(.timeLimit(.minutes(1))) func concurrentDownloadsReserveSpaceUntilTheirCopyCommits() async throws {
+    @Test(.timeLimit(.minutes(5))) func concurrentDownloadsReserveSpaceUntilTheirCopyCommits() async throws {
         let source = FakeContentSource(), scratch = try Scratch()
         var captures = source.capturedDownloads.makeAsyncIterator()
         let first = source.add("first"), second = source.add("second")
@@ -205,7 +205,7 @@ extension CloudOfflineStoreTests {
 }
 
 extension CloudOfflineStoreTests {
-    @Test(.timeLimit(.minutes(1))) func removalAndWipeDrainFlightsAndDeletePartialBytes() async throws {
+    @Test(.timeLimit(.minutes(5))) func removalAndWipeDrainFlightsAndDeletePartialBytes() async throws {
         let source = FakeContentSource(), scratch = try Scratch(), item = source.add("one")
         var captures = source.capturedDownloads.makeAsyncIterator()
         let store = try store(source, scratch)

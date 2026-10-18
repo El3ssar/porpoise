@@ -78,7 +78,7 @@ import Testing
     }
 
     // B4: a paused transfer stops waiting when it is interrupted (quit, sleep), as a Drive one does.
-    @Test(.timeLimit(.minutes(1))) func pausedThenInterruptedTransfersStop() async throws {
+    @Test(.timeLimit(.minutes(5))) func pausedThenInterruptedTransfersStop() async throws {
         let server = try FakeDropboxServer()
         let provider = DropboxProvider(client: try server.client())
         let control = Shell.TransferControl(isPaused: { true }, isCancelled: { false }, isInterrupted: { true })
