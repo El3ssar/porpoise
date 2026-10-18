@@ -15,16 +15,27 @@ final class LocalSource: LocationContentSource {
     }
 
     func load(_ folder: URL, expanded: Set<URL>, deliver: @escaping (LocationListing) -> Void) -> LocationLoad {
+        // A newer load (FSEvents during a download, the user moving on) cancels this one: it stops listing, so
+        // superseded listings don't pile up on a slow mount.
+        let cancellation = DiskCancellation()
         DispatchQueue.global(qos: .userInitiated).async {
+            let cancelled = { cancellation.isCancelled }
             var listing = LocationListing()
-            do { listing.items = try DirectoryLister.list(folder) } catch { listing.error = Self.error(error, folder) }
+            do { listing.items = try DirectoryLister.list(folder, cancelled: cancelled) } catch {
+                if cancelled() { return }
+                listing.error = Self.error(error, folder)
+            }
             listing.vanished = listing.error != nil && folder.isFileURL && !FileManager.default.fileExists(atPath: folder.path)
             var kids: [URL: [FileItem]] = [:]
-            for e in expanded { kids[e] = (try? DirectoryLister.list(e)) ?? [] }
+            for e in expanded {
+                if cancelled() { return }
+                kids[e] = (try? DirectoryLister.list(e, cancelled: cancelled)) ?? []
+            }
+            if cancelled() { return }
             listing.children = kids
             DispatchQueue.main.async { deliver(listing) }
         }
-        return LocationLoad()
+        return LocationLoad { cancellation.cancel() }
     }
 
     static func error(_ error: Error, _ folder: URL) -> LocationLoadError {

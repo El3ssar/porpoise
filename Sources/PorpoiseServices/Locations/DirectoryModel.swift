@@ -51,8 +51,7 @@ public final class DirectoryModel {
     public private(set) var items: [FileItem] = []  // top level, unsorted, including hidden
     public private(set) var rows: [Row] = [] {
         didSet {
-            rowIndex = nil; rowIndexByPath = nil
-            rowFileKeys = FilePath.keys(rows.map { $0.item.url })
+            rowIndex = nil; rowIndexByPath = nil; rowFileKeys = nil
         }
     }
     public private(set) var groups: [ItemGroup] = []
@@ -236,7 +235,29 @@ public final class DirectoryModel {
 
     /// Re-lists the folder (and expanded subfolders) when any of them changes; reloads don't flicker.
     private lazy var watcher = FolderWatcher { [weak self] _ in
-        DispatchQueue.main.async { self?.reload() }
+        DispatchQueue.main.async { self?.folderChanged() }
+    }
+    /// The first change reloads at once; more within this time of that reload wait and make one reload at its end,
+    /// so a download or a copy writing into the folder doesn't list it again several times a second.
+    static let watchReloadInterval: TimeInterval = 0.5
+    private var lastWatchReload: TimeInterval = -.infinity
+    private var watchReloadPending = false
+
+    private func folderChanged() {
+        guard !watchReloadPending else { return }
+        let wait = lastWatchReload + Self.watchReloadInterval - ProcessInfo.processInfo.systemUptime
+        guard wait > 0 else { return watchReload() }
+        watchReloadPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+            guard let self else { return }
+            self.watchReloadPending = false
+            self.watchReload()
+        }
+    }
+
+    private func watchReload() {
+        lastWatchReload = ProcessInfo.processInfo.systemUptime
+        reload(changedOnly: true)
     }
     /// Bumped by every reload: results of an older (slower) load are dropped.
     private var loadToken = 0
@@ -420,7 +441,11 @@ public final class DirectoryModel {
 
     // MARK: Loading
 
-    public func reload(keepSelection: Bool = true) {
+    public func reload(keepSelection: Bool = true) { reload(keepSelection: keepSelection, changedOnly: false) }
+
+    /// `changedOnly`: a change in the folder (FSEvents), not a new visit or the user's reload: item counts are taken
+    /// again only for folders that changed.
+    private func reload(keepSelection: Bool = true, changedOnly: Bool) {
         currentLoad?.cancel(); currentLoad = nil
         source = LocationContentSources.source(for: location)
         folderPrefetch?.cancel(); folderPrefetch = nil
@@ -432,6 +457,7 @@ public final class DirectoryModel {
         let url = location
         tagCache = [:]
         cloudCache = [:]
+        fileKeyCache = [:]
         metadataWanted = []
         // Every load starts clean: an error of the previous location must not leak into this one.
         loadError = nil
@@ -463,7 +489,7 @@ public final class DirectoryModel {
         currentLoad = source.load(url, expanded: expanded) { [weak self] listing in
             guard let self, token == self.loadToken else { return }
             switch listing.part {
-            case .whole: self.apply(listing, of: url, from: source, token: token, keepSelection: keepSelection)
+            case .whole: self.apply(listing, of: url, from: source, token: token, keepSelection: keepSelection, changedOnly: changedOnly)
             case .page: self.applyPage(listing.items, complete: listing.complete, hasCache: cached != nil, token: token, keepSelection: keepSelection)
             case .end: self.finish(listing, of: url, from: source, hadCache: cached != nil)
             }
@@ -488,14 +514,17 @@ public final class DirectoryModel {
     }
 
     /// A source's answer for the location (and the expanded folders it listed with it).
-    private func apply(_ listing: LocationListing, of url: URL, from source: LocationContentSource, token: Int, keepSelection: Bool) {
+    private func apply(
+        _ listing: LocationListing, of url: URL, from source: LocationContentSource, token: Int, keepSelection: Bool, changedOnly: Bool = false
+    ) {
         let traits = source.traits
         if traits.optimisticEdits, listing.complete { listingArrived(token) }
+        let before = changedOnly ? folderDates() : [:]
         items = traits.optimisticEdits ? withEdits(listing.items, in: url) : listing.items
         if let kids = listing.children { children = keepingExpanded(kids) }
         isLoading = false
         if traits.dynamicView { applyDynamicView() }
-        if traits.folderCounts { recountFolders = true }
+        if traits.folderCounts { forgetFolderCounts(changedSince: changedOnly ? before : nil) }
         loadError = listing.error?.message
         blockedByPrivacy = listing.error == .privacy
         if let vanished = listing.vanished {
@@ -627,6 +656,25 @@ public final class DirectoryModel {
     }
 
     // MARK: Folder sizes (Details "Size" column shows item counts, Dolphin's default)
+
+    /// Modification dates of the listed folders (top level and expanded).
+    private func folderDates() -> [URL: Date?] {
+        var dates: [URL: Date?] = [:]
+        for it in items + children.values.joined() where it.isBrowsableFolder { dates[it.url] = it.modificationDate }
+        return dates
+    }
+
+    /// After a reload, counts are taken again. A folder's item count changes only with its modification date, so
+    /// after a change in the folder (`before`: the dates listed before it) only the folders whose date changed, and
+    /// new ones, are counted again. Content sizes depend on deeper folders too: all of them are.
+    private func forgetFolderCounts(changedSince before: [URL: Date?]?) {
+        guard let before, Settings.shared.folderSizeMode == .itemCount else { return recountFolders = true }
+        for (url, date) in folderDates() where before[url] == nil || before[url]! != date {
+            // A count under way may have read the folder before the change.
+            if pendingCounts.contains(url) { return recountFolders = true }
+            folderCounts[url] = nil
+        }
+    }
 
     /// Folder sizes are counted here, one model after another: a serial queue of its own always gets a thread,
     /// where utility work on the shared pool got none while other work kept every core busy.
@@ -784,10 +832,21 @@ public final class DirectoryModel {
     private var rowIndex: [URL: Int]?
     /// Canonical entry identity, built only after a URL miss. Remote scopes retain their complete URL.
     private var rowIndexByPath: [String: Int]?
-    private var rowFileKeys: [String] = []
+    private var rowFileKeys: [String]?
+    /// Keys already worked out since the last reload: each search batch or filter keystroke rebuilds the rows, and
+    /// resolving all of them again took tens of milliseconds on the main thread for thousands of results.
+    private var fileKeyCache: [URL: String] = [:]
 
-    /// Stable for this delivered listing; rendering performs no filesystem work.
-    public func identity(ofRow index: Int) -> String { rowFileKeys[index] }
+    /// Stable for this delivered listing; rendering performs no filesystem work (all rows are keyed at once, on the
+    /// first ask after the rows change).
+    public func identity(ofRow index: Int) -> String {
+        if let keys = rowFileKeys { return keys[index] }
+        let missing = rows.map(\.item.url).filter { fileKeyCache[$0] == nil }
+        for (url, key) in zip(missing, FilePath.keys(missing)) { fileKeyCache[url] = key }
+        let keys = rows.map { fileKeyCache[$0.item.url]! }
+        rowFileKeys = keys
+        return keys[index]
+    }
 
     public func index(of url: URL) -> Int? {
         if rowIndex == nil {

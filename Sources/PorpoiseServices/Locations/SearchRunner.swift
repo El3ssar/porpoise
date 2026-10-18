@@ -260,15 +260,19 @@ public final class SearchRunner: NSObject {
                 if work.isCancelled { return }
                 n += 1
                 if n > Self.maxSimpleVisited { break }
-                guard let item = FileItem.load(u), !(contents && item.isBrowsableFolder),
-                    spec.metadataMatches(item)
-                else { continue }
-                if spec.nameMatches(item.name) {
-                    out.append(item)
-                } else if contents, let value = IndexFileText.read(u.path, limit: Self.maxContentSearchSize),
-                    let line = value.split(separator: "\n", omittingEmptySubsequences: false).first(where: { spec.contentMatches(String($0)) })
-                {
-                    out.append(item); lines[u] = FolderSearch.snippet(String(line), around: spec.text)
+                // Names are checked before the item is read; what each entry autoreleases goes with it.
+                guard contents || spec.nameMatches(u.lastPathComponent) else { continue }
+                autoreleasepool {
+                    guard let item = FileItem.load(u), !(contents && item.isBrowsableFolder),
+                        spec.metadataMatches(item)
+                    else { return }
+                    if spec.nameMatches(item.name) {
+                        out.append(item)
+                    } else if contents, let value = IndexFileText.read(u.path, limit: Self.maxContentSearchSize),
+                        let line = value.split(separator: "\n", omittingEmptySubsequences: false).first(where: { spec.contentMatches(String($0)) })
+                    {
+                        out.append(item); lines[u] = FolderSearch.snippet(String(line), around: spec.text)
+                    }
                 }
                 if out.count >= Self.maxSimpleResults { break }
             }

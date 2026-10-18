@@ -120,4 +120,29 @@ import Testing
         #expect(DirectoryLister.childCount(s.path("missing"), includeHidden: true) == nil)
         #expect(throws: (any Error).self) { try DirectoryLister.list(s.path("missing")) }
     }
+
+    /// A listing reads its entries' attributes along with it (one pass): the same items as reading each one alone.
+    @Test func listingMatchesLoadingEachEntry() throws {
+        let s = try Scratch()
+        try s.file("notes.txt", "hello"); try s.file(".hidden"); try s.folder("Folder")
+        try s.file("Mini.app/Contents/Info.plist"); try s.symlink("link", to: "notes.txt"); try s.symlink("folder link", to: "Folder")
+        let readOnly = try s.file("read only.txt")
+        try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: readOnly.path)
+        let listed = try DirectoryLister.list(s.url).sorted { $0.name < $1.name }
+        let loaded = try fm.contentsOfDirectory(atPath: s.url.path).map { try load(s.url.appendingPathComponent($0)) }.sorted { $0.name < $1.name }
+        #expect(listed.count == 7 && listed == loaded)
+        // Through a symlink to the folder: the items keep the path as given.
+        let viaLink = try DirectoryLister.list(s.path("folder link"))
+        #expect(viaLink.isEmpty)
+        let alias = try s.symlink("alias", to: ".")
+        #expect(try DirectoryLister.list(alias).allSatisfy { $0.url.deletingLastPathComponent().lastPathComponent == "alias" })
+    }
+
+    /// A listing nobody waits for any more stops.
+    @Test func aCancelledListingStops() throws {
+        let s = try Scratch()
+        try s.file("a"); try s.file("b")
+        #expect(throws: CancellationError.self) { try DirectoryLister.list(s.url, cancelled: { true }) }
+        #expect(try DirectoryLister.list(s.url, cancelled: { false }).count == 2)
+    }
 }
