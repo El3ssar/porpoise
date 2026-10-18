@@ -154,6 +154,7 @@ import Testing
 
     @Test func manyConcurrentRequests() async throws {
         let f = try Fixture(); defer { f.stop() }
+        f.server.connectionLimit = 32
         let results = try await withThrowingTaskGroup(of: Bool.self) { group in
             for i in 0..<24 {
                 group.addTask {
@@ -266,6 +267,85 @@ import Testing
         let n = recv(fd, &byte, 1, 0)
         #expect(n == 0)  // closed by the server, not timed out on our side
         #expect(Date().timeIntervalSince(started) < 5)
+    }
+
+    /// Keep sockets open so admission and slot reclamation are observed, rather than relying on request timing.
+    @Test func capsConnectionsAndReclaimsCancelledSlots() async throws {
+        let f = try Fixture(); defer { f.stop() }
+        f.server.connectionLimit = 2
+        let first = try Self.openSocket(port: f.port)
+        let second = try Self.openSocket(port: f.port)
+        defer { close(first); close(second) }
+        await expectEventually(timeout: 5) { f.server.activeConnectionCount == 2 }
+        let rejected = try Self.openSocket(port: f.port)
+        defer { close(rejected) }
+        var byte: UInt8 = 0
+        #expect(recv(rejected, &byte, 1, 0) == 0)
+        #expect(f.server.activeConnectionCount == 2)
+        shutdown(first, SHUT_RDWR)
+        await expectEventually(timeout: 5) { f.server.activeConnectionCount == 1 }
+        #expect(try f.get("/\(f.secret)/stream/index.m3u8").status == 200)
+        f.stop()
+        #expect(recv(second, &byte, 1, 0) == 0)
+        #expect(f.server.activeConnectionCount == 0)
+    }
+
+    @Test func stalledBodySendIsClosed() async throws {
+        let f = try Fixture(); defer { f.stop() }
+        f.server.sendTimeout = 0.3
+        let file = try f.scratch.file("root/stream/huge.mp4", "")
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.truncate(atOffset: 128 * 1024 * 1024)
+        try handle.close()
+        let fd = try Self.openSocket(port: f.port)
+        defer { close(fd) }
+        var small: Int32 = 1024
+        setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &small, socklen_t(MemoryLayout<Int32>.size))
+        await expectEventually(timeout: 5) { f.server.activeConnectionCount == 1 }
+        let request = Data("GET /\(f.secret)/stream/huge.mp4 HTTP/1.1\r\nHost: localhost\r\n\r\n".utf8)
+        _ = request.withUnsafeBytes { send(fd, $0.baseAddress, $0.count, 0) }
+        // Read nothing: the kernel's send buffer fills and the idle deadline must reclaim the slot.
+        await expectEventually(timeout: 5) { f.server.activeConnectionCount == 0 }
+    }
+
+    @Test func stalledRangeRequestsAreClosed() async throws {
+        let server = LocalFileServer()
+        server.sendTimeout = 0.3
+        defer { server.stop() }
+        let url = try #require(
+            server.start(
+                source: .init(
+                    size: 10, contentType: "video/mp4",
+                    read: { _ in
+                        try await Task.sleep(for: .seconds(60))
+                        return Data(count: 10)
+                    })))
+        let fd = try Self.openSocket(port: UInt16(try #require(url.port)))
+        defer { close(fd) }
+        let request = Data("GET \(url.path) HTTP/1.1\r\nHost: localhost\r\n\r\n".utf8)
+        _ = request.withUnsafeBytes { send(fd, $0.baseAddress, $0.count, 0) }
+        var response = [UInt8](repeating: 0, count: 4096)
+        var received: Int
+        repeat { received = recv(fd, &response, response.count, 0) } while received > 0
+        // The deadline also covers a read task that has not yet been scheduled under load.
+        #expect(received == 0)
+        await expectEventually(timeout: 5) { server.activeConnectionCount == 0 }
+    }
+
+    private static func openSocket(port: UInt16) throws -> Int32 {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw POSIXError(.EIO) }
+        var timeout = timeval(tv_sec: 5, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let result = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard result == 0 else { close(fd); throw POSIXError(.ECONNREFUSED) }
+        return fd
     }
 
     @Test func listensOnLoopbackOnly() throws {

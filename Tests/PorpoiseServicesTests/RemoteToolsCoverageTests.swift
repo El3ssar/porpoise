@@ -63,8 +63,8 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
     }
 
     /// The install's message (nil when it worked).
-    private func install() async throws -> String? {
-        try await awaitCallback(timeout: 30) { c in AndroidTools.install { c.resume(returning: $0) } }
+    private func install(verifying verify: @escaping (URL) -> Bool = { _ in true }) async throws -> String? {
+        try await awaitCallback(timeout: 30) { c in AndroidTools.install(verifying: verify) { c.resume(returning: $0) } }
     }
 
     @Test func installsTheDownloadedToolsAndPrefersThem() async throws {
@@ -85,6 +85,18 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         #expect(AndroidTools.adbPath == adb.path)
         #expect(AndroidTools.isInstalled)
         #expect(ADBProvider.adbPath == adb.path)
+    }
+
+    @Test func rejectsUntrustedADBWithoutReplacingExistingTools() async throws {
+        try scratch.file("support/platform-tools/old-file", "keep")
+        try makeZip("unsigned.zip", withADB: true)
+        try serve("unsigned.zip")
+        let result = try await install(verifying: AndroidTools.isTrustedADB)
+        #expect(result?.contains("could not be verified") == true)
+        #expect(scratch.read("support/platform-tools/old-file") == "keep")
+        #expect(await eventually(10) { scratch.listing("support") == ["platform-tools"] })
+        #expect(!AndroidTools.isTrustedADB(URL(fileURLWithPath: "/usr/bin/true")))
+        #expect(!AndroidTools.isTrustedADB(scratch.path("missing")))
     }
 
     @Test func aFailedDownloadIsReported() async throws {

@@ -1,4 +1,5 @@
 import Foundation
+import PorpoiseHelperKit
 
 /// Android support needs Google's `adb`. Google's licence doesn't allow shipping it inside Porpoise, so Porpoise
 /// downloads the official platform-tools from Google on request, into its own Application Support folder.
@@ -66,6 +67,18 @@ public enum AndroidTools {
 
     /// Downloads and unpacks platform-tools; calls back on the main thread with an error message or nil.
     public static func install(done: @escaping (String?) -> Void) {
+        install(verifying: isTrustedADB, done: done)
+    }
+
+    /// Only Google's Developer ID-signed adb is accepted from the downloaded archive.
+    static func isTrustedADB(_ url: URL) -> Bool {
+        CodeSigning.isIntact(
+            at: url,
+            requirement: "anchor apple generic and identifier \"adb\" and certificate leaf[subject.OU] = \"EQHXZ8M8AV\"")
+    }
+
+    /// The verifier is an argument so archive tests can use a fixture without changing the production policy.
+    static func install(verifying verify: @escaping (URL) -> Bool, done: @escaping (String?) -> Void) {
         URLSession.shared.downloadTask(with: downloadURL) { file, response, error in
             func finish(_ msg: String?) { DispatchQueue.main.async { done(msg) } }
             guard let file, (response as? HTTPURLResponse)?.statusCode == 200 else {
@@ -81,6 +94,9 @@ public enum AndroidTools {
                 let unpacked = staging.appendingPathComponent("platform-tools")
                 guard r.status == 0, fm.isExecutableFile(atPath: unpacked.appendingPathComponent("adb").path) else {
                     return finish("The downloaded archive could not be unpacked.")
+                }
+                guard verify(unpacked.appendingPathComponent("adb")) else {
+                    return finish("The downloaded adb could not be verified as signed by Google. The existing tools were kept.")
                 }
                 try? fm.removeItem(at: installDir)
                 try fm.moveItem(at: unpacked, to: installDir)
