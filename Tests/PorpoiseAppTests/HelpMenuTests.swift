@@ -1,11 +1,13 @@
 import AppKit
+import PorpoiseCore
 import PorpoiseServices
+import PorpoiseTestSupport
 import Testing
 
 @testable import Porpoise
 
 /// Every Help item does something: the shortcuts sheet, the install guide, a bug report, the website, donations.
-@MainActor struct HelpMenuTests {
+@MainActor @Suite(.serialized, .isolatedSettings) struct HelpMenuTests {
     @Test func helpItemsReachRealActions() throws {
         _ = NSApplication.shared
         let menu = AppDelegate.shared.buildMainMenu()
@@ -30,5 +32,29 @@ import Testing
         let draft = try BugReportDraft(store: Diagnostics.shared)
         #expect(draft.diagnostics.text.contains("helper.unavailable"))
         #expect(draft.issueURL(repository: AppInfo.repository).absoluteString.hasPrefix("https://github.com/El3ssar/porpoise/issues/new?"))
+    }
+
+    /// Every icon a menu names exists in the bundled theme: the menu bar, the toolbar's menu, and the context menus
+    /// of a file, a folder, an app and the background.
+    @Test func everyMenuIconExists() throws {
+        _ = NSApplication.shared
+        NSMenuItem.missingIcons = []
+        _ = AppDelegate.shared.buildMainMenu()
+        let scratch = try Scratch()
+        let file = scratch.url.appendingPathComponent("note.txt")
+        try "x".write(to: file, atomically: true, encoding: .utf8)
+        let folder = scratch.url.appendingPathComponent("Folder")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let tab = PorpoiseTab(url: scratch.url)
+        let controller = MainWindowController(window: nil)
+        controller.tabs = [tab]
+        _ = controller.hamburgerMenu()
+        let app = FileItem(url: URL(fileURLWithPath: "/System/Applications/Calculator.app"), name: "Calculator.app", isDirectory: true)
+        for item in [
+            FileItem(url: file, name: "note.txt", isDirectory: false), FileItem(url: folder, name: "Folder", isDirectory: true), app, nil,
+        ] {
+            _ = controller.contextMenu(for: item, in: tab.primary)
+        }
+        #expect(NSMenuItem.missingIcons.isEmpty, "no icon for: \(NSMenuItem.missingIcons.sorted())")
     }
 }

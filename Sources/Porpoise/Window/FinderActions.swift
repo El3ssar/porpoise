@@ -19,8 +19,8 @@ extension MainWindowController {
             { FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first }
         ),
         ("Computer", "c", [.command, .shift], "computer", { URL(fileURLWithPath: "/Volumes") }),
-        ("Applications", "a", [.command, .shift], "folder-applications", { URL(fileURLWithPath: "/Applications") }),
-        ("Utilities", "u", [.command, .shift], "applications-utilities", { URL(fileURLWithPath: "/Applications/Utilities") }),
+        ("Applications", "a", [.command, .shift], "applications-other", { URL(fileURLWithPath: "/Applications") }),
+        ("Utilities", "u", [.command, .shift], "utilities-terminal", { URL(fileURLWithPath: "/Applications/Utilities") }),
         (
             "iCloud Drive", "i", [.command, .shift], "folder-cloud",
             {
@@ -28,7 +28,7 @@ extension MainWindowController {
             }
         ),
         (
-            "Library", "l", [.command, .shift], "folder-library",
+            "Library", "l", [.command, .shift], "folder-system",
             { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library") }
         ),
     ]

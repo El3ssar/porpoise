@@ -88,7 +88,7 @@ extension MainWindowController {
         m.addItem(item("Show Previews", "view-preview", #selector(togglePreviews(_:))))
         m.addItem(item("Show Hidden Files", "view-hidden", #selector(toggleHiddenFiles(_:))))
         m.addItem(.separator())
-        m.addItem(item("Restore to Defaults", "edit-reset", #selector(restoreViewDefaults(_:))))
+        m.addItem(item("Restore to Defaults", "edit-undo", #selector(restoreViewDefaults(_:))))
         m.addItem(item("Adjust View Display Style…", "configure", #selector(adjustViewStyle(_:))))
         return m
     }

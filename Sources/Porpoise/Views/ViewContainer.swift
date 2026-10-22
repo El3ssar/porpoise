@@ -152,7 +152,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             ("Move to Trash", "user-trash", #selector(MainWindowController.moveToTrash(_:))),
             ("Rename", "edit-rename", #selector(MainWindowController.renameItem(_:))),
             ("Duplicate", "edit-duplicate", #selector(MainWindowController.duplicateItem(_:))),
-            ("Copy Location", "edit-copy-path", #selector(MainWindowController.copyLocation(_:))),
+            ("Copy Location", "link", #selector(MainWindowController.copyLocation(_:))),
             ("Get Info", "document-properties", #selector(MainWindowController.properties(_:))),
         ]
 
