@@ -28,6 +28,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     let filterBar = FilterBar()
     let searchBar = SearchBar()
     let messageBar = MessageBar()
+    /// What the list says when it shows nothing: empty, still loading, or why it failed and what to do.
+    let listState = ListStateView()
+    /// The search that last finished failed, in its own words ("Nothing found" would be wrong then).
+    private var searchError: String?
     /// Items the message bar says went to a cloud Trash (its Undo); Edit › Undo of them clears the message.
     var cloudTrashNotice: Set<URL> = []
     /// The account whose offline message shows (it goes, and the folder is read again, when the account is back).
@@ -122,7 +126,11 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             guard let self else { return }
             NSWorkspace.shared.open(Self.storagePage(for: self.url))
         }
-        for v in [scroll, header, searchBar, messageBar, selectionTop, selectionBottom, filterBar, statusBar] as [NSView] { addSubview(v) }
+        for v in [scroll, listState, header, searchBar, messageBar, selectionTop, selectionBottom, filterBar, statusBar] as [NSView] {
+            addSubview(v)
+        }
+        listState.isHidden = true
+        listState.onAction = { [weak self] action in self?.perform(action) }
         list.onZoomPreview = { [weak self] size in
             self?.statusBar.zoomLevel = ZoomLevels.continuousLevel(for: size)
         }
@@ -193,13 +201,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             if PlacesModel.isCloud(self.model.location) {
                 self.showCloudState()
             } else if let e = self.model.loadError {
-                if self.model.blockedByPrivacy {
-                    self.messageBar.show(e, error: false, action: "Open Privacy Settings…") {
-                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
-                    }
-                } else {
-                    self.messageBar.show(e, error: true)
-                }
+                // With nothing listed, the list itself says what happened (`listState`); this is a failure after some.
+                if !self.model.rows.isEmpty { self.messageBar.show(e, error: true) }
             } else if self.model.location.scheme == "network" {
                 // Local Network is asked for here, at the first visit, rather than at first launch.
                 SystemIntegration.FirstNeed.localNetwork { [weak self] in
@@ -363,6 +366,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             y += ItemListView.headerHeight
         }
         scroll.frame = CGRect(x: 0, y: y, width: bounds.width, height: max(0, bottom - y))
+        listState.frame = scroll.frame
         if scroll.frame.size != laidOutScrollSize {
             laidOutScrollSize = scroll.frame.size
             list.transitions.resized()
@@ -461,6 +465,36 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     func reload() { model.reload() }
 
+    /// Shows, over the list, what an empty list means; nothing while it lists items or the app library shows.
+    func refreshListState() {
+        guard !showsApps, model.rows.isEmpty else { return listState.show(nil) }
+        let location = model.location
+        if let e = model.loadError, !model.isSearching, !(model.isLoading && model.items.isEmpty) {
+            let missing = location.isFileURL && !FileManager.default.fileExists(atPath: location.path)
+            listState.show(
+                LoadErrorPresentation.error(
+                    e, location: location, missing: missing, blockedByPrivacy: model.blockedByPrivacy, cloud: PlacesModel.isCloud(location)))
+        } else {
+            let trash = location.isFileURL && (location.lastPathComponent == ".Trash" || location.path.contains("/.Trashes/"))
+            listState.show(
+                LoadErrorPresentation.empty(
+                    loading: model.isLoading && model.items.isEmpty, searching: model.isSearching, searchError: searchError,
+                    filtering: model.filter.isActive, trash: trash))
+        }
+    }
+
+    private func perform(_ action: ListState.Action) {
+        switch action {
+        case .retry: reload()
+        case .goUp:
+            setURL(
+                model.location.isFileURL
+                    ? DirectoryModel.nearestExisting(model.location.deletingLastPathComponent()) : model.location.deletingLastPathComponent())
+        case .openPrivacySettings:
+            SystemIntegration.openPrivacyPane("Privacy_AllFiles")
+        }
+    }
+
     /// Keep unrelated preferences out of the listing/re-layout path, including panes in hidden tabs.
     private func settingsChanged(key: String?) {
         switch key {
@@ -515,6 +549,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     }
 
     func updateStatus() {
+        refreshListState()
         if showsApps {
             // Apps, not files and bytes (bundle sizes would need a scan of every app).
             let n = model.rows.count, sel = model.selection.count
@@ -529,9 +564,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             statusBar.text = FileFormat.summary(folders: c.folders, files: c.files, bytes: c.bytes, selected: true)
         } else {
             let c = model.visibleCounts
+            let summary = FileFormat.summary(folders: c.folders, files: c.files, bytes: c.bytes, selected: false)
             statusBar.text =
                 model.isLoading && model.rows.isEmpty
-                ? "Loading folder…" : FileFormat.summary(folders: c.folders, files: c.files, bytes: c.bytes, selected: false)
+                ? "Loading folder…" : summary.isEmpty ? (model.loadError == nil ? FileFormat.itemCount(0) : listState.state?.title ?? "") : summary
         }
         statusBar.zoomLevel = ZoomLevels.continuousLevel(for: zoomView.iconSize)
         if PlacesModel.isCloud(url) {
@@ -733,6 +769,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
         let scope = everywhere ? FileManager.default.homeDirectoryForCurrentUser : url
         statusBar.progress = 0.1
+        searchError = nil
         // What's shown stays until results come (the folder, or the previous results); then it all morphs at once,
         // like the split view: what still matches glides to its place among the results, the rest fades out, and
         // the new results come in one after another.
@@ -758,8 +795,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             }
             self.statusBar.progress = done ? nil : 0.5
             if done {
-                let result = items.isEmpty ? "No items found." : "\(items.count) items found."
+                let result = items.isEmpty ? "No items found." : "\(FileFormat.itemCount(items.count)) found."
+                self.searchError = runner.queryError
                 self.statusBar.showMessage(runner.queryError ?? (result + " · " + SearchIndex.shared.statusText))
+                self.refreshListState()
             }
         }
         searchQuery?.start()
