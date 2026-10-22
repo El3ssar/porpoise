@@ -214,6 +214,22 @@ final class FileOperationsDialogs: FileOperationsUI {
             }
         }
         jobsPanel.add()
+        let window = activity.originWindow as? NSWindow
+        SystemIntegration.FirstNeed.appManagement(activity.kind, activity.sources) { Self.explainAppManagement(on: window) }
+    }
+
+    /// The first app moved or deleted while App Management is off: what it is, and where to switch it on.
+    static func explainAppManagement(on window: NSWindow?) {
+        let a = NSAlert()
+        a.messageText = "Allow Porpoise to manage apps"
+        a.informativeText =
+            "macOS stops one app from moving, updating or deleting another unless you allow it. Switch Porpoise on "
+            + "under App Management, then try again."
+        a.addButton(withTitle: "Open App Management")
+        a.addButton(withTitle: "Not Now")
+        a.runSheet(for: window) { r in
+            if r == .alertFirstButtonReturn { SystemIntegration.openPrivacyPane("Privacy_AppBundles") }
+        }
     }
     func jobProgressed(_ activity: Activity, _ progress: JobProgress) {}
     func jobFinished(_ activity: Activity) {

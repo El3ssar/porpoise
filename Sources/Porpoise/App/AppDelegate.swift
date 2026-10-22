@@ -38,12 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         {
             args = [(item.deletingLastPathComponent(), item)]
         }
-        // First launch: the onboarding assistant comes first; the browser window opens when it's done.
-        if args.isEmpty, windows.isEmpty, OnboardingWindowController.shouldShow {
-            OnboardingWindowController.show { [weak self] in self?.openInitialWindows(args) }
-        } else {
-            openInitialWindows(args)
-        }
+        // First launch: the browser window at once, with the welcome as a sheet on it (only when launched plainly).
+        let welcome = args.isEmpty && windows.isEmpty && OnboardingWindowController.shouldShow
+        openInitialWindows(args)
+        if welcome { OnboardingWindowController.show(on: windows.first?.window) }
         Updates.shared.start()
         PrivilegedHelper.migrateFromLoginItems()
         // After the windows are up, so the question has something behind it.
@@ -275,7 +273,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Cmd+W in windows without tabs (Settings, Properties…) closes the window, as on any Mac.
     @objc func closeCurrentTab(_ sender: Any?) { NSApp.keyWindow?.performClose(sender) }
 
-    @objc func showPermissions(_ sender: Any?) { OnboardingWindowController.show(at: OnboardingWindowController.firstMissing) }
+    /// Every permission, its state and its switch: Settings › System.
+    @objc func showPermissions(_ sender: Any?) { showSettings(page: "System") }
     @objc func checkForUpdates(_ sender: Any?) { Updates.shared.checkForUpdates(sender) }
     @objc func supportPorpoise(_ sender: Any?) { if let u = URL(string: AppInfo.sponsorPage) { NSWorkspace.shared.open(u) } }
 

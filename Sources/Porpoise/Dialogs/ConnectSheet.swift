@@ -101,7 +101,8 @@ final class ConnectSheet: SecondaryWindowController {
             content.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 22),
             content.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -22),
             content.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -18),
-            box.widthAnchor.constraint(equalToConstant: 600),
+            // Six tiles across, at their full width.
+            box.widthAnchor.constraint(equalToConstant: ConnectTile.rowWidth(ServerKind.allCases.count) + 44),
         ])
         window?.contentView = box
         if let window { Theme.dress(window) }
@@ -112,14 +113,17 @@ final class ConnectSheet: SecondaryWindowController {
     private func pickPage() -> NSView {
         let title = Self.heading("Connect")
         let sub = Self.secondary("Add a cloud account or a server. It appears in the sidebar.")
+        // Only what can be added now gets a tile; the rest are named on one quiet line under them.
         let cloud = NSStackView(
-            views: CloudProvider.allCases.map { p in
+            views: CloudProvider.allCases.filter(\.isAvailable).map { p in
                 let t = ConnectTile(title: p.title, image: BrandMarks.image(p.brand, size: 30), available: p.isAvailable)
                 t.identifier = NSUserInterfaceItemIdentifier("tile-" + p.rawValue)
                 t.onClick = { [weak self] in self?.startCloud(p) }
                 return t
             })
-        cloud.spacing = 8
+        cloud.spacing = ConnectTile.spacing
+        let later = CloudProvider.allCases.filter { !$0.isAvailable }.map(\.title)
+        let more = Self.secondary("More services coming: " + later.joined(separator: ", ") + ".")
         let servers = NSStackView(
             views: ServerKind.allCases.map { k in
                 let t = ConnectTile(title: k.title, image: Self.symbol(k.symbol), available: k.isAvailable)
@@ -130,19 +134,21 @@ final class ConnectSheet: SecondaryWindowController {
                 }
                 return t
             })
-        servers.spacing = 8
+        servers.spacing = ConnectTile.spacing
         let tip = Self.secondary("Tip: you can also paste a server address or a share link in the location bar.")
         let cancel = Self.button("Cancel", self, #selector(close(_:)))
         cancel.keyEquivalent = "\u{1b}"
         let stack = NSStackView(views: [
-            title, sub, Self.caption("CLOUD ACCOUNTS"), cloud, Self.caption("SERVERS"), servers, Self.row([tip, NSView(), cancel]),
+            title, sub, Self.caption("CLOUD ACCOUNTS"), cloud, more, Self.caption("SERVERS"), servers, Self.row([tip, NSView(), cancel]),
         ])
+        more.isHidden = later.isEmpty
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
         stack.setCustomSpacing(4, after: title)
         stack.setCustomSpacing(16, after: sub)
-        stack.setCustomSpacing(14, after: cloud)
+        stack.setCustomSpacing(later.isEmpty ? 14 : 6, after: cloud)
+        stack.setCustomSpacing(14, after: more)
         stack.setCustomSpacing(18, after: servers)
         stack.views.last?.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         return stack
@@ -420,15 +426,20 @@ final class ConnectTile: NSControl {
     private let available: Bool
     private var hovering = false
     private var pressing = false
+    /// Wide enough for the longest name ("S3-compatible", "Windows (SMB)") on one line.
+    static let size = CGSize(width: 100, height: 78)
+    static let spacing: CGFloat = 8
+    static let titleFont = NSFont.systemFont(ofSize: 11, weight: .medium)
+    static func rowWidth(_ count: Int) -> CGFloat { CGFloat(count) * size.width + CGFloat(max(count - 1, 0)) * spacing }
 
     init(title: String, image: NSImage?, available: Bool) {
         self.title = title
         self.image = image
         self.available = available
-        super.init(frame: CGRect(x: 0, y: 0, width: 86, height: 78))
+        super.init(frame: CGRect(origin: .zero, size: Self.size))
         translatesAutoresizingMaskIntoConstraints = false
-        widthAnchor.constraint(equalToConstant: 86).isActive = true
-        heightAnchor.constraint(equalToConstant: 78).isActive = true
+        widthAnchor.constraint(equalToConstant: Self.size.width).isActive = true
+        heightAnchor.constraint(equalToConstant: Self.size.height).isActive = true
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
         toolTip = available ? nil : "\(title) is coming in a later version."
         setAccessibilityRole(.button)
@@ -480,13 +491,13 @@ final class ConnectTile: NSControl {
         p.alignment = .center
         p.lineBreakMode = .byTruncatingTail
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: Theme.windowText.withAlphaComponent(alpha * 0.9),
+            .font: Self.titleFont, .foregroundColor: Theme.windowText.withAlphaComponent(alpha * 0.9),
             .paragraphStyle: p,
         ]
         (title as NSString).draw(in: CGRect(x: 4, y: 48, width: r.width - 8, height: 15), withAttributes: attrs)
         if !available {
             let small: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 9), .foregroundColor: Theme.windowTextInactive, .paragraphStyle: p,
+                .font: NSFont.systemFont(ofSize: 10), .foregroundColor: Theme.windowTextInactive, .paragraphStyle: p,
             ]
             ("Coming soon" as NSString).draw(in: CGRect(x: 4, y: 62, width: r.width - 8, height: 12), withAttributes: small)
         }

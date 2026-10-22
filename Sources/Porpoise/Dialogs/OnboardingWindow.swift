@@ -1,53 +1,59 @@
 import AppKit
 import PorpoiseServices
 
-/// First-run assistant: welcome, then every permission Porpoise needs (Full Disk Access, App Management, administrator
-/// actions, Local Network), each detected live, then done. Shown before the first browser window; also reachable
-/// later from Porpoise › Permissions…, which starts at the first permission that's still missing.
+/// First-run welcome: one sheet over the first browser window, in two steps (welcome, then Full Disk Access, the one
+/// permission worth asking for up front). Everything else is asked for the first time it's needed: the helper at the
+/// first action on a system-owned item, App Management at the first app moved, Local Network at the first Network visit
+/// (see `SystemIntegration.FirstNeed`). All of them are listed in Settings › System.
 final class OnboardingWindowController: SecondaryWindowController {
     static var shared: OnboardingWindowController?
-    /// Set once the assistant has been finished (v2: with all four permissions).
-    private static let doneKey = "onboardingDone2"
+    /// Set once the welcome has been seen (finished, skipped or closed): Porpoise asks in context from then on.
+    /// Kept from the earlier four-page assistant, so whoever finished that isn't welcomed again.
+    static let doneKey = "onboardingDone2"
 
-    /// Until it's been finished once, and while something is missing (PORPOISE_FORCE_ONBOARDING shows it in a test instance).
+    /// Until it's been seen once, and while Full Disk Access is off (PORPOISE_FORCE_ONBOARDING shows it in a test instance).
     static var shouldShow: Bool {
         if TestEnvironment.forceOnboarding.isSet { return true }
-        return !Settings.isTesting && !Settings.store.bool(forKey: doneKey) && !SystemIntegration.allPermissionsGranted
+        return !Settings.isTesting && !Settings.store.bool(forKey: doneKey) && !PrivacyAccess.hasFullDiskAccess
     }
 
-    /// The helper comes first: its Full Disk Access switch then sits next to Porpoise's, granted in one visit.
-    enum Step: Int, CaseIterable { case welcome, admin, fullDisk, apps, network, done }
-    /// Porpoise › Permissions…: the first permission still missing.
-    static var firstMissing: Step { Step.allCases.first { $0.page != nil && !($0.page!.granted()) } ?? .fullDisk }
+    enum Step: Int, CaseIterable { case welcome, fullDisk }
 
     /// For tests: the shown step, or "none".
     static var debugStep: String { shared.map { "\($0.step)" } ?? "none" }
 
-    /// `onFinish` runs once the assistant is closed (by finishing or skipping), e.g. to open the first window.
-    static func show(at step: Step = .welcome, onFinish: (() -> Void)? = nil) {
+    /// Shows the welcome as a sheet on `window` (a standalone window when there is none).
+    static func show(at step: Step = .welcome, on window: NSWindow? = nil) {
         if shared == nil { shared = OnboardingWindowController() }
-        // Opened again from the menu while the first-run assistant runs: keep its "open the first window".
-        if let onFinish { shared?.onFinish = onFinish }
-        shared?.go(to: step)
+        guard let shared, let sheet = shared.window else { return }
+        shared.go(to: step)
+        guard sheet.sheetParent == nil, !sheet.isVisible else { return }
         NSApp.activate()
-        shared?.showWindow(nil)
-        shared?.window?.center()
-        shared?.window?.makeKeyAndOrderFront(nil)
+        if let window, window.attachedSheet == nil {
+            window.beginSheet(sheet)
+        } else {
+            shared.present()
+            sheet.center()
+        }
     }
 
-    private var onFinish: (() -> Void)?
-    private var step: Step = .welcome
+    private(set) var step: Step = .welcome
     private var timer: Timer?
     private let pages = NSView()
-    private let primary = NSButton(title: "", target: nil, action: nil)
-    private let secondary = NSButton(title: "", target: nil, action: nil)
-    private let dots = NSStackView()
+    let primary = NSButton(title: "", target: nil, action: nil)
+    let secondary = NSButton(title: "", target: nil, action: nil)
+    let back = NSButton(title: "Back", target: nil, action: nil)
+    let dots = NSStackView()
     // Permission page parts that change live.
     private let statusIcon = NSImageView()
     private let statusText = NSTextField(labelWithString: "")
     private let spinner = NSProgressIndicator()
 
-    private static let size = NSSize(width: 660, height: 490)
+    static let size = NSSize(width: 600, height: 440)
+    /// Every page's content starts here (from the top), so nothing jumps between steps.
+    static let contentTop: CGFloat = 44
+    /// The column text and steps are set in, centred.
+    static let column: CGFloat = 480
 
     init() {
         let w = NSWindow(
@@ -60,10 +66,10 @@ final class OnboardingWindowController: SecondaryWindowController {
         w.isReleasedWhenClosed = false
         super.init(window: w)
         buildChrome()
-        // Closed with the close button: same as finishing without marking it done (asked again next launch).
+        // Closed with the close button (standalone): seen, as with Not Now.
         observers.append(
             NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
-                self?.finish(markDone: false, closing: true)
+                self?.finish(closing: true)
             })
         // Coming back from System Settings: re-check at once.
         observers.append(
@@ -81,58 +87,71 @@ final class OnboardingWindowController: SecondaryWindowController {
 
     private func buildChrome() {
         guard let content = window?.contentView else { return }
-        let bg = NSVisualEffectView(frame: content.bounds)
-        bg.material = .underWindowBackground
-        bg.blendingMode = .behindWindow
-        bg.state = .active
+        // The material of the browser window's sidebar, so the welcome looks like the app that follows.
+        let bg = TintedMaterialView(material: .sidebar, tint: Theme.sidebarBackground, alpha: 0.70)
+        bg.frame = content.bounds
         bg.autoresizingMask = [.width, .height]
         content.addSubview(bg)
-        pages.frame = CGRect(x: 0, y: 72, width: Self.size.width, height: Self.size.height - 72)
+        pages.frame = CGRect(x: 0, y: 92, width: Self.size.width, height: Self.size.height - 92)
         content.addSubview(pages)
         primary.bezelStyle = .rounded
         primary.keyEquivalent = "\r"
-        primary.controlSize = .large
         primary.target = self
         primary.action = #selector(primaryClicked)
         secondary.bezelStyle = .rounded
-        secondary.controlSize = .large
+        secondary.keyEquivalent = "\u{1b}"
         secondary.target = self
         secondary.action = #selector(secondaryClicked)
-        for b in [primary, secondary] { content.addSubview(b) }
+        back.bezelStyle = .rounded
+        back.target = self
+        back.action = #selector(backClicked)
+        for b in [primary, secondary, back] {
+            b.controlSize = .large
+            content.addSubview(b)
+        }
         dots.orientation = .horizontal
         dots.spacing = 8
+        dots.setAccessibilityElement(true)
+        dots.setAccessibilityRole(.staticText)
         content.addSubview(dots)
     }
 
+    /// Unselected pager dots: dark enough to see on the material (3:1 at least; secondaryLabelColor measured 3.05:1 in light).
+    static let dotColor = NSColor(name: nil) { a in
+        a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .secondaryLabelColor : NSColor.black.withAlphaComponent(0.55)
+    }
+
     private func layoutButtons() {
-        primary.sizeToFit()
-        secondary.sizeToFit()
-        let pw = max(150, primary.frame.width + 24), sw = secondary.frame.width + 20
+        for b in [primary, secondary, back] { b.sizeToFit() }
+        let pw = max(150, primary.frame.width + 24), sw = secondary.frame.width + 20, bw = back.frame.width + 20
         primary.frame = CGRect(x: Self.size.width - 32 - pw, y: 24, width: pw, height: 32)
         secondary.frame = CGRect(x: primary.frame.minX - 12 - sw, y: 24, width: sw, height: 32)
+        back.frame = CGRect(x: 32, y: 24, width: bw, height: 32)
         secondary.isHidden = secondary.title.isEmpty
+        back.isHidden = step == .welcome
         dots.arrangedSubviews.forEach { $0.removeFromSuperview() }
         for s in Step.allCases {
-            let d = NSView(frame: CGRect(x: 0, y: 0, width: 8, height: 8))
-            d.wantsLayer = true
-            d.layer?.cornerRadius = 4
-            d.layer?.backgroundColor = (s == step ? Theme.accent : NSColor.tertiaryLabelColor).cgColor
-            d.widthAnchor.constraint(equalToConstant: 8).isActive = true
+            // The current page is an accent capsule, the others round dots.
+            let width: CGFloat = s == step ? 16 : 8
+            let d = PagerDot(color: s == step ? Theme.accent : Self.dotColor, width: width)
+            d.widthAnchor.constraint(equalToConstant: width).isActive = true
             d.heightAnchor.constraint(equalToConstant: 8).isActive = true
             dots.addArrangedSubview(d)
         }
-        dots.frame = CGRect(x: 32, y: 36, width: 8 * 16, height: 8)
+        dots.setAccessibilityLabel("Step \(step.rawValue + 1) of \(Step.allCases.count)")
+        let dw = CGFloat(Step.allCases.count - 1) * 16 + 16
+        // Centred above the buttons, clear of them on every page.
+        dots.frame = CGRect(x: (Self.size.width - dw) / 2, y: 76, width: dw, height: 8)
     }
 
-    private func go(to s: Step) {
+    func go(to s: Step) {
         step = s
         pages.subviews.forEach { $0.removeFromSuperview() }
         timer?.invalidate()
         timer = nil
         switch s {
         case .welcome: buildWelcome()
-        case .done: buildDone()
-        default: if let p = s.page { buildPermission(p) }
+        case .fullDisk: buildFullDisk()
         }
         layoutButtons()
     }
@@ -142,10 +161,12 @@ final class OnboardingWindowController: SecondaryWindowController {
         l.font = .systemFont(ofSize: size, weight: weight)
         l.textColor = color
         l.alignment = .center
+        l.preferredMaxLayoutWidth = Self.column
         return l
     }
 
-    private func centered(_ views: [NSView], spacing: CGFloat = 14) {
+    /// The page's content, from a fixed top, in one centred column.
+    private func anchored(_ views: [NSView], spacing: CGFloat = 14) {
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .centerX
@@ -154,62 +175,63 @@ final class OnboardingWindowController: SecondaryWindowController {
         pages.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.centerXAnchor.constraint(equalTo: pages.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: pages.centerYAnchor, constant: 10),
-            stack.widthAnchor.constraint(equalToConstant: Self.size.width - 96),
+            stack.topAnchor.constraint(equalTo: pages.topAnchor, constant: Self.contentTop),
+            stack.widthAnchor.constraint(equalToConstant: Self.column),
         ])
-        for v in views { (v as? NSTextField)?.preferredMaxLayoutWidth = Self.size.width - 96 }
     }
 
     // MARK: Pages
 
     private func buildWelcome() {
         let icon = NSImageView(image: NSApp.applicationIconImage)
-        icon.widthAnchor.constraint(equalToConstant: 128).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 128).isActive = true
-        centered([
+        icon.widthAnchor.constraint(equalToConstant: 96).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 96).isActive = true
+        anchored([
             icon,
-            label("Welcome to Porpoise", size: 28, weight: .semibold),
+            label("Welcome to Porpoise", size: 26, weight: .semibold),
             label(
-                "A file manager for macOS inspired by KDE Dolphin: split view, a built-in terminal, tabs and panels.",
-                size: 14, color: .secondaryLabelColor),
+                "A fast file manager for your Mac: split view, tabs, a terminal that follows your folder, and your servers "
+                    + "and cloud drives next to your disks.",
+                size: 13, color: .secondaryLabelColor),
             label(
-                "A few quick steps let Porpoise do everything Finder can, without asking you again later.",
-                size: 14, color: .secondaryLabelColor),
+                "One permission helps from the start. Anything else, Porpoise asks for the first time you need it.",
+                size: 13, color: .secondaryLabelColor),
         ])
         primary.title = "Continue"
-        secondary.title = ""
+        secondary.title = "Not Now"
     }
 
-    /// A permission page: what it's for, how to allow it, and its live status.
-    struct Page {
-        /// What's allowed, e.g. "Full Disk Access" (the page is titled "Allow …").
-        let name: String
-        var title: String { "Allow " + name }
-        let why: String
-        /// Numbered instructions (Markdown); `tileRow` gets the draggable app icon.
-        let steps: [String]
-        var tileRow: Int? = nil
-        let button: String
-        let waiting: String
-        let granted: () -> Bool
-        let grantedText: String
-        let request: () -> Void
-    }
-
-    private func buildPermission(_ p: Page) {
-        let steps = NSStackView()
-        steps.orientation = .vertical
-        steps.alignment = .leading
-        steps.spacing = 10
-        for (i, text) in p.steps.enumerated() {
-            let row = stepRow(i + 1, text)
-            if i == p.tileRow {
-                let tile = AppDragTile()
-                tile.widthAnchor.constraint(equalToConstant: 40).isActive = true
-                tile.heightAnchor.constraint(equalToConstant: 40).isActive = true
-                row.addArrangedSubview(tile)
+    /// Full Disk Access: what it's for, how to allow it (collapsed to one line once it's on), and its live status.
+    private func buildFullDisk() {
+        let granted = Self.fullDiskGranted()
+        var views: [NSView] = [
+            label("Allow Full Disk Access", size: 22, weight: .semibold),
+            label(
+                "macOS keeps some folders private (the Trash, Library, other apps' files) until you allow Porpoise once.",
+                size: 13, color: .secondaryLabelColor),
+        ]
+        if !granted {
+            let steps = NSStackView()
+            steps.orientation = .vertical
+            steps.alignment = .leading
+            steps.spacing = 10
+            let texts = [
+                "Click **Open System Settings**. It opens the Full Disk Access list.",
+                "Switch on **Porpoise**. If it isn't listed, drag this icon into the list:",
+                "Come back here. Porpoise notices on its own.",
+            ]
+            for (i, text) in texts.enumerated() {
+                let row = stepRow(i + 1, text)
+                if i == 1 {
+                    let tile = AppDragTile()
+                    tile.widthAnchor.constraint(equalToConstant: 32).isActive = true
+                    tile.heightAnchor.constraint(equalToConstant: 32).isActive = true
+                    row.addArrangedSubview(tile)
+                }
+                steps.addArrangedSubview(row)
             }
-            steps.addArrangedSubview(row)
+            steps.widthAnchor.constraint(equalToConstant: Self.column).isActive = true
+            views.append(steps)
         }
         spinner.style = .spinning
         spinner.controlSize = .small
@@ -217,13 +239,17 @@ final class OnboardingWindowController: SecondaryWindowController {
         statusText.font = .systemFont(ofSize: 13, weight: .medium)
         let status = NSStackView(views: [spinner, statusIcon, statusText])
         status.spacing = 6
-        centered(
-            [label(p.title, size: 24, weight: .semibold), label(p.why, size: 13, color: .secondaryLabelColor), steps, status],
-            spacing: 18)
-        primary.title = p.button
-        secondary.title = "Skip for Now"
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.checkAccess() }
-        checkAccess()
+        views.append(status)
+        views.append(
+            label(
+                "Administrator actions, App Management and Local Network are asked for when first needed. "
+                    + "All of them are in Settings › System.",
+                size: 11, color: .secondaryLabelColor))
+        anchored(views, spacing: 18)
+        secondary.title = granted ? "" : "Not Now"
+        primary.title = granted ? "Start Using Porpoise" : "Open System Settings"
+        if !granted { timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.checkAccess() } }
+        checkAccess(rebuild: false)
     }
 
     private func stepRow(_ n: Int, _ markdown: String) -> NSStackView {
@@ -247,162 +273,74 @@ final class OnboardingWindowController: SecondaryWindowController {
         return row
     }
 
-    private func buildDone() {
-        let missing = Step.allCases.compactMap { s in s.page.flatMap { $0.granted() ? nil : $0.name } }
-        let allSet = missing.isEmpty
-        let icon = NSImageView(
-            image: NSImage(
-                systemSymbolName: allSet ? "checkmark.circle.fill" : "info.circle.fill",
-                accessibilityDescription: nil) ?? NSImage())
-        icon.symbolConfiguration = .init(pointSize: 56, weight: .regular)
-        icon.contentTintColor = allSet ? Theme.success : .secondaryLabelColor
-        let tips = NSGridView(views: [
-            [label("F3", size: 13, weight: .semibold), label("Split view", size: 13, color: .secondaryLabelColor)],
-            [label("F4", size: 13, weight: .semibold), label("Terminal that follows your folder", size: 13, color: .secondaryLabelColor)],
-            [label("⌘P", size: 13, weight: .semibold), label("Jump to the Places sidebar", size: 13, color: .secondaryLabelColor)],
-            [label("⌘,", size: 13, weight: .semibold), label("Settings", size: 13, color: .secondaryLabelColor)],
-        ])
-        tips.rowSpacing = 6
-        tips.columnSpacing = 14
-        tips.column(at: 0).xPlacement = .trailing
-        tips.column(at: 1).xPlacement = .leading
-        // Only as wide as its content, so the stack centres it.
-        for col in 0..<2 { tips.column(at: col).width = col == 0 ? 36 : 230 }
-        tips.setContentHuggingPriority(.required, for: .horizontal)
-        centered(
-            [
-                icon,
-                label(allSet ? "You're all set" : "Almost there", size: 26, weight: .semibold),
-                label(
-                    allSet
-                        ? "Porpoise can do everything Finder can, and won't ask you again."
-                        : "Still to allow: \(missing.joined(separator: ", ")). You can do it any time from Porpoise › Permissions…",
-                    size: 13, color: .secondaryLabelColor),
-                tips,
-            ], spacing: 16)
-        primary.title = "Start Using Porpoise"
-        secondary.title = ""
-    }
-
     // MARK: Actions
 
-    private func checkAccess() {
-        guard let p = step.page else { return }
-        let ok = p.granted()
+    /// Porpoise's own switch, and the helper's when it's installed (it does the work on system-owned items).
+    static var fullDiskGranted: () -> Bool = {
+        PrivacyAccess.hasFullDiskAccess && (!PrivilegedHelper.isEnabled || PrivilegedHelper.hasFullDiskAccess == true)
+    }
+
+    private func checkAccess(rebuild: Bool = true) {
+        guard step == .fullDisk else { return }
+        let ok = Self.fullDiskGranted()
+        // Just switched on: the instructions collapse to the one green line.
+        if ok, rebuild, timer != nil {
+            go(to: .fullDisk)
+            NSApp.activate()
+            window?.makeKeyAndOrderFront(nil)
+            return
+        }
         spinner.isHidden = ok
         statusIcon.isHidden = !ok
         statusIcon.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
         statusIcon.contentTintColor = Theme.success
-        statusText.stringValue = ok ? p.grantedText : p.waiting
+        statusText.stringValue = ok ? "Full Disk Access is on." : "Waiting for Full Disk Access…"
         statusText.textColor = ok ? Theme.success : .secondaryLabelColor
-        if ok, primary.title != "Continue" {
-            primary.title = "Continue"
-            secondary.title = ""
-            layoutButtons()
-            NSApp.activate()
-            window?.makeKeyAndOrderFront(nil)
-        }
     }
-
-    private func next() { go(to: Step(rawValue: step.rawValue + 1) ?? .done) }
 
     @objc private func primaryClicked() {
         switch step {
-        case .welcome: next()
-        case .done: finish(markDone: true)
-        default:
-            guard let p = step.page else { return }
-            if p.granted() { next() } else { p.request() }
+        case .welcome: go(to: .fullDisk)
+        case .fullDisk:
+            // Make sure "Porpoise Helper" is in the list too, when it's installed.
+            if Self.fullDiskGranted() { finish() } else { HelperSetup.openFullDiskAccess() }
         }
     }
 
-    @objc private func secondaryClicked() { if step.page != nil { next() } }
+    /// Not Now: closes, with nothing left to warn about; Porpoise asks again when a protected folder is opened.
+    @objc private func secondaryClicked() { finish() }
+
+    @objc private func backClicked() { go(to: .welcome) }
 
     private var finished = false
 
-    private func finish(markDone: Bool, closing: Bool = false) {
+    func finish(closing: Bool = false) {
         guard !finished else { return }
         finished = true
         timer?.invalidate()
         timer = nil
-        if markDone { Settings.store.set(true, forKey: Self.doneKey) }
-        let run = onFinish
-        onFinish = nil
-        if !closing { window?.close() }
+        spinner.stopAnimation(nil)
+        Settings.store.set(true, forKey: Self.doneKey)
+        if let w = window, !closing {
+            if let parent = w.sheetParent { parent.endSheet(w) } else { w.close() }
+        }
         OnboardingWindowController.shared = nil
-        run?()
     }
 }
 
-extension OnboardingWindowController.Step {
-    /// The permission this step asks for (nil for welcome and done).
-    var page: OnboardingWindowController.Page? {
-        switch self {
-        case .welcome, .done: return nil
-        case .fullDisk:
-            return .init(
-                name: "Full Disk Access",
-                why: "macOS keeps some folders private (the Trash, Library, other apps' files) until you allow it once.",
-                steps: [
-                    "Click **Open System Settings** below. It opens the Full Disk Access list.",
-                    "Switch on **Porpoise** and **Porpoise Helper**. If Porpoise isn't listed, drag this icon into it:",
-                    "Come back here. Porpoise notices on its own.",
-                ],
-                tileRow: 1, button: "Open System Settings", waiting: "Waiting for Full Disk Access…",
-                granted: {
-                    // The helper too, when it's installed (it does the work on system-owned items in the Trash).
-                    PrivacyAccess.hasFullDiskAccess && (!PrivilegedHelper.isEnabled || PrivilegedHelper.hasFullDiskAccess == true)
-                }, grantedText: "Full Disk Access is on.",
-                request: {
-                    // Make sure "Porpoise Helper" is in the list before it opens.
-                    HelperSetup.openFullDiskAccess()
-                })
-        case .apps:
-            return .init(
-                name: "App Management",
-                why: "Lets Porpoise move, rename and delete apps, as Finder does, without macOS blocking it.",
-                steps: [
-                    "Click **Open System Settings** below. It opens the App Management list.",
-                    "Switch **Porpoise** on. If it isn't in the list, drag this icon into it:",
-                    "Come back here. Porpoise notices on its own.",
-                ],
-                tileRow: 1, button: "Open System Settings", waiting: "Waiting for App Management…",
-                granted: { PrivacyAccess.appManagementState == .allowed }, grantedText: "App Management is on.",
-                request: { SystemIntegration.requestAppManagement() })
-        case .admin:
-            return .init(
-                name: "Administrator Actions",
-                why: "Some items belong to the system, such as App Store apps. Porpoise installs a small helper once, and "
-                    + "then empties the Trash and deletes, moves and changes such items without asking, as Finder does.",
-                steps: [
-                    "Click **Install Helper** below.",
-                    "macOS asks for your administrator password, once.",
-                    "Done. In the next step you switch it on, next to Porpoise.",
-                ],
-                button: "Install Helper", waiting: "Waiting for the helper to be installed…",
-                // Standard users can't use the helper: nothing to set up, actions ask for an administrator's password.
-                granted: { !PrivilegedHelper.isForThisUser || PrivilegedHelper.isEnabled },
-                grantedText: PrivilegedHelper.isForThisUser
-                    ? "Administrator actions are allowed."
-                    : "The helper is for administrators: Porpoise asks for an administrator's password when needed.",
-                request: { HelperSetup.install() })
-        case .network:
-            return .init(
-                name: "Local Network",
-                why: "Lets Porpoise find the file servers and shared folders on your network and show them under Network.",
-                steps: [
-                    "Click **Allow Network Access** below.",
-                    "macOS asks whether Porpoise may find devices on your network: click **Allow**.",
-                    "Answered Don't Allow before? Switch Porpoise on in the Local Network list that opens.",
-                ],
-                button: "Allow Network Access", waiting: "Waiting for Local Network access…",
-                granted: { LocalNetworkAccess.shared.isAllowed }, grantedText: "Local Network access is on.",
-                request: {
-                    LocalNetworkAccess.shared.request { allowed in
-                        if !allowed { SystemIntegration.openPrivacyPane("Privacy_LocalNetwork") }
-                    }
-                })
-        }
+/// One pager dot, drawn in its colour for the current look (a layer colour wouldn't follow light and dark).
+private final class PagerDot: NSView {
+    private let color: NSColor
+    init(color: NSColor, width: CGFloat) {
+        self.color = color
+        super.init(frame: CGRect(x: 0, y: 0, width: width, height: 8))
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        color.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
     }
 }
 

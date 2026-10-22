@@ -22,9 +22,11 @@ with light and dark appearances, built-in colour themes and a choice of icon the
 3. Open Porpoise. Because Porpoise isn't signed through Apple's paid developer program, macOS blocks it the first
    time: open **System Settings › Privacy & Security**, scroll to *"Porpoise was blocked…"* and click **Open Anyway**.
    You only do this once. (Terminal alternative: `xattr -dr com.apple.quarantine /Applications/Porpoise.app`.)
-4. Porpoise explains the permissions used for protected folders and the Trash (**Full Disk Access**), moving and
-   deleting apps (**App Management**), administrator actions (the **Porpoise Helper**, installed with your approval)
-   and file-server discovery (**Local Network**). Review them any time in *Porpoise › Permissions…*.
+4. Porpoise opens straight to your home folder, with a short welcome that offers **Full Disk Access** (every folder,
+   including the Trash). Anything else is asked for the first time it's needed: **App Management** when you first move
+   or delete an app, **Administrator Actions** (a small "Porpoise Helper", installed with one password) the first time
+   you change a system-owned item such as an App Store app in the Trash, and **Local Network** when you first open Network.
+   All of them are listed in *Porpoise › Permissions…* (Settings › System).
 
 Requirements: a Mac with Apple Silicon and **macOS 15 Sequoia or newer**. Everything Porpoise needs is inside the
 app; nothing else to install. (Android phones need Google's adb tool, which Porpoise downloads for you from

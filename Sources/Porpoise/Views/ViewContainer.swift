@@ -200,6 +200,13 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 } else {
                     self.messageBar.show(e, error: true)
                 }
+            } else if self.model.location.scheme == "network" {
+                // Local Network is asked for here, at the first visit, rather than at first launch.
+                SystemIntegration.FirstNeed.localNetwork { [weak self] in
+                    self?.messageBar.show(
+                        "Porpoise isn't allowed to look for servers on your network.", error: false, action: "Open Local Network Settings…"
+                    ) { SystemIntegration.openPrivacyPane("Privacy_LocalNetwork") }
+                }
             }
             if let pos = self.pendingPosition {
                 self.pendingPosition = nil
