@@ -14,9 +14,18 @@ public final class LocalFixtureServer {
         process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
         try process.run()
         let deadline = Date().addingTimeInterval(5)
-        while !FileManager.default.fileExists(atPath: portFile.path), Date() < deadline, process.isRunning { Thread.sleep(forTimeInterval: 0.01) }
-        guard let port = try? String(contentsOf: portFile, encoding: .utf8), Int(port) != nil else {
-            process.terminate(); throw URLError(.cannotConnectToHost)
+        var readyPort: Int?
+        // Creation and publication are separate writes: an existing file can still be empty or incomplete.
+        while Date() < deadline, process.isRunning {
+            if let text = try? String(contentsOf: portFile, encoding: .utf8), let port = Int(text), (1...65535).contains(port) {
+                readyPort = port
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        guard let port = readyPort else {
+            if process.isRunning { process.terminate() }
+            throw URLError(.cannotConnectToHost)
         }
         base = URL(string: "http://127.0.0.1:\(port)")!
     }
