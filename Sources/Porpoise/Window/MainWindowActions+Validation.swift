@@ -6,13 +6,24 @@ import PorpoiseServices
 
 extension MainWindowController: NSMenuItemValidation {
 
+    /// Commands that change files: from the keyboard they act only while the files have focus, never while typing
+    /// (⌘⌫ deletes to the line's start in a field, ⌘D and ⌘E mean something else in the terminal).
+    static let changesFiles: Set<Selector> = [
+        #selector(moveToTrash(_:)), #selector(deleteItem(_:)), #selector(duplicateItem(_:)), #selector(makeAlias(_:)),
+        #selector(newFolderWithSelection(_:)), #selector(ejectVolume(_:)),
+    ]
+
     /// The key `event` belongs to the field being typed in rather than to `item`'s shortcut.
     static func typingKeeps(_ item: NSMenuItem, _ event: NSEvent) -> Bool {
         let key = item.keyEquivalent
-        guard !key.isEmpty, event.charactersIgnoringModifiers?.lowercased() == key.lowercased() else { return false }
+        guard KeyEquivalent.matches(key, typed: event.charactersIgnoringModifiers) else { return false }
         if KeyEquivalent.movesInText(key) { return true }
+        if let action = item.action, changesFiles.contains(action) { return true }
         return !item.keyEquivalentModifierMask.contains(.command) && !KeyEquivalent.isFunctionKey(key)
     }
+
+    /// The key press being handled (the debug bridge substitutes the one it delivers).
+    static var currentKeyEvent: () -> NSEvent? = { NSApp.currentEvent }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         guard tabs.indices.contains(current) else { return false }
@@ -20,7 +31,7 @@ extension MainWindowController: NSMenuItemValidation {
         // steal keys while typing in a field or the terminal.
         // Only key presses are affected: the same items stay usable from an open menu.
         // Only for the key actually pressed: the command palette asks about every item while ⌘⇧P is the event.
-        if let event = NSApp.currentEvent, event.type == .keyDown, isTypingFocus, Self.typingKeeps(item, event) { return false }
+        if let event = Self.currentKeyEvent(), event.type == .keyDown, isTypingFocus, Self.typingKeeps(item, event) { return false }
         let p = view.model.props
         let ops = FileOperationsController.shared
         if let r = validateCloudItem(item) { return r }
