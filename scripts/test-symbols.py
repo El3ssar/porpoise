@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Real Mach-O/DWARF regression checks; no app/helper rebuild or account access."""
+from contextlib import contextmanager
+import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -9,6 +12,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 import zipfile
 
 sys.dont_write_bytecode = True
@@ -16,6 +20,16 @@ ROOT = Path(__file__).resolve().parent.parent
 spec = importlib.util.spec_from_file_location('symbols', ROOT / 'scripts/check-symbols.py')
 symbols = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(symbols)
+
+
+@contextmanager
+def working_directory(path):
+    previous = Path.cwd()
+    try:
+        os.chdir(path)
+        yield
+    finally:
+        os.chdir(previous)
 
 
 class SymbolTests(unittest.TestCase):
@@ -110,10 +124,22 @@ class SymbolTests(unittest.TestCase):
             binary.parent.mkdir(parents=True)
             helper.parent.mkdir(parents=True)
             shutil.copy2(self.stripped, binary)
-            shutil.copy2(ROOT / 'Resources/Helper/Porpoise Helper.app/Contents/MacOS/PorpoiseHelper', helper)
+            # Legacy is a disposable Mach-O fixture, never whichever helper is shipping today.
+            original = root / 'Resources/Helper/Porpoise Helper.app/Contents/MacOS/PorpoiseHelper'
+            original.parent.mkdir(parents=True)
+            shutil.copy2(self.stripped, original)
+            shutil.copy2(original, helper)
+            (root / 'Resources/Helper/inputs.sha256').write_text('fixture inputs\n')
+            legacy_uuid = symbols.uuids(original)
+            legacy_sha = hashlib.sha256(original.read_bytes()).hexdigest()
+            # Exercise the real legacy predicate with fixture identities; production pins stay unchanged.
+            subprocess.run(['codesign', '-f', '-s', '-', str(helper)], check=True, capture_output=True)
             args = SimpleNamespace(app=app, app_dsym=self.dsym, helper_dsym=root / 'missing.dSYM',
                                    output=root / 'symbols.zip', version='0.0.0', revision='a' * 40)
-            symbols.archive(args)
+            with working_directory(root), \
+                    mock.patch.object(symbols, 'LEGACY_HELPER_UUID', legacy_uuid), \
+                    mock.patch.object(symbols, 'LEGACY_HELPER_SHA256', legacy_sha):
+                symbols.archive(args)
             with zipfile.ZipFile(args.output) as archive:
                 manifest = json.loads(archive.read('manifest.json'))
                 self.assertEqual(manifest['binaries']['app']['symbols'], 'included')
@@ -125,6 +151,29 @@ class SymbolTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'non-legacy helper'):
                 symbols.archive(args)
             self.assertFalse(args.output.exists())
+
+
+    def test_archive_cli_includes_current_helper_with_default_symbol_path(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            app = root / 'Porpoise.app'
+            binary = app / 'Contents/MacOS/Porpoise'
+            helper = app / 'Contents/Helpers/Porpoise Helper.app/Contents/MacOS/PorpoiseHelper'
+            binary.parent.mkdir(parents=True)
+            helper.parent.mkdir(parents=True)
+            shutil.copy2(self.stripped, binary)
+            shutil.copy2(ROOT / 'Resources/Helper/Porpoise Helper.app/Contents/MacOS/PorpoiseHelper', helper)
+            output = root / 'symbols.zip'
+            # Omit --helper-dsym intentionally: release CI uses the CLI default.
+            subprocess.run([sys.executable, str(ROOT / 'scripts/check-symbols.py'), 'archive',
+                            '--app', str(app), '--app-dsym', str(self.dsym), '--output', str(output),
+                            '--version', '0.0.0', '--revision', 'a' * 40], cwd=ROOT, check=True)
+            with zipfile.ZipFile(output) as archive:
+                manifest = json.loads(archive.read('manifest.json'))
+                self.assertEqual(manifest['binaries']['helper']['symbols'], 'included')
+                expected = [{'arch': arch, 'uuid': uuid} for arch, uuid in sorted(symbols.uuids(helper))]
+                self.assertEqual(manifest['binaries']['helper']['uuids'], expected)
+                self.assertTrue(any(name.startswith('PorpoiseHelper.dSYM/') for name in archive.namelist()))
 
 
 if __name__ == '__main__':
