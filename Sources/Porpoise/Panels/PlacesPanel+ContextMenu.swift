@@ -183,8 +183,13 @@ extension PlacesPanel {
     }
 
     @objc private func removeEntry(_ s: NSMenuItem) {
-        guard let e = s.representedObject as? PlaceEntry else { return }
-        PlacesModel.shared.remove(e)
+        guard let e = s.representedObject as? PlaceEntry, let index = PlacesModel.shared.removeForUndo(e) else { return }
+        // At once, like Finder's sidebar; the window's message bar offers Undo.
+        guard let bar = (window?.windowController as? MainWindowController)?.view.messageBar else { return }
+        bar.show("Removed “\(e.title)” from Places.", error: false, action: "Undo") {
+            bar.dismiss()
+            PlacesModel.shared.restore(e, at: index)
+        }
     }
 
     @objc private func editEntry(_ s: NSMenuItem) {
@@ -217,7 +222,7 @@ extension PlacesPanel {
                 self.ejecting.remove(e.url)
                 guard let failure else { return }
                 let a = NSAlert(error: failure)
-                a.messageText = "Could not eject “\(e.title)”"
+                a.messageText = "Couldn’t eject “\(e.title)”"
                 if let w = self.window { a.beginSheetModal(for: w) } else { a.runModal() }
             }
         }

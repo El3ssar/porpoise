@@ -13,6 +13,29 @@ import Testing
 
     func store() -> ShelfStore { ShelfStore(file: s.path("shelves.json")) }
 
+    /// Clear Shelf and Remove are undone with the same references (ids, bookmarks), in their order; items added since stay.
+    @Test func removalsCanBeUndone() throws {
+        let a = try s.file("one/a.txt", "a"), b = try s.file("one/b.txt", "b"), c = try s.file("one/c.txt", "c")
+        let st = store()
+        st.add([a, b, c])
+        let before = st.current
+        st.remove([before.items[1].id])
+        #expect(st.current.items.map(\.name) == ["a.txt", "c.txt"])
+        #expect(st.restore(before.items, on: before.id))
+        #expect(st.current.items == before.items)
+        st.clear()
+        let d = try s.file("one/d.txt", "d")
+        st.add([d])
+        #expect(st.restore(before.items, on: before.id))
+        #expect(st.current.items.map(\.name) == ["a.txt", "b.txt", "c.txt", "d.txt"])
+        #expect(store().current.items.map(\.id) == st.current.items.map(\.id))  // saved
+        // A shelf deleted meanwhile can't be refilled.
+        st.newShelf(named: "Other")
+        let gone = st.current
+        st.deleteCurrent()
+        #expect(!st.restore(before.items, on: gone.id))
+    }
+
     @Test func savedAndReadBack() throws {
         let a = try s.file("one/a.txt", "a")
         let b = try s.file("two/b.txt", "b")

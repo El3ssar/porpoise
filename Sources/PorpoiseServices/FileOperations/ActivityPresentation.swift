@@ -45,6 +45,7 @@ public struct ActivityPresentation {
         if let cloudTitle { return cloudTitle }
         if let openingName { return "Opening “\(openingName)”" }
         let n = sources.count == 1 ? "“\(Activity.name(sources[0]))”" : FileFormat.itemCount(sources.count)
+        if kind == .trash { return "Moving \(n) to the Trash" }
         let dest = destination.map { " to \(Activity.name($0))" } ?? ""
         return "\(kind.verb) \(n)\(dest)"
     }
@@ -66,7 +67,9 @@ public struct ActivityPresentation {
             }
             var parts: [String] = []
             if let notice { parts.append(notice) }
-            if let p, p.totalFiles > 0 { parts.append("\(FileFormat.count(p.doneFiles)) of \(FileFormat.count(p.totalFiles)) files") }
+            if let p, p.totalFiles > 0 {
+                parts.append("\(FileFormat.count(p.doneFiles)) of \(FileFormat.count(p.totalFiles)) \(p.totalFiles == 1 ? "file" : "files")")
+            }
             if !amounts.isEmpty { parts.append(amounts) }
             if notice == nil, rate.hasSpeedEstimate { parts.append(rate.speedText) }
             if notice == nil, let p, p.totalBytes > 0 || p.totalFiles > 0 { parts.append(rate.timeLeftText) }
@@ -90,6 +93,12 @@ public struct ActivityPresentation {
         if activity.state == .completed, activity.openingName != nil, activity.errors.isEmpty {
             let bytes = activity.progress?.doneBytes ?? 0
             return bytes > 0 ? "Downloaded \(FileFormat.size(bytes))" : "Downloaded"
+        }
+        // What went, by name, as Finder says it.
+        if activity.state == .completed, activity.errors.isEmpty, activity.kind == .trash || activity.kind == .delete, !activity.sources.isEmpty {
+            let n = activity.sources.count
+            let what = n == 1 ? "“\(Activity.name(activity.sources[0]))”" : FileFormat.itemCount(n)
+            return activity.kind == .trash ? "Moved \(what) to the Trash" : "Deleted \(what)"
         }
         guard activity.state == .completed, activity.kind == .copy || activity.kind == .move,
             let progress = activity.progress

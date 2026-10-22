@@ -143,6 +143,17 @@ public final class ShelfStore {
         save()
     }
 
+    /// Undoes a removal: shelf `id` gets back `items` (what it held before), in their order, followed by anything added
+    /// since. False when that shelf is gone.
+    @discardableResult
+    public func restore(_ items: [ShelfItem], on id: UUID) -> Bool {
+        guard let i = shelves.firstIndex(where: { $0.id == id }) else { return false }
+        let before = Set(items.map(\.id))
+        shelves[i].items = items + shelves[i].items.filter { !before.contains($0.id) }
+        save()
+        return true
+    }
+
     /// Moves items to `index` in the list (drag to reorder).
     public func move(_ ids: Set<UUID>, to index: Int) {
         var items = current.items

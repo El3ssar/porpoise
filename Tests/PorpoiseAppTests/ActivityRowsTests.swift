@@ -26,7 +26,7 @@ import Testing
         let trash = Activity(kind: .trash, sources: a.sources, destination: nil, job: nil)
         trash.state = .completed
         row.update(trash)
-        #expect(row.subviews.compactMap { $0 as? NSTextField }.contains { $0.stringValue == "Done" })
+        #expect(row.subviews.compactMap { $0 as? NSTextField }.contains { $0.stringValue == "Moved “report.txt” to the Trash" })
         row.frame = CGRect(x: 0, y: 0, width: 430, height: 52)
         row.layoutSubtreeIfNeeded()
         #expect(row.subviews.allSatisfy { $0.frame.size.width.isFinite && $0.frame.size.height.isFinite })

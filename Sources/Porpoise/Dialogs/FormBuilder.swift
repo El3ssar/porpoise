@@ -340,7 +340,7 @@ private final class WeakRef<T: AnyObject> {
     init(_ v: T) { value = v }
 }
 
-/// Layer colours must resolve in this view's effective appearance, after the window switches light/dark.
+/// Layer colors must resolve in this view's effective appearance, after the window switches light/dark.
 private final class FormSectionView: NSStackView {
     override var wantsUpdateLayer: Bool { true }
     override func viewDidChangeEffectiveAppearance() {
