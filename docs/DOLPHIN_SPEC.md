@@ -2,8 +2,9 @@
 
 What we are copying. Taken from Dolphin's source code (invent.kde.org, master = 26.11.70, read 2026-10-07)
 plus the KDE libraries Dolphin uses (KIO, KConfig, Breeze, plasma-integration).
-Items marked **UNVERIFIED** were not confirmed in source. Shortcuts are the Linux defaults; see
-PLAN.md for how they map to the Mac.
+Items marked **UNVERIFIED** were not confirmed in source. Shortcuts are the Linux defaults. Porpoise uses Finder's
+keys by default and offers this map (Ctrl → ⌘) as the "Dolphin" key set in Settings › Shortcuts; see docs/DESIGN.md
+and the README's shortcut table.
 
 ---
 
@@ -129,7 +130,7 @@ All toolbar buttons are icon-only by default.
 | Panel | Key | Default |
 |---|---|---|
 | Places | F9 | left, visible |
-| Information | F11 | right, hidden |
+| Information | F11 (Porpoise: F10, since macOS reserves F11 for Show Desktop) | right, hidden |
 | Folders | F7 | left, hidden |
 | Terminal | F4 | bottom, hidden |
 
@@ -256,7 +257,7 @@ Focus Terminal (Ctrl+Shift+F4).
 - **Keys:**
   - Arrows, Home/End, PgUp/PgDn move; with Shift they extend the selection.
   - Enter opens (asks before opening many items). Esc clears the selection.
-  - Ctrl+Space toggles the current item. Type-ahead jumps to a matching name (Shift+letter searches backwards).
+  - Ctrl+Space toggles the current item. Type-ahead jumps to a matching name (Shift+letter searches backwards; Porpoise searches backwards only for keys that aren't letters).
 - **Drag hovering over a folder** opens it after 750 ms (setting, off by default).
 - **Inline rename** with F2 (on by default). Several items use a dialog. Confirms when the type changes or when
   a leading dot would hide the item.

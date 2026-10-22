@@ -2,7 +2,7 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
-// The main menu: Dolphin's menu bar, with Ctrl → Cmd.
+// The main menu: Dolphin's menu bar with Finder's keys, or Dolphin's own (Ctrl → Cmd) with Settings › Shortcuts › Key set.
 extension AppDelegate {
     private func mi(
         _ title: String, _ action: Selector?, _ key: String = "", _ mods: NSEvent.ModifierFlags = .command,
@@ -30,6 +30,8 @@ extension AppDelegate {
         let main = NSMenu()
         typealias W = MainWindowController
         typealias K = KeyEquivalent
+        // Only the defaults differ; the user's own bindings (MenuCommandRegistry) apply on top of either set.
+        let dolphin = Settings.shared.shortcutKeySet == .dolphin
 
         // App menu
         let app = NSMenu(title: "Porpoise")
@@ -43,8 +45,8 @@ extension AppDelegate {
         NSApp.servicesMenu = services
         app.addItem(.submenu("Services", icon: nil, services))
         app.addItem(sep())
-        // Cmd+H is "Show Hidden Files" (Dolphin's Ctrl+H); hiding the app moves to Cmd+Opt+Shift+H.
-        app.addItem(mi("Hide Porpoise", #selector(NSApplication.hide(_:)), "h", [.command, .option, .shift]))
+        // ⌘H hides the app, as in every Mac app. Dolphin's keys give it to Show Hidden Files and hide on ⌥⇧⌘H.
+        app.addItem(mi("Hide Porpoise", #selector(NSApplication.hide(_:)), "h", dolphin ? [.command, .option, .shift] : .command))
         app.addItem(mi("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]))
         app.addItem(mi("Show All", #selector(NSApplication.unhideAllApplications(_:))))
         app.addItem(sep())
@@ -56,6 +58,11 @@ extension AppDelegate {
         file.addItem(.submenu("Create New", icon: "list-add", W.createNewMenu()))
         file.addItem(mi("Open", #selector(W.openSelected(_:)), "o", icon: "document-open"))
         file.addItem(mi("Open", #selector(W.openSelected(_:)), K.down, icon: "document-open").hiddenAlternate())
+        // The context menu's Open in… items, on the selected folder (no default keys; assignable in Settings).
+        file.addItem(mi("Open in New Tab", #selector(W.ctxOpenInNewTab(_:)), icon: "tab-new"))
+        file.addItem(mi("Open in New Window", #selector(W.ctxOpenInNewWindow(_:)), icon: "window-new"))
+        file.addItem(mi("Open in Split View", #selector(W.ctxOpenInSplit(_:)), icon: "view-split-left-right"))
+        file.addItem(mi("Show Package Contents", #selector(W.showPackageContents(_:)), icon: "folder-open"))
         file.addItem(mi("New Window", #selector(W.newWindow(_:)), "n", icon: "window-new"))
         file.addItem(mi("New Tab", #selector(W.newTab(_:)), "t", icon: "tab-new"))
         file.addItem(mi("Close Tab", #selector(W.closeCurrentTab(_:)), "w", icon: "tab-close"))
@@ -68,12 +75,23 @@ extension AppDelegate {
         file.addItem(mi("Download", #selector(W.cloudDownload(_:))))
         file.addItem(mi("Remove Download", #selector(W.cloudEvict(_:))))
         file.addItem(sep())
-        file.addItem(mi("Rename…", #selector(W.renameItem(_:)), K.f(2), [], icon: "edit-rename"))
+        // Return renames, as in Finder (only in the file list, MainWindowActions+Validation); F2 too. Dolphin: F2, Return opens.
+        file.addItem(mi("Rename…", #selector(W.renameItem(_:)), dolphin ? K.f(2) : "\r", [], icon: "edit-rename"))
+        if !dolphin { file.addItem(mi("Rename…", #selector(W.renameItem(_:)), K.f(2), [], icon: "edit-rename").hiddenAlternate()) }
         file.addItem(mi("Duplicate Here", #selector(W.duplicateItem(_:)), "d", icon: "edit-duplicate"))
-        file.addItem(mi("Move to Trash", #selector(W.moveToTrash(_:)), K.forwardDelete, [], icon: "user-trash"))
-        file.addItem(mi("Move to Trash", #selector(W.moveToTrash(_:)), K.backspace, .command, icon: "user-trash").hiddenAlternate())
-        file.addItem(mi("Delete", #selector(W.deleteItem(_:)), K.forwardDelete, .shift, icon: "edit-delete"))
-        file.addItem(mi("Delete Immediately", #selector(W.deleteItem(_:)), K.backspace, [.command, .option], icon: "edit-delete").hiddenAlternate())
+        if dolphin {
+            // Dolphin's Delete (⌦) trashes and ⇧⌦ deletes; Finder's ⌘⌫ and ⌥⌘⌫ stay as alternates.
+            file.addItem(mi("Move to Trash", #selector(W.moveToTrash(_:)), K.forwardDelete, [], icon: "user-trash"))
+            file.addItem(mi("Move to Trash", #selector(W.moveToTrash(_:)), K.backspace, .command, icon: "user-trash").hiddenAlternate())
+            file.addItem(mi("Delete", #selector(W.deleteItem(_:)), K.forwardDelete, .shift, icon: "edit-delete"))
+            file.addItem(
+                mi("Delete Immediately", #selector(W.deleteItem(_:)), K.backspace, [.command, .option], icon: "edit-delete").hiddenAlternate())
+        } else {
+            // Finder's: no key without ⌘ removes anything.
+            file.addItem(mi("Move to Trash", #selector(W.moveToTrash(_:)), K.backspace, .command, icon: "user-trash"))
+            file.addItem(mi("Delete Immediately…", #selector(W.deleteItem(_:)), K.backspace, [.command, .option], icon: "edit-delete"))
+        }
+        file.addItem(mi("Restore from Trash", #selector(W.restoreFromTrash(_:)), icon: "restoration"))
         file.addItem(mi("Make Alias", #selector(W.makeAlias(_:)), "a", [.command, .control], icon: "insert-link"))
         file.addItem(mi("Show Original", #selector(W.showOriginal(_:)), "r", icon: "document-open-folder"))
         file.addItem(mi("New Folder with Selection", #selector(W.newFolderWithSelection(_:)), "n", [.command, .control], icon: "folder-new"))
@@ -83,7 +101,8 @@ extension AppDelegate {
         file.addItem(mi("Compare Files…", #selector(W.compareFiles(_:)), "y", [.command, .option], icon: "document-preview"))
         file.addItem(mi("Quick Look", #selector(W.quickLook(_:)), "y", icon: "document-preview"))
         file.addItem(mi("Share…", #selector(W.shareItems(_:)), icon: "document-share"))
-        file.addItem(mi("Properties", #selector(W.properties(_:)), "\r", .option, icon: "document-properties"))
+        file.addItem(mi("Get Info", #selector(W.properties(_:)), dolphin ? "\r" : "i", dolphin ? .option : .command, icon: "document-properties"))
+        file.addItem(dynamicSubmenu("Tags", icon: "tag"))
         main.addItem(.submenu("File", icon: nil, file))
 
         // Edit
@@ -100,7 +119,8 @@ extension AppDelegate {
         edit.addItem(mi("Add to Shelf", #selector(W.addToShelf(_:)), "s", [.command, .option], icon: "bookmarks"))
         edit.addItem(mi("Paste", #selector(W.paste(_:)), "v", icon: "edit-paste"))
         edit.addItem(sep())
-        edit.addItem(mi("Filter…", #selector(W.showFilterBar(_:)), "i", icon: "view-filter"))
+        edit.addItem(
+            mi("Filter…", #selector(W.showFilterBar(_:)), dolphin ? "i" : "f", dolphin ? .command : [.command, .option], icon: "view-filter"))
         edit.addItem(mi("Search…", #selector(W.showSearch(_:)), "f", icon: "edit-find"))
         edit.addItem(sep())
         edit.addItem(mi("Select Files and Folders", #selector(W.toggleSelectionMode(_:)), " ", [.command, .shift], icon: "edit-select"))
@@ -123,8 +143,12 @@ extension AppDelegate {
         view.addItem(.submenu("View Mode", icon: "view-list-icons", W.viewModeMenu()))
         view.addItem(dynamicSubmenu("Show Additional Information", icon: "documentinfo"))
         view.addItem(mi("Show Previews", #selector(W.togglePreviews(_:)), K.f(12), [], icon: "view-preview"))
-        view.addItem(mi("Show Hidden Files", #selector(W.toggleHiddenFiles(_:)), "h", icon: "view-hidden"))
-        view.addItem(mi("Show Hidden Files", #selector(W.toggleHiddenFiles(_:)), ".", [.command, .shift], icon: "view-hidden").hiddenAlternate())
+        if dolphin {
+            view.addItem(mi("Show Hidden Files", #selector(W.toggleHiddenFiles(_:)), "h", icon: "view-hidden"))
+            view.addItem(mi("Show Hidden Files", #selector(W.toggleHiddenFiles(_:)), ".", [.command, .shift], icon: "view-hidden").hiddenAlternate())
+        } else {
+            view.addItem(mi("Show Hidden Files", #selector(W.toggleHiddenFiles(_:)), ".", [.command, .shift], icon: "view-hidden"))
+        }
         view.addItem(sep())
         view.addItem(mi("Restore to Defaults", #selector(W.restoreViewDefaults(_:)), icon: "edit-reset"))
         view.addItem(mi("Adjust View Display Style…", #selector(W.adjustViewStyle(_:)), "j", icon: "configure"))
@@ -152,7 +176,7 @@ extension AppDelegate {
                     mi("Replace Location", #selector(W.replaceLocation(_:)), "l"),
                 ]))
         view.addItem(sep())
-        view.addItem(mi("Customise Toolbar…", #selector(customizeToolbar(_:)), icon: "configure"))
+        view.addItem(mi("Customize Toolbar…", #selector(customizeToolbar(_:)), icon: "configure"))
         view.addItem(mi("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]))
         main.addItem(.submenu("View", icon: nil, view))
 
@@ -188,6 +212,7 @@ extension AppDelegate {
         tools.addItem(mi("Disk Usage…", #selector(W.showDiskUsage(_:)), icon: "drive-harddisk"))
         tools.addItem(mi("Find Duplicates…", #selector(W.showDuplicates(_:)), icon: "edit-copy"))
         tools.addItem(mi("Compress", #selector(W.compress(_:)), icon: "archive-insert"))
+        tools.addItem(mi("Extract Here", #selector(W.extractHere(_:)), icon: "archive-extract"))
         tools.addItem(mi("Remove App and Leftovers…", #selector(W.removeAppAndLeftovers(_:)), icon: "trash-empty"))
         tools.addItem(mi("Empty Trash", #selector(W.emptyTrash(_:)), K.backspace, [.command, .shift], icon: "trash-empty"))
         main.addItem(.submenu("Tools", icon: nil, tools))
@@ -217,7 +242,8 @@ extension AppDelegate {
 
         // Help
         let help = NSMenu(title: "Help")
-        help.addItem(mi("Porpoise Help", #selector(showHelp(_:)), "?", icon: "help-contents"))
+        help.addItem(mi("Keyboard Shortcuts", #selector(showKeyboardShortcuts(_:)), "?", icon: "input-keyboard"))
+        help.addItem(mi("Porpoise Website", #selector(showHelp(_:)), icon: "help-contents"))
         help.addItem(mi("Support Porpoise (Donate)…", #selector(supportPorpoise(_:)), icon: "emblem-favorite"))
         NSApp.helpMenu = help
         main.addItem(.submenu("Help", icon: nil, help))
@@ -255,6 +281,7 @@ extension AppDelegate {
         case "Sort By": built = wc.sortMenu()
         case "Group By": built = wc.groupMenu()
         case "Show Additional Information": built = wc.additionalInfoMenu()
+        case "Tags": built = wc.tagsMenu(for: wc.view.model.selectedItems.filter { $0.url.isFileURL })
         case "Places":
             built = NSMenu()
             for e in PlacesModel.shared.allEntries where !e.hidden {

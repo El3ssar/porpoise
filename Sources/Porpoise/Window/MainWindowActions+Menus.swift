@@ -58,11 +58,13 @@ extension MainWindowController {
         return m
     }
 
-    /// Icons / Compact / Details on ⌘1…⌘3.
+    /// Icons, Details, Compact on ⌘1…⌘3: Finder's ⌘1 icons and ⌘2 list. Dolphin's keys follow the menu order.
     static func viewModeItems() -> [NSMenuItem] {
-        ViewMode.allCases.enumerated().map { i, m in
-            .make(m.title, #selector(setViewMode(_:)), key: "\(i + 1)", icon: m.iconName, tag: i)
-        }
+        let dolphin = Settings.shared.shortcutKeySet == .dolphin
+        return ViewMode.allCases.enumerated().map { i, m in
+            let key = dolphin ? i + 1 : [ViewMode.icons, .details, .compact].firstIndex(of: m).map { $0 + 1 } ?? i + 1
+            return .make(m.title, #selector(setViewMode(_:)), key: "\(key)", icon: m.iconName, tag: i)
+        }.sorted { $0.keyEquivalent < $1.keyEquivalent }
     }
 
     static func viewModeMenu() -> NSMenu {
