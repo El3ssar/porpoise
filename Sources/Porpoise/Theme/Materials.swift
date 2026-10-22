@@ -5,7 +5,9 @@ import PorpoiseServices
 /// sidebar and toolbar, while the colors stay those of the theme. The native theme leaves the material untinted, as
 /// Finder does.
 final class TintedMaterialView: NSVisualEffectView {
-    private let tintLayer = CALayer()
+    /// The theme color over the material (tests read it: the effect view keeps sublayers of its own, which differ
+    /// between macOS versions).
+    let tintLayer = CALayer()
     private let tint: NSColor
     private let tintAlpha: CGFloat
     private func updateTint() {

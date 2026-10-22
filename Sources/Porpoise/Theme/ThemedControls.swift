@@ -162,9 +162,13 @@ final class ThemedTabViewController: NSTabViewController {
 
     override func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [] }
 
+    /// Called when the user (or code) shows another page.
+    var onSelect: ((NSTabViewItem) -> Void)?
+
     override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
         super.tabView(tabView, didSelect: tabViewItem)
         tintTabs()
+        if let tabViewItem { onSelect?(tabViewItem) }
     }
 
     /// Marks the selected tab and draws every tab again, in the palette (also when the palette or the look changes,
