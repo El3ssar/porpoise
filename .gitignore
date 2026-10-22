@@ -10,3 +10,6 @@ Tests/UI/__pycache__/
 .dropbox-app-key
 .onedrive-client-id
 .box-oauth
+
+# Evidence and logs belong in the team folder (.herdr-synapse/porpoise/artifacts), never in the public repo.
+/artifacts/
