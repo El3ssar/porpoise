@@ -44,7 +44,8 @@ public final class DirectoryModel {
         if incomingItems != next { incomingItems = next; rebuild() } else if !next.isEmpty { onChange?() }
     }
     deinit {
-        currentLoad?.cancel(); folderPrefetch?.cancel(); hoverPrefetch?.cancel(); for load in childLoads.values { load.cancel() }
+        rowPreparation?.cancel(); currentLoad?.cancel(); folderPrefetch?.cancel(); hoverPrefetch?.cancel();
+        for load in childLoads.values { load.cancel() }
         if let transferObserver { NotificationCenter.default.removeObserver(transferObserver) }
     }
     public private(set) var location: URL
@@ -58,7 +59,8 @@ public final class DirectoryModel {
         }
     }
     public private(set) var groups: [ItemGroup] = []
-    public private(set) var isLoading = false
+    private var loadingListing = false
+    public var isLoading: Bool { loadingListing || rowPreparation != nil }
     public private(set) var loadError: String?
     /// macOS privacy protection blocked the listing (e.g. the Trash needs Full Disk Access).
     public private(set) var blockedByPrivacy = false
@@ -71,7 +73,14 @@ public final class DirectoryModel {
             guard props != oldValue else { return }
             // Item counts include hidden items only while they are shown.
             if props.showHidden != oldValue.showHidden { recountFolders = true }
-            rebuild()
+            if Self.sortsAlike(props, oldValue), props.effectiveGroupRole == oldValue.effectiveGroupRole,
+                props.mode == oldValue.mode || expanded.isEmpty
+            {
+                // Zoom, columns and a mode without expanded children change geometry, not rows or their order.
+                onChange?()
+            } else {
+                rebuild(keepingOrder: Self.sortsAlike(props, oldValue))
+            }
             onPropsChanged?()
         }
     }
@@ -316,6 +325,7 @@ public final class DirectoryModel {
         let changed = url.standardizedFileURL != location.standardizedFileURL
         location = url
         if changed {
+            loadedNotificationPending = false
             incomingItems = []; incomingProgress = [:]
             expanded = []
             children = [:]
@@ -449,6 +459,8 @@ public final class DirectoryModel {
     /// `changedOnly`: a change in the folder (FSEvents), not a new visit or the user's reload: item counts are taken
     /// again only for folders that changed.
     private func reload(keepSelection: Bool = true, changedOnly: Bool) {
+        loadedNotificationPending = false
+        cancelRowPreparation()
         currentLoad?.cancel(); currentLoad = nil
         source = LocationContentSources.source(for: location)
         folderPrefetch?.cancel(); folderPrefetch = nil
@@ -481,12 +493,12 @@ public final class DirectoryModel {
                 items = listed
                 rebuild()
             }
-            isLoading = false
+            loadingListing = false
             isRefreshing = true
             lastLoaded = url
-            onLoaded?()
+            notifyLoaded()
         } else {
-            isLoading = true
+            loadingListing = true
             if source.traits.paintsCache { isRefreshing = false }
         }
         currentLoad = source.load(url, expanded: expanded) { [weak self] listing in
@@ -502,16 +514,16 @@ public final class DirectoryModel {
     /// A paging source finished: the expanded folders are listed again and the visible ones read ahead. A failure
     /// after the saved listing painted stays quiet.
     private func finish(_ end: LocationListing, of url: URL, from source: LocationContentSource, hadCache: Bool) {
-        isLoading = false
+        loadingListing = false
         isRefreshing = false
         if let error = end.error {
             if !hadCache { loadError = error.message }
-            onLoaded?()
+            notifyLoaded()
             return
         }
         lastLoaded = url
         for expandedURL in expanded { loadChildren(of: expandedURL) }
-        onLoaded?()
+        notifyLoaded()
         let folders = rows.filter { $0.depth == 0 && $0.item.isBrowsableFolder }.map { $0.item.url }
         if prefetchFolders { folderPrefetch = source.prefetch(folders) }
     }
@@ -525,7 +537,7 @@ public final class DirectoryModel {
         let before = changedOnly ? folderDates() : [:]
         items = traits.optimisticEdits ? withEdits(listing.items, in: url) : listing.items
         if let kids = listing.children { children = keepingExpanded(kids) }
-        isLoading = false
+        loadingListing = false
         if traits.dynamicView { applyDynamicView() }
         if traits.folderCounts { forgetFolderCounts(changedSince: changedOnly ? before : nil) }
         loadError = listing.error?.message
@@ -535,12 +547,16 @@ public final class DirectoryModel {
         }
         // Only where a vanished folder can be told apart (a folder on this Mac) is the last folder that listed kept.
         if listing.error == nil, listing.vanished != nil { lastLoaded = url }
-        let alive = Set(allLoadedURLs())
-        if traits.prunesSelection, keepSelection { selection = selection.intersection(alive) }
-        if traits.clearsCurrentItem, let c = currentURL, !alive.contains(c) { currentURL = nil }
+        if !preparesLocalRows,
+            (traits.prunesSelection && keepSelection && !selection.isEmpty) || (traits.clearsCurrentItem && currentURL != nil)
+        {
+            let alive = Set(allLoadedURLs())
+            if traits.prunesSelection, keepSelection { selection = selection.intersection(alive) }
+            if traits.clearsCurrentItem, let c = currentURL, !alive.contains(c) { currentURL = nil }
+        }
         rebuild()
         if traits.watch != .none { updateWatcher() }
-        onLoaded?()
+        notifyLoaded()
     }
 
     private func applyPage(_ listed: [FileItem], complete: Bool, hasCache: Bool, token: Int, keepSelection: Bool) {
@@ -591,9 +607,63 @@ public final class DirectoryModel {
     /// The top level in order, before the name filter: typing in the filter bar narrows it without sorting again.
     private var sortedTop: [FileItem]?
 
+    private var preparesLocalRows: Bool {
+        !isSearching && source is LocalSource && items.count + children.values.reduce(0, { $0 + $1.count }) >= 2000
+    }
+    private var rowPreparation: LocationLoad?
+    private var rowPreparationGeneration: UInt64 = 0
+    private var loadedNotificationPending = false
+    // Internal dependency allows deterministic stale-delivery tests without sleeps or blocking a worker pool.
+    var prepareRows = DirectoryModelPreparation.start
+
+    private func cancelRowPreparation() {
+        rowPreparationGeneration &+= 1
+        rowPreparation?.cancel()
+        rowPreparation = nil
+    }
+
+    private func notifyLoaded() {
+        if isLoading { loadedNotificationPending = true } else { onLoaded?() }
+    }
+
+    private func prepareLocalRows(keepingOrder: Bool) {
+        let generation = rowPreparationGeneration
+        let snapshot = DirectoryModelPreparation(
+            items: items, incoming: incomingItems, children: children, expanded: expanded, props: props, filter: filter,
+            choice: Settings.shared.sortingChoice, hideBackups: Settings.shared.hideBackupFiles, sizes: folderCounts,
+            knownTags: tagCache, ordered: keepingOrder ? sortedTop : nil)
+        // Never let a later filter/mode change reuse order from a superseded listing.
+        if !keepingOrder { sortedTop = nil }
+        rowPreparation = prepareRows(snapshot) { [weak self] result in
+            guard let self, generation == self.rowPreparationGeneration else { return }
+            self.rowPreparation = nil
+            // Selection can change while the old rows remain visible during preparation.
+            self.selection.formIntersection(result.alive)
+            if let current = self.currentURL, !result.alive.contains(current) { self.currentURL = nil }
+            self.sortedTop = result.top
+            self.rows = result.rows
+            self.groups = result.groups
+            self.tagCache = result.tags
+            self.rowFileKeys = result.keys
+            self.fileKeyCache = result.keyCache
+            self.requestFolderCounts()
+            self.onChange?()
+            if self.loadedNotificationPending {
+                self.loadedNotificationPending = false
+                self.notifyLoaded()
+            }
+        }
+    }
+
     /// Rebuilds the rows; `keepingOrder` when only the name filter changed, `adding` when only those items were added
     /// to what's shown.
     public func rebuild(keepingOrder: Bool = false, adding: [FileItem]? = nil) {
+        cancelRowPreparation()
+        // Small directories keep their immediate editing semantics. Search has its own incremental preparation.
+        if preparesLocalRows {
+            prepareLocalRows(keepingOrder: keepingOrder)
+            return
+        }
         let choice = Settings.shared.sortingChoice
         var out: [Row] = []
         var grps: [ItemGroup] = []
@@ -656,6 +726,10 @@ public final class DirectoryModel {
         groups = grps
         requestFolderCounts()
         onChange?()
+        if loadedNotificationPending {
+            loadedNotificationPending = false
+            notifyLoaded()
+        }
     }
 
     // MARK: Folder sizes (Details "Size" column shows item counts, Dolphin's default)
