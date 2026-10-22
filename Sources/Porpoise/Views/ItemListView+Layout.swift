@@ -2,6 +2,36 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
+/// Regular cells are represented by one band per group, rather than one rectangle per file.
+/// Compact retains its existing measured-column layout. Value semantics also keep transition snapshots stable.
+struct ItemCellFrames: RandomAccessCollection {
+    struct Band {
+        let start: Int
+        let origin: CGPoint
+    }
+    var count = 0
+    var bands: [Band] = []
+    var columns = 1
+    var cellSize = CGSize.zero
+    var materialized: [CGRect] = []
+    var startIndex: Int { 0 }
+    var endIndex: Int { count }
+    subscript(index: Int) -> CGRect {
+        precondition(index >= 0 && index < count)
+        if !materialized.isEmpty { return materialized[index] }
+        var lo = 0, hi = bands.count
+        while lo + 1 < hi {
+            let mid = (lo + hi) / 2
+            if bands[mid].start <= index { lo = mid } else { hi = mid }
+        }
+        let band = bands[lo], offset = index - band.start
+        return CGRect(
+            x: band.origin.x + CGFloat(offset % columns) * cellSize.width,
+            y: band.origin.y + CGFloat(offset / columns) * cellSize.height,
+            width: cellSize.width, height: cellSize.height)
+    }
+}
+
 // MARK: - Layout
 
 extension ItemListView {
@@ -19,7 +49,7 @@ extension ItemListView {
     func computeLayout() {
         cloudRects = [:]
         rowKeys = [:]
-        frames = Array(repeating: .zero, count: model.rows.count)
+        cacheGeometryTopology()
         groupHeaderFrames = []
         let width = max(layoutWidthOverride ?? visibleWidth, 100)
         let contentSize: NSSize
@@ -65,20 +95,20 @@ extension ItemListView {
         let textLines = maxLabelLines + model.props.roles(for: .icons).count
         let h = 3 * Self.pad + iconSize + CGFloat(textLines) * lineHeight + 4
         var y = margin
-        var col = 0
-        var lastGroup = -2
-        for (i, r) in model.rows.enumerated() {
-            if r.group != lastGroup && r.group >= 0 {
-                if col != 0 { y += h; col = 0 }
+        var bands: [ItemCellFrames.Band] = []
+        var start = 0
+        for end in geometryHeaderStarts + [model.rows.count] {
+            if end > start {
+                bands.append(.init(start: start, origin: CGPoint(x: margin, y: y)))
+                y += CGFloat((end - start + columns - 1) / columns) * h
+            }
+            if end < model.rows.count {
                 groupHeaderFrames.append(CGRect(x: margin, y: y, width: avail, height: groupH))
                 y += groupH
-                lastGroup = r.group
             }
-            frames[i] = CGRect(x: margin + CGFloat(col) * w, y: y, width: w, height: h)
-            col += 1
-            if col == columns { col = 0; y += h }
+            start = end
         }
-        if col != 0 { y += h }
+        frames = ItemCellFrames(count: model.rows.count, bands: bands, columns: columns, cellSize: CGSize(width: w, height: h))
         return NSSize(width: width, height: max(visibleHeight, y + margin))
     }
 
@@ -86,6 +116,7 @@ extension ItemListView {
     /// new column under its header (Dolphin's horizontal group layout).
     private func layoutCompact(width: CGFloat) -> NSSize {
         let rows = model.rows
+        var cells = Array(repeating: CGRect.zero, count: rows.count)
         let margin = Self.margin, pad = Self.pad, groupH = groupHeaderHeight
         let roles = model.props.roles(for: .compact)
         let h = 2 * pad + max(iconSize, lineHeight * CGFloat(1 + roles.count)) + 2
@@ -109,7 +140,7 @@ extension ItemListView {
             while i < groupEnd {
                 let end = min(groupEnd, i + rowsPerColumn)
                 for j in i..<end {
-                    frames[j] = CGRect(x: x, y: top + CGFloat(j - i) * h, width: colW, height: h)
+                    cells[j] = CGRect(x: x, y: top + CGFloat(j - i) * h, width: colW, height: h)
                 }
                 x += colW
                 i = end
@@ -121,6 +152,7 @@ extension ItemListView {
                 groupHeaderFrames.append(CGRect(x: groupX, y: margin, width: x - groupX - 4, height: groupH))
             }
         }
+        frames = ItemCellFrames(count: cells.count, materialized: cells)
         return NSSize(width: max(width, x + margin), height: visibleHeight)
     }
 
@@ -160,25 +192,43 @@ extension ItemListView {
         columnWidths[.name] = saved[ItemRole.name.rawValue] ?? max(220, width - 2 * side - fixed)
         let total = detailsRoles.reduce(0) { $0 + (columnWidths[$1] ?? 0) }
         var y: CGFloat = 0
-        var lastGroup = -2
-        for (i, r) in model.rows.enumerated() {
-            if r.group != lastGroup && r.group >= 0 {
+        var start = 0
+        var bands: [ItemCellFrames.Band] = []
+        for end in geometryHeaderStarts + [model.rows.count] {
+            if end > start {
+                bands.append(.init(start: start, origin: CGPoint(x: side, y: y)))
+                y += CGFloat(end - start) * h
+            }
+            if end < model.rows.count {
                 groupHeaderFrames.append(CGRect(x: side, y: y, width: total, height: groupH))
                 y += groupH
-                lastGroup = r.group
             }
-            frames[i] = CGRect(x: side, y: y, width: total, height: h)
-            y += h
+            start = end
         }
+        frames = ItemCellFrames(count: model.rows.count, bands: bands, cellSize: CGSize(width: total, height: h))
         computeTreeLines()
         return NSSize(width: max(width, total + 2 * side), height: max(visibleHeight, y + 4))
+    }
+
+    /// Group boundaries depend only on the row generation, not the window or zoom level.
+    private func cacheGeometryTopology() {
+        guard geometryRowsRevision != model.rowsRevision else { return }
+        geometryRowsRevision = model.rowsRevision
+        geometryHeaderStarts = []
+        var lastGroup = -2
+        for (i, row) in model.rows.enumerated() where row.group >= 0 && row.group != lastGroup {
+            geometryHeaderStarts.append(i)
+            lastGroup = row.group
+        }
     }
 
     /// Backward pass: does a later sibling exist at each level (KItemListSiblingsInformation)?
     private func computeTreeLines() {
         // Only drawn with expanders: without them, an array per row (100k in a big folder) on every layout,
         // each column-resize drag event included, for nothing.
-        guard expanderWidth > 0 else { treeLines = []; return }
+        guard expanderWidth > 0 else { treeLines = []; treeLinesRevision = nil; return }
+        guard treeLinesRevision != model.rowsRevision else { return }
+        treeLinesRevision = model.rowsRevision
         let rows = model.rows
         treeLines = Array(repeating: [], count: rows.count)
         var seen: [Bool] = []

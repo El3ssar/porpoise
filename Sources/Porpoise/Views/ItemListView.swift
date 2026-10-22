@@ -32,7 +32,11 @@ final class ItemListView: NSView {
     // MARK: Layout output (+Layout)
 
     /// Item cells, in row order; sorted by y (Icons, Details) or by x (Compact), which hit testing relies on.
-    var frames: [CGRect] = []
+    var frames = ItemCellFrames()
+    /// Row topology survives width and icon-size changes; new rows invalidate it.
+    var geometryRowsRevision: UInt64?
+    var geometryHeaderStarts: [Int] = []
+    var treeLinesRevision: UInt64?
     var groupHeaderFrames: [CGRect] = []
     /// Icons: items per row.
     var columns = 1
