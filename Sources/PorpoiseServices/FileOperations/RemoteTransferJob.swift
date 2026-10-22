@@ -397,7 +397,11 @@ final class RemoteTransferJob {
             if let result = try native.copyTransferFile(source, to: target, replacing: replacing, modified: preserved) {
                 try Shell.withoutTransferControl {
                     try beforeSourceRemoval?()
-                    if kind == .move && !sourceRemovalHandled { try result.removeSource() }
+                    if kind == .move && !sourceRemovalHandled {
+                        do { try result.removeSource() } catch {
+                            throw RemoteError.failed("Copy published; source removal needs review. \(error.localizedDescription)")
+                        }
+                    }
                 }
                 return
             }

@@ -31,7 +31,9 @@ struct MoveSourceRemoval {
                 throw RemoteError.failed("Copy published; source retained. \(error.localizedDescription)")
             }
         } else if let remote {
-            try remote.removeSource()
+            do { try remote.removeSource() } catch {
+                throw RemoteError.failed("Copy published; source retained. \(error.localizedDescription)")
+            }
         } else {
             throw RemoteError.unsupported(
                 "Copy published and verified; source retained because this provider cannot remove a specific source generation safely.")

@@ -105,7 +105,7 @@ private final class RevisionedMoveProvider: RemoteTransferConditionalRemoval {
         let expected = lock.withLock { revision }
         return RemoteRemovalReceipt {
             try self.lock.withLock {
-                guard self.revision == expected else { throw RemoteError.failed("Copy published; source retained because its revision changed.") }
+                guard self.revision == expected else { throw RemoteError.failed("Source revision changed.") }
                 try self.base.delete([source])
                 self.removals += 1
             }
