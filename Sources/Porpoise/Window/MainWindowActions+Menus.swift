@@ -111,6 +111,9 @@ extension MainWindowController {
         m.addItem(.separator())
         m.addItem(.make("Focus Places Panel", #selector(focusPlaces(_:)), key: "p"))
         m.addItem(.make("Focus Terminal Panel", #selector(focusTerminal(_:)), key: KeyEquivalent.f(4), mods: [.command, .shift]))
+        m.addItem(.make("Focus Folders Panel", #selector(focusFolders(_:))))
+        m.addItem(.make("Focus Information Panel", #selector(focusInformation(_:))))
+        m.addItem(.make("Focus Shelf", #selector(focusShelf(_:))))
         return m
     }
 

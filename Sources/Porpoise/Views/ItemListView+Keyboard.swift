@@ -7,6 +7,7 @@ private enum Key {
     static let returnKey = 36, space = 49, backspace = 51, escape = 53, enter = 76
     static let home = 115, pageUp = 116, forwardDelete = 117, end = 119, pageDown = 121
     static let left = 123, right = 124, down = 125, up = 126
+    static let f10 = 109
 }
 
 /// Type-ahead keeps extending the typed prefix while keys come within this interval.
@@ -41,6 +42,9 @@ extension ItemListView {
         case Key.pageDown: moveCurrent(.pageDown, extend: shift); return
         case Key.returnKey, Key.enter:
             if mods.isEmpty { openSelection(); return }
+        case Key.f10 where mods == [.shift]:
+            // ⇧F10, the context-menu key: the current item's menu (the folder's when there's none).
+            showKeyboardMenu(); return
         case Key.escape:
             if selectionModeActive, let c = delegate as? ViewContainer {
                 c.selectionMode = false

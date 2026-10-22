@@ -61,6 +61,9 @@ final class DebugBridge: NSObject {
         "settingsdump": DebugBridge.settingsdumpCommand,
         "permissions": DebugBridge.permissionsCommand,
         "windows": DebugBridge.windowsCommand,
+        "fka": DebugBridge.fkaCommand,
+        "focus": DebugBridge.focusCommand,
+        "keymenu": DebugBridge.keymenuCommand,
     ]
 
     func termtextCommand(_ arg: String) {
@@ -115,6 +118,36 @@ final class DebugBridge: NSObject {
         if words.contains("waiting") { OnboardingWindowController.fullDiskGranted = { false } }
         if words.contains("skip") { OnboardingWindowController.shared?.finish(); return }
         OnboardingWindowController.show(at: step, on: wc?.window)
+    }
+
+    /// fka on|off: Full Keyboard Access as this instance sees it (the system setting otherwise).
+    func fkaCommand(_ arg: String) {
+        let on = arg == "on"
+        KeyboardAccess.isFull = arg == "system" ? { NSApp.isFullKeyboardAccessEnabled } : { on }
+    }
+
+    /// keymenu <png>: presses ⇧F10 in the list, captures the menu it opens (and its items to <png>.txt), then closes it.
+    func keymenuCommand(_ arg: String) {
+        let timer = Timer(timeInterval: 0.6, repeats: false) { _ in
+            WindowCapture.write(WindowCapture.ownWindowIDs(), to: arg)
+            let menu = ItemListView.keyboardMenuShown
+            let items = menu?.items.filter { !$0.isSeparatorItem && !$0.isHidden }.map(\.title) ?? []
+            try? (["open=\(menu != nil)"] + items).joined(separator: "\n").write(toFile: arg + ".txt", atomically: true, encoding: .utf8)
+            menu?.cancelTracking()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        DispatchQueue.main.async { self.sendKey("shift+f10") }
+    }
+
+    /// focus <file>: appends the focused view (and its accessibility label) to the file, one line per call.
+    func focusCommand(_ arg: String) {
+        let r = wc?.window?.firstResponder
+        let view = MainWindowController.focusedView(r)
+        var line = view.map { String(describing: type(of: $0)) } ?? r.map { String(describing: type(of: $0)) } ?? "nil"
+        if let label = view?.accessibilityLabel(), !label.isEmpty { line += " \"\(label)\"" }
+        let url = URL(fileURLWithPath: arg)
+        let old = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        try? (old + line + "\n").write(to: url, atomically: true, encoding: .utf8)
     }
 
     func windowsCommand(_ arg: String) {

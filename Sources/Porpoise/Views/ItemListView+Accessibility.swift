@@ -30,6 +30,24 @@ extension ItemListView {
         }
     }
 
+    /// The menu ⇧F10 shows and where: the current item's at the item, else the folder's at the top left.
+    func keyboardMenu() -> (menu: NSMenu, at: CGPoint)? {
+        if let c = model.currentURL, let i = model.index(of: c), i < frames.count, let m = accessibilityMenu(for: i) {
+            return (m, CGPoint(x: frames[i].midX, y: frames[i].midY))
+        }
+        guard let m = delegate?.itemList(self, menuFor: nil) else { return nil }
+        return (m, CGPoint(x: visibleRect.minX + 20, y: visibleRect.minY + 20))
+    }
+
+    /// The menu ⇧F10 opened, while it's open (for tests to look at it and close it).
+    nonisolated(unsafe) static weak var keyboardMenuShown: NSMenu?
+
+    func showKeyboardMenu() {
+        guard let (menu, at) = keyboardMenu() else { return }
+        Self.keyboardMenuShown = menu
+        menu.popUp(positioning: nil, at: at, in: self)
+    }
+
     /// The context menu for item `i`, selecting it first unless it's already part of the selection.
     func accessibilityMenu(for i: Int) -> NSMenu? {
         guard i < model.rows.count else { return nil }

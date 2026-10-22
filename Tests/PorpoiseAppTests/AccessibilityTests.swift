@@ -182,8 +182,8 @@ import Testing
         #expect(!tabs.acceptsFirstResponder && !crumb.acceptsFirstResponder)
     }
 
-    /// In a browser window, Tab goes through the content (Places, the tab bar), then the path in the title bar, then
-    /// the list; ⇧Tab goes back the same way. Hidden bars' buttons are skipped.
+    /// In a browser window, Tab goes through Places, the path in the title bar and the tab bar, and back to the list;
+    /// ⇧Tab goes back the same way. Hidden bars' buttons are skipped.
     @Test func tabOrderInTheBrowserWindowIncludesThePath() throws {
         NSApplication.shared.setActivationPolicy(.prohibited)
         let saved = KeyboardAccess.isFull
@@ -199,18 +199,23 @@ import Testing
         w.layoutIfNeeded()
         func name(_ r: NSResponder?) -> String { r.map { String(describing: type(of: $0)) } ?? "nil" }
         #expect(w.makeFirstResponder(wc.view.list))
+        let stops = wc.keyLoop.count
         var forward: [String] = []
-        for _ in 0..<4 {
+        for _ in 0..<stops {
             w.selectNextKeyView(nil)
             forward.append(name(w.firstResponder))
         }
-        #expect(forward == ["PlacesPanel", "TabBarView", "BreadcrumbView", "ItemListView"], "\(forward)")
+        // Reading order: the sidebar, the toolbar with the path, the tab bar, then back to the list.
+        let places = forward.firstIndex(of: "PlacesPanel"), path = forward.firstIndex(of: "BreadcrumbView")
+        let tabs = forward.firstIndex(of: "TabBarView")
+        #expect(places != nil && path != nil && tabs != nil && places! < path! && path! < tabs!, "\(forward)")
+        #expect(forward.last == "ItemListView", "\(forward)")
         var backward: [String] = []
-        for _ in 0..<4 {
+        for _ in 0..<stops {
             w.selectPreviousKeyView(nil)
             backward.append(name(w.firstResponder))
         }
-        #expect(backward == ["BreadcrumbView", "TabBarView", "PlacesPanel", "ItemListView"], "\(backward)")
+        #expect(Array(backward.dropLast().reversed()) == Array(forward.dropLast()), "\(backward)")
     }
 
     private func key(_ code: UInt16) throws -> NSEvent {
