@@ -40,7 +40,11 @@ extension ItemListView {
         case Key.end: moveCurrent(.end, extend: shift); return
         case Key.pageUp: moveCurrent(.pageUp, extend: shift); return
         case Key.pageDown: moveCurrent(.pageDown, extend: shift); return
-        case Key.returnKey, Key.enter:
+        case Key.returnKey where mods.isEmpty:
+            // Return renames from the menu bar (Mac keys); it opens here only when no menu item has it (Dolphin keys).
+            if !MenuCommandRegistry.shared.isBound(KeyboardShortcut(key: "\r")) { openSelection() }
+            return
+        case Key.enter:
             if mods.isEmpty { openSelection(); return }
         case Key.f10 where mods == [.shift]:
             // ⇧F10, the context-menu key: the current item's menu (the folder's when there's none).
@@ -58,8 +62,8 @@ extension ItemListView {
                 NSApp.sendAction(#selector(MainWindowController.goBack(_:)), to: nil, from: self)
             }
             return
-        case Key.forwardDelete where mods.isEmpty || mods == [.shift]:
-            // fn+⌫ (Delete) = Move to Trash, Shift+Delete = Delete permanently.
+        case Key.forwardDelete where (mods.isEmpty || mods == [.shift]) && Settings.shared.shortcutKeySet == .dolphin:
+            // Dolphin keys: fn+⌫ (Delete) = Move to Trash, Shift+Delete = Delete permanently. Finder's keys need ⌘⌫.
             let action = mods.isEmpty ? #selector(MainWindowController.moveToTrash(_:)) : #selector(MainWindowController.deleteItem(_:))
             if MenuCommandRegistry.shared.fallbackAllowed(action) { NSApp.sendAction(action, to: nil, from: self) }
             return

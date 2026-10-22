@@ -159,6 +159,8 @@ public final class Settings {
     @Pref("verifyCopies") public var verifyCopies: Bool = false
     @Pref("transferConflictRule") public var transferConflictRule: TransferConflictRule = .ask
     @Pref("transferCompareMethod") public var transferCompareMethod: TransferCompareMethod = .sizeAndDate
+    /// Settings › Shortcuts › Key set. Bindings the user changed apply on top of either set.
+    @Pref("shortcutKeySet") public var shortcutKeySet: ShortcutKeySet = .mac
 
     public func contextMenuShows(_ e: ContextMenuEntry) -> Bool { get("ctx." + e.rawValue, e.defaultOn) }
     public func setContextMenu(_ e: ContextMenuEntry, _ on: Bool) { set("ctx." + e.rawValue, on) }

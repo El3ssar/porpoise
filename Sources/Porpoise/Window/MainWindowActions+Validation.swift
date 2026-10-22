@@ -25,6 +25,12 @@ extension MainWindowController: NSMenuItemValidation {
     /// The key press being handled (the debug bridge substitutes the one it delivers).
     static var currentKeyEvent: () -> NSEvent? = { NSApp.currentEvent }
 
+    /// `event` is Return and `item`'s shortcut is Return without ⌘, ⌃ or ⌥.
+    static func isBareReturn(_ item: NSMenuItem, _ event: NSEvent) -> Bool {
+        item.keyEquivalent == "\r" && item.keyEquivalentModifierMask.intersection([.command, .control, .option]).isEmpty
+            && event.charactersIgnoringModifiers == "\r"
+    }
+
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         guard tabs.indices.contains(current) else { return false }
         // Shortcuts without ⌘ (⌫, ⌥←, ⌥1…), and any on a key that moves the insertion point (⌘← Back, ⌘↑ Up), must not
@@ -32,6 +38,13 @@ extension MainWindowController: NSMenuItemValidation {
         // Only key presses are affected: the same items stay usable from an open menu.
         // Only for the key actually pressed: the command palette asks about every item while ⌘⇧P is the event.
         if let event = Self.currentKeyEvent(), event.type == .keyDown, isTypingFocus, Self.typingKeeps(item, event) { return false }
+        // Return without ⌘ (Rename, with the Mac keys) belongs to the file list, and only with something selected. Elsewhere
+        // it opens a place, presses a sheet's default button or ends an edit.
+        if let event = Self.currentKeyEvent(), event.type == .keyDown, Self.isBareReturn(item, event),
+            event.window !== window || !(window?.firstResponder is ItemListView) || !hasSelection
+        {
+            return false
+        }
         let p = view.model.props
         let ops = FileOperationsController.shared
         if let r = validateCloudItem(item) { return r }
@@ -88,7 +101,10 @@ extension MainWindowController: NSMenuItemValidation {
         case #selector(addToPlaces(_:)):
             return view.model.selectedItems.contains(where: \.isBrowsableFolder) || view.url.isFileURL
         case #selector(restoreFromTrash(_:)):
-            return hasSelection
+            return hasSelection && view.model.kind == .trash
+        // The context menu's items carry their folder; from the menu bar and the palette they act on the selection.
+        case #selector(ctxOpenInNewTab(_:)), #selector(ctxOpenInNewWindow(_:)), #selector(ctxOpenInSplit(_:)):
+            return item.representedObject is URL || selectedFolder != nil
         case #selector(openTerminalHere(_:)):
             return !terminalFolders.isEmpty
         case #selector(openTerminal(_:)):

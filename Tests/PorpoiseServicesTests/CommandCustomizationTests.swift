@@ -45,6 +45,8 @@ import Testing
         #expect(KeyboardShortcut(key: "\u{f705}").display == "F2")
         #expect(KeyboardShortcut(key: "\u{f728}", modifiers: .shift).display == "⇧⌦")
         #expect(KeyboardShortcut().display == "—")
+        #expect(KeyboardShortcut(key: "?", modifiers: .command).display == "⌘?")
+        #expect(KeyboardShortcut(key: ".", modifiers: [.command, .shift]).display == "⇧⌘.")
         #expect(throws: (any Error).self) { try KeyboardShortcut(key: "two keys").validate() }
         #expect(throws: (any Error).self) { try KeyboardShortcut(key: "\0").validate() }
         #expect(throws: (any Error).self) { try KeyboardShortcut(key: "k", modifiers: ShortcutModifiers(rawValue: 16)).validate() }

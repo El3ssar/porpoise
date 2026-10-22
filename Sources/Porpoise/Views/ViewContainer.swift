@@ -144,7 +144,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             ("Rename", "edit-rename", #selector(MainWindowController.renameItem(_:))),
             ("Duplicate", "edit-duplicate", #selector(MainWindowController.duplicateItem(_:))),
             ("Copy Location", "edit-copy-path", #selector(MainWindowController.copyLocation(_:))),
-            ("Properties", "document-properties", #selector(MainWindowController.properties(_:))),
+            ("Get Info", "document-properties", #selector(MainWindowController.properties(_:))),
         ]
 
         model.onChange = { [weak self] in self?.modelChanged() }

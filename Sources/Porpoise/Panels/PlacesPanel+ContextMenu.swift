@@ -84,7 +84,7 @@ extension PlacesPanel {
         add("Reset to Defaults", nil, #selector(resetPlaces))
         if let e = entry(at: i), e.url.isFileURL || PlacesModel.isCloud(e.url) {
             m.addItem(.separator())
-            add("Properties", "document-properties", #selector(properties(_:)), e.url)
+            add("Get Info", "document-properties", #selector(properties(_:)), e.url)
         }
         return m
     }

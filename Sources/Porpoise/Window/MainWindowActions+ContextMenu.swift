@@ -113,7 +113,7 @@ extension MainWindowController {
             m.addItem(self.item("Open Terminal Here", "utilities-terminal", #selector(openTerminalHere(_:))))
             m.addItem(self.item("Reveal in Finder", "system-file-manager", #selector(revealInFinder(_:))))
             m.addItem(.separator())
-            m.addItem(self.item("Properties", "document-properties", #selector(properties(_:))))
+            m.addItem(self.item("Get Info", "document-properties", #selector(properties(_:))))
             return m
         }
         if inTrash {
@@ -124,7 +124,7 @@ extension MainWindowController {
             m.addItem(.separator())
             m.addItem(self.item("Delete", "edit-delete", #selector(deleteItem(_:))))
             m.addItem(.separator())
-            m.addItem(self.item("Properties", "document-properties", #selector(properties(_:))))
+            m.addItem(self.item("Get Info", "document-properties", #selector(properties(_:))))
             return m
         }
         let single = sel.count <= 1
@@ -204,7 +204,7 @@ extension MainWindowController {
             m.addItem(self.item("Move to Other View", "edit-move", #selector(moveToOtherView(_:))))
         }
         m.addItem(.separator())
-        m.addItem(self.item("Properties", "document-properties", #selector(properties(_:))))
+        m.addItem(self.item("Get Info", "document-properties", #selector(properties(_:))))
         return m
     }
 
@@ -227,7 +227,7 @@ extension MainWindowController {
             m.addItem(sub("Sort By", "view-sort", sortMenu()))
             m.addItem(sub("View Mode", "view-list-icons", Self.viewModeMenu()))
             m.addItem(.separator())
-            m.addItem(self.item("Properties", "document-properties", #selector(properties(_:))))
+            m.addItem(self.item("Get Info", "document-properties", #selector(properties(_:))))
             return m
         }
         if single && item.isBrowsableFolder {
@@ -256,7 +256,7 @@ extension MainWindowController {
         m.addItem(self.item(CloudAccounts.shared.deletionTitle(for: item.url), "user-trash", #selector(moveToTrash(_:))))
         m.addItem(.separator())
         m.addItem(self.item("Quick Look", "document-preview", #selector(quickLook(_:))))
-        m.addItem(self.item("Properties", "document-properties", #selector(properties(_:))))
+        m.addItem(self.item("Get Info", "document-properties", #selector(properties(_:))))
         return m
     }
 
@@ -332,7 +332,7 @@ extension MainWindowController {
         return it
     }
 
-    private func tagsMenu(for items: [FileItem]) -> NSMenu {
+    func tagsMenu(for items: [FileItem]) -> NSMenu {
         let m = NSMenu()
         let colors: [(String, NSColor)] = [
             ("Red", .systemRed), ("Orange", .systemOrange), ("Yellow", .systemYellow), ("Green", .systemGreen),
@@ -352,14 +352,21 @@ extension MainWindowController {
 
     // MARK: Context menu actions
 
-    @objc func ctxOpenInNewTab(_ s: NSMenuItem) { if let u = s.representedObject as? URL { addTab(url: u, select: false) } }
+    /// The one selected folder, for the context menu's Open in… items when they come from the menu bar or the palette.
+    var selectedFolder: URL? {
+        let selected = view.model.selectedItems
+        return selected.count == 1 && selected[0].isBrowsableFolder ? selected[0].url : nil
+    }
+    private func folder(_ s: NSMenuItem) -> URL? { s.representedObject as? URL ?? selectedFolder }
+
+    @objc func ctxOpenInNewTab(_ s: NSMenuItem) { if let u = folder(s) { addTab(url: u, select: false) } }
     @objc func ctxOpenInNewTabs(_ s: NSMenuItem) {
         for it in view.model.selectedItems where it.isBrowsableFolder { addTab(url: it.url, select: false) }
     }
-    @objc func ctxOpenInNewWindow(_ s: NSMenuItem) { if let u = s.representedObject as? URL { AppDelegate.shared.newWindow(at: u) } }
+    @objc func ctxOpenInNewWindow(_ s: NSMenuItem) { if let u = folder(s) { AppDelegate.shared.newWindow(at: u) } }
 
     @objc func ctxOpenInSplit(_ s: NSMenuItem) {
-        guard let u = s.representedObject as? URL else { return }
+        guard let u = folder(s) else { return }
         if tab.isSplit { tab.inactive?.setURL(u) } else { tab.openSplit(url: u); tab.secondary?.delegate = self }
         syncToActiveView()
     }

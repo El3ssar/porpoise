@@ -65,13 +65,18 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
         let files = NSStackView(views: [importButton, exportButton]); files.spacing = 8; add(files)
         status.font = .systemFont(ofSize: 12); add(status)
         shown = all; table.reloadData(); if !shown.isEmpty { table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false) }
-        observer = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] _ in
-            self?.table.reloadData()
+        observer = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
+            // Another key set rebuilds the menu bar: list its new items and defaults.
+            if note.object == nil || note.object as? String == "shortcutKeySet" { self?.reloadCommands() } else { self?.table.reloadData() }
         }
     }
     required init?(coder: NSCoder) { fatalError() }
     deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
     private var selected: MenuCommandRegistry.Command? { shown[safe: table.selectedRow] }
+    private func reloadCommands() {
+        all = MenuCommandRegistry.shared.commands.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+        controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
+    }
     func controlTextDidChange(_ obj: Notification) {
         let candidates = all.map { CommandCandidate(id: $0.id, title: $0.path) }
         let ids = CommandSearch.rank(search.stringValue, candidates: candidates, limit: all.count).map { $0.candidate.id }
@@ -102,7 +107,7 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
         var preferences = Settings.shared.keyboardShortcuts; preferences.overrides.removeValue(forKey: selected.id)
         let conflicts = preferences.conflicts(actions: MenuCommandRegistry.shared.commands.map(\.definition))
         guard conflicts.isEmpty else {
-            status.stringValue = "The default conflicts with another customised action. Clear that binding or Reset All first."; return
+            status.stringValue = "The default conflicts with another customized action. Clear that binding or Reset All first."; return
         }
         Settings.shared.keyboardShortcuts = preferences; status.stringValue = "Default shortcuts restored."; status.textColor = Theme.viewTextInactive
     }
@@ -137,15 +142,23 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
 
 enum ShortcutSettingsPage {
     static func build(_ form: FormBuilder) {
+        form.section("Key set")
+        form.radio(
+            [
+                "Mac (Finder): ⌘H hides Porpoise, ⌘I Get Info, Return renames, ⌘⌫ moves to the Trash",
+                "Dolphin: ⌘H shows hidden files, ⌘I filters, F2 renames, Return opens, ⌦ moves to the Trash",
+            ], ShortcutKeySet.allCases.firstIndex(of: Settings.shared.shortcutKeySet) ?? 0
+        ) { Settings.shared.shortcutKeySet = ShortcutKeySet.allCases[$0] }
+        form.note("Shortcuts you've changed below stay as you set them in either key set.")
         form.section("Keyboard shortcuts")
         form.note(
-            "Rebind menu actions, including their hidden alternate shortcuts. Conflicting bindings are blocked. Text editing and view navigation retain their normal keys."
+            "Rebind menu actions, including their hidden alternate shortcuts. Conflicting bindings are blocked. Text editing and view navigation keep their normal keys. Help › Keyboard Shortcuts (⌘?) lists them all."
         )
         let editor = ShortcutEditorView()
         form.stack.addArrangedSubview(editor)
         editor.widthAnchor.constraint(equalTo: form.stack.widthAnchor, constant: -60).isActive = true
         form.section("Toolbar")
-        form.button("Customise Toolbar…") { ToolbarCustomizationWindow.show() }
+        form.button("Customize Toolbar…") { ToolbarCustomizationWindow.show() }
         form.button("Restore Default Toolbar") { Settings.shared.toolbarCommands = ToolbarCommand.defaults }
     }
 }

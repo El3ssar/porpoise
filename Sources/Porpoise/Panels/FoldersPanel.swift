@@ -499,7 +499,7 @@ extension FoldersPanel: NSMenuDelegate {
         if let url = nodeURL(outline.item(atRow: outline.clickedRow)) {
             let open = menu.addItem(withTitle: "Open in New Tab", action: #selector(openInTab(_:)), keyEquivalent: "")
             open.target = self; open.representedObject = url; open.image = Icons.shared.menuIcon("tab-new")
-            let props = menu.addItem(withTitle: "Properties", action: #selector(props(_:)), keyEquivalent: "")
+            let props = menu.addItem(withTitle: "Get Info", action: #selector(props(_:)), keyEquivalent: "")
             props.target = self; props.representedObject = url; props.image = Icons.shared.menuIcon("document-properties")
             menu.addItem(.separator())
         }

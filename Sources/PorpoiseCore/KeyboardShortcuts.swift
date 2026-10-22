@@ -47,7 +47,8 @@ public struct KeyboardShortcut: Codable, Sendable, Hashable {
     }
     public var display: String {
         guard !key.isEmpty else { return "—" }
-        let shortcut = normalized
+        // A shifted symbol shows as typed, as menus do (⌘?, not ⇧⌘/); letters and other keys show ⇧.
+        let shortcut = key.count == 1 && "~!@#$%^&*()_+{}|:\"<>?".contains(key) ? self : normalized
         let flags = shortcut.modifiers
         let prefix =
             (flags.contains(.control) ? "⌃" : "") + (flags.contains(.option) ? "⌥" : "") + (flags.contains(.shift) ? "⇧" : "")
@@ -64,6 +65,12 @@ public struct KeyboardShortcut: Codable, Sendable, Hashable {
 public enum ShortcutError: Error, LocalizedError {
     case invalid(String)
     public var errorDescription: String? { if case .invalid(let text) = self { return text }; return nil }
+}
+/// The default shortcuts every action starts from, before the user's own bindings: Finder's, or Dolphin's (Ctrl → ⌘),
+/// which versions before 0.9.2 used.
+public enum ShortcutKeySet: String, Codable, CaseIterable, Sendable {
+    case mac, dolphin
+    public var title: String { self == .mac ? "Mac (Finder)" : "Dolphin" }
 }
 public struct ShortcutAction: Sendable {
     public let id: String
