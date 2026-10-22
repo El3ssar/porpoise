@@ -2,7 +2,7 @@ import AppKit
 import PorpoiseServices
 
 /// The login FTP providers ask for when a server refuses them (`RemoteFS.askLogin`).
-enum FTPLoginPrompt {
+@MainActor enum FTPLoginPrompt {
     static func ask(host: String, user: String?) -> (user: String, password: String)? {
         let a = NSAlert()
         a.messageText = "Log in to \(host)"

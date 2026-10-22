@@ -4,7 +4,7 @@ import PorpoiseServices
 
 /// Asked when an SSH server's key isn't the one this Mac knows for it: the new key's fingerprint, and the choice. The
 /// safe answer is the default, since a changed key can mean someone is in between.
-enum HostKeyChangePrompt {
+@MainActor enum HostKeyChangePrompt {
     static func ask(server: String, change: HostKeyFingerprint.Change) -> Bool {
         let a = NSAlert()
         a.alertStyle = .critical

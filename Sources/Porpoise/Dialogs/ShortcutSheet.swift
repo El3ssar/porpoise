@@ -113,7 +113,7 @@ final class ShortcutSheet: SecondaryWindowController, NSTableViewDataSource, NST
         menu.items.compactMap { top -> Section? in
             guard let submenu = top.submenu, submenu !== NSApp.servicesMenu else { return nil }
             var order: [String] = [], titles: [String: String] = [:], keys: [String: [String]] = [:]
-            func walk(_ menu: NSMenu, path: [String]) {
+            @MainActor func walk(_ menu: NSMenu, path: [String]) {
                 for item in menu.items where !item.isSeparatorItem {
                     if let sub = item.submenu {
                         if sub !== NSApp.servicesMenu { walk(sub, path: path + [item.title]) }

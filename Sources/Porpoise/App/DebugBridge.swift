@@ -11,7 +11,7 @@ import SwiftTerm
 
 /// Test hook: lets scripts ask the running app for a window snapshot or its state, and trigger actions,
 /// via distributed notifications. Used by scripts/uitest.sh. Inert unless someone posts to it.
-final class DebugBridge: NSObject {
+@MainActor final class DebugBridge: NSObject {
     static let shared = DebugBridge()
     var transferPreviewJob: FileJob?
     /// The channel; PORPOISE_BRIDGE gives a test instance its own, so parallel test runs don't hear each other.
@@ -31,7 +31,7 @@ final class DebugBridge: NSObject {
     }
 
     /// A command: what the bridge does with the rest of the line after its name.
-    typealias Command = (DebugBridge) -> (String) -> Void
+    typealias Command = @MainActor (DebugBridge) -> @MainActor (String) -> Void
 
     /// Every command by its first word, from the tables of the domain extensions.
     private static let commands = [
@@ -42,8 +42,17 @@ final class DebugBridge: NSObject {
         }
     }
 
-    @objc private func handle(_ n: Notification) {
+    @objc nonisolated private func handle(_ n: Notification) {
         guard let line = n.object as? String else { return }
+        receive(line)
+    }
+
+    /// Distributed notifications can enter from another thread. Decode only Sendable data before the UI hop.
+    nonisolated func receive(_ line: String) {
+        MainActorDelivery.deliver { [weak self] in self?.execute(line) }
+    }
+
+    private func execute(_ line: String) {
         let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
         guard let name = parts.first, let command = Self.commands[name] else { return }
         command(self)(parts.count > 1 ? parts[1] : "")
@@ -296,7 +305,7 @@ final class DebugBridge: NSObject {
     /// Every item of a menu (and its submenus) with its shortcut and enabled state (after validation).
     func dumpMenu(_ menu: NSMenu, to path: String) {
         var out: [String] = []
-        func walk(_ m: NSMenu, _ prefix: String) {
+        @MainActor func walk(_ m: NSMenu, _ prefix: String) {
             m.delegate?.menuNeedsUpdate?(m)  // as when the menu opens (dynamic submenus fill themselves)
             m.update()
             for it in m.items where !it.isSeparatorItem {
@@ -327,7 +336,7 @@ final class DebugBridge: NSObject {
     func dumpSettings(to path: String) {
         guard let tabs = settingsWindow?.contentViewController as? NSTabViewController else { return }
         var out: [String] = []
-        func walk(_ v: NSView) {
+        @MainActor func walk(_ v: NSView) {
             let off = (v as? NSControl).map { $0.isEnabled ? "" : " (disabled)" } ?? ""
             switch v {
             case let p as NSPopUpButton: out.append("  popup: \(p.titleOfSelectedItem ?? "")\(off)")
