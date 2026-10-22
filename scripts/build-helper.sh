@@ -8,6 +8,8 @@
 #
 # The helper links only PorpoiseHelperKit, with no paths from this machine in it.
 # Usage: scripts/build-helper.sh [--check]   (--check: only verify the committed helper against its inputs)
+# A real rebuild also writes Resources/HelperSymbols/PorpoiseHelper.dSYM: retain it
+# with the binary, outside Resources/Helper so it never enters the app or DMG.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # All of HelperKit, which has no dependency on Core, FileSystem, Services or the UI.
@@ -20,19 +22,33 @@ if [ "${1:-}" = "--check" ]; then
     shasum -a 256 "${INPUTS[@]}" | diff -u Resources/Helper/inputs.sha256 - ||
         { echo "::error::The helper's inputs changed: run scripts/build-helper.sh and commit Resources/Helper"; ok=1; }
     if LC_ALL=C grep -r -a -q '/Users/' Resources/Helper; then echo "::error::The committed helper contains a home folder path"; ok=1; fi
+    if [ -d Resources/HelperSymbols/PorpoiseHelper.dSYM ]; then
+        python3 scripts/check-symbols.py verify "$APP/Contents/MacOS/PorpoiseHelper" Resources/HelperSymbols/PorpoiseHelper.dSYM || ok=1
+    else
+        # This exception is restricted to the original unchanged helper, not future builds.
+        legacy=$(shasum -a 256 "$APP/Contents/MacOS/PorpoiseHelper" | cut -d' ' -f1)
+        [ "$legacy" = 514be0b29ac86405413d33833e131d20d7ea6771fdbe11a431b2b3237ddfe886 ] ||
+            { echo "::error::Missing helper dSYM; retain symbols from its original build"; ok=1; }
+    fi
     exit $ok
 fi
 [ -f build/AppIcon.icns ] || { echo "run scripts/make-app.sh once first (it makes build/AppIcon.icns)"; exit 1; }
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
-SWIFTC=(xcrun swiftc -O -swift-version 5 -package-name Porpoise -target arm64-apple-macos15.0 -file-prefix-map "$PWD=." -file-prefix-map "$WORK=.")
+SWIFTC=(xcrun swiftc -O -g -swift-version 5 -package-name Porpoise -target arm64-apple-macos15.0 -file-prefix-map "$PWD=." -file-prefix-map "$WORK=.")
 "${SWIFTC[@]}" -wmo -parse-as-library -module-name PorpoiseHelperKit -emit-module -emit-module-path "$WORK/PorpoiseHelperKit.swiftmodule" \
     -c -o "$WORK/PorpoiseHelperKit.o" "${KIT[@]}"
-"${SWIFTC[@]}" -wmo -module-name PorpoiseHelper -I "$WORK" "${HELPER[@]}" "$WORK/PorpoiseHelperKit.o" -o "$WORK/PorpoiseHelper"
+"${SWIFTC[@]}" -wmo -module-name PorpoiseHelper -I "$WORK" -c "${HELPER[@]}" -o "$WORK/PorpoiseHelper.o"
+"${SWIFTC[@]}" "$WORK/PorpoiseHelper.o" "$WORK/PorpoiseHelperKit.o" -o "$WORK/PorpoiseHelper"
+mkdir -p Resources/HelperSymbols
+rm -rf Resources/HelperSymbols/PorpoiseHelper.dSYM
+xcrun dsymutil --num-threads 2 "$WORK/PorpoiseHelper" -o Resources/HelperSymbols/PorpoiseHelper.dSYM
+python3 scripts/check-symbols.py verify "$WORK/PorpoiseHelper" Resources/HelperSymbols/PorpoiseHelper.dSYM
 strip -S "$WORK/PorpoiseHelper"
 rm -rf "$APP" Resources/Helper/PorpoiseHelper
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$WORK/PorpoiseHelper" "$APP/Contents/MacOS/PorpoiseHelper"
+python3 scripts/check-symbols.py verify "$APP/Contents/MacOS/PorpoiseHelper" Resources/HelperSymbols/PorpoiseHelper.dSYM
 cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

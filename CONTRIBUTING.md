@@ -172,6 +172,9 @@ draws and wires things up (see `docs/ARCHITECTURE.md`). Behaviour should follow 
 Releases are built, signed and published by GitHub Actions (`.github/workflows/release.yml`). Each one uploads
 `Porpoise-X.Y.Z.dmg`, `Porpoise.dmg` (what the website's download button points to), `SHA256SUMS.txt` and
 `appcast.xml` (the in-app update feed). Installed copies offer the update within a day.
+Matching app crash symbols are retained separately as an Actions artifact; see
+[`docs/CRASH-SYMBOLS.md`](docs/CRASH-SYMBOLS.md) for retention, verification, the current
+legacy-helper symbol gap and a non-publishing release workflow rehearsal.
 
 There are three ways to cut a release. Use whichever fits:
 

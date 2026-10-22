@@ -18,6 +18,9 @@ APP="$MOUNT/Porpoise.app"
 [ -d "$APP" ] || { echo "::error::no Porpoise.app in $DMG"; exit 1; }
 failed=0
 fail() { echo "::error file=${1#"$MOUNT"/}::$2"; failed=1; }
+while IFS= read -r -d '' symbols; do
+    fail "$symbols" "contains a dSYM; crash symbols must be retained separately"
+done < <(find "$MOUNT" -name '*.dSYM' -print0)
 # Each file that matches (grep -l), not what matched.
 files() { LC_ALL=C grep -r -a -l "$@" "$MOUNT" || true; }
 

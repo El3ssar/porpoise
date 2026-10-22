@@ -9,6 +9,10 @@ on:
       version:
         description: 'Version to release, e.g. 1.2.3 (tags the selected branch if the tag does not exist)'
         required: true
+      dry_run:
+        description: 'Build and check this branch, retain symbols, but do not publish or tag'
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       version:
@@ -18,6 +22,10 @@ on:
         description: 'Commit to release (default: the triggering commit)'
         required: false
         type: string
+      dry_run:
+        required: false
+        type: boolean
+        default: false
     secrets:
       SIGNING_P12_BASE64:
         required: true
@@ -63,13 +71,14 @@ jobs:
         id: version
         env:
           INPUT_VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
         run: |
           V="${INPUT_VERSION:-${GITHUB_REF_NAME}}"
           V="${V#v}"
           [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::'$V' is not a version like 1.2.3"; exit 1; }
-          if gh release view "v$V" >/dev/null 2>&1; then echo "::error::Release v$V already exists"; exit 1; fi
+          if [ "$DRY_RUN" != true ] && gh release view "v$V" >/dev/null 2>&1; then echo "::error::Release v$V already exists"; exit 1; fi
           # A tag that already exists decides what is built (a manual run must not build another commit for it).
-          if git rev-parse -q --verify "refs/tags/v$V" >/dev/null; then git checkout -q "v$V"; fi
+          if [ "$DRY_RUN" != true ] && git rev-parse -q --verify "refs/tags/v$V" >/dev/null; then git checkout -q "v$V"; fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
 
       # A changelog/docs-only descendant may reuse successful main-push CI for the identical app tree.
@@ -112,6 +121,10 @@ jobs:
       - name: Workflow integrity
         if: steps.ci.outputs.passed != 'true'
         run: python3 scripts/test-workflow-pins.py && python3 scripts/test-ci-proof.py
+
+      - name: Crash symbol tooling
+        if: steps.ci.outputs.passed != 'true'
+        run: python3 scripts/test-symbols.py && python3 scripts/test-release-dry-run.py
 
       - name: Helper is current
         if: steps.ci.outputs.passed != 'true'
@@ -186,6 +199,26 @@ jobs:
       - name: Check the disk image
         run: scripts/check-release.sh "build/Porpoise-${{ steps.version.outputs.version }}.dmg"
 
+      # Validate against the signed, stripped binaries that actually ship. Nothing
+      # under build/symbols or Resources/HelperSymbols is copied into the app/DMG.
+      - name: Archive matching crash symbols
+        id: symbols
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          REVISION=$(git rev-parse HEAD)
+          echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
+          python3 scripts/check-symbols.py archive --version "$V" --revision "$REVISION" \
+            --output "build/Porpoise-$V-symbols.zip"
+
+      - name: Retain crash symbols separately from downloads
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Porpoise-${{ steps.version.outputs.version }}-${{ steps.symbols.outputs.revision }}-symbols
+          path: build/Porpoise-${{ steps.version.outputs.version }}-symbols.zip
+          if-no-files-found: error
+          retention-days: 90
+
       # Installed helpers are replaced (one more approval by the user) only when its code hash changes: published with
       # each release, and compared with the previous one's here.
       - name: Record the helper's code hash
@@ -200,6 +233,7 @@ jobs:
       # In-app updates: Sparkle reads appcast.xml from the latest release and checks the disk image's EdDSA
       # signature against the public key built into Porpoise (SUPublicEDKey).
       - name: Sign the update and write the feed
+        if: inputs.dry_run != true
         env:
           V: ${{ steps.version.outputs.version }}
           SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
@@ -223,6 +257,7 @@ jobs:
           xmllint --noout build/appcast.xml
 
       - name: Publish the release
+        if: inputs.dry_run != true
         env:
           V: ${{ steps.version.outputs.version }}
         run: |
