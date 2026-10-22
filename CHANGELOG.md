@@ -26,6 +26,9 @@
   - Disk Usage: map tiles are colored by what they hold (folders, pictures, video, audio, archives, documents), with larger labels and a soft shade. The footer says where you are from the folder you scanned ("Demo › Photos") and leaves out counts that are zero.
   - Disk Usage, Duplicates, Checksums and App Cleanup: an Errors button appears only when there were errors.
   - Properties: no more gap under a file's size.
+- **Mac keys by default, Dolphin's one click away.** Porpoise now uses Finder's shortcuts: ⌘H hides Porpoise, ⇧⌘. shows hidden files, ⌘I is Get Info (Properties is now called Get Info), Return renames (F2 still does), ⌘⌫ moves to the Trash and ⌥⌘⌫ deletes immediately (⌦ alone no longer removes anything), Filter moves to ⌥⌘F, and ⌘2 is Details, ⌘3 Compact. **If you're used to the earlier keys**, choose Settings › Shortcuts › Key set › Dolphin to get the previous map back exactly. Shortcuts you changed yourself stay as you set them in either key set; if one now uses a key a new default has taken, Settings › Shortcuts shows the conflict.
+- **A list of every shortcut.** Help › Keyboard Shortcuts (⌘?) shows the shortcuts in effect, your own included, plus the keys the file list handles itself, and you can type to find one. The website moved to Help › Porpoise Website.
+- **Right-click commands in the menu bar.** Open in New Tab, Open in New Window, Open in Split View, Show Package Contents, Restore from Trash, Tags (File) and Extract Here (Tools) are in the menu bar, so the Command Palette finds them and you can give them shortcuts.
 
 ## 0.9.1
 

@@ -172,38 +172,131 @@ bindings. JSON import validates the whole file before applying it; export contai
 to remain available. Menu keys update immediately and persist across launches. Text editing and basic view-navigation
 keys remain local to their controls; macOS-reserved shortcuts still belong to the system.
 
-**View › Customise Toolbar** opens a native macOS toolbar editor. Drag actions in its palette to add, remove or reorder
+**View › Customize Toolbar** opens a native macOS toolbar editor. Drag actions in its palette to add, remove or reorder
 them; main windows preview the layout live. The Location field stays available and continues to align with split panes.
 Optional actions include Reload, New Tab, Terminal and Command Palette. Narrow windows move excess actions into the
 main-menu path. Restore defaults from the editor or Settings › Shortcuts. [Formats and verification](docs/design/COMMANDS.md).
 
 ## Keyboard shortcuts
 
-Dolphin's shortcuts with Ctrl → ⌘, plus Finder's.
+Finder's shortcuts, plus Dolphin's panels and split view. Prefer Dolphin's own keys (⌘H hidden files, ⌘I filter, F2
+rename, Return opens, ⌦ trash)? Settings › Shortcuts › Key set › Dolphin switches in one click. Any menu command can be
+given its own shortcut there, and **Help › Keyboard Shortcuts (⌘?)** lists everything in effect.
 
-| Action | Key |
-|---|---|
-| Back / Forward / Up | ⌫, ⌘[ or ⌘← / ⌘] or ⌘→ / ⌘↑ (in a text field, ⌘← ⌘→ ⌘↑ keep moving the insertion point) |
-| Switch split pane | ⌥← / ⌥→ |
-| Open | Return, ⌘O or ⌘↓ |
-| Move to Trash / Delete permanently | ⌘⌫ / ⌘⌥⌫ |
-| Show hidden files | ⌘H or ⌘⇧. |
-| Quick Look | Space |
-| Selection mode | ⌘⇧Space (or ⌘C/⌘X/F2 with nothing selected) |
-| Split / Terminal / Places / Folders / Information / Shelf | F3 / F4 / F9 / F7 / F10 / F8 |
-| Connections / Activity / Compare Files | ⌥⌘K / ⌥⌘J / ⌥⌘Y |
-| Filter / Search / Location | ⌘I or / / ⌘F / ⌘L |
-| View modes | ⌘1 ⌘2 ⌘3 |
-| Focus Places (toggle) | ⌘P |
-| View display style | ⌘J |
-| Settings | ⌘, |
-| Go to Folder | ⌘⇧G |
-| Recents / Documents / Desktop / Downloads | ⌘⇧F / ⌘⇧O / ⌘⇧D / ⌘⌥L |
-| Computer / Applications / Utilities / Library | ⌘⇧C / ⌘⇧A / ⌘⇧U / ⌘⇧L |
-| iCloud Drive / AirDrop / Network / Connect to Server | ⌘⇧I / ⌘⇧R / ⌘⇧K / ⌘K |
-| Make Alias / Show Original | ⌃⌘A / ⌘R |
-| New Folder / New Folder with Selection | ⌘⇧N / ⌃⌘N |
-| Duplicate / Eject / Empty Trash | ⌘D / ⌘E / ⌘⇧⌫ |
+In the file list: arrows move (⇧ extends), Space is Quick Look, ⌫ goes back, `/` filters, ⌥. shows hidden files,
+⌃Space adds or removes the current item, and typing a name selects it. The menu bar with the default keys:
+
+<details><summary>All menu shortcuts</summary>
+
+<!-- shortcuts:begin -->
+| Menu | Action | Keys |
+|---|---|---|
+| Porpoise | Settings… | ⌘, |
+| Porpoise | Hide Porpoise | ⌘H |
+| Porpoise | Hide Others | ⌥⌘H |
+| Porpoise | Quit Porpoise | ⌘Q |
+| File | Create New › Folder… | ⇧⌘N |
+| File | Open | ⌘O or ⌘↓ |
+| File | New Window | ⌘N |
+| File | New Tab | ⌘T |
+| File | Close Tab | ⌘W |
+| File | Undo Close Tab | ⇧⌘T |
+| File | Close Window | ⇧⌘W |
+| File | Rename… | ↩ or F2 |
+| File | Duplicate Here | ⌘D |
+| File | Move to Trash | ⌘⌫ |
+| File | Delete Immediately… | ⌥⌘⌫ |
+| File | Make Alias | ⌃⌘A |
+| File | Show Original | ⌘R |
+| File | New Folder with Selection | ⌃⌘N |
+| File | Eject | ⌘E |
+| File | Save Changes | ⌘S |
+| File | Compare Files… | ⌥⌘Y |
+| File | Quick Look | ⌘Y |
+| File | Get Info | ⌘I |
+| Edit | Undo | ⌘Z |
+| Edit | Redo | ⇧⌘Z |
+| Edit | Command Palette… | ⇧⌘P or ⌃⌥I |
+| Edit | Cut | ⌘X |
+| Edit | Copy | ⌘C |
+| Edit | Copy Location | ⌥⌘C |
+| Edit | Add to Shelf | ⌥⌘S |
+| Edit | Paste | ⌘V |
+| Edit | Filter… | ⌥⌘F |
+| Edit | Search… | ⌘F |
+| Edit | Select Files and Folders | ⇧⌘Space |
+| Edit | Copy to Other View | ⇧F5 |
+| Edit | Move to Other View | ⇧F6 |
+| Edit | Select All | ⌘A |
+| Edit | Deselect All | ⌥⌘A |
+| Edit | Invert Selection | ⌥⇧⌘A |
+| View | Zoom In | ⌘+ or ⌘= |
+| View | Reset Zoom Level | ⌘0 |
+| View | Zoom Out | ⌘- |
+| View | View Mode › Icons | ⌘1 |
+| View | View Mode › Details | ⌘2 |
+| View | View Mode › Compact | ⌘3 |
+| View | Show Previews | F12 |
+| View | Show Hidden Files | ⇧⌘. |
+| View | Adjust View Display Style… | ⌘J |
+| View | Linked Browsing | ⌃⌘L |
+| View | Split | F3 |
+| View | Split View to Tabs | ⇧⌘F3 |
+| View | Pop out Split View | ⇧F3 |
+| View | Focus Other View | ⌘F3 |
+| View | Focus Left View | ⌥← |
+| View | Focus Right View | ⌥→ |
+| View | Reload | F5 |
+| View | Show Panels › Places | F9 |
+| View | Show Panels › Information | F10 or ⌥⌘I |
+| View | Show Panels › Folders | F7 |
+| View | Show Panels › Terminal | F4 |
+| View | Show Panels › Shelf | F8 |
+| View | Show Panels › Focus Places Panel | ⌘P |
+| View | Show Panels › Focus Terminal Panel | ⇧⌘F4 |
+| View | Location Bar › Editable Location | F6 |
+| View | Location Bar › Replace Location | ⌘L |
+| View | Enter Full Screen | ⌃⌘F |
+| Go | Up | ⌥↑ or ⌘↑ |
+| Go | Back | ⌘[ or ⌘← |
+| Go | Forward | ⌘] or ⌘→ |
+| Go | Home | ⌥Home or ⇧⌘H |
+| Go | Recents | ⇧⌘F |
+| Go | Documents | ⇧⌘O |
+| Go | Desktop | ⇧⌘D |
+| Go | Downloads | ⌥⌘L |
+| Go | Computer | ⇧⌘C |
+| Go | Applications | ⇧⌘A |
+| Go | Utilities | ⇧⌘U |
+| Go | iCloud Drive | ⇧⌘I |
+| Go | Library | ⇧⌘L |
+| Go | AirDrop | ⇧⌘R |
+| Go | Network | ⇧⌘K |
+| Go | Go to Folder… | ⇧⌘G |
+| Go | Connect to Server… | ⌘K |
+| Go | Connections… | ⌥⌘K |
+| Tools | Open Terminal | ⇧F4 |
+| Tools | Open Terminal Here | ⌥⇧F4 |
+| Tools | Reveal in Finder | ⌥⌘R |
+| Tools | Empty Trash | ⇧⌘⌫ |
+| Window | Minimize | ⌘M |
+| Window | Activity | ⌥⌘J |
+| Window | Next Tab | ⌃⇥ or ⌘} or ⌘Page Down |
+| Window | Previous Tab | ⌃⇧⇥ or ⌘{ or ⌘Page Up |
+| Window | Go to Tab › Tab 1 | ⌥1 |
+| Window | Go to Tab › Tab 2 | ⌥2 |
+| Window | Go to Tab › Tab 3 | ⌥3 |
+| Window | Go to Tab › Tab 4 | ⌥4 |
+| Window | Go to Tab › Tab 5 | ⌥5 |
+| Window | Go to Tab › Tab 6 | ⌥6 |
+| Window | Go to Tab › Tab 7 | ⌥7 |
+| Window | Go to Tab › Tab 8 | ⌥8 |
+| Window | Go to Tab › Tab 9 | ⌥9 |
+| Window | Go to Tab › Last Tab | ⌥0 |
+| Help | Keyboard Shortcuts | ⌘? |
+<!-- shortcuts:end -->
+
+</details>
 
 ## Reliability and security
 
