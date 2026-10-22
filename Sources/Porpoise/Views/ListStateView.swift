@@ -50,7 +50,7 @@ final class ListStateView: NSView {
         guard let state else { return }
         let error = state.isError
         title.stringValue = state.title
-        title.font = .systemFont(ofSize: 15, weight: error ? .semibold : .regular)
+        title.font = .systemFont(ofSize: Tokens.FontSize.title3, weight: error ? .semibold : .regular)
         title.textColor = error ? Theme.viewText : Theme.viewTextInactive.withAlphaComponent(0.8)
         message.stringValue = state.message
         message.isHidden = state.message.isEmpty
@@ -58,13 +58,15 @@ final class ListStateView: NSView {
         details.isHidden = true
         detailsToggle.title = "Show Details"
         detailsToggle.isHidden = state.details == nil
-        for (label, size) in [(message, CGFloat(13)), (details, 11)] {
+        for (label, size) in [(message, Tokens.FontSize.body), (details, Tokens.FontSize.small)] {
             label.font = .systemFont(ofSize: size)
             label.textColor = Theme.viewTextInactive
         }
-        icon.isHidden = !error
-        icon.image = error ? NSImage(systemSymbolName: state.symbol, accessibilityDescription: nil) : nil
-        icon.contentTintColor = Theme.viewTextInactive
+        // A quiet state's symbol is lighter than a failure's, so an empty folder never reads as a problem.
+        icon.image = state.symbol.isEmpty ? nil : NSImage(systemSymbolName: state.symbol, accessibilityDescription: nil)
+        icon.isHidden = icon.image == nil
+        icon.symbolConfiguration = .init(pointSize: error ? 28 : 34, weight: error ? .regular : .light)
+        icon.contentTintColor = error ? Theme.viewTextInactive : Theme.viewTextInactive.withAlphaComponent(0.45)
         actionButton.isHidden = state.action == nil
         actionButton.title = state.action?.title ?? ""
         // Announced like an alert: someone on VoiceOver hears why the folder shows nothing.

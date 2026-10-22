@@ -19,7 +19,9 @@ struct LoadErrorPresentationTests {
             LoadErrorPresentation.empty(loading: loading, searching: searching, searchError: error, filtering: filtering, trash: trash)
         }
         #expect(empty(loading: true, searching: true).title == "Loading…")
-        #expect(empty(searching: true) == ListState(title: "No items match the search"))
+        #expect(empty(searching: true) == ListState(title: "No items match the search", symbol: "magnifyingglass"))
+        // Quiet states carry their own symbol; loading none.
+        #expect(empty().symbol == "folder" && empty(trash: true).symbol == "trash" && empty(loading: true).symbol.isEmpty)
         let failed = empty(searching: true, error: "The index is being rebuilt.")
         #expect(failed.isError && failed.title == "The search didn’t finish" && failed.message == "The index is being rebuilt.")
         #expect(empty(filtering: true).title == "No items match the filter")

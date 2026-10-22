@@ -20,7 +20,7 @@ public struct ListState: Equatable, Sendable {
     public var details: String?
     public var action: Action?
     public var isError = false
-    /// The SF Symbol shown above a failure.
+    /// The SF Symbol shown above the title: a failure's warning, or a quiet state's own (empty when none).
     public var symbol = "exclamationmark.triangle"
 
     public init(
@@ -41,13 +41,13 @@ public struct ListState: Equatable, Sendable {
 public enum LoadErrorPresentation {
     /// A list with nothing in it that didn't fail: still loading, filtered or searched to nothing, or empty.
     public static func empty(loading: Bool, searching: Bool, searchError: String?, filtering: Bool, trash: Bool) -> ListState {
-        if loading { return ListState(title: "Loading…") }
+        if loading { return ListState(title: "Loading…", symbol: "") }
         if searching, let searchError {
             return ListState(title: "The search didn’t finish", message: searchError, isError: true)
         }
-        if searching { return ListState(title: "No items match the search") }
-        if filtering { return ListState(title: "No items match the filter") }
-        return ListState(title: trash ? "Trash is empty" : "Folder is empty")
+        if searching { return ListState(title: "No items match the search", symbol: "magnifyingglass") }
+        if filtering { return ListState(title: "No items match the filter", symbol: "line.3.horizontal.decrease.circle") }
+        return trash ? ListState(title: "Trash is empty", symbol: "trash") : ListState(title: "Folder is empty", symbol: "folder")
     }
 
     /// `missing`: a folder on this Mac that doesn't exist (checked by the caller). `cloud`: the account's own message
