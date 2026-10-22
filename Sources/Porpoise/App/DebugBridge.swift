@@ -151,7 +151,10 @@ final class DebugBridge: NSObject {
     }
 
     func windowsCommand(_ arg: String) {
-        let list = NSApp.windows.filter(\.isVisible).map { "\($0.title)|\(type(of: $0.windowController as Any))|key=\($0.isKeyWindow)" }
+        // The controller's own class (MainWindowController, SettingsWindowController…), not the declared Optional.
+        let list = NSApp.windows.filter(\.isVisible).map { w in
+            "\(w.title)|\(w.windowController.map { String(describing: type(of: $0)) } ?? "-")|key=\(w.isKeyWindow)"
+        }
         try? list.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
     }
 
