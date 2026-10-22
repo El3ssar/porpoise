@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseServices
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
@@ -14,7 +15,7 @@ import Testing
             charactersIgnoringModifiers: c, isARepeat: false, keyCode: 0)!
     }
 
-    @Test func fileCommandsLeaveTheirKeysToTheFieldBeingTyped() throws {
+    @Test(.isolatedSettings) func fileCommandsLeaveTheirKeysToTheFieldBeingTyped() throws {
         _ = NSApplication.shared
         let menu = AppDelegate.shared.buildMainMenu()
         func items(_ m: NSMenu) -> [NSMenuItem] { m.items.flatMap { [$0] + ($0.submenu.map(items) ?? []) } }
@@ -28,7 +29,12 @@ import Testing
         #expect(W.typingKeeps(trash, key("\u{7f}", .command)))
         let deleteNow = try shortcut(#selector(W.deleteItem(_:)), KeyEquivalent.backspace, [.command, .option])
         #expect(W.typingKeeps(deleteNow, key("\u{7f}", [.command, .option])))
-        let forwardTrash = try shortcut(#selector(W.moveToTrash(_:)), KeyEquivalent.forwardDelete, [])
+        // ⌦ alone trashes only with Dolphin's keys.
+        Settings.shared.shortcutKeySet = .dolphin
+        let forwardTrash = try #require(
+            items(AppDelegate.shared.buildMainMenu()).first {
+                $0.action == #selector(W.moveToTrash(_:)) && $0.keyEquivalent == KeyEquivalent.forwardDelete && $0.keyEquivalentModifierMask == []
+            })
         #expect(W.typingKeeps(forwardTrash, key(KeyEquivalent.forwardDelete, .function)))
         for (action, k, mods) in [
             (#selector(W.duplicateItem(_:)), "d", NSEvent.ModifierFlags.command), (#selector(W.ejectVolume(_:)), "e", .command),
