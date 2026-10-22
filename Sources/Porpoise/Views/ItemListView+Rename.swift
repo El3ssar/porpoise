@@ -49,11 +49,15 @@ extension ItemListView: NSTextFieldDelegate {
         guard let f = renameField else { return }
         let tr = nameTextRect(i)
         if mode == .icons {
-            let h = max(lineHeight + 6, min(tr.height, lineHeight * 3 + 6))
-            f.frame = CGRect(x: tr.minX - 2, y: tr.minY, width: tr.width + 4, height: h)
+            // As tall as the name being typed wraps to (up to the label's lines), not the whole text area below the
+            // icon, which also holds the extra information lines: that left a box a line or more below its text.
+            // The bezel insets the text by about 3 pt, so the box starts that much above the label.
+            let lines = iconsLabel(f.stringValue.isEmpty ? " " : f.stringValue, width: tr.width, maxLines: Self.renameMaxLines)
+            let h = min(max(lines.size.height, lineHeight), lineHeight * CGFloat(Self.renameMaxLines)) + 6
+            f.frame = CGRect(x: tr.minX - 2, y: tr.minY - 3, width: tr.width + 4, height: ceil(h))
         } else {
             // Like KItemListRoleEditor: as wide as the name plus some room, within the name column.
-            let textW = textWidth(renamingItem?.name ?? "")
+            let textW = textWidth(f.stringValue)
             let w = min(mode == .details ? tr.width : max(tr.width, 300), max(160, textW + 40))
             f.frame = CGRect(x: tr.minX - 3, y: tr.midY - (lineHeight + 6) / 2, width: w + 6, height: lineHeight + 6)
         }
@@ -63,6 +67,14 @@ extension ItemListView: NSTextFieldDelegate {
         if sel == #selector(NSResponder.cancelOperation(_:)) { cancelRename(); return true }
         if sel == #selector(NSResponder.insertNewline(_:)) { commitRename(); return true }
         return false
+    }
+
+    /// The most lines the Icons rename box grows to while typing.
+    static let renameMaxLines = 3
+
+    /// The box follows the name as it's typed: taller as it wraps (Icons), wider as it grows (Compact, Details).
+    func controlTextDidChange(_ obj: Notification) {
+        if let i = renamingIndex { positionRenameField(i) }
     }
 
     func controlTextDidEndEditing(_ obj: Notification) { commitRename() }

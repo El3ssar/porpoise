@@ -97,8 +97,31 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, mod: Date?
         p.groupSameAsSort = true
         let sorted = ItemSorter.sort([item("apple.txt"), item("Apps", dir: true), item("banana.txt"), item("Books", dir: true)], props: p)
         let g = ItemGrouper.groups(sorted, role: .name, props: p)
-        #expect(g.map(\.title) == ["A", "B", "A", "B"])
+        // A letter in both sections: each group says which, so no header repeats ("A", then "A" again).
+        #expect(g.map(\.title) == ["A · Folders", "B · Folders", "A · Files", "B · Files"])
         #expect(g.map { $0.items.map(\.name) } == [["Apps"], ["Books"], ["apple.txt"], ["banana.txt"]])
+    }
+
+    @Test func headersStayPlainWhenNoTitleRepeats() {
+        var p = ViewProperties()
+        p.groupSameAsSort = true
+        let sorted = ItemSorter.sort([item("Apps", dir: true), item("banana.txt"), item("cherry.txt")], props: p)
+        #expect(ItemGrouper.groups(sorted, role: .name, props: p).map(\.title) == ["A", "B", "C"])
+    }
+
+    @Test func hiddenLastNamesOnlyTheHiddenSection() {
+        var p = ViewProperties()
+        p.groupSameAsSort = true
+        p.foldersFirst = false
+        p.hiddenLast = true
+        // A dot file groups under "Others", as a visible "#notes.txt" does.
+        let hidden = item(".ant.txt")
+        let sorted = ItemSorter.sort([item("apple.txt"), hidden, item("#notes.txt")], props: p)
+        let titles = ItemGrouper.groups(sorted, role: .name, props: p).map(\.title)
+        #expect(Set(titles) == ["A", "Others", "Others · Hidden"] && titles.last == "Others · Hidden")
+        p.foldersFirst = true
+        let both = ItemSorter.sort([item("Apps", dir: true), item("apple.txt"), hidden], props: p)
+        #expect(ItemGrouper.groups(both, role: .name, props: p).map(\.title) == ["A · Folders", "A · Files", "Others · Hidden Files"])
     }
 
     @Test func otherRoleGroupsAreOrderedByThatRole() {
