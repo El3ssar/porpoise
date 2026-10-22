@@ -245,13 +245,17 @@ final class FileDiffTextView: NSView {
                 word = text.substring(with: NSRange(location: range.location, length: end - range.location)) as NSString
             let a = (before.replacingOccurrences(of: "\t", with: "    ") as NSString).size(withAttributes: [.font: font]).width,
                 w = (word.replacingOccurrences(of: "\t", with: "    ") as NSString).size(withAttributes: [.font: font]).width
-            tint.withAlphaComponent(0.26).setFill();
+            tint.withAlphaComponent(Self.wordTintAlpha(dark: effectiveAppearance.isDark)).setFill();
             NSBezierPath(roundedRect: NSRect(x: origin.x + a, y: y + 1, width: w, height: 16), xRadius: 3, yRadius: 3).fill()
         }
         (text.replacingOccurrences(of: "\t", with: "    ") as NSString).draw(
             at: origin, withAttributes: [.font: font, .foregroundColor: Theme.viewText])
         NSGraphicsContext.restoreGraphicsState()
     }
+    /// The changed words' tint over their line's 10 % tint: 0.26 measured 1.31:1 against the line in light (too faint
+    /// to find the edit) and 1.84:1 in dark; light gets 0.40 (1.54:1 measured). Text keeps 4.5:1 or more on both.
+    static func wordTintAlpha(dark: Bool) -> CGFloat { dark ? 0.26 : 0.40 }
+
     private static let rightAligned: NSParagraphStyle = {
         let p = NSMutableParagraphStyle(); p.alignment = .right; return p
     }()
