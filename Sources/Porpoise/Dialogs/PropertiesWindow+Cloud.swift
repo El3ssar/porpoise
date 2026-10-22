@@ -18,7 +18,7 @@ extension PropertiesWindow {
         v.addSubview(icon)
         // Read-only: the name can't be changed here.
         let title = label(name)
-        title.font = .systemFont(ofSize: 15, weight: .semibold)
+        title.font = .systemFont(ofSize: Tokens.FontSize.title3, weight: .semibold)
         title.frame = CGRect(x: 100, y: y - 6, width: 290, height: 20)
         title.autoresizingMask = [.width, .minYMargin]
         v.addSubview(title)
@@ -49,7 +49,7 @@ extension PropertiesWindow {
 
         y -= 10
         let heading = NSTextField(labelWithString: "Sharing")
-        heading.font = .boldSystemFont(ofSize: 13)
+        heading.font = .boldSystemFont(ofSize: Tokens.FontSize.body)
         heading.frame = CGRect(x: 0, y: y, width: 200, height: 18)
         heading.autoresizingMask = [.minYMargin]
         v.addSubview(heading)
@@ -76,7 +76,7 @@ extension PropertiesWindow {
             let manage = ClosureButton(title: "Manage Sharing in Browser…") { _ in
                 NSWorkspace.shared.open(AccountActions.webLink(link, account: account))
             }
-            for b in [copy, manage] { b.controlSize = .small; b.font = .systemFont(ofSize: 11) }
+            for b in [copy, manage] { b.controlSize = .small; b.font = .systemFont(ofSize: Tokens.FontSize.small) }
             let buttons = NSStackView(views: [copy, manage])
             buttons.spacing = 8
             buttons.frame.size = CGSize(width: 282, height: 24)
@@ -85,7 +85,7 @@ extension PropertiesWindow {
                 y -= 4
                 let opens = ClosureButton(title: "Open in Browser") { _ in NSWorkspace.shared.open(AccountActions.webLink(link, account: account)) }
                 opens.controlSize = .small
-                opens.font = .systemFont(ofSize: 11)
+                opens.font = .systemFont(ofSize: Tokens.FontSize.small)
                 let wrap = NSStackView(views: [opens, NSView()])
                 wrap.frame.size = CGSize(width: 282, height: 24)
                 row("Open with:", wrap, y: &y, in: v)
@@ -110,13 +110,13 @@ extension PropertiesWindow {
 
     private func sizeRow(y: inout CGFloat, in v: NSView) {
         let sizeRow = NSView(frame: CGRect(x: 0, y: 0, width: 282, height: 44))
-        sizeLabel.font = .systemFont(ofSize: 13)
+        sizeLabel.font = .systemFont(ofSize: Tokens.FontSize.body)
         sizeLabel.textColor = Theme.windowText
         sizeLabel.maximumNumberOfLines = 2
         sizeLabel.isSelectable = true
         sizeLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         recalculateButton.controlSize = .small
-        recalculateButton.font = .systemFont(ofSize: 11)
+        recalculateButton.font = .systemFont(ofSize: Tokens.FontSize.small)
         for child in [sizeLabel, recalculateButton] {
             child.translatesAutoresizingMaskIntoConstraints = false
             sizeRow.addSubview(child)
@@ -197,7 +197,7 @@ final class CloudOfflineRow: NSView {
         text.lineBreakMode = .byTruncatingTail
         keep.frame = CGRect(x: 0, y: 22, width: 282, height: 20)
         keep.controlSize = .small
-        keep.font = .systemFont(ofSize: 11)
+        keep.font = .systemFont(ofSize: Tokens.FontSize.small)
         keep.handler = { [weak self] b in self?.toggle(on: b.state == .on) }
         addSubview(text)
         addSubview(keep)

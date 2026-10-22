@@ -23,9 +23,9 @@ final class ActivityRowView: NSView {
         parentWindow = window
         self.alternate = alternate
         super.init(frame: .zero)
-        title.font = .systemFont(ofSize: 13)
+        title.font = .systemFont(ofSize: Tokens.FontSize.body)
         title.lineBreakMode = .byTruncatingMiddle
-        status.font = .systemFont(ofSize: 11)
+        status.font = .systemFont(ofSize: Tokens.FontSize.small)
         status.lineBreakMode = .byTruncatingTail
         buttons.spacing = 8
         icon.imageScaling = .scaleProportionallyDown
@@ -87,7 +87,10 @@ final class ActivityRowView: NSView {
         let failed = presentation.hasFailures
         let statusText = NSMutableAttributedString(
             string: text,
-            attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: failed ? Theme.transferDanger : Theme.viewTextInactive])
+            attributes: [
+                .font: NSFont.systemFont(ofSize: Tokens.FontSize.small),
+                .foregroundColor: failed ? Theme.transferDanger : Theme.viewTextInactive,
+            ])
         if a.state == .completed && !failed {
             statusText.addAttribute(.foregroundColor, value: Theme.transferPositive, range: NSRange(location: 0, length: min(6, text.utf16.count)))
         }
@@ -166,9 +169,9 @@ final class EditActivityRowView: NSView {
     init(alternate: Bool) {
         self.alternate = alternate
         super.init(frame: .zero)
-        title.font = .systemFont(ofSize: 13)
+        title.font = .systemFont(ofSize: Tokens.FontSize.body)
         title.lineBreakMode = .byTruncatingMiddle
-        detail.font = .systemFont(ofSize: 11)
+        detail.font = .systemFont(ofSize: Tokens.FontSize.small)
         detail.maximumNumberOfLines = 2
         detail.lineBreakMode = .byTruncatingTail
         icon.imageScaling = .scaleProportionallyDown
@@ -267,9 +270,10 @@ final class EditActivityRowView: NSView {
 enum ActivityRowStyle {
     static func background(alternate: Bool) -> NSColor { alternate ? Theme.viewAlternate : Theme.viewBackground }
     static func title(_ text: String) -> NSAttributedString {
-        let result = NSMutableAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: Theme.viewText])
+        let result = NSMutableAttributedString(
+            string: text, attributes: [.font: NSFont.systemFont(ofSize: Tokens.FontSize.body), .foregroundColor: Theme.viewText])
         if let range = ActivityPresentation.quotedRange(in: text) {
-            result.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .medium), range: range)
+            result.addAttribute(.font, value: NSFont.systemFont(ofSize: Tokens.FontSize.body, weight: .medium), range: range)
         }
         return result
     }
