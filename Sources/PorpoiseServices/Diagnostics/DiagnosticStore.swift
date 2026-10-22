@@ -37,7 +37,8 @@ public final class DiagnosticStore: @unchecked Sendable {
     }
 
     private struct Snapshot: Encodable {
-        let schemaVersion = 1
+        /// 2: the codes recorded at the app's error sites (transfer, provider, helper, unclean exit).
+        let schemaVersion = 2
         let identity: DiagnosticIdentity
         let generatedAt: Date
         let events: [DiagnosticEvent]

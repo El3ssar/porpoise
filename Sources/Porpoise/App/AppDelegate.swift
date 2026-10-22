@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Diagnostics.launched()
         followLook()
         NSApp.mainMenu = buildMainMenu()
         MenuCommandRegistry.shared.start()
@@ -191,6 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        Diagnostics.quitting()
         FileOperationsController.shared.interruptAll()
         VideoPreview.shared.cleanUp()
         RemoteFS.disconnectAll()
@@ -336,6 +338,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func configureShortcuts(_ sender: Any?) { showSettings(page: "Shortcuts") }
+
+    @objc func exportDiagnostics(_ sender: Any?) { DiagnosticsExportWindowController.show() }
 
     @objc func showHelp(_ sender: Any?) {
         if let u = URL(string: AppInfo.homepage) { NSWorkspace.shared.open(u) }

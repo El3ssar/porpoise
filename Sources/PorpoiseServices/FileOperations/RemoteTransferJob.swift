@@ -24,6 +24,8 @@ final class RemoteTransferJob {
     var completed: [URL: URL]
     var results: [URL] = []
     var errors: [String] = []
+    /// The first error behind `errors`, kept only to be classified for diagnostics.
+    var firstError: Error?
     var failedSources: [URL] = []
     var sticky: ConflictResolution?
     var totals: [URL: (bytes: Int64, files: Int)] = [:]
@@ -83,6 +85,7 @@ final class RemoteTransferJob {
                     ownsAccounts = true
                 }
             } catch {
+                firstError = firstError ?? error
                 errors.append(error.localizedDescription); failedSources = remaining; return
             }
         }
@@ -121,6 +124,7 @@ final class RemoteTransferJob {
                     if control.isCancelled { break }
                     failedSources.append(source)
                     let name = RemoteFS.displayName(for: source)
+                    firstError = firstError ?? error
                     errors.append("\(name): \(error.localizedDescription)")
                 }
                 publish()
