@@ -230,11 +230,16 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
         verify.state = Settings.shared.verifyCopies ? .on : .off
         verify.toolTip = "Compare size and SHA-256 after copying."
         menu.addItem(verify)
+        menu.addItem(.separator())
+        let rules = NSMenuItem(title: "Transfer Rules…", action: #selector(showTransferRules), keyEquivalent: "")
+        rules.target = self
+        menu.addItem(rules)
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: settings.bounds.maxY + 4), in: settings)
     }
 
     @objc private func changeConcurrency(_ sender: NSMenuItem) { controller.concurrency = sender.tag }
     @objc private func toggleVerification() { Settings.shared.verifyCopies.toggle() }
+    @objc private func showTransferRules() { SettingsWindowController(page: "Activity").present() }
 
     @objc private func tabChanged() {
         activityPane.isHidden = tabs.selectedSegment != 0
@@ -336,12 +341,13 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
         case "items":
             let what = e.items == 1 ? (e.sources.first.map(Self.name) ?? "1 item") : FileFormat.itemCount(e.items)
             text = what + (e.destination.map { " → " + Self.name($0) } ?? "")
-        default: text = e.outcome
+        default: text = e.outcome + (e.transferNotes?.last.map { " · " + $0 } ?? "")
         }
         let label = NSTextField(labelWithString: text)
         label.lineBreakMode = .byTruncatingMiddle
         label.toolTip =
-            ([e.sources.joined(separator: "\n")] + (e.destination.map { ["→ " + $0] } ?? []) + e.errors + (e.verification.map { [$0] } ?? []))
+            ([e.sources.joined(separator: "\n")] + (e.destination.map { ["→ " + $0] } ?? []) + e.errors + (e.verification.map { [$0] } ?? [])
+            + (e.transferNotes ?? []))
             .joined(separator: "\n")
         if tableColumn?.identifier.rawValue == "outcome", e.outcome != "Completed" { label.textColor = Theme.negativeText }
         return label

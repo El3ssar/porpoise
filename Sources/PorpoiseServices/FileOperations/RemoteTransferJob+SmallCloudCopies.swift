@@ -5,6 +5,7 @@ extension RemoteTransferJob {
     /// Independent small copies share Activity and controls, while each worker owns its journal/conflict state.
     /// Moves, folders, duplicate names, replacements and resumed batches retain the ordered transfer path.
     func runSmallCloudCopies() -> Bool {
+        guard control.policy.exclusions.isEmpty else { return false }
         guard kind == .copy, sources.count > 1, completed.isEmpty, let destination, destination.isFileURL else { return false }
         var items: [FileItem] = []
         var names: Set<String> = []

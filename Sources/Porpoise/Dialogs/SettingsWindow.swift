@@ -12,7 +12,7 @@ final class SettingsWindowController: SecondaryWindowController {
 
     /// The pages' builders, kept so their observers live (and are removed) with the window.
     private var builders: [FormBuilder] = []
-    init() {
+    init(page initialPage: String? = nil) {
         let tabs = ThemedTabViewController()
         tabs.tabStyle = .toolbar
         var builders: [FormBuilder] = []
@@ -48,6 +48,7 @@ final class SettingsWindowController: SecondaryWindowController {
         page("Shortcuts", "keyboard", ShortcutSettingsPage.build)
         page("Search", "magnifyingglass", IndexSettingsPage.build)
         page("Accounts", "person.crop.circle", AccountsSettingsPage.build)
+        page("Activity", "arrow.triangle.2.circlepath", TransferSettingsPage.build)
         let s = Settings.shared
 
         page("Appearance", "paintpalette") { f in AppearancePage.build(f) }
@@ -366,6 +367,7 @@ final class SettingsWindowController: SecondaryWindowController {
             }
         }
 
+        if let initialPage, let index = tabs.tabViewItems.firstIndex(where: { $0.label == initialPage }) { tabs.selectedTabViewItemIndex = index }
         let w = NSWindow(contentViewController: tabs)
         w.initialFirstResponder = nil
         w.title = "Settings"

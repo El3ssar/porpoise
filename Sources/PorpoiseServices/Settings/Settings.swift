@@ -146,6 +146,15 @@ public final class Settings {
     // File operations
     /// Copies and moves running at once; more wait in the queue.
     @Pref("jobsConcurrency") public var jobsConcurrency: Int = 2
+    @Pref("transferMBPerSecond") public var transferMBPerSecond: Int = 0
+    @Pref("transferRetries") public var transferRetries: Int = 3
+    @Pref("transferBackoffSeconds") public var transferBackoffSeconds: Double = 1
+    @Pref("transferExclusions") public var transferExclusions: String = ""
+    public var transferPolicy: TransferPolicy {
+        TransferPolicy(
+            bytesPerSecond: Int64(max(0, min(100_000, transferMBPerSecond))) * 1_000_000,
+            retries: transferRetries, backoff: transferBackoffSeconds, exclusions: transferExclusions.components(separatedBy: ";"))
+    }
     /// After copying, compare the copies with the originals (size and SHA-256).
     @Pref("verifyCopies") public var verifyCopies: Bool = false
     @Pref("transferConflictRule") public var transferConflictRule: TransferConflictRule = .ask
