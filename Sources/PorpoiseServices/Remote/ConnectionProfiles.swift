@@ -8,12 +8,18 @@ public final class ConnectionProfiles: @unchecked Sendable {
     public static let changed = Notification.Name("PorpoiseConnectionProfilesChanged")
 
     private let storeURL: URL?
+    private let fileManager: FileManager
     private let lock = NSLock()
     private var stored: [ConnectionProfile] = []
     private var loaded = false
 
     /// Profiles kept in `storeURL`; nil keeps them in memory (tests).
-    public init(storeURL: URL?) { self.storeURL = storeURL }
+    public convenience init(storeURL: URL?) { self.init(storeURL: storeURL, fileManager: .default) }
+
+    init(storeURL: URL?, fileManager: FileManager) {
+        self.storeURL = storeURL
+        self.fileManager = fileManager
+    }
 
     private struct File: Codable {
         var version: Int
@@ -23,7 +29,9 @@ public final class ConnectionProfiles: @unchecked Sendable {
 
     public var profiles: [ConnectionProfile] {
         lock.lock(); defer { lock.unlock() }
-        loadIfNeeded()
+        // Reading remains nonthrowing for sidebar consumers. A failed load is retried by the next read or mutation;
+        // mutations return the error and never overwrite a file we could not read or preserve.
+        try? loadIfNeeded()
         return stored
     }
 
@@ -32,8 +40,10 @@ public final class ConnectionProfiles: @unchecked Sendable {
     /// The profile `url` is in, if any (the first saved, when two describe the same server).
     public func profile(for url: URL) -> ConnectionProfile? { profiles.first { $0.covers(url) } }
 
-    /// Adds `profile`, or replaces the saved one with its id.
-    public func save(_ profile: ConnectionProfile) {
+    /// Adds `profile`, or replaces the saved one with its id. Success means the atomic write completed; failures
+    /// leave the in-memory list unchanged and post no changed notification. nil-store instances are memory-only.
+    @discardableResult
+    public func save(_ profile: ConnectionProfile) -> Result<Void, Error> {
         change { list in
             if let i = list.firstIndex(where: { $0.id == profile.id }) { list[i] = profile } else { list.append(profile) }
         }
@@ -41,13 +51,20 @@ public final class ConnectionProfiles: @unchecked Sendable {
 
     /// Removes the profile, and the secrets kept for it alone (an S3 secret key). Passwords are kept under the
     /// server rather than the profile, so one Finder or another profile also uses is left in place.
-    public func remove(_ id: UUID, credentials: ConnectionCredentials = .shared) {
-        guard let p = profile(id) else { return }
-        change { $0.removeAll { $0.id == id } }
-        if p.kind == .s3 { try? credentials.removeSecret(for: p) }
+    @discardableResult
+    public func remove(_ id: UUID, credentials: ConnectionCredentials = .shared) -> Result<Void, Error> {
+        var removed: ConnectionProfile?
+        let result = change(skipIfUnchanged: true) { list in
+            removed = list.first { $0.id == id }
+            list.removeAll { $0.id == id }
+        }
+        return result.flatMap {
+            Result { if let removed, removed.kind == .s3 { try credentials.removeSecret(for: removed) } }
+        }
     }
 
-    public func move(_ id: UUID, to index: Int) {
+    @discardableResult
+    public func move(_ id: UUID, to index: Int) -> Result<Void, Error> {
         change { list in
             guard let from = list.firstIndex(where: { $0.id == id }) else { return }
             let p = list.remove(at: from)
@@ -55,40 +72,58 @@ public final class ConnectionProfiles: @unchecked Sendable {
         }
     }
 
-    private func change(_ edit: (inout [ConnectionProfile]) -> Void) {
+    private func change(skipIfUnchanged: Bool = false, _ edit: (inout [ConnectionProfile]) -> Void) -> Result<Void, Error> {
+        // Keep loading, editing and writing in the same critical section: an older snapshot must never overwrite a
+        // newer one. Publish only after the durable write, and release the lock before observers read the list.
         lock.lock()
-        loadIfNeeded()
-        edit(&stored)
-        let snapshot = stored
-        lock.unlock()
-        write(snapshot)
+        do {
+            try loadIfNeeded()
+            var candidate = stored
+            edit(&candidate)
+            if skipIfUnchanged && candidate == stored { lock.unlock(); return .success(()) }
+            try write(candidate)
+            stored = candidate
+            lock.unlock()
+        } catch {
+            lock.unlock()
+            return .failure(error)
+        }
         let post = { NotificationCenter.default.post(name: Self.changed, object: self) }
         if Thread.isMainThread { post() } else { DispatchQueue.main.async(execute: post) }
+        return .success(())
     }
 
-    /// Called with the lock held.
-    private func loadIfNeeded() {
+    /// Called with the lock held. Do not mark a failed load as complete: the user can fix the folder and retry.
+    private func loadIfNeeded() throws {
         guard !loaded else { return }
-        loaded = true
-        guard let storeURL, let data = try? Data(contentsOf: storeURL) else { return }
-        if let file = try? JSONDecoder().decode(File.self, from: data) {
+        guard let storeURL else { loaded = true; return }
+        let data: Data
+        do {
+            data = try Data(contentsOf: storeURL)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+            loaded = true
+            return
+        }
+        if let file = try? JSONDecoder().decode(File.self, from: data), file.version == Self.version {
             stored = file.profiles
         } else {
-            // Unreadable (damaged, or from a newer version): keep a copy rather than overwrite it on the next save.
-            let backup = storeURL.deletingPathExtension().appendingPathExtension("unreadable.json")
-            try? FileManager.default.removeItem(at: backup)
-            try? FileManager.default.copyItem(at: storeURL, to: backup)
-            NSLog("Porpoise: connections.json could not be read; a copy was kept as \(backup.lastPathComponent)")
+            // Preserve each damaged/newer file before allowing a replacement. Never delete an earlier backup, and
+            // never claim recovery succeeded or overwrite the original when copying fails.
+            var backup = storeURL.deletingPathExtension().appendingPathExtension("unreadable.json")
+            if fileManager.fileExists(atPath: backup.path) {
+                backup = storeURL.deletingPathExtension().appendingPathExtension("unreadable-\(UUID().uuidString).json")
+            }
+            try fileManager.copyItem(at: storeURL, to: backup)
         }
+        loaded = true
     }
 
-    private func write(_ list: [ConnectionProfile]) {
+    private func write(_ list: [ConnectionProfile]) throws {
         guard let storeURL else { return }
-        try? FileManager.default.createDirectory(at: storeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: storeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(File(version: Self.version, profiles: list)) else { return }
-        try? data.write(to: storeURL, options: .atomic)
+        try encoder.encode(File(version: Self.version, profiles: list)).write(to: storeURL, options: .atomic)
     }
 
     // MARK: Sidebar

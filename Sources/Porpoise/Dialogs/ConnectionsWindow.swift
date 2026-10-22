@@ -228,6 +228,8 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
         let connect = NSButton(title: "Connect", target: self, action: #selector(connectProfile(_:)))
         connect.keyEquivalent = "\r"
         f.problemLabel.textColor = .systemRed
+        f.problemLabel.lineBreakMode = .byWordWrapping
+        f.problemLabel.maximumNumberOfLines = 0
         let buttons = NSStackView(views: [f.problemLabel, NSView(), save, connect])
         for v in [f.view, buttons, ConnectionInfoView(profile: f.draft, credentials: credentials)] { editor.addArrangedSubview(v) }
         buttons.widthAnchor.constraint(equalTo: editor.widthAnchor).isActive = true
@@ -271,8 +273,13 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
     @objc private func importAlias(_ sender: NSPopUpButton) {
         guard let alias = sender.selectedItem?.representedObject as? String else { return }
         let p = ConnectionProfile(sshHost: sshConfig().resolve(alias))
-        profiles.save(p)
-        select(p.id)
+        do {
+            try profiles.save(p).get()
+            select(p.id)
+        } catch {
+            select(p.id, unsaved: p)
+            form?.problemLabel.stringValue = "Connection wasn’t saved. " + error.localizedDescription + " Try Save again."
+        }
     }
 
     @objc private func removeProfile(_ sender: Any?) {
@@ -285,7 +292,12 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
         guard let window else { return }
         a.beginSheetModal(for: window) { [weak self] r in
             guard r == .alertFirstButtonReturn, let self else { return }
-            self.profiles.remove(id)
+            do { try self.profiles.remove(id).get() } catch {
+                let alert = NSAlert(error: error)
+                alert.messageText = "The connection couldn’t be removed completely."
+                alert.beginSheetModal(for: window)
+                return
+            }
             if let next = self.profiles.profiles.first { self.select(next.id) } else { self.showEmpty() }
         }
     }
@@ -305,8 +317,11 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
                 return false
             }
         }
+        do { try profiles.save(p).get() } catch {
+            f.problemLabel.stringValue = "Connection wasn’t saved. " + error.localizedDescription + " Try Save again."
+            return false
+        }
         f.problemLabel.stringValue = ""
-        profiles.save(p)
         select(p.id)
         return true
     }
