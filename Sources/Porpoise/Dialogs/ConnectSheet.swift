@@ -161,7 +161,7 @@ final class ConnectSheet: SecondaryWindowController {
         spinner.controlSize = .small
         spinner.startAnimation(nil)
         let head = NSTextField(labelWithString: "Continue in your browser")
-        head.font = .systemFont(ofSize: 13, weight: .semibold)
+        head.font = .systemFont(ofSize: Tokens.FontSize.body, weight: .semibold)
         let body = Self.secondary(
             provider.descriptor.signInInstructions)
         body.preferredMaxLayoutWidth = 440
@@ -372,20 +372,20 @@ final class ConnectSheet: SecondaryWindowController {
 
     static func heading(_ s: String) -> NSTextField {
         let t = NSTextField(labelWithString: s)
-        t.font = .systemFont(ofSize: 15, weight: .semibold)
+        t.font = .systemFont(ofSize: Tokens.FontSize.title3, weight: .semibold)
         return t
     }
 
     static func secondary(_ s: String) -> NSTextField {
         let t = NSTextField(wrappingLabelWithString: s)
-        t.font = .systemFont(ofSize: 12)
+        t.font = .systemFont(ofSize: Tokens.FontSize.callout)
         t.textColor = .secondaryLabelColor
         return t
     }
 
     static func caption(_ s: String) -> NSTextField {
         let t = NSTextField(labelWithString: s)
-        t.font = .systemFont(ofSize: 10, weight: .semibold)
+        t.font = .systemFont(ofSize: Tokens.FontSize.caption, weight: .semibold)
         t.textColor = .tertiaryLabelColor
         return t
     }
@@ -400,7 +400,7 @@ final class ConnectSheet: SecondaryWindowController {
         let b = NSButton(title: title, target: target, action: action)
         b.isBordered = false
         b.contentTintColor = .linkColor
-        b.font = .systemFont(ofSize: 12)
+        b.font = .systemFont(ofSize: Tokens.FontSize.callout)
         return b
     }
 
@@ -429,7 +429,7 @@ final class ConnectTile: NSControl {
     /// Wide enough for the longest name ("S3-compatible", "Windows (SMB)") on one line.
     static let size = CGSize(width: 100, height: 78)
     static let spacing: CGFloat = 8
-    static let titleFont = NSFont.systemFont(ofSize: 11, weight: .medium)
+    static let titleFont = NSFont.systemFont(ofSize: Tokens.FontSize.small, weight: .medium)
     static func rowWidth(_ count: Int) -> CGFloat { CGFloat(count) * size.width + CGFloat(max(count - 1, 0)) * spacing }
 
     init(title: String, image: NSImage?, available: Bool) {
@@ -497,7 +497,7 @@ final class ConnectTile: NSControl {
         (title as NSString).draw(in: CGRect(x: 4, y: 48, width: r.width - 8, height: 15), withAttributes: attrs)
         if !available {
             let small: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 10), .foregroundColor: Theme.windowTextInactive, .paragraphStyle: p,
+                .font: NSFont.systemFont(ofSize: Tokens.FontSize.caption), .foregroundColor: Theme.windowTextInactive, .paragraphStyle: p,
             ]
             ("Coming soon" as NSString).draw(in: CGRect(x: 4, y: 62, width: r.width - 8, height: 12), withAttributes: small)
         }
@@ -525,7 +525,7 @@ final class AccountCard: NSView {
         pic.widthAnchor.constraint(equalToConstant: avatarSize).isActive = true
         pic.heightAnchor.constraint(equalToConstant: avatarSize).isActive = true
         let name = NSTextField(labelWithString: a.displayName.isEmpty ? a.email : a.displayName)
-        name.font = .systemFont(ofSize: 13, weight: .semibold)
+        name.font = .systemFont(ofSize: Tokens.FontSize.body, weight: .semibold)
         var lines: [NSView] = [name]
         if !a.displayName.isEmpty { lines.append(ConnectSheet.secondary(a.email)) }
         if let quota = QuotaBar.make(used: a.quotaUsed, total: a.quotaTotal) { lines.append(quota) }

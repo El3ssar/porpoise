@@ -56,14 +56,14 @@ final class AppsView: NSView, NSTextFieldDelegate {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: 15)
+        field.font = .systemFont(ofSize: Tokens.FontSize.title3)
         field.textColor = Theme.viewText
         field.cell?.isScrollable = true
         field.cell?.wraps = false
         field.placeholderAttributedString = NSAttributedString(
             string: "Search",
             attributes: [
-                .foregroundColor: Theme.viewTextInactive, .font: NSFont.systemFont(ofSize: 15),
+                .foregroundColor: Theme.viewTextInactive, .font: NSFont.systemFont(ofSize: Tokens.FontSize.title3),
             ])
         field.delegate = self
         clearButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Clear")
@@ -75,7 +75,7 @@ final class AppsView: NSView, NSTextFieldDelegate {
         for v in [magnifier, field, clearButton] as [NSView] { searchGlass.content.addSubview(v) }
         addSubview(searchGlass)
 
-        noResults.font = .systemFont(ofSize: 22, weight: .medium)
+        noResults.font = .systemFont(ofSize: Tokens.FontSize.title, weight: .medium)
         noResults.textColor = Theme.viewTextInactive
         noResults.isHidden = true
         addSubview(noResults)

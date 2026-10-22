@@ -161,7 +161,7 @@ final class AccountsView: NSView {
             return
         }
         let title = NSTextField(labelWithString: "\(a.provider.title) · \(a.email)")
-        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        title.font = .systemFont(ofSize: Tokens.FontSize.body, weight: .semibold)
         let signIn = ClosureButton(title: "Sign In Again") { [weak self] _ in self?.signInAgain(id) }
         signIn.identifier = NSUserInterfaceItemIdentifier("signInAgain")
         if a.status == .signInNeeded { signIn.keyEquivalent = "\r" }
@@ -258,7 +258,7 @@ final class AccountRow: NSView {
             mark.bottomAnchor.constraint(equalTo: pic.bottomAnchor, constant: 3),
         ])
         let email = NSTextField(labelWithString: a.email)
-        email.font = .systemFont(ofSize: 12, weight: .medium)
+        email.font = .systemFont(ofSize: Tokens.FontSize.callout, weight: .medium)
         email.lineBreakMode = .byTruncatingMiddle
         let sub: String
         switch a.status {
@@ -267,7 +267,7 @@ final class AccountRow: NSView {
         case .ok: sub = a.quotaUsed.map { QuotaBar.text(used: $0, total: a.quotaTotal) } ?? a.provider.title
         }
         let subtitle = NSTextField(labelWithString: sub)
-        subtitle.font = .systemFont(ofSize: 10.5)
+        subtitle.font = .systemFont(ofSize: Tokens.FontSize.small)
         subtitle.lineBreakMode = .byTruncatingTail
         subtitle.textColor = selected ? .alternateSelectedControlTextColor.withAlphaComponent(0.8) : .secondaryLabelColor
         if selected { email.textColor = .alternateSelectedControlTextColor }
@@ -386,7 +386,7 @@ final class OfflineUsageView: NSStackView {
             text.lineBreakMode = .byTruncatingMiddle
             let remove = ClosureButton(title: "Remove Recent Downloads") { _ in service.removeRecent(account: a.id) }
             remove.controlSize = .small
-            remove.font = .systemFont(ofSize: 11)
+            remove.font = .systemFont(ofSize: Tokens.FontSize.small)
             remove.isEnabled = u.recent > 0
             let row = NSStackView(views: [text, remove])
             row.spacing = 10

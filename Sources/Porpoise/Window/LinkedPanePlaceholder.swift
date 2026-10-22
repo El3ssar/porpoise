@@ -13,7 +13,7 @@ final class LinkedPanePlaceholder: NSView {
         }
         override init(frame: CGRect) {
             super.init(frame: frame)
-            title.font = .systemFont(ofSize: 15, weight: .semibold); title.alignment = .center; detail.alignment = .center
+            title.font = .systemFont(ofSize: Tokens.FontSize.title3, weight: .semibold); title.alignment = .center; detail.alignment = .center
             for view in [image, title, detail, button] { addSubview(view) }
         }
         required init?(coder: NSCoder) { fatalError() }
@@ -32,7 +32,7 @@ final class LinkedPanePlaceholder: NSView {
     var statusText = "" { didSet { status.stringValue = statusText } }
     override init(frame: CGRect) {
         super.init(frame: frame)
-        status.font = .systemFont(ofSize: 11); status.textColor = Theme.windowTextInactive
+        status.font = .systemFont(ofSize: Tokens.FontSize.small); status.textColor = Theme.windowTextInactive
         for view in [content, unlink, choose, status] { addSubview(view) }
     }
     required init?(coder: NSCoder) { fatalError() }

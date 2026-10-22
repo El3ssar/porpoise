@@ -236,7 +236,7 @@ final class OnboardingWindowController: SecondaryWindowController {
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.startAnimation(nil)
-        statusText.font = .systemFont(ofSize: 13, weight: .medium)
+        statusText.font = .systemFont(ofSize: Tokens.FontSize.body, weight: .medium)
         let status = NSStackView(views: [spinner, statusIcon, statusText])
         status.spacing = 6
         views.append(status)
@@ -254,7 +254,7 @@ final class OnboardingWindowController: SecondaryWindowController {
 
     private func stepRow(_ n: Int, _ markdown: String) -> NSStackView {
         let badge = NSTextField(labelWithString: "\(n)")
-        badge.font = .systemFont(ofSize: 12, weight: .bold)
+        badge.font = .systemFont(ofSize: Tokens.FontSize.callout, weight: .bold)
         badge.alignment = .center
         badge.textColor = .white
         badge.wantsLayer = true
@@ -265,7 +265,7 @@ final class OnboardingWindowController: SecondaryWindowController {
         badge.widthAnchor.constraint(equalToConstant: 20).isActive = true
         badge.heightAnchor.constraint(equalToConstant: 20).isActive = true
         let text = NSTextField(labelWithAttributedString: (try? NSAttributedString(markdown: markdown)) ?? NSAttributedString(string: markdown))
-        text.font = .systemFont(ofSize: 13)
+        text.font = .systemFont(ofSize: Tokens.FontSize.body)
         text.textColor = .labelColor
         let row = NSStackView(views: [badge, text])
         row.spacing = 10

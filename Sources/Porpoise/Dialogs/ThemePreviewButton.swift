@@ -31,7 +31,7 @@ final class ThemePreviewButton: NSButton {
         }
         color(.windowBackground).setFill(); NSRect(x: 1, y: 1, width: bounds.width - 2, height: 21).fill()
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: state == .on ? .semibold : .regular),
+            .font: NSFont.systemFont(ofSize: Tokens.FontSize.small, weight: state == .on ? .semibold : .regular),
             .foregroundColor: color(.text),
         ]
         let text = NSAttributedString(string: title, attributes: attrs)

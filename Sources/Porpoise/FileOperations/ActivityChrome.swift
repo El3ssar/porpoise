@@ -66,7 +66,7 @@ final class ActivityFooterView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        label.font = .systemFont(ofSize: 12)
+        label.font = .systemFont(ofSize: Tokens.FontSize.callout)
         addSubview(background)
         hairline.wantsLayer = true
         addSubview(hairline)

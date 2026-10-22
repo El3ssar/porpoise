@@ -37,19 +37,19 @@ final class TemplateWindow: SecondaryWindowController, NSTextFieldDelegate, NSTe
         personalName.placeholderString = "Personal template name"; personalName.delegate = self;
         personalName.setAccessibilityLabel("Personal template name")
         stack.addArrangedSubview(NSTextField(labelWithString: "File name pattern")); stack.addArrangedSubview(filename)
-        resolved.font = .monospacedSystemFont(ofSize: 12, weight: .regular); resolved.isSelectable = true
+        resolved.font = .monospacedSystemFont(ofSize: Tokens.FontSize.callout, weight: .regular); resolved.isSelectable = true
         stack.addArrangedSubview(resolved)
         let help = NSTextField(
             wrappingLabelWithString:
                 "Variables: {date} · {time} · {user} · {name} · {counter} or {counter:03}. The counter chooses the next unused name. In the contents, {name} is the final name without its extension."
         )
-        help.font = .systemFont(ofSize: 11); help.textColor = .secondaryLabelColor; stack.addArrangedSubview(help)
+        help.font = .systemFont(ofSize: Tokens.FontSize.small); help.textColor = .secondaryLabelColor; stack.addArrangedSubview(help)
         let editors = NSStackView(); editors.orientation = .horizontal; editors.distribution = .fillEqually; editors.spacing = 12
         for (title, text) in [("Template Contents", source), ("Preview", preview)] {
             let column = NSStackView(); column.orientation = .vertical; column.alignment = .leading; column.spacing = 6
             column.addArrangedSubview(NSTextField(labelWithString: title))
             let scroll = NSScrollView(); scroll.documentView = text; scroll.hasVerticalScroller = true; scroll.borderType = .bezelBorder
-            text.isRichText = false; text.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+            text.isRichText = false; text.font = .monospacedSystemFont(ofSize: Tokens.FontSize.callout, weight: .regular)
             text.textContainerInset = NSSize(width: 8, height: 8); text.isVerticallyResizable = true; text.isHorizontallyResizable = false
             text.autoresizingMask = [.width]; text.textContainer?.widthTracksTextView = true
             text.setAccessibilityLabel(title); column.addArrangedSubview(scroll)
@@ -69,7 +69,7 @@ final class TemplateWindow: SecondaryWindowController, NSTextFieldDelegate, NSTe
             ClosureButton(title: "Export…") { [weak self] _ in self?.exportTemplate() },
             ClosureButton(title: "Templates Folder") { [weak self] _ in self?.openFolder() },
         ]); tools.spacing = 8; stack.addArrangedSubview(tools)
-        status.font = .systemFont(ofSize: 12); status.maximumNumberOfLines = 3; stack.addArrangedSubview(status)
+        status.font = .systemFont(ofSize: Tokens.FontSize.callout); status.maximumNumberOfLines = 3; stack.addArrangedSubview(status)
         let buttons = NSStackView(views: [ClosureButton(title: "Cancel") { [weak self] _ in self?.close() }, create]); buttons.spacing = 8
         stack.addArrangedSubview(buttons); create.keyEquivalent = "\r"; create.handler = { [weak self] _ in self?.createFile() }
         for view in [filename, personalName, resolved, help, status] { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }

@@ -2,6 +2,9 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
+/// The type scale, shortened for the text styles in this file.
+private typealias FontSize = Tokens.FontSize
+
 /// Window › Activity (⌥⌘J): every file operation of this session (queued, running, paused, ended) with pause,
 /// cancel, reorder and retry, and the history of earlier ones, searchable and exportable.
 final class ActivityWindowController: SecondaryWindowController, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
@@ -79,7 +82,7 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
         clear.target = self
         clear.action = #selector(clearFinished)
         clear.isBordered = false
-        clear.font = .systemFont(ofSize: 12)
+        clear.font = .systemFont(ofSize: FontSize.callout)
         clear.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: "Clear Finished")
         clear.imagePosition = .imageLeading
         clear.toolTip = "Clear Finished"
@@ -112,8 +115,8 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
         empty.orientation = .vertical
         empty.alignment = .centerX
         empty.spacing = 6
-        emptyTitle.font = .systemFont(ofSize: 15, weight: .semibold)
-        emptyDetail.font = .systemFont(ofSize: 12)
+        emptyTitle.font = .systemFont(ofSize: FontSize.title3, weight: .semibold)
+        emptyDetail.font = .systemFont(ofSize: FontSize.callout)
         empty.addArrangedSubview(emptyTitle)
         empty.addArrangedSubview(emptyDetail)
         activityPane.addSubview(empty)
@@ -289,7 +292,7 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
         clear.attributedTitle = NSAttributedString(
             string: "Clear Finished",
             attributes: [
-                .font: NSFont.systemFont(ofSize: 12), .foregroundColor: clear.isEnabled ? Theme.windowText : Theme.windowTextInactive,
+                .font: NSFont.systemFont(ofSize: FontSize.callout), .foregroundColor: clear.isEnabled ? Theme.windowText : Theme.windowTextInactive,
             ])
         header?.showsClear = historyPane.isHidden
         let paused = rows.filter { $0.state == .paused }.count

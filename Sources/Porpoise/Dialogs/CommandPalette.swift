@@ -2,6 +2,9 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
+/// The type scale, shortened for the text styles in this file.
+private typealias FontSize = Tokens.FontSize
+
 private final class PaletteTable: NSTableView {
     var invoke: (() -> Void)?
     var cancel: (() -> Void)?
@@ -37,7 +40,8 @@ final class CommandPalette: SecondaryWindowController, NSWindowDelegate, NSTable
         super.init(window: panel); panel.delegate = self
         let stack = contentStack(insets: NSEdgeInsets(top: 30, left: 16, bottom: 14, right: 16))
         func add(_ view: NSView) { stack.addArrangedSubview(view); view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
-        field.placeholderString = "Search commands, places, recent folders and tabs…"; field.font = .systemFont(ofSize: 16); field.delegate = self;
+        field.placeholderString = "Search commands, places, recent folders and tabs…"
+        field.font = .systemFont(ofSize: FontSize.title2); field.delegate = self;
         add(field)
         for (id, width) in [("command", 560.0), ("shortcut", 120.0)] {
             let column = NSTableColumn(identifier: .init(id)); column.width = width; table.addTableColumn(column)
@@ -48,7 +52,7 @@ final class CommandPalette: SecondaryWindowController, NSWindowDelegate, NSTable
         table.setAccessibilityLabel("Command palette results")
         let scroll = NSScrollView(); scroll.documentView = table; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
         scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true; add(scroll)
-        status.font = .systemFont(ofSize: 11); status.textColor = Theme.viewTextInactive; add(status)
+        status.font = .systemFont(ofSize: FontSize.small); status.textColor = Theme.viewTextInactive; add(status)
         collect(); update()
         if let frame = owner?.window?.frame {
             panel.setFrameOrigin(CGPoint(x: frame.midX - panel.frame.width / 2, y: frame.maxY - panel.frame.height - 80))
@@ -157,7 +161,7 @@ final class CommandPalette: SecondaryWindowController, NSWindowDelegate, NSTable
         let title = NSTextField(labelWithString: candidate.title); title.font = Theme.font
         title.textColor = candidate.enabled ? Theme.viewText : Theme.viewTextInactive; title.lineBreakMode = .byTruncatingTail
         let detail = NSTextField(labelWithString: (candidate.enabled ? "" : "Unavailable · ") + candidate.subtitle)
-        detail.font = .systemFont(ofSize: 11); detail.textColor = Theme.viewTextInactive; detail.lineBreakMode = .byTruncatingMiddle
+        detail.font = .systemFont(ofSize: FontSize.small); detail.textColor = Theme.viewTextInactive; detail.lineBreakMode = .byTruncatingMiddle
         let stack = NSStackView(views: [title, detail]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 2
         stack.setAccessibilityLabel(candidate.title + ", " + detail.stringValue); return stack
     }

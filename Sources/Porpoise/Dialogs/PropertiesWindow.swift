@@ -159,7 +159,7 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
         let l = NSTextField(labelWithString: k)
         l.alignment = .right
         l.textColor = Theme.windowTextInactive
-        l.font = .systemFont(ofSize: 13)
+        l.font = .systemFont(ofSize: Tokens.FontSize.body)
         let valueWidth = view.bounds.width - 118
         var h = max(v.frame.height, 20)
         if let t = v as? NSTextField, t.maximumNumberOfLines != 1 {
@@ -190,7 +190,7 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
         let f = NSTextField(wrappingLabelWithString: s)
         f.isSelectable = true
         f.textColor = Theme.windowText
-        f.font = .systemFont(ofSize: 13)
+        f.font = .systemFont(ofSize: Tokens.FontSize.body)
         f.toolTip = s
         return f
     }
@@ -253,14 +253,14 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
         // file's size is one line, and a two-line row left a 44 pt gap before Free space.
         let twoLines = items.count > 1 || items.contains(where: \.isDirectory)
         let sizeRow = NSView(frame: CGRect(x: 0, y: 0, width: 282, height: twoLines ? 44 : 22))
-        sizeLabel.font = .systemFont(ofSize: 13)
+        sizeLabel.font = .systemFont(ofSize: Tokens.FontSize.body)
         sizeLabel.textColor = Theme.windowText
         sizeLabel.maximumNumberOfLines = twoLines ? 2 : 1
         sizeLabel.lineBreakMode = .byTruncatingTail
         sizeLabel.isSelectable = true
         sizeLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         recalculateButton.controlSize = .small
-        recalculateButton.font = .systemFont(ofSize: 11)
+        recalculateButton.font = .systemFont(ofSize: Tokens.FontSize.small)
         recalculateButton.bezelStyle = .rounded
         for child in [sizeLabel, recalculateButton] {
             child.translatesAutoresizingMaskIntoConstraints = false

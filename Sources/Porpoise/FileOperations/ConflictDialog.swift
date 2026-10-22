@@ -3,6 +3,9 @@ import PorpoiseCore
 import PorpoiseServices
 import QuickLookThumbnailing
 
+/// The type scale, shortened for the text styles in this file.
+private typealias FontSize = Tokens.FontSize
+
 /// A window-owned question. No nested modal run loop is used by running transfers.
 final class ConflictDialog: NSObject {
     let info: ConflictInfo
@@ -64,7 +67,8 @@ final class ConflictDialog: NSObject {
         }
         let hintHeight = ceil(
             (hint as NSString).boundingRect(
-                with: CGSize(width: 580, height: 40), options: .usesLineFragmentOrigin, attributes: [.font: NSFont.systemFont(ofSize: 12)]
+                with: CGSize(width: 580, height: 40), options: .usesLineFragmentOrigin,
+                attributes: [.font: NSFont.systemFont(ofSize: FontSize.callout)]
             ).height)
         let height = max(16, hintHeight)
         window.setContentSize(CGSize(width: 620, height: 358 + height))
@@ -97,28 +101,28 @@ final class ConflictDialog: NSObject {
         _ = label("⇄  Replace if different, skip if identical", CGRect(x: 32, y: 133, width: 388, height: 18), size: 12, weight: .semibold)
         method.addItems(withTitles: ["By size & date · 2 s tolerance", "By size only", "By contents"])
         method.selectItem(at: methods.firstIndex(of: info.comparisonOptions.method) ?? 0)
-        method.font = .systemFont(ofSize: 11)
+        method.font = .systemFont(ofSize: FontSize.small)
         method.controlSize = .small
         method.frame = CGRect(x: 238, y: 103, width: 234, height: 24)
         method.removeAllItems(); method.addItems(withTitles: ["Size & date · 2 s", "Size only", "Contents"])
         method.selectItem(at: methods.firstIndex(of: info.comparisonOptions.method) ?? 0)
         method.target = self; method.action = #selector(methodChanged)
         counts.frame = CGRect(x: 32, y: 107, width: 202, height: 16)
-        counts.font = .systemFont(ofSize: 11); counts.textColor = Theme.windowTextInactive
+        counts.font = .systemFont(ofSize: FontSize.small); counts.textColor = Theme.windowTextInactive
         window.contentView!.addSubview(counts)
         methodChanged()
         method.toolTip = "Size & date compares metadata; Contents reads every byte."
         window.contentView!.addSubview(method)
         let total = info.remainingConflicts ?? 1
         let rule = ConflictActionButton(title: total > 1 ? "Apply to All \(total)" : "Apply", target: self, action: #selector(different))
-        rule.font = .systemFont(ofSize: 11)
+        rule.font = .systemFont(ofSize: FontSize.small)
         rule.bezelStyle = .rounded
         rule.titleTint = Theme.activeText
         rule.frame = CGRect(x: 482, y: 115, width: 108, height: 28)
         window.contentView!.addSubview(rule)
         applyAll.title = total > 1 ? "Do this for the other \(total - 1) conflicts" : "Do this for later conflicts in this transfer"
         if total > 1 { _ = label("Conflict 1 of \(total)", CGRect(x: 470, y: 325 + height, width: 130, height: 18), size: 11, secondary: true) }
-        applyAll.font = .systemFont(ofSize: 11)
+        applyAll.font = .systemFont(ofSize: FontSize.small)
         applyAll.frame = CGRect(x: 20, y: 63, width: 386, height: 22)
         window.contentView!.addSubview(applyAll)
         func button(_ title: String, x: CGFloat, width: CGFloat, action: Selector, key: String = "") -> NSButton {
@@ -148,7 +152,7 @@ final class ConflictDialog: NSObject {
         window.contentView!.addSubview(split)
         let replace = ConflictActionButton(title: title, target: self, action: #selector(replace))
         replace.drawsBackground = false; replace.primary = split.primary
-        replace.font = .systemFont(ofSize: 12)
+        replace.font = .systemFont(ofSize: FontSize.callout)
         replace.keyEquivalent = split.primary ? "\r" : ""
         replace.frame = CGRect(x: 0, y: 0, width: bothFolders ? 154 : 128, height: 30)
         split.addSubview(replace)
@@ -286,7 +290,8 @@ class ConflictActionButton: NSButton {
         if drawsBackground { ConflictSplitView.paint(bounds.insetBy(dx: 1, dy: 1), primary: primary, highlighted: isHighlighted) }
         let text = title as NSString
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: font ?? NSFont.systemFont(ofSize: 12), .foregroundColor: titleTint ?? (primary ? Self.primaryTextColor : Theme.windowText),
+            .font: font ?? NSFont.systemFont(ofSize: FontSize.callout),
+            .foregroundColor: titleTint ?? (primary ? Self.primaryTextColor : Theme.windowText),
         ]
         let size = text.size(withAttributes: attributes)
         text.draw(at: CGPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2), withAttributes: attributes)
@@ -315,7 +320,9 @@ private final class ConflictBadge: NSView {
     override func draw(_ dirtyRect: NSRect) {
         Theme.transferChanged.withAlphaComponent(0.14).setFill()
         NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
-        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10, weight: .semibold), .foregroundColor: Theme.transferChanged]
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: FontSize.caption, weight: .semibold), .foregroundColor: Theme.transferChanged,
+        ]
         let size = (text as NSString).size(withAttributes: attrs)
         (text as NSString).draw(at: CGPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2), withAttributes: attrs)
     }

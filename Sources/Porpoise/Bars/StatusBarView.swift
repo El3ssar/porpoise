@@ -2,6 +2,9 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
+/// The type scale, shortened for the text styles in this file.
+private typealias FontSize = Tokens.FontSize
+
 /// Dolphin's status bar. Full width (default here): a thin translucent strip with folder/selection info on the left,
 /// the icon-size slider and a disk-space bar on the right. Small mode: Dolphin's floating box in the view's corner.
 final class StatusBarView: NSView {
@@ -37,7 +40,7 @@ final class StatusBarView: NSView {
     private static let diskBarWidth: CGFloat = 72
     private static let sliderWidth: CGFloat = 96
     private static let messageDuration: TimeInterval = 2.5
-    private static let diskFont = NSFont.systemFont(ofSize: 11)
+    private static let diskFont = NSFont.systemFont(ofSize: FontSize.small)
 
     override var isFlipped: Bool { true }
 
@@ -107,7 +110,7 @@ final class StatusBarView: NSView {
 
     private var textAttrs: [NSAttributedString.Key: Any] {
         let p = NSMutableParagraphStyle(); p.lineBreakMode = .byClipping
-        return [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: Theme.windowText.withAlphaComponent(0.88), .paragraphStyle: p]
+        return [.font: NSFont.systemFont(ofSize: FontSize.callout), .foregroundColor: Theme.windowText.withAlphaComponent(0.88), .paragraphStyle: p]
     }
 
     /// Width the floating small bar needs.
@@ -188,7 +191,7 @@ final class StatusBarView: NSView {
         }
         let attrs = textAttrs
         let tx: CGFloat = progress != nil ? 32 : 12
-        let message = fittedMessage(width: max(0, leftContentEnd - tx), font: .systemFont(ofSize: 12))
+        let message = fittedMessage(width: max(0, leftContentEnd - tx), font: .systemFont(ofSize: FontSize.callout))
         let s = (message as NSString).size(withAttributes: attrs)
         (message as NSString).draw(
             in: CGRect(x: tx, y: (r.height - s.height) / 2, width: max(0, leftContentEnd - tx), height: s.height + 2),

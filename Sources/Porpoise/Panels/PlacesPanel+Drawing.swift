@@ -83,7 +83,7 @@ extension PlacesPanel {
     private func drawHeader(_ sec: PlaceSection, index i: Int, in r: CGRect) {
         let hovered = headerHover == i
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+            .font: NSFont.systemFont(ofSize: Tokens.FontSize.small, weight: .semibold),
             .foregroundColor: Theme.windowTextInactive.withAlphaComponent(hovered ? 0.85 : 0.62),
         ]
         if let account = PlacesModel.shared.account(for: sec) {

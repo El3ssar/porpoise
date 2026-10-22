@@ -16,7 +16,7 @@ final class ChecksumWindow: DiskUtilityWindow {
         toolbar.addArrangedSubview(ClosureButton(title: "Verify Manifest…") { [weak self] _ in self?.verify() })
         toolbar.addArrangedSubview(ClosureButton(title: "Export Manifest…") { [weak self] _ in self?.export() })
         toolbar.addArrangedSubview(ClosureButton(title: "Copy Checksum") { [weak self] _ in self?.copyDigest() })
-        expected.placeholderString = "Paste expected checksum"; expected.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        expected.placeholderString = "Paste expected checksum"; expected.font = .monospacedSystemFont(ofSize: Tokens.FontSize.small, weight: .regular)
         let compare = NSStackView(views: [expected, ClosureButton(title: "Compare") { [weak self] _ in self?.compare() }])
         stack.insertArrangedSubview(compare, at: 1); compare.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         expected.setContentHuggingPriority(.defaultLow, for: .horizontal)

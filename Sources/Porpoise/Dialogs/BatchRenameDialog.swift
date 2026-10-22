@@ -88,7 +88,7 @@ final class BatchRenameDialog: SecondaryWindowController, NSTableViewDataSource,
             wrappingLabelWithString:
                 "Rules run from top to bottom. Positions start at 0; −1 inserts at the end. Regex replacement uses $1, $2…\nTokens: {name}, {ext}, {created:yyyy-MM-dd}, {modified:yyyy-MM-dd}, {exif:yyyy-MM-dd}, {width}, {height}, {artist}, {album}, {title}. Missing metadata blocks that row."
         )
-        hint.font = .systemFont(ofSize: 11); hint.textColor = Theme.viewTextInactive; add(hint)
+        hint.font = .systemFont(ofSize: Tokens.FontSize.small); hint.textColor = Theme.viewTextInactive; add(hint)
         for (id, title, width) in [("old", "Current name", 280.0), ("new", "New name", 280.0), ("status", "Status", 320.0)] {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id)); column.title = title; column.width = width
             table.addTableColumn(column)
@@ -98,7 +98,7 @@ final class BatchRenameDialog: SecondaryWindowController, NSTableViewDataSource,
         let preview = NSScrollView(); preview.documentView = table; preview.hasVerticalScroller = true; preview.hasHorizontalScroller = true
         preview.borderType = .bezelBorder; preview.heightAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
         add(preview)
-        status.font = .systemFont(ofSize: 12); add(status)
+        status.font = .systemFont(ofSize: Tokens.FontSize.callout); add(status)
         apply.target = self; apply.action = #selector(applyRename); apply.keyEquivalent = "\r"; apply.isEnabled = false
         cancel.target = self; cancel.action = #selector(cancelRename); cancel.keyEquivalent = "\u{1b}"
         let spacer = NSView(); spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)

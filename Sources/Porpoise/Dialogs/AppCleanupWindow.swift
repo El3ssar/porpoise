@@ -20,7 +20,7 @@ final class AppCleanupWindow: DiskUtilityWindow {
         let names = originals.prefix(5).map(\.lastPathComponent).joined(separator: ", ")
         let more = originals.count > 5 ? " and \(originals.count - 5) more items" : ""
         let heading = NSTextField(wrappingLabelWithString: "Move \(names)\(more) to Trash. Select any related files to include.")
-        heading.font = .systemFont(ofSize: 13, weight: .medium); toolbar.addArrangedSubview(heading)
+        heading.font = .systemFont(ofSize: Tokens.FontSize.body, weight: .medium); toolbar.addArrangedSubview(heading)
         toolbar.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         heading.widthAnchor.constraint(equalTo: toolbar.widthAnchor).isActive = true
         heading.maximumNumberOfLines = 3
