@@ -9,7 +9,13 @@ import Testing
 
 /// A scan blocks its caller until the folders are read. It must finish even when no other thread is free to help
 /// (CI's 3-core runner: every test thread waiting on scans, nothing left to run their work).
-@Suite struct ScannerStarvationTests {
+///
+/// Its callers take every worker thread the process's dispatch pool has, so it runs alone, like BusyPoolTests
+/// (scripts/test-with-watchdog.sh): among the other suites, their work held the pool for over a minute on CI and not
+/// one scan started, and its callers left Drive's parallel copies no thread (both failed in CI run 39841080505).
+/// By hand: `PORPOISE_TESTS_ALONE=1 swift test --filter ScannerStarvationTests`.
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["PORPOISE_TESTS_ALONE"] == "1", "runs alone: scripts/test-with-watchdog.sh"))
+struct ScannerStarvationTests {
     @Test func scansFinishWhenEveryWorkerThreadIsTaken() async throws {
         let s = try Scratch()
         for d in 0..<4 {
