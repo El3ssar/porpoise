@@ -234,6 +234,20 @@ public enum PrivilegedHelper {
     static func run(_ commands: [[String]], bestEffort: Set<String> = []) -> Outcome {
         // Test instances take commands from other processes (DebugBridge): they never get root.
         guard !Settings.isTesting else { return .unavailable("Test instances don't use Porpoise's helper.") }
+        return diagnosed(runChecked(commands, bestEffort: bestEffort))
+    }
+
+    /// A failed run as a diagnostic event: its kind only, never the command, its paths or the helper's message.
+    static func diagnosed(_ outcome: Outcome, store: DiagnosticStore = Diagnostics.shared) -> Outcome {
+        switch outcome {
+        case .done: break
+        case .unavailable: store.record(.helperUnavailable, failure: .unavailable)
+        case .failed: store.record(.helperFailed, failure: .unknown)
+        }
+        return outcome
+    }
+
+    private static func runChecked(_ commands: [[String]], bestEffort: Set<String>) -> Outcome {
         guard ping(timeout: 4) || ping(timeout: 4) else { return .unavailable("Porpoise's helper didn't answer.") }
         guard let c = connection() else { return .unavailable("This copy of Porpoise isn't signed, so its helper can't be used.") }
         defer { c.invalidate() }

@@ -210,8 +210,9 @@ extension FileOperationsController {
         activityDidChange()
     }
 
-    /// Ends it: history, journal, verification, then the next queued job.
-    func ended(_ activity: Activity, errors: [String]) {
+    /// Ends it: history, journal, verification, then the next queued job. `cause`: the first error behind `errors`,
+    /// for the diagnostic event a failed copy or move records (its category only).
+    func ended(_ activity: Activity, errors: [String], cause: Error? = nil) {
         environment.unregister(activity.control)
         activity.environmentNotice = nil
         let job = activity.job
@@ -233,6 +234,13 @@ extension FileOperationsController {
             }
         }
         activity.finishedAt = Date()
+        if !errors.isEmpty, activity.kind == .copy || activity.kind == .move, activity.state == .failed || activity.state == .completed {
+            if let cause {
+                Diagnostics.shared.record(.transferFailed, error: cause)
+            } else {
+                Diagnostics.shared.record(.transferFailed, failure: .unknown)
+            }
+        }
         // The list keeps the latest ended jobs; the history keeps them all.
         let ended = activities.filter(\.state.isEnded)
         if ended.count > Self.endedKept {

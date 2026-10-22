@@ -94,6 +94,14 @@ public struct DiagnosticEvent: Encodable, Sendable {
         case helperUnavailable = "helper.unavailable"
         case recoveryStarted = "recovery.started"
         case recoveryFinished = "recovery.finished"
+        /// A copy or move ended with items it couldn't place.
+        case transferFailed = "transfer.failed"
+        /// A cloud service refused or failed a request (offline, signed out, a server error).
+        case providerError = "provider.error"
+        /// The privileged helper ran a command and it failed.
+        case helperFailed = "helper.failed"
+        /// The previous launch ended without quitting: a crash, a force quit or a power loss.
+        case appUncleanExit = "app.unclean_exit"
     }
 
     public let timestamp: Date

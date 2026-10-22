@@ -40,6 +40,8 @@ public final class FileJob: @unchecked Sendable {
     public var inventoryDelay: TimeInterval = 0
 
     public private(set) var errors: [String] = []
+    /// The first error behind `errors`, kept only to be classified (`DiagnosticFailure`), never shown or saved.
+    public private(set) var firstError: Error?
     /// Items that failed only for lack of permission (the app may retry them with authorization).
     /// Includes items nested in a folder merge.
     public private(set) var denied: [URL] = []
@@ -209,6 +211,7 @@ public final class FileJob: @unchecked Sendable {
             denied.append(src)
             if let t = target { deniedTargets[src] = t }
         } else {
+            firstError = firstError ?? error
             errors.append(Self.describe(error))
         }
     }
@@ -585,6 +588,7 @@ public final class FileJob: @unchecked Sendable {
             } catch FileOperationError.interrupted {
                 throw FileOperationError.interrupted
             } catch {
+                firstError = firstError ?? error
                 errors.append(Self.describe(error))
             }
         }

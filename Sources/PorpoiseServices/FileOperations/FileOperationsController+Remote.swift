@@ -65,7 +65,7 @@ extension FileOperationsController {
                     activity.remoteResults = runtime.results
                     activity.failedSources = runtime.failedSources
                     self.ui?.jobFinished(activity)
-                    self.ended(activity, errors: runtime.errors)
+                    self.ended(activity, errors: runtime.errors, cause: runtime.firstError)
                     Self.notifyChanged(urls + (folder.map { [$0] } ?? []) + runtime.results)
                     if !runtime.errors.isEmpty && !control.isCancelled { self.ui?.showTransferErrors(activity, window: window) }
                     done?(runtime.results)

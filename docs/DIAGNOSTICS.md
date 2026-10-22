@@ -1,9 +1,23 @@
 # Local diagnostic events
 
-`PorpoiseServices.DiagnosticStore` is the service API for a local support trace. This initial implementation does
-not automatically instrument existing call sites, add a Help-menu action, persist a background log, or send data
-anywhere. UI wiring and reviewed instrumentation are follow-up work. Operation history remains separate and is
-never silently included in an export.
+`PorpoiseServices.DiagnosticStore` is the service API for a local support trace. The app keeps one store for the
+process (`Diagnostics.shared`), records events at its main error sites, and offers them only through
+**Help › Export Diagnostics…**: a window shows the reviewed snapshot exactly as it will be saved, and Save writes those
+bytes to a file the user chooses. Nothing is persisted in the background or sent anywhere. Operation history remains
+separate and is never included in an export.
+
+## In the app
+
+| Code | Recorded when | Failure category |
+|---|---|---|
+| `transfer.failed` | a copy or move ends with items it couldn't place (`FileOperationsController.ended`) | the first error's category |
+| `provider.error` | a cloud service request fails, once per change of category per account; a success resets it (`CloudAccountStatus.record`) | the error's category; `authentication` when the service wants a new sign-in |
+| `helper.failed` / `helper.unavailable` | the privileged helper fails a command / can't be reached (`PrivilegedHelper.run`) | `unknown` / `unavailable` |
+| `app.unclean_exit` | at launch, when the previous run didn't quit normally (a crash, force quit or power loss) | `unknown` |
+
+The unclean-exit check is one boolean in Porpoise's own preferences (`diagnostics.running`), set at launch and
+cleared on quit. No crash report is read. Each cloud account's events share a random correlation, never its id.
+A user's own cancel records nothing. The app's save replaces an existing file only after the save panel has asked.
 
 ## Privacy boundary
 
@@ -19,8 +33,9 @@ compile-time architecture label. No device/user name, environment, home path or 
 Do not pass user data as build metadata, or add freeform fields to the schema. Add a reviewed enum case instead.
 This is exclusion by schema, rather than a regular expression that might miss a new token or filename format.
 
-Schema version 1 codes are `persistence.write_failed`, `provider.connected`, `provider.disconnected`,
-`subprocess.exited`, `helper.unavailable`, `recovery.started` and `recovery.finished`. Failure categories are
+Schema version 2 codes are `persistence.write_failed`, `provider.connected`, `provider.disconnected`,
+`subprocess.exited`, `helper.unavailable`, `recovery.started`, `recovery.finished`, and (new in 2) `transfer.failed`,
+`provider.error`, `helper.failed` and `app.unclean_exit`. Failure categories are
 `none`, `cancelled`, `permission`, `notFound`, `noSpace`, `network`, `authentication`, `conflict`, `timeout`,
 `unavailable` and `unknown`. Classification uses only known Foundation domains/codes. It never retains `userInfo`.
 
@@ -69,6 +84,10 @@ text; none is present in the preview. Local export tests prove identical reviewe
 URLs are rejected before file IO. Full validation still uses the watchdog, coverage, strict lint and shipping
 product build documented in CONTRIBUTING.md.
 
-If a later UI offers this trace for a support report, show the exact preview and require the user's deliberate
+Run `swift test --filter 'DiagnosticsInstrumentationTests|DiagnosticsExportWindowTests'` for the app's error sites: each
+feeds personal data (user and file names, a token, an account id, a helper's paths) and checks none reaches the
+export, and the window test checks the preview text and the saved bytes are the reviewed snapshot.
+
+Any other UI that offers this trace must likewise show the exact preview and require the user's deliberate
 save/share action. Native crash reports and Activity Monitor samples are separate, potentially sensitive artifacts;
 never append them automatically. Do not promise source-level crash symbolication from these events alone.

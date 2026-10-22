@@ -43,6 +43,10 @@ extension CloudConnectError {
     /// What time it is for the steadying. Tests move it on themselves, so what they see doesn't depend on how fast
     /// the machine runs (a stall between two requests looked like a network that had come back).
     var clock: () -> Date = Date.init
+    /// Where provider errors go (Help › Export Diagnostics…); tests give it their own.
+    var diagnostics = Diagnostics.shared
+    /// Each account's diagnostic correlation (random, never its id) and the failure last recorded for it.
+    private var diagnosed: [UUID: (correlation: DiagnosticCorrelation, last: DiagnosticFailure?)] = [:]
 
     public init() {}
 
@@ -56,6 +60,7 @@ extension CloudConnectError {
     }
 
     public func forget(_ id: UUID) {
+        diagnosed[id] = nil
         gates[id] = nil
         checks.removeValue(forKey: id)?.cancel()
         set(id, nil)
@@ -66,6 +71,9 @@ extension CloudConnectError {
     /// against the connection.
     public func record(_ id: UUID, _ error: Error?, signInNeeded: Bool = false, skipped: Bool = false) {
         guard gates[id] != nil else { return }
+        if !skipped, !(error is CancellationError), (error as? URLError)?.code != .cancelled {
+            diagnose(id, signInNeeded ? .authentication : error.map(DiagnosticFailure.init(error:)))
+        }
         if signInNeeded {
             // Until signed in again: a re-check scheduled before mustn't call it OK.
             checks.removeValue(forKey: id)?.cancel()
@@ -84,6 +92,16 @@ extension CloudConnectError {
         if error == nil, statuses[id] == .signInNeeded { set(id, .ok) }
         _ = gates[id]?.record(reached: reached, at: clock())
         settle(id)
+    }
+
+    /// A provider error event when the account's failure category changes (each failing request would flood the
+    /// store); a success resets it.
+    private func diagnose(_ id: UUID, _ failure: DiagnosticFailure?) {
+        var entry = diagnosed[id] ?? (DiagnosticCorrelation(), nil)
+        defer { diagnosed[id] = entry }
+        guard failure != entry.last else { return }
+        entry.last = failure
+        if let failure { diagnostics.record(.providerError, failure: failure, correlation: entry.correlation) }
     }
 
     /// What the steadied connection says now, and when to look again.

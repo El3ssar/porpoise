@@ -178,7 +178,7 @@ public final class FileOperationsController {
                     rulesPreventElevation && !job.denied.isEmpty
                     ? ["Items requiring administrator access were kept because the helper cannot apply this job's transfer rules."] : []
                 let errs = job.errors + (fatal.map { [($0 as? LocalizedError)?.errorDescription ?? $0.localizedDescription] } ?? []) + ruleErrors
-                self.ended(activity, errors: errs)
+                self.ended(activity, errors: errs, cause: job.firstError ?? fatal)
                 // Quitting: nothing more to say or do now; the journal resumes it next time.
                 if job.isInterrupted { return }
                 // One sound per action: now, or once the items needing authentication are done too.
