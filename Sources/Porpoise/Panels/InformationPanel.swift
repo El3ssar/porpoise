@@ -55,8 +55,16 @@ final class InformationPanel: NSView {
 
     override var isFlipped: Bool { true }
 
+    /// A stop in the window's Tab order, so the keyboard (and VoiceOver's cursor) can get to what it shows.
+    override var acceptsFirstResponder: Bool { true }
+    override var focusRingMaskBounds: NSRect { bounds }
+    override func drawFocusRingMask() { bounds.insetBy(dx: 2, dy: 2).fill() }
+
     override init(frame: NSRect) {
         super.init(frame: frame)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        setAccessibilityLabel("Information")
         previewSpinner.style = .spinning
         previewSpinner.controlSize = .small
         previewSpinner.isDisplayedWhenStopped = false

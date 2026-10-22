@@ -43,6 +43,7 @@ final class StatusBarView: NSView {
         hairline.wantsLayer = true
         Theme.whenChanged(hairline) { [weak hairline] in hairline?.layer?.backgroundColor = Theme.hairline.cgColor }
         slider.controlSize = .mini
+        slider.setAccessibilityLabel("Icon Size")
         slider.isContinuous = true
         slider.target = self
         slider.action = #selector(sliderMoved)

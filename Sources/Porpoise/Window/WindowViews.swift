@@ -38,40 +38,27 @@ final class DolphinWindow: NSWindow {
 
     // MARK: Tab order
 
-    /// AppKit's key-view loop covers the window's content, not the title bar: the path field (when it takes focus,
-    /// with Full Keyboard Access) comes in just before the file list, so Tab goes … → path → list and ⇧Tab back.
-    private var pathViews: [NSView] {
-        guard let frame = contentView?.superview else { return [] }
-        func find(_ v: NSView) -> [NSView] { v is BreadcrumbView ? [v] : v.subviews.flatMap(find) }
-        return find(frame).filter(\.canBecomeKeyView).sorted { $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX }
-    }
-
-    private var listView: NSView? { (windowController as? MainWindowController)?.view.list }
-
+    /// Tab and ⇧Tab follow the window's defined order (`MainWindowController.keyLoop`): AppKit's own loop covers the
+    /// content view only, not the title bar, and doesn't follow panels as they come and go.
     override func selectNextKeyView(_ sender: Any?) {
-        let path = pathViews
-        guard !path.isEmpty, let list = listView, let current = firstResponder as? NSView else { return super.selectNextKeyView(sender) }
-        if let i = path.firstIndex(of: current) {
-            makeFirstResponder(i + 1 < path.count ? path[i + 1] : list)
-        } else if current.nextValidKeyView === list {
-            makeFirstResponder(path[0])
-        } else {
-            super.selectNextKeyView(sender)
-        }
+        if !selectKeyView(backwards: false) { super.selectNextKeyView(sender) }
     }
 
     override func selectPreviousKeyView(_ sender: Any?) {
-        let path = pathViews
-        guard !path.isEmpty, let list = listView, let current = firstResponder as? NSView else {
-            return super.selectPreviousKeyView(sender)
-        }
-        if let i = path.firstIndex(of: current) {
-            if i > 0 { makeFirstResponder(path[i - 1]) } else if let before = list.previousValidKeyView { makeFirstResponder(before) }
-        } else if current === list {
-            makeFirstResponder(path[path.count - 1])
-        } else {
-            super.selectPreviousKeyView(sender)
-        }
+        if !selectKeyView(backwards: true) { super.selectPreviousKeyView(sender) }
+    }
+
+    /// False when the focus is somewhere the defined order doesn't cover (AppKit's own order then applies).
+    private func selectKeyView(backwards: Bool) -> Bool {
+        guard let wc = windowController as? MainWindowController, let next = wc.keyLoopStop(after: firstResponder, backwards: backwards)
+        else { return false }
+        return makeFirstResponder(next)
+    }
+
+    /// Esc in the terminal at its prompt goes back to the list (the terminal view takes every key itself).
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, let wc = windowController as? MainWindowController, wc.leaveTerminalOnEscape(event) { return }
+        super.sendEvent(event)
     }
 }
 
