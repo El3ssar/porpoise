@@ -60,6 +60,19 @@ import Testing
         w.selectPreviousKeyView(nil)
         #expect(name(w.firstResponder) == loop[(loop.firstIndex(of: "ItemListView")! + loop.count - 1) % loop.count])
 
+        // A Tab key press (not just the action) leaves the list: the list passes Tab on, and AppKit went nowhere.
+        #expect(w.makeFirstResponder(wc.view.list))
+        let tab = try #require(
+            NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: w.windowNumber, context: nil,
+                characters: "\t", charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48))
+        w.sendEvent(tab)
+        #expect(w.firstResponder !== wc.view.list && name(w.firstResponder) == loop[(loop.firstIndex(of: "ItemListView")! + 1) % loop.count])
+        // In the terminal, Tab stays the shell's (completion).
+        #expect(w.makeFirstResponder(wc.terminal.terminalView))
+        w.sendEvent(tab)
+        #expect(w.firstResponder === wc.terminal.terminalView)
+
         // Esc at the terminal's prompt: back to the list.
         #expect(w.makeFirstResponder(wc.terminal.terminalView))
         let esc = try #require(
