@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.10.0
 
+- **Quieter window chrome.** The sidebar lists only the tags you use; in split view the active pane has an accent edge and keeps the zoom slider and free space; Split is an icon button; the path starts with a home, disk or server symbol.
 - **Archives open like folders.** Local zip, 7z and tar archives list at once without unpacking (a 4 GB zip with 100,000 entries in under a second). Opening, Quick Look or copying an item extracts only that item. Archives are read-only; other formats still unpack into a cache, with size limits and unsafe paths and links refused.
 - **Settings, reorganised.** Settings opens on General, remembers the page you used last, and groups its options on ten pages, with Terminal and Activity on pages of their own.
 - **The selection shows where the keys go.** Selected items dim when the keyboard is elsewhere in the window (Places, a field, the terminal), as in Finder.
