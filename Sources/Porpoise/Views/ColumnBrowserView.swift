@@ -111,6 +111,8 @@ final class ColumnBrowserView: NSView {
     private var pendingFocus: BrowserColumn?
     private var focusPoll: Timer?
     private var previewWork: DispatchWorkItem?
+    /// Whether a mouse button is down (tests set it: the real mouse may be in someone's hand).
+    nonisolated(unsafe) static var mouseIsDown: () -> Bool = { NSEvent.pressedMouseButtons != 0 }
 
     init(container: ViewContainer) {
         self.container = container
@@ -417,11 +419,11 @@ final class ColumnBrowserView: NSView {
     func columnSelectionChanged(_ c: BrowserColumn) {
         guard c.list.window != nil else { return }
         pendingFocus = c
-        if NSEvent.pressedMouseButtons == 0 { return focusPending() }
+        if !Self.mouseIsDown() { return focusPending() }
         guard focusPoll == nil else { return }
         let t = Timer(timeInterval: 0.03, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, NSEvent.pressedMouseButtons == 0 else { return }
+                guard let self, !Self.mouseIsDown() else { return }
                 self.focusPending()
             }
         }

@@ -1,6 +1,6 @@
 import AppKit
 import PorpoiseCore
-import PorpoiseServices
+@testable import PorpoiseServices
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
@@ -9,7 +9,11 @@ import Testing
 
 /// Column view (RM-8): Finder's columns, keys, clicks, widths and preview, on the pane's own list.
 @Suite(.serialized, .isolatedSettings) @MainActor struct ColumnViewTests {
-    init() { _ = NSApplication.shared }
+    init() {
+        _ = NSApplication.shared
+        // The machine's own mouse may be in use while the tests run.
+        ColumnBrowserView.mouseIsDown = { false }
+    }
 
     /// What the pane asks of its window: recorded.
     private final class Recorder: ViewContainerDelegate {
@@ -154,6 +158,20 @@ import Testing
         #expect(window.firstResponder === pane.list && b.after?.url == s.path("B"))
         #expect(recorder.activations > 0)
 
+        // While the mouse is still down (a drag may start from there), the focus waits for it to come up.
+        pane.list.select(s.path("A"))
+        var down = true
+        ColumnBrowserView.mouseIsDown = { down }
+        defer { ColumnBrowserView.mouseIsDown = { false } }
+        let waiting = try #require(b.after)
+        try #require(await eventually { waiting.model.index(of: s.path("A/a.txt")) != nil })
+        try click(s.path("A/a.txt"), in: waiting.list)
+        #expect(pane.url.path == s.url.path && waiting.model.selection == [s.path("A/a.txt")])
+        down = false
+        #expect(await eventually { pane.url.path == s.path("A").path })
+        #expect(pane.model.selection == [s.path("A/a.txt")])
+        pane.setURL(s.url)
+
         // The column after the focused one: a click there goes into it.
         pane.list.select(s.path("A"))
         let next = try #require(b.after)
@@ -238,6 +256,46 @@ import Testing
         #expect(pane.columnBrowser == nil && pane.scroll.superview === pane && pane.list.columnNavigator == nil)
         #expect(pane.scroll.hasHorizontalScroller && !pane.model.browsesColumns)
         #expect(pane.listState.frame == pane.scroll.frame)
+    }
+
+    /// A phone's folders (any location a content source lists: a server, a cloud account) show in columns the same way.
+    @Test func remoteFoldersBrowseInColumnsThroughTheirSource() async throws {
+        let adb = try RecordingTool()
+        let serial = "COL" + UUID().uuidString.prefix(8).filter(\.isLetter).uppercased() + "X"
+        let root = try #require(URL(string: "adb://\(serial)/"))
+        RemoteFS.use(ADBProvider(serial: serial, adb: adb.path), for: root)
+        defer { RemoteFS.use(nil, for: root) }
+        // Every folder of this phone lists the same: a DCIM folder and a photo.
+        try adb.reply(
+            """
+            total 24
+            drwxrwx--x  4 root sdcard_rw 3452 2024-05-01 10:12 .
+            drwxrwx--x  4 root sdcard_rw 3452 2024-05-01 10:12 ..
+            drwxrws---  2 u0_a1 media_rw 3452 2025-02-03 08:00 DCIM
+            -rw-rw----  1 u0_a1 media_rw 2048 2025-02-03 08:01 photo.jpg
+
+            """)
+        let (pane, window, _) = try await pane(root)
+        defer { window.close() }
+        let b = try browser(pane)
+        #expect(pane.model.kind == .device && pane.model.props.mode == .columns)
+        let dcim = try #require(pane.model.rows.first { $0.item.name == "DCIM" }?.item.url)
+        pane.list.select(dcim)
+        let next = try #require(b.after)
+        try #require(await eventually { next.model.rows.count == 2 })
+        #expect(next.model.kind == .device && next.model.rowNames == ["DCIM", "photo.jpg"])
+        key(right, to: pane.list)
+        // The columns follow the folders' own paths (the phone's root lists its /sdcard).
+        let parent = dcim.deletingLastPathComponent()
+        #expect(pane.url.path == dcim.path && pane.model.rows.count == 2 && b.before.last?.url.path == parent.path)
+        #expect(b.before.last?.pathItem?.path == dcim.path)
+        // A remote file shows its preview column too; ← goes back.
+        pane.list.select(try #require(pane.model.rows.first { $0.item.name == "photo.jpg" }?.item.url))
+        #expect(b.showsPreview)
+        key(left, to: pane.list)
+        // That folder's column may still be asking the phone: the folder come from is selected once it's listed.
+        #expect(pane.url.path == parent.path)
+        #expect(await eventually { pane.model.selection.map(\.path) == [dcim.path] })
     }
 
     @Test func columnsResizeLikeFinders() async throws {
