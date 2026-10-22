@@ -10,8 +10,12 @@ final class TintedMaterialView: NSVisualEffectView {
     let tintLayer = CALayer()
     private let tint: NSColor
     private let tintAlpha: CGFloat
+    /// Reduce Transparency (Accessibility › Display) makes the tint opaque. Tests set it, so a machine's own setting
+    /// can't change what they see (CI's runner has it on).
+    nonisolated(unsafe) static var reducesTransparency: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency }
+
     private func updateTint() {
-        let opaque = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        let opaque = Self.reducesTransparency()
         tintLayer.backgroundColor = tint.withAlphaComponent(Tokens.isNative ? 0 : opaque ? 1 : tintAlpha).cgColor
     }
 

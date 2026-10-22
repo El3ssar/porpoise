@@ -86,14 +86,20 @@ import Testing
     }
 
     @Test(.isolatedSettings) func materialsAreUntintedOnlyInTheNativeTheme() {
+        let saved = TintedMaterialView.reducesTransparency
+        defer { TintedMaterialView.reducesTransparency = saved }
         let material = TintedMaterialView(material: .sidebar, tint: Theme.sidebarBackground, alpha: 0.70)
-        func tintAlpha() -> CGFloat {
+        func tintAlpha(reducingTransparency: Bool) -> CGFloat {
+            TintedMaterialView.reducesTransparency = { reducingTransparency }
             Theme.lookChanged()
             return material.tintLayer.backgroundColor?.alpha ?? -1
         }
-        #expect(tintAlpha() == 0)
+        // Native: untinted, also with Reduce Transparency (the material turns opaque by itself).
+        #expect(tintAlpha(reducingTransparency: false) == 0 && tintAlpha(reducingTransparency: true) == 0)
+        // A palette: tinted at 70%, opaque with Reduce Transparency.
         Settings.shared.updateAppearance { $0.themeName = "Breeze Dark" }
-        #expect(abs(tintAlpha() - 0.70) < 0.001)
+        #expect(abs(tintAlpha(reducingTransparency: false) - 0.70) < 0.001)
+        #expect(tintAlpha(reducingTransparency: true) == 1)
     }
 
     @Test(.isolatedSettings) func increaseContrastStrengthensPaletteLines() {
