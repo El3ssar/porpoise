@@ -36,4 +36,10 @@ final class ColumnPreviewView: NSView {
     }
 
     func clear() { shownURL = nil }
+
+    /// Out of the window, the panel stops what plays and forgets what it showed: shown again, it reads it afresh.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { shownURL = nil }
+    }
 }

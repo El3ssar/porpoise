@@ -282,6 +282,8 @@ final class ColumnBrowserView: NSView {
             var q = c.model.props
             q.setIconSize(p.iconSize(for: .columns), for: .columns)
             q.previews = p.previews
+            // Hidden files show in every column or in none (⌥⌘. acts on the focused one).
+            q.showHidden = p.showHidden
             if q != c.model.props { c.model.props = q }
         }
     }
@@ -295,7 +297,8 @@ final class ColumnBrowserView: NSView {
         // Under the handles, which stay on top.
         for (v, _) in shown where v.superview !== content { content.addSubview(v, positioned: .below, relativeTo: nil) }
         for (v, _) in shown { v.isHidden = false }
-        preview.isHidden = !showsPreview || after != nil
+        // Out of the window when it doesn't show: a video or song playing in it stops.
+        if !showsPreview || after != nil { preview.removeFromSuperview() }
         while handles.count < shown.count { handles.append(makeHandle()) }
         for (i, h) in handles.enumerated() { h.isHidden = i >= shown.count }
         layoutColumns()

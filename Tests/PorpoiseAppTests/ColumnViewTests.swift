@@ -354,6 +354,29 @@ import Testing
         #expect(b.preview.frame.maxX >= b.strip.contentView.bounds.width - 1)
     }
 
+    @Test func hiddenFilesAndThePreviewFollowTheFocusedColumn() async throws {
+        let s = try tree()
+        try s.file("A/.secret", "x")
+        let (pane, window, _) = try await pane(s.url)
+        defer { window.close() }
+        let b = try browser(pane)
+        pane.list.select(s.path("A"))
+        let a = try #require(b.after)
+        try #require(await eventually { a.model.rows.count == 2 })
+        // Show Hidden Files in the focused column shows them in the others too.
+        pane.model.props.showHidden = true
+        #expect(await eventually { a.model.rows.count == 3 })
+        pane.model.props.showHidden = false
+        #expect(await eventually { a.model.rows.count == 2 })
+        // The preview is in the window only while it shows (what plays in it stops when it goes).
+        pane.list.select(s.path("f.txt"))
+        #expect(b.preview.window === window && b.preview.shownURL == s.path("f.txt"))
+        pane.list.select(s.path("B"))
+        #expect(b.preview.window == nil && b.preview.shownURL == nil)
+        pane.list.select(s.path("f.txt"))
+        #expect(await eventually { b.preview.window === window && b.preview.shownURL == s.path("f.txt") })
+    }
+
     @Test func columnsScrollToTheLastOneAtOnceWithReduceMotion() async throws {
         let saved = Animator.reducesMotion
         Animator.reducesMotion = { true }
