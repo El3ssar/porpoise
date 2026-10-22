@@ -96,7 +96,7 @@ import Testing
         s.labelFontName = "Monaco"; s.labelFontSize = 15; s.appearance = .dark
         let exported = try s.exportAppearance()
         s.resetAll()
-        #expect(s.appearancePreferences.themeName == "Follow system")
+        #expect(s.appearancePreferences.themeName == AppearanceTheme.systemName)
         try s.importAppearance(exported, includingCommands: true)
         #expect(s.appearancePreferences.themeName == "Nord")
         #expect(s.appearancePreferences.shell == .fish)
@@ -123,6 +123,7 @@ import Testing
     }
     @Test func followsSystemPairAndFixedThemes() {
         var p = AppearancePreferences()
+        p.themeName = "Follow system"
         #expect(p.theme(dark: false).name == "Breeze Light")
         #expect(p.theme(dark: true).name == "Breeze Dark")
         p.darkThemeName = "Nord"

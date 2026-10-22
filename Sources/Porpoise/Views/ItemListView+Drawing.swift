@@ -106,6 +106,8 @@ extension ItemListView {
     private func drawItem(_ i: Int) {
         let item = model.rows[i].item
         let selected = model.selection.contains(item.url)
+        // Drawn in the selected colours: the native theme's grey selection (an inactive view or window) keeps the normal ones.
+        let onSelection = selected && (!Tokens.isNative || selectionIsEmphasized)
 
         if mode == .details {
             // Alternating row colors (Dolphin draws them across the whole view width).
@@ -118,7 +120,7 @@ extension ItemListView {
         drawItemBackground(i, selected: selected)
         if let er = expanderRect(i) {
             let name = model.rows[i].isExpanded ? "go-down" : "go-next"
-            if let img = Icons.shared.image(name, size: 16, selected: selected) {
+            if let img = Icons.shared.image(name, size: 16, selected: onSelection) {
                 img.draw(in: er, from: .zero, operation: .sourceOver, fraction: 0.85)
             }
         }
@@ -137,7 +139,7 @@ extension ItemListView {
         // The list modes draw the badge after the name (drawNameWithTags); Icons on the icon's corner.
         let badge = cloudBadge(item, state: cloud)
         cloudRects[i] = nil
-        if mode == .icons { drawIconBadge(badge, row: i, imageRect: imageRect, selected: selected) }
+        if mode == .icons { drawIconBadge(badge, row: i, imageRect: imageRect, selected: onSelection) }
         if item.isSymlink || item.isAliasFile || item.isWebDocument {
             drawLinkEmblem(i, besideCloudBadge: mode == .icons && badge != .none)
         }
@@ -149,9 +151,27 @@ extension ItemListView {
 
         let isRenamingThis = renamingItem?.url == item.url
         switch mode {
-        case .icons: if !isRenamingThis { drawIconsText(i, selected: selected) }
-        case .compact: if !isRenamingThis { drawCompactText(i, selected: selected) }
-        case .details: drawDetailsText(i, selected: selected, showName: !isRenamingThis)
+        case .icons: if !isRenamingThis { drawIconsText(i, selected: onSelection) }
+        case .compact: if !isRenamingThis { drawCompactText(i, selected: onSelection) }
+        case .details: drawDetailsText(i, selected: onSelection, showName: !isRenamingThis)
+        }
+    }
+
+    /// The selection is the focused one: this view, in the key window.
+    private var selectionIsEmphasized: Bool { isActiveView && window?.isKeyWindow != false }
+
+    /// The native theme's selection, like Finder's: solid accent when it's the focused one, grey when not, no outline.
+    private func drawNativeSelection(_ i: Int) {
+        let url = model.rows[i].item.url
+        let rect = highlightRect(i)
+        (selectionIsEmphasized ? Theme.selection : Tokens.unemphasizedSelection).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: Tokens.Radius.row, yRadius: Tokens.Radius.row).fill()
+        // Several selected: the keyboard's current one keeps its focus frame, so arrow keys stay traceable.
+        if model.selection.count > 1, model.currentURL == url, window?.firstResponder === self {
+            let inner = NSBezierPath(roundedRect: rect.insetBy(dx: 2, dy: 2), xRadius: Tokens.Radius.row - 2, yRadius: Tokens.Radius.row - 2)
+            inner.lineWidth = 1.5
+            Theme.selectionText.withAlphaComponent(0.8).setStroke()
+            inner.stroke()
         }
     }
 
@@ -160,6 +180,7 @@ extension ItemListView {
         let url = model.rows[i].item.url
         let isDrop = dropTargetIndex == i
         let hoverT = hoverAlpha[url] ?? 0
+        if selected, !isDrop, Tokens.isNative { return drawNativeSelection(i) }
         let path = NSBezierPath(roundedRect: highlightRect(i).insetBy(dx: 0.5, dy: 0.5), xRadius: Theme.itemRadius, yRadius: Theme.itemRadius)
         path.lineWidth = 1
         if selected || hoverT > 0 || isDrop {
@@ -288,6 +309,7 @@ extension ItemListView {
     /// Roughly what is behind an item's badges and tag dots: the view color, tinted when selected.
     private func itemBackground(selected: Bool) -> NSColor {
         guard selected else { return Theme.viewBackground }
+        if Tokens.isNative { return Theme.selection }
         return Theme.viewBackground.blended(withFraction: 0.32, of: Theme.selection) ?? Theme.viewBackground
     }
 
@@ -297,8 +319,15 @@ extension ItemListView {
         (selected ? Theme.selectionText : Theme.viewTextInactive).withAlphaComponent(0.85)
     }
 
-    private func nameAttributes(_ item: FileItem) -> [NSAttributedString.Key: Any] {
-        [.font: font, .foregroundColor: Theme.viewText.withAlphaComponent(item.isHidden ? 0.65 : 1), .paragraphStyle: nameParagraph]
+    /// Names and columns: white on the native theme's solid selection. The palette themes keep body text on their
+    /// translucent one, as Dolphin does.
+    private func primaryTextColor(selected: Bool) -> NSColor { Tokens.isNative && selected ? Theme.selectionText : Theme.viewText }
+
+    private func nameAttributes(_ item: FileItem, selected: Bool) -> [NSAttributedString.Key: Any] {
+        [
+            .font: font, .foregroundColor: primaryTextColor(selected: selected).withAlphaComponent(item.isHidden ? 0.65 : 1),
+            .paragraphStyle: nameParagraph,
+        ]
     }
 
     private var nameParagraph: NSParagraphStyle {
@@ -325,7 +354,7 @@ extension ItemListView {
         let (label, size) = iconsLabel(model.displayName(for: item), width: tr.width, maxLines: maxLabelLines)
         let m = NSMutableAttributedString(attributedString: label)
         m.addAttribute(
-            .foregroundColor, value: Theme.viewText.withAlphaComponent(item.isHidden ? 0.65 : 1),
+            .foregroundColor, value: primaryTextColor(selected: selected).withAlphaComponent(item.isHidden ? 0.65 : 1),
             range: NSRange(location: 0, length: m.length))
         let tags = model.shownTags(for: item)
         let d = tagDotDiameter
@@ -404,7 +433,7 @@ extension ItemListView {
             }
             (model.text(for: role, of: item) as NSString).draw(
                 in: CGRect(x: x + 6, y: y, width: w - 14, height: lineHeight),
-                withAttributes: [.font: font, .foregroundColor: Theme.viewText, .paragraphStyle: p])
+                withAttributes: [.font: font, .foregroundColor: primaryTextColor(selected: selected), .paragraphStyle: p])
             x += w
         }
     }
@@ -466,7 +495,8 @@ extension ItemListView {
         // A long name gives way to the glyph, which always shows.
         let gw = badge == .none ? 0 : statusGlyphSize + 5
         let nameW = min(textWidth(name) + 1, max(0, r.width - dw - gw - 2))
-        (name as NSString).draw(in: CGRect(x: r.minX, y: r.minY, width: nameW, height: r.height), withAttributes: nameAttributes(item))
+        (name as NSString).draw(
+            in: CGRect(x: r.minX, y: r.minY, width: nameW, height: r.height), withAttributes: nameAttributes(item, selected: selected))
         if !tags.isEmpty {
             FinderTags.drawDots(
                 tags, at: CGPoint(x: r.minX + nameW + 5, y: r.minY + (r.height - d) / 2 + 1), diameter: d,

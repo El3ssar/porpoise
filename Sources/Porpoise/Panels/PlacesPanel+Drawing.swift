@@ -165,8 +165,15 @@ extension PlacesPanel {
             NSBezierPath(ovalIn: iconRect.insetBy(dx: iconSize * 0.2, dy: iconSize * 0.2)).fill()
         } else {
             let name = e.icon == "user-trash" && trashIsFull() ? "user-trash-full" : e.icon
-            Icons.shared.image(name, size: iconSize, selected: current, folder: e.url.isFileURL && !e.isVolume)?
-                .draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: alpha, respectFlipped: true, hints: nil)
+            let solid = current && hasKeyFocus
+            if let img = Icons.shared.image(name, size: iconSize, selected: Tokens.isNative ? solid : current, folder: e.url.isFileURL && !e.isVolume)
+            {
+                if Tokens.isNative && current && !solid {
+                    drawTinted(img, in: iconRect, color: Theme.accent, alpha: alpha)
+                } else {
+                    img.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: alpha, respectFlipped: true, hints: nil)
+                }
+            }
         }
 
         let tx = Metrics.iconX + iconSize + Metrics.iconTextGap
@@ -176,7 +183,9 @@ extension PlacesPanel {
         let p = NSMutableParagraphStyle()
         p.lineBreakMode = .byTruncatingTail
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: Theme.font, .foregroundColor: Theme.windowText.withAlphaComponent(alpha), .paragraphStyle: p,
+            .font: Theme.font,
+            .foregroundColor: (Tokens.isNative && current && hasKeyFocus ? Theme.selectionText : Theme.windowText).withAlphaComponent(alpha),
+            .paragraphStyle: p,
         ]
         let title = e.hidden ? e.title + " (hidden)" : e.title
         (title as NSString).draw(in: CGRect(x: tx, y: ty, width: r.width - tx - 14 - ejectW, height: lh + 3), withAttributes: attrs)
@@ -192,10 +201,25 @@ extension PlacesPanel {
         }
     }
 
-    /// Rounded, inset highlight like a Mac sidebar: current place, drop target or hover.
+    /// The current place's glyph in one colour (the accent), like Finder's sidebar.
+    private func drawTinted(_ image: NSImage, in rect: CGRect, color: NSColor, alpha: CGFloat) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        ctx.saveGState()
+        ctx.beginTransparencyLayer(in: rect, auxiliaryInfo: nil)
+        image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: alpha, respectFlipped: true, hints: nil)
+        color.setFill()
+        rect.fill(using: .sourceAtop)
+        ctx.endTransparencyLayer()
+        ctx.restoreGState()
+    }
+
+    /// Rounded, inset highlight like a Mac sidebar: current place, drop target or hover. The native theme's current
+    /// place is the accent at 18% (grey in a window that isn't key), solid when the sidebar has the keyboard.
     private func drawBackground(current: Bool, index i: Int, in r: CGRect) {
         let fill: NSColor
-        if current && hasKeyFocus {
+        if Tokens.isNative, current, !hasKeyFocus, dropIndex != i {
+            fill = window?.isKeyWindow == false ? Tokens.unemphasizedSelection : Theme.accent.withAlphaComponent(0.18)
+        } else if current && hasKeyFocus {
             fill = Theme.selection
         } else if current || dropIndex == i {
             fill = Theme.selection.withAlphaComponent(window?.isKeyWindow == false ? 0.35 : 0.62)

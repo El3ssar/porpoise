@@ -56,6 +56,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         lookObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { _, _ in
             DispatchQueue.main.async { Theme.lookChanged() }
         }
+        // The accent colour (System Settings › Appearance): the native theme's selection, focus and folders follow it.
+        NotificationCenter.default.addObserver(forName: NSColor.systemColorsDidChangeNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { Theme.lookChanged() }
+        }
         NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { n in
             guard n.object == nil || ["appearance", "appearancePreferences"].contains(n.object as? String ?? "") else { return }
             MainActor.assumeIsolated {

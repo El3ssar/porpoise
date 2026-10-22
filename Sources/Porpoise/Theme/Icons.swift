@@ -51,7 +51,7 @@ final class Icons {
     func image(_ name: String, size: CGFloat, selected: Bool = false, folder: Bool = false) -> NSImage? {
         let px = Int(size)
         let preferences = Settings.shared.appearancePreferences
-        let tintKey = preferences.theme(dark: true)[.folderTint].hex + preferences.theme(dark: false)[.folderTint].hex
+        let tintKey = Theme.paletteColor(.folderTint, dark: true).hex + Theme.paletteColor(.folderTint, dark: false).hex
         let key = "\(preferences.iconTheme)|\(preferences.folderVariant)|\(tintKey)|\(name)|\(px)|\(selected)|\(folder)" as NSString
         if let img = cache.object(forKey: key) { return img }
         guard let url = IconTheme.shared.file(name, size: px) else { return nil }
@@ -140,7 +140,7 @@ final class Icons {
 
     private func folderImage(_ source: NSImage, size: CGFloat, dark: Bool) -> NSImage {
         let preferences = Settings.shared.appearancePreferences
-        let tint = FolderColor.tint(preferences.theme(dark: dark)[.folderTint], variant: preferences.folderVariant)
+        let tint = FolderColor.tint(Theme.paletteColor(.folderTint, dark: dark), variant: preferences.folderVariant)
         let pixels = max(1, Int(ceil(size * 2)))
         guard
             let rep = NSBitmapImageRep(
@@ -288,7 +288,7 @@ final class Icons {
             // Cached like app icons: asked for on every draw (hover fades redraw at 90 Hz), and a new image each
             // time also defeated CloudBadge's per-image cache.
             let p = Settings.shared.appearancePreferences
-            let key = "native|\(item.url.path)|\(Int(size))|\(p.folderVariant)|\(p.theme(dark: Theme.isDark)[.folderTint].hex)" as NSString
+            let key = "native|\(item.url.path)|\(Int(size))|\(p.folderVariant)|\(Theme.paletteColor(.folderTint, dark: Theme.isDark).hex)" as NSString
             if let img = cache.object(forKey: key) { return img }
             var image = NSWorkspace.shared.icon(forFile: item.url.path)
             if item.isBrowsableFolder { image = folderImage(image, size: size, dark: Theme.isDark) }

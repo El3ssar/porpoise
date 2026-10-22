@@ -221,6 +221,7 @@ struct AppearanceCoverageTests {
 
     @Test func customThemeIsUsedOnlyWhenChosen() {
         var p = AppearancePreferences()
+        p.themeName = "Follow system"
         var custom = AppearanceTheme.builtIns[6]; custom.name = "Mine"
         p.customTheme = custom
         #expect(p.theme(dark: true).name == "Breeze Dark")
@@ -230,5 +231,24 @@ struct AppearanceCoverageTests {
         #expect(p.theme(dark: true).name == "Breeze Dark" && p.theme(dark: false).name == "Breeze Light")
         p.themeName = "Follow system"; p.lightThemeName = "gone"; p.darkThemeName = "Gruvbox"
         #expect(p.theme(dark: false).name == "Breeze Light" && p.theme(dark: true).name == "Gruvbox")
+    }
+
+    @Test func nativeThemeIsTheDefault() throws {
+        let fresh = AppearancePreferences()
+        #expect(fresh.themeName == AppearanceTheme.systemName && fresh.usesSystemColors && fresh.iconTheme == "Native macOS")
+        // Saved settings from before the native theme keep what they chose; a file without the key gets the default.
+        let old = try JSONDecoder().decode(AppearancePreferences.self, from: Data(#"{"themeName":"Follow system"}"#.utf8))
+        #expect(!old.usesSystemColors && old.theme(dark: true).name == "Breeze Dark")
+        #expect(try JSONDecoder().decode(AppearancePreferences.self, from: Data("{}".utf8)).usesSystemColors)
+        // Its portable stand-in: stock macOS colours, graphite (not navy) in dark, valid for export.
+        for dark in [false, true] {
+            let theme = fresh.theme(dark: dark)
+            #expect(theme.name == AppearanceTheme.systemName && theme.isDark == dark)
+            try theme.validate()
+        }
+        #expect(fresh.theme(dark: true)[.viewBackground] == ThemeColor(30, 30, 30))
+        #expect(fresh.theme(dark: false)[.accent] == ThemeColor(0, 122, 255) && fresh.theme(dark: true)[.accent] == ThemeColor(10, 132, 255))
+        // Not one of the palettes: the built-in list and its terminal schemes are unchanged.
+        #expect(!AppearanceTheme.builtIns.contains { $0.name == AppearanceTheme.systemName })
     }
 }

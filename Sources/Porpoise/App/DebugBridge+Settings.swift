@@ -17,7 +17,18 @@ extension DebugBridge {
         "settingssize": DebugBridge.settingssizeCommand,
         "settingsscroll": DebugBridge.settingsscrollCommand,
         "settings": DebugBridge.settingsCommand,
+        "contrast": DebugBridge.contrastCommand,
     ]
+
+    /// contrast on|off|system: Increase Contrast as the theme sees it, without changing the Mac's setting.
+    func contrastCommand(_ arg: String) {
+        switch arg {
+        case "on": Theme.systemIncreasesContrast = { true }
+        case "off": Theme.systemIncreasesContrast = { false }
+        default: Theme.systemIncreasesContrast = { NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast }
+        }
+        Theme.lookChanged()
+    }
 
     func shortcutsimportCommand(_ arg: String) {
         let paths = arg.components(separatedBy: "|")
