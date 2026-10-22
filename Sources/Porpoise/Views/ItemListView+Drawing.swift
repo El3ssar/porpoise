@@ -507,6 +507,7 @@ extension ItemListView {
 
     /// Breeze's emblem-added / emblem-remove as KDE renders them with the color scheme: a light disc with +/−.
     private func drawSelectionMarker(in r: CGRect, selected: Bool) {
+        if Tokens.isNative { return drawNativeSelectionMarker(in: r, selected: selected) }
         let disc = NSBezierPath(ovalIn: r.insetBy(dx: 1, dy: 1))
         Theme.viewText.withAlphaComponent(hoverOnMarker ? 0.95 : 0.75).setFill()
         disc.fill()
@@ -522,6 +523,33 @@ extension ItemListView {
         sym.lineCapStyle = .round
         Theme.viewBackground.setStroke()
         sym.stroke()
+    }
+
+    /// The native theme's toggle, as in Photos: an empty white ring to select, the accent with a white checkmark to
+    /// deselect. A soft shadow keeps the ring visible on a light row or a white page.
+    private func drawNativeSelectionMarker(in r: CGRect, selected: Bool) {
+        let ring = NSBezierPath(ovalIn: r.insetBy(dx: 1.5, dy: 1.5))
+        ring.lineWidth = 1.5
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
+        shadow.shadowBlurRadius = 2
+        shadow.shadowOffset = .zero
+        shadow.set()
+        if selected || hoverOnMarker {
+            (selected ? Theme.accent : NSColor.white.withAlphaComponent(0.3)).setFill()
+            ring.fill()
+        }
+        NSColor.white.setStroke()
+        ring.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+        let config = NSImage.SymbolConfiguration(pointSize: r.width * 0.5, weight: .bold).applying(.init(paletteColors: [.white]))
+        guard selected, let check = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)?.withSymbolConfiguration(config)
+        else { return }
+        let s = check.size
+        check.draw(
+            in: CGRect(x: r.midX - s.width / 2, y: r.midY - s.height / 2, width: s.width, height: s.height), from: .zero,
+            operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
     }
 
     /// Tree branch lines in Details (Dolphin 25.x): vertical lines for open levels, a tick to each item.
