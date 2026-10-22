@@ -315,6 +315,7 @@ import Testing
                 "hideBackup", "sorting", "folderDepth", "folderSize", "dateStyle", "permStyle", "elideMiddle", "labelWidth",
                 "maxLines", "compactMax", "clickRow", "labelFont", "labelFontSize", "expandable", "entireRow", "infoPreview",
                 "infoHover", "infoAutoPlay", "infoCondensed", "foldersHome", "foldersHidden", "termFollow", "placesIcon", "jobsConcurrency",
+                "transferMBPerSecond", "transferRetries", "transferBackoffSeconds", "transferExclusions",
                 "verifyCopies", "transferConflictRule", "transferCompareMethod",
             ])
     }
