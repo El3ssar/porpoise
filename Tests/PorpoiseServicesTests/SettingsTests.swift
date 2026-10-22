@@ -339,7 +339,7 @@ import Testing
                 "confirmDelete", "confirmEmptyTrash", "confirmCloseTabs", "confirmTerminal", "confirmOpenMany",
                 "confirmRenameType", "confirmRenameHide", "confirmTerminals", "execAction", "appearance", "perFolder", "selectionMarker",
                 "renameInline", "toolTips", "autoExpand", "dblClickBg2", "dynamicView", "browseArchives", "allExtensions",
-                "hideBackup", "sorting", "folderDepth", "folderSize", "dateStyle", "permStyle", "elideMiddle", "labelWidth",
+                "hideBackup", "binaryUnits", "sorting", "folderDepth", "folderSize", "dateStyle", "permStyle", "elideMiddle", "labelWidth",
                 "maxLines", "compactMax", "clickRow", "labelFont", "labelFontSize", "expandable", "entireRow", "infoPreview",
                 "infoHover", "infoAutoPlay", "infoCondensed", "foldersHome", "foldersHidden", "termFollow", "placesIcon", "jobsConcurrency",
                 "verifyCopies", "transferConflictRule", "transferCompareMethod",

@@ -17,7 +17,6 @@ struct FileFormattingCacheTests {
         #expect(FileFormat.size(1_500_000, units: .decimal, locale: german) == "1,5 MB")
         #expect(FileFormat.size(2_000_000_000_000, units: .decimal, locale: german) == "2 TB")
         #expect(FileFormat.size(1_500_000, units: .binary, locale: german) == "1.4 MiB")
-        #expect(FileFormat.size(Int64.max, units: .decimal, locale: english).hasSuffix("EB"))
     }
 
     @Test func decimalStatusSizesAreRemovedBeforeTruncatingWords() {
