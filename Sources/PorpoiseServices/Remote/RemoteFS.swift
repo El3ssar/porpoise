@@ -184,10 +184,10 @@ public enum RemoteFS {
 
     /// Asks whether to accept an SSH server's new key, on the main thread: the server as known_hosts names it, and
     /// what ssh reported (the new key's fingerprint). Refuses until the app sets it.
-    nonisolated(unsafe) public static var confirmHostKeyChange: (_ server: String, _ change: HostKeyFingerprint.Change) -> Bool = { _, _ in false }
+    @MainActor public static var confirmHostKeyChange: (_ server: String, _ change: HostKeyFingerprint.Change) -> Bool = { _, _ in false }
 
     /// Asks for an FTP login on the main thread (host, the user name known so far); nil when cancelled. Set by the app.
-    nonisolated(unsafe) public static var askLogin: (_ host: String, _ user: String?) -> (user: String, password: String)? = { _, _ in nil }
+    @MainActor public static var askLogin: (_ host: String, _ user: String?) -> (user: String, password: String)? = { _, _ in nil }
 
     /// Where the cache below lives: Porpoise's caches folder, asked each time (a value kept from the first use could be
     /// the user's real one, read before a test set its own); tests may point it at a scratch folder instead.

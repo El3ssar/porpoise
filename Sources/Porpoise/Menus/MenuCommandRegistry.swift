@@ -17,7 +17,7 @@ extension ShortcutModifiers {
 }
 
 /// Stable action IDs use selectors, tags and represented values, independent of translated/dynamic titles.
-final class MenuCommandRegistry {
+@MainActor final class MenuCommandRegistry {
     static let shared = MenuCommandRegistry()
     struct Command {
         let id: String
@@ -42,10 +42,12 @@ final class MenuCommandRegistry {
     func start() {
         refresh(fillDynamic: false)
         observer = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
-            let key = note.object as? String
-            // The key set decides the menu items' own keys (and which hidden alternates exist): build the menu bar again.
-            if note.object == nil || key == "shortcutKeySet" { NSApp.mainMenu = AppDelegate.shared.buildMainMenu() }
-            if note.object == nil || key == "keyboardShortcuts" || key == "shortcutKeySet" { self?.refresh(fillDynamic: false) }
+            MainActor.assumeIsolated {
+                let key = note.object as? String
+                // The key set decides the menu items' own keys (and which hidden alternates exist): build the menu bar again.
+                if note.object == nil || key == "shortcutKeySet" { NSApp.mainMenu = AppDelegate.shared.buildMainMenu() }
+                if note.object == nil || key == "keyboardShortcuts" || key == "shortcutKeySet" { self?.refresh(fillDynamic: false) }
+            }
         }
     }
     static func id(_ item: NSMenuItem) -> String {
@@ -55,7 +57,7 @@ final class MenuCommandRegistry {
         guard let menu = NSApp.mainMenu else { return }
         originals = originals.filter { $0.value.item != nil }
         var grouped: [String: [(NSMenuItem, String)]] = [:], order: [String] = []
-        func walk(_ menu: NSMenu, path: [String]) {
+        @MainActor func walk(_ menu: NSMenu, path: [String]) {
             if fillDynamic, ["Sort By", "Group By", "Show Additional Information", "Places", "Tags"].contains(menu.title) {
                 menu.delegate?.menuNeedsUpdate?(menu)
             }
@@ -113,7 +115,7 @@ final class MenuCommandRegistry {
     /// Dynamic menu items are rebuilt when their menu opens; apply saved keys to those fresh instances too.
     func apply(to menu: NSMenu) {
         let preferences = Settings.shared.keyboardShortcuts
-        func walk(_ menu: NSMenu) {
+        @MainActor func walk(_ menu: NSMenu) {
             for item in menu.items {
                 if let submenu = item.submenu { walk(submenu) }
                 guard item.action != nil, !Self.isAppKits(item) else { continue }

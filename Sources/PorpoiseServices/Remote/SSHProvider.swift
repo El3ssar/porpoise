@@ -175,7 +175,7 @@ final class SSHProvider: RemoteProvider {
     }
 
     private static func confirmChangedHostKey(_ name: String, _ change: HostKeyFingerprint.Change) -> Bool {
-        if Thread.isMainThread { return RemoteFS.confirmHostKeyChange(name, change) }
+        if Thread.isMainThread { return MainActor.assumeIsolated { RemoteFS.confirmHostKeyChange(name, change) } }
         return DispatchQueue.main.sync { RemoteFS.confirmHostKeyChange(name, change) }
     }
 

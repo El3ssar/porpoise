@@ -150,7 +150,7 @@ import Testing
 
     // MARK: Logins
 
-    @Test func aRefusedLoginAsksOnceAndSavesTheNewLogin() throws {
+    @MainActor @Test func aRefusedLoginAsksOnceAndSavesTheNewLogin() throws {
         try curl.reply("530 Login incorrect.", status: 67)
         nonisolated(unsafe) var asked: [(String, String?)] = []
         RemoteFS.askLogin = { host, user in

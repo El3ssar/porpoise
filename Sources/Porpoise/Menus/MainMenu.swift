@@ -275,7 +275,7 @@ extension AppDelegate {
     }
 
     /// Fills the dynamic submenus (they need the active window's view state).
-    func menuNeedsUpdate(_ menu: NSMenu) {
+    @MainActor func menuNeedsUpdate(_ menu: NSMenu) {
         guard let wc = NSApp.keyWindow?.windowController as? MainWindowController ?? windows.first else { return }
         let built: NSMenu
         switch menu.title {

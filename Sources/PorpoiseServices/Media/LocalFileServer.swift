@@ -11,7 +11,8 @@ import PorpoiseFileSystem
 /// - Files are memory-mapped and sent in chunks, never read whole into memory.
 /// - At most eight connections are admitted, including incomplete requests.
 /// - Request heads and idle responses have separate deadlines; stopping closes every admitted connection.
-// Connection state is confined to `queue`; callers serialize start/stop (the preview owner or a test fixture).
+// Connection state is confined to `queue`; lifecycleLock serializes listener/port and start/stop transactions.
+// Queue callbacks never acquire lifecycleLock, so waiting for listener readiness cannot invert the locks.
 final class LocalFileServer: @unchecked Sendable {
     private static let maxRequestSize = 16_384
     private static let chunkSize = 1 << 20
@@ -25,6 +26,7 @@ final class LocalFileServer: @unchecked Sendable {
         let contentType: String
         let read: @Sendable (Range<Int64>) async throws -> Data
     }
+    private var listenerGeneration: UUID?  // queue-owned; rejects callbacks from stopped listeners
     private var source: RangeSource?
     private var flights: [ObjectIdentifier: (NWConnection, Task<Void, Never>)] = [:]
     private var connections: [ObjectIdentifier: NWConnection] = [:]
@@ -40,6 +42,7 @@ final class LocalFileServer: @unchecked Sendable {
         set { queue.sync { sendIdleTimeout = newValue } }
     }
     var activeConnectionCount: Int { queue.sync { connections.count } }
+    private let lifecycleLock = NSLock()
     private var listener: NWListener?
     private var port: UInt16?
     private var root: URL?
@@ -54,6 +57,11 @@ final class LocalFileServer: @unchecked Sendable {
 
     /// Starts once (later calls just update the root) and returns the base URL to put paths under.
     func start(root: URL) -> URL? {
+        lifecycleLock.lock(); defer { lifecycleLock.unlock() }
+        return startLocked(root: root)
+    }
+
+    private func startLocked(root: URL) -> URL? {
         queue.sync { self.root = root.resolvingSymlinksInPath() }
         if port == nil {
             let params = NWParameters.tcp
@@ -66,10 +74,18 @@ final class LocalFileServer: @unchecked Sendable {
                 default: break
                 }
             }
-            l.newConnectionHandler = { [weak self] c in self?.serve(c) }
+            let generation = UUID()
+            queue.sync { listenerGeneration = generation }
+            l.newConnectionHandler = { [weak self] c in
+                guard let self, self.listenerGeneration == generation else { c.cancel(); return }
+                self.serve(c)
+            }
             l.start(queue: queue)
             _ = ready.wait(timeout: .now() + Self.startTimeout)
-            guard case .ready = l.state, let p = l.port?.rawValue else { l.cancel(); return nil }
+            guard case .ready = l.state, let p = l.port?.rawValue else {
+                queue.sync { listenerGeneration = nil }
+                l.cancel(); return nil
+            }
             listener = l
             port = p
         }
@@ -79,13 +95,16 @@ final class LocalFileServer: @unchecked Sendable {
 
     /// An authenticated on-demand source. Its secret URL never contains an upstream URL or credential.
     func start(source: RangeSource) -> URL? {
+        lifecycleLock.lock(); defer { lifecycleLock.unlock() }
         queue.sync { self.source = source }
-        return start(root: FileManager.default.temporaryDirectory)?.appendingPathComponent("media")
+        return startLocked(root: FileManager.default.temporaryDirectory)?.appendingPathComponent("media")
     }
 
     /// Stops listening (for tests: the app keeps its one server for as long as it runs).
     func stop() {
+        lifecycleLock.lock(); defer { lifecycleLock.unlock() }
         queue.sync {
+            listenerGeneration = nil
             source = nil
             for (connection, task) in flights.values { task.cancel(); connection.cancel() }
             flights.removeAll()

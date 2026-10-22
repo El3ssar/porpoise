@@ -206,7 +206,7 @@ struct SSHConnectionTests {
         return original
     }
 
-    @Test func aChangedHostKeyIsShownAndReplacedOnlyWhenAccepted() throws {
+    @MainActor @Test func aChangedHostKeyIsShownAndReplacedOnlyWhenAccepted() throws {
         // A shared connection from an earlier test would skip the key check.
         server.provider().disconnect()
         let original = try trustAnotherKey()
