@@ -58,7 +58,7 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
         recorder.recorded = { [weak self] shortcut in self?.bind(shortcut) }
         let clear = ClosureButton(title: "Clear") { [weak self] _ in self?.bind(KeyboardShortcut()) }
         let reset = ClosureButton(title: "Reset Selected") { [weak self] _ in self?.resetSelected() }
-        let resetAll = ClosureButton(title: "Reset All") { _ in Settings.shared.keyboardShortcuts = ShortcutPreferences() }
+        let resetAll = ClosureButton(title: "Reset All…") { [weak self] _ in self?.resetAll() }
         let row = NSStackView(views: [recorder, clear, reset, resetAll]); row.spacing = 8; add(row)
         let importButton = ClosureButton(title: "Import Shortcuts…") { [weak self] _ in self?.importFile() }
         let exportButton = ClosureButton(title: "Export Shortcuts…") { [weak self] _ in self?.exportFile() }
@@ -110,6 +110,19 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
             status.stringValue = "The default conflicts with another customized action. Clear that binding or Reset All first."; return
         }
         Settings.shared.keyboardShortcuts = preferences; status.stringValue = "Default shortcuts restored."; status.textColor = Theme.viewTextInactive
+    }
+    /// Asks first: the user's own bindings can't be brought back (unless exported).
+    private func resetAll() {
+        guard Settings.shared.keyboardShortcuts != ShortcutPreferences() else { return }
+        let alert = NSAlert()
+        alert.messageText = "Reset all keyboard shortcuts?"
+        alert.informativeText = "Every shortcut you changed goes back to its default. This can't be undone; export your shortcuts first to keep them."
+        alert.addButton(withTitle: "Reset All").hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        let reset = { (response: NSApplication.ModalResponse) in
+            if response == .alertFirstButtonReturn { Settings.shared.keyboardShortcuts = ShortcutPreferences() }
+        }
+        if let window { alert.beginSheetModal(for: window, completionHandler: reset) } else { reset(alert.runModal()) }
     }
     private func importFile() {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.allowsMultipleSelection = false
