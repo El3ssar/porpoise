@@ -247,7 +247,7 @@ extension AppDelegate {
         help.addItem(mi("Report a Bug…", #selector(reportBug(_:)), icon: "emblem-warning"))
         help.addItem(sep())
         help.addItem(mi("Porpoise Website", #selector(showHelp(_:)), icon: "help-contents"))
-        help.addItem(mi("Export Diagnostics…", #selector(exportDiagnostics(_:)), icon: "document-export"))
+        help.addItem(mi("Export Diagnostics…", #selector(exportDiagnostics(_:)), icon: "document-share"))
         help.addItem(mi("Support Porpoise (Donate)…", #selector(supportPorpoise(_:)), icon: "emblem-favorite"))
         NSApp.helpMenu = help
         main.addItem(.submenu("Help", icon: nil, help))
