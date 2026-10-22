@@ -109,9 +109,21 @@ extension MainWindowController {
     func trashCloud(_ urls: [URL], confirmed: Bool = false) {
         if !confirmed, !CloudAccounts.shared.supportsTrashUndo(urls) {
             let alert = NSAlert()
-            alert.messageText = "Delete these items from \(urls.first.map { CloudAccounts.shared.providerTitle(for: $0) } ?? "the cloud")?"
-            alert.informativeText = "Porpoise cannot undo this deletion automatically. Recovery, when available, is through the service’s website."
+            alert.alertStyle = .warning
+            let service = urls.first.map { CloudAccounts.shared.providerTitle(for: $0) } ?? "the cloud"
+            // Cloud items have ids in their URLs: the names come from the listing.
+            let names = CloudEdit.items(urls).map(\.name)
+            let what = urls.count == 1 ? "“\(names.first ?? RemoteFS.displayName(for: urls[0]))”" : FileFormat.itemCount(urls.count)
+            alert.messageText = "Delete \(what) from \(service)?"
+            let listed =
+                urls.count > 1 && !names.isEmpty
+                ? names.prefix(5).map { "“\($0)”" }.joined(separator: ", ")
+                    + (names.count > 5 ? " and \(FileFormat.count(names.count - 5)) more" : "") + ".\n\n"
+                : ""
+            alert.informativeText =
+                listed + "Porpoise can’t undo this deletion. Recovery, when available, is through the service’s website."
             alert.addButton(withTitle: "Delete"); alert.addButton(withTitle: "Cancel")
+            alert.buttons[0].hasDestructiveAction = true
             let finish: (NSApplication.ModalResponse) -> Void = { [weak self] response in
                 if response == .alertFirstButtonReturn { self?.trashCloud(urls, confirmed: true) }
             }
@@ -162,7 +174,8 @@ extension MainWindowController {
             let missing = items.filter { !restored.contains($0.url) }
             if !missing.isEmpty { CloudEdit.apply(ListingEdit(folder: folder, removed: Set(missing.map(\.url)))) }
             if let error {
-                self?.cloudFailed("Couldn’t put back \(missing.count == 1 ? "“\(missing[0].name)”" : "\(missing.count) items").", error, in: c)
+                self?.cloudFailed(
+                    "Couldn’t put back \(missing.count == 1 ? "“\(missing[0].name)”" : FileFormat.itemCount(missing.count)).", error, in: c)
             }
             if restored.count == items.count { c.list.select(urls[0]); c.model.selection = Set(urls) }
         }

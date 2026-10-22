@@ -97,9 +97,19 @@ struct ActivityPresentationTests {
         a.cloudTitle = "Custom cloud operation"
         #expect(ActivityPresentation(a).title == "Custom cloud operation")
         let many = Activity(kind: .trash, sources: a.sources + a.sources, destination: nil, job: nil)
-        #expect(many.title == "Moving to Trash 2 items")
+        #expect(many.title == "Moving 2 items to the Trash")
         many.state = .completed
-        #expect(ActivityPresentation.summary(many) == many.statusText)
+        // The status names what went, not just "Done".
+        #expect(ActivityPresentation.summary(many) == "Moved 2 items to the Trash")
+        let one = Activity(kind: .trash, sources: a.sources, destination: nil, job: nil)
+        one.state = .completed
+        #expect(one.title == "Moving “report.txt” to the Trash")
+        #expect(ActivityPresentation.summary(one) == "Moved “report.txt” to the Trash")
+        let deleted = Activity(kind: .delete, sources: a.sources + a.sources, destination: nil, job: nil)
+        deleted.state = .completed
+        #expect(ActivityPresentation.summary(deleted) == "Deleted 2 items")
+        deleted.errors = ["Permission denied"]
+        #expect(ActivityPresentation.summary(deleted) == deleted.statusText)  // what failed is told instead
     }
 
     @Test func aggregatesUseBytesThenItemsWithoutIntegerOverflow() {

@@ -455,9 +455,20 @@ public final class PlacesModel {
         save()
     }
 
-    public func remove(_ entry: PlaceEntry) {
-        guard let i = userIndex(of: entry) else { return }
+    public func remove(_ entry: PlaceEntry) { _ = removeForUndo(entry) }
+
+    /// Removes `entry`; returns where it was, for `restore`.
+    public func removeForUndo(_ entry: PlaceEntry) -> Int? {
+        guard let i = userIndex(of: entry) else { return nil }
         userEntries.remove(at: i)
+        save()
+        return i
+    }
+
+    /// Puts back an entry `remove` took out, where it was (Undo); nothing if it's there again.
+    public func restore(_ entry: PlaceEntry, at index: Int) {
+        guard userIndex(of: entry) == nil else { return }
+        userEntries.insert(entry, at: min(max(0, index), userEntries.count))
         save()
     }
 

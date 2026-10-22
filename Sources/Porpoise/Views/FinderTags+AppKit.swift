@@ -2,7 +2,7 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
-/// Finder tag colours, and the dots drawn next to names.
+/// Finder tag colors, and the dots drawn next to names.
 extension FinderTags {
     static func color(_ index: Int) -> NSColor? {
         switch index {

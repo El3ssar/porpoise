@@ -128,11 +128,11 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
         }
         let missing = items.filter { states[$0.id]?.problem != nil }.count
         // Short, for a narrow sidebar; the tooltip says it in full.
-        count.stringValue = items.isEmpty ? "" : missing > 0 ? "\(missing) missing" : "\(items.count) \(items.count == 1 ? "item" : "items")"
+        count.stringValue = items.isEmpty ? "" : missing > 0 ? "\(missing) missing" : FileFormat.itemCount(items.count)
         count.toolTip =
             items.isEmpty
             ? nil
-            : "\(items.count) \(items.count == 1 ? "item" : "items")" + (missing > 0 ? ", \(missing) unavailable (missing or disconnected)" : "")
+            : FileFormat.itemCount(items.count) + (missing > 0 ? ", \(missing) unavailable (missing or disconnected)" : "")
         count.textColor = missing > 0 ? Theme.negativeText : .secondaryLabelColor
         table.reloadData()
         table.selectRowIndexes(IndexSet(items.indices.filter { selected.contains(items[$0].id) }), byExtendingSelection: false)
@@ -213,11 +213,11 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
     }
 
     @objc private func newShelf() {
-        ask("New Shelf", value: "Shelf \(store.shelves.count + 1)") { [weak self] in self?.store.newShelf(named: $0) }
+        ask("New Shelf", value: "Shelf \(store.shelves.count + 1)", button: "Create") { [weak self] in self?.store.newShelf(named: $0) }
     }
 
     @objc private func renameShelf() {
-        ask("Rename Shelf", value: store.current.name) { [weak self] in self?.store.renameCurrent($0) }
+        ask("Rename Shelf", value: store.current.name, button: "Rename") { [weak self] in self?.store.renameCurrent($0) }
     }
 
     @objc private func deleteShelf() {
@@ -226,17 +226,18 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
         a.informativeText = "Only the shelf and its references go; the files themselves stay where they are."
         a.addButton(withTitle: "Delete Shelf")
         a.addButton(withTitle: "Cancel")
+        a.buttons[0].hasDestructiveAction = true
         guard let w = window else { return }
         a.beginSheetModal(for: w) { [weak self] r in if r == .alertFirstButtonReturn { self?.store.deleteCurrent() } else { self?.reload() } }
     }
 
-    private func ask(_ title: String, value: String, _ done: @escaping (String) -> Void) {
+    private func ask(_ title: String, value: String, button: String, _ done: @escaping (String) -> Void) {
         let a = NSAlert()
         a.messageText = title
         let field = NSTextField(string: value)
         field.frame = CGRect(x: 0, y: 0, width: 240, height: 24)
         a.accessoryView = field
-        a.addButton(withTitle: "OK")
+        a.addButton(withTitle: button)
         a.addButton(withTitle: "Cancel")
         a.window.initialFirstResponder = field
         guard let w = window else { return }
@@ -316,12 +317,26 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
         let picked = chosen
         // "Remove" with nothing selected would empty the shelf: that is Clear Shelf's job.
         guard table.selectedRowIndexes.count > 0 || table.clickedRow >= 0 else { return }
-        store.remove(Set(picked.map(\.id)))
+        removeWithUndo(Set(picked.map(\.id)))
     }
 
-    @objc private func clearShelf() { store.clear() }
+    @objc private func clearShelf() { removeWithUndo(Set(items.map(\.id))) }
 
-    @objc private func removeUnavailable() { store.remove(Set(items.filter { states[$0.id]?.problem != nil }.map(\.id))) }
+    @objc private func removeUnavailable() { removeWithUndo(Set(items.filter { states[$0.id]?.problem != nil }.map(\.id))) }
+
+    /// Takes items off the shelf at once; the window's message bar says what went and offers Undo.
+    private func removeWithUndo(_ ids: Set<UUID>) {
+        let shelf = store.current
+        let gone = shelf.items.filter { ids.contains($0.id) }
+        guard !gone.isEmpty else { return }
+        store.remove(ids)
+        guard let bar = (window?.windowController as? MainWindowController)?.view.messageBar else { return }
+        let what = gone.count == 1 ? "“\(gone[0].name)”" : FileFormat.itemCount(gone.count)
+        bar.show("Removed \(what) from the shelf “\(shelf.name)”.", error: false, action: "Undo") { [weak self] in
+            bar.dismiss()
+            self?.store.restore(shelf.items, on: shelf.id)
+        }
+    }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()

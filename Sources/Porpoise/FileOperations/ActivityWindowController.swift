@@ -379,6 +379,7 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
         a.informativeText = "Only the list is removed; your files are not affected."
         a.addButton(withTitle: "Clear")
         a.addButton(withTitle: "Cancel")
+        a.buttons[0].hasDestructiveAction = true
         a.beginSheetModal(for: window) { [weak self] r in if r == .alertFirstButtonReturn { self?.controller.history.clear() } }
     }
 }

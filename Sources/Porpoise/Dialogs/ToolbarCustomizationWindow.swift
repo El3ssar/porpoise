@@ -35,7 +35,7 @@ final class ToolbarCustomizationWindow: SecondaryWindowController, NSToolbarDele
     private var ready = false
     private let status = NSTextField(
         wrappingLabelWithString:
-            "Add, remove and reorder actions using the macOS customisation palette. Changes preview in all open Porpoise windows. The Location field stays available."
+            "Add, remove and reorder actions using the macOS customization palette. Changes preview in all open Porpoise windows. The Location field stays available."
     )
     static func show() {
         if let current { current.showWindow(nil); current.window?.makeKeyAndOrderFront(nil); current.toolbar.runCustomizationPalette(nil); return }
@@ -46,7 +46,7 @@ final class ToolbarCustomizationWindow: SecondaryWindowController, NSToolbarDele
     private init() {
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 900, height: 180), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.title = "Customise Toolbar"; window.isReleasedWhenClosed = false
+        window.title = "Customize Toolbar"; window.isReleasedWhenClosed = false
         super.init(window: window); window.delegate = self
         toolbar.delegate = self; toolbar.allowsUserCustomization = true; toolbar.autosavesConfiguration = false
         toolbar.allowsDisplayModeCustomization = false; toolbar.displayMode = .iconAndLabel
@@ -54,9 +54,9 @@ final class ToolbarCustomizationWindow: SecondaryWindowController, NSToolbarDele
         let reset = ClosureButton(title: "Restore Default Toolbar") { [weak self] _ in
             self?.toolbar.itemIdentifiers = ToolbarCommand.defaults.map(\.toolbarIdentifier); self?.persist()
         }
-        let customise = ClosureButton(title: "Customise…") { [weak self] _ in self?.toolbar.runCustomizationPalette(nil) }
+        let customize = ClosureButton(title: "Customize…") { [weak self] _ in self?.toolbar.runCustomizationPalette(nil) }
         contentStack(
-            NSStackView(views: [status, NSStackView(views: [customise, reset])]), insets: NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24),
+            NSStackView(views: [status, NSStackView(views: [customize, reset])]), insets: NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24),
             spacing: 18, pinBottom: false)
         ready = true
         observation = toolbar.observe(\.itemIdentifiers, options: [.new]) { [weak self] _, _ in self?.schedulePersist() }
@@ -91,7 +91,7 @@ final class ToolbarCustomizationWindow: SecondaryWindowController, NSToolbarDele
         return item
     }
     @objc private func preview(_ sender: NSToolbarItem) {
-        status.stringValue = "\(sender.label) is a toolbar preview. Drag actions in the customisation palette to change the main window's toolbar."
+        status.stringValue = "\(sender.label) is a toolbar preview. Drag actions in the customization palette to change the main window's toolbar."
     }
     func toolbarWillAddItem(_ notification: Notification) { schedulePersist() }
     func toolbarDidRemoveItem(_ notification: Notification) { schedulePersist() }

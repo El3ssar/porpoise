@@ -84,9 +84,15 @@ import Testing
 
         let videos = try entry(m, "Videos")
         #expect(m.isUserEntry(videos))
-        m.remove(videos)
+        let order = m.userEntries
+        let at = try #require(m.removeForUndo(videos))
         #expect(!m.isUserEntry(videos) && !m.titles(in: .places).contains("Videos"))
-        m.remove(videos)  // already gone: nothing happens
+        #expect(m.removeForUndo(videos) == nil)  // already gone: nothing happens
+        // Undo puts it back where it was, once.
+        m.restore(videos, at: at)
+        m.restore(videos, at: at)
+        #expect(m.userEntries == order)
+        m.remove(videos)
 
         let reloaded = PlacesModel(storeURL: store)
         #expect(reloaded.userEntries == m.userEntries)
