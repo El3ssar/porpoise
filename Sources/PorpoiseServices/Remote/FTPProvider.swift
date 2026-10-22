@@ -7,8 +7,7 @@ final class FTPProvider: RemoteProvider {
     private let scheme: String
     private let host: String
     private let port: Int?
-    private var user: String?
-    private var password: String?
+    private let login: FTPLoginState
     private let curl: String
     private let credentialStore: any PasswordCredentialStore
     private let reconnect: ReconnectPolicy
@@ -32,18 +31,21 @@ final class FTPProvider: RemoteProvider {
         reconnect: ReconnectPolicy = ReconnectPolicy()
     ) {
         self.reconnect = reconnect
-        scheme = url.scheme?.lowercased() ?? "ftp"
-        host = url.host ?? ""
+        let scheme = url.scheme?.lowercased() ?? "ftp"
+        let host = url.host ?? ""
+        self.scheme = scheme; self.host = host
         port = url.port
-        user = url.user
-        // `password` alone stays percent-encoded ("p%40ss"); the server needs the password itself.
-        password = url.password(percentEncoded: false)
+        let user = url.user
+        // Read a complete credential pair before publication; later updates/readers use one locked snapshot.
+        let password =
+            url.password(percentEncoded: false)
+            ?? user.flatMap { credentialStore.password(server: host, account: $0, scheme: scheme) }
+        login = FTPLoginState(user: user, password: password)
         self.curl = curl
         self.credentialStore = credentialStore
-        if let u = user, password == nil { password = credentialStore.password(server: host, account: u, scheme: scheme) }
     }
 
-    func rootTitle(_ url: URL) -> String { user.map { "\($0)@\(host)" } ?? host }
+    func rootTitle(_ url: URL) -> String { login.snapshot.user.map { "\($0)@\(host)" } ?? host }
 
     /// ftps:// is FTP with required TLS (`--ssl-reqd`), so curl gets ftp:// either way.
     private func base(_ path: String) -> String {
@@ -62,8 +64,9 @@ final class FTPProvider: RemoteProvider {
 
     /// curl config with the login, in curl's quoted-string syntax.
     private var credentials: Data? {
-        guard let u = user else { return nil }
-        return Data("user = \"\(Self.configEscaped("\(u):\(password ?? "")"))\"\n".utf8)
+        let current = login.snapshot
+        guard let user = current.user else { return nil }
+        return Data("user = \"\(Self.configEscaped("\(user):\(current.password ?? "")"))\"\n".utf8)
     }
 
     /// curl config quoted-string escaping, by code point: a quote followed by a combining mark is one Character,
@@ -136,11 +139,14 @@ final class FTPProvider: RemoteProvider {
     }
 
     private func askCredentials() -> Bool {
-        if !Thread.isMainThread { return DispatchQueue.main.sync { askCredentials() } }
-        guard let login = RemoteFS.askLogin(host, user) else { return false }
-        user = login.user
-        password = login.password
-        credentialStore.save(server: host, account: login.user, password: login.password, scheme: scheme)
+        if Thread.isMainThread { return MainActor.assumeIsolated { askCredentialsOnMain() } }
+        return DispatchQueue.main.sync { askCredentialsOnMain() }
+    }
+
+    @MainActor private func askCredentialsOnMain() -> Bool {
+        guard let answer = RemoteFS.askLogin(host, login.snapshot.user) else { return false }
+        login.replace(user: answer.user, password: answer.password)
+        credentialStore.save(server: host, account: answer.user, password: answer.password, scheme: scheme)
         return true
     }
 

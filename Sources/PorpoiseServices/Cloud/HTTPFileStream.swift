@@ -2,14 +2,17 @@ import Foundation
 
 /// Streams network buffers with backpressure. The consumer finishes each buffer before the task resumes.
 /// Kept provider-neutral so other cloud transports can use the same bounded-memory HTTP path.
-final class HTTPFileStream: @unchecked Sendable {
-    enum Event { case response(HTTPURLResponse), data(Data) }
-    fileprivate var continuation: AsyncThrowingStream<Event, Error>.Continuation!
+final class HTTPFileStream: Sendable {
+    enum Event: Sendable { case response(HTTPURLResponse), data(Data) }
+    fileprivate let continuation: AsyncThrowingStream<Event, Error>.Continuation
+    private init(_ continuation: AsyncThrowingStream<Event, Error>.Continuation) { self.continuation = continuation }
 
     /// One session for every stream: its connections are reused (a ranged download makes many requests to one host),
     /// where a session per request opened a connection, TLS included, each time. Like the ephemeral session per
     /// request it replaces, it keeps no cookies, cache or credentials.
     private static let streams = Streams()
+    // OperationQueue.underlyingQueue is borrowed by the SDK. Keep its executor alive for the shared session.
+    private static let delegateExecutor = DispatchQueue(label: "porpoise.http-file-stream", qos: .userInitiated)
     private static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieStorage = nil; configuration.httpShouldSetCookies = false
@@ -19,13 +22,13 @@ final class HTTPFileStream: @unchecked Sendable {
         // Its own thread, never Swift's cooperative ones: a plain queue's delegate calls waited for one, and with
         // every cooperative thread taken (a full test run on CI's 3-core runner) a range response's upstream head
         // came after the preview server's ten-second idle deadline had closed the response (W-138).
-        queue.underlyingQueue = DispatchQueue(label: "porpoise.http-file-stream", qos: .userInitiated)
+        queue.underlyingQueue = delegateExecutor
         return URLSession(configuration: configuration, delegate: streams, delegateQueue: queue)
     }()
 
     static func receive(_ request: URLRequest, consume: (Data, HTTPURLResponse) async throws -> Void) async throws -> HTTPURLResponse {
-        let stream = HTTPFileStream()
-        let events = AsyncThrowingStream<Event, Error> { stream.continuation = $0 }
+        let (events, continuation) = AsyncThrowingStream<Event, Error>.makeStream()
+        let stream = HTTPFileStream(continuation)
         let task = session.dataTask(with: request)
         streams.add(stream, for: task)
         defer {
@@ -53,6 +56,7 @@ final class HTTPFileStream: @unchecked Sendable {
     }
 
     /// The shared session's delegate: hands each task's events to its stream.
+    // The registry is locked; published streams and their continuations are immutable/Sendable.
     private final class Streams: NSObject, URLSessionDataDelegate, @unchecked Sendable {
         private let lock = NSLock()
         private var streams: [Int: HTTPFileStream] = [:]

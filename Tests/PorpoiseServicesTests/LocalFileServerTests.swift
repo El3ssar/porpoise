@@ -2,11 +2,31 @@ import Foundation
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
+import os
 
 @testable import PorpoiseServices
 
 /// The preview stream's HTTP server, for real: started on a scratch folder and asked over TCP.
 @Suite struct LocalFileServerTests {
+    @Test func concurrentStartsShareOneListenerAndStopCanRaceWithStart() throws {
+        let scratch = try Scratch()
+        let server = LocalFileServer()
+        defer { server.stop() }
+        let urls = OSAllocatedUnfairLock(initialState: [URL]())
+        DispatchQueue.concurrentPerform(iterations: 16) { _ in
+            if let url = server.start(root: scratch.url) { urls.withLock { $0.append(url) } }
+        }
+        let started = urls.withLock { $0 }
+        #expect(started.count == 16)
+        #expect(Set(started).count == 1)
+        DispatchQueue.concurrentPerform(iterations: 32) { index in
+            if index.isMultiple(of: 2) { server.stop() } else { _ = server.start(root: scratch.url) }
+        }
+        server.stop()
+        #expect(server.activeConnectionCount == 0)
+        #expect(server.start(root: scratch.url) != nil)
+    }
+
     /// A response as raw text head plus body bytes.
     struct Response {
         var status: Int
