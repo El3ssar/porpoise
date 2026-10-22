@@ -12,21 +12,34 @@ public enum PreviewSource {
 
     /// Fetches what `url`'s preview is made from. Cloud services give their thumbnail (`thumbnail`) or preview;
     /// a server's file is copied to a temporary folder, one at a time (a folder of photos must not open dozens of
-    /// connections).
+    /// connections). A copy still waiting its turn when the task is cancelled is never fetched.
     public static func localFile(for url: URL, thumbnail: Bool) async throws -> LocalFile {
         guard let provider = RemoteFS.provider(for: url) else { throw CocoaError(.fileNoSuchFile) }
         if let cloud = provider as? CloudFileProvider { return LocalFile(file: try await cloud.preview(url, thumbnail: thumbnail), cleanup: nil) }
-        return try await withCheckedThrowingContinuation { continuation in
-            downloads.async {
-                let dir = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-preview-\(UUID().uuidString)")
-                do {
-                    continuation.resume(returning: LocalFile(file: try provider.download(url, into: dir), cleanup: dir))
-                } catch {
-                    try? FileManager.default.removeItem(at: dir)
-                    continuation.resume(throwing: error)
+        let cancelled = CancelFlag()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                downloads.async {
+                    guard !cancelled.isSet else { return continuation.resume(throwing: CancellationError()) }
+                    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-preview-\(UUID().uuidString)")
+                    do {
+                        continuation.resume(returning: LocalFile(file: try provider.download(url, into: dir), cleanup: dir))
+                    } catch {
+                        try? FileManager.default.removeItem(at: dir)
+                        continuation.resume(throwing: error)
+                    }
                 }
             }
+        } onCancel: {
+            cancelled.set()
         }
+    }
+
+    private final class CancelFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        func set() { lock.withLock { value = true } }
+        var isSet: Bool { lock.withLock { value } }
     }
 
     /// After a failed preview, when to ask again: a cloud service may answer a moment later; a server's copy that
