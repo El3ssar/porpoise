@@ -5,7 +5,10 @@ Thanks for helping! Bug reports, ideas, themes and pull requests are all welcome
 ## Reporting bugs
 
 Use the **Bug report** issue form. Include your macOS version, the Porpoise version (*Porpoise › About*), what you did,
-what you expected and what happened. Screenshots help a lot.
+what you expected and what happened. Screenshots help a lot. For failed file jobs, include the relevant Activity
+error or an excerpt from operation history. For a crash, attach the Porpoise `.ips` report from Console; for a hang,
+use Activity Monitor › Porpoise › Sample Process. Review every attachment first: reports, history and samples can
+contain private paths, filenames, server names or account information. Never include passwords, tokens or keys.
 
 ## Project layout
 
@@ -33,16 +36,23 @@ what you expected and what happened. Screenshots help a lot.
 You need macOS 15+ on Apple Silicon and Xcode 26 (or its command line tools).
 
 ```bash
-swift build              # quick compile check
-swift test               # unit tests
-./scripts/fetch-search-tools.sh  # fd and ripgrep (checksum-verified) into build/search-tools, for search and its tests
+swift build                    # quick compile check
+./scripts/fetch-search-tools.sh # checksum-verified fd and ripgrep for search/tests
+./scripts/build-ffmpeg.sh       # bundled ffmpeg for video previews/tests
+./scripts/test-with-watchdog.sh # full suite, with timeout and hang diagnostics
 ./scripts/make-app.sh    # full app: build/Porpoise.app (the first run also builds ffmpeg, a few minutes)
 open build/Porpoise.app
 ```
 
 ### Tests
 
-`swift test` runs `PorpoiseCoreTests` (models and algorithms), `PorpoiseFileSystemTests` (local IO),
+Run `scripts/fetch-search-tools.sh` and `scripts/build-ffmpeg.sh` before the full suite so search/video checks
+have their bundled tools. CI does this explicitly. `scripts/test-with-watchdog.sh` builds the tests, runs the
+resource-sensitive BusyPool/MemoryBudget tests separately, then the main pass. It prints test-process samples on
+timeout and crash-report details after a failure. `swift test --filter <SuiteName>` remains useful for a focused
+check; report that separately from a full watchdog run.
+
+The Swift test targets are `PorpoiseCoreTests` (models and algorithms), `PorpoiseFileSystemTests` (local IO),
 `PorpoiseHelperKitTests` (unprivileged helper/security checks), `PorpoiseServicesTests` (orchestration, locations,
 remotes and previews), and `PorpoiseAppTests` (app integration). Filesystem tests use real throwaway files:
 
@@ -53,10 +63,11 @@ remotes and previews), and `PorpoiseAppTests` (app integration). Filesystem test
 - **Settings.** A suite that reads or writes settings carries `.isolatedSettings`: each test gets an empty store in
   memory, and those tests take turns.
 - **Real tools.** SSH tests start a private `sshd` on 127.0.0.1 with its own keys; video tests make short clips with
-  an ffmpeg on your `PATH` and are skipped without one; search tests run the real fd and ripgrep from
-  `build/search-tools` (`scripts/fetch-search-tools.sh`) and are skipped without them; FTP and adb are replaced by small scripts that record what
+  the bundled `build/ffmpeg/ffmpeg` (falling back to `PATH`) and are skipped without one; search tests run the real
+  fd and ripgrep from `build/search-tools` (`scripts/fetch-search-tools.sh`) and are skipped without them; FTP and adb are replaced by small scripts that record what
   they're given.
-- **No hanging.** Every wait has its own timeout, so a regression fails instead of stalling the run.
+- **Timeouts.** Use readiness events and bounded waits in new tests. The watchdog stops stalled test execution
+  and prints process samples; compilation happens before its deadline.
 
 A run leaves nothing behind. If you add a test, check: `ls -d $TMPDIR/porpoise-test-*` and `hdiutil info` show
 nothing new afterwards.
@@ -64,8 +75,8 @@ nothing new afterwards.
 Coverage of the logic layers (CI fails below its minimum):
 
 ```bash
-swift test --enable-code-coverage
-python3 scripts/coverage.py
+./scripts/test-with-watchdog.sh --enable-code-coverage
+python3 scripts/coverage.py --min 92
 ```
 
 ### CI and release validation
@@ -143,13 +154,16 @@ configuration and its files then stay isolated from the user's index.
 ## Sending changes
 
 1. Fork, then create a branch from `main`.
-2. Make your change, add tests for it, and run `swift test`. Try it in the app as well.
+2. Make your change, add focused tests for changed behavior, and run the watchdog for full-suite validation.
+   Run strict format lint and `swift build -c release --product Porpoise`. Try visible changes in an isolated app
+   instance (see “Checking the running app” above), in light and dark; distinguish structural test results from visual or attended input checks.
 3. Open a pull request. CI builds and tests it on macOS. Keep pull requests focused: one fix or feature each.
 
 ## Code style
 
 Swift 6 toolchain in Swift 5 language mode, AppKit. The layout is `swift format`'s, configured in `.swift-format`;
-CI checks it, and `swift format -i -r Sources Tests` applies it. Keep functions small, comment the *why*, and match
+CI checks it with `swift format lint --strict -r Sources Tests`, and `swift format -i -r Sources Tests` applies it.
+Keep functions small, comment the *why*, and match
 the surrounding code. Logic belongs in `PorpoiseCore`, `PorpoiseFileSystem`, `PorpoiseHelperKit` or `PorpoiseServices`, where it's tested; the app target
 draws and wires things up (see `docs/ARCHITECTURE.md`). Behaviour should follow KDE Dolphin unless the Mac way is clearly better.
 
