@@ -123,20 +123,27 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
         var x = closeButton.frame.minX - 6
         for b in [contentsButton, namesButton, nil, everywhereButton, hereButton] {
             guard let b else {
-                dividerX = round(x - 4) + 0.5
-                x -= 12
+                dividerX = round(x - 6) + 0.5
+                x -= 16
                 continue
             }
             let w = b.intrinsicContentSize.width
             x -= w
             b.frame = CGRect(x: x, y: (h - 28) / 2, width: w, height: 28)
-            x -= 4
+            x -= 2
         }
         field.frame = CGRect(x: 8, y: (h - 24) / 2, width: x - 14, height: 24)
+        needsDisplay = true  // the pairs' tracks follow the buttons
     }
 
     override func draw(_ dirty: NSRect) {
         Theme.windowBackground.setFill(); bounds.fill()
+        // Each pair (where, what) on one track, so it reads as a segmented control: one choice of two.
+        for pair in [(hereButton, everywhereButton), (namesButton, contentsButton)] {
+            let track = pair.0.frame.union(pair.1.frame).insetBy(dx: -2, dy: -2)
+            Theme.windowText.withAlphaComponent(0.06).setFill()
+            NSBezierPath(roundedRect: track, xRadius: Tokens.Radius.row + 2, yRadius: Tokens.Radius.row + 2).fill()
+        }
         Theme.separator.setFill()
         CGRect(x: dividerX - 0.5, y: bounds.midY - 9, width: 1, height: 18).fill()
         let l = NSBezierPath(); l.move(to: CGPoint(x: 0, y: bounds.height - 0.5)); l.line(to: CGPoint(x: bounds.width, y: bounds.height - 0.5))
