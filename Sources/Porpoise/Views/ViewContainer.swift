@@ -576,12 +576,13 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             readingSpaceOf = url
             let folder = url
             DispatchQueue.global(qos: .utility).async { [weak self] in
-                let v = try? folder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey])
+                // Match Finder Get Info's Available figure, rather than adding reclaimable "important usage" space.
+                let v = try? folder.resourceValues(forKeys: [.volumeAvailableCapacityKey, .volumeTotalCapacityKey])
                 DispatchQueue.main.async {
                     guard let self, self.readingSpaceOf == folder else { return }
                     self.readingSpaceOf = nil
-                    if let free = v?.volumeAvailableCapacityForImportantUsage, let total = v?.volumeTotalCapacity, total > 0 {
-                        self.volumeSpace = (folder, Date(), free, total)
+                    if let free = v?.volumeAvailableCapacity, let total = v?.volumeTotalCapacity, total > 0 {
+                        self.volumeSpace = (folder, Date(), Int64(free), total)
                     } else {
                         self.volumeSpace = nil
                     }
