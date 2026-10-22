@@ -48,7 +48,10 @@ extension RemoteTransferJob {
             children.append(child)
         }
         let nextLock = NSLock(); var next = 0
-        DispatchQueue.concurrentPerform(iterations: min(6, children.count)) { _ in
+        // Workers of their own, not concurrentPerform: each one mostly waits on the network, and concurrentPerform's
+        // helpers come from the CPU-bounded dispatch pool, so a busy process (CI's 3-core runner) copied one at a time.
+        let workers = DispatchGroup()
+        func work() {
             while let child = nextLock.withLock({ () -> RemoteTransferJob? in
                 guard next < children.count else { return nil }; defer { next += 1 }; return children[next]
             }) {
@@ -62,6 +65,14 @@ extension RemoteTransferJob {
                 }
             }
         }
+        for _ in 1..<min(6, children.count) {
+            workers.enter()
+            Thread {
+                work(); workers.leave()
+            }.start()
+        }
+        work()
+        workers.wait()
         return true
     }
 }
