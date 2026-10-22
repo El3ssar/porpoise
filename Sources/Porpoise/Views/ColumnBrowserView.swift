@@ -97,7 +97,7 @@ final class ColumnBrowserView: NSView {
     private(set) var showsPreview = false
     let strip = NSScrollView()
     private let content = ColumnStripContent()
-    private var handles: [ColumnResizeHandle] = []
+    private(set) var handles: [ColumnResizeHandle] = []
     /// Widths the user gave columns, by folder, while this view lasts; the others open at the saved width.
     private var widths: [URL: CGFloat] = [:]
     private var previewWidth: CGFloat?

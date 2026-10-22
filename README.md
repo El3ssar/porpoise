@@ -41,7 +41,8 @@ with *Porpoise › Check for Updates…*.
 
 - **Window:** toolbar with Back/Forward/Up, breadcrumb or editable location bar, tabs, split view (F3) with one
   location bar per pane, full-width status bar with free space and a zoom slider.
-- **Views:** Icons, Compact and Details (expandable folders, sortable/resizable/reorderable columns), smooth zoom
+- **Views:** Icons, Compact, Details (expandable folders, sortable/resizable/reorderable columns) and Columns
+  (Finder's column view with a preview column, on local, remote and cloud folders), smooth zoom
   (pinch, slider, ⌘+/−), previews of images, documents and every video format, grouping, natural sorting,
   type-ahead, inline rename, rubber-band and selection mode, filter bar.
 - **Search:** fast search of names and contents with the bundled fd and ripgrep (results stream in, content matches
@@ -236,6 +237,7 @@ In the file list: arrows move (⇧ extends), Space is Quick Look, ⌫ goes back,
 | View | View Mode › Icons | ⌘1 |
 | View | View Mode › Details | ⌘2 |
 | View | View Mode › Compact | ⌘3 |
+| View | View Mode › Columns | ⌘4 |
 | View | Show Previews | F12 |
 | View | Show Hidden Files | ⇧⌘. |
 | View | Adjust View Display Style… | ⌘J |

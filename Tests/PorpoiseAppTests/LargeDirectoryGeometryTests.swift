@@ -22,7 +22,7 @@ import Testing
         scroll.documentView = view
         for grouped in [false, true] {
             model.props.groupRole = grouped ? .name : nil
-            for mode in [ViewMode.icons, .details] {
+            for mode in [ViewMode.icons, .details, .columns] {
                 model.props.mode = mode
                 for width: CGFloat in [100, 401, 1000] {
                     view.layoutWidthOverride = width
@@ -67,7 +67,7 @@ import Testing
         }
         let view = ItemListView(model: model)
         view.layoutWidthOverride = 1000
-        for mode in [ViewMode.icons, .details] {
+        for mode in [ViewMode.icons, .details, .columns] {
             model.props.mode = mode
             view.previewZoom(32, commitAfter: nil)
             view.computeLayout()
@@ -145,8 +145,8 @@ import Testing
     private func legacyCells(_ view: ItemListView) -> [CGRect] {
         guard let first = view.frames.first else { return [] }
         let h = first.height, w = first.width
-        let margin = view.mode == .icons ? ItemListView.margin : 0
-        let x = view.mode == .icons ? ItemListView.margin : ItemListView.sidePadding
+        let margin = view.mode == .icons ? ItemListView.margin : view.mode == .columns ? ItemListView.columnsTop : 0
+        let x = view.mode == .icons ? ItemListView.margin : view.mode == .columns ? ItemListView.columnsInset : ItemListView.sidePadding
         let headerH = view.model.groups.isEmpty ? 0 : view.lineHeight + 14
         var y = margin, col = 0, lastGroup = -2
         var result: [CGRect] = []

@@ -300,8 +300,7 @@ public final class DirectoryModel {
         searchOverride = ViewOverride()
         dynamicViewPending = true
         columnOverride = ViewOverride()
-        props = ViewStyleStore().style(for: location)
-        applyColumnMode()
+        props = inColumns(ViewStyleStore().style(for: location))
         if !isLoading { applyDynamicView() }
         if isSearching { showSearchView() }
     }
@@ -344,8 +343,7 @@ public final class DirectoryModel {
             searchOverride = ViewOverride()
             dynamicViewPending = true
             columnOverride = ViewOverride()
-            props = ViewStyleStore().style(for: url)
-            applyColumnMode()
+            props = inColumns(ViewStyleStore().style(for: url))
             source = LocationContentSources.source(for: url)
             // Stop watching the old folder now: virtual and remote locations don't use FSEvents.
             updateWatcher()
@@ -1046,6 +1044,14 @@ public final class DirectoryModel {
         didSet { if browsesColumns != oldValue { applyColumnMode() } }
     }
     private var columnOverride = ViewOverride()
+
+    /// A folder's own settings as Column view shows them: never another mode, even for a moment (the pane would
+    /// leave Column view).
+    private func inColumns(_ own: ViewProperties) -> ViewProperties {
+        var p = own
+        if browsesColumns, p.mode != .columns { columnOverride.apply(to: &p) { $0.mode = .columns } }
+        return p
+    }
 
     private func applyColumnMode() {
         if browsesColumns {
