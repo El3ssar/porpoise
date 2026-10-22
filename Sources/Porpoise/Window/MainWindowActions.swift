@@ -17,7 +17,9 @@ extension MainWindowController {
     /// Selected items are all local files (tags, sharing, archives, Launch Services…).
     var selectionIsLocal: Bool { hasSelection && selectedURLs.allSatisfy(\.isFileURL) }
     /// Selected items can be cut, trashed or renamed: local files or SFTP/FTP/ADB items.
-    var selectionIsManageable: Bool { hasSelection && selectedURLs.allSatisfy { $0.isFileURL || RemoteFS.isRemote($0) } }
+    var selectionIsManageable: Bool {
+        hasSelection && selectedURLs.allSatisfy { $0.isFileURL || (RemoteFS.isRemote($0) && LocationKind.of($0) != .archive) }
+    }
     /// What "this" means for location-wide actions: the selection, else the current folder.
     var actionTargets: [URL] { hasSelection ? selectedURLs : [view.url] }
 

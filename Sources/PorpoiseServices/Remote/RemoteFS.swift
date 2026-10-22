@@ -123,7 +123,9 @@ public enum RemoteFS {
         lock.lock(); defer { lock.unlock() }
         if let p = providers[key] { return p }
         let p: RemoteProvider
-        if s == "s3" {
+        if s == "archive" {
+            guard let location = ArchiveLocation(url: url) else { return nil }; p = ArchiveProvider(archive: location.archive)
+        } else if s == "s3" {
             guard let location = S3Location(url: url) else { return nil }; p = S3Provider(location: location)
         } else if s == "gdrive" {
             guard let accountID = url.host.flatMap(UUID.init(uuidString:)) else { return nil }

@@ -40,6 +40,18 @@ import PorpoiseCore
     private static func openOnMain(_ item: FileItem, using launch: ((URL) -> Void)?) {
         let launch = launch ?? openFile
         guard let p = RemoteFS.provider(for: item.url), RemoteParsing.isSafeName(item.url.lastPathComponent) else { return }
+        if item.url.scheme == "archive" {
+            Task { @MainActor in
+                do {
+                    let local = try await CloudRemoteOpen.prepare(item) { try await ArchiveBrowser.localCopy(item.url, context: $0) }
+                    launch(local)
+                    StatusCenter.post("Opened a copy of “\(item.name)”. Changes stay on this Mac.")
+                } catch {
+                    if !(error is CancellationError) { StatusCenter.error("Could not open “\(item.name)”: \(error.localizedDescription)") }
+                }
+            }
+            return
+        }
         if PlacesModel.isCloud(item.url) {
             // A file the account may change: edited in place, its saves go back to Drive as new versions.
             if CloudEditing.shared.canEdit(item) {

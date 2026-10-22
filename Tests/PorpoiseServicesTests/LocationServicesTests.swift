@@ -217,10 +217,9 @@ import Testing
         #expect(throws: (any Error).self) { try dotdot.get() }
         let symlink = try await extract(s.path("symlink.tar"), cache: cache)
         #expect(throws: (any Error).self) { try symlink.get() }
-        // An absolute path loses its leading "/" and lands inside the copy.
-        let absolute = try await extract(s.path("absolute.tar"), cache: cache).get()
-        let inside = absolute.appendingPathComponent(String(victim.path.dropFirst()))
-        #expect(try String(contentsOf: inside, encoding: .utf8) == "evil")
+        // Absolute paths are rejected too, before any entry is materialized.
+        let absolute = try await extract(s.path("absolute.tar"), cache: cache)
+        #expect(throws: (any Error).self) { try absolute.get() }
         #expect(try String(contentsOf: victim, encoding: .utf8) == "original")
         #expect(s.listing("outside").isEmpty)
         let escaped = try FileManager.default.subpathsOfDirectory(atPath: cache.path).filter { $0.hasSuffix("escaped.txt") }

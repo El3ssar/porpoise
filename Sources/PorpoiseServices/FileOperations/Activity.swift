@@ -131,7 +131,10 @@ extension FileOperationsController {
     func activityDidChange() { NotificationCenter.default.post(name: Self.activityChanged, object: self) }
 
     func monitorEnvironment(_ activity: Activity) {
-        environment.register(activity.control, network: (activity.sources + [activity.destination].compactMap { $0 }).contains { !$0.isFileURL }) {
+        environment.register(
+            activity.control,
+            network: (activity.sources + [activity.destination].compactMap { $0 }).contains { !$0.isFileURL && LocationKind.of($0) != .archive }
+        ) {
             [weak self, weak activity] notice in
             activity?.environmentNotice = notice
             activity?.rate.reset()

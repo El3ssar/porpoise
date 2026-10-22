@@ -2,7 +2,7 @@ import Foundation
 
 /// What Porpoise can browse. Classification never connects to a server or asks a provider for contents.
 public enum LocationKind: Equatable, Sendable {
-    case local, trash, cloud(CloudProvider), remote, device, networkShare
+    case local, trash, cloud(CloudProvider), remote, device, networkShare, archive
     case network, recentFiles, recentLocations, tag, smartFolder, unsupported
 
     private static let cloudProviders = Dictionary(
@@ -19,6 +19,7 @@ public enum LocationKind: Equatable, Sendable {
         if scheme == "s3" || RemoteFS.sshSchemes.contains(scheme) || RemoteFS.ftpSchemes.contains(scheme) { return .remote }
         if RemoteFS.mountSchemes.contains(scheme) { return .networkShare }
         switch scheme {
+        case "archive": return .archive
         case "adb": return .device
         case "network": return .network
         case "recent": return url.path == "/locations" ? .recentLocations : .recentFiles
@@ -31,7 +32,7 @@ public enum LocationKind: Equatable, Sendable {
     public var isLocal: Bool { self == .local || self == .trash }
     public var isCloud: Bool { if case .cloud = self { return true }; return false }
     /// A provider-backed file system, including cloud accounts and devices; not a virtual result list.
-    public var isRemote: Bool { isCloud || self == .remote || self == .device }
+    public var isRemote: Bool { isCloud || self == .remote || self == .device || self == .archive }
     public var isVirtual: Bool { self == .network || isResultList }
     /// These locations show items away from their containing folder; Network is discovery, not a result list.
     public var isResultList: Bool {
@@ -42,7 +43,7 @@ public enum LocationKind: Equatable, Sendable {
     }
     /// A network share gains a browsable hierarchy only after it is mounted and represented by a local URL.
     public var hasHierarchy: Bool { isLocal || isRemote }
-    public var acceptsDrops: Bool { hasHierarchy }
+    public var acceptsDrops: Bool { hasHierarchy && self != .archive }
     public var persistsViewStyle: Bool { self != .unsupported }
     public var isSupported: Bool { self != .unsupported }
     public func canGoUp(from url: URL) -> Bool { hasHierarchy && !url.path.isEmpty && url.path != "/" }
@@ -61,6 +62,7 @@ public enum LocationKind: Equatable, Sendable {
         switch self {
         case .trash: return "user-trash"
         case .local: return "folder"
+        case .archive: return "package-x-generic"
         case .device: return "smartphone"
         case .cloud, .remote: return "folder-remote"
         case .network: return "network-workgroup"

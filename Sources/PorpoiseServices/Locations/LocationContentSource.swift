@@ -109,6 +109,7 @@ enum LocationContentSources {
         case .tag, .smartFolder: return SpotlightListSource(location: url)
         case .recentFiles, .recentLocations: return RecentSource(location: url)
         case .network: return NetworkSource(location: url)
+        case .archive: return ArchiveSource(location: url)
         default: break
         }
         if AppLibrary.isActive(for: url) { return AppLibrarySource(location: url) }
