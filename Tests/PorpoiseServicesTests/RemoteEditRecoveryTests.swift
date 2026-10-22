@@ -269,11 +269,13 @@ struct RemoteEditIntegrationTests {
         #expect(onMain)
     }
 
-    @Test func canonicalIdentityIgnoresPasswordAndDefaultPort() async throws {
+    @Test func canonicalIdentityIgnoresPasswordAndHostCaseButKeepsImplicitPortsDistinct() async throws {
         let root = try Scratch("remote-edit-canonical"), provider = CopyEditProvider()
         let a = URL(string: "sftp://user:password@HOST.invalid/file.txt")!
-        let b = URL(string: "sftp://user@host.invalid:22/file.txt")!
+        let b = URL(string: "sftp://user@host.invalid/file.txt")!
         #expect(RemoteEditSessionStore.identity(a) == RemoteEditSessionStore.identity(b))
+        let explicit = URL(string: "sftp://user@host.invalid:22/file.txt")!
+        #expect(RemoteEditSessionStore.identity(b) != RemoteEditSessionStore.identity(explicit))
         let one = RemoteEditSessionStore(remote: a, root: root.url)
         let two = RemoteEditSessionStore(remote: b, root: root.url)
         #expect(try await one.open(provider: provider) == two.local)

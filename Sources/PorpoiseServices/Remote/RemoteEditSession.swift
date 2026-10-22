@@ -43,13 +43,7 @@ final class RemoteEditSessionStore: @unchecked Sendable {
         guard var parts = URLComponents(url: remote, resolvingAgainstBaseURL: false) else { return nil }
         parts.password = nil; parts.fragment = nil
         parts.scheme = parts.scheme?.lowercased(); parts.host = parts.host?.lowercased()
-        if parts.port == nil {
-            switch parts.scheme {
-            case "sftp", "ssh": parts.port = 22
-            case "ftp", "ftps": parts.port = 21
-            default: break
-            }
-        }
+        // An omitted SSH port may come from ~/.ssh/config. It must not alias an explicit :22 connection.
         return parts.url
     }
     static func identity(_ remote: URL) -> String {
