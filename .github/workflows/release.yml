@@ -103,7 +103,9 @@ jobs:
 
       - name: ffmpeg source identity
         id: ffmpeg-source
-        run: echo "sha=$(scripts/build-ffmpeg.sh --source-sha)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "sha=$(scripts/build-ffmpeg.sh --source-sha)" >> "$GITHUB_OUTPUT"
+          echo "identity=$(scripts/build-ffmpeg.sh --cache-key)" >> "$GITHUB_OUTPUT"
 
       - name: Restore ffmpeg
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -111,8 +113,9 @@ jobs:
           path: |
             build/ffmpeg/ffmpeg
             build/ffmpeg/ffmpeg.sha256
-            build/ffmpeg-src/ffmpeg-*/COPYING.*
-          key: ffmpeg-verified-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-source.outputs.sha }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+            build/ffmpeg/identity.json
+            build/ffmpeg/COPYING.LGPLv2.1
+          key: ffmpeg-verified-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-source.outputs.sha }}-${{ steps.ffmpeg-source.outputs.identity }}-${{ hashFiles('scripts/build-ffmpeg.sh', 'scripts/bundled-tool-cache.py') }}
 
       # Verify on every hit; missing or mismatched SHA-256 rebuilds from checksum-verified source.
       - name: Verify or build ffmpeg
@@ -120,7 +123,7 @@ jobs:
 
       - name: Workflow integrity
         if: steps.ci.outputs.passed != 'true'
-        run: python3 scripts/test-workflow-pins.py && python3 scripts/test-ci-proof.py
+        run: python3 scripts/test-workflow-pins.py && python3 scripts/test-ci-proof.py && python3 scripts/test-bundled-tools.py
 
       - name: Crash symbol tooling
         if: steps.ci.outputs.passed != 'true'

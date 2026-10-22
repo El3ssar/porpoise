@@ -1,0 +1,41 @@
+name: Dependency review
+on:
+  pull_request:
+  schedule:
+    - cron: '17 8 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - name: Workflow action pins
+        run: python3 scripts/check-workflow-pins.py
+      - name: Propose dependency maintenance review
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = pull_request ]; then
+            python3 scripts/dependency-review.py --output dependency-proposal.md
+          else
+            python3 scripts/dependency-review.py --online --output dependency-proposal.md
+          fi
+          cat dependency-proposal.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain review proposal
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dependency-review-proposal
+          path: dependency-proposal.md
+          retention-days: 90
+      - name: Review dependency graph changes
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: low

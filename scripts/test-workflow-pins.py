@@ -39,39 +39,29 @@ class WorkflowTests(unittest.TestCase):
             workflow.write_text('path: build/ffmpeg/ffmpeg\nrun: scripts/build-ffmpeg.sh\n')
             self.assertTrue(pins.check(root))
 
-    def test_checks_restored_binary_before_reuse(self):
+    def test_legacy_digest_alone_cannot_authorize_reuse(self):
         with tempfile.TemporaryDirectory() as folder:
             root = pathlib.Path(folder)
             (root / 'scripts').mkdir()
-            shutil.copy(HERE / 'build-ffmpeg.sh', root / 'scripts/build-ffmpeg.sh')
+            for name in ['build-ffmpeg.sh', 'bundled-tool-cache.py']:
+                shutil.copy(HERE / name, root / 'scripts' / name)
             binary = root / 'build/ffmpeg/ffmpeg'
             binary.parent.mkdir(parents=True)
             binary.write_text('fixture binary; never executed')
             binary.chmod(0o755)
             import hashlib
-            digest = binary.parent / 'ffmpeg.sha256'
-            digest.write_text(hashlib.sha256(binary.read_bytes()).hexdigest() + '\n')
-            command = ['/bin/zsh', str(root / 'scripts/build-ffmpeg.sh')]
-            result = subprocess.run(command, capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn('cache verified', result.stdout)
-            (root / 'build/ffmpeg-src').mkdir()
-            (root / 'build/ffmpeg-src/ffmpeg-8.0.tar.xz').write_text('corrupt source')
-            for recorded in ['0' * 64, 'bad checksum', None]:
-                if recorded is None:
-                    digest.unlink()
-                else:
-                    digest.write_text(recorded)
-                result = subprocess.run(command, capture_output=True, text=True)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn('rebuilding', result.stdout)
-                self.assertIn("doesn't match its checksum", result.stdout)
+            (binary.parent / 'ffmpeg.sha256').write_text(hashlib.sha256(binary.read_bytes()).hexdigest() + '\n')
+            result = subprocess.run(['/bin/zsh', str(root / 'scripts/build-ffmpeg.sh'), '--check'],
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('cache rejected', result.stdout)
 
     def test_rejects_corrupt_cached_source_before_build(self):
         with tempfile.TemporaryDirectory() as folder:
             root = pathlib.Path(folder)
             (root / 'scripts').mkdir()
-            shutil.copy(HERE / 'build-ffmpeg.sh', root / 'scripts/build-ffmpeg.sh')
+            for name in ['build-ffmpeg.sh', 'bundled-tool-cache.py']:
+                shutil.copy(HERE / name, root / 'scripts' / name)
             (root / 'build/ffmpeg-src').mkdir(parents=True)
             (root / 'build/ffmpeg-src/ffmpeg-8.0.tar.xz').write_text('untrusted archive')
             result = subprocess.run(['/bin/zsh', str(root / 'scripts/build-ffmpeg.sh'), '--force'], capture_output=True, text=True)

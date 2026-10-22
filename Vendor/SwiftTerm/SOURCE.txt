@@ -1,0 +1,31 @@
+SwiftTerm — vendored source provenance, reviewed 2026-10-23
+Upstream: https://github.com/migueldeicaza/SwiftTerm
+Tag: v1.20.0
+Tag commit: 5d14406844143538cd8f8851d2d8a67c1fe443e5
+Source: https://github.com/migueldeicaza/SwiftTerm/tree/5d14406844143538cd8f8851d2d8a67c1fe443e5
+License: MIT, retained in LICENSE
+
+Local import / patch base: Porpoise b2ab734738b92ca533092b67be70599a64d36d72
+The import's Package.swift names v1.20.0. A fresh comparison against the
+upstream tag on 2026-10-23 matched every retained source/plugin/license file
+except Package.swift and the two warning fixes described below. History did
+not record the original download archive checksum or import command; those
+historical details remain unresolved. The upstream commit is established by
+the current tag plus the retained-file comparison, not an invented import log.
+
+Local differences from that upstream commit:
+- Package.swift is reduced to the macOS SwiftTerm library, build-info generator
+  and plugin, Swift 5 mode; upstream benchmark/test/example/platform-specific
+  targets and dependencies are omitted. Minimum macOS is 13.
+- Sources/SwiftTerm/Apple/Metal/Shaders.metal is omitted and the shader resource
+  is not declared; CoreText rendering supports Command Line Tools-only builds.
+- Nonshipping upstream apps, tests, benchmarks, docs and supporting root files
+  are omitted. Sources/SwiftTerm (except Shaders.metal), the build-info generator,
+  Plugins and LICENSE otherwise match upstream, subject to the warning fix.
+- Porpoise d494c68731bbb64f12cc6e993e1a3efe9f37639b adds `_ =` to two
+  vertices.withUnsafeBytes calls in Apple/Metal/MetalTerminalRenderer.swift.
+
+Reproduce: obtain the exact upstream commit in a scratch directory; compare
+retained files with diff -ru; inspect git show b2ab7347:Vendor/SwiftTerm/Package.swift
+and git show d494c687 -- Vendor/SwiftTerm. Do not replace this tree from a moving tag.
+Update owner: Porpoise maintainers. Review policy: docs/DEPENDENCIES.md.

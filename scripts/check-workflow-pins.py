@@ -16,8 +16,10 @@ def check(root):
                 errors.append(f'{path.name}: action must use a commit SHA and version comment')
         if 'scripts/build-ffmpeg.sh' in text:
             if 'build/ffmpeg/ffmpeg' in text:
-                required = ['build/ffmpeg/ffmpeg.sha256', 'steps.ffmpeg-source.outputs.sha',
-                            "hashFiles('scripts/build-ffmpeg.sh')", 'run: scripts/build-ffmpeg.sh\n']
+                required = ['build/ffmpeg/ffmpeg.sha256', 'build/ffmpeg/identity.json',
+                            'build/ffmpeg/COPYING.LGPLv2.1', 'steps.ffmpeg-source.outputs.sha',
+                            'steps.ffmpeg-source.outputs.identity', 'scripts/build-ffmpeg.sh --cache-key',
+                            "hashFiles('scripts/build-ffmpeg.sh', 'scripts/bundled-tool-cache.py')", 'run: scripts/build-ffmpeg.sh\n']
                 if not all(item in text for item in required) or 'cache-hit' in text:
                     errors.append(f'{path.name}: verify every cached binary, keyed by source and build script')
             elif 'run: scripts/build-ffmpeg.sh --force' not in text:
