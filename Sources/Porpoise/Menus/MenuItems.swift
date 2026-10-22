@@ -20,6 +20,14 @@ enum KeyEquivalent {
 
     private static func character(_ code: Int) -> String { String(utf16CodeUnits: [unichar(code)], count: 1) }
 
+    /// Whether a key press typed `typed` (its charactersIgnoringModifiers) for the shortcut `key`. ⌫ types DEL
+    /// (`\u{7f}`), while a menu spells it `\u{8}`.
+    static func matches(_ key: String, typed: String?) -> Bool {
+        func normalized(_ s: String) -> String { s == "\u{7f}" ? backspace : s.lowercased() }
+        guard !key.isEmpty, let typed else { return false }
+        return normalized(typed) == normalized(key)
+    }
+
     /// The arrows, Home, End, Page Up and Page Down: with or without ⌘ they move the insertion point in a text field
     /// (⌘← to the line's start), so a shortcut on them must not fire while one is edited.
     static func movesInText(_ key: String) -> Bool {

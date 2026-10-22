@@ -32,34 +32,6 @@ extension ItemListView {
             let p = NSBezierPath(roundedRect: r, xRadius: Theme.frameRadius, yRadius: Theme.frameRadius)
             Theme.focus.setStroke(); p.lineWidth = 2; p.stroke()
         }
-        if model.rows.isEmpty { drawPlaceholder() }
-    }
-
-    private func drawPlaceholder() {
-        let text: String
-        if model.isLoading && model.items.isEmpty {
-            text = "Loading…"
-        } else if let e = model.loadError {
-            text = e
-        } else if model.isSearching {
-            text = "No items matching the search"
-        } else if model.filter.isActive {
-            text = "No items matching the filter"
-        } else if model.location.path == FileManager.default.homeDirectoryForCurrentUser.path + "/.Trash" {
-            text = "Trash is empty"
-        } else {
-            text = "Folder is empty"
-        }
-        let p = NSMutableParagraphStyle(); p.alignment = .center
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 15, weight: .regular),
-            .foregroundColor: Theme.viewTextInactive.withAlphaComponent(0.8), .paragraphStyle: p,
-        ]
-        let vr = visibleRect
-        let s = (text as NSString).size(withAttributes: attrs)
-        (text as NSString).draw(
-            in: CGRect(x: vr.minX, y: vr.midY - s.height / 2 - 20, width: vr.width, height: s.height + 4),
-            withAttributes: attrs)
     }
 
     private func drawGroupHeader(_ title: String, in r: CGRect) {
@@ -186,7 +158,9 @@ extension ItemListView {
         if selected || hoverT > 0 || isDrop {
             let fill: NSColor
             if selected {
-                let base = isActiveView && window?.isKeyWindow != false ? Theme.itemSelectedFill : Theme.itemSelectedFill.withAlphaComponent(0.6)
+                // Dimmed while the keys go elsewhere (another pane, window, panel or field), as Finder does.
+                let focused = isActiveView && window?.isKeyWindow != false && window?.firstResponder === self
+                let base = focused ? Theme.itemSelectedFill : Theme.itemSelectedFill.withAlphaComponent(0.6)
                 fill = base.mixed(with: Theme.itemSelectedHoverFill, hoverT)
             } else {
                 fill = isDrop ? Theme.itemSelectedFill : Theme.itemHoverFill.withAlphaComponent(Theme.itemHoverFill.alphaComponent * hoverT)
