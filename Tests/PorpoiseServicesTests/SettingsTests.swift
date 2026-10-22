@@ -343,7 +343,7 @@ import Testing
                 "maxLines", "compactMax", "clickRow", "labelFont", "labelFontSize", "expandable", "entireRow", "infoPreview",
                 "infoHover", "infoAutoPlay", "infoCondensed", "foldersHome", "foldersHidden", "termFollow", "placesIcon", "jobsConcurrency",
                 "transferMBPerSecond", "transferRetries", "transferBackoffSeconds", "transferExclusions",
-                "verifyCopies", "transferConflictRule", "transferCompareMethod",
+                "verifyCopies", "transferConflictRule", "transferCompareMethod", "shortcutKeySet",
             ])
     }
 }
