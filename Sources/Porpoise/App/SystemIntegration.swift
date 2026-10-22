@@ -1,4 +1,5 @@
 import AppKit
+import PorpoiseCore
 import PorpoiseServices
 import ServiceManagement
 import UniformTypeIdentifiers
@@ -150,6 +151,39 @@ enum SystemIntegration {
     static var allPermissionsGranted: Bool {
         PrivacyAccess.hasFullDiskAccess && PrivacyAccess.appManagementState == .allowed && PrivilegedHelper.isEnabled
             && PrivilegedHelper.hasFullDiskAccess == true && LocalNetworkAccess.shared.isAllowed
+    }
+
+    // MARK: Asked for when first needed
+
+    /// The permissions the welcome doesn't ask for: each is asked for, with a word on why, the first time an action
+    /// needs it. (The helper is installed by the first action on a system-owned item: `FileOperationsController.authorize`.)
+    enum FirstNeed {
+        static let askedAppManagementKey = "askedAppManagement"
+        /// The App Management state, and the check that finds it out (replaced in tests).
+        static var appManagementState: () -> PrivacyAccess.AccessState = { PrivacyAccess.appManagementState }
+        static var checkAppManagement: (@escaping () -> Void) -> Void = { done in checkAppManagementInBackground(then: done) }
+
+        /// Moving, trashing or deleting an app needs App Management (macOS stops one app changing another).
+        static func touchesApps(_ kind: FileOperationKind, _ sources: [URL]) -> Bool {
+            [.move, .trash, .delete].contains(kind) && sources.contains { $0.isFileURL && $0.pathExtension == "app" }
+        }
+
+        /// The first time apps are moved or deleted while App Management isn't known to be on: checks it (macOS lists
+        /// Porpoise, switched off, and says so), and calls `explain` if it's off. Once only: after that, Settings › System.
+        static func appManagement(_ kind: FileOperationKind, _ sources: [URL], explain: @escaping () -> Void) {
+            guard touchesApps(kind, sources), appManagementState() != .allowed,
+                !Settings.store.bool(forKey: askedAppManagementKey)
+            else { return }
+            Settings.store.set(true, forKey: askedAppManagementKey)
+            checkAppManagement { if appManagementState() == .denied { explain() } }
+        }
+
+        /// The first visit to Network (and each one while it's off): macOS asks whether Porpoise may look for servers;
+        /// `denied` runs when the answer is no.
+        static func localNetwork(denied: @escaping () -> Void) {
+            guard !LocalNetworkAccess.shared.isAllowed else { return }
+            LocalNetworkAccess.shared.request { allowed in if !allowed { denied() } }
+        }
     }
 
     /// A harmless change to another app (an empty file, removed at once). macOS checks App Management on it:

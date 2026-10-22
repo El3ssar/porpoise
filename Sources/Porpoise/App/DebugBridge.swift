@@ -106,10 +106,10 @@ final class DebugBridge: NSObject {
         dumpSettings(to: arg)
     }
 
-    /// permissions <step>: welcome, fullDisk, apps, admin, network or done.
+    /// permissions <step>: the welcome sheet at welcome or fullDisk, on the front window.
     func permissionsCommand(_ arg: String) {
         let step = OnboardingWindowController.Step.allCases.first { "\($0)" == arg } ?? .welcome
-        OnboardingWindowController.show(at: step)
+        OnboardingWindowController.show(at: step, on: wc?.window)
     }
 
     func windowsCommand(_ arg: String) {

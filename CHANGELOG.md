@@ -6,6 +6,7 @@
 - **Search results say where they are.** The Path column shows each result's folder from the one you searched ("Demo/Photos"), or from your home folder ("~/Documents"), and shortens long paths in the middle so their end stays visible.
 - **List details.** The Details view's Name header lines up with the icons below it; the Information panel says "Read & Write" or "Read Only" instead of `-rw-r--r--`; large photo previews keep a small gap above their names, with a hairline edge.
 - **Changed words stand out in Compare Files.** In light mode, the words that changed on a line are tinted more strongly than the line itself.
+- **Porpoise opens at once.** The first launch shows your home folder straight away, with a two-step welcome sheet on it that offers Full Disk Access and has a Back button. App Management, the administrator helper and Local Network are no longer asked for up front: each is asked for, with a word on why, the first time you move an app, change a system-owned item or open Network. Skipping the welcome leaves nothing to warn about, and Porpoise › Permissions… opens Settings › System, where all four are listed.
 
 ## 0.9.1
 
