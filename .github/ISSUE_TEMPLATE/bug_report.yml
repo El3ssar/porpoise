@@ -30,3 +30,11 @@ body:
       placeholder: |
         1. Open …
         2. Press …
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Relevant diagnostics (optional)
+      description: |
+        For a failed job, include its Activity error or the relevant operation-history excerpt.
+        For a crash, attach the Porpoise .ips report from Console; for a hang, use Activity Monitor > Porpoise > Sample Process.
+        Review attachments for private paths, filenames, server names and account information. Remove sensitive details; never include passwords, tokens or keys.

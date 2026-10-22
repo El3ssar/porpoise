@@ -4,12 +4,13 @@
 
 ## How I tested it
 
-<!-- e.g. swift test, plus what you tried in the app. -->
+<!-- Give exact commands/results. Distinguish focused tests, full watchdog/coverage, shipping build and UI checks. -->
 
 ## Checklist
 
-- [ ] `swift build` and `swift test` pass
-- [ ] Tried the change in the app (`scripts/make-app.sh && open build/Porpoise.app`)
+- [ ] Focused tests and full `scripts/test-with-watchdog.sh --enable-code-coverage` pass; `python3 scripts/coverage.py --min 92` passes
+- [ ] `swift build -c release --product Porpoise` and `swift format lint --strict -r Sources Tests` pass
+- [ ] Tried visible changes in an isolated app instance in light and dark (see CONTRIBUTING.md); attached evidence and stated any unverified behavior
 - [ ] Follows the code style in CONTRIBUTING.md
 
 <!-- Maintainers: add release:patch, release:minor or release:major before merging to publish a new version. -->

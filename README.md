@@ -5,7 +5,8 @@
 **A fast, keyboard-friendly file manager for macOS, inspired by KDE Dolphin.**
 
 Split view, a built-in terminal that follows the folder you're in, tabs, panels, Finder tags, remote folders over
-SSH/FTP, and previews of every video format, in a native Mac app with Desert light and dark looks (following macOS) and a choice of icon themes.
+SSH/FTP, Google Drive (preview), Dropbox, S3-compatible storage, and video previews, in a native Mac app
+with light and dark appearances, built-in colour themes and a choice of icon themes.
 
 ![Porpoise with Places (F9), split view (F3), the Information panel (F10) and the terminal (F4)](docs/screenshots/panes.png)
 
@@ -21,10 +22,9 @@ SSH/FTP, and previews of every video format, in a native Mac app with Desert lig
 3. Open Porpoise. Because Porpoise isn't signed through Apple's paid developer program, macOS blocks it the first
    time: open **System Settings › Privacy & Security**, scroll to *"Porpoise was blocked…"* and click **Open Anyway**.
    You only do this once. (Terminal alternative: `xattr -dr com.apple.quarantine /Applications/Porpoise.app`.)
-4. Porpoise's welcome window walks you through the permissions it needs, once: **Full Disk Access** (every folder,
-   including the Trash), **App Management** (moving and deleting apps), **Administrator Actions** (a small "Porpoise Helper" for system-owned items
-   such as App Store apps in the Trash, installed with one password) and **Local Network** (file servers). After that it never asks again.
-   You can revisit them any time in *Porpoise › Permissions…*.
+4. Porpoise explains the permissions used for protected folders and the Trash (**Full Disk Access**), moving and
+   deleting apps (**App Management**), administrator actions (the **Porpoise Helper**, installed with your approval)
+   and file-server discovery (**Local Network**). Review them any time in *Porpoise › Permissions…*.
 
 Requirements: a Mac with Apple Silicon and **macOS 15 Sequoia or newer**. Everything Porpoise needs is inside the
 app; nothing else to install. (Android phones need Google's adb tool, which Porpoise downloads for you from
@@ -54,8 +54,14 @@ with *Porpoise › Check for Updates…*.
   dragging them to the Trash in the Dock, with Finder's sounds; drop an app from a disk image to install it.
 - **Panels:** Places (foldable, reorderable sections; devices with capacity bars and eject; tags; network), Folders
   tree, Information (big preview, metadata, inline video/audio player) and a **Terminal** (F4) running your own
-  shell that follows the view, and the view follows it.
+  shell that follows the view, and the view follows it. The **Shelf** (F8) holds references to files from different
+  folders so you can collect them before copying, moving or sharing them.
 - **File utilities:** SHA-256/512 checksums, legacy MD5/SHA-1, GNU/BSD manifest verification and export; a drill-down disk-usage map and duplicate review with APFS clone-family reporting and undoable Trash.
+- **Activity:** **⌥⌘J** opens one place for local and remote jobs, progress, pause/cancel, retry, verification and
+  operation history. Supported interrupted transfers can be resumed after relaunch; recovery rechecks the source
+  and destination before continuing.
+- **Compare Files:** compare two text or image files and their metadata with **⌥⌘Y**; image comparison includes
+  an overlay for spotting changes.
 - **Files:** previewed batch rename (F2) with ordered rules, regex captures, numbering, dates/media tokens, presets and
   one-step undo; copy/move/link/trash with progress and undo, Dolphin's drop menu, conflict dialog, Create New,
 
@@ -66,7 +72,13 @@ with *Porpoise › Check for Updates…*.
   Folders, Eject, drag & drop with any app and the Dock Trash; optionally the default file browser for
   "Show in Finder".
 - **Remote:** SFTP/SSH, FTP/FTPS, SMB/AFP/NFS/WebDAV (Connect to Server ⌘K), Bonjour network browsing, Android
-  phones over USB, archives browsed as folders.
+  phones over USB, archives browsed as folders. **Connections** (⌥⌘K) saves SFTP, FTP/FTPS, SMB and S3 servers,
+  with imported SSH hosts, jump hosts and key-file settings. Passwords and S3 secret keys stay in the Keychain.
+- **Cloud accounts:** browse **Google Drive (preview)** and **Dropbox**, copy files in and out, preview and open
+  them, keep offline copies, and save edits back with conflict review. Drive sign-in currently requires an invited
+  account while Google's verification is pending; Dropbox's development app has a linked-account limit.
+  **S3-compatible storage** supports bucket/prefix browsing and resumable multipart uploads. OneDrive and Box are
+  implemented but unavailable in public builds until their app registrations are configured.
 - **Accessibility:** VoiceOver reads and drives the file view, Places, tabs, the path bar and the app library; toolbar
   buttons are reachable with Tab under Full Keyboard Access; Reduce Motion and Increase Contrast are respected.
 
@@ -175,7 +187,8 @@ Dolphin's shortcuts with Ctrl → ⌘, plus Finder's.
 | Show hidden files | ⌘H or ⌘⇧. |
 | Quick Look | Space |
 | Selection mode | ⌘⇧Space (or ⌘C/⌘X/F2 with nothing selected) |
-| Split / Terminal / Places / Folders / Information | F3 / F4 / F9 / F7 / F10 |
+| Split / Terminal / Places / Folders / Information / Shelf | F3 / F4 / F9 / F7 / F10 / F8 |
+| Connections / Activity / Compare Files | ⌥⌘K / ⌥⌘J / ⌥⌘Y |
 | Filter / Search / Location | ⌘I or / / ⌘F / ⌘L |
 | View modes | ⌘1 ⌘2 ⌘3 |
 | Focus Places (toggle) | ⌘P |
@@ -191,8 +204,13 @@ Dolphin's shortcuts with Ctrl → ⌘, plus Finder's.
 
 ## Reliability and security
 
-- Every change is checked by CI: about 480 tests that work on real files, real disk images, a real SSH server and real
-  videos (no mocks), at least 80% line coverage of the logic layers, a format check, and no compiler warnings.
+- Code changes are checked by CI with real throwaway files and disk images, a private SSH server, generated
+  videos and fake cloud servers. CI enforces at least **92% combined line coverage** of the logic layers, strict
+  format lint, helper freshness and a separate shipping build. This coverage does not measure rendered UI quality.
+- The [successful main CI run on 2026-10-18](https://github.com/El3ssar/porpoise/actions/runs/39173254225)
+  ran **1,497 tests in the main pass and 9 in a resource-isolated pass**, with **93.7%** combined logic coverage.
+  The main pass reported one expected issue from the timeout regression test. These are dated results, not a
+  guarantee about later commits.
 - The administrator helper does only single file operations, accepts only Porpoise signed with its own certificate
   and intact on disk, and never changes ownership outside your Trash. [SECURITY.md](SECURITY.md) describes how each
   part is protected and how to report a vulnerability privately.
@@ -212,7 +230,7 @@ You need macOS 15+ on Apple Silicon and Xcode 26 (or its Command Line Tools).
 ./scripts/make-app.sh             # builds build/Porpoise.app (the first run also builds the bundled FFmpeg)
 ./scripts/make-app.sh --install   # …and copies it to ~/Applications
 ./scripts/make-dmg.sh             # release disk image in build/
-swift test                        # unit tests
+./scripts/test-with-watchdog.sh    # full test suite with bounded runtime and hang diagnostics
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the project layout, the test bridge used to check the running app,

@@ -258,7 +258,16 @@ final class ConnectSheet: SecondaryWindowController {
         guard let form, let url = form.url() else { NSSound.beep(); return }
         if form.addToPlaces {
             // Servers the connection manager knows become saved connections (editable in Connections); others a place.
-            if let profile = form.profile() { ConnectionProfiles.shared.save(profile) } else { PlacesModel.shared.add(url, title: form.name) }
+            if let profile = form.profile() {
+                do { try ConnectionProfiles.shared.save(profile).get() } catch {
+                    let alert = NSAlert(error: error)
+                    alert.messageText = "Connection wasn’t saved."
+                    if let window { alert.beginSheetModal(for: window) }
+                    return
+                }
+            } else {
+                PlacesModel.shared.add(url, title: form.name)
+            }
         }
         finish()
         open(url)

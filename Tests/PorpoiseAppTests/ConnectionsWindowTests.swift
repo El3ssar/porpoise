@@ -116,6 +116,48 @@ import Testing
         w.close()
     }
 
+    @Test @MainActor func failedSaveKeepsDraftAndDoesNotConnectThenRetries() throws {
+        let scratch = try Scratch("connection-form-failure")
+        let parent = try scratch.file("parent", "not a directory")
+        let file = parent.appendingPathComponent("connections.json")
+        let profiles = ConnectionProfiles(storeURL: file)
+        var opened: [URL] = []
+        let w = window(profiles, .inMemory()) { opened.append($0) }
+        defer { w.close() }
+        w.addProfile(nil)
+        let form = try #require(w.form)
+        form.type(["Name:": "Work", "Server:": "work.example.com"])
+        let draft = form.draft
+        #expect(!w.saveForm())
+        #expect(w.form === form && w.form?.draft == draft)
+        #expect(form.problemLabel.stringValue.contains("wasn’t saved"))
+        #expect(profiles.profiles.isEmpty && w.rowCount == 0)
+        w.connectProfile(nil)
+        #expect(opened.isEmpty)
+        try FileManager.default.removeItem(at: parent)
+        #expect(w.saveForm())
+        #expect(ConnectionProfiles(storeURL: file).profiles == [draft])
+        #expect(w.rowCount == 1)
+        w.connectProfile(nil)
+        #expect(opened == [draft.url!])
+    }
+
+    @Test @MainActor func failedImportRemainsAnUnsavedEditableDraft() throws {
+        let scratch = try Scratch("connection-import-failure")
+        let parent = try scratch.file("parent", "not a directory")
+        let profiles = ConnectionProfiles(storeURL: parent.appendingPathComponent("connections.json"))
+        let w = window(profiles, .inMemory())
+        defer { w.close() }
+        w.importHost(at: 0)
+        #expect(profiles.profiles.isEmpty)
+        #expect(w.form?.draft.sshAlias == "work")
+        #expect(w.form?.problemLabel.stringValue.contains("wasn’t saved") == true)
+        #expect(w.importTitles.count == 2)
+        try FileManager.default.removeItem(at: parent)
+        #expect(w.saveForm())
+        #expect(profiles.profiles.first?.sshAlias == "work")
+    }
+
     @Test @MainActor func infoDescribesTheRouteAndCapabilities() {
         let p = ConnectionProfile(name: "x", kind: .sftp, host: "h")
         let e = HostKeys.Effective(values: ["hostname": ["10.0.0.5"], "port": ["2200"], "user": ["me"], "proxyjump": ["gw"]])
