@@ -71,7 +71,7 @@ final class InformationPanel: NSView {
         previewSpinner.controlSize = .small
         previewSpinner.isDisplayedWhenStopped = false
         preview.imageScaling = .scaleProportionallyUpOrDown
-        nameLabel.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        nameLabel.font = NSFont.systemFont(ofSize: Tokens.FontSize.title3, weight: .semibold)
         nameLabel.textColor = Theme.windowText
         nameLabel.alignment = .center
         grid.orientation = .vertical
@@ -88,7 +88,7 @@ final class InformationPanel: NSView {
         controls.isHidden = true
         [preview, player, controls, nameLabel, grid].forEach(addSubview)
         addSubview(previewSpinner)
-        previewStatus.font = .systemFont(ofSize: 10)
+        previewStatus.font = .systemFont(ofSize: Tokens.FontSize.caption)
         previewStatus.textColor = Theme.windowTextInactive
         previewStatus.alignment = .center
         addSubview(previewStatus)
