@@ -123,13 +123,9 @@ final class ToolbarView: NSView {
         modeGroup.frame = CGRect(x: navGroup.frame.maxX + Self.groupSpacing, y: gy, width: modeW + 2 * inset, height: gh)
         viewMode.frame = CGRect(x: inset, y: by, width: modeW, height: bh)
 
-        // Short of room for the location field, the Split button drops its title.
+        // Icon only, like its neighbours: the title stays for its accessibility label, the tooltip says the rest.
+        split.showsTitle = false
         let fieldMinX = modeGroup.frame.maxX + Self.fieldLeadingGap
-        let fixedW = 2 * bw + 2 * inset + 6
-        let fieldsMinW = navigatorViews.count == 2 ? 2 * Self.minFieldWidth + Self.fieldSpacing : Self.minFieldWidth
-        split.showsTitle =
-            bounds.width - Self.trailingMargin - fixedW - split.width(showingTitle: true) - Self.fieldTrailingGap - fieldMinX
-            >= fieldsMinW
         let splitW = split.intrinsicContentSize.width + 6
         let actionW = splitW + 2 * bw + 2 * inset
         actionGroup.frame = CGRect(x: bounds.width - Self.trailingMargin - actionW, y: gy, width: actionW, height: gh)

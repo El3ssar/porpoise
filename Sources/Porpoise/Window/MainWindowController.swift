@@ -355,6 +355,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
             b.title = "Split"
             b.toolTip = "Split view"
         }
+        // Icon only: what it does now is in its tooltip, and VoiceOver reads the same.
+        b.setAccessibilityLabel(b.toolTip)
     }
 
     // MARK: - Window

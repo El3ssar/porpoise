@@ -100,10 +100,16 @@ public final class PlacesModel {
     private var cloudEntries: [PlaceEntry] = []
     /// Android phones seen by `adb devices`.
     private var phoneEntries: [PlaceEntry] = []
-    /// Finder's colored tags (Dolphin lists Baloo tags the same way).
-    let tagEntries: [PlaceEntry] = FinderTags.standard.map {
-        PlaceEntry(title: $0.name, url: FinderTags.url(for: $0.name), icon: "tag", section: .tags)
+    /// Finder's colored tags that some file carries (Finder's sidebar lists only those); all seven until Spotlight
+    /// has said, or when it can't.
+    var tagEntries: [PlaceEntry] {
+        FinderTags.standard.filter { usedTags?.contains($0.name) ?? true }.map {
+            PlaceEntry(title: $0.name, url: FinderTags.url(for: $0.name), icon: "tag", section: .tags)
+        }
     }
+    /// The standard tags in use (`UsedTagsQuery`), or nil when unknown.
+    public var usedTags: Set<String>? { didSet { if usedTags != oldValue { post() } } }
+    private var usedTagsQuery: UsedTagsQuery?
 
     public var hiddenSections: Set<PlaceSection> {
         get { storedHiddenSections }
@@ -189,7 +195,10 @@ public final class PlacesModel {
         // The app's model polls phones once the app says it's in front (a test process never does: its adb runs
         // would land in the tests' recording adb).
         isActive = false
-        DispatchQueue.main.async { self.refreshDetected() }
+        DispatchQueue.main.async {
+            self.refreshDetected()
+            self.usedTagsQuery = UsedTagsQuery(tags: FinderTags.standard.map(\.name)) { [weak self] in self?.usedTags = $0 }
+        }
     }
 
     /// A model kept in `storeURL` (tests use their own file), listing `profiles`' saved connections.

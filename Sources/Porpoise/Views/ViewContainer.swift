@@ -75,6 +75,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             needsDisplay = true
         }
     }
+    /// Split view: a 2 pt accent line along the top of the active pane, so which side keys and menus act on is plain
+    /// at a glance (the tab sets it; one pane alone has none).
+    var showsActiveEdge = false { didSet { activeEdge.isHidden = !showsActiveEdge } }
+    private let activeEdge = NSView()
     private var hoverItem: FileItem?
     private var searchQuery: SearchRunner?
     private var observers: [NSObjectProtocol] = []
@@ -129,6 +133,11 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         for v in [scroll, listState, header, searchBar, messageBar, selectionTop, selectionBottom, filterBar, statusBar] as [NSView] {
             addSubview(v)
         }
+        activeEdge.wantsLayer = true
+        activeEdge.isHidden = true
+        activeEdge.setAccessibilityElement(false)
+        Theme.whenChanged(activeEdge) { [weak self] in self?.activeEdge.layer?.backgroundColor = Theme.accent.cgColor }
+        addSubview(activeEdge)
         listState.isHidden = true
         listState.onAction = { [weak self] action in self?.perform(action) }
         list.onZoomPreview = { [weak self] size in
@@ -305,6 +314,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     override func layout() {
         super.layout()
+        activeEdge.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 2)
+        if subviews.last !== activeEdge { addSubview(activeEdge, positioned: .above, relativeTo: nil) }
         var y: CGFloat = 0
         var bottom = bounds.height
         if !searchBar.isHidden {
