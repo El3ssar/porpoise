@@ -210,4 +210,19 @@ import Testing
             ])
         #expect(CloudStorage.locations(in: s.path("missing")).isEmpty)
     }
+
+    @Test func tagsListOnlyTagsInUse() throws {
+        let s = try Scratch()
+        let m = PlacesModel(storeURL: s.path("places.json"))
+        func tags() -> [String] { m.sections().first { $0.0 == .tags }?.1.map(\.title) ?? [] }
+        // Until Spotlight answers (or when it can't), every standard tag.
+        #expect(tags() == FinderTags.standard.map(\.name))
+        m.usedTags = ["Blue", "Red"]
+        #expect(tags() == ["Red", "Blue"])  // in Finder's order
+        // No tag in use: no Tags section at all.
+        m.usedTags = []
+        #expect(m.sections().allSatisfy { $0.0 != .tags })
+        m.usedTags = nil
+        #expect(tags().count == FinderTags.standard.count)
+    }
 }
