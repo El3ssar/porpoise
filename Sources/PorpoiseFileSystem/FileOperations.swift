@@ -283,11 +283,22 @@ public final class FileJob: @unchecked Sendable {
         }
         do {
             if !control.policy.exclusions.isEmpty, placement == .new, let item = FileItem.load(src), item.isDirectory, !item.isSymlink {
+                // A filtered move can remove the empty source folder during merge. Keep its complete
+                // metadata separately, so ACLs, xattrs, modes and dates survive even in that case.
+                // Keep it next to the destination, outside the source even when the source is /tmp.
+                let metadata = folder.appendingPathComponent(".porpoise-folder-metadata-" + UUID().uuidString)
+                try fm.createDirectory(at: metadata, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+                defer { try? fm.removeItem(at: metadata) }
+                guard copyfile(src.path, metadata.path, nil, copyfile_flags_t(COPYFILE_METADATA | COPYFILE_STAT)) == 0 else {
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
                 try fm.createDirectory(at: target, withIntermediateDirectories: false)
                 let createdStart = created.count
                 try merge(src, into: target)
+                guard copyfile(metadata.path, target.path, nil, copyfile_flags_t(COPYFILE_METADATA | COPYFILE_STAT)) == 0 else {
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
                 if kind == .copy {
-                    copyfile(src.path, target.path, nil, copyfile_flags_t(COPYFILE_METADATA | COPYFILE_STAT))
                     created.removeSubrange(createdStart..<created.count); created.append(target)
                 }
                 return target
