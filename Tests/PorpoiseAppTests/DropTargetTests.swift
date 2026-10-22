@@ -61,7 +61,18 @@ private final class TabDrops: TabBarDelegate {
     let file = URL(fileURLWithPath: "/tmp/porpoise-dragged.txt")
     let remote = URL(string: "sftp://me@host/home/me/report.txt")!
 
-    @Test func dragsCarryRemoteItemsAndTheSourcesOperation() {
+    /// Runs `body` as if `keys` were held: the live keyboard (someone at the Mac, keys another process injects) never
+    /// reaches these tests.
+    private func holding<T>(_ keys: NSEvent.ModifierFlags, _ body: () throws -> T) rethrows -> T {
+        let saved = DropTargetPolicy.heldModifiers
+        DropTargetPolicy.heldModifiers = { keys }
+        defer { DropTargetPolicy.heldModifiers = saved }
+        return try body()
+    }
+
+    @Test func dragsCarryRemoteItemsAndTheSourcesOperation() { holding([]) { dragsCarryRemoteItemsAndTheSourcesOperationWithoutKeys() } }
+
+    private func dragsCarryRemoteItemsAndTheSourcesOperationWithoutKeys() {
         let drag = FakeDrag([file, remote, URL(string: "https://example.com/")!], mask: [.copy])
         #expect(DropTargetPolicy.urls(drag) == [file, remote])
         DropTargetPolicy.dragEnded()
@@ -86,7 +97,31 @@ private final class TabDrops: TabBarDelegate {
 
     /// A tab used to read file URLs only (items from a server or a cloud account were dropped silently) and to ask
     /// with the menu whatever the cursor showed.
-    @Test func aTabTakesRemoteItemsWithTheOperationItShows() {
+    @Test func aTabTakesRemoteItemsWithTheOperationItShows() { holding([]) { aTabTakesRemoteItemsWithoutKeys() } }
+
+    /// Held keys choose the operation, the cursor's and the drop's alike: ⌥ copies, ⌘ moves, ⌘⌥ links.
+    @Test func heldKeysChooseTheOperation() {
+        let drag = FakeDrag([file], mask: [.copy, .move, .generic])
+        #expect(DropTargetPolicy.operation(for: drag, modifiers: [.option]) == .copy)
+        #expect(DropTargetPolicy.operation(for: drag, modifiers: [.command]) == .move)
+        #expect(DropTargetPolicy.operation(for: drag, modifiers: [.command, .option]) == .link)
+        #expect(DropTargetPolicy.operation(for: drag, modifiers: [.shift]) == .generic)
+        // A tab reads the keys held now: with ⌘ held, the copy-only remote drag shows a move, and drops one.
+        let bar = TabBarView(frame: CGRect(x: 0, y: 0, width: 600, height: 30))
+        let drops = TabDrops(folder: home)
+        bar.delegate = drops
+        bar.titles = ["One", "Two"]
+        bar.layoutSubtreeIfNeeded()
+        let remoteDrag = FakeDrag([remote], mask: [.copy], at: bar.convert(CGPoint(x: 20, y: 15), to: nil))
+        holding([.command]) {
+            #expect(bar.draggingUpdated(remoteDrag) == .move)
+            #expect(bar.performDragOperation(remoteDrag))
+        }
+        #expect(drops.dropped.last?.operation == .move)
+        holding([.option]) { #expect(bar.draggingUpdated(remoteDrag) == .copy) }
+    }
+
+    private func aTabTakesRemoteItemsWithoutKeys() {
         let bar = TabBarView(frame: CGRect(x: 0, y: 0, width: 600, height: 30))
         let drops = TabDrops(folder: home)
         bar.delegate = drops
@@ -106,6 +141,9 @@ private final class TabDrops: TabBarDelegate {
 
     /// A drag inside the app runs an event-tracking run loop: spring-loading must still open what it rests on.
     @Test func springLoadingWorksDuringADrag() {
+        // AppKit makes event tracking one of the common run loop modes when the application starts: run alone, this
+        // suite has to start it itself.
+        _ = NSApplication.shared
         let loader = SpringLoader(delay: 0.05)
         var opened = 0
         loader.hover(1) { opened += 1 }
