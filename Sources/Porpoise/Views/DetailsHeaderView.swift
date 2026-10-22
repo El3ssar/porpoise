@@ -83,7 +83,9 @@ final class DetailsHeaderView: NSView {
         let attrs: [NSAttributedString.Key: Any] = [.font: Theme.font, .foregroundColor: Theme.viewText]
         let title = role.title as NSString
         let ts = title.size(withAttributes: attrs)
-        let tx = role.rightAligned ? r.maxX - ts.width - (sorted ? 26 : 8) : r.minX + 6
+        // Name starts over the icons below it (past the folders' expander column), as Finder lines them up.
+        let inset = role == .name ? max(6, (list?.expanderWidth ?? 0) + ItemListView.pad) : 6
+        let tx = role.rightAligned ? r.maxX - ts.width - (sorted ? 26 : 8) : r.minX + inset
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: r.insetBy(dx: 2, dy: 0)).addClip()
         title.draw(at: CGPoint(x: tx, y: (r.height - ts.height) / 2), withAttributes: attrs)

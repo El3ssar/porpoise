@@ -25,4 +25,16 @@ import Testing
             #expect(IconTheme.shared.file("folder", size: 64) == original)
         }
     }
+
+    @Test func aSpecialFolderDrawnOnlySmallIsUpscaledWhenLarge() {
+        Settings.shared.updateAppearance { $0.iconTheme = "Tela-circle" }
+        // Tela has the Applications folder only as a 16 px Apple glyph.
+        #expect(IconTheme.shared.isUpscaled("folder-apple", size: 96))
+        #expect(IconTheme.shared.isUpscaled("folder-apple", size: 22))
+        #expect(!IconTheme.shared.isUpscaled("folder-apple", size: 16))
+        // Scalable artwork never is.
+        for name in ["folder", "user-home", "folder-documents"] { #expect(!IconTheme.shared.isUpscaled(name, size: 96)) }
+        #expect(!IconTheme.shared.isUpscaled("no-such-icon", size: 96))
+        #expect(IconTheme.folderIconName(URL(fileURLWithPath: "/Applications")) == "folder-apple")
+    }
 }

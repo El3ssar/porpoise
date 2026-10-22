@@ -65,6 +65,7 @@ final class Icons {
             }
             guard let source else { return nil }
             if folder || IconTheme.isFolderIcon(name) { return self.folderImage(source, size: size, dark: dark) }
+            if url.deletingLastPathComponent().lastPathComponent == "mimetypes" { return Self.documentImage(source, size: size, dark: dark) }
             return source
         }
         guard let darkImg = render(dark: true), let lightImg = render(dark: false) else { return nil }
@@ -111,6 +112,31 @@ final class Icons {
         flattened.setObject(box, forKey: image, cost: box.bytes)
         return flat
     }
+
+    /// A document (mimetype) icon: its near-white paper gets a soft edge in light, so it doesn't vanish on a white view,
+    /// and is dimmed in dark, so a page isn't the brightest thing on screen.
+    static func documentImage(_ source: NSImage, size: CGFloat, dark: Bool) -> NSImage {
+        NSImage(size: NSSize(width: size, height: size), flipped: false) { r in
+            NSGraphicsContext.saveGraphicsState()
+            if !dark {
+                let edge = NSShadow()
+                edge.shadowBlurRadius = max(0.75, size / 40)
+                edge.shadowOffset = NSSize(width: 0, height: -max(0.25, size / 96))
+                edge.shadowColor = NSColor.black.withAlphaComponent(0.32)
+                edge.set()
+            }
+            source.draw(in: r)
+            NSGraphicsContext.restoreGraphicsState()
+            if dark {
+                NSColor.black.withAlphaComponent(Self.darkDocumentDim).setFill()
+                r.fill(using: .sourceAtop)
+            }
+            return true
+        }
+    }
+
+    /// How much darker document paper is drawn in dark: white paper ends at about 84 % of white.
+    static let darkDocumentDim: CGFloat = 0.16
 
     private func folderImage(_ source: NSImage, size: CGFloat, dark: Bool) -> NSImage {
         let preferences = Settings.shared.appearancePreferences
@@ -280,7 +306,9 @@ final class Icons {
             store(img, key, size: size)
             return img
         }
-        let name = iconName(for: item)
+        var name = iconName(for: item)
+        // A special folder the theme draws only small (a glyph) shows as a plain folder when large, like its neighbours.
+        if item.isBrowsableFolder, name != "folder", IconTheme.shared.isUpscaled(name, size: Int(size)) { name = "folder" }
         if name == "unknown" {
             // A type the theme has no icon for: the icon macOS declares for it (as Finder shows), else a generic file.
             if let t = item.utType, !t.isDynamic {
