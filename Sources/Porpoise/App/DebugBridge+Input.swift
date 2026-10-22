@@ -27,6 +27,7 @@ extension DebugBridge {
         "menu": DebugBridge.menuCommand,
         "ctxmenu": DebugBridge.ctxmenuCommand,
         "key": DebugBridge.keyCommand,
+        "appkey": DebugBridge.appkeyCommand,
         "search": DebugBridge.searchCommand,
         "searchbar": DebugBridge.searchbarCommand,
         "navigate": DebugBridge.navigateCommand,
@@ -196,6 +197,28 @@ extension DebugBridge {
         sendKey(arg)
     }
 
+    /// appkey <spec>: a menu shortcut as real input meets it, while the app stays in the background: the item for the
+    /// key is validated by the window with the press as the current event (the typing guard on file commands), and
+    /// runs only if that allows it. `key` instead reaches the menu only while the app is frontmost.
+    func appkeyCommand(_ arg: String) {
+        sendKey(arg, asCurrentEvent: true)
+    }
+
+    /// The main-menu item whose shortcut `e` presses (hidden alternates included).
+    private func menuItem(for e: NSEvent) -> NSMenuItem? {
+        let mods = e.modifierFlags.intersection([.command, .shift, .option, .control])
+        func find(_ menu: NSMenu) -> NSMenuItem? {
+            for item in menu.items {
+                if let sub = item.submenu, let found = find(sub) { return found }
+                if item.keyEquivalentModifierMask == mods, KeyEquivalent.matches(item.keyEquivalent, typed: e.charactersIgnoringModifiers) {
+                    return item
+                }
+            }
+            return nil
+        }
+        return NSApp.mainMenu.flatMap(find)
+    }
+
     /// search <n|c|N|C> <text>: names or contents, here (lowercase) or everywhere (uppercase)
     func searchCommand(_ arg: String) {
         if let v = wc?.view, arg.count > 2 {
@@ -253,7 +276,7 @@ extension DebugBridge {
     }
 
     /// Delivers a key press inside this app only: "cmd+shift+n", "f10", "down", "cmd+,".
-    func sendKey(_ spec: String) {
+    func sendKey(_ spec: String, asCurrentEvent: Bool = false) {
         var parts = spec.split(separator: "+").map(String.init)
         let k = parts.removeLast()
         var flags: NSEvent.ModifierFlags = []
@@ -293,6 +316,13 @@ extension DebugBridge {
                 windowNumber: w.windowNumber, context: nil, characters: chars,
                 charactersIgnoringModifiers: ignoring, isARepeat: false, keyCode: code)
         else { return }
+        if asCurrentEvent, let wc, let item = menuItem(for: e), let action = item.action {
+            let current = MainWindowController.currentKeyEvent
+            MainWindowController.currentKeyEvent = { e }
+            defer { MainWindowController.currentKeyEvent = current }
+            if wc.validateMenuItem(item) { NSApp.sendAction(action, to: wc.responds(to: action) ? wc : nil, from: item) }
+            return
+        }
         let target = NSApp.keyWindow?.attachedSheet ?? NSApp.keyWindow ?? w
         if !flags.intersection([.command, .control]).isEmpty || k.hasPrefix("f") {
             if target.performKeyEquivalent(with: e) { return }
