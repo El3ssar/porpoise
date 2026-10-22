@@ -195,10 +195,12 @@ extension ItemListView {
         if model.props.previews {
             if Thumbnails.wantsPreview(item), let thumb = Thumbnails.shared.thumbnail(for: item, size: iconSize) {
                 let ts = thumb.size
-                let scale = min(ir.width / max(ts.width, 1), ir.height / max(ts.height, 1))
+                // Large previews keep a gap above their label (they fill the cell, so they would touch it).
+                let gap: CGFloat = mode == .icons && iconSize >= 64 ? 4 : 0
+                let scale = min(ir.width / max(ts.width, 1), (ir.height - gap) / max(ts.height, 1))
                 let w = ts.width * scale, h = ts.height * scale
                 // Icons mode sits previews on the icon's baseline; list modes center them.
-                let tr = CGRect(x: ir.midX - w / 2, y: mode == .icons ? ir.maxY - h : ir.midY - h / 2, width: w, height: h)
+                let tr = CGRect(x: ir.midX - w / 2, y: mode == .icons ? ir.maxY - gap - h : ir.midY - h / 2, width: w, height: h)
                 NSGraphicsContext.saveGraphicsState()
                 if iconSize >= 48 {
                     let sh = NSShadow(); sh.shadowBlurRadius = 3; sh.shadowOffset = NSSize(width: 0, height: -1)
@@ -206,6 +208,13 @@ extension ItemListView {
                 }
                 thumb.draw(in: tr, from: .zero, operation: .sourceOver, fraction: alpha, respectFlipped: true, hints: nil)
                 NSGraphicsContext.restoreGraphicsState()
+                if gap > 0 {
+                    // A hairline edge, as Finder draws: a pale photo doesn't melt into the view.
+                    Theme.viewText.withAlphaComponent(0.12).setStroke()
+                    let edge = NSBezierPath(rect: tr.insetBy(dx: 0.25, dy: 0.25))
+                    edge.lineWidth = 0.5
+                    edge.stroke()
+                }
                 return (thumb, tr)
             }
             if let fp = Thumbnails.shared.folderPreview(for: item, size: iconSize) {
@@ -384,7 +393,8 @@ extension ItemListView {
         var x = frames[i].minX + (columnWidths[.name] ?? 0)
         for role in detailsRoles.dropFirst() {
             let w = columnWidths[role] ?? 100
-            let p = role.rightAligned ? Self.rightColumnParagraph : Self.leftColumnParagraph
+            // A path is told apart by its end: elide its middle.
+            let p = role.rightAligned ? Self.rightColumnParagraph : role == .path ? Self.middleElidingParagraph : Self.leftColumnParagraph
             if role == .size, let incoming = model.incomingProgress[item.url] {
                 drawIncomingBar(incoming, in: CGRect(x: x + 6, y: y + lineHeight / 2 - 1.5, width: min(48, max(12, w - 50)), height: 4))
                 ("\(Int(incoming * 100))%" as NSString).draw(

@@ -897,6 +897,27 @@ public final class DirectoryModel {
     }
 
     /// Text for a role of an item, as shown in Details columns / under names.
+    /// A search result's folder as the Path column shows it: from the folder searched ("Demo/Photos"), or with the home
+    /// folder as "~" when it is elsewhere, so the part that tells results apart isn't cut off.
+    public static func searchPathText(parent: String, root: String, home: String = NSHomeDirectory()) -> String {
+        // /tmp, /var and /etc are /private/…: results may be named one way and the folder the other. Strings only (this
+        // runs for every row drawn), unlike standardizedFileURL, which asks the disk.
+        func plain(_ p: String) -> String {
+            for top in ["/tmp", "/var", "/etc"] where p == "/private" + top || p.hasPrefix("/private" + top + "/") {
+                return String(p.dropFirst("/private".count))
+            }
+            return p
+        }
+        let parent = plain(parent)
+        let root = plain(root.count > 1 && root.hasSuffix("/") ? String(root.dropLast()) : root)
+        let name = (root as NSString).lastPathComponent
+        if parent == root { return name }
+        if root != "/", parent.hasPrefix(root + "/") { return name + "/" + parent.dropFirst(root.count + 1) }
+        if parent == home { return "~" }
+        if parent.hasPrefix(home + "/") { return "~/" + parent.dropFirst(home.count + 1) }
+        return parent
+    }
+
     public func text(for role: ItemRole, of item: FileItem) -> String {
         let s = Settings.shared
         switch role {
@@ -914,7 +935,8 @@ public final class DirectoryModel {
         case .path:
             // A Drive item's address names it by id, not by the folders it is in ("/folder", "/my-drive").
             if DriveLocation(url: item.url) != nil { return "Google Drive" }
-            return item.url.deletingLastPathComponent().path
+            let parent = item.url.deletingLastPathComponent().path
+            return isSearching ? Self.searchPathText(parent: parent, root: location.path) : parent
         case .extension_: return item.fileExtension
         case .permissions:
             let sym = FileFormat.permissions(item.posixPermissions, isDirectory: item.isDirectory)

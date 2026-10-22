@@ -364,7 +364,8 @@ final class InformationPanel: NSView {
         if let d = item.modificationDate { addRow("Modified:", date(d)) }
         if let d = item.creationDate { addRow("Created:", date(d)) }
         if let d = item.accessDate { addRow("Accessed:", date(d)) }
-        addRow("Permissions:", FileFormat.permissions(item.posixPermissions, isDirectory: item.isDirectory))
+        // In words, like Finder; the mode bits stay in Properties › Permissions and the Details column.
+        addRow("Permissions:", AccessSummary.text(forFileAt: u.path))
         addRow("Owner:", item.owner ?? "")
         if let l = item.linkDestination { addRow("Link to:", l) }
         let tags = (try? u.resourceValues(forKeys: [.tagNamesKey]).tagNames) ?? []

@@ -356,6 +356,34 @@ import Testing
 
     // MARK: Search results
 
+    @Test func searchPathsReadFromTheFolderSearched() async throws {
+        let text = DirectoryModel.searchPathText
+        #expect(text("/w/Demo", "/w/Demo", "/Users/u") == "Demo")
+        #expect(text("/w/Demo/Photos/2024", "/w/Demo", "/Users/u") == "Demo/Photos/2024")
+        #expect(text("/w/Demo/Photos", "/w/Demo/", "/Users/u") == "Demo/Photos")
+        // A sibling whose name starts like the root is not inside it.
+        #expect(text("/w/Demo2/x", "/w/Demo", "/Users/u") == "/w/Demo2/x")
+        #expect(text("/Users/u/Documents/a", "/w/Demo", "/Users/u") == "~/Documents/a")
+        #expect(text("/Users/u", "/", "/Users/u") == "~")
+        #expect(text("/Library/Fonts", "/", "/Users/u") == "/Library/Fonts")
+        #expect(text("/private/tmp/w/Demo/Photos", "/tmp/w/Demo", "/Users/u") == "Demo/Photos")
+        #expect(text("/tmp/w/Demo", "/private/tmp/w/Demo", "/Users/u") == "Demo")
+        #expect(text("/private/tmpx/a", "/tmp", "/Users/u") == "/private/tmpx/a")
+        // In the model: a result under the folder searched; outside a search the column stays the full path.
+        let s = try Scratch()
+        let found = try s.file("here/Photos/2024/match.txt")
+        let m = try await DirectoryModel.loaded(s.path("here"))
+        let item = try #require(FileItem.load(found))
+        #expect(m.text(for: .path, of: item) == s.path("here/Photos/2024").path)
+        m.searchResults = [item]
+        #expect(m.text(for: .path, of: m.rows[0].item) == "here/Photos/2024")
+        // A result named through /private while the folder isn't (or the other way round) is still inside it.
+        let viaPrivate = URL(fileURLWithPath: "/private/tmp/porpoise-search-root/Photos/x.jpg")
+        let model = DirectoryModel(location: URL(fileURLWithPath: "/tmp/porpoise-search-root"), prefetchFolders: false)
+        model.searchResults = [FileItem(url: viaPrivate, name: "x.jpg", isDirectory: false)]
+        #expect(model.text(for: .path, of: model.rows[0].item) == "porpoise-search-root/Photos")
+    }
+
     @Test func searchResultsReplaceTheListing() async throws {
         let s = try Scratch()
         try s.file("here/local")
