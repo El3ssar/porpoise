@@ -74,9 +74,7 @@ final class SettingsWindowController: SecondaryWindowController {
             f.section("Opening folders")
             f.check("Keep a single Porpoise window, opening new folders in tabs", s.singleWindow) { s.singleWindow = $0 }
             f.section("Window")
-            f.popup("Appearance:", AppearanceChoice.allCases.map(\.title), AppearanceChoice.allCases.firstIndex(of: s.appearance) ?? 0) {
-                s.appearance = AppearanceChoice.allCases[$0]
-            }
+            // Light or dark is chosen once, on the Appearance page, beside the theme it applies to.
             f.check("Show full path in window title", s.showFullPathInTitle) { s.showFullPathInTitle = $0 }
             f.note(
                 "The window title appears in the Window menu, Mission Control and the Dock's window list (the toolbar takes the title bar's place).")

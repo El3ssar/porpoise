@@ -74,7 +74,7 @@ final class FormBuilder: NSObject {
         if let last = stack.arrangedSubviews.last { stack.setCustomSpacing(20, after: last) }
         guard !title.isEmpty else { return }
         let l = NSTextField(labelWithString: title)
-        l.font = .boldSystemFont(ofSize: 13)
+        l.font = .boldSystemFont(ofSize: Tokens.FontSize.body)
         if grouped {
             let heading = NSStackView(views: [l])
             heading.edgeInsets = NSEdgeInsets(top: 0, left: 4, bottom: 0, right: 0)
@@ -102,7 +102,7 @@ final class FormBuilder: NSObject {
             var cells: [NSView] = []
             for i in start..<min(start + 2, labels.count) {
                 let label = NSTextField(labelWithString: labels[i])
-                label.font = .systemFont(ofSize: 12)
+                label.font = .systemFont(ofSize: Tokens.FontSize.callout)
                 let well = ClosureColorWell(color: values(i)) { set(i, $0) }
                 well.colorWellStyle = .minimal
                 well.widthAnchor.constraint(equalToConstant: 38).isActive = true
@@ -334,6 +334,14 @@ final class FormBuilder: NSObject {
             row.addArrangedSubview(b)
             if enabled != nil { track(b, enabled: enabled) {} }
         }
+    }
+
+    /// Shows the last row added only while `condition` holds (re-checked whenever settings change).
+    func visibleWhen(_ condition: @escaping () -> Bool) {
+        guard let row = contentStack.arrangedSubviews.last else { return }
+        let r: () -> Void = { [weak row] in row?.isHidden = !condition() }
+        r()
+        refreshers.append(r)
     }
 
     /// An empty view as wide as the label column (it follows the column as longer labels widen it).

@@ -27,9 +27,13 @@ enum AppearancePage {
         f.popup("System light theme:", names, names.firstIndex(of: s.appearancePreferences.lightThemeName) ?? 0) { i in
             s.updateAppearance { $0.lightThemeName = names[i] }
         }
+        // Only "Follow system" uses these two; under any other theme they would only confuse.
+        let followsSystem = { s.appearancePreferences.themeName == "Follow system" }
+        f.visibleWhen(followsSystem)
         f.popup("System dark theme:", names, names.firstIndex(of: s.appearancePreferences.darkThemeName) ?? 1) { i in
             s.updateAppearance { $0.darkThemeName = names[i] }
         }
+        f.visibleWhen(followsSystem)
         f.popup("Appearance:", AppearanceChoice.allCases.map(\.title), AppearanceChoice.allCases.firstIndex(of: s.appearance) ?? 0) {
             s.appearance = AppearanceChoice.allCases[$0]
         }
