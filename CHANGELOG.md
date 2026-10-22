@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Archives open like folders.** Local zip, 7z and tar archives list at once without unpacking (a 4 GB zip with 100,000 entries in under a second). Opening, Quick Look or copying an item extracts only that item. Archives are read-only; other formats still unpack into a cache, with size limits and unsafe paths and links refused.
+- **Settings, reorganised.** Settings opens on General, remembers the page you used last, and groups its options on ten pages, with Terminal and Activity on pages of their own.
+- **The selection shows where the keys go.** Selected items dim when the keyboard is elsewhere in the window (Places, a field, the terminal), as in Finder.
 - **A native Mac look by default.** The new macOS theme uses the system's colors and your accent color, a graphite dark mode, the sidebar's real translucency and Mac file icons. Selected items fill with your accent color and white text, and turn grey when the window isn't active, the way Finder does; Increase Contrast strengthens separators and highlights. Breeze, Nord, Dracula and the other themes are still in Settings › Appearance, unchanged. Selection badges on hover are a ring and an accent checkmark in the macOS theme.
 - **Sizes as Finder shows them.** File sizes and speeds use decimal units in your language's format (1.5 MB, 622.96 GB free), and free space matches Finder's Get Info. Settings › View › "Binary units (KiB)" brings back KiB, MiB and GiB.
 - **Shortcuts don't touch files while you type.** ⌘⌫, ⌘D and ⌘E in a text field or the terminal now edit text instead of trashing, duplicating or ejecting the selected file. Empty and unreadable folders show one plain message with something to do about it.
