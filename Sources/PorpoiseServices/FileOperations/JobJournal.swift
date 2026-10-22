@@ -43,6 +43,9 @@ public struct JobJournal: Codable, Equatable, Sendable {
     public var destination: URL?
     public var created: Date
     public var items: [Item]
+    /// The interrupted job this one resumes: its journal is removed once this one is written, and ignored if a crash
+    /// came in between.
+    public var replaces: UUID?
 
     public init(id: UUID, kind: FileOperationKind, sources: [URL], destination: URL?) {
         self.id = id
@@ -92,6 +95,11 @@ public final class JournalStore: @unchecked Sendable {
     /// there, and a job's checkpoints, its removal and a later read still follow it.
     private let queue = DispatchQueue(label: "app.porpoise.jobs.journal", qos: .userInitiated)
     private var handles: [UUID: FileHandle] = [:]
+    /// The journal the next one begun takes the place of (`handOff`), and hand-offs whose new journal couldn't be written.
+    private var replacing: UUID?
+    private var failedHandOffs: Set<UUID> = []
+    /// Tests: called before each journal file is written, to make it fail.
+    var writeFault: ((URL) throws -> Void)?
 
     public init(folder: URL) { self.folder = folder }
 
@@ -142,13 +150,56 @@ public final class JournalStore: @unchecked Sendable {
     }
 
     public func save(_ journal: JobJournal) {
-        queue.sync { write(journal) }
+        queue.sync { try? write(journal) }
+    }
+
+    /// Writes `journal` and waits until it is on disk, or says why it couldn't be.
+    public func persist(_ journal: JobJournal) throws {
+        try queue.sync { try write(journal) }
     }
 
     /// Begins a job's journal without waiting: `make` (which looks at every source) runs and the journal is written on the
     /// journal's queue, before the job's first checkpoint, its removal or any read.
     public func begin(_ make: @escaping @Sendable () -> JobJournal) {
-        queue.async { self.write(make()) }
+        queue.async { [self] in
+            var journal = make()
+            guard let old = replacing else {
+                try? write(journal)
+                return
+            }
+            replacing = nil
+            journal.replaces = old
+            // Partial copies carried over are the ones the old journal vouched for.
+            for i in journal.items.indices where journal.items[i].staging != nil && journal.items[i].stagingFingerprint == nil {
+                journal.items[i].stagingFingerprint = journal.items[i].staging.flatMap(JobJournal.Fingerprint.init)
+            }
+            do {
+                try write(journal)
+                removeFiles(old)
+            } catch {
+                failedHandOffs.insert(old)
+            }
+        }
+    }
+
+    /// Runs `start` (on the main thread), whose job's journal takes the place of `old`: the new one is on disk, naming
+    /// `old`, before `old` is removed, so a crash at any moment leaves exactly one record of the work. `then` is told on
+    /// the main thread whether that happened; if the new journal couldn't be written, `old` stays.
+    public func handOff(from old: UUID, start: () -> Void, then: @escaping (Bool) -> Void) {
+        queue.sync { replacing = old }
+        start()
+        queue.async { [self] in
+            let handedOn: Bool
+            if replacing == old {
+                // The job keeps no journal: nothing to hand on to.
+                replacing = nil
+                removeFiles(old)
+                handedOn = true
+            } else {
+                handedOn = failedHandOffs.remove(old) == nil
+            }
+            DispatchQueue.main.async { then(handedOn) }
+        }
     }
 
     /// Waits until every journal asked for is written (before quitting).
@@ -156,33 +207,61 @@ public final class JournalStore: @unchecked Sendable {
         queue.sync {}
     }
 
-    private func write(_ journal: JobJournal) {
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    /// Replaces the journal file whole and flushes it to disk (then its checkpoints are in it).
+    private func write(_ journal: JobJournal) throws {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let enc = JSONEncoder()
         enc.outputFormatting = [.sortedKeys]
+        let data = try enc.encode(journal)
+        let target = url(journal.id)
+        try writeFault?(target)
+        let temporary = folder.appendingPathComponent(".\(journal.id.uuidString).\(UUID().uuidString).tmp")
+        guard FileManager.default.createFile(atPath: temporary.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
+            throw CocoaError(.fileWriteNoPermission, userInfo: [NSFilePathErrorKey: temporary.path])
+        }
+        do {
+            let handle = try FileHandle(forWritingTo: temporary)
+            defer { try? handle.close() }
+            try handle.write(contentsOf: data)
+            try handle.synchronize()
+            guard rename(temporary.path, target.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        } catch {
+            try? FileManager.default.removeItem(at: temporary)
+            throw error
+        }
+        let dir = open(folder.path, O_RDONLY | O_CLOEXEC)
+        if dir >= 0 {
+            fsync(dir)
+            close(dir)
+        }
         try? handles.removeValue(forKey: journal.id)?.close()
-        try? enc.encode(journal).write(to: url(journal.id), options: .atomic)
         try? FileManager.default.removeItem(at: eventsURL(journal.id))
     }
 
     public func remove(_ id: UUID) {
-        queue.async { [self] in
-            try? handles.removeValue(forKey: id)?.close()
-            try? FileManager.default.removeItem(at: url(id))
-            try? FileManager.default.removeItem(at: eventsURL(id))
-        }
+        queue.async { [self] in removeFiles(id) }
     }
 
-    /// Every journal that can be read (newer versions and damaged files are left alone).
+    private func removeFiles(_ id: UUID) {
+        try? handles.removeValue(forKey: id)?.close()
+        try? FileManager.default.removeItem(at: url(id))
+        try? FileManager.default.removeItem(at: eventsURL(id))
+    }
+
+    /// Every journal that can be read (newer versions and damaged files are left alone). One whose job was resumed
+    /// under another journal, left behind by a crash during the hand-off, is removed instead.
     public func all() -> [JobJournal] {
         queue.sync {
             let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
-            return files.filter { $0.pathExtension == "json" }.compactMap { u in
+            let journals = files.filter { $0.pathExtension == "json" }.compactMap { u -> JobJournal? in
                 guard let d = try? Data(contentsOf: u), let j = try? JSONDecoder().decode(JobJournal.self, from: d),
                     j.version == JobJournal.currentVersion
                 else { return nil }
                 return replay(j)
-            }.sorted { $0.created < $1.created }
+            }
+            let replaced = Set(journals.compactMap(\.replaces))
+            for id in replaced where journals.contains(where: { $0.id == id }) { removeFiles(id) }
+            return journals.filter { !replaced.contains($0.id) }.sorted { $0.created < $1.created }
         }
     }
 }

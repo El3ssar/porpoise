@@ -1,10 +1,10 @@
 import Foundation
 import PorpoiseCore
-import PorpoiseFileSystem
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
+@testable import PorpoiseFileSystem
 @testable import PorpoiseServices
 
 /// The Activity window's jobs: queue and concurrency, pause, retry, verification, history, and resuming after a
@@ -26,6 +26,8 @@ struct ActivityTests {
         c.prepareJob = { job in
             job.allowsClone = false
             job.chunkDelay = 0.03
+            // Every chunk reported: a 32 MB copy takes about 240 ms, less than the usual interval between reports.
+            job.publishInterval = 0
         }
     }
 
@@ -134,7 +136,9 @@ struct ActivityTests {
         let plan = try #require(c.recoveryPlans().first)
         #expect(plan.unfinishedMoves.map(\.source) == [src])
         c.recover(plan, window: nil)
-        #expect(!FileManager.default.fileExists(atPath: src.path))
+        // Checked off the main thread, as an activity of its own.
+        #expect(await poll { !FileManager.default.fileExists(atPath: src.path) })
+        #expect(await poll { c.journals.all().isEmpty })
         // A copy that differs: the original stays.
         let src2 = try s.file("src/n.txt", "original")
         try s.file("dst/n.txt", "different")
@@ -142,8 +146,8 @@ struct ActivityTests {
         k.apply(.placed(index: 0, target: dst.appendingPathComponent("n.txt")))
         let plan2 = try #require(FileOperationsController.plan(k))
         c.recover(plan2, window: nil)
+        #expect(await poll { ui.errors.last?.hasPrefix("“n.txt” wasn't removed") == true })
         #expect(FileManager.default.fileExists(atPath: src2.path))
-        #expect(ui.errors.last?.hasPrefix("“n.txt” wasn't removed") == true)
     }
 
     @Test func journalsOfOtherVersionsAreLeftAlone() throws {
