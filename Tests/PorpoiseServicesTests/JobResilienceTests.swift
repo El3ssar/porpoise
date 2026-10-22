@@ -24,11 +24,37 @@ struct JobResilienceTests {
         operations.prepareJob = {
             $0.allowsClone = false; $0.chunkDelay = 0.005; $0.publishInterval = 0
         }
-        operations.run(.copy, [source], to: destination, window: nil)
+        let ui = ScriptedUI()
+        operations.ui = ui
+        defer { operations.activities.forEach { $0.control.cancel() } }
+        // A busy main actor can receive the first progress after the entire copy has
+        // finished. Pause at a worker checkpoint so sleep is tested on an in-flight job.
+        let offset: Int64 = try await awaitCallback { ready in
+            ui.onJobStarted = { job in
+                let original = job.onEvent, control = job.control
+                let lock = NSLock()
+                var didPause = false
+                job.onEvent = { event in
+                    original(event)
+                    guard case .copied(_, let point) = event, point.offset > 0 else { return }
+                    let first = lock.withLock {
+                        guard !didPause else { return false }
+                        didPause = true
+                        return true
+                    }
+                    guard first else { return }
+                    control.pause()
+                    ready.resume(returning: point.offset)
+                }
+            }
+            operations.run(.copy, [source], to: destination, window: nil)
+        }
         let activity = try #require(operations.activities.first)
-        defer { activity.control.cancel() }
-        try #require(await eventually { (activity.progress?.doneBytes ?? 0) > 0 })
+        #expect(offset > 0 && offset < 1_000_000_000 && !activity.state.isEnded)
         center.post(name: NSWorkspace.willSleepNotification, object: nil)
+        // Clear only the temporary worker pause: the monitor's sleep hold must now
+        // keep it paused independently, before testing the user's own Pause below.
+        activity.control.resume()
         #expect(activity.control.isPaused)
         #expect(activity.statusText.contains("Waiting for wake"))
         operations.pause(activity)
