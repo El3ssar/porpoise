@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Cleaner icons.** The Applications folder no longer shows as a giant Apple logo among the folders; Properties shows a photo's or document's own picture instead of a generic type icon. Document icons keep a soft edge on a white background and are dimmed in dark mode, so a page is no longer the brightest thing on screen.
+- **Search results say where they are.** The Path column shows each result's folder from the one you searched ("Demo/Photos"), or from your home folder ("~/Documents"), and shortens long paths in the middle so their end stays visible.
+- **List details.** The Details view's Name header lines up with the icons below it; the Information panel says "Read & Write" or "Read Only" instead of `-rw-r--r--`; large photo previews keep a small gap above their names, with a hairline edge.
+- **Changed words stand out in Compare Files.** In light mode, the words that changed on a line are tinted more strongly than the line itself.
+
 ## 0.9.1
 
 - **Apps go to the Trash as in Finder.** Moving an app to the Trash (menu, ⌘⌫, the app grid, or dragging it to the Dock's Trash) no longer opens the Application Cleanup window: the app goes straight to the Trash, with Undo, and its support files are left alone. To review its leftover Library files as well, choose **Remove App and Leftovers…** from the Tools or context menu, or turn on Settings › Confirmations › "Moving an app to the Trash: review its leftover files" to be asked every time.
