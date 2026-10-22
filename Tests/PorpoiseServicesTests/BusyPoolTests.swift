@@ -157,6 +157,14 @@ struct BusyPoolTests {
         #expect(await eventually { m.detected.contains { $0.title == "Pixel 9" } })
     }
 
+    /// Small Drive copies overlap while every core is busy: they ran one at a time when their workers were
+    /// concurrentPerform helpers, which the busy dispatch pool never gave (CI runs 39132369773 and 39841080505).
+    @Test func smallDriveCopiesOverlapWhileEveryCoreIsBusy() async throws {
+        let release = occupyEveryCore()
+        defer { release() }
+        try await DriveSmallCopyTests().copiesUseBoundedConcurrencyAndVerifyEveryFile()
+    }
+
     /// Asking AVFoundation whether a file plays needs no free cooperative thread: synchronous work may hold them all
     /// (a preview waited 49s to start in a loaded run). Not on the main actor: the answer comes there while this test's
     /// thread, like the others, is held.
