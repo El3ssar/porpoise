@@ -9,6 +9,11 @@
 - **Changed words stand out in Compare Files.** In light mode, the words that changed on a line are tinted more strongly than the line itself.
 - **Porpoise opens at once.** The first launch shows your home folder straight away, with a two-step welcome sheet on it that offers Full Disk Access and has a Back button. App Management, the administrator helper and Local Network are no longer asked for up front: each is asked for, with a word on why, the first time you move an app, change a system-owned item or open Network. Skipping the welcome leaves nothing to warn about, and Porpoise › Permissions… opens Settings › System, where all four are listed.
 - **A tidier Connect sheet.** Tiles are wider, so "Windows (SMB)" and "S3-compatible" no longer cut off, and services that aren't ready yet are named on one "More services coming" line instead of greyed-out tiles.
+- **Secondary windows look the part.**
+  - Connections: the list takes the app's colors instead of a grey panel, and with nothing saved yet the window says what it's for, with an Add Connection button.
+  - Disk Usage: map tiles are colored by what they hold (folders, pictures, video, audio, archives, documents), with larger labels and a soft shade. The footer says where you are from the folder you scanned ("Demo › Photos") and leaves out counts that are zero.
+  - Disk Usage, Duplicates, Checksums and App Cleanup: an Errors button appears only when there were errors.
+  - Properties: no more gap under a file's size.
 
 ## 0.9.1
 

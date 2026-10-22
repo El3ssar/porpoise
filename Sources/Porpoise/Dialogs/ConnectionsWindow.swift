@@ -77,12 +77,23 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
         table.rowHeight = 38
         table.dataSource = self
         table.delegate = self
-        table.style = .sourceList
+        // Inset, not source list: a source list draws the system's grey material whatever background it is given, a
+        // slab against the themed window. This list takes the theme's view color, in a rounded frame.
+        table.style = .inset
         table.setAccessibilityLabel("Saved connections")
         let scroll = NSScrollView()
         scroll.documentView = table
         scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
         scroll.drawsBackground = false
+        scroll.wantsLayer = true
+        scroll.layer?.cornerRadius = 8
+        scroll.layer?.borderWidth = 1
+        scroll.layer?.masksToBounds = true
+        Theme.whenChanged(scroll) { [weak scroll] in
+            scroll?.layer?.backgroundColor = Theme.viewBackground.cgColor
+            scroll?.layer?.borderColor = Theme.separator.cgColor
+        }
 
         let plus = NSImage(systemSymbolName: "plus", accessibilityDescription: "Add") ?? NSImage()
         let add = NSButton(image: plus, target: self, action: #selector(addProfile(_:)))
@@ -110,7 +121,10 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
         editor.spacing = 12
         let editorScroll = NSScrollView()
         editorScroll.hasVerticalScroller = true
+        editorScroll.autohidesScrollers = true
         editorScroll.drawsBackground = false
+        // The editor takes the width the list leaves, whatever its content's own width (the empty state's text).
+        editorScroll.setContentHuggingPriority(.init(1), for: .horizontal)
         let flipped = FlippedView()
         flipped.translatesAutoresizingMaskIntoConstraints = false
         editor.translatesAutoresizingMaskIntoConstraints = false
@@ -239,14 +253,33 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
         selectedID = nil
         form = nil
         editor.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        // A designed empty state, centered: what this window is for and the one thing to do next.
+        let symbol = NSImageView(
+            image: NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 40, weight: .light)) ?? NSImage())
+        symbol.contentTintColor = Theme.windowTextInactive
         let title = NSTextField(labelWithString: "No saved connections")
-        title.font = .systemFont(ofSize: 15, weight: .semibold)
+        title.font = .systemFont(ofSize: 17, weight: .semibold)
+        title.textColor = Theme.windowText
         let body = NSTextField(
             wrappingLabelWithString: "Save SFTP, FTP, SMB and S3 servers here to reach them from the sidebar. "
                 + "Hosts in ~/.ssh/config can be imported with their jump hosts.")
-        body.textColor = .secondaryLabelColor
-        editor.addArrangedSubview(title)
-        editor.addArrangedSubview(body)
+        body.textColor = Theme.windowTextInactive
+        body.alignment = .center
+        body.preferredMaxLayoutWidth = 360
+        let add = NSButton(title: "Add Connection", target: self, action: #selector(addProfile(_:)))
+        add.bezelStyle = .rounded
+        add.controlSize = .large
+        add.keyEquivalent = "\r"
+        add.setAccessibilityIdentifier("connections-empty-add")
+        let column = NSStackView(views: [symbol, title, body, add])
+        column.orientation = .vertical
+        column.alignment = .centerX
+        column.spacing = 10
+        column.setCustomSpacing(16, after: body)
+        column.edgeInsets = NSEdgeInsets(top: 96, left: 0, bottom: 0, right: 0)
+        editor.addArrangedSubview(column)
+        column.widthAnchor.constraint(equalTo: editor.widthAnchor).isActive = true
         removeButton.isEnabled = false
     }
 

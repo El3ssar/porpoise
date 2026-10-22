@@ -24,6 +24,19 @@ import Testing
         ConnectionsWindow(profiles: profiles, credentials: credentials, sshConfig: { Self.config }, open: opened)
     }
 
+    @Test @MainActor func anEmptyListSaysWhatToDoNextInTheThemesColors() throws {
+        let w = window(ConnectionProfiles(storeURL: nil), .inMemory())
+        func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+        let views = all(try #require(w.window?.contentView))
+        // Not a source list: that draws the system's grey whatever background the theme gives it.
+        let table = try #require(views.compactMap { $0 as? NSTableView }.first)
+        #expect(table.style == .inset)
+        let add = try #require(views.compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "connections-empty-add" })
+        #expect(add.title == "Add Connection")
+        add.performClick(nil)
+        #expect(w.form != nil)
+    }
+
     @Test @MainActor func addsAnFTPConnectionWithItsPasswordInTheKeychain() throws {
         let profiles = ConnectionProfiles(storeURL: nil)
         let credentials = ConnectionCredentials.inMemory()
