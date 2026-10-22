@@ -24,10 +24,13 @@ enum DropTargetPolicy {
         ((pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL]) ?? []).filter { $0.isFileURL || RemoteFS.isRemote($0) }
     }
 
+    /// The modifier keys held now (the live keyboard). Tests replace it: what someone holds down on the Mac, or keys
+    /// another process injects, must not change what they see.
+    nonisolated(unsafe) static var heldModifiers: () -> NSEvent.ModifierFlags = { NSEvent.modifierFlags }
+
     /// The drop's operation, for the cursor and for the drop alike: ⌥ copies, ⌘ moves, ⌘⌥ links; without a modifier
     /// the drop asks with a menu (Dolphin), when the source allows it, else it moves or copies as the source allows.
-    static func operation(for sender: NSDraggingInfo) -> NSDragOperation {
-        let mods = NSEvent.modifierFlags
+    static func operation(for sender: NSDraggingInfo, modifiers mods: NSEvent.ModifierFlags = heldModifiers()) -> NSDragOperation {
         let mask = sender.draggingSourceOperationMask
         if mods.contains(.command) && mods.contains(.option) { return .link }
         if mods.contains(.option) { return .copy }
