@@ -49,9 +49,17 @@ extension MainWindowController {
             if inNewTab { addTab(url: u) } else { c.setURL(u) }
             return
         }
-        // "Browse compressed files as folders": open archives like folders (an extracted, read-only copy).
-        if Settings.shared.browseArchives, items.count == 1, items[0].url.isFileURL, ArchiveBrowser.isArchive(items[0]), !inNewTab {
+        // Local archives list without extraction; uncommon formats use the safe whole-archive fallback.
+        if Settings.shared.browseArchives, items.count == 1, items[0].url.isFileURL, ArchiveBrowser.isArchive(items[0]) {
             let archive = items[0]
+            if let location = ArchiveBrowser.location(for: archive) {
+                if inNewTab { addTab(url: location); return }
+                c.setURL(location)
+                c.messageBar.show("Browsing “\(archive.name)”. Archives are read-only; files are extracted when opened or copied.", error: false)
+                c.needsLayout = true
+                return
+            }
+            if inNewTab { openFiles(items); return }  // Preserve the existing fallback for uncommon formats.
             c.statusBar.showMessage("Opening “\(archive.name)”…")
             ArchiveBrowser.extractedFolder(for: archive) { result in
                 switch result {

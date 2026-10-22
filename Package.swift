@@ -19,12 +19,17 @@ let package = Package(
     ],
     targets: [
         .target(name: "PorpoiseCore"),
+        .systemLibrary(name: "CLibArchive"),
         .target(name: "PorpoiseHelperKit"),
         .target(name: "PorpoiseFileSystem", dependencies: ["PorpoiseCore", "PorpoiseHelperKit"]),
         .executableTarget(
             name: "IndexBenchmark", dependencies: ["PorpoiseCore", "PorpoiseServices"], path: "Benchmarks/IndexBenchmark"),
+        .executableTarget(
+            name: "ArchiveBenchmark", dependencies: ["PorpoiseServices"], path: "Benchmarks/ArchiveBenchmark"),
         // Everything the app does that isn't drawing on screen: no AppKit or SwiftUI here.
-        .target(name: "PorpoiseServices", dependencies: ["PorpoiseCore", "PorpoiseFileSystem", "PorpoiseHelperKit"], swiftSettings: testHooks),
+        .target(
+            name: "PorpoiseServices", dependencies: ["PorpoiseCore", "PorpoiseFileSystem", "PorpoiseHelperKit", "CLibArchive"],
+            swiftSettings: testHooks),
         .executableTarget(
             name: "Porpoise",
             dependencies: [

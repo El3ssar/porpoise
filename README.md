@@ -75,7 +75,7 @@ with *Porpoise › Check for Updates…*.
   Folders, Eject, drag & drop with any app and the Dock Trash; optionally the default file browser for
   "Show in Finder".
 - **Remote:** SFTP/SSH, FTP/FTPS, SMB/AFP/NFS/WebDAV (Connect to Server ⌘K), Bonjour network browsing, Android
-  phones over USB, archives browsed as folders. **Connections** (⌥⌘K) saves SFTP, FTP/FTPS, SMB and S3 servers,
+  phones over USB, local zip/7z/tar archives browsed without unpacking (read-only, with extraction on open, preview or copy). Other formats retain whole-archive fallback. **Connections** (⌥⌘K) saves SFTP, FTP/FTPS, SMB and S3 servers,
   with imported SSH hosts, jump hosts and key-file settings. Passwords and S3 secret keys stay in the Keychain.
 - **Cloud accounts:** browse **Google Drive (preview)** and **Dropbox**, copy files in and out, preview and open
   them, keep offline copies, and save edits back with conflict review. Drive sign-in currently requires an invited
@@ -238,6 +238,17 @@ You need macOS 15+ on Apple Silicon and Xcode 26 (or its Command Line Tools).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the project layout, the test bridge used to check the running app,
 and how releases are made.
+
+
+To reproduce archive listing's fixed 100,000-entry, 4 GB ZIP budget without allocating a 4 GB payload on disk:
+
+```sh
+python3 scripts/archive-benchmark-fixture.py /tmp/porpoise-100k-4gb.zip
+swift run -c release -j 2 ArchiveBenchmark /tmp/porpoise-100k-4gb.zip
+```
+
+The fixture contains a valid stored zero-filled payload in a sparse file. The probe includes the first listing
+and entry URL construction, checks that no files appeared in its isolated cache, and fails at two seconds.
 
 ## Licence and credits
 

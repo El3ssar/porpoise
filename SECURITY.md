@@ -66,3 +66,20 @@ rules each follows. Reports that break any of them are very welcome.
 Porpoise is self-signed (no Apple Developer ID), so macOS asks you to confirm the first launch under
 System Settings › Privacy & Security › Open Anyway. Every release is built from this repository by the public workflow
 in `.github/workflows/release.yml`, and `SHA256SUMS.txt` is attached to each release.
+
+### Archive locations
+
+Local ZIP, 7z and tar archives are indexed in memory through macOS's libarchive. Listing writes no extracted
+contents to disk. Opening, Quick Look and copy-out extract the requested file or subtree into a private staging
+folder; publication happens only after the source version and the extracted lengths are checked. Archive
+locations are read-only. Other supported formats retain whole-archive extraction with the same validation.
+
+All archive paths must be relative, without `..`, backslashes, drive prefixes or control characters. Symlinks,
+hard links, special files, encrypted entries, duplicate file names and file/folder conflicts are refused.
+Permissions, ACLs and extended attributes from the archive are not installed. Files are created exclusively
+without following links; unfinished extraction is removed on failure or cancellation. Limits are 250,000 entries
+(including implicit folders), 64 path components, 4,096 UTF-8 bytes per path, 8 GiB per file, 64 GiB total expanded
+size, and a 1,000:1 overall expansion ratio above a 1 MiB allowance. Declared lengths are enforced while extracting.
+Only two inactive archive indexes are retained in memory. Opened copies stay in Porpoise's Caches/archive-open
+folder and can be removed after their applications close. Nested and remote archive browsing, encrypted
+archives and editing entries are follow-ups; opening an extracted copy never rewrites the original archive.

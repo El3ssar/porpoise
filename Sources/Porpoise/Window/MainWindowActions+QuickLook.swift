@@ -40,10 +40,22 @@ extension MainWindowController: QLPreviewPanelDataSource, QLPreviewPanelDelegate
 
     func prepareDriveQuickLook() {
         driveQuickLook?.cancel(); driveQuickLookLoading = []; driveQuickLookURLs = [:]
-        let urls = quickLookURLs.filter { PlacesModel.isCloud($0) && driveQuickLookURLs[$0] == nil }
+        let urls = quickLookURLs.filter { (PlacesModel.isCloud($0) || $0.scheme == "archive") && driveQuickLookURLs[$0] == nil }
         driveQuickLookLoading = Set(urls)
         driveQuickLook = Task { @MainActor [weak self] in
             for url in urls {
+                if url.scheme == "archive" {
+                    do {
+                        let local = try await ArchiveBrowser.localCopy(url)
+                        try Task.checkCancellation()
+                        self?.driveQuickLookURLs[url] = local
+                        self?.driveQuickLookLoading.remove(url)
+                        QLPreviewPanel.shared().reloadData()
+                    } catch {
+                        if !Task.isCancelled { self?.driveQuickLookLoading.remove(url); self?.view.statusBar.showMessage(error.localizedDescription) }
+                    }
+                    continue
+                }
                 guard let cloud = RemoteFS.provider(for: url) as? CloudFileProvider else { continue }
                 do {
                     self?.view.statusBar.showMessage("Loading preview…")
@@ -75,7 +87,7 @@ extension MainWindowController: QLPreviewPanelDataSource, QLPreviewPanelDelegate
     func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! {
         // The selection can change between the count and this call.
         guard let url = quickLookURLs[safe: index] else { return nil }
-        if PlacesModel.isCloud(url) {
+        if PlacesModel.isCloud(url) || url.scheme == "archive" {
             return driveQuickLookURLs[url].map { $0 as NSURL } ?? LoadingDrivePreview(loading: driveQuickLookLoading.contains(url))
         }
         return url as NSURL

@@ -40,7 +40,7 @@ public struct LocationOperations {
     /// volume, where `volumeIsReadOnly` doesn't.
     public func canAddItems(_ folder: URL) -> Bool {
         switch backend {
-        case .remote: return true
+        case .remote: return LocationKind.of(folder) != .archive
         case .local:
             guard folder.isFileURL else { return false }
             if FileManager.default.isWritableFile(atPath: folder.path) { return true }
