@@ -13,13 +13,16 @@ final class Thumbnails {
     private var failed = Set<String>()
     private var pending = Set<String>()
     private var retryAfter: [String: Date] = [:]
+    /// Runs the work behind `pending`: bounded per kind, dropped or cancelled once no owner shows the item.
+    let scheduler: ThumbnailWorkScheduler
 
     /// Previews are kept up to this many bytes of pixels (they go up to 1024 px, so a count alone isn't a bound).
     private static let cacheBytes = 256 << 20
     /// Bookkeeping sets are bounded too: a long session in big folders must not grow them forever.
     private static let maxRemembered = 20_000
 
-    init() {
+    init(scheduler: ThumbnailWorkScheduler = ThumbnailWorkScheduler()) {
+        self.scheduler = scheduler
         cache.countLimit = 3000
         cache.totalCostLimit = Self.cacheBytes
         folderCache.totalCostLimit = Self.cacheBytes / 4
@@ -104,7 +107,7 @@ final class Thumbnails {
         return q
     }()
 
-    func folderPreview(for item: FileItem, size: CGFloat) -> NSImage? {
+    func folderPreview(for item: FileItem, size: CGFloat, owner: ThumbnailOwner? = nil) -> NSImage? {
         guard Settings.shared.previewFolders, item.isBrowsableFolder, item.url.isFileURL, size >= 32 else { return nil }
         let size = Self.bucket(size)
         let version = "\(item.url.path)|\(item.modificationDate?.timeIntervalSince1970 ?? 0)"
@@ -116,7 +119,11 @@ final class Thumbnails {
         var thumbs: [NSImage] = []
         var waiting = false
         for c in candidates where thumbs.count < 4 {
-            if let t = thumbnail(for: c, size: size / 2, exact: true) { thumbs.append(t) } else if !hasFailed(c, size / 2) { waiting = true }
+            if let t = thumbnail(for: c, size: size / 2, exact: true, owner: owner, shownAs: item.url) {
+                thumbs.append(t)
+            } else if !hasFailed(c, size / 2) {
+                waiting = true
+            }
         }
         // Not all previews ready yet: keep showing the last one made at another size (no flicker while zooming).
         if thumbs.count < 4 && waiting { return folderLatest.object(forKey: version as NSString) }
@@ -200,6 +207,9 @@ final class Thumbnails {
 
     func hasFailed(_ item: FileItem, _ size: CGFloat) -> Bool { failed.contains(key(item, size)) }
 
+    /// Previews asked for and not made yet (queued, running, or handed between steps).
+    var outstanding: Int { pending.count }
+
     /// Settings changed: forget folder previews so they are rebuilt (or dropped).
     func resetFolderPreviews() {
         folderCache.removeAllObjects()
@@ -210,27 +220,33 @@ final class Thumbnails {
         folderGeneration += 1
     }
 
-    /// A frame a few seconds in (or the first one for short clips), scaled to fit `size` pixels.
-    static func ffmpegFrame(_ url: URL, size: CGFloat) -> NSImage? {
+    /// A frame a few seconds in (or the first one for short clips), scaled to fit `size` pixels. ffmpeg is stopped
+    /// once `isCancelled` says so.
+    static func ffmpegFrame(_ url: URL, size: CGFloat, isCancelled: @escaping () -> Bool = { false }) -> NSImage? {
         guard let ff = VideoPreview.ffmpeg else { return nil }
         let out = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-frame-\(UUID().uuidString).jpg")
         defer { try? FileManager.default.removeItem(at: out) }
         let s = Int(size)
-        for start in ["3", "0"] {
-            _ = try? Shell.run(
-                ff,
-                [
-                    "-hide_banner", "-loglevel", "error", "-nostdin", "-ss", start, "-i", "file:" + url.path, "-frames:v", "1",
-                    "-vf", "scale='min(\(s),iw)':'min(\(s),ih)':force_original_aspect_ratio=decrease", "-y", out.path,
-                ], timeout: 15)
-            if let img = NSImage(contentsOf: out) { return img }
+        let control = Shell.TransferControl(isPaused: { false }, isCancelled: isCancelled)
+        for start in ["3", "0"] where !isCancelled() {
+            _ = try? Shell.withTransferControl(control) {
+                try Shell.run(
+                    ff,
+                    [
+                        "-hide_banner", "-loglevel", "error", "-nostdin", "-ss", start, "-i", "file:" + url.path, "-frames:v", "1",
+                        "-vf", "scale='min(\(s),iw)':'min(\(s),ih)':force_original_aspect_ratio=decrease", "-y", out.path,
+                    ], timeout: 15)
+            }
+            if !isCancelled(), let img = NSImage(contentsOf: out) { return img }
         }
         return nil
     }
 
     /// Returns a cached thumbnail, or nil and starts generating one (posting `ready` when done).
     /// `exact`: only the requested size (folder previews compose from these), no stand-in.
-    func thumbnail(for item: FileItem, size: CGFloat, exact: Bool = false) -> NSImage? {
+    /// `owner` draws it (at `shownAs`, the folder a folder preview is made for): the work is dropped or cancelled once
+    /// it no longer shows the item. Without one it's wanted until done.
+    func thumbnail(for item: FileItem, size: CGFloat, exact: Bool = false, owner: ThumbnailOwner? = nil, shownAs: URL? = nil) -> NSImage? {
         let k = key(item, size)
         if let img = cache.object(forKey: k as NSString) { return img }
         if let retry = retryAfter[k] {
@@ -238,39 +254,65 @@ final class Thumbnails {
             retryAfter[k] = nil
         }
         if failed.contains(k) { return nil }
-        if pending.contains(k) { return exact ? nil : anyCached(item, near: size) }
+        let interest = ThumbnailWorkScheduler.Interest(owner: owner, url: shownAs ?? item.url)
+        if pending.contains(k) {
+            scheduler.touch(k, interest: interest)
+            return exact ? nil : anyCached(item, near: size)
+        }
         pending.insert(k)
+        let dropped = { [weak self] in _ = self?.pending.remove(k) }
         if item.url.isFileURL {
-            generate(k, for: item, file: item.url, size: size)
+            scheduler.submit(
+                k, lane: .preview, interest: interest, body: { [weak self] job in self?.generate(job, for: item, file: item.url, size: size) },
+                dropped: dropped)
         } else {
             // A cloud service's thumbnail, or (Settings › Previews › remote files) a temporary copy of a server's file
             // for Quick Look.
             let remote = item.url
-            Task { @MainActor [weak self] in
-                let local = try? await PreviewSource.localFile(for: remote, thumbnail: true)
-                guard let self else {
-                    if let dir = local?.cleanup { try? FileManager.default.removeItem(at: dir) }
-                    return
-                }
-                if let local, local.cleanup == nil, let image = NSImage(contentsOf: local.file) {
-                    self.pending.remove(k)
-                    self.store(image, k)
-                    NotificationCenter.default.post(name: Thumbnails.ready, object: remote)
-                } else if let local {
-                    self.generate(k, for: item, file: local.file, size: size, cleanup: local.cleanup)
-                } else {
-                    self.pending.remove(k)
-                    if let delay = PreviewSource.retryDelay(for: remote) {
-                        if self.retryAfter.count > Self.maxRemembered { self.retryAfter.removeAll() }
-                        self.retryAfter[k] = Date().addingTimeInterval(delay)
-                    } else {
-                        self.remember(failed: k)
-                    }
-                    NotificationCenter.default.post(name: Thumbnails.ready, object: remote)
-                }
-            }
+            scheduler.submit(
+                k, lane: PreviewSource.isProgressive(remote) ? .cloud : .server, interest: interest,
+                body: { [weak self] job in self?.fetch(job, for: item, size: size) }, dropped: dropped)
         }
         return exact ? nil : anyCached(item, near: size)
+    }
+
+    /// Fetches what a remote item's preview is made from, then makes it (or keeps the cloud's own thumbnail).
+    private func fetch(_ job: ThumbnailWorkScheduler.Job, for item: FileItem, size: CGFloat) {
+        let k = job.key, remote = item.url
+        let task = Task { @MainActor [weak self] in
+            let local = try? await PreviewSource.localFile(for: remote, thumbnail: true)
+            guard let self, !job.isCancelled else {
+                if let dir = local?.cleanup { try? FileManager.default.removeItem(at: dir) }
+                _ = self?.pending.remove(k)
+                job.finish()
+                return
+            }
+            if let local, local.cleanup == nil, let image = NSImage(contentsOf: local.file) {
+                self.pending.remove(k)
+                self.store(image, k)
+                NotificationCenter.default.post(name: Thumbnails.ready, object: remote)
+                job.finish()
+            } else if let local {
+                self.scheduler.hand(
+                    job, to: .preview,
+                    body: { [weak self] job in self?.generate(job, for: item, file: local.file, size: size, cleanup: local.cleanup) },
+                    dropped: { [weak self] in
+                        if let dir = local.cleanup { try? FileManager.default.removeItem(at: dir) }
+                        _ = self?.pending.remove(k)
+                    })
+            } else {
+                self.pending.remove(k)
+                if let delay = PreviewSource.retryDelay(for: remote) {
+                    if self.retryAfter.count > Self.maxRemembered { self.retryAfter.removeAll() }
+                    self.retryAfter[k] = Date().addingTimeInterval(delay)
+                } else {
+                    self.remember(failed: k)
+                }
+                NotificationCenter.default.post(name: Thumbnails.ready, object: remote)
+                job.finish()
+            }
+        }
+        job.onCancel { task.cancel() }
     }
 
     /// PDF thumbnail generators may return transparent paper, which hides black text in dark mode.
@@ -283,18 +325,23 @@ final class Thumbnails {
     }
 
     /// Makes the preview of `file` (the item itself, or a local copy of a remote item, removed with `cleanup` after).
-    private func generate(_ k: String, for item: FileItem, file: URL, size: CGFloat, cleanup: URL? = nil) {
+    /// Cancelled work publishes nothing: the item is asked for again when it's drawn again.
+    private func generate(_ job: ThumbnailWorkScheduler.Job, for item: FileItem, file: URL, size: CGFloat, cleanup: URL? = nil) {
+        let k = job.key
         // Audio: its cover, else the theme's icon (Quick Look would draw a generic tile).
         if let t = item.utType, t.conforms(to: .audio), !t.conforms(to: .movie) {
-            Task {
+            let task = Task {
                 let image = await AudioArtwork.load(file).flatMap(NSImage.init(data:))
                 await MainActor.run {
                     if let cleanup { try? FileManager.default.removeItem(at: cleanup) }
                     self.pending.remove(k)
+                    defer { job.finish() }
+                    guard !job.isCancelled else { return }
                     if let image { self.store(image, k) } else { self.remember(failed: k) }
                     NotificationCenter.default.post(name: Thumbnails.ready, object: item.url)
                 }
             }
+            job.onCancel { task.cancel() }
             return
         }
         let scale = NSScreen.main?.backingScaleFactor ?? 2
@@ -306,28 +353,48 @@ final class Thumbnails {
             if let cleanup { try? FileManager.default.removeItem(at: cleanup) }
             DispatchQueue.main.async {
                 guard let self else { return }
-                if let rep {
+                if job.isCancelled {
+                    self.pending.remove(k)
+                    job.finish()
+                } else if let rep {
                     self.pending.remove(k)
                     let image = item.url.scheme == "gdrive" && file.pathExtension == "pdf" ? Self.paperPreview(rep.nsImage) : rep.nsImage
                     self.store(image, k)
                     NotificationCenter.default.post(name: Thumbnails.ready, object: item.url)
+                    job.finish()
                 } else if VideoPreview.isVideoExtension(item.fileExtension), item.url.isFileURL, VideoPreview.ffmpeg != nil {
                     // Quick Look can't read MKV/WebM/AVI…: grab a frame with ffmpeg. Still pending meanwhile,
                     // or every repaint would start another Quick Look request and ffmpeg run.
-                    DispatchQueue.global(qos: .utility).async {
-                        let img = Self.ffmpegFrame(item.url, size: gen * scale)
-                        DispatchQueue.main.async {
-                            self.pending.remove(k)
-                            if let img { self.store(img, k) } else { self.remember(failed: k) }
-                            NotificationCenter.default.post(name: Thumbnails.ready, object: item.url)
-                        }
-                    }
+                    self.scheduler.hand(
+                        job, to: .video, body: { [weak self] job in self?.extractFrame(job, for: item, size: gen * scale) },
+                        dropped: { [weak self] in _ = self?.pending.remove(k) })
                 } else {
                     self.pending.remove(k)
                     self.remember(failed: k)
                     // Folder previews wait on every candidate; tell them this one won't come.
                     NotificationCenter.default.post(name: Thumbnails.ready, object: item.url)
+                    job.finish()
                 }
+            }
+        }
+        // A cancelled request still calls back (without a representation), which frees the job's slot.
+        job.onCancel { QLThumbnailGenerator.shared.cancel(req) }
+    }
+
+    /// A video's ffmpeg frame, on a queue of its own: ffmpeg is waited for there, never on a shared pool's thread.
+    private func extractFrame(_ job: ThumbnailWorkScheduler.Job, for item: FileItem, size: CGFloat) {
+        let k = job.key, url = item.url
+        let cancelled = ThumbnailWorkScheduler.Flag()
+        job.onCancel { cancelled.set() }
+        DispatchQueue(label: "porpoise.thumbnails.video", qos: .utility).async { [weak self] in
+            let img = Self.ffmpegFrame(url, size: size) { cancelled.isSet }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.pending.remove(k)
+                defer { job.finish() }
+                guard !job.isCancelled else { return }
+                if let img { self.store(img, k) } else { self.remember(failed: k) }
+                NotificationCenter.default.post(name: Thumbnails.ready, object: url)
             }
         }
     }

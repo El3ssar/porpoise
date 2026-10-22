@@ -193,7 +193,7 @@ extension ItemListView {
         let ir = iconRect(i)
         let alpha: CGFloat = (cutURLs.contains(item.url) || item.isHidden || model.incomingProgress[item.url] != nil) ? 0.5 : 1
         if model.props.previews {
-            if Thumbnails.wantsPreview(item), let thumb = Thumbnails.shared.thumbnail(for: item, size: iconSize) {
+            if Thumbnails.wantsPreview(item), let thumb = Thumbnails.shared.thumbnail(for: item, size: iconSize, owner: self) {
                 let ts = thumb.size
                 // Large previews keep a gap above their label (they fill the cell, so they would touch it).
                 let gap: CGFloat = mode == .icons && iconSize >= 64 ? 4 : 0
@@ -217,7 +217,7 @@ extension ItemListView {
                 }
                 return (thumb, tr)
             }
-            if let fp = Thumbnails.shared.folderPreview(for: item, size: iconSize) {
+            if let fp = Thumbnails.shared.folderPreview(for: item, size: iconSize, owner: self) {
                 fp.draw(in: ir, from: .zero, operation: .sourceOver, fraction: alpha, respectFlipped: true, hints: nil)
                 return (fp, ir)
             }
