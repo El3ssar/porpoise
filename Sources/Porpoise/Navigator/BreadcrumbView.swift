@@ -240,7 +240,8 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     private func width(of s: Segment) -> CGFloat {
         switch s.kind {
         case .placesButton: return 26
-        case .rootArrow, .arrow: return 18
+        case .rootArrow: return 24
+        case .arrow: return 18
         case .more: return 22
         case .crumb(_, let title, let last):
             return ceil((title as NSString).size(withAttributes: [.font: last ? crumbBoldFont : crumbFont]).width) + 10
@@ -342,7 +343,13 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
                 Icons.shared.image("folder", size: 16)?.draw(
                     in: CGRect(x: r.midX - 8, y: r.midY - 8, width: 16, height: 16),
                     from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            case .rootArrow, .arrow:
+            case .rootArrow:
+                // Where the path starts (home, the disk, a server) instead of a lone chevron; its menu is unchanged.
+                Icons.shared.image(rootIconName, size: 16)?.draw(
+                    in: CGRect(x: r.midX - 7, y: r.midY - 7, width: 14, height: 14),
+                    from: .zero, operation: .sourceOver, fraction: isActive ? (hover == i ? 1 : 0.7) : 0.4,
+                    respectFlipped: true, hints: nil)
+            case .arrow:
                 Icons.shared.image("go-next", size: 16)?.draw(
                     in: CGRect(x: r.midX - 6, y: r.midY - 6, width: 12, height: 12),
                     from: .zero, operation: .sourceOver, fraction: isActive ? (hover == i ? 1 : 0.55) : 0.35,
@@ -550,6 +557,14 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
                 self.showMenu(folders.map { ($0, $0.folderName) }, at: r, bold: next)
             }
         }
+    }
+
+    /// The root segment's glyph: the home folder for paths under it, the disk for other local paths, a server for
+    /// remote ones.
+    var rootIconName: String {
+        guard url.isFileURL else { return "network-server" }
+        let p = url.standardizedFileURL.path, home = NSHomeDirectory()
+        return p == home || p.hasPrefix(home + "/") ? "user-home" : "drive-harddisk"
     }
 
     private func showRootMenu(at r: CGRect) {
