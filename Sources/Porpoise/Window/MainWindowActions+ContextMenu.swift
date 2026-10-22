@@ -111,7 +111,7 @@ extension MainWindowController {
             m.addItem(sub("View Mode", "view-list-icons", Self.viewModeMenu()))
             m.addItem(.separator())
             m.addItem(self.item("Open Terminal Here", "utilities-terminal", #selector(openTerminalHere(_:))))
-            m.addItem(self.item("Reveal in Finder", "system-file-manager", #selector(revealInFinder(_:))))
+            m.addItem(self.item("Reveal in Finder", "document-open-folder", #selector(revealInFinder(_:))))
             m.addItem(.separator())
             m.addItem(self.item("Get Info", "document-properties", #selector(properties(_:))))
             return m
@@ -154,7 +154,7 @@ extension MainWindowController {
         m.addItem(.separator())
         m.addItem(self.item("Cut", "edit-cut", #selector(cut(_:))))
         m.addItem(self.item("Copy", "edit-copy", #selector(copy(_:))))
-        m.addItem(self.item("Copy Location", "edit-copy-path", #selector(copyLocation(_:))))
+        m.addItem(self.item("Copy Location", "link", #selector(copyLocation(_:))))
         m.addItem(self.item("Add to Shelf", "bookmarks", #selector(addToShelf(_:))))
         if single && item.isBrowsableFolder {
             m.addItem(self.item("Paste Into Folder", "edit-paste", #selector(paste(_:)), obj: Self.pasteIntoFolder))
@@ -197,7 +197,7 @@ extension MainWindowController {
         }
         m.addItem(self.item("Share…", "document-share", #selector(shareItems(_:))))
         m.addItem(self.item("Quick Look", "document-preview", #selector(quickLook(_:))))
-        m.addItem(self.item("Reveal in Finder", "system-file-manager", #selector(revealInFinder(_:))))
+        m.addItem(self.item("Reveal in Finder", "document-open-folder", #selector(revealInFinder(_:))))
         if tab.isSplit {
             m.addItem(.separator())
             m.addItem(self.item("Copy to Other View", "edit-copy", #selector(copyToOtherView(_:))))
@@ -247,7 +247,7 @@ extension MainWindowController {
         addCloudItems(to: m, selection: sel, in: c)
         m.addItem(self.item("Cut", "edit-cut", #selector(cut(_:))))
         m.addItem(self.item("Copy", "edit-copy", #selector(copy(_:))))
-        if info?.webLink != nil { m.addItem(self.item("Copy Link", "edit-copy-path", #selector(copyCloudLink(_:)), obj: item.url)) }
+        if info?.webLink != nil { m.addItem(self.item("Copy Link", "link", #selector(copyCloudLink(_:)), obj: item.url)) }
         if single && item.isBrowsableFolder {
             m.addItem(self.item("Paste Into Folder", "edit-paste", #selector(paste(_:)), obj: Self.pasteIntoFolder))
         }

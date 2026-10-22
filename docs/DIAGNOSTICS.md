@@ -19,6 +19,13 @@ The unclean-exit check is one boolean in Porpoise's own preferences (`diagnostic
 cleared on quit. No crash report is read. Each cloud account's events share a random correlation, never its id.
 A user's own cancel records nothing. The app's save replaces an existing file only after the save panel has asked.
 
+## Report a Bug
+
+**Help › Report a Bug…** says which versions a report will carry, then opens GitHub's bug form with the Porpoise and
+macOS versions filled in (`BugReportDraft.issueURL`); nothing is sent until the person submits the form in their
+browser. Its **Export Diagnostics…** button opens the same review window as Help › Export Diagnostics…, on
+`Diagnostics.shared`, and once the file is saved opens the form so the file can be attached.
+
 ## Privacy boundary
 
 Events have exactly four fields: timestamp, a fixed event code, a coarse failure category, and a randomly generated

@@ -55,7 +55,7 @@ extension NSMenuItem {
         it.keyEquivalentModifierMask = mods
         it.tag = tag
         it.representedObject = obj
-        if let icon { it.image = Icons.shared.menuIcon(icon) }
+        it.setIcon(icon)
         return it
     }
 
@@ -63,8 +63,18 @@ extension NSMenuItem {
     static func submenu(_ title: String, icon: String?, _ menu: NSMenu) -> NSMenuItem {
         let it = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         it.submenu = menu
-        if let icon { it.image = Icons.shared.menuIcon(icon) }
+        it.setIcon(icon)
         return it
+    }
+
+    /// Icon names a menu asked for that the icon theme doesn't have, so their items show none (tests require none).
+    /// Menus are built on the main thread only.
+    nonisolated(unsafe) static var missingIcons: Set<String> = []
+
+    private func setIcon(_ name: String?) {
+        guard let name else { return }
+        image = Icons.shared.menuIcon(name)
+        if image == nil { Self.missingIcons.insert(name) }
     }
 
     /// Extra key equivalents for the same action (hidden, shortcut still works).
