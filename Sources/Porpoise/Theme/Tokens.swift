@@ -27,25 +27,54 @@ enum Tokens {
         case .viewBackground: return .controlBackgroundColor
         case .alternateRow: return NSColor.alternatingContentBackgroundColors[1]
         case .selection: return selection
-        case .selectionText, .text, .hover: return .labelColor
+        case .selectionText: return .alternateSelectedControlTextColor
+        case .text, .hover: return .labelColor
         case .secondaryText: return .secondaryLabelColor
         case .accent, .folderTint: return accent
         }
     }
 
     /// `role` as an opaque sRGB colour in `appearance`. A translucent one (the dark alternate row is white at 5%) is
-    /// laid over the view background, as it's drawn.
+    /// laid over the view background, as it's drawn. The selection stands out from the rows by at least 3:1 (WCAG
+    /// 1.4.11): macOS's dark selection is only about 2.6:1 against its rows, so it is lightened until it is.
     static func resolved(_ role: ThemeRole, in appearance: NSAppearance) -> NSColor {
         var c = NSColor.black
         appearance.performAsCurrentDrawingAppearance {
-            let color = color(role).usingColorSpace(.sRGB) ?? .black
-            guard color.alphaComponent < 1, let base = NSColor.controlBackgroundColor.usingColorSpace(.sRGB) else {
-                c = color
-                return
+            c = opaque(color(role))
+            if role == .selection {
+                c = distinct(c, from: [opaque(.controlBackgroundColor), opaque(color(.alternateRow))], toward: appearance.isDark ? .white : .black)
             }
-            c = base.blended(withFraction: color.alphaComponent, of: color.withAlphaComponent(1)) ?? color
         }
         return c
+    }
+
+    /// `color` in sRGB, laid over the view background if translucent (in the current drawing appearance).
+    private static func opaque(_ color: NSColor) -> NSColor {
+        let c = color.usingColorSpace(.sRGB) ?? .black
+        guard c.alphaComponent < 1, let base = NSColor.controlBackgroundColor.usingColorSpace(.sRGB) else { return c }
+        return base.blended(withFraction: c.alphaComponent, of: c.withAlphaComponent(1)) ?? c
+    }
+
+    /// `color` mixed toward `target` in small steps until its contrast with each of `backgrounds` is at least `ratio`.
+    static func distinct(_ color: NSColor, from backgrounds: [NSColor], toward target: NSColor, ratio: CGFloat = 3) -> NSColor {
+        var c = color
+        for step in 1...20 where backgrounds.contains(where: { contrast(c, $0) < ratio }) {
+            c = color.blended(withFraction: CGFloat(step) * 0.05, of: target) ?? c
+        }
+        return c
+    }
+
+    /// WCAG 2 contrast ratio of two opaque sRGB colours (1 to 21).
+    static func contrast(_ a: NSColor, _ b: NSColor) -> CGFloat {
+        let la = luminance(a), lb = luminance(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+    }
+
+    /// WCAG 2 relative luminance of an sRGB colour.
+    static func luminance(_ color: NSColor) -> CGFloat {
+        let c = color.usingColorSpace(.sRGB) ?? color
+        func linear(_ v: CGFloat) -> CGFloat { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+        return 0.2126 * linear(c.redComponent) + 0.7152 * linear(c.greenComponent) + 0.0722 * linear(c.blueComponent)
     }
 
     /// The native theme as a portable palette, in light or dark: what the theme gallery previews, Export Theme writes

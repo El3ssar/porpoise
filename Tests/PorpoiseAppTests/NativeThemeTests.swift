@@ -16,6 +16,17 @@ import Testing
         return [c.redComponent, c.greenComponent, c.blueComponent].map { Int(($0 * 255).rounded()) }
     }
 
+    /// labelColor (translucent) laid over controlBackgroundColor, as drawn.
+    private func labelOverView(_ dark: Bool) -> [Int] {
+        var c = NSColor.black
+        NSAppearance(named: dark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance {
+            let label = NSColor.labelColor.usingColorSpace(.sRGB) ?? .black
+            let view = NSColor.controlBackgroundColor.usingColorSpace(.sRGB) ?? .black
+            c = view.blended(withFraction: label.alphaComponent, of: label.withAlphaComponent(1)) ?? view
+        }
+        return rgb(c, dark: dark)
+    }
+
     private func close(_ a: [Int], _ b: [Int], within tolerance: Int = 3) -> Bool { zip(a, b).allSatisfy { abs($0 - $1) <= tolerance } }
 
     @Test(.isolatedSettings) func defaultThemeResolvesToSystemColours() {
@@ -23,7 +34,9 @@ import Testing
         for dark in [false, true] {
             #expect(rgb(Theme.viewBackground, dark: dark) == rgb(.controlBackgroundColor, dark: dark))
             #expect(rgb(Theme.windowBackground, dark: dark) == rgb(.windowBackgroundColor, dark: dark))
-            #expect(rgb(Theme.windowText, dark: dark) == rgb(.labelColor, dark: dark))
+            // Translucent system text, laid over the view.
+            let label = labelOverView(dark)
+            #expect(close(rgb(Theme.windowText, dark: dark), label, within: 1))
             #expect(rgb(Theme.separator, dark: dark) == rgb(.separatorColor, dark: dark))
             #expect(rgb(Theme.negativeText, dark: dark) == rgb(.systemRed, dark: dark))
         }
@@ -88,9 +101,9 @@ import Testing
         let saved = Theme.systemIncreasesContrast
         defer { Theme.systemIncreasesContrast = saved }
         func measure() -> [[Int]] {
-            [Theme.separator, Theme.frame, Theme.hairline, Theme.disabledText, Theme.itemHoverFill, Theme.placesSelectedFill].map {
-                var c = $0
-                NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance { c = $0.usingColorSpace(.sRGB) ?? $0 }
+            [Theme.separator, Theme.frame, Theme.hairline, Theme.disabledText, Theme.itemHoverFill, Theme.placesSelectedFill].map { color in
+                var c = color
+                NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance { c = color.usingColorSpace(.sRGB) ?? color }
                 return [c.redComponent, c.greenComponent, c.blueComponent, c.alphaComponent].map { Int(($0 * 255).rounded()) }
             }
         }
@@ -101,5 +114,33 @@ import Testing
         // Separator and frame: darker; hairline, disabled text, hover and the Places selection: more opaque.
         #expect(increased[0][0] < normal[0][0] && increased[1][0] < normal[1][0])
         for i in 2..<6 { #expect(increased[i][3] > normal[i][3]) }
+    }
+
+    @Test(.isolatedSettings) func selectionStandsOutFromTheRowsAtThreeToOne() {
+        for dark in [false, true] {
+            let selection = rgb(Theme.selection, dark: dark)
+            for row in [Theme.viewBackground, Theme.viewAlternate] {
+                let ratio = Tokens.contrast(color(selection), color(rgb(row, dark: dark)))
+                #expect(ratio >= 3, "\(dark ? "dark" : "light") selection \(selection) only \(ratio):1")
+            }
+            // White text and glyphs on it.
+            #expect(rgb(Theme.selectionText, dark: dark) == [255, 255, 255])
+        }
+        // A pale accent is darkened in light, so it still reads.
+        let pale = NSColor(srgbRed: 1, green: 0.85, blue: 0.3, alpha: 1)
+        let white = NSColor.white, alternate = NSColor(srgbRed: 0.96, green: 0.96, blue: 0.96, alpha: 1)
+        let raised = Tokens.distinct(pale, from: [white, alternate], toward: .black)
+        #expect(Tokens.contrast(raised, white) >= 3 && Tokens.contrast(raised, alternate) >= 3)
+        #expect(Tokens.distinct(.black, from: [white], toward: .white) == .black)
+    }
+
+    @Test(.isolatedSettings) func paletteThemesKeepTheirSelection() {
+        Settings.shared.updateAppearance { $0.themeName = "Breeze Light" }
+        #expect(rgb(Theme.selection, dark: false) == [66, 132, 210])
+        #expect(rgb(Theme.selectionText, dark: false) == [26, 30, 44])
+    }
+
+    private func color(_ c: [Int]) -> NSColor {
+        NSColor(srgbRed: CGFloat(c[0]) / 255, green: CGFloat(c[1]) / 255, blue: CGFloat(c[2]) / 255, alpha: 1)
     }
 }

@@ -96,7 +96,7 @@ import Testing
         s.labelFontName = "Monaco"; s.labelFontSize = 15; s.appearance = .dark
         let exported = try s.exportAppearance()
         s.resetAll()
-        #expect(s.appearancePreferences.themeName == "Follow system")
+        #expect(s.appearancePreferences.themeName == AppearanceTheme.systemName)
         try s.importAppearance(exported, includingCommands: true)
         #expect(s.appearancePreferences.themeName == "Nord")
         #expect(s.appearancePreferences.shell == .fish)
