@@ -18,17 +18,21 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
     private let scroll = NSScrollView()
     private let copyHere = NSButton(title: "Copy Here", target: nil, action: nil)
     private let moveHere = NSButton(title: "Move Here", target: nil, action: nil)
+    private let separator = NSView()
     private let hint = NSTextField(wrappingLabelWithString: "Drag items here, or choose Add to Shelf (⌥⌘S), to collect them from several places.")
     private var states: [UUID: ShelfItemState] = [:]
     private var observer: NSObjectProtocol?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        shelves.controlSize = .small
-        shelves.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        // The panel's header, in the sidebar's section-title style ("Places", "Remote"): the shelf's name opens its menu.
+        shelves.isBordered = false
+        shelves.font = .systemFont(ofSize: Tokens.FontSize.small, weight: .semibold)
+        shelves.contentTintColor = Theme.windowTextInactive
+        shelves.setAccessibilityLabel("Shelf")
         shelves.target = self
         shelves.action = #selector(shelfChosen)
-        count.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        count.font = .systemFont(ofSize: Tokens.FontSize.small)
         count.textColor = .secondaryLabelColor
         table.headerView = nil
         table.addTableColumn(NSTableColumn(identifier: .init("item")))
@@ -50,24 +54,29 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
-        for b in [copyHere, moveHere] {
-            b.controlSize = .small
+        // Regular size in a narrow sidebar: a short title with its glyph (the full name is the tooltip and VoiceOver label).
+        for (b, title, symbol, label) in [
+            (copyHere, "Copy", "doc.on.doc", "Copy Here"), (moveHere, "Move", "arrow.right.doc.on.clipboard", "Move Here"),
+        ] {
             b.bezelStyle = .push
-            b.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            b.title = title
+            b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            b.imagePosition = .imageLeading
+            b.setAccessibilityLabel(label)
             b.target = self
         }
         copyHere.action = #selector(copyToCurrent)
         moveHere.action = #selector(moveToCurrent)
         copyHere.toolTip = "Copy the selected items (all when none is selected) to the folder shown"
         moveHere.toolTip = "Move the selected items (all when none is selected) to the folder shown"
-        hint.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        hint.font = .systemFont(ofSize: Tokens.FontSize.callout)
         hint.textColor = .secondaryLabelColor
         hint.alignment = .center
         let header = NSStackView(views: [shelves, NSView(), count])
         // The shelf's name keeps a readable width; the count gives way.
         shelves.widthAnchor.constraint(greaterThanOrEqualToConstant: 60).isActive = true
         // Its menu's longest command (Rename Shelf…) mustn't decide its width.
-        let cap = shelves.widthAnchor.constraint(lessThanOrEqualToConstant: 70)
+        let cap = shelves.widthAnchor.constraint(lessThanOrEqualToConstant: 120)
         cap.priority = .required
         cap.isActive = true
         shelves.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
@@ -76,12 +85,19 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
         let footer = NSStackView(views: [copyHere, moveHere])
         footer.distribution = .fillEqually
         footer.spacing = 6
-        for v in [header, scroll, footer, hint] as [NSView] {
+        // A hairline above the panel: Places above it reads as scrolled, not cut off.
+        separator.wantsLayer = true
+        Theme.whenChanged(separator) { [weak self] in self?.separator.layer?.backgroundColor = Theme.separator.cgColor }
+        for v in [separator, header, scroll, footer, hint] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
         NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            separator.topAnchor.constraint(equalTo: topAnchor),
+            separator.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            separator.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            separator.heightAnchor.constraint(equalToConstant: 1),
+            header.topAnchor.constraint(equalTo: topAnchor, constant: 8),
             header.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             header.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 4),
