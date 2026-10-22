@@ -355,6 +355,12 @@ final class PorpoiseTab: NSView {
         secondary?.isActive = activeIsSecondary
         navigators[0].isActive = primary.isActive
         navigators[1].isActive = activeIsSecondary
+        // In split view only the active pane marks itself and keeps the zoom slider and free-space bar.
+        let split = secondary != nil
+        for pane in [primary, secondary].compactMap({ $0 }) {
+            pane.showsActiveEdge = split && pane.isActive
+            pane.statusBar.showsControls = !split || pane.isActive
+        }
     }
 
     /// Pane x-ranges in window coordinates (for aligning toolbar navigators).

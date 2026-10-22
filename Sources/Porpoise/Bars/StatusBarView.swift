@@ -17,6 +17,9 @@ final class StatusBarView: NSView {
     var onZoomCommit: (() -> Void)?
     var onDiskClick: (() -> Void)?
     var mode: StatusBarMode = .fullWidth { didSet { update(); updateChrome() } }
+    /// The zoom slider and the free-space bar. Split view keeps them on the active pane's bar only (one window's
+    /// worth, as ForkLift and QSpace show): the other pane's bar keeps just its folder and selection text.
+    var showsControls = true { didSet { if showsControls != oldValue { updateChrome() } } }
 
     private let material = TintedMaterialView(material: .titlebar, alpha: 0.82, blending: .withinWindow)
     private let hairline = NSView()
@@ -66,7 +69,7 @@ final class StatusBarView: NSView {
         let full = mode == .fullWidth
         material.isHidden = !full
         hairline.isHidden = !full
-        wantsSlider = full && Settings.shared.showZoomSlider
+        wantsSlider = full && Settings.shared.showZoomSlider && showsControls
         needsLayout = true
     }
 
@@ -137,7 +140,7 @@ final class StatusBarView: NSView {
         let textMin = 12 + Self.minTextWidth + 16
         let sliderW = wantsSlider ? Self.sliderGroupWidth : 0
         let diskW =
-            freeSpaceText.isEmpty
+            freeSpaceText.isEmpty || !showsControls
             ? 0
             : (freeSpaceText as NSString).size(withAttributes: [.font: Self.diskFont]).width + 8 + Self.diskBarWidth + 18
         let showsDisk = diskW > 0 && textMin + sliderW + diskW <= right
