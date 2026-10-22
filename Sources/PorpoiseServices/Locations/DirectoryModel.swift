@@ -299,7 +299,9 @@ public final class DirectoryModel {
         dynamicOverride = ViewOverride()
         searchOverride = ViewOverride()
         dynamicViewPending = true
+        columnOverride = ViewOverride()
         props = ViewStyleStore().style(for: location)
+        applyColumnMode()
         if !isLoading { applyDynamicView() }
         if isSearching { showSearchView() }
     }
@@ -341,7 +343,9 @@ public final class DirectoryModel {
             dynamicOverride = ViewOverride()
             searchOverride = ViewOverride()
             dynamicViewPending = true
+            columnOverride = ViewOverride()
             props = ViewStyleStore().style(for: url)
+            applyColumnMode()
             source = LocationContentSources.source(for: url)
             // Stop watching the old folder now: virtual and remote locations don't use FSEvents.
             updateWatcher()
@@ -801,7 +805,7 @@ public final class DirectoryModel {
     /// Dolphin's "Use icons view mode for locations which mostly contain media files".
     /// Shown, never saved as the folder's or the common style (`dynamicOverride`); checked once per visit.
     private func applyDynamicView() {
-        guard dynamicViewPending, source.traits.dynamicView else { return }
+        guard dynamicViewPending, source.traits.dynamicView, !browsesColumns else { return }
         dynamicViewPending = false
         guard Settings.shared.dynamicView, !Settings.shared.rememberPerFolder, items.count >= 4 else { return }
         let media = items.filter { $0.utType.map { $0.conforms(to: .image) || $0.conforms(to: .movie) } ?? false }.count
@@ -1030,8 +1034,53 @@ public final class DirectoryModel {
 
     /// Saves the shown properties as the folder's (or the common) style, minus the temporary overrides.
     public func saveProps() {
-        let p = dynamicOverride.stored(searchOverride.stored(props))
+        let p = columnOverride.stored(dynamicOverride.stored(searchOverride.stored(props)))
         ViewStyleStore().save(p, for: location)
+    }
+
+    // MARK: Column view
+
+    /// Column view: every folder shown in a column keeps the Columns mode while its own sort and other settings
+    /// apply. The mode is shown, never saved as such a folder's own.
+    public var browsesColumns = false {
+        didSet { if browsesColumns != oldValue { applyColumnMode() } }
+    }
+    private var columnOverride = ViewOverride()
+
+    private func applyColumnMode() {
+        if browsesColumns {
+            guard props.mode != .columns else { return }
+            var p = props
+            columnOverride.apply(to: &p) { $0.mode = .columns }
+            props = p
+        } else if !columnOverride.isEmpty {
+            props = columnOverride.removed(from: props)
+        }
+    }
+
+    /// Shows `other`'s listing of this same folder at once, while this model reads its own: in Column view a column
+    /// becomes the focused one (or the other way round) without going blank. Its rows are taken as they are when both
+    /// order and show items alike; otherwise its items are sorted here.
+    public func showListing(of other: DirectoryModel) {
+        guard other !== self, items.isEmpty, !other.items.isEmpty, !isSearching, !other.isSearching,
+            Self.sameFolder(other.location, location)
+        else { return }
+        items = other.items
+        folderCounts = other.folderCounts
+        if Self.sortsAlike(props, other.props), props.effectiveGroupRole == other.props.effectiveGroupRole, filter == other.filter,
+            other.expanded.isEmpty, other.rowPreparation == nil, incomingItems.isEmpty, other.incomingItems.isEmpty
+        {
+            sortedTop = other.sortedTop
+            rows = other.rows
+            groups = other.groups
+            onChange?()
+        } else {
+            rebuild()
+        }
+    }
+
+    private static func sameFolder(_ a: URL, _ b: URL) -> Bool {
+        a.isFileURL && b.isFileURL ? a.standardizedFileURL == b.standardizedFileURL : a == b
     }
 }
 

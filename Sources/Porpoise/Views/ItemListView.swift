@@ -21,12 +21,16 @@ protocol ItemListViewDelegate: AnyObject {
 final class ItemListView: NSView {
     let model: DirectoryModel
     weak var delegate: ItemListViewDelegate?
+    /// Column view: where ← and → go (the column before, or the one the current folder opens).
+    weak var columnNavigator: ColumnNavigating?
     var isActiveView = true { didSet { if isActiveView != oldValue { needsDisplay = true } } }
     /// Items cut to the clipboard (drawn dimmed); a view opened after the cut starts with them too.
     var cutURLs: Set<URL> = FileOperationsController.shared.cutURLs
     /// Dolphin's selection mode: plain clicks toggle items instead of replacing the selection.
     var selectionModeActive = false
     var mode: ViewMode { model.props.mode }
+    /// Details and Columns: one item per row, which never reflow when the view is resized or zoomed.
+    var isRowList: Bool { mode == .details || mode == .columns }
     var accessibleItems: [URL: ItemAccessibilityElement] = [:]
 
     // MARK: Layout output (+Layout)
@@ -110,6 +114,10 @@ final class ItemListView: NSView {
     static let margin: CGFloat = 8
     /// Details: indentation per tree level.
     static let indentPerLevel: CGFloat = 20
+    /// Column view: rows' inset from the column's sides and top, and the room the folder chevron takes at their end.
+    static let columnsInset: CGFloat = 8
+    static let columnsTop: CGFloat = 6
+    static let chevronWidth: CGFloat = 18
 
     /// The label font, cached: `Settings.labelFont` builds a new NSFont on every call.
     private(set) var font: NSFont

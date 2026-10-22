@@ -72,9 +72,14 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     var isActive = true {
         didSet {
             list.isActiveView = isActive
+            columnBrowser?.shareLook()
             needsDisplay = true
         }
     }
+    /// Column view's columns, while the pane shows them (`ViewContainer+Columns`).
+    var columnBrowser: ColumnBrowserView?
+    /// Column view's →: the folder gone into selects its first item once it has listed.
+    var selectsFirstOnLoad = false
     /// Split view: a 2 pt accent line along the top of the active pane, so which side keys and menus act on is plain
     /// at a glance (the tab sets it; one pane alone has none).
     var showsActiveEdge = false { didSet { activeEdge.isHidden = !showsActiveEdge } }
@@ -174,6 +179,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             self.apps?.grid.needsDisplay = true
             self.updateStatus()
             self.selectionBottom.enabled = !self.model.selection.isEmpty
+            self.columnBrowser?.syncAfter()
             self.delegate?.containerSelectionChanged(self)
         }
         model.onPropsChanged = { [weak self] in
@@ -181,6 +187,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             self.layoutSubtreeIfNeeded()
             self.layout()  // now: the Details header comes or goes, which resizes the scroll view
             self.list.relayout()
+            self.columnBrowser?.shareLook()
             // Keep the current item in view across mode changes (Dolphin does); a zoom keeps its own position.
             if !self.list.committingZoom {
                 if let c = self.model.currentURL ?? self.model.selection.first, let i = self.model.index(of: c) {
@@ -229,6 +236,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 self.list.select(self.model.rows[i].item.url)
             }
             self.pendingSelect = nil
+            if self.selectsFirstOnLoad {
+                self.selectsFirstOnLoad = false
+                if self.model.selection.isEmpty, let first = self.model.rows.first { self.list.select(first.item.url) }
+            }
         }
         let center = NotificationCenter.default
         observers.append(
@@ -355,6 +366,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             }
             // Hiding the focused list would hand focus to the next view (Places): give it to the grid instead.
             let listHadFocus = window?.firstResponder === list
+            layoutColumns(in: .zero)
             apps?.isHidden = false
             scroll.isHidden = true
             header.isHidden = true
@@ -376,8 +388,12 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             header.frame = CGRect(x: 0, y: y, width: bounds.width, height: ItemListView.headerHeight)
             y += ItemListView.headerHeight
         }
-        scroll.frame = CGRect(x: 0, y: y, width: bounds.width, height: max(0, bottom - y))
-        listState.frame = scroll.frame
+        let viewFrame = CGRect(x: 0, y: y, width: bounds.width, height: max(0, bottom - y))
+        layoutColumns(in: viewFrame)
+        if columnBrowser == nil {
+            scroll.frame = viewFrame
+            listState.frame = viewFrame
+        }
         if scroll.frame.size != laidOutScrollSize {
             laidOutScrollSize = scroll.frame.size
             list.transitions.resized()
@@ -436,7 +452,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         model.filter = AppLibrary.isActive(for: u) ? NameFilter() : filterBar.filter
         list.scroll(.zero)  // first: a location that loads synchronously restores its position inside setLocation
         list.transitions.navigate()
+        let lender = columnsWillNavigate(to: u)
         model.setLocation(u)
+        columnsDidNavigate(lender: lender, selecting: selecting)
         if AppLibrary.isActive(for: u) { apps?.prepareForDisplay() }
         RecentLocations.shared.visit(u)
         needsLayout = true

@@ -102,7 +102,7 @@ extension ItemListView {
         if incoming != nil || dimmedOffline(cloud) { NSGraphicsContext.current?.cgContext.setAlpha(0.5) }
         defer {
             NSGraphicsContext.restoreGraphicsState()
-            if let incoming, mode != .details {
+            if let incoming, mode != .details, mode != .columns {
                 let name = nameTextRect(i)
                 drawIncomingBar(incoming, in: CGRect(x: name.minX, y: name.maxY + 2, width: min(48, name.width), height: 4))
             }
@@ -126,11 +126,15 @@ extension ItemListView {
         case .icons: if !isRenamingThis { drawIconsText(i, selected: onSelection) }
         case .compact: if !isRenamingThis { drawCompactText(i, selected: onSelection) }
         case .details: drawDetailsText(i, selected: onSelection, showName: !isRenamingThis)
+        case .columns: drawColumnsText(i, selected: onSelection, showName: !isRenamingThis)
         }
     }
 
-    /// The selection is the focused one: this view, in the key window.
-    private var selectionIsEmphasized: Bool { isActiveView && window?.isKeyWindow != false }
+    /// The selection is the focused one: this view, in the key window. In Column view only the column with the keys
+    /// has it; the path through the columns before it shows in grey, as in Finder.
+    private var selectionIsEmphasized: Bool {
+        isActiveView && window?.isKeyWindow != false && (mode != .columns || window?.firstResponder === self)
+    }
 
     /// The native theme's selection, like Finder's: solid accent when it's the focused one, grey when not, no outline.
     private func drawNativeSelection(_ i: Int) {
@@ -410,6 +414,23 @@ extension ItemListView {
                 withAttributes: [.font: font, .foregroundColor: primaryTextColor(selected: selected), .paragraphStyle: p])
             x += w
         }
+    }
+
+    /// Column view: the name (with its tags and cloud glyph), then the chevron of an item that opens a column.
+    private func drawColumnsText(_ i: Int, selected: Bool, showName: Bool) {
+        let item = model.rows[i].item
+        let tr = nameTextRect(i)
+        if showName { drawNameWithTags(item, row: i, in: CGRect(x: tr.minX, y: tr.midY - lineHeight / 2, width: tr.width, height: lineHeight), selected: selected) }
+        guard let r = chevronRect(i) else { return }
+        let chevron = NSBezierPath()
+        chevron.move(to: CGPoint(x: r.minX + 4, y: r.minY + 2))
+        chevron.line(to: CGPoint(x: r.maxX - 4, y: r.midY))
+        chevron.line(to: CGPoint(x: r.minX + 4, y: r.maxY - 2))
+        chevron.lineWidth = 1.6
+        chevron.lineCapStyle = .round
+        chevron.lineJoinStyle = .round
+        (selected ? Theme.selectionText : Theme.viewTextInactive).withAlphaComponent(selected ? 1 : 0.8).setStroke()
+        chevron.stroke()
     }
 
     private func drawIncomingBar(_ fraction: Double, in rect: CGRect) {

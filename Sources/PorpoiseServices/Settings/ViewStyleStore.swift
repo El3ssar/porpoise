@@ -70,4 +70,15 @@ public struct ViewStyleStore {
         get { (d.dictionary(forKey: "columnWidths") as? [String: Double])?.mapValues { CGFloat($0) } ?? [:] }
         nonmutating set { d.set(newValue.mapValues { Double($0) }, forKey: "columnWidths") }
     }
+
+    /// Column view: the width a new column opens at (Option-dragging a column's handle sets it, as in Finder).
+    public static let defaultBrowserColumnWidth: CGFloat = 245
+    public static let browserColumnWidths: ClosedRange<CGFloat> = 120...800
+    public var browserColumnWidth: CGFloat {
+        get {
+            let w = d.double(forKey: "browserColumnWidth")
+            return w > 0 ? min(max(CGFloat(w), Self.browserColumnWidths.lowerBound), Self.browserColumnWidths.upperBound) : Self.defaultBrowserColumnWidth
+        }
+        nonmutating set { d.set(Double(newValue), forKey: "browserColumnWidth") }
+    }
 }
