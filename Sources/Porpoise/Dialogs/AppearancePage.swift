@@ -94,13 +94,14 @@ enum AppearancePage {
             "Density:", ViewDensity.allCases.map { $0.rawValue.capitalized },
             ViewDensity.allCases.firstIndex(of: s.appearancePreferences.density) ?? 1
         ) { i in s.updateAppearance { $0.density = ViewDensity.allCases[i] } }
-        for mode in ViewMode.allCases {
+        // Column view keeps Finder's small icons; its size follows the zoom like the other modes'.
+        for mode in ViewMode.allCases where mode != .columns {
             f.stepper(mode.title + " icon size:", iconSize(mode), 8...256, suffix: "pt") { value in
                 s.updateAppearance { p in
                     switch mode {
                     case .icons: p.iconsSize = value;
                     case .compact: p.compactSize = value;
-                    case .details: p.detailsSize = value
+                    case .details, .columns: p.detailsSize = value
                     }
                 }
                 s.applyAppearanceIconSizes()
@@ -130,7 +131,7 @@ enum AppearancePage {
         switch mode {
         case .icons: return p.iconsSize;
         case .compact: return p.compactSize;
-        case .details: return p.detailsSize
+        case .details, .columns: return p.detailsSize
         }
     }
     static func argumentsJSON() -> String {

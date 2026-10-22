@@ -17,6 +17,8 @@ final class InformationPanel: NSView {
     private let grid = NSStackView()
     /// Inspector look: same tinted material as the sidebar.
     private let material = TintedMaterialView(material: .sidebar, tint: Theme.panelBackground, alpha: 0.72)
+    /// Off where the panel sits inside the file view (Column view's preview column): the view's own background shows.
+    var showsMaterial = true { didSet { material.isHidden = !showsMaterial } }
     /// Dolphin's information panel plays audio/video inline. The view shows no controls of its own (see MediaControls).
     private let player = AVPlayerView()
     private let controls = MediaControls()

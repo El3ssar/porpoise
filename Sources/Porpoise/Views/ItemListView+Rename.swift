@@ -58,7 +58,7 @@ extension ItemListView: NSTextFieldDelegate {
         } else {
             // Like KItemListRoleEditor: as wide as the name plus some room, within the name column.
             let textW = textWidth(f.stringValue)
-            let w = min(mode == .details ? tr.width : max(tr.width, 300), max(160, textW + 40))
+            let w = min(isRowList ? tr.width : max(tr.width, 300), max(160, textW + 40))
             f.frame = CGRect(x: tr.minX - 3, y: tr.midY - (lineHeight + 6) / 2, width: w + 6, height: lineHeight + 6)
         }
     }

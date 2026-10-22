@@ -48,7 +48,7 @@ import Testing
     }
 
     @Test func listModesCenterTheBoxOnTheRow() throws {
-        for mode in [ViewMode.compact, .details] {
+        for mode in [ViewMode.compact, .details, .columns] {
             let (view, window) = try list(["Alpha-0.txt"], mode: mode)
             view.beginRename(view.model.rows[0].item.url)
             let field = try #require(view.renameField)

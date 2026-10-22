@@ -304,7 +304,7 @@ extension ItemListView {
     /// columns in Icons, of rows per column in Compact) glide there instead of jumping; a resize that keeps them in
     /// place is shown at once, so they never trail the pointer. True when they glide.
     fileprivate func resized() -> Bool {
-        guard mode != .details, layoutWidthOverride == nil, animates, frames.count == model.rows.count, !frames.isEmpty else {
+        guard !isRowList, layoutWidthOverride == nil, animates, frames.count == model.rows.count, !frames.isEmpty else {
             computeLayout()
             return false
         }
@@ -328,7 +328,7 @@ extension ItemListView {
     /// cells as in `resized()`, starting from where they were on screen; a running glide carries on, kept on screen
     /// across the scroll. True when a new glide started.
     fileprivate func reflowing(_ change: () -> Void) -> Bool {
-        guard mode != .details, layoutWidthOverride == nil, animates, frames.count == model.rows.count, !frames.isEmpty else {
+        guard !isRowList, layoutWidthOverride == nil, animates, frames.count == model.rows.count, !frames.isEmpty else {
             change()
             return false
         }

@@ -31,9 +31,11 @@ extension ItemListView {
         case Key.up: moveCurrent(.up, extend: shift); return
         case Key.down: moveCurrent(.down, extend: shift); return
         case Key.left:
+            if mode == .columns, mods.isEmpty { columnNavigator?.columnKey(right: false, from: self); return }
             if mode == .details, mods.isEmpty, collapseOrGoToParent() { return }
             moveCurrent(.left, extend: shift); return
         case Key.right:
+            if mode == .columns, mods.isEmpty { columnNavigator?.columnKey(right: true, from: self); return }
             if mode == .details, mods.isEmpty, expandCurrent() { return }
             moveCurrent(.right, extend: shift); return
         case Key.home: moveCurrent(.home, extend: shift); return
@@ -144,6 +146,7 @@ extension ItemListView {
             case (.icons, .right), (.details, .right): n = c + 1
             case (.compact, .left): n = compactColumnNeighbor(of: c, right: false) ?? 0
             case (.compact, .right): n = compactColumnNeighbor(of: c, right: true) ?? count - 1
+            case (.columns, .left), (.columns, .right): n = c  // with modifiers: ← and → move between columns only
             case (_, .up): n = c - 1
             case (_, .down): n = c + 1
             case (_, .home): n = 0
@@ -208,7 +211,10 @@ extension ItemListView {
 
     func scrollToItem(_ i: Int) {
         guard i < frames.count else { return }
-        let r = mode == .details ? frames[i].insetBy(dx: -Self.sidePadding, dy: -2) : frames[i].insetBy(dx: -4, dy: -4)
+        let r =
+            mode == .details
+            ? frames[i].insetBy(dx: -Self.sidePadding, dy: -2)
+            : mode == .columns ? frames[i].insetBy(dx: 0, dy: -2) : frames[i].insetBy(dx: -4, dy: -4)
         scrollToVisible(r)
     }
 

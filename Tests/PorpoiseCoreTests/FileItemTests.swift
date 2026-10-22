@@ -70,9 +70,11 @@ import Testing
     }
 
     @Test func labelsForMenusAndColumns() {
-        #expect(ViewMode.allCases.map(\.title) == ["Icons", "Compact", "Details"])
-        #expect(Set(ViewMode.allCases.map(\.iconName)).count == 3)
-        #expect(ViewMode.allCases.map(\.defaultZoom) == [2, 0, 0])
+        #expect(ViewMode.allCases.map(\.title) == ["Icons", "Compact", "Details", "Columns"])
+        #expect(Set(ViewMode.allCases.map(\.iconName)).count == 4)
+        #expect(ViewMode.allCases.map(\.defaultZoom) == [2, 0, 0, 0])
+        // Column view keeps Finder's 16 pt rows with previews on too.
+        #expect(ViewMode.allCases.map(\.defaultPreviewZoom) == [4, 2, 2, 0])
         #expect(Set(ItemRole.allCases.map(\.title)).count == ItemRole.allCases.count)
         #expect(Set(ItemRole.menuRoles + ItemRole.otherRoles) == Set(ItemRole.allCases))
         #expect(ItemRole.name.orderLabels.ascending == "A-Z" && ItemRole.size.orderLabels.descending == "Largest First")

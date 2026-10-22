@@ -226,6 +226,9 @@ extension DebugBridge {
     /// `perfbench <file> zoom <size0> <size1> <steps>`: the view (or the app library) zoomed step by step (as a pinch or the
     /// animation does).
     /// `perfbench <file> zoomanim <size>`: an animated zoom (Cmd+=), counting the frames it showed.
+    /// `perfbench <file> load <runs> <folder>`: the view goes to <folder> (from its parent) and back, timing until the
+    /// folder's rows show, drawn.
+    /// `perfbench <file> columnkeys <runs>`: Column view's → into the selected folder and ← back, each drawn.
     func perfBench(_ arg: String) {
         let a = arg.split(separator: " ").map(String.init)
         guard a.count >= 3, let win = wc?.window, let list = wc?.view.zoomView else { return }
@@ -267,6 +270,36 @@ extension DebugBridge {
                         model.setExpanded(folder.url, true)
                     }
                 })
+        case "load" where a.count == 4:
+            guard let view = wc?.view, let runs = Int(a[2]) else { return }
+            let folder = URL(fileURLWithPath: a[3]), parent = folder.deletingLastPathComponent()
+            var times: [Double] = [], k = 0, start = 0.0, inFolder = false
+            view.setURL(parent)
+            let t = Timer(timeInterval: 0.001, repeats: true) { t in
+                guard !view.model.isLoading, !view.model.rows.isEmpty else { return }
+                if inFolder {
+                    win.displayIfNeeded()
+                    CATransaction.flush()
+                    times.append(CACurrentMediaTime() - start)
+                    k += 1
+                    inFolder = false
+                    view.setURL(parent)
+                    if k >= runs { t.invalidate(); report(times, extra: " mode=\(view.model.props.mode.rawValue) rows=\(view.model.rows.count)") }
+                } else {
+                    inFolder = true
+                    start = CACurrentMediaTime()
+                    view.setURL(folder)
+                }
+            }
+            RunLoop.main.add(t, forMode: .common)
+        case "columnkeys" where n.count == 1:
+            guard let view = wc?.view, let browser = view.columnBrowser else { return }
+            var times: [Double] = []
+            for _ in 0..<max(1, Int(n[0])) {
+                times.append(timed { browser.columnKey(right: true, from: view.list) })
+                times.append(timed { browser.columnKey(right: false, from: view.list) })
+            }
+            report(times, extra: " rows=\(view.model.rows.count)")
         case "resize" where n.count == 3:
             var f = win.frame
             let steps = Int(n[2])

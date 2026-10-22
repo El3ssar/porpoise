@@ -299,7 +299,8 @@ public final class DirectoryModel {
         dynamicOverride = ViewOverride()
         searchOverride = ViewOverride()
         dynamicViewPending = true
-        props = ViewStyleStore().style(for: location)
+        columnOverride = ViewOverride()
+        props = inColumns(ViewStyleStore().style(for: location))
         if !isLoading { applyDynamicView() }
         if isSearching { showSearchView() }
     }
@@ -321,7 +322,8 @@ public final class DirectoryModel {
 
     // MARK: Location
 
-    public func setLocation(_ url: URL) {
+    /// `lender`: a model whose current listing of `url` is taken instead of reading the folder (`takeListing`).
+    public func setLocation(_ url: URL, takingListingOf lender: DirectoryModel? = nil) {
         let changed = url.standardizedFileURL != location.standardizedFileURL
         location = url
         if changed {
@@ -341,10 +343,12 @@ public final class DirectoryModel {
             dynamicOverride = ViewOverride()
             searchOverride = ViewOverride()
             dynamicViewPending = true
-            props = ViewStyleStore().style(for: url)
+            columnOverride = ViewOverride()
+            props = inColumns(ViewStyleStore().style(for: url))
             source = LocationContentSources.source(for: url)
             // Stop watching the old folder now: virtual and remote locations don't use FSEvents.
             updateWatcher()
+            if let lender, takeListing(of: lender) { return }
         }
         reload()
     }
@@ -801,7 +805,7 @@ public final class DirectoryModel {
     /// Dolphin's "Use icons view mode for locations which mostly contain media files".
     /// Shown, never saved as the folder's or the common style (`dynamicOverride`); checked once per visit.
     private func applyDynamicView() {
-        guard dynamicViewPending, source.traits.dynamicView else { return }
+        guard dynamicViewPending, source.traits.dynamicView, !browsesColumns else { return }
         dynamicViewPending = false
         guard Settings.shared.dynamicView, !Settings.shared.rememberPerFolder, items.count >= 4 else { return }
         let media = items.filter { $0.utType.map { $0.conforms(to: .image) || $0.conforms(to: .movie) } ?? false }.count
@@ -943,8 +947,15 @@ public final class DirectoryModel {
     }
 
     /// In row order. Without copying every row's item first: the status bar asks on every selection change.
-    public var selectedItems: [FileItem] {
-        selection.isEmpty ? [] : rows.compactMap { selection.contains($0.item.url) ? $0.item : nil }
+    public var selectedItems: [FileItem] { selectedRows.map { rows[$0].item } }
+
+    /// The rows of the selected items, in order. A few are looked up (the status bar, the preview and Column view ask
+    /// on every arrow key, and going through 100,000 rows each time made the keys lag); many are gone through.
+    private var selectedRows: [Int] {
+        guard !selection.isEmpty, let first = rows.first else { return [] }
+        guard selection.count <= 256 else { return rows.indices.filter { selection.contains(rows[$0].item.url) } }
+        if rowIndex == nil { _ = index(of: first.item.url) }
+        return selection.compactMap { rowIndex?[$0] }.sorted()
     }
 
     public var visibleCounts: (folders: Int, files: Int, bytes: Int64) {
@@ -957,8 +968,8 @@ public final class DirectoryModel {
 
     public var selectedCounts: (folders: Int, files: Int, bytes: Int64) {
         var f = 0, n = 0; var b: Int64 = 0
-        guard !selection.isEmpty else { return (0, 0, 0) }
-        for r in rows where selection.contains(r.item.url) {
+        for i in selectedRows {
+            let r = rows[i]
             if r.item.isBrowsableFolder { f += 1 } else { n += 1; b += r.item.size }
         }
         return (f, n, b)
@@ -1030,8 +1041,95 @@ public final class DirectoryModel {
 
     /// Saves the shown properties as the folder's (or the common) style, minus the temporary overrides.
     public func saveProps() {
-        let p = dynamicOverride.stored(searchOverride.stored(props))
+        let p = columnOverride.stored(dynamicOverride.stored(searchOverride.stored(props)))
         ViewStyleStore().save(p, for: location)
+    }
+
+    // MARK: Column view
+
+    /// Column view: every folder shown in a column keeps the Columns mode while its own sort and other settings
+    /// apply. The mode is shown, never saved as such a folder's own.
+    public var browsesColumns = false {
+        didSet { if browsesColumns != oldValue { applyColumnMode() } }
+    }
+    private var columnOverride = ViewOverride()
+
+    /// A folder's own settings as Column view shows them: never another mode, even for a moment (the pane would
+    /// leave Column view).
+    private func inColumns(_ own: ViewProperties) -> ViewProperties {
+        var p = own
+        if browsesColumns, p.mode != .columns { columnOverride.apply(to: &p) { $0.mode = .columns } }
+        return p
+    }
+
+    private func applyColumnMode() {
+        if browsesColumns {
+            guard props.mode != .columns else { return }
+            var p = props
+            columnOverride.apply(to: &p) { $0.mode = .columns }
+            props = p
+        } else if !columnOverride.isEmpty {
+            props = columnOverride.removed(from: props)
+        }
+    }
+
+    /// Shows `other`'s listing of this same folder at once, while this model reads its own: in Column view a column
+    /// becomes the focused one (or the other way round) without going blank. Its rows are taken as they are when both
+    /// order and show items alike; otherwise its items are sorted here.
+    public func showListing(of other: DirectoryModel) {
+        guard other !== self, items.isEmpty, !other.items.isEmpty, !isSearching, !other.isSearching,
+            Self.sameFolder(other.location, location)
+        else { return }
+        items = other.items
+        folderCounts = other.folderCounts
+        if Self.sortsAlike(props, other.props), props.effectiveGroupRole == other.props.effectiveGroupRole, filter == other.filter,
+            other.expanded.isEmpty, other.rowPreparation == nil, incomingItems.isEmpty, other.incomingItems.isEmpty
+        {
+            // Built once where the rows live, then shared: each focus move would otherwise index them again.
+            if other.rowIndex == nil, let first = other.rows.first { _ = other.index(of: first.item.url) }
+            sortedTop = other.sortedTop
+            rows = other.rows
+            groups = other.groups
+            // The same rows: their lookups too (rebuilding the path keys reads the disk for every row).
+            rowIndex = other.rowIndex
+            rowIndexByPath = other.rowIndexByPath
+            rowFileKeys = other.rowFileKeys
+            fileKeyCache = other.fileKeyCache
+            tagCache = other.tagCache
+            onChange?()
+        } else {
+            rebuild()
+        }
+    }
+
+    /// Takes `other`'s listing of this folder as this model's own, without reading the folder again: `other` read it
+    /// and has kept it current since (Column view moving the focus from one column to another). False when it can't
+    /// (`other` is still reading or failed, or this model already lists something); then this model reads the folder.
+    @discardableResult public func takeListing(of other: DirectoryModel) -> Bool {
+        guard other !== self, items.isEmpty, !isSearching, !other.isSearching, !other.loadingListing, !other.isRefreshing,
+            other.loadError == nil, other.edits.isEmpty, Self.sameFolder(other.location, location),
+            other.lastLoaded.map({ Self.sameFolder($0, location) }) == true
+        else { return false }
+        cancelRowPreparation()
+        currentLoad?.cancel(); currentLoad = nil
+        loadToken += 1
+        tagCache = [:]
+        cloudCache = [:]
+        fileKeyCache = [:]
+        metadataWanted = []
+        loadError = nil
+        blockedByPrivacy = false
+        locationVanished = false
+        if other.items.isEmpty { rebuild() } else { showListing(of: other) }
+        loadingListing = false
+        lastLoaded = location
+        updateWatcher()
+        notifyLoaded()
+        return true
+    }
+
+    private static func sameFolder(_ a: URL, _ b: URL) -> Bool {
+        a.isFileURL && b.isFileURL ? a.standardizedFileURL == b.standardizedFileURL : a == b
     }
 }
 

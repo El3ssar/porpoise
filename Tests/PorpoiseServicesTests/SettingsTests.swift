@@ -312,7 +312,7 @@ import Testing
     }
 
     @Test func viewEnums() {
-        #expect(ViewMode.allCases.map(\.rawValue) == ["icons", "compact", "details"])
+        #expect(ViewMode.allCases.map(\.rawValue) == ["icons", "compact", "details", "columns"])
         #expect(
             ItemRole.allCases.map(\.rawValue) == [
                 "name", "size", "modificationTime", "creationTime", "accessTime", "type", "path", "extension_", "permissions",

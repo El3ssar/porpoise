@@ -57,6 +57,7 @@ extension ItemListView {
         case .icons: contentSize = layoutIcons(width: width)
         case .compact: contentSize = layoutCompact(width: width)
         case .details: contentSize = layoutDetails(width: width)
+        case .columns: contentSize = layoutColumns(width: width)
         }
         // Laid out for a coming width while the real one animates: keep the view as wide as it is (the pane just shows
         // less of it). Resizing it on every step makes AppKit keep stale pieces of earlier frames at its tile seams.
@@ -210,6 +211,37 @@ extension ItemListView {
         return NSSize(width: max(width, total + 2 * side), height: max(visibleHeight, y + 4))
     }
 
+    /// Column view: one full-width row per item, inset from the column's edges, with room for the folder chevron. The
+    /// column never scrolls sideways: a long name is elided instead.
+    private func layoutColumns(width: CGFloat) -> NSSize {
+        let h = 2 * Self.pad + max(iconSize, lineHeight) + 2
+        let side = Self.columnsInset, groupH = groupHeaderHeight
+        let w = max(40, width - 2 * side)
+        var y: CGFloat = Self.columnsTop
+        var start = 0
+        var bands: [ItemCellFrames.Band] = []
+        for end in geometryHeaderStarts + [model.rows.count] {
+            if end > start {
+                bands.append(.init(start: start, origin: CGPoint(x: side, y: y)))
+                y += CGFloat(end - start) * h
+            }
+            if end < model.rows.count {
+                groupHeaderFrames.append(CGRect(x: side, y: y, width: w, height: groupH))
+                y += groupH
+            }
+            start = end
+        }
+        frames = ItemCellFrames(count: model.rows.count, bands: bands, cellSize: CGSize(width: w, height: h))
+        return NSSize(width: width, height: max(visibleHeight, y + Self.columnsTop))
+    }
+
+    /// Column view: the chevron that says a row opens a column (folders and other browsable items).
+    func chevronRect(_ i: Int) -> CGRect? {
+        guard mode == .columns, model.rows[i].item.isBrowsableFolder else { return nil }
+        let f = frames[i]
+        return CGRect(x: f.maxX - Self.chevronWidth, y: f.midY - 6, width: 12, height: 12)
+    }
+
     /// Group boundaries depend only on the row generation, not the window or zoom level.
     private func cacheGeometryTopology() {
         guard geometryRowsRevision != model.rowsRevision else { return }
@@ -329,6 +361,8 @@ extension ItemListView {
         case .details:
             let indent = CGFloat(model.rows[i].depth) * Self.indentPerLevel + expanderWidth
             return CGRect(x: f.minX + indent + pad, y: f.midY - s / 2, width: s, height: s)
+        case .columns:
+            return CGRect(x: f.minX + 6, y: f.midY - s / 2, width: s, height: s)
         }
     }
 
@@ -357,6 +391,8 @@ extension ItemListView {
         case .details:
             let nameW = columnWidths[.name] ?? 200
             return CGRect(x: ir.maxX + 6, y: f.minY, width: f.minX + nameW - ir.maxX - 12, height: f.height)
+        case .columns:
+            return CGRect(x: ir.maxX + 6, y: f.minY, width: max(0, f.maxX - Self.chevronWidth - 4 - ir.maxX - 6), height: f.height)
         }
     }
 
@@ -385,6 +421,9 @@ extension ItemListView {
             }
             let tr = nameTextRect(i)
             return CGRect(x: ir.minX - 2, y: f.minY + 1, width: tr.minX - ir.minX + textWidth(name) + 8, height: f.height - 2)
+        case .columns:
+            // Finder highlights the whole row of a column.
+            return CGRect(x: f.minX, y: f.minY + 0.5, width: f.width, height: f.height - 1)
         }
     }
 

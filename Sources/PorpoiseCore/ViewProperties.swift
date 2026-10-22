@@ -1,13 +1,14 @@
 import Foundation
 
 public enum ViewMode: String, Codable, CaseIterable, Sendable {
-    case icons, compact, details
+    case icons, compact, details, columns
 
     public var title: String {
         switch self {
         case .icons: return "Icons"
         case .compact: return "Compact"
         case .details: return "Details"
+        case .columns: return "Columns"
         }
     }
 
@@ -16,6 +17,7 @@ public enum ViewMode: String, Codable, CaseIterable, Sendable {
         case .icons: return "view-list-icons"
         case .compact: return "view-list-details"
         case .details: return "view-list-tree"
+        case .columns: return "view-split-left-right"
         }
     }
 
@@ -23,7 +25,7 @@ public enum ViewMode: String, Codable, CaseIterable, Sendable {
     public var defaultZoom: Int {
         switch self {
         case .icons: return 2  // 32 px
-        case .compact, .details: return 0  // 16 px
+        case .compact, .details, .columns: return 0  // 16 px
         }
     }
 
@@ -32,6 +34,7 @@ public enum ViewMode: String, Codable, CaseIterable, Sendable {
         switch self {
         case .icons: return 4  // 64 px
         case .compact, .details: return 2  // 32 px
+        case .columns: return 0  // Finder's column rows stay 16 px, previews or not
         }
     }
 }

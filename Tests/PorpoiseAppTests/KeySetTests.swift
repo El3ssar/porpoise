@@ -52,7 +52,7 @@ import Testing
         #expect(!items(m).contains { $0.keyEquivalent == KeyEquivalent.forwardDelete })
         #expect(!items(m).contains { $0.title == "Customise Toolbar…" } && items(m).contains { $0.title == "Customize Toolbar…" })
         // The view settings dropdown uses the same view-mode keys.
-        #expect(W.viewModeItems().map(\.title) == ["Icons", "Details", "Compact"])
+        #expect(W.viewModeItems().map(\.title) == ["Icons", "Details", "Compact", "Columns"])
     }
 
     /// The Dolphin preset gives back exactly the map earlier versions had (captured from 0.9.1's menu bar), except ⌘?,
@@ -61,8 +61,10 @@ import Testing
         let before = Self.map091.map { "\($0.0) \($0.1.unicodeScalars.map { String($0.value, radix: 16) }) \($0.2)" }
         var expected = before.filter { !$0.hasPrefix("showHelp:") }
         expected.append("showKeyboardShortcuts:#0# [\"3f\"] 1048576")
+        // Column view (0.11) came after: ⌘4 in both key sets.
+        expected.append("setViewMode:#3# [\"34\"] 1048576")
         #expect(bindings(menu(.dolphin)) == expected.sorted())
-        #expect(W.viewModeItems().map(\.title) == ["Icons", "Compact", "Details"])
+        #expect(W.viewModeItems().map(\.title) == ["Icons", "Compact", "Details", "Columns"])
     }
 
     /// No two items share a key in either set (what `commandcatalog` would report as a conflict once customized).
