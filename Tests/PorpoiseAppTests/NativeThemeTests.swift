@@ -89,7 +89,7 @@ import Testing
         let material = TintedMaterialView(material: .sidebar, tint: Theme.sidebarBackground, alpha: 0.70)
         func tintAlpha() -> CGFloat {
             Theme.lookChanged()
-            return material.layer?.sublayers?.compactMap(\.backgroundColor).first?.alpha ?? -1
+            return material.tintLayer.backgroundColor?.alpha ?? -1
         }
         #expect(tintAlpha() == 0)
         Settings.shared.updateAppearance { $0.themeName = "Breeze Dark" }
