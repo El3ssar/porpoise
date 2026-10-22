@@ -13,12 +13,20 @@ FLAGS=(-Xswiftc -file-prefix-map -Xswiftc "$PWD=." -Xcc "-ffile-prefix-map=$PWD=
 # release (PORPOISE_RELEASE=1, set by .github/workflows/release.yml; scripts/check-release.sh checks the disk image).
 [ "${PORPOISE_RELEASE:-}" = 1 ] || FLAGS+=(-Xswiftc -DPORPOISE_TEST_HOOKS)
 # Only what ships: the test support targets don't build in release.
-swift build -c "$CONFIG" --arch arm64 "${FLAGS[@]}" --product Porpoise
+swift build -c "$CONFIG" --arch arm64 -j "${SWIFT_JOBS:-2}" "${FLAGS[@]}" --product Porpoise
 BIN=$(swift build -c "$CONFIG" --arch arm64 "${FLAGS[@]}" --show-bin-path)
 APP=build/Porpoise.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/Porpoise" "$APP/Contents/MacOS/Porpoise"
+# Capture the exact linked build while its debug map and object files still exist.
+# Symbols stay outside the app/DMG. Release CI retains them as a separate artifact.
+if [ "$CONFIG" = release ]; then
+  mkdir -p build/symbols
+  rm -rf build/symbols/Porpoise.dSYM
+  xcrun dsymutil --num-threads 2 "$BIN/Porpoise" -o build/symbols/Porpoise.dSYM
+  python3 scripts/check-symbols.py verify "$BIN/Porpoise" build/symbols/Porpoise.dSYM
+fi
 strip -S "$APP/Contents/MacOS/Porpoise"
 # Sparkle (in-app updates). Its XPC services are only for sandboxed apps; Porpoise isn't sandboxed.
 mkdir -p "$APP/Contents/Frameworks"
@@ -184,6 +192,9 @@ SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 codesign -dvvv "$HELPER_APP" 2>&1 | sed -n 's/^CDHash=//p' > build/helper-cdhash.txt
 # The hardened runtime blocks code injection (the privileged helper trusts Porpoise's signature).
 "${SIGN[@]}" --identifier app.porpoise.Porpoise --entitlements Resources/Porpoise.entitlements "$APP"
+if [ "$CONFIG" = release ]; then
+  python3 scripts/check-symbols.py verify "$APP/Contents/MacOS/Porpoise" build/symbols/Porpoise.dSYM
+fi
 echo "built $APP (helper cdhash $(cat build/helper-cdhash.txt))"
 if [ "${1:-}" = "--install" ]; then
   mkdir -p "$HOME/Applications"
