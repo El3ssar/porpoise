@@ -1,8 +1,9 @@
 import Foundation
 
 /// What the privileged helper does with a request, apart from XPC and finding out who asked: checking it and running
-/// the tool. Kept here so it can be tested in-process, without root or launchd.
+/// the filesystem operation. Kept here so it can be tested in-process, without root or launchd.
 public enum HelperRequests {
+    private static let executionLock = NSLock()
     /// Why the helper won't run `arguments` (the tool first), or nil when it is one of `PorpoiseHelperInfo.allowedTools`
     /// in exactly a form Porpoise sends (`administratorCommands`, `renameCommands`, New Item, Properties): fixed
     /// options, then absolute paths. A process that got into Porpoise can't make it run anything else as root:
@@ -190,18 +191,11 @@ public enum HelperRequests {
         }
     }
 
-    /// Runs a tool (no shell); nil on success, else what went wrong.
+    /// Decodes the allowlisted wire request and operates on validated descriptors. Never launches a tool.
     public static func run(_ arguments: [String]) -> String? {
-        guard let tool = arguments.first else { return "Porpoise's helper doesn't run nothing." }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: tool)
-        p.arguments = Array(arguments.dropFirst())
-        let err = Pipe()
-        p.standardError = err
-        p.standardOutput = FileHandle.nullDevice
-        do { try p.run() } catch { return error.localizedDescription }
-        let msg = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        p.waitUntilExit()
-        return p.terminationStatus == 0 ? nil : (msg.isEmpty ? "\(tool) failed." : msg.trimmingCharacters(in: .whitespacesAndNewlines))
+        executionLock.withLock {
+            var operation = HelperFileOperations()
+            return operation.run(arguments)
+        }
     }
 }

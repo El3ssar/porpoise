@@ -45,7 +45,7 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
         return true
     }
 
-    func version(reply: @escaping (String) -> Void) { reply("5") }
+    func version(reply: @escaping (String) -> Void) { reply("6") }
 
     /// The user who asked (Porpoise runs as them; its signature was checked when it connected), if they may use the
     /// helper: administrators only. Checked on every request, so a user removed from admin is refused at once.
@@ -71,7 +71,7 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
     }
 
     func run(_ arguments: [String], reply: @escaping (String?) -> Void) {
-        reply(caller().refusal ?? HelperRequests.refusal(arguments) ?? HelperRequests.run(arguments))
+        reply(caller().refusal ?? HelperRequests.run(arguments))
     }
 }
 

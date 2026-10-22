@@ -5,8 +5,8 @@ import Foundation
 /// apps that belong to the system to the Trash. It answers only to Porpoise signed with the same certificate as itself.
 @objc(_TtP12PorpoiseCore22PorpoiseHelperProtocol_) public protocol PorpoiseHelperProtocol {
     func version(reply: @escaping (String) -> Void)
-    /// Runs one of the file tools in `allowedTools` (no shell) with `arguments` (the tool first). Replies nil on
-    /// success, or what went wrong.
+    /// Interprets one of the fixed legacy file-operation arrays in `allowedTools` (identifier first). Operates on
+    /// validated descriptors, never launches a tool. Replies nil on success, or what went wrong.
     func run(_ arguments: [String], reply: @escaping (String?) -> Void)
     /// Makes the user who asked the owner of an item in their own Trash (the home Trash or a volume's
     /// .Trashes/<uid>), so emptying the Trash later needs no administrator rights. Nothing outside it.
@@ -27,7 +27,7 @@ public enum PorpoiseHelperInfo {
     public static let oldInstalledTool = "/Library/PrivilegedHelperTools/app.porpoise.helper"
     public static let appIdentifier = "app.porpoise.Porpoise"
     public static let helperIdentifier = "app.porpoise.Porpoise.helper"
-    /// The only programs the helper runs.
+    /// Legacy wire identifiers, decoded into descriptor-bound filesystem operations; never executed as programs.
     public static let allowedTools: Set<String> = ["/bin/mv", "/bin/cp", "/bin/ln", "/bin/mkdir", "/bin/chmod", "/bin/rm", "/usr/bin/chflags"]
 
     /// Whether `path` sits directly in user `uid`'s Trash: `home`/.Trash, or a volume's /Volumes/<name>/.Trashes/<uid>.
