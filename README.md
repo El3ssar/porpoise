@@ -316,7 +316,8 @@ In the file list: arrows move (⇧ extends), Space is Quick Look, ⌫ goes back,
 
 Porpoise is free and always will be. If it's useful to you, you can support its development through
 [GitHub Sponsors](https://github.com/sponsors/El3ssar) (also in *Help › Support Porpoise*). Bug reports and ideas are
-just as welcome: [open an issue](https://github.com/El3ssar/porpoise/issues).
+just as welcome: *Help › Report a Bug…* opens the bug form with your Porpoise and macOS versions filled in, and shows
+the diagnostics you can attach (no file names, paths, servers or accounts), or [open an issue](https://github.com/El3ssar/porpoise/issues).
 
 ## Build from source
 
