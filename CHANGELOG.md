@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.0
+
+- **Column view.** View › Columns (⌘4) shows Finder-style columns with a preview column, arrow keys between columns, resizable columns and per-folder settings, on local, remote and cloud folders.
+- **A safer privileged helper.** The helper that does administrator tasks now acts on the exact item it checked, so a file swapped for a link mid-operation can't be hit, and an interrupted delete or rename keeps a recovery record instead of losing the item. Moving something to another disk with administrator rights now stops and restores instead of copying and deleting; copying still works. macOS asks you once to approve the helper again.
+- **Help that helps.** Help › Install Guide opens the first-launch guide, Help › Report a Bug… opens GitHub's bug form with your app and macOS versions filled in, and Help › Export Diagnostics… shows exactly what Porpoise noted about recent errors (no file names, paths, servers or accounts) before you save it. Nothing is ever sent by Porpoise.
+- **Steadier under load.** Logins, previews and menus are safe across threads, menu icons that showed nothing now appear, and small Google Drive copies stay parallel on a busy Mac.
+- **Tidier settings and panels.** Settings buttons line up with the fields they act on; the Shelf panel has a sidebar-style header and full-size Copy and Move buttons; type sizes in Compare Files, Activity, Connections and the disk utilities follow one scale.
+
 ## 0.10.0
 
 - **Quieter window chrome.** The sidebar lists only the tags you use; in split view the active pane has an accent edge and keeps the zoom slider and free space; Split is an icon button; the path starts with a home, disk or server symbol.
