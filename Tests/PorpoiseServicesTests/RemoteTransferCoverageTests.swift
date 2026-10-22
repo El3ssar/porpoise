@@ -72,9 +72,9 @@ final class RemoteTransferCoverageTests {
         #expect(read(dir.appendingPathComponent("copy me.txt")) == "copied")
 
         let moved = try await run(.move, [remote(dir.appendingPathComponent("move me.txt"))], to: dst)
-        #expect(moved.errors.isEmpty && moved.results.count == 1)
+        #expect(moved.errors.contains { $0.contains("source retained") } && moved.results.isEmpty)
         #expect(local.read("dst/move me.txt") == "moved")
-        #expect(!fm.fileExists(atPath: dir.appendingPathComponent("move me.txt").path))
+        #expect(read(dir.appendingPathComponent("move me.txt")) == "moved")
     }
 
     @Test func uploadsWithCopyAndMove() async throws {
@@ -158,8 +158,8 @@ final class RemoteTransferCoverageTests {
         #expect(read(dir.appendingPathComponent("dst/c.txt")) == "c" && read(dir.appendingPathComponent("src/c.txt")) == "c")
 
         let moved = try await run(.move, [remote(dir.appendingPathComponent("src/m.txt"))], to: dest)
-        #expect(moved.errors.isEmpty)
-        #expect(read(dir.appendingPathComponent("dst/m.txt")) == "m" && !fm.fileExists(atPath: dir.appendingPathComponent("src/m.txt").path))
+        #expect(moved.errors.contains { $0.contains("source retained") })
+        #expect(read(dir.appendingPathComponent("dst/m.txt")) == "m" && read(dir.appendingPathComponent("src/m.txt")) == "m")
 
         // Moved into the folder it is already in: nothing to do.
         let stays = try await run(.move, [remote(dir.appendingPathComponent("dst/m.txt"))], to: server.url(dir.appendingPathComponent("dst").path))
@@ -178,8 +178,8 @@ final class RemoteTransferCoverageTests {
         #expect(read(dir.appendingPathComponent("dst/c.txt")) == "c" && read(dir.appendingPathComponent("src/c.txt")) == "c")
 
         let moved = try await run(.move, [remote(dir.appendingPathComponent("src/m.txt"))], to: dest)
-        #expect(moved.errors.isEmpty)
-        #expect(read(dir.appendingPathComponent("dst/m.txt")) == "m" && !fm.fileExists(atPath: dir.appendingPathComponent("src/m.txt").path))
+        #expect(moved.errors.contains { $0.contains("source retained") })
+        #expect(read(dir.appendingPathComponent("dst/m.txt")) == "m" && read(dir.appendingPathComponent("src/m.txt")) == "m")
     }
 
     @Test func deletesRemoteAndLocalItemsOfOneSelection() async throws {
@@ -212,9 +212,9 @@ extension RemoteTransferCoverageTests {
         let source = folder.appendingPathComponent("ssh-to-drive.txt")
         try write("bytes survive both moves", source)
         let upload = try await run(.move, [remote(source)], to: root)
-        #expect(upload.errors.isEmpty && upload.results.count == 1)
-        #expect(!fm.fileExists(atPath: source.path))
-        let remoteItem = try #require(upload.results.first)
+        #expect(upload.errors.contains { $0.contains("source retained") } && upload.results.isEmpty)
+        #expect(read(source) == "bytes survive both moves")
+        let remoteItem = try #require(try provider.list(root).first { $0.name == "ssh-to-drive.txt" }?.url)
         let destination = try server.folder()
         let download = try await run(.move, [remoteItem], to: remoteFolder(destination))
         #expect(download.errors.isEmpty && download.results.count == 1)
