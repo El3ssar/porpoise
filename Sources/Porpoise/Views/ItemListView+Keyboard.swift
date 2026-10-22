@@ -213,7 +213,8 @@ extension ItemListView {
         guard i < frames.count else { return }
         let r =
             mode == .details
-            ? frames[i].insetBy(dx: -Self.sidePadding, dy: -2) : mode == .columns ? frames[i].insetBy(dx: 0, dy: -2) : frames[i].insetBy(dx: -4, dy: -4)
+            ? frames[i].insetBy(dx: -Self.sidePadding, dy: -2)
+            : mode == .columns ? frames[i].insetBy(dx: 0, dy: -2) : frames[i].insetBy(dx: -4, dy: -4)
         scrollToVisible(r)
     }
 

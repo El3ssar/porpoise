@@ -1,11 +1,11 @@
 import AppKit
 import PorpoiseCore
-@testable import PorpoiseServices
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
 @testable import Porpoise
+@testable import PorpoiseServices
 
 /// Column view (RM-8): Finder's columns, keys, clicks, widths and preview, on the pane's own list.
 @Suite(.serialized, .isolatedSettings) @MainActor struct ColumnViewTests {

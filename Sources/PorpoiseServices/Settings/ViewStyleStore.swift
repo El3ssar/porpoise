@@ -77,7 +77,8 @@ public struct ViewStyleStore {
     public var browserColumnWidth: CGFloat {
         get {
             let w = d.double(forKey: "browserColumnWidth")
-            return w > 0 ? min(max(CGFloat(w), Self.browserColumnWidths.lowerBound), Self.browserColumnWidths.upperBound) : Self.defaultBrowserColumnWidth
+            return w > 0
+                ? min(max(CGFloat(w), Self.browserColumnWidths.lowerBound), Self.browserColumnWidths.upperBound) : Self.defaultBrowserColumnWidth
         }
         nonmutating set { d.set(Double(newValue), forKey: "browserColumnWidth") }
     }

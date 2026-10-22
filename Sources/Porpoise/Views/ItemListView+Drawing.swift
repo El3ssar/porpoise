@@ -420,7 +420,10 @@ extension ItemListView {
     private func drawColumnsText(_ i: Int, selected: Bool, showName: Bool) {
         let item = model.rows[i].item
         let tr = nameTextRect(i)
-        if showName { drawNameWithTags(item, row: i, in: CGRect(x: tr.minX, y: tr.midY - lineHeight / 2, width: tr.width, height: lineHeight), selected: selected) }
+        if showName {
+            drawNameWithTags(
+                item, row: i, in: CGRect(x: tr.minX, y: tr.midY - lineHeight / 2, width: tr.width, height: lineHeight), selected: selected)
+        }
         guard let r = chevronRect(i) else { return }
         let chevron = NSBezierPath()
         chevron.move(to: CGPoint(x: r.minX + 4, y: r.minY + 2))

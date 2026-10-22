@@ -26,7 +26,10 @@ import Testing
         let root = try #require(URL(string: "sftp://me@host:2222/home/me"))
         let deep = try #require(URL(string: "sftp://me@host:2222/home/me/src/app"))
         let chain = try #require(ColumnPath.chain(from: root, to: deep))
-        #expect(chain.map(\.absoluteString) == ["sftp://me@host:2222/home/me", "sftp://me@host:2222/home/me/src/", "sftp://me@host:2222/home/me/src/app/"])
+        #expect(
+            chain.map(\.absoluteString) == [
+                "sftp://me@host:2222/home/me", "sftp://me@host:2222/home/me/src/", "sftp://me@host:2222/home/me/src/app/",
+            ])
         #expect(chain.last?.path == "/home/me/src/app")
         #expect(ColumnPath.chain(from: root, to: URL(string: "sftp://me@other:2222/home/me/src")!) == nil)
         #expect(ColumnPath.chain(from: root, to: URL(string: "sftp://you@host:2222/home/me/src")!) == nil)

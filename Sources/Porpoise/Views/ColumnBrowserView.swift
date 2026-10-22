@@ -352,11 +352,13 @@ final class ColumnBrowserView: NSView {
         target = max(0, min(target, content.frame.width - visible))
         let from = clip.bounds.origin.x
         guard abs(target - from) > 0.5 else { return }
-        scroller.run(duration: 0.22, step: { [weak self] p in
-            guard let self else { return }
-            self.strip.contentView.scroll(to: CGPoint(x: from + (target - from) * CGFloat(p), y: 0))
-            self.strip.reflectScrolledClipView(self.strip.contentView)
-        })
+        scroller.run(
+            duration: 0.22,
+            step: { [weak self] p in
+                guard let self else { return }
+                self.strip.contentView.scroll(to: CGPoint(x: from + (target - from) * CGFloat(p), y: 0))
+                self.strip.reflectScrolledClipView(self.strip.contentView)
+            })
     }
 
     private func makeHandle() -> ColumnResizeHandle {
