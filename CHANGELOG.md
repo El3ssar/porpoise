@@ -2,6 +2,7 @@
 
 ## 0.11.0
 
+- **Calmer details.** Appearance is chosen in one place (Settings › Appearance), and the light and dark theme pickers show only under "Follow system"; empty and loading folders show a quiet symbol; the search bar's scope and mode are segmented controls; more of the app follows one type scale.
 - **Column view.** View › Columns (⌘4) shows Finder-style columns with a preview column, arrow keys between columns, resizable columns and per-folder settings, on local, remote and cloud folders.
 - **A safer privileged helper.** The helper that does administrator tasks now acts on the exact item it checked, so a file swapped for a link mid-operation can't be hit, and an interrupted delete or rename keeps a recovery record instead of losing the item. Moving something to another disk with administrator rights now stops and restores instead of copying and deleting; copying still works. macOS asks you once to approve the helper again.
 - **Help that helps.** Help › Install Guide opens the first-launch guide, Help › Report a Bug… opens GitHub's bug form with your app and macOS versions filled in, and Help › Export Diagnostics… shows exactly what Porpoise noted about recent errors (no file names, paths, servers or accounts) before you save it. Nothing is ever sent by Porpoise.
