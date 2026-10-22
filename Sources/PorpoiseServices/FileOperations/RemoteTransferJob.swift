@@ -174,7 +174,12 @@ final class RemoteTransferJob {
         return count
     }
 
+    private var moveRemovals: [URL: MoveSourceRemoval] = [:]
+
     func transfer(_ source: URL, into folder: URL) throws -> URL? {
+        if kind == .move, let incoming = try item(source), !incoming.isDirectory {
+            moveRemovals[source] = try MoveSourceRemoval(source)
+        }
         if RemoteFS.provider(for: source) is CloudTransferProvider || RemoteFS.provider(for: folder) is CloudTransferProvider {
             return try transferCloud(source, into: folder)
         }
@@ -325,6 +330,7 @@ final class RemoteTransferJob {
     }
 
     func merge(_ source: URL, into target: URL) throws -> URL {
+        let directoryRemoval = kind == .move ? try MoveSourceRemoval(source) : nil
         if sources.contains(source), let incoming = try item(source) { publishIncoming(source, item: incoming, target: target) }
         var firstFailure: Error?
         for child in try children(source) {
@@ -337,9 +343,13 @@ final class RemoteTransferJob {
         // Never recursively delete a moved source folder: it may contain skipped or newly created items.
         if kind == .move {
             if source.isFileURL {
-                _ = rmdir(source.path)
-            } else if try children(source, fresh: true).isEmpty {
-                try Shell.withoutTransferControl { try RemoteFS.provider(for: source)?.removeEmptyFolder(source) }
+                try directoryRemoval?.local?.removeEmptyDirectory()
+            } else {
+                guard try children(source, fresh: true).isEmpty, let receipt = directoryRemoval?.remote else {
+                    throw RemoteError.failed(
+                        "Copy published; source folder retained because it changed or safe generation-bound removal is unavailable.")
+                }
+                try Shell.withoutTransferControl { try receipt.removeSource() }
             }
         }
         completed[source] = target
@@ -387,19 +397,33 @@ final class RemoteTransferJob {
             if let result = try native.copyTransferFile(source, to: target, replacing: replacing, modified: preserved) {
                 try Shell.withoutTransferControl {
                     try beforeSourceRemoval?()
-                    if kind == .move && !sourceRemovalHandled { try result.removeSource() }
+                    if kind == .move && !sourceRemovalHandled {
+                        do { try result.removeSource() } catch {
+                            throw RemoteError.failed("Copy published; source removal needs review. \(error.localizedDescription)")
+                        }
+                    }
                 }
                 return
             }
         }
+        let removal = kind == .move && !sourceRemovalHandled ? (try moveRemovals[source] ?? MoveSourceRemoval(source)) : nil
         let scratch = try Self.temporaryFolder()
         defer { try? FileManager.default.removeItem(at: scratch) }
-        let downloaded: URL
+        var downloaded: URL
         if let cloud = RemoteFS.provider(for: source) as? CloudTransferProvider, let operationID = sourceDownloadOperationID {
             downloaded = try cloud.downloadTransfer(source, into: scratch, operationID: operationID)
         } else {
             downloaded = try RemoteFS.provider(for: source)?.download(source, into: scratch) ?? source
         }
+        if source.isFileURL, removal != nil {
+            let snapshotFolder = scratch.appendingPathComponent("Snapshot")
+            try FileManager.default.createDirectory(at: snapshotFolder, withIntermediateDirectories: false)
+            let snapshot = snapshotFolder.appendingPathComponent(source.lastPathComponent)
+            try FileManager.default.copyItem(at: source, to: snapshot)
+            try removal?.local?.verifyCopy(snapshot)
+            downloaded = snapshot
+        }
+        let copiedDigest = removal != nil ? try FileChecksums.digest(downloaded, cancellation: control.asDiskCancellation()) : nil
         if let provider = RemoteFS.provider(for: target) {
             let stageFolder = try stagingFolder(for: target)
             var staged = stageFolder.appendingPathComponent(downloaded.lastPathComponent)
@@ -431,7 +455,12 @@ final class RemoteTransferJob {
                 }
                 published = true
                 try beforeSourceRemoval?()
-                if kind == .move { try removeOriginal(source) }
+                if let removal {
+                    guard try digest(target) == copiedDigest else {
+                        throw RemoteError.failed("Copy published; source retained because destination verification failed.")
+                    }
+                    try removal.remove(afterVerifying: downloaded)
+                }
             }
         } else {
             guard target.isFileURL else { throw RemoteError.unsupported("Unsupported destination.") }
@@ -481,12 +510,31 @@ final class RemoteTransferJob {
                 guard renamex_np(staged.path, target.path, UInt32(RENAME_EXCL)) == 0 else { throw RemoteError.exists(target.lastPathComponent) }
             }
             try beforeSourceRemoval?()
-            if kind == .move, !sourceRemovalHandled { try Shell.withoutTransferControl { try removeOriginal(source) } }
+            if let removal {
+                guard try digest(target) == copiedDigest else {
+                    throw RemoteError.failed("Copy published; source retained because destination verification failed.")
+                }
+                try Shell.withoutTransferControl { try removal.remove(afterVerifying: target) }
+            }
         }
     }
 
     func removeOriginal(_ source: URL) throws {
-        if let provider = RemoteFS.provider(for: source) { try provider.delete([source]) } else { try FileManager.default.removeItem(at: source) }
+        guard let removal = moveRemovals[source] else {
+            throw RemoteError.failed("Copy published; source retained because no source generation receipt is available.")
+        }
+        // Cloud callers already verified the destination receipt. A local receipt still validates
+        // the captured bytes and claims the source pathname before deletion.
+        let scratch = try Self.temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let local: URL
+        if let provider = RemoteFS.provider(for: source) {
+            local = try provider.download(source, into: scratch)
+        } else {
+            local = scratch.appendingPathComponent(source.lastPathComponent)
+            try FileManager.default.copyItem(at: source, to: local)
+        }
+        try removal.remove(afterVerifying: local)
     }
 
     func legCount(_ source: URL) -> Int64 {
