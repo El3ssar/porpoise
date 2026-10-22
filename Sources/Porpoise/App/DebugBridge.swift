@@ -306,6 +306,8 @@ final class DebugBridge: NSObject {
                     k = names[c.value] ?? (c.value >= 0xF704 && c.value <= 0xF726 ? "F\(Int(c.value) - 0xF703)" : "?")
                 }
                 if k == "\u{8}" || k == "\u{7f}" { k = "⌫" }
+                if k == "\r" { k = "↩" }
+                if k == "\t" { k = "⇥" }
                 let mods = it.keyEquivalentModifierMask
                 let ks =
                     k.isEmpty
