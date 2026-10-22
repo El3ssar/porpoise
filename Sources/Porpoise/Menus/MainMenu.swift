@@ -243,6 +243,9 @@ extension AppDelegate {
         // Help
         let help = NSMenu(title: "Help")
         help.addItem(mi("Keyboard Shortcuts", #selector(showKeyboardShortcuts(_:)), "?", icon: "input-keyboard"))
+        help.addItem(mi("Install Guide", #selector(showInstallGuide(_:)), icon: "package-install"))
+        help.addItem(mi("Report a Bug…", #selector(reportBug(_:)), icon: "emblem-warning"))
+        help.addItem(sep())
         help.addItem(mi("Porpoise Website", #selector(showHelp(_:)), icon: "help-contents"))
         help.addItem(mi("Export Diagnostics…", #selector(exportDiagnostics(_:)), icon: "document-export"))
         help.addItem(mi("Support Porpoise (Donate)…", #selector(supportPorpoise(_:)), icon: "emblem-favorite"))
