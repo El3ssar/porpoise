@@ -92,7 +92,7 @@ final class OnboardingWindowController: SecondaryWindowController {
         bg.frame = content.bounds
         bg.autoresizingMask = [.width, .height]
         content.addSubview(bg)
-        pages.frame = CGRect(x: 0, y: 72, width: Self.size.width, height: Self.size.height - 72)
+        pages.frame = CGRect(x: 0, y: 92, width: Self.size.width, height: Self.size.height - 92)
         content.addSubview(pages)
         primary.bezelStyle = .rounded
         primary.keyEquivalent = "\r"
@@ -116,8 +116,10 @@ final class OnboardingWindowController: SecondaryWindowController {
         content.addSubview(dots)
     }
 
-    /// Unselected pager dots: dark enough to see on the material (3:1 at least, light and dark).
-    static var dotColor: NSColor { .secondaryLabelColor }
+    /// Unselected pager dots: dark enough to see on the material (3:1 at least; secondaryLabelColor measured 3.05:1 in light).
+    static let dotColor = NSColor(name: nil) { a in
+        a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .secondaryLabelColor : NSColor.black.withAlphaComponent(0.55)
+    }
 
     private func layoutButtons() {
         for b in [primary, secondary, back] { b.sizeToFit() }
@@ -131,17 +133,15 @@ final class OnboardingWindowController: SecondaryWindowController {
         for s in Step.allCases {
             // The current page is an accent capsule, the others round dots.
             let width: CGFloat = s == step ? 16 : 8
-            let d = NSView(frame: CGRect(x: 0, y: 0, width: width, height: 8))
-            d.wantsLayer = true
-            d.layer?.cornerRadius = 4
-            d.layer?.backgroundColor = (s == step ? Theme.accent : Self.dotColor).cgColor
+            let d = PagerDot(color: s == step ? Theme.accent : Self.dotColor, width: width)
             d.widthAnchor.constraint(equalToConstant: width).isActive = true
             d.heightAnchor.constraint(equalToConstant: 8).isActive = true
             dots.addArrangedSubview(d)
         }
         dots.setAccessibilityLabel("Step \(step.rawValue + 1) of \(Step.allCases.count)")
         let dw = CGFloat(Step.allCases.count - 1) * 16 + 16
-        dots.frame = CGRect(x: (Self.size.width - dw) / 2, y: 36, width: dw, height: 8)
+        // Centred above the buttons, clear of them on every page.
+        dots.frame = CGRect(x: (Self.size.width - dw) / 2, y: 76, width: dw, height: 8)
     }
 
     func go(to s: Step) {
@@ -325,6 +325,22 @@ final class OnboardingWindowController: SecondaryWindowController {
             if let parent = w.sheetParent { parent.endSheet(w) } else { w.close() }
         }
         OnboardingWindowController.shared = nil
+    }
+}
+
+/// One pager dot, drawn in its colour for the current look (a layer colour wouldn't follow light and dark).
+private final class PagerDot: NSView {
+    private let color: NSColor
+    init(color: NSColor, width: CGFloat) {
+        self.color = color
+        super.init(frame: CGRect(x: 0, y: 0, width: width, height: 8))
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        color.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
     }
 }
 
