@@ -34,13 +34,24 @@ final class TabBarView: NSView {
 
     override var isFlipped: Bool { true }
 
+    /// VoiceOver: each tab, then its close button (there even when the tab is too narrow to draw one), and "+".
     override func accessibilityChildren() -> [Any]? {
-        var out: [Any] = rects.indices.map { i in
-            AccessibleRegion(
-                in: self, role: .radioButton, label: titles.indices.contains(i) ? titles[i] : "",
-                frame: { [weak self] in self.flatMap { i < $0.rects.count ? $0.rects[i] : nil } ?? .zero },
-                selected: { [weak self] in self?.selected == i },
-                press: { [weak self] in if let self { self.delegate?.tabBar(self, select: i) } })
+        var out: [Any] = rects.indices.flatMap { i -> [Any] in
+            let title = titles.indices.contains(i) ? titles[i] : ""
+            return [
+                AccessibleRegion(
+                    in: self, role: .radioButton, label: title,
+                    frame: { [weak self] in self.flatMap { i < $0.rects.count ? $0.rects[i] : nil } ?? .zero },
+                    selected: { [weak self] in self?.selected == i },
+                    press: { [weak self] in if let self { self.delegate?.tabBar(self, select: i) } }),
+                AccessibleRegion(
+                    in: self, role: .button, label: "Close \(title)",
+                    frame: { [weak self] in
+                        guard let self, i < self.rects.count else { return .zero }
+                        return self.closeRects[i] == .zero ? self.rects[i] : self.closeRects[i]
+                    },
+                    press: { [weak self] in if let self { self.delegate?.tabBar(self, close: i) } }),
+            ]
         }
         out.append(
             AccessibleRegion(
@@ -53,6 +64,44 @@ final class TabBarView: NSView {
         super.init(frame: frame)
         registerForDraggedTypes(DropTargetPolicy.types)
         setAccessibilityRole(.tabGroup)
+    }
+
+    // MARK: Keyboard (Full Keyboard Access)
+
+    /// The tab with keyboard focus: Tab reaches the bar, ←/→ move between tabs, Space or Return shows that tab.
+    private var focused: Int? {
+        didSet {
+            if focused != oldValue { noteFocusRingMaskChanged(); needsDisplay = true }
+        }
+    }
+
+    override var acceptsFirstResponder: Bool { KeyboardAccess.isFull() && !rects.isEmpty }
+    override var canBecomeKeyView: Bool { acceptsFirstResponder && !isHiddenOrHasHiddenAncestor }
+
+    override func becomeFirstResponder() -> Bool {
+        focused = min(selected, rects.count - 1)
+        return true
+    }
+
+    override func resignFirstResponder() -> Bool {
+        focused = nil
+        return true
+    }
+
+    override var focusRingMaskBounds: NSRect { focused.map { $0 < rects.count ? rects[$0] : .zero } ?? .zero }
+    override func drawFocusRingMask() {
+        guard let i = focused, i < rects.count else { return }
+        NSBezierPath(roundedRect: rects[i].insetBy(dx: 2, dy: 3), xRadius: 6, yRadius: 6).fill()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard let i = focused, !rects.isEmpty else { return super.keyDown(with: event) }
+        switch Int(event.keyCode) {
+        case 123: focused = max(0, i - 1)  // ←
+        case 124: focused = min(rects.count - 1, i + 1)  // →
+        case 49, 36, 76: delegate?.tabBar(self, select: min(i, rects.count - 1))  // Space, Return, Enter
+        default: super.keyDown(with: event)
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }

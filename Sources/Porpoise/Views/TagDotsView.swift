@@ -72,7 +72,7 @@ final class TagDotsView: NSView {
     required init?(coder: NSCoder) { fatalError() }
     deinit { metadataCancellation.cancel() }
 
-    private func dotRect(_ i: Int) -> CGRect { CGRect(x: 20 + CGFloat(i) * 28, y: 6, width: 18, height: 18) }
+    fileprivate func dotRect(_ i: Int) -> CGRect { CGRect(x: 20 + CGFloat(i) * 28, y: 6, width: 18, height: 18) }
 
     override func draw(_ dirtyRect: NSRect) {
         for (i, t) in FinderTags.standard.enumerated() {
@@ -106,11 +106,56 @@ final class TagDotsView: NSView {
     override func mouseExited(with event: NSEvent) { hover = nil; needsDisplay = true }
 
     override func mouseUp(with event: NSEvent) {
-        guard !isLoading, let i = index(at: convert(event.locationInWindow, from: nil)) else { return }
+        guard let i = index(at: convert(event.locationInWindow, from: nil)) else { return }
+        toggle(i)
+    }
+
+    /// Adds or removes standard tag `i` (not while the current tags are still being read), and closes the menu.
+    @discardableResult
+    func toggle(_ i: Int) -> Bool {
+        guard !isLoading, FinderTags.standard.indices.contains(i) else { return false }
         let name = FinderTags.standard[i].name
         action(name)
         if current.contains(name) { current.remove(name) } else { current.insert(name) }
         needsDisplay = true
         menuItem?.menu?.cancelTracking()
+        return true
     }
+
+    // MARK: Accessibility
+
+    /// VoiceOver and Full Keyboard Access: one checkbox per tag, checked when every item has it.
+    override func accessibilityChildren() -> [Any]? { FinderTags.standard.indices.map { TagDotElement(view: self, index: $0) } }
+}
+
+/// One tag dot for VoiceOver: a checkbox named after its tag.
+final class TagDotElement: NSAccessibilityElement {
+    private weak var view: TagDotsView?
+    let index: Int
+
+    init(view: TagDotsView, index: Int) {
+        self.view = view
+        self.index = index
+        super.init()
+        setAccessibilityParent(view)
+        setAccessibilityRole(.checkBox)
+    }
+
+    private var name: String { FinderTags.standard[index].name }
+
+    override func accessibilityLabel() -> String? { name }
+    override func accessibilityValue() -> Any? { NSNumber(value: view?.current.contains(name) == true) }
+    override func isAccessibilityEnabled() -> Bool { view?.isLoading == false }
+    override func accessibilityFrameInParentSpace() -> NSRect { view?.dotRect(index) ?? .zero }
+    override func accessibilityFrame() -> NSRect {
+        guard let view, let window = view.window else { return .zero }
+        return window.convertToScreen(view.convert(view.dotRect(index), to: nil))
+    }
+    override func accessibilityPerformPress() -> Bool { view?.toggle(index) ?? false }
+
+    override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? TagDotElement else { return false }
+        return other.index == index && other.view === view
+    }
+    override var hash: Int { index }
 }
