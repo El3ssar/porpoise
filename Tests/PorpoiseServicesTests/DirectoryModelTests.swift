@@ -88,7 +88,8 @@ import Testing
         try s.folder("archive")
         let m = try await DirectoryModel.loaded(s.url)
         m.props.groupRole = .name
-        #expect(m.groups.map(\.title) == ["A", "0 - 9", "A", "B"])
+        // "A" is in both sections, so each group names its section (no repeated header).
+        #expect(m.groups.map(\.title) == ["A · Folders", "0 - 9 · Files", "A · Files", "B · Files"])
         #expect(m.groups.map(\.count) == [1, 1, 2, 1])
         #expect(m.rows.map(\.group) == [0, 1, 2, 2, 3])
         m.props.groupRole = nil
