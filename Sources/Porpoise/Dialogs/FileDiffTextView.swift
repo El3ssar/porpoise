@@ -1,6 +1,9 @@
 import AppKit
 import PorpoiseCore
 
+/// The type scale, shortened for the text styles in this file.
+private typealias FontSize = Tokens.FontSize
+
 struct FileDiffRow {
     var left: Int?
     var right: Int?
@@ -103,7 +106,7 @@ final class FileDiffTextView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         for b in [copyLeft, copyRight] {
-            b.bezelStyle = .circular; b.controlSize = .small; b.font = .systemFont(ofSize: 11, weight: .semibold)
+            b.bezelStyle = .circular; b.controlSize = .small; b.font = .systemFont(ofSize: FontSize.small, weight: .semibold)
             b.wantsLayer = true; b.layer?.shadowColor = NSColor.black.cgColor; b.layer?.shadowOpacity = 0.12; b.layer?.shadowRadius = 2;
             b.layer?.shadowOffset = NSSize(width: 0, height: -1)
             b.isHidden = true; addSubview(b)
@@ -167,7 +170,7 @@ final class FileDiffTextView: NSView {
             if inline {
                 let text = row.left.map { p.difference.left[$0] } ?? row.right.map { p.difference.right[$0] } ?? ""
                 let attrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
+                    .font: NSFont.monospacedSystemFont(ofSize: FontSize.small, weight: .regular),
                     .foregroundColor: row.change == focused ? Theme.accent : Theme.viewTextInactive.withAlphaComponent(0.7),
                     .paragraphStyle: Self.rightAligned,
                 ]
@@ -229,17 +232,18 @@ final class FileDiffTextView: NSView {
             num.draw(
                 in: NSRect(x: x + 3, y: y + 1, width: 34, height: 17),
                 withAttributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
+                    .font: NSFont.monospacedSystemFont(ofSize: FontSize.small, weight: .regular),
                     .foregroundColor: focused ? Theme.accent : Theme.viewTextInactive.withAlphaComponent(0.7), .paragraphStyle: Self.rightAligned,
                 ])
         }
         if !mark.isEmpty {
             (mark as NSString).draw(
-                at: NSPoint(x: x + 39, y: y), withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .bold), .foregroundColor: tint])
+                at: NSPoint(x: x + 39, y: y),
+                withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: FontSize.callout, weight: .bold), .foregroundColor: tint])
         }
         // Never shape an unbounded single line on the UI thread. The full bytes remain in the model for copying/saving.
         let text = String(line.prefix(2048)).trimmingCharacters(in: .newlines) as NSString
-        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular), origin = NSPoint(x: x + 48 - horizontalOffset, y: y + 1)
+        let font = NSFont.monospacedSystemFont(ofSize: FontSize.callout, weight: .regular), origin = NSPoint(x: x + 48 - horizontalOffset, y: y + 1)
         for range in ranges where range.location < text.length {
             let end = min(text.length, NSMaxRange(range)), before = text.substring(to: range.location) as NSString,
                 word = text.substring(with: NSRange(location: range.location, length: end - range.location)) as NSString

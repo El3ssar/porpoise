@@ -3,6 +3,9 @@ import PorpoiseCore
 import PorpoiseFileSystem
 import PorpoiseServices
 
+/// The type scale, shortened for the text styles in this file.
+private typealias FontSize = Tokens.FontSize
+
 /// Finder's row of color dots at the bottom of a context menu: click to add or remove a tag.
 final class TagDotsView: NSView {
     private(set) var current: Set<String>
@@ -82,7 +85,9 @@ final class TagDotsView: NSView {
             if current.contains(t.name) {
                 // Check mark when every selected item has the tag; hovering shows ✕ to remove it.
                 let s = (hover == i ? "✕" : "✓") as NSString
-                let a: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .bold), .foregroundColor: NSColor.white]
+                let a: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: FontSize.small, weight: .bold), .foregroundColor: NSColor.white,
+                ]
                 let sz = s.size(withAttributes: a)
                 s.draw(at: CGPoint(x: r.midX - sz.width / 2, y: r.midY - sz.height / 2), withAttributes: a)
             } else if hover == i {

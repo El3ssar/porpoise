@@ -22,7 +22,7 @@ import Testing
     @Test func emptyFolderSaysSoAndCountsNothing() async throws {
         let scratch = try Scratch()
         let pane = await loaded(scratch.url)
-        #expect(pane.listState.state == ListState(title: "Folder is empty") && !pane.listState.isHidden)
+        #expect(pane.listState.state == ListState(title: "Folder is empty", symbol: "folder") && !pane.listState.isHidden)
         #expect(pane.statusBar.text == "0 items")
         #expect(pane.listState.frame == pane.scroll.frame)
         // Clicks on the empty space reach the list (its background menu, drops).

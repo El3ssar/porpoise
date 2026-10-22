@@ -406,7 +406,7 @@ extension ItemListView {
                 drawIncomingBar(incoming, in: CGRect(x: x + 6, y: y + lineHeight / 2 - 1.5, width: min(48, max(12, w - 50)), height: 4))
                 ("\(Int(incoming * 100))%" as NSString).draw(
                     in: CGRect(x: x + min(72, max(24, w - 38)), y: y, width: 38, height: lineHeight),
-                    withAttributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Theme.viewTextInactive])
+                    withAttributes: [.font: NSFont.systemFont(ofSize: Tokens.FontSize.caption), .foregroundColor: Theme.viewTextInactive])
                 x += w; continue
             }
             (model.text(for: role, of: item) as NSString).draw(

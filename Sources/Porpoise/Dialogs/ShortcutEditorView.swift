@@ -63,7 +63,7 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
         let importButton = ClosureButton(title: "Import Shortcuts…") { [weak self] _ in self?.importFile() }
         let exportButton = ClosureButton(title: "Export Shortcuts…") { [weak self] _ in self?.exportFile() }
         let files = NSStackView(views: [importButton, exportButton]); files.spacing = 8; add(files)
-        status.font = .systemFont(ofSize: 12); add(status)
+        status.font = .systemFont(ofSize: Tokens.FontSize.callout); add(status)
         shown = all; table.reloadData(); if !shown.isEmpty { table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false) }
         observer = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
             // Another key set rebuilds the menu bar: list its new items and defaults.

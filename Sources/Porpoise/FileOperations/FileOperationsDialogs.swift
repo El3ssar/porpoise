@@ -162,18 +162,18 @@ final class FileOperationsDialogs: FileOperationsUI {
             icon.contentTintColor = Theme.transferDanger
             document.addSubview(icon)
             let path = NSTextField(labelWithString: source.map(Activity.name) ?? "Item \(index + 1)")
-            path.font = .systemFont(ofSize: 11); path.lineBreakMode = .byTruncatingMiddle
+            path.font = .systemFont(ofSize: Tokens.FontSize.small); path.lineBreakMode = .byTruncatingMiddle
             path.frame = CGRect(x: 32, y: y + 6, width: 150, height: 16); path.toolTip = source?.absoluteString
             document.addSubview(path)
             let kind = FileErrorKind.classify(message: error)
             let reason = NSTextField(labelWithString: kind.reason ?? error)
-            reason.font = .systemFont(ofSize: 11); reason.textColor = Theme.windowTextInactive
+            reason.font = .systemFont(ofSize: Tokens.FontSize.small); reason.textColor = Theme.windowTextInactive
             reason.lineBreakMode = .byTruncatingTail; reason.alignment = .right
             reason.frame = CGRect(x: 190, y: y + 6, width: 236, height: 16); reason.toolTip = error
             document.addSubview(reason)
             if let source, kind != .notFound {
                 let reveal = ClosureButton(title: "Reveal") { _ in AppDelegate.shared.newWindow(at: source.deletingLastPathComponent()) }
-                reveal.isBordered = false; reveal.font = .systemFont(ofSize: 11); reveal.contentTintColor = Theme.activeText
+                reveal.isBordered = false; reveal.font = .systemFont(ofSize: Tokens.FontSize.small); reveal.contentTintColor = Theme.activeText
                 reveal.frame = CGRect(x: 436, y: y + 2, width: 60, height: 24)
                 document.addSubview(reveal)
             }

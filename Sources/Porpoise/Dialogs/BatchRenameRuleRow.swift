@@ -42,7 +42,7 @@ final class BatchRenameRuleRow: NSStackView, NSTextFieldDelegate {
         fields.addArrangedSubview(field)
     }
     private func number(_ label: String, _ value: Int) {
-        let title = NSTextField(labelWithString: label + ":"); title.font = .systemFont(ofSize: 11)
+        let title = NSTextField(labelWithString: label + ":"); title.font = .systemFont(ofSize: Tokens.FontSize.small)
         fields.addArrangedSubview(title); text(label, String(value), width: 40)
         inputs[label]?.widthAnchor.constraint(equalToConstant: 45).isActive = true
     }

@@ -2,6 +2,9 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
+/// The type scale, shortened for the text styles in this file.
+private typealias FontSize = Tokens.FontSize
+
 /// Toolbar-local transfer progress. Each window keeps its own popover; Activity keeps the history.
 final class TransferToolbarButton: NSButton {
     var visibilityChanged: (() -> Void)?
@@ -129,7 +132,7 @@ final class TransferToolbarButton: NSButton {
         all.isBordered = false; all.contentTintColor = Theme.activeText; all.alignment = .left
         all.frame = CGRect(x: 12, y: 8, width: 320, height: 26); view.addSubview(all)
         let shortcut = NSTextField(labelWithString: "⌥⌘J")
-        shortcut.font = .systemFont(ofSize: 11); shortcut.textColor = Theme.windowTextInactive
+        shortcut.font = .systemFont(ofSize: FontSize.small); shortcut.textColor = Theme.windowTextInactive
         shortcut.frame = CGRect(x: 382, y: 12, width: 36, height: 18); view.addSubview(shortcut)
         popover.contentViewController = content
         popover.contentSize = view.frame.size
@@ -149,12 +152,12 @@ final class TransferPopoverRow: NSView {
     private var compactAction: ActivityAction?
     override init(frame: NSRect) {
         super.init(frame: frame)
-        title.font = .systemFont(ofSize: 12, weight: .medium); title.lineBreakMode = .byTruncatingMiddle
-        detail.font = .systemFont(ofSize: 11); detail.textColor = Theme.windowTextInactive; detail.lineBreakMode = .byTruncatingTail
+        title.font = .systemFont(ofSize: FontSize.callout, weight: .medium); title.lineBreakMode = .byTruncatingMiddle
+        detail.font = .systemFont(ofSize: FontSize.small); detail.textColor = Theme.windowTextInactive; detail.lineBreakMode = .byTruncatingTail
         for button in [pause, stop] { button.isBordered = false; button.imagePosition = .imageOnly; button.target = self }
         pause.action = #selector(togglePause); stop.action = #selector(stopJob)
         stop.image = NSImage(systemSymbolName: "stop.fill", accessibilityDescription: "Stop"); stop.toolTip = "Stop"
-        percent.font = .systemFont(ofSize: 10); percent.textColor = Theme.windowTextInactive
+        percent.font = .systemFont(ofSize: FontSize.caption); percent.textColor = Theme.windowTextInactive
         for view in [icon, title, detail, bar, percent, pause, stop] as [NSView] { addSubview(view) }
     }
     required init?(coder: NSCoder) { fatalError() }
