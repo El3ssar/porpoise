@@ -185,3 +185,88 @@
     .brand { font-size: 16px; }
     .document { padding-top: 40px; }
   }
+
+  /* Install guide (/install/): numbered steps beside drawings of the macOS windows they mention. */
+  .guide { padding-block: 48px 96px; }
+  .guide h1 { font-size: clamp(34px, 5vw, 54px); }
+  .guide .lede { max-width: 38em; }
+  .guide a { color: var(--blue); text-underline-offset: 3px; }
+  .guide-steps { list-style: none; margin: 56px 0 0; padding: 0; counter-reset: step; }
+  .guide-steps > li { display: grid; grid-template-columns: 1fr 1.1fr; gap: 24px 56px; align-items: center;
+                      padding: 44px 0; border-top: 1px solid var(--line); counter-increment: step; }
+  .guide-steps > li:last-child > div { grid-column: 1 / -1; }
+  .guide-steps h2 { font: 600 24px/1.25 "Figtree", sans-serif; letter-spacing: 0; margin: 0 0 12px; }
+  .guide-steps h2::before { content: counter(step); display: inline-grid; place-items: center; width: 34px; height: 34px;
+                            margin-right: 14px; border-radius: 50%; border: 1.5px solid var(--sand); color: var(--sand);
+                            font: 700 15px "Unbounded", sans-serif; vertical-align: 2px; }
+  .guide-steps p, .guide-more p { color: var(--muted); margin: 0 0 12px; }
+  .guide-steps b, .guide-more b { color: var(--text); font-weight: 600; }
+  .guide .hint { font-size: 15px; color: var(--dim); }
+  .guide figure { margin: 0; display: flex; justify-content: center; }
+  .guide-more { padding: 44px 0 0; border-top: 1px solid var(--line); }
+  .guide-more h2 { font: 600 24px "Figtree", sans-serif; letter-spacing: 0; margin: 0 0 12px; }
+  .guide-more pre { margin: 0; padding: 14px 16px; border-radius: 10px; background: var(--ink-2); border: 1px solid var(--line);
+                    overflow-x: auto; }
+  .guide-more pre code { background: none; padding: 0; }
+  .guide .req { margin-top: 56px; }
+
+  /* Drawn macOS windows: they follow the page's light or dark look, and contain no one's personal data. */
+  .guide { --mac-bg: #2b2b2e; --mac-bar: #353538; --mac-side: #26262a; --mac-group: #333337; --mac-text: #ececef;
+           --mac-dim: #a1a1a8; --mac-btn: #5c5c63; --mac-line: rgba(255,255,255,.09); --mac-accent: #0a84ff; }
+  html[data-theme="light"] .guide { --mac-bg: #f4f4f6; --mac-bar: #e9e9ec; --mac-side: #e6e6ea; --mac-group: #fff;
+           --mac-text: #1d1d1f; --mac-dim: #6e6e73; --mac-btn: #dcdce0; --mac-line: rgba(0,0,0,.1); --mac-accent: #007aff; }
+  @media (prefers-color-scheme: light) {
+    html:not([data-theme="dark"]) .guide { --mac-bg: #f4f4f6; --mac-bar: #e9e9ec; --mac-side: #e6e6ea; --mac-group: #fff;
+           --mac-text: #1d1d1f; --mac-dim: #6e6e73; --mac-btn: #dcdce0; --mac-line: rgba(0,0,0,.1); --mac-accent: #007aff; }
+  }
+  .mac-window, .mac-alert { font: 400 13px/1.35 -apple-system, system-ui, sans-serif; color: var(--mac-text);
+                            background: var(--mac-bg); border: 1px solid var(--mac-line); border-radius: 12px;
+                            box-shadow: 0 1px 2px rgba(0,0,0,.2), 0 30px 60px -24px rgba(0,0,0,.6); }
+  .mac-window { width: 100%; max-width: 520px; overflow: hidden; }
+  .mac-titlebar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--mac-bar);
+                  border-bottom: 1px solid var(--mac-line); }
+  .mac-titlebar i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+  .mac-titlebar i:nth-child(2) { background: #febc2e; }
+  .mac-titlebar i:nth-child(3) { background: #28c840; }
+  .mac-titlebar span { flex: 1; text-align: center; font-weight: 600; margin-right: 52px; }
+  .dmg { display: flex; align-items: center; justify-content: space-around; gap: 8px; padding: 40px 16px 34px; }
+  .dmg-item { display: grid; justify-items: center; gap: 8px; }
+  .dmg-item img, .dmg-item .folder { width: 76px; height: 76px; }
+  .folder path { fill: #4aa3f5; }
+  .folder .glyph { fill: none; stroke: #1e5fa8; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .dmg-arrow { width: 80px; fill: none; stroke: var(--mac-dim); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+  .mac-alert { width: 260px; padding: 20px 16px 16px; display: grid; justify-items: center; text-align: center; gap: 8px; }
+  .mac-alert img { width: 56px; height: 56px; }
+  .mac-alert b { font-size: 13.5px; }
+  .mac-alert p { margin: 0 0 6px; font-size: 11.5px; color: var(--mac-text); }
+  .mac-btn { display: block; padding: 4px 12px; border-radius: 6px; background: var(--mac-btn); font-weight: 500;
+             text-align: center; white-space: nowrap; }
+  .mac-alert .mac-btn { width: 100%; }
+  .mac-btn.primary { background: var(--mac-accent); color: #fff; }
+  /* The control the step is about. */
+  .ring { box-shadow: 0 0 0 3px var(--guide-ring, var(--sand)); }
+  .settings-body { display: grid; grid-template-columns: 150px 1fr; min-height: 236px; }
+  .settings-side { list-style: none; margin: 0; padding: 10px 8px; background: var(--mac-side); border-right: 1px solid var(--mac-line); }
+  .settings-side li { padding: 4px 8px; border-radius: 6px; color: var(--mac-text); }
+  .settings-side li.sel { background: var(--mac-accent); color: #fff; }
+  .settings-main { padding: 18px 16px; }
+  .settings-head { display: block; margin: 0 0 8px; }
+  .settings-group { background: var(--mac-group); border: 1px solid var(--mac-line); border-radius: 10px; }
+  .settings-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; }
+  .settings-row + .settings-row { border-top: 1px solid var(--mac-line); }
+  .settings-row.target { flex-wrap: wrap; }
+  .mac-popup { color: var(--mac-dim); white-space: nowrap; }
+
+  @media (max-width: 900px) {
+    .guide-steps > li { grid-template-columns: 1fr; padding: 36px 0; }
+    .guide figure { justify-content: flex-start; }
+  }
+  @media (max-width: 480px) {
+    .guide { padding-top: 24px; }
+    .settings-body { grid-template-columns: 1fr; }
+    .settings-side { display: none; }
+    .settings-row { flex-wrap: wrap; }
+    .dmg { padding: 28px 8px; }
+    .dmg-item img, .dmg-item .folder { width: 60px; height: 60px; }
+    .dmg-arrow { width: 52px; }
+  }

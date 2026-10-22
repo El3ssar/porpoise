@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install Porpoise — Porpoise</title>
+<meta name="description" content="How to install Porpoise and open it the first time: drag it to Applications, then allow it once in System Settings › Privacy & Security.">
+<meta property="og:title" content="Install Porpoise">
+<meta property="og:description" content="Drag Porpoise to Applications, then allow it once in System Settings › Privacy & Security.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Porpoise">
+<meta property="og:url" content="https://porpoise.dev/install/">
+<meta property="og:image" content="https://porpoise.dev/assets/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Porpoise on macOS: split view with the terminal and Information panel, and the Applications library">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://porpoise.dev/assets/og.jpg">
+<link rel="canonical" href="https://porpoise.dev/install/">
+<meta name="theme-color" content="#161925">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" type="image/png" sizes="192x192" href="../assets/icon-192.png">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@500;700&family=Unbounded:wght@500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<header class="wrap"><nav aria-label="Main"><a class="brand" href="/"><img src="../assets/icon.png" alt="">Porpoise</a><ul><li><a href="/">Back to home</a></li></ul></nav></header>
+
+<main class="wrap guide">
+  <p class="eyebrow">Install</p>
+  <h1>Open Porpoise the first time.</h1>
+  <p class="lede">Porpoise is free, so it isn't signed through Apple's paid developer program. The first time you open it, macOS stops it and asks you to allow it in System Settings. You only do this once, and it takes about a minute. The steps are the same on macOS 15 Sequoia and macOS 26 Tahoe.</p>
+
+  <ol class="guide-steps">
+    <li>
+      <div>
+        <h2>Drag Porpoise to Applications</h2>
+        <p>Download <a href="https://github.com/El3ssar/porpoise/releases/latest/download/Porpoise.dmg">Porpoise.dmg</a> and open it. In the window that appears, drag <b>Porpoise</b> onto the <b>Applications</b> folder, then eject the disk image.</p>
+      </div>
+      <figure role="img" aria-label="The Porpoise disk image window: the Porpoise icon with an arrow pointing to the Applications folder.">
+        <div class="mac-window" aria-hidden="true">
+          <div class="mac-titlebar"><i></i><i></i><i></i><span>Porpoise</span></div>
+          <div class="dmg">
+            <div class="dmg-item"><img src="../assets/icon.png" alt=""><span>Porpoise</span></div>
+            <svg class="dmg-arrow" viewBox="0 0 80 24"><path d="M4 12h64m-12-9 12 9-12 9"/></svg>
+            <div class="dmg-item"><svg class="folder" viewBox="0 0 64 52"><path d="M4 10a4 4 0 0 1 4-4h16l5 6h27a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4Z"/><path class="glyph" d="M24 36 32 20l8 16m-13-5h10"/></svg><span>Applications</span></div>
+          </div>
+        </div>
+      </figure>
+    </li>
+
+    <li>
+      <div>
+        <h2>Open it once, then click Done</h2>
+        <p>Open Porpoise from your Applications folder. macOS says it can't verify the app. Click <b>Done</b>, not Move to Trash. This step makes the Open Anyway button appear in System Settings.</p>
+      </div>
+      <figure role="img" aria-label="A macOS alert: “Porpoise” Not Opened. Apple could not verify “Porpoise” is free of malware. Buttons: Done, highlighted, and Move to Trash.">
+        <div class="mac-alert" aria-hidden="true">
+          <img src="../assets/icon.png" alt="">
+          <b>“Porpoise” Not Opened</b>
+          <p>Apple could not verify “Porpoise” is free of malware that may harm your Mac or compromise your privacy.</p>
+          <span class="mac-btn primary ring">Done</span>
+          <span class="mac-btn">Move to Trash</span>
+        </div>
+      </figure>
+    </li>
+
+    <li>
+      <div>
+        <h2>Click Open Anyway in Privacy &amp; Security</h2>
+        <p>Choose <b>Apple menu › System Settings</b>, then <b>Privacy &amp; Security</b> in the sidebar. Scroll down to <b>Security</b>. Next to <i>“Porpoise” was blocked to protect your Mac</i>, click <b>Open Anyway</b>.</p>
+        <p class="hint">The button appears for about an hour after step 2. If it isn't there, open Porpoise again and come back.</p>
+      </div>
+      <figure role="img" aria-label="System Settings, Privacy and Security selected in the sidebar. Under Security: “Porpoise” was blocked to protect your Mac, with an Open Anyway button.">
+        <div class="mac-window settings" aria-hidden="true">
+          <div class="mac-titlebar"><i></i><i></i><i></i><span>Privacy &amp; Security</span></div>
+          <div class="settings-body">
+            <ul class="settings-side">
+              <li>General</li><li>Appearance</li><li>Accessibility</li><li>Desktop &amp; Dock</li><li>Displays</li>
+              <li class="sel">Privacy &amp; Security</li><li>Notifications</li><li>Battery</li>
+            </ul>
+            <div class="settings-main">
+              <b class="settings-head">Security</b>
+              <div class="settings-group">
+                <div class="settings-row"><span>Allow applications from</span><span class="mac-popup">App Store &amp; Known Developers</span></div>
+                <div class="settings-row target"><span>“Porpoise” was blocked to protect your Mac.</span><span class="mac-btn ring">Open Anyway</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </figure>
+    </li>
+
+    <li>
+      <div>
+        <h2>Confirm with your password</h2>
+        <p>macOS asks once more. Click <b>Open Anyway</b>, then enter your Mac login password or use Touch ID. Porpoise opens.</p>
+      </div>
+      <figure role="img" aria-label="A macOS alert: Open “Porpoise”? Buttons: Open Anyway, highlighted, and Done.">
+        <div class="mac-alert" aria-hidden="true">
+          <img src="../assets/icon.png" alt="">
+          <b>Open “Porpoise”?</b>
+          <p>Apple is not able to verify that it is free from malware. Open it only if you trust its source.</p>
+          <span class="mac-btn ring">Open Anyway</span>
+          <span class="mac-btn">Done</span>
+        </div>
+      </figure>
+    </li>
+
+    <li>
+      <div>
+        <h2>That's it</h2>
+        <p>macOS remembers your choice. Porpoise opens normally from now on, and updates installed from inside Porpoise keep working without asking again.</p>
+      </div>
+    </li>
+  </ol>
+
+  <section class="guide-more" aria-labelledby="terminal">
+    <h2 id="terminal">Prefer Terminal?</h2>
+    <p>Instead of steps 2 to 4, you can remove the download quarantine yourself:</p>
+    <pre><code>xattr -dr com.apple.quarantine /Applications/Porpoise.app</code></pre>
+  </section>
+
+  <section class="guide-more" aria-labelledby="why">
+    <h2 id="why">Why does macOS ask?</h2>
+    <p>macOS opens downloaded apps without asking only if they are signed with a paid Apple Developer ID and checked by Apple. Porpoise is free and has no income, so it isn't. Porpoise is open source: you can read the code and <a href="https://github.com/El3ssar/porpoise#build-from-source">build it yourself</a>, and every release is built by GitHub Actions from the public repository.</p>
+  </section>
+
+  <p class="req">Requires macOS 15 Sequoia or later on a Mac with Apple silicon. Questions? <a href="https://github.com/El3ssar/porpoise/issues/new/choose">Open an issue</a>.</p>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Porpoise · GPL-3.0-or-later</span>
+    <div class="footer-links"><a href="/">Home</a><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="https://github.com/El3ssar/porpoise">Source on GitHub</a></div>
+  </div>
+</footer>
+</body>
+</html>

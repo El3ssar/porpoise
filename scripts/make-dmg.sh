@@ -22,7 +22,8 @@ Installing Porpoise $VERSION
    Apple's paid developer program, so the first time macOS says it can't verify the app. To allow it:
      - open System Settings > Privacy & Security,
      - scroll down to "Porpoise was blocked..." and click "Open Anyway", then confirm.
-   You only do this once. (Or, in Terminal: xattr -dr com.apple.quarantine /Applications/Porpoise.app)
+   You only do this once. Each step, with pictures: https://porpoise.dev/install/
+   (Or, in Terminal: xattr -dr com.apple.quarantine /Applications/Porpoise.app)
 
 3. Porpoise then asks for Full Disk Access, so it can show every folder (the Trash, Library...) like Finder.
    Follow its welcome window; it takes a few seconds.
@@ -30,6 +31,17 @@ Installing Porpoise $VERSION
 Source code, help and updates: https://github.com/El3ssar/porpoise
 Porpoise is free software (GPL-3.0-or-later). If you like it, you can support it from the Help menu.
 TXT
+# Double-clicking this opens the install guide in the browser.
+cat > "$STAGE/Installation Help.webloc" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>URL</key>
+	<string>https://porpoise.dev/install/</string>
+</dict>
+</plist>
+XML
 hdiutil create -quiet -volname "Porpoise $VERSION" -srcfolder "$STAGE" -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "$DMG"
 rm -rf "$STAGE"
 echo "built $DMG ($(du -h "$DMG" | cut -f1))"

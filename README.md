@@ -20,7 +20,8 @@ with light and dark appearances, built-in colour themes and a choice of icon the
 1. Download [**Porpoise.dmg**](https://github.com/El3ssar/porpoise/releases/latest/download/Porpoise.dmg) (or pick a version on the [releases page](https://github.com/El3ssar/porpoise/releases)).
 2. Open it and drag **Porpoise** onto **Applications**.
 3. Open Porpoise. Because Porpoise isn't signed through Apple's paid developer program, macOS blocks it the first
-   time: open **System Settings › Privacy & Security**, scroll to *"Porpoise was blocked…"* and click **Open Anyway**.
+   time: open **System Settings › Privacy & Security**, scroll to *"Porpoise was blocked…"* and click **Open Anyway**
+   ([each step, with pictures](https://porpoise.dev/install/)).
    You only do this once. (Terminal alternative: `xattr -dr com.apple.quarantine /Applications/Porpoise.app`.)
 4. Porpoise opens straight to your home folder, with a short welcome that offers **Full Disk Access** (every folder,
    including the Trash). Anything else is asked for the first time it's needed: **App Management** when you first move
