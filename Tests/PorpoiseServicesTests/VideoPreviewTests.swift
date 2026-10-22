@@ -332,17 +332,61 @@ final class VideoPreviewStreamTests {
 
 /// A stream's folder goes once nothing writes into it, in whichever order ffmpeg starts and the stream is stopped.
 struct StreamSessionTests {
-    private func writer(into dir: URL) throws -> Process {
-        // Stands in for ffmpeg: keeps writing into the folder, creating it again if it's gone.
+    private func writer(into dir: URL, ignoresTermination: Bool = false) async throws -> Process {
+        // A real ffmpeg is one process. A shell loop running mkdir/date/sleep left orphan children behind:
+        // an orphan mkdir could recreate the folder after the shell exited and StreamSession removed it.
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        p.arguments = ["-c", "while :; do mkdir -p \"$0\" && date > \"$0/seg.m4s\"; sleep 0.05; done", dir.path]
-        try p.run()
-        return p
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        p.arguments = [
+            "-I", "-c",
+            """
+            import os, signal, sys, time
+            folder = sys.argv[1]
+            if sys.argv[2] == 'ignore':
+                signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            ready = False
+            while True:
+                os.makedirs(folder, exist_ok=True)
+                with open(os.path.join(folder, 'seg.m4s'), 'w') as segment:
+                    segment.write('segment')
+                if not ready:
+                    sys.stdout.write('R')
+                    sys.stdout.flush()
+                    ready = True
+                time.sleep(0.005)
+            """,
+            dir.path, ignoresTermination ? "ignore" : "terminate",
+        ]
+        let ready = Pipe()
+        p.standardInput = FileHandle.nullDevice
+        p.standardOutput = ready
+        p.standardError = FileHandle.nullDevice
+        defer {
+            ready.fileHandleForReading.readabilityHandler = nil
+            try? ready.fileHandleForReading.close()
+            try? ready.fileHandleForWriting.close()
+        }
+        do {
+            // Process.run returning does not mean the child has executed or written anything yet. Stop only
+            // after its first write, so this test covers a live writer even on a heavily loaded machine.
+            try await awaitCallback("The single-process stream writer did not start") { (callback: Callback<Void>) in
+                ready.fileHandleForReading.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    handle.readabilityHandler = nil
+                    if data == Data("R".utf8) { callback.resume() } else { callback.resume(throwing: CocoaError(.fileReadCorruptFile)) }
+                }
+                try p.run()
+                try ready.fileHandleForWriting.close()
+            }
+            return p
+        } catch {
+            if p.isRunning { kill(p.processIdentifier, SIGKILL) }
+            throw error
+        }
     }
 
     private func gone(_ url: URL) async -> Bool {
-        _ = await poll { !FileManager.default.fileExists(atPath: url.path) }
+        guard await poll({ !FileManager.default.fileExists(atPath: url.path) }) else { return false }
         // Still gone a moment later: nothing wrote it back.
         try? await Task.sleep(for: .milliseconds(300))
         return !FileManager.default.fileExists(atPath: url.path)
@@ -352,11 +396,26 @@ struct StreamSessionTests {
         let s = try Scratch()
         let dir = try s.folder("session")
         let session = StreamSession(dir: dir)
-        let p = try writer(into: dir)
+        let p = try await writer(into: dir)
+        defer { if p.isRunning { kill(p.processIdentifier, SIGKILL) } }
         #expect(session.attach(p))
         session.stop()
         #expect(await gone(dir))
         #expect(await poll { !p.isRunning })
+    }
+
+    @Test func aWriterIgnoringTerminationIsKilledBeforeItsFolderStaysRemoved() async throws {
+        let s = try Scratch()
+        let dir = try s.folder("session")
+        let session = StreamSession(dir: dir)
+        let p = try await writer(into: dir, ignoresTermination: true)
+        defer { if p.isRunning { kill(p.processIdentifier, SIGKILL) } }
+        #expect(session.attach(p))
+        session.stop()
+        try #require(await poll { !p.isRunning })
+        #expect(p.terminationReason == .uncaughtSignal)
+        #expect(p.terminationStatus == SIGKILL)
+        #expect(await gone(dir))
     }
 
     /// The race that left folders behind: the stop comes before ffmpeg is handed to the session.
@@ -365,7 +424,8 @@ struct StreamSessionTests {
         let dir = try s.folder("session")
         let session = StreamSession(dir: dir)
         session.stop()
-        let p = try writer(into: dir)
+        let p = try await writer(into: dir)
+        defer { if p.isRunning { kill(p.processIdentifier, SIGKILL) } }
         #expect(!session.attach(p))
         #expect(await gone(dir))
         await offThePool { p.waitUntilExit() }
