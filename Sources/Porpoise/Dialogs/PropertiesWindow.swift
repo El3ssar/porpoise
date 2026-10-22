@@ -249,10 +249,13 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
             row("Location:", pathLabel(it.url.deletingLastPathComponent().path), y: &y, in: v)
             if let l = it.linkDestination { row("Points to:", pathLabel(l), y: &y, in: v) }
         }
-        let sizeRow = NSView(frame: CGRect(x: 0, y: 0, width: 282, height: 44))
+        // Two lines only when there is a second to show (file and subfolder counts: a folder, or several items); a
+        // file's size is one line, and a two-line row left a 44 pt gap before Free space.
+        let twoLines = items.count > 1 || items.contains(where: \.isDirectory)
+        let sizeRow = NSView(frame: CGRect(x: 0, y: 0, width: 282, height: twoLines ? 44 : 22))
         sizeLabel.font = .systemFont(ofSize: 13)
         sizeLabel.textColor = Theme.windowText
-        sizeLabel.maximumNumberOfLines = 2
+        sizeLabel.maximumNumberOfLines = twoLines ? 2 : 1
         sizeLabel.lineBreakMode = .byTruncatingTail
         sizeLabel.isSelectable = true
         sizeLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -268,7 +271,8 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
             sizeLabel.topAnchor.constraint(equalTo: sizeRow.topAnchor),
             sizeLabel.bottomAnchor.constraint(equalTo: sizeRow.bottomAnchor),
             recalculateButton.leadingAnchor.constraint(equalTo: sizeLabel.trailingAnchor, constant: 8),
-            recalculateButton.trailingAnchor.constraint(equalTo: sizeRow.trailingAnchor),
+            // A push button's bezel sits 1.5 pt further in than a popup's: this lines it up with Open with's (measured).
+            recalculateButton.trailingAnchor.constraint(equalTo: sizeRow.trailingAnchor, constant: 1.5),
             recalculateButton.topAnchor.constraint(equalTo: sizeRow.topAnchor),
             recalculateButton.widthAnchor.constraint(equalToConstant: 86),
         ])
