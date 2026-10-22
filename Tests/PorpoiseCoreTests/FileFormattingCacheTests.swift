@@ -4,16 +4,35 @@ import Testing
 @testable import PorpoiseCore
 
 struct FileFormattingCacheTests {
+    @Test func decimalSizesUseFileStyleAndRequestedLocale() {
+        let english = Locale(identifier: "en_US")
+        #expect(FileFormat.size(0, units: .decimal, locale: english) == "0 B")
+        #expect(FileFormat.size(999, units: .decimal, locale: english) == "999 B")
+        #expect(FileFormat.size(1000, units: .decimal, locale: english) == "1 KB")
+        #expect(FileFormat.size(1_500_000, units: .decimal, locale: english) == "1.5 MB")
+        #expect(FileFormat.size(2_000_000_000_000, units: .decimal, locale: english) == "2 TB")
+        let german = Locale(identifier: "de_DE")
+        #expect(FileFormat.size(999, units: .decimal, locale: german) == "999 B")
+        #expect(FileFormat.size(1000, units: .decimal, locale: german) == "1 KB")
+        #expect(FileFormat.size(1_500_000, units: .decimal, locale: german) == "1,5 MB")
+        #expect(FileFormat.size(2_000_000_000_000, units: .decimal, locale: german) == "2 TB")
+        #expect(FileFormat.size(1_500_000, units: .binary, locale: german) == "1.4 MiB")
+    }
+
+    @Test func decimalStatusSizesAreRemovedBeforeTruncatingWords() {
+        #expect(FileFormat.fittingStatusMessage("1 file selected (134.1 MB)") { $0.count <= 18 } == "1 file selected")
+    }
+
     @Test func speedsAndLimitLabelsUseTheSizeUnitBase() {
-        #expect(FileFormat.speed(1023) == "1023 B/s")
-        #expect(FileFormat.speed(1024) == FileFormat.size(1024) + "/s")
-        #expect(FileFormat.speed(1_048_576) == "1.0 MiB/s")
-        #expect(FileFormat.speed(-1) == "0 B/s")
-        #expect(FileFormat.speed(.nan) == "0 B/s" && FileFormat.speed(.infinity) == "0 B/s")
-        #expect(FileFormat.speed(Double.greatestFiniteMagnitude) == FileFormat.size(Int64.max) + "/s")
-        #expect(FileFormat.byteLimitTitle(1 << 30) == "1 GiB")
-        #expect(FileFormat.byteLimitTitle(5 << 30) == "5 GiB")
-        #expect(FileFormat.byteLimitTitle(nil) == "No limit")
+        #expect(FileFormat.speed(1023, units: .binary) == "1023 B/s")
+        #expect(FileFormat.speed(1024, units: .binary) == FileFormat.size(1024, units: .binary) + "/s")
+        #expect(FileFormat.speed(1_048_576, units: .binary) == "1.0 MiB/s")
+        #expect(FileFormat.speed(-1, units: .binary) == "0 B/s")
+        #expect(FileFormat.speed(.nan, units: .binary) == "0 B/s" && FileFormat.speed(.infinity, units: .binary) == "0 B/s")
+        #expect(FileFormat.speed(Double.greatestFiniteMagnitude, units: .binary) == FileFormat.size(Int64.max, units: .binary) + "/s")
+        #expect(FileFormat.byteLimitTitle(1 << 30, units: .binary) == "1 GiB")
+        #expect(FileFormat.byteLimitTitle(5 << 30, units: .binary) == "5 GiB")
+        #expect(FileFormat.byteLimitTitle(nil, units: .binary) == "No limit")
     }
 
     @Test func protocolDatesPreserveZonesAndCalendarIdentityConcurrently() async {

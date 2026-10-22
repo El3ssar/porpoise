@@ -22,7 +22,8 @@ struct TransferRateSmoothingTests {
         rate.add(bytes: 4_000, at: 4, totalBytes: 100_000)
         #expect(rate.timeLeftText == "About 2 minutes left")
         #expect(rate.hasSpeedEstimate)
-        #expect(rate.speedText == "1000 B/s")
+        #expect(rate.bytesPerSecond == 1_000)
+        #expect(rate.speedText == FileFormat.speed(1_000))
         rate.reset()
         #expect(!rate.hasSpeedEstimate && rate.timeLeftText == "Estimating time…")
     }

@@ -1,6 +1,7 @@
 import Foundation
 import PorpoiseCore
 import PorpoiseFileSystem
+import PorpoiseServicesTestSupport
 import Testing
 
 @testable import PorpoiseServices
@@ -74,7 +75,7 @@ struct ActivityPresentationTests {
         #expect(ActivityPresentation.summary(a) == a.statusText)
     }
 
-    @Test func noticePreparationTitlesAndUnicodeEmphasisStayConsistent() throws {
+    @Test(.isolatedSettings) func noticePreparationTitlesAndUnicodeEmphasisStayConsistent() throws {
         let a = activity()
         a.state = .running
         a.notice = "Waiting for network"

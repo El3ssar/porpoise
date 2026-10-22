@@ -235,7 +235,7 @@ import Testing
         #expect(u.hasPrefix("Google Drive · me@x.com: ") && u.contains(" downloaded · ") && u.hasSuffix("of recently opened files"))
         #expect(!CloudCommands.usageText(CloudOfflineUsage(kept: 1, recent: 0), account: "a").contains("recently"))
         #expect(CloudCommands.cacheLimits.map(\.bytes).last == .some(nil) && CloudCommands.cacheLimits[1].bytes == 5 << 30)
-        #expect(CloudCommands.cacheLimits.map(\.title) == ["1 GiB", "5 GiB", "10 GiB", "25 GiB", "No limit"])
+        #expect(CloudCommands.cacheLimits.map(\.title) == [1, 5, 10, 25].map { FileFormat.byteLimitTitle(Int64($0) << 30) } + ["No limit"])
     }
 
     @Test func demoWordsSetStates() {

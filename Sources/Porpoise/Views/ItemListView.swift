@@ -189,7 +189,7 @@ final class ItemListView: NSView {
     private func settingsChanged(key: String?) {
         let layoutKeys: Set<String> = [
             "labelFont", "labelFontSize", "labelWidth", "maxLines", "compactMax", "expandable",
-            "allExtensions", "dateStyle", "permStyle", "appearancePreferences",
+            "allExtensions", "dateStyle", "permStyle", "binaryUnits", "appearancePreferences",
         ]
         let drawingKeys: Set<String> = [
             "appearance", "selectionMarker", "elideMiddle", "entireRow", "pvImages", "pvVideos", "pvDocs",
@@ -205,7 +205,7 @@ final class ItemListView: NSView {
             textWidthCache = [:]
             compactTextMeasurement = nil
         }
-        if key.map({ ["allExtensions", "dateStyle", "permStyle"].contains($0) }) ?? true { compactTextMeasurement = nil }
+        if key.map({ ["allExtensions", "dateStyle", "permStyle", "binaryUnits"].contains($0) }) ?? true { compactTextMeasurement = nil }
         // The number of label lines may have changed too; refilling this for the visible items is cheap.
         iconsLabelCache = [:]
         relayout()

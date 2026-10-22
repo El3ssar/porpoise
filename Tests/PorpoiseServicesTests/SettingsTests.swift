@@ -22,6 +22,33 @@ import Testing
         #expect(s.labelFontName == "" && s.labelFontSize == 13.0)
     }
 
+    @Test func byteUnitsPersistNotifyAndReset() {
+        #expect(!s.binaryUnits)
+        let decimal = FileFormat.size(1_500_000, units: .decimal)
+        #expect(FileFormat.size(1_500_000) == decimal)
+        var keys: [String] = []
+        let token = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: nil) { n in
+            if let key = n.object as? String { keys.append(key) }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        s.binaryUnits = true
+        #expect(keys == ["binaryUnits"])
+        #expect(Settings.store.object(forKey: "binaryUnits") as? Bool == true)
+        #expect(FileFormat.size(1_500_000) == "1.4 MiB")
+        #expect(FileFormat.speed(1_500_000) == "1.4 MiB/s")
+        #expect(FileFormat.byteLimitTitle(1 << 30) == "1 GiB")
+        #expect(CloudCommands.cacheLimits.first?.title == "1 GiB")
+        s.binaryUnits = false
+        #expect(FileFormat.size(1_500_000) == decimal)
+        #expect(CloudCommands.cacheLimits.first?.title == FileFormat.byteLimitTitle(1 << 30))
+        Settings.store.set(true, forKey: "binaryUnits")
+        #expect(s.binaryUnits && FileFormat.size(1_500_000) == "1.4 MiB")
+        s.resetAll()
+        #expect(!s.binaryUnits && FileFormat.size(1_500_000) == decimal)
+        Settings.store.set("invalid", forKey: "binaryUnits")
+        #expect(!s.binaryUnits && FileFormat.size(1_500_000) == decimal)
+    }
+
     @Test func everyKindOfValueRoundTrips() {
         s.showFullPathInTitle = true
         s.previewMaxSizeMiB = 0
@@ -312,7 +339,7 @@ import Testing
                 "confirmDelete", "confirmEmptyTrash", "confirmCloseTabs", "confirmTerminal", "confirmOpenMany",
                 "confirmRenameType", "confirmRenameHide", "confirmTerminals", "execAction", "appearance", "perFolder", "selectionMarker",
                 "renameInline", "toolTips", "autoExpand", "dblClickBg2", "dynamicView", "browseArchives", "allExtensions",
-                "hideBackup", "sorting", "folderDepth", "folderSize", "dateStyle", "permStyle", "elideMiddle", "labelWidth",
+                "hideBackup", "binaryUnits", "sorting", "folderDepth", "folderSize", "dateStyle", "permStyle", "elideMiddle", "labelWidth",
                 "maxLines", "compactMax", "clickRow", "labelFont", "labelFontSize", "expandable", "entireRow", "infoPreview",
                 "infoHover", "infoAutoPlay", "infoCondensed", "foldersHome", "foldersHidden", "termFollow", "placesIcon", "jobsConcurrency",
                 "verifyCopies", "transferConflictRule", "transferCompareMethod",

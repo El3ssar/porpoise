@@ -101,7 +101,7 @@ import Testing
         let edges: [Int64] = [0, 1, 1023, 1024, 1_048_575, 1_048_576, Int64.max, Int64.min, -1, -1024]
         for i in 0..<cases {
             let bytes = i < edges.count ? edges[i] : Int64.random(in: Int64.min...Int64.max, using: &f.rng) >> f.int(64)
-            let s = FileFormat.size(bytes)
+            let s = FileFormat.size(bytes, units: i.isMultiple(of: 2) ? .decimal : .binary, locale: Locale(identifier: "en_US"))
             v.check(s.hasSuffix("B") && !s.contains("nan") && !s.contains("inf"), "size(\(bytes)) = \(s)")
             v.check(FileFormat.permissions(f.int(1 << 20) - 1000, isDirectory: f.int(2) == 0).count == 10, "permissions")
             _ = FileFormat.summary(folders: f.int(5), files: f.int(5), bytes: bytes, selected: f.int(2) == 0)

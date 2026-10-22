@@ -76,9 +76,9 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bo
 
 @Suite struct FormatTests {
     @Test func sizes() {
-        #expect(FileFormat.size(0) == "0 B")
-        #expect(FileFormat.size(1536) == "1.5 KiB")
-        #expect(FileFormat.size(5 * 1024 * 1024) == "5.0 MiB")
+        #expect(FileFormat.size(0, units: .binary) == "0 B")
+        #expect(FileFormat.size(1536, units: .binary) == "1.5 KiB")
+        #expect(FileFormat.size(5 * 1024 * 1024, units: .binary) == "5.0 MiB")
     }
 
     @Test func names() {
@@ -90,7 +90,7 @@ private func item(_ name: String, dir: Bool = false, size: Int64 = 0, hidden: Bo
     }
 
     @Test func summary() {
-        #expect(FileFormat.summary(folders: 2, files: 1, bytes: 2048, selected: false) == "2 folders, 1 file (2.0 KiB)")
+        #expect(FileFormat.summary(folders: 2, files: 1, bytes: 2048, selected: false, units: .binary) == "2 folders, 1 file (2.0 KiB)")
         #expect(FileFormat.summary(folders: 1, files: 0, bytes: 0, selected: true) == "1 folder selected")
     }
 

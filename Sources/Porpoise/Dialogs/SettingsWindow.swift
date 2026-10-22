@@ -124,6 +124,7 @@ final class SettingsWindowController: SecondaryWindowController {
                 BackgroundDoubleClick.allCases.firstIndex(of: s.doubleClickBackground) ?? 1
             ) { s.doubleClickBackground = BackgroundDoubleClick.allCases[$0] }
             f.section("Content display")
+            f.check("Binary units (KiB)", s.binaryUnits) { s.binaryUnits = $0 }
             f.popup("Sorting mode:", SortingChoice.allCases.map(\.title), SortingChoice.allCases.firstIndex(of: s.sortingChoice) ?? 0) {
                 s.sortingChoice = SortingChoice.allCases[$0]
             }

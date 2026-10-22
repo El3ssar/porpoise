@@ -47,7 +47,7 @@ enum AccountsSettingsPage {
         f.section("On this Mac")
         let limits = CloudCommands.cacheLimits
         f.popup(
-            "Recently opened files use up to:", limits.map(\.title),
+            "Recently opened files use up to:", items: { CloudCommands.cacheLimits.map(\.title) },
             limits.firstIndex { $0.bytes == CloudOfflineHub.service?.cacheLimit } ?? 1
         ) {
             CloudOfflineHub.service?.cacheLimit = limits[$0].bytes

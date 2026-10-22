@@ -101,10 +101,12 @@ public enum CloudCommands {
     }
 
     /// Settings' choices for recently opened files (nil: no limit).
-    public static let cacheLimits: [(title: String, bytes: Int64?)] = [
-        (FileFormat.byteLimitTitle(1 << 30), 1 << 30), (FileFormat.byteLimitTitle(5 << 30), 5 << 30),
-        (FileFormat.byteLimitTitle(10 << 30), 10 << 30), (FileFormat.byteLimitTitle(25 << 30), 25 << 30), (FileFormat.byteLimitTitle(nil), nil),
-    ]
+    public static var cacheLimits: [(title: String, bytes: Int64?)] {
+        [
+            (FileFormat.byteLimitTitle(1 << 30), 1 << 30), (FileFormat.byteLimitTitle(5 << 30), 5 << 30),
+            (FileFormat.byteLimitTitle(10 << 30), 10 << 30), (FileFormat.byteLimitTitle(25 << 30), 25 << 30), (FileFormat.byteLimitTitle(nil), nil),
+        ]
+    }
 
     /// "Google Drive · me@x: 3.1 GB downloaded · 820 MB of recently opened files".
     public static func usageText(_ u: CloudOfflineUsage, account: String) -> String {
