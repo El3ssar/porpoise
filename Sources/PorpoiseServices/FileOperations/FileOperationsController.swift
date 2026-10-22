@@ -169,7 +169,15 @@ public final class FileOperationsController {
                 let backgroundRetry = (kind == .trash || kind == .delete) && !job.denied.isEmpty && !job.isCancelled
                 if !backgroundRetry { self.ui?.jobFinished(activity) }
                 if let r = record { self.pushUndo(r) }
-                let errs = job.errors + (fatal.map { [($0 as? LocalizedError)?.errorDescription ?? $0.localizedDescription] } ?? [])
+                // The administrator fallback runs plain cp/mv rather than this controlled job. It
+                // cannot silently bypass bandwidth or exclusion rules when direct access is denied.
+                let rulesPreventElevation =
+                    (kind == .copy || kind == .move)
+                    && (job.control.policy.bytesPerSecond > 0 || !job.control.policy.exclusions.isEmpty)
+                let ruleErrors =
+                    rulesPreventElevation && !job.denied.isEmpty
+                    ? ["Items requiring administrator access were kept because the helper cannot apply this job's transfer rules."] : []
+                let errs = job.errors + (fatal.map { [($0 as? LocalizedError)?.errorDescription ?? $0.localizedDescription] } ?? []) + ruleErrors
                 self.ended(activity, errors: errs)
                 // Quitting: nothing more to say or do now; the journal resumes it next time.
                 if job.isInterrupted { return }
@@ -185,7 +193,7 @@ public final class FileOperationsController {
                             ["These items could not be moved to Trash: " + job.untrashable.map(\.path).joined(separator: ", ")], window: window)
                     }
                 }
-                if !job.denied.isEmpty && !job.isCancelled {
+                if !job.denied.isEmpty && !job.isCancelled && !rulesPreventElevation {
                     self.retryDenied(kind, job.denied, targets: job.deniedTargets, to: folder, window: window) { more in
                         if backgroundRetry { self.ui?.jobFinished(activity) }
                         if record != nil || !more.isEmpty { sound?.play() }

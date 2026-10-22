@@ -153,6 +153,29 @@ struct JobResilienceTests {
         #expect(entry.matches("backoff") && entry.matches("Excluded"))
     }
 
+    @Test(.enabled(if: geteuid() != 0, "needs ordinary file permissions"), arguments: [false, true])
+    func administratorFallbackCannotBypassRules(_ limitBandwidth: Bool) async throws {
+        let scratch = try Scratch("protected-rules")
+        let source = try scratch.file("source", "retained bytes")
+        let destination = try scratch.folder("destination")
+        #expect(chmod(source.path, 0) == 0)
+        defer { chmod(source.path, 0o600) }
+        if limitBandwidth { Settings.shared.transferMBPerSecond = 1 } else { Settings.shared.transferExclusions = "*.tmp" }
+        let operations = FileOperationsController()
+        let ui = ScriptedUI()
+        operations.ui = ui
+        operations.journals = JournalStore(folder: scratch.path("journals"))
+        operations.history = OperationHistory(file: scratch.path("history"))
+        operations.prepareJob = { $0.allowsClone = false }
+        let result = try await operations.perform(.copy, [source], to: destination)
+        #expect(result.isEmpty)
+        #expect(operations.activities.first?.state == .failed)
+        #expect(operations.activities.first?.errors.contains { $0.contains("transfer rules") } == true)
+        #expect(!ui.questions.contains { $0.confirmTitle == "Authenticate" })
+        #expect(FileManager.default.fileExists(atPath: source.path))
+        #expect(!FileManager.default.fileExists(atPath: destination.appendingPathComponent("source").path))
+    }
+
     static func largeFile(_ url: URL, bytes: UInt64, dense: Bool = false) throws -> URL {
         FileManager.default.createFile(atPath: url.path, contents: Data("first marker".utf8))
         let handle = try FileHandle(forWritingTo: url)
