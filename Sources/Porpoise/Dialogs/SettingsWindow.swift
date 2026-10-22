@@ -3,12 +3,15 @@ import PorpoiseCore
 import PorpoiseFileSystem
 import PorpoiseServices
 
-/// "Configure Dolphin" as a native Mac settings window, with Dolphin's pages and options.
+/// "Configure Dolphin" as a native Mac settings window: Dolphin's options on fewer pages, General first.
 final class SettingsWindowController: SecondaryWindowController {
     /// The Settings window, for the pages' sheets (whichever window happens to be key).
     private(set) static weak var window: NSWindow?
     /// Watches ~/.Trash while the Settings window exists.
     private static var trashWatcher: FolderWatcher?
+
+    /// Where the page shown last is kept, so Settings reopens on it.
+    static let lastPageKey = "settingsLastPage"
 
     /// The pages' builders, kept so their observers live (and are removed) with the window.
     private var builders: [FormBuilder] = []
@@ -45,15 +48,8 @@ final class SettingsWindowController: SecondaryWindowController {
             item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
             tabs.addTabViewItem(item)
         }
-        page("Shortcuts", "keyboard", ShortcutSettingsPage.build)
-        page("Search", "magnifyingglass", IndexSettingsPage.build)
-        page("Accounts", "person.crop.circle", AccountsSettingsPage.build)
-        page("Activity", "arrow.triangle.2.circlepath", TransferSettingsPage.build)
         let s = Settings.shared
-
-        page("Appearance", "paintpalette") { f in AppearancePage.build(f) }
-
-        page("Folders & Tabs", "folder") { f in
+        page("General", "gearshape") { f in
             f.section("Show on startup")
             f.radio(["Folders, tabs, and window state from last time", "Home location"], s.startup == .lastSession ? 0 : 1) {
                 s.startup = $0 == 0 ? .lastSession : .home
@@ -98,8 +94,16 @@ final class SettingsWindowController: SecondaryWindowController {
                 CloseSplitChoice.allCases.firstIndex(of: s.closeSplitChoice) ?? 0
             ) { s.closeSplitChoice = CloseSplitChoice.allCases[$0] }
             f.check("Open new windows in split view mode", s.splitViewOnStartup) { s.splitViewOnStartup = $0 }
+            f.section("Updates")
+            let u = Updates.shared
+            f.check("Check for updates automatically (once a day)", u.automaticallyChecks, enabled: { u.isAvailable }) { u.automaticallyChecks = $0 }
+            f.check(
+                "Download and install updates automatically", u.automaticallyInstalls,
+                enabled: { u.isAvailable && u.automaticallyChecks }
+            ) { u.automaticallyInstalls = $0 }
+            f.button("Check Now") { u.checkForUpdates(nil) }
         }
-
+        page("Appearance", "paintpalette") { f in AppearancePage.build(f) }
         page("View", "square.grid.2x2") { f in
             f.section("Display style")
             f.radio(["Use common display style for all folders", "Remember display style for each folder"], s.rememberPerFolder ? 1 : 0) {
@@ -145,13 +149,6 @@ final class SettingsWindowController: SecondaryWindowController {
                 PermissionStyle.allCases.firstIndex(of: s.permissionStyle) ?? 0
             ) { s.permissionStyle = PermissionStyle.allCases[$0] }
             f.popup("Long file names:", ["Elide in the middle", "Elide at the end"], s.elideMiddle ? 0 : 1) { s.elideMiddle = $0 == 0 }
-        }
-
-        page("View Modes", "rectangle.grid.1x2") { f in
-            f.section("Label font")
-            f.fontPicker("Font:", name: s.labelFontName, size: s.labelFontSize) { name, size in
-                s.labelFontName = name; s.labelFontSize = size
-            }
             f.section("Icons")
             f.popup("Label width:", ["Small", "Medium", "Large", "Huge"], s.iconsLabelWidthIndex) { s.iconsLabelWidthIndex = $0 }
             f.popup("Maximum lines:", ["Unlimited", "1", "2", "3", "4", "5"], max(0, s.iconsMaxLines)) { s.iconsMaxLines = $0 }
@@ -168,9 +165,6 @@ final class SettingsWindowController: SecondaryWindowController {
             ) { s.detailsClickAnywhere = $0 == 0 }
             f.section("Default icon size")
             f.note("Use the slider in the status bar, pinch, or ⌘+/⌘− to change the size of each view.")
-        }
-
-        page("Previews", "photo.on.rectangle") { f in
             f.section("Show previews for")
             f.check("Images", s.previewImages) { s.previewImages = $0 }
             f.check("Videos", s.previewVideos) { s.previewVideos = $0 }
@@ -178,19 +172,11 @@ final class SettingsWindowController: SecondaryWindowController {
             f.check("Text files", s.previewText) { s.previewText = $0 }
             f.check("Fonts", s.previewFonts) { s.previewFonts = $0 }
             f.check("Folders (show their contents)", s.previewFolders) { s.previewFolders = $0 }
-            f.section("Size limits")
+            f.section("Preview size limits")
             f.stepper("Local files below:", s.previewMaxSizeMiB, 0...10000, suffix: "MiB (0 = no limit)") { s.previewMaxSizeMiB = $0 }
             f.check("Show previews for remote files", s.previewRemote) { s.previewRemote = $0 }
         }
-
-        page("Context Menu", "contextualmenu.and.cursorarrow") { f in
-            f.section("Show in context menus")
-            for e in ContextMenuEntry.allCases {
-                f.check(e.title, s.contextMenuShows(e)) { s.setContextMenu(e, $0) }
-            }
-        }
-
-        page("Bars & Panels", "sidebar.left") { f in
+        page("Panels", "sidebar.left") { f in
             f.section("Status bar")
             f.popup("Status bar:", ["Small", "Full width", "Disabled"], StatusBarMode.allCases.firstIndex(of: s.statusBarMode) ?? 1) {
                 s.statusBarMode = StatusBarMode.allCases[$0]
@@ -208,11 +194,15 @@ final class SettingsWindowController: SecondaryWindowController {
             f.section("Folders panel")
             f.check("Limit to Home folder", s.foldersLimitToHome) { s.foldersLimitToHome = $0 }
             f.check("Show hidden folders", s.foldersShowHidden) { s.foldersShowHidden = $0 }
-            f.section("Terminal panel")
-            f.check("Follow folder changes (both directions)", s.terminalFollowsDirectory) { s.terminalFollowsDirectory = $0 }
+            f.section("Show in context menus")
+            for e in ContextMenuEntry.allCases {
+                f.check(e.title, s.contextMenuShows(e)) { s.setContextMenu(e, $0) }
+            }
         }
-
-        page("Confirmations", "checkmark.shield") { f in
+        page("Terminal", "terminal") { f in TerminalSettingsPage.build(f) }
+        page("Search", "magnifyingglass", IndexSettingsPage.build)
+        page("Accounts", "person.crop.circle", AccountsSettingsPage.build)
+        page("Activity", "arrow.triangle.2.circlepath") { f in
             f.section("Copying and moving")
             let rules: [TransferConflictRule] = [.ask, .different, .newer, .keepBoth, .skip]
             f.popup("When names clash:", rules.map(\.title), rules.firstIndex(of: s.transferConflictRule) ?? 0) { s.transferConflictRule = rules[$0] }
@@ -221,6 +211,10 @@ final class SettingsWindowController: SecondaryWindowController {
                 "Compare using:", ["Size & date (2 second tolerance)", "Size only", "Contents"], methods.firstIndex(of: s.transferCompareMethod) ?? 0
             ) { s.transferCompareMethod = methods[$0] }
             f.note("Copy, move, paste and drop use this comparison when resolving name clashes.")
+            TransferSettingsPage.build(f)
+        }
+        page("Shortcuts", "keyboard", ShortcutSettingsPage.build)
+        page("Advanced", "gearshape.2") { f in
             f.section("Ask for confirmation when")
             f.check("Moving files or folders to the Trash", s.confirmTrash) { s.confirmTrash = $0 }
             f.check("Moving an app to the Trash: review its leftover files", s.reviewAppLeftovers) { s.reviewAppLeftovers = $0 }
@@ -236,9 +230,6 @@ final class SettingsWindowController: SecondaryWindowController {
                 "When opening an executable file:", ["Always ask", "Open in application", "Run script"],
                 ExecutableAction.allCases.firstIndex(of: s.executableAction) ?? 0
             ) { s.executableAction = ExecutableAction.allCases[$0] }
-        }
-
-        page("Trash", "trash") { f in
             f.section("Trash")
             // Sizing the Trash walks every item in it: done in the background.
             // Kept current: re-read whenever the Trash changes (emptied, items trashed from anywhere).
@@ -258,17 +249,6 @@ final class SettingsWindowController: SecondaryWindowController {
             f.button("Empty Trash…", enabled: { !TrashInfo.isEmpty }) {
                 FileOperationsController.shared.emptyTrash(window: SettingsWindowController.window)
             }
-        }
-
-        page("System", "lock.shield") { f in
-            f.section("Updates")
-            let u = Updates.shared
-            f.check("Check for updates automatically (once a day)", u.automaticallyChecks, enabled: { u.isAvailable }) { u.automaticallyChecks = $0 }
-            f.check(
-                "Download and install updates automatically", u.automaticallyInstalls,
-                enabled: { u.isAvailable && u.automaticallyChecks }
-            ) { u.automaticallyInstalls = $0 }
-            f.button("Check Now") { u.checkForUpdates(nil) }
             f.section("Compare files")
             f.status(
                 "Default compare app:",
@@ -308,7 +288,7 @@ final class SettingsWindowController: SecondaryWindowController {
             }
             f.section("Android phones")
             f.note(
-                "Browsing Android phones over USB uses Google's adb tool. Porpoise downloads it from Google (about 15 MB) when you ask; Google's licence doesn't allow including it."
+                "Browsing Android phones over USB uses Google's adb tool. Porpoise downloads it from Google (about 15 MB) when you ask; Google's license doesn't allow including it."
             )
             f.status(
                 "Android support:",
@@ -367,7 +347,11 @@ final class SettingsWindowController: SecondaryWindowController {
             }
         }
 
-        if let initialPage, let index = tabs.tabViewItems.firstIndex(where: { $0.label == initialPage }) { tabs.selectedTabViewItemIndex = index }
+        // The page asked for; else General the first time, then the page shown last.
+        let last = initialPage ?? Settings.store.string(forKey: Self.lastPageKey)
+        if let i = tabs.tabViewItems.firstIndex(where: { $0.label == last }) { tabs.selectedTabViewItemIndex = i }
+        tabs.onSelect = { Settings.store.set($0.label, forKey: Self.lastPageKey) }
+
         let w = NSWindow(contentViewController: tabs)
         w.initialFirstResponder = nil
         w.title = "Settings"

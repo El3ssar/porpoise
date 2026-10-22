@@ -278,7 +278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func closeCurrentTab(_ sender: Any?) { NSApp.keyWindow?.performClose(sender) }
 
     /// Every permission, its state and its switch: Settings › System.
-    @objc func showPermissions(_ sender: Any?) { showSettings(page: "System") }
+    @objc func showPermissions(_ sender: Any?) { showSettings(page: "Advanced") }
     @objc func checkForUpdates(_ sender: Any?) { Updates.shared.checkForUpdates(sender) }
     @objc func supportPorpoise(_ sender: Any?) { if let u = URL(string: AppInfo.sponsorPage) { NSWorkspace.shared.open(u) } }
 

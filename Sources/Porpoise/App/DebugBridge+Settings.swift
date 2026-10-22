@@ -88,9 +88,13 @@ extension DebugBridge {
         }
     }
 
+    /// settings [index | page title]: opens Settings (on the page shown last), or on that page.
     func settingsCommand(_ arg: String) {
         AppDelegate.shared.showSettings(nil)
-        if let i = Int(arg), let tabs = settingsWindow?.contentViewController as? NSTabViewController {
+        guard let tabs = settingsWindow?.contentViewController as? NSTabViewController else { return }
+        if let i = Int(arg) {
+            tabs.selectedTabViewItemIndex = i
+        } else if let i = tabs.tabViewItems.firstIndex(where: { $0.label == arg }) {
             tabs.selectedTabViewItemIndex = i
         }
     }
