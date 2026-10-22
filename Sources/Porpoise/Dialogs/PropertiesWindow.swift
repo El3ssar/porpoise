@@ -22,6 +22,7 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
     private var nameField: NSTextField?
     let sizeLabel = NSTextField(labelWithString: "Calculating…")
     private var closeObserver: NSObjectProtocol?
+    private var thumbnailObserver: NSObjectProtocol?
     /// Set when the window closes, so the background size count stops early.
     var sizeCount = DiskCancellation()
     let sizeQueue = DispatchQueue(label: "app.porpoise.properties-size", qos: .userInitiated, autoreleaseFrequency: .workItem)
@@ -64,6 +65,7 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
             self.informationCancellation.cancel()
             if self.cloudItem == nil { self.commitName() }
             if let o = self.closeObserver { NotificationCenter.default.removeObserver(o) }
+            if let o = self.thumbnailObserver { NotificationCenter.default.removeObserver(o) }
         }
         if cloud == nil { readLocalInformation() }
     }
@@ -200,6 +202,23 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
         return f
     }
 
+    /// The item's own picture (a photo, a PDF page), as Finder's Get Info shows it, once Thumbnails has made it.
+    private func showThumbnail(of item: FileItem, in view: NSImageView) {
+        guard Thumbnails.wantsPreview(item) else { return }
+        if let image = Thumbnails.shared.thumbnail(for: item, size: 128, exact: true) {
+            view.image = image
+            return
+        }
+        thumbnailObserver = NotificationCenter.default.addObserver(forName: Thumbnails.ready, object: nil, queue: .main) {
+            [weak self, weak view] n in
+            guard (n.object as? URL) == item.url, let view, let image = Thumbnails.shared.thumbnail(for: item, size: 128, exact: true)
+            else { return }
+            view.image = image
+            if let o = self?.thumbnailObserver { NotificationCenter.default.removeObserver(o) }
+            self?.thumbnailObserver = nil
+        }
+    }
+
     private func generalView() -> NSView {
         let v = NSView(frame: CGRect(x: 0, y: 0, width: 400, height: 600))
         var y: CGFloat = 572
@@ -207,6 +226,7 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
         let icon = NSImageView(frame: CGRect(x: 20, y: y - 40, width: 64, height: 64))
         icon.autoresizingMask = [.minYMargin]
         icon.image = items.count == 1 ? Icons.shared.image(for: items[0], size: 64) : Icons.shared.image("document-multiple", size: 64)
+        if items.count == 1 { showThumbnail(of: items[0], in: icon) }
         v.addSubview(icon)
         if items.count == 1 {
             let nf = NSTextField(string: items[0].name)

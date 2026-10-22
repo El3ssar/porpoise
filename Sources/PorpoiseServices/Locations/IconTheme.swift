@@ -102,6 +102,15 @@ public final class IconTheme {
 
     public func has(_ name: String) -> Bool { file(name, size: 22) != nil }
 
+    /// Whether the best file for `name` at `size` pixels is a smaller fixed-size drawing that would be blown up (Tela has
+    /// `folder-apple` only as a 16 px glyph: at 96 px it is a giant Apple logo among folder tiles).
+    public func isUpscaled(_ name: String, size: Int) -> Bool {
+        guard let url = file(name, size: size) else { return false }
+        let directory = url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
+        guard let pixels = Int(directory.prefix(while: \.isNumber)) else { return false }
+        return pixels < size
+    }
+
     private static let homePath = FileManager.default.homeDirectoryForCurrentUser.path
 
     public static func folderIconName(_ url: URL) -> String {
