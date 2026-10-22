@@ -197,17 +197,18 @@ final class DiskTreemapView: NSView {
         let shadow = NSShadow(); shadow.shadowBlurRadius = 2; shadow.shadowOffset = .zero
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
         let nameAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: NSColor.white, .paragraphStyle: style, .shadow: shadow,
+            .font: NSFont.systemFont(ofSize: Tokens.FontSize.body, weight: .semibold), .foregroundColor: NSColor.white, .paragraphStyle: style,
+            .shadow: shadow,
         ]
         let sizeAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.white.withAlphaComponent(0.88), .paragraphStyle: style,
+            .font: NSFont.systemFont(ofSize: Tokens.FontSize.small), .foregroundColor: NSColor.white.withAlphaComponent(0.88), .paragraphStyle: style,
             .shadow: shadow,
         ]
         for tile in tiles {
             let rect = tile.rect.insetBy(dx: 1, dy: 1)
             guard rect.intersects(dirtyRect), let index = itemIndices[tile.id] else { continue }
             let item = items[index]
-            let path = NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4)
+            let path = NSBezierPath(roundedRect: rect, xRadius: Tokens.Radius.small, yRadius: Tokens.Radius.small)
             kind(of: tile.id, name: item.1).color.setFill()
             path.fill()
             // A soft cushion: lighter at the top, a little darker at the bottom, so tiles read as objects.

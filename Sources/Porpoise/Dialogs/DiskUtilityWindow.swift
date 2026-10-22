@@ -3,6 +3,9 @@ import PorpoiseCore
 import PorpoiseFileSystem
 import PorpoiseServices
 
+/// The type scale, shortened for the many text styles in this file.
+private typealias FontSize = Tokens.FontSize
+
 /// Common native table/progress shell. Every window owns and cancels its background task.
 class DiskUtilityWindow: SecondaryWindowController, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate {
     let stack = NSStackView()
@@ -53,7 +56,7 @@ class DiskUtilityWindow: SecondaryWindowController, NSWindowDelegate, NSTableVie
             scroll.widthAnchor.constraint(equalTo: stack.widthAnchor), scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 150),
         ])
         scroll.setContentHuggingPriority(.defaultLow, for: .vertical)
-        status.isSelectable = true; status.maximumNumberOfLines = 4; status.font = .systemFont(ofSize: 12)
+        status.isSelectable = true; status.maximumNumberOfLines = 4; status.font = .systemFont(ofSize: FontSize.callout)
         errorsButton.handler = { [weak self] _ in self?.showErrors() }; errorsButton.isHidden = true
         let footer = NSStackView(views: [status, errorsButton]); footer.alignment = .top; footer.spacing = 10
         stack.addArrangedSubview(footer); footer.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
@@ -68,7 +71,9 @@ class DiskUtilityWindow: SecondaryWindowController, NSWindowDelegate, NSTableVie
             rows[row].indices.contains(index)
         else { return nil }
         let label = NSTextField(labelWithString: rows[row][index]); label.lineBreakMode = .byTruncatingMiddle
-        label.font = key == "digest" ? .monospacedSystemFont(ofSize: 11, weight: .regular) : .systemFont(ofSize: 12)
+        label.font =
+            key == "digest"
+            ? .monospacedSystemFont(ofSize: FontSize.small, weight: .regular) : .systemFont(ofSize: FontSize.callout)
         label.toolTip = rows[row][index]; label.isSelectable = true
         return label
     }
@@ -111,7 +116,8 @@ class DiskUtilityWindow: SecondaryWindowController, NSWindowDelegate, NSTableVie
     }
     /// A line of help above the footer; `details` (the fine print) shows as its tooltip.
     func note(_ text: String, details: String? = nil) {
-        let label = NSTextField(wrappingLabelWithString: text); label.textColor = Theme.windowTextInactive; label.font = .systemFont(ofSize: 12)
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.textColor = Theme.windowTextInactive; label.font = .systemFont(ofSize: FontSize.callout)
         label.toolTip = details
         stack.insertArrangedSubview(label, at: stack.arrangedSubviews.count - 1);
         label.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true

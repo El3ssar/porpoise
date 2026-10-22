@@ -3,6 +3,9 @@ import PorpoiseCore
 import PorpoiseServices
 import UniformTypeIdentifiers
 
+/// The type scale, shortened for the many text styles in this file.
+private typealias FontSize = Tokens.FontSize
+
 /// Document-like comparison windows, independent of the browser's selection and lifecycle.
 final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuDelegate, NSMenuItemValidation {
     private static let queue = DispatchQueue(
@@ -114,7 +117,7 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
         previous.setAccessibilityLabel("Previous Change"); next.setAccessibilityLabel("Next Change")
         previous.handler = { [weak self] _ in self?.move(-1) }; next.handler = { [weak self] _ in self?.move(1) }
         toolMenu.delegate = self; toolMenu.minimumWidth = 190
-        openWith.isBordered = false; openWith.font = .systemFont(ofSize: 13)
+        openWith.isBordered = false; openWith.font = .systemFont(ofSize: FontSize.body)
         openWith.handler = { [weak self] _ in self?.showToolMenu() }
         openWith.setAccessibilityLabel("Open With")
         externalCapsule.content.addSubview(openWith)
@@ -124,9 +127,9 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
         viewSwitch.setAccessibilityLabel("Comparison View"); textMode.setAccessibilityLabel("Text Layout");
         imageMode.setAccessibilityLabel("Image Comparison Mode")
         for v in [viewSwitch, textMode, imageMode, facts, ignore] { footer.addSubview(v) }
-        facts.font = .systemFont(ofSize: 11); facts.textColor = Theme.windowTextInactive; facts.lineBreakMode = .byTruncatingTail
+        facts.font = .systemFont(ofSize: FontSize.small); facts.textColor = Theme.windowTextInactive; facts.lineBreakMode = .byTruncatingTail
         blend.target = self; blend.action = #selector(blendChanged); blend.setAccessibilityLabel("Onion Skin Opacity")
-        ignore.font = .systemFont(ofSize: 11); ignore.handler = { [weak self] _ in self?.rediff() }
+        ignore.font = .systemFont(ofSize: FontSize.small); ignore.handler = { [weak self] _ in self?.rediff() }
         textScroll.documentView = textCanvas; textScroll.hasVerticalScroller = true; textScroll.autohidesScrollers = true;
         textScroll.drawsBackground = false
         textCanvas.copyChange = { [weak self] change, toRight in self?.copyChange(change, toRight: toRight) };
@@ -147,19 +150,21 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
             body.addSubview(v)
         }
         for label in [dimensions, pixelsChanged, blendLeft, blendRight] {
-            label.font = .systemFont(ofSize: 12); label.textColor = Theme.viewTextInactive
+            label.font = .systemFont(ofSize: FontSize.callout); label.textColor = Theme.viewTextInactive
         }
-        pixelsChanged.font = .systemFont(ofSize: 12, weight: .semibold); pixelsChanged.textColor = Theme.transferChanged;
+        pixelsChanged.font = .systemFont(ofSize: FontSize.callout, weight: .semibold); pixelsChanged.textColor = Theme.transferChanged;
         pixelsChanged.alignment = .right
         blendLeft.alignment = .right; blendRight.alignment = .left
         imageCanvas.onOpacityChange = { [weak self] value in self?.blend.doubleValue = Double(value) }
-        identicalDetail.font = .systemFont(ofSize: 12); identicalDetail.textColor = Theme.viewTextInactive; identicalDetail.alignment = .center
-        message.font = .systemFont(ofSize: 15, weight: .semibold); message.textColor = Theme.viewText; message.alignment = .center;
+        identicalDetail.font = .systemFont(ofSize: FontSize.callout); identicalDetail.textColor = Theme.viewTextInactive
+        identicalDetail.alignment = .center
+        message.font = .systemFont(ofSize: FontSize.title3, weight: .semibold); message.textColor = Theme.viewText; message.alignment = .center;
         message.maximumNumberOfLines = 2
         loading.isIndeterminate = true
-        progressText.font = .systemFont(ofSize: 12); progressText.textColor = Theme.viewTextInactive; progressText.alignment = .center
+        progressText.font = .systemFont(ofSize: FontSize.callout); progressText.textColor = Theme.viewTextInactive; progressText.alignment = .center
         cancelCapsule.content.addSubview(cancelComparison); cancelComparison.isBordered = false
-        cancelComparison.font = .systemFont(ofSize: 13); cancelComparison.keyEquivalent = "\u{1b}"; cancelComparison.keyEquivalentModifierMask = []
+        cancelComparison.font = .systemFont(ofSize: FontSize.body)
+        cancelComparison.keyEquivalent = "\u{1b}"; cancelComparison.keyEquivalentModifierMask = []
         cancelComparison.handler = { [weak self] _ in self?.window?.performClose(nil) }
         previous.nextKeyView = next; next.nextKeyView = openWith
         openWith.nextKeyView = viewSwitch; viewSwitch.nextKeyView = textMode; textMode.nextKeyView = ignore
@@ -172,10 +177,10 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
                 url: url, name: url.lastPathComponent, isDirectory: false, contentType: UTType(filenameExtension: url.pathExtension)?.identifier),
             size: 18);
         icon.frame = NSRect(x: 12, y: 8, width: 18, height: 18)
-        let name = NSTextField(labelWithString: url.lastPathComponent); name.font = .systemFont(ofSize: 13, weight: .semibold);
+        let name = NSTextField(labelWithString: url.lastPathComponent); name.font = .systemFont(ofSize: FontSize.body, weight: .semibold);
         name.textColor = Theme.windowText; name.lineBreakMode = .byTruncatingMiddle
         let path = NSTextField(labelWithString: url.deletingLastPathComponent().pathComponents.suffix(3).joined(separator: " › "));
-        path.font = .systemFont(ofSize: 12); path.textColor = Theme.windowTextInactive; path.lineBreakMode = .byTruncatingMiddle
+        path.font = .systemFont(ofSize: FontSize.callout); path.textColor = Theme.windowTextInactive; path.lineBreakMode = .byTruncatingMiddle
         capsule.content.addSubview(icon); capsule.content.addSubview(name); capsule.content.addSubview(path); capsule.toolTip = url.path
         capsule.setAccessibilityElement(true); capsule.setAccessibilityRole(.group); capsule.setAccessibilityLabel(url.path)
     }
@@ -634,12 +639,13 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
             offset == nil
             ? "\(leftText == nil && images == nil ? "Binary files" : "Files") are identical"
             : (leftText == nil && images == nil ? "Binary files differ" : "Files differ")
-        let title = NSTextField(labelWithString: headline); title.font = .systemFont(ofSize: 17, weight: .semibold); title.textColor = Theme.viewText
+        let title = NSTextField(labelWithString: headline)
+        title.font = .systemFont(ofSize: FontSize.title2, weight: .semibold); title.textColor = Theme.viewText
         let detail = NSTextField(
             labelWithString: offset.map {
                 "First difference at byte \($0.formatted(.number.locale(Locale(identifier: "en_US")))) (0x\(String($0, radix: 16)))"
             } ?? "Every byte matches.")
-        detail.font = .systemFont(ofSize: 12); detail.textColor = Theme.viewTextInactive
+        detail.font = .systemFont(ofSize: FontSize.callout); detail.textColor = Theme.viewTextInactive
         let labels = NSStackView(views: [title, detail]); labels.orientation = .vertical; labels.alignment = .leading; labels.spacing = 2
         let icon = NSImageView();
         icon.image = Icons.shared.image(
@@ -650,7 +656,7 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
         let heading = NSStackView(views: [icon, labels]); heading.spacing = 14; heading.alignment = .centerY
         addInfoRow(heading, height: 70)
         let table = NSStackView(); table.orientation = .vertical; table.alignment = .leading; table.spacing = 0
-        table.wantsLayer = true; table.layer?.cornerRadius = 5; table.layer?.masksToBounds = true; table.layer?.borderWidth = 1;
+        table.wantsLayer = true; table.layer?.cornerRadius = Tokens.Radius.row; table.layer?.masksToBounds = true; table.layer?.borderWidth = 1;
         window?.effectiveAppearance.performAsCurrentDrawingAppearance { table.layer?.borderColor = Theme.frame.cgColor }
         let names = sideNames()
         infoRow("", names.0, names.1, index: -1, table: table)
@@ -659,12 +665,12 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
         let hash = FileDiffHashRow()
         for i in 0..<2 {
             if let digest = hashes[i] {
-                let text = NSTextField(labelWithString: digest); text.font = .monospacedSystemFont(ofSize: 11, weight: .regular);
+                let text = NSTextField(labelWithString: digest); text.font = .monospacedSystemFont(ofSize: FontSize.small, weight: .regular);
                 text.textColor = Theme.viewText
                 text.lineBreakMode = .byTruncatingMiddle; text.toolTip = digest; text.isSelectable = true; hash.cells.append(text)
             } else {
                 let button = ClosureButton(title: hashBusy.contains(i) ? "Computing…" : "Compute") { [weak self] _ in self?.computeHash(i) }
-                button.bezelStyle = .rounded; button.controlSize = .small; button.font = .systemFont(ofSize: 12)
+                button.bezelStyle = .rounded; button.controlSize = .small; button.font = .systemFont(ofSize: FontSize.callout)
                 button.isEnabled = !hashBusy.contains(i); button.setAccessibilityLabel("Compute SHA-256 for \(i == 0 ? names.0 : names.1)");
                 hash.cells.append(button)
             }
@@ -763,7 +769,7 @@ private final class FileDiffInfoRow: NSView {
             (values[i] as NSString).draw(
                 in: NSRect(x: x, y: 7, width: (i == 0 ? label - 20 : col - 12), height: 18),
                 withAttributes: [
-                    .font: NSFont.systemFont(ofSize: 12, weight: heading || (different && i > 0) ? .semibold : .regular),
+                    .font: NSFont.systemFont(ofSize: FontSize.callout, weight: heading || (different && i > 0) ? .semibold : .regular),
                     .foregroundColor: i == 0 ? Theme.viewTextInactive : (different ? Theme.transferChanged : Theme.viewText), .paragraphStyle: p,
                 ])
         }
@@ -787,7 +793,7 @@ private final class FileDiffHashRow: NSView {
     override func draw(_ dirtyRect: NSRect) {
         Theme.viewAlternate.setFill(); bounds.fill()
         ("SHA-256" as NSString).draw(
-            at: NSPoint(x: 12, y: 8), withAttributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: Theme.viewTextInactive])
+            at: NSPoint(x: 12, y: 8), withAttributes: [.font: NSFont.systemFont(ofSize: FontSize.callout), .foregroundColor: Theme.viewTextInactive])
     }
 }
 

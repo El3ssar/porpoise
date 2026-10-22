@@ -87,7 +87,7 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
         scroll.wantsLayer = true
-        scroll.layer?.cornerRadius = 8
+        scroll.layer?.cornerRadius = Tokens.Radius.card
         scroll.layer?.borderWidth = 1
         scroll.layer?.masksToBounds = true
         Theme.whenChanged(scroll) { [weak scroll] in
@@ -187,10 +187,10 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let p = profiles.profiles[row]
         let name = NSTextField(labelWithString: p.name)
-        name.font = .systemFont(ofSize: 13, weight: .medium)
+        name.font = .systemFont(ofSize: Tokens.FontSize.body, weight: .medium)
         name.lineBreakMode = .byTruncatingTail
         let detail = NSTextField(labelWithString: "\(p.kind.title) · \(p.address)")
-        detail.font = .systemFont(ofSize: 11)
+        detail.font = .systemFont(ofSize: Tokens.FontSize.small)
         detail.textColor = .secondaryLabelColor
         detail.lineBreakMode = .byTruncatingTail
         let text = NSStackView(views: [name, detail])
@@ -259,7 +259,7 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
                 .withSymbolConfiguration(.init(pointSize: 40, weight: .light)) ?? NSImage())
         symbol.contentTintColor = Theme.windowTextInactive
         let title = NSTextField(labelWithString: "No saved connections")
-        title.font = .systemFont(ofSize: 17, weight: .semibold)
+        title.font = .systemFont(ofSize: Tokens.FontSize.title2, weight: .semibold)
         title.textColor = Theme.windowText
         let body = NSTextField(
             wrappingLabelWithString: "Save SFTP, FTP, SMB and S3 servers here to reach them from the sidebar. "
@@ -584,13 +584,13 @@ final class ConnectionInfoView: NSStackView {
 
     private static func heading(_ s: String) -> NSTextField {
         let t = NSTextField(labelWithString: s)
-        t.font = .systemFont(ofSize: 12, weight: .semibold)
+        t.font = .systemFont(ofSize: Tokens.FontSize.callout, weight: .semibold)
         return t
     }
 
     private static func line(_ s: String) -> NSTextField {
         let t = NSTextField(wrappingLabelWithString: s)
-        t.font = .systemFont(ofSize: 12)
+        t.font = .systemFont(ofSize: Tokens.FontSize.callout)
         t.textColor = .secondaryLabelColor
         t.isSelectable = true
         t.preferredMaxLayoutWidth = 480

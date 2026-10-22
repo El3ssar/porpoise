@@ -99,6 +99,8 @@ enum Tokens {
     enum FontSize {
         static let caption: CGFloat = 10
         static let small: CGFloat = 11
+        /// macOS's callout style: secondary lines, table cells and metadata.
+        static let callout: CGFloat = 12
         static let body: CGFloat = 13
         static let title3: CGFloat = 15
         static let title2: CGFloat = 17
