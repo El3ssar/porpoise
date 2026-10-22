@@ -106,9 +106,13 @@ final class DebugBridge: NSObject {
         dumpSettings(to: arg)
     }
 
-    /// permissions <step>: the welcome sheet at welcome or fullDisk, on the front window.
+    /// permissions <step> [granted|skip]: the welcome sheet at welcome or fullDisk, on the front window; `granted` shows
+    /// Full Disk Access as on (for screenshots), `skip` clicks Not Now.
     func permissionsCommand(_ arg: String) {
-        let step = OnboardingWindowController.Step.allCases.first { "\($0)" == arg } ?? .welcome
+        let words = arg.split(separator: " ").map(String.init)
+        let step = OnboardingWindowController.Step.allCases.first { "\($0)" == words.first } ?? .welcome
+        if words.contains("granted") { OnboardingWindowController.fullDiskGranted = { true } }
+        if words.contains("skip") { OnboardingWindowController.shared?.finish(); return }
         OnboardingWindowController.show(at: step, on: wc?.window)
     }
 

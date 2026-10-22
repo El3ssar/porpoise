@@ -132,4 +132,30 @@ import Testing
         SystemIntegration.FirstNeed.appManagement(.delete, [app]) { explained += 1 }
         #expect(checks == 1 && explained == 1)
     }
+
+    /// Connect (DS-9): tiles wide enough for every name, six across, and services not ready yet on one line, not as tiles.
+    @Test func connectTilesFitTheirNamesAndComingSoonIsOneLine() throws {
+        let titles = ConnectSheet.ServerKind.allCases.map(\.title) + CloudProvider.allCases.map(\.title)
+        for t in titles {
+            let width = (t as NSString).size(withAttributes: [.font: ConnectTile.titleFont]).width
+            #expect(width <= ConnectTile.size.width - 8, "\(t): \(width)")
+        }
+        #expect(ConnectTile.size.width == 100)
+        let browser = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 900, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        browser.isReleasedWhenClosed = false
+        browser.orderFront(nil)
+        let sheet = ConnectSheet.run(window: browser) { _ in }
+        defer {
+            sheet.close(nil)
+            browser.orderOut(nil)  // not close(): the last window closed would quit the test host
+        }
+        let content = try #require(sheet.window?.contentView)
+        func tiles(_ v: NSView) -> [ConnectTile] { ((v as? ConnectTile).map { [$0] } ?? []) + v.subviews.flatMap(tiles) }
+        let ids = Set(tiles(content).compactMap { $0.identifier?.rawValue })
+        for p in CloudProvider.allCases { #expect(ids.contains("tile-" + p.rawValue) == p.isAvailable, "\(p)") }
+        let later = CloudProvider.allCases.filter { !$0.isAvailable }
+        let line = texts(in: content).first { $0.hasPrefix("More services coming") }
+        #expect(later.allSatisfy { line?.contains($0.title) == true })
+        #expect(content.frame.width >= ConnectTile.rowWidth(ConnectSheet.ServerKind.allCases.count) + 44)
+    }
 }
