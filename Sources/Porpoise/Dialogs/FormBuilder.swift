@@ -321,10 +321,30 @@ final class FormBuilder: NSObject {
             }
             if enabled != nil { track(b, enabled: enabled) {} }
         } else {
-            let row = indented(b)
-            contentStack.addArrangedSubview(row)
-            if enabled != nil { track(row, enabled: enabled) {} }
+            // In the control column, beside the button before it: under the field they act on (System Settings).
+            let row: NSStackView
+            if let last = contentStack.arrangedSubviews.last as? NSStackView, last.identifier?.rawValue == "column-actions" {
+                row = last
+            } else {
+                row = NSStackView(views: [labelColumnSpacer()])
+                row.spacing = 8
+                row.identifier = NSUserInterfaceItemIdentifier("column-actions")
+                contentStack.addArrangedSubview(row)
+            }
+            row.addArrangedSubview(b)
+            if enabled != nil { track(b, enabled: enabled) {} }
         }
+    }
+
+    /// An empty view as wide as the label column (it follows the column as longer labels widen it).
+    private func labelColumnSpacer() -> NSView {
+        let v = NSView()
+        let width = max(140, labelWidths.first?.constant ?? 0)
+        labelWidths.append(v.widthAnchor.constraint(equalToConstant: width))
+        labelWidths.forEach {
+            $0.constant = width; $0.isActive = true
+        }
+        return v
     }
 
     private func indented(_ v: NSView) -> NSView {
