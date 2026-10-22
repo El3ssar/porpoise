@@ -239,7 +239,27 @@ public enum ItemGrouper {
                 return r == .orderedSame ? x.offset < y.offset : r == .orderedAscending
             }.map(\.element)
         }
-        return order.map { (title: $0.title, items: buckets[$0]!) }
+        // Folders first (or hidden last) splits a title across sections: "A" for folders, then "A" again for files.
+        // Then every group names its section, so no header repeats and the view reads consistently.
+        let titles = order.map(\.title)
+        guard Set(titles).count < titles.count else { return order.map { (title: $0.title, items: buckets[$0]!) } }
+        return order.map { key in
+            let name = sectionName(key.section, foldersFirst: props.foldersFirst)
+            return (title: name.isEmpty ? key.title : "\(key.title) · \(name)", items: buckets[key]!)
+        }
+    }
+
+    /// What a section of `groups` holds: with folders first, folders (0, 1) or files (2, 3); odd sections are the
+    /// hidden items put last. Without folders first, section 0 is everything shown, which needs no name.
+    static func sectionName(_ section: Int, foldersFirst: Bool) -> String {
+        let hidden = section % 2 == 1
+        guard foldersFirst else { return hidden ? "Hidden" : "" }
+        switch (section >= 2, hidden) {
+        case (false, false): return "Folders"
+        case (false, true): return "Hidden Folders"
+        case (true, false): return "Files"
+        case (true, true): return "Hidden Files"
+        }
     }
 
     /// Today / Yesterday / weekday this week / Last Week / month names / years — like Dolphin.
