@@ -10,6 +10,10 @@ public enum Shell {
         /// Bytes traversing a file-backed stdin/stdout of the tool (archive overhead may be included).
         public var onBytes: (Int64) -> Void
         public var onStatus: (String?) -> Void
+        public var pace: (Int64) throws -> Void = { _ in }
+        public var paceAsync: @Sendable (Int64) async throws -> Void = { _ in }
+        var managesRetries = false
+        var bytesPerSecond: Int64 = 0
         public init(
             isPaused: @escaping () -> Bool, isCancelled: @escaping () -> Bool,
             isInterrupted: @escaping () -> Bool = { false }, onBytes: @escaping (Int64) -> Void = { _ in },
@@ -52,6 +56,22 @@ public enum Shell {
     /// blocked in `run` on every worker thread (many runs at once from Swift concurrency's pool) those get no thread,
     /// so the readers never start and every run waits forever. A serial queue gets a thread beyond that limit.
     private static func ioQueue() -> DispatchQueue { DispatchQueue(label: "porpoise.shell-io") }
+    private static func isBrokenPipe(_ error: Error) -> Bool {
+        var current = error as NSError
+        for _ in 0..<8 {
+            if current.domain == NSPOSIXErrorDomain && current.code == Int(EPIPE) { return true }
+            guard let underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError else { return false }
+            current = underlying
+        }
+        return false
+    }
+    private static func stopAfterIOFailure(_ process: Process) {
+        guard process.isRunning else { return }
+        process.terminate()
+        Self.ioQueue().asyncAfter(deadline: .now() + killGrace) {
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        }
+    }
 
     /// Runs a tool synchronously (call off the main thread). `stdinFile`/`stdoutFile` stream large data.
     /// stdin is written and stdout/stderr are drained concurrently, so neither side can block on a full
@@ -71,6 +91,8 @@ public enum Shell {
         // Handles we open are ours to close (Process doesn't), or every download would leak a descriptor.
         var opened: [FileHandle] = []
         var inputHandle: FileHandle?
+        var outputHandle: FileHandle?
+        var inPipe: Pipe?
         defer { opened.forEach { try? $0.close() } }
         let outPipe = Pipe(), errPipe = Pipe()
         if let f = stdoutFile {
@@ -79,16 +101,17 @@ public enum Shell {
             }
             let h = try FileHandle(forWritingTo: f)
             opened.append(h)
-            p.standardOutput = h
+            outputHandle = h
+            if control == nil { p.standardOutput = h } else { p.standardOutput = outPipe }
         } else {
             p.standardOutput = outPipe
         }
         p.standardError = errPipe
-        var inPipe: Pipe?
         if let f = stdinFile {
             let h = try FileHandle(forReadingFrom: f)
             opened.append(h)
-            p.standardInput = h
+            if control != nil { inPipe = Pipe() }
+            if let inPipe { p.standardInput = inPipe } else { p.standardInput = h }
             inputHandle = h
         } else if stdin != nil {
             inPipe = Pipe()
@@ -105,6 +128,45 @@ public enum Shell {
         Self.ioQueue().async(group: io) { box.err = errPipe.fileHandleForReading.readDataToEndOfFile() }
         if stdoutFile == nil {
             Self.ioQueue().async(group: io) { box.out = outPipe.fileHandleForReading.readDataToEndOfFile() }
+        } else if let control, let output = outputHandle {
+            Self.ioQueue().async(group: io) {
+                defer { try? outPipe.fileHandleForReading.close() }
+                do {
+                    var buffer = [UInt8](repeating: 0, count: 256 << 10)
+                    while true {
+                        // Foundation may fill a requested read before returning. A pipe must publish even
+                        // a single available byte, or a slow tool's progress and pause hooks go silent.
+                        let count = buffer.withUnsafeMutableBytes {
+                            Darwin.read(outPipe.fileHandleForReading.fileDescriptor, $0.baseAddress, $0.count)
+                        }
+                        if count < 0 {
+                            if errno == EINTR { continue }
+                            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                        }
+                        if count == 0 { break }
+                        let data = Data(buffer.prefix(count))
+                        try control.check(); try control.pace(Int64(data.count))
+                        try output.write(contentsOf: data)
+                        control.onBytes(Int64(data.count))
+                    }
+                } catch { box.record(error); Self.stopAfterIOFailure(p) }
+            }
+        }
+        if let control, let input = inputHandle, let writer = inPipe?.fileHandleForWriting {
+            Self.ioQueue().async(group: io) {
+                defer { try? writer.close() }
+                _ = fcntl(writer.fileDescriptor, F_SETNOSIGPIPE, 1)
+                do {
+                    while let data = try input.read(upToCount: 256 << 10), !data.isEmpty {
+                        try control.check(); try control.pace(Int64(data.count))
+                        try writer.write(contentsOf: data)
+                        control.onBytes(Int64(data.count))
+                    }
+                } catch {
+                    box.record(error)
+                    if !Self.isBrokenPipe(error) { Self.stopAfterIOFailure(p) }
+                }
+            }
         }
         if let data = stdin, let w = inPipe?.fileHandleForWriting {
             Self.ioQueue().async(group: io) {
@@ -116,10 +178,8 @@ public enum Shell {
         }
         let monitor = DispatchGroup()
         if let control {
-            let input = inputHandle
             Self.ioQueue().async(group: monitor) {
                 var suspended = false
-                var previousBytes: Int64 = 0
                 while p.isRunning {
                     if control.isCancelled() {
                         if suspended { _ = p.resume() }
@@ -131,17 +191,6 @@ public enum Shell {
                     }
                     if control.isPaused() && !suspended { suspended = p.suspend() }
                     if !control.isPaused() && suspended { _ = p.resume(); suspended = false }
-                    if !suspended {
-                        let bytes: Int64
-                        if let stdoutFile {
-                            bytes = (try? FileManager.default.attributesOfItem(atPath: stdoutFile.path)[.size] as? NSNumber)?.int64Value ?? 0
-                        } else if let input {
-                            bytes = max(0, Int64(lseek(input.fileDescriptor, 0, SEEK_CUR)))
-                        } else {
-                            bytes = 0
-                        }
-                        if bytes > previousBytes { control.onBytes(bytes - previousBytes); previousBytes = bytes }
-                    }
                     _ = processEnded.wait(timeout: .now() + 0.05)
                 }
             }
@@ -162,6 +211,11 @@ public enum Shell {
         monitor.wait()
         io.wait()
         try control?.check()
+        if let error = box.error {
+            // An early failed command may close stdin. Preserve its real diagnostic (for example,
+            // permission denied), while a successful command that didn't consume its data is an error.
+            if p.terminationStatus == 0 || !Self.isBrokenPipe(error) { throw error }
+        }
         if box.timedOut {
             throw RemoteError.failed("“\((tool as NSString).lastPathComponent)” did not finish within \(Int(timeout)) seconds.")
         }
@@ -174,6 +228,9 @@ public enum Shell {
         var err = Data()
         private let lock = NSLock()
         private var _timedOut = false
+        private var _error: Error?
+        var error: Error? { lock.withLock { _error } }
+        func record(_ error: Error) { lock.withLock { if _error == nil { _error = error } } }
         var timedOut: Bool {
             get { lock.lock(); defer { lock.unlock() }; return _timedOut }
             set { lock.lock(); _timedOut = newValue; lock.unlock() }

@@ -124,6 +124,7 @@ extension RemoteTransferJob {
         }
         var receipt: CloudTransferReceipt?
         if !replace, let targetProvider, record.sourceAccount != nil, record.sourceAccount == record.destinationAccount,
+            control.policy.exclusions.isEmpty || !incoming.isDirectory,
             !incoming.isDirectory || targetProvider.supportsNativeTransferFolders
         {
             record.native = true; try journal.save(record)
@@ -166,9 +167,13 @@ extension RemoteTransferJob {
                 }
                 local = kept
             } else if let sourceProvider {
-                local = try sourceProvider.downloadTransfer(source, into: scratch, operationID: download)
+                local = try TransferRetry.run(control: control, notice: onNotice) {
+                    try sourceProvider.downloadTransfer(source, into: scratch, operationID: download)
+                }
             } else {
-                local = try RemoteFS.provider(for: source)!.download(source, into: scratch)
+                local = try TransferRetry.run(control: control, notice: onNotice) {
+                    try RemoteFS.provider(for: source)!.download(source, into: scratch)
+                }
             }
             if !source.isFileURL {
                 record.stagingURL = local; record.stagingFingerprint = JobJournal.Fingerprint(local); try journal.save(record)

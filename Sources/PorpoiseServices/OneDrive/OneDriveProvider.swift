@@ -154,24 +154,5 @@ public final class OneDriveProvider: CloudFileProvider, @unchecked Sendable {
             }
         }
     }
-    func transferContext() -> CloudTransferContext {
-        let control = Shell.currentTransferControl; let bytes = ByteCount()
-        return .init(
-            checkpoint: {
-                // Paused: waits, until resumed, cancelled or interrupted (quit, sleep), as Drive's transfers do.
-                while control?.isPaused() == true && control?.isCancelled() != true && control?.isInterrupted() != true {
-                    try Task.checkCancellation()
-                    try await Task.sleep(nanoseconds: 20_000_000)
-                }
-                if control?.isInterrupted() == true { throw FileOperationError.interrupted }
-                if control?.isCancelled() == true { throw FileOperationError.cancelled }
-                try Task.checkCancellation()
-            },
-            progress: { count, _ in
-                let delta = bytes.lock.withLock {
-                    let delta = max(0, count - bytes.value); bytes.value = count; return delta
-                }; control?.onBytes(delta)
-            })
-    }
-    private final class ByteCount: @unchecked Sendable { let lock = NSLock(); var value: Int64 = 0 }
+    func transferContext() -> CloudTransferContext { Shell.transferContext() }
 }

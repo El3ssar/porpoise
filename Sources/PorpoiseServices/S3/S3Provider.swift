@@ -161,26 +161,8 @@ public final class S3Provider: RemoteProvider, @unchecked Sendable {
             }
         }
     }
-    private func transferContext() -> CloudTransferContext {
-        let control = Shell.currentTransferControl
-        let counter = S3ByteCounter()
-        return .init(
-            checkpoint: {
-                while control?.isPaused() == true && control?.isCancelled() != true && control?.isInterrupted() != true {
-                    try Task.checkCancellation(); try await Task.sleep(nanoseconds: 20_000_000)
-                }
-                if control?.isInterrupted() == true { throw FileOperationError.interrupted }
-                if control?.isCancelled() == true { throw FileOperationError.cancelled }; try Task.checkCancellation()
-            },
-            progress: { bytes, _ in
-                let delta = counter.lock.withLock {
-                    let delta = max(0, bytes - counter.value); counter.value = bytes; return delta
-                }
-                control?.onBytes(delta)
-            })
-    }
+    private func transferContext() -> CloudTransferContext { Shell.transferContext() }
 }
-private final class S3ByteCounter: @unchecked Sendable { let lock = NSLock(); var value: Int64 = 0 }
 
 extension S3Provider: RemoteTransferPublishing, RemoteTransferTargetChecking {
     public func transferTargetExists(_ url: URL) throws -> Bool {

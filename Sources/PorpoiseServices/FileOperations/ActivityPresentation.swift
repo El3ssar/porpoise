@@ -50,7 +50,7 @@ public struct ActivityPresentation {
     }
 
     static func status(of a: Activity) -> String {
-        let progress = a.progress, state = a.state, rate = a.rate, notice = a.notice, errors = a.errors
+        let progress = a.progress, state = a.state, rate = a.rate, notice = a.environmentNotice ?? a.notice, errors = a.errors
         let verification = a.verification, comparisonMethodTitle = a.comparisonMethodTitle
         let p = progress
         let amounts = p.map { $0.totalBytes > 0 ? "\(FileFormat.size($0.doneBytes)) of \(FileFormat.size($0.totalBytes))" : "" } ?? ""
@@ -60,6 +60,7 @@ public struct ActivityPresentation {
         case .waiting: return "Waiting for your answer"
         case .verifying: return "Verifying the copies…"
         case .running:
+            if let notice = a.environmentNotice { return notice }
             if let p, p.phase == .preparing {
                 return
                     "Preparing… \(FileFormat.count(p.totalFiles)) \(p.totalFiles == 1 ? "file" : "files") · \(FileFormat.count(p.totalFolders)) \(p.totalFolders == 1 ? "folder" : "folders") · \(FileFormat.size(p.totalBytes))"
@@ -74,6 +75,7 @@ public struct ActivityPresentation {
         case .completed:
             let base = errors.isEmpty ? "Done" : "Done, with \(FileFormat.count(errors.count)) \(errors.count == 1 ? "error" : "errors")"
             var summary: [String] = []
+            if a.control.excludedCount > 0 { summary.append("Excluded \(a.control.excludedCount) items") }
             if let p, p.replacedItems > 0 { summary.append("Replaced \(FileFormat.count(p.replacedItems))") }
             if let p, p.skippedIdenticalItems > 0 {
                 summary.append("Skipped \(FileFormat.count(p.skippedIdenticalItems)) identical (\(comparisonMethodTitle))")

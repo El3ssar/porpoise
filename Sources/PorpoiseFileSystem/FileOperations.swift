@@ -117,7 +117,9 @@ public final class FileJob: @unchecked Sendable {
             for source in sources {
                 do {
                     let target = destinationFolder?.appendingPathComponent(source.lastPathComponent)
-                    if kind == .move, let target, !Self.itemExists(at: target), Self.sameVolume(source, target.deletingLastPathComponent()) {
+                    if kind == .move, control.policy.exclusions.isEmpty, let target, !Self.itemExists(at: target),
+                        Self.sameVolume(source, target.deletingLastPathComponent())
+                    {
                         // A rename has no byte-transfer work. Count the selected item without opening its tree.
                         try checkpoint()
                         renameOnly.insert(source)
@@ -249,6 +251,9 @@ public final class FileJob: @unchecked Sendable {
     /// (nil when skipped or denied).
     private func transfer(_ src: URL, into folder: URL) throws -> URL? {
         try checkpoint()
+        if (kind == .copy || kind == .move), control.policy.excludes(src, sources: sources) {
+            control.recordExcluded(src); return nil
+        }
         if let target = completedTransfers[src], Self.itemExists(at: target) {
             progress.doneBytes += size(of: src)
             progress.doneFiles += fileCounts[src] ?? 1
@@ -277,6 +282,16 @@ public final class FileJob: @unchecked Sendable {
             }
         }
         do {
+            if !control.policy.exclusions.isEmpty, placement == .new, let item = FileItem.load(src), item.isDirectory, !item.isSymlink {
+                try fm.createDirectory(at: target, withIntermediateDirectories: false)
+                let createdStart = created.count
+                try merge(src, into: target)
+                if kind == .copy {
+                    copyfile(src.path, target.path, nil, copyfile_flags_t(COPYFILE_METADATA | COPYFILE_STAT))
+                    created.removeSubrange(createdStart..<created.count); created.append(target)
+                }
+                return target
+            }
             if placement == .merge {
                 try merge(src, into: target)
                 return target
@@ -461,8 +476,10 @@ public final class FileJob: @unchecked Sendable {
         var st = stat()
         guard lstat(src.path, &st) == 0 else { return try copyRecursively(src, to: dest) }
         let size = Int64(st.st_size)
-        guard st.st_mode & S_IFMT == S_IFREG, size >= resumableSize else { return try copyRecursively(src, to: dest) }
-        if resumeFrom == 0, allowsClone, clonefile(src.path, dest.path, UInt32(CLONE_NOFOLLOW)) == 0 {
+        guard st.st_mode & S_IFMT == S_IFREG, size >= resumableSize || control.policy.bytesPerSecond > 0 else {
+            return try copyRecursively(src, to: dest)
+        }
+        if resumeFrom == 0, allowsClone, control.policy.bytesPerSecond == 0, clonefile(src.path, dest.path, UInt32(CLONE_NOFOLLOW)) == 0 {
             progress.doneBytes += size
             publish()
             return
@@ -523,6 +540,7 @@ public final class FileJob: @unchecked Sendable {
             let n = read(input, buffer, Self.chunkSize)
             if n < 0 { throw posix("read") }
             if n == 0 { break }
+            try control.throttle(bytes: Int64(n))
             var written = 0
             while written < n {
                 let w = write(output, buffer + written, n - written)
@@ -597,6 +615,7 @@ public final class FileJob: @unchecked Sendable {
             if what == COPYFILE_COPY_DATA && stage == COPYFILE_PROGRESS {
                 var copied: off_t = 0
                 copyfile_state_get(state, UInt32(COPYFILE_STATE_COPIED), &copied)
+                do { try job.control.throttle(bytes: max(0, Int64(copied) - job.currentFileCopied)) } catch { return COPYFILE_QUIT }
                 job.dataProgress(Int64(copied))
             } else if what == COPYFILE_COPY_DATA && stage == COPYFILE_FINISH {
                 job.fileFinished()
@@ -607,7 +626,8 @@ public final class FileJob: @unchecked Sendable {
         }
         copyfile_state_set(state, UInt32(COPYFILE_STATE_STATUS_CB), unsafeBitCast(cb, to: UnsafeRawPointer.self))
         let flags = copyfile_flags_t(
-            COPYFILE_ALL | COPYFILE_RECURSIVE | COPYFILE_NOFOLLOW_SRC | COPYFILE_EXCL | (allowsClone ? COPYFILE_CLONE : 0))
+            COPYFILE_ALL | COPYFILE_RECURSIVE | COPYFILE_NOFOLLOW_SRC | COPYFILE_EXCL
+                | (allowsClone && control.policy.bytesPerSecond == 0 ? COPYFILE_CLONE : 0))
         currentFileBase = progress.doneBytes
         currentFileCopied = 0
         copyFailure = nil
@@ -721,6 +741,7 @@ public final class FileJob: @unchecked Sendable {
     @discardableResult
     private func inventory(_ url: URL, target: URL?) throws -> Int64 {
         try checkpoint()
+        if control.policy.excludes(url, sources: sources) { sizes[url] = 0; fileCounts[url] = 0; return 0 }
         if inventoryDelay > 0 { Thread.sleep(forTimeInterval: inventoryDelay) }
         var st = stat()
         guard lstat(url.path, &st) == 0 else { return 0 }

@@ -95,11 +95,16 @@ final class FTPProvider: RemoteProvider {
         let login = credentials
         // --globoff: a local file named "report[1].pdf" or "{a,b}" is a name, not a pattern (URLs are percent-encoded).
         var all = ["-s", "-S", "--globoff", "--connect-timeout", String(Self.connectTimeout)]
+        if args.contains("-T"), let limit = Shell.currentTransferControl?.bytesPerSecond, limit > 0 {
+            // curl opens upload files itself (stdin carries credentials), so it owns this leg's pacing.
+            all += ["--limit-rate", String(limit)]
+        }
         if scheme == "ftps" { all += ["--ssl-reqd"] }
         if login != nil { all += ["--config", "-"] }
         let r: Shell.Result
         do {
-            r = try reconnect.run(
+            let policy = Shell.currentTransferControl?.managesRetries == true ? ReconnectPolicy.never : reconnect
+            r = try policy.run(
                 connectedBefore: { connected },
                 isLoss: { ($0 as? Lost).map { idempotent || ReconnectPolicy.isConnectFailure(curlStatus: $0.result.status) } ?? false },
                 wait: wait
@@ -117,6 +122,9 @@ final class FTPProvider: RemoteProvider {
         }
         if r.status != 0 {
             let msg = r.err.trimmingCharacters(in: .whitespacesAndNewlines)
+            if ReconnectPolicy.isConnectionLoss(curlStatus: r.status) {
+                throw TransferConnectionError(message: msg.isEmpty ? "Waiting for network" : msg)
+            }
             throw RemoteError.failed(msg.isEmpty ? "FTP error \(r.status)" : msg)
         }
         return r.out

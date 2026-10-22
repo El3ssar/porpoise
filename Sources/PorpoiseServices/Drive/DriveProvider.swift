@@ -310,26 +310,7 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
         }
     }
 
-    func transferContext() -> DriveTransferContext {
-        let control = Shell.currentTransferControl
-        let box = ByteCounter()
-        return DriveTransferContext(
-            checkpoint: {
-                while control?.isPaused() == true && control?.isCancelled() != true && control?.isInterrupted() != true {
-                    try await Task.sleep(nanoseconds: 20_000_000)
-                }
-                if control?.isInterrupted() == true { throw FileOperationError.interrupted }
-                if control?.isCancelled() == true { throw FileOperationError.cancelled }
-                try Task.checkCancellation()
-            },
-            progress: { done, _ in
-                let delta = box.lock.withLock {
-                    let delta = max(0, done - box.value); box.value = done; return delta
-                }
-                control?.onBytes(delta)
-            }, status: { control?.onStatus($0) })
-    }
-    private final class ByteCounter: @unchecked Sendable { let lock = NSLock(); var value: Int64 = 0 }
+    func transferContext() -> DriveTransferContext { Shell.transferContext() }
 
     private final class ResultBox<T>: @unchecked Sendable {
         var value: Result<T, Error>?

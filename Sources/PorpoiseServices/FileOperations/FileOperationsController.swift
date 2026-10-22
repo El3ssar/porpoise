@@ -58,6 +58,7 @@ public final class FileOperationsController {
     var isInterrupting = false
     /// Tests: adjusts each local job before it's queued (no clones, slower chunks…).
     var prepareJob: ((FileJob) -> Void)?
+    var environment = JobEnvironmentMonitor.shared
 
     public init() {}
 
@@ -119,7 +120,7 @@ public final class FileOperationsController {
             runRemote(kind, urls, to: folder, window: window, done: done)
             return
         }
-        let job = FileJob(kind: kind, sources: urls, destinationFolder: folder)
+        let job = FileJob(kind: kind, sources: urls, destinationFolder: folder, control: JobControl(policy: Settings.shared.transferPolicy))
         job.resumePoints = resumePoints
         job.completedTransfers = completedTransfers
         job.conflictRule = Settings.shared.transferConflictRule

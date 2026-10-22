@@ -7,7 +7,7 @@ extension FileOperationsController {
         completed: [URL: URL] = [:], cloudOperations: [URL: UUID] = [:], cloudBatchID: UUID? = nil, rule: TransferConflictRule? = nil,
         options: TransferCompareOptions? = nil
     ) {
-        let control = JobControl()
+        let control = JobControl(policy: Settings.shared.transferPolicy)
         let runtime = RemoteTransferJob(
             kind: kind, sources: urls, destination: folder, control: control,
             rule: rule ?? Settings.shared.transferConflictRule,

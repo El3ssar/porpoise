@@ -16,10 +16,11 @@ public struct HistoryEntry: Codable, Equatable, Sendable {
     public var outcome: String
     public var errors: [String]
     public var verification: String?
+    public var transferNotes: [String]?
 
     public init(
         date: Date, operation: String, items: Int, sources: [String], destination: String?, bytes: Int64, seconds: Double,
-        outcome: String, errors: [String], verification: String? = nil
+        outcome: String, errors: [String], verification: String? = nil, transferNotes: [String]? = nil
     ) {
         self.date = date
         self.operation = operation
@@ -31,12 +32,14 @@ public struct HistoryEntry: Codable, Equatable, Sendable {
         self.outcome = outcome
         self.errors = errors
         self.verification = verification
+        self.transferNotes = transferNotes
     }
 
     func matches(_ text: String) -> Bool {
         let t = text.trimmingCharacters(in: .whitespaces)
         guard !t.isEmpty else { return true }
-        let haystack = ([operation, outcome, destination ?? "", verification ?? ""] + sources + errors).joined(separator: "\n")
+        let haystack = ([operation, outcome, destination ?? "", verification ?? ""] + sources + errors + (transferNotes ?? [])).joined(
+            separator: "\n")
         return t.split(separator: " ").allSatisfy { haystack.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
     }
 }

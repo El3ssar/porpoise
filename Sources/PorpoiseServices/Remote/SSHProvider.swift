@@ -138,7 +138,8 @@ final class SSHProvider: RemoteProvider {
         // A host or user starting with "-" would be read as an ssh option (-oProxyCommand=… runs commands locally).
         guard !host.hasPrefix("-"), !(user ?? "").hasPrefix("-") else { throw RemoteError.failed("Invalid server name “\(target)”.") }
         do {
-            return try reconnect.run(
+            let policy = Shell.currentTransferControl?.managesRetries == true ? ReconnectPolicy.never : reconnect
+            return try policy.run(
                 connectedBefore: { connected }, isLoss: { ($0 as? Lost).map { idempotent || $0.beforeStart } ?? false },
                 wait: wait, reconnect: { disconnect() }
             ) {
@@ -200,6 +201,9 @@ final class SSHProvider: RemoteProvider {
         guard r.status != 0 else { return }
         let t = r.err.split(separator: "\n").filter { !$0.contains("Warning: Permanently added") }.joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        if ReconnectPolicy.isConnectionLoss(sshStatus: r.status, stderr: r.err) {
+            throw TransferConnectionError(message: t.isEmpty ? "Waiting for network" : t)
+        }
         throw RemoteError.failed(t.isEmpty ? fallback : t)
     }
 

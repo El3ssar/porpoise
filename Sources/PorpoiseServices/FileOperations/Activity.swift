@@ -90,6 +90,7 @@ public final class Activity: Identifiable {
     /// A passing condition the transfer is handling by itself ("Slowed down by Google, retrying", "Waiting for
     /// network"): shown instead of the speed until it clears.
     public internal(set) var notice: String?
+    var environmentNotice: String?
 
     /// One line: speed, amounts and time left while running; the outcome once ended.
     public var statusText: String { ActivityPresentation.status(of: self) }
@@ -129,9 +130,19 @@ extension FileOperationsController {
 
     func activityDidChange() { NotificationCenter.default.post(name: Self.activityChanged, object: self) }
 
+    func monitorEnvironment(_ activity: Activity) {
+        environment.register(activity.control, network: (activity.sources + [activity.destination].compactMap { $0 }).contains { !$0.isFileURL }) {
+            [weak self, weak activity] notice in
+            activity?.environmentNotice = notice
+            activity?.rate.reset()
+            self?.activityDidChange()
+        }
+    }
+
     /// Adds `activity` and starts it now, or queues it behind the copies and moves already running.
     func enqueue(_ activity: Activity) {
         activities.append(activity)
+        monitorEnvironment(activity)
         if let job = activity.job, activity.isQueued || activity.kind == .delete || activity.kind == .trash {
             // Looking at every source and writing the journal waits for nothing here: it happens on the journal's queue.
             let (id, kind, sources, destination) = (activity.id, activity.kind, activity.sources, activity.destination)
@@ -198,6 +209,8 @@ extension FileOperationsController {
 
     /// Ends it: history, journal, verification, then the next queued job.
     func ended(_ activity: Activity, errors: [String]) {
+        environment.unregister(activity.control)
+        activity.environmentNotice = nil
         let job = activity.job
         activity.incomingItem = nil
         activity.errors = errors
@@ -270,7 +283,7 @@ extension FileOperationsController {
             items: activity.sources.count,
             sources: activity.sources.prefix(5).map(OperationHistory.describe), destination: activity.destination.map(OperationHistory.describe),
             bytes: activity.progress?.doneBytes ?? 0, seconds: seconds, outcome: activity.outcomeText, errors: Array(activity.errors.prefix(5)),
-            verification: activity.verification?.summary)
+            verification: activity.verification?.summary, transferNotes: activity.control.transferNotes)
         history.append(entry)
         activityDidChange()
     }

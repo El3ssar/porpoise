@@ -38,6 +38,16 @@ final class RemoteTransferJob {
     var publishedNames: [URL: Set<String>] = [:]
     var stageFolders: [URL: URL] = [:]
     var lastPublish = Date.distantPast
+    var logicalPaths: [URL: String] = [:]
+
+    func isExcluded(_ url: URL) -> Bool {
+        guard !control.policy.exclusions.isEmpty else { return false }
+        guard PlacesModel.isCloud(url) else { return control.policy.excludes(url, sources: sources) }
+        let path = logicalPaths[url] ?? RemoteFS.displayName(for: url)
+        let logical = URL(fileURLWithPath: "/" + path)
+        let root = URL(fileURLWithPath: "/" + String(path.split(separator: "/").first ?? ""))
+        return control.policy.excludes(logical, sources: [root])
+    }
 
     init(
         kind: FileOperationKind, sources: [URL], destination: URL?, control: JobControl,
@@ -130,7 +140,7 @@ final class RemoteTransferJob {
         if !fresh, let cached = listings[folder] { return cached }
         let items: [FileItem]
         if let provider = RemoteFS.provider(for: folder) {
-            items = try provider.list(folder)
+            items = try TransferRetry.run(control: control, notice: onNotice) { try provider.list(folder) }
         } else if folder.isFileURL {
             items = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
                 .compactMap(FileItem.load)
@@ -138,6 +148,10 @@ final class RemoteTransferJob {
             throw RemoteError.unsupported("Unsupported location: \(folder.scheme ?? "unknown")")
         }
         listings[folder] = items
+        if PlacesModel.isCloud(folder) {
+            let parent = logicalPaths[folder] ?? RemoteFS.displayName(for: folder)
+            for item in items { logicalPaths[item.url] = parent + "/" + item.name }
+        }
         publishedNames[folder] = nil
         listingIndices[folder] = Dictionary(items.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
         return items
@@ -145,7 +159,9 @@ final class RemoteTransferJob {
 
     func item(_ url: URL) throws -> FileItem? {
         if url.isFileURL { return FileItem.load(url) }
-        if let cloud = RemoteFS.provider(for: url) as? CloudTransferProvider { return try cloud.transferItem(url) }
+        if let cloud = RemoteFS.provider(for: url) as? CloudTransferProvider {
+            return try TransferRetry.run(control: control, notice: onNotice) { try cloud.transferItem(url) }
+        }
         let folder = url.deletingLastPathComponent()
         if listings[folder] == nil || publishedNames[folder]?.contains(url.lastPathComponent) == true {
             // Upload metadata is provider-dependent. Repeated names must compare against authoritative
@@ -157,6 +173,10 @@ final class RemoteTransferJob {
 
     func inventory(_ url: URL) throws -> (bytes: Int64, files: Int) {
         try control.checkpoint()
+        if !control.policy.exclusions.isEmpty, PlacesModel.isCloud(url), logicalPaths[url] == nil, let metadata = try item(url) {
+            logicalPaths[url] = metadata.name
+        }
+        if isExcluded(url) { totals[url] = (0, 0); return (0, 0) }
         guard let item = try item(url) else { return (0, 0) }
         var count = (bytes: item.isSymlink || item.isDirectory ? Int64(0) : item.size, files: item.isDirectory && !item.isSymlink ? 0 : 1)
         if item.isDirectory && !item.isSymlink {
@@ -177,6 +197,7 @@ final class RemoteTransferJob {
     private var moveRemovals: [URL: MoveSourceRemoval] = [:]
 
     func transfer(_ source: URL, into folder: URL) throws -> URL? {
+        if isExcluded(source) { control.recordExcluded(source); return nil }
         if kind == .move, let incoming = try item(source), !incoming.isDirectory {
             moveRemovals[source] = try MoveSourceRemoval(source)
         }
@@ -330,6 +351,7 @@ final class RemoteTransferJob {
     }
 
     func merge(_ source: URL, into target: URL) throws -> URL {
+        let excludedBefore = control.excludedCount
         let directoryRemoval = kind == .move ? try MoveSourceRemoval(source) : nil
         if sources.contains(source), let incoming = try item(source) { publishIncoming(source, item: incoming, target: target) }
         var firstFailure: Error?
@@ -341,7 +363,7 @@ final class RemoteTransferJob {
         }
         if let firstFailure { throw firstFailure }
         // Never recursively delete a moved source folder: it may contain skipped or newly created items.
-        if kind == .move {
+        if kind == .move && control.excludedCount == excludedBefore {
             if source.isFileURL {
                 try directoryRemoval?.local?.removeEmptyDirectory()
             } else {
@@ -411,9 +433,18 @@ final class RemoteTransferJob {
         defer { try? FileManager.default.removeItem(at: scratch) }
         var downloaded: URL
         if let cloud = RemoteFS.provider(for: source) as? CloudTransferProvider, let operationID = sourceDownloadOperationID {
-            downloaded = try cloud.downloadTransfer(source, into: scratch, operationID: operationID)
+            downloaded = try TransferRetry.run(control: control, notice: onNotice) {
+                try cloud.downloadTransfer(source, into: scratch, operationID: operationID)
+            }
         } else {
-            downloaded = try RemoteFS.provider(for: source)?.download(source, into: scratch) ?? source
+            downloaded = try TransferRetry.run(control: control, notice: onNotice) {
+                guard let provider = RemoteFS.provider(for: source) else { return source }
+                let attempt = scratch.appendingPathComponent(UUID().uuidString)
+                try FileManager.default.createDirectory(at: attempt, withIntermediateDirectories: false)
+                do { return try provider.download(source, into: attempt) } catch {
+                    try? FileManager.default.removeItem(at: attempt); throw error
+                }
+            }
         }
         if source.isFileURL, removal != nil {
             let snapshotFolder = scratch.appendingPathComponent("Snapshot")
@@ -429,7 +460,16 @@ final class RemoteTransferJob {
             var staged = stageFolder.appendingPathComponent(downloaded.lastPathComponent)
             var published = false
             defer { if !published { Shell.withoutTransferControl { try? provider.delete([staged]) } } }
-            try provider.upload(downloaded, into: stageFolder)
+            var attempted = false
+            try TransferRetry.run(control: control, notice: onNotice) {
+                if attempted, try provider.list(stageFolder).contains(where: { $0.name == staged.lastPathComponent }) {
+                    // The failed attempt may have left partial bytes. Only this owned, unpublished staging
+                    // name is cleared; the visible destination and original remain untouched.
+                    try provider.delete([staged])
+                }
+                attempted = true
+                try provider.upload(downloaded, into: stageFolder)
+            }
             if staged.lastPathComponent != target.lastPathComponent {
                 try provider.rename(staged, to: target.lastPathComponent)
                 staged = stageFolder.appendingPathComponent(target.lastPathComponent)

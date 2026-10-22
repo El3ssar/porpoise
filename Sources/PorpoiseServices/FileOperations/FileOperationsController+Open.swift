@@ -13,7 +13,8 @@ extension FileOperationsController {
         title: String, sources: [URL], opening item: FileItem? = nil, quiet: Bool = false,
         load: @escaping (CloudTransferContext) async throws -> [URL]
     ) async throws -> [URL] {
-        let control = JobControl()
+        let control = JobControl(policy: Settings.shared.transferPolicy)
+        let budget = TransferByteBudget()
         let activity = Activity(
             kind: .copy, sources: sources, destination: nil, job: nil, control: control, pauseUnavailable: item == nil ? nil : "Opening a remote file"
         )
@@ -27,11 +28,14 @@ extension FileOperationsController {
                 Task { _ = try? await self?.cloudTask(title: title, sources: sources, quiet: quiet, load: load) }
             }
         }
+        monitorEnvironment(activity)
         let context = CloudTransferContext(
             checkpoint: {
                 try await control.checkpointAsync()
+                try await control.throttleAsync(bytes: budget.takePending())
             },
             progress: { [weak self, weak activity] bytes, total in
+                _ = budget.add(cumulative: bytes)
                 DispatchQueue.main.async {
                     guard let self, let activity, !activity.state.isEnded else { return }
                     var progress = JobProgress(
@@ -64,7 +68,12 @@ extension FileOperationsController {
         defer { NotificationCenter.default.removeObserver(observer) }
         let task = Task {
             while true {
-                do { return try await load(context) } catch CloudContentError.lowSpace where item == nil {
+                do {
+                    try await context.checkpoint()
+                    let result = try await load(context)
+                    try await context.checkpoint()
+                    return result
+                } catch CloudContentError.lowSpace where item == nil {
                     activity.state = .paused; activity.notice = CloudContentError.lowSpace.localizedDescription
                     self.activityDidChange()
                     try await wake.wait()
