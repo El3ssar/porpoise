@@ -1,6 +1,6 @@
 import Foundation
 
-/// Text formatting the way KDE does it (KFormat): binary sizes with IEC units, relative dates.
+/// File sizes in native decimal units by default, with optional IEC units and relative dates.
 public enum FileFormat {
     /// A media position: "m:ss", or "h:mm:ss" from an hour on (seconds rounded down).
     public static func playbackTime(_ t: Double) -> String {
@@ -8,8 +8,30 @@ public enum FileFormat {
         return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
     }
 
-    /// "0 B", "512 B", "1.5 KiB", "12.3 MiB"…
-    public static func size(_ bytes: Int64) -> String {
+    public enum SizeUnits: Sendable { case decimal, binary }
+
+    /// Installed by the settings layer; Core remains usable without a settings dependency.
+    public static var preferredSizeUnits: @Sendable () -> SizeUnits {
+        get { sizePreferences.lock.withLock { sizePreferences.read } }
+        set { sizePreferences.lock.withLock { sizePreferences.read = newValue } }
+    }
+
+    private static let sizePreferences = SizePreferences()
+    private final class SizePreferences: @unchecked Sendable {
+        let lock = NSLock()
+        var read: @Sendable () -> SizeUnits = { .decimal }
+    }
+
+    /// Foundation's file byte-count style uses base 1000 and the user's locale, as Finder does.
+    /// ByteCountFormatStyle is the locale-configurable counterpart of ByteCountFormatter's `.file` style.
+    public static func size(_ bytes: Int64, units: SizeUnits? = nil, locale: Locale = .autoupdatingCurrent) -> String {
+        if (units ?? preferredSizeUnits()) == .decimal {
+            // Foundation rounds 999 bytes up to a kilobyte and spells out "bytes"; keep exact small counts.
+            if bytes < 1000 { return bytes.formatted(.number.locale(locale)) + " B" }
+            // Finder and ByteCountFormatter spell the kilobyte symbol "KB".
+            return bytes.formatted(.byteCount(style: .file, allowedUnits: .all, spellsOutZero: false).locale(locale))
+                .replacingOccurrences(of: "kB", with: "KB")
+        }
         if bytes < 1024 { return "\(bytes) B" }
         let units = ["KiB", "MiB", "GiB", "TiB", "PiB", "EiB"]
         var v = Double(bytes) / 1024
@@ -19,8 +41,8 @@ public enum FileFormat {
         return String(format: "%.1f %@", v, units[i])
     }
 
-    /// Transfer speeds use the same binary IEC units as file sizes.
-    public static func speed(_ bytesPerSecond: Double) -> String {
+    /// Transfer speeds use the same unit preference as file sizes.
+    public static func speed(_ bytesPerSecond: Double, units: SizeUnits? = nil) -> String {
         let bytes: Int64
         if !bytesPerSecond.isFinite || bytesPerSecond <= 0 {
             bytes = 0
@@ -29,11 +51,11 @@ public enum FileFormat {
         } else {
             bytes = Int64(bytesPerSecond)
         }
-        return size(bytes) + "/s"
+        return size(bytes, units: units) + "/s"
     }
 
-    public static func byteLimitTitle(_ bytes: Int64?) -> String {
-        bytes.map { size($0).replacingOccurrences(of: ".0 ", with: " ") } ?? "No limit"
+    public static func byteLimitTitle(_ bytes: Int64?, units: SizeUnits? = nil) -> String {
+        bytes.map { size($0, units: units).replacingOccurrences(of: ".0 ", with: " ") } ?? "No limit"
     }
 
     /// Foundation's Internet-date-time format, shared without exposing mutable formatter instances.
@@ -98,7 +120,7 @@ public enum FileFormat {
             candidate = String(candidate[..<destination.lowerBound])
             if fits(candidate) { return candidate }
         }
-        let sizeSuffixes = [" B)", " KiB)", " MiB)", " GiB)", " TiB)", " PiB)", " EiB)"]
+        let sizeSuffixes = [" B)", " KB)", " kB)", " MB)", " GB)", " TB)", " PB)", " EB)", " KiB)", " MiB)", " GiB)", " TiB)", " PiB)", " EiB)"]
         if sizeSuffixes.contains(where: candidate.hasSuffix), let size = candidate.range(of: " (", options: .backwards) {
             candidate = String(candidate[..<size.lowerBound])
             if fits(candidate) { return candidate }
@@ -182,7 +204,7 @@ public enum FileFormat {
     }
 
     /// Status bar summary: "3 folders, 12 files (4.2 MiB)" — Dolphin's wording (KIO::itemsSummaryString).
-    public static func summary(folders: Int, files: Int, bytes: Int64, selected: Bool) -> String {
+    public static func summary(folders: Int, files: Int, bytes: Int64, selected: Bool, units: SizeUnits? = nil) -> String {
         func plural(_ n: Int, _ one: String, _ many: String) -> String { n == 1 ? "1 \(one)" : "\(count(n)) \(many)" }
         var parts: [String] = []
         if selected {
@@ -193,7 +215,7 @@ public enum FileFormat {
             if files > 0 { parts.append(plural(files, "file", "files")) }
         }
         var text = parts.joined(separator: ", ")
-        if files > 0 { text += " (\(size(bytes)))" }
+        if files > 0 { text += " (\(size(bytes, units: units)))" }
         return text
     }
 

@@ -5,6 +5,10 @@ import PorpoiseCore
 /// Keys and defaults are part of the users' saved settings: never change them.
 public final class Settings {
     public static let shared = Settings()
+
+    private init() {
+        FileFormat.preferredSizeUnits = { Settings.store.object(forKey: "binaryUnits") as? Bool == true ? .binary : .decimal }
+    }
     public static let changed = Notification.Name("PorpoiseSettingsChanged")
     /// Test instances set PORPOISE_DEFAULTS_SUITE to use a throwaway defaults domain (never a release: TestEnvironment).
     private static let testSuite = TestEnvironment.defaultsSuite.value()
@@ -104,6 +108,8 @@ public final class Settings {
     /// Off: names whose extension is hidden in Finder (Get Info › Hide extension) show without it.
     @Pref("allExtensions") public var showAllExtensions: Bool = true
     @Pref("hideBackup") public var hideBackupFiles: Bool = false
+
+    @Pref("binaryUnits") public var binaryUnits: Bool = false
 
     // View › Content display
     @Pref("sorting") public var sortingChoice: SortingChoice = .natural

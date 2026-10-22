@@ -38,6 +38,31 @@ import Testing
         }
     }
 
+    @Test func byteUnitsRefreshStatusAndCompactMeasurementsWithoutReloading() throws {
+        _ = NSApplication.shared
+        let scratch = try Scratch()
+        let pane = ViewContainer(url: scratch.url)
+        pane.model.props.mode = .compact
+        pane.model.props.setRoles([.size], for: .compact)
+        pane.model.searchResults = [
+            FileItem(url: scratch.url.appendingPathComponent("sample.bin"), name: "sample.bin", isDirectory: false, size: 1_500_000)
+        ]
+        pane.list.computeLayout()
+        pane.updateStatus()
+        let decimalStatus = pane.statusBar.text
+        #expect(decimalStatus.contains(FileFormat.size(1_500_000, units: .decimal)))
+        let measured = pane.list.textMeasurementCount
+        var reloads = 0
+        pane.model.onChange = { reloads += 1 }
+        Settings.shared.binaryUnits = true
+        #expect(pane.list.textMeasurementCount > measured)
+        #expect(pane.statusBar.text.contains("1.4 MiB"))
+        #expect(reloads == 0)
+        Settings.shared.binaryUnits = false
+        #expect(pane.statusBar.text == decimalStatus)
+        #expect(reloads == 0)
+    }
+
     @Test(arguments: Location.allCases) func everyLocationUsesCommonAndRememberedSettings(_ location: Location) throws {
         _ = NSApplication.shared
         let store = Settings.store

@@ -139,10 +139,10 @@ private var utc: Calendar {
 
 @Suite struct FormatEdgeCaseTests {
     @Test func sizeBoundaries() {
-        #expect(FileFormat.size(1023) == "1023 B")
-        #expect(FileFormat.size(1024) == "1.0 KiB")
-        #expect(FileFormat.size(1024 * 1024 - 1) == "1.0 MiB")  // not "1024.0 KiB"
-        #expect(FileFormat.size(Int64.max).hasSuffix("EiB"))
+        #expect(FileFormat.size(1023, units: .binary) == "1023 B")
+        #expect(FileFormat.size(1024, units: .binary) == "1.0 KiB")
+        #expect(FileFormat.size(1024 * 1024 - 1, units: .binary) == "1.0 MiB")  // not "1024.0 KiB"
+        #expect(FileFormat.size(Int64.max, units: .binary).hasSuffix("EiB"))
     }
 
     @Test func numberedNamesKeepDoubleExtensions() {

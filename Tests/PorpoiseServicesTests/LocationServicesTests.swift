@@ -249,7 +249,7 @@ import Testing
         #expect(c.folders(in: s.path("missing").path, matching: "").isEmpty)
     }
 
-    @Test func trashSummary() throws {
+    @Test(.isolatedSettings) func trashSummary() throws {
         let s = try Scratch()
         let trash = try s.folder("Trash")
         #expect(TrashInfo.summary(of: trash) == "The Trash is empty.")
@@ -260,7 +260,7 @@ import Testing
         try s.file("Trash/old folder/b.txt", "b")
         #expect(!TrashInfo.isEmpty(trash))
         let text = TrashInfo.summary(of: trash)
-        #expect(text.hasPrefix("2 items in the Trash, ") && text.hasSuffix(" KiB."))
+        #expect(text.hasPrefix("2 items in the Trash, ") && text.hasSuffix("\(FileFormat.size(10_001))."))
         #expect(TrashInfo.summary(of: s.path("unreadable")).contains("Full Disk Access"))
         #expect(TrashInfo.isEmpty(s.path("unreadable")))
         #expect(TrashInfo.folder.lastPathComponent == ".Trash")

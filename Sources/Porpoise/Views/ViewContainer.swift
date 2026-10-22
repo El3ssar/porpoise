@@ -476,6 +476,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             model.rebuild()
         case "expandable":
             if !Settings.shared.detailsExpandableFolders { model.collapseAll() }
+        case "binaryUnits":
+            updateStatus()
         case "statusBar2", "zoomSlider2":
             statusBar.mode = Settings.shared.statusBarMode
             updateStatus()
