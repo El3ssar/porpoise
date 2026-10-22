@@ -26,6 +26,7 @@ final class FolderSearch: @unchecked Sendable {
     private let scope: URL
     private let limit: Int
     private let tools: Tools
+    private let candidates: FolderSearchCandidates
     private let update: ([FileItem], [URL: String], Bool) -> Void
 
     private let lock = NSLock()
@@ -37,6 +38,8 @@ final class FolderSearch: @unchecked Sendable {
     private var flushPending = false
     /// Folders known to be packages (or not), so each is asked once.
     private var isPackage: [String: Bool] = [:]
+    /// Parent-directory policy for physical content reads. Resolve each shared parent once, before opening text.
+    private var contentPackages: [String: Bool] = [:]
     /// The scope's real path, resolved once, off the main thread (it was resolved again for every path fd printed).
     private var canonicalScope: String?
     private var stopped = false
@@ -51,12 +54,13 @@ final class FolderSearch: @unchecked Sendable {
         spec: SearchSpec, scope: URL, limit: Int, tools: Tools, update: @escaping ([FileItem], [URL: String], Bool) -> Void
     ) {
         self.spec = spec; self.scope = scope; self.limit = limit; self.tools = tools; self.update = update
+        candidates = FolderSearchCandidates(spec: spec)
     }
 
-    /// fd discovers broad candidates. The shared folded/operator predicate runs before the result limit,
-    /// since fd's literal matching cannot express diacritic folding or all of the query operators.
+    /// fd may reject ASCII basenames using a required term, but keeps every Unicode basename. The shared
+    /// folded/operator predicate still runs before the result limit; content search discovers all paths.
     var commands: [[String]] {
-        [[tools.fd, "--hidden", "--no-ignore", "--absolute-path", "--print0", "--", "", scope.path]]
+        [[tools.fd, "--hidden", "--no-ignore", "--absolute-path", "--print0", "--", candidates.discoveryPattern, scope.path]]
     }
 
     func start() {
@@ -137,27 +141,28 @@ final class FolderSearch: @unchecked Sendable {
     }
 
     private func addChunk(_ paths: [String]) {
-        // The name is checked first: the package check resolves the path, and fd prints every entry in the scope.
-        let new = paths.filter {
-            !$0.isEmpty && (spec.contents || spec.nameMatches(($0 as NSString).lastPathComponent)) && !isInsidePackage($0)
-        }
-        var items: [FileItem] = []
-        var lines: [URL: String] = [:]
+        // Keep at most four bounded text reads in flight. The reader participates, so this does not wait on
+        // nested pool work. Each partition keeps fd order; only possible matches need display metadata.
+        let workers = spec.contents ? min(4, paths.count) : min(1, paths.count)
+        guard workers > 0 else { return }
+        var parts = Array(repeating: [(FileItem, String?)](), count: workers)
+        let partsLock = NSLock()
         let available = lock.withLock { max(0, limit - found.count) }
-        for path in new {
-            if items.count >= available || lock.withLock({ stopped }) { break }
-            guard spec.contents || spec.nameMatches((path as NSString).lastPathComponent),
-                let item = FileItem.load(URL(fileURLWithPath: path)), !(spec.contents && item.isBrowsableFolder),
-                spec.metadataMatches(item)
-            else { continue }
-            if spec.nameMatches(item.name) {
-                items.append(item)
-            } else if spec.contents, let value = IndexFileText.read(path, limit: 5_000_000),
-                let line = value.split(separator: "\n", omittingEmptySubsequences: false).first(where: { spec.contentMatches(String($0)) })
-            {
-                items.append(item); lines[item.url] = Self.snippet(String(line), around: spec.text)
+        DispatchQueue.concurrentPerform(iterations: workers) { worker in
+            let start = paths.count * worker / workers, end = paths.count * (worker + 1) / workers
+            var matches: [(FileItem, String?)] = []
+            for index in start..<end {
+                if matches.count >= available || lock.withLock({ stopped }) { break }
+                autoreleasepool {
+                    if let match = candidate(paths[index]) { matches.append(match) }
+                }
             }
+            partsLock.withLock { parts[worker] = matches }
         }
+        let matches = parts.flatMap { $0 }
+        let items = matches.map { $0.0 }
+        var lines: [URL: String] = [:]
+        for (item, line) in matches { if let line { lines[item.url] = line } }
         let (schedule, full, count) = lock.withLock { () -> (Bool, Bool, Int) in
             let taken = items.prefix(max(0, limit - found.count))
             found.append(contentsOf: taken)
@@ -170,6 +175,21 @@ final class FolderSearch: @unchecked Sendable {
         if schedule {
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.batchInterval(found: count)) { [self] in flush(done: false) }
         }
+    }
+
+    private func candidate(_ path: String) -> (FileItem, String?)? {
+        guard !path.isEmpty else { return nil }
+        let nameMatches = candidates.nameMatches(path)
+        guard spec.contents || nameMatches else { return nil }
+        if spec.contents && !nameMatches && contentIsInsidePackage(path) { return nil }
+        let line = spec.contents && !nameMatches ? candidates.firstLine(in: path, isCancelled: { lock.withLock { stopped } }) : nil
+        guard nameMatches || line != nil, !isInsidePackage(path),
+            let item = FileItem.load(URL(fileURLWithPath: path)), !(spec.contents && item.isBrowsableFolder),
+            spec.metadataMatches(item)
+        else { return nil }
+        if spec.nameMatches(item.name) { return (item, nil) }
+        guard spec.contents, let line = line ?? candidates.firstLine(in: path, isCancelled: { lock.withLock { stopped } }) else { return nil }
+        return (item, Self.snippet(line, around: spec.text))
     }
 
     /// Shared bounded text verification also gives Spotlight results their first matching line.
@@ -199,6 +219,23 @@ final class FolderSearch: @unchecked Sendable {
     /// Whether `path` is inside an app or another package below the scope: those are single items (as in Finder),
     /// and their insides aren't results. The package itself is, when its name matches.
     private func isInsidePackage(_ path: String) -> Bool {
+        let root = scopePath()
+        let resolved = FilePath.canonical(path)
+        guard resolved != root, FilePath.contains(path: resolved, in: root) else { return false }
+        return packageDirectory((resolved as NSString).deletingLastPathComponent, root: root)
+    }
+
+    private func contentIsInsidePackage(_ path: String) -> Bool {
+        guard let slash = path.lastIndex(of: "/") else { return false }
+        let parent = slash == path.startIndex ? "/" : String(path[..<slash])
+        if let known = lock.withLock({ contentPackages[parent] }) { return known }
+        let root = scopePath(), resolved = FilePath.canonical(parent)
+        let excluded = FilePath.contains(path: resolved, in: root) && packageDirectory(resolved, root: root)
+        lock.withLock { contentPackages[parent] = excluded }
+        return excluded
+    }
+
+    private func scopePath() -> String {
         let root =
             lock.withLock { canonicalScope }
             ?? {
@@ -206,9 +243,11 @@ final class FolderSearch: @unchecked Sendable {
                 lock.withLock { canonicalScope = root }
                 return root
             }()
-        let resolved = FilePath.canonical(path)
-        guard resolved != root, FilePath.contains(path: resolved, in: root) else { return false }
-        var dir = (resolved as NSString).deletingLastPathComponent
+        return root
+    }
+
+    private func packageDirectory(_ directory: String, root: String) -> Bool {
+        var dir = directory
         while dir.count > root.count, dir.hasPrefix(root) {
             let known = lock.withLock { isPackage[dir] }
             let package =
