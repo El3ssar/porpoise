@@ -13,9 +13,10 @@ class DiskUtilityWindow: SecondaryWindowController, NSWindowDelegate, NSTableVie
     let cancelButton = ClosureButton(title: "Cancel") { _ in }
     var cancellation = DiskCancellation()
     var rows: [[String]] = []
-    private let errorsButton = ClosureButton(title: "No Errors") { _ in }
+    /// Shown only when a scan had errors: a disabled "No Errors" button read as a status that something had gone wrong.
+    let errorsButton = ClosureButton(title: "") { _ in }
     var errors: [String] = [] {
-        didSet { errorsButton.isEnabled = !errors.isEmpty; errorsButton.title = errors.isEmpty ? "No Errors" : "Errors (\(errors.count))…" }
+        didSet { errorsButton.isHidden = errors.isEmpty; errorsButton.title = "Errors (\(errors.count))…" }
     }
     var busy = false
     let keys: [String]
@@ -53,7 +54,7 @@ class DiskUtilityWindow: SecondaryWindowController, NSWindowDelegate, NSTableVie
         ])
         scroll.setContentHuggingPriority(.defaultLow, for: .vertical)
         status.isSelectable = true; status.maximumNumberOfLines = 4; status.font = .systemFont(ofSize: 12)
-        errorsButton.handler = { [weak self] _ in self?.showErrors() }; errorsButton.isEnabled = false
+        errorsButton.handler = { [weak self] _ in self?.showErrors() }; errorsButton.isHidden = true
         let footer = NSStackView(views: [status, errorsButton]); footer.alignment = .top; footer.spacing = 10
         stack.addArrangedSubview(footer); footer.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         status.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -108,8 +109,10 @@ class DiskUtilityWindow: SecondaryWindowController, NSWindowDelegate, NSTableVie
             }
         }
     }
-    func note(_ text: String) {
-        let label = NSTextField(wrappingLabelWithString: text); label.textColor = .secondaryLabelColor; label.font = .systemFont(ofSize: 11)
+    /// A line of help above the footer; `details` (the fine print) shows as its tooltip.
+    func note(_ text: String, details: String? = nil) {
+        let label = NSTextField(wrappingLabelWithString: text); label.textColor = Theme.windowTextInactive; label.font = .systemFont(ofSize: 12)
+        label.toolTip = details
         stack.insertArrangedSubview(label, at: stack.arrangedSubviews.count - 1);
         label.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
     }

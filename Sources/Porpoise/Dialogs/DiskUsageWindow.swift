@@ -2,6 +2,7 @@ import AppKit
 import PorpoiseCore
 import PorpoiseFileSystem
 import PorpoiseServices
+import UniformTypeIdentifiers
 
 final class DiskUsageWindow: DiskUtilityWindow {
     private let roots: [URL]
@@ -30,7 +31,9 @@ final class DiskUsageWindow: DiskUtilityWindow {
         map.activate = { [weak self] id in self?.enter(id) }
         table.target = self; table.doubleAction = #selector(openRow)
         note(
-            "Double-click a directory or click its map tile to drill down. Hard links count once across the selection. Allocated bytes exclude directory metadata and may overlap across APFS clones; they are not guaranteed reclaimable space. Scans stay on selected volumes."
+            "Click a tile, or double-click a folder in the list, to look inside it.",
+            details:
+                "Hard links count once across the selection. Allocated bytes exclude directory metadata and may overlap across APFS clones; they are not guaranteed reclaimable space. Scans stay on selected volumes."
         )
         scan()
     }
@@ -69,10 +72,37 @@ final class DiskUsageWindow: DiskUtilityWindow {
             let n = tree.nodes[id]; return [n.name, FileFormat.size(n.logical), FileFormat.size(n.allocated), n.files.formatted()]
         }
         table.reloadData()
+        map.folders = Set(children.filter { tree.nodes[$0].directory })
         map.items = children.map { id in (id, tree.nodes[id].name, allocated ? tree.nodes[id].allocated : tree.nodes[id].logical) }
         let node = tree.nodes[current]
-        status.stringValue =
-            "\(node.url?.path ?? "Selection") · \(FileFormat.size(node.logical)) logical · \(FileFormat.size(node.allocated)) allocated · \(node.files.formatted()) unique files · \(tree.hardLinkAliases) hard-link aliases · \(errors.count) errors"
+        status.stringValue = Self.summary(
+            place: Self.place(of: node.url, in: roots), logical: node.logical, allocated: node.allocated, files: node.files,
+            hardLinkAliases: tree.hardLinkAliases, errors: errors.count)
+        status.toolTip = node.url?.path
+    }
+
+    /// Where the map is, from the folder scanned ("Demo › Photos"), not a path from the root of the disk.
+    static func place(of url: URL?, in roots: [URL]) -> String {
+        guard let url else { return "Selection" }
+        let path = url.standardizedFileURL.path
+        for root in roots {
+            let base = root.standardizedFileURL.path
+            guard path == base || path.hasPrefix(base == "/" ? "/" : base + "/") else { continue }
+            let rest = path.dropFirst(base.count).split(separator: "/").map(String.init)
+            return ([root.lastPathComponent] + rest).joined(separator: " › ")
+        }
+        return url.lastPathComponent
+    }
+
+    /// The footer: the place and its sizes; hard-link aliases and errors only when there are some.
+    static func summary(place: String, logical: Int64, allocated: Int64, files: Int, hardLinkAliases: Int, errors: Int) -> String {
+        var parts = [
+            place, "\(FileFormat.size(logical)) logical", "\(FileFormat.size(allocated)) allocated",
+            "\(files.formatted()) \(files == 1 ? "file" : "files")",
+        ]
+        if hardLinkAliases > 0 { parts.append("\(hardLinkAliases.formatted()) hard-link \(hardLinkAliases == 1 ? "alias" : "aliases")") }
+        if errors > 0 { parts.append("\(errors.formatted()) \(errors == 1 ? "error" : "errors")") }
+        return parts.joined(separator: " · ")
     }
     func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) { reload() }
     private func enter(_ id: Int) {
@@ -99,8 +129,16 @@ final class DiskTreemapView: NSView {
     var items: [(Int, String, Int64)] = [] {
         didSet {
             itemIndices = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.0, $0.offset) })
-            layoutBounds = nil; needsDisplay = true
+            kinds = [:]; layoutBounds = nil; needsDisplay = true
         }
+    }
+    /// The ids among `items` that are folders (the rest are files, colored by their kind).
+    var folders: Set<Int> = [] { didSet { kinds = [:]; needsDisplay = true } }
+    /// Each tile's kind, worked out once (a type lookup per tile per frame adds up on a big map).
+    private var kinds: [Int: Kind] = [:]
+    private func kind(of id: Int, name: String) -> Kind {
+        if let k = kinds[id] { return k }
+        let k = Kind(name: name, folder: folders.contains(id)); kinds[id] = k; return k
     }
     private var itemIndices: [Int: Int] = [:]
     private var layoutBounds: CGRect?
@@ -108,22 +146,78 @@ final class DiskTreemapView: NSView {
     var activate: ((Int) -> Void)?
     private var tiles: [UsageTreemap.Tile] = []
     override var isFlipped: Bool { true }
+
+    /// What a tile holds, for its color: one soft hue per kind, so the map reads at a glance (as DaisyDisk's does)
+    /// instead of an arbitrary color per tile.
+    enum Kind: CaseIterable {
+        case folder, image, video, audio, archive, document, other
+
+        init(name: String, folder: Bool) {
+            if folder { self = .folder; return }
+            let ext = (name as NSString).pathExtension
+            guard !ext.isEmpty, let type = UTType(filenameExtension: ext) else { self = .other; return }
+            if type.conforms(to: .image) {
+                self = .image
+            } else if type.conforms(to: .audiovisualContent) && !type.conforms(to: .audio) {
+                self = .video
+            } else if type.conforms(to: .audio) {
+                self = .audio
+            } else if type.conforms(to: .archive) || type.conforms(to: .diskImage) {
+                self = .archive
+            } else if type.conforms(to: .text) || type.conforms(to: .pdf) || type.conforms(to: .presentation)
+                || type.conforms(to: .spreadsheet) || type.conforms(to: .content)
+            {
+                self = .document
+            } else {
+                self = .other
+            }
+        }
+
+        /// Mid-tone colors that keep white labels at 4.78:1 or more in both looks, the cushion's lit top included.
+        var color: NSColor {
+            switch self {
+            case .folder: NSColor(srgbRed: 0.205, green: 0.385, blue: 0.615, alpha: 1)
+            case .image: NSColor(srgbRed: 0.426, green: 0.303, blue: 0.615, alpha: 1)
+            case .video: NSColor(srgbRed: 0.615, green: 0.254, blue: 0.385, alpha: 1)
+            case .audio: NSColor(srgbRed: 0.615, green: 0.312, blue: 0.107, alpha: 1)
+            case .archive: NSColor(srgbRed: 0.107, green: 0.41, blue: 0.435, alpha: 1)
+            case .document: NSColor(srgbRed: 0.205, green: 0.426, blue: 0.238, alpha: 1)
+            case .other: NSColor(srgbRed: 0.353, green: 0.369, blue: 0.402, alpha: 1)
+            }
+        }
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         Theme.windowBackground.setFill(); bounds.fill()
         if layoutBounds != bounds {
             tiles = UsageTreemap.layout(items.map { ($0.0, $0.2) }, in: bounds.insetBy(dx: 2, dy: 2))
             layoutBounds = bounds; layoutCount += 1
         }
-        for (i, tile) in tiles.enumerated() {
+        let style = NSMutableParagraphStyle(); style.lineBreakMode = .byTruncatingMiddle
+        let shadow = NSShadow(); shadow.shadowBlurRadius = 2; shadow.shadowOffset = .zero
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
+        let nameAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: NSColor.white, .paragraphStyle: style, .shadow: shadow,
+        ]
+        let sizeAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.white.withAlphaComponent(0.88), .paragraphStyle: style,
+            .shadow: shadow,
+        ]
+        for tile in tiles {
             let rect = tile.rect.insetBy(dx: 1, dy: 1)
-            NSColor(calibratedHue: CGFloat((i * 37) % 100) / 100, saturation: 0.48, brightness: 0.65, alpha: 1).setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
-            if rect.width > 65 && rect.height > 32, let index = itemIndices[tile.id] {
-                let style = NSMutableParagraphStyle(); style.lineBreakMode = .byTruncatingMiddle
-                let text = items[index].1 + "\n" + FileFormat.size(items[index].2)
-                (text as NSString).draw(
-                    in: rect.insetBy(dx: 6, dy: 5),
-                    withAttributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.white, .paragraphStyle: style])
+            guard rect.intersects(dirtyRect), let index = itemIndices[tile.id] else { continue }
+            let item = items[index]
+            let path = NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4)
+            kind(of: tile.id, name: item.1).color.setFill()
+            path.fill()
+            // A soft cushion: lighter at the top, a little darker at the bottom, so tiles read as objects.
+            NSGradient(colors: [NSColor.white.withAlphaComponent(0.10), NSColor.black.withAlphaComponent(0.12)])?.draw(in: path, angle: 90)
+            guard rect.width > 64, rect.height > 22 else { continue }
+            let inner = rect.insetBy(dx: 8, dy: 6)
+            (item.1 as NSString).draw(in: CGRect(x: inner.minX, y: inner.minY, width: inner.width, height: 17), withAttributes: nameAttrs)
+            if rect.height > 40 {
+                (FileFormat.size(item.2) as NSString).draw(
+                    in: CGRect(x: inner.minX, y: inner.minY + 18, width: inner.width, height: 15), withAttributes: sizeAttrs)
             }
         }
         if tiles.isEmpty {
