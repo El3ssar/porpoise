@@ -2,216 +2,210 @@
 
 ## Goal
 
-A native Mac app with Dolphin's browsing and keyboard behaviour, Finder's everyday conveniences, and the
-remote tools people otherwise need several apps for. Browse, compare, organise and move files in one place,
-whether they are on this Mac, a server, a cloud account or a phone.
+A native Mac app with Dolphin's browsing model (split view, panels, a terminal that follows the folder),
+Finder's keys and everyday conveniences, and the remote tools people otherwise need several apps for.
+Browse, compare, organise and move files in one place, whether they are on this Mac, a server, a cloud
+account or a phone.
 
-The aim is to go beyond Finder, ForkLift, Commander One and QSpace in useful workflows. Adding features alone
-doesn't prove that goal: each phase ends with a working app, checks on real files and a clear account of what
-is supported. Dolphin's layout remains the default; extra tools stay out of the way until you need them.
+Porpoise should feel like the best-made app on the Mac from the moment it opens. Features come after that,
+not before it: a feature that looks unfinished or breaks under load costs more trust than it earns.
 
-> Proposed direction, reviewed 2026-10-11 against commit `8943d456c2bb0a6da02ae509a31c0c6373129ba4`.
-> These are candidates for implementation, not release promises. The original plan stays in
-> [docs/PLAN.md](docs/PLAN.md); the current layers and rules are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+> Reviewed 2026-10-22 against `250e6b1` (0.9.1). The original plan is in [docs/PLAN.md](docs/PLAN.md);
+> the layers and rules are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). These are plans, not release
+> promises. What has shipped is recorded in [CHANGELOG.md](CHANGELOG.md), not here.
 
-## What is already there
+## Priorities
 
-Tabs and split view; Icons, Compact and Details; Places, Folders and Information panels; a terminal with two-way
-folder following; streamed name/content search with fd and ripgrep plus Spotlight; tags, Quick Look, Services,
-Share and AirDrop; cloud-download status; Smart Folder browsing; file operations with progress, conflicts and
-undo; SSH/SFTP, FTP/FTPS and macOS network mounts; USB Android access through adb; remote edit-and-upload;
-archive browsing through an extracted cache; an Applications library; accessibility and light/dark looks.
+1. **Design.** First launch, the main window and every secondary window are attractive, consistent and calm,
+   in light and dark, at every size.
+2. **Robustness.** Nothing is lost, nothing hangs, and every slow path has a measured budget.
+3. **Features.** New features come only after the first two hold for the features that already exist.
 
-These foundations need extending, not rebuilding. In particular:
+## Ground rules
 
-- **Archives:** browsing currently extracts the archive into a cache. It is not an archive editor or a lazy
-  archive filesystem; changes to the extracted copy must not be mistaken for changes to the original.
-- **Cloud drives:** browsing installed providers and iCloud status is not direct access to a cloud account.
-- **Jobs:** progress and cancel exist. A persistent, reorderable queue with pause and recovery is separate work.
-- **Renaming:** individual rename and previewed local batch transformations are implemented, with presets and
-  whole-batch undo. Remote batch transactions remain separate work.
-- **Sessions:** reopening tabs is not the same as named, reusable workspaces.
+- **Free to run.** Porpoise is free and must not cost the maintainer money. There is no Apple Developer ID,
+  no notarisation and no paid security assessment (CASA). Free paths come first: ad hoc signing with clear
+  first-launch help, Google's free brand verification, free app registrations. When a provider requires
+  payment, the provider stays unavailable.
+- **One platform.** Apple Silicon, macOS 15 and later. macOS 26 is the last release for Intel Macs, so Intel
+  support is not planned.
+- **Layers.** Algorithms and task plans go in `PorpoiseCore`; providers, persistence and execution in
+  `PorpoiseServices`; drawing and wiring in the app. Do not add a separate operations engine for each tool.
+- **Capabilities.** Each location says what it supports (write, rename, seek, resume, metadata, checksums,
+  server-side copy). When something is missing, the UI explains why instead of acting like a local disk.
+- **Preview first.** Bulk rename, archive rewrites and cleanup show a plan that can be inspected before they
+  run.
+- **Real checks.** Tests use scratch folders, APFS images, local fake servers and isolated settings, and cover
+  interruptions, Unicode, very large files and folders, permissions and symlinks. Release only after CI is green.
+- **Budgets.** Listing, search, launch, memory, cancellation and throughput are measured against fixed
+  fixtures, including 100,000-file folders. An improvement counts only if it moves a measured number.
+- **Docs ship with the feature.** README, changelog, screenshots and security notes are updated in the same
+  change.
 
----
+## Where things stand (0.9.1)
 
-## Phases
+**Shipped:** tabs, split view, linked browsing; Icons, Compact and Details views; Places, Folders,
+Information, Terminal and Shelf panels; indexed and streamed search; batch rename with presets and undo;
+checksums, disk usage, duplicates, app cleanup and templates; file comparison (text, image, metadata);
+the Activity window with a queue, pause/resume, recovery after quitting, verification and history; command
+palette and custom shortcuts and toolbar; SFTP, FTP/FTPS, SMB/AFP/NFS/WebDAV, saved connections with
+Keychain, jump hosts, reconnect and host-key review; S3-compatible storage; Google Drive and Dropbox with
+offline browsing and edit-in-place; Android over adb; archives browsed through an extracted copy; ten
+themes and freedesktop icon themes; VoiceOver and Full Keyboard Access in the main window.
 
-Each phase can ship in small, focused changes. Do not wait for the whole roadmap to be finished.
+**Built, waiting on a third party:**
 
-### Phase 1: organise files without leaving the window
-
-- **Batch rename (implemented for local files):** combine text replacement, regular expressions, numbering, case changes, dates and metadata.
-  Show old and new names side by side, highlight collisions, save presets, and undo the completed batch.
-  Handle swaps, case-only changes, Unicode names and mixed extensions without overwriting another item.
-- **Checksums:** calculate and compare SHA-256 and SHA-512, verify checksum files, and export a manifest for a
-  selection. Older algorithms may be offered for compatibility, clearly labelled.
-- **Collect files:** a shelf for references gathered from several folders, searches and servers. Copy, move,
-  rename, share or run a Service on the collection. Keep the originals where they are until an operation runs;
-  show missing or disconnected items instead of silently dropping them.
-  *Unreleased: Panels › Shelf (F8) and Add to Shelf (⌥⌘S, context menu, drag in); named shelves saved across
-  launches, items followed through renames by bookmarks; Copy/Move Here, Rename, Share, Services, Open, Show in
-  Folder; missing and disconnected items stay on the shelf, marked.*
-- **Disk use and duplicates:** cancellable folder-size calculation, a map of where space goes, exact duplicate
-  detection by content, and a review screen before moving duplicates to Trash. Similar images are a separate,
-  optional tool, never a reason to delete automatically.
-- **App cleanup:** offer related support files when trashing an app. Explain each match and let the user select
-  what goes; never remove another app's shared data just because a name matches.
-  *Unreleased: native review with sizes/reasons and unchecked related files; whole bundle IDs and exact names,
-  verified exclusive app-group entitlements, shared-owner exclusions, changed-file revalidation, Trash and Undo.*
-- **Create New:** extend templates with variables and previews; allow importing and exporting personal templates.
-  *Unreleased: Create New › From Template, editable source and resolved previews, date/time/user/name/counters,
-  personal template editing in Application Support, ordinary-file imports and versioned archive import/export.*
-
-**Done when:** batch changes and undo are checked on real files, duplicate detection ignores false matches,
-and a collected selection works across folders without losing the original locations.
-
-### Phase 2: linked browsing and file comparison
-
-- **Dropped:** folder comparison and folder sync were removed: their complexity and cost outweighed their value.
-- **Linked browsing:** move through corresponding folder trees together; explain when a counterpart is absent.
-- **File comparison:** built-in text and image comparison, with optional external compare/merge apps. Binary
-  equality and metadata differences are visible even when a visual comparison is unavailable.
-
-**Done when:** linked navigation and text, image and metadata file comparisons work independently.
-
-### Phase 3: transfers that survive interruptions
-
-- **Activity window:** queued, running, waiting, failed and completed jobs; reorder pending jobs, set concurrency,
-  retry failures, and see speed, remaining bytes and an estimate of time left.
-  *Unreleased: Window › Activity (⌥⌘J) has all of this; copies and moves queue (1–6 at once), trashing and
-  deleting never wait.*
-- **Pause and resume:** where the provider supports it, including large remote files. Otherwise say that a
-  restart is needed. Do not display a pause button that only cancels the job.
-  *Unreleased: local jobs pause between chunks or items; files of 8 MB and more are copied in chunks that resume at
-  their offset. Remote transfers show no pause button and say that a stopped item starts over.*
-- **Recovery:** persist job state and offer recovery after a quit, crash, sleep or network interruption.
-  Check that source and destination still match the saved state before resuming.
-  *Unreleased: a versioned JSON journal per job (Application Support/Porpoise/Jobs); at launch Porpoise offers to
-  resume, after checking each item's size, date and inode and that partial copies are its own. Sleep and network
-  drops aren't detected separately yet.*
-- **Transfer rules:** bandwidth limits, retry/backoff settings, exclusions and remembered conflict choices
-  scoped to the current task. Optional verification after copying, with a readable result.
-  *Unreleased: verification (size and SHA-256) is in; bandwidth limits, retry/backoff and exclusions are not yet.*
-- **Safe replacement:** stage incomplete downloads, preserve metadata where supported, and only remove a source
-  after the destination is complete. Make provider limitations visible.
-  *Unreleased: local copies are written under a hidden name and renamed into place when complete (metadata copied);
-  a move removes its source only after that.*
-- **History:** a searchable operation log, exportable for troubleshooting. Recover or undo only when it is
-  actually possible; passwords, tokens and sensitive command output never belong in the log.
-  *Unreleased: the Activity window's History tab: searchable, exported as CSV; remote locations are written without
-  user, password or query.*
-
-**Done when:** interrupted and resumed transfers produce the same bytes as uninterrupted ones; relaunching
-doesn't silently repeat deletions or destroy a destination changed by another app.
-
-### Phase 4: every useful location in the same browser
-
-- **Object storage:** Amazon S3 and compatible services (including MinIO), then Backblaze B2, Azure Blob and
-  Google Cloud Storage. Support pagination, multipart transfers and the provider's actual directory semantics.
-- **Cloud accounts:** direct Google Drive, Dropbox, OneDrive and Box connections, multiple accounts, shared
-  folders, native-document export and share-link controls where their APIs allow it.
-- **Connection manager:** profiles, Keychain credentials, SSH configuration and agent support, jump hosts,
-  reconnect, host-key inspection and clear capability reporting.
-- **Between providers:** copy across accounts and servers through the same jobs engine. Use server-side copy
-  only where supported; otherwise stream or stage locally and show that local storage is being used.
-- **Remote editing:** extend the existing upload-on-save path with remote-change detection, conflict review,
-  recoverable unsent edits and an offline cache with visible pending changes.
-- **Devices:** keep adb for Android; add MTP for devices that don't use debugging. Offer iOS photos and permitted
-  app documents through supported interfaces, without suggesting unrestricted iOS filesystem access.
-
-**Done when:** every provider passes the same supported-operation checks, account credentials stay in Keychain,
-and expired login, quota exhaustion, pagination and reconnect are handled without losing edits.
-
-### Phase 5: archives as real locations
-
-- **Browse without extracting everything:** list entries first; fetch or extract a file only when needed.
-  Keep the current extraction fallback for formats that cannot support selective access.
-- **Write supported formats:** add, replace, rename and remove entries, with a staged rewrite and recovery.
-  Clearly distinguish formats that can be read from those that can be written.
-- **Archive tools:** password handling, encrypted creation where supported, split archives, integrity checks,
-  selective extraction, progress and cancellation. Add nested and remote archive browsing where practical.
-- **Limits:** bound extraction size and nesting, reject escaping paths and unsafe links, and report unsupported
-  entries. Keep free-space use and cache cleanup visible.
-
-**Done when:** opening a large archive doesn't require unpacking it all, a failed rewrite leaves the original
-intact, and hostile archives cannot write outside the chosen destination.
-
-### Phase 6: workspaces, search and developer tools
-
-- **Named workspaces:** save tabs, paths, pane layout, panels, filters and view settings. Optional three/four-pane
-  layouts and horizontal splitting; the usual two-pane Dolphin layout remains one key away.
-- **Command palette (core implemented):** actions, Places/bookmarks, recent locations, open tabs and connections
-  are searchable from the keyboard. Shortcuts have conflict detection and JSON import/export; toolbar actions are
-  customisable with the native macOS palette. Direct rename-preset entries remain future extensions.
-- **Search builder:** combine name, content, dates, size, tags and metadata; save and edit searches. Keep
-  compatibility with Finder Smart Folders where possible. Search multiple roots and supported remotes, with
-  explicit scope and optional archive content; don't download a cloud library without asking.
-- **Git:** file and folder status, ignore awareness, branch display and diffs first; then stage, unstage, commit,
-  fetch, pull and push. Destructive operations need a preview, and repositories never run arbitrary hooks just
-  because the user browses into them.
-- **Custom actions:** run a chosen tool on the current folder or selection, using structured arguments and
-  visible results. Offer a CLI, Shortcuts actions and documented automation interfaces.
-- **Extensions:** a versioned interface for providers, metadata, previews and actions, with explicit access
-  boundaries. Start with built-in adapters; don't load unrestricted third-party code into the privileged path.
-- **Portable setup:** export workspaces, actions and preferences; optional sync between Macs without exporting
-  credentials or hard-coding unavailable volumes.
-
-**Done when:** a workspace round-trip restores the intended view, every command can be reached by keyboard,
-and extensions cannot bypass the checks used by built-in operations.
-
-### Phase 7: finish the Mac experience
-
-- **Column and Gallery views:** genuine hierarchical columns and a large-preview filmstrip, alongside the
-  existing Dolphin views. Add useful Quick Actions such as rotation, markup and PDF creation through supported
-  macOS integration, with clear fallbacks where Apple does not expose an interface.
-- **Metadata:** multi-item Properties, editable supported fields, richer media columns, extended attributes and
-  ACL inspection. Preserve Finder tags, comments, resource forks and cloud-provider semantics during operations.
-- **Access for everyone:** VoiceOver, Full Keyboard Access and reduced-motion checks for every new feature;
-  localised strings, documentation and shortcuts that work with different keyboard layouts.
-- **Installation:** Developer ID signing and notarisation, least-privilege permissions, and a documented helper
-  update/removal path. Keep security work aligned with [SECURITY.md](SECURITY.md).
-- **Platform coverage:** assess Intel support and older macOS versions separately from the feature work;
-  support only configurations that can be built and checked continuously.
-
-Finder's Desktop, device backup/restore and system-owned interfaces may still be handed to Finder. Do not
-claim a complete replacement of private macOS services that a third-party app cannot reliably implement.
+| Item | State | Who acts next |
+| --- | --- | --- |
+| Google Drive verification | Submitted 2026-10-18 (brand verified, app in production, demo video). Until it is approved, only invited accounts can sign in. | Google. If Google asks for a paid CASA, keep the unverified app (100 users, warning screen). |
+| OneDrive | Built and tested (0.8.4); shown as Coming soon. | Operator: free Entra registration ([docs/onedrive/SETUP.md](docs/onedrive/SETUP.md)). |
+| Box | Built and tested (0.9.0); shown as Coming soon. | Operator: Box app registration ([docs/box/SETUP.md](docs/box/SETUP.md)). |
+| Dropbox | Works in development status (limited number of linked accounts). | Operator: Dropbox production approval when the user cap matters. |
 
 ---
 
-## How features land
+## Now: first impression and finish
 
-- **Layers:** algorithms and task plans in `PorpoiseCore`; providers, persistence and execution in
-  `PorpoiseServices`; drawing and wiring in the app. Follow the existing architecture rather than adding
-  another independent operations engine for each tool.
-- **Capabilities:** locations say what they support (write, rename, seek, resume, metadata, checksums and
-  server-side copy). The UI explains a missing capability instead of pretending every backend is a local disk.
-- **Preview first:** bulk rename, archive rewrites and cleanup produce an inspectable plan before running.
-- **Real checks:** scratch folders, APFS images, private servers and isolated settings; provider test accounts
-  where required. Include interruptions, Unicode, very large files and directories, permissions and symlinks.
-- **Performance:** record listing/search latency, memory, cancellation delay and transfer throughput against
-  fixed fixtures (including 100,000-file folders). Set measurable budgets before declaring an improvement.
-- **Documentation:** update README, changelog and relevant security notes when a feature ships. State format
-  and provider limits. Keep unchecked items here until the user-facing path and failure cases are verified.
+Nothing new is added until the existing app holds up to Finder, ForkLift and QSpace side by side.
+
+Decided (2026-10-22):
+
+- **Looks like the Mac by default.** A native macOS theme becomes the default: system colours, the user's
+  accent colour, untinted materials and native file icons, all drawn from one set of design tokens. Breeze,
+  Nord, Dracula and the other themes stay available in Settings › Appearance.
+- **Mac keys by default, Dolphin one click away.** The default shortcuts follow Finder's conventions. A
+  Dolphin preset in Settings › Shortcuts restores Dolphin's keys, and Help gets a sheet listing the
+  shortcuts.
+- **A new app icon** with its own silhouette rather than a folder, drawn on the macOS 26 icon grid so it
+  reads at 16 px next to Finder. The operator is choosing among several directions.
+
+In progress (the P10 fix waves):
+
+- **Design:** the native default theme and tokens, consistent icons, list details and the Compare Files
+  highlight, decimal byte units by default (binary as an option), and the app icon.
+- **First run:** the browser opens at once, behind one welcome sheet, and each permission is asked for
+  when it is first needed.
+- **Keys:** the Mac-standard key set with the Dolphin preset. ⌘⌫, ⌘D and ⌘E no longer act on files while
+  a text field or the terminal has focus.
+- **Performance:** sorting large folders and changing view geometry stay off the main thread, content
+  search is faster, and thumbnail work is scheduled and cancelled as the view scrolls.
+- **Robustness:** durable remote edits with an account-safe cache, a move removes its source only after
+  that exact copy is complete, local recovery checks integrity and ownership, and verification fails
+  closed when a scan is unreadable or cancelled.
+- **Public face:** README and public docs that match 0.9, and saving a connection reports its errors
+  instead of losing them.
+
+Still to do in this phase:
+
+- **Install guide.** porpoise.dev and the README walk through the Gatekeeper "Open Anyway" step with
+  screenshots, because without a Developer ID that step can't be avoided.
+- **One visual system.** One set of spacing, type, colour and corner values for the main window, panels,
+  sheets and every secondary window (Settings, Activity, Compare, Disk Usage, Batch Rename, Connections,
+  Properties). It should match current macOS (Tahoe/27) materials, toolbar and sidebar where AppKit allows.
+- **Empty, loading, offline and error states.** Every view has a designed state for empty folders, no search
+  results, slow listings, offline accounts, expired sign-ins and refused permissions, with no raw error text.
+- **Connect sheet shows what works.** Providers waiting on registration move out of the main grid into a
+  quiet "More services" note. A first look should not be a third of "Coming soon" tiles.
+- **Motion and detail.** Every animation fits a frame-time budget, respects Reduce Motion and never runs
+  twice. Hover, focus rings, selection and drag feedback match across views.
+- **Screenshots.** README and porpoise.dev screenshots are retaken with the native theme and the new icon,
+  in light and dark.
+
+**Done when:** a new user goes from DMG to a browsed folder without a dead end, the design review finds no
+off-system window, and README screenshots match the app.
+
+## Now: robustness and measured budgets
+
+- **Budgets in CI.** Cold launch, first listing of a 100,000-file folder, search keystroke latency, idle CPU
+  and memory after an hour, each with a threshold. A regression fails the perf job.
+- **Finish transfer rules.** Bandwidth limits, retry and backoff settings, exclusions, and detecting sleep
+  and network loss in job recovery (still open from the transfer work).
+- **Crashes and hangs we can see.** Without a paid service: collect MetricKit diagnostics and hang reports
+  locally, then offer the user a readable report to attach to a GitHub issue. Nothing is sent automatically.
+- **State restoration.** Windows, tabs, split layout, panels and scroll positions survive a crash or a forced
+  update, as they do after a normal quit.
+- **Provider parity.** Every location (local, SFTP, FTP, SMB, S3, Drive, Dropbox, and OneDrive/Box once
+  enabled) passes the same operation, conflict, quota, expiry, pagination and reconnect checks against its fake
+  server.
+
+**Done when:** budgets are enforced in CI, an interrupted job resumes after sleep and after Wi-Fi loss, and a
+crash report can be produced without any external service.
+
+## Next: column view
+
+- **Columns.** Hierarchical columns with a preview column, keyboard navigation and type-ahead equivalent to
+  Finder's, available in split view and per folder like the other views. Finder, ForkLift, Path Finder and
+  QSpace all have it, and many Finder users never use any other view.
+- **Gallery** is optional and comes later: a large preview with a filmstrip, only if Columns shows the view
+  layer can carry another mode without regressions.
+
+**Done when:** Columns passes the same VoiceOver, selection, drag-and-drop, rename and 100,000-file checks as
+Details.
+
+## Next: archives as real locations
+
+- **List first, extract on demand.** Read archive entries without unpacking, and extract one entry when it is
+  opened, previewed or copied. Keep the current whole-archive extraction as the fallback for formats without
+  random access.
+- **Write supported formats.** Add, replace, rename and remove entries in zip, tar and 7z with a staged
+  rewrite; the original stays intact until the rewrite is complete. Show which formats are read-only.
+- **Archive tools.** Passwords, encrypted zip/7z creation, split archives, integrity test, selective extraction,
+  progress and cancel. Nested and remote archives where practical.
+- **Limits.** Bound size and nesting, reject escaping paths and unsafe links, report unsupported entries, and
+  keep cache use visible.
+
+**Done when:** a multi-gigabyte zip or 7z lists without unpacking anything, a failed rewrite leaves the original intact,
+and hostile archives cannot write outside the destination.
+
+## Next: workspaces and automation
+
+- **Named workspaces.** Save and switch tabs, paths, split layout, panels, filters and view settings
+  (ForkLift has them).
+- **Custom tools.** Run a configured command on the folder or selection, from the toolbar, menu or palette,
+  with structured arguments and visible output.
+- **Shortcuts and a CLI.** App Intents for opening a location, revealing a file, running a tool and starting
+  a copy; a small `porpoise` command for scripts.
+- **Quick Select.** Select by name pattern, extension or tag from the keyboard.
+
+**Done when:** a workspace round-trip restores the same view, and every Intent works from the Shortcuts app.
+
+## Later: reach
+
+- **Localisation.** No user-facing string is localised today. Move strings into a String Catalog first, then
+  add languages where translators volunteer. Shortcuts must work with non-US keyboard layouts.
+- **Git status.** Status badges, ignore awareness and branch in the status bar. Diff opens in Compare.
+  Committing and pushing stay out until status has proved itself. Never run repository hooks while browsing.
+- **Search builder.** Saved searches combining name, content, date, size, tag and metadata, compatible with
+  Finder Smart Folders.
+- **Devices.** MTP for Android phones without USB debugging, and cameras over PTP.
+- **Remote editing.** Extend Drive/Dropbox conflict review and pending-edit recovery to SFTP, FTP and S3.
+
+## Not planned
+
+- **Developer ID signing and notarisation, and paid CASA:** they cost money (see Ground rules).
+- **Intel Macs and macOS before 15.**
+- **Folder comparison and two-way folder sync:** removed earlier because their complexity and cost
+  outweighed their value. Linked browsing and file comparison cover the everyday case.
+- **Third-party extension SDK:** no unrestricted outside code in the privileged path. Built-in adapters only.
+- **Azure Blob and Google Cloud Storage as separate providers:** possible later through S3-compatible
+  endpoints, not separate engines, and only if users ask for them.
+- **iOS app documents:** Apple does not offer a supported interface for this.
+- **Replacing Finder's Desktop, device backup or other system-owned services.**
 
 ## What makes this more than feature parity
 
-The advantage is that the tools work together: collect search results from several locations, preview a
+The tools work together. You can collect search results from several locations on the Shelf, preview a
 metadata-based rename, compare the result with a server, copy with verification, and recover an interrupted
-transfer inside a saved workspace. The same selection, provider capabilities and operation history carry
-through the workflow.
-
-Treat being ahead of other file managers as something to demonstrate with these complete workflows and
-published comparisons, not a promise inferred from a longer feature list.
+transfer. The selection, the provider capabilities and the operation history carry through the whole workflow.
+Show this with complete workflows and published comparisons, not with a longer feature list.
 
 ## Comparison references
 
-Reviewed 2026-10-11; paid extensions and direct-download PRO editions are included when comparing breadth.
+Reviewed 2026-10-22.
 
-- [Finder: organising, views and Smart Folders](https://support.apple.com/guide/mac-help/organize-your-files-in-the-finder-mchle9f0a1b2/mac)
-- [Finder: multiple-item rename](https://support.apple.com/en-mo/guide/mac-help/mchlp1144/mac)
-- [ForkLift features](https://binarynights.com/) and [manual](https://binarynights.com/manual)
-- [Commander One features](https://mac.eltima.com/file-manager.html)
-- [QSpace features and extensions](https://qspace.awehunt.com/en-us/index.html)
-
-The baseline is the current README and source, especially `ArchiveBrowser`, `RemoteOpener`, `JobsPanel` and
-the file-operation controllers. A documented feature is not a performance or reliability benchmark.
+- [Finder](https://support.apple.com/guide/mac-help/organize-your-files-in-the-finder-mchle9f0a1b2/mac)
+- [ForkLift 4](https://binarynights.com/): workspaces, sync, Git, bandwidth limits, archives, 12 languages
+- [QSpace](https://qspace.awehunt.com/en-us/index.html): 12 layouts, Stash Shelf, 20+ server types, archives
+- [Commander One PRO](https://mac.eltima.com/file-manager.html): MTP, editable 7z, many cloud providers
+- [Dolphin](https://apps.kde.org/dolphin/): plugins (Git, Nextcloud), KIO S3/GDrive
+- Path Finder: dual pane, Drop Stack
