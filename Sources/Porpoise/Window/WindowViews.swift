@@ -35,6 +35,44 @@ final class DolphinWindow: NSWindow {
         super.layoutIfNeeded()
         positionTrafficLights()
     }
+
+    // MARK: Tab order
+
+    /// AppKit's key-view loop covers the window's content, not the title bar: the path field (when it takes focus,
+    /// with Full Keyboard Access) comes in just before the file list, so Tab goes … → path → list and ⇧Tab back.
+    private var pathViews: [NSView] {
+        guard let frame = contentView?.superview else { return [] }
+        func find(_ v: NSView) -> [NSView] { v is BreadcrumbView ? [v] : v.subviews.flatMap(find) }
+        return find(frame).filter(\.canBecomeKeyView).sorted { $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX }
+    }
+
+    private var listView: NSView? { (windowController as? MainWindowController)?.view.list }
+
+    override func selectNextKeyView(_ sender: Any?) {
+        let path = pathViews
+        guard !path.isEmpty, let list = listView, let current = firstResponder as? NSView else { return super.selectNextKeyView(sender) }
+        if let i = path.firstIndex(of: current) {
+            makeFirstResponder(i + 1 < path.count ? path[i + 1] : list)
+        } else if current.nextValidKeyView === list {
+            makeFirstResponder(path[0])
+        } else {
+            super.selectNextKeyView(sender)
+        }
+    }
+
+    override func selectPreviousKeyView(_ sender: Any?) {
+        let path = pathViews
+        guard !path.isEmpty, let list = listView, let current = firstResponder as? NSView else {
+            return super.selectPreviousKeyView(sender)
+        }
+        if let i = path.firstIndex(of: current) {
+            if i > 0 { makeFirstResponder(path[i - 1]) } else if let before = list.previousValidKeyView { makeFirstResponder(before) }
+        } else if current === list {
+            makeFirstResponder(path[path.count - 1])
+        } else {
+            super.selectPreviousKeyView(sender)
+        }
+    }
 }
 
 /// Tab bar (when shown) on top of the current tab's views.

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **VoiceOver and the keyboard reach more of Porpoise.** With VoiceOver, files can be selected (VO-Space) and show their context menu (VO-Shift-M), and each one reads what the view shows about it: its columns, tags, and whether it's cut or hidden. VoiceOver also reads the folder's full item count. Details column headers say which way they sort, the context menu's tag dots are checkboxes, every folder of a long path can be reached, tabs have a close button, and toggle buttons read on or off. With Full Keyboard Access on, Tab reaches the tab bar and the path (←/→ move along them), and no longer stops on buttons of hidden bars.
 - **Cleaner icons.** The Applications folder no longer shows as a giant Apple logo among the folders; Properties shows a photo's or document's own picture instead of a generic type icon. Document icons keep a soft edge on a white background and are dimmed in dark mode, so a page is no longer the brightest thing on screen.
 - **Search results say where they are.** The Path column shows each result's folder from the one you searched ("Demo/Photos"), or from your home folder ("~/Documents"), and shortens long paths in the middle so their end stays visible.
 - **List details.** The Details view's Name header lines up with the icons below it; the Information panel says "Read & Write" or "Read Only" instead of `-rw-r--r--`; large photo previews keep a small gap above their names, with a hairline edge.

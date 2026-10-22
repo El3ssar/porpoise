@@ -34,16 +34,92 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
 
     private var segments: [Segment] = []
 
-    /// VoiceOver: the path's folders, each pressable (the arrows and buttons are reachable through the menus).
-    override func accessibilityChildren() -> [Any]? {
+    /// Every folder of the path, from the root place down, also those collapsed into "…" or left out of a narrow field.
+    private var trail: [(url: URL, title: String)] = []
 
+    /// VoiceOver: the path's folders, each pressable, including those that don't fit (at the "…", or at the one
+    /// folder a narrow field shows). The arrows and buttons are reachable through the menus.
+    override func accessibilityChildren() -> [Any]? {
         if isEditing { return super.accessibilityChildren() }
-        return segments.indices.compactMap { i -> Any? in
-            guard case .crumb(let u, let title, _) = segments[i].kind else { return nil }
+        return trail.map { crumb in
+            let u = crumb.url
             return AccessibleRegion(
-                in: self, role: .button, label: title,
-                frame: { [weak self] in self.flatMap { i < $0.segments.count ? $0.segments[i].rect : nil } ?? .zero },
+                in: self, role: .button, label: crumb.title,
+                frame: { [weak self] in self?.accessibilityFrame(of: u) ?? .zero },
                 press: { [weak self] in if let self { self.delegate?.breadcrumb(self, navigateTo: u, newTab: false) } })
+        }
+    }
+
+    /// Where a folder of the path is drawn: its crumb, the "…" holding it, or else the first thing shown.
+    private func accessibilityFrame(of u: URL) -> CGRect {
+        let shown = segments.first {
+            switch $0.kind {
+            case .crumb(let c, _, _): return c == u
+            case .more(let urls): return urls.contains(u)
+            default: return false
+            }
+        }
+        return
+            (shown
+            ?? segments.first {
+                if case .crumb = $0.kind { return true }; return false
+            })?.rect ?? .zero
+    }
+
+    // MARK: Keyboard (Full Keyboard Access)
+
+    /// The segment that has keyboard focus: Tab reaches the path, ←/→ move along it, Space or Return opens the folder
+    /// (or the "…" menu).
+    private var focused: Int? {
+        didSet {
+            if focused != oldValue { noteFocusRingMaskChanged(); needsDisplay = true }
+        }
+    }
+    private var focusable: [Int] {
+        segments.indices.filter {
+            switch segments[$0].kind {
+            case .crumb, .more: return true
+            default: return false
+            }
+        }
+    }
+
+    override var acceptsFirstResponder: Bool { KeyboardAccess.isFull() && !isEditing }
+    override var canBecomeKeyView: Bool { acceptsFirstResponder && !isHiddenOrHasHiddenAncestor }
+
+    override func becomeFirstResponder() -> Bool {
+        focused = focusable.last
+        return true
+    }
+
+    override func resignFirstResponder() -> Bool {
+        focused = nil
+        return true
+    }
+
+    override var focusRingMaskBounds: NSRect { focused.map { i in i < segments.count ? segments[i].rect : .zero } ?? .zero }
+    override func drawFocusRingMask() {
+        guard let i = focused, i < segments.count else { return }
+        NSBezierPath(roundedRect: segments[i].rect.insetBy(dx: 0, dy: 2), xRadius: 6, yRadius: 6).fill()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        let order = focusable
+        guard !isEditing, let i = focused, let at = order.firstIndex(of: i) else { return super.keyDown(with: event) }
+        switch Int(event.keyCode) {
+        case 123: focused = order[max(0, at - 1)]  // ←
+        case 124: focused = order[min(order.count - 1, at + 1)]  // →
+        case 49, 36, 76: activateSegment(i)  // Space, Return, Enter
+        default: super.keyDown(with: event)
+        }
+    }
+
+    private func activateSegment(_ i: Int) {
+        guard i < segments.count else { return }
+        switch segments[i].kind {
+        case .crumb(let u, _, _): delegate?.breadcrumb(self, navigateTo: u, newTab: false)
+        case .more(let urls): showMenu(urls.map { ($0, $0.folderName) }, at: segments[i].rect)
+        default: break
         }
     }
     private var hover: Int?
@@ -103,6 +179,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         let crumbs = url.isFileURL ? localCrumbs() : remoteCrumbs()
         // Virtual locations (network:, recent:) have no subfolder menus.
         let arrows = LocationKind.of(url).hasHierarchy
+        trail = crumbs
         for (i, c) in crumbs.enumerated() {
             let last = i == crumbs.count - 1
             segs.append(Segment(kind: .crumb(c.url, c.title, last)))
@@ -111,6 +188,8 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         segments = segs
         hover = nil
         layoutSegments()
+        // Keyboard focus stays on the path: on the folder now shown.
+        if focused != nil { focused = focusable.last }
         needsDisplay = true
         setAccessibilityValue(LocationNaming.address(for: url))
     }

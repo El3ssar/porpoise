@@ -17,7 +17,7 @@ final class DetailsHeaderView: NSView {
 
     override var isFlipped: Bool { true }
 
-    private func columnRects() -> [(ItemRole, CGRect)] {
+    fileprivate func columnRects() -> [(ItemRole, CGRect)] {
         guard let list else { return [] }
         var x = ItemListView.sidePadding - scrollX
         var out: [(ItemRole, CGRect)] = []
@@ -200,17 +200,22 @@ final class DetailsHeaderView: NSView {
             break
         }
         let p = convert(event.locationInWindow, from: nil)
-        if let role = pressedRole, columnRects().first(where: { $0.1.contains(p) })?.0 == role {
-            var props = list.model.props
-            if props.sortRole == role {
-                props.sortOrder = props.sortOrder == .ascending ? .descending : .ascending
-            } else {
-                props.sortRole = role
-                props.sortOrder = .ascending
-            }
-            list.model.props = props
-            list.model.saveProps()
+        if let role = pressedRole, columnRects().first(where: { $0.1.contains(p) })?.0 == role { sort(by: role) }
+    }
+
+    /// A click on a column: sort by it, or reverse the order when it's already the sort column.
+    func sort(by role: ItemRole) {
+        guard let list else { return }
+        var props = list.model.props
+        if props.sortRole == role {
+            props.sortOrder = props.sortOrder == .ascending ? .descending : .ascending
+        } else {
+            props.sortRole = role
+            props.sortOrder = .ascending
         }
+        list.model.props = props
+        list.model.saveProps()
+        NSAccessibility.post(element: self, notification: .valueChanged)
     }
 
     // MARK: Context menu (Dolphin's header menu)
@@ -255,4 +260,60 @@ final class DetailsHeaderView: NSView {
         needsDisplay = true
         window?.invalidateCursorRects(for: self)
     }
+}
+
+// MARK: Accessibility
+
+/// VoiceOver: the header is a group of column buttons; each says its column and, for the sort column, the direction,
+/// and sorts on "press" as a click does.
+extension DetailsHeaderView {
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .group }
+    override func accessibilityLabel() -> String? { "Columns" }
+    override func accessibilityChildren() -> [Any]? { columnRects().map { DetailsColumnElement(header: self, role: $0.0) } }
+}
+
+/// One column of the Details header for VoiceOver.
+final class DetailsColumnElement: NSAccessibilityElement {
+    private weak var header: DetailsHeaderView?
+    let role: ItemRole
+
+    init(header: DetailsHeaderView, role: ItemRole) {
+        self.header = header
+        self.role = role
+        super.init()
+        setAccessibilityParent(header)
+        setAccessibilityRole(.button)
+        setAccessibilityEnabled(true)
+    }
+
+    private var sortedAscending: Bool? {
+        guard let props = header?.list?.model.props, props.sortRole == role else { return nil }
+        return props.sortOrder == .ascending
+    }
+
+    override func accessibilityIdentifier() -> String { "column-" + role.rawValue }
+    override func accessibilityLabel() -> String? { role.title }
+    override func accessibilityValue() -> Any? { sortedAscending.map { $0 ? "sorted ascending" : "sorted descending" } }
+    override func accessibilitySortDirection() -> NSAccessibilitySortDirection {
+        sortedAscending.map { $0 ? .ascending : .descending } ?? .unknown
+    }
+    override func accessibilityHelp() -> String? { "Sorts by \(role.title.lowercased())" }
+
+    override func accessibilityFrameInParentSpace() -> NSRect { header?.columnRects().first { $0.0 == role }?.1 ?? .zero }
+    override func accessibilityFrame() -> NSRect {
+        guard let header, let window = header.window else { return .zero }
+        return window.convertToScreen(header.convert(accessibilityFrameInParentSpace(), to: nil))
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        header?.sort(by: role)
+        return header != nil
+    }
+
+    override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? DetailsColumnElement else { return false }
+        return other.role == role && other.header === header
+    }
+    override var hash: Int { role.hashValue }
 }

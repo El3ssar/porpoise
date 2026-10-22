@@ -2,6 +2,12 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
+/// Full Keyboard Access (System Settings › Keyboard › Keyboard navigation): custom controls take focus only with it
+/// on, as standard buttons do. Replaceable in tests.
+enum KeyboardAccess {
+    nonisolated(unsafe) static var isFull: () -> Bool = { NSApp.isFullKeyboardAccessEnabled }
+}
+
 /// Flat Breeze-style tool button (icon, optional text), with hover and pressed backgrounds.
 class FlatButton: NSControl {
     var iconName: String? { didSet { needsDisplay = true } }
@@ -9,7 +15,15 @@ class FlatButton: NSControl {
     /// Off: icon only (the title stays the accessibility label), for bars short of room.
     var showsTitle = true { didSet { if showsTitle != oldValue { invalidateIntrinsicContentSize(); needsDisplay = true } } }
     private var shownTitle: String { showsTitle || iconName == nil ? title : "" }
-    var isToggled = false { didSet { needsDisplay = true; setAccessibilityValue(isToggled ? 1 : 0) } }
+    /// A toggle (Split, a panel): VoiceOver reads it as a toggle button that's on or off, not "1" or "0".
+    var isToggled = false {
+        didSet {
+            needsDisplay = true
+            setAccessibilitySubrole(.toggle)
+            setAccessibilityValue(isToggled ? 1 : 0)
+            setAccessibilityValueDescription(isToggled ? "on" : "off")
+        }
+    }
     var showsMenuIndicator = false { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
     var iconSize: CGFloat = 16
     var cornerRadius: CGFloat = 4
@@ -45,8 +59,9 @@ class FlatButton: NSControl {
     // MARK: Keyboard and VoiceOver
 
     /// Reachable with Tab when Full Keyboard Access is on (System Settings › Keyboard), as standard buttons are.
-    override var acceptsFirstResponder: Bool { NSApp.isFullKeyboardAccessEnabled }
-    override var canBecomeKeyView: Bool { NSApp.isFullKeyboardAccessEnabled }
+    override var acceptsFirstResponder: Bool { KeyboardAccess.isFull() }
+    /// Not while hidden (a closed filter or search bar): overriding this skips AppKit's own check.
+    override var canBecomeKeyView: Bool { KeyboardAccess.isFull() && !isHiddenOrHasHiddenAncestor }
     override var focusRingMaskBounds: NSRect { bounds }
     override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius).fill() }
 
