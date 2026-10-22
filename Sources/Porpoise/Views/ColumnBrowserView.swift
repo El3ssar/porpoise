@@ -45,8 +45,7 @@ final class BrowserColumn {
             // The path item may have arrived with this listing.
             if let p = self.pathItem { self.showPath(p) }
         }
-        if let listing { model.showListing(of: listing) }
-        model.reload()
+        if listing.map(model.takeListing) != true { model.reload() }
     }
 
     /// Selects `item` as the path to the next column (grey while the keys are elsewhere) and keeps it in view.

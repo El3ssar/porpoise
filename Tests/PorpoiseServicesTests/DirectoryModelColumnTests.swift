@@ -80,6 +80,50 @@ import Testing
         #expect(other.items.isEmpty)
     }
 
+    @Test func aCurrentListingIsTakenWithoutReadingTheFolderAgain() async throws {
+        let s = try Scratch()
+        try s.file("a.txt")
+        try s.folder("sub")
+        let lender = try await DirectoryModel.loaded(s.url)
+        let m = DirectoryModel(location: s.url, prefetchFolders: false)
+        var loads = 0
+        m.onLoaded = { loads += 1 }
+        #expect(m.takeListing(of: lender))
+        #expect(!m.isLoading && m.rowNames == ["sub", "a.txt"] && loads == 1)
+        // It watches the folder from now on, as if it had read it.
+        try s.file("b.txt")
+        await expectEventually { m.rowNames == ["sub", "a.txt", "b.txt"] }
+        // Once it lists something, or from a model still reading or listing elsewhere: no.
+        #expect(!m.takeListing(of: lender))
+        let reading = DirectoryModel(location: s.url, prefetchFolders: false)
+        reading.reload()
+        #expect(!DirectoryModel(location: s.url, prefetchFolders: false).takeListing(of: reading))
+        #expect(!DirectoryModel(location: s.path("sub"), prefetchFolders: false).takeListing(of: lender))
+        // An empty folder's listing is taken too.
+        let empty = try await DirectoryModel.loaded(s.path("sub"))
+        let other = DirectoryModel(location: s.path("sub"), prefetchFolders: false)
+        #expect(other.takeListing(of: empty) && other.rows.isEmpty && !other.isLoading)
+        // A listing that failed is read again rather than taken.
+        let gone = try await DirectoryModel.loaded(s.path("missing"))
+        #expect(gone.loadError != nil && !DirectoryModel(location: s.path("missing"), prefetchFolders: false).takeListing(of: gone))
+    }
+
+    @Test func selectedItemsKeepRowOrderWhetherLookedUpOrGoneThrough() async throws {
+        let s = try Scratch()
+        for i in 0..<400 { try s.file(String(format: "f%03d.txt", i), "x") }
+        try s.folder("dir")
+        let m = try await DirectoryModel.loaded(s.url)
+        m.selection = [s.path("f010.txt"), s.path("dir"), s.path("f002.txt"), s.path("gone.txt")]
+        #expect(m.selectedItems.map(\.name) == ["dir", "f002.txt", "f010.txt"])
+        #expect(m.selectedCounts == (1, 2, 2))
+        // More than a few: gone through, the same answer.
+        m.selection = Set((0..<300).map { s.path(String(format: "f%03d.txt", 299 - $0)) })
+        #expect(m.selectedItems.map(\.name) == (0..<300).map { String(format: "f%03d.txt", $0) })
+        #expect(m.selectedCounts.files == 300 && m.selectedCounts.bytes == 300)
+        m.selection = []
+        #expect(m.selectedItems.isEmpty && m.selectedCounts == (0, 0, 0))
+    }
+
     @Test func anotherSortSortsTheLentItems() async throws {
         let s = try Scratch()
         try s.file("a.txt", size: 30)

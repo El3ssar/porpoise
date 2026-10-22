@@ -453,7 +453,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         list.scroll(.zero)  // first: a location that loads synchronously restores its position inside setLocation
         list.transitions.navigate()
         let lender = columnsWillNavigate(to: u)
-        model.setLocation(u)
+        model.setLocation(u, takingListingOf: lender?.model)
         columnsDidNavigate(lender: lender, selecting: selecting)
         if AppLibrary.isActive(for: u) { apps?.prepareForDisplay() }
         RecentLocations.shared.visit(u)

@@ -326,19 +326,24 @@ import Testing
         let big = try #require(b.after)
         try #require(await eventually(30) { big.model.rows.count == 10_000 && !big.model.isLoading })
 
-        // Into it and back out, ten times: the rows are there in the same turn, each move well within a frame budget.
-        var worst: TimeInterval = 0
+        // Into it and back out, ten times: the rows are there in the same turn, and neither side reads the folder again
+        // (the column's listing is current: it's taken as it is).
+        var times: [TimeInterval] = []
         for _ in 0..<10 {
             let t0 = Date()
             key(right, to: pane.list)
             #expect(pane.model.rows.count == 10_000 && pane.model.selection == [s.path("big/f00000.txt")])
+            #expect(!pane.model.isLoading)
             pane.layoutSubtreeIfNeeded()
             key(left, to: pane.list)
             #expect(pane.model.selection == [s.path("big")] && b.after?.model.rows.count == 10_000)
+            #expect(!pane.model.isLoading && b.after?.model.isLoading == false)
             pane.layoutSubtreeIfNeeded()
-            worst = max(worst, Date().timeIntervalSince(t0))
+            times.append(Date().timeIntervalSince(t0))
         }
-        #expect(worst < 0.25, "slowest round trip \(worst)s")
+        // Timing on a shared machine only catches a gross regression (PerfBench measures it: `columnkeys`).
+        let median = times.sorted()[times.count / 2]
+        #expect(median < 1, "median round trip \(median)s")
         // The far end of the column: its row is drawn where it is, and hit testing finds it.
         key(right, to: pane.list)
         key(119, to: pane.list)  // End

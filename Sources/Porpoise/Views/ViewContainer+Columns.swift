@@ -63,7 +63,8 @@ extension ViewContainer {
     /// After the pane went to its new folder (`lender`: the column that lent it its rows).
     func columnsDidNavigate(lender: BrowserColumn?, selecting: URL?) {
         guard let browser = columnBrowser else { return }
-        if let lender { model.showListing(of: lender.model) }
+        // Its listing was taken as it is (current: read and watched there), or shows while the folder is read again.
+        if let lender, model.items.isEmpty { model.showListing(of: lender.model) }
         if model.props.mode == .columns { model.browsesColumns = true }
         // The item to select is in the rows already: selected now, so the next column shows without waiting.
         if let s = selecting, let i = model.index(of: s) {
