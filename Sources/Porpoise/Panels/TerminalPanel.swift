@@ -97,7 +97,7 @@ final class TerminalPanel: NSView, LocalProcessTerminalViewDelegate {
     /// Desert-Konsole.colorscheme (from the Desert theme pack) mapped onto the terminal, or its light counterpart.
     private func applyKonsoleColors(_ t: TerminalView) {
         let preferences = Settings.shared.appearancePreferences
-        let theme = preferences.theme(dark: Theme.isDark)
+        let theme = Theme.palette(dark: Theme.isDark)
         let scheme =
             preferences.terminalScheme == "Custom"
             ? preferences.customTerminalPalette : TerminalPalette.builtIns.first { $0.name == preferences.terminalScheme }

@@ -1,15 +1,16 @@
 import AppKit
 import PorpoiseServices
 
-/// A macOS material (vibrancy) tinted with a Desert color: the wallpaper glows through softly, like Finder's
-/// sidebar and toolbar, while the colors stay those of the Desert-Dark scheme.
+/// A macOS material (vibrancy) tinted with a theme color: the wallpaper glows through softly, like Finder's
+/// sidebar and toolbar, while the colors stay those of the theme. The native theme leaves the material untinted, as
+/// Finder does.
 final class TintedMaterialView: NSVisualEffectView {
     private let tintLayer = CALayer()
     private let tint: NSColor
     private let tintAlpha: CGFloat
     private func updateTint() {
         let opaque = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
-        tintLayer.backgroundColor = tint.withAlphaComponent(opaque ? 1 : tintAlpha).cgColor
+        tintLayer.backgroundColor = tint.withAlphaComponent(Tokens.isNative ? 0 : opaque ? 1 : tintAlpha).cgColor
     }
 
     init(

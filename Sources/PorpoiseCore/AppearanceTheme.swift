@@ -135,6 +135,21 @@ public struct AppearanceTheme: Codable, Equatable, Sendable {
         "High Contrast": "000000 ff6666 66ff66 ffff00 66bbff ff88ff 00ffff ffffff 888888 ff8888 88ff88 ffff88 88ccff ffaaff 88ffff ffffff",
     ]
 
+    /// The native theme's name. Its colours are macOS's own (they follow light and dark, Increase Contrast and the
+    /// user's accent colour), so the app resolves them at drawing time; `system(dark:)` is their portable stand-in.
+    public static let systemName = "macOS"
+
+    /// The native theme's colours on a stock Mac (blue accent), in light or dark.
+    public static func system(dark: Bool) -> Self {
+        var theme =
+            dark
+            ? Self(name: systemName, isDark: true, background: "323232", view: "1e1e1e", text: "dfdfdf", accent: "0a84ff", secondary: "9a9a9a")
+            : Self(name: systemName, isDark: false, background: "ececec", view: "ffffff", text: "1d1d1f", accent: "007aff", secondary: "808080")
+        theme[.alternateRow] = dark ? ThemeColor(42, 42, 42) : ThemeColor(244, 245, 245)
+        theme[.selection] = dark ? ThemeColor(0, 89, 209) : ThemeColor(0, 100, 225)
+        return theme
+    }
+
     public static let builtIns: [Self] = [
         Self(name: "Breeze Light", isDark: false, background: "eef0f5", view: "fcfcfe", text: "222634", accent: "2d76c4", secondary: "626980"),
         Self(name: "Breeze Dark", isDark: true, background: "1d212f", view: "181c27", text: "d6dbf1", accent: "4489ce", secondary: "b4bcda"),

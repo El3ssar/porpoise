@@ -7,18 +7,19 @@ import UniformTypeIdentifiers
 enum AppearancePage {
     static func build(_ f: FormBuilder) {
         let s = Settings.shared
-        let themes = ["Follow system"] + AppearanceTheme.builtIns.map(\.name) + ["Custom"]
+        let themes = [AppearanceTheme.systemName, "Follow system"] + AppearanceTheme.builtIns.map(\.name) + ["Custom"]
         f.grouped = true
         f.section("Theme")
         f.themeCards(
             themes, selected: { s.appearancePreferences.themeName },
             theme: { i in
                 if let theme = AppearanceTheme.builtIns.first(where: { $0.name == themes[i] }) { return theme }
+                if themes[i] == AppearanceTheme.systemName { return Tokens.palette(dark: Theme.isDark) }
                 return s.appearancePreferences.theme(dark: Theme.isDark)
             }
         ) { i in
             s.updateAppearance { p in
-                if themes[i] == "Custom", p.customTheme == nil { p.customTheme = p.theme(dark: Theme.isDark) }
+                if themes[i] == "Custom", p.customTheme == nil { p.customTheme = Theme.palette(dark: Theme.isDark) }
                 p.themeName = themes[i]
             }
         }
@@ -43,14 +44,14 @@ enum AppearancePage {
                 }
             }
         }
-        f.button("Export Theme…") { writeFile(name: "Porpoise-theme.json") { try s.appearancePreferences.theme(dark: Theme.isDark).encoded() } }
+        f.button("Export Theme…") { writeFile(name: "Porpoise-theme.json") { try Theme.palette(dark: Theme.isDark).encoded() } }
         f.section("Colours")
         f.note("Changing a colour creates a custom theme. Changes preview immediately in open windows.")
         f.colorGrid(
             ThemeRole.allCases.map(\.title),
             values: { index in
                 let role = ThemeRole.allCases[index]
-                let c = s.appearancePreferences.theme(dark: Theme.isDark)[role]
+                let c = Theme.palette(dark: Theme.isDark)[role]
                 return NSColor(rgb: c.red, c.green, c.blue)
             },
             set: { index, color in
@@ -58,7 +59,7 @@ enum AppearancePage {
                 guard let c = color.usingColorSpace(.sRGB) else { return }
                 s.updateAppearance { p in
                     if role == .folderTint { p.folderVariant = "default" }
-                    var theme = p.theme(dark: Theme.isDark)
+                    var theme = Theme.palette(dark: Theme.isDark)
                     theme[role] = ThemeColor(
                         Int((c.redComponent * 255).rounded()), Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
                     theme.name = "Custom"; p.customTheme = theme; p.themeName = "Custom"
@@ -66,7 +67,7 @@ enum AppearancePage {
             })
         f.section("Icons")
         let icons =
-            ["Tela-circle", "Native macOS"] + IconTheme.bundledThemes + IconTheme.installedThemes.filter { !IconTheme.bundledThemes.contains($0) }
+            ["Native macOS", "Tela-circle"] + IconTheme.bundledThemes + IconTheme.installedThemes.filter { !IconTheme.bundledThemes.contains($0) }
         f.popup("Icon theme:", icons, icons.firstIndex(of: s.appearancePreferences.iconTheme) ?? 0) { i in
             s.updateAppearance { $0.iconTheme = icons[i] }
         }
@@ -146,7 +147,7 @@ enum AppearancePage {
             set: { index, color in
                 guard let c = color.usingColorSpace(.sRGB) else { return }
                 s.updateAppearance { p in
-                    var theme = p.theme(dark: Theme.isDark)
+                    var theme = Theme.palette(dark: Theme.isDark)
                     theme.terminalPalette[index] = ThemeColor(
                         Int((c.redComponent * 255).rounded()), Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
                     theme.name = "Custom"; p.customTheme = theme; p.themeName = "Custom"

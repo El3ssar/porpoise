@@ -48,10 +48,39 @@ enum Theme {
         }
     }
 
+    /// A theme colour: the system's in the native theme (`Tokens`), the palette's in the others.
     static func paletteColor(_ role: ThemeRole) -> NSColor {
         NSColor(name: nil) { appearance in
-            let c = Settings.shared.appearancePreferences.theme(dark: appearance.isDark)[role]
+            let preferences = Settings.shared.appearancePreferences
+            if preferences.usesSystemColors { return Tokens.resolved(role, in: appearance) }
+            let c = preferences.theme(dark: appearance.isDark)[role]
             return NSColor(rgb: c.red, c.green, c.blue)
+        }
+    }
+
+    /// The theme's palette in light or dark, the native theme's resolved from macOS (the accent colour included).
+    static func palette(dark: Bool) -> AppearanceTheme {
+        let preferences = Settings.shared.appearancePreferences
+        return preferences.usesSystemColors ? Tokens.palette(dark: dark) : preferences.theme(dark: dark)
+    }
+
+    /// One colour of `palette(dark:)`, without resolving the others (icon cache keys ask for it on every draw).
+    static func paletteColor(_ role: ThemeRole, dark: Bool) -> ThemeColor {
+        let preferences = Settings.shared.appearancePreferences
+        guard preferences.usesSystemColors, let appearance = NSAppearance(named: dark ? .darkAqua : .aqua) else {
+            return preferences.theme(dark: dark)[role]
+        }
+        return Tokens.themeColor(Tokens.resolved(role, in: appearance))
+    }
+
+    /// The native theme's system colour, else the palette's.
+    private static func native(_ system: NSColor, else other: NSColor) -> NSColor {
+        NSColor(name: nil) { appearance in
+            var c = other
+            appearance.performAsCurrentDrawingAppearance {
+                c = (Settings.shared.appearancePreferences.usesSystemColors ? system : other).usingColorSpace(.sRGB) ?? other
+            }
+            return c
         }
     }
 
@@ -59,9 +88,9 @@ enum Theme {
     static let windowText = paletteColor(.text)
     static let windowTextInactive = paletteColor(.secondaryText)
     static let activeText = paletteColor(.accent)
-    static let negativeText = color(dark: NSColor(rgb: 191, 97, 106), light: NSColor(rgb: 192, 57, 68))
+    static let negativeText = native(Tokens.danger, else: color(dark: NSColor(rgb: 191, 97, 106), light: NSColor(rgb: 192, 57, 68)))
     static let neutralText = paletteColor(.accent)
-    static let positiveText = color(dark: NSColor(rgb: 0, 160, 128), light: NSColor(rgb: 0, 122, 96))
+    static let positiveText = native(Tokens.success, else: color(dark: NSColor(rgb: 0, 160, 128), light: NSColor(rgb: 0, 122, 96)))
     // Transfer semantic text colours, with contrast on both alternating row backgrounds.
     static let transferPositive = color(dark: NSColor(rgb: 43, 181, 148), light: NSColor(rgb: 0, 122, 96))
     static let transferChanged = color(dark: NSColor(rgb: 216, 166, 87), light: NSColor(rgb: 161, 92, 0))
@@ -80,13 +109,19 @@ enum Theme {
     static let sidebarBackground = paletteColor(.sidebar)
     static let folderTint = paletteColor(.folderTint)
 
-    /// Breeze frame/separator color: text blended into the background at 20% (Breeze's "frameOutlineColor").
-    static let frame = derived { windowText.mixed(with: windowBackground, 0.80) }
-    static let separator = derived { windowText.mixed(with: windowBackground, 0.85) }
+    /// Breeze frame/separator color: text blended into the background at 20% (Breeze's "frameOutlineColor"); macOS's
+    /// separator in the native theme. Increase Contrast doubles the text's share (the system colour does so itself).
+    static let frame = native(.separatorColor, else: derived { windowText.mixed(with: windowBackground, increasedContrast ? 0.55 : 0.80) })
+    static let separator = native(.separatorColor, else: derived { windowText.mixed(with: windowBackground, increasedContrast ? 0.6 : 0.85) })
     /// The thin line under the toolbar and above the status bar, and the split view's divider.
-    static let hairline = color(dark: NSColor.black.withAlphaComponent(0.30), light: NSColor.black.withAlphaComponent(0.10))
-    /// A disabled label: the text color, faded.
-    static let disabledText = derived { windowText.withAlphaComponent(0.4) }
+    static let hairline = native(
+        .separatorColor,
+        else: derived {
+            NSColor.black.withAlphaComponent(
+                NSAppearance.currentDrawing().isDark ? (increasedContrast ? 0.6 : 0.30) : (increasedContrast ? 0.35 : 0.10))
+        })
+    /// A disabled label: the text color, faded (less with Increase Contrast).
+    static let disabledText = native(.tertiaryLabelColor, else: derived { windowText.withAlphaComponent(increasedContrast ? 0.6 : 0.4) })
     static let buttonHoverBackground = derived { windowText.withAlphaComponent(0.10) }
     static let buttonPressedBackground = derived { windowText.withAlphaComponent(0.16) }
     /// Field (line edit) background: View background.
@@ -98,23 +133,27 @@ enum Theme {
     static var itemSelectedFill: NSColor { selection.withAlphaComponent(increasedContrast ? 0.75 : 0.32) }
     static var itemSelectedHoverFill: NSColor { selection.withAlphaComponent(increasedContrast ? 0.85 : 0.45) }
     static var itemSelectedOutline: NSColor { increasedContrast ? windowText : selection.withAlphaComponent(0.55) }
+    /// Increase Contrast (Accessibility › Display). Tests set it, so a machine's own setting can't change what they see.
+    nonisolated(unsafe) static var systemIncreasesContrast: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast }
     static var increasedContrast: Bool {
-        NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        systemIncreasesContrast()
             || Settings.shared.appearancePreferences.theme(dark: isDark).name == "High Contrast"
     }
-    static let itemHoverFill = derived { paletteColor(.hover).withAlphaComponent(0.06) }
+    static let itemHoverFill = derived { paletteColor(.hover).withAlphaComponent(increasedContrast ? 0.14 : 0.06) }
     static let itemHoverOutline = NSColor.clear
-    /// Places panel current entry: Selection at ~23% over the window color, no outline (measured).
-    static let placesSelectedFill = derived { selection.withAlphaComponent(0.23) }
+    /// Places panel current entry: Selection at ~23% over the window color, no outline (measured); half with Increase
+    /// Contrast.
+    static let placesSelectedFill = derived { selection.withAlphaComponent(increasedContrast ? 0.5 : 0.23) }
     /// Split view: inactive view background is the View color with alpha 150/255 (over the window color).
     static let inactiveViewBackgroundOpaque = derived { windowBackground.mixed(with: viewBackground, 150.0 / 255.0) }
 
     // MARK: Light and dark
 
-    /// The look chosen in Settings: macOS's (nil), or always light or dark.
+    /// The look chosen in Settings: macOS's (nil), or always light or dark. A fixed palette has its own; the native
+    /// theme and "Follow system" follow the Appearance setting.
     static var appearance: NSAppearance? {
         let preferences = Settings.shared.appearancePreferences
-        if preferences.themeName != "Follow system" {
+        if preferences.themeName != "Follow system", !preferences.usesSystemColors {
             return NSAppearance(named: preferences.theme(dark: isDark).isDark ? .darkAqua : .aqua)
         }
         switch Settings.shared.appearance {

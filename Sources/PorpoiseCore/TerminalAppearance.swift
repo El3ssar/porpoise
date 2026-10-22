@@ -118,11 +118,11 @@ public enum ViewDensity: String, Codable, CaseIterable, Sendable {
 /// Complete portable appearance settings. This schema is versioned independently of UserDefaults keys.
 public struct AppearancePreferences: Codable, Equatable, Sendable {
     public var version = 1
-    public var themeName = "Follow system"
+    public var themeName = AppearanceTheme.systemName
     public var customTheme: AppearanceTheme?
     public var lightThemeName = "Breeze Light"
     public var darkThemeName = "Breeze Dark"
-    public var iconTheme = "Tela-circle"
+    public var iconTheme = "Native macOS"
     public var folderVariant = "default"
     public var uiFontName = ""
     public var uiFontSize = 13.0
@@ -188,7 +188,10 @@ public struct AppearancePreferences: Codable, Equatable, Sendable {
         if let p = customTerminalPalette, p.colors.count != 16 { throw AppearanceError.invalidTerminalScheme }
         if externalTerminal == .custom { _ = try TerminalCommandTemplate.expand(externalCommand, directory: "/") }
     }
+    /// The native theme: colours from macOS, not from a palette.
+    public var usesSystemColors: Bool { themeName == AppearanceTheme.systemName }
     public func theme(dark: Bool) -> AppearanceTheme {
+        if usesSystemColors { return AppearanceTheme.system(dark: dark) }
         if themeName == "Custom", let customTheme { return customTheme }
         let name = themeName == "Follow system" ? (dark ? darkThemeName : lightThemeName) : themeName
         return AppearanceTheme.builtIns.first { $0.name == name } ?? AppearanceTheme.builtIns[dark ? 1 : 0]

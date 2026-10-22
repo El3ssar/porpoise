@@ -123,6 +123,7 @@ import Testing
     }
     @Test func followsSystemPairAndFixedThemes() {
         var p = AppearancePreferences()
+        p.themeName = "Follow system"
         #expect(p.theme(dark: false).name == "Breeze Light")
         #expect(p.theme(dark: true).name == "Breeze Dark")
         p.darkThemeName = "Nord"

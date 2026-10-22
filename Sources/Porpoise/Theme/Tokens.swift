@@ -1,0 +1,100 @@
+import AppKit
+import PorpoiseCore
+import PorpoiseServices
+
+/// The design tokens of the native "macOS" theme, the default: system colours that follow light and dark, Increase
+/// Contrast and the user's accent colour, and the type, corner and spacing scales new UI is built from.
+enum Tokens {
+    /// Whether the chosen theme is the native one: its colours come from macOS, not from a palette.
+    static var isNative: Bool { Settings.shared.appearancePreferences.usesSystemColors }
+
+    /// An accent colour that replaces the user's (tests set it, so a machine's own setting can't change what they see).
+    nonisolated(unsafe) static var accentOverride: NSColor?
+
+    /// The user's accent colour (System Settings › Appearance).
+    static var accent: NSColor { accentOverride ?? .controlAccentColor }
+
+    /// The selection in the focused view: macOS's, which follows the accent colour.
+    static var selection: NSColor { accentOverride ?? .selectedContentBackgroundColor }
+
+    /// The selection in a view that isn't focused, or a window that isn't key.
+    static let unemphasizedSelection = NSColor.unemphasizedSelectedContentBackgroundColor
+
+    /// The system colour for each theme role.
+    static func color(_ role: ThemeRole) -> NSColor {
+        switch role {
+        case .windowBackground, .panel, .sidebar: return .windowBackgroundColor
+        case .viewBackground: return .controlBackgroundColor
+        case .alternateRow: return NSColor.alternatingContentBackgroundColors[1]
+        case .selection: return selection
+        case .selectionText, .text, .hover: return .labelColor
+        case .secondaryText: return .secondaryLabelColor
+        case .accent, .folderTint: return accent
+        }
+    }
+
+    /// `role` as an opaque sRGB colour in `appearance`. A translucent one (the dark alternate row is white at 5%) is
+    /// laid over the view background, as it's drawn.
+    static func resolved(_ role: ThemeRole, in appearance: NSAppearance) -> NSColor {
+        var c = NSColor.black
+        appearance.performAsCurrentDrawingAppearance {
+            let color = color(role).usingColorSpace(.sRGB) ?? .black
+            guard color.alphaComponent < 1, let base = NSColor.controlBackgroundColor.usingColorSpace(.sRGB) else {
+                c = color
+                return
+            }
+            c = base.blended(withFraction: color.alphaComponent, of: color.withAlphaComponent(1)) ?? color
+        }
+        return c
+    }
+
+    /// The native theme as a portable palette, in light or dark: what the theme gallery previews, Export Theme writes
+    /// and a custom theme starts from.
+    static func palette(dark: Bool) -> AppearanceTheme {
+        var theme = AppearanceTheme.system(dark: dark)
+        guard let appearance = NSAppearance(named: dark ? .darkAqua : .aqua) else { return theme }
+        for role in ThemeRole.allCases { theme[role] = themeColor(resolved(role, in: appearance)) }
+        return theme
+    }
+
+    static func themeColor(_ c: NSColor) -> ThemeColor {
+        ThemeColor(Int((c.redComponent * 255).rounded()), Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
+    }
+
+    // Status colours.
+    static let success = NSColor.systemGreen
+    static let warning = NSColor.systemOrange
+    static let danger = NSColor.systemRed
+
+    /// Type sizes for 13 pt body text, scaled with Settings › font size (`scaled`).
+    enum FontSize {
+        static let caption: CGFloat = 10
+        static let small: CGFloat = 11
+        static let body: CGFloat = 13
+        static let title3: CGFloat = 15
+        static let title2: CGFloat = 17
+        static let title: CGFloat = 22
+        static let largeTitle: CGFloat = 26
+
+        /// `size` scaled by the font size chosen in Settings (13 pt is 1×).
+        static func scaled(_ size: CGFloat) -> CGFloat { (size * Theme.fontSize / body).rounded() }
+    }
+
+    /// Corner radii: small controls, rows, cards, sheets.
+    enum Radius {
+        static let small: CGFloat = 4
+        static let row: CGFloat = 6
+        static let card: CGFloat = 10
+        static let sheet: CGFloat = 14
+    }
+
+    /// Spacing steps.
+    enum Spacing {
+        static let xs: CGFloat = 4
+        static let s: CGFloat = 8
+        static let m: CGFloat = 12
+        static let l: CGFloat = 16
+        static let xl: CGFloat = 24
+        static let xxl: CGFloat = 32
+    }
+}

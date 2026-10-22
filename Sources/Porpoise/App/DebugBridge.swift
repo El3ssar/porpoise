@@ -122,6 +122,8 @@ final class DebugBridge: NSObject {
         let v = w.view
         let state: [String: Any] = [
             "toolbarCommands": Settings.shared.toolbarCommands.map(\.rawValue),
+            "theme": Settings.shared.appearancePreferences.themeName,
+            "iconTheme": Settings.shared.appearancePreferences.iconTheme,
             "url": v.url.isFileURL ? v.url.path : v.url.absoluteString,
             "mode": v.model.props.mode.rawValue,
             "zoom": v.model.props.zoomLevel(for: v.model.props.mode),
