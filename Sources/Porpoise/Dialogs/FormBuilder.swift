@@ -188,12 +188,27 @@ final class FormBuilder: NSObject {
         _ label: String, _ items: [String], _ selected: @autoclosure @escaping () -> Int, enabled: (() -> Bool)? = nil,
         _ set: @escaping (Int) -> Void
     ) {
+        popup(label, items: { items }, selected(), enabled: enabled, set)
+    }
+
+    /// Titles that follow another preference, such as the selected byte units.
+    func popup(
+        _ label: String, items: @escaping () -> [String], _ selected: @autoclosure @escaping () -> Int, enabled: (() -> Bool)? = nil,
+        _ set: @escaping (Int) -> Void
+    ) {
         let p = ClosurePopup { set($0.indexOfSelectedItem) }
-        p.addItems(withTitles: items)
         if grouped { p.widthAnchor.constraint(lessThanOrEqualToConstant: 250).isActive = true }
         let row = labeled(label, p)
         contentStack.addArrangedSubview(row)
-        track(row, enabled: enabled) { [weak p] in p?.selectItem(at: min(max(0, selected()), items.count - 1)) }
+        track(row, enabled: enabled) { [weak p] in
+            guard let p else { return }
+            let titles = items()
+            if p.itemTitles != titles {
+                p.removeAllItems()
+                p.addItems(withTitles: titles)
+            }
+            p.selectItem(at: min(max(0, selected()), titles.count - 1))
+        }
     }
 
     @discardableResult

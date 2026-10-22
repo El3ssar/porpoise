@@ -38,6 +38,30 @@ import Testing
         }
     }
 
+    @Test func accountCacheLimitPopupFollowsByteUnitsWithoutChangingItsValue() throws {
+        _ = NSApplication.shared
+        let previous = CloudOfflineHub.service
+        let demo = DemoOfflineService()
+        CloudOfflineHub.service = demo
+        defer { CloudOfflineHub.service = previous }
+        let form = FormBuilder()
+        AccountsSettingsPage.offlineSection(form)
+        func findPopup(_ view: NSView) -> NSPopUpButton? {
+            if let popup = view as? NSPopUpButton { return popup }
+            return view.subviews.lazy.compactMap(findPopup).first
+        }
+        let popup = try #require(findPopup(form.view))
+        let decimalTitles = popup.itemTitles
+        #expect(popup.indexOfSelectedItem == 1)
+        #expect(decimalTitles.first == FileFormat.byteLimitTitle(1 << 30))
+        Settings.shared.binaryUnits = true
+        #expect(popup.itemTitles == ["1 GiB", "5 GiB", "10 GiB", "25 GiB", "No limit"])
+        #expect(popup.indexOfSelectedItem == 1 && demo.cacheLimit == 5 << 30)
+        Settings.shared.binaryUnits = false
+        #expect(popup.itemTitles == decimalTitles)
+        #expect(popup.indexOfSelectedItem == 1 && demo.cacheLimit == 5 << 30)
+    }
+
     @Test func byteUnitsRefreshStatusAndCompactMeasurementsWithoutReloading() throws {
         _ = NSApplication.shared
         let scratch = try Scratch()
