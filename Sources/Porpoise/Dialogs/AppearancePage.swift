@@ -71,7 +71,8 @@ enum AppearancePage {
             })
         f.section("Icons")
         let icons =
-            ["Native macOS", "Tela-circle"] + IconTheme.bundledThemes + IconTheme.installedThemes.filter { !IconTheme.bundledThemes.contains($0) }
+            ["Native macOS", Icons.nativeColourTheme, "Tela-circle"] + IconTheme.bundledThemes
+            + IconTheme.installedThemes.filter { !IconTheme.bundledThemes.contains($0) }
         f.popup("Icon theme:", icons, icons.firstIndex(of: s.appearancePreferences.iconTheme) ?? 0) { i in
             s.updateAppearance { $0.iconTheme = icons[i] }
         }

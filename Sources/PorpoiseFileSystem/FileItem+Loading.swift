@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import PorpoiseCore
 import UniformTypeIdentifiers
@@ -18,7 +19,10 @@ extension FileItem {
     }
 
     /// `load`, from values already read (a listing fetches them for all its entries at once).
-    static func load(_ url: URL, values v: URLResourceValues) -> FileItem? {
+    static func load(
+        _ url: URL, values v: URLResourceValues,
+        finderMetadata: (URL) -> FinderMetadata? = FileItem.readFinderMetadata
+    ) -> FileItem? {
         let keys = resourceKeySet
         // The file system's spelling (case, a volume's name for "/"), except that Foundation drops a leading U+FEFF
         // from names it reads: then the URL's own name is the real one.
@@ -45,11 +49,21 @@ extension FileItem {
         var perms = 0o644
         var owner: String?
         var group: String?
-        var st = stat()
-        if lstat(url.path, &st) == 0 {
-            perms = Int(st.st_mode & 0o7777)
-            owner = Self.userName(st.st_uid)
-            group = Self.groupName(st.st_gid)
+        var customIcon = false
+        if let metadata = finderMetadata(url) {
+            customIcon = metadata.customIcon
+            owner = Self.userName(metadata.uid)
+            group = Self.groupName(metadata.gid)
+            perms = Int(metadata.mode & 0o7777)
+        } else {
+            // Filesystems that cannot return Finder info still supply the existing POSIX metadata.
+            var st = stat()
+            if lstat(url.path, &st) == 0 {
+                perms = Int(st.st_mode & 0o7777)
+                owner = Self.userName(st.st_uid)
+                group = Self.groupName(st.st_gid)
+            }
+            customIcon = customIconFlag(url)
         }
         return FileItem(
             url: url, name: name, isDirectory: isDir, isSymlink: isLink,
@@ -58,7 +72,35 @@ extension FileItem {
             modificationDate: v.contentModificationDate, creationDate: v.creationDate,
             accessDate: v.contentAccessDate, contentType: contentType,
             posixPermissions: perms, owner: owner, group: group, linkDestination: linkDest,
-            isReadable: v.isReadable ?? true, isWritable: v.isWritable ?? true)
+            isReadable: v.isReadable ?? true, isWritable: v.isWritable ?? true, hasCustomIcon: customIcon)
+    }
+
+    struct FinderMetadata {
+        let uid: uid_t
+        let gid: gid_t
+        let mode: UInt32
+        let customIcon: Bool
+    }
+
+    /// Fetch Finder info with ownership/mode in one syscall, replacing lstat. Attribute order is defined
+    /// by attr.h; returned fields are packed on 4-byte boundaries. A nil result selects the POSIX fallback.
+    static func readFinderMetadata(_ url: URL) -> FinderMetadata? {
+        var attributes = attrlist()
+        attributes.bitmapcount = UInt16(ATTR_BIT_MAP_COUNT)
+        attributes.commonattr = attrgroup_t(ATTR_CMN_FNDRINFO | ATTR_CMN_OWNERID | ATTR_CMN_GRPID | ATTR_CMN_ACCESSMASK)
+        var metadata = [UInt32](repeating: 0, count: 12)
+        guard getattrlist(url.path, &attributes, &metadata, metadata.count * 4, UInt32(FSOPT_NOFOLLOW)) == 0, metadata[0] >= 48 else { return nil }
+        return FinderMetadata(
+            uid: metadata[9], gid: metadata[10], mode: metadata[11],
+            customIcon: metadata.withUnsafeBytes { $0[12] & 0x04 != 0 })
+    }
+
+    /// Finder flags are the big-endian UInt16 at bytes 8–9; kHasCustomIcon is 0x0400.
+    /// This is part of loading the item's other metadata, off the drawing path.
+    private static func customIconFlag(_ url: URL) -> Bool {
+        var info = [UInt8](repeating: 0, count: 32)
+        let count = getxattr(url.path, "com.apple.FinderInfo", &info, info.count, 0, XATTR_NOFOLLOW)
+        return count >= 10 && info[8] & 0x04 != 0
     }
 
     nonisolated(unsafe) private static var userCache: [uid_t: String] = [:]

@@ -23,6 +23,13 @@ final class Icons {
     private func store(_ image: NSImage, _ key: NSString, size: CGFloat, looks: Int = 1) {
         cache.setObject(image, forKey: key, cost: max(1, Int(size * size)) * 4 * 4 * looks)
     }
+    /// Coloured-artwork decisions are shared by type; no per-file rasterisation in the draw path.
+    private let nativePreservation: NSCache<NSString, NSNumber> = {
+        let c = NSCache<NSString, NSNumber>()
+        c.countLimit = 3000
+        return c
+    }()
+
     /// Resolved Finder alias targets (nil: unresolvable).
     private let aliasTargets: NSCache<NSString, AliasTarget> = {
         let c = NSCache<NSString, AliasTarget>()
@@ -39,6 +46,7 @@ final class Icons {
             guard Self.redraws(after: n.object as? String) else { return }
             self?.cache.removeAllObjects()
             self?.flattened.removeAllObjects()
+            self?.nativePreservation.removeAllObjects()
         }
     }
 
@@ -284,7 +292,11 @@ final class Icons {
 
     /// Image for a file item: real app icons for .app bundles (Mac), otherwise the Tela icon.
     func image(for item: FileItem, size: CGFloat, selected: Bool = false) -> NSImage {
-        if Settings.shared.appearancePreferences.iconTheme == "Native macOS" { return nativeImage(for: item, size: size) }
+        let theme = Settings.shared.appearancePreferences.iconTheme
+        if theme == "Native macOS" || theme == Self.nativeColourTheme {
+            let native = nativeImage(for: item, size: size)
+            return theme == Self.nativeColourTheme ? nativeColourImage(native, for: item, size: size) : native
+        }
         // Finder aliases look like their original (the view adds the link emblem).
         if item.isAliasFile, let t = aliasTarget(of: item), !t.isAliasFile { return image(for: t, size: size, selected: selected) }
         if item.isApplication || (item.isPackage && !item.isBrowsableFolder && item.fileExtension.lowercased() == "app") {
@@ -350,6 +362,170 @@ final class Icons {
         }
         if let t = item.utType, !t.isDynamic { return t }
         return .data
+    }
+
+    static let nativeColourTheme = "Native, colour-coded"
+
+    enum NativeFamily: CaseIterable {
+        case pdf, word, sheet, slides, image, video, audio, archive, code, prose, unknown
+
+        func color(dark: Bool) -> NSColor {
+            let rgb: (Double, Double, Double)
+            switch self {
+            case .pdf: rgb = dark ? (0.81, 0.25, 0.28) : (0.73, 0.18, 0.22)
+            case .word: rgb = dark ? (0.28, 0.52, 0.83) : (0.20, 0.40, 0.72)
+            case .sheet: rgb = dark ? (0.26, 0.62, 0.41) : (0.18, 0.49, 0.32)
+            case .slides: rgb = dark ? (0.85, 0.46, 0.23) : (0.76, 0.35, 0.16)
+            case .image: rgb = dark ? (0.22, 0.61, 0.62) : (0.12, 0.48, 0.51)
+            case .video: rgb = dark ? (0.60, 0.42, 0.79) : (0.49, 0.32, 0.68)
+            case .audio: rgb = dark ? (0.79, 0.38, 0.57) : (0.69, 0.27, 0.46)
+            case .archive: rgb = dark ? (0.68, 0.51, 0.31) : (0.56, 0.39, 0.20)
+            case .code: rgb = dark ? (0.36, 0.50, 0.72) : (0.27, 0.39, 0.61)
+            case .prose: rgb = dark ? (0.43, 0.55, 0.62) : (0.34, 0.45, 0.53)
+            case .unknown: rgb = dark ? (0.56, 0.57, 0.59) : (0.44, 0.45, 0.47)
+            }
+            return NSColor(srgbRed: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
+        }
+    }
+
+    static func nativeFamily(for item: FileItem) -> NativeFamily {
+        let t = nativeType(for: item)
+        let ext = item.fileExtension.lowercased()
+        if t.conforms(to: .pdf) { return .pdf }
+        if t.conforms(to: .spreadsheet) || ["csv", "numbers", "xlsx", "xls", "ods"].contains(ext) { return .sheet }
+        if t.conforms(to: .presentation) || ["key", "pptx", "ppt", "odp"].contains(ext) { return .slides }
+        if ["doc", "docx", "odt", "pages", "rtf"].contains(ext) || t.conforms(to: .compositeContent) { return .word }
+        if t.conforms(to: .image) { return .image }
+        if t.conforms(to: .movie) || t.conforms(to: .video) { return .video }
+        if t.conforms(to: .audio) { return .audio }
+        if t.conforms(to: .archive) || t.conforms(to: .diskImage) || ["dmg", "iso", "pkg", "7z"].contains(ext) { return .archive }
+        if t.conforms(to: .sourceCode) || t.conforms(to: .script) || ["json", "yaml", "yml", "toml", "xml", "sql"].contains(ext) { return .code }
+        if t.conforms(to: .text) || ["md", "markdown"].contains(ext) { return .prose }
+        return .unknown
+    }
+
+    /// Rasterise at an explicit resolution, preserving the native artwork's transparent border and shadow.
+    static func nativeBitmap(_ source: NSImage, pixels: Int) -> NSBitmapImageRep {
+        let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        source.draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels))
+        NSGraphicsContext.restoreGraphicsState()
+        return rep
+    }
+
+    static func hasNativeColour(_ source: NSImage) -> Bool {
+        let rep = nativeBitmap(source, pixels: 128), p = rep.bitmapData!
+        var count = 0
+        for y in 0..<128 {
+            for x in 0..<128 {
+                let i = y * rep.bytesPerRow + x * 4
+                if p[i + 3] > 128 && Int(max(p[i], p[i + 1], p[i + 2])) - Int(min(p[i], p[i + 1], p[i + 2])) > 25 { count += 1 }
+            }
+        }
+        return count > 128 * 128 / 200
+    }
+
+    private func nativeColourImage(_ native: NSImage, for item: FileItem, size: CGFloat) -> NSImage {
+        guard !item.isBrowsableFolder, !item.isApplication, !item.isPackage, !item.isAliasFile, !item.isSymlink, !item.hasCustomIcon else {
+            return native
+        }
+        let family = Self.nativeFamily(for: item)
+        guard family != .unknown else { return native }
+        let type = Self.nativeType(for: item)
+        let label = item.fileExtension.isEmpty ? (type.preferredFilenameExtension ?? "") : item.fileExtension
+        let sourceKey = type.identifier as NSString
+        let preserve: Bool
+        if let hit = nativePreservation.object(forKey: sourceKey) {
+            preserve = hit.boolValue
+        } else {
+            preserve = Self.hasNativeColour(NSWorkspace.shared.icon(for: type))
+            nativePreservation.setObject(NSNumber(value: preserve), forKey: sourceKey)
+        }
+        guard !preserve else { return native }
+        let key = "native-colour|\(type.identifier)|\(label)|\(size)" as NSString
+        if let hit = cache.object(forKey: key) { return hit }
+        let typed = NSWorkspace.shared.icon(for: type)
+        let looks = NativeLookImages()
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { r in
+            let dark = NSAppearance.currentDrawing().isDark
+            let rendered = looks.image(dark: dark) {
+                Self.colourNative(typed, size: size, label: label, family: family, dark: dark)
+            }
+            rendered.draw(in: r)
+            return true
+        }
+        store(image, key, size: size, looks: 2)
+        return image
+    }
+
+    /// Allocate and rasterise each appearance only when it is first drawn.
+    private final class NativeLookImages {
+        private let lock = NSLock()
+        private var images: [Bool: NSImage] = [:]
+        func image(dark: Bool, make: () -> NSImage) -> NSImage {
+            lock.lock()
+            defer { lock.unlock() }
+            if let hit = images[dark] { return hit }
+            let result = make()
+            images[dark] = result
+            return result
+        }
+    }
+
+    /// Treatment C: tint only the central neutral ink; an inset band shares the page's bottom corners.
+    static func colourNative(_ source: NSImage, size: CGFloat, label: String, family: NativeFamily, dark: Bool) -> NSImage {
+        guard family != .unknown else { return source }
+        let pixels = max(1, Int(ceil(size * 2)))
+        let rep = nativeBitmap(source, pixels: pixels), p = rep.bitmapData!
+        let ink = family.color(dark: dark).usingColorSpace(.deviceRGB)!
+        for y in 0..<pixels {
+            for x in 0..<pixels {
+                let i = y * rep.bytesPerRow + x * 4
+                let a = Double(p[i + 3]) / 255
+                let v = Double(max(p[i], p[i + 1], p[i + 2])) / 255
+                let spread = Int(max(p[i], p[i + 1], p[i + 2])) - Int(min(p[i], p[i + 1], p[i + 2]))
+                if a > 0.9 && spread < 10 && v > 0.20 && v < 0.84
+                    && x > pixels * 23 / 100 && x < pixels * 77 / 100 && y > pixels * 31 / 100 && y < pixels * 74 / 100
+                {
+                    p[i] = UInt8(ink.redComponent * a * 255)
+                    p[i + 1] = UInt8(ink.greenComponent * a * 255)
+                    p[i + 2] = UInt8(ink.blueComponent * a * 255)
+                }
+            }
+        }
+        let base = NSImage(size: NSSize(width: size, height: size))
+        base.addRepresentation(rep)
+        return NSImage(size: base.size, flipped: false) { r in
+            base.draw(in: r)
+            NSGraphicsContext.saveGraphicsState()
+            // Native page edges at x .17/.82 and bottom .105; stay inside its shadow.
+            let band = NSRect(x: size * 0.175, y: size * 0.112, width: size * 0.64, height: size * 0.19)
+            let radius = max(0.4, size * 0.025)
+            let path = NSBezierPath(roundedRect: band, xRadius: radius, yRadius: radius)
+            path.appendRect(NSRect(x: band.minX, y: band.midY, width: band.width, height: band.height / 2))
+            path.windingRule = .nonZero
+            ink.setFill()
+            path.fill()
+            if size >= 32 && !label.isEmpty && label.count <= 5 {
+                let text = label.uppercased() as NSString
+                var fontSize = size * 0.09
+                var attrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: fontSize, weight: .semibold), .foregroundColor: NSColor.white, .kern: size * 0.003,
+                ]
+                while text.size(withAttributes: attrs).width > band.width * 0.9 {
+                    fontSize *= 0.9
+                    attrs[.font] = NSFont.systemFont(ofSize: fontSize, weight: .semibold)
+                    attrs[.kern] = fontSize / 30
+                }
+                let d = text.size(withAttributes: attrs)
+                text.draw(at: NSPoint(x: band.midX - d.width / 2, y: band.midY - d.height / 2), withAttributes: attrs)
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            return true
+        }
     }
 
     private func aliasTarget(of item: FileItem) -> FileItem? {

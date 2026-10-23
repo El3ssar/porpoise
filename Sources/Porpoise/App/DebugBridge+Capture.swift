@@ -275,6 +275,7 @@ extension DebugBridge {
     /// `perfbench <file> zoomanim <size>`: an animated zoom (Cmd+=), counting the frames it showed.
     /// `perfbench <file> load <runs> <folder>`: the view goes to <folder> (from its parent) and back, timing until the
     /// folder's rows show, drawn.
+    /// `perfbench <file> scroll <steps>`: scrolls through the full folder, forcing layout/draw/CA flush per step.
     /// `perfbench <file> columnkeys <runs>`: Column view's → into the selected folder and ← back, each drawn.
     func perfBench(_ arg: String) {
         let a = arg.split(separator: " ").map(String.init)
@@ -339,6 +340,17 @@ extension DebugBridge {
                 }
             }
             RunLoop.main.add(t, forMode: .common)
+        case "scroll" where n.count == 1:
+            guard Settings.isTesting, let view = wc?.view.list else { return }
+            let steps = max(2, min(2000, Int(n[0])))
+            let end = max(0, view.bounds.height - view.visibleRect.height)
+            report(
+                (0..<steps).map { k in
+                    timed {
+                        view.scroll(NSPoint(x: 0, y: end * CGFloat(k) / CGFloat(steps - 1)))
+                        view.needsDisplay = true
+                    }
+                }, extra: " mode=\(wc?.view.model.props.mode.rawValue ?? "") rows=\(wc?.view.model.rows.count ?? 0)")
         case "columnkeys" where n.count == 1:
             guard let view = wc?.view, let browser = view.columnBrowser else { return }
             var times: [Double] = []
