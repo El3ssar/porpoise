@@ -18,7 +18,8 @@ struct GitUserPreferences {
         var values: [String: String] = [:]
         for config in [xdg.appendingPathComponent("git/config"), home.appendingPathComponent(".gitconfig")] {
             guard regularLocalFile(config) else { continue }
-            let data = try GitCommand.run(["config", "--null", "--list", "--includes", "--file", config.path], in: repository, deadline: deadline)
+            let data = try GitCommand.run(
+                ["config", "--null", "--list", "--includes", "--file", config.path], in: repository, deadline: deadline, configHome: home)
             for (key, value) in pairs(data) where ["core.excludesfile", "status.showuntrackedfiles"].contains(key) { values[key] = value }
         }
         let ignore: URL

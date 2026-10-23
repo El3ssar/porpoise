@@ -29,7 +29,7 @@ enum GitCommand {
     }()
     static func run(
         _ arguments: [String], in folder: URL, deadline: TimeInterval, limit: Int = 16 * 1024 * 1024,
-        extraConfiguration: [String] = []
+        extraConfiguration: [String] = [], configHome: URL? = nil
     ) throws -> Data {
         guard let developerDirectory, FileManager.default.isExecutableFile(atPath: "/usr/bin/git") else { throw Failure.unavailable }
         guard let resolved = realpath(developerDirectory + "/usr/bin/git", nil) else { throw Failure.unavailable }
@@ -44,6 +44,9 @@ enum GitCommand {
         let overrides = configuration + extraConfiguration
         let args = overrides.flatMap { ["-c", $0] } + ["--no-pager", "--no-optional-locks"] + arguments
         var env = environment
+        // Only the read-only global-config query opts into its real HOME, so ~/include paths resolve correctly.
+        // Status keeps the sanitized HOME and disabled global config.
+        if let configHome, arguments.first == "config" { env["HOME"] = configHome.path }
         env["DEVELOPER_DIR"] = developerDirectory
         env["PATH"] = URL(fileURLWithPath: tool).deletingLastPathComponent().path + ":/usr/bin:/bin"
         // Also propagate overrides to Git's own submodule subprocesses.

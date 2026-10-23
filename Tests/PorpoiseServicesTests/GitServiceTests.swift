@@ -60,7 +60,8 @@ import Testing
         let home = try f.scratch.folder("fake-home"), xdg = try f.scratch.folder("xdg")
         let ignore = try f.scratch.file("fake-home/ignore", ".DS_Store\n")
         try f.scratch.file(
-            "fake-home/.gitconfig", "[core]\n    excludesFile = ~/ignore\n    fsmonitor = /must/not/run\n[status]\n    showUntrackedFiles = no\n")
+            "fake-home/preferences", "[core]\n    excludesFile = ~/ignore\n    fsmonitor = /must/not/run\n[status]\n    showUntrackedFiles = no\n")
+        try f.scratch.file("fake-home/.gitconfig", "[include]\n    path = ~/preferences\n")
         try f.scratch.file(".DS_Store", "noise"); try f.scratch.file("untracked", "x")
         let deadline = ProcessInfo.processInfo.systemUptime + 2
         let prefs = try GitUserPreferences.load(in: f.url, deadline: deadline, home: home, xdg: xdg)
