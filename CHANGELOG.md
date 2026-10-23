@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.2
+
+- **The Information panel follows the highlighted pane.** In a split view, the Information panel (preview pane) opens beside whichever pane is highlighted and moves across with a short fade when you switch, instead of always sitting on the right. It takes its room from that pane only, and the files keep their scroll position, selection, a rename in progress and a playing video.
+- **Column view scrolls sideways.** A trackpad swipe, a mouse wheel's tilt or ⇧ with the wheel over the columns now moves them left and right, however many levels deep you are.
+- **A cleaner split divider.** The line between the two panes is a thin hairline in every theme (it was a bright stripe in Breeze), easier to grab, and its cursor shows which ways it can still move. Making the window narrower no longer squeezes a pane below a usable width, grabbing it while the split is still opening no longer leaves the files laid out at the wrong width, a double-click resets it without starting a drag, scrolling over it scrolls the pane beside it, it drags in a background window, and VoiceOver can find and move it.
+
 ## 0.12.1
 
 - **The right icons on servers and in the cloud.** Folders on Google Drive, Dropbox, FTP, SFTP and other servers show the real folder icon, and files the icon macOS shows for their type (PDF, Word, Excel, zip, video, code…); Google Docs, Sheets and Slides show as documents, spreadsheets and presentations. They used to show as a blank page.
