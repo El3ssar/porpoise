@@ -162,7 +162,7 @@ public final class GitStatusService: @unchecked Sendable {
     }
     fileprivate func retry(_ id: UUID) {
         queue.async {
-            for repository in self.repositories.values where repository.listeners[id] != nil && repository.refreshState.failures > 0 {
+            for repository in self.repositories.values where repository.listeners[id] != nil {
                 repository.refreshState.resume(); self.schedule(repository)
             }
         }
@@ -175,6 +175,8 @@ public final class GitStatusService: @unchecked Sendable {
     }
     private func relevant(_ paths: Set<String>, for repository: Repository) -> Bool {
         paths.contains { path in
+            let name = (path as NSString).lastPathComponent
+            if name == ".gitignore" || name == ".gitattributes" { return true }
             for git in repository.gitDirectories {
                 for noise in ["objects", "logs"] {
                     let prefix = git.path + "/" + noise

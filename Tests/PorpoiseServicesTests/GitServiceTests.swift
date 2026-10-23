@@ -131,6 +131,9 @@ import Testing
         let other = GitStatusService.shared.observe(f.url) { second.value = $0 }
         defer { other.cancel() }
         try #require(await eventually { second.value != nil })
+        let delivered = state.deliveries
+        token.retry()  // Explicit Reload also refreshes a healthy cached repository.
+        try #require(await eventually { state.deliveries > delivered })
         try f.scratch.file("deep/child/file", "after")
         try #require(await eventually(10) { state.value?.snapshot.files["deep/child/file"] == .modified })
         #expect(state.value?.snapshot.status(for: "deep", directory: true) == .changedFolder)

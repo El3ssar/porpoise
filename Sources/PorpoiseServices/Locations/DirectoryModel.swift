@@ -34,6 +34,7 @@ public final class DirectoryModel {
     private var gitSettingsObserver: NSObjectProtocol?
     private var gitObservation: GitStatusObservation?
     private var gitLocation: URL?
+    private var gitHasDelivered = false
     public static let gitStatusChanged = Notification.Name("PorpoiseGitStatusChanged")
     public private(set) var gitStatus: GitFolderStatus?
 
@@ -42,11 +43,11 @@ public final class DirectoryModel {
         let next = enabled ? location : nil
         guard next != gitLocation else { return }
         gitObservation?.cancel(); gitObservation = nil
-        gitLocation = next; gitStatus = nil
+        gitLocation = next; gitStatus = nil; gitHasDelivered = false
         guard let next else { return }
         gitObservation = GitStatusService.shared.observe(next) { [weak self] status in
             guard let self, self.gitLocation == next else { return }
-            self.gitStatus = status
+            self.gitStatus = status; self.gitHasDelivered = true
             NotificationCenter.default.post(name: Self.gitStatusChanged, object: self)
         }
     }
@@ -493,7 +494,7 @@ public final class DirectoryModel {
     /// again only for folders that changed.
     private func reload(keepSelection: Bool = true, changedOnly: Bool) {
         observeGit()
-        if !changedOnly { gitObservation?.retry() }
+        if !changedOnly && gitHasDelivered { gitObservation?.retry() }
         loadedNotificationPending = false
         cancelRowPreparation()
         currentLoad?.cancel(); currentLoad = nil
