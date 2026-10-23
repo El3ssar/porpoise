@@ -2,7 +2,7 @@
 
 ## 0.12.1
 
-- **The right icons on servers and in the cloud.** Folders on Google Drive, Dropbox, OneDrive, Box, S3, FTP and SFTP show the real folder icon, and files the icon macOS shows for their type (PDF, Word, Excel, zip, video, code…); Google Docs, Sheets and Slides show as documents, spreadsheets and presentations. They used to show as a blank page.
+- **The right icons on servers and in the cloud.** Folders on Google Drive, Dropbox, FTP, SFTP and other servers show the real folder icon, and files the icon macOS shows for their type (PDF, Word, Excel, zip, video, code…); Google Docs, Sheets and Slides show as documents, spreadsheets and presentations. They used to show as a blank page.
 - **Control-click shows the menu.** Control-click (and right-click, or a two-finger click) always opens the context menu and never opens the item, in every view, the Applications grid, Places and the Folders panel. Right-clicking an item that isn't selected selects it first, as in Finder.
 - **Column view, smoother.** Splitting or closing the split in Column view slides the panes over columns that keep their widths instead of stretching them; the columns never show cut in half on the left; chevrons are lighter; columns that are empty, loading or failed say so quietly.
 
