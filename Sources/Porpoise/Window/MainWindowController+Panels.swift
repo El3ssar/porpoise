@@ -159,7 +159,7 @@ extension MainWindowController {
         pendingSlideCompletion = completion
         split.setPosition(from, ofDividerAt: divider)
         panelAnimator.run(
-            duration: opening ? 0.22 : 0.18, curve: opening ? Animator.easeOutCubic : Animator.easeInCubic,
+            duration: opening ? Motion.panelOpen : Motion.panelClose, curve: opening ? Animator.easeOutCubic : Animator.easeInCubic,
             step: { p in
                 split.setPosition(from + (target - from) * CGFloat(p), ofDividerAt: divider)
             },

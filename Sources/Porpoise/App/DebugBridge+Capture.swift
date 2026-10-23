@@ -19,6 +19,7 @@ extension DebugBridge {
         "perfbench": DebugBridge.perfBench(_:),
         "transitions": DebugBridge.transitionsCommand,
         "animprobe": DebugBridge.animprobeCommand,
+        "motionlog": DebugBridge.motionlogCommand,
         "csnapshot": DebugBridge.csnapshotCommand,
         "winsize": DebugBridge.winsizeCommand,
         "keysnapshot": DebugBridge.keysnapshotCommand,
@@ -119,13 +120,43 @@ extension DebugBridge {
     /// animprobe <file>: runs a 0.3 s animation and writes how many frames it got (the display's ticks).
     func animprobeCommand(_ arg: String) {
         var ticks = 0
-        let probe = Animator()
+        let probe = Animator(name: "probe")
         probe.run(duration: 0.3, step: { _ in ticks += 1 })
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             let screens = NSScreen.screens.map { "\($0.localizedName) \(Int($0.frame.width))" }.joined(separator: ", ")
             try? "ticks=\(ticks) running=\(probe.isRunning) main=\(NSScreen.main?.localizedName ?? "-") screens=\(screens)".write(
                 toFile: arg, atomically: true, encoding: .utf8)
         }
+    }
+
+    /// motionlog start | motionlog <file>: records every animation's frames (`MotionLog`) from `start`; `<file>` stops
+    /// and writes one run a line: its clock, how it ended, its frames, the gaps between them and each step's work, in ms
+    /// (p50/p95/max), and how many gaps were over one and a half refresh periods (a frame missed).
+    func motionlogCommand(_ arg: String) {
+        guard arg != "start" else {
+            MotionLog.runs = []
+            MotionLog.isRecording = true
+            return
+        }
+        MotionLog.isRecording = false
+        let hz = Double(NSScreen.main?.maximumFramesPerSecond ?? 60)
+        func ms(_ v: [CFTimeInterval]) -> String {
+            guard !v.isEmpty else { return "-" }
+            let s = v.sorted()
+            func at(_ q: Double) -> String { String(format: "%.1f", s[min(s.count - 1, Int(Double(s.count - 1) * q + 0.5))] * 1000) }
+            return "\(at(0.5))/\(at(0.95))/\(at(1))"
+        }
+        let first = MotionLog.runs.first?.start ?? 0
+        var lines = ["hz=\(Int(hz)) runs=\(MotionLog.runs.count)"]
+        for r in MotionLog.runs {
+            let gaps = zip(r.frames.dropFirst(), r.frames).map { $0 - $1 }
+            let span = (r.frames.last ?? r.start) - (r.frames.first ?? r.start)
+            lines.append(
+                "\(r.name) at=\(Int((r.start - first) * 1000))ms \(r.end.rawValue) frames=\(r.frames.count) span=\(Int(span * 1000))ms "
+                    + "gap=\(ms(gaps)) work=\(ms(r.work)) missed=\(gaps.filter { $0 > 1.5 / hz }.count)")
+        }
+        MotionLog.runs = []
+        try? lines.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
     }
 
     /// csnapshot <png>|<title prefix or "Settings">: draws a window's views itself, so it works while the window

@@ -5,12 +5,24 @@ import AppKit
 enum Motion {
     /// Items gliding to their new places: a filter, a search, a remote change, a reflow.
     static let glide: TimeInterval = 0.3
+    /// Search results coming in one after another; a listing changed elsewhere settling in.
+    static let searchResults: TimeInterval = 0.45
+    static let remote: TimeInterval = 0.35
     /// The split view: copies flying between the panes as it opens, the pane sliding open and closed (its flights back
     /// take as long), the handle going back to the middle.
     static let flight: TimeInterval = 0.42
     static let splitOpen: TimeInterval = 0.28
     static let splitClose: TimeInterval = 0.24
     static let splitReset: TimeInterval = 0.2
+    /// A panel (Places, Information) sliding in and out; Places sections folding.
+    static let panelOpen: TimeInterval = 0.22
+    static let panelClose: TimeInterval = 0.18
+    static let fold: TimeInterval = 0.24
+    /// The Column view scrolling to a new column; the zoom steps (Cmd+= and Cmd+-).
+    static let scroll: TimeInterval = 0.22
+    static let zoomStep: TimeInterval = 0.16
+    /// The Applications grid's items gliding to new places.
+    static let appsGlide: TimeInterval = 0.34
     /// A control fading in or out.
     static let fade: TimeInterval = 0.18
     /// The hover highlight (Breeze animates hover): quick in, a little slower out.
@@ -50,10 +62,17 @@ final class FrameClock: NSObject {
     static let quiet: CFTimeInterval = 0.1
     static let fallbackInterval: TimeInterval = 1.0 / 30
 
+    /// What runs on it, for `MotionLog` ("places.fold", "hover"…).
+    let name: String
     private var link: CADisplayLink?
     private var timer: Timer?
     private var tick: ((CFTimeInterval) -> Bool)?
     private var lastFrame: CFTimeInterval = 0, lastTime: CFTimeInterval = 0
+    private var logged: Int?
+
+    init(name: String) {
+        self.name = name
+    }
 
     /// False when there is no screen to follow (nothing runs then).
     @discardableResult func run(_ tick: @escaping (CFTimeInterval) -> Bool) -> Bool {
@@ -62,6 +81,7 @@ final class FrameClock: NSObject {
         self.tick = tick
         lastFrame = CACurrentMediaTime()
         lastTime = 0
+        logged = MotionLog.begin(name)
         if Self.followsDisplay {
             let l = screen.displayLink(target: self, selector: #selector(frame(_:)))
             l.add(to: .main, forMode: .common)
@@ -94,17 +114,64 @@ final class FrameClock: NSObject {
             // A frame's time may trail the timer's last tick as the display wakes: time never runs back.
             lastTime = max(lastTime, now)
         }
+        let run = logged, started = CACurrentMediaTime()
+        let more = tick(lastTime)
+        MotionLog.frame(run, at: now, work: CACurrentMediaTime() - started, last: !more)
         // `tick` may have started the clock again (an animation's completion starting the next): only this run ends.
-        if !tick(lastTime), running === timer { stop() }
+        if !more, running === timer { stop() }
     }
 
     var isRunning: Bool { timer != nil }
 
     func stop() {
+        MotionLog.stop(logged)
+        logged = nil
         link?.invalidate()
         link = nil
         timer?.invalidate()
         timer = nil
         tick = nil
+    }
+}
+
+/// What the animations did while a probe records (the debug bridge's `motionlog`): each run of each clock, the times
+/// of the frames it drew, how long each step took and how it ended. Not recording, it costs one check per frame.
+enum MotionLog {
+    enum End: String { case running, finished, stopped, jumped }
+    struct Run {
+        let name: String
+        let start: CFTimeInterval
+        var frames: [CFTimeInterval] = []
+        var work: [CFTimeInterval] = []
+        var end = End.running
+    }
+
+    nonisolated(unsafe) static var isRecording = false
+    nonisolated(unsafe) static var runs: [Run] = []
+
+    /// A run starting: its index, or nil when not recording.
+    static func begin(_ name: String) -> Int? {
+        guard isRecording else { return nil }
+        runs.append(Run(name: name, start: CACurrentMediaTime()))
+        return runs.count - 1
+    }
+
+    static func frame(_ i: Int?, at time: CFTimeInterval, work: CFTimeInterval, last: Bool) {
+        guard let i, runs.indices.contains(i) else { return }
+        runs[i].frames.append(time)
+        runs[i].work.append(work)
+        if last { runs[i].end = .finished }
+    }
+
+    /// Stopped before its last frame (replaced or cancelled), unless it had finished.
+    static func stop(_ i: Int?) {
+        guard let i, runs.indices.contains(i), runs[i].end == .running else { return }
+        runs[i].end = .stopped
+    }
+
+    /// Reduce Motion or no screen: the animation went straight to its end, with no frames.
+    static func jump(_ name: String) {
+        guard isRecording else { return }
+        runs.append(Run(name: name, start: CACurrentMediaTime(), end: .jumped))
     }
 }

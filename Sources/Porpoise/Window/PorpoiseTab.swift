@@ -29,10 +29,10 @@ final class PorpoiseTab: NSView {
     /// The close slide ended while the copies flying back were still landing (they show their end a frame later):
     /// the closing pane goes once they have.
     private var closesWhenLanded = false
-    private let animator = Animator()
+    private let animator = Animator(name: "split.pane")
     /// Copies of the left pane's items flying into the right one as the split opens.
     private var flightOverlay: SplitFlightOverlay?
-    private let flightAnimator = Animator()
+    private let flightAnimator = Animator(name: "split.flight")
     /// The last flight, as it went (the debug bridge and tests read it): the sizes its first copy was drawn at, the
     /// size of the cell it landed on, and whether that cell showed its item when the copies went (no blank frame).
     struct FlightRecord {

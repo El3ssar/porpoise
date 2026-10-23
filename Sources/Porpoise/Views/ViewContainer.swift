@@ -727,7 +727,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     private func animatingItems(searchStyle: Bool = false, onlyAdding: Bool = false, _ change: () -> Void) {
         guard !showsApps else { return change() }
         if searchStyle {
-            list.transitions.change(.search, duration: 0.45, curve: Animator.easeInOutCubic, cascade: true, pictures: !onlyAdding, change)
+            list.transitions.change(
+                .search, duration: Motion.searchResults, curve: Animator.easeInOutCubic, cascade: true, pictures: !onlyAdding, change)
         } else {
             list.transitions.change(.filter, pictures: !onlyAdding, change)
         }
@@ -741,7 +742,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         let list = self.list
         let top = list.visibleRect.minY > 1 ? list.candidateIndexes(in: list.visibleRect).min() : nil
         let anchor = top.map { (key: list.key(ofRow: $0), offset: list.frames[$0].minY - list.visibleRect.minY) }
-        list.transitions.change(.remote, duration: 0.35) {
+        list.transitions.change(.remote, duration: Motion.remote) {
             change()
             list.computeLayout()
             if let anchor, let i = list.row(forKey: anchor.key) {

@@ -106,7 +106,7 @@ final class ColumnBrowserView: NSView {
     private static let spareLimit = 4
     /// The pane is going to another folder: its selection changes on the way, which says nothing about the columns.
     private var navigating = false
-    private let scroller = Animator()
+    private let scroller = Animator(name: "columns.scroll")
     /// A click in another column moves the focus there once the mouse is up (a drag may start from it meanwhile).
     private var pendingFocus: BrowserColumn?
     private var focusPoll: Timer?
@@ -359,7 +359,7 @@ final class ColumnBrowserView: NSView {
         let from = clip.bounds.origin.x
         guard abs(target - from) > 0.5 else { return }
         scroller.run(
-            duration: 0.22,
+            duration: Motion.scroll,
             step: { [weak self] p in
                 guard let self else { return }
                 self.strip.contentView.scroll(to: CGPoint(x: from + (target - from) * CGFloat(p), y: 0))

@@ -24,7 +24,7 @@ import Testing
         let reduces = Animator.reducesMotion
         Animator.reducesMotion = { false }
         defer { Animator.reducesMotion = reduces }
-        let animator = Animator()
+        let animator = Animator(name: "test")
         var steps: [Double] = []
         var second = false
         animator.run(duration: 0.05, step: { _ in }) {
@@ -42,7 +42,7 @@ import Testing
         FrameClock.followsDisplay = false
         FrameClock.frameStep = 1.0 / 60
         defer { Animator.reducesMotion = reduces; FrameClock.followsDisplay = true; FrameClock.frameStep = nil }
-        let animator = Animator()
+        let animator = Animator(name: "test")
         var steps: [Double] = []
         var done = false
         animator.run(duration: 0.2, step: { steps.append($0) }) { done = true }

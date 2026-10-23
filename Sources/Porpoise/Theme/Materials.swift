@@ -64,8 +64,13 @@ final class Animator: NSObject {
     /// app (tests set it, so a machine's own setting can't change what they see).
     nonisolated(unsafe) static var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
-    private let clock = FrameClock()
+    private let clock: FrameClock
     private var completion: (() -> Void)?
+
+    /// `name`: what it animates, for `MotionLog`.
+    init(name: String) {
+        clock = FrameClock(name: name)
+    }
 
     /// Runs `step(progress)` with progress eased 0→1 over `duration`, replacing any running animation
     /// (whose completion is then not called). Steps follow the display's refresh: one per frame shown.
@@ -99,6 +104,7 @@ final class Animator: NSObject {
                 return self.finish()
             })
         else {
+            MotionLog.jump(clock.name)
             self.completion = nil
             step(1)
             completion?()

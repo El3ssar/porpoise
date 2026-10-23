@@ -88,7 +88,7 @@ final class ItemListView: NSView {
     var hoverOnMarker = false
     /// Hover highlight opacity per item while it fades in or out.
     var hoverAlpha: [URL: CGFloat] = [:]
-    let hoverClock = FrameClock()
+    let hoverClock = FrameClock(name: "list.hover")
     var trackingArea: NSTrackingArea?
     var rubberBand: CGRect?
     var rubberStart: CGPoint?
@@ -128,14 +128,14 @@ final class ItemListView: NSView {
     /// True while a zoom is being saved (the container then keeps the scroll position).
     private(set) var committingZoom = false
     private var zoomCommitTimer: Timer?
-    private let zoomAnimator = Animator()
+    private let zoomAnimator = Animator(name: "list.zoom")
 
     // MARK: Transitions (+Transition)
 
     /// The one owner of this view's item animations.
     private(set) lazy var transitions = ItemTransitions(list: self)
     var transition: ItemTransition?
-    let transitionAnimator = Animator()
+    let transitionAnimator = Animator(name: "list.glide")
     /// Items (transition keys) not drawn until another view's flight brings them here.
     var transitionHidden: Set<String> = []
     /// Row per transition key, rebuilt with each layout.
@@ -265,7 +265,7 @@ final class ItemListView: NSView {
         let from = iconSize
         // Huge folders jump straight there: every frame is a full layout.
         zoomAnimator.run(
-            duration: model.rows.count > 4000 ? 0 : 0.16,
+            duration: model.rows.count > 4000 ? 0 : Motion.zoomStep,
             step: { [weak self] p in self?.previewZoom(from + (size - from) * CGFloat(p), commitAfter: nil) },
             completion: { [weak self] in self?.commitZoom() })
     }

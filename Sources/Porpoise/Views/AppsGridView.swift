@@ -14,7 +14,7 @@ final class AppsGridView: NSView, NSDraggingSource {
     private(set) var liveIconSize: CGFloat?
     private var savedIconSize = CGFloat(Settings.shared.appLibraryIconSize)
     private var zoomCommitTimer: Timer?
-    private let zoomAnimator = Animator()
+    private let zoomAnimator = Animator(name: "apps.zoom")
     var onZoomPreview: ((CGFloat) -> Void)?
 
     private var columns = 1
@@ -75,10 +75,10 @@ final class AppsGridView: NSView, NSDraggingSource {
     private var transition: Transition?
     /// Steps the animation with the display (its clock starts at the first frame shown, and it keeps going during a
     /// live resize).
-    private let animator = Animator()
+    private let animator = Animator(name: "apps.glide")
     /// 0…1 through the running animation, eased out (fast start, gentle landing).
     private var progress: CGFloat = 1
-    private static let duration: CFTimeInterval = 0.34
+    private static let duration: CFTimeInterval = Motion.appsGlide
 
     init(model: DirectoryModel) {
         self.model = model
@@ -254,7 +254,7 @@ final class AppsGridView: NSView, NSDraggingSource {
     func animateZoom(to size: CGFloat) {
         let from = iconSize
         zoomAnimator.run(
-            duration: 0.16,
+            duration: Motion.zoomStep,
             step: { [weak self] p in self?.previewZoom(from + (size - from) * CGFloat(p), commitAfter: nil) },
             completion: { [weak self] in self?.commitZoom() })
     }

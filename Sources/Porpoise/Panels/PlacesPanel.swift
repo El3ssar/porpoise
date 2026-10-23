@@ -46,7 +46,7 @@ final class PlacesPanel: NSView {
 
     // Fold/unfold animation (macOS style): rows glide to their new places, folding rows slide into their header and
     // fade, unfolding ones come out of it; the chevron turns.
-    private let foldAnimator = Animator()
+    private let foldAnimator = Animator(name: "places.fold")
     var foldProgress: CGFloat = 1
     /// Per row of `rows`: where it starts (offset from its final y) and its starting opacity.
     private var foldStartOffset: [CGFloat] = []
@@ -102,7 +102,7 @@ final class PlacesPanel: NSView {
         }
         foldProgress = 0
         foldAnimator.run(
-            duration: 0.24, curve: Animator.easeOutCubic,
+            duration: Motion.fold, curve: Animator.easeOutCubic,
             step: { [weak self] p in
                 self?.foldProgress = CGFloat(p)
                 self?.needsDisplay = true
