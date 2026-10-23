@@ -8,9 +8,15 @@ Split view, a built-in terminal that follows the folder you're in, tabs, panels,
 SSH/FTP, Google Drive (preview), Dropbox, S3-compatible storage, and video previews, in a native Mac app
 with light and dark appearances, built-in colour themes and a choice of icon themes.
 
-![Porpoise with Places (F9), split view (F3), the Information panel (F10) and the terminal (F4)](docs/screenshots/panes.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/panes-dark.png">
+  <img src="docs/screenshots/panes-light.png" alt="Porpoise with Places (F9), split view (F3), the Information panel (F10) and the terminal (F4)">
+</picture>
 
-![The Applications folder as an app library, with search](docs/screenshots/applications.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/applications-dark.png">
+  <img src="docs/screenshots/applications-light.png" alt="The Applications folder as an app library, with search">
+</picture>
 
 > Porpoise is an independent, open-source project. It follows KDE Dolphin's layout and behaviour (thank you, KDE!),
 > but it is not affiliated with KDE.
