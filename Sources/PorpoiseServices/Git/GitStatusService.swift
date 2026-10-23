@@ -8,6 +8,9 @@ public struct GitFolderStatus: Sendable {
     public let folder: URL
     public let resolvedFolder: URL
     public let snapshot: GitStatusSnapshot
+    public let isPaused: Bool
+    public let caseSensitive: Bool
+    public var statusText: String { isPaused ? "Git status paused — Reload to retry" : snapshot.branchText }
     public func relativePath(for url: URL) -> String? {
         guard url.isFileURL else { return nil }
         let prefix = folder.path.hasSuffix("/") ? folder.path : folder.path + "/"
@@ -20,8 +23,8 @@ public struct GitFolderStatus: Sendable {
             return nil
         }
         let base = root.path.hasSuffix("/") ? root.path : root.path + "/"
-        guard physical.hasPrefix(base) else { return nil }
-        let relative = String(physical.dropFirst(base.count))
+        guard let prefixRange = physical.range(of: base, options: caseSensitive ? [.anchored] : [.anchored, .caseInsensitive]) else { return nil }
+        let relative = String(physical[prefixRange.upperBound...])
         return GitStatusParser.validPath(relative) ? relative : nil
     }
     public func status(for item: FileItem) -> GitFileStatus? {
@@ -41,6 +44,7 @@ public final class GitStatusObservation: @unchecked Sendable {
         }
         if wasActive { GitStatusService.shared.remove(id) }
     }
+    public func retry() { GitStatusService.shared.retry(id) }
     deinit { cancel() }
 }
 
@@ -59,12 +63,15 @@ public final class GitStatusService: @unchecked Sendable {
     }
     private final class Repository {
         let root: URL
+        let caseSensitive: Bool
+        var gitDirectories: [URL] = []
+        var refreshState = GitRefreshState()
+        var scans = 0
         var listeners: [UUID: Listener] = [:]
         var snapshot: GitStatusSnapshot?
         var watcher: FolderWatcher?
         var pending: DispatchWorkItem?
-        var retryAfter: TimeInterval = 0
-        init(root: URL) { self.root = root }
+        init(root: URL, caseSensitive: Bool) { self.root = root; self.caseSensitive = caseSensitive }
     }
     private var repositories: [URL: Repository] = [:]
     private init() {}
@@ -77,6 +84,7 @@ public final class GitStatusService: @unchecked Sendable {
             let resolved = URL(fileURLWithPath: FilePath.canonical(folder.path))
             let deadline = ProcessInfo.processInfo.systemUptime + Self.budget
             do {
+                guard try resolved.resourceValues(forKeys: [.volumeIsLocalKey]).volumeIsLocal == true else { throw GitCommand.Failure.command }
                 // Ordinary folders need no subprocess; .git can be a directory or a worktree/submodule pointer.
                 var candidate = resolved
                 while !FileManager.default.fileExists(atPath: candidate.appendingPathComponent(".git").path) {
@@ -84,8 +92,7 @@ public final class GitStatusService: @unchecked Sendable {
                     guard parent != candidate else { throw GitCommand.Failure.command }
                     candidate = parent
                 }
-                // Reject mounted network volumes before invoking Git. A normal local folder must report true.
-                guard try resolved.resourceValues(forKeys: [.volumeIsLocalKey]).volumeIsLocal == true else { throw GitCommand.Failure.command }
+                try Self.validateLocalMetadata(candidate.appendingPathComponent(".git"))
                 let root = try GitCommand.path(GitCommand.run(["rev-parse", "--show-toplevel"], in: resolved, deadline: deadline))
                 let listener = Listener(observation: observation, folder: folder, resolved: resolved, receive: receive)
                 if let repository = self.repositories[root] {
@@ -97,12 +104,18 @@ public final class GitStatusService: @unchecked Sendable {
                     GitCommand.run(["rev-parse", "--path-format=absolute", "--git-dir"], in: resolved, deadline: deadline))
                 let commonDir = try GitCommand.path(
                     GitCommand.run(["rev-parse", "--path-format=absolute", "--git-common-dir"], in: resolved, deadline: deadline))
-                let repository = Repository(root: root)
+                for directory in [gitDir, commonDir] {
+                    guard try directory.resourceValues(forKeys: [.volumeIsLocalKey]).volumeIsLocal == true else { throw GitCommand.Failure.command }
+                }
+                let caseSensitive =
+                    (try? root.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]).volumeSupportsCaseSensitiveNames) ?? true
+                let repository = Repository(root: root, caseSensitive: caseSensitive)
+                repository.gitDirectories = [gitDir, commonDir]
                 repository.listeners[observation.id] = listener; self.repositories[root] = repository
-                repository.watcher = FolderWatcher(recursive: true) { [weak self, weak repository] _ in
+                repository.watcher = FolderWatcher(recursive: true, reportEventPaths: true) { [weak self, weak repository] paths in
                     guard let self else { return }
                     self.queue.async { [weak repository] in
-                        guard let repository else { return }; self.schedule(repository)
+                        guard let repository, self.relevant(paths, for: repository) else { return }; self.schedule(repository)
                     }
                 }
                 repository.watcher?.watch([root, gitDir, commonDir])
@@ -112,6 +125,30 @@ public final class GitStatusService: @unchecked Sendable {
             }
         }
         return observation
+    }
+    /// Inspect Git pointer files before invoking Git so a local worktree cannot redirect metadata to a network volume.
+    private static func validateLocalMetadata(_ marker: URL) throws {
+        func local(_ url: URL) throws {
+            guard try url.resourceValues(forKeys: [.volumeIsLocalKey]).volumeIsLocal == true else { throw GitCommand.Failure.command }
+        }
+        func pointer(_ file: URL, prefix: String = "", relativeTo parent: URL) throws -> URL {
+            try local(file)
+            let handle = try FileHandle(forReadingFrom: file); defer { try? handle.close() }
+            let data = try handle.read(upToCount: 65537) ?? Data()
+            guard data.count <= 65536, !data.contains(0), var path = String(data: data, encoding: .utf8), path.hasPrefix(prefix) else {
+                throw GitCommand.Failure.command
+            }
+            if path.hasSuffix("\n") { path.removeLast() }
+            path = String(path.dropFirst(prefix.count))
+            guard !path.isEmpty else { throw GitCommand.Failure.command }
+            return path.hasPrefix("/") ? URL(fileURLWithPath: path) : parent.appendingPathComponent(path)
+        }
+        try local(marker)
+        let isDirectory = try marker.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
+        let directory = try isDirectory ? marker : pointer(marker, prefix: "gitdir: ", relativeTo: marker.deletingLastPathComponent())
+        try local(directory)
+        let common = directory.appendingPathComponent("commondir")
+        if FileManager.default.fileExists(atPath: common.path) { try local(pointer(common, relativeTo: directory)) }
     }
     fileprivate func remove(_ id: UUID) {
         queue.async {
@@ -123,13 +160,45 @@ public final class GitStatusService: @unchecked Sendable {
             }
         }
     }
+    fileprivate func retry(_ id: UUID) {
+        queue.async {
+            for repository in self.repositories.values where repository.listeners[id] != nil && repository.refreshState.failures > 0 {
+                repository.refreshState.resume(); self.schedule(repository)
+            }
+        }
+    }
+    // Kept internal for sustained-event regression measurements; no filenames or diagnostics are emitted.
+    func scanCount(for root: URL, receive: @escaping (Int) -> Void) {
+        queue.async {
+            let count = self.repositories[root]?.scans ?? 0; DispatchQueue.main.async { receive(count) }
+        }
+    }
+    private func relevant(_ paths: Set<String>, for repository: Repository) -> Bool {
+        paths.contains { path in
+            for git in repository.gitDirectories {
+                for noise in ["objects", "logs"] {
+                    let prefix = git.path + "/" + noise
+                    if path == prefix || path.hasPrefix(prefix + "/") { return false }
+                }
+            }
+            let prefix = repository.root.path + "/"
+            if path.hasPrefix(prefix), repository.snapshot?.status(for: String(path.dropFirst(prefix.count)), directory: false) == .ignored {
+                return false
+            }
+            return true
+        }
+    }
     private func deliver(_ snapshot: GitStatusSnapshot?, from repository: Repository, to listener: Listener) {
-        let value = snapshot.map { GitFolderStatus(root: repository.root, folder: listener.folder, resolvedFolder: listener.resolved, snapshot: $0) }
+        let value = (snapshot ?? (repository.refreshState.isPaused ? GitStatusSnapshot() : nil)).map {
+            GitFolderStatus(
+                root: repository.root, folder: listener.folder, resolvedFolder: listener.resolved, snapshot: $0,
+                isPaused: repository.refreshState.isPaused, caseSensitive: repository.caseSensitive)
+        }
         DispatchQueue.main.async { if listener.observation?.isActive == true { listener.receive(value) } }
     }
     private func schedule(_ repository: Repository) {
         repository.pending?.cancel()
-        let delay = max(Self.debounce, repository.retryAfter - ProcessInfo.processInfo.systemUptime)
+        guard let delay = repository.refreshState.delay(at: ProcessInfo.processInfo.systemUptime) else { return }
         let work = DispatchWorkItem { [weak self, weak repository] in
             guard let self, let repository else { return }
             repository.pending = nil; self.refresh(repository, deadline: ProcessInfo.processInfo.systemUptime + Self.budget)
@@ -137,17 +206,23 @@ public final class GitStatusService: @unchecked Sendable {
         repository.pending = work; queue.asyncAfter(deadline: .now() + delay, execute: work)
     }
     private func refresh(_ repository: Repository, deadline: TimeInterval) {
+        let start = ProcessInfo.processInfo.systemUptime
+        repository.scans += 1
+        var success = false
         do {
-            let data = try GitCommand.run(
-                ["status", "--porcelain=v2", "-z", "--branch", "--untracked-files=all", "--ignored=matching", "--ignore-submodules=none"],
-                in: repository.root, deadline: deadline)
+            let preferences = try GitUserPreferences.load(in: repository.root, deadline: deadline)
+            let configuration = try preferences.configuration(in: repository.root, deadline: deadline)
+            var arguments = ["status", "--porcelain=v2", "-z", "--branch", "--ignore-submodules=none"]
+            if !configuration.contains("status.showUntrackedFiles=no") { arguments.append("--ignored=matching") }
+            let data = try GitCommand.run(arguments, in: repository.root, deadline: deadline, extraConfiguration: configuration)
             let parsed = try GitStatusParser.parse(data)
             guard ProcessInfo.processInfo.systemUptime < deadline else { throw GitCommand.Failure.budget }
-            repository.snapshot = parsed
+            repository.snapshot = parsed; success = true
         } catch {
             // Never show an old clean/conflict state after a failed refresh. Back off on pathological repositories.
-            repository.snapshot = nil; repository.retryAfter = ProcessInfo.processInfo.systemUptime + 10
+            repository.snapshot = nil
         }
+        repository.refreshState.finished(success: success, start: start, end: ProcessInfo.processInfo.systemUptime)
         for listener in repository.listeners.values { deliver(repository.snapshot, from: repository, to: listener) }
     }
 }

@@ -32,6 +32,58 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: f.scratch.path(".git/index.lock").path))
         #expect(try Data(contentsOf: f.scratch.path(".git/index")) == index)
     }
+    @Test func repositoryFiltersAndIncludedFiltersCannotExecute() throws {
+        let f = try LocalGitFixture()
+        try f.scratch.file("a.txt", "hi\n"); try f.scratch.file(".gitattributes", "*.txt filter=malicious\n")
+        try f.record()
+        let marker = f.scratch.path("FILTER-RAN")
+        // Configuration is loaded through an include; changing config while status starts cannot escape the sandbox.
+        let include = try f.scratch.file(
+            "filter-config", "[filter \"malicious\"]\n    clean = touch \(marker.path)\n    process = touch \(marker.path)\n    required = true\n")
+        try f.git(["config", "include.path", include.path])
+        try f.scratch.file("a.txt", "hi\n")
+        let deadline = ProcessInfo.processInfo.systemUptime + 2
+        let preferences = try GitUserPreferences.load(in: f.url, deadline: deadline, home: f.scratch.path("fake-home"))
+        let overrides = try preferences.configuration(in: f.url, deadline: deadline)
+        #expect(overrides.contains("filter.malicious.required=false"))
+        let data = try GitCommand.run(["status", "--porcelain=v2", "-z"], in: f.url, deadline: deadline, extraConfiguration: overrides)
+        _ = try GitStatusParser.parse(data)
+        #expect(!FileManager.default.fileExists(atPath: marker.path))
+        let before = try Data(contentsOf: f.scratch.path(".git/config"))
+        #expect(throws: GitCommand.Failure.self) {
+            try GitCommand.run(["config", "--local", "test.mustnotwrite", "x"], in: f.url, deadline: ProcessInfo.processInfo.systemUptime + 2)
+        }
+        #expect(try Data(contentsOf: f.scratch.path(".git/config")) == before)
+    }
+    @Test func onlyGlobalIgnoreAndUntrackedPreferencesAreImported() throws {
+        let f = try LocalGitFixture()
+        let home = try f.scratch.folder("fake-home"), xdg = try f.scratch.folder("xdg")
+        let ignore = try f.scratch.file("fake-home/ignore", ".DS_Store\n")
+        try f.scratch.file(
+            "fake-home/.gitconfig", "[core]\n    excludesFile = ~/ignore\n    fsmonitor = /must/not/run\n[status]\n    showUntrackedFiles = no\n")
+        try f.scratch.file(".DS_Store", "noise"); try f.scratch.file("untracked", "x")
+        let deadline = ProcessInfo.processInfo.systemUptime + 2
+        let prefs = try GitUserPreferences.load(in: f.url, deadline: deadline, home: home, xdg: xdg)
+        #expect(prefs.excludes == ignore && prefs.untracked == "no")
+        let configuration = try prefs.configuration(in: f.url, deadline: deadline)
+        #expect(!configuration.contains { $0.hasPrefix("core.fsmonitor") })
+        let none = try GitStatusParser.parse(
+            GitCommand.run(
+                ["status", "--porcelain=v2", "-z"], in: f.url, deadline: deadline, extraConfiguration: configuration))
+        #expect(none.files.isEmpty)
+        try f.git(["config", "status.showUntrackedFiles", "normal"])
+        let overridden = try prefs.configuration(in: f.url, deadline: deadline)
+        let normal = try GitStatusParser.parse(
+            GitCommand.run(["status", "--porcelain=v2", "-z", "--ignored=matching"], in: f.url, deadline: deadline, extraConfiguration: overridden))
+        #expect(normal.files[".DS_Store"] == .ignored && normal.files["untracked"] == .untracked)
+        #expect(normal.files["fake-home"] == .untracked)
+        // Git's XDG default ignore file is used when no excludesFile is set.
+        try FileManager.default.removeItem(at: home.appendingPathComponent(".gitconfig"))
+        let xdgIgnore = try f.scratch.file("xdg/git/ignore", ".DS_Store\n")
+        #expect(
+            try GitUserPreferences.load(in: f.url, deadline: ProcessInfo.processInfo.systemUptime + 2, home: home, xdg: xdg).excludes == xdgIgnore)
+    }
+
     @Test func deadlineKillsTheEntireProcessGroup() throws {
         let scratch = try Scratch()
         let marker = scratch.path("pid")
@@ -91,6 +143,36 @@ import Testing
         try #require(await eventually(10) { second.value?.snapshot.files["another"] == .untracked })
         #expect(state.deliveries == deliveries)
     }
+    @Test func ignoredWritesDoNotTriggerScans() async throws {
+        let f = try await Task.detached {
+            let f = try LocalGitFixture(); try f.scratch.file(".gitignore", "ignored/\n")
+            try f.scratch.file("tracked", "before"); try f.record(); try f.scratch.file("ignored/output", "initial"); return f
+        }.value
+        let state = State()
+        let token = GitStatusService.shared.observe(f.url) {
+            state.value = $0; state.deliveries += 1
+        }
+        defer { token.cancel() }
+        try #require(await eventually { state.value?.snapshot.files["ignored"] == .ignored })
+        let root = try #require(state.value?.root)
+        func count() async throws -> Int {
+            try await awaitCallback("scan count") { continuation in
+                GitStatusService.shared.scanCount(for: root) { continuation.resume(returning: $0) }
+            }
+        }
+        let before = try await count()
+        let start = ProcessInfo.processInfo.systemUptime
+        try await Task.detached {
+            for i in 0..<100 { try f.scratch.file("ignored/output", String(i)); try await Task.sleep(nanoseconds: 10_000_000) }
+            try await Task.sleep(nanoseconds: 700_000_000)
+        }.value
+        #expect(try await count() == before)
+        print("GIT_IGNORED_WRITES count=100 elapsed_ms=\((ProcessInfo.processInfo.systemUptime - start) * 1000) additional_scans=0")
+        try f.scratch.file("tracked", "after")
+        try #require(await eventually { state.value?.snapshot.files["tracked"] == .modified })
+        #expect(try await count() > before)
+    }
+
     @Test func worktreesDetachedHeadSymlinkedFoldersAndBareRepositories() async throws {
         let f = try await Task.detached {
             let f = try LocalGitFixture(); try f.scratch.file("file", "before"); try f.record()
@@ -155,6 +237,28 @@ import Testing
         #expect(parent.value?.snapshot.ahead == 1 && parent.value?.snapshot.behind == 1)
         #expect(parent.value?.snapshot.status(for: "sub", directory: true) == .changedFolder)
         #expect(child.value?.snapshot.files["file"] == .modified)
+    }
+
+    @Test func borrowingColumnListingsKeepsAndRefreshesGitState() async throws {
+        let f = try await Task.detached {
+            let f = try LocalGitFixture(); try f.scratch.file("file", "before"); try f.record(); return f
+        }.value
+        let original = DirectoryModel(location: f.url), borrowed = DirectoryModel(location: f.url)
+        original.reload()
+        try #require(await eventually { !original.isLoading && original.gitStatus != nil })
+        #expect(borrowed.takeListing(of: original))
+        #expect(borrowed.gitStatus?.snapshot.branch == "main")
+        try f.scratch.file("file", "after")
+        try #require(await eventually { borrowed.gitStatus?.snapshot.files["file"] == .modified })
+    }
+
+    @Test func caseInsensitiveVolumePathMappingUsesComponentBoundaries() {
+        var snapshot = GitStatusSnapshot(); snapshot.files["file"] = .modified
+        let folder = GitFolderStatus(
+            root: URL(fileURLWithPath: "/private/tmp/Repo"), folder: URL(fileURLWithPath: "/tmp/REPO"),
+            resolvedFolder: URL(fileURLWithPath: "/private/tmp/REPO"), snapshot: snapshot, isPaused: false, caseSensitive: false)
+        #expect(folder.relativePath(for: URL(fileURLWithPath: "/tmp/REPO/file")) == "file")
+        #expect(folder.relativePath(for: URL(fileURLWithPath: "/tmp/REPO-other/file")) == nil)
     }
 
     @Test func comparisonCopiesHeadAndWorkingFileAndCleansUp() async throws {

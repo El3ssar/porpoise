@@ -27,22 +27,38 @@ enum GitCommand {
         else { return nil }
         return directory.path
     }()
-    static func run(_ arguments: [String], in folder: URL, deadline: TimeInterval, limit: Int = 16 * 1024 * 1024) throws -> Data {
+    static func run(
+        _ arguments: [String], in folder: URL, deadline: TimeInterval, limit: Int = 16 * 1024 * 1024,
+        extraConfiguration: [String] = []
+    ) throws -> Data {
         guard let developerDirectory, FileManager.default.isExecutableFile(atPath: "/usr/bin/git") else { throw Failure.unavailable }
-        let args = configuration.flatMap { ["-c", $0] } + ["--no-pager", "--no-optional-locks"] + arguments
+        guard let resolved = realpath(developerDirectory + "/usr/bin/git", nil) else { throw Failure.unavailable }
+        let tool = String(cString: resolved); free(resolved)
+        guard FileManager.default.isExecutableFile(atPath: "/usr/bin/sandbox-exec") else { throw Failure.unavailable }
+        let escaped = tool.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
+        let profile =
+            "(version 1)(deny default (with no-log))(allow file-read*)"
+            + "(allow file-write* (literal \"/dev/null\"))(allow process-fork)(allow sysctl-read)"
+            + "(allow signal (target self))(allow process-exec (literal \"" + escaped + "\"))"
+        let overrides = configuration + extraConfiguration
+        let args = overrides.flatMap { ["-c", $0] } + ["--no-pager", "--no-optional-locks"] + arguments
         var env = environment
         env["DEVELOPER_DIR"] = developerDirectory
+        env["PATH"] = URL(fileURLWithPath: tool).deletingLastPathComponent().path + ":/usr/bin:/bin"
         // Also propagate overrides to Git's own submodule subprocesses.
-        env["GIT_CONFIG_COUNT"] = String(configuration.count)
-        for (i, value) in configuration.enumerated() {
+        env["GIT_CONFIG_COUNT"] = String(overrides.count)
+        for (i, value) in overrides.enumerated() {
             let pair = value.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
             env["GIT_CONFIG_KEY_\(i)"] = String(pair[0]); env["GIT_CONFIG_VALUE_\(i)"] = String(pair[1])
         }
-        return try runProcess("/usr/bin/git", args, in: folder, environment: env, deadline: deadline, limit: limit)
+        return try runProcess(
+            "/usr/bin/sandbox-exec", ["-p", profile, tool] + args, in: folder, environment: env, deadline: deadline,
+            limit: limit)
     }
     static func runProcess(
         _ tool: String, _ arguments: [String], in folder: URL, environment: [String: String],
-        deadline: TimeInterval, limit: Int
+        deadline: TimeInterval, limit: Int, mergeErrors: Bool = false
     ) throws -> Data {
         guard ProcessInfo.processInfo.systemUptime < deadline else { throw Failure.budget }
         // Give Git and any local submodule helpers their own process group, so a deadline stops the entire scan.
@@ -65,7 +81,7 @@ enum GitCommand {
         }
         let setup = [
             posix_spawn_file_actions_adddup2(&actions, null, STDIN_FILENO),
-            posix_spawn_file_actions_adddup2(&actions, null, STDERR_FILENO),
+            posix_spawn_file_actions_adddup2(&actions, mergeErrors ? descriptors[1] : null, STDERR_FILENO),
             posix_spawn_file_actions_adddup2(&actions, descriptors[1], STDOUT_FILENO),
             posix_spawn_file_actions_addclose(&actions, descriptors[0]),
             posix_spawn_file_actions_addclose(&actions, descriptors[1]),
@@ -91,10 +107,13 @@ enum GitCommand {
         func stop() {
             kill(-pid, SIGTERM)
             let grace = ProcessInfo.processInfo.systemUptime + 0.05
-            while ProcessInfo.processInfo.systemUptime < grace { reap(); Thread.sleep(forTimeInterval: 0.002) }
+            while ProcessInfo.processInfo.systemUptime < grace {
+                reap(); if reaped { break }; Thread.sleep(forTimeInterval: 0.002)
+            }
             kill(-pid, SIGKILL)
             if !reaped { while waitpid(pid, &status, 0) < 0 && errno == EINTR {} }
         }
+        // A descendant retaining stdout after Git exits still consumes the same deadline and is killed with the group.
         while !ended || !reaped {
             if ProcessInfo.processInfo.systemUptime >= deadline { stop(); throw Failure.budget }
             reap()

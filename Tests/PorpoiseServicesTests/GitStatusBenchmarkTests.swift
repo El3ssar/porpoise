@@ -5,7 +5,7 @@ import Testing
 
 @testable import PorpoiseServices
 
-struct GitStatusBenchmarkTests {
+@Suite(.serialized, .isolatedSettings) struct GitStatusBenchmarkTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["PORPOISE_GIT_BENCHMARK"] == "1"))
     func hundredThousandTrackedFilesAndTenThousandChanges() throws {
         let f = try LocalGitFixture()
@@ -18,18 +18,29 @@ struct GitStatusBenchmarkTests {
             }
         }
         try f.record()
+        let discoveryStart = ProcessInfo.processInfo.systemUptime
+        for arguments in [
+            ["rev-parse", "--show-toplevel"], ["rev-parse", "--path-format=absolute", "--git-dir"],
+            ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        ] {
+            _ = try GitCommand.path(GitCommand.run(arguments, in: f.url, deadline: discoveryStart + GitStatusService.budget))
+        }
+        print("GIT_BENCH_DISCOVERY metadata_launches=3 total_ms=\((ProcessInfo.processInfo.systemUptime - discoveryStart) * 1000)")
         func measure(_ name: String, count: Int) throws {
             for run in 1...5 {
                 let start = ProcessInfo.processInfo.systemUptime
+                let preferences = try GitUserPreferences.load(in: f.url, deadline: start + GitStatusService.budget)
+                let configuration = try preferences.configuration(in: f.url, deadline: start + GitStatusService.budget)
+                let preflight = ProcessInfo.processInfo.systemUptime - start
                 let data = try GitCommand.run(
-                    ["status", "--porcelain=v2", "-z", "--branch", "--untracked-files=all", "--ignored=matching", "--ignore-submodules=none"],
-                    in: f.url, deadline: start + GitStatusService.budget)
+                    ["status", "--porcelain=v2", "-z", "--branch", "--ignored=matching", "--ignore-submodules=none"],
+                    in: f.url, deadline: start + GitStatusService.budget, extraConfiguration: configuration)
                 let command = ProcessInfo.processInfo.systemUptime - start
                 let snapshot = try GitStatusParser.parse(data)
                 let total = ProcessInfo.processInfo.systemUptime - start
                 #expect(snapshot.files.count == count)
                 print(
-                    "GIT_BENCH \(name) run=\(run) command_ms=\(command * 1000) total_ms=\(total * 1000) bytes=\(data.count) entries=\(snapshot.files.count)"
+                    "GIT_BENCH \(name) run=\(run) preflight_ms=\(preflight * 1000) command_ms=\((command - preflight) * 1000) total_ms=\(total * 1000) bytes=\(data.count) entries=\(snapshot.files.count)"
                 )
             }
         }

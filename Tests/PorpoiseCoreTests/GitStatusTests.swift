@@ -53,4 +53,17 @@ struct GitStatusTests {
         #expect(s.status(for: "a/b", directory: false) == nil)
         #expect(s.status(for: "ignored", directory: true) == nil)
     }
+    @Test func collapsedUntrackedFoldersAndRefreshAdmission() throws {
+        let s = try parse(["? dataset/"])
+        #expect(s.status(for: "dataset/a/file", directory: false) == .untracked)
+        #expect(s.status(for: "dataset/a", directory: true) == .changedFolder)
+        var state = GitRefreshState()
+        state.finished(success: true, start: 0, end: 0.25)
+        #expect(state.delay(at: 0.25) == 0.75)
+        for i in 1...3 { state.finished(success: false, start: Double(i), end: Double(i) + 0.1) }
+        #expect(state.isPaused && state.delay(at: 100) == nil)
+        state.resume()
+        #expect(!state.isPaused && state.delay(at: 100) == 0.4)
+    }
+
 }

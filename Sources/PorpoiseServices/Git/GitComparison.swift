@@ -23,7 +23,7 @@ public final class GitComparison: @unchecked Sendable {
     }
     public init(item: FileItem, status: GitFolderStatus) throws {
         guard !item.isDirectory, !item.isSymlink, item.name == item.url.lastPathComponent, let path = status.relativePath(for: item.url),
-            let kind = status.snapshot.files[path], kind != .ignored
+            let kind = status.snapshot.status(for: path, directory: false), kind != .ignored
         else { throw GitCommand.Failure.command }
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-git-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])

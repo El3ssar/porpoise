@@ -51,6 +51,7 @@ public struct GitStatusSnapshot: Sendable, Equatable {
         while let slash = parent.lastIndex(of: "/") {
             parent = String(parent[..<slash])
             if files[parent] == .ignored { return .ignored }
+            if files[parent] == .untracked { return directory ? .changedFolder : .untracked }
         }
         return nil
     }
@@ -124,4 +125,24 @@ public enum GitStatusParser {
             parent = String(parent[..<slash]); folders.insert(parent)
         }
     }
+}
+
+/// Refresh admission is independent of IO: adaptive spacing, bounded retries and explicit reload recovery.
+public struct GitRefreshState: Sendable {
+    public private(set) var failures = 0
+    private var lastStart: TimeInterval = -.infinity
+    private var duration: TimeInterval = 0
+    private var retryAfter: TimeInterval = 0
+    public init() {}
+    public var isPaused: Bool { failures >= 3 }
+    public func delay(at now: TimeInterval) -> TimeInterval? {
+        guard !isPaused else { return nil }
+        return max(0.4, lastStart + max(0.4, duration * 4) - now, retryAfter - now)
+    }
+    public mutating func finished(success: Bool, start: TimeInterval, end: TimeInterval) {
+        lastStart = start; duration = max(0, end - start)
+        failures = success ? 0 : failures + 1
+        retryAfter = success ? 0 : end + 10
+    }
+    public mutating func resume() { failures = 0; retryAfter = 0 }
 }

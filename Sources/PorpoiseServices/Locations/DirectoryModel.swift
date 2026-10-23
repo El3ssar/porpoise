@@ -493,6 +493,7 @@ public final class DirectoryModel {
     /// again only for folders that changed.
     private func reload(keepSelection: Bool = true, changedOnly: Bool) {
         observeGit()
+        if !changedOnly { gitObservation?.retry() }
         loadedNotificationPending = false
         cancelRowPreparation()
         currentLoad?.cancel(); currentLoad = nil
@@ -1162,6 +1163,13 @@ public final class DirectoryModel {
         if other.items.isEmpty { rebuild() } else { showListing(of: other) }
         loadingListing = false
         lastLoaded = location
+        observeGit()
+        if Settings.shared.showGitStatus, let status = other.gitStatus {
+            gitStatus = GitFolderStatus(
+                root: status.root, folder: location, resolvedFolder: status.resolvedFolder,
+                snapshot: status.snapshot, isPaused: status.isPaused, caseSensitive: status.caseSensitive)
+            NotificationCenter.default.post(name: Self.gitStatusChanged, object: self)
+        }
         updateWatcher()
         notifyLoaded()
         return true
