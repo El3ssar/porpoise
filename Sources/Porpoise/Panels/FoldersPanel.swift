@@ -42,6 +42,10 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
 
         var isLoading: Bool { listing != nil }
 
+        /// The children the outline shows: during a re-list, the ones from before it. The outline keeps the row count it
+        /// was last given until the new listing reloads the node, so it must be answered from the same list meanwhile.
+        var shownChildren: [Node]? { children ?? staleChildren }
+
         var name: String {
             guard url.path == "/" else { return url.lastPathComponent }
             return (try? url.resourceValues(forKeys: [.volumeLocalizedNameKey]).volumeLocalizedName) ?? "/"
@@ -373,11 +377,12 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         return .found(n)
     }
 
-    /// The children known so far; starts listing them when they aren't known yet.
+    /// The children known so far (while a re-list runs, those from before it); starts listing them when they aren't
+    /// known yet.
     private func children(of node: Node) -> [Node] {
         if let c = node.children { return c }
         startListing(node)
-        return []
+        return node.shownChildren ?? []
     }
 
     /// Lists `node` on the worker queue and shows the result. A result for a tree that was rebuilt meanwhile (or

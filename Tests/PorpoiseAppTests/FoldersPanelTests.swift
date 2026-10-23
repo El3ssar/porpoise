@@ -157,6 +157,12 @@ extension AppearanceLayoutTests {
         let later = home.appendingPathComponent("a/later", isDirectory: true)
         try fm.createDirectory(at: later, withIntermediateDirectories: true)
         panel.currentURL = later
+        // Meanwhile the outline still shows a's rows from before, and is answered from them (it asked for a child past
+        // the end, and crashed, when a restored window followed a path through /private).
+        let a = try #require(outline.parent(forItem: sibling) as? FoldersPanel.Node)
+        #expect(a.isLoading && outline.numberOfChildren(ofItem: a) == 2)
+        #expect(panel.outlineView(outline, numberOfChildrenOfItem: a) == 2)
+        #expect((panel.outlineView(outline, child: 1, ofItem: a) as? FoldersPanel.Node)?.url.lastPathComponent == "sibling")
         await expectEventually { url(outline.selectedRow)?.path == later.path }
         // A hidden folder on the way to the view's folder is shown anyway.
         panel.currentURL = hidden
