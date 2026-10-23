@@ -37,8 +37,8 @@ public final class DiagnosticStore: @unchecked Sendable {
     }
 
     private struct Snapshot: Encodable {
-        /// 2: the codes recorded at the app's error sites (transfer, provider, helper, unclean exit).
-        let schemaVersion = 2
+        /// 3: optional, strictly projected MetricKit crash/hang details.
+        let schemaVersion = 3
         let identity: DiagnosticIdentity
         let generatedAt: Date
         let events: [DiagnosticEvent]
@@ -65,11 +65,19 @@ public final class DiagnosticStore: @unchecked Sendable {
     /// Returns false when disabled or unable to produce a valid bounded event. Diagnostic failure must not mask
     /// the operation's own result. Each operation should generate one correlation and reuse it for related events.
     @discardableResult
-    public func record(_ code: DiagnosticEvent.Code, failure: DiagnosticFailure = .none, correlation: DiagnosticCorrelation = .init()) -> Bool {
+    public func record(
+        _ code: DiagnosticEvent.Code, failure: DiagnosticFailure = .none, correlation: DiagnosticCorrelation = .init()
+    ) -> Bool {
+        record(code, failure: failure, correlation: correlation, diagnostic: nil)
+    }
+
+    private func record(
+        _ code: DiagnosticEvent.Code, failure: DiagnosticFailure, correlation: DiagnosticCorrelation = .init(), diagnostic: MetricDiagnostic?
+    ) -> Bool {
         return lock.withLock {
             let timestamp = now()
             guard timestamp.timeIntervalSince1970.isFinite else { return false }
-            events.append(DiagnosticEvent(timestamp: timestamp, code: code, failure: failure, correlation: correlation))
+            events.append(DiagnosticEvent(timestamp: timestamp, code: code, failure: failure, correlation: correlation, diagnostic: diagnostic))
             do {
                 _ = try bound(at: timestamp)
                 return !events.isEmpty
@@ -83,6 +91,14 @@ public final class DiagnosticStore: @unchecked Sendable {
     @discardableResult
     public func record(_ code: DiagnosticEvent.Code, error: any Error, correlation: DiagnosticCorrelation = .init()) -> Bool {
         record(code, failure: DiagnosticFailure(error: error), correlation: correlation)
+    }
+
+    /// Only the reviewed projection can add crash/hang details; arbitrary dictionaries are never accepted.
+    @discardableResult
+    public func record(_ diagnostic: MetricDiagnostic) -> Bool {
+        record(
+            diagnostic.kind == .crash ? .appCrash : .appHang,
+            failure: diagnostic.kind == .crash ? .unknown : .timeout, diagnostic: diagnostic)
     }
 
     /// Expired/future events are removed before every preview as well as every record. Passing a set restricts the

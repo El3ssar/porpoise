@@ -1,0 +1,53 @@
+name: Performance budgets
+on:
+  workflow_call:
+    inputs:
+      base_ref:
+        description: 'Base commit to compare under the same workload'
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: 'Full base commit SHA'
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Budget policy regressions
+        run: python3 scripts/test-performance-budgets.py
+      - name: Compare identical optimized app workloads
+        env:
+          BASE_REF: ${{ inputs.base_ref }}
+        run: python3 scripts/performance-budgets.py --base "$BASE_REF" --out "$PWD/build/performance-budgets"
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f build/performance-budgets/SUMMARY.md ]; then
+            cat build/performance-budgets/SUMMARY.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Performance validation failed before a complete matched comparison. See retained logs.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Retain all measurements and failure logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: performance-budgets-${{ github.run_id }}
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            build/performance-budgets/results.json
+            build/performance-budgets/prepared.json
+            build/performance-budgets/SUMMARY.md
+            build/performance-budgets/*-build.log
+            build/performance-budgets/trials/*/*.json
+            build/performance-budgets/trials/*/app.log

@@ -120,3 +120,71 @@ scrolling, selection, tree expansion/collapse, fractional-zoom rename positionin
 and split reflow. Screenshots, successful input, timer gaps and bridge command
 throughput do not establish presented-frame cadence. Keep this follow-up open until
 its frame trace demonstrates the strict budget.
+
+## CI app budgets: calibrated A/B ratios
+
+`performance-budgets` is a required dependency of CI's existing `build-and-test`
+aggregate. It compares the PR base commit (or previous main-push commit) with the
+candidate on the same runner; manual runs require a base reference. Missing builds,
+unsupported base probe APIs, incomplete workloads, invalid data and excessive noise
+fail the job. CI never substitutes an absolute latency threshold or skips a failed
+calibration. Release CI proof remains tied to the successful CI aggregate.
+
+The checked policy is `Benchmarks/PerformanceBudgets/policy.json`: seven base/base
+pairs followed by seven base/candidate pairs, alternating AB and BA order. One
+fixed, unscored base/candidate warmup pair precedes calibration; both complete
+workloads and all warmup results are retained. Each scored launch still uses a new
+process. This declares warm OS caches, not a disk-cold launch measurement. Both
+apps are optimized local/test-hook builds, with the exact same fixed probe from
+`BridgeProbe.swift`, same 100,000 empty-file fixture, 1180x760 content area, Details
+view, search text, fresh isolated defaults, and OS/toolchain. Compilation, downloads
+and fixture setup finish before the shared `lockf -k /tmp/porpoise-gate.lock`.
+
+| Metric | Measured boundary |
+|---|---|
+| `cold_launch` | Fresh process spawn to an empty browser ready for input, including fixed window/mode setup and bounded IPC polling. This is process-cold; OS caches are not flushed. |
+| `listing_100k` | Navigation input through 100,000 committed model rows and synchronous layout/draw flush. |
+| `search_input` | Text-edit notification through the normal search debounce and the one expected result, with synchronous layout/draw flush. |
+| `idle_cpu` | Owned app process user+system CPU seconds / elapsed seconds over 15 seconds after search completion and one second of settling. |
+
+The process uses a unique test defaults domain, channel and temporary directory per
+trial, plus a private shared bundle identifier for both apps in that run and
+process flags disabling AppKit saved-window restoration. The timing lock is taken
+before the foreground capture lock; each capture lock covers one bounded trial
+(150 seconds plus bounded cleanup), and is released between trials. Real accounts, operator settings, helper installation and production index
+roots are excluded. This makes a repeatable regression workload; idle CPU does not
+certify production energy use after an hour. That longer observation and attended
+presented-frame timings remain separate follow-ups. The small fixed probe avoids
+charging serialization of 100,000 filenames to listing and search. It is overlaid
+identically in owned base/candidate worktrees, never into the shipping build.
+
+For each metric, the empirical noise band is the largest symmetric A/A ratio
+`max(A2/A1, A1/A2)` observed in that run. Compare it with the median of all paired
+B/A ratios. A median beyond the recorded band fails the job; a band above 1.5 also
+fails as an unstable calibration. All individual pairs are retained, including
+outliers. No selected favorable subset, retries-to-green or CI-only absolute target
+is used. A completed output cannot be reused to overwrite a failed measurement.
+This empirical envelope is not a population confidence interval.
+
+Near-zero idle CPU is regularized by adding the largest measured A/A CPU difference
+to both sides before ratios are computed. This offset is recorded in results and
+scales with observed baseline noise; it is not an absolute CPU allowance. All-zero
+base/candidate samples compare as 1; a nonzero candidate against an all-zero base
+fails. NaN, infinity, negative, missing and zero-duration samples fail validation.
+
+`results.json`, `prepared.json`, raw per-trial replies, logs, and `SUMMARY.md` record
+commits, harness hashes, policy, host and all measurements. A partial or timed-out
+run is retained as failure evidence. `python3 scripts/test-performance-budgets.py`
+includes a synthetic slowdown that must make the actual CLI exit 1, plus unchanged,
+improved, noisy, zero-CPU and malformed-input cases.
+
+Run locally (builds are outside the shared timing gate):
+
+```sh
+python3 scripts/performance-budgets.py --base BASE_SHA --out "$PWD/build/performance-example"
+```
+
+The output directory must be new. Its nested `builds/base` and `builds/candidate`
+worktrees are owned by that run and retained for inspection. Do not reuse their
+build directories concurrently. Raw results are local/CI artifacts; no binary or
+report is published to users automatically.

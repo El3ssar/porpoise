@@ -87,9 +87,10 @@ import Testing
         #expect(
             try events(store.preview()).compactMap { $0["code"] as? String } == [
                 "persistence.write_failed", "provider.connected", "provider.disconnected", "subprocess.exited", "helper.unavailable",
-                "recovery.started", "recovery.finished", "transfer.failed", "provider.error", "helper.failed", "app.unclean_exit",
+                "recovery.started", "recovery.finished", "transfer.failed", "provider.error", "helper.failed", "app.unclean_exit", "app.crash",
+                "app.hang",
             ])
-        #expect(try json(store.preview())["schemaVersion"] as? Int == 2)
+        #expect(try json(store.preview())["schemaVersion"] as? Int == 3)
     }
 
     @Test func metadataCorrelationAndSelectedReviewArePreserved() throws {

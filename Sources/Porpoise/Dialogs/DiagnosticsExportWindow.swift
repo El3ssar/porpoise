@@ -43,7 +43,7 @@ final class DiagnosticsExportWindowController: SecondaryWindowController {
         let stack = contentStack()
         let note = NSTextField(
             wrappingLabelWithString:
-                "Porpoise keeps a short record of recent errors in memory: what kind of error, when, and your app and macOS versions. It never includes file or folder names, paths, accounts, servers or messages. Below is exactly what will be saved. Nothing is sent anywhere; you choose who to share the file with."
+                "Porpoise keeps a short record of recent errors in memory: what kind of error, when, and your app and macOS versions. System crash and hang summaries may include numeric codes, durations and anonymous binary offsets. It never includes file or folder names, paths, accounts, servers or messages. Below is exactly what will be saved. Nothing is sent anywhere; you choose who to share the file with."
         )
         note.font = Theme.smallFont
         note.textColor = Theme.windowTextInactive

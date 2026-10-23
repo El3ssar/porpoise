@@ -102,14 +102,18 @@ public struct DiagnosticEvent: Encodable, Sendable {
         case helperFailed = "helper.failed"
         /// The previous launch ended without quitting: a crash, a force quit or a power loss.
         case appUncleanExit = "app.unclean_exit"
+        case appCrash = "app.crash"
+        case appHang = "app.hang"
     }
 
+    public let diagnostic: MetricDiagnostic?
     public let timestamp: Date
     public let code: Code
     public let failure: DiagnosticFailure
     public let correlation: DiagnosticCorrelation
 
-    init(timestamp: Date, code: Code, failure: DiagnosticFailure, correlation: DiagnosticCorrelation) {
+    init(timestamp: Date, code: Code, failure: DiagnosticFailure, correlation: DiagnosticCorrelation, diagnostic: MetricDiagnostic? = nil) {
+        self.diagnostic = diagnostic
         self.timestamp = timestamp
         self.code = code
         self.failure = failure
