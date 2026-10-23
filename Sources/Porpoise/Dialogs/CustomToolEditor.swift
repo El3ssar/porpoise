@@ -3,8 +3,13 @@ import PorpoiseCore
 import PorpoiseServices
 
 /// A draft is saved atomically; closing the editor never changes preferences.
+private final class CustomToolDraft {
+    var tool: CustomTool
+    init(_ tool: CustomTool) { self.tool = tool }
+}
+
 final class CustomToolEditor: SecondaryWindowController {
-    private var draft: CustomTool
+    private let draft: CustomToolDraft
     private let form = FormBuilder()
     private let status = NSTextField(wrappingLabelWithString: "")
     let nameField: NSTextField
@@ -12,7 +17,8 @@ final class CustomToolEditor: SecondaryWindowController {
     let argumentsField: NSTextField
     private let saveTool: (CustomTool) throws -> Void
     init(tool: CustomTool, save: @escaping (CustomTool) throws -> Void) {
-        draft = tool; saveTool = save
+        let state = CustomToolDraft(tool)
+        draft = state; saveTool = save
         nameField = NSTextField(string: tool.name); executableField = NSTextField(string: tool.executable)
         let data = try? JSONEncoder().encode(tool.arguments)
         argumentsField = NSTextField(wrappingLabelWithString: data.flatMap { String(data: $0, encoding: .utf8) } ?? "[]")
@@ -45,32 +51,35 @@ final class CustomToolEditor: SecondaryWindowController {
         )
         let choices = CustomTool.Selection.allCases
         form.popup(
-            "Run on:", ["Current folder", "Exactly one selected item", "One or more selected items"], choices.firstIndex(of: tool.selection) ?? 2
+            "Run on:", ["Current folder", "Exactly one selected item", "One or more selected items"],
+            choices.firstIndex(of: state.tool.selection) ?? 2
         ) {
-            [weak self] in self?.draft.selection = choices[$0]
+            [weak self] in self?.draft.tool.selection = choices[$0]
         }
         let targets = CustomTool.Targets.allCases
-        form.popup("Item kind:", ["Files", "Folders", "Files and folders"], targets.firstIndex(of: tool.targets) ?? 2) { [weak self] in
-            self?.draft.targets = targets[$0]
+        form.popup("Item kind:", ["Files", "Folders", "Files and folders"], targets.firstIndex(of: state.tool.targets) ?? 2) { [weak self] in
+            self?.draft.tool.targets = targets[$0]
         }
-        form.text("Extensions (comma separated):", tool.extensions.joined(separator: ", ")) { [weak self] in self?.draft.extensions = Self.list($0) }
-        form.text("Type identifiers:", tool.types.joined(separator: ", ")) { [weak self] in self?.draft.types = Self.list($0) }
+        form.text("Extensions (comma separated):", state.tool.extensions.joined(separator: ", ")) { [weak self] in
+            self?.draft.tool.extensions = Self.list($0)
+        }
+        form.text("Type identifiers:", state.tool.types.joined(separator: ", ")) { [weak self] in self?.draft.tool.types = Self.list($0) }
         form.note("Leave both filters empty for all types. Otherwise an extension OR a conforming type matches; every selected item must match.")
-        form.text("Value prompt (optional):", tool.prompt) { [weak self] in self?.draft.prompt = $0 }
+        form.text("Value prompt (optional):", state.tool.prompt) { [weak self] in self?.draft.tool.prompt = $0 }
         form.section("Show in")
         for (placement, label) in [
             (CustomTool.Placement.contextMenu, "Context menu"), (.toolbar, "Toolbar tools menu"), (.commandPalette, "Command palette"),
         ] {
-            form.check(label, tool.placements.contains(placement)) { [weak self] on in
-                if on { self?.draft.placements.insert(placement) } else { self?.draft.placements.remove(placement) }
+            form.check(label, state.tool.placements.contains(placement)) { [weak self] on in
+                if on { self?.draft.tool.placements.insert(placement) } else { self?.draft.tool.placements.remove(placement) }
             }
         }
         form.section("Keyboard shortcut")
         form.note("Record a shortcut with ⌘, ⌃ or ⌥. Conflicts with other tools and menu commands are blocked.")
-        let shortcut = CustomToolShortcutButton(shortcut: tool.shortcut) { [weak self] in self?.draft.shortcut = $0 }
+        let shortcut = CustomToolShortcutButton(shortcut: tool.shortcut) { [weak self] in self?.draft.tool.shortcut = $0 }
         form.stack.addArrangedSubview(shortcut)
         form.button("Clear Shortcut") { [weak self, weak shortcut] in
-            self?.draft.shortcut = KeyboardShortcut(); shortcut?.setShortcut(KeyboardShortcut())
+            self?.draft.tool.shortcut = KeyboardShortcut(); shortcut?.setShortcut(KeyboardShortcut())
         }
         form.stack.addArrangedSubview(status); status.widthAnchor.constraint(equalTo: form.stack.widthAnchor, constant: -60).isActive = true
         let cancel = ClosureButton(title: "Cancel") { [weak self] _ in self?.window?.close() }
@@ -86,9 +95,9 @@ final class CustomToolEditor: SecondaryWindowController {
     @discardableResult func save() -> Bool {
         window?.makeFirstResponder(nil)
         do {
-            draft.name = nameField.stringValue; draft.executable = executableField.stringValue
-            draft.arguments = try JSONDecoder().decode([String].self, from: Data(argumentsField.stringValue.utf8))
-            try draft.validate(); try saveTool(draft); window?.close(); return true
+            draft.tool.name = nameField.stringValue; draft.tool.executable = executableField.stringValue
+            draft.tool.arguments = try JSONDecoder().decode([String].self, from: Data(argumentsField.stringValue.utf8))
+            try draft.tool.validate(); try saveTool(draft.tool); window?.close(); return true
         } catch { status.stringValue = error.localizedDescription; status.textColor = Theme.negativeText; return false }
     }
 }

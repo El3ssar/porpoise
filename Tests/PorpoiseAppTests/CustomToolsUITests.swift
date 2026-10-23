@@ -23,6 +23,21 @@ import Testing
         cancelled.nameField.stringValue = "Unsaved"; cancelled.window?.close()
         #expect(saved.count == 1)
     }
+    @Test func draftSurvivesUnrelatedSettingsNotifications() throws {
+        let tool = CustomTool(name: "Draft", executable: "/usr/bin/true", arguments: [])
+        var saved: CustomTool?
+        let editor = CustomToolEditor(tool: tool) { saved = $0 }
+        defer { editor.window?.close() }
+        func buttons(_ view: NSView) -> [NSButton] { (view as? NSButton).map { [$0] } ?? view.subviews.flatMap(buttons) }
+        let root = try #require(editor.window?.contentView)
+        let toolbar = try #require(buttons(root).first { $0.title == "Toolbar tools menu" })
+        toolbar.performClick(nil)
+        #expect(toolbar.state == .on)
+        NotificationCenter.default.post(name: Settings.changed, object: "appearance")
+        #expect(toolbar.state == .on)
+        #expect(editor.save())
+        #expect(saved?.placements.contains(.toolbar) == true)
+    }
     @Test func settingsShowsToolsInOrderAndChecksShortcutConflicts() throws {
         var tools = CustomToolDocument.examples
         try CustomToolsEditorView.save(tools)
