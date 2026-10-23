@@ -115,6 +115,53 @@ struct FolderSearchTests {
         #expect(try await run("match-", limit: 10).names.count == 10)
     }
 
+    @Test(arguments: [1, 100]) func completionRemainsTerminalAfterThePendingBatch(_ limit: Int) async throws {
+        try s.file("terminal-match.txt")
+        var events: [Bool] = []
+        var completedNames: [String] = []
+        let search = FolderSearch(spec: try SearchSpec("terminal-match", contents: false), scope: s.url, limit: limit, tools: tools) {
+            items, _, done in
+            events.append(done)
+            if done { completedNames = items.map(\.name) }
+        }
+        defer { search.stop() }
+        search.start()
+        try #require(await eventually { events.contains(true) })
+        // The first batch is delayed 120 ms. Keep observing after completion so it cannot restart progress.
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(completedNames == ["terminal-match.txt"])
+        #expect(events.filter { $0 }.count == 1)
+        #expect(events.last == true)
+        #expect(!events.drop(while: { !$0 }).dropFirst().contains(false))
+    }
+
+    @Test func aFailedToolRetiresItsPendingBatchBeforeFallback() async throws {
+        try s.file("terminal-match.txt")
+        let tool = try s.file(
+            "failed-tool.sh",
+            """
+            #!/bin/sh
+            for search_scope do :; done
+            printf '%s\\0' "$search_scope/terminal-match.txt"
+            kill -TERM "$$"
+            """)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        var events: [String] = []
+        let search = FolderSearch(
+            spec: try SearchSpec("terminal-match", contents: false), scope: s.url, limit: 100,
+            tools: .init(fd: tool.path)
+        ) { _, _, done in events.append(done ? "done" : "batch") }
+        search.onFailure = { events.append("failure") }
+        defer { search.stop() }
+        search.start()
+        try #require(await eventually { events.contains("failure") })
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(events.filter { $0 == "failure" }.count == 1)
+        #expect(events.last == "failure")
+        #expect(!events.drop(while: { $0 != "failure" }).dropFirst().contains("batch"))
+        #expect(!events.contains("done"))
+    }
+
     @Test func aStoppedSearchSaysNothingMoreAndLeavesNoTool() async throws {
         for i in 0..<200 { try s.file("deep/\(i)/x/y/match-\(i).txt") }
         var calls = 0

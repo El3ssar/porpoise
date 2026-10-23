@@ -86,6 +86,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     private let activeEdge = NSView()
     private var hoverItem: FileItem?
     private var searchQuery: SearchRunner?
+    #if PORPOISE_TEST_HOOKS
+    /// Select an isolated search backend in integration tests, before the real runner starts.
+    var configureSearchForTesting: ((SearchRunner) -> Void)?
+    #endif
     private var observers: [NSObjectProtocol] = []
     /// The list is laid out again only when its scroll view changes size (layout() also runs for status bar text).
     private var laidOutScrollSize: NSSize?
@@ -858,6 +862,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 self.refreshListState()
             }
         }
+        #if PORPOISE_TEST_HOOKS
+        if let searchQuery { configureSearchForTesting?(searchQuery) }
+        #endif
         searchQuery?.start()
     }
 
