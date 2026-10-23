@@ -161,7 +161,7 @@ final class QuickSelectSheet: NSObject, NSComboBoxDelegate {
             return
         }
         let n = candidates.lazy.filter(matches).count
-        count.stringValue = n == 0 ? "No items match." : "\(FileFormat.itemCount(n)) of \(candidates.count) match."
+        count.stringValue = n == 0 ? "No items match." : "\(n) of \(FileFormat.itemCount(candidates.count)) \(n == 1 ? "matches" : "match")."
         count.textColor = NSColor.secondaryLabelColor
         alert.buttons.first?.isEnabled = true
     }

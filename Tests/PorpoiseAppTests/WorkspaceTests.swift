@@ -227,7 +227,7 @@ import Testing
         #expect(sheet.status.text == "" && !sheet.status.enabled && sheet.defaultButtonTitle == "Select")
         sheet.fill(QuickSelect(.fileExtension, "md, csv"), action: .add)
         sheet.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
-        #expect(sheet.status == ("2 items of 6 match.", true))
+        #expect(sheet.status == ("2 of 6 items match.", true))
         #expect(sheet.field.objectValues.compactMap { $0 as? String }.contains("md"), "the folder's extensions are offered")
         sheet.fill(QuickSelect(.name, "["), action: .remove)
         sheet.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
