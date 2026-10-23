@@ -10,6 +10,31 @@ import Testing
 /// One operation contract, including destructive/conflict assertions, for every location. Each invocation owns
 /// its filesystem/server. SMB exercises the mounted-local boundary, not the macOS SMB implementation.
 @Suite(.serialized) struct ProviderCapabilityContractTests {
+    @Test func driveUploadsNestedFoldersWithoutFollowingAncestorCycles() async throws {
+        let fixture = try ProviderContractFixture(.drive); defer { fixture.close() }
+        let source = try Scratch(), destination = try Scratch()
+        let folder = try source.folder("upload tree")
+        try source.file("upload tree/top.txt", "top bytes")
+        try source.file("upload tree/nested/deep.txt", "nested bytes ü")
+        try source.folder("upload tree/empty")
+        try FileManager.default.createSymbolicLink(atPath: folder.appendingPathComponent("loop").path, withDestinationPath: ".")
+        try FileManager.default.createSymbolicLink(
+            atPath: folder.appendingPathComponent("nested/back").path, withDestinationPath: "..")
+        try await offThePool {
+            try fixture.upload(folder, fixture.root)
+            let uploaded = try fixture.child(folder.lastPathComponent, in: fixture.root)
+            #expect(uploaded.isDirectory)
+            #expect(try fixture.list(uploaded.url).map(\.name).sorted() == ["empty", "nested", "top.txt"])
+            let nested = try fixture.child("nested", in: uploaded.url)
+            #expect(try fixture.list(nested.url).map(\.name) == ["deep.txt"])
+            let top = try fixture.child("top.txt", in: uploaded.url), deep = try fixture.child("deep.txt", in: nested.url)
+            #expect(try String(contentsOf: fixture.download(top.url, destination.url), encoding: .utf8) == "top bytes")
+            #expect(try String(contentsOf: fixture.download(deep.url, destination.url), encoding: .utf8) == "nested bytes ü")
+            let empty = try fixture.child("empty", in: uploaded.url)
+            #expect(try fixture.list(empty.url).isEmpty)
+        }
+    }
+
     @Test(arguments: ProviderLocation.allCases)
     func operations(_ location: ProviderLocation) async throws {
         let fixture = try ProviderContractFixture(location)
