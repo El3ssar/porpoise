@@ -13,6 +13,8 @@ extension DebugBridge {
             let operation = request["operation"] as? String, let report = request["report"] as? String,
             let view = wc?.view, let window = wc?.window
         else { return }
+        // Launch sends readiness requests until the bridge answers. A completed reply retires all duplicates.
+        guard operation != "ready" || !FileManager.default.fileExists(atPath: report) else { return }
         let model = view.model
         let start = ProcessInfo.processInfo.systemUptime
         let expected = request["expected"] as? Int ?? 0
@@ -32,6 +34,7 @@ extension DebugBridge {
         default: return
         }
         @MainActor func poll() {
+            guard operation != "ready" || !FileManager.default.fileExists(atPath: report) else { return }
             let ready: Bool
             switch operation {
             case "listing": ready = !model.isLoading && !model.isSearching && model.items.count == expected && model.rows.count == expected
