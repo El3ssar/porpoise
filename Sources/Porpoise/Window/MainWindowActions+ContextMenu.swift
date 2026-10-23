@@ -161,6 +161,11 @@ extension MainWindowController {
         if single && item.isBrowsableFolder {
             m.addItem(self.item("Paste Into Folder", "edit-paste", #selector(paste(_:)), obj: Self.pasteIntoFolder))
         }
+        if single, local, !item.isDirectory, !item.isSymlink,
+            let git = c.model.gitStatus?.status(for: item), git != .ignored
+        {
+            m.addItem(self.item("Show Changes", "document-preview", #selector(showGitChanges(_:))))
+        }
         if fileComparisonSelection.count == 2 {
             m.addItem(self.item("Compare Files…", "document-preview", #selector(compareFiles(_:))))
         }

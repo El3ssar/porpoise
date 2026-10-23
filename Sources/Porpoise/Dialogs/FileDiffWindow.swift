@@ -21,6 +21,13 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
         NSApp.activate(ignoringOtherApps: true); controller.window?.makeKeyAndOrderFront(nil)
     }
 
+    static func present(git: GitComparison) {
+        let controller = FileDiffWindow(left: git.left, right: git.right, git: git)
+        controller.keepOpen(); controller.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true); controller.window?.makeKeyAndOrderFront(nil)
+    }
+
+    private let gitComparison: GitComparison?
     let leftURL: URL, rightURL: URL
     private let root = FileDiffRoot()
     private let header = NSView(), footer = NSView(), body = FileDiffBody()
@@ -55,7 +62,7 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
     private let diffQueue = DispatchQueue(label: "app.porpoise.text-diff", qos: .userInitiated, autoreleaseFrequency: .workItem)
     private var leftFile: ComparedFile?, rightFile: ComparedFile?
     private var copies: FileComparisonCopies?
-    private var readOnly: Bool { !leftURL.isFileURL || !rightURL.isFileURL }
+    private var readOnly: Bool { gitComparison != nil || !leftURL.isFileURL || !rightURL.isFileURL }
     private var leftText: String?, rightText: String?
     private var savedLeft: String?, savedRight: String?
     private var images: FileDiffImages?
@@ -96,7 +103,8 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
         ask(dirty[...]); return true
     }
 
-    init(left: URL, right: URL) {
+    init(left: URL, right: URL, git: GitComparison? = nil) {
+        gitComparison = git
         leftURL = left; rightURL = right
         let w = FileDiffNativeWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1000, height: 680),
@@ -403,7 +411,7 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
             }
         }
         if busy { facts.stringValue = "Comparing…" }
-        if readOnly { facts.stringValue += " · Read-only downloaded copy" }
+        if readOnly { facts.stringValue += gitComparison != nil ? " · Read-only Git comparison" : " · Read-only downloaded copy" }
         root.needsLayout = true
     }
     @objc private func controlChanged(_ sender: NSSegmentedControl) {

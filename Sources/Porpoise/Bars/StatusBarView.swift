@@ -8,6 +8,7 @@ private typealias FontSize = Tokens.FontSize
 /// Dolphin's status bar. Full width (default here): a thin translucent strip with folder/selection info on the left,
 /// the icon-size slider and a disk-space bar on the right. Small mode: Dolphin's floating box in the view's corner.
 final class StatusBarView: NSView {
+    var gitText = "" { didSet { if gitText != oldValue { update() } } }
     var text = "" { didSet { if text != oldValue { update() } } }
     /// A message shown for a moment instead of `text` (see `showMessage`).
     var temporaryText: String? { didSet { if temporaryText != oldValue { update() } } }
@@ -106,7 +107,10 @@ final class StatusBarView: NSView {
         tempTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in self?.temporaryText = nil }
     }
 
-    var displayText: String { temporaryText ?? text }
+    var displayText: String {
+        if let temporaryText { return temporaryText }
+        return gitText.isEmpty ? text : gitText + (text.isEmpty ? "" : " · " + text)
+    }
 
     private var textAttrs: [NSAttributedString.Key: Any] {
         let p = NSMutableParagraphStyle(); p.lineBreakMode = .byClipping
