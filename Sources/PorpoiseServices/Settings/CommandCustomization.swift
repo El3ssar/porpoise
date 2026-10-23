@@ -12,7 +12,12 @@ extension Settings {
     }
     public func importKeyboardShortcuts(_ data: Data, actions: [ShortcutAction]) throws {
         let preferences = try ShortcutPreferences.decode(data)
-        guard preferences.conflicts(actions: actions).isEmpty else {
+        let allActions =
+            actions
+            + customTools.map {
+                ShortcutAction(id: "customTool:" + $0.id.uuidString, title: $0.name, defaults: [$0.shortcut])
+            }
+        guard preferences.conflicts(actions: allActions).isEmpty else {
             throw ShortcutError.invalid("The shortcut file contains conflicting bindings. No bindings were changed.")
         }
         keyboardShortcuts = preferences

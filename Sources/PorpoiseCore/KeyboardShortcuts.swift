@@ -128,7 +128,7 @@ public struct ShortcutPreferences: Codable, Sendable, Equatable {
 
 /// Identifiers shared by the native customization palette and the custom unified toolbar.
 public enum ToolbarCommand: String, Codable, CaseIterable, Sendable {
-    case back, forward, up, viewMode, location, split, search, menu, reload, newTab, terminal, commandPalette, link
+    case back, forward, up, viewMode, location, split, search, menu, reload, newTab, terminal, commandPalette, link, customTools
     public var title: String {
         switch self {
         case .back: return "Back"
@@ -144,6 +144,7 @@ public enum ToolbarCommand: String, Codable, CaseIterable, Sendable {
         case .terminal: return "Terminal"
         case .commandPalette: return "Command Palette"
         case .link: return "Linked Browsing"
+        case .customTools: return "Custom Tools"
         }
     }
     public static let defaults: [Self] = [.back, .forward, .up, .viewMode, .location, .split, .search, .menu]

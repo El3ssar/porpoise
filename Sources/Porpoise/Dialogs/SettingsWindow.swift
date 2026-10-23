@@ -212,6 +212,7 @@ final class SettingsWindowController: SecondaryWindowController {
             TransferSettingsPage.build(f)
         }
         page("Shortcuts", "keyboard", ShortcutSettingsPage.build)
+        page("Custom Tools", "hammer", CustomToolsSettingsPage.build)
         page("Advanced", "gearshape.2") { f in
             f.section("Ask for confirmation when")
             f.check("Moving files or folders to the Trash", s.confirmTrash) { s.confirmTrash = $0 }

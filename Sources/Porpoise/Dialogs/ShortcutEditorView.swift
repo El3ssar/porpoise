@@ -90,7 +90,7 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
             try shortcut.validate()
             MenuCommandRegistry.shared.refresh(fillDynamic: false)
             var preferences = Settings.shared.keyboardShortcuts; preferences.overrides[selected.id] = shortcut
-            let conflicts = preferences.conflicts(actions: MenuCommandRegistry.shared.commands.map(\.definition))
+            let conflicts = preferences.conflicts(actions: MenuCommandRegistry.shared.shortcutActions)
             guard conflicts.isEmpty else {
                 let names = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0.path) })
                 status.stringValue = conflicts.map {
@@ -105,7 +105,7 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
     private func resetSelected() {
         guard let selected else { return }
         var preferences = Settings.shared.keyboardShortcuts; preferences.overrides.removeValue(forKey: selected.id)
-        let conflicts = preferences.conflicts(actions: MenuCommandRegistry.shared.commands.map(\.definition))
+        let conflicts = preferences.conflicts(actions: MenuCommandRegistry.shared.shortcutActions)
         guard conflicts.isEmpty else {
             status.stringValue = "The default conflicts with another customized action. Clear that binding or Reset All first."; return
         }
@@ -128,7 +128,7 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try Settings.shared.importKeyboardShortcuts(Data(contentsOf: url), actions: MenuCommandRegistry.shared.commands.map(\.definition));
+            try Settings.shared.importKeyboardShortcuts(Data(contentsOf: url), actions: MenuCommandRegistry.shared.shortcutActions);
             status.stringValue = "Shortcuts imported."; status.textColor = Theme.viewTextInactive
         } catch { status.stringValue = error.localizedDescription; status.textColor = Theme.negativeText }
     }

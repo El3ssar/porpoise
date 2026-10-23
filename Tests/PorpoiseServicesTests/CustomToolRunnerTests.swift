@@ -23,6 +23,23 @@ import Testing
         let runner = CustomToolRunner()
         #expect(throws: (any Error).self) { try runner.start(id: tools[0].id, context: context(scratch)) }
         #expect(runner.runs.isEmpty)
+        var folderTool = tools[1]; folderTool.arguments = []
+        try Settings.shared.saveCustomTools([folderTool])
+        let large = CustomToolContext(
+            folder: scratch.url, items: Array(repeating: FileItem(url: scratch.path("item"), name: "item", isDirectory: false), count: 101))
+        #expect(throws: (any Error).self) { try runner.start(id: folderTool.id, context: large) }
+        #expect(runner.runs.isEmpty)
+    }
+    @Test(.isolatedSettings) func importingCommandShortcutsCannotStealAToolBinding() throws {
+        var tool = CustomToolDocument.examples[0]
+        tool.shortcut = KeyboardShortcut(key: "9", modifiers: [.command, .option])
+        try Settings.shared.saveCustomTools([tool])
+        var preferences = ShortcutPreferences()
+        preferences.overrides["other"] = tool.shortcut
+        #expect(throws: (any Error).self) {
+            try Settings.shared.importKeyboardShortcuts(preferences.encoded(), actions: [ShortcutAction(id: "other", title: "Other", defaults: [])])
+        }
+        #expect(Settings.shared.keyboardShortcuts.overrides.isEmpty)
     }
     @Test(.isolatedSettings) func literalArgumentsCurrentFolderOutputAndNonzeroExit() async throws {
         let scratch = try Scratch()

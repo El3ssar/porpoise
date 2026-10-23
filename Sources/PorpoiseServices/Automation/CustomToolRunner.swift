@@ -32,7 +32,12 @@ import PorpoiseFileSystem
     public init() {}
     static func notify() { NotificationCenter.default.post(name: changed, object: nil) }
     /// Re-reads the settings by ID: callers cannot smuggle an executable in through a menu or external request.
-    @discardableResult public func start(id: UUID, context: CustomToolContext, value: String? = nil) throws -> CustomToolRun {
+    @discardableResult public func start(id: UUID, context: CustomToolContext, value: String? = nil, confirmedLargeSelection: Bool = false) throws
+        -> CustomToolRun
+    {
+        guard !context.needsConfirmation || confirmedLargeSelection else {
+            throw CustomToolError.invalid("Confirm running a tool on more than 100 items first.")
+        }
         guard let tool = Settings.shared.customTools.first(where: { $0.id == id }) else {
             throw CustomToolError.invalid("This tool no longer exists.")
         }

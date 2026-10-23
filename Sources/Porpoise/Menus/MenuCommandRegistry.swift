@@ -37,6 +37,12 @@ extension ShortcutModifiers {
     }
     private var originals: [ObjectIdentifier: Original] = [:]
     private(set) var commands: [Command] = []
+    var shortcutActions: [ShortcutAction] {
+        commands.map(\.definition)
+            + Settings.shared.customTools.map {
+                ShortcutAction(id: "customTool:" + $0.id.uuidString, title: $0.name, defaults: [$0.shortcut])
+            }
+    }
     private var observer: NSObjectProtocol?
 
     func start() {
@@ -45,8 +51,10 @@ extension ShortcutModifiers {
             MainActor.assumeIsolated {
                 let key = note.object as? String
                 // The key set decides the menu items' own keys (and which hidden alternates exist): build the menu bar again.
-                if note.object == nil || key == "shortcutKeySet" { NSApp.mainMenu = AppDelegate.shared.buildMainMenu() }
-                if note.object == nil || key == "keyboardShortcuts" || key == "shortcutKeySet" { self?.refresh(fillDynamic: false) }
+                if note.object == nil || key == "shortcutKeySet" || key == "customTools" { NSApp.mainMenu = AppDelegate.shared.buildMainMenu() }
+                if note.object == nil || key == "keyboardShortcuts" || key == "shortcutKeySet" || key == "customTools" {
+                    self?.refresh(fillDynamic: false)
+                }
             }
         }
     }
@@ -68,7 +76,7 @@ extension ShortcutModifiers {
                     if submenu !== NSApp.servicesMenu { walk(submenu, path: path + [item.title]) }
                     continue
                 }
-                guard item.action != nil, !Self.isAppKits(item) else { continue }
+                guard item.action != nil, item.action != #selector(MainWindowController.runCustomTool(_:)), !Self.isAppKits(item) else { continue }
                 let id = Self.id(item)
                 if grouped[id] == nil { order.append(id) }
                 grouped[id, default: []].append((item, (path + [item.title]).joined(separator: " › ")))
@@ -96,7 +104,7 @@ extension ShortcutModifiers {
     func apply() {
         let preferences = Settings.shared.keyboardShortcuts
         // A clash leaves the actions involved as they are; every other binding still applies.
-        let clashing = Set(preferences.conflicts(actions: commands.map(\.definition)).flatMap { [$0.first, $0.second] })
+        let clashing = Set(preferences.conflicts(actions: shortcutActions).flatMap { [$0.first, $0.second] })
         for command in commands where !clashing.contains(command.id) {
             let items = [command.item] + command.aliases
             if let override = preferences.overrides[command.id] {
@@ -118,7 +126,7 @@ extension ShortcutModifiers {
         @MainActor func walk(_ menu: NSMenu) {
             for item in menu.items {
                 if let submenu = item.submenu { walk(submenu) }
-                guard item.action != nil, !Self.isAppKits(item) else { continue }
+                guard item.action != nil, item.action != #selector(MainWindowController.runCustomTool(_:)), !Self.isAppKits(item) else { continue }
                 let identity = ObjectIdentifier(item)
                 if originals[identity] == nil { originals[identity] = Original(item) }
                 if let shortcut = preferences.overrides[Self.id(item)] {

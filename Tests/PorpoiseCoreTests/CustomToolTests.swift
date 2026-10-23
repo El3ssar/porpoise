@@ -74,6 +74,16 @@ struct CustomToolTests {
         let tool = CustomTool(name: "Safe positional data", executable: "/bin/sh", arguments: ["-c", "printf '%s\\n' \"$@\"", "tool", "{selection}"])
         try tool.validate()
     }
+    @Test func aHundredThousandTargetsMatchWithoutFilesystemReads() {
+        let entry = item("report.txt")
+        let context = CustomToolContext(folder: folder, items: Array(repeating: entry, count: 100_000))
+        var tool = CustomTool(name: "Text", executable: "/usr/bin/true", arguments: [])
+        tool.extensions = ["txt"]
+        let start = ContinuousClock.now
+        #expect(tool.unavailableReason(in: context) == nil)
+        print("Custom tools: matching 100000 cached file items took \(start.duration(to: .now))")
+        #expect(context.needsConfirmation)
+    }
     @Test func documentIsVersionedAtomicAndHasSafeExamples() throws {
         let examples = CustomToolDocument.examples
         let document = CustomToolDocument(tools: examples)

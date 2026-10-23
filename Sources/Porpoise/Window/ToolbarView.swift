@@ -106,7 +106,11 @@ final class ToolbarView: NSView {
         super.layout()
         background.frame = bounds
         hairline.frame = CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
-        if Settings.shared.toolbarCommands != ToolbarCommand.defaults { layoutCustom(); return }
+        if Settings.shared.toolbarCommands != ToolbarCommand.defaults
+            || Settings.shared.customTools.contains(where: { $0.placements.contains(.toolbar) })
+        {
+            layoutCustom(); return
+        }
         restoreDefaultGroups()
         let gh = Self.capsuleHeight
         let gy = (bounds.height - gh) / 2
@@ -162,6 +166,7 @@ final class ToolbarView: NSView {
             let item = NSMenuItem(); item.tag = 3; controller.togglePanel(item)
         case .commandPalette: AppDelegate.shared.showCommandPalette(nil)
         case .link: controller.toggleLinkedBrowsing(nil)
+        case .customTools: controller.showToolbarCustomTools(extraButtons[command])
         default: break
         }
     }
@@ -182,6 +187,9 @@ final class ToolbarView: NSView {
         viewMode.showsMenuIndicator = false; viewMode.isSplitButton = false
         customGroups.values.forEach { $0.isHidden = true }
         var commands = Settings.shared.toolbarCommands
+        if Settings.shared.customTools.contains(where: { $0.placements.contains(.toolbar) }), !commands.contains(.customTools) {
+            commands.append(.customTools)
+        }
         let gh = Self.capsuleHeight, gy = (bounds.height - gh) / 2
         let gap: CGFloat = 6
         transferGroup.isHidden = transfers.isHidden
@@ -267,6 +275,7 @@ private extension ToolbarCommand {
         case .terminal: return "utilities-terminal"
         case .commandPalette: return "system-search"
         case .link: return "insert-link"
+        case .customTools: return "system-run"
         default: return "application-menu"
         }
     }

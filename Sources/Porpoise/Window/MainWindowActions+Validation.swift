@@ -45,6 +45,13 @@ extension MainWindowController: NSMenuItemValidation {
         {
             return false
         }
+        if item.action == #selector(runCustomTool(_:)) {
+            guard let raw = item.representedObject as? String, let id = UUID(uuidString: raw),
+                let tool = Settings.shared.customTools.first(where: { $0.id == id })
+            else { return false }
+            item.toolTip = tool.unavailableReason(in: customToolContext)
+            return item.toolTip == nil
+        }
         let p = view.model.props
         let ops = FileOperationsController.shared
         if let r = validateCloudItem(item) { return r }

@@ -13,6 +13,8 @@ extension MainWindowController {
         // The entries act on the active view: right-clicking the inactive split pane activates it first.
         if c !== view { containerDidBecomeActive(c) }
         let m = buildContextMenu(for: item, in: c)
+        let tools = customToolMenu(.contextMenu)
+        if !tools.items.isEmpty { m.addItem(.separator()); m.addItem(sub("Custom Tools", "system-run", tools)) }
         applyContextMenuSettings(m, hasItem: item != nil)
         return m
     }
