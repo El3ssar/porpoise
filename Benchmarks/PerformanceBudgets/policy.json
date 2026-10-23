@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "pairs": 7,
+  "files": 100000,
+  "idle_seconds": 5,
+  "maximum_noise_ratio": 1.5,
+  "metrics": ["cold_launch", "listing_100k", "search_input", "idle_cpu"]
+}
