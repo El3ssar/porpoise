@@ -17,9 +17,13 @@ extension MainWindowController {
 
     /// Re-arranges the panel split views according to which panels are visible.
     func rebuildPanels() {
+        let responder = window?.firstResponder
         // The split views pass through transient sizes while being rebuilt; don't remember those.
         rebuildingPanels = true
         defer { rebuildingPanels = false }
+        finishInformationMove()
+        informationTab?.dockInformation(in: nil)
+        informationTab = nil
         for s in [outer, hSplit, vSplit, leftStack] {
             s.arrangedSubviews.forEach {
                 s.removeArrangedSubview($0); $0.removeFromSuperview()
@@ -34,30 +38,24 @@ extension MainWindowController {
             layoutSidebar()
         }
         outer.addArrangedSubview(mainColumn)
-        hSplit.addArrangedSubview(centerColumn)
-        if showInformation { hSplit.addArrangedSubview(information) }
-        vSplit.addArrangedSubview(hSplit)
+        vSplit.addArrangedSubview(centerColumn)
         if showTerminal { vSplit.addArrangedSubview(terminal) }
         // Panels hold their size when the window resizes; the views take up the difference.
         for (i, v) in outer.arrangedSubviews.enumerated() { outer.setHoldingPriority(v === mainColumn ? .defaultLow : .init(270), forSubviewAt: i) }
-        for (i, v) in hSplit.arrangedSubviews.enumerated() {
-            hSplit.setHoldingPriority(v === centerColumn ? .defaultLow : .init(261), forSubviewAt: i)
+        for (i, v) in vSplit.arrangedSubviews.enumerated() {
+            vSplit.setHoldingPriority(v === centerColumn ? .defaultLow : .init(260), forSubviewAt: i)
         }
-        for (i, v) in vSplit.arrangedSubviews.enumerated() { vSplit.setHoldingPriority(v === hSplit ? .defaultLow : .init(260), forSubviewAt: i) }
         layoutRoot()
         outer.layoutSubtreeIfNeeded()
         // Newly added panels arrive with empty frames; give every split its full extent before placing dividers
         // (setPosition only moves space between neighbours, so two zero-sized neighbours would stay at zero).
-        for split in [outer, hSplit, vSplit] { split.adjustSubviews() }
+        for split in [outer, vSplit] { split.adjustSubviews() }
         if sidebarVisible {
             outer.setPosition(PanelSize.sidebarWidth.fitted(in: outer.bounds.width, divider: outer.dividerThickness), ofDividerAt: 0)
         }
         mainColumn.layoutSubtreeIfNeeded()
         vSplit.layoutSubtreeIfNeeded()
-        if showInformation {
-            let w = hSplit.bounds.width, d = hSplit.dividerThickness
-            hSplit.setPosition(w - PanelSize.informationWidth.fitted(in: w, divider: d) - d, ofDividerAt: 0)
-        }
+        syncInformationPanel()
         if showTerminal {
             let h = vSplit.bounds.height, d = vSplit.dividerThickness
             vSplit.setPosition(h - PanelSize.terminalHeight.fitted(in: h, divider: d) - d, ofDividerAt: 0)
@@ -81,6 +79,7 @@ extension MainWindowController {
         Settings.store.set(showTerminal, forKey: "panel.terminal")
         Settings.store.set(showShelf, forKey: "panel.shelf")
         alignNavigators()
+        if let responder { window?.makeFirstResponder(responder) }
         AppDelegate.shared.sessionChanged()
     }
 
@@ -115,7 +114,7 @@ extension MainWindowController {
     }
 
     /// Ends the running panel slide at once, applying what it was going to apply.
-    private func finishPanelSlide() {
+    func finishPanelSlide() {
         panelAnimator.stop()
         animatingPanels = false
         let completion = pendingSlideCompletion
@@ -127,10 +126,14 @@ extension MainWindowController {
     /// The panes' item animations (both sides of a split).
     private var paneTransitions: [ItemTransitions] { [tab.primary.list.transitions] + (tab.secondary.map { [$0.list.transitions] } ?? []) }
 
+    private func paneTransitions(for slot: PanelSlot) -> [ItemTransitions] {
+        slot == .information ? [view.list.transitions] : paneTransitions
+    }
+
     /// A panel beside the files is about to slide: their items glide to their new places once, over the slide.
     private func holdPanes(for slot: PanelSlot) {
         guard slot != .terminal else { return }
-        for t in paneTransitions { t.holdForPanel() }
+        for t in paneTransitions(for: slot) { t.holdForPanel() }
     }
 
     /// Places/Folders sit below the title bar area; the strip above them (with the traffic lights) drags the window.
@@ -176,7 +179,7 @@ extension MainWindowController {
             split.setPosition(target, ofDividerAt: divider)
             split.layoutSubtreeIfNeeded()
         }
-        for t in paneTransitions { t.glideForPanel(duration: duration, curve: curve) }
+        for t in paneTransitions(for: slot) { t.glideForPanel(duration: duration, curve: curve) }
         split.setPosition(from, ofDividerAt: divider)
         panelAnimator.run(
             duration: duration, curve: curve,
@@ -256,7 +259,7 @@ extension MainWindowController {
     /// Panels keep their size when the window resizes; only the views (and the panel splits holding them) adjust.
     /// The panel splits are framed by hand, so NSSplitView's proportional resizing applies, not holding priorities.
     func splitView(_ splitView: NSSplitView, shouldAdjustSizeOfSubview view: NSView) -> Bool {
-        view === mainColumn || view === centerColumn || view === hSplit
+        view === mainColumn || view === centerColumn || view === informationTab?.informationPane
     }
 
     /// Divider drags stay within the sizes a panel may have (see `PanelSize.dividerRange`), so the files keep room

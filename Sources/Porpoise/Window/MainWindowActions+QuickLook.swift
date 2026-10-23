@@ -18,6 +18,15 @@ extension MainWindowController: QLPreviewPanelDataSource, QLPreviewPanelDelegate
         panel.dataSource = nil; panel.delegate = nil
     }
 
+    /// Selection and pane focus changes use the same source, including cloud materialization.
+    func refreshQuickLook() {
+        if driveMediaQuickLook?.isVisible == true, !showDriveMediaQuickLook() { driveMediaQuickLook?.close() }
+        if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible {
+            prepareDriveQuickLook()
+            QLPreviewPanel.shared().reloadData()
+        }
+    }
+
     @discardableResult func showDriveMediaQuickLook() -> Bool {
         guard quickLookURLs.count == 1, let url = quickLookURLs.first,
             let cloud = RemoteFS.provider(for: url) as? CloudFileProvider,
