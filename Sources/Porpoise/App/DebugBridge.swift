@@ -38,7 +38,8 @@ import SwiftTerm
 
     /// Every command by its first word, from the tables of the domain extensions.
     private static let commands = [
-        stateCommands, captureCommands, inputCommands, placesCommands, settingsCommands, transfersCommands, cloudCommands, workspaceCommands,
+        stateCommands, captureCommands, inputCommands, columnCommands, placesCommands, settingsCommands, transfersCommands, cloudCommands,
+        workspaceCommands,
     ].reduce(into: [String: Command]()) { all, table in
         all.merge(table) { first, _ in
             assertionFailure("two bridge commands share a name"); return first

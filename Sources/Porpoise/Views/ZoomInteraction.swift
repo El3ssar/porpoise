@@ -15,9 +15,10 @@ protocol ZoomableView: AnyObject {
 extension ZoomableView where Self: NSView {
     /// Cmd+wheel or Cmd+two-finger scroll zooms around the pointer, smoothly (trackpads) or by Dolphin's steps (mouse
     /// wheels). False without Cmd: the view scrolls.
-    func zoomWithWheel(_ event: NSEvent) -> Bool {
+    /// `anchored`: around the pointer (false: the pointer is over another view, so the view keeps its own place).
+    func zoomWithWheel(_ event: NSEvent, anchored: Bool = true) -> Bool {
         guard event.modifierFlags.contains(.command) else { return false }
-        let p = convert(event.locationInWindow, from: nil)
+        let p = anchored ? convert(event.locationInWindow, from: nil) : nil
         if event.hasPreciseScrollingDeltas {
             let level = ZoomLevels.continuousLevel(for: iconSize) + Double(event.scrollingDeltaY) * 0.02
             previewZoom(ZoomLevels.size(forContinuousLevel: level), anchor: p, commitAfter: 0.35)
@@ -28,8 +29,8 @@ extension ZoomableView where Self: NSView {
     }
 
     /// Pinch: continuous zoom around the fingers, saved when the gesture ends.
-    func zoomWithPinch(_ event: NSEvent) {
-        let p = convert(event.locationInWindow, from: nil)
+    func zoomWithPinch(_ event: NSEvent, anchored: Bool = true) {
+        let p = anchored ? convert(event.locationInWindow, from: nil) : nil
         previewZoom(iconSize * (1 + event.magnification), anchor: p, commitAfter: event.phase == .ended || event.phase == .cancelled ? 0 : 0.5)
     }
 }

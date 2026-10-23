@@ -74,4 +74,23 @@ extension ViewContainer {
         browser.didNavigate()
         needsLayout = true
     }
+
+    /// The columns at the history entry the pane leaves, for Back and Forward to put back.
+    func keepColumns() {
+        columnSnapshots[history.index] = columnBrowser?.snapshot()
+    }
+
+    /// A new history entry after `from`: the entries that were after it are gone, and the oldest may have gone too.
+    func columnsVisited(from: Int) {
+        let dropped = from + 1 - history.index
+        columnSnapshots = Dictionary(
+            uniqueKeysWithValues: columnSnapshots.compactMap { i, s in i <= from && i - dropped >= 0 ? (i - dropped, s) : nil })
+    }
+
+    /// Back or Forward (`go`) to an entry: its columns as they were.
+    func restoreColumns(_ go: () -> Void) {
+        columnBrowser?.restoring = columnSnapshots[history.index]
+        go()
+        columnBrowser?.restoring = nil
+    }
 }
