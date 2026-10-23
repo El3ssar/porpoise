@@ -34,6 +34,7 @@ extension MainWindowController {
         layoutRoot()
         syncToActiveView()
         window?.makeFirstResponder(view.list)
+        AppDelegate.shared.sessionChanged()
     }
 
     func updateTabBar() {
@@ -82,6 +83,7 @@ extension MainWindowController {
         tabs.insert(tabs.remove(at: from), at: to)
         current = tabs.firstIndex { $0 === wasCurrent } ?? to
         updateTabBar()
+        AppDelegate.shared.sessionChanged()
     }
     func tabBar(_ bar: TabBarView, folderAt index: Int) -> URL? { tabs.indices.contains(index) ? tabs[index].active.url : nil }
     func tabBar(_ bar: TabBarView, drop urls: [URL], onto index: Int, operation: NSDragOperation) {

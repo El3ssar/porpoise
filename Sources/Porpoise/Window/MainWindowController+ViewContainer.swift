@@ -14,6 +14,7 @@ extension MainWindowController {
         } else if tab.primary === c && tab.activeIsSecondary {
             tab.setActive(secondary: false); syncToActiveView()
         }
+        AppDelegate.shared.sessionChanged()
     }
 
     func containerDidChangeURL(_ c: ViewContainer) {

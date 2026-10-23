@@ -65,11 +65,36 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     var fittingPanels = false
 
     convenience init(urls: [URL], split: [URL?] = []) {
-        let w = DolphinWindow(
+        self.init(window: Self.browserWindow())
+        setUpWindow()
+        // In the given order, not each one after the current tab.
+        for (i, u) in (urls.isEmpty ? [Settings.shared.homeURL] : urls).enumerated() {
+            addTab(url: u, select: i == 0, split: split[safe: i] ?? nil, afterCurrent: false)
+        }
+        if Settings.shared.splitViewOnStartup && !tab.isSplit { tab.openSplit() }
+        showTab(0)
+        if window?.frame.origin == .zero { window?.center() }
+    }
+
+    /// A window showing `layout` (a restored session's window): its tabs are the only ones it ever has, so nothing
+    /// else is listed or shown first. Nil when the layout can't be applied (no tabs, a newer format).
+    convenience init?(layout: WindowLayout) {
+        guard layout.normalized != nil else { return nil }
+        self.init(window: Self.browserWindow())
+        setUpWindow()
+        applyLayout(layout, frame: true)
+        if window?.frame.origin == .zero { window?.center() }
+    }
+
+    private static func browserWindow() -> DolphinWindow {
+        DolphinWindow(
             contentRect: CGRect(x: 0, y: 0, width: 1180, height: 760),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
-        self.init(window: w)
+    }
+
+    private func setUpWindow() {
+        guard let w = window else { return }
         w.titlebarAppearsTransparent = true
         w.titleVisibility = .hidden
         w.isMovableByWindowBackground = false
@@ -82,13 +107,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         w.contentView = root
         root.controller = self
         setupViews()
-        // In the given order (a restored session), not each one after the current tab.
-        for (i, u) in (urls.isEmpty ? [Settings.shared.homeURL] : urls).enumerated() {
-            addTab(url: u, select: i == 0, split: split[safe: i] ?? nil, afterCurrent: false)
-        }
-        if Settings.shared.splitViewOnStartup && !tab.isSplit { tab.openSplit() }
-        showTab(0)
-        if w.frame.origin == .zero { w.center() }
     }
 
     // MARK: - Setup
@@ -160,6 +178,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         observe(.splitResized) { me, n in
             // Only the visible tab's split moves the toolbar's navigators.
             if me.tabs.indices.contains(me.current), n.object as? PorpoiseTab === me.tab { me.alignNavigators() }
+            // Opened, closed or dragged: the split goes with the session.
+            if me.tabs.contains(where: { $0 === n.object as? PorpoiseTab }) { AppDelegate.shared.sessionChanged() }
         }
         observe(.focusView) { me, n in
             guard (n.object as? NSWindow) === me.window else { return }
@@ -364,7 +384,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     func windowDidResize(_ notification: Notification) {
         (window as? DolphinWindow)?.positionTrafficLights()
         alignNavigators()
+        AppDelegate.shared.sessionChanged()
     }
+
+    func windowDidMove(_ notification: Notification) { AppDelegate.shared.sessionChanged() }
 
     func windowDidEnterFullScreen(_ notification: Notification) { layoutRoot() }
     func windowDidExitFullScreen(_ notification: Notification) { layoutRoot() }
@@ -405,21 +428,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         AppDelegate.shared.saveSession()
         terminal.terminate()
         AppDelegate.shared.windowClosed(self)
-    }
-
-    // MARK: - Session
-
-    /// One entry per tab; the first also holds the window's frame and active tab.
-    var sessionState: [[String: String]] {
-        tabs.enumerated().map { i, t in
-            var d = ["url": RemoteFS.withoutPassword(t.primary.url).absoluteString]
-            if let s = t.secondary { d["split"] = RemoteFS.withoutPassword(s.url).absoluteString }
-            if i == 0, let w = window {
-                d["frame"] = NSStringFromRect(w.frame)
-                d["active"] = String(current)
-            }
-            return d
-        }
     }
 
     /// History menu for the Back/Forward dropdowns.

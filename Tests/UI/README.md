@@ -1,6 +1,6 @@
 # UI tests
 
-Two ways to drive the real app:
+Three ways to drive the real app:
 
 - **`acceptance.py`: isolated acceptance run, light and dark.**
   - Builds nothing itself; run it against a test build, `CONFIG=debug scripts/make-app.sh`.
@@ -26,6 +26,21 @@ Two ways to drive the real app:
   python3 Tests/UI/acceptance.py              # light and dark
   python3 Tests/UI/acceptance.py --looks dark # one look
   python3 -I Tests/UI/test_acceptance.py      # the runner's own self-tests, no app
+  ```
+
+- **`restore_after_kill.py`: the session after a forced quit.**
+  - Against a test build too. It builds a session through the bridge: two windows, tabs, a split with its right side
+    active and its handle moved, the Information and Folders panels, Details scrolled down, a folder on a disk image of
+    its own and a server that is offline. Then it kills the app with SIGKILL, ejects the disk image and starts it again.
+  - It checks that every window is back as it was, and appeared that way (never on the home folder first); that the
+    ejected disk's folder is left out with a note while the offline server's tab stays; and that after a launch that
+    died while reopening its session, the next one opens the home folder instead.
+  - Isolated like `acceptance.py`. `--shots` also captures every window before the kill and after the relaunch (it needs
+    screen recording). It keeps `results.json` and both sessions under `build/restore-after-kill/<run>/`.
+
+  ```sh
+  CONFIG=debug scripts/make-app.sh
+  python3 Tests/UI/restore_after_kill.py --shots
   ```
 
 - **`smoke.py`: real input events** (scripts/ui.swift) on fixed screen positions, for a person watching. It is older and
