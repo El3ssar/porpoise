@@ -231,6 +231,8 @@ In the file list: arrows move (⇧ extends), Space is Quick Look, ⌫ goes back,
 | Edit | Select All | ⌘A |
 | Edit | Deselect All | ⌥⌘A |
 | Edit | Invert Selection | ⌥⇧⌘A |
+| Edit | Select Matching… | ⇧⌘S |
+| Edit | Deselect Matching… | ⌥⇧⌘S |
 | View | Zoom In | ⌘+ or ⌘= |
 | View | Reset Zoom Level | ⌘0 |
 | View | Zoom Out | ⌘- |
@@ -295,6 +297,7 @@ In the file list: arrows move (⇧ extends), Space is Quick Look, ⌫ goes back,
 | Window | Go to Tab › Tab 8 | ⌥8 |
 | Window | Go to Tab › Tab 9 | ⌥9 |
 | Window | Go to Tab › Last Tab | ⌥0 |
+| Window | Save Workspace… | ⌃⌘S |
 | Help | Keyboard Shortcuts | ⌘? |
 <!-- shortcuts:end -->
 

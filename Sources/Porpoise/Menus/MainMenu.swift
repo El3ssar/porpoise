@@ -239,7 +239,7 @@ extension AppDelegate {
                     + [mi("Last Tab", #selector(W.activateTab(_:)), "0", .option, tag: 0)]))
         win.addItem(sep())
         win.addItem(dynamicSubmenu("Workspaces", icon: "view-group"))
-        win.addItem(mi("Save Workspace…", #selector(W.saveWorkspace(_:)), "s", [.command, .control], icon: "document-save"))
+        win.addItem(mi("Save Workspace…", #selector(W.saveWorkspace(_:)), "s", [.command, .control], icon: "bookmark-new"))
         win.addItem(sep())
         win.addItem(mi("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))))
         NSApp.windowsMenu = win

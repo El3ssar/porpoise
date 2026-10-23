@@ -63,6 +63,10 @@ import Testing
         expected.append("showKeyboardShortcuts:#0# [\"3f\"] 1048576")
         // Column view (0.11) came after: ⌘4 in both key sets.
         expected.append("setViewMode:#3# [\"34\"] 1048576")
+        // Quick Select and workspaces (0.12): the same keys in both key sets.
+        expected.append("selectMatching:#0# [\"73\"] 1179648")
+        expected.append("deselectMatching:#0# [\"73\"] 1703936")
+        expected.append("saveWorkspace:#0# [\"73\"] 1310720")
         #expect(bindings(menu(.dolphin)) == expected.sorted())
         #expect(W.viewModeItems().map(\.title) == ["Icons", "Compact", "Details", "Columns"])
     }

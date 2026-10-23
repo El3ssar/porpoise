@@ -30,7 +30,7 @@ final class QuickSelectSheet: NSObject, NSComboBoxDelegate {
         set { Settings.store.set(try? JSONEncoder().encode(newValue), forKey: "quickSelect") }
     }
 
-    private init(owner: MainWindowController) {
+    init(owner: MainWindowController) {
         self.owner = owner
         candidates = owner.quickSelectCandidates
         super.init()
@@ -40,7 +40,8 @@ final class QuickSelectSheet: NSObject, NSComboBoxDelegate {
         active?.alert.window.sheetParent?.endSheet(active!.alert.window, returnCode: .cancel)
         let s = QuickSelectSheet(owner: owner)
         active = s
-        s.present(action: action)
+        s.build(action: action)
+        s.present()
     }
 
     var query: QuickSelect {
@@ -50,7 +51,8 @@ final class QuickSelectSheet: NSObject, NSComboBoxDelegate {
 
     var action: QuickSelect.Action { Self.actions[safe: actionPopup.indexOfSelectedItem]?.0 ?? .select }
 
-    private func present(action: QuickSelect.Action) {
+    /// Lays out the sheet for `action`, filled with the last Quick Select.
+    func build(action: QuickSelect.Action) {
         alert.messageText = action == .remove ? "Deselect Matching Items" : "Select Matching Items"
         alert.informativeText = "Type a name pattern, extensions or tags. ⌘1 Name, ⌘2 Extension, ⌘3 Tag."
         alert.icon = Icons.shared.image("edit-select", size: 64)
@@ -91,7 +93,10 @@ final class QuickSelectSheet: NSObject, NSComboBoxDelegate {
         actionPopup.selectItem(at: Self.actions.firstIndex { $0.0 == action } ?? 0)
         criterionChanged()
         alert.window.initialFirstResponder = field
+    }
 
+    /// The sheet on the owner's window, ⌘1–⌘3 switching what the text matches.
+    private func present() {
         // ⌘1–⌘3 pick what the text matches, from the field.
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
             guard let self, e.window === self.alert.window, e.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
@@ -143,6 +148,10 @@ final class QuickSelectSheet: NSObject, NSComboBoxDelegate {
         alert.buttons.first?.title = action == .remove ? "Deselect" : "Select"
         changed()
     }
+
+    /// The match count line, and whether the default button can run.
+    var status: (text: String, enabled: Bool) { (count.stringValue, alert.buttons.first?.isEnabled ?? false) }
+    var defaultButtonTitle: String { alert.buttons.first?.title ?? "" }
 
     @objc private func changed() {
         let q = query

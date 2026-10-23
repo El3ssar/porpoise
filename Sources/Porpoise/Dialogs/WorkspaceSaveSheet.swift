@@ -10,7 +10,7 @@ final class WorkspaceSaveSheet: NSObject, NSComboBoxDelegate {
     private let layout: WindowLayout
     private(set) static var active: WorkspaceSaveSheet?
 
-    private init(layout: WindowLayout) {
+    init(layout: WindowLayout) {
         self.layout = layout
         super.init()
     }
@@ -18,10 +18,12 @@ final class WorkspaceSaveSheet: NSObject, NSComboBoxDelegate {
     static func run(on window: NSWindow?, layout: WindowLayout) {
         let s = WorkspaceSaveSheet(layout: layout)
         active = s
-        s.present(on: window)
+        s.build()
+        s.alert.runSheet(for: window) { [s] r in s.finish(r == .alertFirstButtonReturn) }
     }
 
-    private func present(on window: NSWindow?) {
+    /// Lays out the sheet: the name field (with the saved names), and what saving under that name does.
+    func build() {
         let tabs = layout.tabs.count
         alert.messageText = "Save Workspace"
         alert.informativeText =
@@ -45,7 +47,11 @@ final class WorkspaceSaveSheet: NSObject, NSComboBoxDelegate {
         alert.accessoryView = v
         alert.window.initialFirstResponder = field
         validate()
-        alert.runSheet(for: window) { [self] r in finish(r == .alertFirstButtonReturn) }
+    }
+
+    /// What Save would do: its title and whether it can, and the note under the name.
+    var status: (button: String, enabled: Bool, note: String) {
+        (alert.buttons.first?.title ?? "", alert.buttons.first?.isEnabled ?? false, note.stringValue)
     }
 
     func finish(_ save: Bool) {
