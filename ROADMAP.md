@@ -33,7 +33,7 @@ not before it: a feature that looks unfinished or breaks under load costs more t
   `PorpoiseServices`; drawing and wiring in the app. Do not add a separate operations engine for each tool.
 - **Capabilities.** Each location says what it supports (write, rename, seek, resume, metadata, checksums,
   server-side copy). When something is missing, the UI explains why instead of acting like a local disk.
-- **Preview first.** Bulk rename, archive rewrites and cleanup show a plan that can be inspected before they
+- **Preview first.** Bulk rename and cleanup show a plan that can be inspected before they
   run.
 - **Real checks.** Tests use scratch folders, APFS images, local fake servers and isolated settings, and cover
   interruptions, Unicode, very large files and folders, permissions and symlinks. Release only after CI is green.
@@ -138,49 +138,32 @@ crash report can be produced without any external service.
 - **Columns.** Hierarchical columns with a preview column, keyboard navigation and type-ahead equivalent to
   Finder's, available in split view and per folder like the other views. Finder, ForkLift, Path Finder and
   QSpace all have it, and many Finder users never use any other view.
+- **Each column keeps its own size** (decided 2026-10-24). A width or icon size the user sets never changes.
+  When a column opens a different folder, the columns to its right close and one new column opens with the
+  default width and its parent's icon size. Option-drag still resizes every column at once.
+- **Double-click a folder** to start the columns from it; Back returns to the previous columns.
 - **Gallery** is optional and comes later: a large preview with a filmstrip, only if Columns shows the view
   layer can carry another mode without regressions.
 
 **Done when:** Columns passes the same VoiceOver, selection, drag-and-drop, rename and 100,000-file checks as
 Details.
 
-## Next: archives as real locations
+## Next: automation
 
-- **List first, extract on demand.** Read archive entries without unpacking, and extract one entry when it is
-  opened, previewed or copied. Keep the current whole-archive extraction as the fallback for formats without
-  random access.
-- **Write supported formats.** Add, replace, rename and remove entries in zip, tar and 7z with a staged
-  rewrite; the original stays intact until the rewrite is complete. Show which formats are read-only.
-- **Archive tools.** Passwords, encrypted zip/7z creation, split archives, integrity test, selective extraction,
-  progress and cancel. Nested and remote archives where practical.
-- **Limits.** Bound size and nesting, reject escaping paths and unsafe links, report unsupported entries, and
-  keep cache use visible.
+Named workspaces and Quick Select have shipped. What remains:
 
-**Done when:** a multi-gigabyte zip or 7z lists without unpacking anything, a failed rewrite leaves the original intact,
-and hostile archives cannot write outside the destination.
-
-## Next: workspaces and automation
-
-- **Named workspaces.** Save and switch tabs, paths, split layout, panels, filters and view settings
-  (ForkLift has them).
 - **Custom tools.** Run a configured command on the folder or selection, from the toolbar, menu or palette,
   with structured arguments and visible output.
 - **Shortcuts and a CLI.** App Intents for opening a location, revealing a file, running a tool and starting
   a copy; a small `porpoise` command for scripts.
-- **Quick Select.** Select by name pattern, extension or tag from the keyboard.
 
-**Done when:** a workspace round-trip restores the same view, and every Intent works from the Shortcuts app.
+**Done when:** every Intent works from the Shortcuts app and a custom tool's output and exit status are visible.
 
-## Later: reach
+## Later: Git and devices
 
-- **Localisation.** No user-facing string is localised today. Move strings into a String Catalog first, then
-  add languages where translators volunteer. Shortcuts must work with non-US keyboard layouts.
 - **Git status.** Status badges, ignore awareness and branch in the status bar. Diff opens in Compare.
   Committing and pushing stay out until status has proved itself. Never run repository hooks while browsing.
-- **Search builder.** Saved searches combining name, content, date, size, tag and metadata, compatible with
-  Finder Smart Folders.
 - **Devices.** MTP for Android phones without USB debugging, and cameras over PTP.
-- **Remote editing.** Extend Drive/Dropbox conflict review and pending-edit recovery to SFTP, FTP and S3.
 
 ## Not planned
 
@@ -192,6 +175,8 @@ and hostile archives cannot write outside the destination.
 - **Azure Blob and Google Cloud Storage as separate providers:** possible later through S3-compatible
   endpoints, not separate engines, and only if users ask for them.
 - **iOS app documents:** Apple does not offer a supported interface for this.
+- **Archives as locations, localisation, a search builder and pending-edit recovery for SFTP, FTP and S3:**
+  dropped by the operator on 2026-10-24. Archives stay browsable through an extracted copy.
 - **Replacing Finder's Desktop, device backup or other system-owned services.**
 
 ## What makes this more than feature parity
