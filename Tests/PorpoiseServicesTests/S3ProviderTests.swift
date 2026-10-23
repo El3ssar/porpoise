@@ -130,7 +130,7 @@ import Testing
         #expect(try client.journal.load(operation) == nil)
         #expect(try await stats()["initiated"] as? Int == 1)
     }
-    @MainActor @Test func sharedConflictChecks() async throws {
+    @MainActor @Test(.isolatedSettings) func sharedConflictChecks() async throws {
         let scratch = try Scratch()
         RemoteFS.use(provider, for: location.url)
         defer { RemoteFS.use(nil, for: location.url) }
@@ -138,7 +138,7 @@ import Testing
         let source = try #require(try await offThePool { try provider.list(root).first { $0.name == "hello.txt" } })
         try await TransferConflictParityTests.exerciseRules(source: source, bytes: Data("hello".utf8), scratch: scratch)
     }
-    @MainActor @Test func sharedUploadsPublishReplaceAndCleanStagingFolders() async throws {
+    @MainActor @Test(.isolatedSettings) func sharedUploadsPublishReplaceAndCleanStagingFolders() async throws {
         RemoteFS.use(provider, for: location.url)
         defer { RemoteFS.use(nil, for: location.url) }
         let local = try Scratch(), file = try local.file("uploaded.txt", "first")
