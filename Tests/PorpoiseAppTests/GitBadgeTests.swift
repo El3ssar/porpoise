@@ -21,11 +21,13 @@ import Testing
         return image
     }
     @Test func everyViewDrawsBadgesAndExposesTheirMeaning() async throws {
+        let longName = "A long file name that wraps across two lines and must never collide with its Git status badge.txt"
         let f = try await Task.detached {
             let f = try LocalGitFixture()
             try f.scratch.file("rename.txt", "rename"); try f.scratch.file("conflict.txt", "base");
             try f.scratch.file("modified.txt", "before"); try f.scratch.file(".gitignore", "ignored/\n")
-            try f.record(); try f.scratch.file("modified.txt", "after")
+            try f.scratch.file(longName, "before")
+            try f.record(); try f.scratch.file("modified.txt", "after"); try f.scratch.file(longName, "after")
             try f.git(["mv", "rename.txt", "renamed.txt"])
             try f.scratch.file("added.txt", "added"); try f.git(["add", "added.txt"])
             try f.scratch.file("untracked.txt", "untracked")
@@ -58,6 +60,17 @@ import Testing
                     #expect(pane.list.gitBadge(pane.model.rows[row].item) == kind)
                     #expect((ItemAccessibilityElement(list: pane.list, index: row).accessibilityValue() as? String)?.contains(kind.label) == true)
                     #expect(picture(pane.list, row: row) != nil)
+                }
+                if mode == .icons {
+                    let size = pane.list.iconSize
+                    let long = try #require(pane.model.index(of: f.scratch.path(longName)))
+                    for testSize in [CGFloat(16), 48, 128, 256] {
+                        pane.model.props.setIconSize(testSize, for: .icons); pane.list.computeLayout()
+                        let glyph = GitBadge.iconRect(imageRect: pane.list.iconRect(long), iconSize: pane.list.iconSize)
+                        #expect(!glyph.intersects(pane.list.nameTextRect(long)))
+                        #expect(picture(pane.list, row: long) != nil)
+                    }
+                    pane.model.props.setIconSize(size, for: .icons); pane.list.computeLayout()
                 }
                 let modified = try #require(picture(pane.list, row: index))
                 #expect(modified.width > 0 && modified.height > 0)

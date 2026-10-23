@@ -113,9 +113,7 @@ extension ItemListView {
         cloudRects[i] = nil
         if mode == .icons {
             drawIconBadge(badge, row: i, imageRect: imageRect, selected: onSelection)
-            let size: CGFloat = max(16, min(22, iconSize * 0.34))
-            GitBadge.draw(
-                gitBadge(item), in: CGRect(x: imageRect.minX - size + 4, y: imageRect.maxY - size / 2, width: size, height: size), selected: false)
+            GitBadge.draw(gitBadge(item), in: GitBadge.iconRect(imageRect: imageRect, iconSize: iconSize), selected: false, halo: true)
         }
         if item.isSymlink || item.isAliasFile || item.isWebDocument {
             drawLinkEmblem(i, besideCloudBadge: mode == .icons && badge != .none)
