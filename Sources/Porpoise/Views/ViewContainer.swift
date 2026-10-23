@@ -114,6 +114,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         list = ItemListView(model: model)
         history = NavigationHistory(start: url)
         super.init(frame: .zero)
+        clipsToBounds = true
         list.delegate = self
         scroll.documentView = list
         scroll.hasVerticalScroller = true

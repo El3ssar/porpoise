@@ -22,6 +22,44 @@ final class PorpoiseTab: NSView {
 
     /// The line between the panes (tests drive it).
     let handle = SplitDividerView()
+    /// The inspector host is a sibling behind the file panes. Its first child is an empty sizing space: file panes
+    /// always remain direct children of the tab, preserving editors, scroll views and inline media across focus.
+    private(set) var informationHost: NSSplitView?
+    private(set) weak var informationPane: ViewContainer?
+
+    func dockInformation(in host: NSSplitView?) {
+        if informationHost === host, host == nil || informationPane === active { return }
+        if informationHost !== host { informationHost?.removeFromSuperview() }
+        informationHost = host
+        informationPane = host == nil ? nil : active
+        if let host {
+            if host.superview !== self { addSubview(host, positioned: .below, relativeTo: primary) }
+        }
+        layoutPanes()
+    }
+
+    /// Called after the inspector divider moves: carve its width out of the pane's slot without moving the pane
+    /// into another view hierarchy. The empty sizing space is behind it and never handles its events.
+    func layoutInformationFiles() {
+        guard let pane = informationPane, let host = informationHost, let space = host.arrangedSubviews.first else { return }
+        let frame = convert(space.frame, from: host)
+        if pane.frame != frame { pane.frame = frame }
+    }
+
+    private func placePane(_ pane: ViewContainer, in frame: CGRect) {
+        if informationPane === pane, let host = informationHost {
+            if host.frame != frame { host.frame = frame }
+            layoutInformationFiles()
+        } else if pane.frame != frame {
+            pane.frame = frame
+        }
+    }
+
+    /// Split flights land in the files, excluding the inspector beside the pane that will become active.
+    private func filesWidth(in slot: CGFloat) -> CGFloat {
+        guard let host = informationHost else { return slot }
+        return max(0, slot - PanelSize.informationWidth.fitted(in: slot, divider: host.dividerThickness) - host.dividerThickness)
+    }
     /// Handle position as a fraction of the width, so it stays proportional when the window resizes.
     private var splitFraction: CGFloat = 0.5
     /// Pane being closed: still visible while it shrinks away (Dolphin keeps such "zombie" views).
@@ -105,7 +143,7 @@ final class PorpoiseTab: NSView {
         } else if let z = closing {
             (left, right) = closingOnLeft ? (z, primary) : (primary, z)
         } else {
-            primary.frame = b
+            placePane(primary, in: b)
             handle.isHidden = true
             return
         }
@@ -113,8 +151,8 @@ final class PorpoiseTab: NSView {
         // At rest (and while dragging or resizing the window) both panes keep their minimum width; the fraction stays
         // as chosen, so the line comes back where it was when the window grows again.
         let x = slidesToEdge ? (b.width * splitFraction).rounded() : SplitLayout.lineX(fraction: splitFraction, in: b.width)
-        left.frame = CGRect(x: 0, y: 0, width: x, height: b.height)
-        right.frame = CGRect(x: x + line, y: 0, width: max(0, b.width - x - line), height: b.height)
+        placePane(left, in: CGRect(x: 0, y: 0, width: x, height: b.height))
+        placePane(right, in: CGRect(x: x + line, y: 0, width: max(0, b.width - x - line), height: b.height))
         handle.isHidden = false
         handle.frame = CGRect(x: x - SplitDividerView.grabMargin, y: 0, width: SplitDividerView.width, height: b.height)
         handle.directions = slidesToEdge ? .both : SplitLayout.directions(atX: x, in: b.width)
@@ -206,8 +244,8 @@ final class PorpoiseTab: NSView {
             }
             // The right pane is laid out at its coming width whatever its mode (its mode may only be known once its
             // listing is there): the flight lands on cells that stay put while the pane widens.
-            s.list.layoutWidthOverride = primary.listWidth(forPaneWidth: rightWidth)
-            openingRightWidth = primary.listWidth(forPaneWidth: rightWidth)
+            s.list.layoutWidthOverride = primary.listWidth(forPaneWidth: filesWidth(in: rightWidth))
+            openingRightWidth = primary.listWidth(forPaneWidth: filesWidth(in: rightWidth))
         }
         slidesToEdge = true
         setFraction(1)
@@ -355,7 +393,7 @@ final class PorpoiseTab: NSView {
             // Only Icons rearranges with the width; Details and Compact just follow it smoothly.
             if zombie.list.mode == .icons { zombie.list.layoutWidthOverride = zombie.list.visibleWidth }
             if primary.list.mode == .icons {
-                let width = primary.listWidth(forPaneWidth: bounds.width)
+                let width = primary.listWidth(forPaneWidth: filesWidth(in: bounds.width))
                 primary.list.transitions.change(.splitClose, duration: Motion.splitClose) { primary.list.layoutWidthOverride = width }
             }
             flyItems(backFrom: zombie.list, to: primary.list)
@@ -405,7 +443,8 @@ final class PorpoiseTab: NSView {
     /// Pane x-ranges in window coordinates (for aligning toolbar navigators).
     var paneRanges: [ClosedRange<CGFloat>] {
         containers.map { c in
-            let r = c.convert(c.bounds, to: nil)
+            let host: NSView = informationPane === c ? informationHost ?? c : c
+            let r = host.convert(host.bounds, to: nil)
             return r.minX...r.maxX
         }
     }

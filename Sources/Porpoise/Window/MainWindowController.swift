@@ -18,8 +18,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     let centerColumn = CenterColumnView()
     let outer = ThinSplitView()  // [full-height sidebar, main column]
     let mainColumn = MainColumnView()
-    let vSplit = ThinSplitView()  // [hSplit, terminal]  (inside the main column)
-    let hSplit = ThinSplitView()  // [tab host, information]
+    let vSplit = ThinSplitView()  // [center column, terminal]  (inside the main column)
+    let hSplit = ThinSplitView()  // [empty sizing space, information], behind the active pane
+    let informationSpace = NSView()
+    weak var informationTab: PorpoiseTab?
+    weak var lastSyncedView: ViewContainer?
+    let informationMoveAnimator = Animator(name: "information.focus")
+    var informationGhost: NSView?
+    var informationGlides: [ItemTransitions] = []
     let leftStack = ThinSplitView()  // [places, folders, shelf]
     /// Sidebar host: translucent Desert-tinted material behind Places/Folders (Finder-style).
     let sidebar = NSView()
@@ -192,10 +198,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
             }
         }
         observe(.hoverChanged) { me, n in
-            guard let c = n.object as? ViewContainer, me.allContainers.contains(where: { $0 === c }) else { return }
+            guard me.tabs.indices.contains(me.current), let c = n.object as? ViewContainer, c === me.view else { return }
             if me.showInformation && Settings.shared.infoShowHovered {
-                // While hovering, the hovered view's model holds the item (remote items can't be read again from
-                // disk); after that the panel goes back to the active view's selection.
+                // Only the highlighted pane owns the inspector; hovering another pane must not replace it.
                 let hovered = n.userInfo?["url"] as? URL
                 me.information.show(hovered: hovered, container: hovered == nil ? me.view : c)
             }
@@ -327,6 +332,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         t.navigators[0].url = t.primary.url
         if let s = t.secondary { t.navigators[1].url = s.url }
         let v = view
+        syncInformationPanel()
+        if lastSyncedView !== v {
+            lastSyncedView = v
+            refreshQuickLook()
+        }
         toolbar.back.isEnabled = v.history.canGoBack
         toolbar.forward.isEnabled = v.history.canGoForward
         // Same rule as goUp(_:) and its menu item.
@@ -421,6 +431,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     }
 
     func windowWillClose(_ notification: Notification) {
+        finishInformationMove()
         driveQuickLook?.cancel()
         driveMediaQuickLook?.close()
         observers.forEach(NotificationCenter.default.removeObserver)

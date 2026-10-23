@@ -29,11 +29,9 @@ extension MainWindowController {
     }
 
     func containerSelectionChanged(_ c: ViewContainer) {
-        if c === view, driveMediaQuickLook?.isVisible == true, !showDriveMediaQuickLook() { driveMediaQuickLook?.close() }
-        if c === view, showInformation { information.show(hovered: nil, container: c) }
-        if c === view, QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible {
-            prepareDriveQuickLook()
-            QLPreviewPanel.shared().reloadData()
+        if c === view {
+            if showInformation { information.show(hovered: nil, container: c) }
+            refreshQuickLook()
         }
     }
 
