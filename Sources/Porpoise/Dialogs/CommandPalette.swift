@@ -40,7 +40,7 @@ final class CommandPalette: SecondaryWindowController, NSWindowDelegate, NSTable
         super.init(window: panel); panel.delegate = self
         let stack = contentStack(insets: NSEdgeInsets(top: 30, left: 16, bottom: 14, right: 16))
         func add(_ view: NSView) { stack.addArrangedSubview(view); view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
-        field.placeholderString = "Search commands, places, recent folders and tabs…"
+        field.placeholderString = "Search commands, places, workspaces, recent folders and tabs…"
         field.font = .systemFont(ofSize: FontSize.title2); field.delegate = self;
         add(field)
         for (id, width) in [("command", 560.0), ("shortcut", 120.0)] {
@@ -93,6 +93,20 @@ final class CommandPalette: SecondaryWindowController, NSWindowDelegate, NSTable
             location(
                 place.url, title: place.title, category: place.section == .remote ? "Connection" : "Place / bookmark",
                 id: "place:" + place.url.absoluteString + ":" + place.title)
+        }
+        for workspace in Settings.shared.workspaces {
+            let tabs = workspace.layout.tabs.count
+            let id = "workspace:" + workspace.id.uuidString
+            let candidate = CommandCandidate(
+                id: id, title: workspace.name, subtitle: "Workspace · " + (tabs == 1 ? "1 tab" : "\(tabs) tabs"), keywords: "workspace layout")
+            entries[id] = Entry(candidate: candidate, shortcut: "") { [weak owner] in
+                if let owner {
+                    owner.open(workspace)
+                } else {
+                    AppDelegate.shared.newWindow(at: Settings.shared.homeURL)
+                    AppDelegate.shared.windows.last?.open(workspace)
+                }
+            }
         }
         for (index, url) in RecentLocations.shared.urls.enumerated() {
             location(

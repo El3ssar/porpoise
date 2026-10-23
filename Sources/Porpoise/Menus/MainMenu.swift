@@ -129,6 +129,8 @@ extension AppDelegate {
         edit.addItem(mi("Select All", #selector(NSResponder.selectAll(_:)), "a", icon: "edit-select-all"))
         edit.addItem(mi("Deselect All", #selector(W.deselectAll(_:)), "a", [.command, .option], icon: "edit-select"))
         edit.addItem(mi("Invert Selection", #selector(W.invertSelection(_:)), "a", [.command, .option, .shift], icon: "edit-select-invert"))
+        edit.addItem(mi("Select Matching…", #selector(W.selectMatching(_:)), "s", [.command, .shift], icon: "edit-select"))
+        edit.addItem(mi("Deselect Matching…", #selector(W.deselectMatching(_:)), "s", [.command, .option, .shift], icon: "edit-select"))
         main.addItem(.submenu("Edit", icon: nil, edit))
 
         // View
@@ -236,6 +238,9 @@ extension AppDelegate {
                 (1...9).map { mi("Tab \($0)", #selector(W.activateTab(_:)), "\($0)", .option, tag: $0) }
                     + [mi("Last Tab", #selector(W.activateTab(_:)), "0", .option, tag: 0)]))
         win.addItem(sep())
+        win.addItem(dynamicSubmenu("Workspaces", icon: "view-group"))
+        win.addItem(mi("Save Workspace…", #selector(W.saveWorkspace(_:)), "s", [.command, .control], icon: "bookmark-new"))
+        win.addItem(sep())
         win.addItem(mi("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))))
         NSApp.windowsMenu = win
         main.addItem(.submenu("Window", icon: nil, win))
@@ -292,6 +297,7 @@ extension AppDelegate {
         case "Sort By": built = wc.sortMenu()
         case "Group By": built = wc.groupMenu()
         case "Show Additional Information": built = wc.additionalInfoMenu()
+        case "Workspaces": built = wc.workspacesMenu()
         case "Tags": built = wc.tagsMenu(for: wc.view.model.selectedItems.filter { $0.url.isFileURL })
         case "Places":
             built = NSMenu()

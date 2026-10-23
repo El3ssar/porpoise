@@ -148,7 +148,8 @@ class Run:
         )
         exe = os.path.join(os.path.abspath(self.args.app), "Contents", "MacOS", "Porpoise")
         log = open(os.path.join(self.out, f"app-{look}.log"), "w")
-        self.app = subprocess.Popen([exe], env=env, stdout=log, stderr=subprocess.STDOUT)
+        # No "reopen windows?" alert after an earlier instance was stopped: it would block the app until answered.
+        self.app = subprocess.Popen([exe, "-ApplePersistenceIgnoreState", "YES"], env=env, stdout=log, stderr=subprocess.STDOUT)
         # Ready: the bridge answers, and the browser window shows the folder.
         wait_until(lambda: self.app.poll() is None and any("MainWindowController" in w for w in self.bridge.windows()),
                    self.args.launch_timeout, "the browser window")
@@ -179,7 +180,9 @@ class Run:
         self.results.append({"look": self.look, "check": name, "ok": bool(ok), "info": "" if ok else str(info)[:400]})
         print(("PASS " if ok else "FAIL ") + f"[{self.look}] {name}" + ("" if ok else f"  -> {str(info)[:200]}"), flush=True)
         if not ok:
-            raise StepFailed(f"{name}: {info}")
+            failed = StepFailed(f"{name}: {info}")
+            failed.recorded = True
+            raise failed
 
     def capture(self, name, window="main"):
         """A window-server capture of `window` with its sheet, in the current look. Kept for visual review: a missing
@@ -208,7 +211,8 @@ class Run:
                 raise StepFailed(f"took {time.monotonic() - started:.0f}s")
         except Exception as e:  # noqa: BLE001 — any failure is recorded, with what the app showed
             self.failures += 1
-            if not isinstance(e, StepFailed):
+            # A failed check is in the results already; a wait that timed out (or anything else) isn't yet.
+            if not getattr(e, "recorded", False):
                 self.results.append({"look": self.look, "check": name, "ok": False, "info": repr(e)[:400]})
                 print(f"FAIL [{self.look}] {name}  -> {e!r}", flush=True)
             self.keep_failure(name)

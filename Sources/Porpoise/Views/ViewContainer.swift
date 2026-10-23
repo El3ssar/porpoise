@@ -102,7 +102,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     /// What the zoom (slider, Cmd+= / Cmd+-, the View menu) acts on: the app library when it shows, else the list.
     var zoomView: ZoomableView { showsApps ? apps?.grid ?? list : list }
 
-    init(url: URL) {
+    /// `loadsWhenShown`: list the folder only once the pane is in a window (a workspace's tab on a server connects
+    /// when it's opened, not all at once).
+    init(url: URL, loadsWhenShown: Bool = false) {
+        waitsToLoad = loadsWhenShown
         model = DirectoryModel(location: url)
         list = ItemListView(model: model)
         history = NavigationHistory(start: url)
@@ -299,7 +302,18 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 if (mine + appRoots).contains(where: paths.contains) || self.model.isSearching { self.model.reload() }
             })
         statusBar.mode = Settings.shared.statusBarMode
-        model.reload()
+        if !waitsToLoad { model.reload() }
+    }
+
+    /// Not listed yet: the pane lists its folder when it's first shown.
+    private(set) var waitsToLoad: Bool
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if waitsToLoad, window != nil {
+            waitsToLoad = false
+            model.reload()
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -481,6 +495,14 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     private var viewPositions: [URL: ViewPosition] = [:]
     /// Restored once the folder Back/Forward went to has loaded.
     private var pendingPosition: ViewPosition?
+
+    /// Scrolls to `origin` once the folder has loaded (at once if it has); a workspace's saved position.
+    func restoreScroll(to origin: CGPoint) {
+        if model.isLoading || waitsToLoad { pendingPosition = (origin, nil) } else { list.scroll(origin) }
+    }
+
+    /// Where the list is scrolled, or will be once its folder has loaded.
+    var scrollOrigin: CGPoint { pendingPosition?.origin ?? list.visibleRect.origin }
 
     /// Up works in local folders and on remote servers (sftp/ftp/adb) below their root; virtual lists have no parent.
     var canGoUp: Bool {

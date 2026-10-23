@@ -13,7 +13,7 @@ public enum FilterMode: String, Codable, CaseIterable, Sendable {
 }
 
 /// Name filter used by the filter bar (Ctrl+I in Dolphin).
-public struct NameFilter: Equatable, Sendable {
+public struct NameFilter: Codable, Equatable, Sendable {
     public var text: String
     public var mode: FilterMode
     public var caseSensitive: Bool

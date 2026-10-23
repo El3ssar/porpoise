@@ -67,8 +67,9 @@ final class PorpoiseTab: NSView {
     var isSplit: Bool { secondary != nil }
     var containers: [ViewContainer] { [primary] + (secondary.map { [$0] } ?? []) }
 
-    init(url: URL) {
-        primary = ViewContainer(url: url)
+    /// `loadsWhenShown`: the panes list their folders when the tab is first shown.
+    init(url: URL, loadsWhenShown: Bool = false) {
+        primary = ViewContainer(url: url, loadsWhenShown: loadsWhenShown)
         super.init(frame: .zero)
         addSubview(primary)
         addSubview(handle)
@@ -116,6 +117,15 @@ final class PorpoiseTab: NSView {
         layoutPanes()
     }
 
+    /// Where the handle sits, as a share of the width (a workspace keeps it).
+    var splitShare: CGFloat { splitFraction }
+
+    /// Puts the handle at `share` of the width, without animation (applying a workspace).
+    func setSplitShare(_ share: CGFloat) {
+        guard share > 0, share < 1 else { return }
+        setFraction(share)
+    }
+
     // MARK: - Handle
 
     /// Drag on the handle; `windowX` is where the line should go, in window coordinates.
@@ -152,10 +162,10 @@ final class PorpoiseTab: NSView {
     // MARK: - Open / close
 
     /// Opens the second view (Dolphin F3): it slides in from the right edge to its last width (OutCubic).
-    func openSplit(url: URL? = nil, animated: Bool = true) {
+    func openSplit(url: URL? = nil, animated: Bool = true, loadsWhenShown: Bool = false) {
         guard secondary == nil else { return }
         finishClosing()
-        let s = ViewContainer(url: url ?? active.url)
+        let s = ViewContainer(url: url ?? active.url, loadsWhenShown: loadsWhenShown && window == nil)
         s.delegate = primary.delegate
         secondary = s
         addSubview(s, positioned: .below, relativeTo: handle)

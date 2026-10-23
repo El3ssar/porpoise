@@ -30,6 +30,14 @@ public enum PanelSize: String {
         return clamp(v, extent: extent) ?? min(defaultValue, max(minimum, extent * maxShare))
     }
 
+    /// The size remembered, nil if none (the default applies).
+    public var stored: CGFloat? { Settings.store.double(forKey: rawValue).nonZero.map { CGFloat($0) } }
+
+    /// Remembers `v` as it was saved before (a workspace's panel size), when it is within the panel's own limits.
+    public func restore(_ v: CGFloat) {
+        if v >= minimum, v.isFinite, v < 100_000 { Settings.store.set(Double(v), forKey: rawValue) }
+    }
+
     public func save(_ v: CGFloat, in extent: CGFloat) {
         if let ok = clamp(v, extent: extent), ok == v { Settings.store.set(Double(v), forKey: rawValue) }
     }

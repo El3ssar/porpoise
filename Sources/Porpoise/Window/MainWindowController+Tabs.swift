@@ -6,8 +6,8 @@ import PorpoiseServices
 
 extension MainWindowController {
     @discardableResult
-    func addTab(url: URL, select: Bool = true, split: URL? = nil, afterCurrent: Bool = true) -> PorpoiseTab {
-        let t = PorpoiseTab(url: url)
+    func addTab(url: URL, select: Bool = true, split: URL? = nil, afterCurrent: Bool = true, loadsWhenShown: Bool = false) -> PorpoiseTab {
+        let t = PorpoiseTab(url: url, loadsWhenShown: loadsWhenShown)
         t.primary.delegate = self
         for (i, n) in t.navigators.enumerated() {
             n.delegate = self
@@ -17,7 +17,7 @@ extension MainWindowController {
         }
         let at = (afterCurrent && !Settings.shared.openNewTabsAtEnd && !tabs.isEmpty) ? current + 1 : tabs.count
         tabs.insert(t, at: at)
-        if let s = split { t.openSplit(url: s, animated: false); t.setActive(secondary: false) }
+        if let s = split { t.openSplit(url: s, animated: false, loadsWhenShown: loadsWhenShown); t.setActive(secondary: false) }
         if select { showTab(at) } else { if at <= current && tabs.count > 1 { current += 1 }; updateTabBar() }
         return t
     }
@@ -56,7 +56,7 @@ extension MainWindowController {
     /// Recently closed tabs kept for Undo Close Tab.
     private static let maxClosedTabs = 10
 
-    private func rememberClosed(_ t: PorpoiseTab) {
+    func rememberClosed(_ t: PorpoiseTab) {
         closedTabs.append((t.primary.url, t.secondary?.url))
         if closedTabs.count > Self.maxClosedTabs { closedTabs.removeFirst() }
     }
