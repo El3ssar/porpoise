@@ -18,6 +18,8 @@ import PorpoiseServices
     private var reasons: [UUID: String] = [:]
     private var completions: [() -> Void] = []
 
+    var isPreparing: Bool { !ready }
+
     func preparedReason(for id: UUID) -> String? { ready ? reasons[id] : "Checking selection…" }
 
     func reason(for tool: CustomTool, in owner: MainWindowController, updated: (() -> Void)? = nil) -> String? {

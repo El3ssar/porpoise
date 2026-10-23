@@ -107,6 +107,27 @@ import Testing
         #expect(!wc.validateMenuItem(tools.items[0]))
         ActivityWindowController.shared.window?.close(); CustomToolRunner.shared.clearFinished()
     }
+    @Test func firstShortcutIsNotDroppedWhileAvailabilityWarms() async throws {
+        let scratch = try Scratch(); let file = try scratch.file("one.txt")
+        var tool = CustomTool(name: "Shortcut", executable: "/usr/bin/true", arguments: [])
+        tool.shortcut = KeyboardShortcut(key: "9", modifiers: [.command, .option])
+        try Settings.shared.saveCustomTools([tool])
+        let owner = MainWindowController(urls: [scratch.url]); defer { owner.window?.close() }
+        #expect(await eventually { !owner.view.model.isLoading })
+        owner.view.model.selection = [file]
+        let item = NSMenuItem(title: tool.name, action: #selector(MainWindowController.runCustomTool(_:)), keyEquivalent: "9")
+        item.keyEquivalentModifierMask = [.command, .option]; item.representedObject = tool.id.uuidString
+        let original = MainWindowController.currentKeyEvent
+        defer { MainWindowController.currentKeyEvent = original }
+        MainWindowController.currentKeyEvent = {
+            NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [.command, .option], timestamp: 0, windowNumber: 0,
+                context: nil, characters: "9", charactersIgnoringModifiers: "9", isARepeat: false, keyCode: 25)
+        }
+        #expect(owner.validateMenuItem(item))
+        owner.view.model.selection = []
+        #expect(!owner.validateMenuItem(item))
+    }
     @Test func standardMacShortcutsCannotBeClaimedByTools() throws {
         for key in ["q", "h", "m", "w"] {
             var tool = CustomTool(name: "Reserved", executable: "/usr/bin/true", arguments: [])

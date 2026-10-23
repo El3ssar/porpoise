@@ -54,6 +54,14 @@ extension MainWindowController: NSMenuItemValidation {
                 item.toolTip = self.customToolAvailability.preparedReason(for: tool.id)
                 item.isEnabled = item.toolTip == nil
             }
+            // A first key press must not disappear while the cache warms. Execution rechecks the entire captured
+            // selection off-main before any prompt or process; menus keep their pending disabled state.
+            if customToolAvailability.isPreparing, Self.currentKeyEvent()?.type == .keyDown {
+                let count = view.model.selection.count
+                return view.url.isFileURL
+                    && (tool.selection == .folder || tool.selection == .one && count == 1 || tool.selection == .many && count > 0)
+                    && (!tool.arguments.contains("{otherFolder}") || tab.inactive?.url.isFileURL == true)
+            }
             return item.toolTip == nil
         }
         let p = view.model.props
