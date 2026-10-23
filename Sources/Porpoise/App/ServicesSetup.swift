@@ -4,6 +4,7 @@ import PorpoiseServices
 extension AppDelegate {
     /// Gives the services what only the app can do (dialogs, opening files), before anything uses them.
     @MainActor func connectServices() {
+        if !Settings.isTesting { MetricKitDiagnostics.shared.start() }
         if !Settings.isTesting || TestEnvironment.testIndexDirectory.isSet { SearchIndex.shared.start() }
         RemoteFS.askLogin = FTPLoginPrompt.ask
         RemoteFS.confirmHostKeyChange = HostKeyChangePrompt.ask

@@ -1,6 +1,6 @@
 import Foundation
 
-/// The app's diagnostic events: one store for the process, recorded at the main error sites and exported only from
+/// The app's diagnostic events and projected system crash/hang summaries: one store for the process, recorded at the main error sites and exported only from
 /// Help › Export Diagnostics… after the user has seen exactly what it holds. Nothing is written to disk or sent.
 public enum Diagnostics {
     public static let shared = DiagnosticStore()
