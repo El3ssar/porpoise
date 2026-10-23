@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Matched app A/A calibration and A/B regression gate. No absolute latency/CPU budget."""
+"""Matched app ratio gates and an explicit absolute sustained-idle CPU ceiling."""
 import argparse
 import ctypes
 import hashlib
@@ -36,6 +36,7 @@ def policy_at(path):
         raise ValueError('Invalid performance policy')
     retry_limit(value)
     idle_window_count(value)
+    idle_ceiling(value)
     return value
 
 
@@ -45,6 +46,17 @@ def idle_window_count(policy):
     if type(count) is not int or count not in (1, 3):
         raise ValueError('Invalid idle window count')
     return count
+
+
+def idle_ceiling(policy):
+    # Retained policies without the explicit ceiling keep their historical ratio verdicts.
+    if 'idle_cpu_ceiling' not in policy:
+        return None
+    ceiling = policy['idle_cpu_ceiling']
+    if (isinstance(ceiling, bool) or not isinstance(ceiling, (int, float))
+            or not math.isfinite(ceiling) or not 0 < ceiling <= 0.01):
+        raise ValueError('Invalid idle CPU ceiling')
+    return ceiling
 
 
 def retry_limit(policy):
@@ -67,8 +79,8 @@ def evaluate(report, policy):
 def evaluate_with_history(report, policy):
     """Symmetric worst observed A/A ratio bounds a median of matched A/B ratios.
 
-    Idle CPU is regularized by measured A/A variation, not an absolute CPU allowance.
-    A noisy/missing/invalid calibration is a failed gate, never an exemption.
+    Idle relative diagnostics use measured A/A variation; current policy gates its absolute candidate median.
+    Excessive latency calibration noise and all missing/invalid measurements fail the gate.
     """
     if report.get('schema') != 1 or report.get('policy') != policy:
         raise ValueError('Report/policy identity mismatch')
@@ -152,6 +164,13 @@ def compare_round(calibration_pairs, comparison_pairs, policy):
         results[metric] = dict(status=status, noise_band=band, ratio=median, paired_ratios=ratios,
                                baseline_median=statistics.median(a for a, _ in ab),
                                candidate_median=statistics.median(b for _, b in ab), offset=offset)
+    if (ceiling := idle_ceiling(policy)) is not None:
+        row = results['idle_cpu']
+        candidate = statistics.median(pair['b']['idle_cpu'] for pair in comparison_pairs)
+        row.update(advisory_status=row['status'], absolute_ceiling=ceiling,
+                   candidate_median=candidate,
+                   baseline_median=statistics.median(pair['a']['idle_cpu'] for pair in comparison_pairs),
+                   status='regression' if candidate > ceiling else 'pass')
     return results
 
 
@@ -189,6 +208,12 @@ def summary(report, results):
         attempt = result.get('calibration_attempt', 0)
         label = f'Retry {attempt}' if attempt else 'Initial'
         lines[-1] += f" | {result['status']} | {label} |"
+    if (ceiling := idle_ceiling(report['policy'])) is not None:
+        idle = results['idle_cpu']
+        lines += ['', f"Idle CPU gate: candidate median **{idle['candidate_median']:.6f} core "
+                  f"({idle['candidate_median'] * 100:.4f}%)**; ceiling **{ceiling:.6f} core ({ceiling * 100:.2f}%)**.",
+                  f"Idle B/A ratio and A/A noise band are advisory ({idle['advisory_status']}); "
+                  'they cannot fail the idle gate or trigger recalibration.']
     _, history = evaluate_with_history(report, report['policy'])
     lines += ['', f"Recalibrations completed: {len(report.get('recalibrations', []))}/{retry_limit(report['policy'])}.",
               'The original A/B pairs are fixed; valid verdicts are never recalibrated.', '',

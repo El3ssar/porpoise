@@ -56,7 +56,7 @@ class BudgetTests(unittest.TestCase):
         for metric in budgets.METRICS:
             changed = report()
             for pair in changed['comparison']:
-                pair['b'][metric] *= 1.4
+                pair['b'][metric] = POLICY['idle_cpu_ceiling'] * 1.01 if metric == 'idle_cpu' else pair['b'][metric] * 1.4
             result = budgets.evaluate(changed, POLICY)
             self.assertEqual(result[metric]['status'], 'regression')
             self.assertTrue(all(value['status'] == 'pass' for key, value in result.items() if key != metric))
@@ -65,7 +65,10 @@ class BudgetTests(unittest.TestCase):
         changed = report(0.5)
         for pair in changed['calibration']:
             pair['b'] = sample(3)
-        self.assertTrue(all(value['status'] == 'calibration_failed' for value in budgets.evaluate(changed, POLICY).values()))
+        results = budgets.evaluate(changed, POLICY)
+        self.assertTrue(all(value['status'] == 'calibration_failed' for key, value in results.items() if key != 'idle_cpu'))
+        self.assertEqual(results['idle_cpu']['status'], 'pass')
+        self.assertEqual(results['idle_cpu']['advisory_status'], 'calibration_failed')
 
     def test_one_slow_pair_does_not_choose_a_favorable_subset_or_drive_median(self):
         changed = report()
@@ -83,7 +86,7 @@ class BudgetTests(unittest.TestCase):
                     pair[member]['idle_cpu'] = 0
         self.assertEqual(budgets.evaluate(changed, POLICY)['idle_cpu']['status'], 'pass')
         for pair in changed['comparison']:
-            pair['b']['idle_cpu'] = 0.001
+            pair['b']['idle_cpu'] = POLICY['idle_cpu_ceiling'] * 1.01
         result = budgets.evaluate(changed, POLICY)
         self.assertEqual(result['idle_cpu']['status'], 'regression')
         json.dumps(result, allow_nan=False)
@@ -110,6 +113,101 @@ class BudgetTests(unittest.TestCase):
             changed[field] = value
             with self.assertRaises(ValueError):
                 budgets.evaluate(changed, POLICY)
+
+    def test_idle_absolute_ceiling_overrides_advisory_ratio_and_noise(self):
+        for baseline in [0, 0.0001, 0.1]:
+            for candidate, status in [(0.0049, 'pass'), (0.005, 'pass'), (0.0051, 'regression')]:
+                with self.subTest(baseline=baseline, candidate=candidate):
+                    changed = report()
+                    for pair in changed['calibration']:
+                        pair['a']['idle_cpu'], pair['b']['idle_cpu'] = 0.0001, 0.0013
+                    for pair in changed['comparison']:
+                        pair['a']['idle_cpu'], pair['b']['idle_cpu'] = baseline, candidate
+                    row = budgets.evaluate(changed, POLICY)['idle_cpu']
+                    self.assertEqual(row['status'], status)
+                    self.assertEqual(row['advisory_status'], 'calibration_failed')
+                    self.assertGreater(row['noise_band'], 1.5)
+                    self.assertEqual(row['absolute_ceiling'], 0.005)
+                    self.assertEqual(row['candidate_median'], candidate)
+        high_ratio = report()
+        for pair in high_ratio['comparison']:
+            pair['b']['idle_cpu'] = 0.0049
+        row = budgets.evaluate(high_ratio, POLICY)['idle_cpu']
+        self.assertEqual(row['status'], 'pass')
+        self.assertEqual(row['advisory_status'], 'regression')
+        self.assertGreater(row['ratio'], row['noise_band'])
+        for group in ['calibration', 'comparison']:
+            for pair in high_ratio[group]:
+                pair['a']['idle_cpu'] = 0
+                pair['b']['idle_cpu'] = 0 if group == 'calibration' else 0.0049
+        row = budgets.evaluate(high_ratio, POLICY)['idle_cpu']
+        self.assertIsNone(row['ratio'])
+        self.assertEqual(row['status'], 'pass')
+        self.assertIn('undefined', budgets.summary(high_ratio, budgets.evaluate(high_ratio, POLICY)))
+        changed = report()
+        for pair in changed['calibration']:
+            pair['b']['idle_cpu'] *= 3
+        def forbidden(*args):
+            self.fail('Advisory idle noise cannot trigger recalibration')
+        self.assertEqual(budgets.recalibrate(changed, POLICY, forbidden, lambda *args: None)['idle_cpu']['status'], 'pass')
+        changed['comparison'][0]['b']['idle_cpu'] = 1
+        self.assertEqual(budgets.evaluate(changed, POLICY)['idle_cpu']['status'], 'pass')
+        for pair in changed['comparison'][:4]:
+            pair['b']['idle_cpu'] = 0.0051
+        self.assertEqual(budgets.evaluate(changed, POLICY)['idle_cpu']['status'], 'regression')
+        for pair in changed['calibration']:
+            pair['b']['cold_launch'] *= 3
+        results = budgets.recalibrate(changed, POLICY, forbidden, lambda *args: None)
+        self.assertEqual(results['cold_launch']['status'], 'calibration_failed')
+        self.assertEqual(results['idle_cpu']['status'], 'regression')
+
+
+    def test_idle_ceiling_is_explicit_and_old_relative_policies_are_not_reclassified(self):
+        self.assertIsNone(budgets.idle_ceiling({}))
+        for value in [0, -1, 0.02, True, None, '0.005', float('nan'), float('inf')]:
+            with self.assertRaises(ValueError):
+                budgets.idle_ceiling(dict(idle_cpu_ceiling=value))
+        changed = report()
+        legacy = dict(POLICY)
+        del legacy['idle_cpu_ceiling']
+        changed['policy'] = legacy
+        for pair in changed['calibration']:
+            pair['b']['idle_cpu'] *= 3
+        old = budgets.evaluate(changed, legacy)
+        self.assertEqual(old['idle_cpu']['status'], 'calibration_failed')
+        self.assertNotIn('absolute_ceiling', old['idle_cpu'])
+        changed['policy'] = POLICY
+        current = budgets.evaluate(changed, POLICY)
+        self.assertEqual(current['idle_cpu']['status'], 'pass')
+        for name in budgets.METRICS:
+            if name != 'idle_cpu':
+                self.assertEqual(old[name], current[name])
+        for bad in [float('nan'), float('inf'), -1, True, None]:
+            changed['comparison'][0]['b']['idle_cpu'] = bad
+            with self.assertRaises(ValueError):
+                budgets.evaluate(changed, POLICY)
+
+    def test_cli_idle_absolute_gate_reports_advisory_noise_and_ceiling_breach(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for candidate, expected, status in [(0.0049, 0, 'pass'), (0.0051, 1, 'regression')]:
+                changed = report()
+                for pair in changed['calibration']:
+                    pair['a']['idle_cpu'], pair['b']['idle_cpu'] = 0.0001, 0.0013
+                for pair in changed['comparison']:
+                    pair['a']['idle_cpu'], pair['b']['idle_cpu'] = 0, candidate
+                source, out = root / 'fixture.json', root / str(candidate)
+                source.write_text(json.dumps(changed))
+                result = subprocess.run([sys.executable, str(ROOT / 'scripts/performance-budgets.py'),
+                                         '--evaluate', str(source), '--out', str(out)], capture_output=True, text=True)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                row = json.loads((out / 'results.json').read_text())['evaluation']['idle_cpu']
+                self.assertEqual(row['status'], status)
+                self.assertEqual(row['advisory_status'], 'calibration_failed')
+                summary = (out / 'SUMMARY.md').read_text()
+                self.assertIn('0.50%', summary)
+                self.assertIn('are advisory (calibration_failed)', summary)
+                self.assertIn('Recalibrations completed: 0/2', summary)
 
     def test_idle_windows_use_fixed_median_and_retain_every_counter(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -236,22 +334,25 @@ class BudgetTests(unittest.TestCase):
             pair['b']['cold_launch'] *= 1.4
         for pair in changed['calibration']:
             pair['b']['idle_cpu'] *= 3
+            pair['b']['search_input'] *= 3
         def forbidden(*args):
             self.fail('A regression must never trigger a new calibration')
         results = budgets.recalibrate(changed, POLICY, forbidden, lambda *args: None)
         self.assertEqual(results['cold_launch']['status'], 'regression')
-        self.assertEqual(results['idle_cpu']['status'], 'calibration_failed')
+        self.assertEqual(results['search_input']['status'], 'calibration_failed')
+        self.assertEqual(results['idle_cpu']['status'], 'pass')
+        self.assertEqual(results['idle_cpu']['advisory_status'], 'calibration_failed')
         self.assertNotIn('recalibrations', changed)
 
     def test_first_valid_verdict_is_frozen_and_retry_cannot_erase_regression(self):
         changed = report()
         for pair in changed['calibration']:
-            pair['b']['idle_cpu'] *= 3
+            pair['b']['search_input'] *= 3
         original_comparison = copy.deepcopy(changed['comparison'])
         rounds = []
         def collect(pending, checkpoint):
             rounds.append(pending['attempt'])
-            self.assertEqual(pending['metrics'], ['idle_cpu'])
+            self.assertEqual(pending['metrics'], ['search_input'])
             values = copy.deepcopy(report()['calibration'])
             # Unstable data for an already valid metric cannot replace its original band.
             for pair in values:
@@ -262,7 +363,7 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual(rounds, [1])
         self.assertTrue(all(row['status'] == 'pass' for row in results.values()))
         self.assertEqual(results['cold_launch']['calibration_attempt'], 0)
-        self.assertEqual(results['idle_cpu']['calibration_attempt'], 1)
+        self.assertEqual(results['search_input']['calibration_attempt'], 1)
         self.assertEqual(changed['comparison'], original_comparison)
 
         changed = report(1.4)
@@ -274,7 +375,8 @@ class BudgetTests(unittest.TestCase):
             pending['calibration'].extend(copy.deepcopy(report()['calibration']))
         results = budgets.recalibrate(changed, POLICY, stable, lambda *args: None)
         self.assertEqual(calls, [1])
-        self.assertTrue(all(row['status'] == 'regression' for row in results.values()))
+        self.assertTrue(all(row['status'] == 'regression' for name, row in results.items() if name != 'idle_cpu'))
+        self.assertEqual(results['idle_cpu']['status'], 'pass')
         changed['recalibrations'].append(copy.deepcopy(report()['calibration']))
         with self.assertRaises(ValueError):
             budgets.evaluate(changed, POLICY)
@@ -304,7 +406,7 @@ class BudgetTests(unittest.TestCase):
     def test_interrupted_retry_preserves_partial_samples_and_failed_verdict(self):
         changed = report()
         for pair in changed['calibration']:
-            pair['b']['idle_cpu'] *= 3
+            pair['b']['search_input'] *= 3
         snapshots = []
         def save(results, history):
             snapshots.append((copy.deepcopy(changed), budgets.summary(changed, results)))
@@ -317,7 +419,7 @@ class BudgetTests(unittest.TestCase):
         retained, summary = snapshots[-1]
         self.assertEqual(len(retained['pending_recalibration']['calibration']), 1)
         self.assertIn('Retry 1 in progress: 1/7', summary)
-        self.assertEqual(budgets.evaluate(retained, POLICY)['idle_cpu']['status'], 'calibration_failed')
+        self.assertEqual(budgets.evaluate(retained, POLICY)['search_input']['status'], 'calibration_failed')
         with self.assertRaises(ValueError):
             budgets.recalibrate(retained, POLICY, interrupted, save)
 

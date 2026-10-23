@@ -12,5 +12,6 @@
   ],
   "warmup_pairs": 1,
   "maximum_recalibrations": 2,
-  "idle_windows": 3
+  "idle_windows": 3,
+  "idle_cpu_ceiling": 0.005
 }
