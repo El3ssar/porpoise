@@ -1040,6 +1040,15 @@ public final class DirectoryModel {
     }
 
     /// Saves the shown properties as the folder's (or the common) style, minus the temporary overrides.
+    /// Shows `p` here without saving it as the folder's own (a workspace's view settings); the dynamic view
+    /// doesn't override it once the folder has loaded.
+    /// Another mode leaves Column view (the pane may have started in it, with the folder's own settings).
+    public func showProps(_ p: ViewProperties) {
+        dynamicViewPending = false
+        if p.mode != .columns { browsesColumns = false }
+        props = inColumns(p)
+    }
+
     public func saveProps() {
         let p = columnOverride.stored(dynamicOverride.stored(searchOverride.stored(props)))
         ViewStyleStore().save(p, for: location)

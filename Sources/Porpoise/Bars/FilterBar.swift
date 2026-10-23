@@ -119,6 +119,16 @@ final class FilterBar: NSView, NSSearchFieldDelegate {
         if valid { delegate?.filterBar(self, changed: filter) }
     }
 
+    /// Shows `newFilter` (text, mode and case) and applies it, as if typed.
+    func set(_ newFilter: NameFilter) {
+        filter = newFilter
+        field.stringValue = newFilter.text
+        modeButton.title = newFilter.mode.title
+        caseButton.isToggled = newFilter.caseSensitive
+        needsLayout = true
+        notify()
+    }
+
     func clear() {
         field.stringValue = ""
         filter.text = ""
