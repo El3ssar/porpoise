@@ -75,7 +75,19 @@ import Testing
         #expect(SessionState.exists(URL(string: "ftp://example.com/")!) && !SessionState.exists(url("/nonexistent/\(UUID())")))
     }
 
-    @Test func aWindowComesBackAsItWasBeforeItIsShown() async throws {
+    enum FramePosition: CaseIterable { case original, inside, offEdge }
+
+    @Test(arguments: FramePosition.allCases) func aWindowComesBackAsItWasBeforeItIsShown(position: FramePosition) async throws {
+        let screen = try #require(NSScreen.screens.first)
+        let visible = screen.visibleFrame
+        let savedFrame: NSRect
+        switch position {
+        case .original: savedFrame = NSRect(x: 300, y: 200, width: 900, height: 600)
+        case .inside:
+            let size = NSSize(width: min(900, visible.width), height: min(600, visible.height))
+            savedFrame = NSRect(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2, width: size.width, height: size.height)
+        case .offEdge: savedFrame = NSRect(x: visible.maxX - 450, y: visible.maxY - 300, width: 900, height: 600)
+        }
         let s = try Scratch()
         let big = try s.folder("Big"), left = try s.folder("Left"), right = try s.folder("Right")
         for i in 0..<300 { _ = try s.file("Big/file \(i).txt") }
@@ -86,7 +98,8 @@ import Testing
             tabs: [
                 TabLayout(primary: PaneLayout(url: big, props: details, scroll: [0, 1200])),
                 TabLayout(primary: PaneLayout(url: left), secondary: PaneLayout(url: right), activeIsSecondary: true, splitFraction: 0.3),
-            ], activeTab: 1, panels: PanelLayout(places: false, information: true), frame: [300, 200, 900, 600])
+            ], activeTab: 1, panels: PanelLayout(places: false, information: true),
+            frame: [savedFrame.minX, savedFrame.minY, savedFrame.width, savedFrame.height].map(Double.init))
         Settings.store.set(SessionState(windows: [layout]).stored, forKey: SessionState.key)
         let before = AppDelegate.shared.windows.count
         #expect(AppDelegate.shared.restoreSession())
@@ -97,7 +110,20 @@ import Testing
         #expect(Settings.store.bool(forKey: AppDelegate.restoringKey))
         // Shown as it was, and only so: the frame, the split tab with its right side active, the panels.
         #expect(AppDelegate.shared.firstShown.last?.tabs.map(\.primary.url.lastPathComponent) == ["Big", "Left"])
-        #expect(wc.window?.frame == NSRect(x: 300, y: 200, width: 900, height: 600))
+        let window = try #require(wc.window)
+        // AppKit constrains the saved frame, including adjustments made by setFrame itself. An independent native
+        // window is the screen-dependent oracle; it never reads or restores a Porpoise session.
+        let reference = NSWindow(contentRect: .zero, styleMask: window.styleMask, backing: .buffered, defer: false)
+        reference.isReleasedWhenClosed = false
+        defer { reference.close() }
+        reference.minSize = window.minSize
+        reference.setFrame(reference.constrainFrameRect(savedFrame, to: screen), display: false)
+        let expectedFrame = reference.frame
+        if position == .offEdge { #expect(expectedFrame != savedFrame, "the off-edge case must exercise AppKit's screen constraint") }
+        #expect(window.frame == expectedFrame)
+        #expect(
+            AppDelegate.shared.firstShown.last?.frame
+                == [expectedFrame.minX, expectedFrame.minY, expectedFrame.width, expectedFrame.height].map(Double.init))
         #expect(wc.current == 1 && wc.tab.activeIsSecondary && abs(wc.tab.splitShare - 0.3) < 0.001)
         #expect(wc.showInformation && !wc.showPlaces && !wc.showFolders)
         #expect(wc.view.url.path == right.path)
