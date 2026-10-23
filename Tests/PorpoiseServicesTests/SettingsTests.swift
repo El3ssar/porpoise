@@ -11,6 +11,7 @@ import Testing
 
     @Test func defaultsWhenNothingIsStored() {
         #expect(s.startup == .lastSession)
+        #expect(s.showGitStatus)
         #expect(s.homeURL.path == FileManager.default.homeDirectoryForCurrentUser.path)
         #expect(s.appLibraryView && s.closeButtonsOnTabs && s.confirmDelete && s.showAllExtensions)
         #expect(!s.showFullPathInTitle && !s.confirmTrash && !s.rememberPerFolder && !s.hideBackupFiles)
@@ -333,7 +334,8 @@ import Testing
         let keys = Mirror(reflecting: Settings.shared).children.compactMap { ($0.value as? PrefKey)?.key }
         #expect(
             keys == [
-                "startup", "homeURL", "fullPathTitle", "appLibraryView", "appLibraryIconSize", "filterBar", "alwaysTabBar", "tabClose", "tabStyle",
+                "showGitStatus", "startup", "homeURL", "fullPathTitle", "appLibraryView", "appLibraryIconSize", "filterBar", "alwaysTabBar",
+                "tabClose", "tabStyle",
                 "tabsAtEnd", "closeSplit", "splitStartup", "singleWindow", "pvImages", "pvVideos", "pvDocs", "pvText", "pvFonts",
                 "pvFolders", "pvMax", "pvRemote", "statusBar2", "zoomSlider2", "editableUrl", "fullPathUrl", "confirmTrash", "reviewAppLeftovers",
                 "confirmDelete", "confirmEmptyTrash", "confirmCloseTabs", "confirmTerminal", "confirmOpenMany",
