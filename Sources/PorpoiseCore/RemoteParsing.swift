@@ -1,5 +1,4 @@
 import Foundation
-import UniformTypeIdentifiers
 
 /// Parsers for remote directory listings (SSH `find -printf`, BSD `stat`, `ls -l` from FTP servers and Android).
 ///
@@ -199,8 +198,7 @@ public enum RemoteParsing {
     ) -> FileItem? {
         guard isSafeName(name) else { return nil }
         let url = folder.appendingPathComponent(name, isDirectory: isDir)
-        let ext = (name as NSString).pathExtension
-        let type = isDir ? "public.folder" : (ext.isEmpty ? "public.data" : UTType(filenameExtension: ext)?.identifier ?? "public.data")
+        let type = FileItem.contentType(forName: name, isDirectory: isDir) ?? "public.data"
         return FileItem(
             url: url, name: name, isDirectory: isDir, isSymlink: isLink, isHidden: name.hasPrefix("."),
             size: size, modificationDate: mtime, contentType: type, posixPermissions: mode & 0o7777,

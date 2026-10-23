@@ -249,7 +249,12 @@ public struct DriveFile: Codable, Hashable, Sendable {
     public var contentType: String {
         if isFolder { return "public.folder" }
         if isGoogleDocument { return "com.google.apps." + mimeType.dropFirst("application/vnd.google-apps.".count) }
-        return UTType(mimeType: mimeType)?.identifier ?? "public.data"
+        // Drive sends generic MIME types for many files (application/octet-stream for .swift, text/plain for .md): the
+        // name's type wins when it's a kind of what Drive says, as Finder would show it.
+        let named = FileItem.contentType(forName: name, isDirectory: false).flatMap { UTType($0) }
+        guard let sent = UTType(mimeType: mimeType), !sent.isDynamic else { return named?.identifier ?? UTType.data.identifier }
+        if let named, !named.isDynamic, named.conforms(to: sent) { return named.identifier }
+        return sent.identifier
     }
 
     public func location(accountID: UUID) -> DriveLocation {

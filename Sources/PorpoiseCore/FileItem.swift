@@ -43,7 +43,8 @@ public struct FileItem: Hashable, Sendable {
         self.modificationDate = modificationDate
         self.creationDate = creationDate
         self.accessDate = accessDate
-        self.contentType = contentType
+        // Listings that carry no type (most cloud and remote ones): the type the name implies, as Finder would show.
+        self.contentType = contentType ?? Self.contentType(forName: name, isDirectory: isDirectory)
         self.posixPermissions = posixPermissions
         self.owner = owner
         self.group = group
@@ -53,13 +54,22 @@ public struct FileItem: Hashable, Sendable {
         self.sharedDate = sharedDate
     }
 
-    /// The same item under another name (a cloud rename keeps the URL, an id).
+    /// The same item under another name (a cloud rename keeps the URL, an id). A new extension implies a new type.
     public func named(_ newName: String) -> FileItem {
-        FileItem(
+        let sameExtension = (newName as NSString).pathExtension.lowercased() == (name as NSString).pathExtension.lowercased()
+        return FileItem(
             url: url, name: newName, isDirectory: isDirectory, isSymlink: isSymlink, isHidden: newName.hasPrefix("."), isPackage: isPackage,
             isApplication: isApplication, size: size, modificationDate: modificationDate, creationDate: creationDate, accessDate: accessDate,
-            contentType: contentType, posixPermissions: posixPermissions, owner: owner, group: group, linkDestination: linkDestination,
-            isReadable: isReadable, isWritable: isWritable, sharedDate: sharedDate)
+            contentType: isDirectory || sameExtension ? contentType : nil, posixPermissions: posixPermissions, owner: owner, group: group,
+            linkDestination: linkDestination, isReadable: isReadable, isWritable: isWritable, sharedDate: sharedDate)
+    }
+
+    /// The type a name implies, for an item whose listing has none: a folder, else its extension's type (dynamic for
+    /// an extension macOS doesn't know); nil for a file without an extension, which says nothing about its type.
+    public static func contentType(forName name: String, isDirectory: Bool) -> String? {
+        if isDirectory { return UTType.folder.identifier }
+        let ext = (name as NSString).pathExtension
+        return ext.isEmpty ? nil : UTType(filenameExtension: ext)?.identifier
     }
 
     /// The date a date role shows (nil for other roles).
