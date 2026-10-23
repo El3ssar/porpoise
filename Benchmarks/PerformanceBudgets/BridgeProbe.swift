@@ -38,7 +38,7 @@ extension DebugBridge {
             case "search": ready = model.isSearching && !model.isLoading && model.rows.count == expected
             default: ready = window.isVisible && !model.isLoading && model.rows.count == expected
             }
-            if ready {
+            if ready && window.isVisible && window.occlusionState.contains(.visible) {
                 view.layoutSubtreeIfNeeded()
                 view.displayIfNeeded()
                 CATransaction.flush()

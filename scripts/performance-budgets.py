@@ -277,13 +277,16 @@ def trial(app, out, sender, policy, label):
                     process.kill()
                     process.wait()
             # Only the unique domain and scratch directory this trial created are cleaned up.
-            subprocess.run(['/usr/bin/defaults', 'delete', suite], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(['/usr/bin/defaults', 'delete', suite], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
 
 
 
 def measure(out):
     prepared = json.loads((out / 'prepared.json').read_text())
     policy = prepared['policy']
+    if (policy != policy_at(HARNESS / 'policy.json')
+            or prepared['runner_sha256'] != hashlib.sha256(Path(__file__).read_bytes()).hexdigest()):
+        raise ValueError('Runner/policy changed after preparation')
     report = dict(schema=1, base=prepared['base'], candidate=prepared['candidate'], policy=policy,
                   host=dict(os=platform.platform(), machine=platform.machine()),
                   runner_sha256=prepared['runner_sha256'], harness=prepared['harness'],
