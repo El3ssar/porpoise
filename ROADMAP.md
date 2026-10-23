@@ -124,9 +124,11 @@ off-system window, and README screenshots match the app.
   locally, then offer the user a readable report to attach to a GitHub issue. Nothing is sent automatically.
 - **State restoration.** Windows, tabs, split layout, panels and scroll positions survive a crash or a forced
   update, as they do after a normal quit.
-- **Provider parity.** Every location (local, SFTP, FTP, SMB, S3, Drive, Dropbox, and OneDrive/Box once
-  enabled) passes the same operation, conflict, quota, expiry, pagination and reconnect checks against its fake
-  server.
+- **Provider parity — implemented.** Every location (local, SFTP, FTP, SMB, S3, Drive, Dropbox, and
+  OneDrive/Box once enabled) passes the [shared capability contract](docs/validation/PROVIDER-PARITY.md):
+  operations, conflicts, quota, expiry, pagination and reconnect against isolated fixtures. SMB uses the
+  mounted-volume contract because macOS owns its protocol client. Unsupported and system-managed capabilities
+  are declared and explained in Help → Location Capabilities.
 
 **Done when:** budgets are enforced in CI, an interrupted job resumes after sleep and after Wi-Fi loss, and a
 crash report can be produced without any external service.

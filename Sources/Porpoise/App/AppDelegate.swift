@@ -341,6 +341,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func exportDiagnostics(_ sender: Any?) { DiagnosticsExportWindowController.show() }
 
+    @objc func showLocationCapabilities(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String, let location = ProviderLocation(rawValue: key) else { return }
+        let alert = NSAlert()
+        alert.messageText = location.title + " Capabilities"
+        alert.informativeText = location.help
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     @objc func showHelp(_ sender: Any?) {
         if let u = URL(string: AppInfo.homepage) { NSWorkspace.shared.open(u) }
     }

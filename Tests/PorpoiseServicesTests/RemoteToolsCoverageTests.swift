@@ -304,8 +304,11 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
         try curl.reply("")
         try provider().move(
             [URL(string: "ftp://h.invalid/a.txt")!, URL(string: "ftp://h.invalid/b%20c.txt")!], into: URL(string: "ftp://h.invalid/dst/")!)
+        let calls = curl.calls
+        #expect(calls.count == 4)
+        #expect(calls[0].args.last == "ftp://h.invalid/dst/" && calls[2].args.last == "ftp://h.invalid/dst/")
         #expect(
-            curl.calls.map { Array($0.args.suffix(7).prefix(4)) } == [
+            calls.filter { $0.args.contains("-Q") }.map { Array($0.args.suffix(7).prefix(4)) } == [
                 ["-Q", "RNFR a.txt", "-Q", "RNTO dst/a.txt"], ["-Q", "RNFR b c.txt", "-Q", "RNTO dst/b c.txt"],
             ])
     }

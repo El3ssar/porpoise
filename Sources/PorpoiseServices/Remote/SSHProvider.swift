@@ -299,7 +299,14 @@ final class SSHProvider: RemoteProvider {
 
     /// The trailing "/" makes mv/cp fail instead of renaming when the destination folder is missing.
     func move(_ remote: [URL], into folder: URL) throws {
-        try exec(idempotent: false, "mv -- " + remote.map(shellPath).joined(separator: " ") + " " + shellPath(folder) + "/")
+        for source in remote {
+            let target = shellPath(folder.appendingPathComponent(source.lastPathComponent))
+            let result = try run(
+                "if [ -e \(target) ] || [ -L \(target) ]; then exit \(Self.existsStatus); fi; mv -- \(shellPath(source)) \(shellPath(folder))/",
+                idempotent: false)
+            if result.status == Self.existsStatus { throw RemoteError.exists(source.lastPathComponent) }
+            try check(result, fallback: "Could not move “\(source.lastPathComponent)”.")
+        }
     }
 
     func copy(_ remote: [URL], into folder: URL) throws {

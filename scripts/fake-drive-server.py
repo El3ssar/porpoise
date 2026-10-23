@@ -423,7 +423,7 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/userinfo":
             return self.reply(profiles[allowed.index(authorization)])
         if parsed.path == "/drive/v3/about":
-            return self.reply({"storageQuota": {"usage": "1024", "limit": "16106127360"}})
+            return self.reply(fixtures.get("about", {"storageQuota": {"usage": "1024", "limit": "16106127360"}}))
         if parsed.path == "/drive/v3/drives":
             return self.reply({"drives": fixtures["drives"]})
         if fixtures.get("offline"):
@@ -473,6 +473,13 @@ class Handler(BaseHTTPRequestHandler):
                 aliases = {"root", "fixture-root"} if parent in {"root", "fixture-root"} else {parent}
                 explicit = [f for f in files if aliases.intersection(f.get("parents", []))]
                 if explicit or fixtures.get("mutationFixture"):
+                    if fixtures.get("listPageSize"):
+                        size = int(fixtures["listPageSize"])
+                        offset = int(query.get("pageToken", ["0"])[0])
+                        page = {"files": explicit[offset:offset + size]}
+                        if offset + size < len(explicit):
+                            page["nextPageToken"] = str(offset + size)
+                        return self.reply(page)
                     return self.reply({"files": explicit})
             if "sharedWithMe" in q:
                 ids = fixtures.get("sharedWithMeIDs", ["folder-a", "doc-a", "shortcut-a"])

@@ -271,9 +271,28 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
     }
 
     public func upload(_ local: URL, into remoteFolder: URL) throws {
+        var ancestors: Set<String> = []
+        try upload(local, into: remoteFolder, ancestors: &ancestors)
+    }
+
+    private func upload(_ local: URL, into remoteFolder: URL, ancestors: inout Set<String>) throws {
         guard let client else { throw DriveError.reconnect }
-        let parent = try parentID(remoteFolder)
         let context = transferContext()
+        try Self.wait { try await context.checkpoint() }
+        var isDirectory: ObjCBool = false
+        FileManager.default.fileExists(atPath: local.path, isDirectory: &isDirectory)
+        if isDirectory.boolValue {
+            let path = local.resolvingSymlinksInPath().standardizedFileURL.path
+            // Match other folder-upload adapters: follow directory links, but never recurse into an ancestor.
+            guard ancestors.insert(path).inserted else { return }
+            defer { ancestors.remove(path) }
+            let folder = try Self.wait { try await self.createFolder(named: local.lastPathComponent, in: remoteFolder) }
+            for child in try FileManager.default.contentsOfDirectory(at: local, includingPropertiesForKeys: nil) {
+                try upload(child, into: folder.url, ancestors: &ancestors)
+            }
+            return
+        }
+        let parent = try parentID(remoteFolder)
         _ = try Self.wait { try await client.upload(local, parentID: parent, context: context) }
     }
     public func delete(_ remote: [URL]) throws {
