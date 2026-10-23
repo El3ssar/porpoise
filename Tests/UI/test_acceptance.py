@@ -76,6 +76,29 @@ class AcceptanceRunnerTests(unittest.TestCase):
             self.assertIn("FAIL [light] always fails: on purpose", summary)
             self.assertEqual(json.load(open(os.path.join(out, "results.json")))["run"], "selftest")
 
+    def test_a_wait_that_times_out_fails_the_run(self):
+        with tempfile.TemporaryDirectory() as out:
+            run = make_run(out)
+            run.step("waits", lambda: acceptance.wait_until(lambda: None, 0.1, "nothing", interval=0.05))
+            run.step("checks", lambda: run.check("a check", False, "on purpose"))
+            failed = [r for r in run.results if r.get("ok") is False]
+            # Each failure once: the timeout by its step's name, the check by its own.
+            self.assertEqual([r["check"] for r in failed], ["waits", "a check"])
+            self.assertIn("nothing", failed[0]["info"])
+
+    def test_workspace_diff_names_each_difference(self):
+        import workspaces
+
+        saved = {"tabs": [{"primary": {"url": "a", "scroll": [0, 300]}}], "activeTab": 0, "frame": [0, 0, 1, 1]}
+        same = json.loads(json.dumps(saved))
+        same["frame"] = [5, 5, 9, 9]
+        self.assertEqual(workspaces.diff(workspaces.without_frame(saved), workspaces.without_frame(same)), [])
+        moved = json.loads(json.dumps(saved))
+        moved["tabs"][0]["primary"]["scroll"] = [0, 0]
+        moved["activeTab"] = 1
+        self.assertEqual(workspaces.diff(saved, moved), [".activeTab: 0 != 1", ".tabs[0].primary.scroll[1]: 300 != 0"])
+        self.assertEqual(workspaces.diff([1], [1, 2]), [".: [1] != [1, 2]"])
+
     def test_stop_ends_only_its_own_process(self):
         with tempfile.TemporaryDirectory() as out:
             run = make_run(out)
