@@ -15,13 +15,21 @@ import Testing
         let items = help.items.filter { !$0.isSeparatorItem }
         #expect(
             items.map(\.title) == [
-                "Keyboard Shortcuts", "Install Guide", "Report a Bug…", "Porpoise Website", "Export Diagnostics…",
+                "Keyboard Shortcuts", "Install Guide", "Location Capabilities", "Report a Bug…", "Porpoise Website", "Export Diagnostics…",
                 "Support Porpoise (Donate)…",
             ])
         for item in items {
+            if item.submenu != nil { continue }
             let action = try #require(item.action, "\(item.title)")
             #expect(AppDelegate.shared.responds(to: action), "\(item.title)")
             #expect(item.image != nil, "\(item.title) has an icon")
+        }
+        let capabilities = try #require(items.first { $0.title == "Location Capabilities" }?.submenu)
+        #expect(capabilities.items.map(\.title) == ProviderLocation.allCases.map(\.title))
+        for (item, location) in zip(capabilities.items, ProviderLocation.allCases) {
+            #expect(item.representedObject as? String == location.rawValue)
+            #expect(item.action == #selector(AppDelegate.showLocationCapabilities(_:)))
+            #expect(AppDelegate.shared.responds(to: item.action!))
         }
         #expect(URL(string: AppInfo.installGuide)?.host == "porpoise.dev" && AppInfo.newIssue.hasSuffix("/issues/new/choose"))
     }

@@ -244,6 +244,13 @@ extension AppDelegate {
         let help = NSMenu(title: "Help")
         help.addItem(mi("Keyboard Shortcuts", #selector(showKeyboardShortcuts(_:)), "?", icon: "input-keyboard"))
         help.addItem(mi("Install Guide", #selector(showInstallGuide(_:)), icon: "package-install"))
+        let capabilities = NSMenu(title: "Location Capabilities")
+        for location in ProviderLocation.allCases {
+            let item = mi(location.title, #selector(showLocationCapabilities(_:)))
+            item.representedObject = location.rawValue
+            capabilities.addItem(item)
+        }
+        help.addItem(.submenu("Location Capabilities", icon: "help-contents", capabilities))
         help.addItem(mi("Report a Bug…", #selector(reportBug(_:)), icon: "emblem-warning"))
         help.addItem(sep())
         help.addItem(mi("Porpoise Website", #selector(showHelp(_:)), icon: "help-contents"))
