@@ -146,15 +146,18 @@ final class ColumnBrowserView: NSView {
     override var isFlipped: Bool { true }
 
     static func configure(_ scroll: NSScrollView, showing list: ItemListView) {
+        // Overlay first, then tile: with "Show scroll bars: Always", setting the style after the scroller leaves the
+        // content view a legacy scroller's width short until the next tile, and the column's rows stop short of it.
+        scroll.scrollerStyle = .overlay
         scroll.documentView = list
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
         scroll.autohidesScrollers = true
-        scroll.scrollerStyle = .overlay
         scroll.drawsBackground = true
         scroll.backgroundColor = Theme.viewBackground
         scroll.borderType = .noBorder
         scroll.horizontalScrollElasticity = .none
+        scroll.tile()
     }
 
     // MARK: Columns

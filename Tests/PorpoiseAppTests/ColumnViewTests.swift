@@ -479,6 +479,9 @@ import Testing
         let model = try await DirectoryModel.loaded(s.url) { $0.props.mode = .columns }
         let list = ItemListView(model: model)
         let scroll = NSScrollView(frame: CGRect(x: 0, y: 0, width: 245, height: 400))
+        // As on a Mac set to always show scroll bars (CI's runners): a legacy scroller before the column takes it.
+        scroll.scrollerStyle = .legacy
+        scroll.hasVerticalScroller = true
         ColumnBrowserView.configure(scroll, showing: list)
         list.computeLayout()
         #expect(list.frame.width == scroll.contentView.bounds.width)
