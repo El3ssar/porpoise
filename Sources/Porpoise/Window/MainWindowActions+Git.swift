@@ -1,9 +1,25 @@
 import AppKit
+import PorpoiseCore
 import PorpoiseServices
 
+struct GitChangesRequest {
+    let item: FileItem
+    let status: GitFolderStatus
+}
+
 extension MainWindowController {
+    func addGitChanges(to menu: NSMenu, item: FileItem, in container: ViewContainer, single: Bool) {
+        guard single, item.url.isFileURL, !item.isDirectory, !item.isSymlink,
+            let status = container.model.gitStatus, let kind = status.status(for: item), kind != .ignored
+        else { return }
+        let entry = NSMenuItem(title: "Show Changes", action: #selector(showGitChanges(_:)), keyEquivalent: "")
+        entry.target = self; entry.representedObject = GitChangesRequest(item: item, status: status)
+        menu.addItem(entry)
+    }
+
     @objc func showGitChanges(_ sender: NSMenuItem) {
-        guard let item = view.model.selectedItems.first, let status = view.model.gitStatus else { return }
+        guard let request = sender.representedObject as? GitChangesRequest else { return }
+        let item = request.item, status = request.status
         let bar = view.statusBar
         DispatchQueue.global(qos: .userInitiated).async {
             do {

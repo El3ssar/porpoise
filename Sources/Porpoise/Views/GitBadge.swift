@@ -7,18 +7,15 @@ enum GitBadge {
     static func color(_ status: GitFileStatus, selected: Bool) -> NSColor {
         if selected { return Theme.selectionText }
         switch status {
-        case .conflicted, .deleted: return .systemRed
-        case .added, .untracked: return .systemGreen
+        case .conflicted, .deleted: return Theme.transferDanger
+        case .added, .untracked: return Theme.transferPositive
         case .renamed: return .systemPurple
-        case .modified: return .systemOrange
+        case .modified: return Theme.transferChanged
         case .ignored, .changedFolder: return Theme.viewTextInactive
         }
     }
-    static func draw(_ status: GitFileStatus?, in rect: CGRect, selected: Bool, disc: Bool = false) {
+    static func draw(_ status: GitFileStatus?, in rect: CGRect, selected: Bool) {
         guard let status, status != .ignored else { return }
-        if disc {
-            Theme.viewBackground.setFill(); NSBezierPath(ovalIn: rect).fill()
-        }
         let font = NSFont.monospacedSystemFont(ofSize: min(13, rect.height - 2), weight: .bold)
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color(status, selected: selected)]
         let size = (status.symbol as NSString).size(withAttributes: attributes)

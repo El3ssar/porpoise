@@ -621,7 +621,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     }
 
     func updateStatus() {
-        statusBar.gitText = model.gitStatus?.snapshot.branchText ?? ""
+        statusBar.gitText = model.gitStatus?.statusText ?? ""
         refreshListState()
         if showsApps {
             // Apps, not files and bytes (bundle sizes would need a scan of every app).

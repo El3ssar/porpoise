@@ -117,4 +117,28 @@ import Testing
         Settings.shared.showGitStatus = false
         #expect(!controller.contextMenu(for: item, in: pane).items.contains { $0.title == "Show Changes" })
     }
+    @Test func showChangesFromAnUnfocusedSubcolumnKeepsItsTarget() async throws {
+        let f = try await Task.detached {
+            let f = try LocalGitFixture(); try f.scratch.file("folder/child.txt", "before"); try f.scratch.file("root.txt", "root")
+            try f.record(); try f.scratch.file("folder/child.txt", "after"); return f
+        }.value
+        let controller = MainWindowController(urls: [f.url])
+        defer { controller.window?.close() }
+        let pane = controller.view
+        try #require(await eventually { !pane.model.isLoading && pane.model.gitStatus != nil })
+        pane.setMode(.columns); pane.layoutSubtreeIfNeeded(); pane.list.select(f.scratch.path("folder"))
+        let browser = try #require(pane.columnBrowser)
+        try #require(await eventually { browser.after?.model.gitStatus != nil && browser.after?.model.isLoading == false })
+        let child = try #require(browser.after)
+        let index = try #require(child.model.index(of: f.scratch.path("folder/child.txt")))
+        let menu = try #require(child.list.accessibilityMenu(for: index))
+        let action = try #require(menu.items.first { $0.title == "Show Changes" })
+        #expect(pane.url.path == f.scratch.path("folder").path)
+        // A menu action uses the bound target even if the active pane's selection changes before dispatch.
+        pane.setURL(f.url)
+        controller.showGitChanges(action)
+        try #require(await eventually { FileDiffWindow.current?.leftURL.lastPathComponent == "HEAD-child.txt" })
+        FileDiffWindow.current?.window?.close()
+    }
+
 }
