@@ -25,6 +25,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     weak var lastSyncedView: ViewContainer?
     let informationMoveAnimator = Animator(name: "information.focus")
     var informationGhost: NSView?
+    var informationGlides: [ItemTransitions] = []
     let leftStack = ThinSplitView()  // [places, folders, shelf]
     /// Sidebar host: translucent Desert-tinted material behind Places/Folders (Finder-style).
     let sidebar = NSView()

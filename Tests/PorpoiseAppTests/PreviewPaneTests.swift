@@ -65,6 +65,15 @@ import Testing
         #expect(wc.window?.firstResponder === wc.tab.primary.list)
         let leftInfo = wc.information.convert(wc.information.bounds, to: wc.tab)
         #expect(leftInfo.maxX <= right.frame.minX)
+        wc.toolbar.layoutSubtreeIfNeeded()
+        let ranges = wc.tab.paneRanges
+        let slot = wc.hSplit.convert(wc.hSplit.bounds, to: nil)
+        #expect(ranges[0] == slot.minX...slot.maxX)
+        #expect(abs(ranges[1].lowerBound - ranges[0].upperBound - SplitDividerView.lineWidth) < 0.5)
+        for (index, navigator) in wc.tab.navigators.enumerated() {
+            let frame = navigator.convert(navigator.bounds, to: nil)
+            #expect(frame.minX >= ranges[index].lowerBound && frame.maxX <= ranges[index].upperBound)
+        }
 
         wc.focusRightPane(nil)
         #expect(wc.tab.informationPane === right && right.superview === wc.tab)
@@ -166,13 +175,15 @@ import Testing
         let left = wc.tab.primary, right = try #require(wc.tab.secondary)
         try #require(await poll { left.model.rows.count == 100 && right.model.rows.count == 100 })
         for pane in wc.tab.containers { pane.setMode(.details) }
+        left.list.columnWidths[.name] = 1200
+        left.list.relayout()
         wc.window?.contentView?.layoutSubtreeIfNeeded()
         let probes = wc.tab.containers.map { pane in
             let probe = AttachmentProbe()
             pane.addSubview(probe)
             return probe
         }
-        left.restoreScroll(to: CGPoint(x: 0, y: 300))
+        left.restoreScroll(to: CGPoint(x: 80, y: 300))
         right.restoreScroll(to: CGPoint(x: 0, y: 500))
         let origins = [left.scrollOrigin, right.scrollOrigin]
         let columns = left.list.columnWidths
@@ -184,6 +195,11 @@ import Testing
         let item = panelItem()
         for _ in 0..<3 {
             wc.togglePanel(item)
+            wc.window?.contentView?.layoutSubtreeIfNeeded()
+            for pane in wc.tab.containers {
+                let point = wc.tab.convert(CGPoint(x: pane.scroll.bounds.midX, y: pane.scroll.bounds.midY), from: pane.scroll)
+                #expect(wc.tab.hitTest(point)?.isDescendant(of: pane) == true)
+            }
             wc.focusRightPane(nil)
             wc.focusLeftPane(nil)
             wc.togglePanel(item)

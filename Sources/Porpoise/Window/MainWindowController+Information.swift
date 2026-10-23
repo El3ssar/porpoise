@@ -12,7 +12,9 @@ extension MainWindowController {
         informationGhost?.removeFromSuperview()
         informationGhost = nil
         information.alphaValue = 1
-        informationTab?.containers.forEach { $0.list.transitions.releaseWidth() }
+        let glides = informationGlides
+        informationGlides = []
+        glides.forEach { $0.releaseWidth() }
     }
 
     /// One inspector per window, beside the highlighted pane. Its host occupies that pane's share of the tab,
@@ -37,7 +39,10 @@ extension MainWindowController {
             copy.setAccessibilityElement(false)
             root.addSubview(copy)
             ghost = copy
-            tab.containers.forEach { $0.list.transitions.holdForPanel() }
+            if !tab.isSliding {
+                informationGlides = tab.containers.map { $0.list.transitions }
+                informationGlides.forEach { $0.holdForPanel() }
+            }
         }
         let wasRebuilding = rebuildingPanels
         rebuildingPanels = true
@@ -65,7 +70,7 @@ extension MainWindowController {
         if let ghost {
             informationGhost = ghost
             information.alphaValue = 0
-            tab.containers.forEach { $0.list.transitions.glideForPanel(duration: Motion.fade, curve: Animator.easeOutCubic) }
+            informationGlides.forEach { $0.glideForPanel(duration: Motion.fade, curve: Animator.easeOutCubic) }
             informationMoveAnimator.run(
                 duration: Motion.fade, curve: Animator.easeOutCubic,
                 step: { [weak self, weak ghost] p in

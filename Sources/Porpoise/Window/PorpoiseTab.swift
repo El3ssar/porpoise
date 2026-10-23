@@ -54,6 +54,12 @@ final class PorpoiseTab: NSView {
             pane.frame = frame
         }
     }
+
+    /// Split flights land in the files, excluding the inspector beside the pane that will become active.
+    private func filesWidth(in slot: CGFloat) -> CGFloat {
+        guard let host = informationHost else { return slot }
+        return max(0, slot - PanelSize.informationWidth.fitted(in: slot, divider: host.dividerThickness) - host.dividerThickness)
+    }
     /// Handle position as a fraction of the width, so it stays proportional when the window resizes.
     private var splitFraction: CGFloat = 0.5
     /// Pane being closed: still visible while it shrinks away (Dolphin keeps such "zombie" views).
@@ -238,8 +244,8 @@ final class PorpoiseTab: NSView {
             }
             // The right pane is laid out at its coming width whatever its mode (its mode may only be known once its
             // listing is there): the flight lands on cells that stay put while the pane widens.
-            s.list.layoutWidthOverride = primary.listWidth(forPaneWidth: rightWidth)
-            openingRightWidth = primary.listWidth(forPaneWidth: rightWidth)
+            s.list.layoutWidthOverride = primary.listWidth(forPaneWidth: filesWidth(in: rightWidth))
+            openingRightWidth = primary.listWidth(forPaneWidth: filesWidth(in: rightWidth))
         }
         slidesToEdge = true
         setFraction(1)
@@ -387,7 +393,7 @@ final class PorpoiseTab: NSView {
             // Only Icons rearranges with the width; Details and Compact just follow it smoothly.
             if zombie.list.mode == .icons { zombie.list.layoutWidthOverride = zombie.list.visibleWidth }
             if primary.list.mode == .icons {
-                let width = primary.listWidth(forPaneWidth: bounds.width)
+                let width = primary.listWidth(forPaneWidth: filesWidth(in: bounds.width))
                 primary.list.transitions.change(.splitClose, duration: Motion.splitClose) { primary.list.layoutWidthOverride = width }
             }
             flyItems(backFrom: zombie.list, to: primary.list)
