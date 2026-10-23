@@ -35,34 +35,23 @@ public struct CustomTool: Codable, Sendable, Equatable, Identifiable {
         guard extensions.allSatisfy({ !$0.isEmpty && !$0.contains(where: { $0.isWhitespace || $0 == "/" || $0 == "." }) }),
             types.allSatisfy({ UTType($0) != nil })
         else { throw CustomToolError.invalid("Use extensions without dots and valid type identifiers (such as public.image).") }
-        for argument in arguments {
-            if argument.contains("{selection}"), argument != "{selection}" {
-                throw CustomToolError.invalid("{selection} must be an entire argument; it expands to one argument per selected item.")
-            }
-            var remaining = argument
-            for token in ["{selection}", "{folder}", "{otherFolder}", "{prompt}"] { remaining = remaining.replacingOccurrences(of: token, with: "") }
-            guard !remaining.contains("{"), !remaining.contains("}") else { throw CustomToolError.invalid("Unknown placeholder in arguments.") }
-        }
-        // Script source is code, even when passed as argv. Paths/values may only enter a shell as positional data.
-        if ["sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh"].contains((executable as NSString).lastPathComponent) {
-            for (index, argument) in arguments.enumerated() {
-                let evaluates = argument == "--command" || (argument.hasPrefix("-") && !argument.hasPrefix("--") && argument.contains("c"))
-                if evaluates, arguments.indices.contains(index + 1), arguments[index + 1].contains("{") {
-                    throw CustomToolError.invalid(
-                        "Do not put placeholders in shell source. Use a script file and pass placeholders as separate arguments.")
-                }
-                if argument.hasPrefix("--command="), argument.contains("{") {
-                    throw CustomToolError.invalid("Do not put placeholders in shell source.")
-                }
+        let parsed = try arguments.map(CustomToolTemplate.parts)
+        for parts in parsed where CustomToolTemplate.hasPlaceholder(parts) {
+            guard parts.count == 1, case .placeholder = parts[0] else {
+                throw CustomToolError.invalid("Each placeholder must be an entire argument. Put flags and script source in separate arguments.")
             }
         }
-        if arguments.contains(where: { $0.contains("{prompt}") }), prompt.isEmpty {
+        try CustomToolTemplate.validateCodeArguments(executable: executable, arguments: arguments, parsed: parsed)
+        if parsed.contains([.placeholder("prompt")]), prompt.isEmpty {
             throw CustomToolError.invalid("Give the value prompt a label before using {prompt}.")
         }
-        if selection == .folder, arguments.contains("{selection}") {
+        if selection == .folder, parsed.contains([.placeholder("selection")]) {
             throw CustomToolError.invalid("A current-folder tool uses {folder}, rather than {selection}.")
         }
         try shortcut.validate()
+        guard !shortcut.isReservedByAppKit else {
+            throw CustomToolError.invalid("This shortcut belongs to a standard macOS application or window command.")
+        }
     }
 
     /// Pure matching: uses the listing's metadata, never stats files or follows links on the UI thread.
@@ -71,7 +60,7 @@ public struct CustomTool: Codable, Sendable, Equatable, Identifiable {
         let items = context.items
         if selection == .one && items.count != 1 { return "Select exactly one item." }
         if selection == .many && items.isEmpty { return "Select one or more items." }
-        if arguments.contains(where: { $0.contains("{otherFolder}") }), context.otherFolder?.isFileURL != true {
+        if arguments.contains("{otherFolder}"), context.otherFolder?.isFileURL != true {
             return "Open a local folder in the other split pane."
         }
         let targets = selection == .folder ? [FileItem(url: context.folder, name: "", isDirectory: true)] : items
@@ -97,20 +86,19 @@ public struct CustomTool: Codable, Sendable, Equatable, Identifiable {
         guard value?.contains("\0") != true else { throw CustomToolError.invalid("The value contains an invalid character.") }
         var args: [String] = []
         for argument in arguments {
-            if argument == "{selection}" { args += context.items.map { $0.url.path }; continue }
-            // One pass: a filename/value that contains a placeholder is always literal data.
-            var result = "", rest = argument[...]
-            while let open = rest.firstIndex(of: "{"), let close = rest[open...].firstIndex(of: "}") {
-                result += rest[..<open]
-                switch rest[open...close] {
-                case "{folder}": result += context.folder.path
-                case "{otherFolder}": result += context.otherFolder?.path ?? ""
-                case "{prompt}": result += value ?? ""
+            let parts = try CustomToolTemplate.parts(argument)
+            if parts == [.placeholder("selection")] { args += context.items.map { $0.url.path }; continue }
+            var result = ""
+            for part in parts {
+                switch part {
+                case .literal(let text): result += text
+                case .placeholder("folder"): result += context.folder.path
+                case .placeholder("otherFolder"): result += context.otherFolder?.path ?? ""
+                case .placeholder("prompt"): result += value ?? ""
                 default: break
                 }
-                rest = rest[rest.index(after: close)...]
             }
-            result += rest; args.append(result)
+            args.append(result)
         }
         // Stay comfortably below macOS ARG_MAX; report a useful error instead of truncating a selection.
         guard args.reduce(executable.utf8.count + 1, { $0 + $1.utf8.count + 1 }) <= 128 * 1024 else {

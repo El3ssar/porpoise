@@ -18,6 +18,12 @@ public struct KeyboardShortcut: Codable, Sendable, Hashable {
         modifiers = try c.decodeIfPresent(ShortcutModifiers.self, forKey: .modifiers) ?? []
     }
     public var isEmpty: Bool { key.isEmpty }
+    /// Standard application/window bindings remain available even when AppKit supplies private menu actions.
+    public var isReservedByAppKit: Bool {
+        let value = normalized
+        return ["q", "h", "m", "w"].contains(value.key)
+            && (value.modifiers == .command || value.modifiers == [.command, .option])
+    }
     /// AppKit infers Shift for uppercase letters and shifted ASCII symbols in default key equivalents.
     public var normalized: Self {
         guard !key.isEmpty else { return Self() }

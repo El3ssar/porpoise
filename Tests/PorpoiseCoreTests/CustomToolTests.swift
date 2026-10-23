@@ -11,12 +11,12 @@ struct CustomToolTests {
         let names = ["a b.txt", "single'quote", "double\"quote", "line\nbreak", "日本語 🐬", "$(touch nope)", "`touch nope`", "-n", "{folder}"]
         let context = CustomToolContext(folder: folder, otherFolder: URL(fileURLWithPath: "/demo/other"), items: names.map { item($0) })
         var tool = CustomTool(
-            name: "Test", executable: "/usr/bin/printf", arguments: ["%s\n", "{selection}", "prefix={folder}", "{otherFolder}", "{prompt}"])
+            name: "Test", executable: "/usr/bin/printf", arguments: ["%s\n", "{selection}", "{folder}", "{otherFolder}", "{prompt}"])
         tool.prompt = "Value"
         let invocation = try tool.invocation(in: context, value: "{folder}; $(touch nope)")
         #expect(
             invocation.arguments == ["%s\n"] + names.map { folder.appendingPathComponent($0).path } + [
-                "prefix=" + folder.path, "/demo/other", "{folder}; $(touch nope)",
+                folder.path, "/demo/other", "{folder}; $(touch nope)",
             ])
         #expect(invocation.folder == folder)
     }
@@ -73,6 +73,46 @@ struct CustomToolTests {
         }
         let tool = CustomTool(name: "Safe positional data", executable: "/bin/sh", arguments: ["-c", "printf '%s\\n' \"$@\"", "tool", "{selection}"])
         try tool.validate()
+    }
+    @Test func interpreterSourceIsNeverSubstituted() throws {
+        let cases: [(String, [String])] = [
+            ("python3", ["-c", "{folder}"]), ("python3.13t", ["-c", "{folder}"]), ("python3", ["-Ic", "{prompt}"]),
+            ("osascript", ["-e", "{folder}"]), ("perl", ["-we", "{folder}"]),
+            ("ruby", ["-E", "{folder}"]), ("node", ["--eval", "{folder}"]),
+            ("node", ["-p", "{folder}"]), ("php", ["-r", "{folder}"]),
+            ("awk", ["-F", ":", "{folder}"]), ("gawk", ["-v", "x=y", "--", "{folder}"]),
+            ("gawk", ["-f", "/fixture/script.awk", "-e", "{folder}"]),
+            ("lua", ["-e", "{folder}"]), ("tclsh", ["-e", "{folder}"]),
+            ("env", ["bash", "-c", "{folder}"]), ("env", ["-S", "bash -c", "{folder}"]),
+            ("xcrun", ["python3", "-c", "{folder}"]),
+            ("find", ["{folder}", "-exec", "/bin/sh", "-c", "{prompt}", ";"]),
+            ("ruby3.3", ["-e", "{folder}"]),
+        ]
+        for (executable, args) in cases {
+            var tool = CustomTool(name: "Source", executable: "/usr/bin/" + executable, arguments: args); tool.prompt = "Value"
+            #expect(throws: (any Error).self) { try tool.validate() }
+        }
+        for (executable, args) in [
+            ("python3", ["-c", "import sys; print(sys.argv[1])", "{folder}"]),
+            ("osascript", ["/fixture/script.scpt", "{selection}"]),
+            ("awk", ["{{print $1}}", "{selection}"]),
+            ("awk", ["-f", "/fixture/script.awk", "{selection}"]),
+        ] {
+            try CustomTool(name: "Data", executable: "/usr/bin/" + executable, arguments: args).validate()
+        }
+        for argument in ["--path={folder}", "prefix{prompt}", "-c{folder}", "{folder}/script.py"] {
+            let tool = CustomTool(name: "Embedded", executable: "/usr/bin/python3", arguments: [argument])
+            #expect(throws: (any Error).self) { try tool.validate() }
+        }
+    }
+    @Test func literalBracesAndSubstitutedValuesStayLiteral() throws {
+        let context = CustomToolContext(folder: folder, items: [item("{{folder}}")])
+        let tool = CustomTool(
+            name: "Braces", executable: "/usr/bin/printf", arguments: ["{{print $1}}", "{{}}", "{{name}}", "{{folder}}", "{selection}"])
+        #expect(try tool.invocation(in: context).arguments == ["{print $1}", "{}", "{name}", "{folder}", context.items[0].url.path])
+        var folderTool = tool; folderTool.selection = .folder; folderTool.arguments = ["{{selection}}", "{{otherFolder}}", "{folder}"]
+        #expect(
+            try folderTool.invocation(in: CustomToolContext(folder: folder, items: [])).arguments == ["{selection}", "{otherFolder}", folder.path])
     }
     @Test func aHundredThousandTargetsMatchWithoutFilesystemReads() {
         let entry = item("report.txt")
