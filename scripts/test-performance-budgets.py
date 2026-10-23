@@ -4,6 +4,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import plistlib
 from pathlib import Path
 import subprocess
 import sys
@@ -17,7 +18,10 @@ ROOT = Path(__file__).resolve().parent.parent
 spec = importlib.util.spec_from_file_location('budgets', ROOT / 'scripts/performance-budgets.py')
 budgets = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(budgets)
-POLICY = budgets.policy_at(ROOT / 'Benchmarks/PerformanceBudgets/policy.json')
+CURRENT_POLICY = budgets.policy_at(ROOT / 'Benchmarks/PerformanceBudgets/policy.json')
+# Keep the retained schema1 regression corpus, alongside explicit schema2 coverage below.
+POLICY = dict(CURRENT_POLICY, schema=1, idle_seconds=20)
+POLICY.pop('idle_trials', None)
 
 
 def sample(multiplier=1):
@@ -31,7 +35,246 @@ def report(candidate=1):
                 comparison=[dict(a=sample(), b=sample(candidate)) for _ in range(POLICY['pairs'])])
 
 
+def current_report(candidate=1, idle=0.001):
+    value = report(candidate)
+    value['schema'], value['policy'] = 2, CURRENT_POLICY
+    for group in ['warmup', 'calibration', 'comparison']:
+        for pair in value[group]:
+            for member in pair:
+                pair[member].pop('idle_cpu')
+    value['idle_samples'] = [{'idle_cpu': idle} for _ in range(CURRENT_POLICY['idle_trials'])]
+    return value
+
+
 class BudgetTests(unittest.TestCase):
+    def test_candidate_only_schema_separates_idle_from_latency_statistics(self):
+        value = current_report()
+        results, history = budgets.evaluate_with_history(value, CURRENT_POLICY)
+        previous = budgets.evaluate(report(), POLICY)
+        for name in budgets.LATENCY_METRICS:
+            self.assertEqual(results[name], previous[name])
+        idle = results['idle_cpu']
+        self.assertTrue(idle['candidate_only'])
+        self.assertEqual(idle['sample_count'], 3)
+        self.assertNotIn('ratio', idle)
+        self.assertNotIn('noise_band', idle)
+        self.assertNotIn('advisory_status', idle)
+        self.assertEqual(history[0]['metrics'], list(budgets.LATENCY_METRICS))
+        self.assertNotIn('idle_cpu', history[0]['results'])
+        summary = budgets.summary(value, results)
+        self.assertIn('Candidate only', summary)
+        self.assertIn('no idle A/A calibration, B/A ratio or idle retries', summary)
+        self.assertIn('3 candidate trials; 3 fixed 5-second windows', summary)
+        value['idle_samples'] = [{'idle_cpu': x} for x in [0.001, 0.001, 1]]
+        self.assertEqual(budgets.evaluate(value, CURRENT_POLICY)['idle_cpu']['status'], 'pass')
+        value['idle_samples'] = [{'idle_cpu': x} for x in [0.006, 0.006, 0.001]]
+        for pair in value['calibration']:
+            pair['b']['cold_launch'] *= 3
+        def forbidden(*args):
+            self.fail('An idle breach cannot request latency retries or replacement idle data')
+        result = budgets.recalibrate(value, CURRENT_POLICY, forbidden, lambda *args: None)
+        self.assertEqual(result['idle_cpu']['status'], 'regression')
+        self.assertEqual(result['cold_launch']['status'], 'calibration_failed')
+
+    def test_candidate_only_incomplete_or_mixed_samples_fail_closed(self):
+        for samples in [None, [], [{'idle_cpu': 0.001}] * 2, [{'idle_cpu': 0.001}] * 4,
+                        [{'idle_cpu': 0.001, 'cold_launch': 1}] * 3,
+                        [{'idle_cpu': x} for x in [0.001, float('nan'), 0.001]]]:
+            value = current_report()
+            value['idle_samples'] = samples
+            with self.assertRaises(ValueError):
+                budgets.evaluate(value, CURRENT_POLICY)
+        value = current_report()
+        value['calibration'][0]['a']['idle_cpu'] = 0.001
+        with self.assertRaises(ValueError):
+            budgets.evaluate(value, CURRENT_POLICY)
+        for field, bad in [('idle_trials', 1), ('idle_trials', True), ('idle_seconds', 20), ('idle_cpu_ceiling', None)]:
+            with self.assertRaises(ValueError):
+                budgets.validate_policy(dict(CURRENT_POLICY, **{field: bad}))
+
+    def test_latency_trials_skip_cpu_sampling_and_idle_trials_return_cpu_only(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            process = SimpleNamespace(pid=123, poll=lambda: None, terminate=lambda: None, wait=lambda **kwargs: 0)
+            class FakeSender:
+                done = True
+                def emit(self, channel, command):
+                    request = json.loads(command[len('budget '):])
+                    value = dict(schema=1, operation=request['operation'], rows=request['expected'], visible=True,
+                                 width=1200, height=800, mode='details', seconds=0.1, search_done=self.done)
+                    budgets.write_json(Path(request['report']), value)
+            sender = FakeSender()
+            with patch.object(budgets.subprocess, 'Popen', return_value=process), \
+                    patch.object(budgets.subprocess, 'run', return_value=SimpleNamespace(returncode=0)), \
+                    patch.object(budgets.time, 'sleep'), \
+                    patch.object(budgets, 'measure_idle', return_value=0.001) as cpu:
+                values = budgets.trial('FAKE', root, sender, CURRENT_POLICY, 'latency', 'latency')
+                self.assertEqual(set(values), set(budgets.LATENCY_METRICS))
+                cpu.assert_not_called()
+                values = budgets.trial('FAKE', root, sender, CURRENT_POLICY, 'idle', 'idle')
+                self.assertEqual(values, {'idle_cpu': 0.001})
+                self.assertEqual(cpu.call_count, 1)
+                sender.done = False
+                with self.assertRaisesRegex(ValueError, 'Workload or window identity'):
+                    budgets.trial('FAKE', root, sender, CURRENT_POLICY, 'unfinished-search', 'latency')
+
+    def test_interrupted_candidate_cohort_is_retained_and_cannot_pass_or_resume(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            prepared = dict(base='a' * 40, candidate='b' * 40, policy=CURRENT_POLICY,
+                            apps=dict(base='BASE', candidate='CANDIDATE'), harness={},
+                            runner_sha256=hashlib.sha256(Path(budgets.__file__).read_bytes()).hexdigest())
+            budgets.write_json(root / 'prepared.json', prepared)
+            def trial(args, **kwargs):
+                label = args[args.index('--label') + 1]
+                if label == 'idle-1':
+                    return SimpleNamespace(returncode=1, stdout='', stderr='owned fixture failure')
+                value = {'idle_cpu': 0.001} if label.startswith('idle-') else {key: 1 for key in budgets.LATENCY_METRICS}
+                return SimpleNamespace(returncode=0, stdout=json.dumps(value), stderr='')
+            with patch.object(budgets.platform, 'platform', return_value='fixture'), \
+                    patch.object(budgets.platform, 'machine', return_value='fixture'), \
+                    patch.object(budgets.subprocess, 'run', side_effect=trial):
+                with self.assertRaisesRegex(RuntimeError, 'Owned trial failed'):
+                    budgets.measure(root)
+            retained = json.loads((root / 'results.json').read_text())
+            self.assertEqual(retained['idle_samples'], [{'idle_cpu': 0.001}])
+            self.assertNotIn('evaluation', retained)
+            self.assertFalse((root / 'SUMMARY.md').exists())
+            with self.assertRaises(ValueError):
+                budgets.evaluate(retained, CURRENT_POLICY)
+            with self.assertRaisesRegex(ValueError, 'cannot be reused'):
+                budgets.measure(root)
+
+    def prepare_fixture(self, folder, candidate_version='CANDIDATE', bridge_changed=False):
+        repo, out = folder / 'repo', folder / 'out'
+        repo.mkdir()
+        out.mkdir()
+        def git(*args):
+            return subprocess.check_output(['git', '-C', str(repo), '-c', 'core.hooksPath=/dev/null',
+                                            '-c', 'commit.gpgsign=false', *args], stderr=subprocess.DEVNULL).decode().strip()
+        git('init', '-q')
+        git('config', 'user.name', 'Budget fixture')
+        git('config', 'user.email', 'budget-fixture@example.invalid')
+        (repo / '.gitignore').write_text('build/\n.build/\n')
+        bridge = repo / 'Sources/Porpoise/App/DebugBridge.swift'
+        bridge.parent.mkdir(parents=True)
+        bridge.write_text('// base\nstateCommands, captureCommands,\n')
+        version = repo / 'version.txt'
+        version.write_text('BASE')
+        script = repo / 'scripts/make-app.sh'
+        script.parent.mkdir()
+        script.write_text('''#!/usr/bin/env python3
+from pathlib import Path
+import plistlib, shutil
+version = Path('version.txt').read_text()
+if version == 'FAIL': raise SystemExit(17)
+bridge = Path('Sources/Porpoise/App/DebugBridge.swift')
+if version == 'TAMPER': bridge.write_text('unexpected mutation')
+cache = Path('.build/cache-sentinel')
+print('cache_present=' + str(cache.exists()), flush=True)
+print('bridge_mtime_ns=' + str(bridge.stat().st_mtime_ns), flush=True)
+cache.parent.mkdir(exist_ok=True)
+cache.touch()
+app = Path('build/Porpoise.app')
+shutil.rmtree(app, ignore_errors=True)
+(app/'Contents/MacOS').mkdir(parents=True)
+(app/'Contents/MacOS/Porpoise').write_bytes((version + '\\n' + bridge.read_text()).encode())
+(app/'Contents/Resources').mkdir()
+(app/'Contents/Resources/payload').write_text(version)
+(app/'Contents/Resources/Current').symlink_to('payload')
+(app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'fixture'}))
+''')
+        script.chmod(0o755)
+        git('add', '.')
+        git('commit', '-qm', 'base')
+        base = git('rev-parse', 'HEAD')
+        version.write_text(candidate_version)
+        if bridge_changed:
+            bridge.write_text('// candidate\nstateCommands, captureCommands,\n')
+        git('add', '.')
+        git('commit', '-qm', 'candidate')
+        return repo, out, base, git('rev-parse', 'HEAD')
+
+    def fake_prepare_command(self, real_command):
+        def command(args, **kwargs):
+            if args[0] == 'codesign':
+                return
+            if args[0] == 'xcrun':
+                Path(args[args.index('-o') + 1]).write_text('fixture sender')
+                return
+            return real_command(args, **kwargs)
+        return command
+
+    def test_incremental_preparation_preserves_both_source_apps_and_cache(self):
+        for changed in [False, True]:
+            with self.subTest(bridge_changed=changed), tempfile.TemporaryDirectory() as folder:
+                repo, out, base, candidate = self.prepare_fixture(Path(folder), bridge_changed=changed)
+                real_command = budgets.command
+                with patch.object(budgets, 'ROOT', repo), \
+                        patch.object(budgets, 'command', side_effect=self.fake_prepare_command(real_command)), \
+                        patch.object(budgets, 'fixture_at'):
+                    apps = budgets.prepare(out, base, candidate)
+                self.assertNotEqual(apps['base'], apps['candidate'])
+                self.assertTrue(Path(apps['base']).read_bytes().startswith(b'BASE\n// base'))
+                expected = b'CANDIDATE\n// candidate' if changed else b'CANDIDATE\n// base'
+                self.assertTrue(Path(apps['candidate']).read_bytes().startswith(expected))
+                for name, value in [('base', 'BASE'), ('candidate', 'CANDIDATE')]:
+                    resource = out / 'apps' / (name + '.app') / 'Contents/Resources/Current'
+                    self.assertTrue(resource.is_symlink())
+                    self.assertEqual(resource.read_text(), value)
+                self.assertIn('cache_present=False', (out / 'base-build.log').read_text())
+                self.assertIn('cache_present=True', (out / 'candidate-build.log').read_text())
+                mtimes = [next(line.split('=', 1)[1] for line in (out / (label + '-build.log')).read_text().splitlines()
+                               if line.startswith('bridge_mtime_ns=')) for label in ['base', 'candidate']]
+                self.assertEqual(mtimes[0] == mtimes[1], not changed)
+                stages = json.loads((out / 'preparation.json').read_text())
+                self.assertEqual(stages['base']['commit'], base)
+                self.assertEqual(stages['candidate']['commit'], candidate)
+                for label, app in apps.items():
+                    self.assertEqual(stages[label]['executable_sha256'], hashlib.sha256(Path(app).read_bytes()).hexdigest())
+                first = plistlib.loads((out / 'apps/base.app/Contents/Info.plist').read_bytes())
+                second = plistlib.loads((out / 'apps/candidate.app/Contents/Info.plist').read_bytes())
+                self.assertEqual(first['CFBundleIdentifier'], second['CFBundleIdentifier'])
+                self.assertTrue(first['CFBundleIdentifier'].startswith('app.porpoise.budget.'))
+
+    def test_failed_or_mutated_candidate_cannot_reuse_or_overwrite_the_base(self):
+        for version in ['FAIL', 'TAMPER']:
+            with self.subTest(candidate=version), tempfile.TemporaryDirectory() as folder:
+                repo, out, base, candidate = self.prepare_fixture(Path(folder), candidate_version=version)
+                real_command = budgets.command
+                with patch.object(budgets, 'ROOT', repo), \
+                        patch.object(budgets, 'command', side_effect=self.fake_prepare_command(real_command)), \
+                        patch.object(budgets, 'fixture_at'):
+                    with self.assertRaises((RuntimeError, ValueError)):
+                        budgets.prepare(out, base, candidate)
+                self.assertTrue((out / 'apps/base.app/Contents/MacOS/Porpoise').read_bytes().startswith(b'BASE'))
+                self.assertFalse((out / 'apps/candidate.app').exists())
+                self.assertEqual(set(json.loads((out / 'preparation.json').read_text())), {'base'})
+                self.assertFalse((out / 'prepared.json').exists())
+
+    def test_schema2_cli_pass_idle_breach_and_each_latency_regression(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            cases = [('pass', None, 0), ('idle', 'idle_cpu', 1)] + [(name, name, 1) for name in budgets.LATENCY_METRICS]
+            for name, metric, expected in cases:
+                value = current_report()
+                if metric == 'idle_cpu':
+                    value['idle_samples'] = [{'idle_cpu': 0.006}] * 3
+                elif metric is not None:
+                    for pair in value['comparison']:
+                        pair['b'][metric] *= 1.4
+                source, out = root / (name + '.json'), root / name
+                source.write_text(json.dumps(value))
+                result = subprocess.run([sys.executable, str(ROOT / 'scripts/performance-budgets.py'),
+                                         '--evaluate', str(source), '--out', str(out)], capture_output=True, text=True)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                retained = json.loads((out / 'results.json').read_text())
+                self.assertEqual(retained['idle_samples'], value['idle_samples'])
+                self.assertEqual(retained['comparison'], value['comparison'])
+                if metric is not None:
+                    self.assertEqual(retained['evaluation'][metric]['status'], 'regression')
+                self.assertIn('| idle_cpu | n/a | n/a |', (out / 'SUMMARY.md').read_text())
+
     def test_same_speed_and_improvement_pass_without_absolute_latency_thresholds(self):
         for ratio in [1, 0.8]:
             self.assertTrue(all(row['status'] == 'pass' for row in budgets.evaluate(report(ratio), POLICY).values()))
@@ -291,7 +534,7 @@ class BudgetTests(unittest.TestCase):
         for recovery_at in [1, 2, None]:
             with self.subTest(recovery_at=recovery_at), tempfile.TemporaryDirectory() as folder:
                 root = Path(folder)
-                prepared = dict(base='a' * 40, candidate='b' * 40, policy=POLICY,
+                prepared = dict(base='a' * 40, candidate='b' * 40, policy=CURRENT_POLICY,
                                 apps=dict(base='BASE', candidate='CANDIDATE'), harness={},
                                 runner_sha256=hashlib.sha256(Path(budgets.__file__).read_bytes()).hexdigest())
                 budgets.write_json(root / 'prepared.json', prepared)
@@ -300,10 +543,13 @@ class BudgetTests(unittest.TestCase):
                 def trial(args, **kwargs):
                     label = args[args.index('--label') + 1]
                     app = args[args.index('--trial-only') + 1]
-                    launches.append((label, app))
+                    kind = args[args.index('--trial-kind') + 1]
+                    launches.append((label, app, kind))
                     retry = int(label.split('-')[1]) if label.startswith('recalibration-') else None
                     noisy = label.startswith('calibration-') or (retry is not None and (recovery_at is None or retry < recovery_at))
-                    value = sample(3 if noisy and '-b' in label else 1)
+                    values = sample(3 if noisy and '-b' in label else 1)
+                    keys = ('idle_cpu',) if kind == 'idle' else budgets.LATENCY_METRICS
+                    value = {key: values[key] for key in keys}
                     return SimpleNamespace(returncode=0, stdout=json.dumps(value), stderr='')
 
                 with patch.object(budgets.platform, 'platform', return_value='fixture-host'), \
@@ -313,10 +559,16 @@ class BudgetTests(unittest.TestCase):
                 retained = json.loads((root / 'results.json').read_text())
                 retries = recovery_at or POLICY['maximum_recalibrations']
                 self.assertEqual(len(retained['recalibrations']), retries)
-                self.assertEqual(len(launches), 2 * (POLICY['warmup_pairs'] + POLICY['pairs'] * (2 + retries)))
-                self.assertTrue(all(app == 'BASE' for label, app in launches if label.startswith('recalibration-')))
-                self.assertEqual(retained['calibration'][0]['b'], sample(3))
-                self.assertEqual(retained['comparison'], [dict(a=sample(), b=sample()) for _ in range(POLICY['pairs'])])
+                self.assertEqual(len(launches), 2 * (POLICY['warmup_pairs'] + POLICY['pairs'] * (2 + retries)) + CURRENT_POLICY['idle_trials'])
+                self.assertTrue(all(app == 'BASE' for label, app, kind in launches if label.startswith('recalibration-')))
+                self.assertEqual(retained['calibration'][0]['b'], {key: sample(3)[key] for key in budgets.LATENCY_METRICS})
+                self.assertEqual(retained['comparison'], [{member: {key: sample()[key] for key in budgets.LATENCY_METRICS} for member in ['a', 'b']} for _ in range(POLICY['pairs'])])
+                idle_launches = [(label, app) for label, app, kind in launches if kind == 'idle']
+                self.assertEqual(idle_launches, [(f'idle-{i}', 'CANDIDATE') for i in range(CURRENT_POLICY['idle_trials'])])
+                self.assertEqual(retained['idle_samples'], [{'idle_cpu': 0.001}] * 3)
+                self.assertTrue(retained['evaluation']['idle_cpu']['candidate_only'])
+                self.assertNotIn('ratio', retained['evaluation']['idle_cpu'])
+                self.assertNotIn('noise_band', retained['evaluation']['idle_cpu'])
                 self.assertEqual(retained['policy']['maximum_noise_ratio'], 1.5)
                 self.assertEqual(len(retained['calibration_history']), retries + 1)
                 self.assertNotIn('pending_recalibration', retained)
