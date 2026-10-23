@@ -430,6 +430,8 @@ final class Icons {
 
     private func nativeColourImage(_ native: NSImage, for item: FileItem, size: CGFloat) -> NSImage {
         guard !item.isBrowsableFolder, !item.isApplication, !item.isPackage, !item.isAliasFile else { return native }
+        let family = Self.nativeFamily(for: item)
+        guard family != .unknown else { return native }
         let type = Self.nativeType(for: item)
         let label = item.fileExtension.isEmpty ? (type.preferredFilenameExtension ?? "") : item.fileExtension
         let sourceKey = "\(type.identifier)|\(item.url.isFileURL ? item.url.path : "remote")" as NSString
@@ -448,7 +450,6 @@ final class Icons {
         guard !preserve else { return native }
         let key = "native-colour|\(type.identifier)|\(label)|\(size)" as NSString
         if let hit = cache.object(forKey: key) { return hit }
-        let family = Self.nativeFamily(for: item)
         let light = Self.colourNative(typed, size: size, label: label, family: family, dark: false)
         let dark = Self.colourNative(typed, size: size, label: label, family: family, dark: true)
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { r in
@@ -461,6 +462,7 @@ final class Icons {
 
     /// Treatment C: tint only the central neutral ink; an inset band shares the page's bottom corners.
     static func colourNative(_ source: NSImage, size: CGFloat, label: String, family: NativeFamily, dark: Bool) -> NSImage {
+        guard family != .unknown else { return source }
         let pixels = max(1, Int(ceil(size * 2)))
         let rep = nativeBitmap(source, pixels: pixels), p = rep.bitmapData!
         let ink = family.color(dark: dark).usingColorSpace(.deviceRGB)!
@@ -492,7 +494,7 @@ final class Icons {
             path.windingRule = .nonZero
             ink.setFill()
             path.fill()
-            if size >= 32 && !label.isEmpty {
+            if size >= 32 && !label.isEmpty && label.count <= 5 {
                 let text = label.uppercased() as NSString
                 var fontSize = size * 0.09
                 var attrs: [NSAttributedString.Key: Any] = [

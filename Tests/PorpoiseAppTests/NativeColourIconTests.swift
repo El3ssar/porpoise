@@ -94,6 +94,16 @@ import UniformTypeIdentifiers
         #expect(pixels(Icons.shared.image(for: local, size: 64)) == before)
     }
 
+    @Test func unknownArtworkHasNoBandAndLongLabelsAreOmitted() {
+        let source = NSWorkspace.shared.icon(for: .data)
+        let unknown = Icons.colourNative(source, size: 64, label: "UNKNOWN-PORPOISE", family: .unknown, dark: false)
+        #expect(pixels(unknown) == pixels(source))
+        let prose = NSWorkspace.shared.icon(for: .plainText)
+        let long = Icons.colourNative(prose, size: 64, label: "MARKDOWN", family: .prose, dark: false)
+        let empty = Icons.colourNative(prose, size: 64, label: "", family: .prose, dark: false)
+        #expect(pixels(long) == pixels(empty))
+    }
+
     @Test func smallBandHasNoLabelAndKeepsTransparentBorder() throws {
         let source = NSWorkspace.shared.icon(for: .pdf)
         for size in [16, 32, 64, 128] {
