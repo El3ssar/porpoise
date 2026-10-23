@@ -2,6 +2,7 @@
 
 ## 0.12.0
 
+- **A new icon.** Porpoise has its own icon now, a fin above the water, in the app, the disk image and on porpoise.dev. The README and the website show the native look and the new icon, in light and dark.
 - **Porpoise picks up where you left off.** Windows, tabs, splits, panels, view settings and scroll positions come back after a crash or a forced quit, not only after a normal quit. Folders that no longer exist are left out with a note, and servers that are offline keep their tab and connect when you open it.
 - **Workspaces.** Window › Save Workspace… (⌃⌘S) keeps a window's tabs, splits and panels under a name, and Window › Workspaces opens it again later, in this window or a new one; the command palette lists them too.
 - **Select by pattern.** Edit › Select Matching… (⇧⌘S) selects items by name pattern, extension or tag, adding to the selection or replacing it; Deselect Matching… (⌥⇧⌘S) takes them away.
