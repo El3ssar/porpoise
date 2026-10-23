@@ -19,6 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Launch and quit
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        #if PORPOISE_TEST_HOOKS
+        FocusGuard.install()
+        #endif
         connectServices()
         // "Show in Finder" requests from other apps, when Porpoise is the default file browser.
         SystemIntegration.installRevealHandlers()
