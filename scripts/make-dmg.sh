@@ -42,7 +42,21 @@ cat > "$STAGE/Installation Help.webloc" <<'XML'
 </dict>
 </plist>
 XML
-hdiutil create -quiet -volname "Porpoise $VERSION" -srcfolder "$STAGE" -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "$DMG"
-rm -rf "$STAGE"
+# The mounted volume shows the app icon: .VolumeIcon.icns plus the custom-icon Finder flag on the volume root. The
+# flag doesn't survive -srcfolder, so build read-write, set it on the mounted volume, then compress.
+cp "$APP/Contents/Resources/AppIcon.icns" "$STAGE/.VolumeIcon.icns"
+# no_log keeps fseventsd from writing its event log into the image while it is mounted read-write.
+mkdir "$STAGE/.fseventsd" && touch "$STAGE/.fseventsd/no_log"
+RW=build/Porpoise-rw.dmg
+MNT=build/dmg-mount
+[ ! -d "$MNT" ] || hdiutil detach -quiet -force "$MNT" 2>/dev/null || true   # left mounted by a failed run
+rm -rf "$RW" "$MNT"
+hdiutil create -quiet -volname "Porpoise $VERSION" -srcfolder "$STAGE" -fs HFS+ -format UDRW -ov "$RW"
+hdiutil attach -quiet -nobrowse -noautoopen -mountpoint "$MNT" "$RW"
+trap 'hdiutil detach -quiet -force "$MNT" 2>/dev/null || true' EXIT
+xattr -wx com.apple.FinderInfo 0000000000000000040000000000000000000000000000000000000000000000 "$MNT"
+hdiutil detach -quiet "$MNT"
+hdiutil convert -quiet "$RW" -format UDZO -imagekey zlib-level=9 -ov -o "$DMG"
+rm -rf "$STAGE" "$RW"
 echo "built $DMG ($(du -h "$DMG" | cut -f1))"
 shasum -a 256 "$DMG"
