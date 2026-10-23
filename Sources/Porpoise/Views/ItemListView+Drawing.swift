@@ -429,10 +429,16 @@ extension ItemListView {
         chevron.move(to: CGPoint(x: r.minX + 4, y: r.minY + 2))
         chevron.line(to: CGPoint(x: r.maxX - 4, y: r.midY))
         chevron.line(to: CGPoint(x: r.minX + 4, y: r.maxY - 2))
-        chevron.lineWidth = 1.6
+        chevron.lineWidth = 1.5
         chevron.lineCapStyle = .round
         chevron.lineJoinStyle = .round
-        (selected ? Theme.selectionText : Theme.viewTextInactive).withAlphaComponent(selected ? 1 : 0.8).setStroke()
+        // As in Finder: light, a shade darker on the path through the columns, white on the focused selection (the
+        // palette themes keep body text on their translucent one, as for the name).
+        let color =
+            selected && Tokens.isNative
+            ? Theme.selectionText
+            : model.selection.contains(item.url) ? Theme.viewTextInactive : Theme.disabledText
+        color.setStroke()
         chevron.stroke()
     }
 
