@@ -4,28 +4,34 @@
       <stop offset="0" stop-color="#6aaef5"/>
       <stop offset="1" stop-color="#2d6cc9"/>
     </linearGradient>
-    <linearGradient id="front" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#e3edf9"/>
-    </linearGradient>
     <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#ffffff" stop-opacity=".22"/>
       <stop offset=".5" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
+    <linearGradient id="white" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e3edf9"/>
+    </linearGradient>
+    <linearGradient id="deep" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a62b8"/>
+      <stop offset="1" stop-color="#173f86"/>
+    </linearGradient>
     <filter id="sh" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#0b2f66" flood-opacity=".35"/>
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#0b2f66" flood-opacity=".32"/>
     </filter>
+    <clipPath id="body"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
   </defs>
-  <!-- macOS icon grid: 824×824 squircle body centered on a 1024 canvas -->
+  <!-- W-202 fin / roll. A rolling sea: a convex crest (r 1000) flowing tangent into concave flanks (r 382) at +-236; the lines are its parallel offsets, so they roll with it. -->
   <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
   <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#shine)"/>
+  <g clip-path="url(#body)">
+    <path d="M 60.00 574.83 A 381.95 381.95 0 0 0 275.95 585.34 A 999.95 999.95 0 0 1 748.05 585.34 A 381.95 381.95 0 0 0 964.00 574.83 L 964 964 L 60 964 Z" fill="url(#deep)" fill-opacity=".55"/>
+  </g>
   <g filter="url(#sh)">
-    <!-- back of the folder with its tab -->
-    <path d="M300 318 h150 c14 0 26 6 34 17 l30 41 h210 c22 0 40 18 40 40 v250 H260 V358 c0-22 18-40 40-40z" fill="#ffffff" fill-opacity=".62"/>
-    <!-- paper -->
-    <rect x="306" y="392" width="412" height="200" rx="18" fill="#ffffff" fill-opacity=".9"/>
-    <!-- front -->
-    <path d="M286 448 h452 c26 0 46 21 44 47 l-18 214 c-2 22-20 39-42 39 H302 c-22 0-40-17-42-39 l-18-214 c-2-26 18-47 44-47z" fill="url(#front)"/>
-    <rect x="452" y="500" width="120" height="16" rx="8" fill="#2d6cc9" fill-opacity=".28"/>
+    <path d="M 203.00 595.75 A 434.98 434.98 0 0 1 330.34 506.67 A 145.89 145.89 0 0 0 376.65 473.03 A 236.05 236.05 0 0 0 434.56 359.50 A 34.44 34.44 0 0 1 480.52 334.08 A 381.95 381.95 0 0 1 655.61 468.60 A 145.89 145.89 0 0 0 708.30 513.73 A 434.98 434.98 0 0 1 821.00 595.75 A 381.95 381.95 0 0 1 748.05 585.34 A 999.95 999.95 0 0 0 275.95 585.34 A 381.95 381.95 0 0 1 203.00 595.75 Z" fill="url(#white)"/>
+  </g>
+  <g fill="none" stroke-linecap="round">
+    <path d="M 203.00 651.53 A 437.67 437.67 0 0 0 289.10 639.49 A 944.22 944.22 0 0 1 734.90 639.49 A 437.67 437.67 0 0 0 821.00 651.53" stroke-width="34.4" stroke="#ffffff"/>
+    <path d="M 321.03 724.60 A 854.05 854.05 0 0 1 702.97 724.60" stroke-width="21.3" stroke="#a9c6ee"/>
   </g>
 </svg>
