@@ -63,6 +63,8 @@ final class Animator: NSObject {
     /// Reduce Motion (Accessibility › Display): everything that animates jumps to its end. The one switch for the
     /// app (tests set it, so a machine's own setting can't change what they see).
     nonisolated(unsafe) static var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    /// Every duration is multiplied by this (the debug bridge's `slowmotion`, to capture what each frame shows).
+    nonisolated(unsafe) static var timeScale: Double = 1
 
     private let clock: FrameClock
     private var completion: (() -> Void)?
@@ -94,7 +96,7 @@ final class Animator: NSObject {
                 if ended { return self.finish() }
                 let begin = start ?? now
                 start = begin
-                let p = min(1, (now - begin) / duration)
+                let p = min(1, (now - begin) / (duration * Animator.timeScale))
                 step(curve(p))
                 guard p >= 1 else { return true }
                 if showsEnd {
