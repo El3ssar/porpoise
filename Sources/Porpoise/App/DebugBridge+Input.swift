@@ -319,6 +319,7 @@ extension DebugBridge {
     /// The split view's divider, with synthesized mouse events through the window (so hit-testing is the real one):
     /// `divider probe <file>`: the line's x, the panes and which view each point across the line hits (JSON);
     /// `divider drag <x> [steps]`: presses the middle of the line and drags it to `x` (tab coordinates), then releases;
+    /// `divider down`, `divider move <x>`, `divider up <x>`: one drag over several commands (frames can be taken between);
     /// `divider dblclick`: double-clicks the line.
     func dividerCommand(_ arg: String) {
         let a = arg.split(separator: " ").map(String.init)
@@ -347,9 +348,11 @@ extension DebugBridge {
                     hits.append(["dx": dx, "at": name, "view": v.map { String(describing: type(of: $0)) } ?? "none"])
                 }
             }
+            let divider = tab.subviews.lazy.compactMap { $0 as? SplitDividerView }.first
             let out: [String: Any] = [
                 "lineX": lineX, "tabWidth": tab.bounds.width, "fraction": tab.splitShare,
                 "left": NSStringFromRect(panes[0].frame), "right": NSStringFromRect(panes[1].frame), "hits": hits,
+                "directions": divider.map { "\($0.directions)" } ?? "", "dividerWidth": divider?.frame.width ?? 0,
             ]
             if let d = try? JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .sortedKeys]) {
                 try? d.write(to: URL(fileURLWithPath: a[1]))
@@ -361,6 +364,9 @@ extension DebugBridge {
             send(.leftMouseDown, from)
             for i in 1...steps { send(.leftMouseDragged, from + (to - from) * CGFloat(i) / CGFloat(steps)) }
             send(.leftMouseUp, to)
+        case "down": send(.leftMouseDown, lineX + 0.5)
+        case "move" where a.count == 2: if let x = Double(a[1]) { send(.leftMouseDragged, CGFloat(x)) }
+        case "up" where a.count == 2: if let x = Double(a[1]) { send(.leftMouseUp, CGFloat(x)) }
         case "dblclick":
             send(.leftMouseDown, lineX + 0.5, clicks: 1)
             send(.leftMouseUp, lineX + 0.5, clicks: 1)

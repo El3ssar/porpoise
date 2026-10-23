@@ -20,7 +20,8 @@ final class PorpoiseTab: NSView {
     var missingOnRight = true
     var customTitle: String?
 
-    private let handle = SplitHandleView()
+    /// The line between the panes (tests drive it).
+    let handle = SplitDividerView()
     /// Handle position as a fraction of the width, so it stays proportional when the window resizes.
     private var splitFraction: CGFloat = 0.5
     /// Pane being closed: still visible while it shrinks away (Dolphin keeps such "zombie" views).
@@ -32,6 +33,8 @@ final class PorpoiseTab: NSView {
     private let animator = Animator(name: "split.pane")
     /// The split view is sliding open or closed.
     var isSliding: Bool { animator.isRunning }
+    /// The second pane is sliding in from the edge or away to it: the line goes past the panes' minimum widths.
+    private var slidesToEdge = false
     /// Copies of the left pane's items flying into the right one as the split opens.
     private var flightOverlay: SplitFlightOverlay?
     private let flightAnimator = Animator(name: "split.flight")
@@ -61,9 +64,6 @@ final class PorpoiseTab: NSView {
     /// Handle position the user chose last; reopening the split returns to it (m_splitterLastPosition).
     private static var lastFraction: CGFloat = 0.5
 
-    /// Narrowest a pane can be dragged (QSplitter keeps views usable).
-    private static let minPaneWidth: CGFloat = 160
-
     var active: ViewContainer { activeIsSecondary ? (secondary ?? primary) : primary }
     var inactive: ViewContainer? { secondary == nil ? nil : (activeIsSecondary ? primary : secondary) }
     var isSplit: Bool { secondary != nil }
@@ -77,6 +77,8 @@ final class PorpoiseTab: NSView {
         addSubview(handle)
         handle.onDrag = { [weak self] x in self?.dragHandle(to: x) }
         handle.onDoubleClick = { [weak self] in self?.resetSplitterSizes() }
+        handle.onStep = { [weak self] right in self?.stepHandle(right: right) }
+        handle.share = { [weak self] in self?.splitFraction ?? 0.5 }
         updateActive()
     }
 
@@ -106,12 +108,15 @@ final class PorpoiseTab: NSView {
             handle.isHidden = true
             return
         }
-        let line = SplitHandleView.lineWidth
-        let x = (b.width * splitFraction).rounded()
+        let line = SplitDividerView.lineWidth
+        // At rest (and while dragging or resizing the window) both panes keep their minimum width; the fraction stays
+        // as chosen, so the line comes back where it was when the window grows again.
+        let x = slidesToEdge ? (b.width * splitFraction).rounded() : SplitLayout.lineX(fraction: splitFraction, in: b.width)
         left.frame = CGRect(x: 0, y: 0, width: x, height: b.height)
         right.frame = CGRect(x: x + line, y: 0, width: max(0, b.width - x - line), height: b.height)
         handle.isHidden = false
-        handle.frame = CGRect(x: x - SplitHandleView.grabMargin, y: 0, width: SplitHandleView.width, height: b.height)
+        handle.frame = CGRect(x: x - SplitDividerView.grabMargin, y: 0, width: SplitDividerView.width, height: b.height)
+        handle.directions = slidesToEdge ? .both : SplitLayout.directions(atX: x, in: b.width)
     }
 
     private func setFraction(_ f: CGFloat) {
@@ -133,12 +138,20 @@ final class PorpoiseTab: NSView {
     /// Drag on the handle; `windowX` is where the line should go, in window coordinates.
     private func dragHandle(to windowX: CGFloat) {
         guard secondary != nil, bounds.width > 0 else { return }
-        animator.stop()
+        // Grabbed while sliding open or back to halves: the slide ends where it is, with what it puts in place at its
+        // end (the panes' lists laid out at their own widths again).
+        animator.interrupt()
         let x = convert(CGPoint(x: windowX, y: 0), from: nil).x
-        let minX = Self.minPaneWidth
-        let maxX = bounds.width - Self.minPaneWidth - SplitHandleView.lineWidth
-        let clamped = minX < maxX ? min(max(x, minX), maxX) : bounds.width / 2
-        setFraction(clamped / bounds.width)
+        setFraction(SplitLayout.clamped(x, in: bounds.width) / bounds.width)
+        Self.lastFraction = splitFraction
+    }
+
+    /// VoiceOver's increment or decrement: the line moves by a twentieth of the width.
+    private func stepHandle(right: Bool) {
+        guard secondary != nil, bounds.width > 0 else { return }
+        animator.interrupt()
+        let x = SplitLayout.lineX(fraction: splitFraction, in: bounds.width) + (right ? 1 : -1) * bounds.width / 20
+        setFraction(SplitLayout.clamped(x, in: bounds.width) / bounds.width)
         Self.lastFraction = splitFraction
     }
 
@@ -179,8 +192,8 @@ final class PorpoiseTab: NSView {
         // Both panes are laid out at their final widths from the start: the left one's items glide straight to
         // their places while the handle moves (instead of jumping a column at a time), and the right one, empty,
         // receives copies of them that fly over once it has listed its folder (its own style and order apply).
-        let leftWidth = (bounds.width * Self.lastFraction).rounded()
-        let rightWidth = bounds.width - leftWidth - SplitHandleView.lineWidth
+        let leftWidth = SplitLayout.lineX(fraction: Self.lastFraction, in: bounds.width)
+        let rightWidth = bounds.width - leftWidth - SplitDividerView.lineWidth
         // Column view: its columns keep their widths and the pane slides over them (flights would land on a list laid
         // out at another width, and copies of its rows would stretch on the way).
         let flies = primary.list.transitions.animates && !primary.showsColumns
@@ -195,12 +208,15 @@ final class PorpoiseTab: NSView {
             s.list.layoutWidthOverride = primary.listWidth(forPaneWidth: rightWidth)
             openingRightWidth = primary.listWidth(forPaneWidth: rightWidth)
         }
+        slidesToEdge = true
         setFraction(1)
         // Laid out now, at the edge: the flight below may start at once, and picks the items it brings in from what the
         // pane will show.
         s.layoutSubtreeIfNeeded()
-        animateFraction(to: Self.lastFraction, duration: Motion.splitOpen, curve: Animator.easeOutCubic) { [weak self] in
+        // The slide ends where the line rests (a window too narrow for the last position puts it within the minimums).
+        animateFraction(to: leftWidth / bounds.width, duration: Motion.splitOpen, curve: Animator.easeOutCubic) { [weak self] in
             guard let self else { return }
+            self.slidesToEdge = false
             self.primary.list.transitions.releaseWidth()
             if self.flightOverlay == nil { self.secondary?.list.transitions.releaseWidth() }
         }
@@ -343,6 +359,7 @@ final class PorpoiseTab: NSView {
             }
             flyItems(backFrom: zombie.list, to: primary.list)
         }
+        slidesToEdge = true
         animateFraction(to: closeSecondary ? 1 : 0, duration: Motion.splitClose, curve: Animator.easeInCubic) { [weak self] in
             guard let self else { return }
             if flightOverlay != nil, flightAnimator.isRunning { closesWhenLanded = true } else { finishClosing() }
@@ -353,6 +370,7 @@ final class PorpoiseTab: NSView {
     private func finishClosing() {
         closesWhenLanded = false
         animator.stop()
+        slidesToEdge = false
         if flightOverlay != nil { (containers + [closing].compactMap { $0 }).forEach { $0.list.transitions.flightCancelled() } }
         endFlights()
         if let z = closing {
@@ -413,42 +431,6 @@ final class PorpoiseTab: NSView {
 
     var iconName: String {
         LocationNaming.icon(for: active.url)
-    }
-}
-
-// MARK: - Split handle
-
-/// The 1 pt line between the two panes, with a slightly wider invisible grab area (like a thin NSSplitView
-/// divider). Drag moves it, double-click resets it.
-private final class SplitHandleView: NSView {
-    static let lineWidth: CGFloat = 1
-    /// Extra grab area on each side of the line.
-    static let grabMargin: CGFloat = 2
-    static let width = lineWidth + 2 * grabMargin
-
-    var onDrag: ((CGFloat) -> Void)?
-    var onDoubleClick: (() -> Void)?
-    /// Pointer offset from the line when the drag started, so the line doesn't jump under the pointer.
-    private var grabOffset: CGFloat = 0
-
-    override var mouseDownCanMoveWindow: Bool { false }
-
-    override func draw(_ dirty: NSRect) {
-        Theme.frame.setFill()
-        CGRect(x: Self.grabMargin, y: 0, width: Self.lineWidth, height: bounds.height).fill()
-    }
-
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .columnResize)
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        if event.clickCount == 2 { onDoubleClick?(); return }
-        grabOffset = convert(event.locationInWindow, from: nil).x - Self.grabMargin
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        onDrag?(event.locationInWindow.x - grabOffset)
     }
 }
 

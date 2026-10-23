@@ -139,6 +139,12 @@ final class Animator: NSObject {
         completion = nil
     }
 
+    /// Ends the animation where it is and calls its completion (what it would have put in place at its end still is).
+    func interrupt() {
+        guard isRunning else { return }
+        _ = finish()
+    }
+
     static func easeOutCubic(_ p: Double) -> Double { 1 - pow(1 - p, 3) }
     static func easeInCubic(_ p: Double) -> Double { p * p * p }
     static func easeInOutCubic(_ p: Double) -> Double { p < 0.5 ? 4 * p * p * p : 1 - pow(-2 * p + 2, 3) / 2 }
