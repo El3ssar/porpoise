@@ -29,7 +29,6 @@ final class WorkspaceSaveSheet: NSObject, NSComboBoxDelegate {
         alert.informativeText =
             "Saves this window’s \(tabs == 1 ? "tab" : "\(tabs) tabs"), split views, panels, filters and view settings under a name. "
             + "Open it again from Window › Workspaces or the Command Palette."
-        alert.icon = Icons.shared.image("view-group", size: 64)
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
         let v = NSView(frame: CGRect(x: 0, y: 0, width: 300, height: 50))
@@ -41,7 +40,7 @@ final class WorkspaceSaveSheet: NSObject, NSComboBoxDelegate {
         field.addItems(withObjectValues: Settings.shared.workspaces.map(\.name))
         note.frame = CGRect(x: 0, y: 2, width: 300, height: 18)
         note.font = Theme.smallFont
-        note.textColor = Theme.neutralText
+        note.textColor = NSColor.secondaryLabelColor
         v.addSubview(field)
         v.addSubview(note)
         alert.accessoryView = v

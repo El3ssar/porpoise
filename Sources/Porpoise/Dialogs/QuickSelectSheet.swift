@@ -55,7 +55,6 @@ final class QuickSelectSheet: NSObject, NSComboBoxDelegate {
     func build(action: QuickSelect.Action) {
         alert.messageText = action == .remove ? "Deselect Matching Items" : "Select Matching Items"
         alert.informativeText = "Type a name pattern, extensions or tags. ⌘1 Name, ⌘2 Extension, ⌘3 Tag."
-        alert.icon = Icons.shared.image("edit-select", size: 64)
         alert.addButton(withTitle: action == .remove ? "Deselect" : "Select")
         alert.addButton(withTitle: "Cancel")
 
@@ -81,7 +80,7 @@ final class QuickSelectSheet: NSObject, NSComboBoxDelegate {
         caseBox.action = #selector(changed)
         count.frame = CGRect(x: 0, y: 4, width: width, height: 18)
         count.font = Theme.smallFont
-        count.textColor = Theme.neutralText
+        count.textColor = NSColor.secondaryLabelColor
         count.lineBreakMode = .byTruncatingTail
         for sub in [criterion, field, actionPopup, caseBox, count] as [NSView] { v.addSubview(sub) }
         alert.accessoryView = v
@@ -157,13 +156,13 @@ final class QuickSelectSheet: NSObject, NSComboBoxDelegate {
         let q = query
         guard let matches = q.matcher() else {
             count.stringValue = q.terms.isEmpty ? "" : "Not a valid pattern."
-            count.textColor = q.terms.isEmpty ? Theme.neutralText : Theme.negativeText
+            count.textColor = q.terms.isEmpty ? NSColor.secondaryLabelColor : Theme.negativeText
             alert.buttons.first?.isEnabled = false
             return
         }
         let n = candidates.lazy.filter(matches).count
         count.stringValue = n == 0 ? "No items match." : "\(FileFormat.itemCount(n)) of \(candidates.count) match."
-        count.textColor = Theme.neutralText
+        count.textColor = NSColor.secondaryLabelColor
         alert.buttons.first?.isEnabled = true
     }
 
