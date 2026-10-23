@@ -40,30 +40,65 @@ enum GitCommand {
         }
         return try runProcess("/usr/bin/git", args, in: folder, environment: env, deadline: deadline, limit: limit)
     }
-    private static func runProcess(
+    static func runProcess(
         _ tool: String, _ arguments: [String], in folder: URL, environment: [String: String],
         deadline: TimeInterval, limit: Int
     ) throws -> Data {
         guard ProcessInfo.processInfo.systemUptime < deadline else { throw Failure.budget }
-        let process = Process(), pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: tool); process.arguments = arguments
-        process.environment = environment; process.currentDirectoryURL = folder
-        process.standardOutput = pipe; process.standardError = FileHandle.nullDevice; process.standardInput = FileHandle.nullDevice
-        let handle = pipe.fileHandleForReading, fd = handle.fileDescriptor
-        _ = fcntl(fd, F_SETFL, O_NONBLOCK)
-        defer { try? handle.close(); try? pipe.fileHandleForWriting.close() }
-        try process.run()
-        try? pipe.fileHandleForWriting.close()
-        var output = Data(), buffer = [UInt8](repeating: 0, count: 65536), ended = false
-        func stop() {
-            if process.isRunning { process.terminate() }
-            let grace = ProcessInfo.processInfo.systemUptime + 0.05
-            while process.isRunning && ProcessInfo.processInfo.systemUptime < grace { Thread.sleep(forTimeInterval: 0.002) }
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-            process.waitUntilExit()
+        // Give Git and any local submodule helpers their own process group, so a deadline stops the entire scan.
+        var descriptors: [Int32] = [0, 0]
+        guard pipe(&descriptors) == 0 else { throw Failure.command }
+        defer { close(descriptors[0]) }
+        let null = open("/dev/null", O_RDWR)
+        guard null >= 0 else { close(descriptors[1]); throw Failure.command }
+        defer { close(null) }
+        var actions: posix_spawn_file_actions_t?, attributes: posix_spawnattr_t?
+        guard posix_spawn_file_actions_init(&actions) == 0 else { close(descriptors[1]); throw Failure.command }
+        defer { posix_spawn_file_actions_destroy(&actions) }
+        guard posix_spawnattr_init(&attributes) == 0 else { close(descriptors[1]); throw Failure.command }
+        defer { posix_spawnattr_destroy(&attributes) }
+        let changeDirectory: Int32
+        if #available(macOS 26.0, *) {
+            changeDirectory = posix_spawn_file_actions_addchdir(&actions, folder.path)
+        } else {
+            changeDirectory = posix_spawn_file_actions_addchdir_np(&actions, folder.path)
         }
-        while !ended {
+        let setup = [
+            posix_spawn_file_actions_adddup2(&actions, null, STDIN_FILENO),
+            posix_spawn_file_actions_adddup2(&actions, null, STDERR_FILENO),
+            posix_spawn_file_actions_adddup2(&actions, descriptors[1], STDOUT_FILENO),
+            posix_spawn_file_actions_addclose(&actions, descriptors[0]),
+            posix_spawn_file_actions_addclose(&actions, descriptors[1]),
+            changeDirectory,
+            posix_spawnattr_setpgroup(&attributes, 0),
+            posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT)),
+        ]
+        guard setup.allSatisfy({ $0 == 0 }) else { close(descriptors[1]); throw Failure.command }
+        var argv = ([tool] + arguments).map { strdup($0) } + [nil]
+        var envp = environment.map { strdup($0.key + "=" + $0.value) } + [nil]
+        defer { argv.compactMap { $0 }.forEach { free($0) }; envp.compactMap { $0 }.forEach { free($0) } }
+        var pid: pid_t = 0
+        let launched = posix_spawn(&pid, tool, &actions, &attributes, &argv, &envp)
+        close(descriptors[1])
+        guard launched == 0 else { throw Failure.unavailable }
+        let fd = descriptors[0]
+        _ = fcntl(fd, F_SETFL, O_NONBLOCK)
+        var output = Data(), buffer = [UInt8](repeating: 0, count: 65536), ended = false
+        var status: Int32 = 0, reaped = false
+        func reap() {
+            if !reaped { reaped = waitpid(pid, &status, WNOHANG) == pid }
+        }
+        func stop() {
+            kill(-pid, SIGTERM)
+            let grace = ProcessInfo.processInfo.systemUptime + 0.05
+            while ProcessInfo.processInfo.systemUptime < grace { reap(); Thread.sleep(forTimeInterval: 0.002) }
+            kill(-pid, SIGKILL)
+            if !reaped { while waitpid(pid, &status, 0) < 0 && errno == EINTR {} }
+        }
+        while !ended || !reaped {
             if ProcessInfo.processInfo.systemUptime >= deadline { stop(); throw Failure.budget }
+            reap()
+            if ended { Thread.sleep(forTimeInterval: 0.002); continue }
             let count = Darwin.read(fd, &buffer, buffer.count)
             if count > 0 {
                 guard output.count + count <= limit else { stop(); throw Failure.budget }
@@ -76,12 +111,7 @@ enum GitCommand {
                 stop(); throw Failure.command
             }
         }
-        while process.isRunning {
-            if ProcessInfo.processInfo.systemUptime >= deadline { stop(); throw Failure.budget }
-            Thread.sleep(forTimeInterval: 0.002)
-        }
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else { throw Failure.command }
+        guard status == 0 else { throw Failure.command }
         return output
     }
     static func path(_ data: Data) throws -> URL {

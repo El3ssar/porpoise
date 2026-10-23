@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import PorpoiseCore
 import PorpoiseServicesTestSupport
@@ -31,6 +32,22 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: f.scratch.path(".git/index.lock").path))
         #expect(try Data(contentsOf: f.scratch.path(".git/index")) == index)
     }
+    @Test func deadlineKillsTheEntireProcessGroup() throws {
+        let scratch = try Scratch()
+        let marker = scratch.path("pid")
+        let start = ProcessInfo.processInfo.systemUptime
+        #expect(throws: GitCommand.Failure.self) {
+            try GitCommand.runProcess(
+                "/bin/sh", ["-c", "trap '' TERM; /bin/sleep 30 & echo $! > \"$1\"; wait", "fixture", marker.path],
+                in: scratch.url, environment: GitCommand.environment, deadline: start + 0.2, limit: 1024)
+        }
+        #expect(ProcessInfo.processInfo.systemUptime - start < 1)
+        let child = try #require(scratch.read("pid").flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) })
+        let until = ProcessInfo.processInfo.systemUptime + 2
+        while kill(child, 0) == 0 && ProcessInfo.processInfo.systemUptime < until { Thread.sleep(forTimeInterval: 0.01) }
+        #expect(kill(child, 0) != 0)
+    }
+
     @Test func outputAndTimeBudgetsGiveUp() throws {
         let f = try LocalGitFixture()
         try f.scratch.file("untracked", "text")
