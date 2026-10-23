@@ -236,6 +236,9 @@ extension ItemListView {
 
 extension ItemListView {
     override func scrollWheel(with event: NSEvent) {
+        if event.modifierFlags.contains(.command), let target = columnNavigator?.zoomTarget(from: self), target !== self {
+            return target.scrollWheel(with: event)
+        }
         if zoomWithWheel(event) { return }
         super.scrollWheel(with: event)
         // The content moved under a still pointer.
@@ -244,7 +247,11 @@ extension ItemListView {
         }
     }
 
-    override func magnify(with event: NSEvent) { zoomWithPinch(event) }
+    override func magnify(with event: NSEvent) {
+        // Column view: another column's zoom is the focused column's, the focus moving there first.
+        if let target = columnNavigator?.zoomTarget(from: self), target !== self { return target.magnify(with: event) }
+        zoomWithPinch(event)
+    }
 
     override func swipe(with event: NSEvent) {
         if event.deltaX > 0 {

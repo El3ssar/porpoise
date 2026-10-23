@@ -23,10 +23,15 @@ import Testing
         var renames: [(URL, String)] = []
         var quickLooks = 0
         var activations = 0
+        /// Opening one folder goes into it, as the window does.
+        var navigates = false
         func containerDidBecomeActive(_ c: ViewContainer) { activations += 1 }
         func containerDidChangeURL(_ c: ViewContainer) {}
         func containerSelectionChanged(_ c: ViewContainer) {}
-        func container(_ c: ViewContainer, open items: [FileItem], inNewTab: Bool) { opened.append(items.map(\.url)) }
+        func container(_ c: ViewContainer, open items: [FileItem], inNewTab: Bool) {
+            opened.append(items.map(\.url))
+            if navigates, items.count == 1, items[0].isBrowsableFolder, !inNewTab { c.setURL(items[0].url) }
+        }
         func container(_ c: ViewContainer, menuFor item: FileItem?) -> NSMenu? {
             menus.append(item?.url)
             return NSMenu(title: c.model.selectedItems.map(\.name).joined(separator: ","))
@@ -768,5 +773,219 @@ import Testing
         let full = try #require(b.after)
         #expect(await eventually { full.model.rows.count == 2 })
         #expect(full.stateLabel.isHidden)
+    }
+
+    // MARK: Each column's own size (W-219)
+
+    /// Six folders deep: L1/…/L6, and in the root and each of them a folder S and a file f.txt; L1 has 60 more files.
+    private func deepTree() throws -> Scratch {
+        let s = try Scratch()
+        try s.file("f.txt", "0")
+        try s.folder("S")
+        for k in 1...6 {
+            try s.file("\(level(k))/f.txt", "\(k)")
+            try s.folder("\(level(k))/S")
+        }
+        for n in 0..<60 { try s.file("L1/file \(n).txt", "\(n)") }
+        return s
+    }
+
+    /// The path of the folder `depth` levels down: L1/…/L`depth`.
+    private func level(_ depth: Int) -> String { (1...max(1, depth)).map { "L\($0)" }.joined(separator: "/") }
+
+    /// Each folder column's width and icon size, first to last.
+    private func sizes(_ b: ColumnBrowserView) -> [[CGFloat]] {
+        b.shownColumns.compactMap { v, url in
+            guard url != nil, let list = (v as? NSScrollView)?.documentView as? ItemListView else { return nil }
+            return [v.frame.width, list.iconSize]
+        }
+    }
+
+    /// Every column shown has listed its folder.
+    private func listed(_ b: ColumnBrowserView) async throws {
+        try #require(await eventually { (b.before + [b.after].compactMap { $0 }).allSatisfy { !$0.model.isLoading } })
+    }
+
+    /// The pane in the folder `depth` levels down, `item` (in it) selected once it has listed.
+    private func go(_ pane: ViewContainer, _ s: Scratch, to depth: Int, selecting item: String) async throws {
+        pane.setURL(depth == 0 ? s.url : s.path(level(depth)))
+        let u = s.path(depth == 0 ? item : "\(level(depth))/\(item)")
+        try #require(await eventually { pane.model.index(of: u) != nil })
+        pane.list.select(u)
+        try await listed(try browser(pane))
+    }
+
+    /// The pane's own column zoomed to `size`, as a pinch or the slider leaves it.
+    private func zoom(_ pane: ViewContainer, to size: CGFloat) {
+        pane.list.previewZoom(size, anchor: nil, commitAfter: nil)
+        pane.list.commitZoom()
+    }
+
+    @Test func everyColumnKeepsTheWidthAndIconSizeItWasGiven() async throws {
+        let s = try deepTree()
+        let (pane, window, _) = try await pane(s.url, width: 1600)
+        defer { window.close() }
+        let b = try browser(pane)
+        try await go(pane, s, to: 5, selecting: "L6")
+        #expect(b.folders.count == 7)
+        let saved = ViewStyleStore.defaultBrowserColumnWidth
+        let icon = pane.list.iconSize
+        #expect(sizes(b) == Array(repeating: [saved, icon], count: 7))
+
+        // Each column its own width; the focused one (L5) its own icon size.
+        for i in 0..<7 { b.resize(column: i, to: 150 + 20 * CGFloat(i), all: false) }
+        zoom(pane, to: 32)
+        var expected = (0..<7).map { [150 + 20 * CGFloat($0), icon] }
+        expected[5][1] = 32
+        #expect(sizes(b) == expected)
+
+        // Moving the focus and selecting along the same path changes none of them.
+        key(left, to: pane.list)
+        #expect(pane.url.path == s.path(level(4)).path && sizes(b) == Array(expected.prefix(6)))
+        key(right, to: pane.list)
+        pane.list.select(s.path(level(6)))
+        #expect(sizes(b) == expected)
+        // (A click on the item already selected there selects nothing new: the column takes the focus as a click
+        // elsewhere in it would.)
+        b.focus(b.before[2])
+        #expect(pane.url.path == s.path(level(2)).path && sizes(b) == Array(expected.prefix(4)))
+        try await go(pane, s, to: 5, selecting: "L6")
+        #expect(sizes(b) == expected, "the columns closed on the way keep their sizes until another folder opens there")
+
+        // A file only replaces what's after its column, with the preview.
+        pane.list.select(s.path("\(level(5))/f.txt"))
+        #expect(b.showsPreview && sizes(b) == Array(expected.prefix(6)))
+        // The folder again: a new column, at the saved width with its parent's icon size.
+        pane.list.select(s.path(level(6)))
+        try await listed(b)
+        #expect(sizes(b) == Array(expected.prefix(6)) + [[saved, 32]])
+
+        // Another folder in L2's column: the columns after it close, and one opens.
+        let l2 = b.before[2]
+        try #require(await eventually { l2.model.index(of: s.path("\(level(2))/S")) != nil })
+        try click(s.path("\(level(2))/S"), in: l2.list)
+        try await listed(b)
+        #expect(pane.url.path == s.path(level(2)).path && b.after?.url == s.path("\(level(2))/S"))
+        #expect(sizes(b) == Array(expected.prefix(3)) + [[saved, icon]])
+    }
+
+    @Test func zoomChangesTheFocusedColumnOnly() async throws {
+        let s = try deepTree()
+        let (pane, window, _) = try await pane(s.url, width: 1400)
+        defer { window.close() }
+        let b = try browser(pane)
+        try await go(pane, s, to: 2, selecting: "L3")
+        let icon = pane.list.iconSize
+        zoom(pane, to: 48)
+        #expect(sizes(b).map { $0[1] } == [icon, icon, 48, icon])
+
+        // ⌘ and the wheel over another column: the focus goes there, and that column zooms.
+        let first = b.before[0]
+        let p = first.list.convert(CGPoint(x: first.list.visibleRect.midX, y: first.list.visibleRect.midY), to: nil)
+        let cg = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0))
+        cg.flags = .maskCommand
+        cg.location = CGPoint(x: p.x, y: window.frame.height - p.y)
+        first.list.scrollWheel(with: try #require(NSEvent(cgEvent: cg)))
+        #expect(pane.url.path == s.url.path)
+        pane.list.commitZoom()
+        let zoomed = ZoomLevels.step(from: icon, by: 1)
+        #expect(zoomed != icon && sizes(b).map { $0[1] } == [zoomed, icon] && b.sizes.map(\.iconSize) == [zoomed, icon, 48, icon])
+        // The focused column's zoom stays its own when the focus moves on.
+        key(right, to: pane.list)
+        #expect(pane.list.iconSize == icon && sizes(b).map { $0[1] } == [zoomed, icon, 48])
+        // A new column takes its parent's size.
+        try await go(pane, s, to: 2, selecting: "S")
+        #expect(sizes(b).map { $0[1] } == [zoomed, icon, 48, 48])
+    }
+
+    @Test func optionResizesEveryColumnAndTheWidthNewOnesOpenAt() async throws {
+        let s = try deepTree()
+        let (pane, window, _) = try await pane(s.url, width: 1400)
+        defer { window.close() }
+        let b = try browser(pane)
+        try await go(pane, s, to: 2, selecting: "L3")
+        b.resize(column: 0, to: 300, all: false)
+        b.resize(column: 2, to: 180, all: true)
+        #expect(sizes(b).map { $0[0] } == [180, 180, 180, 180] && ViewStyleStore().browserColumnWidth == 180)
+        pane.list.select(s.path("\(level(2))/S"))
+        try await listed(b)
+        #expect(sizes(b).map { $0[0] } == [180, 180, 180, 180])
+    }
+
+    @Test func aDoubleClickedFolderStartsTheColumnsAndBackPutsThemBack() async throws {
+        let s = try deepTree()
+        let (pane, window, recorder) = try await pane(s.url, width: 1400)
+        defer { window.close() }
+        recorder.navigates = true
+        let b = try browser(pane)
+        try await go(pane, s, to: 3, selecting: "L4")
+        for i in 0..<5 { b.resize(column: i, to: 150 + 20 * CGFloat(i), all: false) }
+        // L4 its own icon size: zoomed while focused.
+        key(right, to: pane.list)
+        zoom(pane, to: 40)
+        key(left, to: pane.list)
+        let l1 = b.before[1]
+        l1.list.scroll(CGPoint(x: 0, y: 300))
+        let columns = b.folders, before = sizes(b), icon = b.before[0].list.iconSize
+        #expect(columns.count == 5 && before[4] == [230, 40] && pane.model.selection == [s.path(level(4))])
+
+        // A double-click on L4: it's the first column, with its own size.
+        try click(s.path(level(4)), in: pane.list, count: 2)
+        #expect(pane.url.path == s.path(level(4)).path && b.root.path == s.path(level(4)).path)
+        #expect(b.folders.map(\.path) == [s.path(level(4)).path] && sizes(b) == [[230, 40]])
+        pane.list.select(s.path(level(5)))
+        try await listed(b)
+        // (L5 had opened after L4 before its zoom, and keeps the size it showed at.)
+        #expect(sizes(b) == [[230, 40], [ViewStyleStore.defaultBrowserColumnWidth, icon]])
+        let rerooted = sizes(b)
+
+        // Back: the columns as they were, their sizes, the selection and where each was scrolled.
+        pane.goBack()
+        try #require(await eventually { !pane.model.rows.isEmpty && b.after != nil })
+        try await listed(b)
+        #expect(b.root.path == s.url.path && b.folders.map(\.path) == columns.map(\.path))
+        #expect(sizes(b) == before && pane.model.selection == [s.path(level(4))])
+        #expect(await eventually { b.before[1].list.visibleRect.minY == 300 })
+        // Forward: the double-click again.
+        pane.goForward()
+        try await listed(b)
+        #expect(b.root.path == s.path(level(4)).path && sizes(b) == rerooted)
+        #expect(pane.model.selection == [s.path(level(5))])
+
+        // From another column: that column's folder starts them.
+        pane.goBack()
+        let root = b.before[0]
+        try #require(await eventually { root.model.index(of: s.path("S")) != nil })
+        try click(s.path("S"), in: root.list)
+        try click(s.path("S"), in: root.list, count: 2)
+        #expect(pane.url.path == s.path("S").path && b.folders.map(\.path) == [s.path("S").path])
+        pane.goBack()
+        #expect(b.root.path == s.url.path && pane.url.path == s.url.path && pane.model.selection == [s.path("S")])
+    }
+
+    @Test func eachPaneOfASplitSizesItsOwnColumns() async throws {
+        let s = try deepTree()
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 1600, height: 600), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let tab = PorpoiseTab(url: s.url)
+        window.contentView = tab
+        tab.frame = window.contentView?.bounds ?? .zero
+        let left = tab.primary
+        try #require(await eventually { !left.model.isLoading && !left.model.rows.isEmpty })
+        left.setMode(.columns)
+        tab.openSplit()
+        try #require(await eventually { !tab.isSliding && tab.secondary.map { !$0.model.rows.isEmpty } == true })
+        let right = try #require(tab.secondary)
+        right.setMode(.columns)
+        tab.layoutSubtreeIfNeeded()
+        for pane in [left, right] { try await go(pane, s, to: 2, selecting: "L3") }
+        let l = try browser(left), r = try browser(right)
+        let icon = left.list.iconSize, saved = ViewStyleStore.defaultBrowserColumnWidth
+        l.resize(column: 1, to: 300, all: false)
+        zoom(right, to: 48)
+        #expect(sizes(l) == [[saved, icon], [300, icon], [saved, icon], [saved, icon]])
+        #expect(sizes(r) == [[saved, icon], [saved, icon], [saved, 48], [saved, icon]])
     }
 }

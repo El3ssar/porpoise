@@ -78,6 +78,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     }
     /// Column view's columns, while the pane shows them (`ViewContainer+Columns`).
     var columnBrowser: ColumnBrowserView?
+    /// Column view's columns at each history entry (by its index), for Back and Forward.
+    var columnSnapshots: [Int: ColumnBrowserView.Snapshot] = [:]
     /// Column view's →: the folder gone into selects its first item once it has listed.
     var selectsFirstOnLoad = false
     /// Split view: a 2 pt accent line along the top of the active pane, so which side keys and menus act on is plain
@@ -459,7 +461,12 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         if !searchBar.isHidden { closeSearch() }
         messageBar.isHidden = true
         offlineNotice = nil
-        if addToHistory { history.visit(u) }
+        if addToHistory {
+            keepColumns()
+            let from = history.index, was = history.current
+            history.visit(u)
+            if u != was { columnsVisited(from: from) }
+        }
         // Remember where the view was in the folder we leave, for Back/Forward.
         if u != url {
             viewPositions[url] = (list.visibleRect.origin, model.currentURL)
@@ -483,17 +490,23 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     func goBack(_ steps: Int = 1) {
         let from = url
+        guard history.canGoBack else { return }
+        keepColumns()
         guard let u = history.goBack(steps) else { return }
         historyTraversal = -steps
         defer { historyTraversal = 0 }
-        setURL(u, addToHistory: false, selecting: from.deletingLastPathComponent() == u ? from : nil, restoring: viewPositions[u])
+        restoreColumns {
+            setURL(u, addToHistory: false, selecting: from.deletingLastPathComponent() == u ? from : nil, restoring: viewPositions[u])
+        }
     }
 
     func goForward(_ steps: Int = 1) {
+        guard history.canGoForward else { return }
+        keepColumns()
         guard let u = history.goForward(steps) else { return }
         historyTraversal = steps
         defer { historyTraversal = 0 }
-        setURL(u, addToHistory: false, restoring: viewPositions[u])
+        restoreColumns { setURL(u, addToHistory: false, restoring: viewPositions[u]) }
     }
 
     /// Scroll position and current item per visited folder (Dolphin restores both on Back/Forward).
@@ -917,7 +930,12 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     // MARK: ItemListViewDelegate
 
-    func itemList(_ view: ItemListView, open items: [FileItem], inNewTab: Bool) { delegate?.container(self, open: items, inNewTab: inNewTab) }
+    func itemList(_ view: ItemListView, open items: [FileItem], inNewTab: Bool) {
+        // Column view: a folder opened (a double-click) becomes the first column.
+        if let b = columnBrowser, !inNewTab, items.count == 1, ColumnBrowserView.opensColumn(items[0]) { b.opening = items[0].url }
+        defer { columnBrowser?.opening = nil }
+        delegate?.container(self, open: items, inNewTab: inNewTab)
+    }
     func itemList(_ view: ItemListView, menuFor item: FileItem?) -> NSMenu? { delegate?.container(self, menuFor: item) }
     func itemList(_ view: ItemListView, drop urls: [URL], onto folder: URL, operation: NSDragOperation, event: NSEvent?) {
         delegate?.container(self, drop: urls, onto: folder, operation: operation)

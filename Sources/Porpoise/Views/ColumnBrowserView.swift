@@ -5,6 +5,8 @@ import PorpoiseServices
 /// Where ← and → go in Column view.
 protocol ColumnNavigating: AnyObject {
     func columnKey(right: Bool, from list: ItemListView)
+    /// The list a zoom gesture over `list` acts on: the focused column's, the focus moving to `list`'s column first.
+    func zoomTarget(from list: ItemListView) -> ItemListView
 }
 
 /// A Column view column that isn't the focused one: a folder on the path before it, or the folder its one selected
@@ -21,6 +23,8 @@ final class BrowserColumn {
     /// What the column shows while it has no rows: a quiet line at its top (the focused column has the pane's own).
     let stateLabel = ColumnStateLabel()
     private var loadingWork: DispatchWorkItem?
+    /// Where Back put the column's rows, once its folder has listed.
+    var pendingOrigin: CGPoint?
 
     var url: URL { model.location }
 
@@ -51,6 +55,10 @@ final class BrowserColumn {
             guard let self else { return }
             // The path item may have arrived with this listing.
             if let p = self.pathItem { self.showPath(p) }
+            if let o = self.pendingOrigin {
+                self.pendingOrigin = nil
+                self.list.scroll(o)
+            }
             self.refreshState()
         }
         if listing.map(model.takeListing) != true { model.reload() }
@@ -129,9 +137,16 @@ final class ColumnBrowserView: NSView {
     let strip = NSScrollView()
     private let content = ColumnStripContent()
     private(set) var handles: [ColumnResizeHandle] = []
-    /// Widths the user gave columns, by folder, while this view lasts; the others open at the saved width.
-    private var widths: [URL: CGFloat] = [:]
-    private var previewWidth: CGFloat?
+    /// Each column's own width and icon size, first to last, while it shows the same folder (and the ones closed for a
+    /// moment on the way, until another folder opens in their place).
+    private(set) var sizes: [ColumnSize] = []
+    private(set) var previewWidth: CGFloat?
+    /// The pane arrived in a folder: its column's own icon size goes to the pane, not the folder's saved one to it.
+    private var arriving = false
+    /// The folder the user opened (a double-click): it becomes the first column.
+    var opening: URL?
+    /// The columns as they were at the history entry Back or Forward goes to.
+    var restoring: Snapshot?
     /// Columns that went out of view, kept a moment to come back without being read again (Back, ←, a click on the
     /// path), and while the mouse that made them go is still down (a drag from one, its context menu).
     private var spare: [BrowserColumn] = []
@@ -207,7 +222,15 @@ final class ColumnBrowserView: NSView {
 
     func width(of url: URL?) -> CGFloat {
         guard let url else { return previewWidth ?? max(ViewStyleStore().browserColumnWidth, Self.previewMinimum) }
-        return widths[Self.key(url)] ?? ViewStyleStore().browserColumnWidth
+        return size(of: url)?.width ?? ViewStyleStore().browserColumnWidth
+    }
+
+    /// The icon size of the column listing `url`.
+    func iconSize(of url: URL) -> CGFloat? { size(of: url)?.iconSize }
+
+    private func size(of url: URL) -> ColumnSize? {
+        let k = Self.key(url)
+        return sizes.first { Self.key($0.url) == k }
     }
 
     static let previewMinimum: CGFloat = 280
@@ -233,8 +256,24 @@ final class ColumnBrowserView: NSView {
     /// The pane went to its new folder: the columns follow.
     func didNavigate() {
         navigating = false
+        let here = Self.key(container.url)
+        if let s = restoring, Self.key(s.focused) == here {
+            root = s.root
+            sizes = s.sizes
+            previewWidth = s.previewWidth
+        } else {
+            restoring = nil
+        }
+        // An opened folder starts the columns, keeping its own size.
+        if let o = opening, Self.key(o) == here { root = container.url }
         if !ColumnPath.contains(root, container.url) { root = container.url }
+        arriving = true
         syncPath()
+        arriving = false
+        if let s = restoring {
+            restoring = nil
+            apply(s)
+        }
     }
 
     /// A column (shown or kept) listing `url`.
@@ -309,13 +348,17 @@ final class ColumnBrowserView: NSView {
         if preview.shownURL == nil { work.perform() } else { DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work) }
     }
 
-    /// Settings the columns share with the focused one (the icon size, previews, the pane being active).
+    /// Settings the columns share with the focused one (previews, hidden files, the pane being active), and each
+    /// column's own icon size. A zoom of the focused column (the pane's) is that column's own.
     func shareLook() {
         let p = container.model.props
+        if !navigating, !arriving, let i = sizes.firstIndex(where: { Self.key($0.url) == Self.key(container.url) }) {
+            sizes[i].iconSize = p.iconSize(for: .columns)
+        }
         for c in before + [after].compactMap({ $0 }) {
             c.list.isActiveView = container.isActive
             var q = c.model.props
-            q.setIconSize(p.iconSize(for: .columns), for: .columns)
+            if let s = iconSize(of: c.url) { q.setIconSize(s, for: .columns) }
             q.previews = p.previews
             // Hidden files show in every column or in none (⌥⌘. acts on the focused one).
             q.showHidden = p.showHidden
@@ -327,6 +370,12 @@ final class ColumnBrowserView: NSView {
 
     /// Puts the columns in place; `scrolling`: brings the last one into view.
     func arrange(scrolling: Bool) {
+        fitSizes()
+        if arriving, let s = iconSize(of: container.url), container.model.props.iconSize(for: .columns) != s {
+            var p = container.model.props
+            p.setIconSize(s, for: .columns)
+            container.model.props = p
+        }
         shareLook()
         let shown = shownColumns
         // Under the handles, which stay on top.
@@ -458,7 +507,31 @@ final class ColumnBrowserView: NSView {
         return h
     }
 
-    // MARK: Widths
+    // MARK: Sizes
+
+    /// Each column shown keeps its size while its folder stays; a column opening another folder closes the ones after
+    /// it, and the one it opens starts at the saved width with its parent's icon size.
+    private func fitSizes() {
+        let folders = self.folders
+        guard let first = folders.first else { return }
+        let keys = sizes.map { Self.key($0.url) }
+        if let k = keys.firstIndex(of: Self.key(first)) {
+            // The first column moved down (an opened folder): the ones before it go.
+            sizes.removeFirst(k)
+        } else if let top = sizes.first, let k = folders.firstIndex(where: { Self.key($0) == Self.key(top.url) }) {
+            // Up from the first column: its parent comes before it.
+            let width = ViewStyleStore().browserColumnWidth
+            sizes.insert(contentsOf: folders[..<k].map { ColumnSize(url: $0, width: width, iconSize: top.iconSize) }, at: 0)
+        }
+        for (i, f) in folders.enumerated() {
+            if i < sizes.count, Self.key(sizes[i].url) == Self.key(f) { continue }
+            sizes.removeSubrange(min(i, sizes.count)...)
+            let icon = i > 0 ? sizes[i - 1].iconSize : container.model.props.iconSize(for: .columns)
+            sizes.append(ColumnSize(url: f, width: ViewStyleStore().browserColumnWidth, iconSize: icon))
+        }
+        // A file's preview replaced what was after its column.
+        if showsPreview, sizes.count > folders.count { sizes.removeSubrange(folders.count...) }
+    }
 
     func resize(column i: Int, to w: CGFloat, all: Bool) {
         let shown = shownColumns
@@ -468,9 +541,9 @@ final class ColumnBrowserView: NSView {
         if all {
             // Option: every column, and the width new ones open at (Finder).
             ViewStyleStore().browserColumnWidth = width
-            widths = [:]
+            for j in sizes.indices { sizes[j].width = width }
         } else if let url = shown[i].url {
-            widths[Self.key(url)] = width
+            setWidth(width, of: url)
         } else {
             previewWidth = max(width, Self.previewMinimum)
         }
@@ -484,9 +557,14 @@ final class ColumnBrowserView: NSView {
         let targets = all ? Array(shown.indices) : [i]
         for j in targets {
             guard let s = shown[j].view as? NSScrollView, let list = s.documentView as? ItemListView, let url = shown[j].url else { continue }
-            widths[Self.key(url)] = fittingWidth(list)
+            setWidth(fittingWidth(list), of: url)
         }
         layoutColumns()
+    }
+
+    private func setWidth(_ w: CGFloat, of url: URL) {
+        let k = Self.key(url)
+        if let i = sizes.firstIndex(where: { Self.key($0.url) == k }) { sizes[i].width = w }
     }
 
     /// Room for the longest name in `list`, its icon, tags and the chevron (the first 5,000 rows decide).
@@ -569,6 +647,11 @@ final class ColumnBrowserView: NSView {
 
 extension ColumnBrowserView: ColumnNavigating {
     /// ← goes to the column before (its folder selected); → into the selected folder, selecting its first item.
+    func zoomTarget(from list: ItemListView) -> ItemListView {
+        if list !== container.list { focusNow(list) }
+        return container.list
+    }
+
     func columnKey(right: Bool, from list: ItemListView) {
         if list !== container.list { focusNow(list) }
         let model = container.model
@@ -595,7 +678,7 @@ extension ColumnBrowserView: ColumnNavigating {
 extension ColumnBrowserView: ItemListViewDelegate {
     func itemList(_ view: ItemListView, open items: [FileItem], inNewTab: Bool) {
         focusNow(view)
-        container.delegate?.container(container, open: items, inNewTab: inNewTab)
+        container.itemList(container.list, open: items, inNewTab: inNewTab)
     }
 
     func itemList(_ view: ItemListView, menuFor item: FileItem?) -> NSMenu? {
@@ -616,6 +699,13 @@ extension ColumnBrowserView: ItemListViewDelegate {
         focusNow(view)
         container.delegate?.containerQuickLook(container)
     }
+}
+
+/// A column's own width and icon size, for the folder it shows.
+struct ColumnSize: Equatable {
+    var url: URL
+    var width: CGFloat
+    var iconSize: CGFloat
 }
 
 /// The strip the columns sit on: draws the dividers between them.
