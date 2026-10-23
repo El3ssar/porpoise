@@ -34,10 +34,28 @@ def policy_at(path):
             or not math.isfinite(value.get('maximum_noise_ratio', float('nan')))
             or not 1 < value['maximum_noise_ratio'] <= 2):
         raise ValueError('Invalid performance policy')
+    retry_limit(value)
     return value
 
 
+def retry_limit(policy):
+    # Earlier retained policies did not permit recalibration.
+    count = policy.get('maximum_recalibrations', 0)
+    if type(count) is not int or not 0 <= count <= 2:
+        raise ValueError('Invalid recalibration bound')
+    return count
+
+
+def needs_recalibration(results):
+    return (any(row['status'] == 'calibration_failed' for row in results.values())
+            and not any(row['status'] == 'regression' for row in results.values()))
+
+
 def evaluate(report, policy):
+    return evaluate_with_history(report, policy)[0]
+
+
+def evaluate_with_history(report, policy):
     """Symmetric worst observed A/A ratio bounds a median of matched A/B ratios.
 
     Idle CPU is regularized by measured A/A variation, not an absolute CPU allowance.
@@ -49,25 +67,59 @@ def evaluate(report, policy):
         revision = report.get(key, '')
         if len(revision) != 40 or any(c not in '0123456789abcdef' for c in revision):
             raise ValueError('Exact source commits required')
-    groups = [report.get('calibration'), report.get('comparison'), report.get('warmup')]
+    retries = report.get('recalibrations', [])
+    if not isinstance(retries, list) or len(retries) > retry_limit(policy):
+        raise ValueError('Too many recalibrations')
+    groups = [report.get('calibration'), report.get('comparison'), report.get('warmup'), *retries]
     if any(not isinstance(group, list) or len(group) != count
-           for group, count in zip(groups, [policy['pairs'], policy['pairs'], policy['warmup_pairs']])):
+           for group, count in zip(groups, [policy['pairs'], policy['pairs'], policy['warmup_pairs'],
+                                           *([policy['pairs']] * len(retries))])):
         raise ValueError('Missing paired samples')
     for group in groups:
-        for pair in group:
-            if not isinstance(pair, dict) or set(pair) != {'a', 'b'}:
-                raise ValueError('Invalid pair')
-            for sample in pair.values():
-                if not isinstance(sample, dict) or set(sample) != set(METRICS):
-                    raise ValueError('Missing/unknown measurement')
-                for name, number in sample.items():
-                    if (isinstance(number, bool) or not isinstance(number, (int, float))
-                            or not math.isfinite(number) or number < 0 or (name != 'idle_cpu' and number == 0)):
-                        raise ValueError('Invalid measurement')
+        validate_samples(group)
+    initial = compare_round(groups[0], groups[1], policy)
+    results = {name: dict(row, calibration_attempt=0) for name, row in initial.items()}
+    history = [dict(attempt=0, metrics=list(METRICS), results=initial)]
+    for attempt, calibration in enumerate(retries, start=1):
+        if not needs_recalibration(results):
+            raise ValueError('Recalibration after a valid verdict is not permitted')
+        pending = [name for name, row in results.items() if row['status'] == 'calibration_failed']
+        current = compare_round(calibration, groups[1], policy)
+        # The first valid verdict is frozen. New A/A data cannot widen an already valid band or erase a regression.
+        history.append(dict(attempt=attempt, metrics=pending, results={name: current[name] for name in pending}))
+        for name in pending:
+            results[name] = dict(current[name], calibration_attempt=attempt)
+    if 'pending_recalibration' in report:
+        pending = report['pending_recalibration']
+        expected = [name for name, row in results.items() if row['status'] == 'calibration_failed']
+        if (not isinstance(pending, dict) or set(pending) != {'attempt', 'metrics', 'calibration'}
+                or not needs_recalibration(results) or len(retries) >= retry_limit(policy)
+                or type(pending['attempt']) is not int or pending['attempt'] != len(retries) + 1
+                or pending['metrics'] != expected or not isinstance(pending['calibration'], list)
+                or len(pending['calibration']) > policy['pairs']):
+            raise ValueError('Invalid in-progress recalibration')
+        validate_samples(pending['calibration'])
+    return results, history
+
+
+def validate_samples(group):
+    for pair in group:
+        if not isinstance(pair, dict) or set(pair) != {'a', 'b'}:
+            raise ValueError('Invalid pair')
+        for sample in pair.values():
+            if not isinstance(sample, dict) or set(sample) != set(METRICS):
+                raise ValueError('Missing/unknown measurement')
+            for name, number in sample.items():
+                if (isinstance(number, bool) or not isinstance(number, (int, float))
+                        or not math.isfinite(number) or number < 0 or (name != 'idle_cpu' and number == 0)):
+                    raise ValueError('Invalid measurement')
+
+
+def compare_round(calibration_pairs, comparison_pairs, policy):
     results = {}
     for metric in METRICS:
-        aa = [(pair['a'][metric], pair['b'][metric]) for pair in groups[0]]
-        ab = [(pair['a'][metric], pair['b'][metric]) for pair in groups[1]]
+        aa = [(pair['a'][metric], pair['b'][metric]) for pair in calibration_pairs]
+        ab = [(pair['a'][metric], pair['b'][metric]) for pair in comparison_pairs]
         offset = max(abs(a - b) for a, b in aa) if metric == 'idle_cpu' else 0
 
         def ratio(a, b):
@@ -94,16 +146,56 @@ def evaluate(report, policy):
     return results
 
 
+
+def recalibrate(report, policy, collect_round, save):
+    """Only invalid A/A calibration can retry; candidate measurements are never repeated or replaced."""
+    if 'pending_recalibration' in report:
+        raise ValueError('Cannot resume an incomplete calibration output')
+    results, history = evaluate_with_history(report, policy)
+    save(results, history)
+    while needs_recalibration(results) and len(report.get('recalibrations', [])) < retry_limit(policy):
+        attempt = len(report.get('recalibrations', [])) + 1
+        pending = dict(attempt=attempt,
+                       metrics=[name for name, row in results.items() if row['status'] == 'calibration_failed'],
+                       calibration=[])
+        report['pending_recalibration'] = pending
+        save(results, history)
+        collect_round(pending, lambda: save(results, history))
+        report.setdefault('recalibrations', []).append(pending['calibration'])
+        del report['pending_recalibration']
+        results, history = evaluate_with_history(report, policy)
+        save(results, history)
+    return results
+
+
 def summary(report, results):
     lines = ['# App performance budget comparison', '',
              f"Base `{report['base']}`; candidate `{report['candidate']}`.", '',
-             '| Metric | Median paired B/A | A/A noise band | Status |', '|---|---:|---:|---|']
+             '| Metric | Median paired B/A | A/A noise band | Status | Calibration |', '|---|---:|---:|---|---|']
     for name, result in results.items():
         ratio = result.get('ratio')
         band = result.get('noise_band')
         lines.append(f"| {name} | {ratio:.4f}" if ratio is not None else f'| {name} | undefined')
         lines[-1] += f" | {band:.4f}" if band is not None else ' | invalid'
-        lines[-1] += f" | {result['status']} |"
+        attempt = result.get('calibration_attempt', 0)
+        label = f'Retry {attempt}' if attempt else 'Initial'
+        lines[-1] += f" | {result['status']} | {label} |"
+    _, history = evaluate_with_history(report, report['policy'])
+    lines += ['', f"Recalibrations completed: {len(report.get('recalibrations', []))}/{retry_limit(report['policy'])}.",
+              'The original A/B pairs are fixed; valid verdicts are never recalibrated.', '',
+              '| Calibration round | Applied metric | Noise band | Status |', '|---|---|---:|---|']
+    for attempt in history:
+        label = 'Initial' if attempt['attempt'] == 0 else f"Retry {attempt['attempt']}"
+        for name, row in attempt['results'].items():
+            band = row.get('noise_band')
+            shown = f'{band:.4f}' if band is not None else 'invalid'
+            lines.append(f"| {label} | {name} | {shown} | {row['status']} |")
+    if pending := report.get('pending_recalibration'):
+        lines += ['', f"Retry {pending['attempt']} in progress: {len(pending['calibration'])}/{report['policy']['pairs']} A/A pairs collected."]
+    elif any(row['status'] == 'regression' for row in results.values()):
+        lines += ['', 'A measured regression fails the gate and stops recalibration.']
+    elif needs_recalibration(results) and len(report.get('recalibrations', [])) >= retry_limit(report['policy']):
+        lines += ['', 'Recalibration budget exhausted; unstable calibration fails the gate.']
     lines += ['', 'All samples, policy, host identity and workload evidence are retained in results.json.',
               'Process-cold launches use normal OS caches. Listing/search include synchronous layout/draw,',
               'not presented-frame timing. Idle CPU is this isolated test-window process, not a one-hour',
@@ -295,8 +387,7 @@ def measure(out):
         raise ValueError('A measurement output cannot be reused; retain it and start a declared new run')
     capture = ROOT / '.team/artifacts/p2/review/.capture-lock'
     capture = capture.resolve() if capture.parent.exists() else out / '.capture-lock'
-    for group, left, right in [('warmup', 'base', 'candidate'), ('calibration', 'base', 'base'), ('comparison', 'base', 'candidate')]:
-        count = policy['warmup_pairs'] if group == 'warmup' else policy['pairs']
+    def collect(group, left, right, count, pairs, checkpoint):
         for index in range(count):
             order = [('a', left), ('b', right)] if index % 2 == 0 else [('b', right), ('a', left)]
             pair = {}
@@ -310,12 +401,23 @@ def measure(out):
                 if result.returncode:
                     raise RuntimeError('Owned trial failed: ' + result.stderr.strip())
                 pair[member] = json.loads(result.stdout)
-            report[group].append(pair)
-            write_json(out / 'results.json', report)
-    results = evaluate(report, policy)
-    report['evaluation'] = results
-    write_json(out / 'results.json', report)
-    (out / 'SUMMARY.md').write_text(summary(report, results))
+            pairs.append(pair)
+            checkpoint()
+
+    for group, left, right in [('warmup', 'base', 'candidate'), ('calibration', 'base', 'base'), ('comparison', 'base', 'candidate')]:
+        count = policy['warmup_pairs'] if group == 'warmup' else policy['pairs']
+        collect(group, left, right, count, report[group], lambda: write_json(out / 'results.json', report))
+
+    def save(results, history):
+        report['evaluation'], report['calibration_history'] = results, history
+        write_json(out / 'results.json', report)
+        (out / 'SUMMARY.md').write_text(summary(report, results))
+
+    def collect_retry(pending, checkpoint):
+        print(f"Recalibration {pending['attempt']}/{retry_limit(policy)} for {', '.join(pending['metrics'])}", flush=True)
+        collect(f"recalibration-{pending['attempt']}", 'base', 'base', policy['pairs'], pending['calibration'], checkpoint)
+
+    results = recalibrate(report, policy, collect_retry, save)
     return 0 if all(row['status'] == 'pass' for row in results.values()) else 1
 
 
@@ -344,7 +446,8 @@ def main():
     if args.evaluate:
         policy = policy_at(HARNESS / 'policy.json')
         report = json.loads(args.evaluate.read_text())
-        results = evaluate(report, policy)
+        results, history = evaluate_with_history(report, policy)
+        report['calibration_history'] = history
         out.mkdir(parents=True, exist_ok=True)
         report['evaluation'] = results
         write_json(out / 'results.json', report)
