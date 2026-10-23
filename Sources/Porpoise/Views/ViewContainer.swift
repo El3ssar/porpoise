@@ -429,6 +429,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     @objc private func scrolled() {
         header.scrollX = scroll.contentView.bounds.minX
+        AppDelegate.shared.sessionChanged()
     }
 
     // MARK: Navigation

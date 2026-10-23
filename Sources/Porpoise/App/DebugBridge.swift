@@ -27,8 +27,11 @@ import SwiftTerm
     var settingsWindow: NSWindow? { NSApp.windows.first { $0.isVisible && $0.windowController is SettingsWindowController } }
 
     var wc: MainWindowController? {
-        (NSApp.keyWindow?.windowController as? MainWindowController) ?? AppDelegate.shared.windows.first
+        if let i = targetWindow, AppDelegate.shared.windows.indices.contains(i) { return AppDelegate.shared.windows[i] }
+        return (NSApp.keyWindow?.windowController as? MainWindowController) ?? AppDelegate.shared.windows.first
     }
+    /// The browser window commands act on, set by `frontwindow` (a test instance in the background has no key window).
+    var targetWindow: Int?
 
     /// A command: what the bridge does with the rest of the line after its name.
     typealias Command = @MainActor (DebugBridge) -> @MainActor (String) -> Void
@@ -70,6 +73,10 @@ import SwiftTerm
         "settingsdump": DebugBridge.settingsdumpCommand,
         "permissions": DebugBridge.permissionsCommand,
         "windows": DebugBridge.windowsCommand,
+        "session": DebugBridge.sessionCommand,
+        "splitfraction": DebugBridge.splitfractionCommand,
+        "frontwindow": DebugBridge.frontwindowCommand,
+        "winframe": DebugBridge.winframeCommand,
         "fka": DebugBridge.fkaCommand,
         "focus": DebugBridge.focusCommand,
         "keymenu": DebugBridge.keymenuCommand,
@@ -165,6 +172,42 @@ import SwiftTerm
             "\(w.title)|\(w.windowController.map { String(describing: type(of: $0)) } ?? "-")|key=\(w.isKeyWindow)"
         }
         try? list.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
+    }
+
+    /// session <file>: the windows as the session keeps them now ("live"), as last saved ("saved"), as each window
+    /// was when it first appeared ("firstShown"), and whether a restore is still settling, as JSON.
+    func sessionCommand(_ arg: String) {
+        let app = AppDelegate.shared
+        let report: [String: Any] = [
+            "live": SessionState(windows: app.windows.map { $0.captureLayout() }).json,
+            "saved": SessionState(stored: Settings.store.object(forKey: SessionState.key)).json,
+            "firstShown": SessionState(windows: app.firstShown).json,
+            "restoring": Settings.store.bool(forKey: AppDelegate.restoringKey),
+            "windowCount": app.windows.count,
+            "messages": app.windows.map { $0.view.messageBar.isHidden ? "" : $0.view.messageBar.text },
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: URL(fileURLWithPath: arg))
+        }
+    }
+
+    /// splitfraction <0…1>: moves the current tab's split handle there, as a drag does.
+    func splitfractionCommand(_ arg: String) {
+        if let w = wc, let f = Double(arg) { w.tab.setSplitShare(CGFloat(f)) }
+    }
+
+    /// frontwindow <index>: brings that browser window (in the order they were opened) to the front, and makes it the
+    /// one later commands act on.
+    func frontwindowCommand(_ arg: String) {
+        guard let i = Int(arg), AppDelegate.shared.windows.indices.contains(i) else { return }
+        targetWindow = i
+        AppDelegate.shared.windows[i].window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// winframe <x> <y> <width> <height>: the window's frame, in screen coordinates.
+    func winframeCommand(_ arg: String) {
+        let n = arg.split(separator: " ").compactMap { Double($0) }
+        if n.count == 4 { wc?.window?.setFrame(CGRect(x: n[0], y: n[1], width: n[2], height: n[3]), display: true) }
     }
 
     func writeState(to path: String) {

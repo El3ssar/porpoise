@@ -6,11 +6,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static let shared = AppDelegate()
     private(set) var windows: [MainWindowController] = []
     private var sessionSave: DispatchWorkItem?
+    /// The last session wasn't reopened, because reopening it was what went wrong last time.
+    private var skippedRestore = false
     private var settingsWindow: SettingsWindowController?
     private var lookObservation: NSKeyValueObservation?
-    /// UserDefaults key of the saved windows/tabs: [[["url": …, "split": …]]], the first tab of each window
-    /// also with "frame" and "active".
-    private static let sessionKey = "session"
+    /// Set while a session is being reopened: still set at the next launch, reopening it crashed or hung, and that launch
+    /// opens the home folder instead of trying again.
+    static let restoringKey = "session.restoring"
+    /// How long after its windows appear a reopened session counts as restored: its folders have listed by then.
+    static let restoreSettleTime: TimeInterval = 5
 
     // MARK: - Launch and quit
 
@@ -80,6 +84,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // Restored.
         } else {
             newWindow(at: Settings.shared.homeURL)
+            if skippedRestore {
+                windows.last?.view.messageBar.show(
+                    "Porpoise quit while reopening your last windows, so it opened your home folder instead.", error: false)
+            }
         }
         NSApp.activate()
     }
@@ -101,33 +109,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return out
     }
 
-    /// Reopens the windows and tabs of the last session; false if there was nothing to restore.
-    private func restoreSession() -> Bool {
-        guard let session = Settings.store.array(forKey: Self.sessionKey) as? [[[String: String]]] else { return false }
-        for w in session {
-            func exists(_ u: URL) -> Bool { !u.isFileURL || FileManager.default.fileExists(atPath: u.path) }
-            // Tab and split URLs stay paired when a vanished folder is dropped; `index` is the tab's saved position.
-            let tabs = w.enumerated().compactMap { i, t -> (index: Int, url: URL, split: URL?)? in
-                guard let u = t["url"].flatMap(URL.init(string:)), exists(u) else { return nil }
-                return (i, u, t["split"].flatMap(URL.init(string:)).flatMap { exists($0) ? $0 : nil })
-            }
-            guard !tabs.isEmpty else { continue }
-            newWindow(urls: tabs.map(\.url), split: tabs.map(\.split))
-            // Each window where it was (if that's still on a screen), on the tab that was active.
-            guard let wc = windows.last, let info = w.first else { continue }
-            if let f = info["frame"].map(NSRectFromString), NSScreen.screens.contains(where: { $0.visibleFrame.intersects(f) }) {
-                wc.window?.setFrame(f, display: false)
-            }
-            // The saved index counts dropped tabs too: the active one is the last kept tab at or before it.
-            if let a = info["active"].flatMap(Int.init), let shown = tabs.lastIndex(where: { $0.index <= a }) { wc.showTab(shown) }
+    /// Reopens the windows and tabs of the last session, each one as it was before it is shown (no window first shows
+    /// the home folder, or appears elsewhere, before changing); false if there was nothing to restore.
+    func restoreSession() -> Bool {
+        let store = Settings.store
+        if store.bool(forKey: Self.restoringKey) {
+            // The last launch didn't get through reopening its session: don't try the same again.
+            store.removeObject(forKey: Self.restoringKey)
+            skippedRestore = true
+            return false
         }
-        return !windows.isEmpty
+        let (session, missing) = SessionState(stored: store.object(forKey: SessionState.key)).available()
+        guard !session.windows.isEmpty else { return false }
+        store.set(true, forKey: Self.restoringKey)
+        for layout in session.windows {
+            if let wc = MainWindowController(layout: layout) { show(add(wc, cascading: layout.frame == nil)) }
+        }
+        if let message = SessionState.missingMessage(missing) { windows.last?.view.messageBar.show(message, error: false) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.restoreSettleTime) { store.removeObject(forKey: Self.restoringKey) }
+        return true
     }
 
     /// The folders of the last session's tabs.
     private var savedSessionFolders: [URL] {
-        let session = Settings.store.array(forKey: Self.sessionKey) as? [[[String: String]]] ?? []
-        return session.joined().compactMap { $0["url"].flatMap(URL.init(string:)) }
+        SessionState(stored: Settings.store.object(forKey: SessionState.key)).windows.flatMap { $0.tabs.map(\.primary.url) }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -198,6 +203,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         RemoteFS.disconnectAll()
         AndroidTools.stopServerIfOurs()
         saveSession()
+        // Quitting while a session reopens isn't a failed restore.
+        Settings.store.removeObject(forKey: Self.restoringKey)
         CloudStateWriter.shared.flushAll()
     }
 
@@ -220,7 +227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Reveals what Archive Utility just unpacked when `event` is its reopen; false when it isn't.
     func revealUnpacked(after event: NSAppleEventDescriptor?) -> Bool {
-        let shown = windows.flatMap(\.sessionState).compactMap { $0["url"].flatMap(URL.init(string:)) }
+        let shown = windows.flatMap { $0.tabs.map(\.primary.url) }
         guard let event, let item = RevealInference.reopenItem(event, folders: RevealInference.folders(shown: shown)) else { return false }
         reveal([item])
         return true
@@ -248,32 +255,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func newWindow(at url: URL, split: URL? = nil) { newWindow(urls: [url], split: [split]) }
 
-    func newWindow(urls: [URL], split: [URL?] = []) {
-        let wc = MainWindowController(urls: urls, split: split)
-        windows.append(wc)
+    func newWindow(urls: [URL], split: [URL?] = []) { show(add(MainWindowController(urls: urls, split: split))) }
+
+    /// Keeps `wc` among the browser windows, not shown yet.
+    private func add(_ wc: MainWindowController, cascading: Bool = true) -> MainWindowController {
         // Cascade from the previous window, like document windows.
-        if let last = windows.dropLast().last?.window {
+        if cascading, let last = windows.last?.window {
             wc.window?.setFrame(last.frame.offsetBy(dx: 24, dy: -24), display: false)
         }
+        windows.append(wc)
+        return wc
+    }
+
+    private func show(_ wc: MainWindowController) {
+        #if PORPOISE_TEST_HOOKS
+        // What each window showed when it first appeared (the bridge's `session` reports it).
+        firstShown.append(wc.captureLayout())
+        #endif
         wc.showWindow(nil)
         wc.window?.makeKeyAndOrderFront(nil)
     }
+
+    #if PORPOISE_TEST_HOOKS
+    private(set) var firstShown: [WindowLayout] = []
+    #endif
 
     func windowClosed(_ wc: MainWindowController) {
         windows.removeAll { $0 === wc }
     }
 
     func saveSession() {
-        let state = windows.map(\.sessionState)
-        if !state.isEmpty { Settings.store.set(state, forKey: Self.sessionKey) }
+        sessionSave?.cancel()
+        sessionSave = nil
+        let state = SessionState(windows: windows.map { $0.captureLayout() })
+        if !state.windows.isEmpty { Settings.store.set(state.stored, forKey: SessionState.key) }
     }
 
-    /// Saves the session shortly after the last change (navigation, tabs), so a crash loses little.
+    /// How soon after a change the session is saved: a crash or a forced quit loses at most this much.
+    static let sessionSaveDelay: TimeInterval = 2
+
+    /// Saves the session shortly after a change (navigation, tabs, the split, panels, scrolling, the window's frame):
+    /// once for a burst of changes, never put off by more of them.
     func sessionChanged() {
-        sessionSave?.cancel()
+        guard sessionSave == nil else { return }
         let w = DispatchWorkItem { [weak self] in self?.saveSession() }
         sessionSave = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: w)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.sessionSaveDelay, execute: w)
     }
 
     /// Cmd+W in windows without tabs (Settings, Properties…) closes the window, as on any Mac.

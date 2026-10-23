@@ -81,6 +81,7 @@ extension MainWindowController {
         Settings.store.set(showTerminal, forKey: "panel.terminal")
         Settings.store.set(showShelf, forKey: "panel.shelf")
         alignNavigators()
+        AppDelegate.shared.sessionChanged()
     }
 
     enum PanelSlot { case sidebar, information, terminal }
