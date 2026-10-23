@@ -46,6 +46,12 @@ import Testing
         return (window, tab)
     }
 
+    /// Closes the test's window and leaves the position a split reopens at as other suites expect it (halves).
+    private func done(_ window: NSWindow) {
+        window.close()
+        PorpoiseTab.lastFraction = 0.5
+    }
+
     private func folder(_ scratch: Scratch, files: Int = 6) throws -> URL {
         for n in 1...files { try Data("\(n)".utf8).write(to: scratch.url.appendingPathComponent("file \(n).txt")) }
         return scratch.url
@@ -101,7 +107,7 @@ import Testing
     @Test func dragStopsAtTheMinimumsAndTheCursorSaysWhichWayIsLeft() async throws {
         let scratch = try Scratch()
         let (window, tab) = try await splitTab(try folder(scratch))
-        defer { window.close() }
+        defer { done(window) }
         let w = tab.bounds.width
         #expect(lineX(tab) == (w / 2).rounded())
         #expect(tab.handle.directions == .both)
@@ -124,7 +130,7 @@ import Testing
     @Test func theGrabAreaIsSevenPoints() async throws {
         let scratch = try Scratch()
         let (window, tab) = try await splitTab(try folder(scratch))
-        defer { window.close() }
+        defer { done(window) }
         let x = lineX(tab)
         func hit(_ dx: CGFloat) -> NSView? {
             let p = tab.convert(CGPoint(x: x + 0.5 + dx, y: tab.bounds.midY), to: nil)
@@ -141,7 +147,7 @@ import Testing
     @Test func windowResizeKeepsTheMinimumsAndComesBack() async throws {
         let scratch = try Scratch()
         let (window, tab) = try await splitTab(try folder(scratch))
-        defer { window.close() }
+        defer { done(window) }
         drag(tab, to: 330)
         let share = tab.splitShare
         for width in [900.0, 600, 400] {
@@ -167,7 +173,7 @@ import Testing
         defer { Animator.reducesMotion = reduces }
         let scratch = try Scratch()
         let (window, tab) = try await splitTab(try folder(scratch))
-        defer { window.close() }
+        defer { done(window) }
         drag(tab, to: 300)
         #expect(lineX(tab) == 300)
         let x = lineX(tab) + 0.5
@@ -195,7 +201,7 @@ import Testing
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 500), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        defer { window.close() }
+        defer { done(window) }
         let tab = PorpoiseTab(url: url)
         window.contentView = tab
         tab.frame = window.contentView?.bounds ?? .zero
@@ -224,7 +230,7 @@ import Testing
     @Test func looksLikeAHairlineAndIsASplitter() async throws {
         let scratch = try Scratch()
         let (window, tab) = try await splitTab(try folder(scratch))
-        defer { window.close() }
+        defer { done(window) }
         var hairline: CGColor?
         NSApp.effectiveAppearance.performAsCurrentDrawingAppearance { hairline = Theme.hairline.cgColor }
         #expect(tab.handle.lineColor == hairline)

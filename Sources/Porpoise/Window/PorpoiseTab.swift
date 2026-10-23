@@ -61,8 +61,9 @@ final class PorpoiseTab: NSView {
     /// The right list's width once the split has opened: which of its items fly in (in Compact, items flow in
     /// columns, and the still narrow pane would show only the first).
     private var openingRightWidth: CGFloat?
-    /// Handle position the user chose last; reopening the split returns to it (m_splitterLastPosition).
-    private static var lastFraction: CGFloat = 0.5
+    /// Handle position the user chose last; reopening the split returns to it (m_splitterLastPosition). Tests that move
+    /// the line put it back.
+    static var lastFraction: CGFloat = 0.5
 
     var active: ViewContainer { activeIsSecondary ? (secondary ?? primary) : primary }
     var inactive: ViewContainer? { secondary == nil ? nil : (activeIsSecondary ? primary : secondary) }
