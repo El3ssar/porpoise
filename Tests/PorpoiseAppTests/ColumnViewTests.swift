@@ -601,4 +601,25 @@ import Testing
         // Narrower than the last column: its left edge.
         #expect(ColumnBrowserView.endOrigins(of: cols, focused: 3, visible: 150) == (603, 603))
     }
+
+    /// A column with nothing in it says so in a quiet line at its top (the focused one has the pane's own message),
+    /// which never takes a click; one with rows doesn't.
+    @Test func anEmptyColumnSaysSoQuietly() async throws {
+        let s = try tree()
+        let (pane, window, _) = try await pane(s.url)
+        defer { window.close() }
+        let b = try browser(pane)
+        pane.list.select(s.path("B"))
+        let empty = try #require(b.after)
+        #expect(await eventually { !empty.model.isLoading && !empty.stateLabel.isHidden })
+        #expect(empty.stateLabel.stringValue == "Folder is empty" && empty.stateLabel.state?.isError == false)
+        #expect(empty.stateLabel.superview === empty.list && empty.stateLabel.frame.minY > ItemListView.columnsTop)
+        #expect(empty.stateLabel.frame.width > 0 && empty.stateLabel.frame.maxX <= empty.list.bounds.width)
+        #expect(empty.stateLabel.hitTest(CGPoint(x: empty.stateLabel.frame.midX, y: empty.stateLabel.frame.midY)) == nil)
+
+        pane.list.select(s.path("A"))
+        let full = try #require(b.after)
+        #expect(await eventually { full.model.rows.count == 2 })
+        #expect(full.stateLabel.isHidden)
+    }
 }

@@ -18,6 +18,9 @@ final class BrowserColumn {
     weak var browser: ColumnBrowserView?
     /// The browser is changing this column's selection itself, not the user.
     private var settingPath = false
+    /// What the column shows while it has no rows: a quiet line at its top (the focused column has the pane's own).
+    let stateLabel = ColumnStateLabel()
+    private var loadingWork: DispatchWorkItem?
 
     var url: URL { model.location }
 
@@ -32,7 +35,11 @@ final class BrowserColumn {
         list.columnNavigator = browser
         ColumnBrowserView.configure(scroll, showing: list)
         scroll.setAccessibilityLabel(url.lastPathComponent)
-        model.onChange = { [weak self] in self?.list.relayout() }
+        list.addSubview(stateLabel)
+        model.onChange = { [weak self] in
+            self?.list.relayout()
+            self?.refreshState()
+        }
         model.onSelectionChanged = { [weak self] in
             guard let self else { return }
             self.list.needsDisplay = true
@@ -44,8 +51,32 @@ final class BrowserColumn {
             guard let self else { return }
             // The path item may have arrived with this listing.
             if let p = self.pathItem { self.showPath(p) }
+            self.refreshState()
         }
         if listing.map(model.takeListing) != true { model.reload() }
+        refreshState()
+    }
+
+    /// Empty, still loading (after a moment: a quick listing never flashes it) or failed: said in a quiet line, in the
+    /// pane's own words.
+    func refreshState() {
+        loadingWork?.cancel()
+        loadingWork = nil
+        guard model.rows.isEmpty else { return stateLabel.show(nil) }
+        let loading = model.isLoading && model.items.isEmpty
+        let state: ListState
+        if let e = model.loadError, !loading {
+            let missing = url.isFileURL && !FileManager.default.fileExists(atPath: url.path)
+            state = LoadErrorPresentation.error(
+                e, location: url, missing: missing, blockedByPrivacy: model.blockedByPrivacy, cloud: PlacesModel.isCloud(url))
+        } else {
+            state = LoadErrorPresentation.empty(
+                loading: loading, searching: false, searchError: nil, filtering: model.filter.isActive, trash: false)
+        }
+        guard loading, stateLabel.isHidden else { return stateLabel.show(state) }
+        let work = DispatchWorkItem { [weak self] in self?.stateLabel.show(state) }
+        loadingWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + ColumnStateLabel.loadingDelay, execute: work)
     }
 
     /// Selects `item` as the path to the next column (grey while the keys are elsewhere) and keeps it in view.
@@ -65,6 +96,7 @@ final class BrowserColumn {
     }
 
     func close() {
+        loadingWork?.cancel()
         model.onChange = nil
         model.onSelectionChanged = nil
         model.onLoaded = nil
@@ -365,6 +397,7 @@ final class ColumnBrowserView: NSView {
         for case let s as NSScrollView in shown.map(\.view) {
             (s.documentView as? ItemListView)?.relayout()
         }
+        for c in before + [after].compactMap({ $0 }) where !c.stateLabel.isHidden { c.stateLabel.place() }
         content.needsDisplay = true
     }
 
@@ -594,5 +627,54 @@ final class ColumnStripContent: NSView {
         for x in browser?.dividers ?? [] where x < bounds.width {
             CGRect(x: x, y: 0, width: 1, height: bounds.height).intersection(dirty).fill()
         }
+    }
+}
+
+/// A column's quiet line while it has no rows ("Folder is empty", "Loading…", what went wrong), centred at its top,
+/// lighter than the focused column's message so the eye stays there. Clicks go through to the column.
+final class ColumnStateLabel: NSTextField {
+    static let loadingDelay: TimeInterval = 0.4
+    private(set) var state: ListState?
+
+    init() {
+        super.init(frame: .zero)
+        isEditable = false
+        isSelectable = false
+        isBordered = false
+        drawsBackground = false
+        alignment = .center
+        lineBreakMode = .byWordWrapping
+        maximumNumberOfLines = 3
+        font = .systemFont(ofSize: Tokens.FontSize.callout)
+        isHidden = true
+        setAccessibilityElement(false)
+        Theme.whenChanged(self) { [weak self] in
+            guard let self, let state = self.state else { return }
+            self.textColor = state.isError ? Theme.viewTextInactive : Theme.disabledText
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func show(_ state: ListState?) {
+        self.state = state
+        isHidden = state == nil
+        guard let state else { return }
+        stringValue = state.title
+        textColor = state.isError ? Theme.viewTextInactive : Theme.disabledText
+        setAccessibilityElement(true)
+        setAccessibilityLabel(state.title)
+        superview?.needsLayout = true
+        place()
+    }
+
+    /// Centred under the top inset of the column it's in, as wide as the column allows.
+    func place() {
+        guard let column = superview else { return }
+        let width = max(0, column.bounds.width - 24)
+        let height = cell?.cellSize(forBounds: CGRect(x: 0, y: 0, width: width, height: 200)).height ?? 16
+        frame = CGRect(x: 12, y: ItemListView.columnsTop + 10, width: width, height: ceil(height))
     }
 }
