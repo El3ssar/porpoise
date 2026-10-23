@@ -188,11 +188,18 @@ import Testing
             try Data("not a video".utf8).write(to: url)
             return try #require(FileItem.load(url))
         }
-        let thumbnails = Thumbnails()
+        let cache = RecordingThumbnailCache()
+        let thumbnails = Thumbnails(cache: cache)
         let viewport = Viewport()
         var ready: [Int] = [], peak = 0
         let observer = NotificationCenter.default.addObserver(forName: Thumbnails.ready, object: nil, queue: .main) { n in
-            MainActor.assumeIsolated { if let u = n.object as? URL, let row = Viewport.row(u) { ready.append(row) } }
+            MainActor.assumeIsolated {
+                guard let url = n.object as? URL, let row = items.firstIndex(where: { $0.url == url }) else { return }
+                ready.append(row)
+                #expect(cache.stored.count == ready.count, "every ready follows its frame's cache insertion")
+                // NSCache can evict under pressure. Force it here, after publication, instead of relying on load.
+                cache.removeAllObjects()
+            }
         }
         defer { NotificationCenter.default.removeObserver(observer) }
         viewport.shown = 0..<10
@@ -209,7 +216,11 @@ import Testing
         }
         #expect(peak <= 2)
         #expect(Set(ready) == Set(15..<20), "published \(ready.sorted())")
-        #expect(items[15..<20].allSatisfy { thumbnails.thumbnail(for: $0, size: 64, owner: viewport) != nil })
+        // Check generation independently of an evictable cache. The observer checks store-before-publication.
+        #expect(cache.stored.count == 5)
+        #expect(cache.stored.allSatisfy { $0.image.size == NSSize(width: 64, height: 64) })
+        #expect(items[15..<20].allSatisfy { !thumbnails.hasFailed($0, 64) })
+        #expect(cache.stored.allSatisfy { cache.object(forKey: $0.key) == nil }, "eviction was exercised")
         // The two running when scrolled away were stopped, the rest of the first screen never started.
         let runs = (try? String(contentsOf: log, encoding: .utf8))?.split(separator: "\n").count ?? 0
         #expect((5...2 + 5 + 2).contains(runs), "\(runs) ffmpeg runs")
@@ -291,4 +302,14 @@ final class GatedServer: RemoteProvider, @unchecked Sendable {
     func move(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
     func copy(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
     func rootTitle(_ url: URL) -> String { "thumbs" }
+}
+
+/// Keeps the generated values independently of NSCache's discretionary retention, to check publication order.
+private final class RecordingThumbnailCache: NSCache<NSString, NSImage>, @unchecked Sendable {
+    private(set) var stored: [(key: NSString, image: NSImage)] = []
+
+    override func setObject(_ image: NSImage, forKey key: NSString, cost: Int) {
+        stored.append((key, image))
+        super.setObject(image, forKey: key, cost: cost)
+    }
 }

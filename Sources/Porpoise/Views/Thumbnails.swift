@@ -7,9 +7,10 @@ import QuickLookThumbnailing
 /// QuickLook previews (Dolphin's "Show Previews"), cached by path + modification date + size.
 final class Thumbnails {
     static let shared = Thumbnails()
+    /// A result changed, including failure. Cache retention is discretionary; readers can still miss and retry.
     static let ready = Notification.Name("PorpoiseThumbnailReady")
 
-    private let cache = NSCache<NSString, NSImage>()
+    private let cache: NSCache<NSString, NSImage>
     private var failed = Set<String>()
     private var pending = Set<String>()
     private var retryAfter: [String: Date] = [:]
@@ -21,8 +22,9 @@ final class Thumbnails {
     /// Bookkeeping sets are bounded too: a long session in big folders must not grow them forever.
     private static let maxRemembered = 20_000
 
-    init(scheduler: ThumbnailWorkScheduler = ThumbnailWorkScheduler()) {
+    init(scheduler: ThumbnailWorkScheduler = ThumbnailWorkScheduler(), cache: NSCache<NSString, NSImage> = NSCache()) {
         self.scheduler = scheduler
+        self.cache = cache
         cache.countLimit = 3000
         cache.totalCostLimit = Self.cacheBytes
         folderCache.totalCostLimit = Self.cacheBytes / 4
