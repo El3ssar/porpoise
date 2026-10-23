@@ -62,6 +62,7 @@ import Testing
         wc.view.model.selection = Set(wc.view.model.rows.map { $0.item.url })
         let before = CustomToolRunner.shared.runs.map(\.id)
         wc.executeCustomTool(tool)
+        #expect(await eventually { wc.window?.attachedSheet != nil })
         let confirmation = try #require(wc.window?.attachedSheet)
         func labels(_ view: NSView) -> [String] {
             (view as? NSTextField).map { [$0.stringValue] } ?? view.subviews.flatMap(labels)
@@ -72,6 +73,7 @@ import Testing
         #expect(CustomToolRunner.shared.runs.map(\.id) == before)
         wc.view.model.selection = [scratch.path("file-0.txt")]
         wc.executeCustomTool(tool)
+        #expect(await eventually { wc.window?.attachedSheet != nil })
         let prompt = try #require(wc.window?.attachedSheet)
         #expect(labels(try #require(prompt.contentView)).contains("Value to print"))
         wc.window?.endSheet(prompt, returnCode: .alertSecondButtonReturn)
@@ -92,8 +94,9 @@ import Testing
         let menu = wc.contextMenu(for: secondary.model.rows[0].item, in: secondary)
         let tools = try #require(menu.items.first(where: { $0.title == "Custom Tools" })?.submenu)
         #expect(wc.view === secondary); #expect(wc.customToolContext.otherFolder == left)
-        #expect(tools.items.map(\.title) == ["Print"]); #expect(wc.validateMenuItem(tools.items[0]))
+        #expect(tools.items.map(\.title) == ["Print"]); #expect(await eventually { wc.validateMenuItem(tools.items[0]) })
         wc.runCustomTool(tools.items[0])
+        #expect(await eventually { CustomToolRunner.shared.runs.contains { $0.name == tool.name } })
         let run = try #require(CustomToolRunner.shared.runs.first { $0.name == tool.name })
         #expect(await eventually { !run.isRunning })
         #expect(run.output == file.path + "\n" + left.path + "\n")
@@ -104,4 +107,38 @@ import Testing
         #expect(!wc.validateMenuItem(tools.items[0]))
         ActivityWindowController.shared.window?.close(); CustomToolRunner.shared.clearFinished()
     }
+    @Test func standardMacShortcutsCannotBeClaimedByTools() throws {
+        for key in ["q", "h", "m", "w"] {
+            var tool = CustomTool(name: "Reserved", executable: "/usr/bin/true", arguments: [])
+            tool.shortcut = KeyboardShortcut(key: key, modifiers: .command)
+            #expect(throws: (any Error).self) { try CustomToolsEditorView.save([tool]) }
+        }
+    }
+    @Test func hundredThousandSelectionMenuMatchingIsScheduledOffMainAndInvalidates() async throws {
+        let scratch = try Scratch()
+        let owner = MainWindowController(urls: [scratch.url]); defer { owner.window?.close() }
+        #expect(await eventually { !owner.view.model.isLoading })
+        let entries = (0..<100_000).map { FileItem(url: scratch.path("\($0).txt"), name: "\($0).txt", isDirectory: false) }
+        owner.view.model.searchResults = entries
+        owner.view.model.selection = Set(entries.map(\.url))
+        var tools = (0..<10).map { CustomTool(name: "Text \($0)", executable: "/usr/bin/true", arguments: []) }
+        for index in tools.indices { tools[index].extensions = ["txt"] }
+        try Settings.shared.saveCustomTools(tools)
+        let start = ContinuousClock.now
+        let menu = owner.customToolMenu(.contextMenu)
+        let elapsed = start.duration(to: .now)
+        print("Custom tools: 100k selection / 10 tools main-thread menu construction \(elapsed)")
+        #expect(elapsed < .milliseconds(100), "Selection matching must not run synchronously while constructing a menu.")
+        #expect(menu.items.count == 10)
+        #expect(await eventually { menu.items.allSatisfy(\.isEnabled) })
+        owner.view.model.selection = []
+        #expect(!owner.validateMenuItem(menu.items[0]))
+        #expect(await eventually { owner.customToolAvailability.reason(for: tools[0], in: owner) == "Select one or more items." })
+        owner.view.model.selection = [entries[0].url]
+        _ = owner.customToolAvailability.reason(for: tools[0], in: owner)
+        tools[0].extensions = ["png"]; try Settings.shared.saveCustomTools(tools)
+        _ = owner.customToolAvailability.reason(for: tools[0], in: owner)
+        #expect(await eventually { owner.customToolAvailability.reason(for: tools[0], in: owner) == "The selected types do not match this tool." })
+    }
+
 }

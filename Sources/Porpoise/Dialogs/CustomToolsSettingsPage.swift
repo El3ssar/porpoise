@@ -50,6 +50,11 @@ final class CustomToolsEditorView: NSView, NSTableViewDataSource, NSTableViewDel
         MenuCommandRegistry.shared.refresh(fillDynamic: false)
         let commands = MenuCommandRegistry.shared.commands.filter { $0.item.action != #selector(MainWindowController.runCustomTool(_:)) }
         for tool in tools where !tool.shortcut.isEmpty {
+            if tool.shortcut.isReservedByAppKit
+                || MenuCommandRegistry.shared.appKitBindings.contains(where: { $0.normalized == tool.shortcut.normalized })
+            {
+                throw CustomToolError.invalid("The shortcut for “\(tool.name)” belongs to macOS.")
+            }
             if commands.contains(where: { command in
                 let bindings = Settings.shared.keyboardShortcuts.overrides[command.id].map { [$0] } ?? command.defaults
                 return bindings.contains { !$0.isEmpty && $0.normalized == tool.shortcut.normalized }
@@ -89,6 +94,16 @@ final class CustomToolsEditorView: NSView, NSTableViewDataSource, NSTableViewDel
             let alert = NSAlert(); alert.messageText = "Replace custom tools with \(document.tools.count) imported tools?"
             alert.informativeText =
                 "Review commands from files you trust. Existing tools will be replaced; export them first to keep them. Importing does not run a tool."
+            let commands = document.tools.map { tool in
+                "\(tool.name)\n\(tool.executable)\n" + tool.arguments.map { "  " + String(reflecting: $0) }.joined(separator: "\n")
+            }.joined(separator: "\n\n")
+            let review = NSTextView(frame: CGRect(x: 0, y: 0, width: 520, height: 240))
+            review.isEditable = false; review.isSelectable = true; review.string = commands
+            review.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+            review.setAccessibilityLabel("Commands to import")
+            let scroll = NSScrollView(frame: review.frame); scroll.documentView = review; scroll.hasVerticalScroller = true
+            review.autoresizingMask = [.width]; review.textContainer?.widthTracksTextView = true
+            alert.accessoryView = scroll
             alert.addButton(withTitle: "Import"); alert.addButton(withTitle: "Cancel")
             alert.runSheet(for: window) { [weak self] response in if response == .alertFirstButtonReturn { self?.save(document.tools) } }
         } catch { status.stringValue = error.localizedDescription }

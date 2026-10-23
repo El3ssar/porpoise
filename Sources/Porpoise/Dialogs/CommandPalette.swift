@@ -81,11 +81,16 @@ final class CommandPalette: SecondaryWindowController, NSWindowDelegate, NSTable
         }
         let tools = Settings.shared.customTools.filter { $0.placements.contains(.commandPalette) }
         if let owner, !tools.isEmpty {
-            let context = owner.customToolContext
-            for tool in tools {
+            for (index, tool) in tools.enumerated() {
+                let reason = owner.customToolAvailability.reason(
+                    for: tool, in: owner,
+                    updated: index == 0
+                        ? { [weak self] in
+                            self?.collect(); self?.update()
+                        } : nil)
                 let candidate = CommandCandidate(
                     id: "tool:" + tool.id.uuidString, title: tool.name, subtitle: "Custom tool", keywords: "tool command",
-                    enabled: tool.unavailableReason(in: context) == nil)
+                    enabled: reason == nil)
                 entries[candidate.id] = Entry(candidate: candidate, shortcut: tool.shortcut.display) { [weak owner] in owner?.executeCustomTool(tool)
                 }
             }

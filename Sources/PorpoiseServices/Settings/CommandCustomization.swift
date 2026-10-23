@@ -12,6 +12,14 @@ extension Settings {
     }
     public func importKeyboardShortcuts(_ data: Data, actions: [ShortcutAction]) throws {
         let preferences = try ShortcutPreferences.decode(data)
+        guard !preferences.overrides.keys.contains(where: { $0.hasPrefix("customTool:") }) else {
+            throw ShortcutError.invalid("Edit custom tool shortcuts in Custom Tools settings, rather than a keyboard-shortcut file.")
+        }
+        for (id, shortcut) in preferences.overrides where shortcut.isReservedByAppKit {
+            guard actions.first(where: { $0.id == id })?.defaults.contains(where: { $0.normalized == shortcut.normalized }) == true else {
+                throw ShortcutError.invalid("The shortcut file claims a standard macOS application or window shortcut.")
+            }
+        }
         let allActions =
             actions
             + customTools.map {

@@ -6,6 +6,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     TabBarDelegate, PlacesPanelDelegate, NSSplitViewDelegate
 {
 
+    let customToolAvailability = CustomToolAvailabilityCache()
     var driveMediaQuickLook: CloudMediaPreviewPanel?
     var driveQuickLook: Task<Void, Never>?
     var driveQuickLookURLs: [URL: URL] = [:]

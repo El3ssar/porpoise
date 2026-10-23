@@ -4,7 +4,7 @@ import PorpoiseFileSystem
 import UniformTypeIdentifiers
 
 /// One visible row: an item plus its tree depth (Details view's expandable folders).
-public struct Row {
+public struct Row: Sendable {
     public let item: FileItem
     public let depth: Int
     public var isExpanded: Bool
@@ -225,7 +225,9 @@ public final class DirectoryModel {
     }
     private var countCancellation = DiskCancellation()
 
-    public var selection: Set<URL> = [] { didSet { if selection != oldValue { onSelectionChanged?() } } }
+    /// Constant-time invalidation for selection-dependent UI caches.
+    public private(set) var selectionRevision: UInt64 = 0
+    public var selection: Set<URL> = [] { didSet { if selection != oldValue { selectionRevision &+= 1; onSelectionChanged?() } } }
     public var currentURL: URL?
     public var anchorURL: URL?
 

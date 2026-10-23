@@ -8,20 +8,23 @@ import PorpoiseFileSystem
     public let name: String
     public private(set) var output = ""
     public private(set) var exitStatus: Int32?
+    public private(set) var terminationSignal: Int32?
     public private(set) var failure: String?
     public private(set) var cancelled = false
     private let control: CustomToolProcess
     public var isRunning: Bool { exitStatus == nil && failure == nil }
     public var status: String {
         if let failure { return failure }
-        if let exitStatus { return cancelled ? "Cancelled · exit \(exitStatus)" : "Exit \(exitStatus)" }
+        if let terminationSignal { return cancelled ? "Cancelled · signal \(terminationSignal)" : "Terminated (signal \(terminationSignal))" }
+        if let exitStatus { return cancelled ? "Cancelled" : "Exit \(exitStatus)" }
         return cancelled ? "Cancelling…" : "Running"
     }
     fileprivate init(name: String, control: CustomToolProcess) { self.name = name; self.control = control }
     public func cancel() { guard isRunning else { return }; cancelled = true; control.cancel(); CustomToolRunner.notify() }
     fileprivate func updateOutput(_ value: String) { guard isRunning else { return }; output = value; CustomToolRunner.notify() }
     fileprivate func finish(_ result: CustomToolProcess.Result) {
-        output = result.output; exitStatus = result.status; failure = result.failed ? "Could not start the executable." : nil
+        output = result.output; exitStatus = result.status; terminationSignal = result.signal;
+        failure = result.failed ? "Could not start the executable." : nil
     }
 }
 
@@ -32,7 +35,8 @@ import PorpoiseFileSystem
     public init() {}
     static func notify() { NotificationCenter.default.post(name: changed, object: nil) }
     /// Re-reads the settings by ID: callers cannot smuggle an executable in through a menu or external request.
-    @discardableResult public func start(id: UUID, context: CustomToolContext, value: String? = nil, confirmedLargeSelection: Bool = false) throws
+    @discardableResult public func start(id: UUID, context: CustomToolContext, value: String? = nil, confirmedLargeSelection: Bool = false)
+        async throws
         -> CustomToolRun
     {
         guard let tool = Settings.shared.customTools.first(where: { $0.id == id }) else {
@@ -42,7 +46,12 @@ import PorpoiseFileSystem
             throw CustomToolError.invalid("Confirm running a tool on more than 100 items first.")
         }
         guard runs.filter(\.isRunning).count < 4 else { throw CustomToolError.invalid("Four tools are running. Wait for one to finish.") }
-        let invocation = try tool.invocation(in: context, value: value)
+        let invocation = try await Task.detached(priority: .userInitiated) { try tool.invocation(in: context, value: value) }.value
+        try Task.checkCancellation()
+        guard Settings.shared.customTools.first(where: { $0.id == id }) == tool else {
+            throw CustomToolError.invalid("This tool changed while preparing it. Run it again to use the updated command.")
+        }
+        guard runs.filter(\.isRunning).count < 4 else { throw CustomToolError.invalid("Four tools are running. Wait for one to finish.") }
         let control = CustomToolProcess()
         let run = CustomToolRun(name: tool.name, control: control)
         // Keep at most 100 completed commands; running entries are never evicted.
@@ -69,7 +78,7 @@ import PorpoiseFileSystem
 
 /// Owns process state behind a lock; neither launch nor pipe reads block the main thread.
 private final class CustomToolProcess: @unchecked Sendable {
-    struct Result: Sendable { let output: String; let status: Int32?; let failed: Bool }
+    struct Result: Sendable { let output: String; let status: Int32?; let failed: Bool; var signal: Int32? = nil }
     private let lock = NSLock()
     private var process: Process?
     private var cancelled = false
@@ -119,6 +128,7 @@ private final class CustomToolProcess: @unchecked Sendable {
         p.waitUntilExit()
         lock.lock(); process = nil; lock.unlock()
         let output = String(decoding: data, as: UTF8.self) + (truncated ? "\n[Output limited to 1 MiB]" : "")
-        return Result(output: output, status: p.terminationStatus, failed: false)
+        return Result(
+            output: output, status: p.terminationStatus, failed: false, signal: p.terminationReason == .uncaughtSignal ? p.terminationStatus : nil)
     }
 }

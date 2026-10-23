@@ -88,6 +88,12 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
         guard let selected else { status.stringValue = "Select an action first."; return }
         do {
             try shortcut.validate()
+            let ownsDefault = selected.defaults.contains { $0.normalized == shortcut.normalized }
+            if !shortcut.isEmpty && !ownsDefault
+                && (shortcut.isReservedByAppKit || MenuCommandRegistry.shared.appKitBindings.contains { $0.normalized == shortcut.normalized })
+            {
+                throw ShortcutError.invalid("This shortcut belongs to macOS.")
+            }
             MenuCommandRegistry.shared.refresh(fillDynamic: false)
             var preferences = Settings.shared.keyboardShortcuts; preferences.overrides[selected.id] = shortcut
             let conflicts = preferences.conflicts(actions: MenuCommandRegistry.shared.shortcutActions)

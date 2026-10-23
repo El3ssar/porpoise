@@ -9,7 +9,7 @@ import Testing
     private func context(_ scratch: Scratch, names: [String] = []) -> CustomToolContext {
         CustomToolContext(folder: scratch.url, items: names.map { FileItem(url: scratch.path($0), name: $0, isDirectory: false) })
     }
-    @Test(.isolatedSettings) func settingsRoundTripRejectsWholeInvalidImportAndNeverDiscoversFiles() throws {
+    @Test(.isolatedSettings) func settingsRoundTripRejectsWholeInvalidImportAndNeverDiscoversFiles() async throws {
         let scratch = try Scratch()
         let tools = CustomToolDocument.examples
         try Settings.shared.saveCustomTools(tools)
@@ -21,14 +21,33 @@ import Testing
         try CustomToolDocument(tools: tools).encoded().write(to: scratch.path("porpoise-tools.json"))
         #expect(Settings.shared.customTools.isEmpty)
         let runner = CustomToolRunner()
-        #expect(throws: (any Error).self) { try runner.start(id: tools[0].id, context: context(scratch)) }
+        await #expect(throws: (any Error).self) { try await runner.start(id: tools[0].id, context: context(scratch)) }
         #expect(runner.runs.isEmpty)
         var folderTool = tools[1]; folderTool.arguments = []; folderTool.selection = .many
         try Settings.shared.saveCustomTools([folderTool])
         let large = CustomToolContext(
             folder: scratch.url, items: Array(repeating: FileItem(url: scratch.path("item"), name: "item", isDirectory: false), count: 101))
-        #expect(throws: (any Error).self) { try runner.start(id: folderTool.id, context: large) }
+        await #expect(throws: (any Error).self) { try await runner.start(id: folderTool.id, context: large) }
         #expect(runner.runs.isEmpty)
+    }
+    @Test(.isolatedSettings) func decodedSettingsCacheTracksDataAndDefaultsStore() throws {
+        let original = Settings.store
+        defer { Settings.store = original }
+        let tools = (0..<200).map { CustomTool(name: "Tool \($0)", executable: "/usr/bin/true", arguments: ["{selection}"]) }
+        try Settings.shared.saveCustomTools(tools)
+        _ = Settings.shared.customTools
+        let start = ContinuousClock.now
+        for _ in 0..<20 { #expect(Settings.shared.customTools.count == 200) }
+        print("Custom tools: 20 cached settings reads / 200 definitions \(start.duration(to: .now))")
+        let second = UserDefaults(suiteName: "porpoise-tools-cache-test-" + UUID().uuidString)!
+        Settings.store = second
+        #expect(Settings.shared.customTools.isEmpty)
+        second.set(try CustomToolDocument(tools: Array(tools.prefix(2))).encoded(), forKey: "customTools")
+        #expect(Settings.shared.customTools.count == 2)
+        second.removeObject(forKey: "customTools")
+        #expect(Settings.shared.customTools.isEmpty)
+        Settings.store = original
+        #expect(Settings.shared.customTools == tools)
     }
     @Test(.isolatedSettings) func importingCommandShortcutsCannotStealAToolBinding() throws {
         var tool = CustomToolDocument.examples[0]
@@ -40,6 +59,10 @@ import Testing
             try Settings.shared.importKeyboardShortcuts(preferences.encoded(), actions: [ShortcutAction(id: "other", title: "Other", defaults: [])])
         }
         #expect(Settings.shared.keyboardShortcuts.overrides.isEmpty)
+        preferences.overrides["customTool:" + tool.id.uuidString] = KeyboardShortcut()
+        #expect(throws: (any Error).self) { try Settings.shared.importKeyboardShortcuts(preferences.encoded(), actions: []) }
+        preferences.overrides = ["other": KeyboardShortcut(key: "q", modifiers: .command)]
+        #expect(throws: (any Error).self) { try Settings.shared.importKeyboardShortcuts(preferences.encoded(), actions: []) }
     }
     @Test(.isolatedSettings) func literalArgumentsCurrentFolderOutputAndNonzeroExit() async throws {
         let scratch = try Scratch()
@@ -49,18 +72,18 @@ import Testing
         var fail = CustomTool(name: "Fail", executable: "/usr/bin/false", arguments: []); fail.selection = .folder
         try Settings.shared.saveCustomTools([tool, pwd, fail])
         let runner = CustomToolRunner(), c = context(scratch, names: names)
-        let run = try runner.start(id: tool.id, context: c)
+        let run = try await runner.start(id: tool.id, context: c)
         #expect(await eventually { !run.isRunning })
         #expect(run.exitStatus == 0)
         #expect(run.output == names.map { "<" + scratch.path($0).path + ">\n" }.joined())
         #expect(!FileManager.default.fileExists(atPath: scratch.path("INJECTED").path))
-        let folderRun = try runner.start(id: pwd.id, context: c)
+        let folderRun = try await runner.start(id: pwd.id, context: c)
         #expect(await eventually { !folderRun.isRunning })
         let actual = try FileManager.default.attributesOfItem(atPath: folderRun.output.trimmingCharacters(in: .newlines))
         let expected = try FileManager.default.attributesOfItem(atPath: scratch.url.path)
         #expect(actual[.systemFileNumber] as? NSNumber == expected[.systemFileNumber] as? NSNumber)
         #expect(actual[.systemNumber] as? NSNumber == expected[.systemNumber] as? NSNumber)
-        let failed = try runner.start(id: fail.id, context: c)
+        let failed = try await runner.start(id: fail.id, context: c)
         #expect(await eventually { !failed.isRunning })
         #expect(failed.exitStatus == 1); #expect(failed.status == "Exit 1")
         runner.clearFinished(); #expect(runner.runs.isEmpty)
@@ -74,11 +97,11 @@ import Testing
         try Settings.shared.saveCustomTools([bad, missing, output])
         let runner = CustomToolRunner()
         for tool in [bad, missing] {
-            let run = try runner.start(id: tool.id, context: context(scratch))
+            let run = try await runner.start(id: tool.id, context: context(scratch))
             #expect(await eventually { !run.isRunning }); #expect(run.failure != nil); #expect(run.exitStatus == nil)
             #expect(!run.status.contains(scratch.url.path))
         }
-        let run = try runner.start(id: output.id, context: context(scratch))
+        let run = try await runner.start(id: output.id, context: context(scratch))
         #expect(await eventually { !run.isRunning })
         #expect(run.output.hasSuffix("[Output limited to 1 MiB]")); #expect(run.output.utf8.count < 1_049_000)
     }
@@ -87,12 +110,13 @@ import Testing
         var tool = CustomTool(name: "Sleep", executable: "/bin/sleep", arguments: ["30"]); tool.selection = .folder
         try Settings.shared.saveCustomTools([tool])
         let runner = CustomToolRunner()
-        let runs = try (0..<4).map { _ in try runner.start(id: tool.id, context: context(scratch)) }
+        var runs: [CustomToolRun] = []
+        for _ in 0..<4 { runs.append(try await runner.start(id: tool.id, context: context(scratch))) }
         defer { runs.forEach { $0.cancel() } }
-        #expect(throws: (any Error).self) { try runner.start(id: tool.id, context: context(scratch)) }
+        await #expect(throws: (any Error).self) { try await runner.start(id: tool.id, context: context(scratch)) }
         for run in runs { run.cancel() }
         #expect(await eventually { runs.allSatisfy { !$0.isRunning } })
-        #expect(runs.allSatisfy { $0.cancelled })
+        #expect(runs.allSatisfy { $0.cancelled && $0.status.hasPrefix("Cancelled") && !$0.status.contains("exit") })
     }
     @Test(.isolatedSettings) func stderrIsCapturedAndOutputArrivesBeforeExit() async throws {
         let scratch = try Scratch()
@@ -101,7 +125,7 @@ import Testing
             name: "Stream", executable: "/bin/sh", arguments: ["-c", "printf first; printf error >&2; sleep 1; printf last; exit 7"])
         tool.selection = .folder
         try Settings.shared.saveCustomTools([tool])
-        let run = try CustomToolRunner().start(id: tool.id, context: context(scratch))
+        let run = try await CustomToolRunner().start(id: tool.id, context: context(scratch))
         #expect(await eventually { run.output.contains("first") && run.isRunning })
         #expect(await eventually { !run.isRunning })
         #expect(run.output == "firsterrorlast"); #expect(run.exitStatus == 7)

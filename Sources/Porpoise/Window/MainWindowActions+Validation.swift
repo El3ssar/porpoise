@@ -49,7 +49,11 @@ extension MainWindowController: NSMenuItemValidation {
             guard let raw = item.representedObject as? String, let id = UUID(uuidString: raw),
                 let tool = Settings.shared.customTools.first(where: { $0.id == id })
             else { return false }
-            item.toolTip = tool.unavailableReason(in: customToolContext)
+            item.toolTip = customToolAvailability.reason(for: tool, in: self) { [weak self, weak item] in
+                guard let self, let item else { return }
+                item.toolTip = self.customToolAvailability.preparedReason(for: tool.id)
+                item.isEnabled = item.toolTip == nil
+            }
             return item.toolTip == nil
         }
         let p = view.model.props

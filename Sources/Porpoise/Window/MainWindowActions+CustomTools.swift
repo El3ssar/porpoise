@@ -10,16 +10,19 @@ extension MainWindowController {
         let menu = NSMenu(title: "Custom Tools")
         let tools = Settings.shared.customTools.filter { $0.placements.contains(placement) }
         guard !tools.isEmpty else { return menu }
-        let context = customToolContext
         for tool in tools {
             let item = NSMenuItem(title: tool.name, action: #selector(runCustomTool(_:)), keyEquivalent: "")
             item.representedObject = tool.id.uuidString; item.target = self
-            let reason = tool.unavailableReason(in: context)
+            let reason = customToolAvailability.reason(for: tool, in: self) { [weak self, weak item] in
+                guard let self, let item else { return }
+                item.toolTip = self.customToolAvailability.preparedReason(for: tool.id)
+                item.isEnabled = item.toolTip == nil
+            }
             item.isEnabled = reason == nil
             item.toolTip = reason
             menu.addItem(item)
         }
-        menu.autoenablesItems = true
+        menu.autoenablesItems = false
         return menu
     }
     @objc func runCustomTool(_ sender: NSMenuItem) {
@@ -29,14 +32,27 @@ extension MainWindowController {
         executeCustomTool(tool)
     }
     func executeCustomTool(_ tool: CustomTool) {
-        // Capture originating pane, folder and selection before any sheet changes the responder.
-        let context = customToolContext
-        guard tool.unavailableReason(in: context) == nil else { return }
+        // Snapshot value types now; selection extraction and matching run off-main before showing any sheet.
+        let folder = view.url, other = tab.inactive?.url, rows = view.model.rows, selection = view.model.selection
+        Task { @MainActor [weak self] in
+            let prepared = await Task.detached(priority: .userInitiated) {
+                let items = rows.compactMap { selection.contains($0.item.url) ? $0.item : nil }
+                let context = CustomToolContext(folder: folder, otherFolder: other, items: items)
+                return (context, tool.unavailableReason(in: context))
+            }.value
+            guard let self else { return }
+            if let reason = prepared.1 { self.reportError(reason); return }
+            self.presentCustomTool(tool, context: prepared.0)
+        }
+    }
+    private func presentCustomTool(_ tool: CustomTool, context: CustomToolContext) {
         let run: (String?) -> Void = { [weak self] value in
-            do {
-                try CustomToolRunner.shared.start(id: tool.id, context: context, value: value, confirmedLargeSelection: true)
-                ActivityWindowController.shared.showTools()
-            } catch { self?.reportError(error.localizedDescription) }
+            Task { @MainActor in
+                do {
+                    try await CustomToolRunner.shared.start(id: tool.id, context: context, value: value, confirmedLargeSelection: true)
+                    ActivityWindowController.shared.showTools()
+                } catch { self?.reportError(error.localizedDescription) }
+            }
         }
         let prompt = { [weak self] in
             guard !tool.prompt.isEmpty else { run(nil); return }

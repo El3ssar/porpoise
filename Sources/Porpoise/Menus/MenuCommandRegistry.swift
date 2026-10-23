@@ -43,6 +43,19 @@ extension ShortcutModifiers {
                 ShortcutAction(id: "customTool:" + $0.id.uuidString, title: $0.name, defaults: [$0.shortcut])
             }
     }
+    var appKitBindings: [KeyboardShortcut] {
+        var result: [KeyboardShortcut] = []
+        func walk(_ menu: NSMenu) {
+            for item in menu.items {
+                if let submenu = item.submenu { walk(submenu) }
+                if Self.isAppKits(item), !item.keyEquivalent.isEmpty {
+                    result.append(KeyboardShortcut(key: item.keyEquivalent, modifiers: ShortcutModifiers(item.keyEquivalentModifierMask)))
+                }
+            }
+        }
+        if let menu = NSApp.mainMenu { walk(menu) }
+        return result
+    }
     private var observer: NSObjectProtocol?
 
     func start() {
