@@ -20,6 +20,7 @@ final class AppsGridView: NSView, NSDraggingSource {
     private var columns = 1
     private var originX: CGFloat = 0
     private var hover: Int?
+    let hoverFade = HoverFade(name: "apps.hover")
     private var mouseDownPoint: CGPoint?
     private var mouseDownIndex: Int?
     private var mouseDownSelectedBefore = false
@@ -84,6 +85,14 @@ final class AppsGridView: NSView, NSDraggingSource {
         self.model = model
         super.init(frame: .zero)
         registerForDraggedTypes([.fileURL])
+        hoverFade.target = { [weak self] in
+            guard let self, let i = self.hover, i < self.model.rows.count else { return nil }
+            return self.model.rows[i].item.url
+        }
+        hoverFade.redraw = { [weak self] u in
+            guard let self, let i = self.model.index(of: u), i < self.model.rows.count else { return }
+            self.setNeedsDisplay(self.cellRect(i))
+        }
         let ws = NSWorkspace.shared.notificationCenter
         for n in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
             observers.append(ws.addObserver(forName: n, object: nil, queue: .main) { [weak self] _ in self?.refreshRunning() })
@@ -94,6 +103,7 @@ final class AppsGridView: NSView, NSDraggingSource {
     required init?(coder: NSCoder) { fatalError() }
     deinit {
         observers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
+        hoverFade.stop()
     }
 
     override var isFlipped: Bool { true }
@@ -508,14 +518,14 @@ final class AppsGridView: NSView, NSDraggingSource {
         // Apps leaving the result shrink and fade out quickly, under the ones that stay.
         for l in transition?.leaving ?? [] {
             drawItem(
-                l.item, cell: l.cell, look: look, selected: false, hovered: false, focused: focused,
+                l.item, cell: l.cell, look: look, selected: false, hovered: 0, focused: focused,
                 alpha: max(0, 1 - p * 1.6), scale: 1 - 0.18 * p, dirty: dirtyRect)
         }
         for i in drawnIndexes(dirtyRect) {
             let item = model.rows[i].item
             let place = placement(item.url, target: cellRect(i))
             drawItem(
-                item, cell: place.cell, look: look, selected: model.selection.contains(item.url), hovered: hover == i,
+                item, cell: place.cell, look: look, selected: model.selection.contains(item.url), hovered: hoverFade.alpha[item.url] ?? 0,
                 focused: focused, alpha: place.alpha, scale: place.scale, dirty: dirtyRect)
         }
     }
@@ -556,7 +566,7 @@ final class AppsGridView: NSView, NSDraggingSource {
 
     /// One app: highlight, icon, name and running dot, all in theme colours (like the other views).
     private func drawItem(
-        _ item: FileItem, cell: CGRect, look: Look, selected: Bool, hovered: Bool, focused: Bool,
+        _ item: FileItem, cell: CGRect, look: Look, selected: Bool, hovered: CGFloat, focused: Bool,
         alpha: CGFloat, scale: CGFloat, dirty: CGRect
     ) {
         guard alpha > 0.01, cell.intersects(dirty), let ctx = NSGraphicsContext.current?.cgContext else { return }
@@ -569,11 +579,15 @@ final class AppsGridView: NSView, NSDraggingSource {
             ctx.translateBy(x: -cell.midX, y: -cell.midY)
         }
         let ir = iconRect(in: cell)
-        if selected || hovered {
+        if selected || hovered > 0 {
             let bg = NSBezierPath(
                 roundedRect: ir.insetBy(dx: -look.highlightInset, dy: -look.highlightInset), xRadius: look.highlightRadius,
                 yRadius: look.highlightRadius)
-            let fill = selected ? (hovered ? Theme.itemSelectedHoverFill : Theme.itemSelectedFill) : Theme.itemHoverFill
+            // The hover highlight fades as in the file views (`HoverFade`).
+            let fill =
+                selected
+                ? Theme.itemSelectedFill.mixed(with: Theme.itemSelectedHoverFill, hovered)
+                : Theme.itemHoverFill.withAlphaComponent(Theme.itemHoverFill.alphaComponent * hovered)
             (selected && !focused ? fill.withAlphaComponent(fill.alphaComponent * 0.6) : fill).setFill()
             bg.fill()
             if selected {
@@ -648,11 +662,12 @@ final class AppsGridView: NSView, NSDraggingSource {
     override func mouseMoved(with event: NSEvent) { setHover(index(at: convert(event.locationInWindow, from: nil))) }
     override func mouseExited(with event: NSEvent) { setHover(nil) }
 
-    private func setHover(_ i: Int?) {
+    func setHover(_ i: Int?) {
         guard i != hover else { return }
         if let h = hover, h < model.rows.count { setNeedsDisplay(cellRect(h)) }
         hover = i
         if let i { setNeedsDisplay(cellRect(i)) }
+        hoverFade.update()
         if let o = owner { o.host?.appsView(o, hovered: i.map { model.rows[$0].item }) }
     }
 

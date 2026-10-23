@@ -134,6 +134,58 @@ final class FrameClock: NSObject {
     }
 }
 
+/// Hover highlights fading in and out (`Motion.hoverIn`, `.hoverOut`), each item's from where it is, so moving across
+/// items hands the highlight over smoothly; with Reduce Motion they just switch. The file views and the Applications
+/// grid share it, so hover looks the same in both.
+final class HoverFade {
+    /// Each highlight's opacity while it shows or fades (none: no highlight).
+    private(set) var alpha: [URL: CGFloat] = [:]
+    /// The item under the pointer, asked at every step (the items may change under a still pointer).
+    var target: () -> URL? = { nil }
+    /// Draws an item again: its highlight changed.
+    var redraw: (URL) -> Void = { _ in }
+    private let clock: FrameClock
+
+    init(name: String) {
+        clock = FrameClock(name: name)
+    }
+
+    var isRunning: Bool { clock.isRunning }
+
+    /// The pointer moved to another item (or off them): highlights head for their new opacity.
+    func update() {
+        if let t = target(), alpha[t] == nil { alpha[t] = 0.01 }
+        if Animator.reducesMotion() {
+            clock.stop()
+            step(by: 1)
+            return
+        }
+        guard !clock.isRunning else { return }
+        var last = CACurrentMediaTime()
+        clock.run { [weak self] now in
+            defer { last = now }
+            return self?.step(by: CGFloat(max(0, now - last))) ?? false
+        }
+    }
+
+    func stop() { clock.stop() }
+
+    /// Moves each highlight `seconds` further toward its goal (a whole fade: 1 with Reduce Motion); true while some are
+    /// still on their way.
+    @discardableResult private func step(by seconds: CGFloat) -> Bool {
+        let target = target()
+        var moving = false
+        for (u, a) in alpha {
+            let goal: CGFloat = u == target ? 1 : 0
+            let next = goal > a ? min(1, a + seconds / Motion.hoverIn) : max(0, a - seconds / Motion.hoverOut)
+            if next == 0 && goal == 0 { alpha.removeValue(forKey: u) } else { alpha[u] = next }
+            if next != goal { moving = true }
+            redraw(u)
+        }
+        return moving
+    }
+}
+
 /// What the animations did while a probe records (the debug bridge's `motionlog`): each run of each clock, the times
 /// of the frames it drew, how long each step took and how it ended. Not recording, it costs one check per frame.
 enum MotionLog {

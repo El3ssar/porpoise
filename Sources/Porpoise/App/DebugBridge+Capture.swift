@@ -20,6 +20,7 @@ extension DebugBridge {
         "transitions": DebugBridge.transitionsCommand,
         "animprobe": DebugBridge.animprobeCommand,
         "motionlog": DebugBridge.motionlogCommand,
+        "reducemotion": DebugBridge.reducemotionCommand,
         "csnapshot": DebugBridge.csnapshotCommand,
         "winsize": DebugBridge.winsizeCommand,
         "keysnapshot": DebugBridge.keysnapshotCommand,
@@ -157,6 +158,15 @@ extension DebugBridge {
         }
         MotionLog.runs = []
         try? lines.joined(separator: "\n").write(toFile: arg, atomically: true, encoding: .utf8)
+    }
+
+    /// reducemotion on|off|system: animations follow that instead of Accessibility › Display › Reduce Motion.
+    func reducemotionCommand(_ arg: String) {
+        switch arg {
+        case "on": Animator.reducesMotion = { true }
+        case "off": Animator.reducesMotion = { false }
+        default: Animator.reducesMotion = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+        }
     }
 
     /// csnapshot <png>|<title prefix or "Settings">: draws a window's views itself, so it works while the window

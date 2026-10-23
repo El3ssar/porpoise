@@ -86,9 +86,7 @@ final class ItemListView: NSView {
     /// The item the delegate was last told is hovered (rows can change under a still pointer).
     var hoveredURL: URL?
     var hoverOnMarker = false
-    /// Hover highlight opacity per item while it fades in or out.
-    var hoverAlpha: [URL: CGFloat] = [:]
-    let hoverClock = FrameClock(name: "list.hover")
+    let hoverFade = HoverFade(name: "list.hover")
     var trackingArea: NSTrackingArea?
     var rubberBand: CGRect?
     var rubberStart: CGPoint?
@@ -153,6 +151,14 @@ final class ItemListView: NSView {
         lineHeight = Self.lineHeight(of: font)
         super.init(frame: .zero)
         registerForDraggedTypes(DropTargetPolicy.types)
+        hoverFade.target = { [weak self] in
+            guard let self, let i = self.hoverIndex, i < self.model.rows.count else { return nil }
+            return self.model.rows[i].item.url
+        }
+        hoverFade.redraw = { [weak self] u in
+            guard let self, let i = self.model.index(of: u), i < self.frames.count else { return }
+            self.setNeedsDisplay(self.highlightRect(i).insetBy(dx: -30, dy: -4))
+        }
         observers.append(
             NotificationCenter.default.addObserver(forName: Thumbnails.ready, object: nil, queue: .main) { [weak self] n in
                 self?.thumbnailReady(n)
@@ -168,7 +174,7 @@ final class ItemListView: NSView {
     deinit {
         observers.forEach(NotificationCenter.default.removeObserver)
         zoomCommitTimer?.invalidate()
-        hoverClock.stop()
+        hoverFade.stop()
         zoomAnimator.stop()
         transitionAnimator.stop()
     }

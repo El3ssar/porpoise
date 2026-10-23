@@ -155,7 +155,7 @@ extension ItemListView {
     private func drawItemBackground(_ i: Int, selected: Bool) {
         let url = model.rows[i].item.url
         let isDrop = dropTargetIndex == i
-        let hoverT = hoverAlpha[url] ?? 0
+        let hoverT = hoverFade.alpha[url] ?? 0
         if selected, !isDrop, Tokens.isNative { return drawNativeSelection(i) }
         let path = NSBezierPath(roundedRect: highlightRect(i).insetBy(dx: 0.5, dy: 0.5), xRadius: Theme.itemRadius, yRadius: Theme.itemRadius)
         path.lineWidth = 1
