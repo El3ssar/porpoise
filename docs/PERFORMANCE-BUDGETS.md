@@ -59,7 +59,10 @@ fail the job. CI never substitutes an absolute latency threshold or skips a fail
 calibration. Release CI proof remains tied to the successful CI aggregate.
 
 The checked policy is `Benchmarks/PerformanceBudgets/policy.json`: seven base/base
-pairs followed by seven base/candidate pairs, alternating AB and BA order. Both
+pairs followed by seven base/candidate pairs, alternating AB and BA order. One
+fixed, unscored base/candidate warmup pair precedes calibration; both complete
+workloads and all warmup results are retained. Each scored launch still uses a new
+process. This declares warm OS caches, not a disk-cold launch measurement. Both
 apps are optimized local/test-hook builds, with the exact same fixed probe from
 `BridgeProbe.swift`, same 100,000 empty-file fixture, 1180x760 content area, Details
 view, search text, fresh isolated defaults, and OS/toolchain. Compilation, downloads
@@ -70,10 +73,13 @@ and fixture setup finish before the shared `lockf -k /tmp/porpoise-gate.lock`.
 | `cold_launch` | Fresh process spawn to an empty browser ready for input, including fixed window/mode setup and bounded IPC polling. This is process-cold; OS caches are not flushed. |
 | `listing_100k` | Navigation input through 100,000 committed model rows and synchronous layout/draw flush. |
 | `search_input` | Text-edit notification through the normal search debounce and the one expected result, with synchronous layout/draw flush. |
-| `idle_cpu` | Owned app process user+system CPU seconds / elapsed seconds over five seconds after search completion and one second of settling. |
+| `idle_cpu` | Owned app process user+system CPU seconds / elapsed seconds over 15 seconds after search completion and one second of settling. |
 
 The process uses a unique test defaults domain, channel and temporary directory per
-trial. Real accounts, operator settings, helper installation and production index
+trial, plus a private shared bundle identifier for both apps in that run and
+process flags disabling AppKit saved-window restoration. The timing lock is taken
+before the foreground capture lock; each capture lock covers one bounded trial
+(150 seconds plus bounded cleanup), and is released between trials. Real accounts, operator settings, helper installation and production index
 roots are excluded. This makes a repeatable regression workload; idle CPU does not
 certify production energy use after an hour. That longer observation and attended
 presented-frame timings remain separate follow-ups. The small fixed probe avoids
@@ -85,7 +91,8 @@ For each metric, the empirical noise band is the largest symmetric A/A ratio
 B/A ratios. A median beyond the recorded band fails the job; a band above 1.5 also
 fails as an unstable calibration. All individual pairs are retained, including
 outliers. No selected favorable subset, retries-to-green or CI-only absolute target
-is used. This empirical envelope is not a population confidence interval.
+is used. A completed output cannot be reused to overwrite a failed measurement.
+This empirical envelope is not a population confidence interval.
 
 Near-zero idle CPU is regularized by adding the largest measured A/A CPU difference
 to both sides before ratios are computed. This offset is recorded in results and

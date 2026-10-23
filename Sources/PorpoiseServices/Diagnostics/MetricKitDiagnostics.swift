@@ -37,6 +37,7 @@ public final class MetricKitDiagnostics: NSObject, MXMetricManagerSubscriber, @u
     private let recorder: MetricDiagnosticRecorder
     private let lock = NSLock()
     private var started = false
+    private let cachedReports = DispatchQueue(label: "app.porpoise.metric-diagnostics.cached", qos: .utility)
 
     public init(store: DiagnosticStore) { recorder = MetricDiagnosticRecorder(store: store) }
 
@@ -50,7 +51,7 @@ public final class MetricKitDiagnostics: NSObject, MXMetricManagerSubscriber, @u
             })
         else { return }
         MXMetricManager.shared.add(self)
-        DispatchQueue.global(qos: .utility).async { self.consume(MXMetricManager.shared.pastDiagnosticPayloads) }
+        cachedReports.async { self.consume(MXMetricManager.shared.pastDiagnosticPayloads) }
     }
 
     public func didReceive(_ payloads: [MXDiagnosticPayload]) { consume(payloads) }

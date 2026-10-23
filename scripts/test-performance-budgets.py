@@ -22,6 +22,7 @@ def sample(multiplier=1):
 
 def report(candidate=1):
     return dict(schema=1, policy=POLICY, base='a' * 40, candidate='b' * 40,
+                warmup=[dict(a=sample(), b=sample()) for _ in range(POLICY['warmup_pairs'])],
                 calibration=[dict(a=sample(), b=sample(1.03)) for _ in range(POLICY['pairs'])],
                 comparison=[dict(a=sample(), b=sample(candidate)) for _ in range(POLICY['pairs'])])
 
@@ -36,6 +37,16 @@ class BudgetTests(unittest.TestCase):
                 for member in ['a', 'b']:
                     pair[member] = {key: value * 1000 for key, value in pair[member].items()}
         self.assertEqual(budgets.evaluate(scaled, POLICY)['cold_launch']['status'], 'pass')
+
+    def test_fixed_warmup_is_required_retained_and_excluded_from_scoring(self):
+        changed = report()
+        changed['warmup'][0]['b'] = sample(1000)
+        self.assertTrue(all(row['status'] == 'pass' for row in budgets.evaluate(changed, POLICY).values()))
+        self.assertEqual(changed['warmup'][0]['b']['cold_launch'], 1000)
+        for value in [[], None]:
+            changed['warmup'] = value
+            with self.assertRaises(ValueError):
+                budgets.evaluate(changed, POLICY)
 
     def test_each_regression_beyond_measured_noise_fails(self):
         for metric in budgets.METRICS:

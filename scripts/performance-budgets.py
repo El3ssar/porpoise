@@ -8,6 +8,7 @@ import math
 import os
 from pathlib import Path
 import platform
+import plistlib
 import select
 import shutil
 import statistics
@@ -29,7 +30,7 @@ def policy_at(path):
     value = json.loads(path.read_text())
     if (value.get('schema') != 1 or value.get('metrics') != list(METRICS)
             or not isinstance(value.get('pairs'), int) or not 7 <= value['pairs'] <= 25
-            or value.get('files') != 100000 or not 2 <= value.get('idle_seconds', 0) <= 3600
+            or value.get('warmup_pairs') != 1 or value.get('files') != 100000 or not 2 <= value.get('idle_seconds', 0) <= 3600
             or not math.isfinite(value.get('maximum_noise_ratio', float('nan')))
             or not 1 < value['maximum_noise_ratio'] <= 2):
         raise ValueError('Invalid performance policy')
@@ -48,8 +49,9 @@ def evaluate(report, policy):
         revision = report.get(key, '')
         if len(revision) != 40 or any(c not in '0123456789abcdef' for c in revision):
             raise ValueError('Exact source commits required')
-    groups = [report.get('calibration'), report.get('comparison')]
-    if any(not isinstance(group, list) or len(group) != policy['pairs'] for group in groups):
+    groups = [report.get('calibration'), report.get('comparison'), report.get('warmup')]
+    if any(not isinstance(group, list) or len(group) != count
+           for group, count in zip(groups, [policy['pairs'], policy['pairs'], policy['warmup_pairs']])):
         raise ValueError('Missing paired samples')
     for group in groups:
         for pair in group:
@@ -127,6 +129,7 @@ def prepare(out, base, candidate):
     builds = out / 'builds'
     builds.mkdir()
     apps = {}
+    bundle_id = 'app.porpoise.budget.' + uuid.uuid4().hex
     for label, commit in [('base', base), ('candidate', candidate)]:
         folder = builds / label
         with (out / (label + '-build.log')).open('w') as log:
@@ -146,6 +149,7 @@ def prepare(out, base, candidate):
                                     ignore=shutil.ignore_patterns('ffmpeg-8.0'))
             environment = dict(os.environ, PORPOISE_RELEASE='0', CONFIG='release', SWIFT_JOBS='2', FFMPEG_JOBS='2')
             command(['scripts/make-app.sh'], cwd=folder, log=log, env=environment)
+            isolate_bundle(folder / 'build/Porpoise.app', bundle_id, log)
         apps[label] = str(folder / 'build/Porpoise.app/Contents/MacOS/Porpoise')
     with (out / 'sender-build.log').open('w') as log:
         command(['xcrun', 'swiftc', '-O', str(HARNESS / 'Sender.swift'), '-o', str(out / 'sender')], log=log)
@@ -156,6 +160,15 @@ def prepare(out, base, candidate):
         (fixture / name).touch(exist_ok=False)
     (out / 'empty').mkdir()
     return apps
+
+
+def isolate_bundle(app, identifier, log=None):
+    # AppKit saved-state lives in a bundle namespace, independently of Settings.store.
+    info = app / 'Contents/Info.plist'
+    value = plistlib.loads(info.read_bytes())
+    value['CFBundleIdentifier'] = identifier
+    info.write_bytes(plistlib.dumps(value))
+    command(['codesign', '--force', '--sign', '-', str(app)], log=log)
 
 
 class Usage(ctypes.Structure):
@@ -218,28 +231,33 @@ def trial(app, out, sender, policy, label):
     # Avoid SDK delivery/network/account side effects: the workload owns its test defaults and fixtures.
     with (folder / 'app.log').open('w') as log:
         start = time.monotonic()
-        process = subprocess.Popen([app, str(out / 'empty')], env=environment, stdout=log, stderr=subprocess.STDOUT)
+        process = subprocess.Popen([app, '-ApplePersistenceIgnoreState', 'YES', '-NSQuitAlwaysKeepsWindows', 'NO', str(out / 'empty')], env=environment, stdout=log, stderr=subprocess.STDOUT)
         try:
             ready = folder / 'ready.json'
-            deadline = start + 120
-            while not ready.exists() and time.monotonic() < deadline:
+            deadline = start + 150
+            launch_deadline = start + 120
+            while not ready.exists() and time.monotonic() < launch_deadline:
                 if process.poll() is not None:
                     raise RuntimeError('App exited during cold launch')
                 sender.emit(channel, 'budget ' + json.dumps(dict(operation='ready', report=str(ready), expected=0)))
                 time.sleep(0.025)
+            if not ready.exists():
+                raise TimeoutError('Cold launch deadline')
             launch = time.monotonic() - start
-            context = read_reply(ready, process)
+            context = read_reply(ready, process, timeout=max(0, deadline - time.monotonic()))
             values = {'cold_launch': launch}
             for operation, metric, expected in [('listing', 'listing_100k', 100000), ('search', 'search_input', 1)]:
                 reply = folder / (operation + '.json')
                 sender.emit(channel, 'budget ' + json.dumps(dict(operation=operation, report=str(reply), expected=expected,
                                                                directory=str(out / 'fixture'))))
-                value = read_reply(reply, process)
+                value = read_reply(reply, process, timeout=max(0, deadline - time.monotonic()))
                 if (value['rows'] != expected or value['operation'] != operation or not value['visible']
                         or (value['width'], value['height'], value['mode']) != (context['width'], context['height'], context['mode'])):
                     raise ValueError('Workload or window identity mismatch')
                 values[metric] = value['seconds']
             # Let completion work settle before accounting this process's CPU, including its view timers.
+            if deadline - time.monotonic() < policy['idle_seconds'] + 1:
+                raise TimeoutError('Trial deadline before idle sampling')
             time.sleep(1)
             if process.poll() is not None:
                 raise RuntimeError('App exited before idle sampling')
@@ -267,25 +285,35 @@ def measure(out):
     prepared = json.loads((out / 'prepared.json').read_text())
     policy = prepared['policy']
     report = dict(schema=1, base=prepared['base'], candidate=prepared['candidate'], policy=policy,
-                  host=dict(os=platform.platform(), machine=platform.machine()), calibration=[], comparison=[])
-    sender = Sender(out / 'sender')
-    try:
-        for group, left, right in [('calibration', 'base', 'base'), ('comparison', 'base', 'candidate')]:
-            for index in range(policy['pairs']):
-                # Alternate AB/BA order; retain pairing and all raw samples, including failures.
-                order = [('a', left), ('b', right)] if index % 2 == 0 else [('b', right), ('a', left)]
-                pair = {}
-                for member, label in order:
-                    pair[member] = trial(prepared['apps'][label], out, sender, policy, f'{group}-{index}-{member}')
-                report[group].append(pair)
-                write_json(out / 'results.json', report)
-        results = evaluate(report, policy)
-        report['evaluation'] = results
-        write_json(out / 'results.json', report)
-        (out / 'SUMMARY.md').write_text(summary(report, results))
-        return 0 if all(row['status'] == 'pass' for row in results.values()) else 1
-    finally:
-        sender.close()
+                  host=dict(os=platform.platform(), machine=platform.machine()),
+                  runner_sha256=prepared['runner_sha256'], harness=prepared['harness'],
+                  warmup=[], calibration=[], comparison=[])
+    if (out / 'results.json').exists():
+        raise ValueError('A measurement output cannot be reused; retain it and start a declared new run')
+    capture = ROOT / '.team/artifacts/p2/review/.capture-lock'
+    capture = capture.resolve() if capture.parent.exists() else out / '.capture-lock'
+    for group, left, right in [('warmup', 'base', 'candidate'), ('calibration', 'base', 'base'), ('comparison', 'base', 'candidate')]:
+        count = policy['warmup_pairs'] if group == 'warmup' else policy['pairs']
+        for index in range(count):
+            order = [('a', left), ('b', right)] if index % 2 == 0 else [('b', right), ('a', left)]
+            pair = {}
+            print(f'{group} pair {index + 1}/{count}', flush=True)
+            for member, label in order:
+                # Timing lock is acquired first; the foreground lock is held for one bounded trial (<3 min).
+                result = subprocess.run(['/usr/bin/lockf', '-k', str(capture), sys.executable,
+                                         str(Path(__file__).resolve()), '--trial-only', prepared['apps'][label],
+                                         '--label', f'{group}-{index}-{member}', '--out', str(out)],
+                                        capture_output=True, text=True)
+                if result.returncode:
+                    raise RuntimeError('Owned trial failed: ' + result.stderr.strip())
+                pair[member] = json.loads(result.stdout)
+            report[group].append(pair)
+            write_json(out / 'results.json', report)
+    results = evaluate(report, policy)
+    report['evaluation'] = results
+    write_json(out / 'results.json', report)
+    (out / 'SUMMARY.md').write_text(summary(report, results))
+    return 0 if all(row['status'] == 'pass' for row in results.values()) else 1
 
 
 def main():
@@ -294,9 +322,20 @@ def main():
     parser.add_argument('--candidate', default='HEAD')
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--measure-only', action='store_true')
+    parser.add_argument('--trial-only', help=argparse.SUPPRESS)
+    parser.add_argument('--label', default='trial', help=argparse.SUPPRESS)
     parser.add_argument('--evaluate', type=Path, help='evaluate a retained report without building/running apps')
     args = parser.parse_args()
     out = args.out.resolve()
+    if args.trial_only:
+        prepared = json.loads((out / 'prepared.json').read_text())
+        sender = Sender(out / 'sender')
+        try:
+            values = trial(args.trial_only, out, sender, prepared['policy'], args.label)
+            print(json.dumps(values, allow_nan=False))
+            return 0
+        finally:
+            sender.close()
     if args.measure_only:
         return measure(out)
     if args.evaluate:
@@ -315,7 +354,8 @@ def main():
     out.mkdir(parents=True, exist_ok=False)
     apps = prepare(out, base, candidate)
     inputs = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in HARNESS.iterdir() if path.is_file()}
-    write_json(out / 'prepared.json', dict(base=base, candidate=candidate, policy=policy, apps=apps, harness=inputs))
+    write_json(out / 'prepared.json', dict(base=base, candidate=candidate, policy=policy, apps=apps, harness=inputs,
+                                              runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()))
     # Builds are outside the shared timing lock; -k preserves its inode across queued jobs.
     return subprocess.run(['/usr/bin/lockf', '-k', '/tmp/porpoise-gate.lock', sys.executable, str(Path(__file__).resolve()),
                            '--measure-only', '--out', str(out)]).returncode
