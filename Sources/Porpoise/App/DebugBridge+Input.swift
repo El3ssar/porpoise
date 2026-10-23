@@ -35,6 +35,7 @@ extension DebugBridge {
         "select": DebugBridge.selectCommand,
         "hit": DebugBridge.hitCommand,
         "wheel": DebugBridge.wheelCommand,
+        "divider": DebugBridge.dividerCommand,
     ]
 
     func linkCommand(_ arg: String) {
@@ -312,6 +313,66 @@ extension DebugBridge {
                 "content": \(b.strip.documentView?.frame.width ?? 0), "rest": \(b.endOrigin)}
                 """
             try? out.write(toFile: a[4], atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// The split view's divider, with synthesized mouse events through the window (so hit-testing is the real one):
+    /// `divider probe <file>`: the line's x, the panes and which view each point across the line hits (JSON);
+    /// `divider drag <x> [steps]`: presses the middle of the line and drags it to `x` (tab coordinates), then releases;
+    /// `divider down`, `divider move <x>`, `divider up <x>`: one drag over several commands (frames can be taken between);
+    /// `divider dblclick`: double-clicks the line.
+    func dividerCommand(_ arg: String) {
+        let a = arg.split(separator: " ").map(String.init)
+        guard let w = wc, let win = w.window, let sub = a.first else { return }
+        let tab = w.tab
+        let panes = tab.subviews.compactMap { $0 as? ViewContainer }.filter { !$0.isHidden }.sorted { $0.frame.minX < $1.frame.minX }
+        guard panes.count == 2 else { return }
+        let lineX = panes[0].frame.maxX
+        func send(_ type: NSEvent.EventType, _ x: CGFloat, clicks: Int = 1) {
+            let p = tab.convert(CGPoint(x: x, y: tab.bounds.midY), to: nil)
+            if let e = NSEvent.mouseEvent(
+                with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1)
+            {
+                win.sendEvent(e)
+            }
+        }
+        switch sub {
+        case "probe" where a.count == 2:
+            guard let frame = win.contentView?.superview else { return }
+            var hits: [[String: Any]] = []
+            for dx in -12...12 {
+                for (name, y) in [("top", tab.bounds.maxY - 12), ("middle", tab.bounds.midY), ("bottom", 10)] {
+                    let inWindow = tab.convert(CGPoint(x: lineX + 0.5 + CGFloat(dx), y: y), to: nil)
+                    let v = frame.hitTest(frame.superview?.convert(inWindow, from: nil) ?? inWindow)
+                    hits.append(["dx": dx, "at": name, "view": v.map { String(describing: type(of: $0)) } ?? "none"])
+                }
+            }
+            let divider = tab.subviews.lazy.compactMap { $0 as? SplitDividerView }.first
+            let out: [String: Any] = [
+                "lineX": lineX, "tabWidth": tab.bounds.width, "fraction": tab.splitShare,
+                "left": NSStringFromRect(panes[0].frame), "right": NSStringFromRect(panes[1].frame), "hits": hits,
+                "directions": divider.map { "\($0.directions)" } ?? "", "dividerWidth": divider?.frame.width ?? 0,
+            ]
+            if let d = try? JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .sortedKeys]) {
+                try? d.write(to: URL(fileURLWithPath: a[1]))
+            }
+        case "drag" where a.count >= 2:
+            guard let to = Double(a[1]).map({ CGFloat($0) }) else { return }
+            let steps = a.count > 2 ? max(1, Int(a[2]) ?? 12) : 12
+            let from = lineX + 0.5
+            send(.leftMouseDown, from)
+            for i in 1...steps { send(.leftMouseDragged, from + (to - from) * CGFloat(i) / CGFloat(steps)) }
+            send(.leftMouseUp, to)
+        case "down": send(.leftMouseDown, lineX + 0.5)
+        case "move" where a.count == 2: if let x = Double(a[1]) { send(.leftMouseDragged, CGFloat(x)) }
+        case "up" where a.count == 2: if let x = Double(a[1]) { send(.leftMouseUp, CGFloat(x)) }
+        case "dblclick":
+            send(.leftMouseDown, lineX + 0.5, clicks: 1)
+            send(.leftMouseUp, lineX + 0.5, clicks: 1)
+            send(.leftMouseDown, lineX + 0.5, clicks: 2)
+            send(.leftMouseUp, lineX + 0.5, clicks: 2)
+        default: break
         }
     }
 
