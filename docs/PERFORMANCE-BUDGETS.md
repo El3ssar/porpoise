@@ -128,7 +128,8 @@ aggregate. It compares the PR base commit (or previous main-push commit) with th
 candidate on the same runner; manual runs require a base reference. Missing builds,
 unsupported base probe APIs, incomplete workloads, invalid data and excessive noise
 fail the job. CI never substitutes an absolute latency threshold or skips a failed
-calibration. Release CI proof remains tied to the successful CI aggregate.
+calibration after its bounded recalibration budget. Release CI proof remains tied
+to the successful CI aggregate.
 
 The checked policy is `Benchmarks/PerformanceBudgets/policy.json`: seven base/base
 pairs followed by seven base/candidate pairs, alternating AB and BA order. One
@@ -158,13 +159,31 @@ presented-frame timings remain separate follow-ups. The small fixed probe avoids
 charging serialization of 100,000 filenames to listing and search. It is overlaid
 identically in owned base/candidate worktrees, never into the shipping build.
 
-For each metric, the empirical noise band is the largest symmetric A/A ratio
-`max(A2/A1, A1/A2)` observed in that run. Compare it with the median of all paired
-B/A ratios. A median beyond the recorded band fails the job; a band above 1.5 also
-fails as an unstable calibration. All individual pairs are retained, including
-outliers. No selected favorable subset, retries-to-green or CI-only absolute target
+Within each calibration round, a metric's empirical noise band is the largest
+symmetric A/A ratio `max(A2/A1, A1/A2)` across all seven pairs. Compare a valid band
+with the median of all original paired B/A ratios: a median beyond it fails the
+job. A band above 1.5 invalidates calibration and invokes the bounded retry policy
+below. All individual pairs are retained, including
+outliers. No selected favorable subset, candidate retries or CI-only absolute target
 is used. A completed output cannot be reused to overwrite a failed measurement.
 This empirical envelope is not a population confidence interval.
+
+The policy permits at most **two extra A/A rounds** when calibration is invalid.
+Each round collects all seven complete base/base pairs, in alternating order,
+under the same timing/capture locks and unchanged **1.5** cap. Only metrics still
+marked `calibration_failed` use that round; a first valid band and verdict remain
+frozen. The original seven A/B pairs are never repeated or replaced. A measured
+regression stops recalibration immediately, even if another metric is noisy; a
+regression found after a retry also fails without another attempt. Persistent
+noise after two retries fails. Missing/malformed data or workload errors fail
+rather than earning extra retries.
+
+`results.json` retains the initial samples, every complete recalibration round,
+its applied metrics/verdicts, and any interrupted round's partial pairs.
+`SUMMARY.md` reports the retry count, all applied calibration bands/statuses,
+exhaustion or a regression stop, and partial progress if interrupted. Offline
+`--evaluate` replays that history; it never invents missing calibration data.
+CI's 45-minute job bound is unchanged.
 
 Near-zero idle CPU is regularized by adding the largest measured A/A CPU difference
 to both sides before ratios are computed. This offset is recorded in results and

@@ -10,5 +10,6 @@
     "search_input",
     "idle_cpu"
   ],
-  "warmup_pairs": 1
+  "warmup_pairs": 1,
+  "maximum_recalibrations": 2
 }
