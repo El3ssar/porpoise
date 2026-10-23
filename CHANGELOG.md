@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.12.0
+
+- **Porpoise picks up where you left off.** Windows, tabs, splits, panels, view settings and scroll positions come back after a crash or a forced quit, not only after a normal quit. Folders that no longer exist are left out with a note, and servers that are offline keep their tab and connect when you open it.
+- **Workspaces.** Window › Save Workspace… (⌃⌘S) keeps a window's tabs, splits and panels under a name, and Window › Workspaces opens it again later, in this window or a new one; the command palette lists them too.
+- **Select by pattern.** Edit › Select Matching… (⇧⌘S) selects items by name pattern, extension or tag, adding to the selection or replacing it; Deselect Matching… (⌥⇧⌘S) takes them away.
+- **Servers and clouds behave alike.** One shared test suite now checks the same operations on local folders, SMB volumes, FTP, SFTP, S3, Google Drive, Dropbox, OneDrive and Box. On FTP and SFTP, a move no longer replaces an item that is already at the destination, and uploading a folder tree to Google Drive keeps its structure. Help › Location Capabilities explains what each kind of location can and can't do.
+- **Smoother motion.** Panels slide in once instead of restarting their animation, the filter no longer animates when you change folders, and hover fades match in the Applications grid and the file views.
+- **Speed is checked on every change.** Launch, listing a large folder, search and idle CPU have budgets that every change has to stay within before it ships.
+- **Crash and hang summaries stay on your Mac.** When macOS reports a crash or a hang, Porpoise keeps a short summary (no file names, paths or accounts) that Help › Export Diagnostics… includes. Nothing is sent.
+- Fixed a crash in the Folders panel when a folder was listed again while it was open.
+
 ## 0.11.0
 
 - **Calmer details.** Appearance is chosen in one place (Settings › Appearance), and the light and dark theme pickers show only under "Follow system"; empty and loading folders show a quiet symbol; the search bar's scope and mode are segmented controls; more of the app follows one type scale.
