@@ -129,9 +129,15 @@ final class FilterBar: NSView, NSSearchFieldDelegate {
         notify()
     }
 
-    func clear() {
+    /// `notifying`: false when the view sets its filter itself (going to another folder), so nothing animates first.
+    func clear(notifying: Bool = true) {
         field.stringValue = ""
         filter.text = ""
+        guard notifying else {
+            invalidLabel.isHidden = true
+            needsLayout = true
+            return
+        }
         notify()
     }
 

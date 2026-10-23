@@ -449,7 +449,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
         // A password typed into the address goes to the Keychain, never into the tab, its history or the session.
         let u = newURL.isFileURL ? newURL.standardizedFileURL : RemoteFS.storingPassword(newURL)
-        if !filterBar.isLocked { filterBar.clear(); if !Settings.shared.showFilterBarOnStartup { filterBar.isHidden = true } }
+        if !filterBar.isLocked { filterBar.clear(notifying: false); if !Settings.shared.showFilterBarOnStartup { filterBar.isHidden = true } }
         if !searchBar.isHidden { closeSearch() }
         messageBar.isHidden = true
         offlineNotice = nil
@@ -719,7 +719,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         filterBar.focus()
     }
 
-    func filterBar(_ bar: FilterBar, changed filter: NameFilter) { animatingItems { model.filter = filter } }
+    func filterBar(_ bar: FilterBar, changed filter: NameFilter) {
+        guard filter != model.filter else { return }
+        animatingItems { model.filter = filter }
+    }
 
     /// Applies a change to what's listed (filter, search results), the items gliding to their new places, the ones
     /// that went away fading out and new ones growing in.
@@ -755,7 +758,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     func filterBarClosed(_ bar: FilterBar) {
         bar.clear()
         bar.isHidden = true
-        animatingItems { model.filter = NameFilter() }
+        // Clearing glided the items back already, unless what was typed wasn't a valid filter.
+        if model.filter != NameFilter() { animatingItems { model.filter = NameFilter() } }
         needsLayout = true
         window?.makeFirstResponder(list)
     }
