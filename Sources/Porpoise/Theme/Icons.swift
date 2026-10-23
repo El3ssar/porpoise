@@ -284,18 +284,7 @@ final class Icons {
 
     /// Image for a file item: real app icons for .app bundles (Mac), otherwise the Tela icon.
     func image(for item: FileItem, size: CGFloat, selected: Bool = false) -> NSImage {
-        if Settings.shared.appearancePreferences.iconTheme == "Native macOS" {
-            // Cached like app icons: asked for on every draw (hover fades redraw at 90 Hz), and a new image each
-            // time also defeated CloudBadge's per-image cache.
-            let p = Settings.shared.appearancePreferences
-            let key = "native|\(item.url.path)|\(Int(size))|\(p.folderVariant)|\(Theme.paletteColor(.folderTint, dark: Theme.isDark).hex)" as NSString
-            if let img = cache.object(forKey: key) { return img }
-            var image = NSWorkspace.shared.icon(forFile: item.url.path)
-            if item.isBrowsableFolder { image = folderImage(image, size: size, dark: Theme.isDark) }
-            image.size = NSSize(width: size, height: size)
-            store(image, key, size: size)
-            return image
-        }
+        if Settings.shared.appearancePreferences.iconTheme == "Native macOS" { return nativeImage(for: item, size: size) }
         // Finder aliases look like their original (the view adds the link emblem).
         if item.isAliasFile, let t = aliasTarget(of: item), !t.isAliasFile { return image(for: t, size: size, selected: selected) }
         if item.isApplication || (item.isPackage && !item.isBrowsableFolder && item.fileExtension.lowercased() == "app") {
@@ -314,7 +303,8 @@ final class Icons {
             if let t = item.utType, !t.isDynamic {
                 let key = "type|\(t.identifier)|\(Int(size))"
                 if let img = cache.object(forKey: key as NSString) { return img }
-                let img = NSWorkspace.shared.icon(for: t)
+                let shared = NSWorkspace.shared.icon(for: t)
+                let img = shared.copy() as? NSImage ?? shared
                 img.size = NSSize(width: size, height: size)
                 store(img, key as NSString, size: size)
                 return img
@@ -323,6 +313,43 @@ final class Icons {
         }
         return image(name, size: size, selected: selected)
             ?? image("application-octet-stream", size: size, selected: selected) ?? NSImage()
+    }
+
+    /// The Native macOS theme: what Finder shows. A file on this Mac by its path (custom and app icons too); anything
+    /// else, a cloud or remote item with no file here, by its type: asked by path, macOS answers a blank page for it.
+    /// Cached like app icons: asked for on every draw (hover fades redraw at 90 Hz), and a new image each time also
+    /// defeated CloudBadge's per-image cache.
+    private func nativeImage(for item: FileItem, size: CGFloat) -> NSImage {
+        let p = Settings.shared.appearancePreferences
+        let local = item.url.isFileURL
+        let type = local ? nil : Self.nativeType(for: item)
+        let source = type.map { "type|\($0.identifier)" } ?? "file|\(item.url.path)"
+        let key = "native|\(source)|\(Int(size))|\(p.folderVariant)|\(Theme.paletteColor(.folderTint, dark: Theme.isDark).hex)" as NSString
+        if let img = cache.object(forKey: key) { return img }
+        var image = type.map { NSWorkspace.shared.icon(for: $0) } ?? NSWorkspace.shared.icon(forFile: item.url.path)
+        // A copy: macOS may hand out one shared image per type, and the size set below would change it everywhere.
+        image = image.copy() as? NSImage ?? image
+        if item.isBrowsableFolder { image = folderImage(image, size: size, dark: Theme.isDark) }
+        image.size = NSSize(width: size, height: size)
+        store(image, key, size: size)
+        return image
+    }
+
+    /// The type whose icon a cloud or remote item shows in the Native theme: folders the folder, Google Docs and the
+    /// like the Office document of their kind (they have no type of their own on a Mac), others their content type.
+    static func nativeType(for item: FileItem) -> UTType {
+        if item.isBrowsableFolder { return .folder }
+        if item.isWebDocument, let kind = item.contentType?.split(separator: ".").last {
+            let office = [
+                "document": "org.openxmlformats.wordprocessingml.document",
+                "spreadsheet": "org.openxmlformats.spreadsheetml.sheet",
+                "presentation": "org.openxmlformats.presentationml.presentation",
+            ]
+            if let id = office[String(kind)], let t = UTType(id) { return t }
+            return kind == "drawing" ? .image : .internetLocation
+        }
+        if let t = item.utType, !t.isDynamic { return t }
+        return .data
     }
 
     private func aliasTarget(of item: FileItem) -> FileItem? {

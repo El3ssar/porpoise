@@ -11,6 +11,7 @@ extension DebugBridge {
     /// Transfer dialogs, the activity popover and their fixtures.
     static let transfersCommands: [String: Command] = [
         "drivefixture": DebugBridge.drivefixtureCommand,
+        "dropboxfixture": DebugBridge.dropboxfixtureCommand,
         "reviewfront": DebugBridge.reviewfrontCommand,
         "transferdialog": DebugBridge.transferdialogCommand,
         "transferdialogcancel": DebugBridge.transferdialogcancelCommand,
@@ -37,6 +38,24 @@ extension DebugBridge {
                     account = try await store.connect { url in Task { _ = try? await URLSession.shared.data(from: url) } }
                 }
                 self.wc?.view.setURL(DriveLocation(accountID: account.id).url)
+                self.writeState(to: arg)
+            } catch { try? error.localizedDescription.write(toFile: arg, atomically: true, encoding: .utf8) }
+        }
+    }
+
+    /// Loopback-only Dropbox fixture, like `drivefixture`: signs in to PORPOISE_DROPBOX_FAKE and shows the account.
+    func dropboxfixtureCommand(_ arg: String) {
+        guard Settings.isTesting, TestEnvironment.dropboxFake.isSet else { return }
+        Task { @MainActor in
+            do {
+                let store = DropboxAccountStore.shared
+                let account: DropboxAccount
+                if let existing = store.accounts.first {
+                    account = existing
+                } else {
+                    account = try await store.connect { url in Task { _ = try? await URLSession.shared.data(from: url) } }
+                }
+                self.wc?.view.setURL(DropboxLocation(accountID: account.id).url)
                 self.writeState(to: arg)
             } catch { try? error.localizedDescription.write(toFile: arg, atomically: true, encoding: .utf8) }
         }
