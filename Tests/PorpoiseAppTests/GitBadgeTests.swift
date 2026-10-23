@@ -9,7 +9,12 @@ import Testing
 
 /// Real models, AppKit drawing and VoiceOver for every view mode, including the shared Column row renderer.
 @Suite(.serialized, .isolatedSettings) @MainActor struct GitBadgeTests {
-    init() { _ = NSApplication.shared }
+    init() {
+        _ = NSApplication.shared
+        #if DEBUG
+        FocusGuard.install()
+        #endif
+    }
     private func picture(_ list: ItemListView, row: Int) -> CGImage? {
         var image: CGImage?
         list.effectiveAppearance.performAsCurrentDrawingAppearance { image = list.picture(ofRow: row) }
