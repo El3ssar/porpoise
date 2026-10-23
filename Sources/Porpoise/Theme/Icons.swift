@@ -429,23 +429,25 @@ final class Icons {
     }
 
     private func nativeColourImage(_ native: NSImage, for item: FileItem, size: CGFloat) -> NSImage {
-        guard !item.isBrowsableFolder, !item.isApplication, !item.isPackage, !item.isAliasFile, !item.hasCustomIcon else { return native }
+        guard !item.isBrowsableFolder, !item.isApplication, !item.isPackage, !item.isAliasFile, !item.isSymlink, !item.hasCustomIcon else {
+            return native
+        }
         let family = Self.nativeFamily(for: item)
         guard family != .unknown else { return native }
         let type = Self.nativeType(for: item)
         let label = item.fileExtension.isEmpty ? (type.preferredFilenameExtension ?? "") : item.fileExtension
         let sourceKey = type.identifier as NSString
-        let typed = NSWorkspace.shared.icon(for: type)
         let preserve: Bool
         if let hit = nativePreservation.object(forKey: sourceKey) {
             preserve = hit.boolValue
         } else {
-            preserve = Self.hasNativeColour(typed)
+            preserve = Self.hasNativeColour(NSWorkspace.shared.icon(for: type))
             nativePreservation.setObject(NSNumber(value: preserve), forKey: sourceKey)
         }
         guard !preserve else { return native }
         let key = "native-colour|\(type.identifier)|\(label)|\(size)" as NSString
         if let hit = cache.object(forKey: key) { return hit }
+        let typed = NSWorkspace.shared.icon(for: type)
         let looks = NativeLookImages()
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { r in
             let dark = NSAppearance.currentDrawing().isDark
