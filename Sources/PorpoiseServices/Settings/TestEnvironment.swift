@@ -10,7 +10,7 @@ public enum TestEnvironment: CaseIterable, Sendable {
     case defaultsSuite, bridge, testIndexDirectory, resources, templateDir, knownHosts, forceOnboarding, updateFeed
     case cloudDemo, offlineDemo, cloudBrowser, driveFake, dropboxFake, dropboxAppKey, oneDriveFake, oneDriveClientID, googleClientID,
         googleClientSecret, boxFake, boxClientID, boxClientSecret
-    case cleanupApps, cleanupLibrary, transferDelay, transferPreparationDelay, fileDiffReadDelayMs
+    case appLibrary, cleanupApps, cleanupLibrary, transferDelay, transferPreparationDelay, fileDiffReadDelayMs
 
     /// The variable's value in `environment` (the process's own by default); always nil in a release.
     public func value(in environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
@@ -47,6 +47,7 @@ public enum TestEnvironment: CaseIterable, Sendable {
         case .boxFake: "PORPOISE_BOX_FAKE"
         case .boxClientID: "PORPOISE_BOX_CLIENT_ID"
         case .boxClientSecret: "PORPOISE_BOX_CLIENT_SECRET"
+        case .appLibrary: "PORPOISE_APP_LIBRARY"
         case .cleanupApps: "PORPOISE_CLEANUP_APPS"
         case .cleanupLibrary: "PORPOISE_CLEANUP_LIBRARY"
         case .transferDelay: "PORPOISE_TRANSFER_DELAY"
