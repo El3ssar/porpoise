@@ -19,7 +19,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     let outer = ThinSplitView()  // [full-height sidebar, main column]
     let mainColumn = MainColumnView()
     let vSplit = ThinSplitView()  // [center column, terminal]  (inside the main column)
-    let hSplit = ThinSplitView()  // [active pane, information], docked inside the active tab
+    let hSplit = ThinSplitView()  // [empty sizing space, information], behind the active pane
+    let informationSpace = NSView()
     weak var informationTab: PorpoiseTab?
     weak var lastSyncedView: ViewContainer?
     let informationMoveAnimator = Animator(name: "information.focus")

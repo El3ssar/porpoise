@@ -22,32 +22,37 @@ final class PorpoiseTab: NSView {
 
     /// The line between the panes (tests drive it).
     let handle = SplitDividerView()
-    /// The window's one inspector is docked beside the active pane, inside its share of the tab.
+    /// The inspector host is a sibling behind the file panes. Its first child is an empty sizing space: file panes
+    /// always remain direct children of the tab, preserving editors, scroll views and inline media across focus.
     private(set) var informationHost: NSSplitView?
     private(set) weak var informationPane: ViewContainer?
 
     func dockInformation(in host: NSSplitView?) {
         if informationHost === host, host == nil || informationPane === active { return }
-        if let old = informationPane, let split = informationHost {
-            let frame = split.frame
-            split.removeArrangedSubview(old)
-            old.removeFromSuperview()
-            addSubview(old, positioned: .below, relativeTo: handle)
-            old.frame = frame
-            split.removeFromSuperview()
-        }
-        informationPane = nil
+        if informationHost !== host { informationHost?.removeFromSuperview() }
         informationHost = host
+        informationPane = host == nil ? nil : active
         if let host {
-            informationPane = active
-            host.insertArrangedSubview(active, at: 0)
-            addSubview(host, positioned: .below, relativeTo: handle)
+            if host.superview !== self { addSubview(host, positioned: .below, relativeTo: primary) }
         }
         layoutPanes()
     }
 
-    private func paneHost(_ pane: ViewContainer) -> NSView {
-        informationPane === pane ? informationHost ?? pane : pane
+    /// Called after the inspector divider moves: carve its width out of the pane's slot without moving the pane
+    /// into another view hierarchy. The empty sizing space is behind it and never handles its events.
+    func layoutInformationFiles() {
+        guard let pane = informationPane, let host = informationHost, let space = host.arrangedSubviews.first else { return }
+        let frame = convert(space.frame, from: host)
+        if pane.frame != frame { pane.frame = frame }
+    }
+
+    private func placePane(_ pane: ViewContainer, in frame: CGRect) {
+        if informationPane === pane, let host = informationHost {
+            if host.frame != frame { host.frame = frame }
+            layoutInformationFiles()
+        } else if pane.frame != frame {
+            pane.frame = frame
+        }
     }
     /// Handle position as a fraction of the width, so it stays proportional when the window resizes.
     private var splitFraction: CGFloat = 0.5
@@ -132,7 +137,7 @@ final class PorpoiseTab: NSView {
         } else if let z = closing {
             (left, right) = closingOnLeft ? (z, primary) : (primary, z)
         } else {
-            paneHost(primary).frame = b
+            placePane(primary, in: b)
             handle.isHidden = true
             return
         }
@@ -140,8 +145,8 @@ final class PorpoiseTab: NSView {
         // At rest (and while dragging or resizing the window) both panes keep their minimum width; the fraction stays
         // as chosen, so the line comes back where it was when the window grows again.
         let x = slidesToEdge ? (b.width * splitFraction).rounded() : SplitLayout.lineX(fraction: splitFraction, in: b.width)
-        paneHost(left).frame = CGRect(x: 0, y: 0, width: x, height: b.height)
-        paneHost(right).frame = CGRect(x: x + line, y: 0, width: max(0, b.width - x - line), height: b.height)
+        placePane(left, in: CGRect(x: 0, y: 0, width: x, height: b.height))
+        placePane(right, in: CGRect(x: x + line, y: 0, width: max(0, b.width - x - line), height: b.height))
         handle.isHidden = false
         handle.frame = CGRect(x: x - SplitDividerView.grabMargin, y: 0, width: SplitDividerView.width, height: b.height)
         handle.directions = slidesToEdge ? .both : SplitLayout.directions(atX: x, in: b.width)
@@ -207,7 +212,6 @@ final class PorpoiseTab: NSView {
     /// Opens the second view (Dolphin F3): it slides in from the right edge to its last width (OutCubic).
     func openSplit(url: URL? = nil, animated: Bool = true, loadsWhenShown: Bool = false) {
         guard secondary == nil else { return }
-        dockInformation(in: nil)
         finishClosing()
         let s = ViewContainer(url: url ?? active.url, loadsWhenShown: loadsWhenShown && window == nil)
         s.delegate = primary.delegate
@@ -352,7 +356,6 @@ final class PorpoiseTab: NSView {
     /// Closes one view of the split (Dolphin's CloseSplitViewChoice); the closed view shrinks away (InCubic).
     func closeSplit(closeActive: Bool? = nil, animated: Bool = true) {
         guard let s = secondary else { return }
-        dockInformation(in: nil)
         missingCounterpart?.removeFromSuperview(); missingCounterpart = nil; linkedRoots = nil
         containers.forEach { $0.preservesMissingLocation = false }
         let closeSecondary: Bool
@@ -434,7 +437,7 @@ final class PorpoiseTab: NSView {
     /// Pane x-ranges in window coordinates (for aligning toolbar navigators).
     var paneRanges: [ClosedRange<CGFloat>] {
         containers.map { c in
-            let host = paneHost(c)
+            let host: NSView = informationPane === c ? informationHost ?? c : c
             let r = host.convert(host.bounds, to: nil)
             return r.minX...r.maxX
         }

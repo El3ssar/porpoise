@@ -89,6 +89,21 @@ extension MainWindowController {
     /// `toggle` flips the visibility flag(s); a sidebar change that keeps the sidebar visible just rebuilds.
     func animatePanel(_ slot: PanelSlot, show: Bool, toggle: @escaping () -> Void) {
         finishPanelSlide()
+        if slot == .information {
+            finishInformationMove()
+            if show {
+                holdPanes(for: slot)
+                toggle()
+                rebuildInformationPanel()
+                slide(slot, opening: true)
+            } else {
+                slide(slot, opening: false) {
+                    toggle()
+                    self.rebuildInformationPanel()
+                }
+            }
+            return
+        }
         if slot == .sidebar {
             let sidebarWasVisible = sidebarVisible
             toggle()
@@ -111,6 +126,14 @@ extension MainWindowController {
                 toggle(); self.rebuildPanels()
             }
         }
+    }
+
+    /// An Information toggle only changes sibling frames; rebuilding the window would detach the file panes.
+    private func rebuildInformationPanel() {
+        syncInformationPanel()
+        Settings.store.set(showInformation, forKey: "panel.info")
+        alignNavigators()
+        AppDelegate.shared.sessionChanged()
     }
 
     /// Ends the running panel slide at once, applying what it was going to apply.
@@ -204,6 +227,7 @@ extension MainWindowController {
             if resized { fitPanel(of: sv) } else if moved { savePanelSize(of: sv) }
         }
         splitStates[id] = (sv.bounds.size, panelExtent(in: sv))
+        if sv === hSplit { informationTab?.layoutInformationFiles() }
         if sv === outer { layoutToolbar(); layoutSidebar() }
         alignNavigators()
     }
@@ -259,7 +283,7 @@ extension MainWindowController {
     /// Panels keep their size when the window resizes; only the views (and the panel splits holding them) adjust.
     /// The panel splits are framed by hand, so NSSplitView's proportional resizing applies, not holding priorities.
     func splitView(_ splitView: NSSplitView, shouldAdjustSizeOfSubview view: NSView) -> Bool {
-        view === mainColumn || view === centerColumn || view === informationTab?.informationPane
+        view === mainColumn || view === centerColumn || view === informationSpace
     }
 
     /// Divider drags stay within the sizes a panel may have (see `PanelSize.dividerRange`), so the files keep room

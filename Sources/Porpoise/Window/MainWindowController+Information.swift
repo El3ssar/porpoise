@@ -34,30 +34,33 @@ extension MainWindowController {
             let copy = InformationGhost(frame: root.convert(information.bounds, from: information))
             copy.image = image
             copy.imageScaling = .scaleAxesIndependently
+            copy.setAccessibilityElement(false)
             root.addSubview(copy)
             ghost = copy
             tab.containers.forEach { $0.list.transitions.holdForPanel() }
         }
         let wasRebuilding = rebuildingPanels
-        let responder = window?.firstResponder
         rebuildingPanels = true
         defer { rebuildingPanels = wasRebuilding }
-        informationTab?.dockInformation(in: nil)
-        informationTab = nil
+        if informationTab !== owner {
+            informationTab?.dockInformation(in: nil)
+            informationTab = nil
+        }
         guard showInformation else {
             information.removeFromSuperview()
             return
         }
         informationTab = tab
-        tab.dockInformation(in: hSplit)
+        if informationSpace.superview !== hSplit { hSplit.insertArrangedSubview(informationSpace, at: 0) }
         if information.superview !== hSplit { hSplit.addArrangedSubview(information) }
+        tab.dockInformation(in: hSplit)
         hSplit.setHoldingPriority(.defaultLow, forSubviewAt: 0)
         hSplit.setHoldingPriority(.init(261), forSubviewAt: 1)
         hSplit.adjustSubviews()
         let width = hSplit.bounds.width, divider = hSplit.dividerThickness
         hSplit.setPosition(width - PanelSize.informationWidth.fitted(in: width, divider: divider) - divider, ofDividerAt: 0)
         hSplit.layoutSubtreeIfNeeded()
-        if let responder { window?.makeFirstResponder(responder) }
+        tab.layoutInformationFiles()
         information.show(hovered: nil, container: view)
         if let ghost {
             informationGhost = ghost
