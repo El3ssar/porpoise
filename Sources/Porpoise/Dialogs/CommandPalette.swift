@@ -79,11 +79,13 @@ final class CommandPalette: SecondaryWindowController, NSWindowDelegate, NSTable
                 NSApp.sendAction(selector, to: item.target, from: item)
             }
         }
-        if let owner {
-            for tool in Settings.shared.customTools where tool.placements.contains(.commandPalette) {
+        let tools = Settings.shared.customTools.filter { $0.placements.contains(.commandPalette) }
+        if let owner, !tools.isEmpty {
+            let context = owner.customToolContext
+            for tool in tools {
                 let candidate = CommandCandidate(
                     id: "tool:" + tool.id.uuidString, title: tool.name, subtitle: "Custom tool", keywords: "tool command",
-                    enabled: tool.unavailableReason(in: owner.customToolContext) == nil)
+                    enabled: tool.unavailableReason(in: context) == nil)
                 entries[candidate.id] = Entry(candidate: candidate, shortcut: tool.shortcut.display) { [weak owner] in owner?.executeCustomTool(tool)
                 }
             }

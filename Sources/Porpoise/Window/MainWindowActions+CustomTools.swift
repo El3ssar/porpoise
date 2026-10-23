@@ -8,11 +8,15 @@ extension MainWindowController {
     }
     func customToolMenu(_ placement: CustomTool.Placement) -> NSMenu {
         let menu = NSMenu(title: "Custom Tools")
-        for tool in Settings.shared.customTools where tool.placements.contains(placement) {
+        let tools = Settings.shared.customTools.filter { $0.placements.contains(placement) }
+        guard !tools.isEmpty else { return menu }
+        let context = customToolContext
+        for tool in tools {
             let item = NSMenuItem(title: tool.name, action: #selector(runCustomTool(_:)), keyEquivalent: "")
             item.representedObject = tool.id.uuidString; item.target = self
-            item.isEnabled = tool.unavailableReason(in: customToolContext) == nil
-            item.toolTip = tool.unavailableReason(in: customToolContext)
+            let reason = tool.unavailableReason(in: context)
+            item.isEnabled = reason == nil
+            item.toolTip = reason
             menu.addItem(item)
         }
         menu.autoenablesItems = true
