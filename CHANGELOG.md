@@ -11,6 +11,7 @@
 - **Speed is checked on every change.** Launch, listing a large folder, search and idle CPU have budgets that every change has to stay within before it ships.
 - **Crash and hang summaries stay on your Mac.** When macOS reports a crash or a hang, Porpoise keeps a short summary (no file names, paths or accounts) that Help › Export Diagnostics… includes. Nothing is sent.
 - Fixed a crash in the Folders panel when a folder was listed again while it was open.
+- A quick search no longer shows its spinner again after it has finished.
 
 ## 0.11.0
 
