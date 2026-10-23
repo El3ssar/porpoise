@@ -34,6 +34,7 @@ extension DebugBridge {
         "action": DebugBridge.actionCommand,
         "select": DebugBridge.selectCommand,
         "hit": DebugBridge.hitCommand,
+        "wheel": DebugBridge.wheelCommand,
     ]
 
     func linkCommand(_ arg: String) {
@@ -272,6 +273,45 @@ extension DebugBridge {
             var v = fv.hitTest(p)
             while let cur = v { chain.append(String(describing: type(of: cur))); v = cur.superview }
             try? chain.joined(separator: " < ").write(toFile: a[2], atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// wheel <line|shift>|<dx>|<dy>|<column: an index, or "focused">|<json>: scrolls over that column of the active
+    /// pane as a mouse wheel (its tilt sideways) or ⇧ and the wheel do, a frame apart, each event through the window
+    /// as AppKit routes the hardware's: to the view under the point (the pointer doesn't move). A trackpad gesture
+    /// can't be played so: AppKit pulls its next events from the trackpad itself. Writes where the columns' strip
+    /// and that column's rows were and went.
+    func wheelCommand(_ arg: String) {
+        let a = arg.components(separatedBy: "|")
+        guard a.count == 5, a[0] != "trackpad", let pane = wc?.view, let b = pane.columnBrowser, let w = pane.window,
+            let dx = Int32(a[1]), let dy = Int32(a[2])
+        else { return }
+        let shown = b.shownColumns
+        let column = Int(a[3]).flatMap { shown.indices.contains($0) ? shown[$0].view : nil } ?? pane.scroll
+        let seen = column.visibleRect
+        let inWindow = column.convert(CGPoint(x: seen.midX, y: seen.midY), to: nil)
+        let clip = b.strip.contentView, rows = (column as? NSScrollView)?.contentView
+        let from = (clip.bounds.minX, rows?.bounds.minY ?? 0)
+        let shift = a[0] == "shift"
+        // A window-less event's location reads as its point in the window: the window hit-tests it there.
+        let top = NSScreen.screens.first?.frame.maxY ?? 0
+        for i in 0..<5 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.016) {
+                let cg = CGEvent(
+                    scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: shift ? dx / 5 : dy / 5, wheel2: shift ? 0 : dx / 5,
+                    wheel3: 0)
+                cg?.location = CGPoint(x: inWindow.x, y: top - inWindow.y)
+                if shift { cg?.flags = .maskShift }
+                if let e = cg.flatMap({ NSEvent(cgEvent: $0) }) { w.sendEvent(e) }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            let out = """
+                {"kind": "\(a[0])", "dx": \(dx), "dy": \(dy), "stripFrom": \(from.0), "stripTo": \(clip.bounds.minX), \
+                "rowsFrom": \(from.1), "rowsTo": \(rows?.bounds.minY ?? 0), "visible": \(clip.bounds.width), \
+                "content": \(b.strip.documentView?.frame.width ?? 0), "rest": \(b.endOrigin)}
+                """
+            try? out.write(toFile: a[4], atomically: true, encoding: .utf8)
         }
     }
 
