@@ -31,6 +31,25 @@ public final class DirectoryModel {
     private var folderPrefetch: LocationLoad?
     private var hoverPrefetch: LocationLoad?
     private var transferObserver: NSObjectProtocol?
+    private var gitSettingsObserver: NSObjectProtocol?
+    private var gitObservation: GitStatusObservation?
+    private var gitLocation: URL?
+    public static let gitStatusChanged = Notification.Name("PorpoiseGitStatusChanged")
+    public private(set) var gitStatus: GitFolderStatus?
+
+    private func observeGit() {
+        let enabled = Settings.shared.showGitStatus && kind == .local
+        let next = enabled ? location : nil
+        guard next != gitLocation else { return }
+        gitObservation?.cancel(); gitObservation = nil
+        gitLocation = next; gitStatus = nil
+        guard let next else { return }
+        gitObservation = GitStatusService.shared.observe(next) { [weak self] status in
+            guard let self, self.gitLocation == next else { return }
+            self.gitStatus = status
+            NotificationCenter.default.post(name: Self.gitStatusChanged, object: self)
+        }
+    }
     private var incomingItems: [FileItem] = []
     public private(set) var incomingProgress: [URL: Double] = [:]
     private func updateIncoming() {
@@ -47,6 +66,7 @@ public final class DirectoryModel {
         rowPreparation?.cancel(); currentLoad?.cancel(); folderPrefetch?.cancel(); hoverPrefetch?.cancel();
         for load in childLoads.values { load.cancel() }
         if let transferObserver { NotificationCenter.default.removeObserver(transferObserver) }
+        if let gitSettingsObserver { NotificationCenter.default.removeObserver(gitSettingsObserver) }
     }
     public private(set) var location: URL
     public private(set) var items: [FileItem] = []  // top level, unsorted, including hidden
@@ -290,6 +310,12 @@ public final class DirectoryModel {
         self.location = location
         self.source = LocationContentSources.source(for: location)
         self.props = ViewStyleStore().style(for: location)
+        gitSettingsObserver = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
+            guard note.object as? String == "showGitStatus" || note.object == nil else { return }
+            guard let self else { return }
+            self.observeGit()
+            NotificationCenter.default.post(name: Self.gitStatusChanged, object: self)
+        }
         transferObserver = NotificationCenter.default.addObserver(forName: FileOperationsController.activityChanged, object: nil, queue: .main) {
             [weak self] _ in self?.updateIncoming()
         }
@@ -328,6 +354,7 @@ public final class DirectoryModel {
     public func setLocation(_ url: URL, takingListingOf lender: DirectoryModel? = nil) {
         let changed = url.standardizedFileURL != location.standardizedFileURL
         location = url
+        observeGit()
         if changed {
             loadedNotificationPending = false
             incomingItems = []; incomingProgress = [:]
@@ -465,6 +492,7 @@ public final class DirectoryModel {
     /// `changedOnly`: a change in the folder (FSEvents), not a new visit or the user's reload: item counts are taken
     /// again only for folders that changed.
     private func reload(keepSelection: Bool = true, changedOnly: Bool) {
+        observeGit()
         loadedNotificationPending = false
         cancelRowPreparation()
         currentLoad?.cancel(); currentLoad = nil

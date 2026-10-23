@@ -9,6 +9,7 @@ public final class FolderWatcher: @unchecked Sendable {
 
     private var stream: FSEventStreamRef?
     private let callback: (Set<String>) -> Void
+    private let recursive: Bool
     private let queue = DispatchQueue(label: "porpoise.fsevents", autoreleaseFrequency: .workItem)
     /// Read by the FSEvents callback on `queue` while `watch` may run on another thread.
     private let lock = NSLock()
@@ -24,7 +25,8 @@ public final class FolderWatcher: @unchecked Sendable {
         set { lock.lock(); _aliases = newValue; lock.unlock() }
     }
 
-    public init(callback: @escaping (Set<String>) -> Void) {
+    public init(recursive: Bool = false, callback: @escaping (Set<String>) -> Void) {
+        self.recursive = recursive
         self.callback = callback
         queue.setSpecific(key: Self.queueKey, value: true)
     }
@@ -48,7 +50,11 @@ public final class FolderWatcher: @unchecked Sendable {
             let me = Unmanaged<FolderWatcher>.fromOpaque(info).takeUnretainedValue()
             let arr = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] ?? []
             let map = me.aliases
-            let hits = FolderWatcher.changedFolders(Array(arr.prefix(count)), watched: Set(map.keys))
+            let events = Array(arr.prefix(count))
+            let hits =
+                me.recursive
+                ? Set(map.keys.filter { root in events.contains { $0 == root || $0.hasPrefix(root.hasSuffix("/") ? root : root + "/") } })
+                : FolderWatcher.changedFolders(events, watched: Set(map.keys))
             if !hits.isEmpty { me.callback(Set(hits.flatMap { map[$0] ?? [] })) }
         }
         stream = FSEventStreamCreate(
