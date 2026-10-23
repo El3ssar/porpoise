@@ -235,7 +235,9 @@ final class FTPProvider: RemoteProvider {
 
     func move(_ remote: [URL], into folder: URL) throws {
         for r in remote {
-            try command("RNFR \(try rel(r))", "RNTO \(try rel(folder.appendingPathComponent(r.lastPathComponent)))")
+            let target = folder.appendingPathComponent(r.lastPathComponent)
+            if try exists(target) { throw RemoteError.exists(r.lastPathComponent) }
+            try command("RNFR \(try rel(r))", "RNTO \(try rel(target))")
         }
     }
 
