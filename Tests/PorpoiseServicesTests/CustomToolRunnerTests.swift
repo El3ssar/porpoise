@@ -23,7 +23,7 @@ import Testing
         let runner = CustomToolRunner()
         #expect(throws: (any Error).self) { try runner.start(id: tools[0].id, context: context(scratch)) }
         #expect(runner.runs.isEmpty)
-        var folderTool = tools[1]; folderTool.arguments = []
+        var folderTool = tools[1]; folderTool.arguments = []; folderTool.selection = .many
         try Settings.shared.saveCustomTools([folderTool])
         let large = CustomToolContext(
             folder: scratch.url, items: Array(repeating: FileItem(url: scratch.path("item"), name: "item", isDirectory: false), count: 101))

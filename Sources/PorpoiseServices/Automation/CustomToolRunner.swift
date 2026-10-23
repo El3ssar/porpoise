@@ -35,11 +35,11 @@ import PorpoiseFileSystem
     @discardableResult public func start(id: UUID, context: CustomToolContext, value: String? = nil, confirmedLargeSelection: Bool = false) throws
         -> CustomToolRun
     {
-        guard !context.needsConfirmation || confirmedLargeSelection else {
-            throw CustomToolError.invalid("Confirm running a tool on more than 100 items first.")
-        }
         guard let tool = Settings.shared.customTools.first(where: { $0.id == id }) else {
             throw CustomToolError.invalid("This tool no longer exists.")
+        }
+        guard tool.selection == .folder || !context.needsConfirmation || confirmedLargeSelection else {
+            throw CustomToolError.invalid("Confirm running a tool on more than 100 items first.")
         }
         guard runs.filter(\.isRunning).count < 4 else { throw CustomToolError.invalid("Four tools are running. Wait for one to finish.") }
         let invocation = try tool.invocation(in: context, value: value)

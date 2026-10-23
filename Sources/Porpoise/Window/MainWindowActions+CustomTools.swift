@@ -47,7 +47,7 @@ extension MainWindowController {
             alert.window.initialFirstResponder = field
             alert.runSheet(for: self?.window) { response in if response == .alertFirstButtonReturn { run(field.stringValue) } }
         }
-        guard context.needsConfirmation else { prompt(); return }
+        guard tool.selection != .folder && context.needsConfirmation else { prompt(); return }
         let alert = NSAlert(); alert.messageText = "Run “\(tool.name)” on \(context.items.count) items?"
         alert.informativeText = "The command will receive every selected path. Changes made by custom tools cannot be undone by Porpoise."
         alert.addButton(withTitle: "Continue"); alert.addButton(withTitle: "Cancel")
