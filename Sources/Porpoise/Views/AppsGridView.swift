@@ -672,6 +672,12 @@ final class AppsGridView: NSView, NSDraggingSource {
     }
 
     override func mouseDown(with event: NSEvent) {
+        if SecondaryClick.matches(event) {
+            mouseDownPoint = nil
+            mouseDownIndex = nil
+            SecondaryClick.present(event, in: self)
+            return
+        }
         window?.makeFirstResponder(self)
         let p = convert(event.locationInWindow, from: nil)
         let i = index(at: p)
@@ -697,6 +703,7 @@ final class AppsGridView: NSView, NSDraggingSource {
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard !SecondaryClick.matches(event) else { mouseDownPoint = nil; return }
         // A plain click on one of several selected apps selects just that one.
         // The index is from mouseDown: an app installed or removed meanwhile can have changed the rows.
         if mouseDownPoint != nil, let i = mouseDownIndex, event.modifierFlags.intersection([.command, .shift]).isEmpty, event.clickCount == 1 {
@@ -713,6 +720,8 @@ final class AppsGridView: NSView, NSDraggingSource {
         guard let o = owner else { return nil }
         return o.host?.appsView(o, menuFor: i.map { model.rows[$0].item })
     }
+
+    override func rightMouseDown(with event: NSEvent) { mouseDown(with: event) }
 
     // MARK: Keyboard
 

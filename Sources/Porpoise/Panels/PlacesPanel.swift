@@ -14,6 +14,8 @@ protocol PlacesPanelDelegate: AnyObject {
 final class PlacesPanel: NSView {
     weak var delegate: PlacesPanelDelegate?
     var currentURL: URL? { didSet { needsDisplay = true } }
+    /// Highlight the menu's target while tracking, without navigating away from the current location.
+    var contextMenuURL: URL?
 
     enum Metrics {
         static let topInset: CGFloat = 4
@@ -263,7 +265,7 @@ final class PlacesPanel: NSView {
     var entryIndices: [Int] { rows.indices.filter { entry(at: $0) != nil } }
 
     func isCurrent(_ e: PlaceEntry) -> Bool {
-        guard let c = currentURL else { return false }
+        guard let c = contextMenuURL ?? currentURL else { return false }
         return e.url.standardizedFileURL == c.standardizedFileURL
     }
 }

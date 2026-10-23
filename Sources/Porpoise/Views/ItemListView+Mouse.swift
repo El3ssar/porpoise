@@ -86,6 +86,13 @@ extension ItemListView {
     var selecting: ItemSelectionController { ItemSelectionController(model: model) }
 
     override func mouseDown(with event: NSEvent) {
+        if SecondaryClick.matches(event) {
+            mouseDownIndex = nil
+            rubberStart = nil
+            rubberBand = nil
+            SecondaryClick.present(event, in: self)
+            return
+        }
         window?.makeFirstResponder(self)
         commitRename()
         let p = convert(event.locationInWindow, from: nil)
@@ -186,6 +193,7 @@ extension ItemListView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard !SecondaryClick.matches(event) else { mouseDownIndex = nil; return }
         if rubberStart != nil {
             rubberStart = nil
             rubberBand = nil
@@ -220,6 +228,8 @@ extension ItemListView {
         needsDisplay = true
         return delegate?.itemList(self, menuFor: i.map { model.rows[$0].item })
     }
+
+    override func rightMouseDown(with event: NSEvent) { mouseDown(with: event) }
 }
 
 // MARK: - Gestures (Cmd+wheel and pinch zoom, swipe back/forward)

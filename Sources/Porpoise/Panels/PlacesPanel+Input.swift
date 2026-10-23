@@ -102,6 +102,14 @@ extension PlacesPanel {
     }
 
     override func mouseDown(with event: NSEvent) {
+        if SecondaryClick.matches(event) {
+            pressed = nil
+            contextMenuURL = entry(at: rowIndex(at: convert(event.locationInWindow, from: nil)))?.url
+            needsDisplay = true
+            defer { contextMenuURL = nil; needsDisplay = true }
+            SecondaryClick.present(event, in: self)
+            return
+        }
         let p = convert(event.locationInWindow, from: nil)
         pressed = rowIndex(at: p)
         pressPoint = p
@@ -150,6 +158,7 @@ extension PlacesPanel {
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard !SecondaryClick.matches(event) else { pressed = nil; return }
         let p = convert(event.locationInWindow, from: nil)
         defer { pressed = nil }
         guard !isDraggingRow, let i = rowIndex(at: p), i == pressed else { return }
@@ -158,6 +167,8 @@ extension PlacesPanel {
         if e.isEjectable && p.x > bounds.width - Metrics.ejectHitWidth { eject(e); return }
         delegate?.places(self, open: e.url, newTab: event.modifierFlags.contains(.command), splitView: false)
     }
+
+    override func rightMouseDown(with event: NSEvent) { mouseDown(with: event) }
 
     /// Middle click opens in a new tab; other buttons (mouse back/forward) go up the responder chain.
     override func otherMouseUp(with event: NSEvent) {

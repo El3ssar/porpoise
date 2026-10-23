@@ -501,7 +501,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
 extension FoldersPanel: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        if let url = nodeURL(outline.item(atRow: outline.clickedRow)) {
+        if let url = nodeURL(outline.item(atRow: outline.contextRow ?? outline.clickedRow)) {
             let open = menu.addItem(withTitle: "Open in New Tab", action: #selector(openInTab(_:)), keyEquivalent: "")
             open.target = self; open.representedObject = url; open.image = Icons.shared.menuIcon("tab-new")
             let props = menu.addItem(withTitle: "Get Info", action: #selector(props(_:)), keyEquivalent: "")
@@ -523,6 +523,35 @@ extension FoldersPanel: NSMenuDelegate {
 /// The tree; Return opens the selected folder (arrows only move the selection, like Dolphin's panel).
 private final class FolderOutlineView: NSOutlineView {
     var onReturn: (() -> Void)?
+    var contextRow: Int?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let row = row(at: convert(event.locationInWindow, from: nil))
+        contextRow = row
+        if row >= 0, !selectedRowIndexes.contains(row) { selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false) }
+        return super.menu(for: event)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if SecondaryClick.matches(event) {
+            defer { contextRow = nil }
+            SecondaryClick.present(event, in: self)
+            return
+        }
+        contextRow = nil
+        super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard !SecondaryClick.matches(event) else { return }
+        super.mouseUp(with: event)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        defer { contextRow = nil }
+        SecondaryClick.present(event, in: self)
+    }
+
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 36 || event.keyCode == 76 { onReturn?() } else { super.keyDown(with: event) }
     }
