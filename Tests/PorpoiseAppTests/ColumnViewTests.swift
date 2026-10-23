@@ -499,4 +499,78 @@ import Testing
             }
         }
     }
+
+    /// The split view opening and closing over Column view: the panes slide over columns that keep their widths
+    /// (nothing flies between the panes, no list is laid out at another width meanwhile, so no row ever stretches), and
+    /// each pane keeps its focused column and what follows it in view as it narrows and widens.
+    @Test func splitSlidesOverColumnsWithoutStretchingThem() async throws {
+        let s = try tree()
+        let reduces = Animator.reducesMotion
+        Animator.reducesMotion = { false }
+        defer { Animator.reducesMotion = reduces }
+        // Every frame is drawn, however slow the machine.
+        FrameClock.frameStep = 1.0 / 60
+        defer { FrameClock.frameStep = nil }
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 1100, height: 600), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let tab = PorpoiseTab(url: s.url)
+        window.contentView = tab
+        tab.frame = window.contentView?.bounds ?? .zero
+        let left = tab.primary
+        try #require(await eventually { !left.model.isLoading && !left.model.rows.isEmpty })
+        left.setMode(.columns)
+        tab.layoutSubtreeIfNeeded()
+        left.setURL(s.path("A/A1"))
+        try #require(await eventually { left.model.index(of: s.path("A/A1/deep.txt")) != nil })
+        left.list.select(s.path("A/A1/deep.txt"))
+        tab.layoutSubtreeIfNeeded()
+        let b = try browser(left)
+        #expect(b.folders == [s.url, s.path("A"), s.path("A/A1")] && b.showsPreview)
+
+        /// The folders' columns' widths (the preview fills what's left), and whether the focused column and the last
+        /// one are in view.
+        func widths(_ b: ColumnBrowserView) -> [CGFloat] { b.shownColumns.filter { $0.url != nil }.map(\.view.frame.width) }
+        func endInView(_ b: ColumnBrowserView) -> Bool {
+            let shown = b.strip.contentView.bounds
+            guard let last = b.shownColumns.last?.view.frame else { return false }
+            return b.container.scroll.frame.minX >= shown.minX - 0.5 && last.minX >= shown.minX - 0.5
+                && min(last.maxX, shown.maxX) - last.minX >= min(last.width, shown.width) - 0.5
+        }
+        let before = widths(b)
+        let flights = tab.flightsLanded
+        /// Runs the slide frame by frame, checking each.
+        func slide(_ check: () -> Void) async throws {
+            let end = Date().addingTimeInterval(eventualTimeout)
+            repeat {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+                check()
+                try await Task.sleep(for: .milliseconds(5))
+            } while (tab.isSliding || tab.closing != nil) && Date() < end
+        }
+
+        tab.openSplit()
+        let right = try #require(tab.secondary)
+        var frames = 0
+        try await slide {
+            frames += 1
+            #expect(widths(b) == before)
+            #expect(right.list.layoutWidthOverride == nil && left.list.layoutWidthOverride == nil)
+        }
+        #expect(frames > 3)
+        try #require(await eventually { !right.model.rows.isEmpty })
+        tab.layoutSubtreeIfNeeded()
+        #expect(left.frame.width < 700 && widths(b) == before && endInView(b), "\(b.strip.contentView.bounds)")
+        #expect(tab.flightsLanded == flights)
+        #expect(!right.list.transitions.log.contains(.splitOpen) && !left.list.transitions.log.contains(.splitOpen))
+
+        tab.closeSplit(closeActive: true)
+        try await slide {
+            #expect(widths(b) == before && left.list.layoutWidthOverride == nil)
+        }
+        tab.layoutSubtreeIfNeeded()
+        #expect(tab.secondary == nil && tab.closing == nil && tab.flightsLanded == flights)
+        #expect(endInView(b) && b.strip.contentView.bounds.minX == 0, "the wider pane shows every column again")
+    }
 }

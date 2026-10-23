@@ -312,8 +312,12 @@ final class ColumnBrowserView: NSView {
 
     override func layout() {
         super.layout()
+        let resized = strip.frame.width != bounds.width
         strip.frame = bounds
         layoutColumns()
+        // The pane got wider or narrower (the window, a split sliding open or closed, a panel): the columns keep their
+        // widths, and the last one (or the focused one) stays in view, as in Finder.
+        if resized, !scroller.isRunning { keepEndInView() }
     }
 
     /// The x of each column's right edge (a divider follows each).
@@ -346,17 +350,8 @@ final class ColumnBrowserView: NSView {
 
     /// The last column in full view (or as much of it as fits, from its left edge), gliding there.
     func scrollToEnd() {
-        guard let last = shownColumns.last?.view else { return }
-        let clip = strip.contentView
-        let visible = clip.bounds.width
-        var target = clip.bounds.origin.x
-        if last.frame.maxX > target + visible { target = last.frame.maxX - visible }
-        // The focused column stays in view too.
-        let focused = container.scroll.frame
-        if focused.minX < target { target = focused.minX }
-        if target > last.frame.minX { target = last.frame.minX }
-        target = max(0, min(target, content.frame.width - visible))
-        let from = clip.bounds.origin.x
+        guard let target = endOffset() else { return }
+        let from = strip.contentView.bounds.origin.x
         guard abs(target - from) > 0.5 else { return }
         scroller.run(
             duration: Motion.scroll,
@@ -365,6 +360,28 @@ final class ColumnBrowserView: NSView {
                 self.strip.contentView.scroll(to: CGPoint(x: from + (target - from) * CGFloat(p), y: 0))
                 self.strip.reflectScrolledClipView(self.strip.contentView)
             })
+    }
+
+    /// Where the strip shows the last column in full (or as much of it as fits, from its left edge) with the focused
+    /// column, moving as little as it can.
+    private func endOffset() -> CGFloat? {
+        guard let last = shownColumns.last?.view else { return nil }
+        let clip = strip.contentView
+        let visible = clip.bounds.width
+        var target = clip.bounds.origin.x
+        if last.frame.maxX > target + visible { target = last.frame.maxX - visible }
+        // The focused column stays in view too.
+        let focused = container.scroll.frame
+        if focused.minX < target { target = focused.minX }
+        if target > last.frame.minX { target = last.frame.minX }
+        return max(0, min(target, content.frame.width - visible))
+    }
+
+    /// The same at once (the strip changed width under the columns).
+    private func keepEndInView() {
+        guard let target = endOffset(), abs(target - strip.contentView.bounds.origin.x) > 0.5 else { return }
+        strip.contentView.scroll(to: CGPoint(x: target, y: 0))
+        strip.reflectScrolledClipView(strip.contentView)
     }
 
     private func makeHandle() -> ColumnResizeHandle {

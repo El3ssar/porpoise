@@ -105,10 +105,9 @@ import Testing
     /// Opening the split on a pane zoomed bigger (or smaller), and closing it again: the flying copies change size
     /// smoothly from the leaving pane's to the landing pane's (never jumping at the end), and land as the very items
     /// drawn there, which show in the same frame the copies go.
-    @Test(arguments: [ViewMode.icons, .compact, .details, .columns], [true, false])
+    /// (Column view slides without flights: ColumnViewTests.splitSlidesOverColumnsWithoutStretchingThem.)
+    @Test(arguments: [ViewMode.icons, .compact, .details], [true, false])
     func flightsTurnIntoTheLandingPanesSize(mode: ViewMode, bigger: Bool) async throws {
-        // Column rows start at the smallest size: they can only be zoomed bigger.
-        if mode == .columns && !bigger { return }
         _ = NSApplication.shared
         let scratch = try Scratch(), folder = scratch.url
         let reduces = Animator.reducesMotion

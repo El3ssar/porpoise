@@ -30,6 +30,8 @@ final class PorpoiseTab: NSView {
     /// the closing pane goes once they have.
     private var closesWhenLanded = false
     private let animator = Animator(name: "split.pane")
+    /// The split view is sliding open or closed.
+    var isSliding: Bool { animator.isRunning }
     /// Copies of the left pane's items flying into the right one as the split opens.
     private var flightOverlay: SplitFlightOverlay?
     private let flightAnimator = Animator(name: "split.flight")
@@ -179,7 +181,9 @@ final class PorpoiseTab: NSView {
         // receives copies of them that fly over once it has listed its folder (its own style and order apply).
         let leftWidth = (bounds.width * Self.lastFraction).rounded()
         let rightWidth = bounds.width - leftWidth - SplitHandleView.lineWidth
-        let flies = primary.list.transitions.animates
+        // Column view: its columns keep their widths and the pane slides over them (flights would land on a list laid
+        // out at another width, and copies of its rows would stretch on the way).
+        let flies = primary.list.transitions.animates && !primary.showsColumns
         if flies {
             // Only Icons rearranges with the width; Details and Compact just follow it smoothly.
             if primary.list.mode == .icons {
@@ -214,6 +218,12 @@ final class PorpoiseTab: NSView {
     /// Opening: copies of the left pane's visible items fly to their places in `right`; its other items come in.
     private func flyItems(into right: ViewContainer) {
         let list = right.list
+        // The right pane turned out to show columns (its folder's own setting): nothing flies into them.
+        guard !right.showsColumns else {
+            openingRightWidth = nil
+            list.transitions.releaseWidth()
+            return
+        }
         guard let images = primary.list.transitions.flightPictures() else { return }
         if list.frames.count != list.model.rows.count { list.computeLayout() }
         let shown = CGRect(
@@ -324,7 +334,7 @@ final class PorpoiseTab: NSView {
         // The mirror of opening: the pane that stays is laid out at its full width at once, its items gliding to
         // their places as it grows; the closing one keeps its layout while it shrinks away, and its items fly back
         // onto the same ones in the pane that stays.
-        if primary.list.transitions.animates {
+        if primary.list.transitions.animates, !primary.showsColumns, !zombie.showsColumns {
             // Only Icons rearranges with the width; Details and Compact just follow it smoothly.
             if zombie.list.mode == .icons { zombie.list.layoutWidthOverride = zombie.list.visibleWidth }
             if primary.list.mode == .icons {
