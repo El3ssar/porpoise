@@ -18,6 +18,9 @@ final class BrowserColumn {
     weak var browser: ColumnBrowserView?
     /// The browser is changing this column's selection itself, not the user.
     private var settingPath = false
+    /// What the column shows while it has no rows: a quiet line at its top (the focused column has the pane's own).
+    let stateLabel = ColumnStateLabel()
+    private var loadingWork: DispatchWorkItem?
 
     var url: URL { model.location }
 
@@ -32,7 +35,11 @@ final class BrowserColumn {
         list.columnNavigator = browser
         ColumnBrowserView.configure(scroll, showing: list)
         scroll.setAccessibilityLabel(url.lastPathComponent)
-        model.onChange = { [weak self] in self?.list.relayout() }
+        list.addSubview(stateLabel)
+        model.onChange = { [weak self] in
+            self?.list.relayout()
+            self?.refreshState()
+        }
         model.onSelectionChanged = { [weak self] in
             guard let self else { return }
             self.list.needsDisplay = true
@@ -44,8 +51,32 @@ final class BrowserColumn {
             guard let self else { return }
             // The path item may have arrived with this listing.
             if let p = self.pathItem { self.showPath(p) }
+            self.refreshState()
         }
         if listing.map(model.takeListing) != true { model.reload() }
+        refreshState()
+    }
+
+    /// Empty, still loading (after a moment: a quick listing never flashes it) or failed: said in a quiet line, in the
+    /// pane's own words.
+    func refreshState() {
+        loadingWork?.cancel()
+        loadingWork = nil
+        guard model.rows.isEmpty else { return stateLabel.show(nil) }
+        let loading = model.isLoading && model.items.isEmpty
+        let state: ListState
+        if let e = model.loadError, !loading {
+            let missing = url.isFileURL && !FileManager.default.fileExists(atPath: url.path)
+            state = LoadErrorPresentation.error(
+                e, location: url, missing: missing, blockedByPrivacy: model.blockedByPrivacy, cloud: PlacesModel.isCloud(url))
+        } else {
+            state = LoadErrorPresentation.empty(
+                loading: loading, searching: false, searchError: nil, filtering: model.filter.isActive, trash: false)
+        }
+        guard loading, stateLabel.isHidden else { return stateLabel.show(state) }
+        let work = DispatchWorkItem { [weak self] in self?.stateLabel.show(state) }
+        loadingWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + ColumnStateLabel.loadingDelay, execute: work)
     }
 
     /// Selects `item` as the path to the next column (grey while the keys are elsewhere) and keeps it in view.
@@ -65,6 +96,7 @@ final class BrowserColumn {
     }
 
     func close() {
+        loadingWork?.cancel()
         model.onChange = nil
         model.onSelectionChanged = nil
         model.onLoaded = nil
@@ -312,51 +344,77 @@ final class ColumnBrowserView: NSView {
 
     override func layout() {
         super.layout()
+        let resized = strip.frame.width != bounds.width
         strip.frame = bounds
         layoutColumns()
+        // The pane got wider or narrower (the window, a split sliding open or closed, a panel): the columns keep their
+        // widths and follow, the last one (and the focused one) in view, then settle on a column's edge.
+        if resized, !scroller.isRunning { keepEndInView() }
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        scrollToEnd()
     }
 
     /// The x of each column's right edge (a divider follows each).
     private(set) var dividers: [CGFloat] = []
+    /// Where the strip rests: the last column (and the focused one) in view, no column cut on the left.
+    private(set) var endOrigin: CGFloat = 0
+    /// The same before it moves on to a column's edge: where it follows the pane while that changes width.
+    private var followOrigin: CGFloat = 0
+    private var settleWork: DispatchWorkItem?
 
     private func layoutColumns() {
         let h = max(0, strip.contentView.bounds.height)
+        let visible = strip.contentView.bounds.width
+        let shown = shownColumns
+        // Each column at its width, the preview at its own for now.
+        var frames: [CGRect] = []
         var x: CGFloat = 0
-        dividers = []
-        for (i, (v, url)) in shownColumns.enumerated() {
+        for (_, url) in shown {
             let w = width(of: url)
-            let isPreview = url == nil
-            // The preview takes what's left of the window when that's more than its width.
-            let fill = isPreview ? max(w, strip.contentView.bounds.width - x) : w
-            v.frame = CGRect(x: x, y: 0, width: fill, height: h)
-            x += fill
-            dividers.append(x)
-            if i < handles.count {
-                handles[i].frame = CGRect(x: x - ColumnResizeHandle.width / 2, y: 0, width: ColumnResizeHandle.width, height: h)
-                handles[i].isHidden = isPreview
-            }
-            x += 1
+            frames.append(CGRect(x: x, y: 0, width: w, height: h))
+            x += w + 1
         }
-        content.frame = CGRect(x: 0, y: 0, width: max(x, strip.contentView.bounds.width), height: h)
-        for case let s as NSScrollView in shownColumns.map(\.view) {
+        let focused = shown.firstIndex { $0.view === container.scroll }
+        (followOrigin, endOrigin) = Self.endOrigins(of: frames, focused: focused, visible: visible)
+        // The preview takes the rest of the strip where it rests.
+        if let last = frames.indices.last, shown[last].url == nil {
+            frames[last].size.width = max(frames[last].width, endOrigin + visible - frames[last].minX)
+        }
+        dividers = []
+        for (i, (v, url)) in shown.enumerated() {
+            v.frame = frames[i]
+            dividers.append(frames[i].maxX)
+            if i < handles.count {
+                handles[i].frame = CGRect(
+                    x: frames[i].maxX - ColumnResizeHandle.width / 2, y: 0, width: ColumnResizeHandle.width, height: h)
+                handles[i].isHidden = url == nil
+            }
+        }
+        content.frame = CGRect(x: 0, y: 0, width: max((frames.last?.maxX ?? 0) + 1, endOrigin + visible), height: h)
+        for case let s as NSScrollView in shown.map(\.view) {
             (s.documentView as? ItemListView)?.relayout()
         }
+        for c in before + [after].compactMap({ $0 }) where !c.stateLabel.isHidden { c.stateLabel.place() }
         content.needsDisplay = true
+    }
+
+    /// Where the strip shows the last column (as much of it as fits, from its left edge) and the focused one: as is
+    /// (`follow`), and moved on to the next column's left edge, so that none shows cut in half on the left (`rest`).
+    static func endOrigins(of frames: [CGRect], focused: Int?, visible: CGFloat) -> (follow: CGFloat, rest: CGFloat) {
+        guard let last = frames.last, last.maxX > visible else { return (0, 0) }
+        var t = last.maxX - visible
+        if let focused, frames.indices.contains(focused) { t = min(t, frames[focused].minX) }
+        t = max(0, min(t, last.minX))
+        return (t, frames.first { $0.minX >= t - 0.5 }?.minX ?? t)
     }
 
     /// The last column in full view (or as much of it as fits, from its left edge), gliding there.
     func scrollToEnd() {
-        guard let last = shownColumns.last?.view else { return }
-        let clip = strip.contentView
-        let visible = clip.bounds.width
-        var target = clip.bounds.origin.x
-        if last.frame.maxX > target + visible { target = last.frame.maxX - visible }
-        // The focused column stays in view too.
-        let focused = container.scroll.frame
-        if focused.minX < target { target = focused.minX }
-        if target > last.frame.minX { target = last.frame.minX }
-        target = max(0, min(target, content.frame.width - visible))
-        let from = clip.bounds.origin.x
+        settleWork?.cancel()
+        let from = strip.contentView.bounds.origin.x, target = endOrigin
         guard abs(target - from) > 0.5 else { return }
         scroller.run(
             duration: Motion.scroll,
@@ -365,6 +423,22 @@ final class ColumnBrowserView: NSView {
                 self.strip.contentView.scroll(to: CGPoint(x: from + (target - from) * CGFloat(p), y: 0))
                 self.strip.reflectScrolledClipView(self.strip.contentView)
             })
+    }
+
+    /// The strip changed width under the columns: they follow at once, and glide to a column's edge once it stops.
+    private func keepEndInView() {
+        if abs(followOrigin - strip.contentView.bounds.origin.x) > 0.5 {
+            strip.contentView.scroll(to: CGPoint(x: followOrigin, y: 0))
+            strip.reflectScrolledClipView(strip.contentView)
+        }
+        settleWork?.cancel()
+        guard abs(endOrigin - followOrigin) > 0.5 else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.window?.inLiveResize != true else { return }
+            self.scrollToEnd()
+        }
+        settleWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
     }
 
     private func makeHandle() -> ColumnResizeHandle {
@@ -484,6 +558,7 @@ final class ColumnBrowserView: NSView {
         focusPoll?.invalidate()
         focusPoll = nil
         previewWork?.cancel()
+        settleWork?.cancel()
     }
 }
 
@@ -552,5 +627,54 @@ final class ColumnStripContent: NSView {
         for x in browser?.dividers ?? [] where x < bounds.width {
             CGRect(x: x, y: 0, width: 1, height: bounds.height).intersection(dirty).fill()
         }
+    }
+}
+
+/// A column's quiet line while it has no rows ("Folder is empty", "Loading…", what went wrong), centred at its top,
+/// lighter than the focused column's message so the eye stays there. Clicks go through to the column.
+final class ColumnStateLabel: NSTextField {
+    static let loadingDelay: TimeInterval = 0.4
+    private(set) var state: ListState?
+
+    init() {
+        super.init(frame: .zero)
+        isEditable = false
+        isSelectable = false
+        isBordered = false
+        drawsBackground = false
+        alignment = .center
+        lineBreakMode = .byWordWrapping
+        maximumNumberOfLines = 3
+        font = .systemFont(ofSize: Tokens.FontSize.callout)
+        isHidden = true
+        setAccessibilityElement(false)
+        Theme.whenChanged(self) { [weak self] in
+            guard let self, let state = self.state else { return }
+            self.textColor = state.isError ? Theme.viewTextInactive : Theme.disabledText
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func show(_ state: ListState?) {
+        self.state = state
+        isHidden = state == nil
+        guard let state else { return }
+        stringValue = state.title
+        textColor = state.isError ? Theme.viewTextInactive : Theme.disabledText
+        setAccessibilityElement(true)
+        setAccessibilityLabel(state.title)
+        superview?.needsLayout = true
+        place()
+    }
+
+    /// Centred under the top inset of the column it's in, as wide as the column allows.
+    func place() {
+        guard let column = superview else { return }
+        let width = max(0, column.bounds.width - 24)
+        let height = cell?.cellSize(forBounds: CGRect(x: 0, y: 0, width: width, height: 200)).height ?? 16
+        frame = CGRect(x: 12, y: ItemListView.columnsTop + 10, width: width, height: ceil(height))
     }
 }

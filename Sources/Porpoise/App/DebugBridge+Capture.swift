@@ -21,6 +21,7 @@ extension DebugBridge {
         "animprobe": DebugBridge.animprobeCommand,
         "motionlog": DebugBridge.motionlogCommand,
         "reducemotion": DebugBridge.reducemotionCommand,
+        "slowmotion": DebugBridge.slowmotionCommand,
         "csnapshot": DebugBridge.csnapshotCommand,
         "winsize": DebugBridge.winsizeCommand,
         "keysnapshot": DebugBridge.keysnapshotCommand,
@@ -167,6 +168,11 @@ extension DebugBridge {
         case "off": Animator.reducesMotion = { false }
         default: Animator.reducesMotion = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
         }
+    }
+
+    /// slowmotion <factor>: every animation takes <factor> times as long (1: back to normal), so `wframes` can show it.
+    func slowmotionCommand(_ arg: String) {
+        Animator.timeScale = max(0.01, Double(arg) ?? 1)
     }
 
     /// csnapshot <png>|<title prefix or "Settings">: draws a window's views itself, so it works while the window

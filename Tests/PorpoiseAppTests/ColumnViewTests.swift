@@ -499,4 +499,127 @@ import Testing
             }
         }
     }
+
+    /// The split view opening and closing over Column view: the panes slide over columns that keep their widths
+    /// (nothing flies between the panes, no list is laid out at another width meanwhile, so no row ever stretches), and
+    /// each pane keeps its focused column and what follows it in view as it narrows and widens.
+    @Test func splitSlidesOverColumnsWithoutStretchingThem() async throws {
+        let s = try tree()
+        let reduces = Animator.reducesMotion
+        Animator.reducesMotion = { false }
+        defer { Animator.reducesMotion = reduces }
+        // Every frame is drawn, however slow the machine.
+        FrameClock.frameStep = 1.0 / 60
+        defer { FrameClock.frameStep = nil }
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 1100, height: 600), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let tab = PorpoiseTab(url: s.url)
+        window.contentView = tab
+        tab.frame = window.contentView?.bounds ?? .zero
+        let left = tab.primary
+        try #require(await eventually { !left.model.isLoading && !left.model.rows.isEmpty })
+        left.setMode(.columns)
+        tab.layoutSubtreeIfNeeded()
+        left.setURL(s.path("A/A1"))
+        try #require(await eventually { left.model.index(of: s.path("A/A1/deep.txt")) != nil })
+        left.list.select(s.path("A/A1/deep.txt"))
+        tab.layoutSubtreeIfNeeded()
+        let b = try browser(left)
+        #expect(b.folders == [s.url, s.path("A"), s.path("A/A1")] && b.showsPreview)
+
+        /// The folders' columns' widths (the preview fills what's left), and whether the focused column and the last
+        /// one are in view.
+        func widths(_ b: ColumnBrowserView) -> [CGFloat] { b.shownColumns.filter { $0.url != nil }.map(\.view.frame.width) }
+        func endInView(_ b: ColumnBrowserView) -> Bool {
+            let shown = b.strip.contentView.bounds
+            guard let last = b.shownColumns.last?.view.frame else { return false }
+            return b.container.scroll.frame.minX >= shown.minX - 0.5 && last.minX >= shown.minX - 0.5
+                && min(last.maxX, shown.maxX) - last.minX >= min(last.width, shown.width) - 0.5
+        }
+        let before = widths(b)
+        let flights = tab.flightsLanded
+        /// Runs the slide frame by frame, checking each.
+        func slide(_ check: () -> Void) async throws {
+            let end = Date().addingTimeInterval(eventualTimeout)
+            repeat {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+                check()
+                try await Task.sleep(for: .milliseconds(5))
+            } while (tab.isSliding || tab.closing != nil) && Date() < end
+        }
+
+        /// Runs the main run loop (the strip glides there) until `condition` holds.
+        func spin(until condition: () -> Bool) async throws {
+            let end = Date().addingTimeInterval(eventualTimeout)
+            while !condition(), Date() < end {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(condition())
+        }
+
+        tab.openSplit()
+        let right = try #require(tab.secondary)
+        var frames = 0
+        try await slide {
+            frames += 1
+            #expect(widths(b) == before)
+            #expect(right.list.layoutWidthOverride == nil && left.list.layoutWidthOverride == nil)
+        }
+        #expect(frames > 3)
+        try #require(await eventually { !right.model.rows.isEmpty })
+        tab.layoutSubtreeIfNeeded()
+        // Once the pane stops narrowing, the strip glides on to a column's left edge: none shows cut on the left.
+        try await spin { abs(b.strip.contentView.bounds.minX - b.endOrigin) < 0.5 }
+        let origin = b.strip.contentView.bounds.minX
+        #expect(left.frame.width < 700 && widths(b) == before && endInView(b), "\(b.strip.contentView.bounds)")
+        #expect(origin > 0 && b.shownColumns.contains { abs($0.view.frame.minX - origin) < 0.5 }, "\(origin)")
+        #expect(tab.flightsLanded == flights)
+        #expect(!right.list.transitions.log.contains(.splitOpen) && !left.list.transitions.log.contains(.splitOpen))
+
+        tab.closeSplit(closeActive: true)
+        try await slide {
+            #expect(widths(b) == before && left.list.layoutWidthOverride == nil)
+        }
+        tab.layoutSubtreeIfNeeded()
+        try await spin { abs(b.strip.contentView.bounds.minX - b.endOrigin) < 0.5 }
+        #expect(tab.secondary == nil && tab.closing == nil && tab.flightsLanded == flights)
+        #expect(endInView(b) && b.strip.contentView.bounds.minX == 0, "the wider pane shows every column again")
+    }
+
+    /// Where the strip rests: at 0 while everything fits; else the last column in view from its left edge, with the
+    /// focused one, on a column's left edge (never one cut in half on the left).
+    @Test func theStripRestsOnAColumnsEdge() {
+        let cols = (0..<4).map { CGRect(x: CGFloat($0) * 201, y: 0, width: 200, height: 400) }
+        #expect(ColumnBrowserView.endOrigins(of: cols, focused: 3, visible: 900) == (0, 0))
+        // 803 wide in 500: following, the last column's right edge at the strip's (303); resting, on the third column's edge.
+        #expect(ColumnBrowserView.endOrigins(of: cols, focused: 3, visible: 500) == (303, 402))
+        // The focused column (the second) stays in view: the strip doesn't go past its left edge.
+        #expect(ColumnBrowserView.endOrigins(of: cols, focused: 1, visible: 500) == (201, 201))
+        // Narrower than the last column: its left edge.
+        #expect(ColumnBrowserView.endOrigins(of: cols, focused: 3, visible: 150) == (603, 603))
+    }
+
+    /// A column with nothing in it says so in a quiet line at its top (the focused one has the pane's own message),
+    /// which never takes a click; one with rows doesn't.
+    @Test func anEmptyColumnSaysSoQuietly() async throws {
+        let s = try tree()
+        let (pane, window, _) = try await pane(s.url)
+        defer { window.close() }
+        let b = try browser(pane)
+        pane.list.select(s.path("B"))
+        let empty = try #require(b.after)
+        #expect(await eventually { !empty.model.isLoading && !empty.stateLabel.isHidden })
+        #expect(empty.stateLabel.stringValue == "Folder is empty" && empty.stateLabel.state?.isError == false)
+        #expect(empty.stateLabel.superview === empty.list && empty.stateLabel.frame.minY > ItemListView.columnsTop)
+        #expect(empty.stateLabel.frame.width > 0 && empty.stateLabel.frame.maxX <= empty.list.bounds.width)
+        #expect(empty.stateLabel.hitTest(CGPoint(x: empty.stateLabel.frame.midX, y: empty.stateLabel.frame.midY)) == nil)
+
+        pane.list.select(s.path("A"))
+        let full = try #require(b.after)
+        #expect(await eventually { full.model.rows.count == 2 })
+        #expect(full.stateLabel.isHidden)
+    }
 }
