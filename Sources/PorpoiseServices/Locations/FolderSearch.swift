@@ -36,6 +36,8 @@ final class FolderSearch: @unchecked Sendable {
     /// The first line containing the text, for each file found by its contents.
     private var snippets: [URL: String] = [:]
     private var flushPending = false
+    /// Completion or fallback is terminal: a previously scheduled batch must not restart progress.
+    private var completed = false
     /// Folders known to be packages (or not), so each is asked once.
     private var isPackage: [String: Bool] = [:]
     /// Parent-directory policy for physical content reads. Resolve each shared parent once, before opening text.
@@ -266,14 +268,19 @@ final class FolderSearch: @unchecked Sendable {
     private func flush(done: Bool) {
         let (items, lines, cancelled) = lock.withLock {
             flushPending = false
-            return (found, snippets, stopped && !done)
+            let cancelled = completed || (stopped && !done)
+            if done && !cancelled { completed = true }
+            return (found, snippets, cancelled)
         }
-        if !cancelled || done { update(items, lines, done) }
+        if !cancelled { update(items, lines, done) }
     }
 
     private func finish() {
-        if lock.withLock({ stopped && found.count < limit }) { return }  // stopped from outside: nothing more to say
-        if lock.withLock({ failed }), let onFailure { return onFailure() }
+        if lock.withLock({ completed || (stopped && found.count < limit) }) { return }  // stopped from outside: nothing more to say
+        if lock.withLock({ failed }), let onFailure {
+            lock.withLock { completed = true }
+            return onFailure()
+        }
         flush(done: true)
     }
 }
