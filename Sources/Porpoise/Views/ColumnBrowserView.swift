@@ -316,42 +316,72 @@ final class ColumnBrowserView: NSView {
         strip.frame = bounds
         layoutColumns()
         // The pane got wider or narrower (the window, a split sliding open or closed, a panel): the columns keep their
-        // widths, and the last one (or the focused one) stays in view, as in Finder.
+        // widths and follow, the last one (and the focused one) in view, then settle on a column's edge.
         if resized, !scroller.isRunning { keepEndInView() }
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        scrollToEnd()
     }
 
     /// The x of each column's right edge (a divider follows each).
     private(set) var dividers: [CGFloat] = []
+    /// Where the strip rests: the last column (and the focused one) in view, no column cut on the left.
+    private(set) var endOrigin: CGFloat = 0
+    /// The same before it moves on to a column's edge: where it follows the pane while that changes width.
+    private var followOrigin: CGFloat = 0
+    private var settleWork: DispatchWorkItem?
 
     private func layoutColumns() {
         let h = max(0, strip.contentView.bounds.height)
+        let visible = strip.contentView.bounds.width
+        let shown = shownColumns
+        // Each column at its width, the preview at its own for now.
+        var frames: [CGRect] = []
         var x: CGFloat = 0
-        dividers = []
-        for (i, (v, url)) in shownColumns.enumerated() {
+        for (_, url) in shown {
             let w = width(of: url)
-            let isPreview = url == nil
-            // The preview takes what's left of the window when that's more than its width.
-            let fill = isPreview ? max(w, strip.contentView.bounds.width - x) : w
-            v.frame = CGRect(x: x, y: 0, width: fill, height: h)
-            x += fill
-            dividers.append(x)
-            if i < handles.count {
-                handles[i].frame = CGRect(x: x - ColumnResizeHandle.width / 2, y: 0, width: ColumnResizeHandle.width, height: h)
-                handles[i].isHidden = isPreview
-            }
-            x += 1
+            frames.append(CGRect(x: x, y: 0, width: w, height: h))
+            x += w + 1
         }
-        content.frame = CGRect(x: 0, y: 0, width: max(x, strip.contentView.bounds.width), height: h)
-        for case let s as NSScrollView in shownColumns.map(\.view) {
+        let focused = shown.firstIndex { $0.view === container.scroll }
+        (followOrigin, endOrigin) = Self.endOrigins(of: frames, focused: focused, visible: visible)
+        // The preview takes the rest of the strip where it rests.
+        if let last = frames.indices.last, shown[last].url == nil {
+            frames[last].size.width = max(frames[last].width, endOrigin + visible - frames[last].minX)
+        }
+        dividers = []
+        for (i, (v, url)) in shown.enumerated() {
+            v.frame = frames[i]
+            dividers.append(frames[i].maxX)
+            if i < handles.count {
+                handles[i].frame = CGRect(
+                    x: frames[i].maxX - ColumnResizeHandle.width / 2, y: 0, width: ColumnResizeHandle.width, height: h)
+                handles[i].isHidden = url == nil
+            }
+        }
+        content.frame = CGRect(x: 0, y: 0, width: max((frames.last?.maxX ?? 0) + 1, endOrigin + visible), height: h)
+        for case let s as NSScrollView in shown.map(\.view) {
             (s.documentView as? ItemListView)?.relayout()
         }
         content.needsDisplay = true
     }
 
+    /// Where the strip shows the last column (as much of it as fits, from its left edge) and the focused one: as is
+    /// (`follow`), and moved on to the next column's left edge, so that none shows cut in half on the left (`rest`).
+    static func endOrigins(of frames: [CGRect], focused: Int?, visible: CGFloat) -> (follow: CGFloat, rest: CGFloat) {
+        guard let last = frames.last, last.maxX > visible else { return (0, 0) }
+        var t = last.maxX - visible
+        if let focused, frames.indices.contains(focused) { t = min(t, frames[focused].minX) }
+        t = max(0, min(t, last.minX))
+        return (t, frames.first { $0.minX >= t - 0.5 }?.minX ?? t)
+    }
+
     /// The last column in full view (or as much of it as fits, from its left edge), gliding there.
     func scrollToEnd() {
-        guard let target = endOffset() else { return }
-        let from = strip.contentView.bounds.origin.x
+        settleWork?.cancel()
+        let from = strip.contentView.bounds.origin.x, target = endOrigin
         guard abs(target - from) > 0.5 else { return }
         scroller.run(
             duration: Motion.scroll,
@@ -362,26 +392,20 @@ final class ColumnBrowserView: NSView {
             })
     }
 
-    /// Where the strip shows the last column in full (or as much of it as fits, from its left edge) with the focused
-    /// column, moving as little as it can.
-    private func endOffset() -> CGFloat? {
-        guard let last = shownColumns.last?.view else { return nil }
-        let clip = strip.contentView
-        let visible = clip.bounds.width
-        var target = clip.bounds.origin.x
-        if last.frame.maxX > target + visible { target = last.frame.maxX - visible }
-        // The focused column stays in view too.
-        let focused = container.scroll.frame
-        if focused.minX < target { target = focused.minX }
-        if target > last.frame.minX { target = last.frame.minX }
-        return max(0, min(target, content.frame.width - visible))
-    }
-
-    /// The same at once (the strip changed width under the columns).
+    /// The strip changed width under the columns: they follow at once, and glide to a column's edge once it stops.
     private func keepEndInView() {
-        guard let target = endOffset(), abs(target - strip.contentView.bounds.origin.x) > 0.5 else { return }
-        strip.contentView.scroll(to: CGPoint(x: target, y: 0))
-        strip.reflectScrolledClipView(strip.contentView)
+        if abs(followOrigin - strip.contentView.bounds.origin.x) > 0.5 {
+            strip.contentView.scroll(to: CGPoint(x: followOrigin, y: 0))
+            strip.reflectScrolledClipView(strip.contentView)
+        }
+        settleWork?.cancel()
+        guard abs(endOrigin - followOrigin) > 0.5 else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.window?.inLiveResize != true else { return }
+            self.scrollToEnd()
+        }
+        settleWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
     }
 
     private func makeHandle() -> ColumnResizeHandle {
@@ -501,6 +525,7 @@ final class ColumnBrowserView: NSView {
         focusPoll?.invalidate()
         focusPoll = nil
         previewWork?.cancel()
+        settleWork?.cancel()
     }
 }
 

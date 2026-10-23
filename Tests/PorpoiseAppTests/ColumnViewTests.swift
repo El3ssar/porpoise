@@ -550,6 +550,16 @@ import Testing
             } while (tab.isSliding || tab.closing != nil) && Date() < end
         }
 
+        /// Runs the main run loop (the strip glides there) until `condition` holds.
+        func spin(until condition: () -> Bool) async throws {
+            let end = Date().addingTimeInterval(eventualTimeout)
+            while !condition(), Date() < end {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(condition())
+        }
+
         tab.openSplit()
         let right = try #require(tab.secondary)
         var frames = 0
@@ -561,7 +571,11 @@ import Testing
         #expect(frames > 3)
         try #require(await eventually { !right.model.rows.isEmpty })
         tab.layoutSubtreeIfNeeded()
+        // Once the pane stops narrowing, the strip glides on to a column's left edge: none shows cut on the left.
+        try await spin { abs(b.strip.contentView.bounds.minX - b.endOrigin) < 0.5 }
+        let origin = b.strip.contentView.bounds.minX
         #expect(left.frame.width < 700 && widths(b) == before && endInView(b), "\(b.strip.contentView.bounds)")
+        #expect(origin > 0 && b.shownColumns.contains { abs($0.view.frame.minX - origin) < 0.5 }, "\(origin)")
         #expect(tab.flightsLanded == flights)
         #expect(!right.list.transitions.log.contains(.splitOpen) && !left.list.transitions.log.contains(.splitOpen))
 
@@ -570,7 +584,21 @@ import Testing
             #expect(widths(b) == before && left.list.layoutWidthOverride == nil)
         }
         tab.layoutSubtreeIfNeeded()
+        try await spin { abs(b.strip.contentView.bounds.minX - b.endOrigin) < 0.5 }
         #expect(tab.secondary == nil && tab.closing == nil && tab.flightsLanded == flights)
         #expect(endInView(b) && b.strip.contentView.bounds.minX == 0, "the wider pane shows every column again")
+    }
+
+    /// Where the strip rests: at 0 while everything fits; else the last column in view from its left edge, with the
+    /// focused one, on a column's left edge (never one cut in half on the left).
+    @Test func theStripRestsOnAColumnsEdge() {
+        let cols = (0..<4).map { CGRect(x: CGFloat($0) * 201, y: 0, width: 200, height: 400) }
+        #expect(ColumnBrowserView.endOrigins(of: cols, focused: 3, visible: 900) == (0, 0))
+        // 803 wide in 500: following, the last column's right edge at the strip's (303); resting, on the third column's edge.
+        #expect(ColumnBrowserView.endOrigins(of: cols, focused: 3, visible: 500) == (303, 402))
+        // The focused column (the second) stays in view: the strip doesn't go past its left edge.
+        #expect(ColumnBrowserView.endOrigins(of: cols, focused: 1, visible: 500) == (201, 201))
+        // Narrower than the last column: its left edge.
+        #expect(ColumnBrowserView.endOrigins(of: cols, focused: 3, visible: 150) == (603, 603))
     }
 }
