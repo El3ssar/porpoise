@@ -121,128 +121,148 @@ and split reflow. Screenshots, successful input, timer gaps and bridge command
 throughput do not establish presented-frame cadence. Keep this follow-up open until
 its frame trace demonstrates the strict budget.
 
-## CI app budgets: latency ratios and an idle CPU ceiling
+## CI app budgets: paired latency and candidate-only idle
 
-`performance-budgets` is a required dependency of CI's existing `build-and-test`
-aggregate. It compares the PR base commit (or previous main-push commit) with the
-candidate on the same runner; manual runs require a base reference. Missing builds,
-unsupported base probe APIs, incomplete workloads, invalid data and excessive latency noise
-fail the job. CI never substitutes an absolute latency threshold or skips a failed
-calibration after its bounded recalibration budget. Release CI proof remains tied
-to the successful CI aggregate.
+`performance-budgets` is required by CI's existing `build-and-test` aggregate.
+It compares the PR base (or previous main-push commit) with the candidate on the
+same runner. Missing builds, unsupported probe APIs, incomplete workloads,
+invalid data and unstable latency calibration fail the job. Release CI proof
+remains tied to the successful aggregate.
 
-The checked policy is `Benchmarks/PerformanceBudgets/policy.json`: seven base/base
-pairs followed by seven base/candidate pairs, alternating AB and BA order. One
-fixed, unscored base/candidate warmup pair precedes calibration; both complete
-workloads and all warmup results are retained. Each scored launch still uses a new
-process. This declares warm OS caches, not a disk-cold launch measurement. Both
-apps are optimized local/test-hook builds, with the exact same fixed probe from
-`BridgeProbe.swift`, same 100,000 empty-file fixture, 1180x760 content area, Details
-view, search text, fresh isolated defaults, and OS/toolchain. Compilation, downloads
-and fixture setup finish before the shared `lockf -k /tmp/porpoise-gate.lock`.
+The checked protocol is `Benchmarks/PerformanceBudgets/policy.json`, schema 2:
+
+- **Latency:** one fixed unscored base/candidate warmup pair, seven base/base
+  calibration pairs, then seven base/candidate comparison pairs. Within every
+  group, pair order alternates AB and BA. All results are retained.
+- **Idle:** a separate fixed cohort of **three candidate processes only**. Each
+  completes the same fixture setup and search, settles for one second, then
+  observes **three five-second CPU windows**. Each trial scores its median;
+  the idle gate scores the median of all three trials. No idle A/A or B/A
+  measurement, warmup, recalibration or replacement cohort is collected.
+- **Retries:** at most two additional complete seven-pair A/A rounds for unstable
+  latency metrics. Their original A/B measurements are fixed; first valid
+  verdicts freeze. Any primary regression stops retries immediately.
+
+A normal run launches 30 latency processes and3 idle processes. With both retry
+rounds it launches 58 latency processes and the same 3 idle processes. Only the
+three idle processes take CPU windows: **45 seconds total**, compared with the
+previous protocol's30–58 minutes of windows. The seven latency pairs and two-round
+bound remain: the retained hosted run 39941766200 needed one search recalibration
+(initial band 1.5541, then 1.3272). There is no evidence to justify discarding pairs
+or selecting a shorter favorable subset. Runtime savings come from separating
+workloads and reusing verified build inputs.
+
+Both apps use the exact same fixed nonshipping `BridgeProbe.swift`, 100,000 empty
+files, 1180x760 requested content area, Details view, search text, fresh isolated
+defaults and toolchain. Each scored launch is a new process with normal warm OS
+caches; disk caches are not flushed. Actual visibility, window geometry, rows and
+mode are checked and retained.
 
 | Metric | Measured boundary |
 |---|---|
-| `cold_launch` | Fresh process spawn to an empty browser ready for input, including fixed window/mode setup and bounded IPC polling. This is process-cold; OS caches are not flushed. |
-| `listing_100k` | Navigation input through 100,000 committed model rows and synchronous layout/draw flush. |
-| `search_input` | Text-edit notification through the normal search debounce and the one expected result, with synchronous layout/draw flush. |
-| `idle_cpu` | Median of three fixed 20-second windows of owned process user+system CPU seconds / actual elapsed seconds, after search completion and one second of settling. |
+| `cold_launch` | Process spawn to an empty browser ready for input, including fixed window/mode setup and bounded IPC polling. |
+| `listing_100k` | Navigation through 100,000 committed rows and synchronous layout/draw flush. |
+| `search_input` | Text-edit notification through normal debounce and the first expected visible result, with synchronous layout/draw flush. The recorded duration freezes there; unscored teardown waits for terminal search completion so no worker is abandoned when the process exits. |
+| `idle_cpu` | Candidate-only median core fraction after the same listing/search setup and terminal search completion; three fixed five-second windows per process, three processes. |
 
-The process uses a unique test defaults domain, channel and temporary directory per
-trial, plus a private shared bundle identifier for both apps in that run and
-process flags disabling AppKit saved-window restoration. The timing lock is taken
-before the foreground capture lock; each capture lock covers one bounded trial
-(150 seconds plus bounded cleanup), and is released between trials. Real accounts, operator settings, helper installation and production index
-roots are excluded. This makes a repeatable regression workload; idle CPU does not
-certify production energy use after an hour. That longer observation and attended
-presented-frame timings remain separate follow-ups. The small fixed probe avoids
-charging serialization of 100,000 filenames to listing and search. It is overlaid
-identically in owned base/candidate worktrees, never into the shipping build.
+Latency-only processes exit after the search worker completes and never sample
+CPU or sleep for idle. Idle processes retain setup replies but do not contribute
+extra scored latency samples. Compilation, downloads, fixture setup and app
+staging finish before `lockf -k /tmp/porpoise-gate.lock`. Each bounded trial takes
+the capture lock under the timing lock and releases it before the next trial.
+Only saved owned PIDs and their private defaults/scratch state are cleaned up.
+Real accounts, operator settings, helper installation and production index roots
+are excluded.
 
-For cold launch, listing and search, each calibration round's empirical noise band is the largest
-symmetric A/A ratio `max(A2/A1, A1/A2)` across all seven pairs. Compare a valid band
-with the median of all original paired B/A ratios: a median beyond it fails the
-job. A band above 1.5 invalidates calibration and invokes the bounded retry policy
-below. All individual pairs are retained, including
-outliers. No selected favorable subset or candidate retries are used for these latency gates. A completed output cannot be reused to overwrite a failed measurement.
-This empirical envelope is not a population confidence interval.
+### Latency calibration
 
-The policy permits at most **two extra A/A rounds** when latency calibration is invalid.
-Each round collects all seven complete base/base pairs, in alternating order,
-under the same timing/capture locks and unchanged **1.5** cap. Only metrics still
-marked `calibration_failed` use that round (the three latency metrics); a first valid band and verdict remain
-frozen. The original seven A/B pairs are never repeated or replaced. A measured
-regression stops recalibration immediately, even if another metric is noisy; a
-regression found after a retry also fails without another attempt. Persistent
-noise after two retries fails. Missing/malformed data or workload errors fail
-rather than earning extra retries.
+For cold launch, listing and search, the empirical noise band is the largest
+symmetric A/A ratio `max(A2/A1,A1/A2)` across all seven pairs. A band above **1.5**
+invalidates calibration. A valid band gates the median of the original seven
+paired B/A ratios; a median beyond the band fails. Every pair, including outliers,
+is retained. This empirical envelope is not a population confidence interval.
+Persistent noise after two retries fails. A valid regression cannot be erased by
+recalibrating or repeating candidate measurements. Partial retry data is retained
+but never treated as a complete pass.
 
-`results.json` retains the initial samples, every complete recalibration round,
-its applied metrics/verdicts, and any interrupted round's partial pairs.
-`SUMMARY.md` reports the retry count, all applied calibration bands/statuses,
-exhaustion or a regression stop, and partial progress if interrupted. Offline
-`--evaluate` replays that history; it never invents missing calibration data.
-CI's job bound is 90 minutes to cover the fixed 60-second idle observation in each trial, including up to two recalibration rounds. The individual 150-second trial deadline and bounded per-trial capture lock are unchanged.
+### Idle ceiling and accounting
 
-Idle accounting reads `proc_pid_rusage` user/system counters and converts Mach absolute
-time units with `mach_timebase_info` before dividing by actual monotonic wall time.
-Every trial always observes all three 20-second windows and scores their median,
-without replacing windows or adapting their length to an observed result. This
-measures sustained idle activity and reduces sensitivity to one sporadic burst;
-it does not enforce a peak-CPU budget. A sustained increase affects the median
-and can cross the explicit ceiling below. The other three metric boundaries
-and their statistical gates are unchanged.
-
-Each trial's `idle.json` retains all raw starting/ending CPU counters, timebase,
-CPU/wall seconds, individual ratios, wakeup deltas, and host load averages at both
-ends of every window. Partial traces survive a sampling failure; an incomplete
-trace cannot produce a metric or a passing trial. Load and wakeup telemetry aid
-diagnosis; they never exclude a sample or alter its score. Older artifacts used
-one 15-second interval and incorrectly labeled Mach ticks as nanoseconds; their
-same-host dimensionless ratios remain valid, but their absolute CPU numbers
-must not be treated as CPU seconds without applying that host's timebase.
-
-### Idle CPU gate: explicit absolute ceiling
-
-`idle_cpu_ceiling` is **0.005 core: 0.5% of one CPU core**. The candidate median
-across all seven A/B trials fails only when it exceeds that ceiling; equality
-passes. Each trial still uses the median of its three fixed 20-second windows.
-This is a sustained isolated-window regression workload, not a peak-CPU or
-one-hour production energy certification. Every sample is retained.
-
-The ceiling is explicit because hosted samples are very close to zero. In run
-39926875938 the candidate median was 0.000505 core (0.0505%), while the initial
-and two repeated idle calibration bands were 1.6780, 1.5977 and 1.7585. All three
-latency metrics eventually passed. A ratio of such tiny CPU values remained
-unstable despite longer repeated windows. The 0.5% ceiling is about ten times
-that candidate median and several times the observed typical trial values
-(roughly 0.0001–0.0013 core); it leaves room for sporadic runner work while failing
-a sustained half-percent-of-core workload. It is a policy choice for this fixture,
+`idle_cpu_ceiling` is **0.005 core, or 0.5% of one CPU core**. A candidate cohort
+median at or below it passes; one above it fails, independently of baseline CPU.
+The ceiling was chosen explicitly from corrected-unit hosted samples: run
+39926875938's 58 trial medians ranged 0.000109–0.001343 core, with candidate median
+0.000505 core. Relative idle calibration still failed after two retries. Run
+39941766200 then passed its absolute gate at 0.000223 core (0.0223%), despite an
+advisory relative band 1.9108. These establish the ceiling's baseline context,
 not a hardware-independent production energy target.
 
-Idle B/A ratios and A/A bands remain in the report **as advisory diagnostics**.
-Near-zero relative values still add the largest measured A/A CPU difference to
-both sides. An idle ratio regression or band above 1.5 cannot fail the current
-idle gate or trigger recalibration. The report records both the absolute gate
-verdict and the advisory relative verdict, including undefined relative ratios
-against an all-zero baseline. Latency ratios retain their unchanged **1.5** cap.
-Missing, nonfinite, negative or malformed CPU data and failed workloads still fail
-validation. Older retained policies without `idle_cpu_ceiling` keep their historical
-relative idle verdicts when replayed; they are not retroactively labeled passing.
+The current shorter cohort is justified by the absolute gate: it needs a small
+fixed candidate observation, not dozens of paired near-zero ratios. Three
+processes and three windows per process retain a median's resistance to a single
+sporadic burst while sampling independent process lifetimes. All samples are
+retained, counts/durations never adapt to their values, and an over-budget cohort
+cannot be replaced. This is sustained isolated-window CPU, not peak CPU,
+presented-frame timing or an hour-long production energy certification.
 
-`results.json`, `prepared.json`, raw per-trial replies, logs, and `SUMMARY.md` record
-commits, harness hashes, policy, host and all measurements. A partial or timed-out
-run is retained as failure evidence. `python3 scripts/test-performance-budgets.py`
-includes a synthetic slowdown that must make the actual CLI exit 1, plus unchanged,
-improved, noisy, zero-CPU and malformed-input cases.
+Accounting reads owned-process `proc_pid_rusage` user/system Mach counters and
+converts with `mach_timebase_info`, then divides CPU seconds by actual monotonic
+wall seconds. Each idle trial's `idle.json` retains all starting/ending counters,
+timebase, elapsed/CPU seconds, individual ratios, wakeup deltas and host load
+before/after every window. Interrupted prefixes cannot produce a passing metric.
+NaN, infinity, negative, missing and malformed samples fail validation even when
+an aggregate would otherwise ignore them.
 
-Run locally (builds are outside the shared timing gate):
+### Build reuse and runtime bound
+
+One newly owned detached worktree at `builds/working` builds base then candidate.
+SwiftPM's normal incremental dependency checks reuse unchanged artifacts at the
+same path and flags. An unchanged fixed-probe overlay keeps its mtime; a changed
+tracked bridge is restored only after verifying the owned overlay, then checked
+out and instrumented again. Unexpected source/overlay mutations fail preparation.
+No reset/clean operation touches another checkout.
+
+Each completed app is copied to a **separate staged snapshot**, `apps/base.app`
+or `apps/candidate.app`, with symlinks preserved. Both receive the same private
+bundle identifier and are independently signed/verified. `preparation.json`
+records source commit/tree, overlay and executable hashes and stage durations.
+Candidate compilation cannot overwrite the staged base; failed/mutated builds
+cannot fall back to it. Actual builds always run for both revisions—cache reuse
+never substitutes a labeled base executable for a failed candidate.
+
+CI restores the same approved ffmpeg cache used by other jobs, keyed by OS,
+architecture, upstream source, build identity and script hashes. Every hit is
+verified by `scripts/build-ffmpeg.sh`; checksum, identity and license files travel
+with the binary. Missing/stale entries rebuild. Signing, fixture creation and all
+compilation remain outside the measurement locks.
+
+The target is **under 20 minutes typical and under 30 with retries**. The job has a
+**30-minute bound**, with the comparison step limited to 27 minutes so summary and
+artifact retention have cleanup time. The prior run spent 69 minutes, including
+44 minutes of idle windows and about 16.8 minutes of preparation. The new protocol
+removes repeated idle waits, shares the incremental build workspace and restores
+verified tool inputs; hosted duration must still be measured on the new source.
+
+### Retained evidence and replay
+
+Schema2 reports contain latency-only paired samples plus a separate
+`idle_samples` candidate cohort. Summary CPU ratio/calibration cells are `n/a`;
+the absolute median and ceiling are explicit. `results.json` retains all groups,
+raw metrics, applied calibration history and partial failures. `prepared.json`,
+`preparation.json`, build logs, per-trial replies and `SUMMARY.md` retain source,
+harness, policy, host, app identity and timing evidence.
+
+Offline `--evaluate` validates and replays a report's **recorded policy**, not the
+current default policy. Supported schema 1 reports keep their historical combined
+samples, relative/advisory idle verdicts and retry history. They are never silently
+converted into candidate-only measurements or relabeled as a fresh hosted run.
+An incomplete/mixed schema fails, and an existing measurement output cannot be
+reused to overwrite failure evidence.
+
+Run locally with a new output directory:
 
 ```sh
 python3 scripts/performance-budgets.py --base BASE_SHA --out "$PWD/build/performance-example"
 ```
 
-The output directory must be new. Its nested `builds/base` and `builds/candidate`
-worktrees are owned by that run and retained for inspection. Do not reuse their
-build directories concurrently. Raw results are local/CI artifacts; no binary or
-report is published to users automatically.
+The staged apps, owned worktree and logs remain for inspection. No binary or report
+is published to users automatically.

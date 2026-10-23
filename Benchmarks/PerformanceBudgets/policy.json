@@ -1,8 +1,8 @@
 {
-  "schema": 1,
+  "schema": 2,
   "pairs": 7,
   "files": 100000,
-  "idle_seconds": 20,
+  "idle_seconds": 5,
   "maximum_noise_ratio": 1.5,
   "metrics": [
     "cold_launch",
@@ -13,5 +13,6 @@
   "warmup_pairs": 1,
   "maximum_recalibrations": 2,
   "idle_windows": 3,
-  "idle_cpu_ceiling": 0.005
+  "idle_cpu_ceiling": 0.005,
+  "idle_trials": 3
 }

@@ -19,7 +19,8 @@ import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
 HARNESS = ROOT / 'Benchmarks/PerformanceBudgets'
-METRICS = ('cold_launch', 'listing_100k', 'search_input', 'idle_cpu')
+LATENCY_METRICS = ('cold_launch', 'listing_100k', 'search_input')
+METRICS = (*LATENCY_METRICS, 'idle_cpu')
 
 
 def write_json(path, value):
@@ -27,17 +28,31 @@ def write_json(path, value):
 
 
 def policy_at(path):
-    value = json.loads(path.read_text())
-    if (value.get('schema') != 1 or value.get('metrics') != list(METRICS)
-            or not isinstance(value.get('pairs'), int) or not 7 <= value['pairs'] <= 25
-            or value.get('warmup_pairs') != 1 or value.get('files') != 100000 or not 2 <= value.get('idle_seconds', 0) <= 3600
-            or not math.isfinite(value.get('maximum_noise_ratio', float('nan')))
-            or not 1 < value['maximum_noise_ratio'] <= 2):
+    return validate_policy(json.loads(path.read_text()))
+
+
+def validate_policy(value):
+    if (not isinstance(value, dict) or type(value.get('schema')) is not int or value['schema'] not in (1, 2)
+            or value.get('metrics') != list(METRICS)
+            or type(value.get('pairs')) is not int or not 7 <= value['pairs'] <= 25
+            or value.get('warmup_pairs') != 1 or value.get('files') != 100000
+            or isinstance(value.get('idle_seconds'), bool) or not isinstance(value.get('idle_seconds'), (int, float))
+            or not 2 <= value['idle_seconds'] <= 3600
+            or isinstance(value.get('maximum_noise_ratio'), bool)
+            or not isinstance(value.get('maximum_noise_ratio'), (int, float))
+            or not math.isfinite(value['maximum_noise_ratio']) or not 1 < value['maximum_noise_ratio'] <= 2):
         raise ValueError('Invalid performance policy')
     retry_limit(value)
     idle_window_count(value)
-    idle_ceiling(value)
+    ceiling = idle_ceiling(value)
+    if value['schema'] == 2 and (value.get('idle_trials') != 3 or type(value['idle_trials']) is not int
+                                or value['idle_seconds'] != 5 or value.get('idle_windows') != 3 or ceiling is None):
+        raise ValueError('Invalid candidate-only idle policy')
     return value
+
+
+def paired_metrics(policy):
+    return LATENCY_METRICS if policy['schema'] == 2 else METRICS
 
 
 def idle_window_count(policy):
@@ -82,7 +97,8 @@ def evaluate_with_history(report, policy):
     Idle relative diagnostics use measured A/A variation; current policy gates its absolute candidate median.
     Excessive latency calibration noise and all missing/invalid measurements fail the gate.
     """
-    if report.get('schema') != 1 or report.get('policy') != policy:
+    validate_policy(policy)
+    if type(report.get('schema')) is not int or report['schema'] != policy['schema'] or report.get('policy') != policy:
         raise ValueError('Report/policy identity mismatch')
     for key in ['base', 'candidate']:
         revision = report.get(key, '')
@@ -97,10 +113,20 @@ def evaluate_with_history(report, policy):
                                            *([policy['pairs']] * len(retries))])):
         raise ValueError('Missing paired samples')
     for group in groups:
-        validate_samples(group)
+        validate_samples(group, paired_metrics(policy))
     initial = compare_round(groups[0], groups[1], policy)
     results = {name: dict(row, calibration_attempt=0) for name, row in initial.items()}
-    history = [dict(attempt=0, metrics=list(METRICS), results=initial)]
+    history = [dict(attempt=0, metrics=list(paired_metrics(policy)), results=initial)]
+    if policy['schema'] == 2:
+        samples = report.get('idle_samples')
+        if not isinstance(samples, list) or len(samples) != policy['idle_trials']:
+            raise ValueError('Missing candidate-only idle samples')
+        validate_samples([dict(a=sample, b=sample) for sample in samples], ('idle_cpu',))
+        candidate = statistics.median(sample['idle_cpu'] for sample in samples)
+        ceiling = idle_ceiling(policy)
+        results['idle_cpu'] = dict(status='regression' if candidate > ceiling else 'pass',
+                                   candidate_median=candidate, absolute_ceiling=ceiling,
+                                   candidate_only=True, sample_count=len(samples))
     for attempt, calibration in enumerate(retries, start=1):
         if not needs_recalibration(results):
             raise ValueError('Recalibration after a valid verdict is not permitted')
@@ -119,16 +145,16 @@ def evaluate_with_history(report, policy):
                 or pending['metrics'] != expected or not isinstance(pending['calibration'], list)
                 or len(pending['calibration']) > policy['pairs']):
             raise ValueError('Invalid in-progress recalibration')
-        validate_samples(pending['calibration'])
+        validate_samples(pending['calibration'], paired_metrics(policy))
     return results, history
 
 
-def validate_samples(group):
+def validate_samples(group, metrics=METRICS):
     for pair in group:
         if not isinstance(pair, dict) or set(pair) != {'a', 'b'}:
             raise ValueError('Invalid pair')
         for sample in pair.values():
-            if not isinstance(sample, dict) or set(sample) != set(METRICS):
+            if not isinstance(sample, dict) or set(sample) != set(metrics):
                 raise ValueError('Missing/unknown measurement')
             for name, number in sample.items():
                 if (isinstance(number, bool) or not isinstance(number, (int, float))
@@ -138,7 +164,7 @@ def validate_samples(group):
 
 def compare_round(calibration_pairs, comparison_pairs, policy):
     results = {}
-    for metric in METRICS:
+    for metric in paired_metrics(policy):
         aa = [(pair['a'][metric], pair['b'][metric]) for pair in calibration_pairs]
         ab = [(pair['a'][metric], pair['b'][metric]) for pair in comparison_pairs]
         offset = max(abs(a - b) for a, b in aa) if metric == 'idle_cpu' else 0
@@ -164,7 +190,7 @@ def compare_round(calibration_pairs, comparison_pairs, policy):
         results[metric] = dict(status=status, noise_band=band, ratio=median, paired_ratios=ratios,
                                baseline_median=statistics.median(a for a, _ in ab),
                                candidate_median=statistics.median(b for _, b in ab), offset=offset)
-    if (ceiling := idle_ceiling(policy)) is not None:
+    if policy['schema'] == 1 and (ceiling := idle_ceiling(policy)) is not None:
         row = results['idle_cpu']
         candidate = statistics.median(pair['b']['idle_cpu'] for pair in comparison_pairs)
         row.update(advisory_status=row['status'], absolute_ceiling=ceiling,
@@ -203,17 +229,24 @@ def summary(report, results):
     for name, result in results.items():
         ratio = result.get('ratio')
         band = result.get('noise_band')
-        lines.append(f"| {name} | {ratio:.4f}" if ratio is not None else f'| {name} | undefined')
-        lines[-1] += f" | {band:.4f}" if band is not None else ' | invalid'
+        missing = 'n/a' if name == 'idle_cpu' and report['policy']['schema'] == 2 else 'undefined'
+        lines.append(f"| {name} | {ratio:.4f}" if ratio is not None else f'| {name} | {missing}')
+        missing_band = 'n/a' if name == 'idle_cpu' and report['policy']['schema'] == 2 else 'invalid'
+        lines[-1] += f" | {band:.4f}" if band is not None else f' | {missing_band}'
         attempt = result.get('calibration_attempt', 0)
-        label = f'Retry {attempt}' if attempt else 'Initial'
+        label = 'Candidate only' if name == 'idle_cpu' and report['policy']['schema'] == 2 else (f'Retry {attempt}' if attempt else 'Initial')
         lines[-1] += f" | {result['status']} | {label} |"
     if (ceiling := idle_ceiling(report['policy'])) is not None:
         idle = results['idle_cpu']
         lines += ['', f"Idle CPU gate: candidate median **{idle['candidate_median']:.6f} core "
                   f"({idle['candidate_median'] * 100:.4f}%)**; ceiling **{ceiling:.6f} core ({ceiling * 100:.2f}%)**.",
-                  f"Idle B/A ratio and A/A noise band are advisory ({idle['advisory_status']}); "
-                  'they cannot fail the idle gate or trigger recalibration.']
+                  ('Idle is candidate-only: no idle A/A calibration, B/A ratio or idle retries.'
+                   if report['policy']['schema'] == 2 else
+                   f"Idle B/A ratio and A/A noise band are advisory ({idle['advisory_status']}); "
+                   'they cannot fail the idle gate or trigger recalibration.')]
+        if report['policy']['schema'] == 2:
+            lines += [f"Idle cohort: {len(report['idle_samples'])} candidate trials; "
+                      f"{idle_window_count(report['policy'])} fixed {report['policy']['idle_seconds']}-second windows each."]
     _, history = evaluate_with_history(report, report['policy'])
     lines += ['', f"Recalibrations completed: {len(report.get('recalibrations', []))}/{retry_limit(report['policy'])}.",
               'The original A/B pairs are fixed; valid verdicts are never recalibrated.', '',
@@ -251,41 +284,98 @@ def revision(ref):
     return value
 
 
-def prepare(out, base, candidate):
-    """All compilation and fixture setup precede the shared timing lock."""
-    builds = out / 'builds'
-    builds.mkdir()
-    apps = {}
-    bundle_id = 'app.porpoise.budget.' + uuid.uuid4().hex
-    for label, commit in [('base', base), ('candidate', candidate)]:
-        folder = builds / label
-        with (out / (label + '-build.log')).open('w') as log:
-            command(['git', '-C', str(ROOT), 'worktree', 'add', '--detach', str(folder), commit], log=log)
-            bridge = folder / 'Sources/Porpoise/App/DebugBridge.swift'
-            source = bridge.read_text()
-            anchor = 'stateCommands, captureCommands,'
-            if source.count(anchor) != 1:
-                raise ValueError('Base/candidate bridge does not support the fixed probe; no measurement was accepted')
-            bridge.write_text(source.replace(anchor, 'stateCommands, budgetCommands, captureCommands,'))
-            shutil.copy2(HARNESS / 'BridgeProbe.swift', folder / 'Sources/Porpoise/App/DebugBridge+Budgets.swift')
-            (folder / 'build').mkdir(exist_ok=True)
-            for name in ['ffmpeg', 'search-tools', 'ffmpeg-src']:
-                cached = (builds / 'base' / 'build' / name) if label == 'candidate' else ROOT / 'build' / name
-                if cached.exists():
-                    shutil.copytree(cached, folder / 'build' / name, dirs_exist_ok=True,
-                                    ignore=shutil.ignore_patterns('ffmpeg-8.0'))
-            environment = dict(os.environ, PORPOISE_RELEASE='0', CONFIG='release', SWIFT_JOBS='2', FFMPEG_JOBS='2')
-            command(['scripts/make-app.sh'], cwd=folder, log=log, env=environment)
-            isolate_bundle(folder / 'build/Porpoise.app', bundle_id, log)
-        apps[label] = str(folder / 'build/Porpoise.app/Contents/MacOS/Porpoise')
-    with (out / 'sender-build.log').open('w') as log:
-        command(['xcrun', 'swiftc', '-O', str(HARNESS / 'Sender.swift'), '-o', str(out / 'sender')], log=log)
+def fixture_at(out):
     fixture = out / 'fixture'
     fixture.mkdir()
     for index in range(100000):
         name = 'needle-target.txt' if index == 0 else f'item-{index:06d}.txt'
         (fixture / name).touch(exist_ok=False)
     (out / 'empty').mkdir()
+
+
+def git_bytes(folder, *args):
+    return subprocess.check_output(['git', '-C', str(folder), *args])
+
+
+def prepare(out, base, candidate):
+    """Compile sequentially in one owned worktree; stage immutable, separately signed app snapshots."""
+    builds, staged = out / 'builds', out / 'apps'
+    builds.mkdir()
+    staged.mkdir()
+    folder = builds / 'working'
+    apps, stages = {}, {}
+    bundle_id = 'app.porpoise.budget.' + uuid.uuid4().hex
+    bridge_name = 'Sources/Porpoise/App/DebugBridge.swift'
+    probe_name = 'Sources/Porpoise/App/DebugBridge+Budgets.swift'
+    bridge, probe = folder / bridge_name, folder / probe_name
+    anchor = 'stateCommands, captureCommands,'
+    original = patched = None
+    owned_probe = (HARNESS / 'BridgeProbe.swift').read_bytes()
+    for label, commit in [('base', base), ('candidate', candidate)]:
+        started = time.monotonic()
+        with (out / (label + '-build.log')).open('w') as log:
+            log.write(f'Building source {commit} in one owned incremental workspace.\n')
+            log.flush()
+            if label == 'base':
+                command(['git', '-C', str(ROOT), 'worktree', 'add', '--detach', str(folder), commit], log=log)
+                (folder / 'build').mkdir(exist_ok=True)
+                for name in ['ffmpeg', 'search-tools', 'ffmpeg-src']:
+                    cached = ROOT / 'build' / name
+                    if cached.exists():
+                        shutil.copytree(cached, folder / 'build' / name, dirs_exist_ok=True,
+                                        ignore=shutil.ignore_patterns('ffmpeg-8.0'))
+            else:
+                if bridge.read_bytes() != patched or probe.read_bytes() != owned_probe:
+                    raise ValueError('Owned benchmark overlay changed during preparation')
+                next_original = git_bytes(ROOT, 'show', f'{commit}:{bridge_name}')
+                # Preserve unchanged overlay mtimes so SwiftPM can reuse the app module too.
+                if next_original != original:
+                    command(['git', '-C', str(folder), 'restore', '--source=HEAD', '--', bridge_name], log=log)
+                    patched = None
+                command(['git', '-C', str(folder), 'checkout', '--detach', commit], log=log)
+            if git_bytes(folder, 'rev-parse', 'HEAD').decode().strip() != commit:
+                raise ValueError('Build source commit mismatch')
+            if probe_name.encode() in git_bytes(folder, 'ls-files', '--', probe_name).splitlines():
+                raise ValueError('Tracked source collides with the fixed benchmark probe')
+            original = git_bytes(folder, 'show', f'HEAD:{bridge_name}')
+            source = original.decode()
+            if source.count(anchor) != 1:
+                raise ValueError('Base/candidate bridge does not support the fixed probe')
+            expected = source.replace(anchor, 'stateCommands, budgetCommands, captureCommands,').encode()
+            if patched is None:
+                bridge.write_bytes(expected)
+            elif bridge.read_bytes() != expected:
+                raise ValueError('Unexpected bridge change across source checkout')
+            patched = expected
+            if not probe.exists():
+                probe.write_bytes(owned_probe)
+            elif probe.read_bytes() != owned_probe:
+                raise ValueError('Unexpected probe change across source checkout')
+            environment = dict(os.environ, PORPOISE_RELEASE='0', CONFIG='release', SWIFT_JOBS='2', FFMPEG_JOBS='2')
+            command(['scripts/make-app.sh'], cwd=folder, log=log, env=environment)
+            if bridge.read_bytes() != patched or probe.read_bytes() != owned_probe:
+                raise ValueError('Build changed the fixed benchmark overlay')
+            changed = git_bytes(folder, 'diff', '--name-only').decode().splitlines()
+            if changed != [bridge_name]:
+                raise ValueError('Build changed tracked source beyond the fixed overlay')
+            app = staged / (label + '.app')
+            shutil.copytree(folder / 'build/Porpoise.app', app, symlinks=True)
+            isolate_bundle(app, bundle_id, log)
+            command(['codesign', '--verify', '--deep', '--strict', str(app)], log=log)
+            executable = app / 'Contents/MacOS/Porpoise'
+            apps[label] = str(executable)
+            stages[label] = dict(commit=commit, tree=git_bytes(folder, 'rev-parse', 'HEAD^{tree}').decode().strip(),
+                                 seconds=time.monotonic() - started,
+                                 executable_sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),
+                                 bridge_sha256=hashlib.sha256(patched).hexdigest())
+            write_json(out / 'preparation.json', stages)
+    # A later build must not have overwritten either staged source artifact.
+    for label, executable in apps.items():
+        if hashlib.sha256(Path(executable).read_bytes()).hexdigest() != stages[label]['executable_sha256']:
+            raise ValueError('Staged app changed during candidate preparation')
+    with (out / 'sender-build.log').open('w') as log:
+        command(['xcrun', 'swiftc', '-O', str(HARNESS / 'Sender.swift'), '-o', str(out / 'sender')], log=log)
+    fixture_at(out)
     return apps
 
 
@@ -402,7 +492,9 @@ def read_reply(path, process, timeout=125):
     raise TimeoutError('App workload deadline')
 
 
-def trial(app, out, sender, policy, label):
+def trial(app, out, sender, policy, label, kind='combined'):
+    if kind not in ('latency', 'idle', 'combined'):
+        raise ValueError('Invalid trial kind')
     folder = out / 'trials' / (label + '-' + uuid.uuid4().hex)
     folder.mkdir(parents=True)
     channel = 'budget-' + uuid.uuid4().hex
@@ -434,11 +526,15 @@ def trial(app, out, sender, policy, label):
                                                                directory=str(out / 'fixture'))))
                 value = read_reply(reply, process, timeout=max(0, deadline - time.monotonic()))
                 if (value['rows'] != expected or value['operation'] != operation or not value['visible']
+                        or (operation == 'search' and not value.get('search_done'))
                         or (value['width'], value['height'], value['mode']) != (context['width'], context['height'], context['mode'])):
                     raise ValueError('Workload or window identity mismatch')
                 values[metric] = value['seconds']
-            # Sample fixed repeated windows; retain every counter/duration before aggregation.
-            values['idle_cpu'] = measure_idle(process, policy, folder, deadline)
+            # Paired latency trials never wait for idle. The separate cohort uses candidate processes only.
+            if kind == 'idle':
+                values = {'idle_cpu': measure_idle(process, policy, folder, deadline)}
+            elif kind == 'combined':
+                values['idle_cpu'] = measure_idle(process, policy, folder, deadline)
             write_json(folder / 'measurements.json', values)
             return values
         finally:
@@ -460,34 +556,45 @@ def measure(out):
     if (policy != policy_at(HARNESS / 'policy.json')
             or prepared['runner_sha256'] != hashlib.sha256(Path(__file__).read_bytes()).hexdigest()):
         raise ValueError('Runner/policy changed after preparation')
-    report = dict(schema=1, base=prepared['base'], candidate=prepared['candidate'], policy=policy,
+    report = dict(schema=policy['schema'], base=prepared['base'], candidate=prepared['candidate'], policy=policy,
                   host=dict(os=platform.platform(), machine=platform.machine()),
                   runner_sha256=prepared['runner_sha256'], harness=prepared['harness'],
-                  warmup=[], calibration=[], comparison=[])
+                  warmup=[], calibration=[], comparison=[], idle_samples=[])
     if (out / 'results.json').exists():
         raise ValueError('A measurement output cannot be reused; retain it and start a declared new run')
     capture = ROOT / '.team/artifacts/p2/review/.capture-lock'
     capture = capture.resolve() if capture.parent.exists() else out / '.capture-lock'
+    def run_trial(label, app, kind):
+        # Timing lock precedes capture; each bounded owned trial holds capture for <3 min.
+        result = subprocess.run(['/usr/bin/lockf', '-k', str(capture), sys.executable,
+                                 str(Path(__file__).resolve()), '--trial-only', prepared['apps'][app],
+                                 '--label', label, '--trial-kind', kind, '--out', str(out)],
+                                capture_output=True, text=True)
+        if result.returncode:
+            raise RuntimeError('Owned trial failed: ' + result.stderr.strip())
+        return json.loads(result.stdout)
+
     def collect(group, left, right, count, pairs, checkpoint):
         for index in range(count):
             order = [('a', left), ('b', right)] if index % 2 == 0 else [('b', right), ('a', left)]
             pair = {}
             print(f'{group} pair {index + 1}/{count}', flush=True)
-            for member, label in order:
-                # Timing lock is acquired first; the foreground lock is held for one bounded trial (<3 min).
-                result = subprocess.run(['/usr/bin/lockf', '-k', str(capture), sys.executable,
-                                         str(Path(__file__).resolve()), '--trial-only', prepared['apps'][label],
-                                         '--label', f'{group}-{index}-{member}', '--out', str(out)],
-                                        capture_output=True, text=True)
-                if result.returncode:
-                    raise RuntimeError('Owned trial failed: ' + result.stderr.strip())
-                pair[member] = json.loads(result.stdout)
+            for member, app in order:
+                pair[member] = run_trial(f'{group}-{index}-{member}', app, 'latency')
             pairs.append(pair)
             checkpoint()
 
+    started = time.monotonic()
     for group, left, right in [('warmup', 'base', 'candidate'), ('calibration', 'base', 'base'), ('comparison', 'base', 'candidate')]:
         count = policy['warmup_pairs'] if group == 'warmup' else policy['pairs']
         collect(group, left, right, count, report[group], lambda: write_json(out / 'results.json', report))
+    report['initial_latency_seconds'] = time.monotonic() - started
+    idle_started = time.monotonic()
+    for index in range(policy['idle_trials']):
+        print(f"Candidate idle trial {index + 1}/{policy['idle_trials']}", flush=True)
+        report['idle_samples'].append(run_trial(f'idle-{index}', 'candidate', 'idle'))
+        write_json(out / 'results.json', report)
+    report['idle_cohort_seconds'] = time.monotonic() - idle_started
 
     def save(results, history):
         report['evaluation'], report['calibration_history'] = results, history
@@ -499,6 +606,8 @@ def measure(out):
         collect(f"recalibration-{pending['attempt']}", 'base', 'base', policy['pairs'], pending['calibration'], checkpoint)
 
     results = recalibrate(report, policy, collect_retry, save)
+    report['measurement_seconds'] = time.monotonic() - started
+    save(results, report['calibration_history'])
     return 0 if all(row['status'] == 'pass' for row in results.values()) else 1
 
 
@@ -510,6 +619,7 @@ def main():
     parser.add_argument('--measure-only', action='store_true')
     parser.add_argument('--trial-only', help=argparse.SUPPRESS)
     parser.add_argument('--label', default='trial', help=argparse.SUPPRESS)
+    parser.add_argument('--trial-kind', choices=['latency', 'idle', 'combined'], help=argparse.SUPPRESS)
     parser.add_argument('--evaluate', type=Path, help='evaluate a retained report without building/running apps')
     args = parser.parse_args()
     out = args.out.resolve()
@@ -517,7 +627,8 @@ def main():
         prepared = json.loads((out / 'prepared.json').read_text())
         sender = Sender(out / 'sender')
         try:
-            values = trial(args.trial_only, out, sender, prepared['policy'], args.label)
+            kind = args.trial_kind or ('latency' if prepared['policy']['schema'] == 2 else 'combined')
+            values = trial(args.trial_only, out, sender, prepared['policy'], args.label, kind)
             print(json.dumps(values, allow_nan=False))
             return 0
         finally:
@@ -525,8 +636,8 @@ def main():
     if args.measure_only:
         return measure(out)
     if args.evaluate:
-        policy = policy_at(HARNESS / 'policy.json')
         report = json.loads(args.evaluate.read_text())
+        policy = validate_policy(report.get('policy'))
         results, history = evaluate_with_history(report, policy)
         report['calibration_history'] = history
         out.mkdir(parents=True, exist_ok=True)

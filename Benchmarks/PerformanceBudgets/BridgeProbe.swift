@@ -33,6 +33,7 @@ extension DebugBridge {
             modeCommand("details")
         default: return
         }
+        var measured: [String: Any]?
         @MainActor func poll() {
             guard operation != "ready" || !FileManager.default.fileExists(atPath: report) else { return }
             let ready: Bool
@@ -45,13 +46,25 @@ extension DebugBridge {
                 view.layoutSubtreeIfNeeded()
                 view.displayIfNeeded()
                 CATransaction.flush()
-                let value: [String: Any] = [
-                    "schema": 1, "operation": operation, "seconds": ProcessInfo.processInfo.systemUptime - start,
-                    "rows": model.rows.count, "visible": window.isVisible, "active": NSApp.isActive,
-                    "occluded": !window.occlusionState.contains(.visible), "width": window.frame.width,
-                    "height": window.frame.height, "mode": model.props.mode.rawValue,
-                ]
-                if let bytes = try? JSONSerialization.data(withJSONObject: value, options: .sortedKeys) {
+                if measured == nil {
+                    measured = [
+                        "schema": 1, "operation": operation, "seconds": ProcessInfo.processInfo.systemUptime - start,
+                        "rows": model.rows.count, "visible": window.isVisible, "active": NSApp.isActive,
+                        "occluded": !window.occlusionState.contains(.visible), "width": window.frame.width,
+                        "height": window.frame.height, "mode": model.props.mode.rawValue,
+                    ]
+                }
+                // Preserve first-result timing, but let the worker finish before teardown/idle sampling.
+                if operation == "search" && view.statusBar.progress != nil {
+                    if ProcessInfo.processInfo.systemUptime - start < 120 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.005) { poll() }
+                    } else {
+                        try? Data("{\"error\":\"search completion timeout\"}".utf8).write(to: URL(fileURLWithPath: report), options: .atomic)
+                    }
+                    return
+                }
+                if operation == "search" { measured?["search_done"] = true }
+                if let measured, let bytes = try? JSONSerialization.data(withJSONObject: measured, options: .sortedKeys) {
                     try? bytes.write(to: URL(fileURLWithPath: report), options: .atomic)
                 }
             } else if ProcessInfo.processInfo.systemUptime - start < 120 {
