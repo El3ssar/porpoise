@@ -111,6 +111,84 @@ class BudgetTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 budgets.evaluate(changed, POLICY)
 
+    def test_idle_windows_use_fixed_median_and_retain_every_counter(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            clock = [0.0]
+            def sleep(seconds):
+                clock[0] += seconds
+            def snapshot(ticks):
+                return dict(user_ticks=ticks, system_ticks=0, idle_wakes=0, interrupt_wakes=0,
+                            timebase_numer=1, timebase_denom=1)
+            # The largest burst stays in the artifact, but does not define steady idle CPU.
+            samples = [snapshot(ticks) for ticks in [0, 200_000_000, 200_000_000, 600_000_000, 600_000_000, 20_600_000_000]]
+            process = SimpleNamespace(pid=123, poll=lambda: None)
+            with patch.object(budgets.time, 'monotonic', side_effect=lambda: clock[0]), \
+                    patch.object(budgets.time, 'sleep', side_effect=sleep) as sleeps, \
+                    patch.object(budgets, 'cpu_snapshot', side_effect=samples) as cpu, \
+                    patch.object(budgets.os, 'getloadavg', return_value=(1, 2, 3)):
+                result = budgets.measure_idle(process, POLICY, root, deadline=150)
+            self.assertEqual(result, 0.02)
+            self.assertEqual(cpu.call_count, 6)
+            self.assertEqual([call.args[0] for call in sleeps.call_args_list], [1, 20, 20, 20])
+            trace = json.loads((root / 'idle.json').read_text())
+            self.assertEqual([row['cpu_ratio'] for row in trace['windows']], [0.01, 0.02, 1])
+            self.assertEqual(trace['median_cpu_ratio'], result)
+            self.assertEqual(trace['windows'][2]['last'], samples[-1])
+            self.assertEqual(trace['windows'][0]['load_before'], [1, 2, 3])
+
+    def test_cpu_ticks_convert_with_mach_timebase_and_invalid_clocks_fail(self):
+        first = dict(user_ticks=10, system_ticks=20, idle_wakes=2, interrupt_wakes=3,
+                     timebase_numer=125, timebase_denom=3)
+        last = dict(first, user_ticks=48_000_010, system_ticks=24_000_020, idle_wakes=4)
+        row = budgets.idle_window(first, last, 20)
+        self.assertEqual(row['cpu_seconds'], 3)
+        self.assertEqual(row['cpu_ratio'], 0.15)
+        self.assertEqual(row['idle_wakes'], 2)
+        for elapsed in [0, -1, float('nan'), float('inf')]:
+            with self.assertRaises(ValueError):
+                budgets.idle_window(first, last, elapsed)
+        for field, value in [('timebase_denom', 0), ('timebase_numer', 1), ('user_ticks', 0), ('idle_wakes', 0)]:
+            with self.assertRaises(ValueError):
+                budgets.idle_window(first, dict(last, **{field: value}), 20)
+
+    def test_idle_sampling_failure_retains_partial_trace_and_never_returns_median(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            clock = [0.0]
+            def sleep(seconds):
+                clock[0] += seconds
+            first = dict(user_ticks=0, system_ticks=0, idle_wakes=0, interrupt_wakes=0,
+                         timebase_numer=1, timebase_denom=1)
+            polls = iter([None, None, None, 1])
+            process = SimpleNamespace(pid=123, poll=lambda: next(polls))
+            with patch.object(budgets.time, 'monotonic', side_effect=lambda: clock[0]), \
+                    patch.object(budgets.time, 'sleep', side_effect=sleep), \
+                    patch.object(budgets, 'cpu_snapshot', return_value=first), \
+                    patch.object(budgets.os, 'getloadavg', return_value=(1, 2, 3)):
+                with self.assertRaisesRegex(RuntimeError, 'exited during idle'):
+                    budgets.measure_idle(process, POLICY, root, deadline=150)
+            trace = json.loads((root / 'idle.json').read_text())
+            self.assertEqual(len(trace['windows']), 1)
+            self.assertNotIn('median_cpu_ratio', trace)
+            with patch.object(budgets, 'cpu_snapshot') as cpu:
+                with self.assertRaises(TimeoutError):
+                    budgets.measure_idle(process, POLICY, root, deadline=0)
+                cpu.assert_not_called()
+
+    def test_idle_window_policy_is_bounded_and_old_policies_remain_replayable(self):
+        self.assertEqual(budgets.idle_window_count({}), 1)
+        self.assertEqual(budgets.idle_window_count(POLICY), 3)
+        for count in [0, 2, 4, True, 3.0, None]:
+            with self.assertRaises(ValueError):
+                budgets.idle_window_count(dict(idle_windows=count))
+        original = report()
+        old = dict(POLICY)
+        del old['idle_windows']
+        old['idle_seconds'] = 15
+        original['policy'] = old
+        self.assertTrue(all(row['status'] == 'pass' for row in budgets.evaluate(original, old).values()))
+
     def test_measure_retries_only_base_calibration_and_retains_every_attempt(self):
         for recovery_at in [1, 2, None]:
             with self.subTest(recovery_at=recovery_at), tempfile.TemporaryDirectory() as folder:

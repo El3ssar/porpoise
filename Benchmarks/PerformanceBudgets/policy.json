@@ -2,7 +2,7 @@
   "schema": 1,
   "pairs": 7,
   "files": 100000,
-  "idle_seconds": 15,
+  "idle_seconds": 20,
   "maximum_noise_ratio": 1.5,
   "metrics": [
     "cold_launch",
@@ -11,5 +11,6 @@
     "idle_cpu"
   ],
   "warmup_pairs": 1,
-  "maximum_recalibrations": 2
+  "maximum_recalibrations": 2,
+  "idle_windows": 3
 }

@@ -35,7 +35,16 @@ def policy_at(path):
             or not 1 < value['maximum_noise_ratio'] <= 2):
         raise ValueError('Invalid performance policy')
     retry_limit(value)
+    idle_window_count(value)
     return value
+
+
+def idle_window_count(policy):
+    # Retained pre-window policies used one interval. A new run uses three fixed intervals.
+    count = policy.get('idle_windows', 1)
+    if type(count) is not int or count not in (1, 3):
+        raise ValueError('Invalid idle window count')
+    return count
 
 
 def retry_limit(policy):
@@ -196,7 +205,8 @@ def summary(report, results):
         lines += ['', 'A measured regression fails the gate and stops recalibration.']
     elif needs_recalibration(results) and len(report.get('recalibrations', [])) >= retry_limit(report['policy']):
         lines += ['', 'Recalibration budget exhausted; unstable calibration fails the gate.']
-    lines += ['', 'All samples, policy, host identity and workload evidence are retained in results.json.',
+    lines += ['', f"Idle CPU: median of {idle_window_count(report['policy'])} fixed {report['policy']['idle_seconds']}-second window(s) per process.",
+              'All samples, policy, host identity and workload evidence are retained in results.json.',
               'Process-cold launches use normal OS caches. Listing/search include synchronous layout/draw,',
               'not presented-frame timing. Idle CPU is this isolated test-window process, not a one-hour',
               'production energy certification. No real accounts or operator preferences are used.', '']
@@ -268,7 +278,11 @@ class Usage(ctypes.Structure):
                ['user', 'system', 'idle_wakes', 'interrupt_wakes', 'pageins', 'wired', 'resident', 'footprint', 'start', 'exit']]
 
 
-def cpu_time(pid):
+class Timebase(ctypes.Structure):
+    _fields_ = [('numer', ctypes.c_uint32), ('denom', ctypes.c_uint32)]
+
+
+def cpu_snapshot(pid):
     library = ctypes.CDLL('/usr/lib/libproc.dylib', use_errno=True)
     function = library.proc_pid_rusage
     function.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_void_p]
@@ -276,7 +290,58 @@ def cpu_time(pid):
     usage = Usage()
     if function(pid, 0, ctypes.byref(usage)) != 0:
         raise OSError(ctypes.get_errno(), 'Cannot sample owned process CPU')
-    return (usage.user + usage.system) / 1e9
+    # ri_user_time/ri_system_time are Mach absolute time units, not nanoseconds.
+    system = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
+    timebase_info = system.mach_timebase_info
+    timebase_info.argtypes = [ctypes.POINTER(Timebase)]
+    timebase_info.restype = ctypes.c_int
+    timebase = Timebase()
+    if timebase_info(ctypes.byref(timebase)) != 0 or not timebase.numer or not timebase.denom:
+        raise OSError('Cannot read Mach timebase')
+    return dict(user_ticks=usage.user, system_ticks=usage.system,
+                idle_wakes=usage.idle_wakes, interrupt_wakes=usage.interrupt_wakes,
+                timebase_numer=timebase.numer, timebase_denom=timebase.denom)
+
+
+def idle_window(first, last, elapsed):
+    if (not math.isfinite(elapsed) or elapsed <= 0
+            or (first['timebase_numer'], first['timebase_denom']) != (last['timebase_numer'], last['timebase_denom'])
+            or first['timebase_numer'] <= 0 or first['timebase_denom'] <= 0):
+        raise ValueError('Invalid idle clock')
+    deltas = {key: last[key] - first[key] for key in ['user_ticks', 'system_ticks', 'idle_wakes', 'interrupt_wakes']}
+    if any(value < 0 for value in deltas.values()):
+        raise ValueError('Owned process CPU counters moved backwards')
+    cpu = (deltas['user_ticks'] + deltas['system_ticks']) * first['timebase_numer'] / first['timebase_denom'] / 1e9
+    return dict(cpu_seconds=cpu, elapsed_seconds=elapsed, cpu_ratio=cpu / elapsed, **deltas)
+
+
+def measure_idle(process, policy, folder, deadline):
+    count, seconds = idle_window_count(policy), policy['idle_seconds']
+    # Fixed sample count/durations, never stop early or replace a noisy window.
+    if deadline - time.monotonic() < count * seconds + 1:
+        raise TimeoutError('Trial deadline before idle sampling')
+    trace = dict(schema=1, accounting='proc_pid_rusage_mach_time', aggregation='median',
+                 window_seconds=seconds, window_count=count, windows=[])
+    path = folder / 'idle.json'
+    write_json(path, trace)
+    time.sleep(1)
+    for _ in range(count):
+        if process.poll() is not None:
+            raise RuntimeError('App exited before idle sampling')
+        first = cpu_snapshot(process.pid)
+        start, load = time.monotonic(), os.getloadavg()
+        time.sleep(seconds)
+        if process.poll() is not None:
+            raise RuntimeError('App exited during idle sampling')
+        last = cpu_snapshot(process.pid)
+        window = idle_window(first, last, time.monotonic() - start)
+        window.update(first=first, last=last, load_before=load, load_after=os.getloadavg())
+        trace['windows'].append(window)
+        write_json(path, trace)
+    result = statistics.median(window['cpu_ratio'] for window in trace['windows'])
+    trace['median_cpu_ratio'] = result
+    write_json(path, trace)
+    return result
 
 
 class Sender:
@@ -347,17 +412,8 @@ def trial(app, out, sender, policy, label):
                         or (value['width'], value['height'], value['mode']) != (context['width'], context['height'], context['mode'])):
                     raise ValueError('Workload or window identity mismatch')
                 values[metric] = value['seconds']
-            # Let completion work settle before accounting this process's CPU, including its view timers.
-            if deadline - time.monotonic() < policy['idle_seconds'] + 1:
-                raise TimeoutError('Trial deadline before idle sampling')
-            time.sleep(1)
-            if process.poll() is not None:
-                raise RuntimeError('App exited before idle sampling')
-            first_cpu, first_wall = cpu_time(process.pid), time.monotonic()
-            time.sleep(policy['idle_seconds'])
-            if process.poll() is not None:
-                raise RuntimeError('App exited during idle sampling')
-            values['idle_cpu'] = (cpu_time(process.pid) - first_cpu) / (time.monotonic() - first_wall)
+            # Sample fixed repeated windows; retain every counter/duration before aggregation.
+            values['idle_cpu'] = measure_idle(process, policy, folder, deadline)
             write_json(folder / 'measurements.json', values)
             return values
         finally:

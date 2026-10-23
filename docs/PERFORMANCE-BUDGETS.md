@@ -146,7 +146,7 @@ and fixture setup finish before the shared `lockf -k /tmp/porpoise-gate.lock`.
 | `cold_launch` | Fresh process spawn to an empty browser ready for input, including fixed window/mode setup and bounded IPC polling. This is process-cold; OS caches are not flushed. |
 | `listing_100k` | Navigation input through 100,000 committed model rows and synchronous layout/draw flush. |
 | `search_input` | Text-edit notification through the normal search debounce and the one expected result, with synchronous layout/draw flush. |
-| `idle_cpu` | Owned app process user+system CPU seconds / elapsed seconds over 15 seconds after search completion and one second of settling. |
+| `idle_cpu` | Median of three fixed 20-second windows of owned process user+system CPU seconds / actual elapsed seconds, after search completion and one second of settling. |
 
 The process uses a unique test defaults domain, channel and temporary directory per
 trial, plus a private shared bundle identifier for both apps in that run and
@@ -183,7 +183,25 @@ its applied metrics/verdicts, and any interrupted round's partial pairs.
 `SUMMARY.md` reports the retry count, all applied calibration bands/statuses,
 exhaustion or a regression stop, and partial progress if interrupted. Offline
 `--evaluate` replays that history; it never invents missing calibration data.
-CI's 45-minute job bound is unchanged.
+CI's job bound is 90 minutes to cover the fixed 60-second idle observation in each trial, including up to two recalibration rounds. The individual 150-second trial deadline and bounded per-trial capture lock are unchanged.
+
+Idle accounting reads `proc_pid_rusage` user/system counters and converts Mach absolute
+time units with `mach_timebase_info` before dividing by actual monotonic wall time.
+Every trial always observes all three 20-second windows and scores their median,
+without replacing windows or adapting their length to an observed result. This
+measures sustained idle activity and reduces sensitivity to one sporadic burst;
+it does not enforce a peak-CPU budget. A sustained increase affects the median
+and still fails against the unchanged A/A band. The other three metric boundaries
+and the statistical gate are unchanged.
+
+Each trial's `idle.json` retains all raw starting/ending CPU counters, timebase,
+CPU/wall seconds, individual ratios, wakeup deltas, and host load averages at both
+ends of every window. Partial traces survive a sampling failure; an incomplete
+trace cannot produce a metric or a passing trial. Load and wakeup telemetry aid
+diagnosis; they never exclude a sample or alter its score. Older artifacts used
+one 15-second interval and incorrectly labeled Mach ticks as nanoseconds; their
+same-host dimensionless ratios remain valid, but their absolute CPU numbers
+must not be treated as CPU seconds without applying that host's timebase.
 
 Near-zero idle CPU is regularized by adding the largest measured A/A CPU difference
 to both sides before ratios are computed. This offset is recorded in results and
