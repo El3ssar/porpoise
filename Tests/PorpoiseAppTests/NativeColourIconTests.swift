@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseFileSystem
 import PorpoiseServices
 import PorpoiseServicesTestSupport
 import Testing
@@ -91,7 +92,10 @@ import UniformTypeIdentifiers
         Settings.shared.updateAppearance { $0.iconTheme = "Native macOS" }
         let before = pixels(Icons.shared.image(for: local, size: 64))
         Settings.shared.updateAppearance { $0.iconTheme = Icons.nativeColourTheme }
-        #expect(pixels(Icons.shared.image(for: local, size: 64)) == before)
+        let reloaded = try #require(FileItem.load(url))
+        #expect(reloaded.hasCustomIcon)
+        #expect(reloaded.named("Renamed.pdf").hasCustomIcon)
+        #expect(pixels(Icons.shared.image(for: reloaded, size: 64)) == before)
     }
 
     @Test func unknownArtworkHasNoBandAndLongLabelsAreOmitted() {

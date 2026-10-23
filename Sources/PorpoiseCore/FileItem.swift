@@ -23,6 +23,8 @@ public struct FileItem: Hashable, Sendable {
     public let isWritable: Bool
     /// When it was shared with the user (cloud items in "Shared with me").
     public let sharedDate: Date?
+    /// Finder custom-icon flag, read with local filesystem metadata (never from a draw callback).
+    public let hasCustomIcon: Bool
 
     public init(
         url: URL, name: String, isDirectory: Bool, isSymlink: Bool = false, isHidden: Bool = false,
@@ -30,7 +32,7 @@ public struct FileItem: Hashable, Sendable {
         modificationDate: Date? = nil, creationDate: Date? = nil, accessDate: Date? = nil,
         contentType: String? = nil, posixPermissions: Int = 0o644, owner: String? = nil,
         group: String? = nil, linkDestination: String? = nil, isReadable: Bool = true,
-        isWritable: Bool = true, sharedDate: Date? = nil
+        isWritable: Bool = true, sharedDate: Date? = nil, hasCustomIcon: Bool = false
     ) {
         self.url = url
         self.name = name
@@ -52,6 +54,7 @@ public struct FileItem: Hashable, Sendable {
         self.isReadable = isReadable
         self.isWritable = isWritable
         self.sharedDate = sharedDate
+        self.hasCustomIcon = hasCustomIcon
     }
 
     /// The same item under another name (a cloud rename keeps the URL, an id). A new extension implies a new type.
@@ -61,7 +64,7 @@ public struct FileItem: Hashable, Sendable {
             url: url, name: newName, isDirectory: isDirectory, isSymlink: isSymlink, isHidden: newName.hasPrefix("."), isPackage: isPackage,
             isApplication: isApplication, size: size, modificationDate: modificationDate, creationDate: creationDate, accessDate: accessDate,
             contentType: isDirectory || sameExtension ? contentType : nil, posixPermissions: posixPermissions, owner: owner, group: group,
-            linkDestination: linkDestination, isReadable: isReadable, isWritable: isWritable, sharedDate: sharedDate)
+            linkDestination: linkDestination, isReadable: isReadable, isWritable: isWritable, sharedDate: sharedDate, hasCustomIcon: hasCustomIcon)
     }
 
     /// The type a name implies, for an item whose listing has none: a folder, else its extension's type (dynamic for

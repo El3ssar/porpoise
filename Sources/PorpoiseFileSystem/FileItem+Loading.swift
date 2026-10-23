@@ -58,7 +58,15 @@ extension FileItem {
             modificationDate: v.contentModificationDate, creationDate: v.creationDate,
             accessDate: v.contentAccessDate, contentType: contentType,
             posixPermissions: perms, owner: owner, group: group, linkDestination: linkDest,
-            isReadable: v.isReadable ?? true, isWritable: v.isWritable ?? true)
+            isReadable: v.isReadable ?? true, isWritable: v.isWritable ?? true, hasCustomIcon: customIconFlag(url))
+    }
+
+    /// Finder flags are the big-endian UInt16 at bytes 8–9; kHasCustomIcon is 0x0400.
+    /// This is part of loading the item's other metadata, off the drawing path.
+    private static func customIconFlag(_ url: URL) -> Bool {
+        var info = [UInt8](repeating: 0, count: 32)
+        let count = getxattr(url.path, "com.apple.FinderInfo", &info, info.count, 0, 0)
+        return count >= 10 && info[8] & 0x04 != 0
     }
 
     nonisolated(unsafe) private static var userCache: [uid_t: String] = [:]

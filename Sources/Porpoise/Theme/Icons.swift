@@ -23,7 +23,7 @@ final class Icons {
     private func store(_ image: NSImage, _ key: NSString, size: CGFloat, looks: Int = 1) {
         cache.setObject(image, forKey: key, cost: max(1, Int(size * size)) * 4 * 4 * looks)
     }
-    /// Preservation decisions survive size changes; rendered neutral artwork is shared by type.
+    /// Coloured-artwork decisions are shared by type; no per-file rasterisation in the draw path.
     private let nativePreservation: NSCache<NSString, NSNumber> = {
         let c = NSCache<NSString, NSNumber>()
         c.countLimit = 3000
@@ -429,35 +429,48 @@ final class Icons {
     }
 
     private func nativeColourImage(_ native: NSImage, for item: FileItem, size: CGFloat) -> NSImage {
-        guard !item.isBrowsableFolder, !item.isApplication, !item.isPackage, !item.isAliasFile else { return native }
+        guard !item.isBrowsableFolder, !item.isApplication, !item.isPackage, !item.isAliasFile, !item.hasCustomIcon else { return native }
         let family = Self.nativeFamily(for: item)
         guard family != .unknown else { return native }
         let type = Self.nativeType(for: item)
         let label = item.fileExtension.isEmpty ? (type.preferredFilenameExtension ?? "") : item.fileExtension
-        let sourceKey = "\(type.identifier)|\(item.url.isFileURL ? item.url.path : "remote")" as NSString
+        let sourceKey = type.identifier as NSString
         let typed = NSWorkspace.shared.icon(for: type)
         let preserve: Bool
         if let hit = nativePreservation.object(forKey: sourceKey) {
             preserve = hit.boolValue
         } else {
-            // Any per-file artwork, even a monochrome custom icon, belongs to the file's author.
-            let custom =
-                item.url.isFileURL
-                && Self.nativeBitmap(native, pixels: 128).tiffRepresentation != Self.nativeBitmap(typed, pixels: 128).tiffRepresentation
-            preserve = custom || Self.hasNativeColour(typed)
+            preserve = Self.hasNativeColour(typed)
             nativePreservation.setObject(NSNumber(value: preserve), forKey: sourceKey)
         }
         guard !preserve else { return native }
         let key = "native-colour|\(type.identifier)|\(label)|\(size)" as NSString
         if let hit = cache.object(forKey: key) { return hit }
-        let light = Self.colourNative(typed, size: size, label: label, family: family, dark: false)
-        let dark = Self.colourNative(typed, size: size, label: label, family: family, dark: true)
+        let looks = NativeLookImages()
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { r in
-            (NSAppearance.currentDrawing().isDark ? dark : light).draw(in: r)
+            let dark = NSAppearance.currentDrawing().isDark
+            let rendered = looks.image(dark: dark) {
+                Self.colourNative(typed, size: size, label: label, family: family, dark: dark)
+            }
+            rendered.draw(in: r)
             return true
         }
         store(image, key, size: size, looks: 2)
         return image
+    }
+
+    /// Allocate and rasterise each appearance only when it is first drawn.
+    private final class NativeLookImages {
+        private let lock = NSLock()
+        private var images: [Bool: NSImage] = [:]
+        func image(dark: Bool, make: () -> NSImage) -> NSImage {
+            lock.lock()
+            defer { lock.unlock() }
+            if let hit = images[dark] { return hit }
+            let result = make()
+            images[dark] = result
+            return result
+        }
     }
 
     /// Treatment C: tint only the central neutral ink; an inset band shares the page's bottom corners.
