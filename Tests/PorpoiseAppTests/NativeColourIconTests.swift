@@ -94,6 +94,10 @@ import UniformTypeIdentifiers
         Settings.shared.updateAppearance { $0.iconTheme = Icons.nativeColourTheme }
         let reloaded = try #require(FileItem.load(url))
         #expect(reloaded.hasCustomIcon)
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        #expect(reloaded.posixPermissions == (attributes[.posixPermissions] as? NSNumber)?.intValue)
+        #expect(reloaded.owner == attributes[.ownerAccountName] as? String)
+        #expect(reloaded.group == attributes[.groupOwnerAccountName] as? String)
         #expect(reloaded.named("Renamed.pdf").hasCustomIcon)
         #expect(pixels(Icons.shared.image(for: reloaded, size: 64)) == before)
     }
