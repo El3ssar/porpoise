@@ -81,6 +81,8 @@ enum TransitionKind: String {
     private var arrival: (() -> Void)?
     /// A flight brings this view's items in: other changes don't animate meanwhile.
     private var flying = false
+    /// Where the items were as a panel began to slide in or out beside the view (`holdForPanel()`).
+    private var held: ItemSnapshot?
 
     init(list: ItemListView) { self.list = list }
 
@@ -183,7 +185,7 @@ enum TransitionKind: String {
     /// The view was resized (window, split pane, panel): items that change places glide there. Not while a flight
     /// brings them in: it reads where they are at every frame, so it follows them by itself.
     func resized() {
-        guard !flying, arrival == nil else { return list.relayout() }
+        guard !flying, arrival == nil, held == nil else { return list.relayout() }
         if list.resized() { record(.reflow) }
     }
 
@@ -191,6 +193,24 @@ enum TransitionKind: String {
     func reflow(_ change: () -> Void) {
         guard !flying, arrival == nil else { return change() }
         if list.reflowing(change) { record(.reflow) }
+    }
+
+    /// A panel is about to slide in or out beside the view, changing its width at every frame: each column it passed
+    /// would start the glide over (Icons). Remembers where the items are; until `glideForPanel`, resizes only lay the
+    /// view out again.
+    func holdForPanel() {
+        guard !flying, arrival == nil, list.mode == .icons else { return }
+        held = list.snapshotForTransition(pictures: false)
+    }
+
+    /// The view has the width the slide ends at: it is laid out for it until `releaseWidth()`, and its items glide
+    /// there once, over the slide.
+    func glideForPanel(duration: TimeInterval, curve: @escaping (Double) -> Double) {
+        guard let start = held else { return }
+        held = nil
+        list.layoutWidthOverride = list.visibleWidth
+        record(.reflow)
+        list.animateLayoutChange(from: start, duration: duration, curve: curve)
     }
 
     /// The view was laid out for a coming width (`layoutWidthOverride`) while its pane moved; it has that width now.

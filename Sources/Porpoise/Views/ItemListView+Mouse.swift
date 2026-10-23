@@ -58,8 +58,7 @@ extension ItemListView {
         let item = hoverIndex.flatMap { $0 < model.rows.count ? model.rows[$0].item : nil }
         model.prefetch(item)
         hoveredURL = item?.url
-        if let item, hoverAlpha[item.url] == nil { hoverAlpha[item.url] = 0.01 }
-        startHoverAnimation()
+        hoverFade.update()
         delegate?.itemList(self, hovered: item)
         let line = item.flatMap(model.searchSnippet(for:)).map { "“\($0)”" }
         if Settings.shared.showToolTips, let it = item {
@@ -77,38 +76,6 @@ extension ItemListView {
         guard mode != .icons, i < model.rows.count else { return nil }
         let name = model.displayName(for: model.rows[i].item)
         return textWidth(name) > nameTextRect(i).width ? name : nil
-    }
-
-    /// Hover highlights fade in and out (`Motion.hoverIn`, `.hoverOut`), each row from where it is, so moving across
-    /// rows hands the highlight over smoothly. With Reduce Motion they just switch.
-    private func startHoverAnimation() {
-        if Animator.reducesMotion() {
-            hoverClock.stop()
-            stepHover(by: 1)
-            return
-        }
-        guard !hoverClock.isRunning else { return }
-        var last = CACurrentMediaTime()
-        hoverClock.run { [weak self] now in
-            defer { last = now }
-            return self?.stepHover(by: CGFloat(max(0, now - last))) ?? false
-        }
-    }
-
-    /// Moves each hover highlight `seconds` further toward its goal (a whole fade: 1 with Reduce Motion); true while
-    /// some are still on their way.
-    @discardableResult private func stepHover(by seconds: CGFloat) -> Bool {
-        let rows = model.rows
-        let target = hoverIndex.flatMap { $0 < rows.count ? rows[$0].item.url : nil }
-        var moving = false
-        for (u, a) in hoverAlpha {
-            let goal: CGFloat = u == target ? 1 : 0
-            let next = goal > a ? min(1, a + seconds / Motion.hoverIn) : max(0, a - seconds / Motion.hoverOut)
-            if next == 0 && goal == 0 { hoverAlpha.removeValue(forKey: u) } else { hoverAlpha[u] = next }
-            if next != goal { moving = true }
-            if let i = model.index(of: u), i < frames.count { setNeedsDisplay(highlightRect(i).insetBy(dx: -30, dy: -4)) }
-        }
-        return moving
     }
 }
 

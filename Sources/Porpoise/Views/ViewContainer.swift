@@ -449,7 +449,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
         // A password typed into the address goes to the Keychain, never into the tab, its history or the session.
         let u = newURL.isFileURL ? newURL.standardizedFileURL : RemoteFS.storingPassword(newURL)
-        if !filterBar.isLocked { filterBar.clear(); if !Settings.shared.showFilterBarOnStartup { filterBar.isHidden = true } }
+        if !filterBar.isLocked { filterBar.clear(notifying: false); if !Settings.shared.showFilterBarOnStartup { filterBar.isHidden = true } }
         if !searchBar.isHidden { closeSearch() }
         messageBar.isHidden = true
         offlineNotice = nil
@@ -719,7 +719,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         filterBar.focus()
     }
 
-    func filterBar(_ bar: FilterBar, changed filter: NameFilter) { animatingItems { model.filter = filter } }
+    func filterBar(_ bar: FilterBar, changed filter: NameFilter) {
+        guard filter != model.filter else { return }
+        animatingItems { model.filter = filter }
+    }
 
     /// Applies a change to what's listed (filter, search results), the items gliding to their new places, the ones
     /// that went away fading out and new ones growing in.
@@ -727,7 +730,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     private func animatingItems(searchStyle: Bool = false, onlyAdding: Bool = false, _ change: () -> Void) {
         guard !showsApps else { return change() }
         if searchStyle {
-            list.transitions.change(.search, duration: 0.45, curve: Animator.easeInOutCubic, cascade: true, pictures: !onlyAdding, change)
+            list.transitions.change(
+                .search, duration: Motion.searchResults, curve: Animator.easeInOutCubic, cascade: true, pictures: !onlyAdding, change)
         } else {
             list.transitions.change(.filter, pictures: !onlyAdding, change)
         }
@@ -741,7 +745,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         let list = self.list
         let top = list.visibleRect.minY > 1 ? list.candidateIndexes(in: list.visibleRect).min() : nil
         let anchor = top.map { (key: list.key(ofRow: $0), offset: list.frames[$0].minY - list.visibleRect.minY) }
-        list.transitions.change(.remote, duration: 0.35) {
+        list.transitions.change(.remote, duration: Motion.remote) {
             change()
             list.computeLayout()
             if let anchor, let i = list.row(forKey: anchor.key) {
@@ -754,7 +758,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     func filterBarClosed(_ bar: FilterBar) {
         bar.clear()
         bar.isHidden = true
-        animatingItems { model.filter = NameFilter() }
+        // Clearing glided the items back already, unless what was typed wasn't a valid filter.
+        if model.filter != NameFilter() { animatingItems { model.filter = NameFilter() } }
         needsLayout = true
         window?.makeFirstResponder(list)
     }

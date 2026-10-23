@@ -56,7 +56,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     // Panel layout state (see MainWindowController+Panels).
     var rebuildingPanels = false
     var animatingPanels = false
-    let panelAnimator = Animator()
+    let panelAnimator = Animator(name: "panel")
     /// What to do when the running panel slide ends (apply a hide); also run when another slide interrupts it.
     var pendingSlideCompletion: (() -> Void)?
     /// Size of each panel split and of its panel when it last resized its subviews, to tell window resizes from

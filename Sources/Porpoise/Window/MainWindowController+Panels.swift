@@ -94,7 +94,7 @@ extension MainWindowController {
             toggle()
             if sidebarWasVisible == sidebarVisible { rebuildPanels(); return }
             if sidebarVisible {
-                rebuildPanels(); slide(slot, opening: true)
+                holdPanes(for: slot); rebuildPanels(); slide(slot, opening: true)
             } else {
                 // Put the flag back while sliding out, then apply.
                 toggle();
@@ -105,7 +105,7 @@ extension MainWindowController {
             return
         }
         if show {
-            toggle(); rebuildPanels(); slide(slot, opening: true)
+            holdPanes(for: slot); toggle(); rebuildPanels(); slide(slot, opening: true)
         } else {
             slide(slot, opening: false) {
                 toggle(); self.rebuildPanels()
@@ -120,6 +120,16 @@ extension MainWindowController {
         let completion = pendingSlideCompletion
         pendingSlideCompletion = nil
         completion?()
+        for t in paneTransitions { t.releaseWidth() }
+    }
+
+    /// The panes' item animations (both sides of a split).
+    private var paneTransitions: [ItemTransitions] { [tab.primary.list.transitions] + (tab.secondary.map { [$0.list.transitions] } ?? []) }
+
+    /// A panel beside the files is about to slide: their items glide to their new places once, over the slide.
+    private func holdPanes(for slot: PanelSlot) {
+        guard slot != .terminal else { return }
+        for t in paneTransitions { t.holdForPanel() }
     }
 
     /// Places/Folders sit below the title bar area; the strip above them (with the traffic lights) drags the window.
@@ -155,11 +165,20 @@ extension MainWindowController {
         }
         let from = opening ? collapsed : current
         let target = opening ? open : collapsed
+        let duration = opening ? Motion.panelOpen : Motion.panelClose
+        let curve = opening ? Animator.easeOutCubic : Animator.easeInCubic
         animatingPanels = true
         pendingSlideCompletion = completion
+        // The files are laid out once for where the slide ends (opening, the panel is already in), and glide there.
+        if !opening {
+            holdPanes(for: slot)
+            split.setPosition(target, ofDividerAt: divider)
+            split.layoutSubtreeIfNeeded()
+        }
+        for t in paneTransitions { t.glideForPanel(duration: duration, curve: curve) }
         split.setPosition(from, ofDividerAt: divider)
         panelAnimator.run(
-            duration: opening ? 0.22 : 0.18, curve: opening ? Animator.easeOutCubic : Animator.easeInCubic,
+            duration: duration, curve: curve,
             step: { p in
                 split.setPosition(from + (target - from) * CGFloat(p), ofDividerAt: divider)
             },
