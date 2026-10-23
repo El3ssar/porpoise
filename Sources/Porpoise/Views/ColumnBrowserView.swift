@@ -12,7 +12,7 @@ protocol ColumnNavigating: AnyObject {
 final class BrowserColumn {
     let model: DirectoryModel
     let list: ItemListView
-    let scroll = NSScrollView()
+    let scroll = NestedScrollView()
     /// The item of this column that the next column opens (the path through the columns).
     private(set) var pathItem: URL?
     weak var browser: ColumnBrowserView?
@@ -410,6 +410,9 @@ final class ColumnBrowserView: NSView {
         t = max(0, min(t, last.minX))
         return (t, frames.first { $0.minX >= t - 0.5 }?.minX ?? t)
     }
+
+    /// The strip is gliding to where it rests.
+    var isScrolling: Bool { scroller.isRunning }
 
     /// The last column in full view (or as much of it as fits, from its left edge), gliding there.
     func scrollToEnd() {

@@ -602,6 +602,153 @@ import Testing
         #expect(ColumnBrowserView.endOrigins(of: cols, focused: 3, visible: 150) == (603, 603))
     }
 
+    /// A scroll as a mouse wheel (its tilt sideways) or ⇧ and the wheel make it, `dx` pointing to the right, sent the
+    /// way the window sends it: each event to the view under the pointer, which the columns may have moved.
+    private enum Wheel: CaseIterable { case wheel, shift }
+    private func scroll(_ kind: Wheel, dx: Int32, dy: Int32 = 0, over view: NSView) {
+        guard let content = view.window?.contentView else { return }
+        // The middle of what shows of it (it may be cut by the pane's edge).
+        let shown = view.visibleRect
+        let p = content.convert(view.convert(CGPoint(x: shown.midX, y: shown.midY), to: nil), from: nil)
+        for _ in 0..<5 {
+            let cg = CGEvent(
+                scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: kind == .shift ? dx / 5 : dy / 5,
+                wheel2: kind == .shift ? 0 : dx / 5,
+                wheel3: 0)
+            if kind == .shift { cg?.flags = .maskShift }
+            if let e = cg.flatMap({ NSEvent(cgEvent: $0) }) { content.hitTest(p)?.scrollWheel(with: e) }
+        }
+    }
+
+    /// A trackpad scroll: fingers resting, the gesture, then its momentum.
+    private func gesture(dx: Int32, dy: Int32) -> [NSEvent] {
+        func event(_ dx: Int32, _ dy: Int32, phase: Int64 = 0, momentum: Int64 = 0) -> NSEvent? {
+            let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0)
+            cg?.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+            cg?.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
+            cg?.setIntegerValueField(.scrollWheelEventMomentumPhase, value: momentum)
+            return cg.flatMap { NSEvent(cgEvent: $0) }
+        }
+        // CGScrollPhase: began 1, changed 2, ended 4, may begin 128; CGMomentumScrollPhase: begin 1, continue 2, end 3.
+        let events =
+            [event(0, 0, phase: 128), event(dx / 10, dy / 10, phase: 1)] + (0..<9).map { _ in event(dx / 10, dy / 10, phase: 2) }
+            + [event(0, 0, phase: 4), event(dx / 20, dy / 20, momentum: 1)] + (0..<4).map { _ in event(dx / 20, dy / 20, momentum: 2) }
+            + [event(0, 0, momentum: 3)]
+        return events.compactMap { $0 }
+    }
+
+    /// A trackpad gesture is sideways or not from where it starts to the end of its momentum, whatever its fingers do
+    /// on the way (AppKit tracks a gesture against the real trackpad, which a test can't drive: the app's debug
+    /// bridge `wheel trackpad` posts one through the window server).
+    @Test func aTrackpadGestureGoesSidewaysAsItStarts() {
+        let sideways = gesture(dx: 200, dy: 30)
+        #expect(sideways.count == 18 && sideways[1].phase == .began && sideways.last?.momentumPhase == .ended)
+        #expect(sideways.map(NestedScrollView.isSideways) == [false] + Array(repeating: true, count: 17))
+        // Down, its fingers drifting sideways at the end: still down, momentum and all.
+        let down = gesture(dx: 0, dy: -300)
+        #expect(!down.map { NestedScrollView.isSideways($0) }.contains(true))
+        let drift = [down[1], sideways[2], sideways[13]]
+        #expect(drift.map(NestedScrollView.isSideways) == [false, false, false])
+        // A wheel's own clicks each count.
+        let tilt = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 0, wheel2: 3, wheel3: 0).flatMap {
+            NSEvent(cgEvent: $0)
+        }
+        let roll = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 3, wheel2: 0, wheel3: 0).flatMap {
+            NSEvent(cgEvent: $0)
+        }
+        #expect(tilt.map(NestedScrollView.isSideways) == true && roll.map(NestedScrollView.isSideways) == false)
+    }
+
+    /// Ten folders down, wider than the pane (alone, or in a split): a sideways scroll over any column moves the
+    /// columns, as in Finder, while an up-and-down one scrolls that column's rows; the keys and a window resize keep
+    /// the focused column in view.
+    @Test(arguments: [false, true]) func sidewaysScrollsMoveTheColumnsTenFoldersDown(split: Bool) async throws {
+        let reduces = Animator.reducesMotion
+        Animator.reducesMotion = { false }
+        defer { Animator.reducesMotion = reduces }
+        FrameClock.frameStep = 1.0 / 60
+        defer { FrameClock.frameStep = nil }
+        // AppKit glides a wheel's clicks with an animation an offscreen window never ends: each click lands at once.
+        UserDefaults.standard.set(false, forKey: "NSScrollAnimationEnabled")
+        defer { UserDefaults.standard.removeObject(forKey: "NSScrollAnimationEnabled") }
+        let s = try Scratch()
+        let deep = (1...10).map(String.init).joined(separator: "/")
+        for n in 0..<80 { try s.file("\(deep)/file \(n).txt", "\(n)") }
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 1000, height: 600), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let tab = PorpoiseTab(url: s.url)
+        window.contentView = tab
+        tab.frame = window.contentView?.bounds ?? .zero
+        let pane = tab.primary
+        try #require(await eventually { !pane.model.isLoading && !pane.model.rows.isEmpty })
+        pane.setMode(.columns)
+        if split {
+            tab.openSplit()
+            try #require(await eventually { !tab.isSliding && tab.secondary.map { !$0.model.rows.isEmpty } == true })
+            tab.setActive(secondary: false)
+        }
+        tab.layoutSubtreeIfNeeded()
+        window.makeFirstResponder(pane.list)
+        pane.setURL(s.path(deep))
+        try #require(await eventually { pane.model.rows.count == 80 })
+        pane.list.select(s.path("\(deep)/file 0.txt"))
+        let b = try browser(pane)
+        let clip = b.strip.contentView
+        #expect(b.folders.count == 11 && b.showsPreview)
+        #expect(b.strip.documentView.map { $0.frame.width > clip.bounds.width * 2 } == true, "\(clip.bounds)")
+        func focusedInView() -> Bool {
+            let f = pane.scroll.frame
+            return f.minX >= clip.bounds.minX - 0.5 && f.maxX <= clip.bounds.maxX + 0.5
+        }
+        #expect(await eventually { abs(clip.bounds.minX - b.endOrigin) < 0.5 } && focusedInView())
+
+        for kind in Wheel.allCases {
+            // Over the focused column, and over another one in view (the preview, in a narrow pane).
+            let other = b.shownColumns.map(\.view).last {
+                $0 !== pane.scroll && $0.frame.minX >= clip.bounds.minX && $0.frame.minX < clip.bounds.maxX - 40
+            }
+            for over in [pane.scroll, try #require(other)] {
+                let end = clip.bounds.minX
+                scroll(kind, dx: 15, over: over)
+                #expect(
+                    clip.bounds.minX < end - 50, "\(kind) over \(over === pane.scroll ? "the focused column" : "its parent"): \(clip.bounds.minX)")
+                scroll(kind, dx: -30, over: over)
+                #expect(clip.bounds.minX > end - 50, "\(kind) back: \(clip.bounds.minX)")
+                b.scrollToEnd()
+                #expect(await eventually { !b.isScrolling && abs(clip.bounds.minX - end) < 0.5 })
+            }
+        }
+        // Up and down: the columns stay (the column's own rows take it: an offscreen window's columns don't move for a
+        // wheel's clicks, the app's do, `wheel line|0|-40` in REPORT-scroll.md).
+        let end = clip.bounds.minX
+        for dy: Int32 in [15, -15] {
+            scroll(.wheel, dx: 0, dy: dy, over: pane.scroll)
+            #expect(clip.bounds.minX == end)
+        }
+        #expect(!NestedScrollView.isSideways(try #require(gesture(dx: 10, dy: -300).dropFirst().first)))
+
+        // ← all the way up and → back down: the focused column is in view at each step.
+        for _ in 0..<10 {
+            key(left, to: pane.list)
+            #expect(await eventually { !b.isScrolling && focusedInView() }, "\(pane.url.lastPathComponent): \(clip.bounds)")
+        }
+        #expect(pane.url.standardizedFileURL == s.url.standardizedFileURL && clip.bounds.minX == 0, "\(pane.url.path) \(clip.bounds)")
+        for _ in 0..<10 {
+            try #require(await eventually { !pane.model.isLoading && pane.model.selection.count == 1 })
+            key(right, to: pane.list)
+            #expect(await eventually { !b.isScrolling && focusedInView() }, "\(pane.url.lastPathComponent): \(clip.bounds)")
+        }
+        #expect(pane.url.standardizedFileURL == s.path(deep).standardizedFileURL)
+        // The window narrower and wider: still in view, the strip resting on a column's edge.
+        for width in [520.0, 1400, 800] {
+            window.setContentSize(NSSize(width: width, height: 600))
+            tab.layoutSubtreeIfNeeded()
+            #expect(await eventually { !b.isScrolling && abs(clip.bounds.minX - b.endOrigin) < 0.5 } && focusedInView(), "\(width): \(clip.bounds)")
+        }
+    }
+
     /// A column with nothing in it says so in a quiet line at its top (the focused one has the pane's own message),
     /// which never takes a click; one with rows doesn't.
     @Test func anEmptyColumnSaysSoQuietly() async throws {

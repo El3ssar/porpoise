@@ -22,7 +22,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     weak var delegate: ViewContainerDelegate?
     let model: DirectoryModel
     let list: ItemListView
-    let scroll = NSScrollView()
+    let scroll = NestedScrollView()
     let header = DetailsHeaderView()
     let statusBar = StatusBarView()
     let filterBar = FilterBar()
