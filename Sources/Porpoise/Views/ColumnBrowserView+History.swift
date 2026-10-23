@@ -9,6 +9,7 @@ extension ColumnBrowserView {
         var focused: URL
         var sizes: [ColumnSize]
         var previewWidth: CGFloat?
+        /// The selection, when it's small (a large one isn't kept for every entry: the current item is).
         var selection: Set<URL>
         var current: URL?
         var anchor: URL?
@@ -16,13 +17,16 @@ extension ColumnBrowserView {
         var origins: [URL: CGPoint]
     }
 
+    static let keptSelection = 1000
+
     /// The columns as they are now.
     func snapshot() -> Snapshot {
         let model = container.model
         var origins: [URL: CGPoint] = [:]
         for c in before + [after].compactMap({ $0 }) { origins[Self.key(c.url)] = c.list.visibleRect.origin }
         return Snapshot(
-            root: root, focused: container.url, sizes: sizes, previewWidth: previewWidth, selection: model.selection,
+            root: root, focused: container.url, sizes: sizes, previewWidth: previewWidth,
+            selection: model.selection.count <= Self.keptSelection ? model.selection : [],
             current: model.currentURL, anchor: model.anchorURL, origins: origins)
     }
 

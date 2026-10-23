@@ -5,7 +5,7 @@ import PorpoiseServices
 /// Where ← and → go in Column view.
 protocol ColumnNavigating: AnyObject {
     func columnKey(right: Bool, from list: ItemListView)
-    /// The list a zoom gesture over `list` acts on: the focused column's, the focus moving to `list`'s column first.
+    /// The list a zoom gesture over `list` acts on: the focused column's.
     func zoomTarget(from list: ItemListView) -> ItemListView
 }
 
@@ -647,10 +647,7 @@ final class ColumnBrowserView: NSView {
 
 extension ColumnBrowserView: ColumnNavigating {
     /// ← goes to the column before (its folder selected); → into the selected folder, selecting its first item.
-    func zoomTarget(from list: ItemListView) -> ItemListView {
-        if list !== container.list { focusNow(list) }
-        return container.list
-    }
+    func zoomTarget(from list: ItemListView) -> ItemListView { container.list }
 
     func columnKey(right: Bool, from list: ItemListView) {
         if list !== container.list { focusNow(list) }

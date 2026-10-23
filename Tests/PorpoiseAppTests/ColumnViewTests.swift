@@ -879,23 +879,25 @@ import Testing
         zoom(pane, to: 48)
         #expect(sizes(b).map { $0[1] } == [icon, icon, 48, icon])
 
-        // ⌘ and the wheel over another column: the focus goes there, and that column zooms.
+        // ⌘ and the wheel over another column: the focused column zooms, the focus and Back stay as they were.
+        let entries = pane.history.entries.count
         let first = b.before[0]
         let p = first.list.convert(CGPoint(x: first.list.visibleRect.midX, y: first.list.visibleRect.midY), to: nil)
         let cg = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0))
         cg.flags = .maskCommand
         cg.location = CGPoint(x: p.x, y: window.frame.height - p.y)
         first.list.scrollWheel(with: try #require(NSEvent(cgEvent: cg)))
-        #expect(pane.url.path == s.url.path)
         pane.list.commitZoom()
-        let zoomed = ZoomLevels.step(from: icon, by: 1)
-        #expect(zoomed != icon && sizes(b).map { $0[1] } == [zoomed, icon] && b.sizes.map(\.iconSize) == [zoomed, icon, 48, icon])
+        let zoomed = ZoomLevels.step(from: 48, by: 1)
+        #expect(pane.url.path == s.path(level(2)).path && pane.history.entries.count == entries)
+        #expect(zoomed != 48 && sizes(b).map { $0[1] } == [icon, icon, zoomed, icon])
         // The focused column's zoom stays its own when the focus moves on.
+        key(left, to: pane.list)
+        #expect(pane.list.iconSize == icon && b.sizes.map(\.iconSize) == [icon, icon, zoomed, icon])
         key(right, to: pane.list)
-        #expect(pane.list.iconSize == icon && sizes(b).map { $0[1] } == [zoomed, icon, 48])
         // A new column takes its parent's size.
         try await go(pane, s, to: 2, selecting: "S")
-        #expect(sizes(b).map { $0[1] } == [zoomed, icon, 48, 48])
+        #expect(sizes(b).map { $0[1] } == [icon, icon, zoomed, zoomed])
     }
 
     @Test func optionResizesEveryColumnAndTheWidthNewOnesOpenAt() async throws {

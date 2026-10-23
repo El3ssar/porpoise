@@ -237,7 +237,8 @@ extension ItemListView {
 extension ItemListView {
     override func scrollWheel(with event: NSEvent) {
         if event.modifierFlags.contains(.command), let target = columnNavigator?.zoomTarget(from: self), target !== self {
-            return target.scrollWheel(with: event)
+            _ = target.zoomWithWheel(event, anchored: false)
+            return
         }
         if zoomWithWheel(event) { return }
         super.scrollWheel(with: event)
@@ -248,8 +249,8 @@ extension ItemListView {
     }
 
     override func magnify(with event: NSEvent) {
-        // Column view: another column's zoom is the focused column's, the focus moving there first.
-        if let target = columnNavigator?.zoomTarget(from: self), target !== self { return target.magnify(with: event) }
+        // Column view: a zoom over another column is the focused column's (it stays where it is, as does the focus).
+        if let target = columnNavigator?.zoomTarget(from: self), target !== self { return target.zoomWithPinch(event, anchored: false) }
         zoomWithPinch(event)
     }
 
