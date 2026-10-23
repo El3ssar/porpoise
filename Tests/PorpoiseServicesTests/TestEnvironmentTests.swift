@@ -17,4 +17,9 @@ struct TestEnvironmentTests {
         #expect(TestEnvironment.bridge.value(in: env) == "t")
         #expect(TestEnvironment.cloudDemo.value(in: env) == nil)
     }
+
+    @Test func theAppLibraryHasItsOwnSwitch() {
+        #expect(TestEnvironment.appLibrary.name == "PORPOISE_APP_LIBRARY")
+        #expect(TestEnvironment.appLibrary.value(in: ["PORPOISE_APP_LIBRARY": "/a:/b"]) == "/a:/b")
+    }
 }
