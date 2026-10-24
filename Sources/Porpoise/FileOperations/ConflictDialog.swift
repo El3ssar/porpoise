@@ -104,7 +104,7 @@ final class ConflictDialog: NSObject {
         _ = label("⇄  Replace if different, skip if identical", CGRect(x: 32, y: 133, width: 388, height: 18), size: 12, weight: .semibold)
         method.font = .systemFont(ofSize: FontSize.small)
         method.controlSize = .small
-        method.frame = CGRect(x: 238, y: 103, width: 234, height: 24)
+        method.frame = CGRect(x: 238, y: 103, width: 210, height: 24)
         method.addItems(withTitles: Self.methodTitles(tolerance: info.comparisonOptions.timestampTolerance))
         method.selectItem(at: methods.firstIndex(of: info.comparisonOptions.method) ?? 0)
         method.target = self; method.action = #selector(methodChanged)
@@ -117,7 +117,9 @@ final class ConflictDialog: NSObject {
         let total = info.remainingConflicts ?? 1
         let rule = NSButton(title: total > 1 ? "Apply to All \(total)" : "Apply", target: self, action: #selector(different))
         rule.bezelStyle = .push
-        rule.frame = CGRect(x: 482, y: 113, width: 108, height: 32)
+        rule.sizeToFit()
+        // Right-aligned in the strip, as wide as its title needs ("Apply to All 120").
+        rule.frame = CGRect(x: 594 - rule.frame.width, y: 113, width: rule.frame.width, height: 32)
         window.contentView!.addSubview(rule)
         applyAll.title = total > 1 ? "Do this for the other \(total - 1) conflicts" : "Do this for later conflicts in this transfer"
         if total > 1 { _ = label("Conflict 1 of \(total)", CGRect(x: 470, y: 325 + height, width: 130, height: 18), size: 11, secondary: true) }

@@ -41,6 +41,10 @@ import Testing
             // Nothing overlaps: each button's frame is clear of the others'.
             let shown = all.filter { !$0.isHidden && $0.frame.minY < 60 }.map(\.frame)
             for (i, a) in shown.enumerated() { for b in shown[(i + 1)...] { #expect(a.intersection(b).width <= 0) } }
+            // The rule's button shows its whole title beside the method pop-up.
+            let rule = try #require(all.first { $0.title.hasPrefix("Apply") })
+            let method = try #require(d.window.contentView?.subviews.first { $0 is NSPopUpButton })
+            #expect(rule.frame.width >= rule.fittingSize.width && rule.frame.minX >= method.frame.maxX)
         }
     }
 
