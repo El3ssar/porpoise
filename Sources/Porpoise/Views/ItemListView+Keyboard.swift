@@ -46,11 +46,13 @@ extension ItemListView {
         case Key.pageUp: moveCurrent(.pageUp, extend: shift); return
         case Key.pageDown: moveCurrent(.pageDown, extend: shift); return
         case Key.returnKey where mods.isEmpty:
-            // Return renames from the menu bar (Mac keys); it opens here only when no menu item has it (Dolphin keys).
-            if Settings.shared.shortcutKeySet == .dolphin,
-                MenuCommandRegistry.shared.fallbackAllowed(#selector(MainWindowController.openSelected(_:))),
-                !MenuCommandRegistry.shared.isBound(KeyboardShortcut(key: "\r"))
-            {
+            // AppKit offers a key to the menu bar only with ⌘ or ⌃, so a bare Return always comes here, even when a menu
+            // item has it (Open with Dolphin's keys, Rename with the Mac keys): it does that item's job. Open is this
+            // list's own (a column's selection, or its current item). With no item on Return, Dolphin's keys open.
+            let open = #selector(MainWindowController.openSelected(_:))
+            if let item = MenuCommandRegistry.shared.item(bound: KeyboardShortcut(key: "\r")) {
+                if item.action == open { openSelection() } else { perform(item) }
+            } else if Settings.shared.shortcutKeySet == .dolphin, MenuCommandRegistry.shared.fallbackAllowed(open) {
                 openSelection()
             }
             return
@@ -154,6 +156,17 @@ extension ItemListView {
         case .orderedDescending: return false
         case .orderedSame: return a.1 < b.1
         }
+    }
+
+    /// Runs `item` as the menu bar would for its key: on the first responder in this list's chain that takes its
+    /// action, if that responder enables it.
+    private func perform(_ item: NSMenuItem) {
+        guard let action = item.action else { return }
+        var responder: NSResponder? = self
+        while let r = responder, !r.responds(to: action) { responder = r.nextResponder }
+        guard let target = item.target ?? responder else { return }
+        if let validation = target as? NSMenuItemValidation, !validation.validateMenuItem(item) { return }
+        NSApp.sendAction(action, to: target, from: item)
     }
 
     func openSelection() {
