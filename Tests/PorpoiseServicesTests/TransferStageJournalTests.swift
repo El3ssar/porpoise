@@ -8,6 +8,32 @@ import Testing
 @testable import PorpoiseServices
 
 struct TransferStageJournalTests {
+    @Test func anActualKillDuringExfatReplacementKeepsBothGenerations() async throws {
+        let s = try Scratch(), disk = try DiskImage(name: "PPPUB", megabytes: 64, fileSystem: "ExFAT", in: s)
+        let target = disk.volume.appendingPathComponent("target")
+        try Data("previous".utf8).write(to: target)
+        try Data("incoming".utf8).write(to: disk.volume.appendingPathComponent("incoming"))
+        let probe = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent(".build/debug/MoveRecoveryProbe")
+        let process = Process()
+        process.executableURL = probe
+        process.arguments = [s.url.path, "replacement"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            process.terminationHandler = { _ in continuation.resume() }
+            do { try process.run() } catch { continuation.resume(throwing: error) }
+        }
+        #expect(process.terminationReason == .uncaughtSignal && process.terminationStatus == SIGKILL)
+        let journal = TransferStageJournal(folder: s.path("journal"))
+        let record = try #require(try journal.store.all().first)
+        #expect(record.preserved)
+        #expect(try String(contentsOf: record.holding.appendingPathComponent("Previous/target"), encoding: .utf8) == "previous")
+        #expect(try String(contentsOf: record.holding.appendingPathComponent("Incoming/target"), encoding: .utf8) == "incoming")
+        try Data("arrived".utf8).write(to: target)
+        #expect(journal.recover().map(\.url) == [record.holding])
+        #expect(try String(contentsOf: target, encoding: .utf8) == "arrived")
+    }
     @Test func missingVolumeUUIDKeepsMovesAndStagingRecoveryAvailable() throws {
         let s = try Scratch(), journal = TransferStageJournal(folder: s.path("journal"), volumeUUID: { _ in nil })
         let source = try s.file("source", "bytes"), target = try s.file("target", "bytes")
@@ -174,9 +200,11 @@ struct TransferStageJournalTests {
         #expect(FileJob.itemExists(at: stage))
     }
 
-    @Test func remoteDownloadStagesOnTheDestinationVolume() throws {
+    @Test(arguments: ["APFS", "ExFAT", "MS-DOS FAT32"], [false, true])
+    func remoteDownloadStagesOnTheDestinationVolume(_ fileSystem: String, _ replacing: Bool) throws {
         let s = try Scratch(), server = try Scratch()
-        let disk = try DiskImage(in: s)
+        let disk = try DiskImage(name: "PPPUB", megabytes: 64, fileSystem: fileSystem, in: s)
+        if replacing { try Data("previous".utf8).write(to: disk.volume.appendingPathComponent("source")) }
         let provider = CountingTransferProvider(root: server.url)
         let remote = URL(string: "sftp://\(UUID().uuidString)/source")!
         try server.file("source", "download")
@@ -184,15 +212,32 @@ struct TransferStageJournalTests {
         defer { RemoteFS.use(nil, for: remote) }
         provider.onDownload = {
             #expect((try? FileManager.default.contentsOfDirectory(atPath: disk.volume.path).contains { $0.hasPrefix(".porpoise-transfer-") }) == true)
-            #expect(!FileJob.itemExists(at: disk.volume.appendingPathComponent("source")))
+            #expect(FileJob.itemExists(at: disk.volume.appendingPathComponent("source")) == replacing)
         }
         let journal = TransferStageJournal(folder: s.path("journal"))
         let job = RemoteTransferJob(kind: .copy, sources: [remote], destination: disk.volume, control: JobControl(), rule: .ask, options: .init())
         job.stageJournal = journal
+        job.resolve = { _ in .init(.overwrite) }
         job.run()
-        #expect(job.errors.isEmpty)
+        #expect(job.errors.isEmpty, "\(job.errors)")
         #expect(try String(contentsOf: disk.volume.appendingPathComponent("source"), encoding: .utf8) == "download")
         #expect(try journal.store.all().isEmpty)
+    }
+
+    @Test func anArrivalDuringDownloadKeepsItsBytesAndNamesTheConflict() throws {
+        let s = try Scratch(), server = try Scratch(), destination = try s.folder("dst")
+        let provider = CountingTransferProvider(root: server.url)
+        let remote = URL(string: "sftp://\(UUID().uuidString)/source")!
+        try server.file("source", "download")
+        RemoteFS.use(provider, for: remote)
+        defer { RemoteFS.use(nil, for: remote) }
+        provider.onDownload = {
+            do { try s.file("dst/source", "arrival") } catch { Issue.record(error) }
+        }
+        let job = RemoteTransferJob(kind: .copy, sources: [remote], destination: destination, control: JobControl(), rule: .ask, options: .init())
+        job.run()
+        #expect(job.results.isEmpty && s.read("dst/source") == "arrival")
+        #expect(job.errors.contains { $0.contains(RemoteError.exists("source").localizedDescription) })
     }
 
     @Test func uploadReadsTheOriginalWithoutALocalSnapshot() throws {

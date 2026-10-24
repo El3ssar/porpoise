@@ -23,6 +23,7 @@ public final class FileJob: @unchecked Sendable {
     public var onEvent: (JobEvent) -> Void = { _ in }
     /// Services persists private source claims so a crash never makes them undiscoverable.
     public var removalCheckpoint: (LocalMoveRemovalReceipt.Checkpoint) throws -> Void = { _ in }
+    public var publicationCheckpoint: (FilePublication.Checkpoint) throws -> Void = { _ in }
     /// Partial copies to continue instead of starting over, by source (from a journal, after a relaunch).
     public var resumePoints: [URL: ResumePoint] = [:]
     /// Clone files where the volume can (APFS). Off in tests that need real byte copies on one volume.
@@ -91,6 +92,7 @@ public final class FileJob: @unchecked Sendable {
     /// Byte counters for the file copyfile() is working on.
     private var currentFileBase: Int64 = 0
     private var currentFileCopied: Int64 = 0
+    private var copyRootPath = ""
     /// First error copyfile() reported through its callback during a recursive copy.
     fileprivate var copyFailure: (code: Int32, path: String?)?
 
@@ -223,7 +225,7 @@ public final class FileJob: @unchecked Sendable {
 
     /// Files permission problems separately so the app can offer to authenticate.
     private func record(_ error: Error, for src: URL, target: URL?) {
-        if !(error is LocalMoveRemovalReceipt.Retained), FileErrorKind.classify(error) == .permission {
+        if !(error is LocalMoveRemovalReceipt.Retained || error is FilePublication.Retained), FileErrorKind.classify(error) == .permission {
             denied.append(src)
             if let t = target { deniedTargets[src] = t }
         } else {
@@ -335,7 +337,9 @@ public final class FileJob: @unchecked Sendable {
             throw FileOperationError.cancelled
         } catch FileOperationError.interrupted {
             throw FileOperationError.interrupted
-        } catch  where !(error is LocalMoveRemovalReceipt.Retained) && FileErrorKind.classify(error) == .permission {
+        } catch
+            where !(error is LocalMoveRemovalReceipt.Retained || error is FilePublication.Retained) && FileErrorKind.classify(error) == .permission
+        {
             record(error, for: src, target: target)
             return nil
         }
@@ -427,9 +431,11 @@ public final class FileJob: @unchecked Sendable {
         let top = depth == 0
         // A path too long for a hidden name next to it is written in place, as before.
         var dest =
-            replacing
-            ? Self.stagingURL(for: target)
-            : copying ? Self.copyStagingURL(for: target, of: src, insideLength: longestInsidePaths[src]) ?? target : target
+            replacing && sameVolumeMove
+            ? src
+            : replacing
+                ? Self.stagingURL(for: target)
+                : copying ? Self.copyStagingURL(for: target, of: src, insideLength: longestInsidePaths[src]) ?? target : target
         var resumeFrom: Int64 = 0
         if copying, top, let point = resumePoints[src], Self.itemExists(at: point.staging) {
             dest = point.staging
@@ -441,7 +447,7 @@ public final class FileJob: @unchecked Sendable {
         case .link:
             try fm.createSymbolicLink(at: dest, withDestinationURL: src)
         case .move where sameVolumeMove:
-            try fm.moveItem(at: src, to: dest)
+            if dest != src { try FilePublication.renameExclusively(src, to: dest) }
             renamed = true
             progress.doneBytes += size(of: src)  // what was there before the rename
         default:
@@ -464,30 +470,24 @@ public final class FileJob: @unchecked Sendable {
             }
         }
         if replacing {
-            // Swap publishes atomically and leaves the displaced item at our staging path. If archiving it
-            // fails, swap back before reporting the error: the old target must never disappear on failure.
-            var swapped = false
             do {
-                guard renamex_np(dest.path, target.path, UInt32(RENAME_SWAP)) == 0 else {
-                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-                }
-                swapped = true
-                if let disposeReplacedItem { try disposeReplacedItem(dest, target) } else { try fm.removeItem(at: dest) }
+                try FilePublication.replace(
+                    dest, at: target,
+                    dispose: { previous in
+                        if let disposeReplacedItem { try disposeReplacedItem(previous, target) } else { try fm.removeItem(at: previous) }
+                    }, checkpoint: publicationCheckpoint)
             } catch {
-                if swapped, renamex_np(dest.path, target.path, UInt32(RENAME_SWAP)) != 0 {
-                    // Another process may have moved the published target. Never clean up the complete old
-                    // item when rollback failed: both generations must remain recoverable.
-                    throw FileOperationError.failed(
-                        "Could not restore the previous item from “\(dest.path)”. The completed replacement may have moved. \(error.localizedDescription)"
-                    )
+                if error is FilePublication.Retained { throw error }
+                if renamed {
+                    if dest != src { try? FilePublication.renameExclusively(dest, to: src) }
+                } else {
+                    try? fm.removeItem(at: dest)
                 }
-                if renamed { try? fm.moveItem(at: dest, to: src) } else { try? fm.removeItem(at: dest) }
                 throw error
             }
         } else if dest != target {
-            // Never over an item that appeared meanwhile (another job pasting the same name): that one stays.
-            if renamex_np(dest.path, target.path, UInt32(RENAME_EXCL)) != 0 {
-                let code = errno
+            do { try FilePublication.renameExclusively(dest, to: target) } catch {
+                let code = (error as? POSIXError)?.code.rawValue ?? EIO
                 try? fm.removeItem(at: dest)
                 throw NSError(
                     domain: NSPOSIXErrorDomain, code: Int(code),
@@ -677,7 +677,17 @@ public final class FileJob: @unchecked Sendable {
             } else if what == COPYFILE_COPY_DATA && stage == COPYFILE_FINISH {
                 job.fileFinished()
             } else if what == COPYFILE_RECURSE_FILE && stage == COPYFILE_START, let s = src {
-                job.progress.currentName = (String(cString: s) as NSString).lastPathComponent
+                let path = String(cString: s), url = URL(fileURLWithPath: path)
+                let name = url.lastPathComponent
+                // copyfile reads packed attributes through the counterpart. Do not also publish its
+                // generated sidecar as ordinary data during folder recursion (including onto APFS).
+                if path != job.copyRootPath, name.hasPrefix("._"),
+                    FileJob.itemExists(at: url.deletingLastPathComponent().appendingPathComponent(String(name.dropFirst(2)))),
+                    CopyVerification.isGeneratedAppleDouble(url)
+                {
+                    return COPYFILE_SKIP
+                }
+                job.progress.currentName = name
             }
             return COPYFILE_CONTINUE
         }
@@ -688,6 +698,7 @@ public final class FileJob: @unchecked Sendable {
         currentFileBase = progress.doneBytes
         currentFileCopied = 0
         copyFailure = nil
+        copyRootPath = src.path
         if copyfile(src.path, dst.path, state, flags) != 0 || copyFailure != nil {
             let code = copyFailure?.code ?? errno
             let failed = copyFailure?.path.map { ($0 as NSString).lastPathComponent } ?? src.lastPathComponent

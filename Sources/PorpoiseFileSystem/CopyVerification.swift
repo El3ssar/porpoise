@@ -64,7 +64,7 @@ public enum CopyVerification {
         case S_IFDIR:
             guard let la = try? reader.list(a.path) else { return r.mismatches.append(.init(path: path, reason: "the original could not be read")) }
             guard let lb = try? reader.list(b.path) else { return r.mismatches.append(.init(path: path, reason: "the copy could not be read")) }
-            let ca = Set(la)
+            let ca = Set(contentNames(la, at: a))
             let cb = Set(lb).filter { name in
                 ca.contains(name) || !name.hasPrefix("._") || !ca.contains(String(name.dropFirst(2)))
                     || !isGeneratedAppleDouble(b.appendingPathComponent(name))
@@ -100,6 +100,15 @@ public enum CopyVerification {
 
     private static func join(_ a: String, _ b: String) -> String { a.isEmpty ? b : a + "/" + b }
 
+    /// Packed metadata on the source is unpacked by copyfile on a native destination. Unlinking its
+    /// counterpart also removes it on FAT/exFAT; arbitrary ._ files remain ordinary captured entries.
+    static func contentNames(_ names: [String], at folder: URL) -> [String] {
+        let all = Set(names)
+        return names.filter { name in
+            !name.hasPrefix("._") || !all.contains(String(name.dropFirst(2))) || !isGeneratedAppleDouble(folder.appendingPathComponent(name))
+        }
+    }
+
     /// Foundation hides AppleDouble names, including ordinary user files named ._something.
     static func directoryNames(_ path: String) throws -> [String] {
         guard let directory = opendir(path) else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
@@ -118,7 +127,7 @@ public enum CopyVerification {
         }
     }
 
-    /// Only destination-side metadata generated on a filesystem without native xattrs. A user file
+    /// Only metadata generated on a filesystem without native xattrs. A user file
     /// merely named ._something, an orphan, a symlink or malformed data must remain a real difference.
     static func isGeneratedAppleDouble(_ url: URL) -> Bool {
         var volume = statfs(), info = stat()

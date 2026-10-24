@@ -97,6 +97,23 @@ public final class TransferStageJournal: @unchecked Sendable {
         try saveActive(
             Record(operationID: id, holding: holding, identity: identity(holding), parentIdentity: identity(holding.deletingLastPathComponent())))
     }
+    public func publicationCheckpoint(_ checkpoint: FilePublication.Checkpoint) throws {
+        switch checkpoint {
+        case .protecting(let holding, let original, let incoming):
+            let id = try id(holding)
+            var record =
+                try store.load(id)
+                ?? Record(
+                    operationID: id, holding: holding, identity: identity(holding), parentIdentity: identity(holding.deletingLastPathComponent()))
+            guard try identity(holding) == record.identity else { throw CloudJournalError.invalidRecord }
+            record.source = original; record.sourceIdentity = try identity(original)
+            record.target = incoming; record.targetIdentity = try identity(incoming)
+            record.preserved = true
+            try saveActive(record)
+        case .previousClaimed: break
+        case .finished(let holding): try finish(holding)
+        }
+    }
     private func saveActive(_ record: Record) throws {
         let inserted = lock.withLock { active.insert(record.operationID).inserted }
         do { try store.save(record) } catch {
@@ -193,8 +210,6 @@ public final class TransferStageJournal: @unchecked Sendable {
         return retained
     }
     private func restore(_ claimed: URL, to source: URL) throws {
-        guard renamex_np(claimed.path, source.path, UInt32(RENAME_EXCL)) == 0 else {
-            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-        }
+        try FilePublication.renameExclusively(claimed, to: source)
     }
 }
