@@ -56,4 +56,58 @@ import Testing
         let replace = buttons(d).first { $0.keyEquivalent == "\r" }
         #expect(replace?.bezelColor?.usingColorSpace(.sRGB) == Theme.accent.usingColorSpace(.sRGB))
     }
+
+    // MARK: Real events (AppKit's own dispatch: NSApp.sendEvent for keys)
+
+    /// The sheet shown on its own, answering into `answers`.
+    private func presented(newer: Bool, _ answers: @escaping (ConflictAnswer) -> Void) -> ConflictDialog {
+        NSApplication.shared.setActivationPolicy(.prohibited)
+        let d = dialog(newer: newer)
+        d.present(on: nil, completion: answers)
+        d.window.orderFront(nil)
+        return d
+    }
+
+    private func press(_ keyCode: UInt16, _ characters: String, _ flags: NSEvent.ModifierFlags = [], in window: NSWindow) throws {
+        let event = try #require(
+            NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                isARepeat: false, keyCode: keyCode))
+        NSApp.sendEvent(event)
+    }
+
+    /// Return is Replace for a newer item and Skip for an older one; Escape stops the transfer; ⌘D keeps both.
+    @Test(arguments: [(true, ConflictResolution.overwrite), (false, .skip)])
+    func returnAndEscapeAnswerAsTheirButtonsSay(newer: Bool, returnAnswer: ConflictResolution) throws {
+        var answer: ConflictAnswer?
+        let d = presented(newer: newer) { answer = $0 }
+        defer { d.window.close() }
+        try press(36, "\r", in: d.window)
+        #expect(answer?.resolution == returnAnswer)
+
+        answer = nil
+        let e = presented(newer: newer) { answer = $0 }
+        defer { e.window.close() }
+        try press(53, "\u{1b}", in: e.window)
+        #expect(answer?.resolution == .cancel)
+
+        answer = nil
+        let k = presented(newer: newer) { answer = $0 }
+        defer { k.window.close() }
+        try press(2, "d", .command, in: k.window)
+        #expect(answer?.resolution == .keepBoth)
+    }
+
+    /// Each button gives its answer when pressed (performClick: a synthetic mouse-down through window.sendEvent ends
+    /// the test process with status 0 under swift test, so the run silently stops).
+    @Test(arguments: [("Skip", ConflictResolution.skip), ("Keep Both", .keepBoth), ("Replace", .overwrite), ("Stop Copying", .cancel)])
+    func clickingAButtonAnswersWithIt(title: String, resolution: ConflictResolution) throws {
+        var answer: ConflictAnswer?
+        let d = presented(newer: true) { answer = $0 }
+        defer { d.window.close() }
+        let button = try #require(buttons(d).first { $0.title == title })
+        button.performClick(nil)
+        #expect(answer?.resolution == resolution)
+    }
 }

@@ -153,9 +153,11 @@ import Testing
         #expect(check.image is ChoiceImage && popUp.cell is ThemedPopUpButtonCell && table.headerView is ThemedHeaderView)
         #expect(push.bezelColor != nil && !table.usesAlternatingRowBackgroundColors && label.textColor == Theme.windowText)
         Theme.dress(root)  // a second change of palette records nothing new
+        check.title = "Renamed"  // changed while the palette is on: the native theme keeps the new title
         Settings.shared.updateAppearance { $0.themeName = AppearanceTheme.systemName }
         Theme.dress(root)
         expectAppKits()
+        #expect(check.title == "Renamed")
         #expect(popUp.numberOfItems == 2 && popUp.indexOfSelectedItem == 1 && popUp.cell?.accessibilityRole() == .popUpButton)
         #expect(radio.cell?.accessibilityRole() == .radioButton && column.headerCell.stringValue == "Name")
     }

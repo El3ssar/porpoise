@@ -142,7 +142,7 @@ extension Theme {
             let title = button.attributedTitle
             let color = title.length > 0 ? title.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor : nil
             if title.length > 0, color == nil || isSystem(color, primaryText) {
-                remember(button) { $0.title = title }
+                remember(button) { $0.tintedTitle = true }
                 let colored = NSMutableAttributedString(attributedString: title)
                 colored.addAttribute(.foregroundColor, value: windowText, range: NSRange(location: 0, length: colored.length))
                 button.attributedTitle = colored
@@ -161,7 +161,9 @@ extension Theme {
         var border: NSColor??
         var text: NSColor??
         var flag: Bool?
-        var title: NSAttributedString?
+        /// A checkbox's or radio button's title was given the palette's text colour (only that is undone: the title
+        /// itself may have changed since).
+        var tintedTitle: Bool?
     }
 
     private static let originals = NSMapTable<NSView, Original>.weakToStrongObjects()
@@ -175,7 +177,7 @@ extension Theme {
         if original.border == nil, let c = fresh.border { original.border = c }
         if original.text == nil, let c = fresh.text { original.text = c }
         if original.flag == nil { original.flag = fresh.flag }
-        if original.title == nil { original.title = fresh.title }
+        if original.tintedTitle == nil { original.tintedTitle = fresh.tintedTitle }
         originals.setObject(original, forKey: view)
     }
 
@@ -206,7 +208,11 @@ extension Theme {
         case let slider as NSSlider:
             if let c = o.color { slider.trackFillColor = c }
         case let button as NSButton:
-            if let t = o.title { button.attributedTitle = t }
+            if o.tintedTitle == true, button.attributedTitle.length > 0 {
+                let title = NSMutableAttributedString(attributedString: button.attributedTitle)
+                title.removeAttribute(.foregroundColor, range: NSRange(location: 0, length: title.length))
+                button.attributedTitle = title
+            }
             if let c = o.color { button.bezelColor = c }
         case let box as NSBox:
             if let c = o.color { box.fillColor = c ?? .clear }
