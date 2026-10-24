@@ -35,6 +35,12 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
     private let addButton = NSButton()
     private let removeButton = NSButton()
     private let importButton = NSPopUpButton(frame: .zero, pullsDown: true)
+    /// The list and the selected row's settings; hidden while there is nothing to list.
+    private let split = NSStackView()
+    /// While there is nothing to list: what this window is for and what to do, centred in the window (UI-11).
+    let emptyView = NSView()
+    /// The empty state's own Import from SSH Config pull-down, shown while ~/.ssh/config has hosts to import.
+    private let emptyImport = NSPopUpButton(frame: .zero, pullsDown: true)
     private(set) var entries: [Entry] = []
     /// The row shown on the right (a server not saved yet is shown without being in the list).
     private(set) var selection: Entry?
@@ -159,7 +165,7 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
 
         let left = NSStackView(views: [scroll, buttons])
         left.orientation = .vertical
-        left.spacing = 6
+        left.spacing = Tokens.Space.s
         left.widthAnchor.constraint(equalToConstant: 270).isActive = true
         scroll.widthAnchor.constraint(equalTo: left.widthAnchor).isActive = true
         buttons.widthAnchor.constraint(equalTo: left.widthAnchor).isActive = true
@@ -186,20 +192,38 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
             flipped.widthAnchor.constraint(equalTo: editorScroll.contentView.widthAnchor),
         ])
 
-        let split = NSStackView(views: [left, editorScroll])
+        split.setViews([left, editorScroll], in: .leading)
         split.orientation = .horizontal
         split.alignment = .top
-        split.spacing = 18
-        split.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(split)
+        split.spacing = Tokens.Space.xl
+        let margin = Tokens.Space.xl
+        for v in [split, emptyView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            content.addSubview(v)
+            NSLayoutConstraint.activate([
+                v.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: margin),
+                v.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -margin),
+                v.topAnchor.constraint(equalTo: content.topAnchor, constant: margin),
+                v.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -margin),
+            ])
+        }
         NSLayoutConstraint.activate([
-            split.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
-            split.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
-            split.topAnchor.constraint(equalTo: content.topAnchor, constant: 14),
-            split.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -14),
             left.heightAnchor.constraint(equalTo: split.heightAnchor),
             editorScroll.heightAnchor.constraint(equalTo: split.heightAnchor),
         ])
+        emptyView.isHidden = true
+        emptyImport.addItem(withTitle: "Import from SSH Config")
+        emptyImport.controlSize = .large
+        emptyImport.target = self
+        emptyImport.action = #selector(importAlias(_:))
+        emptyImport.setAccessibilityIdentifier("accounts-empty-import")
+    }
+
+    /// Shows the list and the selected row, or (`empty`) the window's empty state in their place.
+    private func setEmpty(_ empty: Bool) {
+        split.isHidden = empty
+        emptyView.isHidden = !empty
+        if !empty { emptyView.subviews.forEach { $0.removeFromSuperview() } }
     }
 
     private func reload() {
@@ -257,7 +281,7 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
 
     /// ~/.ssh/config hosts not saved yet, each with where it leads.
     private func rebuildImportMenu() {
-        while importButton.numberOfItems > 1 { importButton.removeItem(at: 1) }
+        for b in [importButton, emptyImport] { while b.numberOfItems > 1 { b.removeItem(at: 1) } }
         let saved = Set(profiles.profiles.compactMap(\.sshAlias))
         let hosts = sshConfig().hosts.filter { !saved.contains($0.alias) }
         for h in hosts {
@@ -267,8 +291,10 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             item.representedObject = h.alias
             importButton.menu?.addItem(item)
+            emptyImport.menu?.addItem(item.copy() as! NSMenuItem)
         }
         importButton.isEnabled = !hosts.isEmpty
+        emptyImport.isHidden = hosts.isEmpty
     }
 
     // MARK: Table
@@ -292,7 +318,7 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
         switch entries[row] {
         case .heading(let title):
             let t = NSTextField(labelWithString: title)
-            t.font = .systemFont(ofSize: Tokens.FontSize.small, weight: .semibold)
+            t.font = Tokens.font(.subheadline)
             t.textColor = .secondaryLabelColor
             t.setAccessibilityRole(.staticText)
             return t
@@ -359,6 +385,7 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
         selection = .account(id)
         form = nil
         selectRow(of: .account(id))
+        setEmpty(false)
         editor.arrangedSubviews.forEach { $0.removeFromSuperview() }
         let detail = AccountDetailView(accountID: id)
         accountDetail = detail
@@ -381,6 +408,7 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
     }
 
     private func showForm(_ f: ConnectionForm) {
+        setEmpty(false)
         editor.arrangedSubviews.forEach { $0.removeFromSuperview() }
         let save = NSButton(title: "Save", target: self, action: #selector(saveProfile(_:)))
         let connect = NSButton(title: "Connect", target: self, action: #selector(connectProfile(_:)))
@@ -399,13 +427,16 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
         accountDetail = nil
         table.deselectAll(nil)
         editor.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        // A designed empty state, centered: what this window is for and the things to do next.
+        setEmpty(true)
+        emptyView.subviews.forEach { $0.removeFromSuperview() }
+        // A designed empty state, centred in the window: what this window is for and the things to do next. An empty
+        // list beside it would only repeat that there is nothing.
         let symbol = NSImageView(
             image: NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: 40, weight: .light)) ?? NSImage())
         symbol.contentTintColor = Theme.windowTextInactive
         let title = NSTextField(labelWithString: "No accounts or servers")
-        title.font = .systemFont(ofSize: Tokens.FontSize.title2, weight: .semibold)
+        title.font = Tokens.font(.title2)
         title.textColor = Theme.windowText
         let body = NSTextField(
             wrappingLabelWithString: "Connect a cloud account, or save SFTP, FTP, SMB and S3 servers, to reach them from the sidebar. "
@@ -423,15 +454,19 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
             b.controlSize = .large
         }
         let actions = NSStackView(views: [cloud, add])
-        actions.spacing = 12
-        let column = NSStackView(views: [symbol, title, body, actions])
+        actions.spacing = Tokens.Space.s
+        let column = NSStackView(views: [symbol, title, body, actions, emptyImport])
         column.orientation = .vertical
         column.alignment = .centerX
-        column.spacing = 10
-        column.setCustomSpacing(16, after: body)
-        column.edgeInsets = NSEdgeInsets(top: 96, left: 0, bottom: 0, right: 0)
-        editor.addArrangedSubview(column)
-        column.widthAnchor.constraint(equalTo: editor.widthAnchor).isActive = true
+        column.spacing = Tokens.Space.s
+        column.setCustomSpacing(Tokens.Space.l, after: body)
+        column.translatesAutoresizingMaskIntoConstraints = false
+        emptyView.addSubview(column)
+        NSLayoutConstraint.activate([
+            column.centerXAnchor.constraint(equalTo: emptyView.centerXAnchor),
+            column.centerYAnchor.constraint(equalTo: emptyView.centerYAnchor),
+            column.widthAnchor.constraint(lessThanOrEqualTo: emptyView.widthAnchor),
+        ])
         updateButtons()
     }
 
