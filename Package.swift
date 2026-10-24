@@ -11,6 +11,7 @@ let package = Package(
     products: [
         .executable(name: "Porpoise", targets: ["Porpoise"]),
         .executable(name: "PorpoiseHelper", targets: ["PorpoiseHelper"]),
+        .executable(name: "PorpoiseCLI", targets: ["PorpoiseCLI"]),
     ],
     dependencies: [
         .package(path: "Vendor/SwiftTerm"),
@@ -39,6 +40,7 @@ let package = Package(
             swiftSettings: testHooks
         ),
         .executableTarget(name: "PorpoiseHelper", dependencies: ["PorpoiseHelperKit"]),
+        .executableTarget(name: "PorpoiseCLI", dependencies: ["PorpoiseCore", "PorpoiseServices"]),
         // Fake-server-only subprocess used to verify durable journals across actual process death.
         .executableTarget(
             name: "DriveRecoveryProbe", dependencies: ["PorpoiseCore", "PorpoiseServices"], path: "Tests/DriveRecoveryProbe"),
