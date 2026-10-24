@@ -14,7 +14,7 @@ SOURCES = ROOT / 'Sources/Porpoise'
 # name: (pattern, files exempt from it, baseline)
 CHECKS = {
     'literal font sizes': (r'ystemFont\(ofSize: *[0-9]', (), 1),
-    'literal corner radii': (r'(cornerRadius *= *|xRadius: *)[0-9]', (), 13),
+    'literal corner radii': (r'(cornerRadius *= *|xRadius: *)[0-9]', (), 9),
     'literal colours outside Theme/': (r'NSColor\((srgbRed|rgb|white|calibrated)', ('Theme/',), 13),
     'literal durations': (r'duration( *= *|: *)[0-9]', ('Theme/Motion.swift',), 3),
 }

@@ -187,8 +187,7 @@ enum ShortcutSettingsPage {
             "Rebind menu actions, including their hidden alternate shortcuts. Conflicting bindings are blocked. Text editing and view navigation keep their normal keys. Help › Keyboard Shortcuts (⌘?) lists them all."
         )
         let editor = ShortcutEditorView()
-        form.stack.addArrangedSubview(editor)
-        editor.widthAnchor.constraint(equalTo: form.stack.widthAnchor, constant: -60).isActive = true
+        form.wide(editor)
         form.section("Toolbar")
         form.button("Customize Toolbar…") { ToolbarCustomizationWindow.show() }
         form.button("Restore Default Toolbar") { Settings.shared.toolbarCommands = Settings.shared.defaultToolbarCommands }

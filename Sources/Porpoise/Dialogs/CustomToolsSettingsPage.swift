@@ -163,8 +163,7 @@ enum CustomToolsSettingsPage {
             "Run your own programs on local files and folders. Tools come only from these settings. Nothing in a browsed folder can add or run a tool."
         )
         let editor = CustomToolsEditorView()
-        form.stack.addArrangedSubview(editor)
-        editor.widthAnchor.constraint(equalTo: form.stack.widthAnchor, constant: -60).isActive = true
+        form.wide(editor)
         form.note(
             "Commands run in the active pane’s folder. Output and exit status appear in Activity. Custom tool changes cannot be undone by Porpoise.")
     }

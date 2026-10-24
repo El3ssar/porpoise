@@ -77,8 +77,7 @@ enum AccountsSettingsPage {
         }
         _ = f.note("Files you download stay on this Mac until you choose Remove Download; they don’t count toward this.")
         let usage = OfflineUsageView()
-        f.stack.addArrangedSubview(usage)
-        usage.widthAnchor.constraint(equalTo: f.stack.widthAnchor, constant: -60).isActive = true
+        f.wide(usage)
         if let root = CloudOfflineHub.service?.root {
             _ = f.note("Downloads are kept in \((root.path as NSString).abbreviatingWithTildeInPath).")
         }

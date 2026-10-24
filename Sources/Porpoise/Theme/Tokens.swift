@@ -193,4 +193,10 @@ enum Tokens {
         /// Around hero empty states and onboarding.
         static let xxxl: CGFloat = 32
     }
+
+    /// Named chrome metrics (DESIGN-CONTRACT §3).
+    enum Metric {
+        /// A form's label column at its narrowest; a page's column is as wide as its longest label.
+        static let formLabelColumn: CGFloat = 120
+    }
 }

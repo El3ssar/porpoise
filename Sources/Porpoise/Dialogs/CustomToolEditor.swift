@@ -40,8 +40,7 @@ final class CustomToolEditor: SecondaryWindowController {
         stack.addArrangedSubview(scroll); scroll.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         func field(_ title: String, _ field: NSTextField) {
             form.stack.addArrangedSubview(NSTextField(labelWithString: title))
-            field.setAccessibilityLabel(title); form.stack.addArrangedSubview(field)
-            field.widthAnchor.constraint(equalTo: form.stack.widthAnchor, constant: -60).isActive = true
+            field.setAccessibilityLabel(title); form.wide(field)
         }
         field("Name", nameField); field("Executable (absolute path)", executableField); field("Arguments (JSON array of strings)", argumentsField)
         argumentsField.heightAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
@@ -81,7 +80,7 @@ final class CustomToolEditor: SecondaryWindowController {
         form.button("Clear Shortcut") { [weak self, weak shortcut] in
             self?.draft.tool.shortcut = KeyboardShortcut(); shortcut?.setShortcut(KeyboardShortcut())
         }
-        form.stack.addArrangedSubview(status); status.widthAnchor.constraint(equalTo: form.stack.widthAnchor, constant: -60).isActive = true
+        form.wide(status)
         let cancel = ClosureButton(title: "Cancel") { [weak self] _ in self?.window?.close() }
         let saveButton = ClosureButton(title: "Save") { [weak self] _ in self?.save() }; saveButton.keyEquivalent = "\r"
         stack.addArrangedSubview(NSStackView(views: [cancel, saveButton]))

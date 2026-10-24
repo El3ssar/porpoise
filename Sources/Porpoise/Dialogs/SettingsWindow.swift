@@ -23,7 +23,7 @@ final class SettingsWindowController: SecondaryWindowController {
             builders.append(fb)
             build(fb)
             // Long pages scroll, like KDE's settings pages.
-            let scroll = NSScrollView(frame: CGRect(x: 0, y: 0, width: 760, height: 580))
+            let scroll = FadingScrollView(frame: CGRect(x: 0, y: 0, width: 760, height: 580))
             scroll.hasVerticalScroller = true
             scroll.autohidesScrollers = true
             scroll.drawsBackground = false
@@ -51,7 +51,11 @@ final class SettingsWindowController: SecondaryWindowController {
         // The page asked for; else General the first time, then the page shown last (an old page's name: where it went).
         let last = (initialPage ?? Settings.store.string(forKey: Self.lastPageKey)).flatMap(SettingsPages.page(named:))
         if let i = tabs.tabViewItems.firstIndex(where: { $0.label == last }) { tabs.selectedTabViewItemIndex = i }
-        tabs.onSelect = { Settings.store.set($0.label, forKey: Self.lastPageKey) }
+        tabs.onSelect = { item in
+            Settings.store.set(item.label, forKey: Self.lastPageKey)
+            // A page longer than the window says so: its scroller shows for a moment.
+            (item.viewController?.view as? NSScrollView)?.flashScrollers()
+        }
 
         let w = NSWindow(contentViewController: tabs)
         w.initialFirstResponder = nil
@@ -87,9 +91,9 @@ final class SettingsWindowController: SecondaryWindowController {
         scroll.reflectScrolledClipView(scroll.contentView)
     }
 
-    /// A section's bold heading (FormBuilder.section's label).
+    /// A section's heading (FormBuilder.section's label).
     static func heading(_ title: String, in view: NSView) -> NSTextField? {
-        if let t = view as? NSTextField, !t.isEditable, t.stringValue == title, t.font?.fontDescriptor.symbolicTraits.contains(.bold) == true {
+        if let t = view as? NSTextField, t.identifier == FormBuilder.headingID, t.stringValue == title {
             return t
         }
         for v in view.subviews { if let found = heading(title, in: v) { return found } }
@@ -98,3 +102,59 @@ final class SettingsWindowController: SecondaryWindowController {
 }
 
 final class FlippedView: NSView { override var isFlipped: Bool { true } }
+
+/// A scroll view whose bottom edge fades the content into the window while there is more below, so a row cut in half
+/// reads as "scroll for more" (macOS 26's soft scroll edge, for a page under no bar).
+final class FadingScrollView: NSScrollView {
+    let fade = ScrollEdgeFade()
+    private var observers: [NSObjectProtocol] = []
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        addSubview(fade)
+        contentView.postsBoundsChangedNotifications = true
+        // Scrolled, or the page grown or shrunk (a row shown only for some choices).
+        observers.append(
+            NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: contentView, queue: .main) {
+                [weak self] _ in self?.updateFade()
+            })
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+
+    override var documentView: NSView? {
+        didSet {
+            guard let doc = documentView else { return }
+            observers.append(
+                NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: doc, queue: .main) {
+                    [weak self] _ in self?.updateFade()
+                })
+        }
+    }
+
+    /// The scroll view lays out its own subviews: the fade goes along the bottom, above the page.
+    override func tile() {
+        super.tile()
+        let height = Tokens.Space.xxl
+        fade.frame = CGRect(x: 0, y: isFlipped ? bounds.height - height : 0, width: bounds.width, height: height)
+        if subviews.last !== fade { addSubview(fade, positioned: .above, relativeTo: nil) }
+        updateFade()
+    }
+
+    /// Shown while the page goes on below the visible part.
+    func updateFade() {
+        guard let doc = documentView else { return }
+        fade.isHidden = contentView.bounds.maxY >= doc.frame.maxY - 1
+    }
+}
+
+/// The fade itself: the window's background, from clear at the top to opaque at the bottom.
+final class ScrollEdgeFade: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        NSGradient(colors: [Theme.windowBackground.withAlphaComponent(0), Theme.windowBackground])?.draw(in: bounds, angle: -90)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
