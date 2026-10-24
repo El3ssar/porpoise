@@ -25,7 +25,6 @@ extension ViewContainer {
             addSubview(browser, positioned: .below, relativeTo: listState)
             browser.frame = frame
             browser.syncPath()
-            delegate?.containerDidEnterColumns(self)
         }
         browser.isHidden = false
         if browser.frame != frame { browser.frame = frame }

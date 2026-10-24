@@ -231,6 +231,10 @@ final class PorpoiseTab: NSView {
         let s = ViewContainer(url: url ?? active.url, loadsWhenShown: loadsWhenShown && window == nil)
         s.delegate = primary.delegate
         secondary = s
+        // Neither pane goes into Column view by itself while split (a folder's own or the common style): they show
+        // the mode the window was in.
+        let mode = primary.model.props.mode
+        for c in [primary, s] { c.model.splitMode = mode }
         addSubview(s, positioned: .below, relativeTo: handle)
         setActive(secondary: true)
         guard animated, bounds.width > 0 else {
@@ -422,6 +426,8 @@ final class PorpoiseTab: NSView {
         if let z = closing {
             z.removeFromSuperview()
             closing = nil
+            // Alone again: a Columns style shows as Column view.
+            primary.model.splitMode = nil
             layoutPanes()
         }
         primary.list.transitions.releaseWidth()

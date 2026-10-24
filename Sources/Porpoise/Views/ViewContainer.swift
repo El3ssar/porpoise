@@ -7,8 +7,6 @@ protocol ViewContainerDelegate: AnyObject {
     func containerDidBecomeActive(_ c: ViewContainer)
     func containerDidChangeURL(_ c: ViewContainer)
     func containerSelectionChanged(_ c: ViewContainer)
-    /// The pane went into Column view (its columns were just made).
-    func containerDidEnterColumns(_ c: ViewContainer)
     func container(_ c: ViewContainer, open items: [FileItem], inNewTab: Bool)
     func container(_ c: ViewContainer, menuFor item: FileItem?) -> NSMenu?
     func container(_ c: ViewContainer, drop urls: [URL], onto folder: URL, operation: NSDragOperation)
@@ -17,10 +15,6 @@ protocol ViewContainerDelegate: AnyObject {
     func containerQuickLook(_ c: ViewContainer)
     /// The search bar was shown or hidden (the toolbar's Search button follows it).
     func containerSearchVisibilityChanged(_ c: ViewContainer)
-}
-
-extension ViewContainerDelegate {
-    func containerDidEnterColumns(_ c: ViewContainer) {}
 }
 
 /// Dolphin's DolphinViewContainer: one view with its history, filter bar, search bar and status bar.
@@ -736,6 +730,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     var zoomLevel: Int { showsApps ? ZoomLevels.nearestLevel(for: zoomView.iconSize) : model.props.zoomLevel(for: model.props.mode) }
 
     func setMode(_ m: ViewMode) {
+        // In a split, the mode chosen is the one a Columns style gives way to.
+        if model.splitMode != nil, m != .columns { model.splitMode = m }
         var p = model.props
         p.mode = m
         model.props = p

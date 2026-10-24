@@ -976,15 +976,27 @@ import Testing
         try #require(await eventually { pair.tab.closing == nil })
         #expect(!pair.tab.isSplit && pair.view.url.path == other.path && pair.view.columnBrowser != nil)
 
-        // A pane of a split put into Column view another way (its folder's own setting): it stays alone.
+        // A Columns style a pane of a split only inherits (Column view chosen in another window makes it the common
+        // style) keeps the split: the pane shows the window's mode until it's alone. Only choosing Column view there
+        // collapses the split (above).
         pair.show(.icons)
         let third = MainWindowController(urls: [a], split: [other])
         try #require(await eventually { third.tab.containers.allSatisfy { !$0.model.isLoading } })
         let right = try #require(third.tab.secondary)
-        right.setMode(.columns)
+        var common = ViewProperties()
+        common.mode = .columns
+        ViewStyleStore().save(common, for: s.path(level(2)))
+        right.setURL(s.path(level(2)))
         third.tab.layoutSubtreeIfNeeded()
-        #expect(await eventually { !third.tab.isSplit && third.tab.closing == nil })
-        #expect(third.view === right && right.columnBrowser != nil)
+        try #require(await eventually { !right.model.isLoading })
+        #expect(third.tab.isSplit && right.model.props.mode == .icons && right.columnBrowser == nil)
+        right.model.saveProps()
+        #expect(ViewStyleStore().style(for: s.path(level(2))).mode == .columns, "the stand-in mode is never saved")
+        // Alone again, it shows its Columns style.
+        third.tab.setActive(secondary: true)
+        third.tab.closeSplit(closeActive: false, animated: false)
+        third.tab.layoutSubtreeIfNeeded()
+        #expect(!third.tab.isSplit && third.tab.primary === right && right.model.props.mode == .columns && right.columnBrowser != nil)
 
         // A split saved with a pane in Column view comes back as that pane alone.
         var columns = ViewProperties()
