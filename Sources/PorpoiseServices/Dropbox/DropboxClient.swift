@@ -48,6 +48,7 @@ public final class DropboxClient: @unchecked Sendable {
         metadataCache = CloudMetadataCache(directory: scoped.appendingPathComponent("Metadata"))
         journal = CloudJournal(folder: scoped.appendingPathComponent("Operations"))
         renditions = CloudRenditionCache(directory: scoped.appendingPathComponent("Renditions"))
+        enableMetadataRetention()
     }
     func request(_ route: String, arguments: Any, content: Bool = false, body: Data? = nil, range: Range<Int64>? = nil) throws -> URLRequest {
         var request = URLRequest(url: (content ? configuration.contentURL : configuration.apiURL).appendingPathComponent(route))

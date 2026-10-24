@@ -67,6 +67,7 @@ public final class DriveClient: @unchecked Sendable {
         self.metadataCache = DriveMetadataCache(accountID: accountID, directory: metadataDirectory)
         self.mutationJournal = mutationJournal
         self.accountID = accountID; self.tokens = tokens; self.http = http; self.baseURL = baseURL; self.report = report
+        enableMetadataRetention()
     }
 
     public func accountInfo() async throws -> DriveAccountInfo {

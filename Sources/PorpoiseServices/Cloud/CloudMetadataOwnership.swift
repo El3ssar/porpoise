@@ -6,6 +6,10 @@ protocol CloudMetadataOwningContentSource: AnyObject {
 }
 
 enum CloudMetadataOwnership {
+    static func root(_ owner: CloudMetadataRetention.Owner, canonical: String) -> CloudMetadataRetention.Owner {
+        func refs(_ values: Set<String>) -> Set<String> { Set(values.map { $0.isEmpty ? canonical : $0 }) }
+        return .init(items: refs(owner.items), subtrees: refs(owner.subtrees), listings: refs(owner.listings))
+    }
     static func key(_ family: String, directory: URL) -> String {
         family + ":" + cloudObjectKey(directory.standardizedFileURL.path)
     }

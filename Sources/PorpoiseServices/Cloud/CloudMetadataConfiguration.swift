@@ -1,10 +1,16 @@
 import Foundation
 
 private extension CloudMetadataCache {
-    func enableProviderRetention(_ configuration: RetentionConfiguration, edits: URL, source: CloudContentSource) {
+    func enableProviderRetention(_ configuration: RetentionConfiguration, edits: URL, source: CloudContentSource, canonicalRoot: String? = nil) {
         let offline = CloudMetadataOwnership.offlineDirectory(for: source), account = source.accountID
         enableRetention(configuration) {
-            CloudMetadataOwnership.restore(edits: edits, offline: offline, account: account, item: Item.self)
+            let owners = CloudMetadataOwnership.restore(edits: edits, offline: offline, account: account, item: Item.self)
+            guard let canonicalRoot else { return owners }
+            return owners.mapValues { value in
+                var value = value
+                value.owner = CloudMetadataOwnership.root(value.owner, canonical: canonicalRoot)
+                return value
+            }
         }
     }
 }
@@ -13,7 +19,8 @@ extension BoxClient {
     func enableMetadataRetention() {
         let edits = metadataCache.directory.deletingLastPathComponent().appendingPathComponent("Edits")
         metadataCache.enableProviderRetention(
-            .init(parents: { Set($0.parentID.map { [$0] } ?? []) }, roots: [BoxItem.rootID]), edits: edits, source: contentSource)
+            .init(parents: { Set($0.parentID.map { [$0] } ?? []) }, roots: [BoxItem.rootID]), edits: edits, source: contentSource,
+            canonicalRoot: BoxItem.rootID)
     }
 }
 

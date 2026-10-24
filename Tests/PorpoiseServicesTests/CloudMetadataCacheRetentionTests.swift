@@ -76,8 +76,9 @@ struct CloudMetadataCacheRetentionTests {
         let active = cache.retainMetadata(.init(listings: ["folder"]))
         let read = cache.beginRead()
         cache.remember([Item("target", name: "new", parent: "parent")])
-        cache.store([Item("shortcut")], key: "folder", since: read.generation,
-                    contextFiles: [Item("target", name: "old", parent: "parent"), Item("parent")], snapshotValue: nil)
+        cache.store(
+            [Item("shortcut")], key: "folder", since: read.generation,
+            contextFiles: [Item("target", name: "old", parent: "parent"), Item("parent")], snapshotValue: nil)
         read.release()
         await cache.settleRetention()
         #expect(cache.snapshot("folder")?.files.map(\.id) == ["shortcut"])

@@ -7,9 +7,66 @@ import Testing
 @testable import PorpoiseServices
 
 @Suite(.serialized) struct CloudMetadataProviderRetentionTests {
+    private func durableEdit<Engine: CloudEditEngine>(
+        _ store: CloudEditSessionStore<Engine>, file: Engine.File, cache: CloudMetadataCache<Engine.File>,
+        removeOffline: () async throws -> Void, reopen: () throws -> CloudMetadataCache<Engine.File>
+    ) async throws where Engine.File: CloudMetadataItem {
+        let session = try await store.openSession(file)
+        try await removeOffline()
+        cache.setRetentionLimits(.init(files: 0, listings: 0, bytes: 0))
+        await cache.settleRetention()
+        #expect(cache.file(file.id) != nil)
+        await store.releaseCopy(session.id)
+        await cache.settleRetention()
+        #expect(cache.file(file.id) != nil && FileManager.default.fileExists(atPath: session.localURL.path))
+        // The durable record must seed metadata even when the disposable metadata file is absent on restart.
+        await offThePool { cache.clear() }
+        let restored = try reopen()
+        restored.setRetentionLimits(.init(files: 0, listings: 0, bytes: 0))
+        await restored.settleRetention()
+        #expect(restored.file(file.id) != nil && restored.retentionRestoreFailures == 0)
+    }
+
+    @Test func allFourEditEnginesRetainCleanDurableSessionsAfterMetadataLoss() async throws {
+        let box = try FakeBoxServer(), boxClient = try box.client()
+        try await durableEdit(boxClient.edits, file: boxClient.metadata("21"), cache: boxClient.metadataCache) {
+            try await boxClient.offlineCopies().wipe()
+        } reopen: {
+            try box.client(id: boxClient.accountID).metadataCache
+        }
+
+        let dropbox = try FakeDropboxServer(), dropboxClient = try dropbox.client()
+        try await durableEdit(dropboxClient.edits, file: dropboxClient.metadata("id:hello"), cache: dropboxClient.metadataCache) {
+            try await dropboxClient.offlineCopies().wipe()
+        } reopen: {
+            try dropbox.client(id: dropboxClient.accountID).metadataCache
+        }
+
+        let graph = try FakeGraphServer(), oneDrive = try graph.client()
+        try await durableEdit(oneDrive.edits, file: oneDrive.metadata("FIXTURE!hello"), cache: oneDrive.metadataCache) {
+            try await oneDrive.offlineCopies().wipe()
+        } reopen: {
+            try graph.client(id: oneDrive.accountID).metadataCache
+        }
+
+        let drive = try FakeDriveServer(fixture: FakeDriveServer.fixture("mutations.json")), scratch = try Scratch()
+        let account = UUID(), (_, tokens, _) = try drive.client(id: account)
+        let client = DriveClient(
+            accountID: account, tokens: tokens, baseURL: drive.base.appendingPathComponent("drive/v3/"),
+            metadataDirectory: scratch.url)
+        try await durableEdit(client.edits, file: client.file("binary-a"), cache: client.metadataCache.storage) {
+            try await client.offlineCopies().wipe()
+        } reopen: {
+            DriveClient(
+                accountID: account, tokens: tokens, baseURL: drive.base.appendingPathComponent("drive/v3/"),
+                metadataDirectory: scratch.url
+            ).metadataCache.storage
+        }
+    }
+
     @Test(.isolatedSettings) @MainActor func directoryModelOwnsExpandedListingsUntilCollapse() async throws {
         let server = try FakeBoxServer(), client = try server.client(), provider = BoxProvider(client: client)
-        client.enableMetadataRetention()
+
         let root = BoxLocation(accountID: client.accountID).url
         let rows = try await provider.refresh(root)
         let folder = try #require(rows.first { $0.isDirectory })
@@ -81,7 +138,7 @@ import Testing
 
     @Test @MainActor func boxEvictOnlineRevisitAndOfflineFallback() async throws {
         let server = try FakeBoxServer(), client = try server.client()
-        client.enableMetadataRetention()
+
         try await browse(
             BoxProvider(client: client), cache: client.metadataCache, root: BoxLocation(accountID: client.accountID).url,
             content: client.contentSource
@@ -89,14 +146,43 @@ import Testing
             let down = BoxClient(
                 accountID: client.accountID, configuration: server.config, tokens: client.tokens, directory: server.directory,
                 http: .init(send: { _ in throw URLError(.notConnectedToInternet) }))
-            down.enableMetadataRetention()
+
             return (BoxProvider(client: down), down.metadataCache)
         }
     }
 
+    @Test @MainActor func boxRootPinUsesTheAPIRootBeforeAndAfterRestart() async throws {
+        let server = try FakeBoxServer(), client = try server.client(), provider = BoxProvider(client: client)
+        let root = BoxLocation(accountID: client.accountID).url
+        let rows = try await provider.refresh(root)
+        let folder = try #require(rows.first { $0.isDirectory })
+        let children = try await provider.refresh(folder.url)
+        #expect(client.metadataCache.file(BoxItem.rootID) == nil)
+        let source = client.contentSource, rootRef = try #require(client.contentSource.ref(for: root))
+        #expect(rootRef.item.isEmpty)
+        let copies = try CloudOfflineStore(source: source, directory: CloudMetadataOwnership.offlineDirectory(for: source))
+        try await copies.pin([rootRef])
+        client.metadataCache.setRetentionLimits(.init(files: 0, listings: 0, bytes: 0))
+        await client.metadataCache.settleRetention()
+        #expect(provider.cachedListing(root) == rows && provider.cachedListing(folder.url) == children)
+        await offThePool { client.metadataCache.flush() }
+        let down = BoxClient(
+            accountID: client.accountID, configuration: server.config, tokens: client.tokens, directory: server.directory,
+            http: .init(send: { _ in throw URLError(.notConnectedToInternet) }))
+        down.metadataCache.setRetentionLimits(.init(files: 0, listings: 0, bytes: 0))
+        await down.metadataCache.settleRetention()
+        let restored = BoxProvider(client: down)
+        #expect(restored.cachedListing(root) == rows && restored.cachedListing(folder.url) == children)
+        let restoredCopies = try CloudOfflineStore(
+            source: down.contentSource, directory: CloudMetadataOwnership.offlineDirectory(for: down.contentSource))
+        try await restoredCopies.unpin([rootRef])
+        await down.metadataCache.settleRetention()
+        #expect(restored.cachedListing(root) == nil && restored.cachedListing(folder.url) == nil)
+    }
+
     @Test @MainActor func dropboxEvictOnlineRevisitAndOfflineFallback() async throws {
         let server = try FakeDropboxServer(), client = try server.client()
-        client.enableMetadataRetention()
+
         try await browse(
             DropboxProvider(client: client), cache: client.metadataCache, root: DropboxLocation(accountID: client.accountID).url,
             content: client.contentSource
@@ -104,14 +190,14 @@ import Testing
             let down = DropboxClient(
                 accountID: client.accountID, configuration: server.config, tokens: client.tokens, directory: server.directory,
                 http: .init(send: { _ in throw URLError(.notConnectedToInternet) }))
-            down.enableMetadataRetention()
+
             return (DropboxProvider(client: down), down.metadataCache)
         }
     }
 
     @Test @MainActor func oneDriveEvictOnlineRevisitAndOfflineFallback() async throws {
         let server = try FakeGraphServer(), client = try server.client()
-        client.enableMetadataRetention()
+
         try await browse(
             OneDriveProvider(client: client), cache: client.metadataCache, root: OneDriveLocation(accountID: client.accountID).url,
             content: client.contentSource
@@ -119,7 +205,7 @@ import Testing
             let down = OneDriveClient(
                 accountID: client.accountID, configuration: server.config, tokens: client.tokens, driveID: client.driveID,
                 directory: server.directory, http: .init(send: { _ in throw URLError(.notConnectedToInternet) }))
-            down.enableMetadataRetention()
+
             return (OneDriveProvider(client: down), down.metadataCache)
         }
     }
@@ -131,7 +217,7 @@ import Testing
         let client = DriveClient(
             accountID: account, tokens: tokens, baseURL: server.base.appendingPathComponent("drive/v3/"),
             metadataDirectory: scratch.url)
-        client.enableMetadataRetention()
+
         let root = DriveLocation(accountID: client.accountID).url
         try await browse(
             DriveProvider(accountID: client.accountID, client: client), cache: client.metadataCache.storage, root: root, content: client.contentSource
@@ -139,16 +225,16 @@ import Testing
             let down = DriveClient(
                 accountID: client.accountID, tokens: tokens, http: .init(send: { _ in throw URLError(.notConnectedToInternet) }),
                 baseURL: server.base.appendingPathComponent("drive/v3/"), metadataDirectory: scratch.url)
-            down.enableMetadataRetention()
+
             return (DriveProvider(accountID: client.accountID, client: down), down.metadataCache.storage)
         }
     }
 
     @Test @MainActor func oneDriveSharedOwnerSeedsForeignDriveWithoutCrossDriveIdentityLeaks() async throws {
         let server = try FakeGraphServer(), client = try server.client(), provider = OneDriveProvider(client: client)
-        client.enableMetadataRetention()
+
         let foreign = provider.drive(FakeGraphServer.otherDrive)
-        foreign.enableMetadataRetention()
+
         foreign.metadataCache.setRetentionLimits(.init(files: 0, listings: 0, bytes: 0))
         let root = OneDriveLocation(accountID: client.accountID, itemID: "collection:shared").url
         let source = CloudSource(location: root, provider: provider)
@@ -169,11 +255,11 @@ import Testing
 
     @Test @MainActor func dropboxOwnersAreScopedToTheirNamespaces() async throws {
         let server = try FakeDropboxServer(), client = try server.client(), provider = DropboxProvider(client: client)
-        client.enableMetadataRetention()
+
         let root = DropboxLocation(accountID: client.accountID).url
         let otherRoot = DropboxLocation(accountID: client.accountID, namespaceID: "other-namespace").url
         let other = try provider.scoped(otherRoot)
-        other.enableMetadataRetention()
+
         let source = CloudSource(location: root, provider: provider)
         source.retainMetadata(for: [root, otherRoot])
         let ownRows = try await provider.refresh(root), otherRows = try await provider.refresh(otherRoot)

@@ -3,7 +3,8 @@ import PorpoiseCore
 
 extension BoxContentSource: CloudMetadataOwningContentSource {
     func setMetadataOwner(_ name: String, owner: CloudMetadataRetention.Owner?, complete: Bool) {
-        client?.metadataCache.setRetentionOwner(name, owner.map { .init(owner: $0, complete: complete) })
+        client?.metadataCache.setRetentionOwner(
+            name, owner.map { .init(owner: CloudMetadataOwnership.root($0, canonical: BoxItem.rootID), complete: complete) })
     }
 }
 

@@ -53,6 +53,7 @@ public final class OneDriveClient: @unchecked Sendable {
         metadataCache = CloudMetadataCache(directory: scoped.appendingPathComponent("Metadata"))
         journal = CloudJournal(folder: scoped.appendingPathComponent("Operations"))
         renditions = CloudRenditionCache(directory: scoped.appendingPathComponent("Renditions"))
+        enableMetadataRetention()
     }
 
     // MARK: Requests

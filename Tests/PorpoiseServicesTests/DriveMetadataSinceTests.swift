@@ -64,6 +64,10 @@ import Testing
         let listing = Task { try await client.listPage(root) }
         await hold.untilHeld()  // the server listed the old name
         let renamed = try await client.rename("binary-a", to: "renamed while listing")
+
+        client.metadataCache.storage.setRetentionLimits(.init(files: 0, listings: 0, bytes: 0))
+        await client.metadataCache.storage.settleRetention()
+        #expect(client.metadataCache.file("binary-a")?.name == renamed.name)
         await hold.release()
         let page = try await listing.value
 
@@ -102,6 +106,10 @@ import Testing
         await hold.untilHeld()
         // The rename looks the file up too (not held: only the first response is), then changes it.
         _ = try await client.rename("binary-a", to: "renamed while looking")
+
+        client.metadataCache.storage.setRetentionLimits(.init(files: 0, listings: 0, bytes: 0))
+        await client.metadataCache.storage.settleRetention()
+        #expect(client.metadataCache.file("binary-a")?.name == "renamed while looking")
         await hold.release()
         #expect(try await lookup.value.name == "renamed while looking")
         #expect(client.metadataCache.file("binary-a")?.name == "renamed while looking")
