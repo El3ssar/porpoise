@@ -314,9 +314,10 @@ private func script(_ scratch: Scratch, _ name: String, _ body: String) throws -
     }
 
     @Test func copiesThroughALocalTemporaryCopy() throws {
-        try curl.reply(Self.parent, call: 0)  // a.txt is a file
-        try curl.reply("abc", call: 1)  // its contents
-        try curl.reply("", call: 2)  // upload
+        try curl.reply("", call: 0)  // destination folder is empty
+        try curl.reply(Self.parent, call: 1)  // a.txt is a file
+        try curl.reply("abc", call: 2)  // its contents
+        try curl.reply("", call: 3)  // upload
         try provider().copy([URL(string: "ftp://h.invalid/a.txt")!], into: URL(string: "ftp://h.invalid/dst/")!)
         let upload = try #require(curl.calls.last)
         #expect(upload.args.last == "ftp://h.invalid/dst/a.txt")
