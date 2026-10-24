@@ -236,7 +236,7 @@ final class Thumbnails {
 
     /// A frame a few seconds in (or the first one for short clips), scaled to fit `size` pixels. ffmpeg is stopped
     /// once `isCancelled` says so.
-    static func ffmpegFrame(_ url: URL, size: CGFloat, isCancelled: @escaping () -> Bool = { false }) -> NSImage? {
+    static func ffmpegFrame(_ url: URL, size: CGFloat, timeout: TimeInterval = 15, isCancelled: @escaping () -> Bool = { false }) -> NSImage? {
         guard let ff = VideoPreview.ffmpeg else { return nil }
         let out = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-frame-\(UUID().uuidString).jpg")
         defer { try? FileManager.default.removeItem(at: out) }
@@ -249,7 +249,7 @@ final class Thumbnails {
                     [
                         "-hide_banner", "-loglevel", "error", "-nostdin", "-ss", start, "-i", "file:" + url.path, "-frames:v", "1",
                         "-vf", "scale='min(\(s),iw)':'min(\(s),ih)':force_original_aspect_ratio=decrease", "-y", out.path,
-                    ], timeout: 15)
+                    ], timeout: timeout)
             }
             if !isCancelled(), let img = NSImage(contentsOf: out) { return img }
         }
