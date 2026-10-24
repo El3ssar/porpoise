@@ -4,6 +4,22 @@ import XCTest
 @testable import PorpoiseServices
 
 final class CLIInstallerTests: XCTestCase {
+    func testUnwritableDirectoryIsNotReportedAsAnExistingFile() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let executable = dir.appendingPathComponent("cli"), bin = dir.appendingPathComponent("bin")
+        try Data("fixture".utf8).write(to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: bin.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: bin.path) }
+        XCTAssertThrowsError(try CLIInstaller.install(executable: executable, destination: bin.appendingPathComponent("porpoise"))) { error in
+            guard case CLIInstaller.Failure.cannotInstall = error else { return XCTFail("Expected a write failure, got \(error)") }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: bin.appendingPathComponent("porpoise").path))
+    }
+
     func testInstallIsIdempotentAndNeverReplacesUserFiles() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: dir) }

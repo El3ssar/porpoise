@@ -29,7 +29,8 @@ if arguments == ["--help"] || arguments == ["-h"] {
             print(message)
         }
     } catch {
-        FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
+        let hint = (error as? AutomationError) == .invalidRequest ? " Run porpoise --help for usage." : ""
+        FileHandle.standardError.write(Data((error.localizedDescription + hint + "\n").utf8))
         exit(1)
     }
 }

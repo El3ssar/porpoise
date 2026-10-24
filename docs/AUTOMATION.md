@@ -6,7 +6,7 @@ Custom tools are created in Settings → Custom Tools. Only tools saved there ca
 
 Enable **Allow command-line control** in Settings → Advanced to allow programs running as your user to read selected paths and open or reveal locations. This is off by default and disabling it stops the socket.
 
-Settings → Advanced → Install Command-line Tool creates `~/.local/bin/porpoise`, pointing to the CLI inside this copy of the app. It refuses to replace unrelated files or links. Add `~/.local/bin` to your shell's PATH yourself, or use its full path. Moving or deleting the app breaks this link; reinstall from Settings in the new copy.
+Settings → Advanced → Install Command-line Tool creates `~/.local/bin/porpoise`, pointing to the CLI inside this copy of the app. It refuses to replace unrelated files or links. Add `~/.local/bin` to your shell's PATH yourself, or use its full path. Moving or deleting the app breaks this link; move the previous link aside before reinstalling from Settings in the new copy.
 
 The app must already be running. The CLI never launches another app or contacts a network service.
 

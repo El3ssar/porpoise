@@ -65,7 +65,7 @@ public enum AutomationError: String, Error, LocalizedError, Sendable {
     case invalidRequest, unavailable, unsafeEndpoint, busy, timedOut, oversized, invalidResponse
     public var errorDescription: String? {
         switch self {
-        case .invalidRequest: return "Invalid automation request. Run porpoise --help for usage."
+        case .invalidRequest: return "Invalid automation request. Check the supplied paths and options."
         case .unavailable: return "Porpoise is not available. Start the app and try again."
         case .unsafeEndpoint: return "The local automation endpoint is not secure."
         case .busy: return "Another Porpoise instance already owns the automation endpoint."
