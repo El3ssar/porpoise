@@ -218,9 +218,11 @@ final class PlacesPanel: NSView {
             foldGhosts = []
         }
         rows = out
-        // Row indices changed: drop stale hover/press state.
+        // Row indices changed: drop stale hover/press/drop state (the next drag update finds the drop target again).
         pressed = nil
         hover = nil
+        dropIndex = nil
+        dropInsertBefore = nil
         if let w = window {
             let p = convert(w.mouseLocationOutsideOfEventStream, from: nil)
             if visibleRect.contains(p) { hover = hoverIndex(at: p) }

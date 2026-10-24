@@ -7,7 +7,7 @@ import Testing
 @testable import Porpoise
 
 /// A drag as AppKit hands it to a drop target: a pasteboard, the source's operations, a place in the window.
-private final class FakeDrag: NSObject, NSDraggingInfo {
+final class FakeDrag: NSObject, NSDraggingInfo {
     let pasteboard = NSPasteboard(name: NSPasteboard.Name("porpoise-drop-test-\(UUID().uuidString)"))
     var mask: NSDragOperation
     var location: NSPoint

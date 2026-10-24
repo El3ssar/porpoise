@@ -125,6 +125,13 @@ final class AppsGridView: NSView, NSDraggingSource {
         tiles = [:]
     }
 
+    /// Light or dark: apps with appearance-aware icons are rendered again in the new style.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        tiles = [:]
+        needsDisplay = true
+    }
+
     /// Out of the window (tab closed mid-animation): the animation stops, a zoom is saved.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()

@@ -756,7 +756,7 @@ final class ColumnStripContent: NSView {
     override func draw(_ dirty: NSRect) {
         Theme.viewBackground.setFill()
         dirty.fill()
-        NSColor.separatorColor.setFill()
+        Theme.separator.setFill()
         for x in browser?.dividers ?? [] where x < bounds.width {
             CGRect(x: x, y: 0, width: 1, height: bounds.height).intersection(dirty).fill()
         }

@@ -50,6 +50,83 @@ import Testing
         #expect(!pane.messageBar.text.contains("isn’t connected"))
     }
 
+    /// #19: type-ahead ignores case and accents.
+    @Test func typeAheadIgnoresAccents() {
+        #expect(ItemListView.name("École", startsWith: "e"))
+        #expect(ItemListView.name("école.txt", startsWith: "ECO"))
+        #expect(ItemListView.name("Résumé", startsWith: "resu"))
+        #expect(!ItemListView.name("Notes", startsWith: "otes"))
+        #expect(!ItemListView.name("ab", startsWith: "abc"))
+    }
+
+    /// #21: light ↔ dark renders the app library's tiles again (apps whose icons follow the appearance).
+    @Test func appTilesFollowTheAppearance() throws {
+        let scratch = try Scratch()
+        let model = DirectoryModel(location: scratch.url, prefetchFolders: false)
+        model.searchResults = (0..<4).map { i in
+            FileItem(url: URL(fileURLWithPath: "/Applications/Fixture-\(i).app"), name: "Fixture-\(i).app", isDirectory: true, isApplication: true)
+        }
+        let grid = AppsGridView(model: model)
+        grid.appearance = NSAppearance(named: .aqua)
+        grid.updateLayout(width: 800)
+        let bitmap = try #require(
+            NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: 800, pixelsHigh: 600, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+        for _ in 0..<10 { grid.draw(CGRect(x: 0, y: 0, width: 800, height: 600)) }
+        NSGraphicsContext.restoreGraphicsState()
+        try #require(grid.retainedTileBytes > 0)
+        grid.appearance = NSAppearance(named: .darkAqua)
+        #expect(grid.retainedTileBytes == 0)
+    }
+
+    /// #20: a drop on Places goes where it's released, even after the rows moved under the held drag.
+    @Test func aPlacesDropUsesTheRowsAsTheyAreNow() throws {
+        let s = try Scratch("places-drop")
+        let a = try s.folder("A"), b = try s.folder("B"), x = try s.folder("X")
+        let file = try s.file("dragged.txt", "x")
+        let panel = PlacesPanel(frame: CGRect(x: 0, y: 0, width: 240, height: 500))
+        let drops = PlaceDrops()
+        panel.delegate = drops
+        func entry(_ u: URL) -> PlaceEntry { PlaceEntry(title: u.lastPathComponent, url: u, icon: "folder", section: .places) }
+        panel.rows = [.init(kind: .entry(entry(a)), y: 0, height: 28), .init(kind: .entry(entry(b)), y: 28, height: 28)]
+        let drag = FakeDrag([file], mask: [.copy, .move], at: panel.convert(CGPoint(x: 80, y: 42), to: nil))
+        #expect(panel.draggingUpdated(drag) != [])
+        #expect(panel.dropIndex == 1)  // B
+        // A row appears above while the drag is held: the pointer is now over B at index 2, A sits at index 1.
+        panel.rows = [
+            .init(kind: .entry(entry(x)), y: 0, height: 10), .init(kind: .entry(entry(a)), y: 10, height: 28),
+            .init(kind: .entry(entry(b)), y: 38, height: 28),
+        ]
+        #expect(panel.performDragOperation(drag))
+        #expect(drops.dropped.map(\.folder) == [b])
+    }
+
+    /// #17: column dividers, resize grips, tag outlines and the Shelf's text take the theme's colours (a palette theme
+    /// such as Breeze or High Contrast), never the system's greys.
+    @Test func themedPanesUseThemeColours() throws {
+        for file in [
+            "Sources/Porpoise/Views/ColumnResizeHandle.swift", "Sources/Porpoise/Panels/ShelfPanel.swift",
+            "Sources/Porpoise/Views/FinderTags+AppKit.swift",
+        ] {
+            let text = try String(contentsOf: TestPaths.repo.appendingPathComponent(file), encoding: .utf8)
+            for grey in ["separatorColor", "secondaryLabelColor", "tertiaryLabelColor"] { #expect(!text.contains(grey), "\(file): \(grey)") }
+        }
+        let columns = try String(contentsOf: TestPaths.repo.appendingPathComponent("Sources/Porpoise/Views/ColumnBrowserView.swift"), encoding: .utf8)
+        #expect(!columns.contains("NSColor.separatorColor"))
+    }
+
+    private final class PlaceDrops: PlacesPanelDelegate {
+        var dropped: [(urls: [URL], folder: URL)] = []
+        func places(_ p: PlacesPanel, open url: URL, newTab: Bool, splitView: Bool) {}
+        func places(_ p: PlacesPanel, drop urls: [URL], onto url: URL, operation: NSDragOperation) { dropped.append((urls, url)) }
+        func places(_ p: PlacesPanel, emptyTrash: Void) {}
+        func places(_ p: PlacesPanel, properties url: URL) {}
+        func placesWantsViewFocus(_ p: PlacesPanel) {}
+    }
+
     private final class FailingProvider: RemoteProvider {
         func list(_ folder: URL) throws -> [FileItem] { throw CocoaError(.fileReadNoPermission) }
         func rootTitle(_ url: URL) -> String { "Failing fixture" }
