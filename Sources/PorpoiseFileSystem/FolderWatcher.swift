@@ -47,22 +47,30 @@ public final class FolderWatcher: @unchecked Sendable {
         var ctx = FSEventStreamContext(
             version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
             retain: nil, release: nil, copyDescription: nil)
-        let cb: FSEventStreamCallback = { _, info, count, eventPaths, _, _ in
+        let cb: FSEventStreamCallback = { _, info, count, eventPaths, eventFlags, _ in
             guard let info else { return }
             let me = Unmanaged<FolderWatcher>.fromOpaque(info).takeUnretainedValue()
             let arr = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] ?? []
             let map = me.aliases
             let events = Array(arr.prefix(count))
+            let flags = (0..<count).map { eventFlags[$0] }
+            let watched = Set(map.keys)
             let hits =
                 me.recursive
                 ? Set(map.keys.filter { root in events.contains { $0 == root || $0.hasPrefix(root.hasSuffix("/") ? root : root + "/") } })
-                : FolderWatcher.changedFolders(events, watched: Set(map.keys))
-            if !hits.isEmpty { me.callback(me.reportEventPaths ? Set(events) : Set(hits.flatMap { map[$0] ?? [] })) }
+                : FolderWatcher.changedFolders(events, watched: watched)
+            // Events macOS coalesced, dropped or can't name: every folder they may cover is read again.
+            let rescans = FolderWatcher.rescannedFolders(events, flags: flags, watched: watched)
+            let all = hits.union(rescans)
+            guard !all.isEmpty else { return }
+            me.callback(me.reportEventPaths ? Set(events).union(rescans) : Set(all.flatMap { map[$0] ?? [] }))
         }
         stream = FSEventStreamCreate(
             nil, cb, &ctx, Array(real.keys) as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow), Self.latency,
-            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer))
+            FSEventStreamCreateFlags(
+                kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer
+                    | kFSEventStreamCreateFlagWatchRoot))
         if let s = stream {
             FSEventStreamSetDispatchQueue(s, queue)
             FSEventStreamStart(s)
@@ -78,6 +86,24 @@ public final class FolderWatcher: @unchecked Sendable {
             if !watched.contains(p) { changed.insert((p as NSString).deletingLastPathComponent) }
         }
         return changed.intersection(watched)
+    }
+
+    /// Watched folders that events with these flags say must be read again: everything under a "must scan
+    /// subdirectories" path, every watched folder when events were dropped (by the user's process or the kernel),
+    /// and a watched folder whose own path changed (it, or a folder above it, was moved or renamed).
+    static func rescannedFolders(_ eventPaths: [String], flags: [FSEventStreamEventFlags], watched: Set<String>) -> Set<String> {
+        var out = Set<String>()
+        for (p, f) in zip(eventPaths, flags) {
+            if f & FSEventStreamEventFlags(kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped) != 0 { return watched }
+            if f & FSEventStreamEventFlags(kFSEventStreamEventFlagRootChanged) != 0 {
+                out.formUnion(watched.filter { $0 == p })
+            }
+            if f & FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs) != 0 {
+                let root = p.hasSuffix("/") ? p : p + "/"
+                out.formUnion(watched.filter { $0 == p || $0.hasPrefix(root) })
+            }
+        }
+        return out
     }
 
     public func stop() {

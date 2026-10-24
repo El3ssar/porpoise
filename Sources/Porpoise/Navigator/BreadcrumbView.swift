@@ -386,6 +386,12 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
 
     private func segmentIndex(at p: CGPoint) -> Int? { segments.firstIndex { $0.rect.contains(p) } }
 
+    /// Where the crumb of `u` is drawn (nil: not shown).
+    func crumbRect(_ u: URL) -> CGRect? {
+        rebuildIfNeeded()
+        return segments.first { if case .crumb(let c, _, _) = $0.kind { c.path == u.path } else { false } }?.rect
+    }
+
     override func mouseMoved(with event: NSEvent) {
         guard !isEditing else { return }
         let i = segmentIndex(at: convert(event.locationInWindow, from: nil))
@@ -463,10 +469,28 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             case .crumb(let u, _, _) = segments[i].kind, u.isFileURL, u.path != "/", u.path != ""
         else { super.scrollWheel(with: event); return }
         let parent = u.deletingLastPathComponent()
-        let sibs = subfolders(of: parent)
-        guard let idx = sibs.firstIndex(where: { $0.path == u.path }) else { return }
-        let next = idx + (event.scrollingDeltaY > 0 ? -1 : 1)
-        if next >= 0 && next < sibs.count { delegate?.breadcrumb(self, navigateTo: sibs[next], newTab: false) }
+        let step = event.scrollingDeltaY > 0 ? -1 : 1
+        // The next ticks of one turn of the wheel use the list the first one read.
+        if let c = siblings, c.parent == parent, Date().timeIntervalSince(c.time) < 2 { return go(from: u, in: c.folders, by: step) }
+        // Listed off the main thread: a big folder or a disk on the network (under /Volumes, a file URL too) never
+        // stalls the window; the step applies if the crumb still shows that folder by then.
+        siblingRequest += 1
+        let request = siblingRequest
+        let list = Self.listFolders
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let folders = list(parent)
+            DispatchQueue.main.async {
+                guard let self, self.siblingRequest == request else { return }
+                self.siblings = (parent, folders, Date())
+                guard self.window != nil, self.url.path == u.path || self.url.path.hasPrefix(u.path + "/") else { return }
+                self.go(from: u, in: folders, by: step)
+            }
+        }
+    }
+
+    private func go(from u: URL, in folders: [URL], by step: Int) {
+        guard let i = folders.firstIndex(where: { $0.path == u.path }), folders.indices.contains(i + step) else { return }
+        delegate?.breadcrumb(self, navigateTo: folders[i + step], newTab: false)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -528,8 +552,13 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     // MARK: Menus
 
     private var subfolderRequest = 0
+    /// The wheel's sibling folders, by parent, and when they were read.
+    private var siblings: (parent: URL, folders: [URL], time: Date)?
+    private var siblingRequest = 0
+    /// Lists a folder's subfolders (tests watch where it runs).
+    nonisolated(unsafe) static var listFolders: (URL) -> [URL] = { BreadcrumbView.subfolders(of: $0) }
 
-    private func subfolders(of u: URL) -> [URL] {
+    private nonisolated static func subfolders(of u: URL) -> [URL] {
         if let p = RemoteFS.provider(for: u) {
             return ((try? p.list(u)) ?? []).filter { $0.isDirectory && !$0.isHidden }.map(\.url)
                 .sorted { $0.folderName.localizedStandardCompare($1.folderName) == .orderedAscending }
@@ -551,7 +580,8 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         subfolderRequest += 1
         let request = subfolderRequest
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let folders = self?.subfolders(of: u) else { return }
+            guard self != nil else { return }
+            let folders = Self.subfolders(of: u)
             DispatchQueue.main.async {
                 guard let self, self.window != nil, self.subfolderRequest == request else { return }
                 self.showMenu(folders.map { ($0, $0.folderName) }, at: r, bold: next)
