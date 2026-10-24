@@ -39,7 +39,7 @@ jobs:
           key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-tests-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ github.sha }}
           restore-keys: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-tests-${{ hashFiles('Package.resolved', 'Package.swift') }}-
       - name: Workflow integrity
-        run: python3 scripts/test-workflow-pins.py && python3 scripts/test-ci-proof.py && python3 scripts/test-bundled-tools.py && python3 scripts/test-performance-budgets.py
+        run: python3 scripts/test-workflow-pins.py && python3 scripts/test-ci-proof.py && python3 scripts/test-bundled-tools.py && python3 scripts/test-performance-budgets.py && python3 scripts/test-test-completion.py
       - name: Crash symbol tooling
         run: python3 scripts/test-symbols.py && python3 scripts/test-release-dry-run.py && python3 scripts/test-app-intents-protocols.py
       - name: Format
