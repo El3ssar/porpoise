@@ -19,7 +19,7 @@ struct SSHJobResilienceTests {
         let remote = server.url(source)
         RemoteFS.use(server.provider(), for: remote)
         defer { RemoteFS.use(nil, for: remote) }
-        let monitor = JobEnvironmentMonitor(center: NotificationCenter(), monitorsNetwork: false)
+        let monitor = JobEnvironmentMonitor(monitorsNetwork: false)
         let operations = FileOperationsController()
         operations.environment = monitor
         operations.history = OperationHistory(file: scratch.path("history"))

@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import Network
 import PorpoiseCore
@@ -18,19 +17,10 @@ public final class JobEnvironmentMonitor {
     private var registrations: [ObjectIdentifier: Registration] = [:]
     private var sleeping = false
     private var online = true
-    private let center: NotificationCenter
-    private var observers: [NSObjectProtocol] = []
     private var pathMonitor: NWPathMonitor?
 
-    /// Inject a notification center and reachability events in tests; never change the host's network or sleep state.
-    init(center: NotificationCenter = NSWorkspace.shared.notificationCenter, monitorsNetwork: Bool = !Settings.isTesting) {
-        self.center = center
-        for (name, asleep) in [(NSWorkspace.willSleepNotification, true), (NSWorkspace.didWakeNotification, false)] {
-            observers.append(
-                center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                    self?.sleeping = asleep; self?.apply()
-                })
-        }
+    /// Tests inject reachability and sleep events without changing the host's network or sleep state.
+    init(monitorsNetwork: Bool = !Settings.isTesting) {
         if monitorsNetwork {
             let monitor = NWPathMonitor()
             pathMonitor = monitor
@@ -43,7 +33,6 @@ public final class JobEnvironmentMonitor {
     }
 
     deinit {
-        observers.forEach(center.removeObserver)
         pathMonitor?.cancel()
         for entry in registrations.values {
             entry.control?.setHold(.sleep, active: false)
@@ -59,6 +48,9 @@ public final class JobEnvironmentMonitor {
     func unregister(_ control: JobControl) { registrations[ObjectIdentifier(control)] = nil }
 
     func setOnline(_ available: Bool) { online = available; apply() }
+
+    /// The app's workspace adapter delivers sleep/wake on main, before jobs are started.
+    public func setSleeping(_ asleep: Bool) { sleeping = asleep; apply() }
 
     private func apply() {
         registrations = registrations.filter { $0.value.control != nil && $0.value.control?.hasEnded == false }
