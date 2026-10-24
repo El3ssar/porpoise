@@ -116,8 +116,9 @@ import Testing
         #expect(results.isEmpty)
         #expect(s.read("dst/report") == "the only copy")
         #expect(s.listing("dst") == ["report"])
-        // Not allowed to read it: offered to the administrator, who the scripted user declines.
-        #expect(ui.questions.last?.confirmTitle == "Authenticate")
+        // Administrator retries cannot replace an occupied target, even after an ordinary overwrite failed.
+        #expect(ui.questions.isEmpty)
+        #expect(ui.errors.contains { $0.contains("the existing item was left unchanged") })
     }
 
     @Test func pastingIntoTheSameFolderMakesACopyWithoutAsking() async throws {
