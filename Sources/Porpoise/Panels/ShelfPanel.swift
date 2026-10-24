@@ -285,7 +285,7 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
         guard !plan.urls.isEmpty else { return }
         let sources = Dictionary(uniqueKeysWithValues: picked.compactMap { item in store.state(of: item).url.map { (item.id, $0) } })
         let shelf = store
-        FileOperationsController.shared.run(
+        FileOperationsController.shared.runWithMoveReceipts(
             kind, plan.urls, to: folder, window: window,
             moved: { results in
                 shelf.moved(results, sources: sources)
@@ -330,13 +330,13 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
     @objc private func share() { shareChosen(mode: .picker) }
     @objc private func airDrop() { shareChosen(mode: .airDrop) }
 
-    func shareChosen(mode: SharingCoordinator.Mode, using coordinator: SharingCoordinator = .shared) {
+    func shareChosen(mode: SharingCoordinator.Mode, using coordinator: SharingCoordinator? = nil) {
         let plan = store.plan(chosen)
         report(plan)
         // Do not share a subset when a bookmarked local item is unavailable.
         guard plan.skipped.isEmpty else { return }
         let row = max(0, table.selectedRow)
-        coordinator.share(
+        (coordinator ?? .shared).share(
             plan.urls, mode: mode, from: table,
             rect: row < table.numberOfRows ? table.rect(ofRow: row) : table.visibleRect)
     }
