@@ -16,7 +16,7 @@ final class RecentSource: LocationContentSource {
             deliver(LocationListing(items: RecentLocations.shared.urls.compactMap { FileItem.load($0) }))
             return LocationLoad()
         }
-        let query = RecentFilesQuery { deliver(LocationListing(items: $0)) }
+        let query = RecentFilesQuery(done: deliver)
         // The query keeps answering until the next load replaces it.
         return LocationLoad { _ = query }
     }

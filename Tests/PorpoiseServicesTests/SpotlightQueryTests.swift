@@ -56,16 +56,16 @@ import Testing
         #expect(result?.map(\.name) == ["\(tag).txt"])
     }
 
-    @Test(.timeLimit(.minutes(5))) func recentFilesAndTagsAreEmptyWhenSpotlightNeverAnswers() async throws {
+    @Test(.timeLimit(.minutes(5))) func recentFilesAndTagsReportFailureWhenSpotlightNeverAnswers() async throws {
         let resume = stallSpotlight()
         defer { resume() }
-        var query: MetadataListQuery?
-        defer { withExtendedLifetime(query) {} }
-        // Own the query until its timeout callback arrives, as DirectoryModel does. An unused local can be
-        // released before the await, which stops the query rather than testing its unavailable response.
-        let tagged: [FileItem] = try await awaitCallback { continuation in
-            query = MetadataListQuery.tagged("Red-\(UUID().uuidString)") { continuation.resume(returning: $0) }
+        let source = SpotlightListSource(location: FinderTags.url(for: "Red-\(UUID().uuidString)"))
+        var load: LocationLoad?
+        defer { load?.cancel() }
+        let tagged: LocationListing = try await awaitCallback { continuation in
+            load = source.load(source.location, expanded: []) { continuation.resume(returning: $0) }
         }
-        #expect(tagged.isEmpty)
+        #expect(tagged.error != nil && tagged.items.isEmpty)
+
     }
 }
