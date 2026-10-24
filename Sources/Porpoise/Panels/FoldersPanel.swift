@@ -39,6 +39,8 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         private static var listings = 0
         /// The missing child a re-list was made for: one re-list per missing folder, not one per follow.
         var relistedFor: String?
+        /// The folder changed on disk while it was being listed: it's listed once more when that listing is done.
+        var changedWhileListing = false
         init(_ url: URL) { self.url = url }
 
         var isLoading: Bool { listing != nil }
@@ -234,6 +236,8 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         return out
     }
 
+    static let relistDelay: TimeInterval = 0.3
+
     /// Tests of the listing mechanics turn it off: a re-list the disk asks for would race theirs.
     var watchesDisk = true { didSet { watchOpenFolders() } }
 
@@ -247,9 +251,19 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         guard remoteTree == nil else { return }
         let changed = Set(paths.map(FilePath.canonical))
         for n in openFolders() where n.shownChildren != nil && (changed.contains(FilePath.canonical(n.url.path)) || paths.contains(n.url.path)) {
-            n.invalidate()
-            startListing(n)
+            relist(n)
         }
+    }
+
+    /// Lists `n` again; one listing under way finishes first (a folder that keeps changing, such as the temporary
+    /// folder, would otherwise restart it at every change and never show anything), then it's listed once more.
+    private func relist(_ n: Node) {
+        if n.isLoading {
+            n.changedWhileListing = true
+            return
+        }
+        n.invalidate()
+        startListing(n)
     }
 
     func outlineViewItemDidExpand(_ notification: Notification) { watchOpenFolders() }
@@ -455,6 +469,15 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
                 guard let self, let node, self.root === tree, self.remoteTree == nil, node.finishListing(token, names) else { return }
                 self.outline.reloadItem(node === self.root ? nil : node, reloadChildren: true)
                 if self.followWaiting { self.followCurrent() }
+                // Changed meanwhile: listed once more, a moment later (a folder that never stops changing is read at
+                // most a few times a second, and what follows the view's folder through it gets its turn first).
+                if node.changedWhileListing {
+                    node.changedWhileListing = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Self.relistDelay) { [weak self, weak node] in
+                        guard let self, let node, self.root === tree else { return }
+                        self.relist(node)
+                    }
+                }
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.loadingLabelDelay) { [weak self, weak node] in
