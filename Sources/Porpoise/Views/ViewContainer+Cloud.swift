@@ -37,7 +37,12 @@ extension ViewContainer {
                 return
             }
             if retry {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.showCloudState(retry: false) }
+                // Only if the pane is still there: by then it may show a local folder that failed in its own way.
+                let location = model.location
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                    guard let self, self.model.location == location else { return }
+                    self.showCloudState(retry: false)
+                }
                 return
             }
             // A shared folder kept as a place that went away (unshared or deleted): offer to remove the place.

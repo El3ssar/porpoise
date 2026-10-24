@@ -29,7 +29,19 @@ final class Thumbnails {
         cache.totalCostLimit = Self.cacheBytes
         folderCache.totalCostLimit = Self.cacheBytes / 4
         folderLatest.totalCostLimit = Self.cacheBytes / 8
-        NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] _ in self?.resetFolderPreviews() }
+        NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
+            self?.settingsChanged(key: n.object as? String)
+        }
+    }
+
+    /// The settings a folder preview depends on (nil: several changed at once). Any other one, such as an icon size
+    /// elsewhere, leaves the previews as they are instead of blinking them all back to plain folders.
+    static let folderPreviewKeys: Set<String> = [
+        "pvImages", "pvVideos", "pvDocs", "pvText", "pvFonts", "pvFolders", "pvMax", "pvRemote", "appearance", "appearancePreferences",
+    ]
+
+    func settingsChanged(key: String?) {
+        if key.map(Self.folderPreviewKeys.contains) ?? true { resetFolderPreviews() }
     }
 
     private func store(_ img: NSImage, _ key: String) { cache.setObject(img, forKey: key as NSString, cost: Self.cost(of: img)) }
@@ -100,7 +112,7 @@ final class Thumbnails {
     /// Folder versions whose candidates are being listed. Never while drawing: a folder can hold 100,000 files.
     private var folderScans = Set<String>()
     /// Bumped by `resetFolderPreviews()`: a listing started before is thrown away.
-    private var folderGeneration = 0
+    private(set) var folderGeneration = 0
     private static let folderScanQueue: OperationQueue = {
         let q = OperationQueue()
         q.name = "porpoise.thumbnails.folders"
