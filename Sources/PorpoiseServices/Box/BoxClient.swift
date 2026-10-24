@@ -163,7 +163,9 @@ public final class BoxClient: @unchecked Sendable {
     public func list(_ folderID: String = BoxItem.rootID, onPage: @Sendable ([BoxItem], Bool) async -> Void = { _, _ in }) async throws -> [BoxItem] {
         let folderID = folderID.isEmpty ? BoxItem.rootID : folderID
         do {
-            let since = metadataCache.generation
+            let read = metadataCache.beginRead()
+            defer { withExtendedLifetime(read) {} }
+            let since = read.generation
             var files: [String: BoxItem] = [:]
             try await CloudPager.each(repeated: BoxError.invalidResponse) { (marker: String?) in
                 var query: [URLQueryItem] = [

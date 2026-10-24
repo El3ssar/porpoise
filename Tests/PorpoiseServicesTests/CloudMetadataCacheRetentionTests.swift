@@ -68,6 +68,25 @@ struct CloudMetadataCacheRetentionTests {
         #expect(cache.file("edited") == nil && cache.retentionStorageCounts.reads == 0 && cache.retentionStorageCounts.remembered == 0)
     }
 
+    @Test func snapshotInstallsDependencyContextAtomicallyWithoutUndoingNewerMetadata() async throws {
+        let scratch = try Scratch(), cache = await cache(scratch)
+        var config = configuration()
+        config.dependencies = { $0.id == "shortcut" ? ["target"] : [] }
+        cache.enableRetention(config)
+        let active = cache.retainMetadata(.init(listings: ["folder"]))
+        let read = cache.beginRead()
+        cache.remember([Item("target", name: "new", parent: "parent")])
+        cache.store([Item("shortcut")], key: "folder", since: read.generation,
+                    contextFiles: [Item("target", name: "old", parent: "parent"), Item("parent")], snapshotValue: nil)
+        read.release()
+        await cache.settleRetention()
+        #expect(cache.snapshot("folder")?.files.map(\.id) == ["shortcut"])
+        #expect(cache.file("target")?.name == "new" && cache.file("parent") != nil)
+        active.release()
+        await cache.settleRetention()
+        #expect(cache.files.isEmpty && cache.snapshot("folder") == nil)
+    }
+
     @Test func restoredOfflineSubtreeSurvivesBeforeTheFirstPrune() async throws {
         let scratch = try Scratch(), cache = await cache(scratch)
         cache.remember([Item("root"), Item("folder", parent: "root"), Item("child", parent: "folder"), Item("ordinary")])

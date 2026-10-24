@@ -27,6 +27,7 @@ public final class DriveMetadataCache: @unchecked Sendable {
     /// Where the cache is now: what a request starts from, so that what it reads back doesn't undo a change made here
     /// meanwhile (`learn`, `store`, `apply`).
     var generation: UInt64 { storage.generation }
+    func beginRead() -> CloudMetadataLease { storage.beginRead() }
     var files: [DriveFile] { storage.files }
     func remember(_ files: [DriveFile]) { storage.remember(files) }
     func learn(_ files: [DriveFile], since: UInt64) -> [DriveFile] { storage.learn(files, since: since) }

@@ -142,7 +142,9 @@ public final class DropboxClient: @unchecked Sendable {
     }
     public func list(_ path: String = "", onPage: @Sendable ([DropboxItem], Bool) async -> Void = { _, _ in }) async throws -> [DropboxItem] {
         do {
-            let since = metadataCache.generation
+            let read = metadataCache.beginRead()
+            defer { withExtendedLifetime(read) {} }
+            let since = read.generation
             var cursor: String?; var files: [String: DropboxItem] = [:]
             // IDs by path: a deleted entry names a path, not an ID.
             var paths: [String?: Set<String>] = [:]

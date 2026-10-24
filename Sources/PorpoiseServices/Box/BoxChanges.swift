@@ -72,7 +72,9 @@ private let boxRemovals: Set<String> = ["ITEM_TRASH", "ITEM_DELETE", "ITEM_UNSHA
 let boxEventLimit = 500
 
 private func boxChangePage(_ client: BoxClient, cursor: String) async throws -> CloudChangePage {
-    let since = client.metadataCache.generation
+    let read = client.metadataCache.beginRead()
+    defer { withExtendedLifetime(read) {} }
+    let since = read.generation
     let page: BoxEvents = try await client.get(
         client.api(
             "events",
@@ -85,7 +87,8 @@ private func boxChangePage(_ client: BoxClient, cursor: String) async throws -> 
     let hasMore = !page.entries.isEmpty && next != cursor
     return CloudChangePage(
         cursor: next, hasMore: hasMore,
-        apply: {
+        apply: { [read] in
+            defer { withExtendedLifetime(read) {} }
             var current = Dictionary(client.metadataCache.files.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             var updates: [String: BoxItem] = [:]; var removed = Set<String>()
             var children: [String: [String]]?

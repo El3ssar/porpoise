@@ -168,7 +168,9 @@ public final class DriveClient: @unchecked Sendable {
     public func file(_ id: String, resourceKey: String? = nil, includeTrashed: Bool = false) async throws -> DriveFile {
         guard DriveLink.isValidID(id) else { throw DriveError.invalidLocation }
         let resourceKey = resourceKey ?? metadataCache.file(id)?.resourceKey
-        let since = metadataCache.generation
+        let read = metadataCache.beginRead()
+        defer { withExtendedLifetime(read) {} }
+        let since = read.generation
         let data = try await request(
             "files/\(id)",
             query: [
@@ -203,7 +205,9 @@ public final class DriveClient: @unchecked Sendable {
 
     public func listPage(_ location: DriveLocation, pageToken: String? = nil) async throws -> DrivePage {
         guard location.accountID == accountID else { throw DriveError.invalidLocation }
-        let since = metadataCache.generation
+        let read = metadataCache.beginRead()
+        defer { withExtendedLifetime(read) {} }
+        let since = read.generation
         var query = [URLQueryItem(name: "pageSize", value: "1000")]
         if let pageToken { query.append(URLQueryItem(name: "pageToken", value: pageToken)) }
         if case .sharedDrives = location.collection {

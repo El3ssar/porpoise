@@ -149,7 +149,9 @@ public final class OneDriveClient: @unchecked Sendable {
     public func list(_ folderID: String = "", onPage: @Sendable ([OneDriveItem], Bool) async -> Void = { _, _ in }) async throws -> [OneDriveItem] {
         do {
             if folderID.isEmpty, rootID == nil { _ = try await metadata("") }
-            let since = metadataCache.generation
+            let read = metadataCache.beginRead()
+            defer { withExtendedLifetime(read) {} }
+            let since = read.generation
             var files: [String: OneDriveItem] = [:]
             try await CloudPager.each(repeated: OneDriveError.invalidResponse) { (next: String?) in
                 let url = try next.map(link) ?? graph(itemPath(folderID) + "/children", query: [.init(name: "$top", value: "200")])

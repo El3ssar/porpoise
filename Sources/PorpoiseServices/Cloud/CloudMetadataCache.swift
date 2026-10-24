@@ -192,8 +192,10 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     public func store(_ files: [Item], key: String, since: UInt64? = nil) {
         store(files, key: key, since: since, snapshotValue: nil)
     }
-    func store(_ files: [Item], key: String, since: UInt64?, snapshotValue: (name: String, value: Any)?) {
+    func store(_ files: [Item], key: String, since: UInt64?, contextFiles: [Item] = [], snapshotValue: (name: String, value: Any)?) {
         lock.withLock {
+            // Install dependencies and membership under one lock: pruning cannot separate them.
+            for file in contextFiles.map({ newest($0, since: since) }) { state.files[file.id] = file; touched(file.id) }
             let files = files.map { newest($0, since: since) }
             state.listings[key] = Snapshot(files: files, savedAt: Date())
             snapshotValues[key] = snapshotValue.map { [$0.name: $0.value] }

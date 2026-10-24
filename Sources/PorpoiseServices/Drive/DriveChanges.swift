@@ -19,7 +19,9 @@ extension DriveClient {
     /// Remote search is paged and explicitly scoped; no local content index is implied.
     public func search(_ text: String, in location: DriveLocation, fullText: Bool = false, pageToken: String? = nil) async throws -> DrivePage {
         guard location.accountID == accountID else { throw DriveError.invalidLocation }
-        let since = metadataCache.generation
+        let read = metadataCache.beginRead()
+        defer { withExtendedLifetime(read) {} }
+        let since = read.generation
         let escaped = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
         var filter = "trashed = false and \(fullText ? "fullText" : "name") contains '\(escaped)'"
         var driveID: String?
@@ -95,7 +97,9 @@ private func driveChangePage(_ client: DriveClient, scope: String, cursor: Strin
         let nextPageToken: String?
         let newStartPageToken: String?
     }
-    let since = client.metadataCache.generation
+    let read = client.metadataCache.beginRead()
+    defer { withExtendedLifetime(read) {} }
+    let since = read.generation
     let page = try client.decode(
         Page.self,
         await client.request(
@@ -107,7 +111,8 @@ private func driveChangePage(_ client: DriveClient, scope: String, cursor: Strin
     guard let next = page.nextPageToken ?? page.newStartPageToken, !next.isEmpty else { throw DriveError.invalidResponse }
     return CloudChangePage(
         cursor: next, hasMore: page.nextPageToken != nil,
-        apply: {
+        apply: { [read] in
+            defer { withExtendedLifetime(read) {} }
             let changes = page.changes ?? []
             if !changes.isEmpty {
                 let removed = changes.filter { $0.removed == true || $0.file?.trashed == true }.compactMap(\.fileId)
@@ -132,7 +137,9 @@ private func driveStartCursor(_ client: DriveClient, scope: String) async throws
 
 /// The token precedes the baseline; replay then includes changes made during enumeration.
 private func driveResetBaseline(_ client: DriveClient, scope: String, token: String) async throws {
-    let since = client.metadataCache.generation
+    let read = client.metadataCache.beginRead()
+    defer { withExtendedLifetime(read) {} }
+    let since = read.generation
     let previous = client.metadataCache.files.filter { scope == "user" ? $0.driveId == nil : $0.driveId == scope }
     var files: [DriveFile] = []
     try await CloudPager.each(repeated: DriveError.invalidResponse) { (pageToken: String?) in

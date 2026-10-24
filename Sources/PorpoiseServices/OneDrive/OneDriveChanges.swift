@@ -47,12 +47,15 @@ extension CloudChangeFeed {
 }
 
 private func oneDriveChangePage(_ client: OneDriveClient, cursor: String) async throws -> CloudChangePage {
-    let since = client.metadataCache.generation
+    let read = client.metadataCache.beginRead()
+    defer { withExtendedLifetime(read) {} }
+    let since = read.generation
     let page: OneDriveClient.Page<OneDriveItem> = try await client.get(try client.link(cursor))
     guard let next = page.next ?? page.delta else { throw OneDriveError.invalidResponse }
     return CloudChangePage(
         cursor: next, hasMore: page.next != nil,
-        apply: {
+        apply: { [read] in
+            defer { withExtendedLifetime(read) {} }
             var current = Dictionary(client.metadataCache.files.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             var updates: [String: OneDriveItem] = [:]; var removed = Set<String>()
             // Each folder's children, made at the first deletion and kept as entries move; a link is checked when used.
