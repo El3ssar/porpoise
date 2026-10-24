@@ -1108,6 +1108,10 @@ import Testing
         #expect(seen == ["alpha.txt", "beta.txt", "Zeta", "Zeta"])
         key(tab, to: pane.list, .shift)
         #expect(pane.model.selection == [s.path("beta.txt")])
+        // Names that compare the same (Report.txt and Report.pdf with extensions hidden) keep the order shown, so
+        // neither is skipped.
+        #expect(ItemListView.byName(("Report", 0), ("Report", 1)) && !ItemListView.byName(("Report", 1), ("Report", 0)))
+        #expect(ItemListView.byName(("alpha", 5), ("Beta", 0)))
     }
 
     @Test func voiceOverListsTheBrowsersColumns() async throws {
