@@ -10,6 +10,31 @@ import Testing
 /// One operation contract, including destructive/conflict assertions, for every location. Each invocation owns
 /// its filesystem/server. SMB exercises the mounted-local boundary, not the macOS SMB implementation.
 @Suite(.serialized) struct ProviderCapabilityContractTests {
+    @Test(arguments: [ProviderLocation.ftp, .sftp])
+    func directProviderCopyRefusesAnOccupiedFileOrFolder(_ location: ProviderLocation) async throws {
+        let fixture = try ProviderContractFixture(location); defer { fixture.close() }
+        let source = try Scratch(), downloads = try Scratch()
+        try await offThePool {
+            let copy = try #require(fixture.copy)
+            let local = try source.file("same.txt", "source")
+            try fixture.upload(local, fixture.root)
+            try fixture.makeFolder("target", fixture.root)
+            let destination = try fixture.child("target", in: fixture.root).url
+            let remote = try fixture.child("same.txt", in: fixture.root).url
+            try copy(remote, destination)
+            try Data("different".utf8).write(to: local)
+            try fixture.makeFolder("other", fixture.root)
+            let other = try fixture.child("other", in: fixture.root).url
+            try fixture.upload(local, other)
+            let replacement = try fixture.child("same.txt", in: other).url
+            #expect(throws: (any Error).self) { try copy(replacement, destination) }
+            let kept = try fixture.child("same.txt", in: destination).url
+            #expect(try String(contentsOf: fixture.download(kept, downloads.url), encoding: .utf8) == "source")
+            // An existing directory must not silently absorb the source's children either.
+            #expect(throws: (any Error).self) { try copy(other, fixture.root) }
+        }
+    }
+
     @Test func driveUploadsNestedFoldersWithoutFollowingAncestorCycles() async throws {
         let fixture = try ProviderContractFixture(.drive); defer { fixture.close() }
         let source = try Scratch(), destination = try Scratch()
@@ -183,6 +208,7 @@ private final class ProviderContractFixture {
     let upload: (URL, URL) throws -> Void
     let download: (URL, URL) throws -> URL
     let rename: (URL, String) throws -> Void
+    var copy: ((URL, URL) throws -> Void)?
     let move: (URL, URL) throws -> Void
     let delete: (URL) throws -> Void
     let makeFolder: (String, URL) throws -> Void
@@ -344,6 +370,7 @@ private final class ProviderContractFixture {
         upload = provider.upload
         download = provider.download
         rename = provider.rename
+        copy = { try provider.copy([$0], into: $1) }
         move = { try provider.move([$0], into: $1) }
         delete = confirmedDelete ?? { try provider.delete([$0]) }
         makeFolder = createFolder ?? { name, folder in try provider.makeFolder(folder.appendingPathComponent(name, isDirectory: true)) }
