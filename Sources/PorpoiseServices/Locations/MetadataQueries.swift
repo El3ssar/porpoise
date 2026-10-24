@@ -5,11 +5,14 @@ import PorpoiseFileSystem
 /// "Recent Files": Spotlight's last-used dates (the Mac's equivalent of recentlyused:/files).
 final class RecentFilesQuery {
     private let spotlight: SpotlightQuery
+    private let files: MetadataFileLoad
     private static let maxAge: TimeInterval = 30 * 86400
     private static let maxResults = 200
 
     /// `done` gets the listing, including an explicit failure when Spotlight does not answer.
     init(done: @escaping (LocationListing) -> Void) {
+        let files = MetadataFileLoad()
+        self.files = files
         let since = Date().addingTimeInterval(-Self.maxAge)
         spotlight = SpotlightQuery(
             predicate: NSPredicate(format: "kMDItemLastUsedDate >= %@ AND kMDItemContentTypeTree != 'public.folder'", since as NSDate),
@@ -18,7 +21,7 @@ final class RecentFilesQuery {
         ) { event in
             switch event {
             case .gathered(let paths):
-                done(LocationListing(items: paths.filter { !$0.contains("/Library/") }.compactMap { FileItem.load(URL(fileURLWithPath: $0)) }))
+                files.start(paths.filter { !$0.contains("/Library/") }.map { URL(fileURLWithPath: $0) }, done: done)
             case .unavailable:
                 done(LocationListing(error: .provider("Spotlight did not answer. Try again or check Spotlight indexing in System Settings.")))
             case .progress, .updated: break
@@ -27,19 +30,22 @@ final class RecentFilesQuery {
         spotlight.start()
     }
 
-    deinit { spotlight.stop() }
+    deinit { spotlight.stop(); files.cancel() }
 }
 
 /// Files carrying a tag (the sidebar's Tags section), or matching a Finder Smart Folder, found with Spotlight.
 final class MetadataListQuery {
     private let spotlight: SpotlightQuery
+    private let files: MetadataFileLoad
     var query: NSMetadataQuery { spotlight.query }
 
     /// `done` gets the listing, including an explicit failure when Spotlight does not answer.
     init(predicate: NSPredicate, scopes: [Any] = [NSMetadataQueryLocalComputerScope], done: @escaping (LocationListing) -> Void) {
+        let files = MetadataFileLoad()
+        self.files = files
         spotlight = SpotlightQuery(predicate: predicate, scopes: scopes, limit: 2000) { event in
             switch event {
-            case .gathered(let paths): done(LocationListing(items: paths.compactMap { FileItem.load(URL(fileURLWithPath: $0)) }))
+            case .gathered(let paths): files.start(paths.map { URL(fileURLWithPath: $0) }, done: done)
             case .unavailable:
                 done(LocationListing(error: .provider("Spotlight did not answer. Try again or check Spotlight indexing in System Settings.")))
             case .progress, .updated: break
@@ -49,7 +55,7 @@ final class MetadataListQuery {
     }
 
     // Replaced before it finished gathering (the user moved on): stop searching.
-    deinit { spotlight.stop() }
+    deinit { spotlight.stop(); files.cancel() }
 
     static func tagged(_ tag: String, done: @escaping (LocationListing) -> Void) -> MetadataListQuery {
         MetadataListQuery(predicate: NSPredicate(format: "kMDItemUserTags == %@", tag), done: done)
@@ -71,4 +77,26 @@ final class MetadataListQuery {
         }
         return MetadataListQuery(predicate: pred, scopes: scopes.isEmpty ? [NSMetadataQueryLocalComputerScope] : scopes, done: done)
     }
+}
+
+/// File metadata can block on mounted volumes. One dedicated queue bounds the work; cancellation drops both
+/// queued IO and delivery after navigation, without occupying a cooperative worker waiting for another task.
+final class MetadataFileLoad {
+    private static let queue = DispatchQueue(label: "app.porpoise.metadata-list", qos: .userInitiated)
+    private let cancellation = DiskCancellation()
+    func start(_ urls: [URL], load: @escaping (URL) -> FileItem? = { FileItem.load($0) }, done: @escaping (LocationListing) -> Void) {
+        let cancellation = cancellation
+        Self.queue.async {
+            var items: [FileItem] = []
+            for url in urls {
+                guard !cancellation.isCancelled else { return }
+                if let item = load(url) { items.append(item) }
+            }
+            DispatchQueue.main.async {
+                guard !cancellation.isCancelled else { return }
+                done(LocationListing(items: items))
+            }
+        }
+    }
+    func cancel() { cancellation.cancel() }
 }

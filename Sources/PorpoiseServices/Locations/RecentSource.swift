@@ -13,8 +13,9 @@ final class RecentSource: LocationContentSource {
 
     func load(_ folder: URL, expanded: Set<URL>, deliver: @escaping (LocationListing) -> Void) -> LocationLoad {
         if LocationKind.of(folder) == .recentLocations {
-            deliver(LocationListing(items: RecentLocations.shared.urls.compactMap { FileItem.load($0) }))
-            return LocationLoad()
+            let files = MetadataFileLoad()
+            files.start(RecentLocations.shared.urls, done: deliver)
+            return LocationLoad { files.cancel() }
         }
         let query = RecentFilesQuery(done: deliver)
         // The query keeps answering until the next load replaces it.

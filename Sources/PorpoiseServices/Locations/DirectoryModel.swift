@@ -652,7 +652,9 @@ public final class DirectoryModel {
     private var sortedTop: [FileItem]?
 
     private var preparesLocalRows: Bool {
-        !isSearching && source is LocalSource && items.count + children.values.reduce(0, { $0 + $1.count }) >= 2000
+        !isSearching
+            && ((props.sortRole == .tags || props.effectiveGroupRole == .tags)
+                || source is LocalSource && items.count + children.values.reduce(0, { $0 + $1.count }) >= 2000)
     }
     private var rowPreparation: LocationLoad?
     private var rowPreparationGeneration: UInt64 = 0
@@ -703,7 +705,7 @@ public final class DirectoryModel {
     /// to what's shown.
     public func rebuild(keepingOrder: Bool = false, adding: [FileItem]? = nil) {
         cancelRowPreparation()
-        // Small directories keep their immediate editing semantics. Search has its own incremental preparation.
+        // Tag ordering needs IO even for a small listing. Search has its own incremental preparation.
         if preparesLocalRows {
             prepareLocalRows(keepingOrder: keepingOrder)
             return

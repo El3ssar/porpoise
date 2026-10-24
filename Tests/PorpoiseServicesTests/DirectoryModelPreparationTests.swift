@@ -14,6 +14,24 @@ import Testing
         }
     }
 
+    @Test func smallTagSortAndGroupingUseGenerationBoundPreparation() throws {
+        let s = try Scratch()
+        let m = DirectoryModel(location: s.url)
+        var pending: [(DirectoryModelPreparation, (DirectoryModelPreparation.Result) -> Void)] = []
+        m.prepareRows = { input, done in
+            pending.append((input, done)); return LocationLoad()
+        }
+        m.applyEdit(ListingEdit(folder: s.url, added: files(s.url, count: 3)))
+        m.props.sortRole = .tags
+        #expect(pending.count == 1)
+        m.props.sortRole = .name
+        m.props.groupRole = .tags
+        #expect(pending.count == 2)
+        m.props.groupRole = nil
+        for request in pending { request.1(try #require(request.0.build())) }
+        #expect(!m.isLoading && m.rows.count == 3)
+    }
+
     @Test func geometryChangesKeepTheRowsAndOrderWhileExpansionStillRebuilds() throws {
         let s = try Scratch()
         let m = DirectoryModel(location: s.url)
