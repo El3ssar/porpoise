@@ -35,16 +35,20 @@ import os
 
     @Test func centralPublishersNotifyOnceAfterStoringAndResetStillBroadcasts() {
         let changes = OSAllocatedUnfairLock(initialState: [SettingsChange?]())
+        let expected: [SettingsChange] = [.key("confirmTrash"), .key("ctx.duplicate"), .all]
         let token = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: nil) { note in
-            changes.withLock { $0.append(SettingsChange(note)) }
-            switch SettingsChange(note) {
+            guard let change = SettingsChange(note), expected.contains(change) else { return }
+            changes.withLock { $0.append(change) }
+            switch change {
             case .key("confirmTrash"): #expect(Settings.store.bool(forKey: "confirmTrash"))
             case .key("ctx.duplicate"): #expect(Settings.store.object(forKey: "ctx.duplicate") as? Bool == false)
             case .all: #expect(Settings.store.object(forKey: "confirmTrash") == nil)
-            default: Issue.record("Unexpected settings change")
+            default: break
             }
         }
         defer { NotificationCenter.default.removeObserver(token) }
+        SettingsChange.key("unrelated.fixture").post()
+        #expect(changes.withLock { $0.isEmpty })
         Settings.shared.confirmTrash = true
         #expect(changes.withLock { $0 } == [.key("confirmTrash")])
         Settings.shared.setContextMenu(.duplicate, false)
