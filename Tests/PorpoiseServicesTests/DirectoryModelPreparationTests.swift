@@ -42,10 +42,12 @@ import Testing
         m.selection = Set(m.rows.map(\.item.url))
         let expected = m.rows.map(\.item.url)
         var counts = 0
-        let start = ContinuousClock.now
-        for _ in 0..<30 { counts += m.selectedItems.count }
-        print("W261 selection 100k x30: \(start.duration(to: .now)) count=\(counts)")
-        #expect(counts == 3_000_000 && m.selectedItems.map(\.url) == expected)
+        for sample in 0..<5 {
+            let start = ContinuousClock.now
+            for _ in 0..<30 { counts += m.selectedItems.count }
+            print("W261 selection 100k x30 sample=\(sample): \(start.duration(to: .now))")
+        }
+        #expect(counts == 15_000_000 && m.selectedItems.map(\.url) == expected)
         m.selection = [expected[20], expected[10]]
         #expect(m.selectedItems.map(\.url) == [expected[10], expected[20]])
         m.props.sortOrder = .descending
