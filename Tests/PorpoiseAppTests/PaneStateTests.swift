@@ -25,26 +25,29 @@ import Testing
         wc.view.layoutSubtreeIfNeeded()
         try #require(await eventually(Self.wait) { wc.view.model.rows.count == 2 })
         #expect(window.makeFirstResponder(wc.view.list))
+        // AppKit matches a ⌘ key to its menu item, then sends the item's nil-targeted action to the key window. The test
+        // host can't have one without activating the app (it would take the focus from the user), so the items these
+        // tests press are aimed at this window as the key window would be. Test aid only: the match itself is AppKit's.
+        for item in Self.items(NSApp.mainMenu)
+        where [#selector(MainWindowController.showSearch(_:)), #selector(MainWindowController.showFilterBar(_:))].contains(item.action) {
+            item.target = wc
+        }
         return (wc, window)
     }
 
-    /// A key press. Keys without ⌘ go through the window's own dispatch (`sendEvent`), which runs the menu item bound
-    /// to them. AppKit offers ⌘ keys to the menu bar only for the key window, and a test window can't be key without
-    /// taking the focus from whatever app is in front: the item bound to the real event runs as the menu bar runs it.
+    private static func items(_ menu: NSMenu?) -> [NSMenuItem] {
+        (menu?.items ?? []).flatMap { [$0] + items($0.submenu) }
+    }
+
+    /// A key press as the system delivers it: ⌘ keys through AppKit's own dispatch (`NSApp.sendEvent`, which offers
+    /// them to the menu bar); other keys to the window (`sendEvent`), which offers menu keys without ⌘ to the menu bar.
     private func press(_ keyCode: UInt16, _ characters: String, _ flags: NSEvent.ModifierFlags = [], in window: NSWindow) throws {
         let event = try #require(
             NSEvent.keyEvent(
                 with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters,
                 isARepeat: false, keyCode: keyCode))
-        let current = MainWindowController.currentKeyEvent
-        MainWindowController.currentKeyEvent = { event }
-        defer { MainWindowController.currentKeyEvent = current }
-        guard flags.contains(.command) else { return window.sendEvent(event) }
-        let item = try #require(MainWindowController.menuItem(for: event), "no menu item for \(characters) \(flags)")
-        let wc = try #require(window.windowController as? MainWindowController)
-        #expect(wc.validateMenuItem(item), "\(item.title) disabled")
-        #expect(NSApp.sendAction(try #require(item.action), to: wc, from: item))
+        if flags.contains(.command) { NSApp.sendEvent(event) } else { window.sendEvent(event) }
     }
 
     @Test(arguments: [ShortcutKeySet.mac, .dolphin]) func searchAndFilterTakeTurns(_ keySet: ShortcutKeySet) async throws {
