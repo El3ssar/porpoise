@@ -10,6 +10,7 @@ import Testing
     let s = Settings.shared
 
     @Test func defaultsWhenNothingIsStored() {
+        #expect(!s.allowCommandLineControl)
         #expect(s.startup == .lastSession)
         #expect(s.showGitStatus)
         #expect(s.homeURL.path == FileManager.default.homeDirectoryForCurrentUser.path)
