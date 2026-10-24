@@ -42,8 +42,8 @@ import Testing
         try s.file("note")
         let src = [URL(fileURLWithPath: "/x/photos"), URL(fileURLWithPath: "/x/note")]
         let copy = FileOperationsController.administratorCommands(.copy, src, targets: [:], to: s.url)
-        #expect(copy.commands == [["/bin/cp", "-pR", "--", "/x/note", s.path("note").path]])
-        #expect(copy.skipped == ["“photos” already exists in “\(s.url.lastPathComponent)”."])
+        #expect(copy.commands.isEmpty && copy.skipped.count == 2)
+        #expect(copy.skipped.allSatisfy { $0.contains("the existing item was left unchanged") })
         // A link never replaces anything.
         let link = FileOperationsController.administratorCommands(.link, [src[1]], targets: [:], to: s.url)
         #expect(link.commands.isEmpty && link.skipped.count == 1)

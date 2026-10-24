@@ -40,6 +40,21 @@ extension FileOperationsController {
 
         let plan = Self.administratorCommands(kind, remaining, targets: targets, to: folder)
         if !plan.skipped.isEmpty { showErrors(plan.skipped, window: window) }
+        if kind == .copy || kind == .move {
+            guard !plan.commands.isEmpty else { done(unlocked); return }
+            let batch = AdministratorTransferBatch(kind: kind, commands: plan.commands, elevate: Self.elevate)
+            authorize(
+                verb: Self.permissionVerb(kind), items: remaining, commands: plan.commands, kind: kind, window: window,
+                run: { batch.run(viaHelper: $0) }
+            ) { [self] _ in
+                let completed = batch.completion
+                if kind == .copy, !completed.targets.isEmpty { pushUndo(.created(completed.targets)) }
+                if kind == .move, !completed.moves.isEmpty { pushUndo(.moved(completed.moves)) }
+                Self.notifyChanged(remaining + completed.targets)
+                done(unlocked + completed.targets)
+            }
+            return
+        }
         // Trashed items become yours, as part of the same approved action: emptying the Trash won't need the helper.
         authorize(
             verb: Self.permissionVerb(kind), items: remaining, commands: plan.commands, handOver: plan.trashed.map(\.inTrash.path), kind: kind,
@@ -76,10 +91,8 @@ extension FileOperationsController {
                 cmds.append(["/bin/mv", "--", u.path, dst.path])
             case .move, .copy, .link:
                 guard let dst = targets[u] ?? folder?.appendingPathComponent(u.lastPathComponent) else { continue }
-                // mv/cp/ln would put the item *inside* an existing folder instead of replacing it.
-                var isDir: ObjCBool = false
-                if FileManager.default.fileExists(atPath: dst.path, isDirectory: &isDir), isDir.boolValue || kind == .link {
-                    skipped.append("“\(dst.lastPathComponent)” already exists in “\(dst.deletingLastPathComponent().lastPathComponent)”.")
+                if FileJob.itemExists(at: dst) {
+                    skipped.append(AdministratorTransferBatch.occupied(dst))
                     continue
                 }
                 let tool = kind == .move ? ["/bin/mv"] : (kind == .copy ? ["/bin/cp", "-pR"] : ["/bin/ln", "-s"])
@@ -170,6 +183,17 @@ extension FileOperationsController {
         verb: String, items: [URL], commands: [[String]], handOver: [String] = [], kind: FileOperationKind, window: AnyObject?,
         done: @escaping (Bool) -> Void
     ) {
+        let elevate = Self.elevate
+        authorize(verb: verb, items: items, commands: commands, kind: kind, window: window, run: { elevate(commands, $0, handOver) }, done: done)
+    }
+
+    private static let authorizationQueue = DispatchQueue(
+        label: "porpoise.authorized-operations", qos: .userInitiated, autoreleaseFrequency: .workItem)
+
+    private func authorize(
+        verb: String, items: [URL], commands: [[String]], kind: FileOperationKind, window: AnyObject?,
+        run: @escaping (Bool) -> ElevatedOutcome, done: @escaping (Bool) -> Void
+    ) {
         guard let viaHelper = confirmAuthorization(verb: verb, items: items, commands: commands, window: window) else { return done(false) }
         let activity = Activity(kind: kind, sources: items, destination: nil, job: nil, pauseUnavailable: "Actions as administrator can't be paused.")
         activity.cloudTitle = "As administrator: \(verb)"
@@ -178,9 +202,8 @@ extension FileOperationsController {
         began(activity)
         ui?.jobStarted(activity)
         activityDidChange()
-        let elevate = Self.elevate
-        DispatchQueue.global(qos: .userInitiated).async {
-            let outcome = elevate(commands, viaHelper, handOver)
+        Self.authorizationQueue.async {
+            let outcome = run(viaHelper)
             DispatchQueue.main.async { [self] in
                 let ok = report(outcome)
                 if case .cancelled = outcome { activity.control.cancel() }
