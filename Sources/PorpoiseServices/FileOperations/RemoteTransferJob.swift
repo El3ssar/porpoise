@@ -572,17 +572,19 @@ final class RemoteTransferJob {
                 }
                 // Once swapped, staging may hold the user's previous target. Persist that fact first.
                 try stageJournal?.preserve(stageFolder)
-                guard renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 else {
-                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-                }
+                let journal = stageJournal
                 do {
-                    if let dispose = disposeReplacedItem {
-                        try dispose(staged, target)
-                    } else {
-                        try FileManager.default.removeItem(at: staged)
-                    }
+                    try FilePublication.replace(
+                        staged, at: target,
+                        dispose: { previous in
+                            if let dispose = disposeReplacedItem {
+                                try dispose(previous, target)
+                            } else {
+                                try FileManager.default.removeItem(at: previous)
+                            }
+                        }, checkpoint: { try journal?.publicationCheckpoint($0) })
                 } catch {
-                    guard renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 else {
+                    if error is FilePublication.Retained {
                         removeStage = false
                         stageFolders[target.deletingLastPathComponent()] = nil
                         stageJournal?.release(stageFolder)
@@ -593,7 +595,7 @@ final class RemoteTransferJob {
                     throw error
                 }
             } else {
-                guard renamex_np(staged.path, target.path, UInt32(RENAME_EXCL)) == 0 else { throw RemoteError.exists(target.lastPathComponent) }
+                try FilePublication.renameExclusively(staged, to: target)
             }
             try beforeSourceRemoval?()
             if let removal {

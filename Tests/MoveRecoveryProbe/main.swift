@@ -9,6 +9,19 @@ let root = URL(fileURLWithPath: CommandLine.arguments[1])
 guard root.lastPathComponent.hasPrefix("porpoise-test-") else { exit(64) }
 let mode = CommandLine.arguments[2]
 let journal = TransferStageJournal(folder: root.appendingPathComponent("journal"))
+if mode == "replacement" {
+    let volume = root.appendingPathComponent("mnt-PPPUB")
+    try FilePublication.replace(
+        volume.appendingPathComponent("incoming"), at: volume.appendingPathComponent("target"),
+        dispose: {
+            try FileManager.default.removeItem(at: $0)
+        },
+        checkpoint: { checkpoint in
+            try journal.publicationCheckpoint(checkpoint)
+            if case .previousClaimed = checkpoint { kill(getpid(), SIGKILL) }
+        })
+    exit(1)
+}
 var deletions = 0
 let receipt = try LocalMoveRemovalReceipt(
     source: root.appendingPathComponent("source"),

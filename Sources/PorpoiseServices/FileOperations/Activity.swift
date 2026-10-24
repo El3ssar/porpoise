@@ -202,6 +202,7 @@ extension FileOperationsController {
         let store = journals
         let stages = transferStages
         job.removalCheckpoint = { try stages.checkpoint($0) }
+        job.publicationCheckpoint = { try stages.publicationCheckpoint($0) }
         let id = activity.id
         job.onEvent = { [weak activity] e in
             store.record(e, id: id)
