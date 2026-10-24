@@ -56,7 +56,7 @@ public final class TransferStageJournal: @unchecked Sendable {
                 ?? Record(
                     operationID: id, holding: holding, identity: Identity(holding), parentIdentity: Identity(holding.deletingLastPathComponent()))
             guard try Identity(holding) == record.identity else { throw CloudJournalError.invalidRecord }
-            record.source = source; record.target = target; record.verified = verified
+            record.source = source; record.target = target.map(RemoteFS.withoutPassword); record.verified = verified
             if record.sourceIdentity == nil { record.sourceIdentity = try Identity(source) }
             if verified, let target, target.isFileURL { record.targetIdentity = try Identity(target) }
             try saveActive(record)

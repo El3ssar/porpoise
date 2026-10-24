@@ -8,6 +8,16 @@ import Testing
 @testable import PorpoiseServices
 
 struct TransferStageJournalTests {
+    @Test func remoteTargetPasswordsNeverEnterRecoveryRecords() throws {
+        let s = try Scratch(), journal = TransferStageJournal(folder: s.path("journal"))
+        let source = try s.file("source", "bytes")
+        let holding = try s.folder(".porpoise-removal-" + UUID().uuidString)
+        let target = try #require(URL(string: "ftp://fixture:fixture-password@127.0.0.1/target"))
+        try journal.checkpoint(.claimed(holding: holding, source: source, target: target, verified: false))
+        let record = try #require(try journal.store.all().first)
+        #expect(record.target?.password == nil)
+        try journal.finish(holding)
+    }
     @Test(arguments: ["claimed", "verified", "deleting"], [false, true])
     func actualProcessDeathRetainsUncertainCopies(_ mode: String, _ replaceTarget: Bool) async throws {
         let s = try Scratch()
