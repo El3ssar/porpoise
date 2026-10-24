@@ -61,6 +61,7 @@ extension RemoteTransferJob {
                 self.progressLock.withLock {
                     self.results += child.results
                     self.errors += child.errors
+                    self.failures += child.failures
                     self.firstError = self.firstError ?? child.firstError
                     self.failedSources += child.failedSources
                     self.completed.merge(child.completed) { _, new in new }

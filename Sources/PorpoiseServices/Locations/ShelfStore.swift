@@ -239,14 +239,15 @@ public final class ShelfStore {
         return p
     }
 
-    /// After a move, the references follow their items to `folder`.
-    public func moved(_ items: [ShelfItem], to folder: URL) {
-        for item in items {
-            guard let i = current.items.firstIndex(where: { $0.id == item.id }) else { continue }
-            let u = folder.appendingPathComponent(item.url.lastPathComponent)
-            if folder.isFileURL ? FileJob.itemExists(at: u) : true {
-                shelves[currentIndex].items[i] = ShelfItem(url: u)
-                shelves[currentIndex].items[i].id = item.id
+    /// Follow only confirmed moves, preserving the submitted entry identity across shelf switches and Keep Both.
+    public func moved(_ results: [URL: URL], sources: [UUID: URL]) {
+        guard !results.isEmpty else { return }
+        for shelf in shelves.indices {
+            for index in shelves[shelf].items.indices {
+                let id = shelves[shelf].items[index].id
+                guard let source = sources[id], let target = results[source] else { continue }
+                shelves[shelf].items[index] = ShelfItem(url: target)
+                shelves[shelf].items[index].id = id
             }
         }
         save()

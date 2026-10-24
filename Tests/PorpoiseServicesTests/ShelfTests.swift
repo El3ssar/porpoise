@@ -101,12 +101,31 @@ import Testing
         let dest = try s.folder("dest")
         try FileManager.default.moveItem(at: a, to: dest.appendingPathComponent("a.txt"))
         let first = st.current.items[0]
-        st.moved([first], to: dest)
+        st.moved([a: dest.appendingPathComponent("a.txt")], sources: [first.id: a])
         #expect(st.current.items[0].url == dest.appendingPathComponent("a.txt") && st.current.items[0].id == first.id)
         st.remove([st.current.items[1].id])
         #expect(st.current.items.map(\.name) == ["a.txt", "c.txt"])
         st.clear()
         #expect(st.current.items.isEmpty)
         #expect(ShelfPlan().skippedText == nil)
+    }
+
+    @Test func moveReferencesUseReceiptsAcrossKeepBothSkipCancelAndShelfSwitches() async throws {
+        let a = try s.file("src/a.txt", "a"), b = try s.file("src/b.txt", "b")
+        try s.file("dst/a.txt", "old a"); try s.file("dst/b.txt", "old b")
+        let st = store(); st.add([a, b])
+        let entries = st.current.items, sources = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0.url) })
+        st.newShelf(named: "Different"); st.add([s.path("dst/a.txt")])
+        let other = st.current.items
+        let c = makeController(ScriptedUI(conflicts: [.init(.rename("a kept.txt")), .init(.skip)]))
+        var finished = false
+        c.run(.move, [a, b], to: s.path("dst"), window: nil, moved: { st.moved($0, sources: sources) }) { _ in finished = true }
+        #expect(await poll { finished })
+        #expect(st.current.items == other)
+        #expect(st.shelves[0].items.map(\.url) == [s.path("dst/a kept.txt"), b])
+        #expect(st.shelves[0].items.map(\.id) == entries.map(\.id))
+        st.moved([:], sources: sources)  // A failed/cancelled job has no receipt, even if a same-named target exists.
+        #expect(st.shelves[0].items[1].url == b && s.read("dst/b.txt") == "old b")
+        #expect(store().shelves[0].items == st.shelves[0].items)
     }
 }

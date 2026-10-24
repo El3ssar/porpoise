@@ -5,7 +5,7 @@ extension FileOperationsController {
     func runRemote(
         _ kind: FileOperationKind, _ urls: [URL], to folder: URL?, window: AnyObject?, done: (([URL]) -> Void)?,
         completed: [URL: URL] = [:], cloudOperations: [URL: UUID] = [:], cloudBatchID: UUID? = nil, rule: TransferConflictRule? = nil,
-        options: TransferCompareOptions? = nil
+        options: TransferCompareOptions? = nil, moved: (([URL: URL]) -> Void)? = nil
     ) {
         let control = JobControl(policy: Settings.shared.transferPolicy)
         let runtime = RemoteTransferJob(
@@ -49,7 +49,7 @@ extension FileOperationsController {
             self.runRemote(
                 kind, remaining, to: folder, window: window, done: done,
                 completed: runtime.completed, cloudOperations: runtime.cloudOperations, cloudBatchID: runtime.cloudBatchID, rule: runtime.rule,
-                options: runtime.options)
+                options: runtime.options, moved: moved)
         }
         activity.start = { [weak self, weak activity] in
             guard let self, let activity, activity.state == .queued else { return }
@@ -59,15 +59,18 @@ extension FileOperationsController {
             DispatchQueue(label: "porpoise.remote-transfer." + activity.id.uuidString, qos: .userInitiated).async {
                 runtime.run()
                 TrashService.shared.flush()
+                let submitted = Set(urls)
+                let movedItems = runtime.movedItems.filter { submitted.contains($0.key) }
                 DispatchQueue.main.async {
                     activity.remoteComparisonMethod = runtime.options.method
                     activity.remoteRemaining = runtime.remaining
                     activity.remoteResults = runtime.results
                     activity.failedSources = runtime.failedSources
                     self.ui?.jobFinished(activity)
-                    self.ended(activity, errors: runtime.errors, cause: runtime.firstError)
+                    self.ended(activity, errors: runtime.errors, cause: runtime.firstError, failures: runtime.failures)
                     Self.notifyChanged(urls + (folder.map { [$0] } ?? []) + runtime.results)
                     if !runtime.errors.isEmpty && !control.isCancelled { self.ui?.showTransferErrors(activity, window: window) }
+                    moved?(movedItems)
                     done?(runtime.results)
                 }
             }

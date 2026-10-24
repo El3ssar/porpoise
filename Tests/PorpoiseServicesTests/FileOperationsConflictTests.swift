@@ -8,6 +8,20 @@ import Testing
 
 /// Copying and moving into a folder that already has items of the same names, answered through the conflict dialog.
 @MainActor @Suite(.isolatedSettings) struct FileOperationsConflictTests {
+    @Test func severalNestedErrorsKeepTheirOwnSourceInsteadOfRetryArrayPositions() async throws {
+        let s = try Scratch()
+        let a = try s.file("src/folder/a.txt", "a"), b = try s.file("src/folder/b.txt", "b")
+        try s.file("dst/folder/a.txt", "old a"); try s.file("dst/folder/b.txt", "old b")
+        let folder = s.path("src/folder"), missing = s.path("src/missing.txt")
+        let ui = ScriptedUI(conflicts: [.init(.writeInto), .init(.rename("../invalid")), .init(.rename("../invalid"))])
+        let c = makeController(ui)
+        _ = try await c.perform(.copy, [folder, missing], to: s.path("dst"))
+        let activity = try #require(c.activities.last)
+        #expect(activity.errors.count == 3 && activity.failedSources == [folder, missing])
+        #expect(activity.errorDetails.map(\.source) == [a, b, missing])
+        #expect(activity.errorDetails.map(\.message) == activity.errors)
+    }
+
     @Test func skipLeavesBothItemsAlone() async throws {
         let s = try Scratch()
         let src = try s.file("src/notes.txt", "new")
