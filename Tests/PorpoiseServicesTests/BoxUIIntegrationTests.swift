@@ -15,10 +15,11 @@ import Testing
     let backend: BoxCloudBackend
     let composite: CompositeCloudBackend
     let accounts = CloudAccounts()
-    init() throws {
+    init(http: CloudHTTPTransport = .init()) throws {
         Settings.store.set("fixture-client", forKey: "boxClientID"); Settings.store.set("fixture-secret", forKey: "boxClientSecret")
         server = try FakeBoxServer(); defaults = UserDefaults(suiteName: suite)!
-        store = BoxAccountStore(defaults: defaults, credentials: MemoryCredentials(), configuration: server.config, directory: server.directory)
+        store = BoxAccountStore(
+            defaults: defaults, credentials: MemoryCredentials(), configuration: server.config, directory: server.directory, http: http)
         backend = BoxCloudBackend(store: store)
         let drive = DemoCloudBackend(); drive.links["not a link"] = .notALink
         composite = CompositeCloudBackend([.box: backend, .googleDrive: drive]); accounts.backend = composite
@@ -41,6 +42,109 @@ import Testing
 }
 
 @Suite(.serialized, .isolatedSettings) struct BoxUIIntegrationTests {
+
+    @Test @MainActor func aLateQuotaFromTheReplacedClientCannotPublish() async throws {
+        let gate = CloudBackendRequestGate { request in request.url?.query?.contains("space_used") == true }
+        defer { gate.resume() }
+        let fixture = try BoxUIFixture(http: gate.http); defer { fixture.cleanup() }
+        let account = try await fixture.connect()
+        await expectEventually { gate.waiting }
+        let root = try #require(fixture.accounts.url(account.id, root: .myDrive))
+        let original = try #require(RemoteFS.provider(for: root) as? BoxProvider)
+        fixture.backend.setActive(false); await original.stopFeeds()
+        try await fixture.server.configure(["quota": ["space_amount": 2000, "space_used": 900]])
+        let result: Result<Void, CloudConnectError> = try await awaitCallback { callback in
+            _ = fixture.accounts.signInAgain(account.id, openBrowser: openInFakeBrowser, done: { callback.resume(returning: $0) })
+        }
+        try result.get()
+        let replacement = try #require(RemoteFS.provider(for: root) as? BoxProvider)
+        #expect(replacement.client !== original.client)
+        fixture.backend.setActive(false); await replacement.stopFeeds()
+        let published = Locked<[Int64]>([]), publish = fixture.backend.onChange
+        fixture.backend.onChange = { [weak backend = fixture.backend] in
+            if let used = backend?.accounts.first?.quotaUsed { published.append(used) }
+            publish?()
+        }
+        gate.resume()
+        await expectEventually {
+            fixture.backend.checkForChanges(account.id)
+            return fixture.backend.accounts.first?.quotaUsed == 900
+        }
+        #expect(!published.value.contains(4_000_000_000))
+    }
+
+    @Test @MainActor func removalDrainsAFeedBeforeUnregisteringTheProvider() async throws {
+        let gate = CloudBackendRequestGate { request in request.url?.path.hasSuffix("/events") == true }
+        defer { gate.resume() }
+        let fixture = try BoxUIFixture(http: gate.http); defer { fixture.cleanup() }
+        let account = try await fixture.connect()
+        let root = try #require(fixture.accounts.url(account.id, root: .myDrive))
+        let provider = try #require(RemoteFS.provider(for: root) as? BoxProvider)
+        let marker = provider.client.metadataCache.directory.appendingPathComponent("lifecycle-probe")
+        try FileManager.default.createDirectory(at: marker.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("retained until the feed drains".utf8).write(to: marker)
+        await expectEventually { gate.waiting }
+        let finished = Flag()
+        let removing = Task { @MainActor in
+            let error: Error? = try await awaitCallback { callback in
+                fixture.backend.remove(account.id) { callback.resume(returning: $0) }
+            }
+            finished.set(); return error
+        }
+        defer { gate.resume(); removing.cancel() }
+        await expectEventually { gate.cancelled.isSet }
+        #expect(!finished.isSet && fixture.backend.accounts.count == 1)
+        #expect(RemoteFS.provider(for: root) === provider)
+        #expect(FileManager.default.fileExists(atPath: marker.path))
+        gate.resume()
+        #expect(try await removing.value == nil)
+        #expect(fixture.backend.accounts.isEmpty && RemoteFS.provider(for: root) == nil)
+        #expect(!FileManager.default.fileExists(atPath: marker.path))
+    }
+
+    @Test @MainActor func reconciliationKeepsProviderUntilSameAccountGetsANewClient() async throws {
+        let fixture = try BoxUIFixture(); defer { fixture.cleanup() }
+        let account = try await fixture.connect()
+        let root = try #require(fixture.accounts.url(account.id, root: .myDrive))
+        let original = try #require(RemoteFS.provider(for: root) as? BoxProvider)
+        fixture.backend.setActive(false); await original.stopFeeds()
+        var changes = 0
+        let publish = fixture.backend.onChange
+        fixture.backend.onChange = {
+            changes += 1; publish?()
+        }
+        fixture.store.onChange?()
+        #expect(RemoteFS.provider(for: root) === original)
+        #expect(changes == 1)
+        let result: Result<Void, CloudConnectError> = try await awaitCallback { callback in
+            _ = fixture.accounts.signInAgain(account.id, openBrowser: openInFakeBrowser, done: { callback.resume(returning: $0) })
+        }
+        try result.get()
+        let replacement = try #require(RemoteFS.provider(for: root) as? BoxProvider)
+        #expect(replacement !== original && replacement.client !== original.client)
+        #expect(replacement.client === fixture.store.client(for: replacement.client.accountID))
+        #expect(fixture.accounts.accounts.map(\.id) == [account.id])
+        fixture.backend.setActive(false); await replacement.stopFeeds()
+        let notices = Locked<[(String, Bool)]>([])
+        let observer = NotificationCenter.default.addObserver(forName: CloudAccounts.remoteChanged, object: nil, queue: nil) { notice in
+            if let key = notice.object as? String { notices.append((key, Thread.isMainThread)) }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        replacement.client.onFreshness?()
+        await expectEventually { notices.value.contains { $0.0 == account.id } }
+        #expect(notices.value.filter { $0.0 == account.id }.allSatisfy { $0.1 })
+    }
+
+    @Test @MainActor func clientAndStoreCallbacksDoNotRetainBackend() async throws {
+        let fixture = try BoxUIFixture(); defer { fixture.cleanup() }
+        _ = try await fixture.connect()
+        fixture.backend.setActive(false)
+        var temporary: BoxCloudBackend? = BoxCloudBackend(store: fixture.store)
+        let observed = NSHashTable<BoxCloudBackend>.weakObjects()
+        observed.add(try #require(temporary))
+        temporary = nil
+        #expect(observed.allObjects.isEmpty)
+    }
     @Test @MainActor func quotaFlowsThroughAccountSidebarAndRefreshes() async throws {
         let fixture = try BoxUIFixture(); defer { fixture.cleanup() }
         let account = try await fixture.connect()
