@@ -17,7 +17,8 @@ struct AutomationPathTests {
         let other = try scratch.file("item", "leave alone")
         let request = try AutomationCLI.parse(["move", "link/../item", "--to", "link/../output"], directory: scratch.url.path).request
         let sources = try AutomationLocations.localURLs(request.paths, folders: false)
-        let destination = try #require(AutomationLocations.localURLs([try #require(request.destination)], folders: true).first)
+        let destinationPath = try #require(request.destination)
+        let destination = try #require(AutomationLocations.localURLs([destinationPath], folders: true).first)
         #expect(sources == [intended])
         #expect(destination.path == scratch.path("elsewhere/output").path)
         let job = FileJob(kind: .move, sources: sources, destinationFolder: destination)
