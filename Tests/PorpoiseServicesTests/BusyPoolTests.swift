@@ -157,6 +157,19 @@ struct BusyPoolTests {
         #expect(await eventually { m.detected.contains { $0.title == "Pixel 9" } })
     }
 
+    /// A phone's name is asked of adb while every core is busy: the shared utility queue gave it no thread for the
+    /// whole of a hosted run's wait (main dbb05921, ADBProviderTests).
+    @Test func aPhonesNameIsAskedWhileEveryCoreIsBusy() throws {
+        let adb = try RecordingTool()
+        try adb.reply("List of devices attached\nR58N123 device usb:1-1 product:x model:Galaxy_S21 device:o1s\n")
+        let provider = ADBProvider(serial: "R58N123", adb: adb.path)
+        let release = occupyEveryCore()
+        defer { release() }
+        #expect(provider.rootTitle(URL(string: "adb://R58N123/")!) == "R58N123")
+        provider.waitForTitleLookup()
+        #expect(provider.rootTitle(URL(string: "adb://R58N123/")!) == "Galaxy S21")
+    }
+
     /// Small Drive copies overlap while every core is busy: they ran one at a time when their workers were
     /// concurrentPerform helpers, which the busy dispatch pool never gave (CI runs 39132369773 and 39841080505).
     @Test func smallDriveCopiesOverlapWhileEveryCoreIsBusy() async throws {

@@ -38,6 +38,12 @@ final class ADBProvider: RemoteProvider, RemoteTransferTargetChecking {
     var titleTimeout: TimeInterval = 3
     /// How long before asking adb again for a name it didn't give.
     static let titleRetry: TimeInterval = 10
+    /// Where adb is asked for the name: a queue of its own, which always gets a thread (the shared utility queues
+    /// may get none for a long while when every core is busy).
+    private let titleQueue = DispatchQueue(label: "porpoise.adb.title", qos: .utility)
+
+    /// Returns once the name asked for so far has been looked up (tests).
+    func waitForTitleLookup() { titleQueue.sync {} }
 
     /// The phone's name; its serial number until adb has given it. Breadcrumbs ask on the main thread on every redraw:
     /// adb is asked on another one, and `RemoteFS.titlesChanged` is posted once the name is there.
@@ -50,7 +56,7 @@ final class ADBProvider: RemoteProvider, RemoteTransferTargetChecking {
         }
         if due {
             let timeout = titleTimeout, tool = tool, serial = serial
-            DispatchQueue.global(qos: .utility).async { [weak self] in
+            titleQueue.async { [weak self] in
                 guard let m = Self.devices(timeout: timeout, adb: tool).first(where: { $0.serial == serial })?.model else { return }
                 self?.model = m
                 DispatchQueue.main.async { NotificationCenter.default.post(name: RemoteFS.titlesChanged, object: nil) }

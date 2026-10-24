@@ -109,26 +109,33 @@ import Testing
     }
 
     /// W-236 (W-235 R22): the serial at once, never adb on the asking thread; the name once adb gave it, asked once.
+    /// Waits for the lookup itself, not for a time: a busy runner can take long to start the stand-in adb.
     @Test func titleIsTheModelAskedOnceInTheBackground() async throws {
         try adb.reply("List of devices attached\nR58N123 device usb:1-1 product:x model:Galaxy_S21 device:o1s\n")
-        provider.titleTimeout = 30  // a busy test run can be slow to start the stand-in adb
-        let changed = Task { @MainActor in
-            for await _ in NotificationCenter.default.notifications(named: RemoteFS.titlesChanged) { return true }
-            return false
+        provider.titleTimeout = 60
+        let posted = Locked(0)
+        let observer = NotificationCenter.default.addObserver(forName: RemoteFS.titlesChanged, object: nil, queue: nil) { _ in
+            posted.change { $0 += 1 }
         }
+        defer { NotificationCenter.default.removeObserver(observer) }
         #expect(provider.rootTitle(url("/")) == "R58N123")
-        #expect(await eventually(30) { provider.rootTitle(url("/")) == "Galaxy S21" })
-        #expect(await changed.value)
+        provider.waitForTitleLookup()
+        #expect(provider.rootTitle(url("/")) == "Galaxy S21")
         #expect(adb.calls.map(\.args) == [["devices", "-l"]])
+        // The breadcrumbs hear of it on the main thread (other tests may post it too: at least once).
+        await MainActor.run {}
+        #expect(posted.value >= 1)
     }
 
     @Test func titleFallsBackToTheSerial() async throws {
         try adb.reply("List of devices attached\n")
+        provider.titleTimeout = 60
         #expect(provider.rootTitle(url("/")) == "R58N123")
+        provider.waitForTitleLookup()
+        #expect(adb.calls.count == 1)
         // Not listed: asked again only after a while, not on every redraw.
-        #expect(await eventually(30) { adb.calls.count == 1 })
         #expect(provider.rootTitle(url("/")) == "R58N123")
-        try await Task.sleep(for: .milliseconds(300))
+        provider.waitForTitleLookup()
         #expect(adb.calls.count == 1)
     }
 }
