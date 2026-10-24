@@ -8,6 +8,7 @@ import PorpoiseServices
     private var server: AutomationServer?
     private var observation: NSObjectProtocol?
     private var generation = 0
+    private var pendingApprovals = 0
     typealias Approval = @MainActor ([URL], URL, AutomationRequest.Action, NSWindow?, Date) async -> Bool
     var approveTransfer: Approval
     private let windowProvider: @MainActor () -> MainWindowController?
@@ -92,12 +93,20 @@ import PorpoiseServices
                 let sources = request.useSelection ? selection : urls
                 guard !sources.isEmpty else { throw AutomationError.invalidRequest }
                 guard let destination else { throw AutomationError.invalidRequest }
+                guard pendingApprovals == 0 else {
+                    return AutomationResponse(id: request.id, error: "Porpoise is waiting for approval of another transfer.")
+                }
                 if window == nil { AppDelegate.shared.newWindow(at: destination) }
+                guard window?.window?.attachedSheet == nil else {
+                    return AutomationResponse(id: request.id, error: "Finish the open dialog in Porpoise before requesting a transfer.")
+                }
+                pendingApprovals += 1
                 let operations = FileOperationsController.shared
                 let pending = operations.queueAutomation(
                     request.action == .copy ? .copy : .move, sources: sources, destination: destination, window: window?.window)
                 let approvalDeadline = Date().addingTimeInterval(120)
                 Task {
+                    defer { pendingApprovals -= 1 }
                     let approved = await approveTransfer(sources, destination, request.action, window?.window, approvalDeadline)
                     let allowed =
                         approved && approvalDeadline > Date() && !Task.isCancelled
