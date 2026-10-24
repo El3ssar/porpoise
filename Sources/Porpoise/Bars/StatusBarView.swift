@@ -23,6 +23,7 @@ final class StatusBarView: NSView {
     var mode: StatusBarMode = .fullWidth { didSet { update(); updateChrome() } }
     /// The zoom slider and the free-space bar. Split view keeps them on the active pane's bar only (one window's
     /// worth, as ForkLift and QSpace show): the other pane's bar keeps just its folder and selection text.
+    var allowsZoom = true { didSet { if allowsZoom != oldValue { updateChrome() } } }
     var showsControls = true { didSet { if showsControls != oldValue { updateChrome() } } }
 
     private let material = TintedMaterialView(material: .titlebar, alpha: 0.82, blending: .withinWindow)
@@ -73,7 +74,7 @@ final class StatusBarView: NSView {
         let full = mode == .fullWidth
         material.isHidden = !full
         hairline.isHidden = !full
-        wantsSlider = full && Settings.shared.showZoomSlider && showsControls
+        wantsSlider = full && Settings.shared.showZoomSlider && showsControls && allowsZoom
         needsLayout = true
     }
 

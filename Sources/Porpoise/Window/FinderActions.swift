@@ -39,7 +39,7 @@ extension MainWindowController {
         window?.makeFirstResponder(view.list)
     }
 
-    @objc func goAirDrop(_ sender: Any?) { SharingCoordinator.browseAirDrop() }
+    @objc func goAirDrop(_ sender: Any?) { view.setURL(PlacesModel.airDropURL) }
 
     /// Finder's Go to Folder (⌘⇧G): the editable location bar with its path selected.
     @objc func goToFolder(_ sender: Any?) { replaceLocation(sender) }

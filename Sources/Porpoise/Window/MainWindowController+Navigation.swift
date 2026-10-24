@@ -76,7 +76,6 @@ extension MainWindowController {
     // MARK: PlacesPanelDelegate
 
     func places(_ p: PlacesPanel, open url: URL, newTab: Bool, splitView: Bool) {
-        if url == PlacesModel.airDropURL { SharingCoordinator.browseAirDrop(); return }
         if newTab { addTab(url: url, select: false); return }
         if splitView {
             if !tab.isSplit { tab.openSplit(url: url); tab.secondary?.delegate = self } else { tab.inactive?.setURL(url) }

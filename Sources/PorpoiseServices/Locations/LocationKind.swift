@@ -3,7 +3,7 @@ import Foundation
 /// What Porpoise can browse. Classification never connects to a server or asks a provider for contents.
 public enum LocationKind: Equatable, Sendable {
     case local, trash, cloud(CloudProvider), remote, device, networkShare, archive
-    case network, recentFiles, recentLocations, tag, smartFolder, unsupported
+    case airDrop, network, recentFiles, recentLocations, tag, smartFolder, unsupported
 
     private static let cloudProviders = Dictionary(
         uniqueKeysWithValues: CloudProviderDescriptor.catalog.compactMap { descriptor in
@@ -21,6 +21,7 @@ public enum LocationKind: Equatable, Sendable {
         switch scheme {
         case "archive": return .archive
         case "adb": return .device
+        case "airdrop": return .airDrop
         case "network": return .network
         case "recent": return url.path == "/locations" ? .recentLocations : .recentFiles
         case "tags": return .tag
@@ -33,7 +34,7 @@ public enum LocationKind: Equatable, Sendable {
     public var isCloud: Bool { if case .cloud = self { return true }; return false }
     /// A provider-backed file system, including cloud accounts and devices; not a virtual result list.
     public var isRemote: Bool { isCloud || self == .remote || self == .device || self == .archive }
-    public var isVirtual: Bool { self == .network || isResultList }
+    public var isVirtual: Bool { self == .airDrop || self == .network || isResultList }
     /// These locations show items away from their containing folder; Network is discovery, not a result list.
     public var isResultList: Bool {
         switch self {
@@ -52,6 +53,7 @@ public enum LocationKind: Equatable, Sendable {
         switch self {
         case .trash: return "Trash"
         case .cloud(let provider): return provider.title
+        case .airDrop: return "AirDrop"
         case .network: return "Network"
         case .recentFiles: return "Recent Files"
         case .recentLocations: return "Recent Locations"
@@ -65,6 +67,7 @@ public enum LocationKind: Equatable, Sendable {
         case .archive: return "package-x-generic"
         case .device: return "smartphone"
         case .cloud, .remote: return "folder-remote"
+        case .airDrop: return "airdrop"
         case .network: return "network-workgroup"
         default: return "document-open-recent"
         }

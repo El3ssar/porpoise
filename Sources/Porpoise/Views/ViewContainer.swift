@@ -12,9 +12,16 @@ protocol ViewContainerDelegate: AnyObject {
     func container(_ c: ViewContainer, drop urls: [URL], onto folder: URL, operation: NSDragOperation)
     func container(_ c: ViewContainer, rename item: FileItem, to name: String)
     func container(_ c: ViewContainer, middleClicked item: FileItem)
+    func containerAirDropPeer(_ c: ViewContainer) -> ViewContainer?
+    func container(_ c: ViewContainer, shareWithAirDrop urls: [URL], from anchor: NSView)
     func containerQuickLook(_ c: ViewContainer)
     /// The search bar was shown or hidden (the toolbar's Search button follows it).
     func containerSearchVisibilityChanged(_ c: ViewContainer)
+}
+
+extension ViewContainerDelegate {
+    func containerAirDropPeer(_ c: ViewContainer) -> ViewContainer? { nil }
+    func container(_ c: ViewContainer, shareWithAirDrop urls: [URL], from anchor: NSView) {}
 }
 
 /// Dolphin's DolphinViewContainer: one view with its history, filter bar, search bar and status bar.
@@ -104,6 +111,14 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     /// The Applications folder as an app library (created the first time it's shown).
     private(set) var apps: AppsView?
+    private(set) var airDropPage: AirDropPage?
+    private var previousAirDropSelection: [URL] = []
+    var showsAirDrop: Bool { LocationKind.of(url) == .airDrop }
+    func refreshAirDropSelection() { airDropPage?.refreshSelection() }
+    private func airDropSelection() -> [URL] {
+        if let peer = delegate?.containerAirDropPeer(self), !peer.model.selection.isEmpty { return peer.model.selectedItems.map(\.url) }
+        return previousAirDropSelection
+    }
     var showsApps: Bool { AppLibrary.isActive(for: url) && !model.isSearching }
     /// What the zoom (slider, Cmd+= / Cmd+-, the View menu) acts on: the app library when it shows, else the list.
     var zoomView: ZoomableView { showsApps ? apps?.grid ?? list : list }
@@ -383,6 +398,42 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             filterBar.frame = CGRect(x: 0, y: bottom - 38, width: bounds.width, height: 38)
             bottom -= 38
         }
+        let airDropHadFocus =
+            airDropPage.map { page in
+                (window?.firstResponder as? NSView)?.isDescendant(of: page) == true
+            } ?? false
+        airDropPage?.isHidden = !showsAirDrop
+        if showsAirDrop {
+            if airDropPage == nil {
+                let page = AirDropPage(frame: .zero)
+                page.selection = { [weak self] in self?.airDropSelection() ?? [] }
+                page.selectionAvailable = { [weak self] in
+                    guard let self else { return false }
+                    return self.delegate?.containerAirDropPeer(self)?.model.selection.isEmpty == false || !self.previousAirDropSelection.isEmpty
+                }
+                page.onActivate = { [weak self] in
+                    guard let self else { return }
+                    self.delegate?.containerDidBecomeActive(self)
+                }
+                page.onSend = { [weak self] urls, anchor in
+                    guard let self else { return }
+                    self.delegate?.container(self, shareWithAirDrop: urls, from: anchor)
+                }
+                addSubview(page, positioned: .above, relativeTo: scroll)
+                airDropPage = page
+            }
+            layoutColumns(in: .zero)
+            scroll.isHidden = true; header.isHidden = true; apps?.isHidden = true; listState.show(nil)
+            if !filterBar.isHidden { bottom += 38; filterBar.frame.origin.y = bounds.height }
+            airDropPage?.isHidden = false
+            airDropPage?.frame = CGRect(x: 0, y: y, width: bounds.width, height: max(0, bottom - y))
+            list.focusRedirect = airDropPage?.chooseButton
+            airDropPage?.refreshSelection()
+            if window?.firstResponder === list { window?.makeFirstResponder(airDropPage?.chooseButton) }
+            layoutStatusBar(bottom: bottom, mode: statusMode)
+            return
+        }
+        if airDropHadFocus { window?.makeFirstResponder(list) }
         // Applications: the app library takes the place of the list (and of the filter bar: it has its own search).
         if showsApps {
             if apps == nil {
@@ -464,6 +515,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
         // A password typed into the address goes to the Keychain, never into the tab, its history or the session.
         let u = newURL.isFileURL ? newURL.standardizedFileURL : RemoteFS.storingPassword(newURL)
+        if u == PlacesModel.airDropURL, !showsAirDrop { previousAirDropSelection = model.selectedItems.map(\.url) }
         if !filterBar.isLocked { filterBar.clear(notifying: false); if !Settings.shared.showFilterBarOnStartup { filterBar.isHidden = true } }
         if !searchBar.isHidden { closeSearch() }
         messageBar.isHidden = true
@@ -544,7 +596,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     /// Shows, over the list, what an empty list means; nothing while it lists items or the app library shows.
     func refreshListState() {
-        guard !showsApps, model.rows.isEmpty else { return listState.show(nil) }
+        guard !showsAirDrop, !showsApps, model.rows.isEmpty else { return listState.show(nil) }
         let location = model.location
         if let e = model.loadError, !model.isSearching, !(model.isLoading && model.items.isEmpty) {
             let missing = location.isFileURL && !FileManager.default.fileExists(atPath: location.path)
@@ -626,9 +678,12 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     }
 
     func updateStatus() {
+        statusBar.allowsZoom = !showsAirDrop
         statusBar.gitText = model.gitStatus?.statusText ?? ""
         refreshListState()
-        if showsApps {
+        if showsAirDrop {
+            statusBar.text = "AirDrop · Choose files or drop them here to send"
+        } else if showsApps {
             // Apps, not files and bytes (bundle sizes would need a scan of every app).
             let n = model.rows.count, sel = model.selection.count
             let apps = { (k: Int) in k == 1 ? "1 app" : "\(k) apps" }
