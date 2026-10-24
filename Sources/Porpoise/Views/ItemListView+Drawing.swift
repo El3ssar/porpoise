@@ -165,10 +165,13 @@ extension ItemListView {
         }
     }
 
-    /// Icons view, native theme: the backing behind a selected item's icon, a little larger than the icon.
+    /// Icons view, native theme: the backing behind a selected item's icon, a little larger than the icon, ending a
+    /// little above the name's pill (the density's padding may leave less room below the icon than around it).
     func iconSelectionRect(_ i: Int) -> CGRect {
         let outset = Tokens.Space.xs
-        return iconRect(i).insetBy(dx: -outset, dy: -outset).intersection(frames[i].insetBy(dx: 1, dy: 1))
+        var r = iconRect(i).insetBy(dx: -outset, dy: -outset).intersection(frames[i].insetBy(dx: 1, dy: 1))
+        r.size.height = min(r.height, iconsNamePillRect(i).minY - Tokens.Space.xxs - r.minY)
+        return r
     }
 
     /// Icons view, native theme: the accent pill behind a selected item's name, its tag dots and its extra lines.

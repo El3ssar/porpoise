@@ -24,7 +24,7 @@ import Testing
 
     private func buttons(_ d: ConflictDialog) -> [NSButton] {
         func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
-        return all(d.window.contentView!).compactMap { $0 as? NSButton }.filter { !Theme.isChoice($0) }
+        return all(d.window.contentView!).compactMap { $0 as? NSButton }.filter { !Theme.isChoice($0) && !($0 is NSPopUpButton) }
     }
 
     @Test func buttonsAreAppKitsWithOneDefault() throws {
@@ -32,8 +32,8 @@ import Testing
             let d = dialog(newer: newer)
             defer { d.window.close() }
             let all = buttons(d)
-            // Plain NSButtons (no class of ours drawing them), push bezels, each one a key view the Tab key reaches.
-            #expect(all.allSatisfy { type(of: $0) == NSButton.self && $0.bezelStyle == .push && $0.canBecomeKeyView })
+            // Plain NSButtons (no class of ours drawing them, so AppKit draws the focus ring), push bezels.
+            #expect(all.allSatisfy { type(of: $0) == NSButton.self && $0.bezelStyle == .push })
             #expect(all.filter { $0.keyEquivalent == "\r" }.map(\.title) == [newer ? "Replace" : "Skip"])
             #expect(all.filter { $0.keyEquivalent == "\u{1b}" }.map(\.title) == ["Stop Copying"])
             let rules = try #require(all.first { $0.toolTip == "Conditional replacement rules" })

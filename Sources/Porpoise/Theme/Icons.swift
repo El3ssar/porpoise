@@ -632,7 +632,8 @@ final class Icons {
         "document-preview": "eye", "edit-copy": "doc.on.doc", "edit-rename": "pencil", "edit-undo": "arrow.uturn.backward",
         "folder-new": "folder.badge.plus", "document-new": "doc.badge.plus", "bookmark-new": "bookmark", "configure": "gearshape",
         "help-contents": "questionmark.circle", "list-add": "plus", "media-eject": "eject", "view-sort": "arrow.up.arrow.down",
-        "view-filter": "line.3.horizontal.decrease", "tag": "tag", "edit-select": "checkmark.circle", "documentinfo": "info.circle",
+        "view-filter": "line.3.horizontal.decrease", "view-group": "rectangle.3.group", "tag": "tag", "edit-select": "checkmark.circle",
+        "documentinfo": "info.circle",
         "user-trash": "trash",
     ]
 

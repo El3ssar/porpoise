@@ -112,7 +112,7 @@ import Testing
 
     /// The native theme (the default) leaves AppKit's controls as macOS draws them, and gives back those a palette theme
     /// had replaced when the user switches back: checkboxes, radio buttons, pop-ups, header rows, the accent, tables'
-    /// alternating rows, and Settings' tabs (the toolbar's own selectable items).
+    /// alternating rows.
     @Test(.isolatedSettings) @MainActor func theNativeThemeKeepsAppKitsControls() throws {
         let root = NSView()
         let check = NSButton(checkboxWithTitle: "Check", target: nil, action: nil)
@@ -134,13 +134,18 @@ import Testing
 
         #expect(Tokens.isNative)
         Theme.dress(root)
-        func isAppKits() -> Bool {
-            check.image == nil && radio.image == nil && !(popUp.cell is ThemedPopUpButtonCell) && !(table.headerView is ThemedHeaderView)
-                && !(column.headerCell is ThemedHeaderCell) && table.usesAlternatingRowBackgroundColors && push.bezelColor == nil
-                && segments.selectedSegmentBezelColor == nil && label.textColor == .labelColor
-                && check.attributedTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) == nil
+        let checkImage = check.image, radioImage = radio.image
+        func expectAppKits(_ sourceLocation: SourceLocation = #_sourceLocation) {
+            #expect(!(check.image is ChoiceImage) && check.image === checkImage && radio.image === radioImage, sourceLocation: sourceLocation)
+            #expect(!(popUp.cell is ThemedPopUpButtonCell), sourceLocation: sourceLocation)
+            #expect(!(table.headerView is ThemedHeaderView) && !(column.headerCell is ThemedHeaderCell), sourceLocation: sourceLocation)
+            #expect(table.usesAlternatingRowBackgroundColors, sourceLocation: sourceLocation)
+            #expect(push.bezelColor == nil && segments.selectedSegmentBezelColor == nil, sourceLocation: sourceLocation)
+            #expect(label.textColor == .labelColor, sourceLocation: sourceLocation)
+            let title = check.attributedTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+            #expect(title == nil || Theme.isSystem(title, Theme.primaryText), sourceLocation: sourceLocation)
         }
-        #expect(isAppKits())
+        expectAppKits()
 
         // Breeze dresses them; back to the native theme, they are AppKit's again, with their state and roles.
         Settings.shared.updateAppearance { $0.themeName = "Breeze Light" }
@@ -150,30 +155,9 @@ import Testing
         Theme.dress(root)  // a second change of palette records nothing new
         Settings.shared.updateAppearance { $0.themeName = AppearanceTheme.systemName }
         Theme.dress(root)
-        #expect(isAppKits())
+        expectAppKits()
         #expect(popUp.numberOfItems == 2 && popUp.indexOfSelectedItem == 1 && popUp.cell?.accessibilityRole() == .popUpButton)
         #expect(radio.cell?.accessibilityRole() == .radioButton && column.headerCell.stringValue == "Name")
-
-        // Settings' tabs: the toolbar's own items, selectable, with their labels.
-        let tabs = ThemedTabViewController()
-        tabs.tabStyle = .toolbar
-        for (title, symbol) in [("One", "folder"), ("Two", "keyboard")] {
-            let item = NSTabViewItem(viewController: NSViewController())
-            item.viewController?.view = NSView()
-            item.label = title
-            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-            tabs.addTabViewItem(item)
-        }
-        let window = NSWindow(contentViewController: tabs)
-        window.isReleasedWhenClosed = false
-        tabs.tintTabs()
-        let toolbar = try #require(window.toolbar)
-        #expect(toolbar.items.allSatisfy { $0.view == nil } && toolbar.displayMode == .iconAndLabel)
-        #expect(toolbar.selectedItemIdentifier == toolbar.items.first?.itemIdentifier)
-        Settings.shared.updateAppearance { $0.themeName = "Breeze Light" }
-        tabs.tintTabs()
-        #expect(toolbar.items.allSatisfy { $0.view is TabButton } && toolbar.displayMode == .iconOnly)
-        window.close()
     }
 
     @Test @MainActor func onlyTheAppsSecondaryWindowsAreDressed() {

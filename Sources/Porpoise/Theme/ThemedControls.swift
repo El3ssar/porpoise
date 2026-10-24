@@ -14,6 +14,7 @@ extension Theme {
     /// Gives a checkbox or radio button the palette's box (once: the box follows the palette by itself).
     static func dressChoice(_ button: NSButton) {
         guard !(button.image is ChoiceImage) else { return }
+        choiceImages.setObject(ChoiceOriginal(button.image, button.alternateImage), forKey: button)
         let radio = button.cell?.accessibilityRole() == .radioButton
         button.image = ChoiceImage(radio: radio, on: false)
         button.alternateImage = ChoiceImage(radio: radio, on: true)
@@ -36,12 +37,22 @@ extension Theme {
         }
     }
 
-    /// A checkbox or radio button drawn by AppKit again (the native theme).
+    /// A checkbox or radio button drawn by AppKit again (the native theme), with the images AppKit gave it.
     static func undressChoice(_ button: NSButton) {
         guard button.image is ChoiceImage else { return }
-        button.image = nil
-        button.alternateImage = nil
+        let original = choiceImages.object(forKey: button)
+        button.image = original?.image
+        button.alternateImage = original?.alternate
+        choiceImages.removeObject(forKey: button)
     }
+
+    private final class ChoiceOriginal {
+        let image: NSImage?, alternate: NSImage?
+        init(_ image: NSImage?, _ alternate: NSImage?) { (self.image, self.alternate) = (image, alternate) }
+    }
+
+    /// Each dressed checkbox's and radio button's own images, to give back in the native theme.
+    private static let choiceImages = NSMapTable<NSButton, ChoiceOriginal>.weakToStrongObjects()
 
     /// A table's header row drawn by AppKit again (the native theme).
     static func undressHeader(_ table: NSTableView) {
@@ -149,25 +160,24 @@ final class ThemedHeaderCell: NSTableHeaderCell {
     }
 }
 
-/// Settings' pages as toolbar tabs drawn in the palette: the selected one in its accent on a pressed background, the
-/// others in its text color (macOS draws the selected tab in its own accent, which can't be changed). Each tab is a
-/// button: it takes the keyboard focus, and VoiceOver reads it as a radio button among the tabs, selected or not.
-/// Settings' tabs: in the native theme the toolbar's own selectable items, as macOS draws them; in a palette theme
-/// `TabButton`s, drawn in the palette. A change of theme while the window is open swaps one for the other.
+/// Settings' pages as toolbar tabs drawn in the theme's colours (the system's in the native theme): the selected one
+/// with its symbol in the accent on a pressed background. Each tab is a button: it takes the keyboard focus, and
+/// VoiceOver reads it as a radio button among the tabs, selected or not. They stay buttons in every theme: the theme
+/// changes while Settings is open, and a toolbar item can't give up its view again (AppKit traps on nil), nor can the
+/// tab view controller's items be swapped under it.
 final class ThemedTabViewController: NSTabViewController {
     private var buttons: [NSToolbarItem.Identifier: TabButton] = [:]
-    private var items: [NSToolbarItem.Identifier: NSToolbarItem] = [:]
 
-    // Set once the window (and its toolbar) is there: not yet in viewDidLoad.
+    // The buttons show their own title. Set once the window (and its toolbar) is there: not yet in viewDidLoad.
     override func viewWillAppear() {
         super.viewWillAppear()
-        applyTabStyle()
+        view.window?.toolbar?.displayMode = .iconOnly
     }
 
     override func toolbar(
         _ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
-        // The tab view controller's own item (it removes exactly those when it goes).
+        // The tab view controller's own item (it removes exactly those when it goes), showing our button.
         guard let item = super.toolbar(toolbar, itemForItemIdentifier: itemIdentifier, willBeInsertedIntoToolbar: flag),
             let index = tabViewItems.firstIndex(where: { $0.label == item.label })
         else { return nil }
@@ -176,42 +186,15 @@ final class ThemedTabViewController: NSTabViewController {
         }
         button.isSelected = index == selectedTabViewItemIndex
         buttons[itemIdentifier] = button
-        items[itemIdentifier] = item
-        style(item, button)
+        item.view = button
+        // In the » menu when the window is too narrow for every tab.
+        let menuItem = NSMenuItem(title: item.label, action: #selector(TabButton.performClick(_:)), keyEquivalent: "")
+        menuItem.target = button
+        item.menuFormRepresentation = menuItem
         return item
     }
 
-    override func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        Tokens.isNative ? super.toolbarSelectableItemIdentifiers(toolbar) : []
-    }
-
-    /// The item as the theme wants it: the system's (symbol over label, selection drawn by the toolbar) or our button.
-    private func style(_ item: NSToolbarItem, _ button: TabButton) {
-        if Tokens.isNative {
-            item.view = nil
-            item.menuFormRepresentation = nil
-        } else {
-            item.view = button
-            // In the » menu when the window is too narrow for every tab.
-            let menuItem = NSMenuItem(title: item.label, action: #selector(TabButton.performClick(_:)), keyEquivalent: "")
-            menuItem.target = button
-            item.menuFormRepresentation = menuItem
-        }
-    }
-
-    /// The buttons show their own title; the system's items need the toolbar to show it.
-    private func applyTabStyle() {
-        guard let toolbar = view.window?.toolbar else { return }
-        toolbar.displayMode = Tokens.isNative ? .iconAndLabel : .iconOnly
-        for (identifier, item) in items { if let button = buttons[identifier] { style(item, button) } }
-        if Tokens.isNative, let selected = tabView.selectedTabViewItem,
-            let identifier = items.first(where: { $0.value.label == selected.label })?.key
-        {
-            toolbar.selectedItemIdentifier = identifier
-        } else if !Tokens.isNative {
-            toolbar.selectedItemIdentifier = nil
-        }
-    }
+    override func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [] }
 
     /// Called when the user (or code) shows another page.
     var onSelect: ((NSTabViewItem) -> Void)?
@@ -225,7 +208,6 @@ final class ThemedTabViewController: NSTabViewController {
     /// Marks the selected tab and draws every tab again, in the palette (also when the palette or the look changes,
     /// from `Theme.dress`).
     func tintTabs() {
-        applyTabStyle()
         let selected = tabView.selectedTabViewItem?.label
         for button in buttons.values {
             button.isSelected = button.title == selected
