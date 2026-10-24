@@ -209,7 +209,8 @@ final class RemoteTransferJob {
     private var moveRemovals: [URL: MoveSourceRemoval] = [:]
 
     private func captureRemoval(_ source: URL) throws -> MoveSourceRemoval {
-        try MoveSourceRemoval(source, cancellation: control.asDiskCancellation(), onCheckpoint: { try self.stageJournal.checkpoint($0) })
+        let journal = stageJournal
+        return try MoveSourceRemoval(source, cancellation: control.asDiskCancellation(), onCheckpoint: { try journal.checkpoint($0) })
     }
 
     func transfer(_ source: URL, into folder: URL) throws -> URL? {

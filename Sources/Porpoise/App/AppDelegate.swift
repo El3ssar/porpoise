@@ -358,9 +358,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     let alert = NSAlert()
                     alert.messageText = "Files kept after an interrupted transfer"
                     alert.informativeText = item.message
-                    alert.addButton(withTitle: "Reveal in Porpoise")
+                    alert.addButton(withTitle: "Open in Porpoise")
                     alert.addButton(withTitle: "Later")
-                    if alert.runModal() == .alertFirstButtonReturn { self.reveal([item.url]) }
+                    if alert.runModal() == .alertFirstButtonReturn { self.application(NSApp, open: [item.url]) }
                 }
                 self.offerJobRecovery()
             }

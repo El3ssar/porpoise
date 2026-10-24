@@ -95,7 +95,8 @@ public struct LocalMoveRemovalReceipt {
             try onCheckpoint(.claimed(holding: holding, source: source, target: target, verified: true))
             try cancellation.check()
             deleting = true
-            try deleteClaimed(claimed, path: "", entries: captured, holding: holding, checkTarget: checkTarget)
+            var linkedGenerations: [DiskIdentity: Entry] = [:]
+            try deleteClaimed(claimed, path: "", entries: captured, holding: holding, linkedGenerations: &linkedGenerations, checkTarget: checkTarget)
         } catch {
             if deleting {
                 throw FileOperationError.failed("Copy published; remaining source retained at “\(holding.path)”. \(error.localizedDescription)")
@@ -114,6 +115,7 @@ public struct LocalMoveRemovalReceipt {
 
     private func deleteClaimed(
         _ url: URL, path: String, entries captured: [String: Entry], holding: URL, renamedEntry: Entry? = nil,
+        linkedGenerations: inout [DiskIdentity: Entry],
         checkTarget: (String) throws -> Void
     ) throws {
         guard let expected = renamedEntry ?? captured[path], let actual = try? Self.entry(at: url),
@@ -125,7 +127,10 @@ public struct LocalMoveRemovalReceipt {
             for name in names {
                 let childPath = path + "/" + name
                 let child = url.appendingPathComponent(name)
-                guard let childExpected = captured[childPath],
+                guard let capturedChild = captured[childPath] else { throw failure }
+                let identity = DiskIdentity(device: capturedChild.info.st_dev, inode: capturedChild.info.st_ino)
+                let childExpected = linkedGenerations[identity] ?? capturedChild
+                guard
                     childExpected.sameGeneration(as: try Self.entry(at: child))
                 else { throw failure }
                 let owned = holding.appendingPathComponent(UUID().uuidString)
@@ -133,9 +138,11 @@ public struct LocalMoveRemovalReceipt {
                 do {
                     let renamed = try Self.entry(at: owned)
                     guard childExpected.sameGeneration(as: renamed, renamed: true) else { throw failure }
+                    if renamed.info.st_nlink > 1 || linkedGenerations[identity] != nil { linkedGenerations[identity] = renamed }
                     try deleteClaimed(
                         owned, path: childPath, entries: captured, holding: holding,
-                        renamedEntry: Entry(info: renamed.info, contents: childExpected.contents), checkTarget: checkTarget)
+                        renamedEntry: Entry(info: renamed.info, contents: capturedChild.contents),
+                        linkedGenerations: &linkedGenerations, checkTarget: checkTarget)
                 } catch {
                     if renamex_np(owned.path, child.path, UInt32(RENAME_EXCL)) != 0 {
                         throw FileOperationError.failed("Copy published; source retained at “\(owned.path)”. \(error.localizedDescription)")
@@ -145,8 +152,25 @@ public struct LocalMoveRemovalReceipt {
             }
             guard rmdir(url.path) == 0 else { throw failure }
         } else {
+            // Renaming/unlinking one hard link changes the inode's ctime through every alias.
+            // Keep that descriptor's post-unlink generation for the remaining captured links.
+            let descriptor = expected.info.st_nlink > 1 ? open(url.path, O_EVTONLY | O_SYMLINK | O_CLOEXEC) : -1
+            defer { if descriptor >= 0 { close(descriptor) } }
+            if expected.info.st_nlink > 1 {
+                var held = stat()
+                guard descriptor >= 0, fstat(descriptor, &held) == 0, expected.sameGeneration(as: Entry(info: held, contents: "")) else {
+                    throw failure
+                }
+            }
             try onCheckpoint(.deleting(holding: holding))
             guard unlink(url.path) == 0 else { throw Self.posix() }
+            if descriptor >= 0 {
+                var held = stat()
+                guard fstat(descriptor, &held) == 0, held.st_nlink + 1 == expected.info.st_nlink,
+                    expected.sameGeneration(as: Entry(info: held, contents: ""), renamed: true)
+                else { throw failure }
+                linkedGenerations[DiskIdentity(device: held.st_dev, inode: held.st_ino)] = Entry(info: held, contents: expected.contents)
+            }
         }
     }
 

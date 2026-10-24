@@ -126,10 +126,15 @@ struct TransferStageJournalTests {
         }
         RemoteFS.use(provider, for: remote)
         defer { RemoteFS.use(nil, for: remote) }
-        let job = RemoteTransferJob(kind: .move, sources: [source], destination: remote, control: JobControl(), rule: .ask, options: .init())
-        job.stageJournal = TransferStageJournal(folder: s.path("journal"))
-        job.run()
-        #expect(uploaded && job.errors.isEmpty && !FileJob.itemExists(at: source))
+        weak var releasedJob: RemoteTransferJob?
+        autoreleasepool {
+            let job = RemoteTransferJob(kind: .move, sources: [source], destination: remote, control: JobControl(), rule: .ask, options: .init())
+            job.stageJournal = TransferStageJournal(folder: s.path("journal"))
+            job.run()
+            #expect(uploaded && job.errors.isEmpty && !FileJob.itemExists(at: source))
+            releasedJob = job
+        }
+        #expect(releasedJob == nil)
         #expect(server.read("dst/source") == "upload")
     }
 }

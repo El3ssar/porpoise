@@ -7,6 +7,32 @@ import Testing
 @testable import PorpoiseFileSystem
 
 struct MovePipelineTests {
+    @Test func deletingOneHardLinkDoesNotRejectItsCapturedAliases() throws {
+        let s = try Scratch()
+        let source = try s.folder("source")
+        let first = try s.file("source/a", "linked bytes")
+        try s.folder("source/sub")
+        #expect(link(first.path, s.path("source/sub/b").path) == 0)
+        try FileManager.default.copyItem(at: source, to: s.path("target"))
+        let receipt = try LocalMoveRemovalReceipt(source: source)
+        try receipt.removeSource(afterVerifying: s.path("target"))
+        #expect(!FileJob.itemExists(at: source))
+        #expect(s.read("target/a") == "linked bytes" && s.read("target/sub/b") == "linked bytes")
+    }
+
+    @Test func stoppingAfterPublicationKeepsBothWholeCopies() throws {
+        let s = try Scratch(), disk = try DiskImage(in: s)
+        let source = try s.folder("source")
+        try s.file("source/a/b/file", "keep")
+        let job = FileJob(kind: .move, sources: [source], destinationFolder: disk.volume)
+        var retained = 0
+        job.onEvent = { if case .placed = $0 { job.cancel() } }
+        job.onProgress = { retained = $0.retainedCopies }
+        _ = try job.run()
+        #expect(job.errors.isEmpty)
+        #expect(CopyVerification.verify(source, disk.volume.appendingPathComponent("source")).ok)
+        #expect(retained == 1)
+    }
     @Test func aLateStopFinishesCurrentTreeAndStopsTheNextItem() throws {
         let s = try Scratch(), disk = try DiskImage(in: s)
         let source = try s.folder("source")
