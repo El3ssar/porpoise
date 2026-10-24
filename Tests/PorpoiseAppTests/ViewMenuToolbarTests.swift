@@ -34,18 +34,28 @@ import Testing
         return (wc, window)
     }
 
-    /// A ⌘ key press as AppKit matches it against the menu bar: a real key event given to the main menu's
-    /// `performKeyEquivalent` (what `NSApp.sendEvent` does for ⌘ keys in an active app; the test host never is active).
-    private func pressMenuKey(_ keyCode: UInt16, _ characters: String, _ flags: NSEvent.ModifierFlags, in window: NSWindow) throws -> Bool {
+    /// A key press through AppKit's own dispatch, as the system delivers it (`NSApp.sendEvent`).
+    private func press(_ keyCode: UInt16, _ characters: String, _ flags: NSEvent.ModifierFlags, in window: NSWindow) throws {
         let event = try #require(
             NSEvent.keyEvent(
                 with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters,
                 isARepeat: false, keyCode: keyCode))
-        let current = MainWindowController.currentKeyEvent
-        MainWindowController.currentKeyEvent = { event }
-        defer { MainWindowController.currentKeyEvent = current }
-        return try #require(NSApp.mainMenu).performKeyEquivalent(with: event)
+        NSApp.sendEvent(event)
+    }
+
+    /// A click on `view` through the window, as the system delivers it: mouse down and up at its centre.
+    private func click(_ view: NSView, in window: NSWindow) throws {
+        let point = view.convert(CGPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+        // What a real click there reaches: the button itself, not something over it.
+        #expect(window.contentView?.superview?.hitTest(point) === view)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let event = try #require(
+                NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0))
+            window.sendEvent(event)
+        }
     }
 
     @Test(arguments: ShortcutKeySet.allCases) func viewMenuStartsWithTheModesAsFinderDoes(_ keySet: ShortcutKeySet) throws {
@@ -75,16 +85,17 @@ import Testing
         Settings.shared.statusBarMode = .small
         let item = try #require(
             NSApp.mainMenu?.items.first { $0.title == "View" }?.submenu?.items.first { $0.action == #selector(W.toggleStatusBar(_:)) })
-        // The test host has no key window to send the item's nil-targeted action to; aim it at this window, as AppKit
-        // would at the key window in a running app.
+        // AppKit's dispatch matches ⌘/ to this item; its nil-targeted action then goes to the key window. The test host
+        // can't have one without activating the app (it would take focus from the user), so the item is aimed at this
+        // window as the key window would be. Without this the key still reaches the item, but its action goes nowhere.
         item.target = wc
         _ = wc.validateMenuItem(item)
         #expect(item.title == "Hide Status Bar")
-        #expect(try pressMenuKey(44, "/", .command, in: window))
+        try press(44, "/", .command, in: window)
         #expect(await eventually { Settings.shared.statusBarMode == .disabled })
         _ = wc.validateMenuItem(item)
         #expect(item.title == "Show Status Bar")
-        #expect(try pressMenuKey(44, "/", .command, in: window))
+        try press(44, "/", .command, in: window)
         #expect(await eventually { Settings.shared.statusBarMode == .small })
         Settings.shared.statusBarMode = .fullWidth
     }
@@ -131,11 +142,13 @@ import Testing
             #expect(button === action)
             shown = m.items.filter { !$0.isSeparatorItem }.map(\.title)
         }
-        wc.toolbar.perform(.action)
-        #expect(shown.first == "New Folder…")
+        try click(action, in: window)
+        #expect(await eventually { shown.first == "New Folder…" })
         let file = try #require(wc.view.model.rows.first { $0.item.name == "a.txt" }?.item.url)
         wc.view.list.select(file)
-        wc.toolbar.perform(.action)
+        shown = []
+        try click(action, in: window)
+        #expect(await eventually { !shown.isEmpty })
         #expect(shown.contains("Get Info") && shown.contains("Move to Trash") && !shown.contains("New Folder…"))
         // Dolphin's keys: the menu comes back in place of Share and Action.
         Settings.shared.shortcutKeySet = .dolphin
