@@ -190,13 +190,24 @@ struct RecoveryIntegritySafetyTests {
         c.journals.save(j)
         let plan = try #require(c.recoveryPlans().first)
         let reached = Flag(), go = DispatchSemaphore(value: 0)
+        defer { go.signal(); c.journals.writeFault = nil }
         c.journals.writeFault = { _ in
             reached.set()
-            _ = go.wait(timeout: .now() + 30)
+            #expect(go.wait(timeout: .now() + 30) == .success)
         }
         c.recover(plan, window: nil)
-        #expect(await poll { reached.isSet })
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) { go.signal() }
+        try #require(await poll { reached.isSet })
+        let activity = try #require(c.activities.first)
+        let control = activity.verificationControl ?? activity.control
+        // interruptAll waits for this journal write. Release it only after interruption, even if the main
+        // thread is descheduled before calling interruptAll; a timed release could let recovery finish first.
+        Thread {
+            guard waitUntil(30, { control.isInterrupted }) else {
+                Issue.record("The controller never interrupted the held recovery")
+                return
+            }
+            go.signal()
+        }.start()
         c.interruptAll()
         c.journals.writeFault = nil
         #expect(await poll { c.activities.first?.state == .interrupted })
