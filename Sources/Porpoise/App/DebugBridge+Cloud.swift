@@ -17,7 +17,7 @@ extension DebugBridge {
     /// - `finish <same fields>` / `cancel`: ends the browser sign-in in progress; `fail <message>`
     /// - `status <id> ok|offline|signin`, `avatar <id> <image file>`
     /// - `sheet` opens the Connect sheet; `tile <provider or server kind>` picks a tile on it; `page <file>` writes its page
-    /// - `settingsremove` / `settingsselect <id>`: Settings › Accounts' − button / account list
+    /// - `settingsremove` / `settingsselect <id | server:<uuid>>`: the Accounts & Servers window's − button / its list
     /// - `info <url>|<owner>|<email>|<access>|<count>|<link role>|<modified by>|<shared by>|<web link>|<kind>`
     func cloudDemo(_ arg: String) {
         let parts = arg.split(separator: " ", maxSplits: 1).map(String.init)
@@ -65,8 +65,10 @@ extension DebugBridge {
                 sharedWithNames: [], anyoneWithLink: f[5].isEmpty ? nil : f[5], modifiedBy: f[6], sharedBy: f[7].isEmpty ? nil : f[7],
                 webLink: URL(string: f[8]), isWebDocument: f[9].hasPrefix("Google"), kind: f[9])
         case "shot": shot(rest)
-        case "settingsremove": AccountsSettingsPage.current?.removeAccount()
-        case "settingsselect": AccountsSettingsPage.current?.select(rest)
+        case "settingsremove": AccountsServersWindow.current?.removeSelected(nil)
+        case "settingsselect":
+            let server = rest.hasPrefix("server:") ? UUID(uuidString: String(rest.dropFirst(7))) : nil
+            AccountsServersWindow.showFromFront(selecting: server.map { .server($0) } ?? .account(rest))
         case "rename":
             // rename <name>|<new name>: through the inline rename's path.
             let f = rest.components(separatedBy: "|")

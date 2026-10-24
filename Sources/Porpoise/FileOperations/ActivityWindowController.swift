@@ -246,7 +246,7 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
 
     @objc private func changeConcurrency(_ sender: NSMenuItem) { controller.concurrency = sender.tag }
     @objc private func toggleVerification() { Settings.shared.verifyCopies.toggle() }
-    @objc private func showTransferRules() { SettingsWindowController(page: "Activity").present() }
+    @objc private func showTransferRules() { AppDelegate.shared.showSettings(page: "Files", section: "Transfer rules") }
 
     @objc private func tabChanged() {
         activityPane.isHidden = tabs.selectedSegment != 0

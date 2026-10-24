@@ -220,7 +220,7 @@ extension MainWindowController {
     @objc func goHome(_ sender: Any?) { view.setURL(Settings.shared.homeURL) }
     @objc func goNetwork(_ sender: Any?) { view.setURL(NetworkBrowser.url) }
     @objc func connectToServer(_ sender: Any?) { ConnectSheet.run(window: window) { [weak self] in self?.view.setURL($0) } }
-    @objc func showConnections(_ sender: Any?) { ConnectionsWindow.show { [weak self] in self?.view.setURL($0) } }
+    @objc func showConnections(_ sender: Any?) { AccountsServersWindow.show(open: AccountsServersWindow.opener(owner: self)) }
     @objc func goToPlace(_ sender: NSMenuItem) {
         if let s = sender.representedObject as? String, let u = URL(string: s) { view.setURL(u) }
     }

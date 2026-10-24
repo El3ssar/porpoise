@@ -2,16 +2,29 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
-/// Go › Connections…: the saved servers. A list on the left; on the right the selected connection's settings, what is
-/// known about it (the server's key, the ssh agent, where ~/.ssh/config sends it) and what it can do. Passwords and
-/// secret keys go to the Keychain; the list itself never holds one.
-final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource, NSTableViewDelegate {
+/// Go › Accounts & Servers… (⌥⌘K) and Settings › Accounts & Servers: every cloud account and saved server in one list
+/// on the left; on the right the selected one's settings. For a server, also what is known about it (the server's
+/// key, the ssh agent, where ~/.ssh/config sends it) and what it can do. Passwords and secret keys go to the Keychain;
+/// the list itself never holds one. ⌘K stays the quick Connect sheet, which "+" also opens for a cloud account.
+final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSource, NSTableViewDelegate {
     /// The window on screen, for the test bridge and so the menu brings it back.
-    private(set) static var current: ConnectionsWindow?
+    private(set) static var current: AccountsServersWindow?
 
+    /// A row of the list: a section heading, a cloud account (by id) or a saved server.
+    enum Entry: Equatable {
+        case heading(String)
+        case account(String)
+        case server(UUID)
+    }
+
+    static let accountsHeading = "Cloud Accounts"
+    /// The height of the bar of buttons under the list.
+    static let barHeight: CGFloat = 22
+    static let serversHeading = "Servers"
+
+    private var accounts: CloudAccounts { .shared }
     private let profiles: ConnectionProfiles
     private let credentials: ConnectionCredentials
-    /// Opens a location in the window the Connections window was opened from.
     /// Where Connect opens a server: the window that asked last (an earlier one may have closed since).
     private(set) var open: (URL) -> Void
     /// Reads ~/.ssh/config (tests give their own).
@@ -19,27 +32,54 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
 
     private let table = NSTableView()
     private let editor = NSStackView()
+    private let addButton = NSButton()
     private let removeButton = NSButton()
     private let importButton = NSPopUpButton(frame: .zero, pullsDown: true)
+    private(set) var entries: [Entry] = []
+    /// The row shown on the right (a server not saved yet is shown without being in the list).
+    private(set) var selection: Entry?
     private(set) var form: ConnectionForm?
-    private var selectedID: UUID?
-    private var changeObserver: NSObjectProtocol?
+    private(set) var accountDetail: AccountDetailView?
+    /// The new server shown while it isn't saved yet.
+    private var unsavedID: UUID?
+    private var observers: [NSObjectProtocol] = []
 
-    /// Shows the window; with `adding`, a new connection of that kind to fill in.
+    /// Shows the window; with `adding`, a new server of that kind to fill in; with `selecting`, that row.
     @discardableResult
-    static func show(adding kind: ConnectionProfile.Kind? = nil, open: @escaping (URL) -> Void) -> ConnectionsWindow {
-        let w: ConnectionsWindow
+    static func show(adding kind: ConnectionProfile.Kind? = nil, selecting entry: Entry? = nil, open: @escaping (URL) -> Void)
+        -> AccountsServersWindow
+    {
+        let w: AccountsServersWindow
         if let shown = current, shown.window?.isVisible == true {
             w = shown
             w.open = open
+            NSApp.activate()
             w.window?.makeKeyAndOrderFront(nil)
         } else {
-            w = ConnectionsWindow(profiles: .shared, credentials: .shared, open: open)
+            w = AccountsServersWindow(profiles: .shared, credentials: .shared, open: open)
             current = w
             w.present()
         }
-        if let kind { w.addProfile(kind: kind) }
+        if let kind { w.addProfile(kind: kind) } else if let entry { w.select(entry) }
         return w
+    }
+
+    /// Shown from Settings or the sidebar: servers open in the browser window in front.
+    static func showFromFront(selecting entry: Entry? = nil) { show(selecting: entry, open: opener(owner: frontBrowser())) }
+
+    /// Where a server opened from here goes: `owner` (the window that asked) while it's still open; once it has
+    /// closed, the browser window in front then, or a new window. Held weakly, so a closed window is never navigated.
+    static func opener(owner: MainWindowController?) -> (URL) -> Void {
+        return { [weak owner] url in
+            if let owner, owner.window?.isVisible == true { return owner.view.setURL(url) }
+            if let front = frontBrowser() { return front.view.setURL(url) }
+            AppDelegate.shared.newWindow(at: url)
+        }
+    }
+
+    /// The browser window in front (Settings or this window may be in front of it), not whichever was opened first.
+    static func frontBrowser() -> MainWindowController? {
+        ViewContainer.frontBrowserWindow().flatMap { $0.windowController as? MainWindowController }
     }
 
     init(
@@ -51,38 +91,38 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
         self.sshConfig = sshConfig
         self.open = open
         let w = NSWindow(
-            contentRect: CGRect(x: 0, y: 0, width: 820, height: 560), styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            contentRect: CGRect(x: 0, y: 0, width: 860, height: 580), styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered, defer: false)
-        w.title = "Connections"
-        w.minSize = CGSize(width: 720, height: 460)
-        w.setFrameAutosaveName("Connections")
+        w.title = "Accounts & Servers"
+        w.minSize = CGSize(width: 760, height: 480)
+        w.setFrameAutosaveName("AccountsServers")
         super.init(window: w)
         build()
-        changeObserver = NotificationCenter.default.addObserver(forName: ConnectionProfiles.changed, object: profiles, queue: .main) {
-            [weak self] _ in self?.reload()
+        for (name, object) in [(ConnectionProfiles.changed, profiles as AnyObject), (CloudAccounts.changed, nil), (CloudOfflineHub.changed, nil)] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in self?.reload() })
         }
         reload()
-        if let first = profiles.profiles.first { select(first.id) } else { showEmpty() }
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    deinit { changeObserver.map(NotificationCenter.default.removeObserver) }
+    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 
     // MARK: Layout
 
     private func build() {
         guard let content = window?.contentView else { return }
-        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("profile"))
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("entry"))
         table.addTableColumn(column)
         table.headerView = nil
-        table.rowHeight = 38
         table.dataSource = self
         table.delegate = self
         // Inset, not source list: a source list draws the system's grey material whatever background it is given, a
         // slab against the themed window. This list takes the theme's view color, in a rounded frame.
         table.style = .inset
-        table.setAccessibilityLabel("Saved connections")
+        // Both headings drawn alike: a floating first heading gets a hairline the second doesn't.
+        table.floatsGroupRows = false
+        table.setAccessibilityLabel("Cloud accounts and saved servers")
         let scroll = NSScrollView()
         scroll.documentView = table
         scroll.hasVerticalScroller = true
@@ -97,24 +137,30 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
             scroll?.layer?.borderColor = Theme.separator.cgColor
         }
 
-        let plus = NSImage(systemSymbolName: "plus", accessibilityDescription: "Add") ?? NSImage()
-        let add = NSButton(image: plus, target: self, action: #selector(addProfile(_:)))
+        // "+" asks what to add: a cloud account (through the Connect sheet's sign-in) or a server to fill in here.
+        addButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "Add")
+        addButton.toolTip = "Add a cloud account or a server"
+        addButton.target = self
+        addButton.action = #selector(showAddMenu(_:))
         removeButton.image = NSImage(systemSymbolName: "minus", accessibilityDescription: "Remove")
+        removeButton.toolTip = "Remove the selected account or server"
         removeButton.target = self
-        removeButton.action = #selector(removeProfile(_:))
-        for b in [add, removeButton] { b.bezelStyle = .smallSquare; b.widthAnchor.constraint(equalToConstant: 26).isActive = true }
+        removeButton.action = #selector(removeSelected(_:))
+        // One 22-pt bar under the list: + and − and the import pull-down, all square-bezelled, as System Settings does.
+        for b in [addButton, removeButton] { b.bezelStyle = .smallSquare; b.widthAnchor.constraint(equalToConstant: 26).isActive = true }
         importButton.addItem(withTitle: "Import from SSH Config")
-        importButton.controlSize = .small
+        importButton.bezelStyle = .smallSquare
+        for b in [addButton, removeButton, importButton] { b.heightAnchor.constraint(equalToConstant: Self.barHeight).isActive = true }
         importButton.target = self
         importButton.action = #selector(importAlias(_:))
         importButton.setAccessibilityLabel("Import a host from ~/.ssh/config")
-        let buttons = NSStackView(views: [add, removeButton, NSView(), importButton])
+        let buttons = NSStackView(views: [addButton, removeButton, NSView(), importButton])
         buttons.spacing = 0
 
         let left = NSStackView(views: [scroll, buttons])
         left.orientation = .vertical
         left.spacing = 6
-        left.widthAnchor.constraint(equalToConstant: 250).isActive = true
+        left.widthAnchor.constraint(equalToConstant: 270).isActive = true
         scroll.widthAnchor.constraint(equalTo: left.widthAnchor).isActive = true
         buttons.widthAnchor.constraint(equalTo: left.widthAnchor).isActive = true
 
@@ -157,13 +203,56 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
     }
 
     private func reload() {
-        let keep = selectedID
+        var rows: [Entry] = [.heading(Self.accountsHeading)]
+        rows += accounts.accounts.map { .account($0.id) }
+        rows.append(.heading(Self.serversHeading))
+        rows += profiles.profiles.map { .server($0.id) }
+        entries = rows
         table.reloadData()
-        if let keep, let row = profiles.profiles.firstIndex(where: { $0.id == keep }) {
-            table.selectRowIndexes([row], byExtendingSelection: false)
+        switch selection {
+        case .account(let id) where accounts.account(id) != nil:
+            selectRow(of: .account(id))
+            // A quota or picture arriving mid-typing doesn't rebuild the field being typed in.
+            if let detail = accountDetail, !detail.isEditing { detail.build() }
+        case .server(let id) where profiles.profile(id) != nil:
+            selectRow(of: .server(id))
+        case .server(let id) where id == unsavedID:
+            break  // a new server being filled in
+        case .account, .server, nil:
+            // Gone (signed out, removed elsewhere), or nothing shown yet: the first row there is, or the empty state.
+            showFirstOrEmpty()
+        case .heading:
+            break
         }
-        removeButton.isEnabled = selectedID.map { profiles.profile($0) != nil } ?? false
+        updateButtons()
         rebuildImportMenu()
+    }
+
+    private var selectableEntries: [Entry] { entries.filter { if case .heading = $0 { false } else { true } } }
+
+    /// The first account or server there still is; the empty state only when there is none.
+    private func showFirstOrEmpty() {
+        let first = selectableEntries.first {
+            switch $0 {
+            case .account(let id): accounts.account(id) != nil
+            case .server(let id): profiles.profile(id) != nil
+            case .heading: false
+            }
+        }
+        if let first { select(first) } else { showEmpty() }
+    }
+
+    private func selectRow(of entry: Entry) {
+        guard let row = entries.firstIndex(of: entry), table.selectedRow != row else { return }
+        table.selectRowIndexes([row], byExtendingSelection: false)
+    }
+
+    private func updateButtons() {
+        switch selection {
+        case .account(let id): removeButton.isEnabled = accounts.account(id) != nil
+        case .server(let id): removeButton.isEnabled = profiles.profile(id) != nil
+        default: removeButton.isEnabled = false
+        }
     }
 
     /// ~/.ssh/config hosts not saved yet, each with where it leads.
@@ -184,33 +273,65 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
 
     // MARK: Table
 
-    func numberOfRows(in tableView: NSTableView) -> Int { profiles.profiles.count }
+    func numberOfRows(in tableView: NSTableView) -> Int { entries.count }
+
+    func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool {
+        if case .heading = entries[row] { return true }
+        return false
+    }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        self.tableView(tableView, isGroupRow: row) ? nil : EntryRowView()
+    }
+
+    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool { !self.tableView(tableView, isGroupRow: row) }
+
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat { self.tableView(tableView, isGroupRow: row) ? 26 : 40 }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let p = profiles.profiles[row]
-        let name = NSTextField(labelWithString: p.name)
-        name.font = .systemFont(ofSize: Tokens.FontSize.body, weight: .medium)
-        name.lineBreakMode = .byTruncatingTail
-        let detail = NSTextField(labelWithString: "\(p.kind.title) · \(p.address)")
-        detail.font = .systemFont(ofSize: Tokens.FontSize.small)
-        detail.textColor = .secondaryLabelColor
-        detail.lineBreakMode = .byTruncatingTail
-        let text = NSStackView(views: [name, detail])
-        text.orientation = .vertical
-        text.alignment = .leading
-        text.spacing = 1
-        let icon = NSImageView(image: NSImage(systemSymbolName: Self.symbol(p.kind), accessibilityDescription: p.kind.title) ?? NSImage())
-        let row = NSStackView(views: [icon, text])
-        row.spacing = 8
-        row.identifier = NSUserInterfaceItemIdentifier(p.id.uuidString)
+        switch entries[row] {
+        case .heading(let title):
+            let t = NSTextField(labelWithString: title)
+            t.font = .systemFont(ofSize: Tokens.FontSize.small, weight: .semibold)
+            t.textColor = .secondaryLabelColor
+            t.setAccessibilityRole(.staticText)
+            return t
+        case .account(let id):
+            guard let a = accounts.account(id) else { return nil }
+            let sub: String
+            switch a.status {
+            case .signInNeeded: sub = "Needs sign-in"
+            case .offline: sub = "Offline"
+            case .ok: sub = a.quotaUsed.map { QuotaBar.text(used: $0, total: a.quotaTotal) } ?? a.provider.title
+            }
+            let pic = NSImageView(image: BrandMarks.avatar(accounts.avatar(id), name: a.displayName, email: a.email, size: 26))
+            let mark = NSImageView(image: BrandMarks.image(a.provider.brand, size: 12) ?? NSImage())
+            mark.translatesAutoresizingMaskIntoConstraints = false
+            pic.addSubview(mark)
+            NSLayoutConstraint.activate([
+                pic.widthAnchor.constraint(equalToConstant: 26), pic.heightAnchor.constraint(equalToConstant: 26),
+                mark.trailingAnchor.constraint(equalTo: pic.trailingAnchor, constant: 3),
+                mark.bottomAnchor.constraint(equalTo: pic.bottomAnchor, constant: 3),
+            ])
+            return Self.row(icon: pic, title: a.email, detail: sub, id: id, warning: a.status == .signInNeeded)
+        case .server(let id):
+            guard let p = profiles.profile(id) else { return nil }
+            let icon = NSImageView(image: NSImage(systemSymbolName: Self.symbol(p.kind), accessibilityDescription: p.kind.title) ?? NSImage())
+            icon.symbolConfiguration = .init(pointSize: EntryCellView.symbolSize, weight: .regular)
+            return Self.row(icon: icon, title: p.name, detail: "\(p.kind.title) · \(p.address)", id: p.id.uuidString)
+        }
+    }
+
+    private static func row(icon: NSView, title: String, detail: String, id: String, warning: Bool = false) -> NSView {
+        let row = EntryCellView(icon: icon, title: title, detail: detail, warning: warning)
+        row.identifier = NSUserInterfaceItemIdentifier(id)
         return row
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         let row = table.selectedRow
-        guard row >= 0, row < profiles.profiles.count else { return }
-        let id = profiles.profiles[row].id
-        if id != selectedID { select(id) }
+        guard row >= 0, row < entries.count, entries[row] != selection else { return }
+        select(entries[row])
     }
 
     static func symbol(_ kind: ConnectionProfile.Kind) -> String {
@@ -222,20 +343,41 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
         }
     }
 
-    // MARK: Editing
+    // MARK: Showing a row
 
-    /// Shows `id`'s settings (a profile not saved yet when it isn't in the list).
-    func select(_ id: UUID, unsaved: ConnectionProfile? = nil) {
-        selectedID = id
-        guard let p = unsaved ?? profiles.profile(id) else { return showEmpty() }
-        if let row = profiles.profiles.firstIndex(where: { $0.id == id }), table.selectedRow != row {
-            table.selectRowIndexes([row], byExtendingSelection: false)
+    /// Shows the row's settings: an account's, or a server's form.
+    func select(_ entry: Entry) {
+        switch entry {
+        case .heading: return
+        case .account(let id): showAccount(id)
+        case .server(let id): select(id)
         }
-        removeButton.isEnabled = unsaved == nil
+    }
+
+    private func showAccount(_ id: String) {
+        guard accounts.account(id) != nil else { return showFirstOrEmpty() }
+        selection = .account(id)
+        form = nil
+        selectRow(of: .account(id))
+        editor.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        let detail = AccountDetailView(accountID: id)
+        accountDetail = detail
+        editor.addArrangedSubview(detail)
+        updateButtons()
+    }
+
+    /// Shows server `id`'s settings (a profile not saved yet when it isn't in the list).
+    func select(_ id: UUID, unsaved: ConnectionProfile? = nil) {
+        selection = .server(id)
+        unsavedID = unsaved?.id
+        accountDetail = nil
+        guard let p = unsaved ?? profiles.profile(id) else { return showFirstOrEmpty() }
+        if unsaved == nil { selectRow(of: .server(id)) }
         let f = ConnectionForm(profile: p, hasSecret: credentials.hasSecret(for: p), aliases: Set(sshConfig().aliases))
         f.onKindChange = { [weak self] in self?.showForm(f) }
         form = f
         showForm(f)
+        updateButtons()
     }
 
     private func showForm(_ f: ConnectionForm) {
@@ -252,29 +394,37 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
     }
 
     private func showEmpty() {
-        selectedID = nil
+        selection = nil
         form = nil
+        accountDetail = nil
+        table.deselectAll(nil)
         editor.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        // A designed empty state, centered: what this window is for and the one thing to do next.
+        // A designed empty state, centered: what this window is for and the things to do next.
         let symbol = NSImageView(
             image: NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: 40, weight: .light)) ?? NSImage())
         symbol.contentTintColor = Theme.windowTextInactive
-        let title = NSTextField(labelWithString: "No saved connections")
+        let title = NSTextField(labelWithString: "No accounts or servers")
         title.font = .systemFont(ofSize: Tokens.FontSize.title2, weight: .semibold)
         title.textColor = Theme.windowText
         let body = NSTextField(
-            wrappingLabelWithString: "Save SFTP, FTP, SMB and S3 servers here to reach them from the sidebar. "
+            wrappingLabelWithString: "Connect a cloud account, or save SFTP, FTP, SMB and S3 servers, to reach them from the sidebar. "
                 + "Hosts in ~/.ssh/config can be imported with their jump hosts.")
         body.textColor = Theme.windowTextInactive
         body.alignment = .center
-        body.preferredMaxLayoutWidth = 360
-        let add = NSButton(title: "Add Connection", target: self, action: #selector(addProfile(_:)))
-        add.bezelStyle = .rounded
-        add.controlSize = .large
+        body.preferredMaxLayoutWidth = 380
+        let cloud = NSButton(title: "Connect Cloud Account…", target: self, action: #selector(addAccount(_:)))
+        cloud.setAccessibilityIdentifier("accounts-empty-cloud")
+        let add = NSButton(title: "Add Server", target: self, action: #selector(addProfile(_:)))
         add.keyEquivalent = "\r"
         add.setAccessibilityIdentifier("connections-empty-add")
-        let column = NSStackView(views: [symbol, title, body, add])
+        for b in [cloud, add] {
+            b.bezelStyle = .rounded
+            b.controlSize = .large
+        }
+        let actions = NSStackView(views: [cloud, add])
+        actions.spacing = 12
+        let column = NSStackView(views: [symbol, title, body, actions])
         column.orientation = .vertical
         column.alignment = .centerX
         column.spacing = 10
@@ -282,8 +432,10 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
         column.edgeInsets = NSEdgeInsets(top: 96, left: 0, bottom: 0, right: 0)
         editor.addArrangedSubview(column)
         column.widthAnchor.constraint(equalTo: editor.widthAnchor).isActive = true
-        removeButton.isEnabled = false
+        updateButtons()
     }
+
+    // MARK: Adding and removing
 
     /// The Import menu's titles (tests).
     var importTitles: [String] { importButton.itemTitles.dropFirst().map { $0 } }
@@ -294,7 +446,32 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
         importAlias(importButton)
     }
 
-    var rowCount: Int { table.numberOfRows }
+    /// The saved servers listed.
+    var serverRowCount: Int { entries.filter { if case .server = $0 { true } else { false } }.count }
+
+    /// The cloud accounts listed.
+    var accountRowCount: Int { entries.filter { if case .account = $0 { true } else { false } }.count }
+
+    /// "+"'s menu: what can be added.
+    func addMenu() -> NSMenu {
+        let menu = NSMenu(title: "Add")
+        let cloud = NSMenuItem(title: "Cloud Account…", action: #selector(addAccount(_:)), keyEquivalent: "")
+        let server = NSMenuItem(title: "Server", action: #selector(addProfile(_:)), keyEquivalent: "")
+        for item in [cloud, server] {
+            item.target = self
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func showAddMenu(_ sender: NSButton) {
+        addMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.maxY + 4), in: sender)
+    }
+
+    /// The Connect sheet on this window, for its cloud sign-in; the account appears in the list when it's connected.
+    @objc func addAccount(_ sender: Any?) {
+        ConnectSheet.run(window: window) { [weak self] url in self?.open(url) }
+    }
 
     @objc func addProfile(_ sender: Any?) { addProfile(kind: .sftp) }
 
@@ -317,8 +494,20 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
         }
     }
 
-    @objc private func removeProfile(_ sender: Any?) {
-        guard let id = selectedID, let p = profiles.profile(id) else { return }
+    /// "−": signs out of the selected account, or removes the selected server, after asking.
+    @objc func removeSelected(_ sender: Any?) {
+        switch selection {
+        case .account(let id):
+            guard let a = accounts.account(id) else { return }
+            AccountActions.confirmRemove(a, window: window)
+        case .server:
+            removeProfile()
+        default: NSSound.beep()
+        }
+    }
+
+    private func removeProfile() {
+        guard case .server(let id) = selection, let p = profiles.profile(id) else { return }
         let a = NSAlert()
         a.messageText = "Remove “\(p.name)”?"
         a.informativeText = p.kind == .s3 ? "Its secret key is removed from the Keychain too." : "It's removed from the sidebar."
@@ -333,7 +522,7 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
                 alert.beginSheetModal(for: window)
                 return
             }
-            if let next = self.profiles.profiles.first { self.select(next.id) } else { self.showEmpty() }
+            self.showFirstOrEmpty()
         }
     }
 
@@ -365,7 +554,7 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
     @objc private func saveProfile(_ sender: Any?) { if !saveForm() { NSSound.beep() } }
 
     @objc func connectProfile(_ sender: Any?) {
-        guard saveForm(), let id = selectedID, let url = profiles.profile(id)?.url else { return NSSound.beep() }
+        guard saveForm(), case .server(let id) = selection, let url = profiles.profile(id)?.url else { return NSSound.beep() }
         open(url)
     }
 }
@@ -599,4 +788,108 @@ final class ConnectionInfoView: NSStackView {
         t.preferredMaxLayoutWidth = 480
         return t
     }
+}
+
+/// A row of the list: AppKit's selection in the native theme; in a palette theme the palette's (its selection colour
+/// as a tint with an outline, as in the file lists), under the palette's selection text.
+final class EntryRowView: NSTableRowView {
+    /// The inset table style's own margin either side of a selection.
+    static let selectionInset: CGFloat = 10
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard !Tokens.isNative else { return super.drawSelection(in: dirtyRect) }
+        let path = NSBezierPath(
+            roundedRect: bounds.insetBy(dx: Self.selectionInset, dy: 0.5), xRadius: Tokens.Radius.row, yRadius: Tokens.Radius.row)
+        Theme.itemSelectedFill.setFill()
+        path.fill()
+        Theme.itemSelectedOutline.setStroke()
+        path.stroke()
+    }
+
+    // A tint, not a solid fill: the cells keep their normal style and take the palette's selection text themselves.
+    override var interiorBackgroundStyle: NSView.BackgroundStyle { Tokens.isNative ? super.interiorBackgroundStyle : .normal }
+}
+
+/// One account or server in the list: a 26-pt icon slot (so every title starts at the same x), the name and a detail
+/// line. Its text follows the row's selection, as a table cell's does.
+final class EntryCellView: NSTableCellView {
+    private let detail: NSTextField
+    private let warning: NSImageView?
+
+    init(icon: NSView, title: String, detail text: String, warning showsWarning: Bool) {
+        let name = NSTextField(labelWithString: title)
+        name.font = .systemFont(ofSize: Tokens.FontSize.body, weight: .medium)
+        name.lineBreakMode = .byTruncatingMiddle
+        detail = NSTextField(labelWithString: text)
+        detail.font = .systemFont(ofSize: Tokens.FontSize.small)
+        detail.lineBreakMode = .byTruncatingMiddle
+        if showsWarning {
+            let mark = NSImageView(
+                image: NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning") ?? NSImage())
+            mark.symbolConfiguration = .init(pointSize: Tokens.FontSize.small, weight: .regular)
+            warning = mark
+        } else {
+            warning = nil
+        }
+        super.init(frame: .zero)
+        textField = name
+        let slot = NSView()
+        slot.translatesAutoresizingMaskIntoConstraints = false
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        slot.addSubview(icon)
+        NSLayoutConstraint.activate([
+            slot.widthAnchor.constraint(equalToConstant: Self.iconSlot), slot.heightAnchor.constraint(equalToConstant: Self.iconSlot),
+            icon.centerXAnchor.constraint(equalTo: slot.centerXAnchor), icon.centerYAnchor.constraint(equalTo: slot.centerYAnchor),
+        ])
+        let subRow = NSStackView(views: [warning, detail].compactMap { $0 })
+        subRow.spacing = 3
+        let text = NSStackView(views: [name, subRow])
+        text.orientation = .vertical
+        text.alignment = .leading
+        text.spacing = 1
+        let row = NSStackView(views: [slot, text])
+        row.spacing = 8
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            row.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        backgroundStyleChanged()
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    /// The avatar's size: server symbols are centred in the same square.
+    static let iconSlot: CGFloat = 26
+    /// Server symbols at the sidebar's symbol size (design contract I1).
+    static let symbolSize: CGFloat = 16
+
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet { backgroundStyleChanged() }
+    }
+
+    override func viewWillDraw() {
+        super.viewWillDraw()
+        backgroundStyleChanged()
+    }
+
+    /// On the selection, the selection's text colour (the detail at 80 %); otherwise the window's text colours. In a
+    /// palette theme the row draws a tint and keeps its style normal (EntryRowView), so there a selected row counts
+    /// whatever its style.
+    private func backgroundStyleChanged() {
+        let rowSelected = (superview as? NSTableRowView)?.isSelected == true
+        let selected = backgroundStyle == .emphasized || (rowSelected && !Tokens.isNative)
+        guard selected != showsSelection else { return }  // called on every draw: only a change recolours
+        showsSelection = selected
+        textField?.textColor = selected ? Theme.selectionText : Theme.windowText
+        detail.textColor = selected ? Theme.selectionText.withAlphaComponent(0.8) : Theme.windowTextInactive
+        warning?.contentTintColor = selected ? Theme.selectionText : .systemYellow
+    }
+
+    /// Whether the text shows the selection's colours now (nil until first coloured).
+    private var showsSelection: Bool?
+
+    /// The colours the name and detail show now (tests).
+    var colors: (title: NSColor?, detail: NSColor?) { (textField?.textColor, detail.textColor) }
 }

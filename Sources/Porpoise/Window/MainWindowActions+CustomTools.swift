@@ -69,7 +69,7 @@ extension MainWindowController {
         alert.addButton(withTitle: "Continue"); alert.addButton(withTitle: "Cancel")
         alert.runSheet(for: window) { response in if response == .alertFirstButtonReturn { prompt() } }
     }
-    @objc func showCustomTools(_ sender: Any?) { SettingsWindowController(page: "Custom Tools").present() }
+    @objc func showCustomTools(_ sender: Any?) { AppDelegate.shared.showSettings(page: "Keyboard", section: "Custom tools") }
     @objc func showToolbarCustomTools(_ sender: Any?) {
         let menu = customToolMenu(.toolbar)
         if menu.items.isEmpty {

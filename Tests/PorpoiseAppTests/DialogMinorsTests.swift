@@ -267,12 +267,12 @@ import Testing
         #expect(view.output.string == run.output)
     }
 
-    /// #8: Connections, shown again from another window, connects in that window (the first may be closed).
+    /// #8: Accounts & Servers, shown again from another window, connects in that window (the first may be closed).
     @Test func connectionsOpenInTheWindowThatAskedLast() {
         var first: [URL] = [], second: [URL] = []
-        let w = ConnectionsWindow.show { first.append($0) }
+        let w = AccountsServersWindow.show { first.append($0) }
         defer { w.window?.close() }
-        let again = ConnectionsWindow.show { second.append($0) }
+        let again = AccountsServersWindow.show { second.append($0) }
         #expect(again === w)
         let url = URL(string: "sftp://example.invalid/")!
         again.open(url)
@@ -308,8 +308,8 @@ import Testing
         #expect(ServerForm(kind: .webdav).draftProfile() == nil)  // not one Connections manages: a place, as before
     }
 
-    /// #20: a quota or picture arriving while a sidebar name is typed keeps the field; rows are chosen by keyboard
-    /// and VoiceOver too.
+    /// #20: a quota or picture arriving while a sidebar name is typed keeps the field; accounts are chosen with the
+    /// keyboard (real ↑/↓ key events through the window), the headings skipped.
     @Test func accountsKeepTheNameBeingTypedAndTakeTheKeyboard() throws {
         let previous = CloudAccounts.shared.backend
         CloudAccounts.shared.backend = DemoCloudBackend(accounts: [
@@ -317,27 +317,34 @@ import Testing
             CloudAccount(id: "two", email: "two@example.invalid", displayName: "Two"),
         ])
         defer { CloudAccounts.shared.backend = previous }
-        let view = AccountsView()
-        let w = window(view)
-        defer { w.close() }
-        #expect(view.selected == "one")
-        let field = try #require(view.nameField)
-        #expect(w.makeFirstResponder(field))
+        let w = AccountsServersWindow(profiles: ConnectionProfiles(storeURL: nil), credentials: .inMemory()) { _ in }
+        let win = try #require(w.window)
+        defer { win.close() }
+        #expect(w.selection == .account("one"))
+        let field = try #require(w.accountDetail?.nameField)
+        #expect(win.makeFirstResponder(field))
         (field.currentEditor() as? NSTextView)?.insertText("Wo", replacementRange: NSRange(location: 0, length: 0))
         NotificationCenter.default.post(name: CloudAccounts.changed, object: nil)
-        #expect(view.nameField === field && field.currentEditor() != nil)
-        w.makeFirstResponder(nil)
-        let rows = view.list.arrangedSubviews.compactMap { $0 as? AccountRow }
-        #expect(rows.count == 2 && rows[1].accessibilityPerformPress() && view.selected == "two")
-        let row = try #require(view.list.arrangedSubviews.compactMap { $0 as? AccountRow }.last)
-        #expect(w.makeFirstResponder(row))
-        let up = try #require(
-            NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: w.windowNumber, context: nil, characters: "",
-                charactersIgnoringModifiers: "", isARepeat: false, keyCode: 126))
-        row.keyDown(with: up)
-        #expect(view.selected == "one")
+        #expect(w.accountDetail?.nameField === field && field.currentEditor() != nil)
+        let table = try #require(Self.views(in: win.contentView).compactMap { $0 as? NSTableView }.first)
+        #expect(win.makeFirstResponder(table))
+        func key(_ code: UInt16) throws {
+            let arrow = code == 125 ? "\u{F701}" : "\u{F700}"
+            let event = try #require(
+                NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: win.windowNumber, context: nil,
+                    characters: arrow, charactersIgnoringModifiers: arrow, isARepeat: false, keyCode: code))
+            win.sendEvent(event)
+        }
+        try key(125)
+        #expect(w.selection == .account("two"))
+        try key(126)
+        #expect(w.selection == .account("one"))
+        try key(126)  // the heading above isn't a row to choose
+        #expect(w.selection == .account("one"))
     }
+
+    private static func views(in view: NSView?) -> [NSView] { view.map { [$0] + $0.subviews.flatMap { views(in: $0) } } ?? [] }
 
     /// #13: a cloud folder's size lists each folder once (Drive folders can have several parents) and, on opening
     /// the window, stops after a bounded number of listings and says it's partial.

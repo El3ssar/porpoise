@@ -82,7 +82,7 @@ with *Porpoise › Check for Updates…*.
   Folders, Eject, drag & drop with any app and the Dock Trash; optionally the default file browser for
   "Show in Finder".
 - **Remote:** SFTP/SSH, FTP/FTPS, SMB/AFP/NFS/WebDAV (Connect to Server ⌘K), Bonjour network browsing, Android
-  phones over USB, local zip/7z/tar archives browsed without unpacking (read-only, with extraction on open, preview or copy). Other formats retain whole-archive fallback. **Connections** (⌥⌘K) saves SFTP, FTP/FTPS, SMB and S3 servers,
+  phones over USB, local zip/7z/tar archives browsed without unpacking (read-only, with extraction on open, preview or copy). Other formats retain whole-archive fallback. **Accounts & Servers** (⌥⌘K) lists every cloud account and saves SFTP, FTP/FTPS, SMB and S3 servers,
   with imported SSH hosts, jump hosts and key-file settings. Passwords and S3 secret keys stay in the Keychain.
 - **Cloud accounts:** browse **Google Drive (preview)** and **Dropbox**, copy files in and out, preview and open
   them, keep offline copies, and save edits back with conflict review. Drive sign-in currently requires an invited
@@ -292,7 +292,7 @@ In the file list: arrows move (⇧ extends), Space is Quick Look, ⌫ goes back,
 | Go | Network | ⇧⌘K |
 | Go | Go to Folder… | ⇧⌘G |
 | Go | Connect to Server… | ⌘K |
-| Go | Connections… | ⌥⌘K |
+| Go | Accounts & Servers… | ⌥⌘K |
 | Tools | Open Terminal | ⇧F4 |
 | Tools | Open Terminal Here | ⌥⇧F4 |
 | Tools | Empty Trash | ⇧⌘⌫ |

@@ -140,8 +140,7 @@ extension PlacesPanel {
     @objc private func accountSignOut(_ s: NSMenuItem) { if let a = cloudAccount(s) { AccountActions.confirmRemove(a, window: window) } }
     @objc private func accountSettings(_ s: NSMenuItem) {
         guard let a = cloudAccount(s) else { return }
-        AppDelegate.shared.showSettings(page: "Accounts")
-        AccountsSettingsPage.current?.select(a.id)
+        AccountsServersWindow.showFromFront(selecting: .account(a.id))
     }
 
     @objc private func toggleSection(_ s: NSMenuItem) {

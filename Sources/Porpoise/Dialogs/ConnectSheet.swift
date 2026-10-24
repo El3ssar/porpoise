@@ -257,7 +257,7 @@ final class ConnectSheet: SecondaryWindowController {
     private func addS3Connection() {
         let open = self.open
         finish()
-        ConnectionsWindow.show(adding: .s3, open: open)
+        AccountsServersWindow.show(adding: .s3, open: open)
     }
 
     static var problemShownForTesting: ((String) -> Void)?
@@ -265,9 +265,9 @@ final class ConnectSheet: SecondaryWindowController {
     @objc private func connectServer(_ sender: Any?) {
         guard let form, let url = form.url() else { NSSound.beep(); return }
         if form.addToPlaces {
-            // Servers the connection manager knows become saved connections (editable in Connections); others a place.
-            // A server Connections manages is saved there, or the form says what's wrong and stays: it never
-            // quietly becomes a plain place that Connections can't list or edit.
+            // Servers the connection manager knows become saved connections (editable in Accounts & Servers); others a place.
+            // A server Accounts & Servers manages is saved there, or the form says what's wrong and stays: it never
+            // quietly becomes a plain place that Accounts & Servers can't list or edit.
             if let (_, problem) = form.draftProfile(), let problem {
                 let alert = NSAlert()
                 alert.messageText = "Connection wasn’t saved."
@@ -674,13 +674,13 @@ final class ServerForm {
         }
     }
 
-    /// The fields as a saved connection, for the kinds the Connections window manages.
+    /// The fields as a saved connection, for the kinds the Accounts & Servers window manages.
     func profile() -> ConnectionProfile? {
         guard let (p, problem) = draftProfile(), problem == nil else { return nil }
         return p
     }
 
-    /// The saved connection the fields describe and what's wrong with it, for the kinds Connections manages (nil
+    /// The saved connection the fields describe and what's wrong with it, for the kinds Accounts & Servers manages (nil
     /// for others, which become a plain place).
     func draftProfile() -> (ConnectionProfile, problem: String?)? {
         let kind: ConnectionProfile.Kind
