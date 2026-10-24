@@ -405,7 +405,10 @@ public final class DirectoryModel {
         tagCache[item.url] = t
         return t
     }
-    public func refreshTags() { tagCache = [:] }
+    public func refreshTags() {
+        tagCache = [:]
+        if props.sortRole == .tags || props.effectiveGroupRole == .tags { rebuild() }
+    }
     private func tagMap(_ list: [FileItem]) -> [URL: [String]] {
         var m: [URL: [String]] = [:]
         for it in list {
@@ -655,9 +658,8 @@ public final class DirectoryModel {
     private var sortedTop: [FileItem]?
 
     private var preparesLocalRows: Bool {
-        !isSearching
-            && ((props.sortRole == .tags || props.effectiveGroupRole == .tags)
-                || source is LocalSource && items.count + children.values.reduce(0, { $0 + $1.count }) >= 2000)
+        props.sortRole == .tags || props.effectiveGroupRole == .tags
+            || !isSearching && source is LocalSource && items.count + children.values.reduce(0, { $0 + $1.count }) >= 2000
     }
     private var rowPreparation: LocationLoad?
     private var rowPreparationGeneration: UInt64 = 0
@@ -678,9 +680,11 @@ public final class DirectoryModel {
     private func prepareLocalRows(keepingOrder: Bool) {
         let generation = rowPreparationGeneration
         let snapshot = DirectoryModelPreparation(
-            items: items, incoming: incomingItems, children: children, expanded: expanded, props: props, filter: filter,
+            items: searchResults ?? items, incoming: isSearching ? [] : incomingItems, children: children, expanded: expanded, props: props,
+            filter: filter,
             choice: Settings.shared.sortingChoice, hideBackups: Settings.shared.hideBackupFiles, sizes: folderCounts,
-            knownTags: tagCache, ordered: keepingOrder ? sortedTop : nil)
+            knownTags: tagCache, ordered: keepingOrder ? sortedTop : nil,
+            search: isSearching ? searchMatches : nil, retainedItems: isSearching ? items : [])
         // Never let a later filter/mode change reuse order from a superseded listing.
         if !keepingOrder { sortedTop = nil }
         rowPreparation = prepareRows(snapshot) { [weak self] result in

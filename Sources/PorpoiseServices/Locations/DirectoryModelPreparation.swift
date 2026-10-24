@@ -15,6 +15,8 @@ struct DirectoryModelPreparation {
     let sizes: [URL: Int]
     let knownTags: [URL: [FinderTags.Tag]]
     let ordered: [FileItem]?
+    var search: SearchMatches? = nil
+    var retainedItems: [FileItem] = []
 
     struct Result {
         let top: [FileItem]
@@ -110,7 +112,15 @@ struct DirectoryModelPreparation {
                 if open, let kids = children[item.url] { add(sort(visible(kids, filtered: true)), depth: depth + 1, group: group) }
             }
         }
-        if let role = groupRole {
+        if let search, search.contents {
+            let named = shown.filter { search.nameMatches($0) }
+            let content = shown.filter { !search.nameMatches($0) }
+            for (title, list) in [("Name matches", named), ("Content matches", content)] where !list.isEmpty {
+                let first = rows.count, index = groups.count
+                add(list, depth: 0, group: index)
+                groups.append(ItemGroup(title: title, firstRow: first, count: rows.count - first))
+            }
+        } else if let role = groupRole {
             let parts = ItemGrouper.groups(shown, role: role, props: props, choice: choice, folderSizes: sizes, tags: groupTags)
             for (index, part) in parts.enumerated() {
                 let first = rows.count
@@ -126,6 +136,6 @@ struct DirectoryModelPreparation {
         guard !cancelled() else { return nil }
         return Result(
             top: top, rows: rows, groups: groups, tags: tags, keys: keys, keyCache: Dictionary(zip(urls, keys), uniquingKeysWith: { a, _ in a }),
-            alive: Set(items.map(\.url) + incoming.map(\.url) + children.values.flatMap { $0.map(\.url) }))
+            alive: Set(items.map(\.url) + incoming.map(\.url) + retainedItems.map(\.url) + children.values.flatMap { $0.map(\.url) }))
     }
 }

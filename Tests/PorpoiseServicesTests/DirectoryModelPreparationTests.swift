@@ -54,6 +54,25 @@ import Testing
         #expect(m.selectedItems.isEmpty)
     }
 
+    @Test func tagSortedContentSearchKeepsSearchGroupsOffMain() throws {
+        let s = try Scratch(), m = DirectoryModel(location: s.url)
+        var pending: [(DirectoryModelPreparation, (DirectoryModelPreparation.Result) -> Void)] = []
+        m.prepareRows = { input, done in
+            pending.append((input, done)); return LocationLoad()
+        }
+        let named = FileItem(url: s.path("needle.txt"), name: "needle.txt", isDirectory: false)
+        let content = FileItem(url: s.path("other.txt"), name: "other.txt", isDirectory: false)
+        m.searchMatches = SearchMatches(text: "needle", contents: true)
+        m.searchResults = [content, named]
+        m.props.sortRole = .tags
+        let request = try #require(pending.last)
+        request.1(try #require(request.0.build()))
+        #expect(m.rows.map(\.item.name) == ["needle.txt", "other.txt"])
+        #expect(m.groups.map(\.title) == ["Name matches", "Content matches"])
+        m.refreshTags()
+        #expect(pending.count == 2)
+    }
+
     @Test func geometryChangesKeepTheRowsAndOrderWhileExpansionStillRebuilds() throws {
         let s = try Scratch()
         let m = DirectoryModel(location: s.url)
