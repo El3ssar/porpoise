@@ -10,14 +10,15 @@ import Testing
 /// The name-clash sheet is built from AppKit's own buttons: the default one drawn by macOS (accent, white title), the
 /// keyboard focus visible, Escape and Return as on every Mac sheet.
 @Suite(.serialized, .isolatedSettings) @MainActor struct ConflictDialogLookTests {
-    private func dialog(newer: Bool) -> ConflictDialog {
+    private func dialog(newer: Bool, remaining: Int? = nil) -> ConflictDialog {
         let source = FileItem(
             url: URL(fileURLWithPath: "/fixture/src/a.txt"), name: "a.txt", isDirectory: false, size: 5,
             modificationDate: Date(timeIntervalSince1970: newer ? 300 : 100))
         let target = FileItem(
             url: URL(fileURLWithPath: "/fixture/dst/a.txt"), name: "a.txt", isDirectory: false, size: 3,
             modificationDate: Date(timeIntervalSince1970: 200))
-        let d = ConflictDialog(info: ConflictInfo(source: source, destination: target, suggestedName: "a (1).txt"), kind: .copy)
+        let d = ConflictDialog(
+            info: ConflictInfo(source: source, destination: target, suggestedName: "a (1).txt", remainingConflicts: remaining), kind: .copy)
         d.window.isReleasedWhenClosed = false
         return d
     }
@@ -41,11 +42,19 @@ import Testing
             // Nothing overlaps: each button's frame is clear of the others'.
             let shown = all.filter { !$0.isHidden && $0.frame.minY < 60 }.map(\.frame)
             for (i, a) in shown.enumerated() { for b in shown[(i + 1)...] { #expect(a.intersection(b).width <= 0) } }
-            // The rule's button shows its whole title beside the method pop-up.
-            let rule = try #require(all.first { $0.title.hasPrefix("Apply") })
-            let method = try #require(d.window.contentView?.subviews.first { $0 is NSPopUpButton })
-            #expect(rule.frame.width >= rule.fittingSize.width && rule.frame.minX >= method.frame.maxX)
         }
+    }
+
+    /// The rule's button shows its whole title ("Apply to All 120") beside the method pop-up, inside its strip.
+    @Test(arguments: [nil, 2, 42, 120, 1200] as [Int?]) func applyToAllShowsItsWholeTitle(remaining: Int?) throws {
+        let d = dialog(newer: true, remaining: remaining)
+        defer { d.window.close() }
+        let rule = try #require(buttons(d).first { $0.title.hasPrefix("Apply") })
+        #expect(rule.title == ((remaining ?? 1) > 1 ? "Apply to All \(remaining ?? 1)" : "Apply"))
+        let method = try #require(d.window.contentView?.subviews.first { $0 is NSPopUpButton })
+        #expect(rule.frame.width >= rule.fittingSize.width, "\(rule.title) is cut")
+        #expect(rule.frame.minX >= method.frame.maxX, "\(rule.title) overlaps the method pop-up")
+        #expect(rule.frame.maxX <= 600, "\(rule.title) leaves its strip")
     }
 
     @Test func aPaletteThemeGivesTheDefaultButtonItsAccent() {
