@@ -184,8 +184,8 @@ import Testing
     @Test func longFolderNamesTruncateInTheMiddle() async throws {
         let s = try Scratch()
         let long = "-Users-someone-Projects-a-rather-long-project-name-ending-in-42"
-        // Six levels down: the tree's column used to widen with every level expanded, past the panel's edge.
-        let deep = "one/two/three/four/five/\(long)"
+        // Eight levels down: the tree's column used to widen with every level expanded, past the panel's edge.
+        let deep = "one/two/three/four/five/six/seven/\(long)"
         try s.folder(deep)
         Settings.shared.homeURL = s.url
         let panel = FoldersPanel(frame: NSRect(x: 0, y: 0, width: 200, height: 400))
@@ -208,6 +208,17 @@ import Testing
         let fieldEnd = field.convert(field.bounds, to: outline).maxX
         #expect(fieldEnd <= outline.visibleRect.maxX + 0.5, "\(fieldEnd) > \(outline.visibleRect.maxX)")
         #expect(field.attributedStringValue.size().width > field.bounds.width, "the name should need shortening at 200 pt")
+        // Eight levels in 200 pt: less indentation than the 14 pt of a shallow tree, never under 8.
+        #expect(outline.indentationPerLevel < 14 && outline.indentationPerLevel >= 8, "\(outline.indentationPerLevel)")
+        // Every row's name ends inside the panel, also in rows whose cells were reused at another depth.
+        panel.currentURL = s.url
+        try #require(await eventually { outline.selectedRow < 0 || (outline.item(atRow: outline.selectedRow) as? FoldersPanel.Node)?.url == s.url })
+        outline.layoutSubtreeIfNeeded()
+        for r in 0..<outline.numberOfRows {
+            guard let c = outline.view(atColumn: 0, row: r, makeIfNecessary: true) as? NSTableCellView, let f = c.textField else { continue }
+            c.layoutSubtreeIfNeeded()
+            #expect(f.convert(f.bounds, to: outline).maxX <= outline.visibleRect.maxX + 0.5, "row \(r)")
+        }
     }
 
     /// A hidden folder on the way to the shown one is in the tree anyway, and stays there, open, when a change on disk

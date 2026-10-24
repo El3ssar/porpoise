@@ -16,6 +16,8 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     private var followPending = false
     /// A follow stopped at a folder whose listing is running; it resumes when the listing arrives.
     private var followWaiting = false
+    /// Levels from the tree's top to the folder shown (it decides the indentation).
+    private var followDepth = 0
     /// Folders are listed here, never in outline callbacks: a folder of 100,000 files took seconds.
     private let listingQueue = DispatchQueue(label: "porpoise.folders.listing", qos: .userInitiated, attributes: .concurrent)
 
@@ -174,7 +176,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         outline.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
         col.resizingMask = .autoresizingMask
         outline.rowHeight = 24
-        outline.indentationPerLevel = 14
+        outline.indentationPerLevel = Self.maxIndent
         outline.backgroundColor = .clear
         outline.style = .plain
         outline.selectionHighlightStyle = .regular
@@ -225,6 +227,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     override func layout() {
         super.layout()
         scroll.frame = bounds
+        fitIndentation(depth: followDepth)
         outline.sizeLastColumnToFit()
     }
 
@@ -355,6 +358,8 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
             chain.insert(u, at: 0)
             u = u.deletingLastPathComponent()
         }
+        followDepth = chain.count
+        fitIndentation(depth: followDepth)
         var parent: Node?
         followWaiting = false
         for c in chain {
@@ -589,26 +594,43 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     private func nodeURL(_ item: Any?) -> URL? { (item as? Node)?.url ?? (item as? RemoteFolderTree.Node)?.url }
 
     private func makeCell() -> NSTableCellView {
-        // The name field ends at the cell's edge and follows its width: one wider than the cell was clipped there with
-        // no ellipsis ("-Users-dan", W-266).
-        let v = NSTableCellView(frame: CGRect(x: 0, y: 0, width: 100, height: 24))
+        let v = FolderCell(frame: CGRect(x: 0, y: 0, width: 100, height: 24))
         v.identifier = Self.cellID
         let img = NSImageView()
-        img.frame = CGRect(x: 2, y: 4, width: 16, height: 16)
         let t = NSTextField(labelWithString: "")
         t.font = Theme.font
         t.textColor = Theme.windowText
         // Names that differ at the end (dated, numbered, -Users-…-project folders) stay apart (DESIGN-CONTRACT T5).
         t.lineBreakMode = .byTruncatingMiddle
         t.cell?.truncatesLastVisibleLine = true
-        t.frame = CGRect(x: 22, y: 3, width: v.bounds.width - 24, height: 17)
-        t.autoresizingMask = [.width]
         v.addSubview(img)
         v.addSubview(t)
         v.imageView = img
         v.textField = t
         return v
     }
+
+    /// A row: the icon, then the name up to the row's edge. Laid out from the row's width each time (an autoresized
+    /// field squeezed to nothing in a deep row came back wider than its row in a shallow one, and ran past the edge
+    /// with no ellipsis).
+    private final class FolderCell: NSTableCellView {
+        override func layout() {
+            super.layout()
+            imageView?.frame = CGRect(x: 2, y: 4, width: 16, height: 16)
+            textField?.frame = CGRect(x: 22, y: 3, width: max(0, bounds.width - 24), height: 17)
+        }
+    }
+
+    /// Less indentation in a deep tree, so the names keep some room: 14 pt a level, down to 8 when the folder shown
+    /// is too deep for that in the panel's width.
+    private func fitIndentation(depth: Int) {
+        let room = max(0, bounds.width - Self.nameRoom)
+        let indent = min(Self.maxIndent, max(Self.minIndent, (room / CGFloat(max(depth, 1))).rounded(.down)))
+        if outline.indentationPerLevel != indent { outline.indentationPerLevel = indent }
+    }
+    private static let maxIndent: CGFloat = 14, minIndent: CGFloat = 8
+    /// What a row keeps for its triangle, icon and a readable part of the name.
+    private static let nameRoom: CGFloat = 110
 
     func outlineView(_ o: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? { BreezeRowView() }
 
