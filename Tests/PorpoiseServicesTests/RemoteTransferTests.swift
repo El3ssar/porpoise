@@ -8,6 +8,19 @@ import Testing
 
 /// Jobs with a non-file URL go the remote way. Without connecting anywhere, these check what it refuses.
 @MainActor @Suite(.isolatedSettings) struct RemoteTransferTests {
+    @Test func mixedMoveReceiptsAndErrorsKeepSourceIdentity() async throws {
+        let s = try Scratch(), file = try s.file("src/local.txt", "local"), destination = try s.folder("dst")
+        let remote = URL(string: "unknown://host/remote.txt")!
+        let c = makeController(ScriptedUI())
+        var moved: [URL: URL] = [:], finished = false
+        c.run(.move, [remote, file], to: destination, window: nil, moved: { moved = $0 }) { _ in finished = true }
+        #expect(await poll { finished })
+        #expect(moved == [file: destination.appendingPathComponent("local.txt")])
+        let activity = try #require(c.activities.last)
+        #expect(activity.errorDetails.map(\.source) == [remote])
+        #expect(s.read("dst/local.txt") == "local" && !FileManager.default.fileExists(atPath: file.path))
+    }
+
     @Test func linksCannotBeMadeToRemoteItems() async throws {
         let s = try Scratch()
         let ui = ScriptedUI()

@@ -30,6 +30,8 @@ public final class Activity: Identifiable {
     public internal(set) var progress: JobProgress?
     public internal(set) var rate = TransferRate()
     public internal(set) var errors: [String] = []
+    var failures: [TransferFailure] = []
+    public var errorDetails: [TransferFailure] { failures.isEmpty ? errors.map { TransferFailure(source: nil, message: $0) } : failures }
     public internal(set) var verification: CopyVerification.Result?
     public internal(set) var queuedAt = Date()
     public internal(set) var startedAt: Date?
@@ -217,12 +219,22 @@ extension FileOperationsController {
 
     /// Ends it: history, journal, verification, then the next queued job. `cause`: the first error behind `errors`,
     /// for the diagnostic event a failed copy or move records (its category only).
-    func ended(_ activity: Activity, errors: [String], cause: Error? = nil) {
+    func ended(_ activity: Activity, errors: [String], cause: Error? = nil, failures: [TransferFailure] = []) {
         environment.unregister(activity.control)
         activity.environmentNotice = nil
         let job = activity.job
         activity.incomingItem = nil
         activity.errors = errors
+        activity.failures = activity.job?.failures ?? failures
+        var pairedCounts: [String: Int] = [:]
+        for failure in activity.failures {
+            pairedCounts[failure.message, default: 0] += 1
+        }
+        let unpaired = errors.filter { message in
+            guard let count = pairedCounts[message], count > 0 else { return true }
+            pairedCounts[message] = count - 1; return false
+        }
+        activity.failures += unpaired.map { TransferFailure(source: nil, message: $0) }
         if let job { activity.failedSources = job.failedSources }
         if activity.control.isInterrupted {
             activity.state = .interrupted  // the journal stays, for next time
@@ -287,7 +299,7 @@ extension FileOperationsController {
                 activity.verification = control.isCancelled ? nil : total
                 activity.state = control.isInterrupted ? .interrupted : control.isCancelled ? .cancelled : .completed
                 self.record(activity)
-                self.activityDidChange()
+                self.startQueued()
             }
         }
     }

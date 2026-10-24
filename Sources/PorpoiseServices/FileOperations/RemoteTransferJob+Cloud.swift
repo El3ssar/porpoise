@@ -248,6 +248,7 @@ extension RemoteTransferJob {
             }
         }
         record.phase = .done; try journal.save(record)
+        if kind == .move, let target = record.receipt?.url { movedItems[source] = target }
     }
 
     static func checkReplaceable(_ incoming: FileItem, _ existing: FileItem) throws {

@@ -92,36 +92,16 @@ extension MainWindowController {
     }
 
     func openFiles(_ items: [FileItem]) {
-        for it in items {
-            if isExecutable(it) {
-                // Settings › Confirmations › "When opening an executable file".
-                switch Settings.shared.executableAction {
-                case .run: ExternalTerminal.run(it.url); continue
-                case .open: NSWorkspace.shared.open(it.url); continue
-                case .ask:
-                    let a = NSAlert()
-                    a.messageText = "“\(it.name)” is an executable file. Do you want to run it, or open it in an application?"
-                    a.addButton(withTitle: "Run")
-                    a.addButton(withTitle: "Open")
-                    a.addButton(withTitle: "Cancel")
-                    switch a.runModal() {
-                    case .alertFirstButtonReturn: ExternalTerminal.run(it.url)
-                    case .alertSecondButtonReturn: NSWorkspace.shared.open(it.url)
-                    default: break
-                    }
-                    continue
+        Task { [weak self] in
+            for item in items {
+                guard let self else { return }
+                if AccountActions.openWebDocument(item.url) { continue }
+                if !item.url.isFileURL { RemoteOpener.open(item); continue }
+                await withCheckedContinuation { continuation in
+                    localFileOpening.open(item, window: window) { continuation.resume() }
                 }
             }
-            if AccountActions.openWebDocument(it.url) { continue }
-            if !it.url.isFileURL { RemoteOpener.open(it); continue }
-            NSWorkspace.shared.open(it.url)
         }
-    }
-
-    /// Scripts and binaries with the executable bit (not apps/bundles).
-    private func isExecutable(_ it: FileItem) -> Bool {
-        guard it.url.isFileURL, !it.isDirectory, it.posixPermissions & 0o111 != 0, let t = it.utType else { return false }
-        return t.conforms(to: .shellScript) || t.conforms(to: .unixExecutable) || t.conforms(to: .script)
     }
 
     func container(_ c: ViewContainer, menuFor item: FileItem?) -> NSMenu? { contextMenu(for: item, in: c) }
@@ -140,13 +120,8 @@ extension MainWindowController {
         } else if !item.url.isFileURL {
             RemoteOpener.open(item)
         } else {
-            // Dolphin opens files with the second associated app on middle-click.
-            let apps = NSWorkspace.shared.urlsForApplications(toOpen: item.url)
-            if apps.count > 1 {
-                NSWorkspace.shared.open([item.url], withApplicationAt: apps[1], configuration: NSWorkspace.OpenConfiguration())
-            } else {
-                NSWorkspace.shared.open(item.url)
-            }
+            // Application choice follows the executable policy, just as opening from the file list does.
+            localFileOpening.open(item, secondApplication: true, window: window) {}
         }
     }
 
@@ -195,62 +170,12 @@ extension MainWindowController {
     func containerSearchVisibilityChanged(_ c: ViewContainer) { if c === view { toolbar.search.isToggled = !c.searchBar.isHidden } }
 
     func rename(_ item: FileItem, to name: String, in c: ViewContainer) {
-        let old = item.url
-        if PlacesModel.isCloud(old) { renameCloud(item, to: name, in: c); return }
-        let newExt = (name as NSString).pathExtension
-        if Settings.shared.confirmRenameType, !item.isBrowsableFolder, newExt.lowercased() != item.fileExtension.lowercased(),
-            !item.fileExtension.isEmpty
-        {
-            let a = NSAlert()
-            a.messageText = "Change File Type"
-            a.informativeText = "Changing the file extension from “\(item.fileExtension)” to “\(newExt)” may change the way the file opens."
-            a.addButton(withTitle: "Change Type")
-            a.addButton(withTitle: "Cancel")
-            guard a.runModal() == .alertFirstButtonReturn else { return }
-        }
-        if Settings.shared.confirmRenameHide, name.hasPrefix(".") && !item.name.hasPrefix(".") && !c.model.props.showHidden {
-            let a = NSAlert()
-            a.messageText = "Hide this File?"
-            a.informativeText = "The name starts with a dot, so the item will be hidden."
-            a.addButton(withTitle: "Rename and Hide")
-            a.addButton(withTitle: "Cancel")
-            guard a.runModal() == .alertFirstButtonReturn else { return }
-        }
-        if !old.isFileURL {
-            // A server: the name is checked against its folder and the rename can be undone, as on this Mac.
-            DispatchQueue.global(qos: .userInitiated).async {
-                let result = Result { try LocationOperations(for: old).rename(old, to: name) }
-                DispatchQueue.main.async {
-                    switch result {
-                    case .success(let renamed):
-                        if let undo = renamed.undo { FileOperationsController.shared.pushUndo(undo) }
-                        c.pendingSelect = renamed.url; c.reload()
-                    case .failure(let error):
-                        c.messageBar.show(error.localizedDescription, error: true); c.needsLayout = true
-                    }
-                }
-            }
-            return
-        }
-        do {
-            let renamed = try LocationOperations(for: old).rename(old, to: name)
-            if let undo = renamed.undo { FileOperationsController.shared.pushUndo(undo) }
-            c.pendingSelect = renamed.url
+        if PlacesModel.isCloud(item.url) { renameCloud(item, to: name, in: c); return }
+        let navigation = c.navigations
+        itemRenaming.rename(item, to: name, showingHidden: c.model.props.showHidden, window: window) { [weak c] renamed in
+            guard let c, c.navigations == navigation else { return }
+            if let renamed { c.pendingSelect = renamed }
             c.reload()
-        } catch  where FileErrorKind.classify(error) == .permission {
-            // Root-owned item or folder: authenticate, as Finder does.
-            let new = old.deletingLastPathComponent().appendingPathComponent(name)
-            if FileOperationsController.shared.authorize(
-                verb: "rename", items: [old],
-                commands: FileOperationsController.renameCommands(old, to: new), window: window)
-            {
-                FileOperationsController.shared.pushUndo(.renamed(from: old, to: new))
-                c.pendingSelect = new
-            }
-            c.reload()
-        } catch {
-            let a = NSAlert(error: error)
-            if let window { a.beginSheetModal(for: window) } else { a.runModal() }
         }
     }
 }

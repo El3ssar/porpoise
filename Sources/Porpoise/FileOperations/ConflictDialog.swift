@@ -44,9 +44,9 @@ final class ConflictDialog: NSObject {
             ? Activity.name(destinationFolder)
             : LinkedBrowsing.sideNames(info.source.url.deletingLastPathComponent(), destinationFolder).1
         let bothFolders = info.source.isBrowsableFolder && info.destination.isBrowsableFolder
-        let delta = (info.source.modificationDate?.timeIntervalSince1970 ?? 0) - (info.destination.modificationDate?.timeIntervalSince1970 ?? 0)
-        let newer = delta > info.comparisonOptions.timestampTolerance
-        let older = delta < -info.comparisonOptions.timestampTolerance
+        let delta = info.source.modificationDate.flatMap { source in info.destination.modificationDate.map { source.timeIntervalSince($0) } }
+        let newer = delta.map { $0 > info.comparisonOptions.timestampTolerance } ?? false
+        let older = delta.map { $0 < -info.comparisonOptions.timestampTolerance } ?? false
         window.title = "Names Clash"
         window.backgroundColor = Theme.windowBackground
         let sizeDelta = info.source.size - info.destination.size
@@ -60,6 +60,8 @@ final class ConflictDialog: NSObject {
             hint = "The item you’re \(kind == .move ? "moving" : "copying") is newer" + sizeHint + "."
         } else if older {
             hint = "The incoming item is older" + sizeHint + ". Skip keeps the newer version."
+        } else if delta == nil {
+            hint = "A modification date is unavailable. Compare contents before replacing."
         } else if info.source.size == info.destination.size {
             hint = "They look identical: same size and date. Compare contents to check every byte."
         } else {

@@ -306,6 +306,22 @@ struct ActivityTests {
         #expect(activity.verification?.ok == true)
     }
 
+    @Test func verificationCompletionReleasesTheOnlyQueueSlot() async throws {
+        Settings.shared.verifyCopies = true
+        c.concurrency = 1
+        let source = try s.file("source", "bytes"), target = try s.file("target", "bytes")
+        let verifying = Activity(kind: .copy, sources: [source], destination: s.url, job: nil)
+        verifying.placed = [0: target]
+        verifying.state = .running
+        let queued = Activity(kind: .copy, sources: [], destination: s.url, job: nil)
+        queued.start = { queued.state = .completed }
+        c.activities = [verifying, queued]
+        c.ended(verifying, errors: [])
+        #expect(verifying.state == .verifying && queued.state == .queued)
+        #expect(await poll { verifying.verification?.ok == true && queued.state == .completed })
+        queued.start = nil
+    }
+
     // MARK: History
 
     @Test func historyIsSearchableAndExportable() async throws {

@@ -25,7 +25,9 @@ final class RemoteTransferJob {
     var cloudRecovered: [URL: [CloudTransferRecord]] = [:]
     var completed: [URL: URL]
     var results: [URL] = []
+    var movedItems: [URL: URL] = [:]
     var errors: [String] = []
+    var failures: [TransferFailure] = []
     /// The first error behind `errors`, kept only to be classified for diagnostics.
     var firstError: Error?
     var failedSources: [URL] = []
@@ -88,7 +90,9 @@ final class RemoteTransferJob {
                 }
             } catch {
                 firstError = firstError ?? error
-                errors.append(error.localizedDescription); failedSources = remaining; return
+                errors.append(error.localizedDescription)
+                failures.append(TransferFailure(source: nil, message: error.localizedDescription))
+                failedSources = remaining; return
             }
         }
         let transport = control.asTransferControl(onBytes: { self.advance(bytes: $0) }, onStatus: { self.onNotice($0) })
@@ -128,6 +132,7 @@ final class RemoteTransferJob {
                     let name = RemoteFS.displayName(for: source)
                     firstError = firstError ?? error
                     errors.append("\(name): \(error.localizedDescription)")
+                    failures.append(TransferFailure(source: source, message: "\(name): \(error.localizedDescription)"))
                 }
                 publish()
             }
@@ -379,6 +384,7 @@ final class RemoteTransferJob {
                 }
                 try Shell.withoutTransferControl { try receipt.removeSource() }
             }
+            movedItems[source] = target
         }
         completed[source] = target
         return target
@@ -429,6 +435,7 @@ final class RemoteTransferJob {
                         do { try result.removeSource() } catch {
                             throw RemoteError.failed("Copy published; source removal needs review. \(error.localizedDescription)")
                         }
+                        movedItems[source] = target
                     }
                 }
                 return
@@ -506,6 +513,7 @@ final class RemoteTransferJob {
                         throw RemoteError.failed("Copy published; source retained because destination verification failed.")
                     }
                     try removal.remove(afterVerifying: downloaded)
+                    movedItems[source] = target
                 }
             }
         } else {
@@ -561,6 +569,7 @@ final class RemoteTransferJob {
                     throw RemoteError.failed("Copy published; source retained because destination verification failed.")
                 }
                 try Shell.withoutTransferControl { try removal.remove(afterVerifying: target) }
+                movedItems[source] = target
             }
         }
     }

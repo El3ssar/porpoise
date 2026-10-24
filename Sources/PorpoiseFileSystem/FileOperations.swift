@@ -40,6 +40,7 @@ public final class FileJob: @unchecked Sendable {
     public var inventoryDelay: TimeInterval = 0
 
     public private(set) var errors: [String] = []
+    public private(set) var failures: [TransferFailure] = []
     /// The first error behind `errors`, kept only to be classified (`DiagnosticFailure`), never shown or saved.
     public private(set) var firstError: Error?
     /// Items that failed only for lack of permission (the app may retry them with authorization).
@@ -49,6 +50,8 @@ public final class FileJob: @unchecked Sendable {
     public private(set) var deniedTargets: [URL: URL] = [:]
     /// Top-level results (where each source ended up), used to select pasted items.
     public private(set) var results: [URL] = []
+    /// Successful top-level moves, keyed by the original source rather than selection position or name.
+    public private(set) var movedItems: [URL: URL] = [:]
     /// Items that could not go to the Trash because their volume has none (network shares, some
     /// external disks). Finder offers to delete these immediately instead.
     public private(set) var untrashable: [URL] = []
@@ -193,7 +196,11 @@ public final class FileJob: @unchecked Sendable {
             if kind != .link && FilePath(entry: src).contains(FilePath(canonical: dest)) {
                 throw FileOperationError.intoItself(src.lastPathComponent)
             }
-            if let r = try transfer(src, into: dest) { results.append(r) }
+            if let r = try transfer(src, into: dest) {
+                results.append(r)
+                // A merged/filtered move may publish a destination but retain skipped source children.
+                if kind == .move, r != src, !Self.itemExists(at: src) { movedItems[src] = r }
+            }
         case .trash:
             do {
                 if let out = try trashItem(src) { trashed.append((src, out)) }
@@ -213,6 +220,7 @@ public final class FileJob: @unchecked Sendable {
         } else {
             firstError = firstError ?? error
             errors.append(Self.describe(error))
+            failures.append(TransferFailure(source: src, message: Self.describe(error)))
         }
     }
 
@@ -590,6 +598,7 @@ public final class FileJob: @unchecked Sendable {
             } catch {
                 firstError = firstError ?? error
                 errors.append(Self.describe(error))
+                failures.append(TransferFailure(source: child, message: Self.describe(error)))
             }
         }
         // A merged move leaves the source folder empty; rmdir() refuses if anything is left behind.

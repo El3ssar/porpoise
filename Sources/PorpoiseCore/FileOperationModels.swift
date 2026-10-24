@@ -36,6 +36,13 @@ public struct TransferFolderSummary: Sendable {
     public init(itemCount: Int, bytes: Int64? = nil) { self.itemCount = itemCount; self.bytes = bytes }
 }
 
+/// A transfer error carries its own source identity; error and retry arrays need not have the same length.
+public struct TransferFailure: Sendable, Equatable {
+    public let source: URL?
+    public let message: String
+    public init(source: URL?, message: String) { self.source = source; self.message = message }
+}
+
 public struct ConflictInfo: Sendable {
     public let source: FileItem
     public let sourceFolder: TransferFolderSummary?

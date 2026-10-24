@@ -100,15 +100,23 @@ public final class FileOperationsController {
         let urls = clipboardURLs
         guard !urls.isEmpty else { return }
         let cut = clipboardIsCut
-        run(cut ? .move : .copy, urls, to: folder, window: window) { [weak self] results in
-            if cut, let self {
-                self.cutChangeCount = -1
-                self.cutURLs = []
-                self.clipboard.clear()
-                NotificationCenter.default.post(name: Self.cutChanged, object: nil)
-            }
-            done?(results)
-        }
+        let changeCount = clipboard.changeCount
+        run(
+            cut ? .move : .copy, urls, to: folder, window: window,
+            moved: { [weak self] moved in
+                if cut, let self, self.clipboard.changeCount == changeCount, self.cutChangeCount == changeCount, !moved.isEmpty {
+                    let remaining = urls.filter { moved[$0] == nil }
+                    self.cutURLs = Set(remaining)
+                    if remaining.isEmpty {
+                        self.cutChangeCount = -1
+                        self.clipboard.clear()
+                    } else {
+                        self.clipboard.write(remaining)
+                        self.cutChangeCount = self.clipboard.changeCount
+                    }
+                    NotificationCenter.default.post(name: Self.cutChanged, object: nil)
+                }
+            }, done: done)
     }
 
     // MARK: Jobs
@@ -117,11 +125,11 @@ public final class FileOperationsController {
     public func run(
         _ kind: FileOperationKind, _ urls: [URL], to folder: URL? = nil, window: AnyObject?, sound: FinderSound? = nil,
         allowDeleteFallback: Bool = true, allowAuthorization: Bool = true, resumePoints: [URL: ResumePoint] = [:],
-        completedTransfers: [URL: URL] = [:], done: (([URL]) -> Void)? = nil
+        completedTransfers: [URL: URL] = [:], moved: (([URL: URL]) -> Void)? = nil, done: (([URL]) -> Void)? = nil
     ) {
         guard !urls.isEmpty else { return }
         if urls.contains(where: { !$0.isFileURL }) || (folder.map { !$0.isFileURL } ?? false) {
-            runRemote(kind, urls, to: folder, window: window, done: done)
+            runRemote(kind, urls, to: folder, window: window, done: done, moved: moved)
             return
         }
         let job = FileJob(kind: kind, sources: urls, destinationFolder: folder, control: JobControl(policy: Settings.shared.transferPolicy))
@@ -137,14 +145,15 @@ public final class FileOperationsController {
         activity.allowsAuthorization = allowAuthorization
         activity.start = { [weak self, weak activity] in
             guard let self, let activity, activity.state == .queued else { return }
-            self.start(activity, job: job, window: window, sound: sound, allowDeleteFallback: allowDeleteFallback, done: done)
+            self.start(activity, job: job, window: window, sound: sound, allowDeleteFallback: allowDeleteFallback, moved: moved, done: done)
         }
         enqueue(activity)
     }
 
     /// Runs a queued job.
     private func start(
-        _ activity: Activity, job: FileJob, window: AnyObject?, sound: FinderSound?, allowDeleteFallback: Bool, done: (([URL]) -> Void)?
+        _ activity: Activity, job: FileJob, window: AnyObject?, sound: FinderSound?, allowDeleteFallback: Bool,
+        moved: (([URL: URL]) -> Void)?, done: (([URL]) -> Void)?
     ) {
         let kind = activity.kind, urls = activity.sources, folder = activity.destination
         began(activity)
@@ -208,9 +217,22 @@ public final class FileOperationsController {
                     ) { more in
                         if backgroundRetry { self.ui?.jobFinished(activity) }
                         if record != nil || !more.isEmpty { sound?.play() }
+                        var movedItems = job.movedItems
+                        if kind == .move {
+                            let placed = Set(more), submitted = Set(urls)
+                            for source in job.denied where submitted.contains(source) {
+                                if let target = job.deniedTargets[source] ?? folder?.appendingPathComponent(source.lastPathComponent),
+                                    placed.contains(target)
+                                {
+                                    movedItems[source] = target
+                                }
+                            }
+                        }
+                        moved?(movedItems)
                         done?(job.results + more)
                     }
                 } else {
+                    moved?(job.movedItems)
                     done?(job.results)
                 }
             }

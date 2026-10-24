@@ -20,6 +20,10 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
         let freeSpace: String?
     }
     private var nameField: NSTextField?
+    var itemRenaming = ItemRenaming()
+    private var renaming = false
+    private var renamedURL: URL?
+    private let showingHidden: Bool
     let sizeLabel = NSTextField(labelWithString: "Calculating…")
     private var closeObserver: NSObjectProtocol?
     private var thumbnailObserver: NSObjectProtocol?
@@ -30,14 +34,14 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
 
     /// Local files, and one cloud item (Google Drive: its sharing instead of permissions). Other remote and virtual
     /// locations (sftp://, recent:/…) have no local path to inspect. `items`: what the view knows about them.
-    static func show(urls: [URL], items: [FileItem] = []) {
+    static func show(urls: [URL], items: [FileItem] = [], showingHidden: Bool = false) {
         if let cloud = urls.first(where: PlacesModel.isCloud) {
             PropertiesWindow(cloud: cloud, item: items.first { $0.url == cloud }).present()
             return
         }
         let urls = urls.filter(\.isFileURL)
         guard !urls.isEmpty else { NSSound.beep(); return }
-        PropertiesWindow(urls: urls, items: items).present()
+        PropertiesWindow(urls: urls, items: items, showingHidden: showingHidden).present()
     }
 
     /// The cloud item shown (nil: local items).
@@ -45,8 +49,9 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
 
     convenience init(cloud url: URL, item: FileItem?) { self.init(urls: [url], cloud: (url, item)) }
 
-    init(urls: [URL], cloud: (url: URL, item: FileItem?)? = nil, items: [FileItem] = []) {
+    init(urls: [URL], cloud: (url: URL, item: FileItem?)? = nil, items: [FileItem] = [], showingHidden: Bool = false) {
         self.urls = urls
+        self.showingHidden = showingHidden
         knownItems = items
         cloudItem = cloud
         let w = PropertiesPanel(
@@ -63,10 +68,11 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
             guard let self else { return }
             self.sizeCount.cancel()
             self.informationCancellation.cancel()
-            if self.cloudItem == nil { self.commitName() }
+            if self.cloudItem == nil { self.commitComment() }
             if let o = self.closeObserver { NotificationCenter.default.removeObserver(o) }
             if let o = self.thumbnailObserver { NotificationCenter.default.removeObserver(o) }
         }
+        w.cancelNameEditing = { [weak self] in self?.cancelNameEditing() }
         if cloud == nil { readLocalInformation() }
     }
 
@@ -524,31 +530,49 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
         FileOperationsController.notifyChanged(urls)
     }
 
+    private func commitComment() {
+        let url = renamedURL ?? urls[0]
+        if let field = commentField, field.stringValue != FinderComment.read(url) {
+            FinderComment.write(field.stringValue, to: url)
+        }
+    }
+
+    private func cancelNameEditing() {
+        window?.makeFirstResponder(nil)
+        nameField?.stringValue = urls[0].lastPathComponent
+    }
+
     private func commitName() {
-        if let c = commentField, c.stringValue != FinderComment.read(urls[0]) { FinderComment.write(c.stringValue, to: urls[0]) }
-        guard let nf = nameField, urls.count == 1, nf.stringValue != urls[0].lastPathComponent, !nf.stringValue.isEmpty else { return }
-        do {
-            let new = try FileActions.rename(urls[0], to: nf.stringValue)
-            FileOperationsController.shared.pushUndo(.renamed(from: urls[0], to: new))
-            FileOperationsController.notifyChanged([urls[0], new])
-        } catch {
-            // The window is closing: tell the user the new name didn't stick.
-            NSAlert(error: error).runSheet(for: nil) { _ in }
+        guard !renaming else { return }
+        guard cloudItem == nil, let field = nameField, urls.count == 1,
+            field.stringValue != urls[0].lastPathComponent, !field.stringValue.isEmpty
+        else { window?.performClose(nil); return }
+        guard let item = localItems.first(where: { $0.url == urls[0] }) ?? knownItems.first(where: { $0.url == urls[0] }) else { return }
+        commitComment()
+        renaming = true
+        itemRenaming.rename(item, to: field.stringValue, showingHidden: showingHidden, window: window) { [weak self] renamed in
+            guard let self else { return }
+            self.renaming = false
+            if let renamed { self.renamedURL = renamed; self.window?.performClose(nil) }
         }
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
-        if sel == #selector(NSResponder.cancelOperation(_:)) { window?.makeFirstResponder(nil); return true }
-        if sel == #selector(NSResponder.insertNewline(_:)) { window?.performClose(nil); return true }
+        if sel == #selector(NSResponder.cancelOperation(_:)) { cancelNameEditing(); return true }
+        if sel == #selector(NSResponder.insertNewline(_:)) {
+            window?.makeFirstResponder(nil)
+            commitName(); return true
+        }
         return false
     }
 }
 
 /// Closing shortcuts stay local to Properties, including when another Porpoise window is open.
 final class PropertiesPanel: NSWindow {
+    var cancelNameEditing: (() -> Void)?
     override func cancelOperation(_ sender: Any?) {
         if let editor = firstResponder as? NSTextView, editor.isFieldEditor {
-            makeFirstResponder(nil)
+            cancelNameEditing?()
         } else {
             performClose(sender)
         }

@@ -6,6 +6,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     TabBarDelegate, PlacesPanelDelegate, NSSplitViewDelegate
 {
 
+    var localFileOpening = LocalFileOpening()
+    var itemRenaming = ItemRenaming()
+    var fileOperations = FileOperationsController.shared
     let customToolAvailability = CustomToolAvailabilityCache()
     var driveMediaQuickLook: CloudMediaPreviewPanel?
     var driveQuickLook: Task<Void, Never>?

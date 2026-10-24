@@ -34,6 +34,54 @@ import Testing
         #expect(c.clipboardURLs == [f])
     }
 
+    @Test func failedCancelledAndPartlySkippedMovesKeepOnlyUnmovedCuts() async throws {
+        let s = try Scratch()
+        let first = try s.file("src/first.txt", "first"), second = try s.file("src/second.txt", "second")
+        try s.file("dst/first.txt", "existing first"); try s.file("dst/second.txt", "existing second")
+        let ui = ScriptedUI(conflicts: [.init(.cancel)])
+        let c = makeController(ui)
+        c.copy([first, second], cut: true)
+        _ = try await c.paste(into: s.path("dst"))
+        #expect(c.clipboardURLs == [first, second] && c.cutURLs == [first, second])
+        ui.conflictAnswers = [.init(.rename("kept first.txt")), .init(.skip)]
+        _ = try await c.paste(into: s.path("dst"))
+        #expect(c.clipboardURLs == [second] && c.cutURLs == [second])
+        #expect(s.read("dst/first.txt") == "existing first" && s.read("dst/kept first.txt") == "first")
+        #expect(s.read("src/second.txt") == "second")
+        ui.conflictAnswers = [.init(.overwrite)]
+        _ = try await c.paste(into: s.path("dst"))
+        #expect(c.clipboardURLs.isEmpty && c.cutURLs.isEmpty && s.read("dst/second.txt") == "second")
+        let missing = s.path("src/missing.txt")
+        c.copy([missing], cut: true)
+        _ = try await c.paste(into: s.path("dst"))
+        #expect(c.clipboardURLs == [missing] && c.cutURLs == [missing])
+    }
+
+    @Test func aNewClipboardDuringAnInFlightMoveIsNeverCleared() async throws {
+        let s = try Scratch(), first = try s.file("src/a.txt", "new"), next = try s.file("next.txt", "next")
+        try s.file("dst/a.txt", "old")
+        let ui = ScriptedUI(), c = makeController(ui)
+        ui.asyncConflict = { _, _, done in
+            c.copy([next], cut: true); done(.init(.overwrite))
+        }
+        c.copy([first], cut: true)
+        _ = try await c.paste(into: s.path("dst"))
+        #expect(c.clipboardURLs == [next] && c.cutURLs == [next])
+        #expect(s.read("dst/a.txt") == "new" && s.read("next.txt") == "next")
+        ui.asyncConflict = nil
+    }
+
+    @Test func aMergedMoveWithSkippedChildrenStaysCut() async throws {
+        let s = try Scratch()
+        let folder = try s.folder("src/folder")
+        try s.file("src/folder/a.txt", "keep"); try s.file("dst/folder/a.txt", "existing")
+        let c = makeController(ScriptedUI(conflicts: [.init(.writeInto), .init(.skip)]))
+        c.copy([folder], cut: true)
+        _ = try await c.paste(into: s.path("dst"))
+        #expect(c.cutURLs == [folder] && c.clipboardURLs == [folder])
+        #expect(s.read("src/folder/a.txt") == "keep" && s.read("dst/folder/a.txt") == "existing")
+    }
+
     @Test func aCutReplacedOnTheClipboardBySomeoneElseIsCopiedInstead() async throws {
         let s = try Scratch()
         let mine = try s.file("src/mine.txt"), theirs = try s.file("src/theirs.txt")

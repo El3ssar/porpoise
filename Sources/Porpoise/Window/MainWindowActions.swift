@@ -175,9 +175,8 @@ extension MainWindowController {
 
     @objc func moveToTrash(_ sender: Any?) {
         if view.list.isRenaming { return }
-        if NSEvent.modifierFlags.contains(.shift) { deleteItem(sender); return }
         guard hasSelection else { enterSelectionMode(prompt: "Select the files and folders that should be moved to the Trash."); return }
-        FileOperationsController.shared.trash(selectedURLs, window: window)
+        fileOperations.trash(selectedURLs, window: window)
     }
 
     /// Opt-in App Cleanup: reviews the selected apps' Library files (all unchecked) before moving them to the Trash.
@@ -188,10 +187,12 @@ extension MainWindowController {
 
     @objc func deleteItem(_ sender: Any?) {
         guard hasSelection else { enterSelectionMode(prompt: "Select the files and folders that should be permanently deleted."); return }
-        FileOperationsController.shared.delete(selectedURLs, window: window)
+        fileOperations.delete(selectedURLs, window: window)
     }
 
-    @objc func properties(_ sender: Any?) { PropertiesWindow.show(urls: actionTargets, items: view.model.selectedItems) }
+    @objc func properties(_ sender: Any?) {
+        PropertiesWindow.show(urls: actionTargets, items: view.model.selectedItems, showingHidden: view.model.props.showHidden)
+    }
 
     @objc func restoreFromTrash(_ sender: Any?) {
         let unknown = FileOperationsController.shared.restore(selectedURLs, window: window)
