@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.14.1
+## 0.14.2
 
 - **You approve every administrator action, with Touch ID.** Porpoise's administrator helper (version 7) no longer acts just because Porpoise asks: each action carries your approval, which the helper checks itself, through the macOS dialog that offers Touch ID or your password.
   - Standard: changing items in /Applications, /Library or other disks. One approval covers about five minutes and ends when the screen locks or you switch users.

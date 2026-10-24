@@ -26,7 +26,8 @@ files() { LC_ALL=C grep -r -a -l "$@" "$MOUNT" || true; }
 
 while IFS= read -r f; do
     [ -n "$f" ] || continue
-    homes=$(LC_ALL=C grep -a -o '/Users/[^/[:cntrl:]]*/' "$f" | sort -u)
+    # /Users/Shared is not anyone's home (the helper names it); a match of '/Users/' alone isn't a home path either.
+    homes=$(LC_ALL=C grep -a -o '/Users/[^/[:cntrl:]]*/' "$f" | grep -vx '/Users/Shared/' | sort -u || true)
     # fd and ripgrep are the projects' own release builds (checksum-pinned): Rust keeps their CI's crate paths.
     case "$f" in */Contents/Helpers/fd | */Contents/Helpers/rg) homes=$(grep -vx '/Users/runner/' <<<"$homes" || true) ;; esac
     if [ -n "$homes" ]; then fail "$f" "contains a path in a home folder"; fi
