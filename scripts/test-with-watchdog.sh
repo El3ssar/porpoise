@@ -16,7 +16,10 @@ for a in "$@"; do
     case "$a" in --filter | --filter=* | --skip | --skip=*) alone=0 ;; esac
 done
 swift build "${build[@]}" || exit $?
-marker=$(mktemp)
+run_artifacts=$(mktemp -d)
+trap 'rm -rf "$run_artifacts"' EXIT
+marker="$run_artifacts/crash-marker"
+touch "$marker"
 here=$(dirname "$0")
 test_command=(swift)
 # Use the actual toolchain executable: macOS strips DYLD variables from the /usr/bin/swift shim.
@@ -25,21 +28,18 @@ if [[ -n "${PORPOISE_DENY_KEYCHAIN_DYLIB:-}" ]]; then
 fi
 started=$SECONDS
 
-# Runs `swift test` with the given arguments within what is left of the time limit.
-watched() {
-    "${test_command[@]}" test "$@" &
-    local pid=$! status
+# Waits for one owned process within the shared deadline (discovery is bounded too).
+wait_for_process() {
+    local pid=$1 label=$2 status
     while ((SECONDS - started < limit)); do
         if ! kill -0 "$pid" 2>/dev/null; then
             wait "$pid"
             status=$?
-            # Crash reports are written a moment after the process dies.
-            if ((status != 0)); then sleep 5; python3 "$here/crash-reports.py" "$marker"; fi
             return $status
         fi
         sleep 1
     done
-    echo "::error::swift test still running after ${limit}s; stacks of the test processes follow"
+    echo "::error::$label still running after ${limit}s; stacks of the test processes follow"
     for p in $(pgrep -f 'swiftpm-testing-helper|\.xctest'); do
         echo "=== $(ps -o command= -p "$p" | cut -c1-200)"
         sample "$p" 2 -mayDie 2>/dev/null | sed -n '/Call graph:/,/Total number in stack/p' | head -600
@@ -48,11 +48,36 @@ watched() {
     return 1
 }
 
+# Runs `swift test` with the given arguments and proves it finished, even if a
+# test calls exit(0). Keep one invocation so SwiftPM still merges all coverage.
+watched() {
+    local discovery="$run_artifacts/discovered" output="$run_artifacts/output" fifo="$run_artifacts/live-output"
+    local pid tee_pid status
+    "${test_command[@]}" test "$@" list --skip-build > "$discovery" 2> "$run_artifacts/discovery-errors" &
+    pid=$!
+    wait_for_process "$pid" 'swift test list'
+    status=$?
+    if ((status != 0)); then cat "$run_artifacts/discovery-errors"; return "$status"; fi
+
+    mkfifo "$fifo" || return 1
+    tee "$output" < "$fifo" &
+    tee_pid=$!
+    "${test_command[@]}" test "$@" > "$fifo" 2>&1 &
+    pid=$!
+    wait_for_process "$pid" 'swift test'
+    status=$?
+    # Wait for the live transcript to finish before checking its final summaries.
+    wait_for_process "$tee_pid" 'test output stream' || status=1
+    rm -f "$fifo"
+    # Crash reports are written a moment after the process dies.
+    if ((status != 0)); then sleep 5; python3 "$here/crash-reports.py" "$marker"; return "$status"; fi
+    python3 "$here/check-test-completion.py" "$discovery" "$output"
+}
+
 status=0
 if ((alone)); then
     PORPOISE_TESTS_ALONE=1 watched "$@" --filter "BusyPoolTests|MemoryBudgetTests|ScannerStarvationTests" || status=$?
 fi
 # The whole run last (also after a failure above): its coverage is the one scripts/coverage.py reads.
 watched "$@" || status=$?
-rm -f "$marker"
 exit $status
