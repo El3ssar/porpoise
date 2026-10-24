@@ -127,8 +127,8 @@ public actor CloudEditSessionStore<Engine: CloudEditEngine> {
             do {
                 let session = try await shared.value
                 openSessions.insert(session.id); return session
-            } catch _ where shared.isCancelled && !Task.isCancelled {
-                // The caller that started it gave up; this one starts again.
+            } catch _ where !Task.isCancelled {
+                // Its starter's failure may be its own (canceled, or stopped in Activity): this caller tries itself.
                 if opening[key] == shared { opening[key] = nil }
             }
         }

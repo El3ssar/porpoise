@@ -99,4 +99,23 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: session.localURL.path) && gate.count == 2)
         #expect(try records(scratch.url) == 1)
     }
+
+    /// Activity cancels an open through its checkpoint, not by canceling the task.
+    @Test func anOpenStoppedInActivityLeavesTheOtherItsCopy() async throws {
+        struct Stopped: Error {}
+        let scratch = try Scratch()
+        let gate = Gate(), stop = Gate()
+        let store = CloudEditSessionStore(engine: Engine(directory: scratch.url, gate: gate))
+        let file = File(id: "f1", revision: "r1")
+        let stoppable = CloudTransferContext(checkpoint: { if stop.isOpen { throw Stopped() } })
+        let first = Task { try await store.openSession(file, context: stoppable) }
+        await expectEventually { gate.count == 1 }
+        let second = Task { try await store.openSession(file) }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        stop.release()
+        await #expect(throws: Stopped.self) { try await first.value }
+        gate.release()
+        let session = try await second.value
+        #expect(FileManager.default.fileExists(atPath: session.localURL.path) && gate.count == 2)
+    }
 }
