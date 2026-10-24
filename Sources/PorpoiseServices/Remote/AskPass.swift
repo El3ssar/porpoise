@@ -3,6 +3,18 @@ import PorpoiseCore
 
 /// Native password / confirmation prompt. ssh calls our own binary with `--askpass "<prompt>"`.
 public enum AskPass {
+    /// Automatic answer during an explicitly approved host-key change.
+    public static func acceptedAnswer(prompt: String, fingerprint: String?) -> String? {
+        guard let fingerprint, !fingerprint.isEmpty, isHostKeyConfirmation(prompt) else { return nil }
+        return prompt.lowercased().contains("please type") ? "no" : fingerprint
+    }
+
+    public static func isHostKeyConfirmation(_ prompt: String) -> Bool {
+        let lower = prompt.lowercased()
+        return lower.contains("yes/no") || lower.contains("continue connecting")
+            || (lower.contains("please type") && lower.contains("fingerprint"))
+    }
+
     /// Path of a tiny script ssh can execute as SSH_ASKPASS (it calls back into the app binary).
     static let scriptPath: String = writeScript(in: Settings.supportFolder)
 

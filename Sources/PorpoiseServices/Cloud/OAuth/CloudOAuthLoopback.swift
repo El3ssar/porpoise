@@ -100,13 +100,20 @@ public final class CloudOAuthLoopback: @unchecked Sendable {
             var noSignal: Int32 = 1
             setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
             var bytes = Data()
-            while bytes.range(of: Data("\r\n\r\n".utf8)) == nil, bytes.count < 8192 {
-                try ready(fd, deadline: deadline)
-                var buffer = [UInt8](repeating: 0, count: 2048)
-                let count = recv(fd, &buffer, buffer.count, 0)
-                guard count > 0 else { break }
-                bytes.append(contentsOf: buffer.prefix(count))
+            // A speculative browser connection must not occupy the listener for the whole sign-in timeout.
+            let clientDeadline = min(deadline, Date().addingTimeInterval(min(1, timeout / 4)))
+            do {
+                while bytes.range(of: Data("\r\n\r\n".utf8)) == nil, bytes.count < 8192 {
+                    try ready(fd, deadline: clientDeadline)
+                    var buffer = [UInt8](repeating: 0, count: 2048)
+                    let count = recv(fd, &buffer, buffer.count, 0)
+                    guard count > 0 else { break }
+                    bytes.append(contentsOf: buffer.prefix(count))
+                }
+            } catch CloudOAuthError.timeout {
+                continue
             }
+            guard bytes.range(of: Data("\r\n\r\n".utf8)) != nil else { continue }
             let line = String(decoding: bytes, as: UTF8.self).components(separatedBy: "\r\n").first ?? ""
             let parts = line.split(separator: " ")
             guard parts.count == 3, parts[0] == "GET", parts[1].hasPrefix("/oauth/callback?"),
