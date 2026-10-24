@@ -119,7 +119,8 @@ import Testing
         }
         let content = try #require(controller.window?.contentView)
         let locked = try #require(buttons(content).first { $0.title == "Locked" })
-        #expect(locked.image is ChoiceImage)
+        // Breeze's box in a palette theme; AppKit's own checkbox in the native theme (W-270 UI-1).
+        #expect((locked.image is ChoiceImage) == !Tokens.isNative)
         controller.window?.close()
     }
 
