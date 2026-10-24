@@ -123,7 +123,7 @@ jobs:
 
       - name: Workflow integrity
         if: steps.ci.outputs.passed != 'true'
-        run: python3 scripts/test-workflow-pins.py && python3 scripts/test-ci-proof.py && python3 scripts/test-bundled-tools.py
+        run: python3 scripts/test-workflow-pins.py && python3 scripts/test-ci-proof.py && python3 scripts/test-bundled-tools.py && python3 scripts/test-test-completion.py
 
       - name: Crash symbol tooling
         if: steps.ci.outputs.passed != 'true'
