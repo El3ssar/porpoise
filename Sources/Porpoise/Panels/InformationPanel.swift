@@ -8,7 +8,7 @@ import QuickLookThumbnailing
 /// Dolphin's Information panel (F10 here): large preview, name and metadata of the hovered item, the selection,
 /// or the current folder.
 final class InformationPanel: NSView {
-    private let preview = NSImageView()
+    private let preview = PreviewImageView()
     let codePreview = CodePreviewView(frame: .zero)
     private var codeCleanup: URL?
     private let previewSpinner = NSProgressIndicator()
@@ -322,6 +322,7 @@ final class InformationPanel: NSView {
         previewStatus.stringValue = ""
         previewSpinner.stopAnimation(nil)
         preview.image = nil
+        preview.isPicture = false
         nameLabel.stringValue = ""
         grid.arrangedSubviews.forEach { $0.removeFromSuperview() }
     }
@@ -384,6 +385,7 @@ final class InformationPanel: NSView {
         previewStatus.stringValue = ""
         previewSpinner.stopAnimation(nil)
         preview.image = Icons.shared.image("document-multiple", size: 128) ?? Icons.shared.image("folder", size: 128)
+        preview.isPicture = false
         nameLabel.stringValue = "\(urls.count) items selected"
         // The view already has the items (thousands may be selected; no need to read each from disk again).
         let wanted = Set(urls)
@@ -405,6 +407,7 @@ final class InformationPanel: NSView {
         previewSpinner.stopAnimation(nil)
         let big = Self.previewSize
         preview.image = Icons.shared.image(for: item, size: big)
+        preview.isPicture = false
         // Text thumbnail preferences stay unchanged. The explicit Information preview has its own switch.
         let settings = Settings.shared
         let withinSizeLimit = settings.previewMaxSizeMiB <= 0 || item.size <= Int64(settings.previewMaxSizeMiB) * 1024 * 1024
@@ -435,7 +438,10 @@ final class InformationPanel: NSView {
                             }
                         }
                         guard !Task.isCancelled, let self, self.shownURLs == [item.url] else { return }
-                        if let image { self.preview.image = local.pathExtension == "pdf" ? Thumbnails.paperPreview(image) : image }
+                        if let image {
+                            self.preview.image = local.pathExtension == "pdf" ? Thumbnails.paperPreview(image) : image
+                            self.preview.isPicture = true
+                        }
                     }
                     let context = CloudTransferContext(progress: { [weak self] bytes, total in
                         Task { @MainActor in
@@ -454,7 +460,12 @@ final class InformationPanel: NSView {
             }
             return
         }
-        if let t = Thumbnails.shared.thumbnail(for: item, size: big) { preview.image = t } else { observeThumbnail(item) }
+        if let t = Thumbnails.shared.thumbnail(for: item, size: big) {
+            preview.image = t
+            preview.isPicture = true
+        } else {
+            observeThumbnail(item)
+        }
     }
 
     private func clearCodePreview() {
@@ -513,6 +524,7 @@ final class InformationPanel: NSView {
             // Kept until the next update: a smaller size for the same file may arrive first.
             if let t = Thumbnails.shared.thumbnail(for: item, size: Self.previewSize) {
                 self.preview.image = t
+                self.preview.isPicture = true
                 // The video's poster too, if the player is already there (thumbnails can take a while).
                 if self.poster.superview != nil { self.poster.image = t }
             }

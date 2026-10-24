@@ -41,3 +41,25 @@ extension DesignTokensTests {
         #expect(Tokens.themeColor(light) == Tokens.themeColor(system))
     }
 }
+
+extension DesignTokensTests {
+    /// A file's picture is fitted, centred and drawn with rounded corners; an icon is drawn as AppKit draws it.
+    @Test func picturesHaveRoundedCorners() throws {
+        let red = NSImage(size: CGSize(width: 200, height: 100), flipped: false) { r in
+            NSColor.red.setFill(); r.fill(); return true
+        }
+        let view = PreviewImageView(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        view.imageScaling = .scaleProportionallyUpOrDown
+        view.image = red
+        view.isPicture = true
+        #expect(view.pictureRect == CGRect(x: 0, y: 25, width: 100, height: 50))
+        let rep = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: rep)
+        let scale = CGFloat(rep.pixelsWide) / view.bounds.width
+        func alpha(_ x: CGFloat, _ yFromTop: CGFloat) -> CGFloat {
+            rep.colorAt(x: Int(x * scale), y: Int(yFromTop * scale))?.alphaComponent ?? 0
+        }
+        // The picture's corner is cut; its middle is drawn.
+        #expect(alpha(0.5, 25.5) < 0.2 && alpha(50, 50) > 0.9)
+    }
+}
