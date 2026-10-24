@@ -1029,17 +1029,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             // Sorted off the main thread: typing and scrolling stay smooth with thousands of results.
             self.model.sortSearchResults(items) { [weak self] apply in
                 guard let self, self.searchGeneration == generation else { return }
-                // The same search's next batch keeps what's shown and adds to it.
-                let old = self.model.searchResults ?? []
-                let adding =
-                    self.model.isSearching && !old.isEmpty && items.count >= old.count
-                    && old.indices.allSatisfy { items[$0].url == old[$0].url }
-                self.animatingItems(searchStyle: true, onlyAdding: adding) {
-                    // Shown for the results only: never saved as the folder's style.
-                    if !self.model.isSearching { self.model.showSearchView() }
-                    self.model.searchMatches = matches
-                    apply()
-                }
+                self.showSearchBatch(items, matches: matches, applying: apply)
             }
             self.statusBar.progress = done ? nil : 0.5
             if done {
@@ -1078,18 +1068,24 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             let matches = SearchMatches(text: text, contents: contents)
             self.model.sortSearchResults(items) { [weak self] apply in
                 guard let self, self.cloudSearch === run else { return }
-                let old = self.model.searchResults ?? []
-                let adding =
-                    self.model.isSearching && !old.isEmpty && items.count >= old.count
-                    && old.indices.allSatisfy { items[$0].url == old[$0].url }
-                self.animatingItems(searchStyle: true, onlyAdding: adding) {
-                    if !self.model.isSearching { self.model.showSearchView() }
-                    self.model.searchMatches = matches
-                    apply()
-                }
+                self.showSearchBatch(items, matches: matches, applying: apply)
             }
         }
         run.start()
+    }
+
+    private func showSearchBatch(_ items: [FileItem], matches: SearchMatches, applying apply: () -> Void) {
+        // The same search's next batch keeps what's shown and adds to it.
+        let old = model.searchResults ?? []
+        let adding =
+            model.isSearching && !old.isEmpty && items.count >= old.count
+            && old.indices.allSatisfy { items[$0].url == old[$0].url }
+        animatingItems(searchStyle: true, onlyAdding: adding) {
+            // Shown for the results only: never saved as the folder's style.
+            if !model.isSearching { model.showSearchView() }
+            model.searchMatches = matches
+            apply()
+        }
     }
 
     func searchBar(_ bar: SearchBar, hint: String?) {
