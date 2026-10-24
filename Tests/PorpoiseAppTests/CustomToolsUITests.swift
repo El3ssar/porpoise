@@ -161,12 +161,20 @@ import Testing
         var tools = (0..<10).map { CustomTool(name: "Text \($0)", executable: "/usr/bin/true", arguments: []) }
         for index in tools.indices { tools[index].extensions = ["txt"] }
         try Settings.shared.saveCustomTools(tools)
-        let start = ContinuousClock.now
+        let entered = Flag(), release = DispatchSemaphore(value: 0)
+        owner.customToolAvailability.beforeMatching = {
+            #expect(!Thread.isMainThread)
+            entered.set()
+            guard !Thread.isMainThread else { return }
+            #expect(release.wait(timeout: .now() + eventualTimeout) == .success)
+        }
+        defer { owner.customToolAvailability.beforeMatching = nil; release.signal() }
         let menu = owner.customToolMenu(.contextMenu)
-        let elapsed = start.duration(to: .now)
-        print("Custom tools: 100k selection / 10 tools main-thread menu construction \(elapsed)")
-        #expect(elapsed < .milliseconds(100), "Selection matching must not run synchronously while constructing a menu.")
+        try #require(await eventually { entered.isSet })
         #expect(menu.items.count == 10)
+        #expect(menu.items.allSatisfy { !$0.isEnabled })
+        owner.customToolAvailability.beforeMatching = nil
+        release.signal()
         #expect(await eventually { menu.items.allSatisfy(\.isEnabled) })
         owner.view.model.selection = []
         #expect(!owner.validateMenuItem(menu.items[0]))

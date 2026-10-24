@@ -18,6 +18,10 @@ import PorpoiseServices
     private var reasons: [UUID: String] = [:]
     private var completions: [() -> Void] = []
 
+    #if DEBUG || PORPOISE_TEST_HOOKS
+    var beforeMatching: (() -> Void)?
+    #endif
+
     var isPreparing: Bool { !ready }
 
     func preparedReason(for id: UUID) -> String? { ready ? reasons[id] : "Checking selection…" }
@@ -30,7 +34,13 @@ import PorpoiseServices
         if key != next {
             key = next; generation &+= 1; ready = false; reasons = [:]; completions = []
             let token = generation, rows = model.rows, selection = model.selection
+            #if DEBUG || PORPOISE_TEST_HOOKS
+            let beforeMatching = beforeMatching
+            #endif
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                #if DEBUG || PORPOISE_TEST_HOOKS
+                beforeMatching?()
+                #endif
                 let items = rows.compactMap { selection.contains($0.item.url) ? $0.item : nil }
                 let context = CustomToolContext(folder: next.folder, otherFolder: next.otherFolder, items: items)
                 var reasons: [UUID: String] = [:]

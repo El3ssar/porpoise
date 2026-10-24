@@ -68,12 +68,16 @@ struct TemplateStoreTests {
         let body = String(repeating: "{name} ", count: 1000) + String(repeating: "x", count: 4 << 20)
         let template = FileTemplate(title: "Note", filename: "Note.txt", contents: Data(body.utf8))
         let store = TemplateStore(directory: scratch.path("Templates"))
-        let t = Date()
+        let render = store.renderTemplate
+        var renders = 0
+        store.renderTemplate = { template, pattern, context in
+            renders += 1
+            return try render(template, pattern, context)
+        }
         let found = try store.preview(template, pattern: "Note {counter:04}.txt", folder: scratch.url, context: TemplateContext(name: "x"))
-        let elapsed = Date().timeIntervalSince(t)
         #expect(found.name == "Note 2001.txt" && found.counter == 2001, "\(found.name)")
         #expect(String(decoding: found.contents.prefix(10), as: UTF8.self) == "Note 2001 ")
-        #expect(elapsed < 2, "\(elapsed) s")
+        #expect(renders == 1, "contents are expanded only after the free name is found")
         // Names already read: the folder isn't listed again (a name missing from them is taken as free).
         let given = try store.preview(
             template, pattern: "Note {counter:04}.txt", folder: scratch.path("missing"), context: TemplateContext(name: "x"),
