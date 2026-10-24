@@ -75,8 +75,9 @@ extension AppDelegate {
         guard attention, let w = windows.first(where: { $0.window?.isKeyWindow == true }) ?? windows.first else {
             return StatusCenter.post(text)
         }
-        w.view.messageBar.show(text, error: false, action: "Review in Activity…") {
-            w.view.messageBar.dismiss()
+        let bar = w.view.messageBar
+        bar.show(text, error: false, action: "Review in Activity…") { [weak bar] in
+            bar?.dismiss()
             ActivityWindowController.shared.show()
         }
         w.view.needsLayout = true

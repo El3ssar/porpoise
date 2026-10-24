@@ -121,9 +121,9 @@ final class FileOperationsDialogs: FileOperationsUI {
         {
             let source = activity.failedSources.count == 1 ? activity.failedSources[0] : nil
             let link = source.flatMap { CloudAccounts.shared.info(for: $0)?.webLink }
-            c.messageBar.show(notice, error: false, action: link == nil ? nil : "Open in Browser") {
+            c.messageBar.show(notice, error: false, action: link == nil ? nil : "Open in Browser") { [weak c] in
                 if let link, let source { NSWorkspace.shared.open(AccountActions.webLink(link, account: CloudAccounts.shared.account(for: source))) }
-                c.messageBar.dismiss()
+                c?.messageBar.dismiss()
             }
             c.needsLayout = true
             return
