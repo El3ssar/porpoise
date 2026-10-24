@@ -246,24 +246,13 @@ In the file list: arrows move (⇧ extends), Space is Quick Look, ⌫ goes back,
 | Edit | Invert Selection | ⌥⇧⌘A |
 | Edit | Select Matching… | ⇧⌘S |
 | Edit | Deselect Matching… | ⌥⇧⌘S |
-| View | Zoom In | ⌘+ or ⌘= |
-| View | Reset Zoom Level | ⌘0 |
-| View | Zoom Out | ⌘- |
-| View | View Mode › Icons | ⌘1 |
-| View | View Mode › Details | ⌘2 |
-| View | View Mode › Compact | ⌘3 |
-| View | View Mode › Columns | ⌘4 |
+| View | as Icons | ⌘1 |
+| View | as Details | ⌘2 |
+| View | as Compact | ⌘3 |
+| View | as Columns | ⌘4 |
 | View | Show Previews | F12 |
 | View | Show Hidden Files | ⇧⌘. |
-| View | Adjust View Display Style… | ⌘J |
-| View | Linked Browsing | ⌃⌘L |
-| View | Split | F3 |
-| View | Split View to Tabs | ⇧⌘F3 |
-| View | Pop out Split View | ⇧F3 |
-| View | Focus Other View | ⌘F3 |
-| View | Focus Left View | ⌥← |
-| View | Focus Right View | ⌥→ |
-| View | Reload | F5 |
+| View | Hide Status Bar | ⌘/ |
 | View | Show Panels › Places | F9 |
 | View | Show Panels › Information | F10 or ⌥⌘I |
 | View | Show Panels › Folders | F7 |
@@ -273,6 +262,18 @@ In the file list: arrows move (⇧ extends), Space is Quick Look, ⌫ goes back,
 | View | Show Panels › Focus Terminal Panel | ⇧⌘F4 |
 | View | Location Bar › Editable Location | F6 |
 | View | Location Bar › Replace Location | ⌘L |
+| View | Split | F3 |
+| View | Linked Browsing | ⌃⌘L |
+| View | Split View to Tabs | ⇧⌘F3 |
+| View | Pop out Split View | ⇧F3 |
+| View | Focus Other View | ⌘F3 |
+| View | Focus Left View | ⌥← |
+| View | Focus Right View | ⌥→ |
+| View | Zoom In | ⌘+ or ⌘= |
+| View | Zoom Out | ⌘- |
+| View | Reset Zoom Level | ⌘0 |
+| View | Reload | F5 |
+| View | Adjust View Display Style… | ⌘J |
 | View | Enter Full Screen | ⌃⌘F |
 | Go | Up | ⌥↑ or ⌘↑ |
 | Go | Back | ⌘[ or ⌘← |

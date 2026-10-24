@@ -81,6 +81,8 @@ public final class Settings {
 
     // Interface › Status & Location bars
     @Pref("statusBar2") public var statusBarMode: StatusBarMode = .fullWidth
+    /// The style View › Show Status Bar brings back (the one it had when hidden from the menu).
+    @Pref("statusBarShown") public var statusBarShownMode: StatusBarMode = .fullWidth
     @Pref("zoomSlider2") public var showZoomSlider: Bool = true
     @Pref("editableUrl") public var editableLocation: Bool = false
     @Pref("fullPathUrl") public var showFullPathInLocation: Bool = false

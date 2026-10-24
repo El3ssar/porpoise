@@ -93,6 +93,6 @@ import Testing
         #expect(throws: (any Error).self) { try ToolbarCommand.validate([.location, .back, .back]) }
         Settings.shared.toolbarCommands = [.back]
         #expect(Settings.shared.toolbarCommands == layout)
-        Settings.shared.resetAll(); #expect(Settings.shared.toolbarCommands == ToolbarCommand.defaults)
+        Settings.shared.resetAll(); #expect(Settings.shared.toolbarCommands == Settings.shared.defaultToolbarCommands)
     }
 }

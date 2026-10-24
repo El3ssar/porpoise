@@ -63,6 +63,20 @@ extension MainWindowController {
     /// Column view's preview column for a selected file, on or off (every window).
     @objc func togglePreviewColumn(_ sender: Any?) { Settings.shared.columnsShowPreview.toggle() }
 
+    /// View › Hide/Show Status Bar (⌘/, as in Finder): hides it, and brings back the style it had.
+    @objc func toggleStatusBar(_ sender: Any?) {
+        let s = Settings.shared
+        if s.statusBarMode == .disabled {
+            s.statusBarMode = s.statusBarShownMode == .disabled ? .fullWidth : s.statusBarShownMode
+        } else {
+            s.statusBarShownMode = s.statusBarMode
+            s.statusBarMode = .disabled
+        }
+    }
+
+    /// View › Always Show Tab Bar (Settings › General › Tabs): the tab bar even with one tab.
+    @objc func toggleTabBar(_ sender: Any?) { Settings.shared.alwaysShowTabBar.toggle() }
+
     @objc func toggleHiddenFiles(_ sender: Any?) {
         mutateProps { $0.showHidden.toggle() }
         view.statusBar.showMessage(view.model.props.showHidden ? "Hidden files are shown." : "Hidden files are hidden.")

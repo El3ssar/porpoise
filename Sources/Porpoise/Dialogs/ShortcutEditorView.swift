@@ -191,6 +191,6 @@ enum ShortcutSettingsPage {
         editor.widthAnchor.constraint(equalTo: form.stack.widthAnchor, constant: -60).isActive = true
         form.section("Toolbar")
         form.button("Customize Toolbar…") { ToolbarCustomizationWindow.show() }
-        form.button("Restore Default Toolbar") { Settings.shared.toolbarCommands = ToolbarCommand.defaults }
+        form.button("Restore Default Toolbar") { Settings.shared.toolbarCommands = Settings.shared.defaultToolbarCommands }
     }
 }

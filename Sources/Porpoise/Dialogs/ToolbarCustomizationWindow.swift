@@ -21,6 +21,7 @@ extension ToolbarCommand {
         case .customTools: return "hammer"
         case .share: return "square.and.arrow.up"
         case .airDrop: return "airdrop"
+        case .action: return "ellipsis.circle"
         }
     }
     var toolbarIdentifier: NSToolbarItem.Identifier { .init("Porpoise.toolbar." + rawValue) }
@@ -55,7 +56,7 @@ final class ToolbarCustomizationWindow: SecondaryWindowController, NSToolbarDele
         toolbar.allowsDisplayModeCustomization = false; toolbar.displayMode = .iconAndLabel
         window.toolbar = toolbar; toolbar.itemIdentifiers = Settings.shared.toolbarCommands.map(\.toolbarIdentifier)
         let reset = ClosureButton(title: "Restore Default Toolbar") { [weak self] _ in
-            self?.toolbar.itemIdentifiers = ToolbarCommand.defaults.map(\.toolbarIdentifier); self?.persist()
+            self?.toolbar.itemIdentifiers = Settings.shared.defaultToolbarCommands.map(\.toolbarIdentifier); self?.persist()
         }
         let customize = ClosureButton(title: "Customize…") { [weak self] _ in self?.toolbar.runCustomizationPalette(nil) }
         contentStack(
@@ -81,7 +82,9 @@ final class ToolbarCustomizationWindow: SecondaryWindowController, NSToolbarDele
         }
         if commands != Settings.shared.toolbarCommands { Settings.shared.toolbarCommands = commands }
     }
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { ToolbarCommand.defaults.map(\.toolbarIdentifier) }
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        Settings.shared.defaultToolbarCommands.map(\.toolbarIdentifier)
+    }
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { ToolbarCommand.allCases.map(\.toolbarIdentifier) }
     func toolbarImmovableItemIdentifiers(_ toolbar: NSToolbar) -> Set<NSToolbarItem.Identifier> { [.init("Porpoise.toolbar.location")] }
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool)

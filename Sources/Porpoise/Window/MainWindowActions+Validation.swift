@@ -210,6 +210,8 @@ extension MainWindowController: NSMenuItemValidation {
             return view.showsColumns
         case #selector(togglePreviews(_:)): item.state = p.previews ? .on : .off
         case #selector(toggleHiddenFiles(_:)): item.state = p.showHidden ? .on : .off
+        case #selector(toggleStatusBar(_:)): item.title = Settings.shared.statusBarMode == .disabled ? "Show Status Bar" : "Hide Status Bar"
+        case #selector(toggleTabBar(_:)): item.state = Settings.shared.alwaysShowTabBar ? .on : .off
         case #selector(toggleFoldersFirst(_:)): item.state = p.foldersFirst ? .on : .off
         case #selector(toggleHiddenLast(_:)): item.state = p.hiddenLast ? .on : .off
         case #selector(sortBy(_:)): item.state = (item.representedObject as? String) == p.sortRole.rawValue ? .on : .off
