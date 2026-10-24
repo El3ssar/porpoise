@@ -157,6 +157,7 @@ import Testing
         #expect(await eventually { !owner.view.model.isLoading })
         let entries = (0..<100_000).map { FileItem(url: scratch.path("\($0).txt"), name: "\($0).txt", isDirectory: false) }
         owner.view.model.searchResults = entries
+        try #require(await eventually { owner.view.model.rows.count == entries.count })
         owner.view.model.selection = Set(entries.map(\.url))
         var tools = (0..<10).map { CustomTool(name: "Text \($0)", executable: "/usr/bin/true", arguments: []) }
         for index in tools.indices { tools[index].extensions = ["txt"] }

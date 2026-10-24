@@ -84,6 +84,7 @@ struct TemplateStoreTests {
             existing: ["Note 0001.txt", "Note 0002.txt", "Note 0003.txt", "Note 0004.txt", "Note 0005.txt"])
         // The first free number: 6 (counting on from a counter already moved gave 7).
         #expect(given.name == "Note 0006.txt")
+        #expect(renders == 2)
     }
 
     @Test func boundedImportsRejectLinksAndSpecialFiles() throws {
