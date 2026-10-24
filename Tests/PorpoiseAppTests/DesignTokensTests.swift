@@ -77,6 +77,10 @@ extension DesignTokensTests {
         let menu = try #require(Icons.shared.menuIcon("go-previous"))
         #expect(menu.isTemplate)
         #expect(Icons.shared.image("go-previous", size: 18) != nil && Icons.nativeSymbol(for: "folder") == nil)
+        // The Places sidebar keeps its own family (the bundled, accent-tinted glyphs) for names the map also has.
+        let sidebar = Icons.shared.image("media-eject", size: 16, symbols: false)
+        let toolbar = Icons.shared.image("media-eject", size: 16)
+        #expect(sidebar != nil && toolbar != nil && sidebar !== toolbar)
         Settings.shared.updateAppearance { $0.iconTheme = "Breeze" }
         #expect(Icons.nativeSymbol(for: "go-previous") == nil)
         #expect(Icons.shared.menuIcon("go-previous")?.isTemplate != true)

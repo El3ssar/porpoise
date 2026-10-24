@@ -57,16 +57,18 @@ final class Icons {
 
     /// Icon image by freedesktop name. `selected` uses highlighted-text colors (like KDE's selected state). It draws
     /// in the colors of the look it's drawn in (light or dark), so menus and buttons holding it follow a change.
-    func image(_ name: String, size: CGFloat, selected: Bool = false, folder: Bool = false) -> NSImage? {
+    /// `symbols`: false keeps the bundled artwork where the native icon theme would draw an SF Symbol, for a surface
+    /// drawn in one family of its own (the Places sidebar, accent-tinted).
+    func image(_ name: String, size: CGFloat, selected: Bool = false, folder: Bool = false, symbols: Bool = true) -> NSImage? {
         let px = Int(size)
         let preferences = Settings.shared.appearancePreferences
         let tintKey = Theme.paletteColor(.folderTint, dark: true).hex + Theme.paletteColor(.folderTint, dark: false).hex
-        let key = "\(preferences.iconTheme)|\(preferences.folderVariant)|\(tintKey)|\(name)|\(px)|\(selected)|\(folder)" as NSString
+        let key = "\(preferences.iconTheme)|\(preferences.folderVariant)|\(tintKey)|\(name)|\(px)|\(selected)|\(folder)|\(symbols)" as NSString
         if let img = cache.object(forKey: key) { return img }
         let image: NSImage?
         if name == "airdrop", ["Native macOS", Self.nativeColourTheme].contains(preferences.iconTheme) {
             image = airDropImage(size: size, selected: selected, systemGlyph: Self.systemAirDropGlyph)
-        } else if let symbol = Self.nativeSymbol(for: name), let glyph = symbolImage(symbol, size: size, selected: selected) {
+        } else if symbols, let symbol = Self.nativeSymbol(for: name), let glyph = symbolImage(symbol, size: size, selected: selected) {
             image = glyph
         } else {
             image = portableImage(name, size: size, selected: selected, folder: folder)
