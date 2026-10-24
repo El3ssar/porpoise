@@ -10,10 +10,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     var itemRenaming = ItemRenaming()
     var fileOperations = FileOperationsController.shared
     let customToolAvailability = CustomToolAvailabilityCache()
-    var driveMediaQuickLook: CloudMediaPreviewPanel?
-    var driveQuickLook: Task<Void, Never>?
-    var driveQuickLookURLs: [URL: URL] = [:]
-    var driveQuickLookLoading: Set<URL> = []
+    var spacePreview: SpacePreviewPanel?
     let root = RootView()
     let toolbar = ToolbarView()
     let tabBar = TabBarView()
@@ -441,8 +438,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
 
     func windowWillClose(_ notification: Notification) {
         finishInformationMove()
-        driveQuickLook?.cancel()
-        driveMediaQuickLook?.close()
+        spacePreview?.close()
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
         AppDelegate.shared.saveSession()

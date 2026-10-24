@@ -18,7 +18,7 @@ extension MainWindowController {
     }
 
     func containerDidChangeURL(_ c: ViewContainer) {
-        if c === view { driveMediaQuickLook?.close() }
+        if c === view { spacePreview?.close() }
         linkedNavigationChanged(c)
         AppDelegate.shared.sessionChanged()
         if c === view || tab.containers.contains(where: { $0 === c }) {

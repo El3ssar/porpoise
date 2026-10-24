@@ -40,7 +40,7 @@ extension Theme {
         // Accents are kept as resolved colors by the controls: work them out in the look the window is drawn in.
         window.effectiveAppearance.performAsCurrentDrawingAppearance {
             window.titlebarAppearsTransparent = true
-            window.backgroundColor = windowBackground.usingColorSpace(.sRGB) ?? windowBackground
+            window.backgroundColor = window is MaterialBackedWindow ? .clear : windowBackground.usingColorSpace(.sRGB) ?? windowBackground
             (window.contentViewController as? ThemedTabViewController)?.tintTabs()
             if let tabs = window.contentViewController as? NSTabViewController {
                 // Pages not shown now are outside the window's views.

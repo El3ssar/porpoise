@@ -190,6 +190,13 @@ Finder's shortcuts, plus Dolphin's panels and split view. Prefer Dolphin's own k
 rename, Return opens, ⌦ trash)? Settings › Shortcuts › Key set › Dolphin switches in one click. Any menu command can be
 given its own shortcut there, and **Help › Keyboard Shortcuts (⌘?)** lists everything in effect.
 
+Code and text have offline syntax highlighting in the Space preview, Information panel and Column preview.
+Large text previews show up to 2,000 lines or 256 KiB, with a note when only the beginning is shown. The Information
+panel's “Show preview” switch controls its code preview; the “Text files” preview setting controls file thumbnails.
+In the Space preview, all four arrows follow the browser selection, Space/Escape close, and the previous/next buttons
+browse a multiple selection. Open With, Share and Full Screen are available. System Quick Look's Markup, Rotate,
+Trim, index sheet and full-screen slideshow are not available in this preview.
+
 In the file list: arrows move (⇧ extends), Space is Quick Look, ⌫ goes back, `/` filters, ⌥. shows hidden files,
 ⌃Space adds or removes the current item, and typing a name selects it. The menu bar with the default keys:
 

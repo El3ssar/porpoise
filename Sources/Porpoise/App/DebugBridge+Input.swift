@@ -6,6 +6,7 @@ import PorpoiseFileSystem
 import AppKit
 import PorpoiseCore
 import PorpoiseServices
+import Quartz
 
 extension DebugBridge {
     /// Clicks, keys, menus, gestures and navigation, as a user would do them.
@@ -32,6 +33,7 @@ extension DebugBridge {
         "searchbar": DebugBridge.searchbarCommand,
         "navigate": DebugBridge.navigateCommand,
         "action": DebugBridge.actionCommand,
+        "preview": DebugBridge.previewCommand,
         "select": DebugBridge.selectCommand,
         "hit": DebugBridge.hitCommand,
         "wheel": DebugBridge.wheelCommand,
@@ -258,6 +260,21 @@ extension DebugBridge {
             NSApp.sendAction(NSSelectorFromString(arg), to: w, from: nil)
         } else {
             NSApp.sendAction(NSSelectorFromString(arg), to: nil, from: nil)
+        }
+    }
+
+    /// Open the app-owned preview without application activation or global input.
+    func previewCommand(_ arg: String) {
+        wc?.quickLook(nil)
+        // An inactive test instance has no key window. Order only its own preview forward; never activate it.
+        if let panel = wc?.spacePreview {
+            if panel.isVisible {
+                // Explicit fixture capture only: inactive panels normally hide from WindowServer.
+                if arg == "visible" { panel.hidesOnDeactivate = false }
+                panel.orderFrontRegardless()
+            } else {
+                panel.hidesOnDeactivate = true
+            }
         }
     }
 
