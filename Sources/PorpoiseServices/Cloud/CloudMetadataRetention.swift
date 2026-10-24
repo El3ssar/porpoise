@@ -9,7 +9,7 @@ struct CloudMetadataRetention {
         var listings: Int
         var bytes: Int
     }
-    struct Owner: Sendable {
+    struct Owner: Equatable, Sendable {
         var items: Set<String> = []
         var subtrees: Set<String> = []
         var listings: Set<String> = []

@@ -58,7 +58,12 @@ public struct OneDriveEditEngine: CloudEditEngine, @unchecked Sendable {
     public func remoteCopy(_ file: OneDriveItem, beside: URL) async -> URL? { nil }
 }
 extension CloudEditSessionStore where Engine == OneDriveEditEngine {
-    public init(client: OneDriveClient) { self.init(engine: OneDriveEditEngine(client: client)) }
+    public init(client: OneDriveClient) {
+        let engine = OneDriveEditEngine(client: client), name = CloudMetadataOwnership.key("edits", directory: engine.directory)
+        self.init(engine: engine) { [weak client] files, complete in
+            client?.metadataCache.setRetentionOwner(name, .init(owner: .init(items: Set(files.map(\.id))), files: files, complete: complete))
+        }
+    }
     public func begin(_ file: OneDriveItem, context: CloudTransferContext = .init()) async throws -> Session {
         if let existing = cachedSession(file) { retainCopy(existing.id); return existing }
         return try await openSession(file, context: context)

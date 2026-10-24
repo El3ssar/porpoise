@@ -54,7 +54,12 @@ public struct DropboxEditEngine: CloudEditEngine, @unchecked Sendable {
     public func remoteCopy(_ file: DropboxItem, beside: URL) async -> URL? { nil }
 }
 extension CloudEditSessionStore where Engine == DropboxEditEngine {
-    public init(client: DropboxClient) { self.init(engine: DropboxEditEngine(client: client)) }
+    public init(client: DropboxClient) {
+        let engine = DropboxEditEngine(client: client), name = CloudMetadataOwnership.key("edits", directory: engine.directory)
+        self.init(engine: engine) { [weak client] files, complete in
+            client?.metadataCache.setRetentionOwner(name, .init(owner: .init(items: Set(files.map(\.id))), files: files, complete: complete))
+        }
+    }
     public func begin(_ file: DropboxItem, context: CloudTransferContext = .init()) async throws -> Session {
         if let existing = cachedSession(file) { retainCopy(existing.id); return existing }
         return try await openSession(file, context: context)

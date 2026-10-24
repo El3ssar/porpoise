@@ -7,7 +7,7 @@ extension DriveFile: CloudMetadataItem {}
 public final class DriveMetadataCache: @unchecked Sendable {
     public typealias Snapshot = CloudMetadataCache<DriveFile>.Snapshot
     public let directory: URL
-    private let storage: CloudMetadataCache<DriveFile>
+    let storage: CloudMetadataCache<DriveFile>
     public init(accountID: UUID, directory: URL? = nil) {
         self.directory = directory ?? Self.root.appendingPathComponent(accountID.uuidString)
         storage = CloudMetadataCache(directory: self.directory)

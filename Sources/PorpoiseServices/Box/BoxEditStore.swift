@@ -58,7 +58,12 @@ public struct BoxEditEngine: CloudEditEngine, @unchecked Sendable {
     public func remoteCopy(_ file: BoxItem, beside: URL) async -> URL? { nil }
 }
 extension CloudEditSessionStore where Engine == BoxEditEngine {
-    public init(client: BoxClient) { self.init(engine: BoxEditEngine(client: client)) }
+    public init(client: BoxClient) {
+        let engine = BoxEditEngine(client: client), name = CloudMetadataOwnership.key("edits", directory: engine.directory)
+        self.init(engine: engine) { [weak client] files, complete in
+            client?.metadataCache.setRetentionOwner(name, .init(owner: .init(items: Set(files.map(\.id))), files: files, complete: complete))
+        }
+    }
     public func begin(_ file: BoxItem, context: CloudTransferContext = .init()) async throws -> Session {
         if let existing = cachedSession(file) { retainCopy(existing.id); return existing }
         return try await openSession(file, context: context)

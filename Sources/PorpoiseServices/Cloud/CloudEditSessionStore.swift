@@ -78,9 +78,19 @@ public actor CloudEditSessionStore<Engine: CloudEditEngine> {
     private var openSessions: Set<UUID> = []
     /// Opens in flight by file identity: an overlapping open of the same file shares the one copy.
     private var opening: [String: Task<Session, Error>] = [:]
+    private let metadataOwnership: (@Sendable ([Engine.File], Bool) -> Void)?
+    private var metadataOwnershipComplete = true
     public init(engine: Engine) {
+        self.init(engine: engine, metadataOwnership: nil)
+    }
+    init(engine: Engine, metadataOwnership: (@Sendable ([Engine.File], Bool) -> Void)?) {
         self.engine = engine
-        for url in (try? FileManager.default.contentsOfDirectory(at: engine.directory, includingPropertiesForKeys: nil)) ?? []
+        self.metadataOwnership = metadataOwnership
+        let records: [URL]
+        do { records = try FileManager.default.contentsOfDirectory(at: engine.directory, includingPropertiesForKeys: nil) } catch {
+            records = []; metadataOwnershipComplete = CloudMetadataOwnership.missing(error)
+        }
+        for url in records
         where url.pathExtension == "json" {
             if let bytes = try? Data(contentsOf: url), var session = try? JSONDecoder().decode(Session.self, from: bytes),
                 session.localURL.standardizedFileURL.path.hasPrefix(engine.directory.standardizedFileURL.path + "/")
@@ -89,8 +99,11 @@ public actor CloudEditSessionStore<Engine: CloudEditEngine> {
                     session.state = .unsent("Saved changes have not reached the cloud.")
                 }
                 sessions[session.id] = session
+            } else {
+                metadataOwnershipComplete = false
             }
         }
+        metadataOwnership?(sessions.values.map(\.file), metadataOwnershipComplete)
     }
     public func session(_ id: UUID) -> Session? { sessions[id] }
     public func pending() -> [Session] {
@@ -202,12 +215,20 @@ public actor CloudEditSessionStore<Engine: CloudEditEngine> {
         return try await saveSession(id)
     }
     private func update(_ session: Session) throws {
-        try FileManager.default.createDirectory(at: engine.directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let url = engine.directory.appendingPathComponent(session.id.uuidString + ".json")
-        try JSONEncoder().encode(session).write(to: url, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-        let handle = try FileHandle(forWritingTo: url); try handle.synchronize(); try handle.close()
-        sessions[session.id] = session
+        // Protect new identity/ancestry before writing, and keep the old durable identity until commit.
+        metadataOwnership?(sessions.values.map(\.file) + [session.file], metadataOwnershipComplete)
+        do {
+            try FileManager.default.createDirectory(at: engine.directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            let url = engine.directory.appendingPathComponent(session.id.uuidString + ".json")
+            try JSONEncoder().encode(session).write(to: url, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            let handle = try FileHandle(forWritingTo: url); try handle.synchronize(); try handle.close()
+            sessions[session.id] = session
+        } catch {
+            metadataOwnership?(sessions.values.map(\.file), metadataOwnershipComplete)
+            throw error
+        }
+        metadataOwnership?(sessions.values.map(\.file), metadataOwnershipComplete)
         NotificationCenter.default.post(name: Self.changed, object: session.id)
     }
 }

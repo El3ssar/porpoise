@@ -29,6 +29,9 @@ public actor CloudOfflineStore {
     private let freeSpace: @Sendable () -> (available: Int64, total: Int64)
     private let held: @Sendable (CloudItemRef) async -> Bool
     private let changed: @Sendable (CloudOfflineSnapshot) -> Void
+    private let metadataOwnerName: String
+    private var metadataDurableOwner = CloudMetadataRetention.Owner()
+    private var metadataOwnerComplete = true
 
     public init(
         source: CloudContentSource, directory: URL, recentLimit: Int64? = 5_000_000_000,
@@ -38,6 +41,7 @@ public actor CloudOfflineStore {
         publishPacing: @escaping @Sendable () async -> Void = CloudOfflineStore.defaultPublishPacing
     ) throws {
         self.source = source; self.directory = directory; self.limit = recentLimit
+        metadataOwnerName = CloudMetadataOwnership.key("offline", directory: directory)
         self.held = held; self.changed = changed; self.publishPacing = publishPacing
         self.freeSpace =
             freeSpace ?? {
@@ -62,6 +66,11 @@ public actor CloudOfflineStore {
         // A corrupt index has no trusted ownership records. All disposable objects can be rebuilt.
         if loaded == nil { try? fm.removeItem(at: directory.appendingPathComponent("objects")) }
         self.index = recovered
+        metadataDurableOwner = CloudMetadataOwnership.offline(recovered)
+        metadataOwnerComplete =
+            (loaded != nil || !fm.fileExists(atPath: file.path)) && CloudMetadataOwnership.valid(recovered, account: source.accountID)
+        (source as? CloudMetadataOwningContentSource)?.setMetadataOwner(
+            metadataOwnerName, owner: metadataDurableOwner, complete: metadataOwnerComplete)
     }
 
     public func snapshot() -> CloudOfflineSnapshot {
@@ -314,12 +323,17 @@ public actor CloudOfflineStore {
         for id in Array(index.items.keys) { try await discardPartials(id) }
         index = CloudOfflineIndex(); progress = [:]; errors = [:]
         try FileManager.default.removeItem(at: directory)
+        (source as? CloudMetadataOwningContentSource)?.setMetadataOwner(metadataOwnerName, owner: nil, complete: true)
         publish()
     }
     /// `now`: what the user asked for (pins) and bytes just committed are written before returning; the rest (what
     /// was remembered, last use, evictions) a moment later, once for everything that changes meanwhile.
     private func persist(now: Bool = false) throws {
         guard !invalidated else { throw CancellationError() }
+        // Until a write commits, both the last durable state and the current intent can own offline bytes.
+        (source as? CloudMetadataOwningContentSource)?.setMetadataOwner(
+            metadataOwnerName, owner: CloudMetadataOwnership.union(metadataDurableOwner, CloudMetadataOwnership.offline(index)),
+            complete: metadataOwnerComplete)
         if now {
             try write()
         } else if !writeScheduled {
@@ -338,6 +352,10 @@ public actor CloudOfflineStore {
         let url = directory.appendingPathComponent("index.json")
         try JSONEncoder().encode(index).write(to: url, options: .atomic)
         try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        metadataDurableOwner = CloudMetadataOwnership.offline(index)
+        metadataOwnerComplete = CloudMetadataOwnership.valid(index, account: source.accountID)
+        (source as? CloudMetadataOwningContentSource)?.setMetadataOwner(
+            metadataOwnerName, owner: metadataDurableOwner, complete: metadataOwnerComplete)
     }
     /// A store wiped, or a folder removed meanwhile (an account, a test's scratch folder), is not written again.
     private func writeIfScheduled() {
