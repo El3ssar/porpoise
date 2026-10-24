@@ -9,6 +9,8 @@ import QuickLookThumbnailing
 /// or the current folder.
 final class InformationPanel: NSView {
     private let preview = NSImageView()
+    let codePreview = CodePreviewView(frame: .zero)
+    private var codeCleanup: URL?
     private let previewSpinner = NSProgressIndicator()
     private let previewStatus = NSTextField(wrappingLabelWithString: "")
     private var playbackSession: CloudPlaybackSession?
@@ -86,7 +88,8 @@ final class InformationPanel: NSView {
         // Clicking the video plays or pauses it.
         player.addGestureRecognizer(NSClickGestureRecognizer(target: controls, action: #selector(MediaControls.togglePlay)))
         controls.isHidden = true
-        [preview, player, controls, nameLabel, grid].forEach(addSubview)
+        codePreview.isHidden = true
+        [preview, codePreview, player, controls, nameLabel, grid].forEach(addSubview)
         addSubview(previewSpinner)
         previewStatus.font = .systemFont(ofSize: Tokens.FontSize.caption)
         previewStatus.textColor = Theme.windowTextInactive
@@ -103,6 +106,7 @@ final class InformationPanel: NSView {
         [thumbnailObserver, windowCloseObserver].compactMap { $0 }.forEach(NotificationCenter.default.removeObserver)
         playerWork?.cancel()
         drivePreview?.cancel()
+        if let codeCleanup { try? FileManager.default.removeItem(at: codeCleanup) }
     }
 
     override func draw(_ dirty: NSRect) {}
@@ -113,6 +117,7 @@ final class InformationPanel: NSView {
         let w = bounds.width
         let side = min(w - 40, Self.maxPreviewSide)
         preview.frame = CGRect(x: (w - side) / 2, y: 16, width: side, height: Settings.shared.infoShowPreview ? side : 0)
+        codePreview.frame = CGRect(x: 12, y: preview.frame.minY, width: max(0, w - 24), height: preview.frame.height)
         // Decided from the file type (never by loading the media on the main thread).
         previewSpinner.frame = CGRect(x: preview.frame.midX - 8, y: preview.frame.midY - 8, width: 16, height: 16)
         previewStatus.frame = CGRect(x: preview.frame.minX, y: preview.frame.maxY - 26, width: preview.frame.width, height: 24)
@@ -173,7 +178,11 @@ final class InformationPanel: NSView {
         windowCloseObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: newWindow,
             queue: .main
-        ) { [weak self] _ in self?.stopPlayer() }
+        ) { [weak self] _ in
+            self?.stopPlayer()
+            self?.drivePreview?.cancel()
+            self?.clearCodePreview()
+        }
     }
 
     override func viewDidMoveToWindow() {
@@ -183,6 +192,7 @@ final class InformationPanel: NSView {
         DispatchQueue.main.async { [weak self] in
             guard let self, self.window == nil else { return }
             self.stopPlayer()
+            self.clearCodePreview()
             self.drivePreview?.cancel(); self.drivePreview = nil
             self.previewSpinner.stopAnimation(nil)
             self.shownURLs = []
@@ -248,6 +258,7 @@ final class InformationPanel: NSView {
     private func update(_ urls: [URL]) {
         grid.arrangedSubviews.forEach { $0.removeFromSuperview() }
         observeThumbnail(nil)
+        clearCodePreview()
         defer { needsLayout = true }
         if urls.count > 1 {
             stopPlayer()
@@ -295,6 +306,14 @@ final class InformationPanel: NSView {
         previewSpinner.stopAnimation(nil)
         let big = Self.previewSize
         preview.image = Icons.shared.image(for: item, size: big)
+        // Text thumbnail preferences stay unchanged. The explicit Information preview has its own switch.
+        let settings = Settings.shared
+        let withinSizeLimit = settings.previewMaxSizeMiB <= 0 || item.size <= Int64(settings.previewMaxSizeMiB) * 1024 * 1024
+        let remoteText = settings.previewRemote && (SyntaxLanguage.detect(filename: item.name) != nil || item.utType?.conforms(to: .text) == true)
+        if settings.infoShowPreview, withinSizeLimit, CodePreviewView.supports(item), item.url.isFileURL || remoteText {
+            showCodePreview(item)
+            return
+        }
         guard Settings.shared.infoShowPreview, Thumbnails.wantsPreview(item) else { return }
         // A cloud file's large preview arrives in steps; a video's or a song's is its thumbnail, cached like any other.
         if PreviewSource.isProgressive(item.url), item.utType?.conforms(to: .audiovisualContent) != true {
@@ -337,6 +356,45 @@ final class InformationPanel: NSView {
             return
         }
         if let t = Thumbnails.shared.thumbnail(for: item, size: big) { preview.image = t } else { observeThumbnail(item) }
+    }
+
+    private func clearCodePreview() {
+        codePreview.cancel()
+        codePreview.isHidden = true
+        preview.isHidden = false
+        if let codeCleanup { try? FileManager.default.removeItem(at: codeCleanup) }
+        codeCleanup = nil
+    }
+
+    private func showCodePreview(_ item: FileItem) {
+        codePreview.isHidden = false
+        preview.isHidden = true
+        if item.url.isFileURL { codePreview.load(item.url, filename: item.name); return }
+        drivePreview = Task { @MainActor [weak self] in
+            do {
+                if item.url.scheme == "archive" {
+                    let local = try await ArchiveBrowser.localCopy(item.url)
+                    guard let self, !Task.isCancelled, self.shownURLs == [item.url] else { return }
+                    self.codePreview.load(local, filename: item.name)
+                } else if PreviewSource.isProgressive(item.url) {
+                    try await PreviewSource.progressive(item.url, context: .init()) { [weak self] local in
+                        guard let self, !Task.isCancelled, self.shownURLs == [item.url] else { throw CancellationError() }
+                        self.codePreview.load(local, filename: item.name)
+                    }
+                } else {
+                    let local = try await PreviewSource.localFile(for: item.url, thumbnail: false)
+                    guard let self, !Task.isCancelled, self.shownURLs == [item.url] else {
+                        if let cleanup = local.cleanup { try? FileManager.default.removeItem(at: cleanup) }
+                        return
+                    }
+                    self.codeCleanup = local.cleanup
+                    self.codePreview.load(local.file, filename: item.name)
+                }
+            } catch {
+                guard let self, !Task.isCancelled, self.shownURLs == [item.url] else { return }
+                self.previewStatus.stringValue = "Text preview unavailable"
+            }
+        }
     }
 
     /// Waits for the item's thumbnail. One observer at most: the previous one is removed on every update.

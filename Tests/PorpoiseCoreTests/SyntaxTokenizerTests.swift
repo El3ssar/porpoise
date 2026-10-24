@@ -51,6 +51,28 @@ import Testing
         #expect(try tokens("# Header\n`code`", .markdown).contains { $0.1 == .heading })
         #expect(try tokens("select name from items where id = 42 -- comment", .sql).contains { $0.0 == "select" && $0.1 == .keyword })
     }
+    @Test func requestedProgrammingLanguagesHaveLexicalSamples() throws {
+        let samples: [(SyntaxLanguage, String, String)] = [
+            (.c, "int value = 42; // note", "int"), (.cpp, "constexpr int value = 42; // note", "constexpr"),
+            (.objectiveC, "@interface Dolphin // note", "Dolphin"),
+            (.javascript, "const name = \"literal\"; // note", "const"),
+            (.typescript, "interface Dolphin {} // note", "interface"),
+            (.css, "body { color: red; /* note */ }", "color"),
+            (.shell, "if true; then echo 'literal'; fi # note", "then"),
+            (.go, "func dolphin() { return 42 } // note", "func"),
+            (.rust, "fn dolphin() { let x = 42; } // note", "fn"),
+            (.java, "public class Dolphin {} // note", "public"),
+            (.kotlin, "fun dolphin() = 42 // note", "fun"),
+            (.ruby, "def dolphin; puts 'literal'; end # note", "def"),
+            (.lua, "local dolphin = 42 -- note", "local"),
+        ]
+        for (language, source, expected) in samples {
+            let values = try tokens(source, language)
+            #expect(values.contains { $0.0 == expected })
+            #expect(values.contains { $0.1 == .comment && $0.0.contains("note") })
+        }
+    }
+
     @Test func numericPrefixesDoNotConsumeIdentifiersAndRustLifetimesDoNotSwallowCode() throws {
         let values = try tokens("let x = 42abc; let y = 0xFF; let z = -1.2e-3", .swift)
         #expect(values.filter { $0.1 == .number }.map(\.0) == ["42", "0xFF", "-1.2e-3"])

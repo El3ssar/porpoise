@@ -263,12 +263,8 @@ extension DebugBridge {
         }
     }
 
-    /// Establish the documented Quick Look data source for inactive test instances, without activating them.
-    func previewCommand(_ arg: String) {
-        guard let wc, let panel = QLPreviewPanel.shared() else { return }
-        wc.beginPreviewPanelControl(panel)
-        wc.quickLook(nil)
-    }
+    /// Open the app-owned preview without application activation or global input.
+    func previewCommand(_ arg: String) { wc?.quickLook(nil) }
 
     func selectCommand(_ arg: String) {
         if let v = wc?.view { v.list.select(arg.hasPrefix("/") ? URL(fileURLWithPath: arg) : v.url.appendingPathComponent(arg)) }

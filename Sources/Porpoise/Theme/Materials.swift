@@ -1,6 +1,9 @@
 import AppKit
 import PorpoiseServices
 
+/// Windows whose stable material content supplies their backing, including while content loads.
+protocol MaterialBackedWindow: AnyObject {}
+
 /// A macOS material (vibrancy) tinted with a theme color: the wallpaper glows through softly, like Finder's
 /// sidebar and toolbar, while the colors stay those of the theme. The native theme leaves the material untinted, as
 /// Finder does.

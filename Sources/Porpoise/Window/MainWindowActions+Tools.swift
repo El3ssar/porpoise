@@ -41,10 +41,8 @@ extension MainWindowController {
     }
 
     @objc func quickLook(_ sender: Any?) {
-        if driveMediaQuickLook?.isVisible == true { driveMediaQuickLook?.close(); return }
-        if showDriveMediaQuickLook() { return }
-        guard let p = QLPreviewPanel.shared() else { return }
-        if p.isVisible { p.orderOut(nil) } else { prepareDriveQuickLook(); p.makeKeyAndOrderFront(nil) }
+        if spacePreview?.isVisible == true { spacePreview?.close(); return }
+        showSpacePreview()
     }
 
     @objc func revealInFinder(_ sender: Any?) {

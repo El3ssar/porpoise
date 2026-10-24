@@ -108,8 +108,27 @@ public enum CodePreviewLoader {
         // A byte cap can split the final scalar; only a truncated input may drop that incomplete suffix.
         for trim in 0...(truncated ? min(trimLimit, payload.count) : 0) {
             if encoding != .utf8 && trim % 2 != 0 { continue }
+            if encoding == .utf8 && trim > 0 && !incompleteUTF8(Array(payload.suffix(trim))) { continue }
+            if encoding != .utf8 && trim == 2 {
+                let tail = Array(payload.suffix(2))
+                let unit = encoding == .utf16LittleEndian ? UInt16(tail[0]) | UInt16(tail[1]) << 8 : UInt16(tail[0]) << 8 | UInt16(tail[1])
+                guard (0xD800...0xDBFF).contains(unit) else { continue }
+            }
             if let text = String(data: payload.prefix(payload.count - trim), encoding: encoding) { return text }
         }
         throw Failure.invalidText
     }
+    private static func incompleteUTF8(_ suffix: [UInt8]) -> Bool {
+        guard let lead = suffix.first else { return false }
+        let length = (0xC2...0xDF).contains(lead) ? 2 : (0xE0...0xEF).contains(lead) ? 3 : (0xF0...0xF4).contains(lead) ? 4 : 0
+        guard suffix.count < length, suffix.dropFirst().allSatisfy({ (0x80...0xBF).contains($0) }) else { return false }
+        if suffix.count > 1 {
+            let second = suffix[1]
+            if lead == 0xE0 && second < 0xA0 || lead == 0xED && second >= 0xA0 || lead == 0xF0 && second < 0x90 || lead == 0xF4 && second >= 0x90 {
+                return false
+            }
+        }
+        return true
+    }
+
 }

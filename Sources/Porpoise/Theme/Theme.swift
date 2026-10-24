@@ -184,7 +184,8 @@ enum Theme {
         NSApp.effectiveAppearance.performAsCurrentDrawingAppearance {
             for o in observers { o.apply() }
             for window in NSApp.windows {
-                window.backgroundColor = Theme.windowBackground.usingColorSpace(.sRGB) ?? Theme.windowBackground
+                window.backgroundColor =
+                    window is MaterialBackedWindow ? .clear : Theme.windowBackground.usingColorSpace(.sRGB) ?? Theme.windowBackground
                 window.contentView?.redrawAll()
             }
             redressWindows()

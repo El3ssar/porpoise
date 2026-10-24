@@ -71,6 +71,17 @@ struct CodePreviewLoaderTests {
         }
     }
 
+    @Test func byteCapDoesNotHideMalformedText() async throws {
+        for suffix: [UInt8] in [[0xFF], [0xC0], [0xE0, 0x80], [0xED, 0xA0], [0xF4, 0x90]] {
+            let data = Data("valid".utf8) + Data(suffix) + Data([65])
+            try await withFile(data) { file in
+                await #expect(throws: CodePreviewLoader.Failure.invalidText) {
+                    try await CodePreviewLoader.load(file, limits: .init(bytes: data.count - 1))
+                }
+            }
+        }
+    }
+
     @Test func emptySymlinkAndCancellation() async throws {
         try await withFile(Data()) { file in
             let link = file.deletingLastPathComponent().appendingPathComponent("link.swift")
