@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.3
+
+- **The Information panel stays on the right.** In a split view, the Information panel (F10) always sits at the right edge of the window, beside both panes; switching panes changes what it shows, without moving it. (0.12.2 had it follow the highlighted pane.)
+- Compare Files keeps a file's tags, extended attributes and permissions when it saves.
+- Creating an item with administrator rights says so when an item of that name appeared meanwhile, instead of reporting it created.
+- The Information panel's details for one slow network disk no longer hold up the others, and Undo decides whether a move crossed disks off the main thread.
+- Many small fixes in views, panels and dialogs from the code review.
+
 ## 0.14.2
 
 - **You approve every administrator action, with Touch ID.** Porpoise's administrator helper (version 7) no longer acts just because Porpoise asks: each action carries your approval, which the helper checks itself, through the macOS dialog that offers Touch ID or your password.
