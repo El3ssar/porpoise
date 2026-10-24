@@ -186,8 +186,9 @@ final class FileOperationsDialogs: FileOperationsUI {
         list.addSubview(scroll); sheet.contentView?.addSubview(list)
         guard let owner = sheetOwner(window) else { return }
         func button(_ title: String, x: CGFloat, primary: Bool, action: @escaping () -> Void) {
-            let button = TransferErrorActionButton(title: title, action: action)
-            button.primary = primary; button.bezelStyle = .rounded
+            // AppKit's own buttons: Return for the primary one, Escape for the other.
+            let button = ClosureButton(title: title) { _ in action() }
+            button.bezelStyle = .push
             button.keyEquivalent = primary ? "\r" : "\u{1b}"
             button.frame = CGRect(x: x, y: 14, width: 100, height: 28)
             sheet.contentView?.addSubview(button)
@@ -201,6 +202,7 @@ final class FileOperationsDialogs: FileOperationsUI {
             owner.endSheet(sheet); sheet.orderOut(nil)
             FileOperationsController.shared.retry(activity, window: owner)
         }
+        Theme.dress(sheet)  // a palette theme's look and accent; the native theme keeps macOS's
         owner.beginSheet(sheet)
     }
 
@@ -291,18 +293,6 @@ final class SystemClipboard: FileClipboard {
     func readURLs() -> [URL] { (pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL]) ?? [] }
 
     func clear() { pasteboard.clearContents() }
-}
-
-/// Uses the same explicit accent/default drawing as conflict sheets, including while the owner is inactive.
-private final class TransferErrorActionButton: ConflictActionButton {
-    private let perform: () -> Void
-    init(title: String, action: @escaping () -> Void) {
-        perform = action
-        super.init(frame: .zero)
-        self.title = title; target = self; self.action = #selector(invoke)
-    }
-    required init?(coder: NSCoder) { fatalError() }
-    @objc private func invoke() { perform() }
 }
 
 private final class TransferErrorListView: NSView {
