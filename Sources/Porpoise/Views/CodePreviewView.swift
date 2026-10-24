@@ -45,7 +45,9 @@ final class CodePreviewView: NSView {
         textView.textContainer?.widthTracksTextView = true
         textView.setAccessibilityLabel("Code preview")
         scrollView.drawsBackground = false
+        scrollView.clipsToBounds = true
         scrollView.contentView.drawsBackground = false
+        scrollView.contentView.clipsToBounds = true
         scrollView.hasVerticalScroller = true
         scrollView.documentView = textView
         note.font = .systemFont(ofSize: 11)
@@ -66,7 +68,7 @@ final class CodePreviewView: NSView {
     override func layout() {
         super.layout()
         let footer: CGFloat = note.stringValue.isEmpty ? 0 : 26
-        note.frame = NSRect(x: 12, y: 4, width: max(0, bounds.width - 24), height: footer)
+        note.frame = NSRect(x: 12, y: 4, width: max(0, bounds.width - 24), height: max(0, footer - 8))
         scrollView.frame = NSRect(x: 0, y: footer, width: bounds.width, height: max(0, bounds.height - footer))
         textView.setFrameSize(NSSize(width: scrollView.contentSize.width, height: max(textView.frame.height, scrollView.contentSize.height)))
     }
