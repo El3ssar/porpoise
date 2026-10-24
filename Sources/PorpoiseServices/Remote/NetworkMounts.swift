@@ -9,7 +9,9 @@ public enum NetworkMounts {
     public static func mount(_ url: URL, completion: @escaping (Result<URL, Error>) -> Void) {
         let profile = ConnectionProfiles.shared.profile(for: url)
         var components = URLComponents(url: mountURL(url), resolvingAgainstBaseURL: false)
-        if profile?.kind == .smb, let user = profile?.user { components?.user = user }
+        if profile?.kind == .smb, let user = profile?.user?.trimmingCharacters(in: .whitespaces), !user.isEmpty {
+            components?.user = user
+        }
         let u = components?.url ?? mountURL(url)
         // Already mounted?
         if let existing = mountedVolume(for: u) { completion(.success(existing)); return }
@@ -31,9 +33,14 @@ public enum NetworkMounts {
                 PlacesModel.shared.refreshDevices()
                 completion(.success(dest))
             } else {
-                let msg =
-                    status == ECANCELED || status == Int32(-128)
-                    ? "Connection cancelled." : "Could not connect to \(u.host ?? u.absoluteString) (error \(status))."
+                let msg: String
+                if status == EEXIST {
+                    msg = "macOS reports this share is already connected. Disconnect the existing share before trying this connection."
+                } else {
+                    msg =
+                        status == ECANCELED || status == Int32(-128)
+                        ? "Connection cancelled." : "Could not connect to \(u.host ?? u.absoluteString) (error \(status))."
+                }
                 completion(.failure(RemoteError.failed(msg)))
             }
         }
@@ -76,7 +83,7 @@ public enum NetworkMounts {
     /// Where `url` is on volume `v`, mounted from `remount`: same scheme, host, effective port, requested user and share (or no share asked for).
     static func path(of url: URL, onVolume v: URL, mountedFrom remount: URL) -> URL? {
         guard remount.host?.lowercased() == url.host?.lowercased(), remount.scheme?.lowercased() == url.scheme?.lowercased() else { return nil }
-        if let user = url.user(percentEncoded: false), user != remount.user(percentEncoded: false) { return nil }
+        if let user = url.user(percentEncoded: false), !user.isEmpty, user != remount.user(percentEncoded: false) { return nil }
         let defaults = ["smb": 445, "afp": 548, "nfs": 2049, "http": 80, "https": 443, "vnc": 5900]
         let defaultPort = defaults[url.scheme?.lowercased() ?? ""]
         guard (url.port ?? defaultPort) == (remount.port ?? defaultPort) else { return nil }
