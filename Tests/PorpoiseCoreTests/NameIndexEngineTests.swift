@@ -66,7 +66,7 @@ struct NameIndexEngineTests {
         #expect(SearchScratch.posixPattern(#"\bword"#) == nil)
         #expect(SearchScratch.posixPattern("[abc") == nil)
         #expect(SearchScratch.posixPattern(#"a\-b\/c"#) == "a-b/c")
-        // Both ways give what NSRegularExpression gives on the folded name.
+        // Both ways give what NSRegularExpression gives on the original name.
         var index = NameIndex()
         let root = index.append(name: "/r", directory: true)
         let names = ["IMG_0001.JPG", "img_12.jpg", "café 2.txt", "Café.TXT", "x.jpg", "IMG_.jpg", "a b", "a-b"]
@@ -74,9 +74,21 @@ struct NameIndexEngineTests {
         for pattern in [#"^img_\d+\.jpg$"#, "^caf", #"\s"#, #"^(?:img)"#, "TXT$", #"\bb"#, "a-b"] {
             let re = try NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
             let expected = names.filter { n in
-                let f = IndexQuery.fold(n)
+                let f = n
                 return re.firstMatch(in: f, range: NSRange(f.startIndex..., in: f)) != nil
             }
+            #expect(try index.search(IndexQuery("regex:" + pattern)).map { index.name($0) } == expected, "\(pattern)")
+        }
+    }
+
+    @Test func regexUsesOriginalUnicodeNames() throws {
+        var index = NameIndex()
+        let root = index.append(name: "/r", directory: true)
+        let names = ["Résumé.txt", "Resume.txt", "RÉSUMÉ.txt", "résumé[1].txt", "日本語.txt", "e\u{301}.txt"]
+        for name in names { index.append(name: name, parent: root) }
+        for pattern in ["^Résumé", "^R[éÉ]sumé", #"résumé\[1\]"#, #"\p{Han}+"#, "^e\u{301}"] {
+            let re = try NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+            let expected = names.filter { re.firstMatch(in: $0, range: NSRange($0.startIndex..., in: $0)) != nil }
             #expect(try index.search(IndexQuery("regex:" + pattern)).map { index.name($0) } == expected, "\(pattern)")
         }
     }
