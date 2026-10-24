@@ -129,7 +129,8 @@ final class FileOperationsDialogs: FileOperationsUI {
             return
         }
         let count = max(1, activity.failedSources.count)
-        let listHeight = min(196, CGFloat(activity.errors.count) * 28)
+        let failures = activity.errorDetails
+        let listHeight = min(196, CGFloat(failures.count) * 28)
         let height = 138 + listHeight
         let sheet = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 560, height: height), styleMask: [.titled], backing: .buffered, defer: false)
         sheet.title = "Transfer Errors"
@@ -146,15 +147,15 @@ final class FileOperationsDialogs: FileOperationsUI {
             weight: .semibold)
         label("Finished files stay in place. Try Again retries the items that failed.", y: height - 82, size: 12)
         let scroll = NSScrollView(frame: CGRect(x: 20, y: 54, width: 520, height: listHeight))
-        scroll.hasVerticalScroller = activity.errors.count > 7
+        scroll.hasVerticalScroller = failures.count > 7
         scroll.drawsBackground = false
         scroll.wantsLayer = true; scroll.layer?.cornerRadius = 6; scroll.layer?.borderWidth = 1
         Theme.whenChanged(scroll) { [weak scroll] in
             scroll?.layer?.backgroundColor = Theme.viewBackground.cgColor
             scroll?.layer?.borderColor = Theme.frame.cgColor
         }
-        let document = NSView(frame: CGRect(x: 0, y: 0, width: 504, height: CGFloat(activity.errors.count) * 28))
-        for (index, failure) in activity.errorDetails.enumerated() {
+        let document = NSView(frame: CGRect(x: 0, y: 0, width: 504, height: CGFloat(failures.count) * 28))
+        for (index, failure) in failures.enumerated() {
             let error = failure.message
             let y = document.bounds.height - CGFloat(index + 1) * 28
             let source = failure.source

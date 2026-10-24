@@ -23,6 +23,7 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
     var itemRenaming = ItemRenaming()
     private var renaming = false
     private var renamedURL: URL?
+    private let showingHidden: Bool
     let sizeLabel = NSTextField(labelWithString: "Calculating…")
     private var closeObserver: NSObjectProtocol?
     private var thumbnailObserver: NSObjectProtocol?
@@ -33,14 +34,14 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
 
     /// Local files, and one cloud item (Google Drive: its sharing instead of permissions). Other remote and virtual
     /// locations (sftp://, recent:/…) have no local path to inspect. `items`: what the view knows about them.
-    static func show(urls: [URL], items: [FileItem] = []) {
+    static func show(urls: [URL], items: [FileItem] = [], showingHidden: Bool = false) {
         if let cloud = urls.first(where: PlacesModel.isCloud) {
             PropertiesWindow(cloud: cloud, item: items.first { $0.url == cloud }).present()
             return
         }
         let urls = urls.filter(\.isFileURL)
         guard !urls.isEmpty else { NSSound.beep(); return }
-        PropertiesWindow(urls: urls, items: items).present()
+        PropertiesWindow(urls: urls, items: items, showingHidden: showingHidden).present()
     }
 
     /// The cloud item shown (nil: local items).
@@ -48,8 +49,9 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
 
     convenience init(cloud url: URL, item: FileItem?) { self.init(urls: [url], cloud: (url, item)) }
 
-    init(urls: [URL], cloud: (url: URL, item: FileItem?)? = nil, items: [FileItem] = []) {
+    init(urls: [URL], cloud: (url: URL, item: FileItem?)? = nil, items: [FileItem] = [], showingHidden: Bool = false) {
         self.urls = urls
+        self.showingHidden = showingHidden
         knownItems = items
         cloudItem = cloud
         let w = PropertiesPanel(
@@ -548,7 +550,7 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
         guard let item = localItems.first(where: { $0.url == urls[0] }) ?? knownItems.first(where: { $0.url == urls[0] }) else { return }
         commitComment()
         renaming = true
-        itemRenaming.rename(item, to: field.stringValue, showingHidden: false, window: window) { [weak self] renamed in
+        itemRenaming.rename(item, to: field.stringValue, showingHidden: showingHidden, window: window) { [weak self] renamed in
             guard let self else { return }
             self.renaming = false
             if let renamed { self.renamedURL = renamed; self.window?.performClose(nil) }

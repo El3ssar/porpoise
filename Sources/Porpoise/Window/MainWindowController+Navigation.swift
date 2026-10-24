@@ -108,6 +108,6 @@ extension MainWindowController {
     }
 
     func places(_ p: PlacesPanel, emptyTrash: Void) { FileOperationsController.shared.emptyTrash(window: window) }
-    func places(_ p: PlacesPanel, properties url: URL) { PropertiesWindow.show(urls: [url]) }
+    func places(_ p: PlacesPanel, properties url: URL) { PropertiesWindow.show(urls: [url], showingHidden: view.model.props.showHidden) }
     func placesWantsViewFocus(_ p: PlacesPanel) { window?.makeFirstResponder(view.list) }
 }
