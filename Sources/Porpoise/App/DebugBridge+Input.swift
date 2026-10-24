@@ -267,7 +267,15 @@ extension DebugBridge {
     func previewCommand(_ arg: String) {
         wc?.quickLook(nil)
         // An inactive test instance has no key window. Order only its own preview forward; never activate it.
-        if let panel = wc?.spacePreview, panel.isVisible { panel.orderFrontRegardless() }
+        if let panel = wc?.spacePreview {
+            if panel.isVisible {
+                // Explicit fixture capture only: inactive panels normally hide from WindowServer.
+                if arg == "visible" { panel.hidesOnDeactivate = false }
+                panel.orderFrontRegardless()
+            } else {
+                panel.hidesOnDeactivate = true
+            }
+        }
     }
 
     func selectCommand(_ arg: String) {
