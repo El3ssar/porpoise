@@ -137,6 +137,37 @@ struct CloudMetadataRetentionPolicyTests {
         #expect(policy.prune(to: limits) == .init())
     }
 
+    @Test func conflictingAliasesProtectEveryOwnedSubtreeWithoutTrapping() {
+        for order in [["left", "right"], ["right", "left"]] {
+            var policy = Policy()
+            for id in order { policy.putFile(id, aliases: ["ambiguous"], bytes: 10) }
+            policy.putFile("left-child", parents: ["left"], bytes: 10)
+            policy.putFile("right-child", parents: ["right"], bytes: 10)
+            policy.putFile("ambiguous-child", parents: ["ambiguous"], bytes: 10)
+            policy.putFile("ordinary", bytes: 10)
+            policy.setOwner("offline", .init(subtrees: ["ambiguous"]))
+            #expect(policy.accounting.aliasConflicts == 1)
+            #expect(policy.prune(to: .init(files: 0, listings: 0, bytes: 0)) == .init(files: ["ordinary"]))
+            #expect(policy.accounting.protectedFiles == 5)
+            policy.setOwner("offline", nil)
+            #expect(policy.prune(to: .init(files: 0, listings: 0, bytes: 0)).files.count == 5)
+            #expect(policy.accounting.aliasConflicts == 0)
+        }
+    }
+
+    @Test func anOwnedSubtreeKeepsCompleteOfflineListingsUntilReleased() {
+        var policy = Policy()
+        policy.putFile("folder", aliases: ["/pinned"], bytes: 10)
+        policy.putFile("child", parents: ["/pinned"], bytes: 10)
+        policy.putListing("/pinned", items: ["child"], context: ["/pinned"], bytes: 20)
+        policy.setOwner("offline", .init(subtrees: ["folder"]))
+        let limits = Policy.Limits(files: 0, listings: 0, bytes: 0)
+        #expect(policy.prune(to: limits) == .init())
+        #expect(policy.accounting.protectedFiles == 2 && policy.accounting.protectedListings == 1)
+        policy.setOwner("offline", nil)
+        #expect(policy.prune(to: limits) == .init(files: ["folder", "child"], listings: ["/pinned"]))
+    }
+
     private final class Item {
         let payload = String(repeating: "x", count: 256)
         let live: Locked<Int>
