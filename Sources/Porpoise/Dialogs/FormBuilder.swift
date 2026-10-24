@@ -36,9 +36,16 @@ final class FormBuilder: NSObject {
         ])
         view = container
         super.init()
-        for name in [Settings.changed, NSWindow.didBecomeKeyNotification, PrivacyAccess.statusChanged] {
+        for name in [Settings.changed, PrivacyAccess.statusChanged] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.refresh() })
         }
+        // Its own window coming forward (a permission granted in System Settings meanwhile), not every window's:
+        // Settings stays alive once opened, and each refresh asks LaunchServices and the permissions again.
+        observers.append(
+            NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { [weak self] n in
+                guard let self, let w = self.view.window, n.object as? NSWindow === w else { return }
+                self.refresh()
+            })
     }
 
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }

@@ -140,12 +140,9 @@ final class FileDiffTextView: NSView {
             let target = Int(((point.y - visibleRect.minY) / max(1, visibleRect.height) * bounds.height - 10) / lineHeight)
             if let best = p.starts.indices.min(by: { abs(p.starts[$0] - target) < abs(p.starts[$1] - target) }) { jump?(best) }; return
         }
-        if canCopyChanges, !inline, abs(point.x - (bounds.width - 8) / 2) < 20 {
-            let i = row(at: point)
-            if p.rows.indices.contains(i), let c = p.rows[i].change { copyChange?(c, point.x > (bounds.width - 8) / 2) }
-        } else {
-            window?.makeFirstResponder(self)
-        }
+        // A click focuses, wherever it lands: changes are copied only with the ← → buttons (a click near the middle
+        // used to overwrite one side).
+        window?.makeFirstResponder(self)
     }
     private func color(_ row: FileDiffRow) -> NSColor {
         row.left == nil ? Theme.transferPositive : (row.right == nil ? Theme.transferDanger : Theme.transferChanged)

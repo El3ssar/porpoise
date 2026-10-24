@@ -138,4 +138,96 @@ import Testing
         #expect(ConflictDialog.methodTitles(tolerance: 2) == ["Size & date · 2 s", "Size only", "Contents"])
         #expect(ConflictDialog.methodTitles(tolerance: 120).first == "Size & date · 2 min")
     }
+
+    /// #26: unticking "Keep on this Mac" asks before removing the downloaded copy.
+    @Test func removingADownloadAsksFirst() {
+        let service = DemoOfflineService()
+        let url = URL(string: "gdrive://acct/folder/Big")!
+        service.keep([url])
+        let row = CloudOfflineRow(url: url, item: nil, service: service, provider: "Google Drive")
+        #expect(row.keep.state == .on)
+        CloudOfflineRow.confirmRemoveDownloadForTesting = { false }
+        defer { CloudOfflineRow.confirmRemoveDownloadForTesting = nil }
+        row.keep.performClick(nil)
+        #expect(!service.log.contains { $0.hasPrefix("remove") } && row.keep.state == .on)
+        CloudOfflineRow.confirmRemoveDownloadForTesting = { true }
+        row.keep.performClick(nil)
+        #expect(service.log.contains { $0.hasPrefix("remove") } && row.keep.state == .off)
+    }
+
+    /// #23: a settings page refreshes when its own window becomes key, not when any window does.
+    @Test func settingsRefreshOnlyForTheirOwnWindow() {
+        var reads = 0
+        let form = FormBuilder()
+        form.check(
+            "Probe",
+            {
+                reads += 1; return true
+            }()
+        ) { _ in }
+        let own = window(form.view), other = window(NSView())
+        defer { own.close(); other.close() }
+        let before = reads
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: other)
+        #expect(reads == before)
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: own)
+        #expect(reads == before + 1)
+    }
+
+    /// #19: the toolbar's transfer button stops ticking once nothing moves (a failure waits without a timer), and
+    /// forgets activities that are gone.
+    @Test func theTransferButtonRestsOnAFailure() async throws {
+        let w = window(NSView())
+        defer { w.close() }
+        let button = TransferToolbarButton(frame: CGRect(x: 0, y: 0, width: 30, height: 30))
+        w.contentView?.addSubview(button)
+        let controller = FileOperationsController.shared
+        let failed = Activity(kind: .copy, sources: [URL(fileURLWithPath: "/tmp/x")], destination: nil, job: nil)
+        failed.originWindow = w
+        failed.errors = ["“x” couldn’t be copied."]
+        failed.state = .failed
+        failed.finishedAt = Date().addingTimeInterval(-10)
+        controller.activities.append(failed)
+        defer {
+            controller.activities.removeAll { $0 === failed }
+            NotificationCenter.default.post(name: FileOperationsController.activityChanged, object: nil)
+        }
+        NotificationCenter.default.post(name: FileOperationsController.activityChanged, object: nil)
+        #expect(!button.tickingForTests)
+    }
+
+    /// #16: a click near the middle of a changed row only focuses: changes are copied with the buttons.
+    @Test func aClickNearTheSeamDoesntCopyAChange() throws {
+        let view = FileDiffTextView(frame: CGRect(x: 0, y: 0, width: 600, height: 400))
+        view.presentation = FileDiffPresentation(TextDifference(left: "a\nb\n", right: "a\nc\n"), inline: false)
+        var copied = 0
+        view.copyChange = { _, _ in copied += 1 }
+        let w = window(view)
+        defer { w.close() }
+        let changed = try #require(view.presentation?.rows.firstIndex { $0.change != nil })
+        for dx in [-10.0, 10] {
+            let p = view.convert(CGPoint(x: (view.bounds.width - 8) / 2 + dx, y: 10 + (CGFloat(changed) + 0.5) * view.lineHeight), to: nil)
+            let e = try #require(
+                NSEvent.mouseEvent(
+                    with: .leftMouseDown, location: p, modifierFlags: [], timestamp: 0, windowNumber: w.windowNumber, context: nil, eventNumber: 0,
+                    clickCount: 1, pressure: 1))
+            view.mouseDown(with: e)
+        }
+        #expect(copied == 0 && w.firstResponder === view)
+    }
+
+    /// #17: Save writes where a symlinked file really is (the link stays a link), and in place for a file with
+    /// another name too (both names see the new text).
+    @Test func savingKeepsLinksAndOtherNames() throws {
+        let s = try Scratch("diff-save")
+        let target = try s.file("target.txt", "old")
+        let link = try s.symlink("link.txt", to: target.path)
+        try FileDiffWindow.write("new", to: link)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == target.path)
+        #expect(s.read("target.txt") == "new")
+        let other = s.path("other.txt")
+        try FileManager.default.linkItem(at: target, to: other)
+        try FileDiffWindow.write("both", to: target)
+        #expect(s.read("other.txt") == "both" && s.read("target.txt") == "both")
+    }
 }

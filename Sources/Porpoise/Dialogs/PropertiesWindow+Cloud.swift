@@ -229,10 +229,26 @@ final class CloudOfflineRow: NSView {
         }
     }
 
+    static var confirmRemoveDownloadForTesting: (() -> Bool)?
+
     private func toggle(on: Bool) {
         if !on {
-            // Remove Download: what couldn't be removed (unsent edits…) says why.
-            if let why = service.removeDownload([url]).first { update(); text.stringValue = why }
+            // Asked first, as downloading a big folder is: a misclick would mean downloading it all again.
+            let removeIt = { [weak self] in
+                guard let self else { return }
+                // Remove Download: what couldn't be removed (unsent edits…) says why.
+                if let why = self.service.removeDownload([self.url]).first { self.update(); self.text.stringValue = why }
+            }
+            let a = NSAlert()
+            a.messageText = "Remove the downloaded copy of “\(url.lastPathComponent)”?"
+            a.informativeText = "It stays in the cloud and on your other devices; opening it here downloads it again. Edits not sent yet are kept."
+            a.addButton(withTitle: "Remove Download")
+            a.addButton(withTitle: "Cancel")
+            if let answer = Self.confirmRemoveDownloadForTesting {
+                if answer() { removeIt() } else { update() }
+                return
+            }
+            a.runSheet(for: window) { [weak self] r in if r == .alertFirstButtonReturn { removeIt() } else { self?.update() } }
             return
         }
         guard let item else { return service.keep([url]) }
