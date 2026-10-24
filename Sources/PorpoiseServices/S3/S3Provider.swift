@@ -27,16 +27,27 @@ public final class S3Provider: RemoteProvider, @unchecked Sendable {
     }
     public func rootTitle(_ url: URL) -> String { client.location.bucket }
     public func list(_ folder: URL) throws -> [FileItem] {
+        let listing = try listWithNotice(folder)
+        if let notice = listing.notice { throw RemoteError.unsupported(notice) }
+        return listing.items
+    }
+    public func listWithNotice(_ folder: URL) throws -> RemoteListing {
         let location = try location(folder)
         return try CloudAwait.run {
-            try await self.client.list(prefix: location.prefix).map { object in
+            var skipped = 0
+            let items = try await self.client.list(prefix: location.prefix).compactMap { object -> FileItem? in
                 let suffix = String(object.key.dropFirst(location.prefix.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                 // Never turn an untrusted object key into a local path component.
-                try RemoteFS.checkName(suffix)
+                do { try RemoteFS.checkName(suffix) } catch { skipped += 1; return nil }
                 return FileItem(
                     url: location.replacingKey(object.key).url, name: suffix, isDirectory: object.isFolder, size: object.size,
                     modificationDate: object.modified, contentType: object.isFolder ? "public.folder" : nil, isWritable: true)
             }
+            return RemoteListing(
+                items: items,
+                notice: skipped == 0
+                    ? nil
+                    : "\(skipped) S3 items could not be shown because their names are unsupported. Folder transfers were not allowed to omit them.")
         }
     }
     public func download(_ remote: URL, into localFolder: URL) throws -> URL {

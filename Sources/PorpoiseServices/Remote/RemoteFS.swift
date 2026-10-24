@@ -4,6 +4,8 @@ import PorpoiseCore
 /// A remote file system reachable through a command-line tool (Dolphin's KIO workers, the Mac way).
 public protocol RemoteProvider: AnyObject {
     func list(_ folder: URL) throws -> [FileItem]
+    /// Browsing may show safe siblings with an explicit notice. Transfers keep the strict `list` contract.
+    func listWithNotice(_ folder: URL) throws -> RemoteListing
     /// Copies a remote file or folder into a local folder; returns the local URL. Fails rather than
     /// overwrite an existing local item.
     func download(_ remote: URL, into localFolder: URL) throws -> URL
@@ -22,7 +24,13 @@ public protocol RemoteProvider: AnyObject {
     func rootTitle(_ url: URL) -> String
 }
 
+public struct RemoteListing {
+    public var items: [FileItem]
+    public var notice: String?
+}
+
 extension RemoteProvider {
+    public func listWithNotice(_ folder: URL) throws -> RemoteListing { RemoteListing(items: try list(folder)) }
     public func removeEmptyFolder(_ remote: URL) throws {
         throw RemoteError.unsupported("This provider cannot remove an empty moved folder safely.")
     }
