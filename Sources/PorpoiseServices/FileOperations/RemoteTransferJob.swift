@@ -595,7 +595,9 @@ final class RemoteTransferJob {
                     throw error
                 }
             } else {
-                try FilePublication.renameExclusively(staged, to: target)
+                do { try FilePublication.renameExclusively(staged, to: target) } catch let error as POSIXError where error.code == .EEXIST {
+                    throw RemoteError.exists(target.lastPathComponent)
+                }
             }
             try beforeSourceRemoval?()
             if let removal {

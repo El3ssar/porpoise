@@ -224,6 +224,22 @@ struct TransferStageJournalTests {
         #expect(try journal.store.all().isEmpty)
     }
 
+    @Test func anArrivalDuringDownloadKeepsItsBytesAndNamesTheConflict() throws {
+        let s = try Scratch(), server = try Scratch(), destination = try s.folder("dst")
+        let provider = CountingTransferProvider(root: server.url)
+        let remote = URL(string: "sftp://\(UUID().uuidString)/source")!
+        try server.file("source", "download")
+        RemoteFS.use(provider, for: remote)
+        defer { RemoteFS.use(nil, for: remote) }
+        provider.onDownload = {
+            do { try s.file("dst/source", "arrival") } catch { Issue.record(error) }
+        }
+        let job = RemoteTransferJob(kind: .copy, sources: [remote], destination: destination, control: JobControl(), rule: .ask, options: .init())
+        job.run()
+        #expect(job.results.isEmpty && s.read("dst/source") == "arrival")
+        #expect(job.errors.contains { $0.contains(RemoteError.exists("source").localizedDescription) })
+    }
+
     @Test func uploadReadsTheOriginalWithoutALocalSnapshot() throws {
         let s = try Scratch(), server = try Scratch()
         let source = try s.file("source", "upload")

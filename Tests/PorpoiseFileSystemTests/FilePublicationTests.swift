@@ -8,6 +8,24 @@ import Testing
 
 @Suite(.serialized)
 struct FilePublicationTests {
+    @Test func apfsPublicationUsesItsNativeRenameCapabilities() throws {
+        let s = try Scratch(), disk = try DiskImage(in: s)
+        let incoming = disk.volume.appendingPathComponent("incoming"), target = disk.volume.appendingPathComponent("target")
+        try Data("incoming".utf8).write(to: incoming)
+        try FilePublication.renameExclusively(incoming, to: target)
+        try Data("replacement".utf8).write(to: incoming)
+        var checkpoints = 0
+        try FilePublication.replace(
+            incoming, at: target,
+            dispose: { previous in
+                #expect(try String(contentsOf: previous, encoding: .utf8) == "incoming")
+                try FileManager.default.removeItem(at: previous)
+            }, checkpoint: { _ in checkpoints += 1 })
+        #expect(checkpoints == 0)
+        #expect(try String(contentsOf: target, encoding: .utf8) == "replacement")
+        #expect(try CopyVerification.directoryNames(disk.volume.path).filter { $0.hasPrefix(".porpoise-replaced-") }.isEmpty)
+    }
+
     @Test(arguments: ["ExFAT", "MS-DOS FAT32"])
     func copyMoveAndReplaceOnScratchVolumes(_ fileSystem: String) throws {
         let s = try Scratch(), disk = try DiskImage(name: "PPPUB", megabytes: 64, fileSystem: fileSystem, in: s)
