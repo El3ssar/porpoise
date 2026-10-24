@@ -102,7 +102,7 @@ final class CustomToolEditor: SecondaryWindowController {
     }
 }
 
-private final class CustomToolShortcutButton: NSButton {
+final class CustomToolShortcutButton: NSButton {
     private var recording = false
     private var current = KeyboardShortcut()
     private let changed: (KeyboardShortcut) -> Void
@@ -116,8 +116,15 @@ private final class CustomToolShortcutButton: NSButton {
     }
     override var acceptsFirstResponder: Bool { true }
     @objc private func record() { recording = true; title = "Press shortcut (Esc cancels)…"; window?.makeFirstResponder(self) }
+    /// Only while it's the focus: clicked into another field, ⌘A or ⌘V there are the field's, not a shortcut.
+    var isRecording: Bool { recording }
+    override func resignFirstResponder() -> Bool {
+        if recording { setShortcut(current) }
+        return super.resignFirstResponder()
+    }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if recording { keyDown(with: event); return true }; return super.performKeyEquivalent(with: event)
+        if recording, window?.firstResponder === self { keyDown(with: event); return true }
+        return super.performKeyEquivalent(with: event)
     }
     override func keyDown(with event: NSEvent) {
         guard recording else { super.keyDown(with: event); return }

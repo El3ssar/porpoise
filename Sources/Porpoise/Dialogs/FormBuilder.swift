@@ -229,22 +229,36 @@ final class FormBuilder: NSObject {
         st.minValue = Double(range.lowerBound); st.maxValue = Double(range.upperBound)
         st.increment = range.upperBound > 1000 ? 10 : 1
         let field = ClosureTextField(string: "") { [weak st] tf in
+            // Not a number ("1o0"): nothing is saved, the field shows the saved value again (0 often means "no limit").
+            guard let typed = Self.integer(tf.stringValue) else {
+                tf.stringValue = String(value())
+                NSSound.beep()
+                return
+            }
             // Out-of-range input is clamped, and the field shows the value actually saved.
-            let v = min(range.upperBound, max(range.lowerBound, tf.integerValue))
-            tf.integerValue = v
+            let v = min(range.upperBound, max(range.lowerBound, typed))
+            tf.stringValue = String(v)
             st?.integerValue = v; set(v)
         }
         field.alignment = .right
         field.widthAnchor.constraint(equalToConstant: 60).isActive = true
-        st.onChange = { [weak field] in field?.integerValue = $0 }
+        // Plain digits: `integerValue =` writes the locale's grouping ("10.000"), which reads back as 10.
+        st.onChange = { [weak field] in field?.stringValue = String($0) }
         let row = NSStackView(views: [field, st, NSTextField(labelWithString: suffix)])
         row.spacing = 6
         let labeledRow = labeled(label, row)
         contentStack.addArrangedSubview(labeledRow)
         track(labeledRow, enabled: enabled) { [weak field, weak st] in
             guard let field, let st, field.currentEditor() == nil else { return }
-            st.integerValue = value(); field.integerValue = value()
+            st.integerValue = value(); field.stringValue = String(value())
         }
+    }
+
+    /// A whole number as typed, with or without grouping ("10000", "10,000", "10.000", "10 000"); nil for anything else.
+    static func integer(_ text: String) -> Int? {
+        let separators = CharacterSet(charactersIn: ",.' \u{00A0}\u{202F}").union(.whitespaces)
+        let digits = text.trimmingCharacters(in: .whitespaces).unicodeScalars.filter { !separators.contains($0) }
+        return Int(String(String.UnicodeScalarView(digits)))
     }
 
     @discardableResult

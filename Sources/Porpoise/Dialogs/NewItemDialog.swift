@@ -125,36 +125,31 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
                         atPath: url.path, withDestinationPath: (targetField.stringValue as NSString).expandingTildeInPath)
                 case .urlLink:
                     let plist = try PropertyListSerialization.data(fromPropertyList: ["URL": targetField.stringValue], format: .xml, options: 0)
-                    var n = nameField.stringValue
-                    if !n.hasSuffix(".webloc") { n += ".webloc" }
-                    url = try FileActions.makeFile(named: n, in: folder, contents: plist)
+                    url = try FileActions.makeFile(named: finalName, in: folder, contents: plist)
                 }
                 done(url)
             } catch  where FileErrorKind.classify(error) == .permission {
-                // Protected folder: create it as administrator.
-                var n = nameField.stringValue
-                if kind == .urlLink && !n.hasSuffix(".webloc") { n += ".webloc" }
-                let dst = folder.appendingPathComponent(n)
-                var cmd: [String]
+                // Protected folder: create it as administrator, as the normal path would ("a/b" makes both folders)
+                // and never over something that appeared meanwhile.
+                let dst = folder.appendingPathComponent(finalName)
                 var tempFile: URL?
-                switch kind {
-                case .folder: cmd = ["/bin/mkdir", "--", dst.path]
-                case .link: cmd = ["/bin/ln", "-s", "--", (targetField.stringValue as NSString).expandingTildeInPath, dst.path]
-                default:
-                    // Write the contents to a temporary file first, then copy it into place.
+                var data = Data()
+                if kind == .htmlFile { data = NewItemKind.htmlTemplate }
+                if kind == .urlLink {
+                    data =
+                        (try? PropertyListSerialization.data(fromPropertyList: ["URL": targetField.stringValue], format: .xml, options: 0)) ?? Data()
+                }
+                if ![.folder, .link].contains(kind) {
                     let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                    var data = Data()
-                    if kind == .htmlFile { data = NewItemKind.htmlTemplate }
-                    if kind == .urlLink {
-                        data =
-                            (try? PropertyListSerialization.data(fromPropertyList: ["URL": targetField.stringValue], format: .xml, options: 0))
-                            ?? Data()
+                    do { try data.write(to: tmp) } catch {
+                        DispatchQueue.main.async { NSAlert(error: error).runSheet(for: window) { _ in } }
+                        return
                     }
-                    try? data.write(to: tmp)
-                    cmd = ["/bin/cp", "--", tmp.path, dst.path]
                     tempFile = tmp
                 }
-                let ok = FileOperationsController.shared.authorize(verb: "create an item in", items: [folder], commands: [cmd], window: window)
+                let commands = Self.administratorCommands(
+                    kind, at: dst, in: folder, linkTarget: (targetField.stringValue as NSString).expandingTildeInPath, contents: tempFile)
+                let ok = FileOperationsController.shared.authorize(verb: "create an item in", items: [folder], commands: commands, window: window)
                 if let t = tempFile { try? FileManager.default.removeItem(at: t) }  // also when the prompt was cancelled
                 if ok { done(dst) }
             } catch {
@@ -175,6 +170,33 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
 
     func controlTextDidChange(_ obj: Notification) { validate() }
 
+    /// The name the item gets: a link to a location ends in ".webloc".
+    private var finalName: String { Self.finalName(nameField.stringValue, kind: kind) }
+
+    static func finalName(_ n: String, kind: NewItemKind) -> String { kind == .urlLink && !n.hasSuffix(".webloc") ? n + ".webloc" : n }
+
+    /// What creates the item as administrator. Folders: each missing one on the way ("a/b"). Files: copied next to
+    /// where they go under a temporary name, then moved in without replacing (`mv -n`): an item that appeared there
+    /// since stays, and the leftover copy goes.
+    static func administratorCommands(_ kind: NewItemKind, at dst: URL, in folder: URL, linkTarget: String, contents: URL?) -> [[String]] {
+        switch kind {
+        case .folder:
+            var missing: [URL] = []
+            var u = dst
+            while u.path.count > folder.path.count, !FileManager.default.fileExists(atPath: u.path) {
+                missing.insert(u, at: 0)
+                u = u.deletingLastPathComponent()
+            }
+            return missing.map { ["/bin/mkdir", "--", $0.path] }
+        case .link:
+            return [["/bin/ln", "-s", "--", linkTarget, dst.path]]
+        default:
+            guard let contents else { return [] }
+            let staged = dst.deletingLastPathComponent().appendingPathComponent(".porpoise-new-\(UUID().uuidString)").path
+            return [["/bin/cp", "--", contents.path, staged], ["/bin/mv", "-n", "--", staged, dst.path], ["/bin/rm", "-rf", "--", staged]]
+        }
+    }
+
     /// What to say about a new item's name in a folder elsewhere: nothing, a note (the service keeps both), or an error.
     static func nameProblem(_ name: String, names: Set<String>, in folder: URL) -> (message: String, isError: Bool)? {
         let duplicates = CloudProviderDescriptor.descriptor(for: folder)?.allowsDuplicateNames ?? false
@@ -194,7 +216,8 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
             alert.buttons.first?.isEnabled = !name.isEmpty && problem?.isError != true
             return
         }
-        let res = FileActions.validateName(nameField.stringValue, in: folder, allowSlash: kind == .folder)
+        // The name it will have: "Link" is taken when "Link.webloc" is there.
+        let res = FileActions.validateName(finalName, in: folder, allowSlash: kind == .folder)
         message.stringValue = res?.message ?? ""
         message.textColor = (res?.isError ?? false) ? Theme.negativeText : Theme.neutralText
         // Links need a target: an empty one would make a dangling symlink or an empty .webloc.
