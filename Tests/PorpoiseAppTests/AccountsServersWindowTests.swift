@@ -238,6 +238,11 @@ import Testing
         #expect(w.selection == .server(server.id))
         w.select(.account("two"))
         #expect(w.accountDetail?.accountID == "two")
+        // A server or account that isn't there (a stale link): the first row there is, not "No accounts or servers".
+        w.select(.server(UUID()))
+        #expect(w.selection == .account("one") && w.accountDetail?.accountID == "one")
+        w.select(.account("gone"))
+        #expect(w.selection == .account("one"))
         // Signed out elsewhere (the sidebar's menu): the window shows the next row there is.
         CloudAccounts.shared.backend = DemoCloudBackend(accounts: [CloudAccount(id: "one", email: "one@example.invalid", displayName: "One")])
         #expect(w.entries.contains(.account("two")) == false)

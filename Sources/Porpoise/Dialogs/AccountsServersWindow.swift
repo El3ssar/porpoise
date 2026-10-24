@@ -203,7 +203,7 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
             break  // a new server being filled in
         case .account, .server, nil:
             // Gone (signed out, removed elsewhere), or nothing shown yet: the first row there is, or the empty state.
-            if let first = selectableEntries.first { select(first) } else { showEmpty() }
+            showFirstOrEmpty()
         case .heading:
             break
         }
@@ -212,6 +212,18 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
     }
 
     private var selectableEntries: [Entry] { entries.filter { if case .heading = $0 { false } else { true } } }
+
+    /// The first account or server there still is; the empty state only when there is none.
+    private func showFirstOrEmpty() {
+        let first = selectableEntries.first {
+            switch $0 {
+            case .account(let id): accounts.account(id) != nil
+            case .server(let id): profiles.profile(id) != nil
+            case .heading: false
+            }
+        }
+        if let first { select(first) } else { showEmpty() }
+    }
 
     private func selectRow(of entry: Entry) {
         guard let row = entries.firstIndex(of: entry), table.selectedRow != row else { return }
@@ -343,7 +355,7 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
     }
 
     private func showAccount(_ id: String) {
-        guard accounts.account(id) != nil else { return showEmpty() }
+        guard accounts.account(id) != nil else { return showFirstOrEmpty() }
         selection = .account(id)
         form = nil
         selectRow(of: .account(id))
@@ -359,7 +371,7 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
         selection = .server(id)
         unsavedID = unsaved?.id
         accountDetail = nil
-        guard let p = unsaved ?? profiles.profile(id) else { return showEmpty() }
+        guard let p = unsaved ?? profiles.profile(id) else { return showFirstOrEmpty() }
         if unsaved == nil { selectRow(of: .server(id)) }
         let f = ConnectionForm(profile: p, hasSecret: credentials.hasSecret(for: p), aliases: Set(sshConfig().aliases))
         f.onKindChange = { [weak self] in self?.showForm(f) }
@@ -510,7 +522,7 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
                 alert.beginSheetModal(for: window)
                 return
             }
-            if let next = self.selectableEntries.first { self.select(next) } else { self.showEmpty() }
+            self.showFirstOrEmpty()
         }
     }
 
