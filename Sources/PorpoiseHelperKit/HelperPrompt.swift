@@ -27,6 +27,8 @@ public enum HelperDisplay {
         for scalar in text.unicodeScalars {
             switch scalar.value {
             case 0x5c: result += "\\\\"
+            // Quote marks inside a name would let it close its quote and seem to start another item.
+            case 0x22, 0x201C, 0x201D: result += "\\u{" + String(scalar.value, radix: 16) + "}"
             case 0x0a: result += "\\n"
             case 0x0d: result += "\\r"
             case 0x09: result += "\\t"

@@ -77,8 +77,7 @@ import PorpoiseServices
         }
         for t in tiers { f.note(t) }
         f.observe(PrivacyAccess.statusChanged)
-        weak var form = f
-        reload { form?.refresh() }
+        reload { [weak f] in f?.refresh() }
     }
 
     private static func confirmUninstall() -> Bool {

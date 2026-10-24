@@ -31,17 +31,17 @@ public enum HelperRequests {
             // -h: a symlink's own mode, never its target's. Setuid, setgid and sticky bits need the protected approval.
             ok =
                 a.count == 4 && a[0] == "-h" && a[1] == "--" && (1...4).contains(a[2].count) && a[2].allSatisfy { ("0"..."7").contains($0) }
-                && writable(a[3])
+                && writable(a[3]) && removable(a[3])
         case "/bin/rm":
             ok = a.count == 3 && a[0] == "-rf" && a[1] == "--" && removable(a[2])
         case "/usr/bin/chflags":
             // chflags follows a link given as the operand: the flags would change on its target.
             ok =
                 a.count == 3 && a[0] == "-R" && a[1] == "nouchg,noschg" && removable(a[2]) && !isSymlink(a[2])
-                || a.count == 3 && a[0] == "-h" && settableFlag(a[1]) != nil && isPath(a[2])
+                || a.count == 3 && a[0] == "-h" && settableFlag(a[1]) != nil && removable(a[2])
         case "/usr/sbin/chown":
             // -h: a link itself. Numeric owner and group only: names would be looked up as root.
-            ok = a.count == 4 && a[0] == "-h" && a[1] == "--" && isOwner(a[2]) && isPath(a[3])
+            ok = a.count == 4 && a[0] == "-h" && a[1] == "--" && isOwner(a[2]) && removable(a[3])
         default:
             ok = false
         }
@@ -87,7 +87,7 @@ public enum HelperRequests {
     /// a link points to, so only the parents' real paths could be checked, not where it lands.
     static func writable(_ p: String) -> Bool { isPath(p) && !isSymlink(p) }
 
-    /// A path that may be moved away, removed or changed: anything but a volume's root, the top folders of the
+    /// A path that may be moved away, removed, re-owned, re-moded or locked: anything but a volume's root, the top folders of the
     /// system ("/Applications", "/Users", "/private"…) and the system's fixed folders themselves. A link is removed
     /// as itself.
     static func removable(_ p: String) -> Bool {
@@ -196,11 +196,19 @@ public enum HelperRequests {
         }
     }
 
-    /// Decodes the allowlisted wire request and operates on validated descriptors. Never launches a tool. With no
-    /// policy: no approval check (tests of the operations themselves).
-    static func run(_ arguments: [String], policy: HelperPolicy? = nil, authorized: HelperTier = .standard) -> String? {
+    /// Decodes the allowlisted wire request and operates on validated descriptors, each step checked against
+    /// `policy` for no more than the `authorized` tier. Never launches a tool.
+    static func run(_ arguments: [String], policy: HelperPolicy, authorized: HelperTier) -> String? {
         executionLock.withLock {
             var operation = HelperFileOperations(policy: policy, authorized: authorized)
+            return operation.run(arguments)
+        }
+    }
+
+    /// The same without the approval check: only for tests of the operations themselves.
+    static func runUnchecked(_ arguments: [String]) -> String? {
+        executionLock.withLock {
+            var operation = HelperFileOperations()
             return operation.run(arguments)
         }
     }

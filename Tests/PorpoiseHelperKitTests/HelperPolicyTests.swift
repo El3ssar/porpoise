@@ -170,9 +170,9 @@ import Testing
             try s.folder("dst/\(i)")
             let dst = s.path("dst/\(i)")
             // "--" ends options: names starting with "-" are not taken as flags.
-            #expect(HelperRequests.run(["/bin/cp", "-pR", "--", src.path, dst.appendingPathComponent("copy").path]) == nil, "\(name)")
-            #expect(HelperRequests.run(["/bin/ln", "-s", "--", src.path, dst.appendingPathComponent("link").path]) == nil, "\(name)")
-            #expect(HelperRequests.run(["/bin/mv", "--", src.path, dst.appendingPathComponent(name).path]) == nil, "\(name)")
+            #expect(HelperRequests.runUnchecked(["/bin/cp", "-pR", "--", src.path, dst.appendingPathComponent("copy").path]) == nil, "\(name)")
+            #expect(HelperRequests.runUnchecked(["/bin/ln", "-s", "--", src.path, dst.appendingPathComponent("link").path]) == nil, "\(name)")
+            #expect(HelperRequests.runUnchecked(["/bin/mv", "--", src.path, dst.appendingPathComponent(name).path]) == nil, "\(name)")
             #expect(s.read("dst/\(i)/\(name)") == "data \(i)")
             #expect(s.read("dst/\(i)/copy") == "data \(i)")
             #expect(try fm.destinationOfSymbolicLink(atPath: dst.appendingPathComponent("link").path) == src.path)
@@ -187,29 +187,29 @@ import Testing
         let s = try Scratch()
         let dir = s.path("made/$(id)/deep")
         try s.folder("made/$(id)")
-        #expect(HelperRequests.run(["/bin/mkdir", "--", dir.path]) == nil)
+        #expect(HelperRequests.runUnchecked(["/bin/mkdir", "--", dir.path]) == nil)
         var isDir: ObjCBool = false
         #expect(fm.fileExists(atPath: dir.path, isDirectory: &isDir) && isDir.boolValue)
         let f = try s.file("made/f;rm -rf ~", "x")
-        #expect(HelperRequests.run(["/bin/chmod", "-h", "--", "600", f.path]) == nil)
+        #expect(HelperRequests.runUnchecked(["/bin/chmod", "-h", "--", "600", f.path]) == nil)
         #expect((try fm.attributesOfItem(atPath: f.path)[.posixPermissions] as? NSNumber)?.intValue == 0o600)
         #expect(chflags(f.path, UInt32(UF_IMMUTABLE)) == 0)
         #expect((try fm.attributesOfItem(atPath: f.path)[.immutable] as? Bool) == true)
-        #expect(HelperRequests.run(["/bin/rm", "-rf", "--", f.path]) != nil)  // locked: rm fails and says why
-        #expect(HelperRequests.run(["/usr/bin/chflags", "-R", "nouchg,noschg", f.path]) == nil)
-        #expect(HelperRequests.run(["/bin/rm", "-rf", "--", s.path("made").path]) == nil)
+        #expect(HelperRequests.runUnchecked(["/bin/rm", "-rf", "--", f.path]) != nil)  // locked: rm fails and says why
+        #expect(HelperRequests.runUnchecked(["/usr/bin/chflags", "-R", "nouchg,noschg", f.path]) == nil)
+        #expect(HelperRequests.runUnchecked(["/bin/rm", "-rf", "--", s.path("made").path]) == nil)
         #expect(s.listing() == [])
     }
 
     @Test func failuresReportTheToolsMessage() throws {
         let s = try Scratch()
-        let r = HelperRequests.run(["/bin/mv", "--", s.path("missing").path, s.path("x").path])
+        let r = HelperRequests.runUnchecked(["/bin/mv", "--", s.path("missing").path, s.path("x").path])
         #expect(r?.contains("No such file or directory") == true)
         #expect(r?.hasSuffix("\n") == false)
         // A tool that fails silently still reports something.
-        #expect(HelperRequests.run(["/usr/bin/false"]) == "Porpoise's helper doesn't run /usr/bin/false.")
-        #expect(HelperRequests.run(["/nonexistent/tool"]) != nil)
-        #expect(HelperRequests.run([]) == "Porpoise's helper doesn't run nothing.")
+        #expect(HelperRequests.runUnchecked(["/usr/bin/false"]) == "Porpoise's helper doesn't run /usr/bin/false.")
+        #expect(HelperRequests.runUnchecked(["/nonexistent/tool"]) != nil)
+        #expect(HelperRequests.runUnchecked([]) == "Porpoise's helper doesn't run nothing.")
     }
 
     // MARK: Taking ownership of trashed items

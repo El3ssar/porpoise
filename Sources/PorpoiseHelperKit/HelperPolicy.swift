@@ -36,9 +36,14 @@ public struct HelperPathFacts: Equatable, Sendable {
     public var flags: UInt32?
     /// The item or its folder carries SF_RESTRICTED (System Integrity Protection).
     public var restricted = false
+    /// Who owns the folder it's in (a write where nothing is yet lands in their folder).
+    public var parentOwner: uid_t?
 
-    public init(path: String, owner: uid_t? = nil, mode: mode_t? = nil, flags: UInt32? = nil, restricted: Bool = false) {
+    public init(
+        path: String, owner: uid_t? = nil, mode: mode_t? = nil, flags: UInt32? = nil, restricted: Bool = false, parentOwner: uid_t? = nil
+    ) {
         self.path = path; self.owner = owner; self.mode = mode; self.flags = flags; self.restricted = restricted
+        self.parentOwner = parentOwner
     }
 
     /// Read from the disk now: the parent resolved, the leaf by lstat, SF_RESTRICTED looked for on it and its folder.
@@ -47,6 +52,7 @@ public struct HelperPathFacts: Equatable, Sendable {
         var facts = HelperPathFacts(path: HelperPolicy.normalized(full))
         var st = stat()
         if lstat(full, &st) == 0 { facts.owner = st.st_uid; facts.mode = st.st_mode; facts.flags = st.st_flags }
+        if lstat((full as NSString).deletingLastPathComponent, &st) == 0 { facts.parentOwner = st.st_uid }
         facts.restricted = isRestricted(full)
         return facts
     }
@@ -72,6 +78,9 @@ public struct HelperPolicy: Sendable {
     public var persistence = ["/Library/LaunchDaemons", "/Library/LaunchAgents", "/Library/PrivilegedHelperTools", "/Library/StartupItems"]
     /// The system's own configuration and secrets.
     public var configuration = ["/private/etc", "/private/var/db", "/private/var/root", "/Library/Security"]
+    /// What holds private data outside people's homes: keychains, memory and swap, logs and audit trails. (Each
+    /// person's temporary and cache folders, in /private/var/folders, are theirs: the owner rule covers them.)
+    public var privateData = ["/Library/Keychains", "/private/var/vm", "/private/var/audit", "/private/var/log"]
 
     public init(caller: uid_t, otherHomes: [(path: String, name: String)]) {
         self.caller = caller
@@ -90,6 +99,7 @@ public struct HelperPolicy: Sendable {
             "/private/etc", "/private/var", "/private/var/db", "/private/var/root", "/private/tmp", "/Users/Shared", "/Volumes",
         ])
 
+    static let containsReason = "contains the system's startup, configuration or home folders"
     static let startupReason = "changes what runs when your Mac starts"
     static let settingsReason = "changes system settings"
     public static let sipMessage = "macOS protects this item (System Integrity Protection): no app can change it."
@@ -107,16 +117,23 @@ public struct HelperPolicy: Sendable {
         let p = facts.path
         let sealed = Self.sealedSystem.contains { Self.isInside(p, $0) } && !Self.isInside(p, "/usr/local")
         if role != .read && (facts.restricted || sealed) { return (.never, Self.sipMessage) }
+        // A folder that holds the protected ones (/Library, /private/var…): whoever could re-own, re-mode or replace
+        // it could swap what's inside for their own, with root's launch daemons among it.
+        let guarded = persistence + configuration + privateData + otherHomes.map(\.path)
+        if role != .read, guarded.contains(where: { $0.hasPrefix(p == "/" ? "/" : p + "/") }) { return (.never, Self.containsReason) }
         if let home = otherHomes.first(where: { Self.isInside(p, $0.path) }) {
             return (.protected, "belongs to \(home.name)")
         }
         if configuration.contains(where: { Self.isInside(p, $0) }) {
             return (.protected, role == .read ? "is the system's own configuration" : Self.settingsReason)
         }
+        if privateData.contains(where: { Self.isInside(p, $0) }) { return (.protected, "contains private data") }
         if role != .read, persistence.contains(where: { Self.isInside(p, $0) }) {
             return (.protected, Self.startupReason)
         }
-        if role != .read && role != .write, let owner = facts.owner, owner >= 501, owner != caller {
+        // Another person's item (read, replaced, removed or changed), or for a new item their folder.
+        let owner = role == .write ? (facts.owner ?? facts.parentOwner) : facts.owner
+        if let owner, owner >= 501, owner != caller, owner != uid_t(bitPattern: -2) {
             return (.protected, "belongs to \(HomeDirectories.name(of: owner))")
         }
         if role != .read, let mode = facts.mode, mode & S_IFMT != S_IFDIR, mode & (S_ISUID | S_ISGID) != 0 {

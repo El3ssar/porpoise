@@ -79,6 +79,39 @@ final class FakeAuthorizer: HelperAuthorizing, @unchecked Sendable {
         #expect(try tier(["/bin/cp", "--", "/tmp/x", "/users/bob/x"]).0 == .standard)
     }
 
+    /// B1 (review): re-owning, re-moding or locking a top-level or fixed folder is refused outright, and a folder
+    /// that holds the protected ones is never changed (its owner could swap what's inside).
+    @Test func foldersHoldingTheProtectedOnesAreNeverChanged() throws {
+        for p in ["/", "/Library", "/private", "/private/var", "/Applications", "/Users", "/Volumes/X", "/System", "/Library/LaunchDaemons"] {
+            for args in [
+                ["/usr/sbin/chown", "-h", "--", "501:20", p], ["/bin/chmod", "-h", "--", "0777", p], ["/usr/bin/chflags", "-h", "uchg", p],
+            ] {
+                #expect(HelperRequests.refusal(args) != nil, "\(args)")
+            }
+        }
+        // Below the top level: a folder holding another person's home, or the startup folders' parent.
+        #expect(policy.tier(of: HelperPathFacts(path: "/Volumes/Homes"), role: .change) == (.never, HelperPolicy.containsReason))
+        #expect(policy.tier(of: HelperPathFacts(path: "/private/var"), role: .remove).tier == .never)
+        #expect(policy.tier(of: HelperPathFacts(path: "/Library/Application Support"), role: .change).tier == .standard)
+    }
+
+    /// M1/M2 (review): another person's items are protected to read and to replace, and so is writing into their folder;
+    /// keychains, swap, logs and audit trails to read.
+    @Test func otherPeoplesItemsAndPrivateDataAreProtected() throws {
+        let theirs = HelperPathFacts(path: "/private/var/folders/zz/abc/T/secret", owner: 502, mode: S_IFREG | 0o600)
+        #expect(policy.tier(of: theirs, role: .read).tier == .protected)
+        let replaced = HelperPathFacts(path: "/Applications/Foo.app/Contents/MacOS/Foo", owner: 502, mode: S_IFREG | 0o755)
+        #expect(policy.tier(of: replaced, role: .write).tier == .protected)
+        let intoTheirs = HelperPathFacts(path: "/Applications/Foo.app/Contents/MacOS/New", parentOwner: 502)
+        #expect(policy.tier(of: intoTheirs, role: .write).tier == .protected)
+        #expect(policy.tier(of: HelperPathFacts(path: "/Applications/Mine/New", parentOwner: me), role: .write).tier == .standard)
+        #expect(policy.tier(of: HelperPathFacts(path: "/Applications/Root/New", parentOwner: 0), role: .write).tier == .standard)
+        for p in ["/Library/Keychains/System.keychain", "/private/var/vm/sleepimage", "/private/var/audit/x", "/private/var/log/system.log"] {
+            #expect(policy.tier(of: HelperPathFacts(path: p), role: .read) == (.protected, "contains private data"), "\(p)")
+        }
+        #expect(policy.tier(of: HelperPathFacts.read("/Library/Keychains/System.keychain"), role: .read).tier == .protected)
+    }
+
     @Test func neverWhatSystemIntegrityProtectionKeeps() throws {
         for args in [
             ["/bin/rm", "-rf", "--", "/System/Library/x"], ["/bin/mkdir", "--", "/usr/libexec/x"], ["/bin/cp", "--", "/tmp/x", "/bin/x"],
@@ -113,6 +146,10 @@ final class FakeAuthorizer: HelperAuthorizing, @unchecked Sendable {
         #expect(HelperDisplay.path("/Users/me/a\nrename b.txt") == "“/Users/me/a\\nrename b.txt”")
         #expect(HelperDisplay.path("/Users/me/\u{202E}txt.exe") == "“/Users/me/\\u{202e}txt.exe”")
         #expect(HelperDisplay.path("/x/a\u{200B}b\u{00A0}c d") == "“/x/a\\u{200b}b\\u{a0}c d”")
+        // A name can't close its quote and seem to start another item.
+        let forged = HelperDisplay.path("/x/x”, then delete “/private/etc/hosts")
+        #expect(forged == "“/x/x\\u{201d}, then delete \\u{201c}/private/etc/hosts”")
+        #expect(HelperDisplay.path("/x/a\"b") == "“/x/a\\u{22}b”")
         let long = "/Users/me/" + String(repeating: "d/", count: 2000) + "evil.plist"
         let shown = HelperDisplay.path(long)
         #expect(shown.count <= HelperDisplay.limit + 2 && shown.hasSuffix("/evil.plist”") && shown.contains("…"))

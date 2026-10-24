@@ -55,7 +55,7 @@ final class HelperPath {
         case .read: allowed = HelperRequests.isPath(full)
         case .write: allowed = HelperRequests.writable(full)
         case .remove: allowed = HelperRequests.removable(full)
-        case .change: allowed = HelperRequests.isPath(full)
+        case .change: allowed = HelperRequests.removable(full)
         }
         guard allowed else { throw HelperFailure("That location is not allowed for this operation.") }
         var parentInfo = stat()
@@ -87,7 +87,8 @@ final class HelperPath {
         let full = HelperPolicy.normalized((parent.path ?? canonicalParent ?? "") + "/" + name)
         return HelperPathFacts(
             path: full, owner: expected?.st_uid, mode: expected?.st_mode, flags: expected?.st_flags,
-            restricted: HelperPathFacts.isRestricted((parent.path ?? canonicalParent ?? "") + "/" + name))
+            restricted: HelperPathFacts.isRestricted((parent.path ?? canonicalParent ?? "") + "/" + name),
+            parentOwner: (try? parent.info)?.st_uid)
     }
 
     func validateParent() throws {
