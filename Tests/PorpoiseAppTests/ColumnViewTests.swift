@@ -727,10 +727,13 @@ import Testing
         }
         // Up and down: the columns stay (the column's own rows take it: an offscreen window's columns don't move for a
         // wheel's clicks, the app's do, `wheel line|0|-40` in REPORT-scroll.md).
+        // From where the strip rests, once any glide or late settle has run (a loaded machine runs them late).
+        try #require(await eventually { !b.isScrolling && abs(clip.bounds.minX - b.endOrigin) < 0.5 })
         let end = clip.bounds.minX
         for dy: Int32 in [15, -15] {
             scroll(.wheel, dx: 0, dy: dy, over: pane.scroll)
-            #expect(clip.bounds.minX == end)
+            try await Task.sleep(for: .milliseconds(200))
+            #expect(!b.isScrolling && abs(clip.bounds.minX - end) < 0.5, "\(dy): \(clip.bounds.minX) from \(end)")
         }
         #expect(!NestedScrollView.isSideways(try #require(gesture(dx: 10, dy: -300).dropFirst().first)))
 
