@@ -78,7 +78,7 @@ import Testing
         #expect(Set(ItemRole.allCases.map(\.title)).count == ItemRole.allCases.count)
         #expect(Set(ItemRole.menuRoles + ItemRole.otherRoles) == Set(ItemRole.allCases))
         #expect(ItemRole.name.orderLabels.ascending == "A-Z" && ItemRole.size.orderLabels.descending == "Largest First")
-        #expect(ItemRole.creationTime.orderLabels.descending == "Newest First" && ItemRole.owner.orderLabels.ascending == "Ascending")
+        #expect(ItemRole.creationTime.orderLabels.descending == "Newest First" && ItemRole.owner.orderLabels.ascending == "A-Z" && ItemRole.permissions.orderLabels.ascending == "Ascending")
         #expect(ItemRole.allCases.allSatisfy { $0.defaultColumnWidth >= 90 })
         #expect(ItemRole.allCases.filter(\.rightAligned) == [.size])
         #expect(FilterMode.allCases.map(\.title) == ["Plain Text", "Glob Pattern", "Regular Expression"])

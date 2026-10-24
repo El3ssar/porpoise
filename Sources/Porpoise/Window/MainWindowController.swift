@@ -424,8 +424,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         }
         if showTerminal, terminal.hasRunningProgram, Settings.shared.confirmCloseTerminal {
             let a = NSAlert()
-            a.messageText =
-                "The program “\(terminal.runningProgramName)” is still running in the Terminal panel. Are you sure you want to close this window?"
+            a.messageText = "Close this window and stop “\(terminal.runningProgramName)”?"
+            a.informativeText = "It's still running in the Terminal panel. Closing the window ends it."
             a.addButton(withTitle: "Close Window")
             a.addButton(withTitle: "Cancel")
             if a.runModal() != .alertFirstButtonReturn { return false }

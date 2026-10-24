@@ -6,7 +6,8 @@ import Testing
 
 @testable import Porpoise
 
-/// The first-run welcome is one sheet of two steps on the browser window, and the other permissions are asked for
+/// The first-run welcome is one sheet of two steps on the browser window (the first also offers the key set and the
+/// default file browser), and the other permissions are asked for
 /// when an action first needs them. These tests replace process-wide permission hooks and read/write Settings.store;
 /// take the shared settings turn as well as serializing this suite's own tests.
 @MainActor @Suite(.serialized, .isolatedSettings) struct OnboardingTests {
@@ -41,13 +42,44 @@ import Testing
         try withWelcome(granted: false) { welcome, browser in
             #expect(browser.attachedSheet === welcome.window)
             #expect(OnboardingWindowController.debugStep == "welcome")
-            #expect(welcome.back.isHidden && welcome.primary.title == "Continue" && welcome.secondary.title == "Not Now")
+            #expect(welcome.back.isHidden && welcome.primary.title == "Continue" && welcome.secondary.title == "Skip")
             click(welcome.primary)
             #expect(welcome.step == .fullDisk && !welcome.back.isHidden)
             #expect(welcome.primary.title == "Open System Settings" && !welcome.secondary.isHidden)
             click(welcome.back)
             #expect(welcome.step == .welcome && welcome.back.isHidden)
         }
+    }
+
+    /// The welcome step offers the key set and the default file browser; the permissions note names a real place.
+    @Test func welcomeOffersTheKeySetAndTheDefaultBrowser() throws {
+        let saved = (OnboardingWindowController.setDefaultBrowser, OnboardingWindowController.isDefaultBrowser)
+        var isDefault = false
+        var asked: [Bool] = []
+        OnboardingWindowController.isDefaultBrowser = { isDefault }
+        OnboardingWindowController.setDefaultBrowser = { on, done in
+            asked.append(on)
+            isDefault = on
+            done(nil)
+        }
+        defer { (OnboardingWindowController.setDefaultBrowser, OnboardingWindowController.isDefaultBrowser) = saved }
+        Settings.shared.shortcutKeySet = .mac
+        try withWelcome(granted: false) { welcome, _ in
+            #expect(welcome.keySet.segmentCount == 2 && welcome.keySet.selectedSegment == 0)
+            #expect(welcome.keySetHint.stringValue.contains("Return renames"))
+            welcome.keySet.selectedSegment = 1
+            welcome.keySetChanged(welcome.keySet)
+            #expect(Settings.shared.shortcutKeySet == .dolphin && welcome.keySetHint.stringValue.contains("Return opens"))
+            #expect(welcome.defaultBrowser.state == .off)
+            welcome.defaultBrowser.state = .on
+            welcome.defaultBrowserChanged(welcome.defaultBrowser)
+            #expect(asked == [true] && welcome.defaultBrowser.state == .on)
+            welcome.go(to: .fullDisk)
+            let shown = texts(in: try #require(welcome.window?.contentView))
+            #expect(shown.contains { $0.contains("Porpoise › Permissions") })
+            #expect(!shown.contains { $0.contains("Settings › System") })
+        }
+        Settings.shared.shortcutKeySet = .mac
     }
 
     @Test func grantedFullDiskAccessCollapsesToOneLine() throws {

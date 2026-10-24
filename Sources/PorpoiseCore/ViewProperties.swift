@@ -75,7 +75,7 @@ public enum ItemRole: String, Codable, CaseIterable, Sendable {
     /// Ascending / descending labels in the Sort By menu, as Dolphin words them.
     public var orderLabels: (ascending: String, descending: String) {
         switch self {
-        case .name: return ("A-Z", "Z-A")
+        case .name, .type, .extension_, .path, .linkDestination, .owner, .group: return ("A-Z", "Z-A")
         case .size: return ("Smallest First", "Largest First")
         case .modificationTime, .creationTime, .accessTime, .sharedTime: return ("Oldest First", "Newest First")
         default: return ("Ascending", "Descending")

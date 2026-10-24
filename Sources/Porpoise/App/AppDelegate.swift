@@ -168,7 +168,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let w = windows.first(where: { $0.showTerminal && $0.terminal.hasRunningProgram })
         {
             let a = NSAlert()
-            a.messageText = "The program “\(w.terminal.runningProgramName)” is still running in the Terminal panel. Are you sure you want to quit?"
+            a.messageText = "Quit Porpoise and stop “\(w.terminal.runningProgramName)”?"
+            a.informativeText = "It's still running in the Terminal panel. Quitting ends it."
             a.addButton(withTitle: "Quit")
             a.addButton(withTitle: "Cancel")
             if a.runModal() != .alertFirstButtonReturn { return .terminateCancel }

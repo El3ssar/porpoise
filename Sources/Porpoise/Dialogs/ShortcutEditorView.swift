@@ -38,7 +38,8 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
     override init(frame: NSRect) {
         super.init(frame: frame)
         MenuCommandRegistry.shared.refresh();
-        all = MenuCommandRegistry.shared.commands.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+        // In menu-bar order (File, Edit, View…), as the menus show them; a search ranks by match instead.
+        all = MenuCommandRegistry.shared.commands
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
         NSLayoutConstraint.activate([
@@ -47,7 +48,7 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
         ])
         func add(_ view: NSView) { stack.addArrangedSubview(view); view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
         search.placeholderString = "Find an action"; search.delegate = self; add(search)
-        for (id, label, width) in [("action", "Action", 330.0), ("current", "Shortcut", 110.0), ("default", "Default(s)", 180.0)] {
+        for (id, label, width) in [("action", "Action", 330.0), ("current", "Shortcut", 110.0), ("default", "Default", 180.0)] {
             let column = NSTableColumn(identifier: .init(id)); column.title = label; column.width = width; table.addTableColumn(column)
         }
         table.dataSource = self; table.delegate = self; table.rowHeight = 24; table.usesAlternatingRowBackgroundColors = true
@@ -59,10 +60,11 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
         let clear = ClosureButton(title: "Clear") { [weak self] _ in self?.bind(KeyboardShortcut()) }
         let reset = ClosureButton(title: "Reset Selected") { [weak self] _ in self?.resetSelected() }
         let resetAll = ClosureButton(title: "Reset All…") { [weak self] _ in self?.resetAll() }
-        let row = NSStackView(views: [recorder, clear, reset, resetAll]); row.spacing = 8; add(row)
-        let importButton = ClosureButton(title: "Import Shortcuts…") { [weak self] _ in self?.importFile() }
-        let exportButton = ClosureButton(title: "Export Shortcuts…") { [weak self] _ in self?.exportFile() }
-        let files = NSStackView(views: [importButton, exportButton]); files.spacing = 8; add(files)
+        let importButton = ClosureButton(title: "Import…") { [weak self] _ in self?.importFile() }
+        let exportButton = ClosureButton(title: "Export…") { [weak self] _ in self?.exportFile() }
+        importButton.toolTip = "Import keyboard shortcuts from a file"; exportButton.toolTip = "Export your keyboard shortcuts to a file"
+        // One row under the list: editing on the left, the file buttons on the right.
+        let row = NSStackView(views: [recorder, clear, reset, resetAll, NSView(), importButton, exportButton]); row.spacing = 8; add(row)
         status.font = .systemFont(ofSize: Tokens.FontSize.callout); add(status)
         shown = all; table.reloadData(); if !shown.isEmpty { table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false) }
         observer = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
@@ -77,10 +79,15 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
     deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
     private var selected: MenuCommandRegistry.Command? { shown[safe: table.selectedRow] }
     private func reloadCommands() {
-        all = MenuCommandRegistry.shared.commands.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+        all = MenuCommandRegistry.shared.commands
         controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
     }
     func controlTextDidChange(_ obj: Notification) {
+        guard !search.stringValue.trimmingCharacters(in: .whitespaces).isEmpty else {
+            shown = all
+            table.reloadData(); if !shown.isEmpty { table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false) }
+            return
+        }
         let candidates = all.map { CommandCandidate(id: $0.id, title: $0.path) }
         let ids = CommandSearch.rank(search.stringValue, candidates: candidates, limit: all.count).map { $0.candidate.id }
         let byID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) }); shown = ids.compactMap { byID[$0] }
@@ -155,7 +162,10 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
         switch tableColumn?.identifier.rawValue {
         case "action": value = command.path
         case "current": value = MenuCommandRegistry.shared.shortcut(for: command.id).display
-        default: value = command.defaults.map(\.display).joined(separator: " / ")
+        default:
+            // Only where it differs from the shortcut in use: an unchanged row would repeat itself.
+            let current = MenuCommandRegistry.shared.shortcut(for: command.id).normalized
+            value = command.defaults.contains { $0.normalized == current } ? "" : command.defaults.map(\.display).joined(separator: " / ")
         }
         let label = NSTextField(labelWithString: value); label.lineBreakMode = .byTruncatingMiddle; label.toolTip = value
         return label
