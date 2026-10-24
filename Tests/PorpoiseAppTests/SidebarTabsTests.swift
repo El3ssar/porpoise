@@ -184,14 +184,16 @@ import Testing
     @Test func longFolderNamesTruncateInTheMiddle() async throws {
         let s = try Scratch()
         let long = "-Users-someone-Projects-a-rather-long-project-name-ending-in-42"
-        try s.folder(long)
+        // Six levels down: the tree's column used to widen with every level expanded, past the panel's edge.
+        let deep = "one/two/three/four/five/\(long)"
+        try s.folder(deep)
         Settings.shared.homeURL = s.url
         let panel = FoldersPanel(frame: NSRect(x: 0, y: 0, width: 200, height: 400))
         let window = NSWindow(contentRect: panel.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = panel
         defer { window.close() }
-        panel.currentURL = s.url
+        panel.currentURL = s.path(deep)
         let outline = try #require((panel.subviews.first as? NSScrollView)?.documentView as? NSOutlineView)
         try #require(await eventually { (0..<outline.numberOfRows).contains { (outline.item(atRow: $0) as? FoldersPanel.Node)?.name == long } })
         let row = try #require((0..<outline.numberOfRows).first { (outline.item(atRow: $0) as? FoldersPanel.Node)?.name == long })
@@ -200,7 +202,9 @@ import Testing
         cell.layoutSubtreeIfNeeded()
         let field = try #require(cell.textField)
         #expect(field.lineBreakMode == .byTruncatingMiddle && cell.toolTip == long)
-        // The field ends inside the row (it used to run 400 pt past it and be clipped with no ellipsis).
+        // The field ends inside the panel (it ran past it and was clipped with no ellipsis: a field 400 pt wide in a
+        // narrower cell, and a column widened by the levels above it).
+        #expect(outline.tableColumns[0].width <= outline.visibleRect.width + 0.5, "\(outline.tableColumns[0].width)")
         let fieldEnd = field.convert(field.bounds, to: outline).maxX
         #expect(fieldEnd <= outline.visibleRect.maxX + 0.5, "\(fieldEnd) > \(outline.visibleRect.maxX)")
         #expect(field.attributedStringValue.size().width > field.bounds.width, "the name should need shortening at 200 pt")
@@ -223,7 +227,15 @@ import Testing
         func selected() -> URL? { (outline.item(atRow: outline.selectedRow) as? FoldersPanel.Node)?.url }
         func real(_ u: URL) -> String { FilePath.canonical(u.path) }
         panel.currentURL = s.path("Inner/Deeper")
-        try #require(await eventually { selected().map(real) == real(s.path("Inner/Deeper")) })
+        try #require(
+            await eventually { selected().map(real) == real(s.path("Inner/Deeper")) },
+            "\((0..<outline.numberOfRows).map { (outline.item(atRow: $0) as? FoldersPanel.Node)?.url.path ?? "?" }) selected \(outline.selectedRow) home \(Settings.shared.homeURL.path)")
+        // A change on disk lists Home again (here a late event about the folders just made): the shown folder stays
+        // selected through the reload.
+        try s.folder("Later")
+        panel.foldersChanged([s.url.path])
+        try #require(await eventually { (0..<outline.numberOfRows).contains { (outline.item(atRow: $0) as? FoldersPanel.Node)?.name == "Later" } })
+        #expect(selected().map(real) == real(s.path("Inner/Deeper")), "selected row \(outline.selectedRow)")
         // The root itself isn't a row: Home's children are the top rows.
         #expect(outline.parent(forItem: outline.item(atRow: 0)) == nil && topName().map { URL(fileURLWithPath: $0).lastPathComponent } == "Inner")
         panel.currentURL = outside.path("Elsewhere")

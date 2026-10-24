@@ -163,6 +163,11 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         outline.addTableColumn(col)
         outline.outlineTableColumn = col
         outline.headerView = nil
+        // The column stays as wide as the panel, however deep the tree: AppKit's default widens it with every level
+        // expanded, so deep names ran past the sidebar's edge without an ellipsis.
+        outline.autoresizesOutlineColumn = false
+        outline.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
+        col.resizingMask = .autoresizingMask
         outline.rowHeight = 24
         outline.indentationPerLevel = 14
         outline.backgroundColor = .clear
@@ -215,6 +220,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     override func layout() {
         super.layout()
         scroll.frame = bounds
+        outline.sizeLastColumnToFit()
     }
 
     // MARK: Following the disk
@@ -472,9 +478,17 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         listingQueue.async { [weak self, weak node] in
             let names = Node.sortedSubfolderNames(of: url, showHidden: hidden)
             DispatchQueue.main.async { [weak self, weak node] in
-                guard let self, let node, self.root === tree, self.remoteTree == nil, node.finishListing(token, names) else { return }
+                guard let self, let node, self.root === tree, self.remoteTree == nil else { return }
+                let selected = self.outline.item(atRow: self.outline.selectedRow) as? Node
+                guard node.finishListing(token, names) else { return }
                 self.outline.reloadItem(node === self.root ? nil : node, reloadChildren: true)
-                if self.followWaiting { self.followCurrent() }
+                if self.followWaiting {
+                    self.followCurrent()
+                } else if let selected, self.outline.selectedRow < 0 {
+                    // Listed again (a change on disk) above the shown folder: the reload dropped its selection.
+                    let row = self.outline.row(forItem: selected)
+                    if row >= 0 { self.outline.selectRowIndexes([row], byExtendingSelection: false) }
+                }
                 // Changed meanwhile: listed once more, a moment later (a folder that never stops changing is read at
                 // most a few times a second, and what follows the view's folder through it gets its turn first).
                 if node.changedWhileListing {
