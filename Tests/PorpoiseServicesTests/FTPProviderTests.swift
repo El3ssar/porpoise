@@ -54,7 +54,11 @@ import Testing
         }
         defer { RemoteFS.askLogin = { _, _ in nil } }
         try curl.reply("Could not read report530.txt", status: 78)
-        #expect(throws: (any Error).self) { try provider("ftp://h.invalid/").list(URL(string: "ftp://h.invalid/")!) }
+        let scratch = try Scratch()
+        let wrapper = try scratch.file("curl", "#!/bin/sh\nexec \(RemoteParsing.quote(curl.path)) \"$@\" >&2\n")
+        chmod(wrapper.path, 0o755)
+        let p = FTPProvider(url: URL(string: "ftp://h.invalid/")!, curl: wrapper.path, credentialStore: keychain)
+        #expect(throws: (any Error).self) { try p.list(URL(string: "ftp://h.invalid/")!) }
         #expect(!asked && curl.calls.count == 1)
     }
 
