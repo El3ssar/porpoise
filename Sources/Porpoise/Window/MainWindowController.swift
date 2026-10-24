@@ -383,14 +383,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         if t.isSplit {
             b.iconName = t.activeIsSecondary ? "view-right-close" : "view-left-close"
             b.title = "Close"
-            b.toolTip = t.activeIsSecondary ? "Close right view" : "Close left view"
+            toolbar.splitTooltipTitle = t.activeIsSecondary ? "Close right view" : "Close left view"
         } else {
             b.iconName = "view-split-left-right"
             b.title = "Split"
-            b.toolTip = "Split view"
+            toolbar.splitTooltipTitle = "Split view"
         }
         // Icon only: what it does now is in its tooltip, and VoiceOver reads the same.
-        b.setAccessibilityLabel(b.toolTip)
+        b.setAccessibilityLabel(toolbar.splitTooltipTitle)
+        toolbar.refreshShortcutTooltips()
     }
 
     // MARK: - Window

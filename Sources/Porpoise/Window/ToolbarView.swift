@@ -12,6 +12,7 @@ final class ToolbarView: NSView {
     let up = FlatButton(icon: "go-up", tooltip: "Up")
     let viewMode = FlatButton(icon: "view-list-icons", tooltip: "Change View Mode")
     let split = FlatButton(icon: "view-split-left-right", title: "Split", tooltip: "Split view")
+    var splitTooltipTitle = "Split view"
     let search = FlatButton(icon: "edit-find", tooltip: "Search")
     let hamburger = FlatButton(icon: "application-menu", tooltip: "Main Menu")
     private var shortcutsObserver: NSObjectProtocol?
@@ -157,14 +158,13 @@ final class ToolbarView: NSView {
             let shortcut = MenuCommandRegistry.shared.shortcut(for: action, tag: tag)
             let tooltip = shortcut.isEmpty ? title : title + " (" + shortcut.display + ")"
             guard view.toolTip != tooltip else { return }
-            view.toolTip = tooltip; view.setAccessibilityLabel(title); view.setAccessibilityHelp(tooltip)
+            view.toolTip = tooltip; view.setAccessibilityHelp(tooltip)
         }
         update(back, title: "Back", action: #selector(W.goBack(_:)))
         update(forward, title: "Forward", action: #selector(W.goForward(_:)))
         update(up, title: "Up", action: #selector(W.goUp(_:)))
         update(search, title: "Search", action: #selector(W.showSearch(_:)))
-        let splitTitle = split.title == "Close" ? (split.toolTip?.components(separatedBy: " (").first ?? "Close view") : "Split view"
-        update(split, title: splitTitle, action: #selector(W.toggleSplit(_:)))
+        update(split, title: splitTooltipTitle, action: #selector(W.toggleSplit(_:)))
         update(linkFolders, title: "Linked Browsing", action: #selector(W.toggleLinkedBrowsing(_:)))
         for (command, button) in extraButtons {
             switch command {
