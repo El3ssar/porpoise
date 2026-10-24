@@ -81,4 +81,34 @@ import Testing
         #expect(!c.list.isRenaming)
         #expect(!(w.firstResponder is NSText))
     }
+
+    /// CR-15: a link's folder opened in a new tab offers Add to Places there, and the old pane offers nothing later.
+    @Test func aLinkFolderInANewTabOffersAddToPlacesThere() async throws {
+        let s = try Scratch()
+        let start = try s.folder("start"), linked = try s.folder("linked"), other = try s.folder("other")
+        let link = "https://drive.google.com/drive/folders/CR15"
+        let backend = CloudAccounts.shared.backend
+        let demo = DemoCloudBackend(accounts: [CloudAccount(id: "cr15", email: "fixture@example.invalid", displayName: "Fixture")])
+        demo.links[link] = .folder(linked)
+        CloudAccounts.shared.backend = demo
+        defer { CloudAccounts.shared.backend = backend }
+        let wc = try browser([start])
+        defer { close(wc) }
+        let old = wc.view
+        try #require(await eventually { !old.model.isLoading })
+        wc.openCloudLink(try #require(URL(string: link)), in: old, newTab: true)
+        let shown = wc.view
+        #expect(shown !== old)
+        #expect(await eventually { !shown.messageBar.isHidden && shown.messageBar.text.contains("from a link") })
+        old.reload()
+        try #require(await eventually { !old.model.isLoading })
+        #expect(old.messageBar.isHidden || !old.messageBar.text.contains("from a link"))
+
+        // In place, but the pane goes elsewhere before the folder is listed: no offer on that other folder.
+        wc.openCloudLink(try #require(URL(string: link)), in: old, newTab: false)
+        old.setURL(other)
+        try #require(await eventually { old.model.location.standardizedFileURL == other.standardizedFileURL && !old.model.isLoading })
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(old.messageBar.isHidden || !old.messageBar.text.contains("from a link"))
+    }
 }

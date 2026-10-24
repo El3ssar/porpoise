@@ -36,18 +36,23 @@ extension MainWindowController {
     func openCloudLink(_ link: URL, in target: ViewContainer, newTab: Bool) {
         let service = CloudProviderDescriptor.linkProvider(link.absoluteString)?.title ?? "cloud"
         target.statusBar.showMessage("Opening the \(service) link…")
+        let asked = target.url
         CloudAccounts.shared.resolveLink(link.absoluteString) { [weak self, weak target] result in
-            guard let self, let target else { return }
+            // A pane that went elsewhere meanwhile isn't taken back to the link.
+            guard let self, let target, newTab || target.url == asked else { return }
             switch result {
             case .folder(let u):
-                if newTab { self.addTab(url: u, select: true) } else { target.setURL(u) }
-                target.onNextLoad = { [weak target] in
-                    guard let target, !PlacesModel.shared.contains(u), target.model.loadError == nil else { return }
-                    target.messageBar.show("Opened a folder from a link.", error: false, action: "Add to Places") { [weak target] in
+                // The offer goes with the pane that shows the folder, and only while it still does.
+                let shown: ViewContainer
+                if newTab { shown = self.addTab(url: u, select: true).primary } else { target.setURL(u); shown = target }
+                let location = shown.url
+                shown.onNextLoad = { [weak shown] in
+                    guard let shown, shown.url == location, !PlacesModel.shared.contains(u), shown.model.loadError == nil else { return }
+                    shown.messageBar.show("Opened a folder from a link.", error: false, action: "Add to Places") { [weak shown] in
                         PlacesModel.shared.add(u, title: u.folderName)
-                        target?.messageBar.dismiss()
+                        shown?.messageBar.dismiss()
                     }
-                    target.needsLayout = true
+                    shown.needsLayout = true
                 }
             case .file(let u):
                 if u.scheme == "https" {
