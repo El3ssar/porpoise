@@ -44,6 +44,8 @@ enum RemoteError: LocalizedError {
 
 /// Registry: which URL schemes are browsed through a provider.
 public enum RemoteFS {
+    /// A location's title became known (a phone's name, read in the background): views and windows show it.
+    public static let titlesChanged = Notification.Name("PorpoiseRemoteTitlesChanged")
     static let sshSchemes: Set<String> = ["sftp", "ssh", "fish", "scp"]
     static let ftpSchemes: Set<String> = ["ftp", "ftps"]
     static let mountSchemes: Set<String> = ["smb", "afp", "nfs", "webdav", "webdavs", "dav", "davs", "cifs", "vnc"]
