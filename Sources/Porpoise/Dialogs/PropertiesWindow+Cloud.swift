@@ -35,7 +35,9 @@ extension PropertiesWindow {
             row("Size:", label("—, doesn’t use storage"), y: &y, in: v)
         } else if isFolder {
             sizeRow(y: &y, in: v)
-            countCloudSize(url)
+            // On open, a bounded count (Get Info on "My Drive" mustn't send thousands of requests); Recalculate
+            // counts it all.
+            countCloudSize(url, folderLimit: Self.openingFolderLimit)
         } else if let item {
             row("Size:", label("\(FileFormat.size(item.size)) (\(item.size.formatted()) bytes)"), y: &y, in: v)
         }
@@ -131,9 +133,13 @@ extension PropertiesWindow {
         row("Size:", sizeRow, y: &y, in: v)
     }
 
+    /// Folders listed when the window opens.
+    static let openingFolderLimit = 200
+
     /// A cloud folder's size, counted live through its listings (cancellable, like local folders). Google Docs count
-    /// as items without bytes.
-    func countCloudSize(_ url: URL) {
+    /// as items without bytes. Each folder is listed once (a Drive folder can sit in several), and with
+    /// `folderLimit` no more than that many: the size then says it's partial.
+    func countCloudSize(_ url: URL, folderLimit: Int? = nil) {
         sizeCount.cancel()
         let cancellation = DiskCancellation()
         sizeCount = cancellation
@@ -141,21 +147,10 @@ extension PropertiesWindow {
         sizeLabel.stringValue = "Calculating…"
         guard let provider = RemoteFS.provider(for: url) else { sizeLabel.stringValue = "—"; return }
         sizeQueue.async { [weak self] in
-            var bytes: Int64 = 0, files = 0, folders = 0
-            var pending = [url]
-            var failed = false
-            while let folder = pending.popLast(), !cancellation.isCancelled {
-                guard let list = try? provider.list(folder) else { failed = true; continue }
-                for it in list {
-                    // Shortcuts are followed by the listing but not counted again (their target lives elsewhere).
-                    if it.isBrowsableFolder {
-                        if !it.isSymlink { folders += 1; pending.append(it.url) }
-                    } else {
-                        files += 1
-                        bytes += it.size
-                    }
-                }
-                let (b, f, d) = (bytes, files, folders)
+            let (bytes, files, folders, failed, stopped) = Self.cloudSize(
+                of: url, provider: provider, folderLimit: folderLimit, cancellation: cancellation
+            ) {
+                b, f, d in
                 DispatchQueue.main.async { [weak self] in
                     guard let self, self.sizeCount === cancellation, !cancellation.isCancelled else { return }
                     self.sizeLabel.stringValue = "Calculating…\n\(FileFormat.size(b)), \((f + d).formatted()) items"
@@ -165,13 +160,41 @@ extension PropertiesWindow {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.sizeCount === cancellation, !cancellation.isCancelled else { return }
                 var text =
-                    "\(FileFormat.size(b))\n\(f.formatted()) \(f == 1 ? "file" : "files"), \(d.formatted()) \(d == 1 ? "subfolder" : "subfolders")"
+                    (stopped ? "At least " : "")
+                    + "\(FileFormat.size(b))\n\(f.formatted()) \(f == 1 ? "file" : "files"), \(d.formatted()) \(d == 1 ? "subfolder" : "subfolders")"
                 if partial { text += " (some folders couldn’t be read)" }
+                if stopped { text += " so far. Click Recalculate to count everything." }
                 self.sizeLabel.stringValue = text
                 self.sizeLabel.toolTip = text
                 self.recalculateButton.isEnabled = true
             }
         }
+    }
+
+    /// Counts through `provider`'s listings: bytes, files, subfolders, whether some couldn't be read, and whether it
+    /// stopped at `folderLimit` listings.
+    nonisolated static func cloudSize(
+        of url: URL, provider: RemoteProvider, folderLimit: Int?, cancellation: DiskCancellation, progress: (Int64, Int, Int) -> Void = { _, _, _ in }
+    ) -> (bytes: Int64, files: Int, folders: Int, failed: Bool, stopped: Bool) {
+        var bytes: Int64 = 0, files = 0, folders = 0, listed = 0
+        var pending = [url], seen: Set<URL> = [url.standardized]
+        var failed = false
+        while let folder = pending.popLast(), !cancellation.isCancelled {
+            if let folderLimit, listed >= folderLimit { return (bytes, files, folders, failed, true) }
+            listed += 1
+            guard let list = try? provider.list(folder) else { failed = true; continue }
+            for it in list {
+                // Shortcuts are followed by the listing but not counted again (their target lives elsewhere).
+                if it.isBrowsableFolder {
+                    if !it.isSymlink, seen.insert(it.url.standardized).inserted { folders += 1; pending.append(it.url) }
+                } else {
+                    files += 1
+                    bytes += it.size
+                }
+            }
+            progress(bytes, files, folders)
+        }
+        return (bytes, files, folders, failed, false)
     }
 }
 

@@ -320,4 +320,41 @@ import Testing
         row.keyDown(with: up)
         #expect(view.selected == "one")
     }
+
+    /// #13: a cloud folder's size lists each folder once (Drive folders can have several parents) and, on opening
+    /// the window, stops after a bounded number of listings and says it's partial.
+    @Test func aCloudFolderSizeIsBoundedAndListsEachFolderOnce() {
+        let provider = TreeProvider()
+        let root = URL(string: "gdrive://acct/root/")!
+        let full = PropertiesWindow.cloudSize(of: root, provider: provider, folderLimit: nil, cancellation: DiskCancellation())
+        #expect(full.folders == 3 && full.files == 4 && full.bytes == 40 && !full.stopped)
+        #expect(provider.listed.filter { $0.lastPathComponent == "shared" }.count == 1)  // reached twice, listed once
+        let bounded = PropertiesWindow.cloudSize(of: root, provider: TreeProvider(), folderLimit: 2, cancellation: DiskCancellation())
+        #expect(bounded.stopped && bounded.files < 4)
+    }
+
+    /// root: a/, b/, x.txt; a: shared/, y.txt; b: shared/ (the same folder again), z.txt; shared: w.txt.
+    private final class TreeProvider: RemoteProvider {
+        var listed: [URL] = []
+        func list(_ folder: URL) throws -> [FileItem] {
+            listed.append(folder)
+            let base = URL(string: "gdrive://acct/")!
+            func dir(_ n: String) -> FileItem { FileItem(url: base.appendingPathComponent(n + "/"), name: n, isDirectory: true) }
+            func file(_ n: String) -> FileItem { FileItem(url: folder.appendingPathComponent(n), name: n, isDirectory: false, size: 10) }
+            switch folder.lastPathComponent {
+            case "root": return [dir("a"), dir("b"), file("x.txt")]
+            case "a": return [dir("shared"), file("y.txt")]
+            case "b": return [dir("shared"), file("z.txt")]
+            default: return [file("w.txt")]
+            }
+        }
+        func rootTitle(_ url: URL) -> String { "Tree" }
+        func download(_ remote: URL, into localFolder: URL) throws -> URL { throw CocoaError(.featureUnsupported) }
+        func upload(_ local: URL, into remoteFolder: URL) throws { throw CocoaError(.featureUnsupported) }
+        func delete(_ remote: [URL]) throws { throw CocoaError(.featureUnsupported) }
+        func makeFolder(_ remote: URL) throws { throw CocoaError(.featureUnsupported) }
+        func rename(_ remote: URL, to newName: String) throws { throw CocoaError(.featureUnsupported) }
+        func move(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
+        func copy(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
+    }
 }
