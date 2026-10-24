@@ -562,6 +562,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     /// The root segment's glyph: the home folder for paths under it, the disk for other local paths, a server for
     /// remote ones.
     var rootIconName: String {
+        if LocationKind.of(url) == .airDrop { return "airdrop" }
         guard url.isFileURL else { return "network-server" }
         let p = url.standardizedFileURL.path, home = NSHomeDirectory()
         return p == home || p.hasPrefix(home + "/") ? "user-home" : "drive-harddisk"

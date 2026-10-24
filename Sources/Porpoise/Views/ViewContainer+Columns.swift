@@ -5,7 +5,7 @@ import PorpoiseServices
 /// Column view in the pane: the browser takes the list's place and puts the list (the focused column) among its
 /// columns. See `ColumnBrowserView`.
 extension ViewContainer {
-    var showsColumns: Bool { model.props.mode == .columns && !showsApps }
+    var showsColumns: Bool { model.props.mode == .columns && !showsApps && !showsAirDrop }
 
     /// Lays out the column browser in `frame` (Column view), or puts the list back where it was (any other mode).
     func layoutColumns(in frame: CGRect) {

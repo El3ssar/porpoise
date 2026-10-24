@@ -28,7 +28,15 @@ extension MainWindowController {
         }  // a background tab's title
     }
 
+    func containerAirDropPeer(_ c: ViewContainer) -> ViewContainer? {
+        tabs.first(where: { $0.containers.contains(where: { $0 === c }) })?.containers.first(where: { $0 !== c })
+    }
+    func container(_ c: ViewContainer, shareWithAirDrop urls: [URL], from anchor: NSView) {
+        SharingCoordinator.shared.share(urls, mode: .airDrop, from: anchor)
+    }
     func containerSelectionChanged(_ c: ViewContainer) {
+        guard tabs.indices.contains(current) else { return }
+        for pane in tab.containers where pane.showsAirDrop { pane.refreshAirDropSelection() }
         if c === view {
             if showInformation { information.show(hovered: nil, container: c) }
             refreshQuickLook()

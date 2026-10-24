@@ -16,7 +16,7 @@ extension PlacesPanel {
         }
         if let e = entry(at: i) {
             if e.url == PlacesModel.airDropURL {
-                add("Open AirDrop", "airdrop", #selector(openNewTab(_:)), e.url)
+                add("Open AirDrop in New Tab", "tab-new", #selector(openNewTab(_:)), e.url)
             } else {
                 add("Open in New Tab", "tab-new", #selector(openNewTab(_:)), e.url)
                 add("Open in New Window", "window-new", #selector(openNewWindow(_:)), e.url)

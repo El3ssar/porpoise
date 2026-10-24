@@ -82,6 +82,25 @@ private final class SharingPlaceDrops: PlacesPanelDelegate {
         return try body()
     }
 
+    @Test func airDropPageDropsAlwaysSendCopiesThroughTheSharingPath() async throws {
+        let scratch = try Scratch(), file = try scratch.file("original", "unchanged")
+        let remote = URL(string: "sftp://example.invalid/remote.txt")!
+        let page = AirDropPage(frame: CGRect(x: 0, y: 0, width: 400, height: 500))
+        var sent: [URL] = []
+        page.onSend = {
+            sent = $0; #expect($1 === page)
+        }
+        let drag = FakeDrag([file, remote], mask: [.copy, .move, .link])
+        #expect(page.draggingEntered(drag) == .copy)
+        #expect(page.performDragOperation(drag))
+        #expect(sent == [file, remote])
+        #expect(scratch.read("original") == "unchanged")
+        let invalid = FakeDrag([URL(string: "https://example.invalid")!], mask: .copy)
+        #expect(page.draggingEntered(invalid).isEmpty)
+        #expect(!page.performDragOperation(invalid))
+        #expect(sent == [file, remote])
+    }
+
     @Test func dragsCarryRemoteItemsAndTheSourcesOperation() { holding([]) { dragsCarryRemoteItemsAndTheSourcesOperationWithoutKeys() } }
 
     private func dragsCarryRemoteItemsAndTheSourcesOperationWithoutKeys() {
@@ -174,7 +193,7 @@ private final class SharingPlaceDrops: PlacesPanelDelegate {
                 with: .rightMouseDown, location: panel.convert(CGPoint(x: 80, y: 14), to: nil), modifierFlags: [],
                 timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
         let titles = try #require(panel.menu(for: event)).items.map(\.title)
-        #expect(titles.contains("Open AirDrop") && !titles.contains("Open in New Window") && !titles.contains("Open in Split View"))
+        #expect(titles.contains("Open AirDrop in New Tab") && !titles.contains("Open in New Window") && !titles.contains("Open in Split View"))
     }
 
     /// A drag inside the app runs an event-tracking run loop: spring-loading must still open what it rests on.

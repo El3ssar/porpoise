@@ -108,6 +108,7 @@ enum LocationContentSources {
         switch LocationKind.of(url) {
         case .tag, .smartFolder: return SpotlightListSource(location: url)
         case .recentFiles, .recentLocations: return RecentSource(location: url)
+        case .airDrop: return AirDropSource(location: url)
         case .network: return NetworkSource(location: url)
         case .archive: return ArchiveSource(location: url)
         default: break
@@ -118,5 +119,16 @@ enum LocationContentSources {
             return ProviderSource(location: url, provider: provider)
         }
         return LocalSource(location: url)
+    }
+}
+
+/// AirDrop is an in-app action page, with no filesystem listing or discovery side effects.
+private final class AirDropSource: LocationContentSource {
+    let location: URL
+    init(location: URL) { self.location = location }
+    var traits: LocationTraits { LocationTraits(prunesSelection: true, clearsCurrentItem: true) }
+    func load(_ folder: URL, expanded: Set<URL>, deliver: @escaping (LocationListing) -> Void) -> LocationLoad {
+        deliver(LocationListing())
+        return LocationLoad()
     }
 }

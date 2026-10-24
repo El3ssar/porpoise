@@ -50,11 +50,6 @@ import PorpoiseServices
         for session in Array(sessions.values) { session.finish() }
     }
 
-    /// Go/Places opens the system's receiver browser; sending is an explicit, separate action.
-    static func browseAirDrop() {
-        let app = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app/Contents/Applications/AirDrop.app")
-        NSWorkspace.shared.open(app)
-    }
 }
 
 @MainActor final class SharingSession: NSObject, @preconcurrency NSSharingServicePickerDelegate, NSSharingServiceDelegate {
@@ -111,6 +106,11 @@ import PorpoiseServices
         service?.delegate = nil; service = nil
         let finish = onFinish; onFinish = nil; finish?()
     }
+
+    func sharingService(
+        _ sharingService: NSSharingService, sourceWindowForShareItems items: [Any],
+        sharingContentScope: UnsafeMutablePointer<NSSharingService.SharingContentScope>
+    ) -> NSWindow? { anchor?.window }
 
     func sharingServicePicker(_ sharingServicePicker: NSSharingServicePicker, delegateFor sharingService: NSSharingService)
         -> (any NSSharingServiceDelegate)?
