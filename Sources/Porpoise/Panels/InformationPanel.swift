@@ -231,9 +231,8 @@ final class InformationPanel: NSView {
     /// How long the pointer rests on a row before the panel shows it.
     private static let hoverDelay: TimeInterval = 0.08
 
-    /// The item for a URL: read from disk for local files; remote items come from the view's listing.
+    /// A remote or virtual item, from the view's listing.
     private func item(for u: URL) -> FileItem? {
-        if u.isFileURL { return FileItem.load(u) }
         if let c = container {
             if let i = c.model.index(of: u), c.model.rows.indices.contains(i) { return c.model.rows[i].item }
             if u == c.url {
@@ -254,19 +253,83 @@ final class InformationPanel: NSView {
             showSummary(of: urls)
             return
         }
-        guard let u = urls.first, let item = item(for: u) else {
-            stopPlayer()
-            drivePreview?.cancel(); drivePreview = nil
-            previewStatus.stringValue = ""
-            previewSpinner.stopAnimation(nil)
-            preview.image = nil
-            nameLabel.stringValue = ""
+        detailWork?.cancel()
+        guard let u = urls.first else { return clear() }
+        guard u.isFileURL else {
+            // Remote and virtual items: what the view's listing knows, no disk to read.
+            guard let item = item(for: u) else { return clear() }
+            show(item, details: nil)
             return
         }
-        nameLabel.stringValue = PlacesModel.shared.title(for: u) ?? item.name
-        showPreview(of: item)
-        setupPlayer(for: item)
-        addDetailRows(for: item)
+        // This Mac (or a mounted share): the item as listed shows at once; reading it again, counting a folder's
+        // items, its permissions, tags and Spotlight's details happen off the main thread, and land only if it's
+        // still the item shown (a big folder or a slow share never stalls the window, nor do rows rushed past).
+        let listed = container.flatMap { c in c.model.index(of: u).flatMap { c.model.rows.indices.contains($0) ? c.model.rows[$0].item : nil } }
+        if let listed { show(listed, details: nil) }
+        let cached = metadataCache
+        let work = DispatchWorkItem { [weak self] in
+            let read = Self.readDetails(of: u, spotlight: cached)
+            DispatchQueue.main.async {
+                guard let self, self.shownURLs == urls else { return }
+                guard let read else { return self.clear() }
+                self.metadataCache[read.spotlightKey] = read.spotlight
+                if self.metadataCache.count >= Self.metadataCacheLimit { self.metadataCache.removeAll() }
+                self.show(read.item, details: read, keepsPreview: listed?.url == read.item.url)
+            }
+        }
+        detailWork = work
+        Self.detailQueue.async(execute: work)
+    }
+
+    /// Nothing to show.
+    private func clear() {
+        stopPlayer()
+        drivePreview?.cancel(); drivePreview = nil
+        previewStatus.stringValue = ""
+        previewSpinner.stopAnimation(nil)
+        preview.image = nil
+        nameLabel.stringValue = ""
+        grid.arrangedSubviews.forEach { $0.removeFromSuperview() }
+    }
+
+    /// `item`'s name, preview and details (`details`: what was read from disk; nil: what the item itself knows).
+    /// `keepsPreview`: it already shows (from the listing), the picture or player isn't set up again.
+    private func show(_ item: FileItem, details: Details?, keepsPreview: Bool = false) {
+        grid.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        nameLabel.stringValue = PlacesModel.shared.title(for: item.url) ?? item.name
+        if !keepsPreview {
+            showPreview(of: item)
+            setupPlayer(for: item)
+        }
+        addDetailRows(for: item, details: details)
+        needsLayout = true
+    }
+
+    private var detailWork: DispatchWorkItem?
+    /// Disk and Spotlight reads for the panel, one at a time; a newer selection cancels those not started.
+    private static let detailQueue = DispatchQueue(label: "porpoise.information", qos: .userInitiated)
+
+    /// What the panel reads from disk about one local item, off the main thread.
+    struct Details {
+        let item: FileItem
+        let childCount: Int?
+        let permissions: String
+        let tags: [String]
+        let spotlight: [(String, String)]
+        let spotlightKey: String
+    }
+
+    /// Reads it (nil: the item is gone). `spotlight`: details already read, by item and date.
+    nonisolated static func readDetails(of u: URL, spotlight cache: [String: [(String, String)]]) -> Details? {
+        guard let item = FileItem.load(u) else { return nil }
+        let key = item.url.path + "|" + String(item.modificationDate?.timeIntervalSinceReferenceDate ?? 0)
+        return Details(
+            item: item,
+            childCount: item.isBrowsableFolder ? DirectoryLister.childCount(u, includeHidden: false) : nil,
+            permissions: AccessSummary.text(forFileAt: u.path),
+            tags: (try? u.resourceValues(forKeys: [.tagNamesKey]).tagNames) ?? [],
+            spotlight: cache[key] ?? spotlightMetadata(item),
+            spotlightKey: key)
     }
 
     private func showSummary(of urls: [URL]) {
@@ -355,7 +418,7 @@ final class InformationPanel: NSView {
         }
     }
 
-    private func addDetailRows(for item: FileItem) {
+    private func addDetailRows(for item: FileItem, details: Details?) {
         let u = item.url
         addRow("Type:", item.typeDescription)
         // Remote items: only what the listing knows (no local metadata to read).
@@ -366,7 +429,7 @@ final class InformationPanel: NSView {
             return
         }
         if item.isBrowsableFolder {
-            if let n = DirectoryLister.childCount(u, includeHidden: false) { addRow("Contains:", FileFormat.itemCount(n)) }
+            if let n = details?.childCount { addRow("Contains:", FileFormat.itemCount(n)) }
         } else {
             addRow("Size:", FileFormat.size(item.size))
         }
@@ -375,12 +438,13 @@ final class InformationPanel: NSView {
         if let d = item.creationDate { addRow("Created:", date(d)) }
         if let d = item.accessDate { addRow("Accessed:", date(d)) }
         // In words, like Finder; the mode bits stay in Properties › Permissions and the Details column.
-        addRow("Permissions:", AccessSummary.text(forFileAt: u.path))
+        // Read off the main thread: until then, what the listing knows.
+        guard let details else { return }
+        addRow("Permissions:", details.permissions)
         addRow("Owner:", item.owner ?? "")
         if let l = item.linkDestination { addRow("Link to:", l) }
-        let tags = (try? u.resourceValues(forKeys: [.tagNamesKey]).tagNames) ?? []
-        if !tags.isEmpty { addRow("Tags:", tags.joined(separator: ", ")) }
-        for (k, v) in spotlightMetadata(item) { addRow(k, v) }
+        if !details.tags.isEmpty { addRow("Tags:", details.tags.joined(separator: ", ")) }
+        for (k, v) in details.spotlight { addRow(k, v) }
     }
 
     private func formatted(_ d: Date) -> String {
@@ -388,9 +452,7 @@ final class InformationPanel: NSView {
     }
 
     /// Image/audio/video details from Spotlight (Baloo's role on KDE).
-    private func spotlightMetadata(_ item: FileItem) -> [(String, String)] {
-        let key = item.url.path + "|" + String(item.modificationDate?.timeIntervalSinceReferenceDate ?? 0)
-        if let c = metadataCache[key] { return c }
+    nonisolated private static func spotlightMetadata(_ item: FileItem) -> [(String, String)] {
         guard let md = MDItemCreateWithURL(nil, item.url as CFURL) else { return [] }
         var out: [(String, String)] = []
         func attr(_ k: CFString) -> Any? { MDItemCopyAttribute(md, k) }
@@ -409,8 +471,6 @@ final class InformationPanel: NSView {
         if let al = attr(kMDItemAlbum) as? String { out.append(("Album:", al)) }
         if let p = attr(kMDItemNumberOfPages) as? Int { out.append(("Pages:", "\(p)")) }
         if let w = attr(kMDItemWhereFroms) as? [String], let f = w.first { out.append(("Downloaded From:", f)) }
-        if metadataCache.count >= Self.metadataCacheLimit { metadataCache.removeAll() }
-        metadataCache[key] = out
         return out
     }
 
