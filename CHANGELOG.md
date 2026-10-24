@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.14.1
+
+- **You approve every administrator action, with Touch ID.** Porpoise's administrator helper (version 7) no longer acts just because Porpoise asks: each action carries your approval, which the helper checks itself, through the macOS dialog that offers Touch ID or your password.
+  - Standard: changing items in /Applications, /Library or other disks. One approval covers about five minutes and ends when the screen locks or you switch users.
+  - Protected: system configuration, startup items, another person's files or private data (keychains, logs), and giving items to root. You're asked every time, and the dialog names the action and the item.
+  - Never: places protected by System Integrity Protection, and anything a script, the `porpoise` command or a shortcut asks for.
+
+  The helper is installed only after its signature is checked, writes no file names to the system log, and Settings › Advanced shows its version and can remove it. Properties can now change an item's owner and group. The first administrator action after updating asks once to install the new helper.
+- **GitHub Dark for code.** Code previews in Space, the Information panel and Column view use GitHub's dark colours; Settings › Appearance › Code theme also offers GitHub Light or following the Mac's appearance.
+- The Information panel shows a file's new size and date when it changes while selected, and only shows the latest result.
+- Type-ahead ignores accents, Applications tiles follow light and dark mode, a drop on Places goes to the row it's released on, and themed panes use their theme's colours.
+- Folder previews are only rebuilt when a preview setting changes.
+
 ## 0.14.0
 
 - **AirDrop opens in Porpoise.** Clicking AirDrop in the sidebar, Go › AirDrop (⇧⌘R) or a new tab shows an AirDrop page in the pane instead of Finder's window: drop files on it, choose files, or send the selection, and the system's list of nearby devices opens over the Porpoise window. Commands that make no sense there, such as Rename or Copy to Other View, are turned off.
