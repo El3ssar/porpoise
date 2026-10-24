@@ -33,8 +33,20 @@ enum AccountsSettingsPage {
         f.section("Sign-in configuration")
         for descriptor in CloudProviderDescriptor.catalog {
             for configuration in descriptor.configurations {
-                f.text(configuration.label, Settings.store.string(forKey: configuration.key) ?? "") {
-                    Settings.store.set($0.trimmingCharacters(in: .whitespacesAndNewlines), forKey: configuration.key)
+                if configuration.key == "boxClientSecret" {
+                    f.text(configuration.label, (try? BoxApplicationSecret.read()) ?? "") { value in
+                        do { try BoxApplicationSecret.save(value) } catch {
+                            let alert = NSAlert()
+                            alert.messageText = "Couldn’t save the Box application secret."
+                            alert.informativeText =
+                                "Enter the Box client ID first. If it is already entered, check that your login Keychain is available."
+                            alert.runModal()
+                        }
+                    }
+                } else {
+                    f.text(configuration.label, Settings.store.string(forKey: configuration.key) ?? "") {
+                        Settings.store.set($0.trimmingCharacters(in: .whitespacesAndNewlines), forKey: configuration.key)
+                    }
                 }
             }
         }
