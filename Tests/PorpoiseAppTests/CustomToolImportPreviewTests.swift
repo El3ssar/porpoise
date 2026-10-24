@@ -3,6 +3,7 @@ import PorpoiseCore
 import PorpoiseServices
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
+import QuartzCore
 import Testing
 
 @testable import Porpoise
@@ -29,13 +30,33 @@ import Testing
         try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
         // Optional review artifacts render real production views without depending on Stage Manager's thumbnails.
         // These establish layout/content, not active-window desktop blending or spoken VoiceOver acceptance.
-        func capture(_ window: NSWindow, name: String) throws {
+        let originalAppearance = NSApp.appearance
+        defer { NSApp.appearance = originalAppearance; Theme.lookChanged() }
+        func capture(_ window: NSWindow, name: String) async throws {
             for (look, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
                 let appearance = try #require(NSAppearance(named: appearanceName))
                 Settings.shared.appearance = look == "light" ? .light : .dark
+                NSApp.appearance = appearance
                 window.appearance = appearance
+                Theme.lookChanged()
+                window.contentView?.redrawAll()
+                window.displayIfNeeded()
+                CATransaction.flush()
+                try await Task.sleep(nanoseconds: 50_000_000)
                 let view = try #require(window.contentView?.superview)
                 view.layoutSubtreeIfNeeded()
+                if name == "activity" {
+                    func toolsView(_ view: NSView) -> CustomToolActivityView? {
+                        (view as? CustomToolActivityView) ?? view.subviews.compactMap(toolsView).first
+                    }
+                    let tools = try #require(toolsView(view))
+                    var background: CGFloat = 0, foreground: CGFloat = 0
+                    appearance.performAsCurrentDrawingAppearance {
+                        background = tools.output.backgroundColor.usingColorSpace(.deviceRGB)?.redComponent ?? -1
+                        foreground = tools.output.textColor?.usingColorSpace(.deviceRGB)?.redComponent ?? -1
+                    }
+                    #expect(look == "dark" ? background < 0.5 && foreground > 0.5 : background > 0.5 && foreground < 0.5)
+                }
                 let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
                 appearance.performAsCurrentDrawingAppearance { view.cacheDisplay(in: view.bounds, to: bitmap) }
                 let data = try #require(bitmap.representation(using: .png, properties: [:]))
@@ -44,14 +65,14 @@ import Testing
         }
         alert.layout()
         defer { alert.window.close() }
-        try capture(alert.window, name: "import")
+        try await capture(alert.window, name: "import")
         try Settings.shared.saveCustomTools(document.tools)
         let settings = SettingsWindowController(page: "Custom Tools")
         defer { settings.window?.close() }
-        try capture(try #require(settings.window), name: "settings")
+        try await capture(try #require(settings.window), name: "settings")
         let editor = CustomToolEditor(tool: tool) { _ in Issue.record("Capture fixture must not save the draft.") }
         defer { editor.window?.close() }
-        try capture(try #require(editor.window), name: "editor")
+        try await capture(try #require(editor.window), name: "editor")
         let context = CustomToolContext(folder: scratch.url, items: names.map { FileItem(url: scratch.path($0), name: $0, isDirectory: false) })
         let run = try await CustomToolRunner.shared.start(id: tool.id, context: context)
         #expect(await eventually { !run.isRunning })
@@ -59,6 +80,6 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: scratch.path("INJECTED").path))
         ActivityWindowController.shared.showTools()
         defer { ActivityWindowController.shared.window?.close(); CustomToolRunner.shared.clearFinished() }
-        try capture(try #require(ActivityWindowController.shared.window), name: "activity")
+        try await capture(try #require(ActivityWindowController.shared.window), name: "activity")
     }
 }
