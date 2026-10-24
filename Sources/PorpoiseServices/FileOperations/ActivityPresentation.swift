@@ -21,7 +21,9 @@ public struct ActivityPresentation {
         fraction = min(1, max(0, activity.fraction))
         hasFailures = activity.state == .failed || (activity.state == .completed && (!activity.errors.isEmpty || activity.verification?.ok == false))
         showsProgress = activity.state.isActive || activity.state == .queued
-        isIndeterminate = activity.progress?.phase == .preparing || (activity.fraction <= 0 && activity.state.isActive) || activity.state == .queued
+        isIndeterminate =
+            (activity.progress?.phase == .preparing || activity.progress?.phase == .verifying) || (activity.fraction <= 0 && activity.state.isActive)
+            || activity.state == .queued
         isPaused = activity.state == .paused
     }
 
@@ -66,6 +68,9 @@ public struct ActivityPresentation {
                 return
                     "Preparing… \(FileFormat.count(p.totalFiles)) \(p.totalFiles == 1 ? "file" : "files") · \(FileFormat.count(p.totalFolders)) \(p.totalFolders == 1 ? "folder" : "folders") · \(FileFormat.size(p.totalBytes))"
             }
+            if let p, p.phase == .verifying {
+                return "Verifying move… \(FileFormat.size(p.verifiedBytes)) checked"
+            }
             var parts: [String] = []
             if let notice { parts.append(notice) }
             if let p, p.totalFiles > 0 {
@@ -85,7 +90,8 @@ public struct ActivityPresentation {
             }
             return [([base] + summary).joined(separator: " · "), verification?.summary].compactMap { $0 }.joined(separator: ". ")
         case .failed: return errors.first ?? "Failed"
-        case .cancelled: return "Cancelled"
+        case .cancelled:
+            return (p?.retainedCopies ?? 0) > 0 ? "Cancelled — copy complete; original kept" : "Cancelled"
         case .interrupted: return "Interrupted: it can be resumed next time Porpoise starts"
         }
     }
