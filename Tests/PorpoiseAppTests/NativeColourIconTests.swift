@@ -89,10 +89,11 @@ import UniformTypeIdentifiers
             return true
         }
         #expect(NSWorkspace.shared.setIcon(custom, forFile: url.path, options: []))
-        Settings.shared.updateAppearance { $0.iconTheme = "Native macOS" }
-        let before = pixels(Icons.shared.image(for: local, size: 64))
-        Settings.shared.updateAppearance { $0.iconTheme = Icons.nativeColourTheme }
+        // As listed (the listing says it has an icon of its own).
         let reloaded = try #require(FileItem.load(url))
+        Settings.shared.updateAppearance { $0.iconTheme = "Native macOS" }
+        let before = pixels(Icons.shared.image(for: reloaded, size: 64))
+        Settings.shared.updateAppearance { $0.iconTheme = Icons.nativeColourTheme }
         #expect(reloaded.hasCustomIcon)
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         #expect(reloaded.posixPermissions == (attributes[.posixPermissions] as? NSNumber)?.intValue)

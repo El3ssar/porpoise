@@ -130,21 +130,30 @@ extension ItemListView {
     }
 
     /// The item after (or before) the current one by name; the first (or last) by name without one. One pass over
-    /// the rows, so a huge folder needn't be sorted again for a key press.
+    /// the rows, each name read once, so a huge folder needn't be sorted again for a key press. Names that compare
+    /// the same (they differ only in case) keep the order shown.
     func selectByName(forward: Bool) {
         guard !model.rows.isEmpty else { return }
-        func name(_ i: Int) -> String { model.displayName(for: model.rows[i].item) }
-        func before(_ a: Int, _ b: Int) -> Bool { name(a).localizedStandardCompare(name(b)) == .orderedAscending }
-        let here = model.currentURL.flatMap { model.index(of: $0) }
-        var best: Int?
-        for i in model.rows.indices where i != here {
+        let here = model.currentURL.flatMap { model.index(of: $0) }.map { (model.displayName(for: model.rows[$0].item), $0) }
+        var best: (String, Int)?
+        for i in model.rows.indices where i != here?.1 {
+            let key = (model.displayName(for: model.rows[i].item), i)
             // Beyond the current one in the direction asked, and closer to it than the best so far.
-            if let h = here, forward ? !before(h, i) : !before(i, h) { continue }
-            if let b = best, forward ? !before(i, b) : !before(b, i) { continue }
-            best = i
+            if let h = here, forward ? !Self.byName(h, key) : !Self.byName(key, h) { continue }
+            if let b = best, forward ? !Self.byName(key, b) : !Self.byName(b, key) { continue }
+            best = key
         }
-        guard let target = best else { return }
+        guard let target = best?.1 else { return }
         select(model.rows[target].item.url)
+    }
+
+    /// (name, row) in name order, the row breaking ties between names that compare the same.
+    static func byName(_ a: (String, Int), _ b: (String, Int)) -> Bool {
+        switch a.0.localizedStandardCompare(b.0) {
+        case .orderedAscending: return true
+        case .orderedDescending: return false
+        case .orderedSame: return a.1 < b.1
+        }
     }
 
     func openSelection() {

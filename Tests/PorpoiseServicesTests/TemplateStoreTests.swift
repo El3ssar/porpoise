@@ -60,6 +60,28 @@ struct TemplateStoreTests {
         #expect(throws: (any Error).self) { try store.create(template, pattern: "../escape", folder: folder, context: context) }
         _ = try store.preview(template, pattern: template.filename, folder: folder, context: TemplateContext(name: "x", counter: Int.max))
     }
+    /// W-236 (W-235 D15): looking for a free counter renders names only; the contents once, for the name found; a
+    /// folder already read isn't read again; and the first free number is the one taken.
+    @Test func aFreeCounterIsFoundByNameOnly() throws {
+        let scratch = try Scratch()
+        for i in 1...2000 { FileManager.default.createFile(atPath: scratch.path(String(format: "Note %04d.txt", i)).path, contents: nil) }
+        let body = String(repeating: "{name} ", count: 1000) + String(repeating: "x", count: 4 << 20)
+        let template = FileTemplate(title: "Note", filename: "Note.txt", contents: Data(body.utf8))
+        let store = TemplateStore(directory: scratch.path("Templates"))
+        let t = Date()
+        let found = try store.preview(template, pattern: "Note {counter:04}.txt", folder: scratch.url, context: TemplateContext(name: "x"))
+        let elapsed = Date().timeIntervalSince(t)
+        #expect(found.name == "Note 2001.txt" && found.counter == 2001, "\(found.name)")
+        #expect(String(decoding: found.contents.prefix(10), as: UTF8.self) == "Note 2001 ")
+        #expect(elapsed < 2, "\(elapsed) s")
+        // Names already read: the folder isn't listed again (a name missing from them is taken as free).
+        let given = try store.preview(
+            template, pattern: "Note {counter:04}.txt", folder: scratch.path("missing"), context: TemplateContext(name: "x"),
+            existing: ["Note 0001.txt", "Note 0002.txt", "Note 0003.txt", "Note 0004.txt", "Note 0005.txt"])
+        // The first free number: 6 (counting on from a counter already moved gave 7).
+        #expect(given.name == "Note 0006.txt")
+    }
+
     @Test func boundedImportsRejectLinksAndSpecialFiles() throws {
         let s = try Scratch(); let store = TemplateStore(directory: s.path("Templates"))
         let source = try s.file("source.txt", "text")

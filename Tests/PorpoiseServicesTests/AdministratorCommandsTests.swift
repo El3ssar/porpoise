@@ -84,7 +84,7 @@ import Testing
         let script = FileOperationsController.administratorScript([["/usr/bin/chflags", "nouchg", "/a"], ["/bin/rm", "--", "/a"]])
         #expect(
             script
-                == #"do shell script "( '/usr/bin/chflags' 'nouchg' '/a' 2>/dev/null; true ) && ( '/bin/rm' '--' '/a' )" with administrator privileges"#
+                == #"do shell script "( '/usr/bin/chflags' 'nouchg' '/a' 2>/dev/null; true ) && ( '/bin/rm' '--' '/a' )" with prompt "Porpoise needs an administrator’s permission to make this change." with administrator privileges"#
         )
     }
 
@@ -93,7 +93,8 @@ import Testing
     @Test func hostileNamesStaySingleArgumentsThroughAppleScriptAndTheShell() throws {
         let s = try Scratch()
         let script = FileOperationsController.administratorScript([["/usr/bin/printf", "<%s>"] + hostile])
-        let suffix = " with administrator privileges"
+        // Without its prompt and privileges: the shell line alone.
+        let suffix = #" with prompt "Porpoise needs an administrator’s permission to make this change." with administrator privileges"#
         try #require(script.hasSuffix(suffix))
         let r = try runTool("/usr/bin/osascript", ["-e", String(script.dropLast(suffix.count))], cwd: s.url)
         let data = r.out

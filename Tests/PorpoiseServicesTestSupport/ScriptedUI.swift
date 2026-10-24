@@ -16,6 +16,8 @@ public final class ScriptedUI: FileOperationsUI {
     public var didCancelConflict = false
     public var onJobStarted: ((FileJob) -> Void)?
     public var confirms: Bool
+    /// Says yes to "Authenticate" (tests that also replace what runs as administrator).
+    public var authenticates = false
     /// Ticks "Do not ask again" on the questions it confirms.
     public var dontAskAgain = false
     /// App Cleanup's review: nil leaves it to the controller (no review); else the items left selected, or nil to cancel.
@@ -39,7 +41,7 @@ public final class ScriptedUI: FileOperationsUI {
 
     public func confirm(_ question: PorpoiseServices.Confirmation, window: AnyObject?) -> (confirmed: Bool, dontAskAgain: Bool) {
         questions.append(question)
-        if question.confirmTitle == "Authenticate" { return (false, false) }
+        if question.confirmTitle == "Authenticate" { return (authenticates, false) }
         return (confirms, confirms && dontAskAgain)
     }
 

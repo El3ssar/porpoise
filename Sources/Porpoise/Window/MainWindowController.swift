@@ -179,6 +179,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     private func observeNotifications() {
         observe(Settings.changed) { me, note in me.settingsChanged(key: note.object as? String) }
         observe(PlacesModel.changed) { me, _ in me.placesChanged() }
+        observe(RemoteFS.titlesChanged) { me, _ in me.placesChanged() }
         observe(.terminalExited) { me, n in
             // Like Dolphin: typing `exit` closes the Terminal panel; F4 opens a fresh shell.
             guard (n.object as? TerminalPanel) === me.terminal, me.showTerminal else { return }

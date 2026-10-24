@@ -21,6 +21,12 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
     private let separator = NSView()
     private let hint = NSTextField(wrappingLabelWithString: "Drag items here, or choose Add to Shelf (⌥⌘S), to collect them from several places.")
     private var states: [UUID: ShelfItemState] = [:]
+    /// Each item as found on disk (its icon), read with its state.
+    private var files: [UUID: FileItem] = [:]
+    /// Where the items are is worked out off the main thread (a share that went away would hold the window); a newer
+    /// reload's answer replaces an older one's.
+    private var stateGeneration = 0
+    private static let stateQueue = DispatchQueue(label: "porpoise.shelf.states", qos: .userInitiated)
     private var observer: NSObjectProtocol?
 
     override convenience init(frame: NSRect) { self.init(frame: frame, store: .shared) }
@@ -133,7 +139,6 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
 
     func reload() {
         let selected = Set(table.selectedRowIndexes.compactMap { items.indices.contains($0) ? items[$0].id : nil })
-        states = Dictionary(uniqueKeysWithValues: store.current.items.map { ($0.id, store.state(of: $0)) })
         shelves.removeAllItems()
         for s in store.shelves { shelves.addItem(withTitle: s.name) }
         shelves.selectItem(at: store.currentIndex)
@@ -145,6 +150,43 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
             mi.target = self
             shelves.menu?.addItem(mi)
         }
+        showCount()
+        table.reloadData()
+        table.selectRowIndexes(IndexSet(items.indices.filter { selected.contains(items[$0].id) }), byExtendingSelection: false)
+        hint.isHidden = !items.isEmpty
+        copyHere.isEnabled = !items.isEmpty
+        moveHere.isEnabled = !items.isEmpty
+        refreshStates()
+    }
+
+    /// Finds every item (at its path, through its bookmark, its disk connected or not) off the main thread, then
+    /// shows them and remembers the new places of those renamed or moved, saving once.
+    private func refreshStates() {
+        stateGeneration += 1
+        let generation = stateGeneration, snapshot = items
+        Self.stateQueue.async { [weak self] in
+            var found: [UUID: (state: ShelfItemState, file: FileItem?)] = [:]
+            for item in snapshot {
+                let state = ShelfStore.resolve(item)
+                found[item.id] = (state, state.url.flatMap { $0.isFileURL ? FileItem.load($0) : nil })
+            }
+            DispatchQueue.main.async {
+                guard let self, self.stateGeneration == generation else { return }
+                self.states = found.mapValues(\.state)
+                self.files = found.compactMapValues(\.file)
+                let selected = self.table.selectedRowIndexes
+                self.showCount()
+                self.table.reloadData()
+                self.table.selectRowIndexes(selected, byExtendingSelection: false)
+                var moved: [UUID: URL] = [:]
+                for item in snapshot { if case .available(let u) = found[item.id]?.state, u != item.url { moved[item.id] = u } }
+                if !moved.isEmpty { self.store.remember(moved) }
+            }
+        }
+    }
+
+    /// How many items, and how many can't be reached.
+    private func showCount() {
         let missing = items.filter { states[$0.id]?.problem != nil }.count
         // Short, for a narrow sidebar; the tooltip says it in full.
         count.stringValue = items.isEmpty ? "" : missing > 0 ? "\(missing) missing" : FileFormat.itemCount(items.count)
@@ -153,11 +195,6 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
             ? nil
             : FileFormat.itemCount(items.count) + (missing > 0 ? ", \(missing) unavailable (missing or disconnected)" : "")
         count.textColor = missing > 0 ? Theme.negativeText : .secondaryLabelColor
-        table.reloadData()
-        table.selectRowIndexes(IndexSet(items.indices.filter { selected.contains(items[$0].id) }), byExtendingSelection: false)
-        hint.isHidden = !items.isEmpty
-        copyHere.isEnabled = !items.isEmpty
-        moveHere.isEnabled = !items.isEmpty
     }
 
     /// The selected items, or all of them when none is selected.
@@ -173,10 +210,11 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let item = items[row]
-        let state = states[item.id] ?? .missing
+        // Until it's been looked for: as it was added, nothing wrong with it yet.
+        let state = states[item.id] ?? (item.url.isFileURL ? .available(item.url) : .remote(item.url))
         let v = ShelfRowView()
         let url = state.url ?? item.url
-        let file = url.isFileURL ? FileItem.load(url) : nil
+        let file = files[item.id]
         v.icon.image =
             file.map { Icons.shared.image(for: $0, size: 22) }
             ?? Icons.shared.image(url.isFileURL ? "unknown" : "folder-remote", size: 22) ?? NSImage()

@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseFileSystem
 import PorpoiseServices
 
 /// The windows of "Folders, tabs, and window state from last time", each as a `WindowLayout` (what named workspaces
@@ -93,8 +94,11 @@ struct SessionState: Equatable {
         return (SessionState(windows: kept), missing)
     }
 
-    /// Whether `url` can be shown: local folders must still be there; anything else is tried when shown.
-    static func exists(_ url: URL) -> Bool { !url.isFileURL || FileManager.default.fileExists(atPath: url.path) }
+    /// Whether `url` can be shown: local folders must still be there; anything else is tried when shown, a folder on a
+    /// network share too (its server may be gone, and a stat there would hold the launch before any window shows).
+    static func exists(_ url: URL) -> Bool {
+        !url.isFileURL || MountTable.isNetwork(url.path) || FileManager.default.fileExists(atPath: url.path)
+    }
 
     /// The message shown when some folders couldn't be reopened.
     static func missingMessage(_ names: [String]) -> String? {

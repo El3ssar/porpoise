@@ -4,7 +4,15 @@ import PorpoiseCore
 /// Android over adb. `adb shell` runs its argument with the device's sh, so paths are single-quoted.
 final class ADBProvider: RemoteProvider, RemoteTransferTargetChecking {
     let serial: String
-    private var model: String?
+    /// The phone's name once adb gave it (read on any thread: breadcrumbs ask on the main one).
+    private var model: String? {
+        get { modelLock.withLock { _model } }
+        set { modelLock.withLock { _model = newValue } }
+    }
+    private var _model: String?
+    private let modelLock = NSLock()
+    /// When the name was last asked of adb (it's asked again after a while if it wasn't known then).
+    private var askedAt: Date?
     /// Printed by our rename script when the target exists (older adb doesn't pass exit codes on).
     private static let existsMarker = "__PORPOISE_EXISTS__"
 
@@ -26,15 +34,29 @@ final class ADBProvider: RemoteProvider, RemoteTransferTargetChecking {
         return RemoteParsing.parseADBDevices(String(decoding: r.out, as: UTF8.self))
     }
 
-    /// Cached, also when the phone isn't listed: breadcrumbs ask for it on the main thread on every redraw.
-    /// How long the phone's name may take; the serial number stands in after that.
+    /// How long the phone's name may take to come from adb.
     var titleTimeout: TimeInterval = 3
+    /// How long before asking adb again for a name it didn't give.
+    static let titleRetry: TimeInterval = 10
 
+    /// The phone's name; its serial number until adb has given it. Breadcrumbs ask on the main thread on every redraw:
+    /// adb is asked on another one, and `RemoteFS.titlesChanged` is posted once the name is there.
     func rootTitle(_ url: URL) -> String {
         if let m = model { return m }
-        let m = Self.devices(timeout: titleTimeout, adb: tool).first(where: { $0.serial == serial })?.model ?? serial
-        model = m
-        return m
+        let due = modelLock.withLock {
+            guard askedAt.map({ Date().timeIntervalSince($0) > Self.titleRetry }) ?? true else { return false }
+            askedAt = Date()
+            return true
+        }
+        if due {
+            let timeout = titleTimeout, tool = tool, serial = serial
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let m = Self.devices(timeout: timeout, adb: tool).first(where: { $0.serial == serial })?.model else { return }
+                self?.model = m
+                DispatchQueue.main.async { NotificationCenter.default.post(name: RemoteFS.titlesChanged, object: nil) }
+            }
+        }
+        return serial
     }
 
     private func adb(_ args: [String]) throws -> Data {

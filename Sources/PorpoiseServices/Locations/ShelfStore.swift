@@ -202,15 +202,25 @@ public final class ShelfStore {
     /// Finds an item: at its path, else through its bookmark (renamed or moved: the new place is remembered).
     public func state(of item: ShelfItem) -> ShelfItemState {
         let s = Self.resolve(item)
-        if case .available(let u) = s, u != item.url, let i = current.items.firstIndex(where: { $0.id == item.id }) {
-            shelves[currentIndex].items[i].url = u
-            shelves[currentIndex].items[i].bookmark = try? u.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-            save()
-        }
+        if case .available(let u) = s, u != item.url { remember([item.id: u]) }
         return s
     }
 
-    static func resolve(_ item: ShelfItem) -> ShelfItemState {
+    /// Remembers where items were found again (renamed or moved), saving once for all of them: for places worked out
+    /// off the main thread (`resolve`), where saving item by item would post a change for each.
+    public func remember(_ found: [UUID: URL]) {
+        var changed = false
+        for (id, u) in found {
+            guard let i = current.items.firstIndex(where: { $0.id == id }), current.items[i].url != u else { continue }
+            shelves[currentIndex].items[i].url = u
+            shelves[currentIndex].items[i].bookmark = try? u.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+            changed = true
+        }
+        if changed { save() }
+    }
+
+    /// Where `item` is now, without changing the shelf: safe off the main thread.
+    public static func resolve(_ item: ShelfItem) -> ShelfItemState {
         guard item.url.isFileURL else { return .remote(item.url) }
         if FileJob.itemExists(at: item.url) { return .available(item.url) }
         if let b = item.bookmark {

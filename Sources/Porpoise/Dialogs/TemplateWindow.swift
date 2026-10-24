@@ -109,9 +109,34 @@ final class TemplateWindow: SecondaryWindowController, NSTextFieldDelegate, NSTe
     }
     func controlTextDidChange(_ notification: Notification) { updatePreview() }
     func textDidChange(_ notification: Notification) { updatePreview() }
+
+    /// The folder's names, read once off the main thread (the free name is looked for among them on every key).
+    private var existingNames: Set<String>?
+    private var previewWork: DispatchWorkItem?
+    private static let previewQueue = DispatchQueue(label: "porpoise.template-preview", qos: .userInitiated)
+
+    /// The preview follows typing a moment later, rendered off the main thread; only the last one asked shows.
     private func updatePreview() {
+        previewWork?.cancel()
+        let template = current, pattern = filename.stringValue, folder = folder, context = context, store = store
+        let known = existingNames
+        let work = DispatchWorkItem { [weak self] in
+            let names = known ?? Set((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
+            let result = Result { try store.preview(template, pattern: pattern, folder: folder, context: context, existing: names) }
+            DispatchQueue.main.async {
+                guard let self, self.previewWork?.isCancelled == false else { return }
+                self.existingNames = names
+                self.showPreview(result)
+            }
+        }
+        previewWork = work
+        Self.previewQueue.asyncAfter(deadline: .now() + (known == nil ? 0 : Self.previewDelay), execute: work)
+    }
+    static let previewDelay: TimeInterval = 0.12
+
+    private func showPreview(_ outcome: Result<(name: String, contents: Data, counter: Int), Error>) {
         do {
-            let result = try store.preview(current, pattern: filename.stringValue, folder: folder, context: context)
+            let result = try outcome.get()
             resolved.stringValue = "Creates: " + result.name
             preview.string =
                 binary == nil

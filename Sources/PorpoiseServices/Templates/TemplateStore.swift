@@ -68,19 +68,26 @@ public final class TemplateStore {
         else { throw FileOperationError.failed("The template is empty or too large.") }
         _ = try TemplateExpansion.render(template, context: TemplateContext(name: template.title))
     }
-    /// Find a free counter without overwriting another file. The eventual create is also exclusive.
-    public func preview(_ template: FileTemplate, pattern: String, folder: URL, context: TemplateContext) throws -> (
-        name: String, contents: Data, counter: Int
-    ) {
-        let existing = Set(try FileManager.default.contentsOfDirectory(atPath: folder.path))
+    /// Find a free counter without overwriting another file. The eventual create is also exclusive. Only names are
+    /// rendered while looking (a template's contents can be 8 MB); `existing`: the folder's names, if already read.
+    public func preview(_ template: FileTemplate, pattern: String, folder: URL, context: TemplateContext, existing: Set<String>? = nil) throws
+        -> (name: String, contents: Data, counter: Int)
+    {
+        let existing = try existing ?? Set(FileManager.default.contentsOfDirectory(atPath: folder.path))
         var context = context
+        // Counted from where the context starts, one at a time (adding each offset to the counter already moved on
+        // skipped numbers: 1, 2, 4, 7, 11…).
+        let first = max(1, context.counter)
         for offset in 0..<10000 {
-            let (counter, overflow) = max(1, context.counter).addingReportingOverflow(offset)
+            let (counter, overflow) = first.addingReportingOverflow(offset)
             if overflow { break }
             context.counter = counter
-            let rendered = try TemplateExpansion.render(template, filenamePattern: pattern, context: context)
-            if !existing.contains(rendered.name) { return (rendered.name, rendered.contents, counter) }
-            if !pattern.contains("{counter") { throw FileOperationError.failed("A file named “\(rendered.name)” already exists.") }
+            let name = TemplateExpansion.expand(pattern, context: context)
+            if !existing.contains(name) {
+                let rendered = try TemplateExpansion.render(template, filenamePattern: pattern, context: context)
+                return (rendered.name, rendered.contents, counter)
+            }
+            if !pattern.contains("{counter") { throw FileOperationError.failed("A file named “\(name)” already exists.") }
         }
         throw FileOperationError.failed("No unused template counter was found.")
     }

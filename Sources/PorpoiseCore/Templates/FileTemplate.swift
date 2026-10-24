@@ -35,10 +35,11 @@ public struct TemplateContext: Sendable {
 public enum TemplateExpansion {
     /// Only known placeholders are expanded. Ordinary JSON, CSS and unknown braces remain literal.
     public static func expand(_ text: String, context: TemplateContext) -> String {
-        let regex = try! NSRegularExpression(pattern: #"\{(date|time|user|name|counter(?::0?[1-9])?)\}"#)
         let input = text as NSString
-        var result = text
-        for match in regex.matches(in: text, range: NSRange(location: 0, length: input.length)).reversed() {
+        // Built in one pass: replacing each match in place copied the rest of an 8 MB template every time.
+        var result = ""
+        var last = 0
+        for match in placeholder.matches(in: text, range: NSRange(location: 0, length: input.length)) {
             let token = input.substring(with: match.range(at: 1))
             let value: String
             switch token {
@@ -51,10 +52,14 @@ public enum TemplateExpansion {
                 let number = String(max(1, context.counter))
                 value = String(repeating: "0", count: max(0, min(9, width) - number.count)) + number
             }
-            if let range = Range(match.range, in: result) { result.replaceSubrange(range, with: value) }
+            result += input.substring(with: NSRange(location: last, length: match.range.location - last))
+            result += value
+            last = match.range.location + match.range.length
         }
-        return result
+        return result + input.substring(from: last)
     }
+
+    private static let placeholder = try! NSRegularExpression(pattern: #"\{(date|time|user|name|counter(?::0?[1-9])?)\}"#)
     public static func render(_ template: FileTemplate, filenamePattern: String? = nil, context: TemplateContext) throws -> (
         name: String, contents: Data
     ) {

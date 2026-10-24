@@ -40,16 +40,17 @@ extension FileOperationsController {
 
         let plan = Self.administratorCommands(kind, remaining, targets: targets, to: folder)
         if !plan.skipped.isEmpty { showErrors(plan.skipped, window: window) }
-        let ok = authorize(verb: Self.permissionVerb(kind), items: remaining, commands: plan.commands, window: window)
-        // Remember where they came from, so "Restore" can put them back.
-        if ok && !plan.trashed.isEmpty {
-            pushUndo(.trashed(plan.trashed))
-            TrashService.shared.record(plan.trashed)
-            // Yours from now on: emptying the Trash won't need the helper for them.
-            PrivilegedHelper.takeOwnership(of: plan.trashed.map(\.inTrash.path))
+        authorize(verb: Self.permissionVerb(kind), items: remaining, commands: plan.commands, kind: kind, window: window) { [self] ok in
+            // Remember where they came from, so "Restore" can put them back.
+            if ok && !plan.trashed.isEmpty {
+                pushUndo(.trashed(plan.trashed))
+                TrashService.shared.record(plan.trashed)
+                // Yours from now on: emptying the Trash won't need the helper for them.
+                PrivilegedHelper.takeOwnership(of: plan.trashed.map(\.inTrash.path))
+            }
+            Self.notifyChanged(remaining + (folder.map { [$0] } ?? []) + plan.results + plan.trashed.map(\.inTrash))
+            done(unlocked + (ok ? plan.results + plan.trashed.map(\.inTrash) + (kind == .delete ? remaining : []) : []))
         }
-        Self.notifyChanged(remaining + (folder.map { [$0] } ?? []) + plan.results + plan.trashed.map(\.inTrash))
-        done(unlocked + (ok ? plan.results + plan.trashed.map(\.inTrash) + (kind == .delete ? remaining : []) : []))
     }
 
     /// What to run as administrator for items the job wasn't allowed to touch: the commands, the items they create
@@ -154,28 +155,55 @@ extension FileOperationsController {
     /// Finder's "authenticate to continue": runs the commands as administrator. Returns true if they ran
     /// successfully. Each command is a program and its arguments (see PorpoiseHelperInfo.allowedTools).
     @discardableResult
+    /// Runs `commands` as administrator and waits: for quick, single-item actions (a new item, a permission change).
+    /// File operations use the `done:` form, which works off the main thread.
     public func authorize(verb: String, items: [URL], commands: [[String]], window: AnyObject?) -> Bool {
+        guard let viaHelper = confirmAuthorization(verb: verb, items: items, commands: commands, window: window) else { return false }
+        return report(Self.elevate(commands, viaHelper))
+    }
+
+    /// Runs `commands` as administrator off the main thread, shown as their own Activity (they may copy or delete a
+    /// lot as root); only the confirmation is asked here. `done(true)` once they ran.
+    public func authorize(
+        verb: String, items: [URL], commands: [[String]], kind: FileOperationKind, window: AnyObject?, done: @escaping (Bool) -> Void
+    ) {
+        guard let viaHelper = confirmAuthorization(verb: verb, items: items, commands: commands, window: window) else { return done(false) }
+        let activity = Activity(kind: kind, sources: items, destination: nil, job: nil, pauseUnavailable: "Actions as administrator can't be paused.")
+        activity.cloudTitle = "As administrator: \(verb)"
+        activity.originWindow = window
+        activities.append(activity)
+        began(activity)
+        ui?.jobStarted(activity)
+        activityDidChange()
+        let elevate = Self.elevate
+        DispatchQueue.global(qos: .userInitiated).async {
+            let outcome = elevate(commands, viaHelper)
+            DispatchQueue.main.async { [self] in
+                let ok = report(outcome)
+                if case .cancelled = outcome { activity.control.cancel() }
+                if case .failed(let message) = outcome { ended(activity, errors: [message]) } else { ended(activity, errors: []) }
+                ui?.jobFinished(activity)
+                done(ok)
+            }
+        }
+    }
+
+    /// What running commands as administrator came to.
+    public enum ElevatedOutcome: Equatable, Sendable {
+        case done, cancelled
+        case failed(String)
+    }
+
+    /// Asks before anything runs as administrator: nil when it won't (nothing to run, or the person said no);
+    /// otherwise whether it goes through Porpoise's helper (which needs no question each time).
+    private func confirmAuthorization(verb: String, items: [URL], commands: [[String]], window: AnyObject?) -> Bool? {
         #if PORPOISE_TEST_HOOKS
         authorizationAttempted?()
         #endif
-        guard !commands.isEmpty else { return false }
-        // Standard users never use the helper (it's for administrators): macOS's prompt below, for an administrator's
+        guard !commands.isEmpty else { return nil }
+        // Standard users never use the helper (it's for administrators): macOS's prompt, for an administrator's
         // name and password.
-        if !Settings.isTesting && PrivilegedHelper.isForThisUser {
-            // Porpoise's helper does it at once, without asking. Not installed yet (or a new version of it): it's
-            // installed once, with macOS's administrator dialog, and the action continues.
-            guard PrivilegedHelper.ensureOn() else { return false }
-            // Clearing lock flags is best effort, as in Finder; the operation itself reports what went wrong.
-            switch PrivilegedHelper.run(commands, bestEffort: ["/usr/bin/chflags"]) {
-            case .done: return true
-            case .failed(let err): ui?.showAuthorizationError(err); return false
-            case .unavailable(let why):
-                ui?.showAuthorizationError(
-                    "Porpoise's helper isn't responding (\(why)). If it's switched off under System Settings › General › Login Items & Extensions, switch it on and try again."
-                )
-                return false
-            }
-        }
+        if !Settings.isTesting && PrivilegedHelper.isForThisUser { return true }
         // Test instances and standard users never get root through the helper: the standard macOS prompt, after explaining.
         let q = Confirmation(
             message: items.count == 1
@@ -185,28 +213,74 @@ extension FileOperationsController {
                 + "These items belong to another user or the system. Authenticate as an administrator to continue"
                 + (PrivilegedHelper.isForThisUser ? ", or turn on Porpoise's helper in Porpoise › Permissions… to never be asked again." : "."),
             confirmTitle: "Authenticate")
-        guard confirm(q, window: window) else { return false }
-        var err: NSDictionary?
-        NSAppleScript(source: Self.administratorScript(commands))?.executeAndReturnError(&err)
-        guard let err else { return true }
-        if (err[NSAppleScript.errorNumber] as? Int) == Self.userCancelledError { return false }
-        ui?.showAuthorizationError(err[NSAppleScript.errorMessage] as? String ?? "The operation failed.")
-        return false
+        return confirm(q, window: window) ? false : nil
+    }
+
+    /// Shows what went wrong, if anything; true if the commands ran.
+    private func report(_ outcome: ElevatedOutcome) -> Bool {
+        switch outcome {
+        case .done: return true
+        case .cancelled: return false
+        case .failed(let message): ui?.showAuthorizationError(message); return false
+        }
+    }
+
+    /// Runs `commands` as root, on any thread: through Porpoise's helper (installed or updated first, with one
+    /// approval, if needed), or after macOS's administrator prompt. Tests replace it.
+    nonisolated(unsafe) static var elevate: ([[String]], Bool) -> ElevatedOutcome = { commands, viaHelper in
+        if viaHelper {
+            // Porpoise's helper does it at once, without asking. Not installed yet (or a new version of it): it's
+            // installed once, with macOS's administrator dialog, and the action continues.
+            guard PrivilegedHelper.ensureOn() else { return .cancelled }
+            // Clearing lock flags is best effort, as in Finder; the operation itself reports what went wrong.
+            switch PrivilegedHelper.run(commands, bestEffort: ["/usr/bin/chflags"]) {
+            case .done: return .done
+            case .failed(let err): return .failed(err)
+            case .unavailable(let why):
+                return .failed(
+                    "Porpoise's helper isn't responding (\(why)). If it's switched off under System Settings › General › Login Items & Extensions, switch it on and try again."
+                )
+            }
+        }
+        // osascript, in a process of its own: AppleScript stays off this process's threads, and macOS shows its prompt.
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        p.arguments = ["-e", administratorScript(commands)]
+        let err = Pipe()
+        p.standardError = err
+        p.standardOutput = FileHandle.nullDevice
+        do { try p.run() } catch { return .failed(error.localizedDescription) }
+        let message = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        p.waitUntilExit()
+        if p.terminationStatus == 0 { return .done }
+        if message.contains("(\(userCancelledError))") { return .cancelled }
+        return .failed(FileOperationsController.osascriptMessage(message))
+    }
+
+    /// osascript's error line without its "0:12: execution error: " prefix and "(-60005)" suffix.
+    static func osascriptMessage(_ stderr: String) -> String {
+        var m = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let r = m.range(of: "execution error: ") { m = String(m[r.upperBound...]) }
+        if let r = m.range(of: #" \(-?\d+\)$"#, options: .regularExpression) { m.removeSubrange(r) }
+        return m.isEmpty ? "The operation failed." : m
     }
 
     /// The AppleScript that runs `commands` in one administrator shell, stopping at the first failure (lock flags
-    /// are cleared best effort).
+    /// are cleared best effort). Its prompt names Porpoise: run by osascript, macOS would otherwise say "osascript".
     static func administratorScript(_ commands: [[String]]) -> String {
         let q = RemoteParsing.quote
         let shell = commands.map { c in
             let line = c.map(q).joined(separator: " ")
             return c.first == "/usr/bin/chflags" ? "( \(line) 2>/dev/null; true )" : "( \(line) )"
         }.joined(separator: " && ")
-        return "do shell script \(Escaping.appleScriptString(shell)) with administrator privileges"
+        return "do shell script \(Escaping.appleScriptString(shell)) with prompt \(Escaping.appleScriptString(administratorPrompt))"
+            + " with administrator privileges"
     }
 
+    static let administratorPrompt = "Porpoise needs an administrator’s permission to make this change."
+
     /// AppleScript's "User canceled." error number.
-    private static let userCancelledError = -128
+    static let userCancelledError = -128
 
     /// Administrator commands that rename `old` to `new`. A change of case only goes through a temporary name:
     /// on a case-insensitive volume `mv -n a A` sees "A" as existing and quietly does nothing.

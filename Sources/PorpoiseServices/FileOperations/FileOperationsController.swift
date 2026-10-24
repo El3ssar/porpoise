@@ -41,6 +41,10 @@ public final class FileOperationsController {
     public weak var cloud: CloudAccounts?
 
     var undoStack: [UndoRecord] = []
+    /// Undo and redo that copy data between volumes run here, one at a time and in order.
+    let undoQueue = DispatchQueue(label: "porpoise.undo", qos: .userInitiated)
+    /// Undos running there: until they're done, every undo and redo goes there too, so they stay in order.
+    var undosRunning = 0
     var redoStack: [UndoRecord] = []
     private var cutChangeCount = -1
     public private(set) var cutURLs: Set<URL> = []

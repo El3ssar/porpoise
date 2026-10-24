@@ -99,16 +99,27 @@ import Testing
         #expect { try provider.list(url("/data")) } throws: { $0.localizedDescription == "Permission denied" }
     }
 
-    @Test func titleIsTheModelAskedOnce() throws {
+    /// W-236 (W-235 R22): the serial at once, never adb on the asking thread; the name once adb gave it, asked once.
+    @Test func titleIsTheModelAskedOnceInTheBackground() async throws {
         try adb.reply("List of devices attached\nR58N123 device usb:1-1 product:x model:Galaxy_S21 device:o1s\n")
         provider.titleTimeout = 30  // a busy test run can be slow to start the stand-in adb
-        #expect(provider.rootTitle(url("/")) == "Galaxy S21")
-        #expect(provider.rootTitle(url("/")) == "Galaxy S21")
+        let changed = Task { @MainActor in
+            for await _ in NotificationCenter.default.notifications(named: RemoteFS.titlesChanged) { return true }
+            return false
+        }
+        #expect(provider.rootTitle(url("/")) == "R58N123")
+        #expect(await eventually(30) { provider.rootTitle(url("/")) == "Galaxy S21" })
+        #expect(await changed.value)
         #expect(adb.calls.map(\.args) == [["devices", "-l"]])
     }
 
-    @Test func titleFallsBackToTheSerial() throws {
+    @Test func titleFallsBackToTheSerial() async throws {
         try adb.reply("List of devices attached\n")
         #expect(provider.rootTitle(url("/")) == "R58N123")
+        // Not listed: asked again only after a while, not on every redraw.
+        #expect(await eventually(30) { adb.calls.count == 1 })
+        #expect(provider.rootTitle(url("/")) == "R58N123")
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(adb.calls.count == 1)
     }
 }
