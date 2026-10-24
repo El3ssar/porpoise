@@ -28,7 +28,8 @@ import Testing
         var events: WorkspaceServiceEvents? = WorkspaceServiceEvents(
             workspace: center, distributed: NotificationCenter(), authorizationInvalidated: {}
         ) { state.sleeping.append($0) }
-        weak var released = events
+        weak var released: WorkspaceServiceEvents?
+        released = events
         center.post(name: NSWorkspace.willSleepNotification, object: nil)
         #expect(state.sleeping == [true])
         events = nil
@@ -71,7 +72,8 @@ import Testing
         var events: WorkspaceServiceEvents? = WorkspaceServiceEvents(
             workspace: workspace, distributed: distributed, authorizationInvalidated: { invalidations.change { $0 += 1 } },
             sleepingChanged: { _ in })
-        weak var released = events
+        weak var released: WorkspaceServiceEvents?
+        released = events
         workspace.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
         #expect(invalidations.value == 1)
         events = nil
