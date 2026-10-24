@@ -67,12 +67,12 @@ enum AccountsSettingsPage {
 
 /// The account list and the selected account's details, side by side.
 final class AccountsView: NSView {
-    private let list = NSStackView()
+    let list = NSStackView()
     private let detail = NSStackView()
     private let add = NSButton()
     private let remove = NSButton()
     private(set) var selected: String?
-    private var nameField: NSTextField?
+    private(set) var nameField: NSTextField?
 
     init() {
         super.init(frame: .zero)
@@ -132,6 +132,7 @@ final class AccountsView: NSView {
         for a in accounts {
             let r = AccountRow(account: a, avatar: CloudAccounts.shared.avatar(a.id), selected: a.id == selected)
             r.onClick = { [weak self] in self?.select(a.id) }
+            r.onStep = { [weak self] step in self?.step(step) }
             list.addArrangedSubview(r)
             r.widthAnchor.constraint(equalTo: list.widthAnchor, constant: -12).isActive = true
         }
@@ -140,16 +141,30 @@ final class AccountsView: NSView {
             list.addArrangedSubview(empty)
         }
         remove.isEnabled = selected != nil
+        // A quota or picture arriving mid-typing doesn't rebuild the field being typed in.
+        if detailShows == selected, let field = nameField, field.currentEditor() != nil { return }
         buildDetail()
     }
+
+    /// The account the detail pane shows.
+    private var detailShows: String?
 
     func select(_ id: String) {
         selected = id
         reload()
     }
 
+    /// ↑/↓ on a row: the account before or after, the focus going with it.
+    func step(_ by: Int) {
+        let accounts = CloudAccounts.shared.accounts
+        guard let i = accounts.firstIndex(where: { $0.id == selected }), accounts.indices.contains(i + by) else { return NSSound.beep() }
+        select(accounts[i + by].id)
+        if let row = list.arrangedSubviews.compactMap({ $0 as? AccountRow })[safe: i + by] { window?.makeFirstResponder(row) }
+    }
+
     private func buildDetail() {
         detail.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        detailShows = selected
         let accounts = CloudAccounts.shared
         guard let id = selected, let a = accounts.account(id) else {
             let text = ConnectSheet.secondary(
@@ -228,7 +243,8 @@ final class AccountsView: NSView {
     }
 
     @objc func addAccount() {
-        let front = AppDelegate.shared.windows.first
+        // The browser window in front (Settings is in front of it), not whichever was opened first.
+        let front = ViewContainer.frontBrowserWindow().flatMap { w in AppDelegate.shared.windows.first { $0.window === w } }
         ConnectSheet.run(window: window) { url in front?.view.setURL(url) }
     }
 
@@ -243,6 +259,8 @@ final class AccountsView: NSView {
 /// One account in the list: picture, email, and its storage or its trouble.
 final class AccountRow: NSView {
     var onClick: (() -> Void)?
+    /// ↑ (-1) or ↓ (+1) pressed while the row has the focus.
+    var onStep: ((Int) -> Void)?
     private let isSelected: Bool
 
     init(account a: CloudAccount, avatar: Data?, selected: Bool) {
@@ -298,6 +316,23 @@ final class AccountRow: NSView {
     }
 
     override func mouseUp(with event: NSEvent) { onClick?() }
+
+    // Keyboard and VoiceOver choose an account too: Tab to a row, Space or Return picks it, ↑/↓ move between them.
+    override var acceptsFirstResponder: Bool { true }
+    override var canBecomeKeyView: Bool { true }
+    override func becomeFirstResponder() -> Bool { needsDisplay = true; return true }
+    override func resignFirstResponder() -> Bool { needsDisplay = true; return true }
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 49, 36, 76: onClick?()
+        case 126: onStep?(-1)
+        case 125: onStep?(1)
+        default: super.keyDown(with: event)
+        }
+    }
+    override func accessibilityPerformPress() -> Bool { onClick?(); return true }
+    override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill() }
+    override var focusRingMaskBounds: NSRect { bounds }
 }
 
 /// What the sidebar header's menu, Settings and the message bar do with an account.

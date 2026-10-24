@@ -289,4 +289,35 @@ import Testing
         #expect(form.draftProfile()?.problem == nil && form.profile()?.port == 2222)
         #expect(ServerForm(kind: .webdav).draftProfile() == nil)  // not one Connections manages: a place, as before
     }
+
+    /// #20: a quota or picture arriving while a sidebar name is typed keeps the field; rows are chosen by keyboard
+    /// and VoiceOver too.
+    @Test func accountsKeepTheNameBeingTypedAndTakeTheKeyboard() throws {
+        let previous = CloudAccounts.shared.backend
+        CloudAccounts.shared.backend = DemoCloudBackend(accounts: [
+            CloudAccount(id: "one", email: "one@example.invalid", displayName: "One"),
+            CloudAccount(id: "two", email: "two@example.invalid", displayName: "Two"),
+        ])
+        defer { CloudAccounts.shared.backend = previous }
+        let view = AccountsView()
+        let w = window(view)
+        defer { w.close() }
+        #expect(view.selected == "one")
+        let field = try #require(view.nameField)
+        #expect(w.makeFirstResponder(field))
+        (field.currentEditor() as? NSTextView)?.insertText("Wo", replacementRange: NSRange(location: 0, length: 0))
+        NotificationCenter.default.post(name: CloudAccounts.changed, object: nil)
+        #expect(view.nameField === field && field.currentEditor() != nil)
+        w.makeFirstResponder(nil)
+        let rows = view.list.arrangedSubviews.compactMap { $0 as? AccountRow }
+        #expect(rows.count == 2 && rows[1].accessibilityPerformPress() && view.selected == "two")
+        let row = try #require(view.list.arrangedSubviews.compactMap { $0 as? AccountRow }.last)
+        #expect(w.makeFirstResponder(row))
+        let up = try #require(
+            NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: w.windowNumber, context: nil, characters: "",
+                charactersIgnoringModifiers: "", isARepeat: false, keyCode: 126))
+        row.keyDown(with: up)
+        #expect(view.selected == "one")
+    }
 }
