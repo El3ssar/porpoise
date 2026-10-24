@@ -93,6 +93,9 @@ import Testing
             let offsets = document.tokens.spans.map(\.range.location) + [4]
             for underlay in [NSColor.black, .white] {
                 let composite = try #require(underlay.blended(withFraction: backdrop.alphaComponent, of: backdrop.withAlphaComponent(1)))
+                for kind in SyntaxToken.Kind.allCases {
+                    #expect(Tokens.contrast(CodePreviewView.syntaxColor(kind), composite) >= 4.5)
+                }
                 for offset in offsets {
                     let foreground = try #require(storage.attribute(.foregroundColor, at: offset, effectiveRange: nil) as? NSColor)
                     #expect(Tokens.contrast(foreground, composite) >= 4.5)
