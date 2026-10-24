@@ -9,7 +9,7 @@ set -uo pipefail
 # A test that traps takes the whole process down with its buffered output: afterwards, where it trapped is printed
 # from macOS's crash report.
 limit=${TEST_TIMEOUT:-900}
-build=(--build-tests)
+build=(--build-tests -j "${PORPOISE_BUILD_JOBS:-4}")  # capped: many builds share this Mac
 alone=1
 for a in "$@"; do
     [ "$a" = --enable-code-coverage ] && build+=("$a")  # the same build swift test then reuses
