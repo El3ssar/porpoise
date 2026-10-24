@@ -17,11 +17,12 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
     static let shared = ActivityWindowController()
 
     private let controller = FileOperationsController.shared
-    private let tabs = NSSegmentedControl(labels: ["Activity", "History"], trackingMode: .selectOne, target: nil, action: nil)
+    private let tabs = NSSegmentedControl(labels: ["Activity", "History", "Tools"], trackingMode: .selectOne, target: nil, action: nil)
     private let activityTable = NSTableView()
     private let historyTable = NSTableView()
     private let activityPane = NSView()
     private let historyPane = NSView()
+    private let toolPane = CustomToolActivityView()
     private let search = NSSearchField()
     private let clear = NSButton(title: "Clear Finished", target: nil, action: nil)
     private let settings = NSButton()
@@ -70,6 +71,8 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
         if window?.isVisible != true { window?.center() }
         showWindow(nil)
     }
+
+    func showTools() { show(); tabs.selectedSegment = 2; tabChanged() }
 
     // MARK: Building
 
@@ -147,7 +150,7 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
         let historyScroll = scroll(historyTable)
         stack(historyPane, [historyHeader, historyScroll], fill: historyScroll)
 
-        for v in [header, activityPane, historyPane, footer] as [NSView] {
+        for v in [header, activityPane, historyPane, toolPane, footer] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(v)
         }
@@ -161,7 +164,7 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
             footer.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             footer.heightAnchor.constraint(equalToConstant: 28),
         ])
-        for pane in [activityPane, historyPane] {
+        for pane in [activityPane, historyPane, toolPane] {
             NSLayoutConstraint.activate([
                 pane.topAnchor.constraint(equalTo: header.bottomAnchor),
                 pane.leadingAnchor.constraint(equalTo: content.leadingAnchor),
@@ -170,6 +173,7 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
             ])
         }
         historyPane.isHidden = true
+        toolPane.isHidden = true
         Theme.whenChanged(self) { [weak self] in self?.applyTheme() }
         applyTheme()
         syncSettings()
@@ -247,6 +251,7 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
     @objc private func tabChanged() {
         activityPane.isHidden = tabs.selectedSegment != 0
         historyPane.isHidden = tabs.selectedSegment != 1
+        toolPane.isHidden = tabs.selectedSegment != 2
         reload()
     }
 
@@ -294,7 +299,7 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
             attributes: [
                 .font: NSFont.systemFont(ofSize: FontSize.callout), .foregroundColor: clear.isEnabled ? Theme.windowText : Theme.windowTextInactive,
             ])
-        header?.showsClear = historyPane.isHidden
+        header?.showsClear = tabs.selectedSegment == 0
         let paused = rows.filter { $0.state == .paused }.count
         let active = rows.filter { $0.state.isActive && $0.state != .paused }.count
         let queued = rows.filter { $0.state == .queued }.count

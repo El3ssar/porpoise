@@ -79,6 +79,22 @@ final class CommandPalette: SecondaryWindowController, NSWindowDelegate, NSTable
                 NSApp.sendAction(selector, to: item.target, from: item)
             }
         }
+        let tools = Settings.shared.customTools.filter { $0.placements.contains(.commandPalette) }
+        if let owner, !tools.isEmpty {
+            for (index, tool) in tools.enumerated() {
+                let reason = owner.customToolAvailability.reason(
+                    for: tool, in: owner,
+                    updated: index == 0
+                        ? { [weak self] in
+                            self?.collect(); self?.update()
+                        } : nil)
+                let candidate = CommandCandidate(
+                    id: "tool:" + tool.id.uuidString, title: tool.name, subtitle: "Custom tool", keywords: "tool command",
+                    enabled: reason == nil)
+                entries[candidate.id] = Entry(candidate: candidate, shortcut: tool.shortcut.display) { [weak owner] in owner?.executeCustomTool(tool)
+                }
+            }
+        }
         func location(_ url: URL, title: String, category: String, id: String) {
             let candidate = CommandCandidate(id: id, title: title, subtitle: category + " · " + LocationNaming.address(for: url), keywords: category)
             entries[id] = Entry(candidate: candidate, shortcut: "") { [weak owner] in

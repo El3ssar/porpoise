@@ -18,6 +18,12 @@ public struct KeyboardShortcut: Codable, Sendable, Hashable {
         modifiers = try c.decodeIfPresent(ShortcutModifiers.self, forKey: .modifiers) ?? []
     }
     public var isEmpty: Bool { key.isEmpty }
+    /// Standard application/window bindings remain available even when AppKit supplies private menu actions.
+    public var isReservedByAppKit: Bool {
+        let value = normalized
+        return ["q", "h", "m", "w"].contains(value.key)
+            && (value.modifiers == .command || value.modifiers == [.command, .option])
+    }
     /// AppKit infers Shift for uppercase letters and shifted ASCII symbols in default key equivalents.
     public var normalized: Self {
         guard !key.isEmpty else { return Self() }
@@ -128,7 +134,7 @@ public struct ShortcutPreferences: Codable, Sendable, Equatable {
 
 /// Identifiers shared by the native customization palette and the custom unified toolbar.
 public enum ToolbarCommand: String, Codable, CaseIterable, Sendable {
-    case back, forward, up, viewMode, location, split, search, menu, reload, newTab, terminal, commandPalette, link
+    case back, forward, up, viewMode, location, split, search, menu, reload, newTab, terminal, commandPalette, link, customTools
     public var title: String {
         switch self {
         case .back: return "Back"
@@ -144,6 +150,7 @@ public enum ToolbarCommand: String, Codable, CaseIterable, Sendable {
         case .terminal: return "Terminal"
         case .commandPalette: return "Command Palette"
         case .link: return "Linked Browsing"
+        case .customTools: return "Custom Tools"
         }
     }
     public static let defaults: [Self] = [.back, .forward, .up, .viewMode, .location, .split, .search, .menu]

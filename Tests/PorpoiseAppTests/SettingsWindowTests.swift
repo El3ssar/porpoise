@@ -18,7 +18,7 @@ import Testing
         let tabs = try pages(first)
         #expect(
             tabs.tabViewItems.map(\.label) == [
-                "General", "Appearance", "View", "Panels", "Terminal", "Search", "Accounts", "Activity", "Shortcuts", "Advanced",
+                "General", "Appearance", "View", "Panels", "Terminal", "Search", "Accounts", "Activity", "Shortcuts", "Custom Tools", "Advanced",
             ])
         #expect(tabs.tabViewItems[tabs.selectedTabViewItemIndex].label == "General")
         tabs.selectedTabViewItemIndex = 4

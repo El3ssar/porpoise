@@ -18,6 +18,7 @@ extension ToolbarCommand {
         case .terminal: return "terminal"
         case .commandPalette: return "command"
         case .link: return "link"
+        case .customTools: return "hammer"
         }
     }
     var toolbarIdentifier: NSToolbarItem.Identifier { .init("Porpoise.toolbar." + rawValue) }

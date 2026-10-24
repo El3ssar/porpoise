@@ -45,6 +45,25 @@ extension MainWindowController: NSMenuItemValidation {
         {
             return false
         }
+        if item.action == #selector(runCustomTool(_:)) {
+            guard let raw = item.representedObject as? String, let id = UUID(uuidString: raw),
+                let tool = Settings.shared.customTools.first(where: { $0.id == id })
+            else { return false }
+            item.toolTip = customToolAvailability.reason(for: tool, in: self) { [weak self, weak item] in
+                guard let self, let item else { return }
+                item.toolTip = self.customToolAvailability.preparedReason(for: tool.id)
+                item.isEnabled = item.toolTip == nil
+            }
+            // A first key press must not disappear while the cache warms. Execution rechecks the entire captured
+            // selection off-main before any prompt or process; menus keep their pending disabled state.
+            if customToolAvailability.isPreparing, Self.currentKeyEvent()?.type == .keyDown {
+                let count = view.model.selection.count
+                return view.url.isFileURL
+                    && (tool.selection == .folder || tool.selection == .one && count == 1 || tool.selection == .many && count > 0)
+                    && (!tool.arguments.contains("{otherFolder}") || tab.inactive?.url.isFileURL == true)
+            }
+            return item.toolTip == nil
+        }
         let p = view.model.props
         let ops = FileOperationsController.shared
         if let r = validateCloudItem(item) { return r }

@@ -217,6 +217,14 @@ extension AppDelegate {
         tools.addItem(mi("Extract Here", #selector(W.extractHere(_:)), icon: "archive-extract"))
         tools.addItem(mi("Remove App and Leftovers…", #selector(W.removeAppAndLeftovers(_:)), icon: "trash-empty"))
         tools.addItem(mi("Empty Trash", #selector(W.emptyTrash(_:)), K.backspace, [.command, .shift], icon: "trash-empty"))
+        tools.addItem(.separator())
+        for tool in Settings.shared.customTools {
+            let item = NSMenuItem(title: tool.name, action: #selector(W.runCustomTool(_:)), keyEquivalent: tool.shortcut.normalized.key)
+            item.keyEquivalentModifierMask = tool.shortcut.normalized.modifiers.appKit
+            item.representedObject = tool.id.uuidString
+            tools.addItem(item)
+        }
+        tools.addItem(mi("Configure Custom Tools…", #selector(W.showCustomTools(_:))))
         main.addItem(.submenu("Tools", icon: nil, tools))
 
         // Window

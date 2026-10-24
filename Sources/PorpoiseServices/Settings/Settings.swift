@@ -29,6 +29,8 @@ public final class Settings {
         return FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-test-" + suite).appendingPathComponent(test)
     }
     private var d: UserDefaults { Settings.store }
+    let customToolsLock = NSLock()
+    var customToolsCache: (store: ObjectIdentifier, data: Data?, tools: [CustomTool])?
     let appearanceLock = NSLock()
     var appearanceCache: (data: Data, value: AppearancePreferences)?
 
