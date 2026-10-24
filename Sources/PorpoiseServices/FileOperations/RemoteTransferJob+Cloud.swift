@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 extension RemoteTransferJob {
     /// One durable conflict/publication/removal flow for every opaque-ID cloud provider.
@@ -142,6 +143,7 @@ extension RemoteTransferJob {
                 target = try targetProvider.createTransferFolder(named: name, in: folder, operationID: child).url
             } else {
                 target = folder.appendingPathComponent(name)
+                try CopyNamePreflight.validateDestination(target, source: source)
                 if let provider = RemoteFS.provider(for: folder) {
                     try provider.makeFolder(target)
                 } else {

@@ -240,6 +240,27 @@ struct TransferStageJournalTests {
         #expect(job.errors.contains { $0.contains(RemoteError.exists("source").localizedDescription) })
     }
 
+    @Test(arguments: ["ExFAT", "MS-DOS FAT32"])
+    func remoteReservedNamesAreRefusedBeforeDownloadingBytes(_ fileSystem: String) throws {
+        let s = try Scratch(), server = try Scratch()
+        let disk = try DiskImage(name: "PPNAMES", megabytes: 64, fileSystem: fileSystem, in: s)
+        let sidecar = disk.volume.appendingPathComponent("._ordinary")
+        try Data("existing user bytes".utf8).write(to: sidecar)
+        let provider = CountingTransferProvider(root: server.url)
+        let remote = URL(string: "sftp://\(UUID().uuidString)/ordinary")!
+        try server.file("ordinary", "download")
+        RemoteFS.use(provider, for: remote)
+        defer { RemoteFS.use(nil, for: remote) }
+        var downloaded = false
+        provider.onDownload = { downloaded = true }
+        let job = RemoteTransferJob(kind: .copy, sources: [remote], destination: disk.volume, control: JobControl(), rule: .ask, options: .init())
+        job.run()
+        #expect(!downloaded && job.results.isEmpty)
+        #expect(job.errors.contains { $0.contains("reserved for file metadata") })
+        #expect(try String(contentsOf: sidecar, encoding: .utf8) == "existing user bytes")
+        #expect(!FileJob.itemExists(at: disk.volume.appendingPathComponent("ordinary")))
+    }
+
     @Test func uploadReadsTheOriginalWithoutALocalSnapshot() throws {
         let s = try Scratch(), server = try Scratch()
         let source = try s.file("source", "upload")

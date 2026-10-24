@@ -253,6 +253,7 @@ final class RemoteTransferJob {
         }
         if topLevel { publishIncoming(source, item: incoming, target: target) }
         if incoming.isDirectory && !incoming.isSymlink {
+            try CopyNamePreflight.validateDestination(target, source: source)
             guard !replace else { throw RemoteError.unsupported("A folder cannot replace a file across these locations. Keep Both instead.") }
             if let provider = RemoteFS.provider(for: target) {
                 try provider.makeFolder(target)
@@ -378,6 +379,7 @@ final class RemoteTransferJob {
     }
 
     func merge(_ source: URL, into target: URL) throws -> URL {
+        try CopyNamePreflight.validateDestination(target, source: source)
         let excludedBefore = control.excludedCount
         let directoryRemoval = kind == .move ? try captureRemoval(source) : nil
         if sources.contains(source), let incoming = try item(source) { publishIncoming(source, item: incoming, target: target) }
@@ -442,6 +444,7 @@ final class RemoteTransferJob {
         _ source: URL, to target: URL, replacing: Bool, modified: Date?, beforeSourceRemoval: (() throws -> Void)? = nil,
         sourceDownloadOperationID: UUID? = nil, sourceRemovalHandled: Bool = false
     ) throws {
+        try CopyNamePreflight.validateDestination(target, source: source)
         if let native = RemoteFS.provider(for: target) as? RemoteTransferNativeCopy {
             let preserved = replacing && options.method == .sizeAndDate ? modified : nil
             if let result = try native.copyTransferFile(source, to: target, replacing: replacing, modified: preserved) {
