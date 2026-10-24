@@ -162,6 +162,9 @@ extension MainWindowController: NSMenuItemValidation {
 
         // View state (checkmarks)
         case #selector(setViewMode(_:)): item.state = ViewMode.allCases[safe: item.tag] == p.mode ? .on : .off
+        case #selector(togglePreviewColumn(_:)):
+            item.state = Settings.shared.columnsShowPreview ? .on : .off
+            return view.showsColumns
         case #selector(togglePreviews(_:)): item.state = p.previews ? .on : .off
         case #selector(toggleHiddenFiles(_:)): item.state = p.showHidden ? .on : .off
         case #selector(toggleFoldersFirst(_:)): item.state = p.foldersFirst ? .on : .off

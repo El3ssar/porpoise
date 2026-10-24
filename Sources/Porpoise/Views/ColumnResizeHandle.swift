@@ -6,6 +6,8 @@ final class ColumnResizeHandle: NSView {
     /// A new width for the column, from the drag; `all` with Option held.
     var onResize: ((_ width: CGFloat, _ all: Bool) -> Void)?
     var onFit: ((_ all: Bool) -> Void)?
+    /// Every column as wide as the widest needs (the handle's menu).
+    var onFitEqually: (() -> Void)?
     /// The column's width when the drag started.
     var columnWidth: () -> CGFloat = { 0 }
     var onDragEnded: (() -> Void)?
@@ -65,6 +67,27 @@ final class ColumnResizeHandle: NSView {
         guard dragStart != nil else { return }
         dragStart = nil
         onDragEnded?()
+    }
+
+    /// Finder's handle menu: fit this column, every column to its own names, or every column to the widest.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let m = NSMenu()
+        m.addItem(Item("Right Size This Column") { [weak self] in self?.onFit?(false) })
+        m.addItem(Item("Right Size All Columns Individually") { [weak self] in self?.onFit?(true) })
+        m.addItem(Item("Right Size All Columns Equally") { [weak self] in self?.onFitEqually?() })
+        return m
+    }
+
+    /// A menu item that runs a closure.
+    private final class Item: NSMenuItem {
+        private let run: () -> Void
+        init(_ title: String, _ run: @escaping () -> Void) {
+            self.run = run
+            super.init(title: title, action: #selector(choose), keyEquivalent: "")
+            target = self
+        }
+        required init(coder: NSCoder) { fatalError() }
+        @objc private func choose() { run() }
     }
 
     // VoiceOver: the splitter's value is the width; increment and decrement step it.

@@ -142,6 +142,8 @@ public final class Settings {
 
     // Panels
     @Pref("infoPreview") public var infoShowPreview: Bool = true
+    /// Column view: a selected file shows in a preview column after its own (Finder's "Show preview column").
+    @Pref("columnsShowPreview") public var columnsShowPreview: Bool = true
     @Pref("infoHover") public var infoShowHovered: Bool = true
     @Pref("infoAutoPlay") public var infoAutoPlay: Bool = false
     @Pref("infoCondensed") public var infoCondensedDates: Bool = false

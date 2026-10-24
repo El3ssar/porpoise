@@ -146,6 +146,7 @@ extension AppDelegate {
         view.addItem(.submenu("View Mode", icon: "view-list-icons", W.viewModeMenu()))
         view.addItem(dynamicSubmenu("Show Additional Information", icon: "documentinfo"))
         view.addItem(mi("Show Previews", #selector(W.togglePreviews(_:)), K.f(12), [], icon: "view-preview"))
+        view.addItem(mi("Show Preview Column", #selector(W.togglePreviewColumn(_:)), icon: "view-preview"))
         if dolphin {
             view.addItem(mi("Show Hidden Files", #selector(W.toggleHiddenFiles(_:)), "h", icon: "view-hidden"))
             view.addItem(mi("Show Hidden Files", #selector(W.toggleHiddenFiles(_:)), ".", [.command, .shift], icon: "view-hidden").hiddenAlternate())

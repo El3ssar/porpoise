@@ -23,9 +23,14 @@ final class ColumnPreviewView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// The preview, name and details stay one block of this width at most, centred in the column (Finder): in a
+    /// wide window the column takes the rest of the strip, and the details would sit far from the picture.
+    static let contentWidth: CGFloat = 420
+
     override func layout() {
         super.layout()
-        information.frame = bounds
+        let w = min(bounds.width, Self.contentWidth)
+        information.frame = CGRect(x: floor((bounds.width - w) / 2), y: 0, width: w, height: bounds.height)
     }
 
     /// Shows the focused column's one selected file.

@@ -101,8 +101,14 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     /// The browser window in front (the main one, even while a panel or another kind of window is key).
     nonisolated(unsafe) static var frontBrowserWindow: () -> NSWindow? = {
-        if let w = NSApp.mainWindow, w.windowController is MainWindowController { return w }
-        return NSApp.orderedWindows.first { $0.windowController is MainWindowController }
+        frontBrowser(main: NSApp.mainWindow, ordered: NSApp.orderedWindows, all: AppDelegate.shared.windows.compactMap(\.window))
+    }
+
+    /// The main window if it's a browser, else the frontmost browser on screen; with none on screen (every one
+    /// minimised or on another Space), the first one, so a message isn't lost.
+    static func frontBrowser(main: NSWindow?, ordered: [NSWindow], all: [NSWindow]) -> NSWindow? {
+        if let main, main.windowController is MainWindowController { return main }
+        return ordered.first { $0.windowController is MainWindowController } ?? all.first
     }
 
     /// How many times the pane was sent somewhere: work that ends later (mounting a share, extracting an archive)
@@ -714,6 +720,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             model.rebuild()
             needsLayout = true
         case "perFolder", "dynamicView", "appearanceIconSizes": model.reloadProps()
+        case "columnsShowPreview": columnBrowser?.syncAfter()
         case "appLibraryIconSize": apps?.grid.savedSizeChanged()
         case "appLibraryView":
             guard url.standardizedFileURL == AppLibrary.location else { return }

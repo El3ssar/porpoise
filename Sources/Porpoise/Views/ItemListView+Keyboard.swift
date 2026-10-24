@@ -4,7 +4,7 @@ import PorpoiseServices
 
 /// Virtual key codes handled by the item view.
 private enum Key {
-    static let returnKey = 36, space = 49, backspace = 51, escape = 53, enter = 76
+    static let returnKey = 36, tab = 48, space = 49, backspace = 51, escape = 53, enter = 76
     static let home = 115, pageUp = 116, forwardDelete = 117, end = 119, pageDown = 121
     static let left = 123, right = 124, down = 125, up = 126
     static let f10 = 109
@@ -38,6 +38,9 @@ extension ItemListView {
             if mode == .columns, mods.isEmpty { columnNavigator?.columnKey(right: true, from: self); return }
             if mode == .details, mods.isEmpty, expandCurrent() { return }
             moveCurrent(.right, extend: shift); return
+        case Key.tab where mode == .columns && (mods.isEmpty || mods == [.shift]):
+            // Finder: Tab and ⇧Tab go to the next and previous item by name, whatever the order shown.
+            selectByName(forward: !shift); return
         case Key.home: moveCurrent(.home, extend: shift); return
         case Key.end: moveCurrent(.end, extend: shift); return
         case Key.pageUp: moveCurrent(.pageUp, extend: shift); return
@@ -124,6 +127,24 @@ extension ItemListView {
         guard let c = model.currentURL, let i = model.index(of: c) else { return false }
         if model.rows[i].item.isBrowsableFolder && !model.rows[i].isExpanded && expanderWidth > 0 { model.setExpanded(c, true) }
         return true
+    }
+
+    /// The item after (or before) the current one by name; the first (or last) by name without one. One pass over
+    /// the rows, so a huge folder needn't be sorted again for a key press.
+    func selectByName(forward: Bool) {
+        guard !model.rows.isEmpty else { return }
+        func name(_ i: Int) -> String { model.displayName(for: model.rows[i].item) }
+        func before(_ a: Int, _ b: Int) -> Bool { name(a).localizedStandardCompare(name(b)) == .orderedAscending }
+        let here = model.currentURL.flatMap { model.index(of: $0) }
+        var best: Int?
+        for i in model.rows.indices where i != here {
+            // Beyond the current one in the direction asked, and closer to it than the best so far.
+            if let h = here, forward ? !before(h, i) : !before(i, h) { continue }
+            if let b = best, forward ? !before(i, b) : !before(b, i) { continue }
+            best = i
+        }
+        guard let target = best else { return }
+        select(model.rows[target].item.url)
     }
 
     func openSelection() {

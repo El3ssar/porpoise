@@ -191,6 +191,13 @@ final class ColumnBrowserView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    // VoiceOver: a browser's columns, first to last (each a list titled by its folder, then the preview).
+    override func accessibilityColumns() -> [Any]? { shownColumns.map(\.view) }
+    override func accessibilityVisibleColumns() -> [Any]? {
+        let shown = strip.contentView.bounds
+        return shownColumns.map(\.view).filter { $0.frame.intersects(shown) }
+    }
+
     deinit {
         focusPoll?.invalidate()
         scroller.stop()
@@ -339,7 +346,7 @@ final class ColumnBrowserView: NSView {
             setPreview(nil)
         } else {
             after = nil
-            setPreview(one)
+            setPreview(Settings.shared.columnsShowPreview ? one : nil)
         }
         if let previous, previous !== after, !before.contains(where: { $0 === previous }) { keepSpare(previous) }
         after?.showPath(nil)
@@ -525,6 +532,7 @@ final class ColumnBrowserView: NSView {
         }
         h.onResize = { [weak self] w, all in self?.resize(column: index, to: w, all: all) }
         h.onFit = { [weak self] all in self?.fit(column: index, all: all) }
+        h.onFitEqually = { [weak self] in self?.fitEqually() }
         h.onDragEnded = { [weak self] in self?.layoutColumns() }
         content.addSubview(h)
         return h
@@ -588,6 +596,13 @@ final class ColumnBrowserView: NSView {
     private func setWidth(_ w: CGFloat, of url: URL) {
         let k = Self.key(url)
         if let i = sizes.firstIndex(where: { Self.key($0.url) == k }) { sizes[i].width = w }
+    }
+
+    /// Every column as wide as the widest of them needs, and new ones open at that width (the handle's menu).
+    func fitEqually() {
+        let lists = shownColumns.compactMap { $0.url == nil ? nil : ($0.view as? NSScrollView)?.documentView as? ItemListView }
+        guard let widest = lists.map(fittingWidth).max() else { return }
+        resize(column: 0, to: widest, all: true)
     }
 
     /// Room for the longest name in `list`, its icon, tags and the chevron (the first 5,000 rows decide).

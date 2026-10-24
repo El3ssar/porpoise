@@ -260,10 +260,16 @@ struct VolumeLeave {
     struct Weak { weak var pane: ViewContainer?; init(_ p: ViewContainer) { pane = p } }
     var panes: [(pane: Weak, url: URL, navigations: Int)] = []
 
-    /// The eject failed: each pane still at home (not sent anywhere since) goes back.
+    /// The eject failed: each pane still at home (not sent anywhere since) goes back, as Back would take it (its
+    /// history gains nothing).
     @MainActor func putBack() {
         for (w, url, n) in panes {
-            if let c = w.pane, c.navigations == n { c.setURL(url) }
+            guard let c = w.pane, c.navigations == n else { continue }
+            if c.history.backList.first.map({ $0.standardizedFileURL == url.standardizedFileURL }) == true {
+                c.goBack()
+            } else {
+                c.setURL(url, addToHistory: false)
+            }
         }
     }
 }

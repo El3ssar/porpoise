@@ -300,6 +300,81 @@ import Testing
         try await Task.sleep(for: .milliseconds(300))
         #expect(!pane.model.rows.contains { $0.item.name == "alpha.txt" && pane.model.isSearching })
     }
+
+    // MARK: W-241 (the W-240 review's minors)
+
+    /// The crumb wheel reads a slow folder once: ticks while it's being read add up, and apply together.
+    @Test func ticksWhileTheCrumbsFolderIsReadAddUp() async throws {
+        let s = try Scratch()
+        for name in ["A", "B", "C", "D"] { try s.folder(name) }
+        final class Recorder: BreadcrumbDelegate {
+            var went: [URL] = []
+            func breadcrumb(_ b: BreadcrumbView, navigateTo url: URL, newTab: Bool) {
+                went.append(url)
+                b.url = url
+            }
+            func breadcrumbActivated(_ b: BreadcrumbView) {}
+            func breadcrumb(_ b: BreadcrumbView, drop urls: [URL], onto folder: URL, operation: NSDragOperation) {}
+        }
+        let gate = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var reads = 0
+        let real = BreadcrumbView.listFolders
+        BreadcrumbView.listFolders = {
+            reads += 1
+            gate.wait()
+            return real($0)
+        }
+        defer { BreadcrumbView.listFolders = real }
+        let crumbs = BreadcrumbView(frame: CGRect(x: 0, y: 0, width: 700, height: 28))
+        let window = NSWindow(contentRect: crumbs.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = crumbs
+        defer { window.close() }
+        let recorder = Recorder()
+        crumbs.delegate = recorder
+        crumbs.url = s.path("A")
+        crumbs.layoutSubtreeIfNeeded()
+        let r = try #require(crumbs.crumbRect(crumbs.url))
+        let p = crumbs.convert(CGPoint(x: r.midX, y: r.midY), to: nil)
+        for _ in 0..<3 {
+            let cg = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: -1, wheel2: 0, wheel3: 0))
+            cg.location = CGPoint(x: p.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - p.y)
+            crumbs.scrollWheel(with: try #require(NSEvent(cgEvent: cg)))
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        gate.signal()
+        try #require(await eventually { !recorder.went.isEmpty })
+        #expect(reads == 1 && recorder.went.map(\.lastPathComponent) == ["D"])
+    }
+
+    /// A failed eject puts a pane back as Back would: its history gains no entry.
+    @Test func aPaneAFailedEjectPutsBackGainsNoHistory() async throws {
+        let s = try Scratch()
+        try s.file("Disk/Work/w.txt", "w")
+        let (a, wa) = try await pane(s.path("Disk/Work"))
+        defer { wa.close() }
+        var left = VolumeLeave()
+        let was = a.url
+        a.setURL(FileManager.default.homeDirectoryForCurrentUser)
+        left.panes.append((VolumeLeave.Weak(a), was, a.navigations))
+        let entries = a.history.entries.count
+        left.putBack()
+        #expect(a.url.path == s.path("Disk/Work").path && a.history.entries.count == entries && a.history.canGoForward)
+    }
+
+    /// A status message with no browser window on screen goes to the first one, not nowhere.
+    @Test func statusMessagesFindABrowserWithNoneOnScreen() {
+        let first = MainWindowController(urls: [FileManager.default.homeDirectoryForCurrentUser])
+        let second = MainWindowController(urls: [FileManager.default.homeDirectoryForCurrentUser])
+        defer {
+            first.window?.close()
+            second.window?.close()
+        }
+        let windows = [first, second].compactMap(\.window)
+        #expect(ViewContainer.frontBrowser(main: second.window, ordered: windows, all: windows) === second.window)
+        #expect(ViewContainer.frontBrowser(main: nil, ordered: [second.window!], all: windows) === second.window)
+        #expect(ViewContainer.frontBrowser(main: nil, ordered: [], all: windows) === first.window)
+    }
 }
 
 extension NSEvent {
