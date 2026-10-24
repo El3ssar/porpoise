@@ -33,6 +33,29 @@ import Testing
         #expect(provider.fullPaints.value == 0 && provider.downloadCalls.value == 0)
     }
 
+    @Test func failedAutomaticRemoteTextRestoresTheIcon() async throws {
+        _ = NSApplication.shared
+        Settings.shared.previewRemote = true
+        Settings.shared.previewText = false
+        Settings.shared.infoShowPreview = true
+        let scratch = try Scratch()
+        let local = try scratch.file("unused.swift", "let unused = 1")
+        let root = URL(string: "gdrive://\(UUID().uuidString)/my-drive")!
+        let item = FileItem(url: root.appendingPathComponent("missing.swift"), name: "missing.swift", isDirectory: false)
+        let provider = PreviewProvider(prefix: local, full: local, listing: [item], failsPreview: true)
+        RemoteFS.registerCloud(provider, for: root)
+        defer { RemoteFS.registerCloud(nil, for: root) }
+        let wc = MainWindowController(urls: [root])
+        defer { wc.window?.close() }
+        try #require(await poll { wc.view.model.rows.count == 1 })
+        wc.view.list.select(item.url)
+        let panel = InformationPanel(frame: NSRect(x: 0, y: 0, width: 300, height: 600))
+        panel.show(hovered: nil, container: wc.view)
+        try #require(await poll { provider.progressiveCalls.value == 1 && panel.codePreview.isHidden })
+        #expect(panel.subviews.contains { ($0 as? NSImageView)?.image != nil && !$0.isHidden })
+        #expect(panel.codePreview.document == nil && provider.downloadCalls.value == 0)
+    }
+
     @Test func cloudVideoUsesStreamingAndCloseStopsOwnedStream() async throws {
         _ = NSApplication.shared
         let scratch = try Scratch()
@@ -63,10 +86,15 @@ private final class PreviewProvider: CloudFileProvider, @unchecked Sendable {
     let descriptor = CloudProvider.googleDrive.descriptor
     let prefix: URL
     let full: URL
+    let listing: [FileItem]
+    let failsPreview: Bool
     let progressiveCalls = Counter(), playbackCalls = Counter(), downloadCalls = Counter(), fullPaints = Counter()
     let stream: PreviewStream
     private let gate = Locked<Callback<Void>?>(nil)
-    init(prefix: URL, full: URL) { self.prefix = prefix; self.full = full; stream = PreviewStream(url: full) }
+    init(prefix: URL, full: URL, listing: [FileItem] = [], failsPreview: Bool = false) {
+        self.prefix = prefix; self.full = full; self.listing = listing; self.failsPreview = failsPreview
+        stream = PreviewStream(url: full)
+    }
     func release() {
         gate.change { callback in
             callback?.resume(); callback = nil
@@ -76,6 +104,7 @@ private final class PreviewProvider: CloudFileProvider, @unchecked Sendable {
         -> URL
     {
         progressiveCalls.add()
+        if failsPreview { throw CocoaError(.fileReadNoSuchFile) }
         try await onPreview(prefix)
         try await awaitCallback { callback in gate.change { $0 = callback } }
         try Task.checkCancellation()
@@ -85,12 +114,12 @@ private final class PreviewProvider: CloudFileProvider, @unchecked Sendable {
     }
     func playback(_ url: URL) async throws -> CloudPlayback { playbackCalls.add(); return CloudPlayback(url: stream.url, stream: stream) }
     func preview(_ remote: URL, thumbnail: Bool) async throws -> URL { prefix }
-    func cachedListing(_ folder: URL) -> [FileItem]? { nil }
-    func refresh(_ folder: URL, onPage: @escaping @Sendable ([FileItem], Bool) async -> Void) async throws -> [FileItem] { [] }
+    func cachedListing(_ folder: URL) -> [FileItem]? { listing }
+    func refresh(_ folder: URL, onPage: @escaping @Sendable ([FileItem], Bool) async -> Void) async throws -> [FileItem] { listing }
     func prefetch(_ folders: [URL]) async {}
     func displayName(for url: URL) -> String? { nil }
     func transferItem(_ url: URL) throws -> FileItem { throw CocoaError(.featureUnsupported) }
-    func list(_ folder: URL) throws -> [FileItem] { [] }
+    func list(_ folder: URL) throws -> [FileItem] { listing }
     func download(_ remote: URL, into localFolder: URL) throws -> URL { downloadCalls.add(); throw CocoaError(.featureUnsupported) }
     func upload(_ local: URL, into remoteFolder: URL) throws { throw CocoaError(.featureUnsupported) }
     func delete(_ remote: [URL]) throws { throw CocoaError(.featureUnsupported) }

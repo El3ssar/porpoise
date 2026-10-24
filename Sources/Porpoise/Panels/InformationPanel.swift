@@ -398,7 +398,8 @@ final class InformationPanel: NSView {
                 }
             } catch {
                 guard let self, !Task.isCancelled, self.shownURLs == [item.url] else { return }
-                self.previewStatus.stringValue = "Text preview unavailable"
+                self.clearCodePreview()
+                self.previewStatus.stringValue = "Preview unavailable"
             }
         }
     }
