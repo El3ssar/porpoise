@@ -230,4 +230,34 @@ import Testing
         try FileDiffWindow.write("both", to: target)
         #expect(s.read("other.txt") == "both" && s.read("target.txt") == "both")
     }
+
+    /// #14: a running tool's output grows in place: what was selected stays selected (to copy it).
+    @Test func aRunningToolsOutputKeepsTheSelection() async throws {
+        let s = try Scratch("tool-output")
+        var tool = CustomTool(name: "Ticker", executable: "/bin/sh", arguments: ["-c", "for i in 1 2 3 4 5 6 7 8; do echo line $i; sleep 0.2; done"])
+        tool.selection = .folder
+        try Settings.shared.saveCustomTools([tool])
+        let view = CustomToolActivityView(frame: CGRect(x: 0, y: 0, width: 500, height: 300))
+        let w = window(view)
+        defer { w.close(); CustomToolRunner.shared.clearFinished() }
+        let run = try await CustomToolRunner.shared.start(id: tool.id, context: CustomToolContext(folder: s.url, items: []))
+        try #require(await eventually { view.output.string.contains("line 2") })
+        view.output.setSelectedRange(NSRange(location: 0, length: 6))
+        try #require(await eventually { view.output.string.contains("line 5") })
+        #expect(view.output.selectedRange() == NSRange(location: 0, length: 6))
+        #expect(await eventually { !run.isRunning })
+        #expect(view.output.string == run.output)
+    }
+
+    /// #8: Connections, shown again from another window, connects in that window (the first may be closed).
+    @Test func connectionsOpenInTheWindowThatAskedLast() {
+        var first: [URL] = [], second: [URL] = []
+        let w = ConnectionsWindow.show { first.append($0) }
+        defer { w.window?.close() }
+        let again = ConnectionsWindow.show { second.append($0) }
+        #expect(again === w)
+        let url = URL(string: "sftp://example.invalid/")!
+        again.open(url)
+        #expect(first.isEmpty && second == [url])
+    }
 }

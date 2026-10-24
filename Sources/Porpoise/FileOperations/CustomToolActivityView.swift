@@ -53,9 +53,20 @@ final class CustomToolActivityView: NSView, NSTableViewDataSource, NSTableViewDe
         }
         update()
     }
+    /// The run whose output is shown: while it runs, only what it printed since is added (setting the whole text
+    /// four times a second lost the selection, so nothing could be copied, and redid up to 1 MB each time).
+    private var shownRun: UUID?
     private func update() {
         let run = selected
-        output.string = run?.output ?? ""
+        let text = run?.output ?? ""
+        let id = run?.id
+        if id != shownRun || !text.hasPrefix(output.string) {
+            output.string = text
+        } else if text.utf16.count > output.string.utf16.count {
+            let added = String(text.utf16.dropFirst(output.string.utf16.count)) ?? ""
+            output.textStorage?.append(NSAttributedString(string: added, attributes: output.typingAttributes))
+        }
+        shownRun = id
         status.stringValue = run?.status ?? "No custom tools have run."
         cancel.isEnabled = run?.isRunning == true
         setAccessibilityLabel(run.map { $0.name + ". " + $0.status } ?? "Custom tool activity")

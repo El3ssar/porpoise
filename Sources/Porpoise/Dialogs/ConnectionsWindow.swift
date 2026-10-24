@@ -12,7 +12,8 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
     private let profiles: ConnectionProfiles
     private let credentials: ConnectionCredentials
     /// Opens a location in the window the Connections window was opened from.
-    private let open: (URL) -> Void
+    /// Where Connect opens a server: the window that asked last (an earlier one may have closed since).
+    private(set) var open: (URL) -> Void
     /// Reads ~/.ssh/config (tests give their own).
     private let sshConfig: () -> SSHConfig
 
@@ -30,6 +31,7 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
         let w: ConnectionsWindow
         if let shown = current, shown.window?.isVisible == true {
             w = shown
+            w.open = open
             w.window?.makeKeyAndOrderFront(nil)
         } else {
             w = ConnectionsWindow(profiles: .shared, credentials: .shared, open: open)
