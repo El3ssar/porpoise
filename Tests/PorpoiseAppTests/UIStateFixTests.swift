@@ -80,6 +80,18 @@ import Testing
         try await Task.sleep(for: .milliseconds(700))
         #expect(!c.list.isRenaming)
         #expect(!(w.firstResponder is NSText))
+
+        // The pane goes elsewhere and back before the copy ends: no rename there either.
+        let other = try s.folder("other")
+        c.list.select(a)
+        #expect(w.makeFirstResponder(c.list))
+        wc.duplicateItem(nil)
+        c.setURL(other)
+        c.setURL(s.url)
+        #expect(w.makeFirstResponder(c.list))
+        try #require(await eventually { c.model.location.standardizedFileURL == s.url.standardizedFileURL && c.model.rows.count == 5 })
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(!c.list.isRenaming)
     }
 
     /// CR-15: a link's folder opened in a new tab offers Add to Places there, and the old pane offers nothing later.

@@ -448,6 +448,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     /// Item to rename once a load lists it (a new copy or folder), unless the list has lost focus by then; going
     /// elsewhere first forgets it.
     var pendingRename: URL?
+    /// Counts the folders gone to: a command finishing later can tell the pane went elsewhere meanwhile, even back.
+    private(set) var visits = 0
 
     /// The listed URL for `u`, even when the paths differ by a symlink (/tmp vs /private/tmp): such an item is
     /// matched by name when its parent resolves to the shown folder.
@@ -627,6 +629,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         // Remember where the view was in the folder we leave, for Back/Forward.
         if u != url {
             pendingRename = nil
+            visits += 1
             viewPositions[url] = (list.visibleRect.origin, model.currentURL)
             if viewPositions.count > 200 { viewPositions.removeAll() }
             pendingPosition = nil

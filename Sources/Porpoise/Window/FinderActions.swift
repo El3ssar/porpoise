@@ -136,11 +136,11 @@ extension MainWindowController {
             reportError(error.localizedDescription); return
         }
         // The view that asked, even if another tab or pane is active when the move ends.
-        let c = view
+        let c = view, visit = view.visits
         FileOperationsController.shared.run(.move, items.map(\.url), to: folder, window: window) { [weak c] _ in
             guard let c else { return }
             c.pendingSelect = folder
-            c.pendingRename = folder
+            if c.visits == visit { c.pendingRename = folder }  // not in a pane that went elsewhere meanwhile
             c.reload()
         }
     }
