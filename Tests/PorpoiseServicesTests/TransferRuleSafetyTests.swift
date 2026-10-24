@@ -7,14 +7,15 @@ import Testing
 @testable import PorpoiseServices
 
 struct TransferRuleSafetyTests {
-    @Test(arguments: ["published", "unchanged", "different"])
-    func replacementReconcilesLostReplyOnlyWhenStageIsGoneAndBytesMatch(_ outcome: String) throws {
+    @Test(arguments: ["published", "unchanged", "different"], [false, true])
+    func replacementReconcilesLostReplyOnlyWhenStageIsGoneAndBytesMatch(_ outcome: String, _ editedAfterUpload: Bool) throws {
         let scratch = try Scratch(), server = try Scratch()
         let source = try scratch.file("source", "incoming")
         try server.file("destination/source", "previous")
         let remote = URL(string: "sftp://\(UUID().uuidString)/destination")!
         let provider = RuleProvider(root: server.url)
         provider.replacementOutcome = outcome
+        if editedAfterUpload { provider.afterUpload = { try Data("later local edit".utf8).write(to: source) } }
         RemoteFS.use(provider, for: remote)
         defer { RemoteFS.use(nil, for: remote) }
         let job = RemoteTransferJob(
@@ -24,7 +25,7 @@ struct TransferRuleSafetyTests {
         #expect(provider.publications == 1)
         #expect(job.errors.isEmpty == (outcome == "published"))
         #expect(job.results.count == (outcome == "published" ? 1 : 0))
-        #expect(scratch.read("source") == "incoming")
+        #expect(scratch.read("source") == (editedAfterUpload ? "later local edit" : "incoming"))
         if outcome == "unchanged" { #expect(server.read("destination/source") == "previous") }
     }
 
@@ -82,6 +83,7 @@ private final class RuleProvider: RemoteProvider, RemoteTransferTargetChecking, 
     let base: CountingTransferProvider
     var failUpload = false, failDownload = false, failPublication = false
     var replacementOutcome = "published"
+    var afterUpload: () throws -> Void = {}
     var uploads = 0, publications = 0
     var downloadFolders: [URL] = []
     init(root: URL) { base = CountingTransferProvider(root: root) }
@@ -97,6 +99,7 @@ private final class RuleProvider: RemoteProvider, RemoteTransferTargetChecking, 
     func upload(_ url: URL, into folder: URL) throws {
         uploads += 1
         try base.upload(url, into: folder)
+        try afterUpload()
         if failUpload && uploads == 1 { throw URLError(.networkConnectionLost) }
     }
     func delete(_ urls: [URL]) throws { try base.delete(urls) }

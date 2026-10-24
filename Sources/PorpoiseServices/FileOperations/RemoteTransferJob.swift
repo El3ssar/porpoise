@@ -467,7 +467,7 @@ final class RemoteTransferJob {
             try removal?.local?.verifyCopy(snapshot)
             downloaded = snapshot
         }
-        let copiedDigest = removal != nil ? try FileChecksums.digest(downloaded, cancellation: control.asDiskCancellation()) : nil
+        let copiedDigest = removal != nil || replacing ? try FileChecksums.digest(downloaded, cancellation: control.asDiskCancellation()) : nil
         if let provider = RemoteFS.provider(for: target) {
             let stageFolder = try stagingFolder(for: target)
             var staged = stageFolder.appendingPathComponent(downloaded.lastPathComponent)
@@ -499,8 +499,9 @@ final class RemoteTransferJob {
                         try publishing.publishTransferFile(staged, to: target, modified: options.method == .sizeAndDate ? modified : nil)
                     } catch is TransferConnectionError {
                         // A rename may have committed before its reply was lost. Never repeat publication.
+                        // Reconciliation is part of the commit section; Stop waits for the SSH connection timeout.
                         guard try !provider.list(stageFolder).contains(where: { $0.name == staged.lastPathComponent }),
-                            try digest(target) == (copiedDigest ?? FileChecksums.digest(downloaded))
+                            try digest(target) == copiedDigest
                         else { throw TransferConnectionError(message: "Could not verify whether the file was published.") }
                     }
                 } else {
