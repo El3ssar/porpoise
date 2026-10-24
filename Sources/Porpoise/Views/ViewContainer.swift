@@ -536,9 +536,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         pendingSelect = selecting
         // The app library has its own search, which starts empty; elsewhere the filter bar's text applies.
         model.filter = AppLibrary.isActive(for: u) ? NameFilter() : filterBar.filter
+        let leftAt = list.visibleRect.origin
         list.scroll(.zero)  // first: a location that loads synchronously restores its position inside setLocation
         list.transitions.navigate()
-        let lender = columnsWillNavigate(to: u)
+        let lender = columnsWillNavigate(to: u, leftAt: leftAt)
         model.setLocation(u, takingListingOf: lender?.model)
         columnsDidNavigate(lender: lender, selecting: selecting)
         if AppLibrary.isActive(for: u) { apps?.prepareForDisplay() }
@@ -784,6 +785,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     var zoomLevel: Int { showsApps ? ZoomLevels.nearestLevel(for: zoomView.iconSize) : model.props.zoomLevel(for: model.props.mode) }
 
     func setMode(_ m: ViewMode) {
+        // In a split, the mode chosen is the one a Columns style gives way to.
+        if model.splitMode != nil, m != .columns { model.splitMode = m }
         var p = model.props
         p.mode = m
         model.props = p
@@ -994,8 +997,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     // MARK: ItemListViewDelegate
 
     func itemList(_ view: ItemListView, open items: [FileItem], inNewTab: Bool) {
-        // Column view: a folder opened (a double-click) becomes the first column.
-        if let b = columnBrowser, !inNewTab, items.count == 1, ColumnBrowserView.opensColumn(items[0]) { b.opening = items[0].url }
+        // Column view: a double-clicked folder becomes the first column (opened otherwise, it opens as the next one).
+        if let b = columnBrowser, view.openingByDoubleClick, !inNewTab, items.count == 1, ColumnBrowserView.opensColumn(items[0]) {
+            b.opening = items[0].url
+        }
         defer { columnBrowser?.opening = nil }
         delegate?.container(self, open: items, inNewTab: inNewTab)
     }

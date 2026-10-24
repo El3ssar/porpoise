@@ -1102,24 +1102,27 @@ public final class DirectoryModel {
         didSet { if browsesColumns != oldValue { applyColumnMode() } }
     }
     private var columnOverride = ViewOverride()
+    /// In a split view, which Column view doesn't share: the mode a folder whose own (or the common) style is
+    /// Columns shows in meanwhile. Never saved as its style.
+    public var splitMode: ViewMode? {
+        didSet { if splitMode != oldValue { applyColumnMode() } }
+    }
 
     /// A folder's own settings as Column view shows them: never another mode, even for a moment (the pane would
-    /// leave Column view).
+    /// leave Column view); in a split, Columns gives way to `splitMode`.
     private func inColumns(_ own: ViewProperties) -> ViewProperties {
         var p = own
-        if browsesColumns, p.mode != .columns { columnOverride.apply(to: &p) { $0.mode = .columns } }
+        if browsesColumns, p.mode != .columns {
+            columnOverride.apply(to: &p) { $0.mode = .columns }
+        } else if !browsesColumns, let s = splitMode, p.mode == .columns {
+            columnOverride.apply(to: &p) { $0.mode = s }
+        }
         return p
     }
 
     private func applyColumnMode() {
-        if browsesColumns {
-            guard props.mode != .columns else { return }
-            var p = props
-            columnOverride.apply(to: &p) { $0.mode = .columns }
-            props = p
-        } else if !columnOverride.isEmpty {
-            props = columnOverride.removed(from: props)
-        }
+        let p = inColumns(columnOverride.isEmpty ? props : columnOverride.removed(from: props))
+        if p != props { props = p }
     }
 
     /// Shows `other`'s listing of this same folder at once, while this model reads its own: in Column view a column

@@ -64,6 +64,11 @@ extension MainWindowController {
     }
 
     private func addLayoutTab(_ t: TabLayout) {
+        var t = t
+        // Column view shows one pane: a split saved with a pane in it comes back as that pane alone.
+        if let s = t.secondary, t.primary.props?.mode == .columns || s.props?.mode == .columns {
+            t = TabLayout(primary: t.activeIsSecondary ? s : t.primary, title: t.title)
+        }
         let start = t.primary.columnRoot ?? t.primary.url, split = t.secondary.map { $0.columnRoot ?? $0.url }
         // A tab on a server connects when it's shown: an offline one shows its error (and Try Again) then, and a
         // workspace with several never asks for several passwords at once.

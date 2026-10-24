@@ -94,6 +94,8 @@ final class ItemListView: NSView {
     var mouseDownIndex: Int?
     var mouseDownPoint: CGPoint = .zero
     var mouseDownSelectedBefore = false
+    /// The items being opened come from a double-click (Column view starts its columns at a double-clicked folder).
+    var openingByDoubleClick = false
     var cloudRefreshPending = false
     var typeAhead = ""
     var typeAheadTime = Date.distantPast

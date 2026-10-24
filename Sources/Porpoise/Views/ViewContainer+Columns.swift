@@ -54,10 +54,10 @@ extension ViewContainer {
     /// Before the pane goes to `url`: in Column view, a folder outside the columns starts them again, with its own
     /// view settings (Columns stays unless that folder is set to show otherwise). Returns the column already listing
     /// `url`, whose rows the pane can show at once.
-    func columnsWillNavigate(to url: URL) -> BrowserColumn? {
+    func columnsWillNavigate(to url: URL, leftAt: CGPoint) -> BrowserColumn? {
         guard let browser = columnBrowser else { return nil }
         if !ColumnPath.contains(browser.root, url) { model.browsesColumns = false }
-        return browser.willNavigate(to: url)
+        return browser.willNavigate(to: url, leftAt: leftAt)
     }
 
     /// After the pane went to its new folder (`lender`: the column that lent it its rows).

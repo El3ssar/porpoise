@@ -505,95 +505,6 @@ import Testing
         }
     }
 
-    /// The split view opening and closing over Column view: the panes slide over columns that keep their widths
-    /// (nothing flies between the panes, no list is laid out at another width meanwhile, so no row ever stretches), and
-    /// each pane keeps its focused column and what follows it in view as it narrows and widens.
-    @Test func splitSlidesOverColumnsWithoutStretchingThem() async throws {
-        let s = try tree()
-        let reduces = Animator.reducesMotion
-        Animator.reducesMotion = { false }
-        defer { Animator.reducesMotion = reduces }
-        // Every frame is drawn, however slow the machine.
-        FrameClock.frameStep = 1.0 / 60
-        defer { FrameClock.frameStep = nil }
-        let window = NSWindow(
-            contentRect: CGRect(x: 0, y: 0, width: 1100, height: 600), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        defer { window.close() }
-        let tab = PorpoiseTab(url: s.url)
-        window.contentView = tab
-        tab.frame = window.contentView?.bounds ?? .zero
-        let left = tab.primary
-        try #require(await eventually { !left.model.isLoading && !left.model.rows.isEmpty })
-        left.setMode(.columns)
-        tab.layoutSubtreeIfNeeded()
-        left.setURL(s.path("A/A1"))
-        try #require(await eventually { left.model.index(of: s.path("A/A1/deep.txt")) != nil })
-        left.list.select(s.path("A/A1/deep.txt"))
-        tab.layoutSubtreeIfNeeded()
-        let b = try browser(left)
-        #expect(b.folders == [s.url, s.path("A"), s.path("A/A1")] && b.showsPreview)
-
-        /// The folders' columns' widths (the preview fills what's left), and whether the focused column and the last
-        /// one are in view.
-        func widths(_ b: ColumnBrowserView) -> [CGFloat] { b.shownColumns.filter { $0.url != nil }.map(\.view.frame.width) }
-        func endInView(_ b: ColumnBrowserView) -> Bool {
-            let shown = b.strip.contentView.bounds
-            guard let last = b.shownColumns.last?.view.frame else { return false }
-            return b.container.scroll.frame.minX >= shown.minX - 0.5 && last.minX >= shown.minX - 0.5
-                && min(last.maxX, shown.maxX) - last.minX >= min(last.width, shown.width) - 0.5
-        }
-        let before = widths(b)
-        let flights = tab.flightsLanded
-        /// Runs the slide frame by frame, checking each.
-        func slide(_ check: () -> Void) async throws {
-            let end = Date().addingTimeInterval(eventualTimeout)
-            repeat {
-                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-                check()
-                try await Task.sleep(for: .milliseconds(5))
-            } while (tab.isSliding || tab.closing != nil) && Date() < end
-        }
-
-        /// Runs the main run loop (the strip glides there) until `condition` holds.
-        func spin(until condition: () -> Bool) async throws {
-            let end = Date().addingTimeInterval(eventualTimeout)
-            while !condition(), Date() < end {
-                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-                try await Task.sleep(for: .milliseconds(5))
-            }
-            #expect(condition())
-        }
-
-        tab.openSplit()
-        let right = try #require(tab.secondary)
-        var frames = 0
-        try await slide {
-            frames += 1
-            #expect(widths(b) == before)
-            #expect(right.list.layoutWidthOverride == nil && left.list.layoutWidthOverride == nil)
-        }
-        #expect(frames > 3)
-        try #require(await eventually { !right.model.rows.isEmpty })
-        tab.layoutSubtreeIfNeeded()
-        // Once the pane stops narrowing, the strip glides on to a column's left edge: none shows cut on the left.
-        try await spin { abs(b.strip.contentView.bounds.minX - b.endOrigin) < 0.5 }
-        let origin = b.strip.contentView.bounds.minX
-        #expect(left.frame.width < 700 && widths(b) == before && endInView(b), "\(b.strip.contentView.bounds)")
-        #expect(origin > 0 && b.shownColumns.contains { abs($0.view.frame.minX - origin) < 0.5 }, "\(origin)")
-        #expect(tab.flightsLanded == flights)
-        #expect(!right.list.transitions.log.contains(.splitOpen) && !left.list.transitions.log.contains(.splitOpen))
-
-        tab.closeSplit(closeActive: true)
-        try await slide {
-            #expect(widths(b) == before && left.list.layoutWidthOverride == nil)
-        }
-        tab.layoutSubtreeIfNeeded()
-        try await spin { abs(b.strip.contentView.bounds.minX - b.endOrigin) < 0.5 }
-        #expect(tab.secondary == nil && tab.closing == nil && tab.flightsLanded == flights)
-        #expect(endInView(b) && b.strip.contentView.bounds.minX == 0, "the wider pane shows every column again")
-    }
-
     /// Where the strip rests: at 0 while everything fits; else the last column in view from its left edge, with the
     /// focused one, on a column's left edge (never one cut in half on the left).
     @Test func theStripRestsOnAColumnsEdge() {
@@ -664,10 +575,10 @@ import Testing
         #expect(tilt.map(NestedScrollView.isSideways) == true && roll.map(NestedScrollView.isSideways) == false)
     }
 
-    /// Ten folders down, wider than the pane (alone, or in a split): a sideways scroll over any column moves the
+    /// Ten folders down, wider than the pane: a sideways scroll over any column moves the
     /// columns, as in Finder, while an up-and-down one scrolls that column's rows; the keys and a window resize keep
     /// the focused column in view.
-    @Test(arguments: [false, true]) func sidewaysScrollsMoveTheColumnsTenFoldersDown(split: Bool) async throws {
+    @Test func sidewaysScrollsMoveTheColumnsTenFoldersDown() async throws {
         let reduces = Animator.reducesMotion
         Animator.reducesMotion = { false }
         defer { Animator.reducesMotion = reduces }
@@ -689,11 +600,6 @@ import Testing
         let pane = tab.primary
         try #require(await eventually { !pane.model.isLoading && !pane.model.rows.isEmpty })
         pane.setMode(.columns)
-        if split {
-            tab.openSplit()
-            try #require(await eventually { !tab.isSliding && tab.secondary.map { !$0.model.rows.isEmpty } == true })
-            tab.setActive(secondary: false)
-        }
         tab.layoutSubtreeIfNeeded()
         window.makeFirstResponder(pane.list)
         pane.setURL(s.path(deep))
@@ -727,10 +633,13 @@ import Testing
         }
         // Up and down: the columns stay (the column's own rows take it: an offscreen window's columns don't move for a
         // wheel's clicks, the app's do, `wheel line|0|-40` in REPORT-scroll.md).
+        // From where the strip rests, once any glide or late settle has run (a loaded machine runs them late).
+        try #require(await eventually { !b.isScrolling && abs(clip.bounds.minX - b.endOrigin) < 0.5 })
         let end = clip.bounds.minX
         for dy: Int32 in [15, -15] {
             scroll(.wheel, dx: 0, dy: dy, over: pane.scroll)
-            #expect(clip.bounds.minX == end)
+            try await Task.sleep(for: .milliseconds(200))
+            #expect(!b.isScrolling && abs(clip.bounds.minX - end) < 0.5, "\(dy): \(clip.bounds.minX) from \(end)")
         }
         #expect(!NestedScrollView.isSideways(try #require(gesture(dx: 10, dy: -300).dropFirst().first)))
 
@@ -869,35 +778,48 @@ import Testing
         #expect(sizes(b) == Array(expected.prefix(3)) + [[saved, icon]])
     }
 
-    @Test func zoomChangesTheFocusedColumnOnly() async throws {
+    /// ⌘ and the wheel (or a pinch) over a column, its icons only; and where it was.
+    private func cmdWheel(over list: ItemListView, in window: NSWindow) throws {
+        let p = list.convert(CGPoint(x: list.visibleRect.midX, y: list.visibleRect.midY), to: nil)
+        let cg = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0))
+        cg.flags = .maskCommand
+        cg.location = CGPoint(x: p.x, y: window.frame.height - p.y)
+        list.scrollWheel(with: try #require(NSEvent(cgEvent: cg)))
+        list.commitZoom()
+    }
+
+    @Test func zoomActsOnTheColumnUnderThePointerAndTheKeysOnTheFocusedOne() async throws {
         let s = try deepTree()
         let (pane, window, _) = try await pane(s.url, width: 1400)
         defer { window.close() }
         let b = try browser(pane)
         try await go(pane, s, to: 2, selecting: "L3")
-        let icon = pane.list.iconSize
+        let icon = pane.list.iconSize, step = ZoomLevels.step(from: icon, by: 1)
+        let entries = pane.history.entries.count
+
+        // ⌘+ and the slider: the focused column (L2).
         zoom(pane, to: 48)
         #expect(sizes(b).map { $0[1] } == [icon, icon, 48, icon])
-
-        // ⌘ and the wheel over another column: the focused column zooms, the focus and Back stay as they were.
-        let entries = pane.history.entries.count
-        let first = b.before[0]
-        let p = first.list.convert(CGPoint(x: first.list.visibleRect.midX, y: first.list.visibleRect.midY), to: nil)
-        let cg = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0))
-        cg.flags = .maskCommand
-        cg.location = CGPoint(x: p.x, y: window.frame.height - p.y)
-        first.list.scrollWheel(with: try #require(NSEvent(cgEvent: cg)))
-        pane.list.commitZoom()
-        let zoomed = ZoomLevels.step(from: 48, by: 1)
+        // ⌘-wheel or a pinch over the first column, the last one, then the focused one: each zooms itself; the focus
+        // and Back stay as they were.
+        try cmdWheel(over: b.before[0].list, in: window)
+        #expect(sizes(b).map { $0[1] } == [step, icon, 48, icon])
+        try cmdWheel(over: try #require(b.after).list, in: window)
+        #expect(sizes(b).map { $0[1] } == [step, icon, 48, step])
+        try cmdWheel(over: pane.list, in: window)
+        let focused = ZoomLevels.step(from: 48, by: 1)
+        #expect(sizes(b).map { $0[1] } == [step, icon, focused, step])
         #expect(pane.url.path == s.path(level(2)).path && pane.history.entries.count == entries)
-        #expect(zoomed != 48 && sizes(b).map { $0[1] } == [icon, icon, zoomed, icon])
-        // The focused column's zoom stays its own when the focus moves on.
+        // With the preview after the focused column, the one under the pointer still.
+        pane.list.select(s.path("\(level(2))/f.txt"))
+        #expect(b.showsPreview)
+        try cmdWheel(over: b.before[1].list, in: window)
+        #expect(sizes(b).map { $0[1] } == [step, step, focused])
+        // Each keeps its size as the focus moves; a new column takes its parent's.
         key(left, to: pane.list)
-        #expect(pane.list.iconSize == icon && b.sizes.map(\.iconSize) == [icon, icon, zoomed, icon])
         key(right, to: pane.list)
-        // A new column takes its parent's size.
         try await go(pane, s, to: 2, selecting: "S")
-        #expect(sizes(b).map { $0[1] } == [icon, icon, zoomed, zoomed])
+        #expect(sizes(b).map { $0[1] } == [step, step, focused, focused])
     }
 
     @Test func optionResizesEveryColumnAndTheWidthNewOnesOpenAt() async throws {
@@ -965,29 +887,127 @@ import Testing
         #expect(b.root.path == s.url.path && pane.url.path == s.url.path && pane.model.selection == [s.path("S")])
     }
 
-    @Test func eachPaneOfASplitSizesItsOwnColumns() async throws {
+    // MARK: W-231
+
+    @Test func aClickNeverScrollsAnyColumnUpOrDown() async throws {
         let s = try deepTree()
-        let window = NSWindow(
-            contentRect: CGRect(x: 0, y: 0, width: 1600, height: 600), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
+        let (pane, window, _) = try await pane(s.url, width: 1400)
         defer { window.close() }
-        let tab = PorpoiseTab(url: s.url)
-        window.contentView = tab
-        tab.frame = window.contentView?.bounds ?? .zero
-        let left = tab.primary
-        try #require(await eventually { !left.model.isLoading && !left.model.rows.isEmpty })
-        left.setMode(.columns)
-        tab.openSplit()
-        try #require(await eventually { !tab.isSliding && tab.secondary.map { !$0.model.rows.isEmpty } == true })
-        let right = try #require(tab.secondary)
-        right.setMode(.columns)
-        tab.layoutSubtreeIfNeeded()
-        for pane in [left, right] { try await go(pane, s, to: 2, selecting: "L3") }
-        let l = try browser(left), r = try browser(right)
-        let icon = left.list.iconSize, saved = ViewStyleStore.defaultBrowserColumnWidth
-        l.resize(column: 1, to: 300, all: false)
-        zoom(right, to: 48)
-        #expect(sizes(l) == [[saved, icon], [300, icon], [saved, icon], [saved, icon]])
-        #expect(sizes(r) == [[saved, icon], [saved, icon], [saved, 48], [saved, icon]])
+        let b = try browser(pane)
+        try await go(pane, s, to: 3, selecting: "L4")
+        // L1's column (60 files) scrolled to its middle.
+        let l1 = b.before[1]
+        if l1.list.frames.count != l1.model.rows.count { l1.list.computeLayout() }
+        l1.list.scroll(CGPoint(x: 0, y: 300))
+        func offsets() -> [CGFloat] { b.shownColumns.compactMap { (($0.view as? NSScrollView)?.documentView as? ItemListView)?.visibleRect.minY } }
+        #expect(offsets() == [0, 300, 0, 0, 0])
+        // Files in L1's column, one after the other: the focus goes there, and its rows stay where they are.
+        for name in ["file 20.txt", "file 22.txt", "file 21.txt"] {
+            let list = b.shownColumns.compactMap { ($0.view as? NSScrollView)?.documentView as? ItemListView }[1]
+            try click(s.path("L1/\(name)"), in: list)
+            #expect(pane.url.path == s.path("L1").path && pane.list.visibleRect.minY == 300, "\(name): \(pane.list.visibleRect.minY)")
+            #expect(Array(offsets().prefix(2)) == [0, 300])
+        }
+        // L1 in the first column (already selected there): L1's column keeps its place as the one after.
+        try click(s.path("L1"), in: b.before[0].list)
+        #expect(pane.url.path == s.url.path && b.after?.url.lastPathComponent == "L1")
+        #expect(offsets() == [0, 300], "\(offsets())")
+        // A file shown in it, now the column after the focused one: the focus goes in, its rows stay put.
+        try click(s.path("L1/file 25.txt"), in: try #require(b.after).list)
+        #expect(pane.url.path == s.path("L1").path && pane.list.visibleRect.minY == 300, "\(pane.list.visibleRect.minY)")
+        #expect(offsets() == [0, 300], "\(offsets())")
+    }
+
+    @Test func onlyADoubleClickStartsTheColumnsAtAFolder() async throws {
+        let s = try deepTree()
+        let (pane, window, recorder) = try await pane(s.url, width: 1400)
+        defer { window.close() }
+        recorder.navigates = true
+        let b = try browser(pane)
+        func l4() throws -> FileItem { try #require(pane.model.rows.first { $0.item.name == "L4" }?.item) }
+
+        // Spring-loading (a drag resting on the folder) opens it as the next column.
+        try await go(pane, s, to: 3, selecting: "L4")
+        pane.list.delegate?.itemList(pane.list, open: [try l4()], inNewTab: false)
+        #expect(b.root.path == s.url.path && pane.url.path == s.path(level(4)).path && b.folders.count == 5)
+        // ⌘↓ and Enter, the same.
+        for (code, mods) in [(UInt16(125), NSEvent.ModifierFlags.command), (76, [])] {
+            try await go(pane, s, to: 3, selecting: "L4")
+            key(code, to: pane.list, mods)
+            #expect(b.root.path == s.url.path && pane.url.path == s.path(level(4)).path && b.folders.count == 5, "\(code)")
+        }
+        // A double-click: the first column.
+        try await go(pane, s, to: 3, selecting: "L4")
+        try click(s.path(level(4)), in: pane.list, count: 2)
+        #expect(b.root.path == s.path(level(4)).path && b.folders.count == 1)
+    }
+
+    @Test func aClickOnTheItemSelectedInAnotherColumnMovesTheFocusThere() async throws {
+        let s = try deepTree()
+        let (pane, window, _) = try await pane(s.url, width: 1400)
+        defer { window.close() }
+        let b = try browser(pane)
+        try await go(pane, s, to: 3, selecting: "L4")
+        try click(s.path(level(2)), in: b.before[1].list)
+        #expect(pane.url.path == s.path("L1").path && pane.model.selection == [s.path(level(2))])
+        #expect(window.firstResponder === pane.list && b.folders.count == 3 && b.after?.url.lastPathComponent == "L2")
+    }
+
+    @Test func columnViewIsNeverSplit() async throws {
+        let s = try deepTree()
+        let a = s.path("L1"), other = s.path("S")
+        // In Column view, Split is off (and says why); nothing opens it.
+        let wc = MainWindowController(urls: [s.url])
+        try #require(await eventually { !wc.view.model.isLoading })
+        wc.show(.columns)
+        let split = NSMenuItem(title: "Split", action: #selector(MainWindowController.toggleSplit(_:)), keyEquivalent: "")
+        #expect(!wc.tab.canSplit && !wc.validateMenuItem(split) && split.toolTip == MainWindowController.noSplitInColumns)
+        wc.toggleSplit(nil)
+        wc.places(wc.places, open: a, newTab: false, splitView: true)
+        #expect(!wc.tab.isSplit && wc.view.url.path == a.path)
+        wc.show(.icons)
+        #expect(wc.tab.canSplit && wc.validateMenuItem(split))
+
+        // Columns chosen in a split: the active pane stays, alone, where it was.
+        let pair = MainWindowController(urls: [a], split: [other])
+        try #require(await eventually { pair.tab.containers.allSatisfy { !$0.model.isLoading } })
+        pair.tab.setActive(secondary: true)
+        pair.show(.columns)
+        try #require(await eventually { pair.tab.closing == nil })
+        #expect(!pair.tab.isSplit && pair.view.url.path == other.path && pair.view.columnBrowser != nil)
+
+        // A Columns style a pane of a split only inherits (Column view chosen in another window makes it the common
+        // style) keeps the split: the pane shows the window's mode until it's alone. Only choosing Column view there
+        // collapses the split (above).
+        pair.show(.icons)
+        let third = MainWindowController(urls: [a], split: [other])
+        try #require(await eventually { third.tab.containers.allSatisfy { !$0.model.isLoading } })
+        let right = try #require(third.tab.secondary)
+        var common = ViewProperties()
+        common.mode = .columns
+        ViewStyleStore().save(common, for: s.path(level(2)))
+        right.setURL(s.path(level(2)))
+        third.tab.layoutSubtreeIfNeeded()
+        try #require(await eventually { !right.model.isLoading })
+        #expect(third.tab.isSplit && right.model.props.mode == .icons && right.columnBrowser == nil)
+        right.model.saveProps()
+        #expect(ViewStyleStore().style(for: s.path(level(2))).mode == .columns, "the stand-in mode is never saved")
+        // Alone again, it shows its Columns style.
+        third.tab.setActive(secondary: true)
+        third.tab.closeSplit(closeActive: false, animated: false)
+        third.tab.layoutSubtreeIfNeeded()
+        #expect(!third.tab.isSplit && third.tab.primary === right && right.model.props.mode == .columns && right.columnBrowser != nil)
+
+        // A split saved with a pane in Column view comes back as that pane alone.
+        var columns = ViewProperties()
+        columns.mode = .columns
+        var icons = ViewProperties()
+        icons.mode = .icons
+        let layout = WindowLayout(tabs: [
+            TabLayout(primary: PaneLayout(url: a, props: icons), secondary: PaneLayout(url: other, props: columns), activeIsSecondary: true)
+        ])
+        let restored = MainWindowController(urls: [s.url])
+        #expect(restored.applyLayout(layout))
+        #expect(!restored.tab.isSplit && restored.view.url.path == other.path && restored.view.model.props.mode == .columns)
     }
 }

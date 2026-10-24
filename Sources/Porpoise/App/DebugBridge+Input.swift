@@ -60,7 +60,7 @@ extension DebugBridge {
     }
 
     func modeCommand(_ arg: String) {
-        if let w = wc, let m = ViewMode(rawValue: arg) { w.view.setMode(m); w.syncToActiveView() }
+        if let w = wc, let m = ViewMode(rawValue: arg) { w.show(m) }
     }
 
     func activateCommand(_ arg: String) {

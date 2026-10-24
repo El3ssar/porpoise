@@ -31,6 +31,8 @@ extension MainWindowController: NSMenuItemValidation {
             && event.charactersIgnoringModifiers == "\r"
     }
 
+    static let noSplitInColumns = "Column view shows one pane. Choose another view to split the window."
+
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         guard tabs.indices.contains(current) else { return false }
         // Shortcuts without ⌘ (⌫, ⌥←, ⌥1…), and any on a key that moves the insertion point (⌘← Back, ⌘↑ Up), must not
@@ -142,7 +144,11 @@ extension MainWindowController: NSMenuItemValidation {
             item.title = tab.isSplit ? (tab.activeIsSecondary ? "Close Right View" : "Close Left View") : "Split"
             item.image = Icons.shared.menuIcon(
                 tab.isSplit ? (tab.activeIsSecondary ? "view-right-close" : "view-left-close") : "view-split-left-right")
-            return true
+            item.toolTip = tab.isSplit || tab.canSplit ? nil : Self.noSplitInColumns
+            return tab.isSplit || tab.canSplit
+        case #selector(ctxOpenInSplit(_:)):
+            item.toolTip = tab.isSplit || tab.canSplit ? nil : Self.noSplitInColumns
+            return tab.isSplit || tab.canSplit
 
         // View state (checkmarks)
         case #selector(setViewMode(_:)): item.state = ViewMode.allCases[safe: item.tag] == p.mode ? .on : .off
