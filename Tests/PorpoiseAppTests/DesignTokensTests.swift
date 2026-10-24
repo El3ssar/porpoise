@@ -21,3 +21,23 @@ import Testing
         #expect((regular?[.weight] as? CGFloat ?? 1) < 0.1)
     }
 }
+
+extension DesignTokensTests {
+    /// The grey selection of a window that isn't key stands out from both dark rows (it was about 1.5:1).
+    @Test func theUnemphasizedSelectionStandsOutInDark() throws {
+        let dark = try #require(NSAppearance(named: .darkAqua))
+        var selection = NSColor.black, rows: [NSColor] = []
+        dark.performAsCurrentDrawingAppearance {
+            selection = Tokens.unemphasizedSelection.usingColorSpace(.sRGB) ?? .black
+            rows = [Theme.viewBackground, Theme.viewAlternate].map { $0.usingColorSpace(.sRGB) ?? .black }
+        }
+        for row in rows { #expect(Tokens.contrast(selection, row) >= 1.8) }
+        // Light keeps macOS's own grey.
+        var light = NSColor.black, system = NSColor.white
+        NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
+            light = Tokens.unemphasizedSelection.usingColorSpace(.sRGB) ?? .black
+            system = NSColor.unemphasizedSelectedContentBackgroundColor.usingColorSpace(.sRGB) ?? .white
+        }
+        #expect(Tokens.themeColor(light) == Tokens.themeColor(system))
+    }
+}

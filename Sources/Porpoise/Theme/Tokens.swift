@@ -17,8 +17,17 @@ enum Tokens {
     /// The selection in the focused view: macOS's, which follows the accent colour.
     static var selection: NSColor { accentOverride ?? .selectedContentBackgroundColor }
 
-    /// The selection in a view that isn't focused, or a window that isn't key.
-    static let unemphasizedSelection = NSColor.unemphasizedSelectedContentBackgroundColor
+    /// The selection in a view that isn't focused, or a window that isn't key: macOS's grey. In dark it is only about
+    /// 1.5:1 against the alternate rows, so it is lightened until it stands out from both rows by 1.8:1.
+    static let unemphasizedSelection = NSColor(name: nil) { appearance in
+        var c = NSColor.unemphasizedSelectedContentBackgroundColor
+        appearance.performAsCurrentDrawingAppearance {
+            let system = opaque(.unemphasizedSelectedContentBackgroundColor)
+            let rows = [opaque(.controlBackgroundColor), opaque(color(.alternateRow))]
+            c = appearance.isDark ? distinct(system, from: rows, toward: .white, ratio: 1.8) : system
+        }
+        return c
+    }
 
     /// Behind a selected item's icon in Icons view (Finder's neutral backing): the accent goes behind the name only.
     static let iconSelectionBacking = NSColor.quaternaryLabelColor
