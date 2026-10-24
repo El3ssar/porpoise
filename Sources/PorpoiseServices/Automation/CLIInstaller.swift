@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public enum CLIInstaller {
@@ -22,6 +23,11 @@ public enum CLIInstaller {
             throw Failure.cannotInstall
         }
         // createSymbolicLink is exclusive, including dangling links. Never remove a pre-existing destination.
-        do { try fm.createSymbolicLink(at: destination, withDestinationURL: executable) } catch { throw Failure.occupied }
+        do { try fm.createSymbolicLink(at: destination, withDestinationURL: executable) } catch {
+            // Report a collision only for an existing leaf, including dangling links.
+            var info = stat()
+            if lstat(destination.path, &info) == 0 { throw Failure.occupied }
+            throw Failure.cannotInstall
+        }
     }
 }
