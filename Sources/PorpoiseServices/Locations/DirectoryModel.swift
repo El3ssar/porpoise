@@ -322,6 +322,7 @@ public final class DirectoryModel {
         self.location = location
         self.source = LocationContentSources.source(for: location)
         self.props = ViewStyleStore().style(for: location)
+        source.retainMetadata(for: [location])
         gitSettingsObserver = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
             guard note.object as? String == "showGitStatus" || note.object == nil else { return }
             guard let self else { return }
@@ -386,7 +387,9 @@ public final class DirectoryModel {
             dynamicViewPending = true
             columnOverride = ViewOverride()
             props = inColumns(ViewStyleStore().style(for: url))
-            source = LocationContentSources.source(for: url)
+            let replacement = LocationContentSources.source(for: url)
+            replacement.retainMetadata(for: [url])
+            source = replacement
             // Stop watching the old folder now: virtual and remote locations don't use FSEvents.
             updateWatcher()
             if let lender, takeListing(of: lender) { return }
@@ -512,7 +515,9 @@ public final class DirectoryModel {
         loadedNotificationPending = false
         cancelRowPreparation()
         currentLoad?.cancel(); currentLoad = nil
-        source = LocationContentSources.source(for: location)
+        let replacement = LocationContentSources.source(for: location)
+        replacement.retainMetadata(for: expanded.union([location]))
+        source = replacement
         folderPrefetch?.cancel(); folderPrefetch = nil
         hoverPrefetch?.cancel(); hoverPrefetch = nil
         for load in childLoads.values { load.cancel() }
@@ -637,6 +642,7 @@ public final class DirectoryModel {
     }
 
     private func updateWatcher() {
+        source.retainMetadata(for: expanded.union([location]))
         switch source.traits.watch {
         case .fileSystem: watcher.watch([location] + Array(expanded))
         case .appLibrary: watcher.watch(AppLibrary.roots)
@@ -911,6 +917,7 @@ public final class DirectoryModel {
 
     /// Lists an expanded folder off the main thread (it may be huge or on a slow mount), then shows its rows.
     private func loadChildren(of url: URL) {
+        source.retainMetadata(for: expanded.union([location, url]))
         let token = loadToken
         // A cloud folder shows its saved listing until the service answers.
         if let cached = source.cached(url) { children[url] = cached }

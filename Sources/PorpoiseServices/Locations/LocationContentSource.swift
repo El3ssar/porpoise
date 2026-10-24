@@ -7,6 +7,7 @@ protocol LocationContentSource: AnyObject {
     var location: URL { get }
     var traits: LocationTraits { get }
     /// What can be painted at once without asking anyone (a cloud folder's saved listing); nil: wait for `load`.
+    func retainMetadata(for folders: Set<URL>)
     func cached(_ folder: URL) -> [FileItem]?
     /// Lists `folder` (the location, or an expanded folder in it) and the `expanded` folders below it. `deliver` gets
     /// each page, the last one `complete`, or the failure. Cancelling the returned load drops what's still to come.
@@ -16,6 +17,7 @@ protocol LocationContentSource: AnyObject {
 }
 
 extension LocationContentSource {
+    func retainMetadata(for folders: Set<URL>) {}
     func cached(_ folder: URL) -> [FileItem]? { nil }
     func prefetch(_ folders: [URL]) -> LocationLoad { LocationLoad() }
 }
