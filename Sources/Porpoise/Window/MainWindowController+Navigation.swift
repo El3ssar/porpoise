@@ -18,7 +18,7 @@ extension MainWindowController {
             return
         }
         if url.isFileURL && !(FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue) {
-            if FileManager.default.fileExists(atPath: url.path) { NSWorkspace.shared.open(url); return }
+            if let item = FileItem.load(url) { openFiles([item]); return }
             target.messageBar.show("The folder “\(url.path)” does not exist.", error: true)
             target.needsLayout = true
             return

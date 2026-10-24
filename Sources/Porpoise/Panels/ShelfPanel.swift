@@ -283,10 +283,13 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
         let plan = store.plan(picked)
         report(plan)
         guard !plan.urls.isEmpty else { return }
-        FileOperationsController.shared.run(kind, plan.urls, to: folder, window: window) { [weak self] _ in
-            // The references follow what was moved.
-            if kind == .move { self?.store.moved(picked, to: folder) }
-        }
+        let sources = Dictionary(uniqueKeysWithValues: picked.compactMap { item in store.state(of: item).url.map { (item.id, $0) } })
+        let store = store
+        FileOperationsController.shared.run(
+            kind, plan.urls, to: folder, window: window,
+            moved: { results in
+                store.moved(results, sources: sources)
+            })
     }
 
     @objc func openSelected() {

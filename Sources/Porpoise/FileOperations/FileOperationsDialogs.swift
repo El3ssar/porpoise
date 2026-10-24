@@ -154,9 +154,10 @@ final class FileOperationsDialogs: FileOperationsUI {
             scroll?.layer?.borderColor = Theme.frame.cgColor
         }
         let document = NSView(frame: CGRect(x: 0, y: 0, width: 504, height: CGFloat(activity.errors.count) * 28))
-        for (index, error) in activity.errors.enumerated() {
+        for (index, failure) in activity.errorDetails.enumerated() {
+            let error = failure.message
             let y = document.bounds.height - CGFloat(index + 1) * 28
-            let source = activity.failedSources[safe: index] ?? activity.failedSources.first
+            let source = failure.source
             let icon = NSImageView(frame: CGRect(x: 8, y: y + 6, width: 16, height: 16))
             icon.image = NSImage(systemSymbolName: "doc", accessibilityDescription: "Couldn't copy")
             icon.contentTintColor = Theme.transferDanger
