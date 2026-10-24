@@ -59,99 +59,85 @@ private final class UnavailableEditProvider: RemoteProvider {
     func rootTitle(_ url: URL) -> String { "Test" }
 }
 
-@MainActor
-@Suite(.serialized, .isolatedSettings)
-struct RemoteEditSessionTests {
-    let remote = URL(string: "sftp://user@session.invalid:2222/draft.txt")!
+@Suite struct RemoteOpenCopyTests {
+    private let remote = URL(string: "sftp://user@copies.invalid:2222/draft.txt")!
 
-    @Test func reconstructedStoreKeepsEditsOffline() async throws {
-        let root = try Scratch("remote-session-restart"), provider = RevisionEditProvider()
-        let store = RemoteEditSessionStore(remote: remote, root: root.url)
-        let local = try await store.open(provider: provider)
-        try Data("unsent edit".utf8).write(to: local, options: .atomic)
+    @Test func canonicalIdentitySeparatesAccountsAndImplicitPortsWithoutPasswords() {
+        let a = URL(string: "sftp://user:password@HOST.invalid/file.txt")!
+        let b = URL(string: "sftp://user@host.invalid/file.txt")!
+        #expect(RemoteOpenCopyStore.identity(a) == RemoteOpenCopyStore.identity(b))
+        #expect(RemoteOpenCopyStore.identity(b) != RemoteOpenCopyStore.identity(URL(string: "sftp://user@host.invalid:22/file.txt")!))
+        #expect(RemoteOpenCopyStore.identity(b) != RemoteOpenCopyStore.identity(URL(string: "sftp://other@host.invalid/file.txt")!))
+    }
+
+    @Test func everyOpenChecksCurrentBytesAndKeepsEarlierEdits() async throws {
+        let root = try Scratch("remote-copy-fresh"), provider = CopyEditProvider()
+        let store = RemoteOpenCopyStore(remote: remote, root: root.url)
+        let first = try await store.open(provider: provider)
+        #expect(try await store.open(provider: provider) == first)
+        #expect(provider.downloads == 2)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: first.path)
+        try Data("my local edit".utf8).write(to: first)
+        provider.content = "new server bytes"
+        let second = try await store.open(provider: provider)
+        #expect(second != first)
+        #expect(try String(contentsOf: second, encoding: .utf8) == "new server bytes")
+        #expect(try String(contentsOf: first, encoding: .utf8) == "my local edit")
+        #expect((try FileManager.default.attributesOfItem(atPath: second.path)[.posixPermissions] as? NSNumber)?.intValue == 0o444)
         provider.failDownload = true
-        let recovered = RemoteEditSessionStore(remote: remote, root: root.url)
-        #expect(try await recovered.open(provider: provider) == local)
-        #expect(try String(contentsOf: local, encoding: .utf8) == "unsent edit")
-        #expect(provider.downloads == 1)
-        let permissions = try FileManager.default.attributesOfItem(atPath: local.path)[.posixPermissions] as? NSNumber
-        #expect(permissions?.intValue == 0o600)
-        #expect(!String(data: try Data(contentsOf: store.folder.appendingPathComponent("session.json")), encoding: .utf8)!.contains("password"))
+        await #expect(throws: URLError.self) { try await store.open(provider: provider) }
+        #expect(try String(contentsOf: first, encoding: .utf8) == "my local edit")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: store.folder.path).count == 2)
     }
-
-    @Test func failedPublicationRetainsImmutableSnapshotAndNewerEdits() async throws {
-        let root = try Scratch("remote-session-snapshot"), provider = RevisionEditProvider()
-        let store = RemoteEditSessionStore(remote: remote, root: root.url)
-        let local = try await store.open(provider: provider)
-        try Data("v2".utf8).write(to: local)
-        provider.beforePublish = {
-            try Data("v3".utf8).write(to: local, options: .atomic)
-            throw URLError(.networkConnectionLost)
+    @Test func previewCopiesAreIndependentFromCacheAndPreserveExportName() async throws {
+        let root = try Scratch("remote-copy-preview")
+        let cached = root.url.appendingPathComponent("export.pdf")
+        try Data("cloud bytes".utf8).write(to: cached)
+        let store = RemoteOpenCopyStore(remote: remote, root: root.url.appendingPathComponent("Copies"))
+        let opened = try await store.copy(cached)
+        #expect(opened != cached && opened.lastPathComponent == "export.pdf")
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: opened.path)
+        try Data("local annotation".utf8).write(to: opened)
+        #expect(try String(contentsOf: cached, encoding: .utf8) == "cloud bytes")
+        let next = try await store.copy(cached)
+        #expect(next != opened)
+        #expect(try String(contentsOf: opened, encoding: .utf8) == "local annotation")
+    }
+    @Test func sweepOnlyRemovesOldUnchangedReadOnlyOwnedCopies() throws {
+        struct Record: Encodable {
+            let version = 1
+            let name: String
+            let fingerprint: JobJournal.Fingerprint
+            let hash: String
+            let created: Date
         }
-        await #expect(throws: URLError.self) { try await store.save(provider: provider) }
-        let recordURL = store.folder.appendingPathComponent("session.json")
-        let saved = try JSONDecoder().decode(RemoteEditSession.self, from: Data(contentsOf: recordURL))
-        let id = try #require(saved.uploadID)
-        let snapshot = store.folder.appendingPathComponent("Uploads/" + id.uuidString + "/draft.txt")
-        #expect(try String(contentsOf: snapshot, encoding: .utf8) == "v2")
-        provider.beforePublish = {}
-        let recovered = RemoteEditSessionStore(remote: remote, root: root.url)
-        #expect(try await recovered.save(provider: provider))
-        #expect(provider.text == "v2")
-        #expect(try String(contentsOf: local, encoding: .utf8) == "v3")
-        #expect(!FileManager.default.fileExists(atPath: snapshot.path))
-        #expect(try await !recovered.save(provider: provider))
-        #expect(provider.text == "v3")
-        let count = provider.publications
-        #expect(try await !recovered.save(provider: provider))
-        #expect(provider.publications == count)
-    }
-
-    @Test func remoteConflictRetainsBothVersions() async throws {
-        let root = try Scratch("remote-session-conflict"), provider = RevisionEditProvider()
-        let store = RemoteEditSessionStore(remote: remote, root: root.url)
-        let local = try await store.open(provider: provider)
-        try Data("mine".utf8).write(to: local)
-        provider.replaceRemote("theirs")
-        await #expect(throws: RemoteEditError.self) { try await store.save(provider: provider) }
-        #expect(provider.text == "theirs")
-        #expect(try String(contentsOf: local, encoding: .utf8) == "mine")
-    }
-
-    @Test func changedRemoteDuringDownloadIsNotAnEditingBaseline() async throws {
-        let root = try Scratch("remote-session-freshness"), provider = RevisionEditProvider()
-        let store = RemoteEditSessionStore(remote: remote, root: root.url)
-        provider.afterDownload = { provider.replaceRemote("new generation") }
-        await #expect(throws: RemoteEditError.self) { try await store.open(provider: provider) }
-        #expect(!FileManager.default.fileExists(atPath: store.local.path))
-        #expect(provider.publications == 0)
-    }
-
-    @Test func damagedRecordsAndUnownedWorkingCopiesAreKept() async throws {
-        let root = try Scratch("remote-session-damaged"), provider = RevisionEditProvider()
-        let store = RemoteEditSessionStore(remote: remote, root: root.url)
-        let local = try await store.open(provider: provider)
-        let recordURL = store.folder.appendingPathComponent("session.json")
-        try Data("damaged".utf8).write(to: recordURL)
-        await #expect(throws: RemoteEditError.self) { try await store.open(provider: provider) }
-        #expect(try String(contentsOf: local, encoding: .utf8) == "server")
-        try FileManager.default.removeItem(at: recordURL)
-        await #expect(throws: RemoteEditError.self) { try await store.open(provider: provider) }
-        #expect(try String(contentsOf: local, encoding: .utf8) == "server")
-        await #expect(throws: RemoteEditError.self) { try await store.save(provider: provider) }
-    }
-
-    @Test func noConditionalCapabilityMeansCopyOnly() async throws {
-        let root = try Scratch("remote-session-copy"), provider = CopyEditProvider()
-        let store = RemoteEditSessionStore(remote: remote, root: root.url)
-        let local = try await store.open(provider: provider)
-        try Data("local edit".utf8).write(to: local)
-        await #expect(throws: RemoteEditError.self) { try await store.save(provider: provider) }
-        #expect(provider.uploads == 0)
-        #expect(try String(contentsOf: local, encoding: .utf8) == "local edit")
-        #expect(RemoteEditError.copyOnly.localizedDescription.contains("stays on this Mac"))
-        #expect(RemoteEditError.changed.localizedDescription.contains("changed"))
-        #expect(RemoteEditError.damaged.localizedDescription.contains("kept"))
+        let root = try Scratch("remote-copy-sweep"), store = RemoteOpenCopyStore(remote: remote, root: root.url)
+        func seed(age: TimeInterval, changed: Bool, writable: Bool, owner: RemoteOpenCopyStore? = nil) throws -> URL {
+            let folder = (owner ?? store).folder.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let content = folder.appendingPathComponent("Content", isDirectory: true)
+            try FileManager.default.createDirectory(at: content, withIntermediateDirectories: false)
+            let local = content.appendingPathComponent("draft.txt")
+            try Data("original".utf8).write(to: local)
+            let record = Record(
+                name: local.lastPathComponent, fingerprint: try #require(JobJournal.Fingerprint(local)),
+                hash: try FileChecksums.digest(local), created: Date().addingTimeInterval(-age))
+            try JSONEncoder().encode(record).write(to: folder.appendingPathComponent(".porpoise-copy.json"))
+            if changed { try Data("edited".utf8).write(to: local) }
+            try FileManager.default.setAttributes([.posixPermissions: writable ? 0o600 : 0o444], ofItemAtPath: local.path)
+            return local
+        }
+        let old = try seed(age: 8 * 86400, changed: false, writable: false)
+        let fresh = try seed(age: 60, changed: false, writable: false)
+        let changed = try seed(age: 8 * 86400, changed: true, writable: false)
+        let unlocked = try seed(age: 8 * 86400, changed: false, writable: true)
+        let other = RemoteOpenCopyStore(remote: URL(string: "sftp://another.invalid/file.txt")!, root: root.url)
+        let otherOld = try seed(age: 8 * 86400, changed: false, writable: false, owner: other)
+        try RemoteOpenCopyStore.sweepRoot(root.url)
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+        #expect(!FileManager.default.fileExists(atPath: otherOld.path))
+        #expect(!FileManager.default.fileExists(atPath: other.folder.path))
+        for kept in [fresh, changed, unlocked] { #expect(FileManager.default.fileExists(atPath: kept.path)) }
     }
 }
 
@@ -184,103 +170,4 @@ private class CopyEditProvider: RemoteProvider, @unchecked Sendable {
     func move(_ urls: [URL], into folder: URL) throws {}
     func copy(_ urls: [URL], into folder: URL) throws {}
     func rootTitle(_ url: URL) -> String { "Test server" }
-}
-
-private final class RevisionEditProvider: CopyEditProvider, RemoteEditPublishing, @unchecked Sendable {
-    private var revision = 1
-    private var publicationCount = 0
-    var publications: Int { lock.withLock { publicationCount } }
-    func replaceRemote(_ text: String) {
-        lock.withLock {
-            content = text; revision += 1
-        }
-    }
-    func editRevision(_ remote: URL) throws -> String { lock.withLock { String(revision) } }
-    func publishEdit(_ local: URL, to remote: URL, expectedRevision: String) throws -> String {
-        try lock.withLock {
-            try beforePublish()
-            guard expectedRevision == String(revision) else { throw RemoteEditError.changed }
-            content = try String(contentsOf: local, encoding: .utf8)
-            revision += 1; publicationCount += 1
-            return String(revision)
-        }
-    }
-}
-
-@MainActor
-@Suite(.serialized, .isolatedSettings)
-struct RemoteEditIntegrationTests {
-    @Test func concurrentOpenDownloadsOnceAndShowsActivity() async throws {
-        let root = try Scratch("remote-edit-coalescing"), provider = CopyEditProvider()
-        let remote = URL(string: "sftp://coalesce.invalid/file.txt")!
-        RemoteFS.cacheParentOverride = root.url; RemoteFS.use(provider, for: remote)
-        defer { RemoteFS.cacheParentOverride = nil; RemoteFS.use(nil, for: remote) }
-        var opened: [URL] = []
-        let item = FileItem(url: remote, name: "file.txt", isDirectory: false)
-        RemoteOpener.open(item, using: { opened.append($0) })
-        RemoteOpener.open(item, using: { opened.append($0) })
-        await expectEventually("both open requests") { opened.count == 2 }
-        #expect(provider.downloads == 1)
-        #expect(opened.first == opened.last)
-        #expect(FileOperationsController.shared.activities.contains { $0.sources == [remote] && $0.state == .completed })
-    }
-
-    @Test func conditionalPublisherWatchesRepeatedAtomicReplacements() async throws {
-        let root = try Scratch("remote-edit-watching"), provider = RevisionEditProvider()
-        let remote = URL(string: "sftp://watch.invalid/file.txt")!
-        RemoteFS.cacheParentOverride = root.url; RemoteFS.use(provider, for: remote)
-        defer { RemoteFS.cacheParentOverride = nil; RemoteFS.use(nil, for: remote) }
-        var local: URL?
-        RemoteOpener.open(FileItem(url: remote, name: "file.txt", isDirectory: false), using: { local = $0 })
-        await expectEventually("opened") { local != nil }
-        let url = try #require(local)
-        for text in ["v2", "v3"] {
-            try Data(text.utf8).write(to: url, options: .atomic)
-            await expectEventually("conditional save") { provider.text == text }
-        }
-        #expect(provider.uploads == 0)
-        #expect(FileOperationsController.shared.activities.contains { $0.sources == [remote] && $0.cloudTitle == "Saving “file.txt”" })
-    }
-
-    @Test func cancellationBeforePublicationKeepsWorkingFile() async throws {
-        let root = try Scratch("remote-edit-cancel"), provider = RevisionEditProvider()
-        let remote = URL(string: "sftp://cancel.invalid/file.txt")!
-        let store = RemoteEditSessionStore(remote: remote, root: root.url)
-        let local = try await store.open(provider: provider)
-        try Data("draft".utf8).write(to: local)
-        let context = CloudTransferContext(checkpoint: { throw CancellationError() })
-        await #expect(throws: CancellationError.self) { try await store.save(provider: provider, context: context) }
-        #expect(provider.text == "server")
-        #expect(try String(contentsOf: local, encoding: .utf8) == "draft")
-    }
-
-    @Test func backgroundCallerOpensOnMainActor() async throws {
-        let root = try Scratch("remote-edit-background"), provider = CopyEditProvider()
-        let remote = URL(string: "sftp://background.invalid/file.txt")!
-        RemoteFS.cacheParentOverride = root.url; RemoteFS.use(provider, for: remote)
-        let previous = RemoteOpener.openFile
-        defer { RemoteFS.cacheParentOverride = nil; RemoteFS.use(nil, for: remote); RemoteOpener.openFile = previous }
-        var opened: URL?, onMain = false
-        RemoteOpener.openFile = {
-            opened = $0; onMain = Thread.isMainThread
-        }
-        await offThePool { RemoteOpener.open(FileItem(url: remote, name: "file.txt", isDirectory: false)) }
-        await expectEventually("background open") { opened != nil }
-        #expect(onMain)
-    }
-
-    @Test func canonicalIdentityIgnoresPasswordAndHostCaseButKeepsImplicitPortsDistinct() async throws {
-        let root = try Scratch("remote-edit-canonical"), provider = CopyEditProvider()
-        let a = URL(string: "sftp://user:password@HOST.invalid/file.txt")!
-        let b = URL(string: "sftp://user@host.invalid/file.txt")!
-        #expect(RemoteEditSessionStore.identity(a) == RemoteEditSessionStore.identity(b))
-        let explicit = URL(string: "sftp://user@host.invalid:22/file.txt")!
-        #expect(RemoteEditSessionStore.identity(b) != RemoteEditSessionStore.identity(explicit))
-        let one = RemoteEditSessionStore(remote: a, root: root.url)
-        let two = RemoteEditSessionStore(remote: b, root: root.url)
-        #expect(try await one.open(provider: provider) == two.local)
-        #expect(try await two.open(provider: provider) == one.local)
-        let data = try Data(contentsOf: one.folder.appendingPathComponent("session.json"))
-        #expect(!String(decoding: data, as: UTF8.self).contains("password"))
-    }
 }

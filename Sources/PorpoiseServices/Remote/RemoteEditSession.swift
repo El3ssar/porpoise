@@ -2,43 +2,22 @@ import CryptoKit
 import Foundation
 import PorpoiseCore
 
-/// Opt-in only: publication must atomically reject a changed remote revision. A metadata check followed by an
-/// unconditional upload does not satisfy this contract. Other providers open a durable local copy without save-back.
-protocol RemoteEditPublishing: RemoteProvider {
-    func editRevision(_ remote: URL) throws -> String
-    func publishEdit(_ snapshot: URL, to remote: URL, expectedRevision: String) throws -> String
-}
-
-struct RemoteEditSession: Codable, Sendable {
-    var version = 1
-    var remote: URL
-    var name: String
-    var sentHash: String
-    var revision: String?
-    var uploadID: UUID?
-    var uploadHash: String?
-}
-
-enum RemoteEditError: LocalizedError {
-    case damaged, changed, copyOnly
-    var errorDescription: String? {
-        switch self {
-        case .damaged: return "The saved remote editing session could not be read. Its local files have been kept."
-        case .changed: return "The file changed while preparing its local copy. Both versions have been kept."
-        case .copyOnly: return "This server cannot safely save changes back. Your edited copy stays on this Mac."
-        }
+/// Copy-only opens never publish to the server. Launched files are read-only and independent of preview caches.
+/// A changed/unlocked copy is retained; only old, unchanged, read-only copies may be swept.
+final class RemoteOpenCopyStore: @unchecked Sendable {
+    private struct Record: Codable {
+        var version = 1
+        var name: String
+        var fingerprint: JobJournal.Fingerprint
+        var hash: String
+        var created: Date
     }
-}
-
-/// Owns user-edited bytes in Application Support, outside all disposable rendition/download caches. One serial
-/// worker owns each store; a retry reads the durable record and reuses the exact upload snapshot after failure.
-final class RemoteEditSessionStore: @unchecked Sendable {
     let folder: URL
-    let local: URL
     private let remote: URL
-    private let queue = DispatchQueue(label: "porpoise.remote-edit", qos: .userInitiated)
-    private var recordURL: URL { folder.appendingPathComponent("session.json") }
-
+    private let queue = DispatchQueue(label: "porpoise.remote-copy", qos: .userInitiated)
+    private var previous: URL?
+    private static let launchedLock = NSLock()
+    private static var launched: Set<URL> = []
     private static func canonical(_ remote: URL) -> URL? {
         guard var parts = URLComponents(url: remote, resolvingAgainstBaseURL: false) else { return nil }
         parts.password = nil; parts.fragment = nil
@@ -51,112 +30,131 @@ final class RemoteEditSessionStore: @unchecked Sendable {
     }
 
     init(remote: URL, root: URL) {
-        // An unparseable location is rejected by open before any directory or provider is touched.
         self.remote = Self.canonical(remote) ?? URL(fileURLWithPath: "/")
         folder = root.appendingPathComponent(Self.identity(remote), isDirectory: true)
-        local = folder.appendingPathComponent("Working", isDirectory: true).appendingPathComponent(remote.lastPathComponent)
     }
-
     func open(provider: RemoteProvider, context: CloudTransferContext = .init()) async throws -> URL {
-        try await run(context: context) { control in
-            guard !self.remote.isFileURL else { throw RemoteEditError.damaged }
+        try await prepare(context: context) { incoming in
+            guard !self.remote.isFileURL else { throw CloudContentError.unsupported }
             try RemoteFS.checkName(self.remote.lastPathComponent)
-            if let session = try self.load() {
-                guard session.remote == self.remote, session.name == self.remote.lastPathComponent,
-                    FileManager.default.fileExists(atPath: self.local.path)
-                else { throw RemoteEditError.damaged }
-                return self.local
-            }
-            // Never remove or adopt bytes without their record, including a torn initial download.
-            guard !FileManager.default.fileExists(atPath: self.local.path) else { throw RemoteEditError.damaged }
-            let incoming = self.folder.appendingPathComponent("Opening-" + UUID().uuidString, isDirectory: true)
-            try self.create(incoming)
-            defer { try? FileManager.default.removeItem(at: incoming) }
-            let publisher = provider as? RemoteEditPublishing
-            let revision = try publisher?.editRevision(self.remote)
-            let downloaded = try provider.download(self.remote, into: incoming)
-            try control.checkpoint()
-            guard downloaded.deletingLastPathComponent().standardizedFileURL == incoming.standardizedFileURL,
-                downloaded.lastPathComponent == self.remote.lastPathComponent,
-                (try downloaded.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])).isRegularFile == true,
-                (try downloaded.resourceValues(forKeys: [.isSymbolicLinkKey])).isSymbolicLink != true
-            else { throw RemoteEditError.damaged }
-            if let revision, try publisher?.editRevision(self.remote) != revision { throw RemoteEditError.changed }
-            try self.create(self.local.deletingLastPathComponent())
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: downloaded.path)
-            try FileManager.default.moveItem(at: downloaded, to: self.local)
-            try self.sync(self.local)
-            try self.syncDirectory(self.local.deletingLastPathComponent())
-            try self.save(
-                .init(remote: self.remote, name: self.remote.lastPathComponent, sentHash: self.hash(self.local, control), revision: revision))
-            return self.local
+            return try provider.download(self.remote, into: incoming)
         }
     }
-
-    /// Returns true when another save arrived during publication. A failure keeps both the snapshot and working file.
-    func save(provider: RemoteProvider, context: CloudTransferContext = .init()) async throws -> Bool {
+    func copy(_ source: URL, context: CloudTransferContext = .init()) async throws -> URL {
+        try await prepare(context: context) { incoming in
+            let target = incoming.appendingPathComponent(try RemoteFS.localName(source.lastPathComponent))
+            try cloudClone(source, to: target); return target
+        }
+    }
+    private func prepare(context: CloudTransferContext, load: @escaping (URL) throws -> URL) async throws -> URL {
         try await run(context: context) { control in
-            guard var session = try self.load() else { throw RemoteEditError.damaged }
-            guard let publisher = provider as? RemoteEditPublishing, let revision = session.revision else { throw RemoteEditError.copyOnly }
-            let currentHash = try self.hash(self.local, control)
-            if session.uploadID == nil {
-                guard currentHash != session.sentHash else { return false }
-                let id = UUID(), snapshot = self.snapshot(id)
-                try self.create(snapshot.deletingLastPathComponent())
-                try FileManager.default.copyItem(at: self.local, to: snapshot)
-                let snapshotHash = try self.hash(snapshot, control)
-                guard snapshotHash == currentHash else { throw RemoteEditError.changed }
-                try self.sync(snapshot)
-                try self.syncDirectory(snapshot.deletingLastPathComponent())
-                try self.syncDirectory(snapshot.deletingLastPathComponent().deletingLastPathComponent())
-                session.uploadID = id; session.uploadHash = snapshotHash
-                try self.save(session)
-            }
-            guard let id = session.uploadID, let expected = session.uploadHash, try self.hash(self.snapshot(id), control) == expected else {
-                throw RemoteEditError.damaged
-            }
+            try self.sweep(control: control)
+            let incoming = self.folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: incoming, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            var published = false
+            defer { if !published { try? FileManager.default.removeItem(at: incoming) } }
+            let content = incoming.appendingPathComponent("Content", isDirectory: true)
+            try FileManager.default.createDirectory(at: content, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+            let local = try load(content)
             try control.checkpoint()
-            session.revision = try publisher.publishEdit(self.snapshot(id), to: self.remote, expectedRevision: revision)
-            session.sentHash = expected; session.uploadID = nil; session.uploadHash = nil
-            try self.save(session)
-            try? FileManager.default.removeItem(at: self.snapshot(id).deletingLastPathComponent())
-            return try self.hash(self.local, control) != session.sentHash
+            let values = try local.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            guard local.deletingLastPathComponent().standardizedFileURL == content.standardizedFileURL,
+                RemoteParsing.isSafeName(local.lastPathComponent), values.isRegularFile == true, values.isSymbolicLink != true
+            else { throw CloudContentError.changed }
+            let hash = try FileChecksums.digest(local, cancellation: control.asDiskCancellation())
+            if let previous = self.previous, Self.isReadOnly(previous),
+                (try? FileChecksums.digest(previous, cancellation: control.asDiskCancellation())) == hash
+            {
+                return previous
+            }
+            try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: local.path)
+            guard let fingerprint = JobJournal.Fingerprint(local) else { throw CloudContentError.changed }
+            let record = Record(name: local.lastPathComponent, fingerprint: fingerprint, hash: hash, created: Date())
+            let metadata = incoming.appendingPathComponent(".porpoise-copy.json")
+            try JSONEncoder().encode(record).write(to: metadata, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: metadata.path)
+            Self.launchedLock.withLock { _ = Self.launched.insert(local) }
+            self.previous = local; published = true
+            return local
         }
     }
-
-    private func snapshot(_ id: UUID) -> URL {
-        folder.appendingPathComponent("Uploads/" + id.uuidString).appendingPathComponent(local.lastPathComponent)
+    /// Disconnect must not erase an unlocked/edited copy. Hashing runs off the main actor, as with cloud edits.
+    static func checkUnchangedCopies(in root: URL) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let fm = FileManager.default
+                    guard fm.fileExists(atPath: root.path) else { continuation.resume(); return }
+                    for identity in try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isSymbolicLinkKey]) {
+                        guard (try identity.resourceValues(forKeys: [.isSymbolicLinkKey])).isSymbolicLink != true else {
+                            throw CloudConnectionError.unsentEdits
+                        }
+                        for candidate in try fm.contentsOfDirectory(at: identity, includingPropertiesForKeys: [.isSymbolicLinkKey]) {
+                            guard UUID(uuidString: candidate.lastPathComponent) != nil,
+                                (try candidate.resourceValues(forKeys: [.isSymbolicLinkKey])).isSymbolicLink != true,
+                                let data = try? Data(contentsOf: candidate.appendingPathComponent(".porpoise-copy.json")),
+                                let record = try? JSONDecoder().decode(Record.self, from: data), record.version == 1,
+                                RemoteParsing.isSafeName(record.name)
+                            else { throw CloudConnectionError.unsentEdits }
+                            let content = candidate.appendingPathComponent("Content")
+                            let local = content.appendingPathComponent(record.name)
+                            guard (try content.resourceValues(forKeys: [.isSymbolicLinkKey])).isSymbolicLink != true,
+                                (try local.resourceValues(forKeys: [.isSymbolicLinkKey])).isSymbolicLink != true,
+                                let permissions = try fm.attributesOfItem(atPath: local.path)[.posixPermissions] as? NSNumber,
+                                permissions.intValue & 0o222 == 0,
+                                try FileChecksums.digest(local) == record.hash
+                            else { throw CloudConnectionError.unsentEdits }
+                        }
+                    }
+                    continuation.resume()
+                } catch { continuation.resume(throwing: error) }
+            }
+        }
     }
-    private func hash(_ url: URL, _ control: JobControl) throws -> String {
-        try FileChecksums.digest(url, cancellation: control.asDiskCancellation())
+    private static func isReadOnly(_ local: URL) -> Bool {
+        guard let values = try? local.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+            values.isRegularFile == true, values.isSymbolicLink != true,
+            let permissions = try? FileManager.default.attributesOfItem(atPath: local.path)[.posixPermissions] as? NSNumber
+        else { return false }
+        return permissions.intValue & 0o222 == 0
     }
-    private func create(_ url: URL) throws {
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    /// Never visits legacy edit sessions, unknown directories, symlinks, current-process copies or changed bytes.
+    func sweep(now: Date = Date(), control: JobControl = JobControl()) throws {
+        try Self.sweepFolder(folder, now: now, control: control)
     }
-    private func load() throws -> RemoteEditSession? {
-        guard FileManager.default.fileExists(atPath: recordURL.path) else { return nil }
-        guard let session = try? JSONDecoder().decode(RemoteEditSession.self, from: Data(contentsOf: recordURL)),
-            session.version == 1, session.remote == remote, session.name == local.lastPathComponent
-        else { throw RemoteEditError.damaged }
-        return session
+    static func sweepRoot(_ root: URL, now: Date = Date(), control: JobControl = JobControl()) throws {
+        guard FileManager.default.fileExists(atPath: root.path) else { return }
+        for identity in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isSymbolicLinkKey]) {
+            try control.checkpoint()
+            guard identity.lastPathComponent.count == 64, identity.lastPathComponent.allSatisfy({ $0.isHexDigit }),
+                (try? identity.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == false
+            else { continue }
+            try sweepFolder(identity, now: now, control: control)
+            // rmdir removes only an empty directory, even if another open starts during the sweep.
+            _ = identity.withUnsafeFileSystemRepresentation { path in path.map { Darwin.rmdir($0) } ?? -1 }
+        }
     }
-    private func save(_ session: RemoteEditSession) throws {
-        try create(folder)
-        try JSONEncoder().encode(session).write(to: recordURL, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: recordURL.path)
-        try sync(recordURL)
-        try syncDirectory(folder)
-    }
-    private func syncDirectory(_ directory: URL) throws {
-        let fd = Darwin.open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
-        guard fd >= 0 else { throw POSIXError(.EIO) }
-        defer { close(fd) }
-        guard fsync(fd) == 0 else { throw POSIXError(.EIO) }
-    }
-    private func sync(_ url: URL) throws {
-        let handle = try FileHandle(forWritingTo: url)
-        defer { try? handle.close() }
-        try handle.synchronize()
+    private static func sweepFolder(_ folder: URL, now: Date, control: JobControl) throws {
+        guard FileManager.default.fileExists(atPath: folder.path) else { return }
+        for candidate in try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isSymbolicLinkKey]) {
+            try control.checkpoint()
+            guard UUID(uuidString: candidate.lastPathComponent) != nil,
+                (try? candidate.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == false,
+                let data = try? Data(contentsOf: candidate.appendingPathComponent(".porpoise-copy.json")),
+                let record = try? JSONDecoder().decode(Record.self, from: data), record.version == 1,
+                RemoteParsing.isSafeName(record.name), now.timeIntervalSince(record.created) > 7 * 86400
+            else { continue }
+            let content = candidate.appendingPathComponent("Content", isDirectory: true)
+            let local = content.appendingPathComponent(record.name)
+            guard (try? content.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == false,
+                !Self.launchedLock.withLock({ Self.launched.contains(local) }), Self.isReadOnly(local),
+                JobJournal.Fingerprint(local) == record.fingerprint,
+                (try? FileChecksums.digest(local, cancellation: control.asDiskCancellation())) == record.hash,
+                Set(try FileManager.default.contentsOfDirectory(atPath: candidate.path)) == ["Content", ".porpoise-copy.json"],
+                try FileManager.default.contentsOfDirectory(atPath: content.path) == [record.name]
+            else { continue }
+            try FileManager.default.removeItem(at: candidate)
+        }
     }
     private func run<T>(context: CloudTransferContext, _ body: @escaping (JobControl) throws -> T) async throws -> T {
         let control = JobControl()

@@ -39,7 +39,7 @@ public struct CloudAuthorizedClient: Sendable {
     /// the provider to read); only a response that delivered nothing is ever sent again. `onWait` hears each pause.
     public func send(
         _ request: URLRequest, idempotent: Bool, receive: Receive? = nil, before: (() async throws -> Void)? = nil,
-        onWait: ((TimeInterval) -> Void)? = nil
+        onWait: ((TimeInterval) -> Void)? = nil, uploading file: URL? = nil
     ) async throws -> (Data, HTTPURLResponse) {
         var request = request
         var bearer = try await token(nil)
@@ -53,7 +53,7 @@ public struct CloudAuthorizedClient: Sendable {
             } else {
                 request.setValue("Bearer " + bearer, forHTTPHeaderField: "Authorization")
             }
-            let (body, response) = try await exchange(request, receive: receive)
+            let (body, response) = try await exchange(request, receive: receive, file: file)
             if response.statusCode == 401, !renewed {
                 renewed = true
                 bearer = try await token(bearer)
@@ -72,7 +72,8 @@ public struct CloudAuthorizedClient: Sendable {
         }
     }
 
-    private func exchange(_ request: URLRequest, receive: Receive?) async throws -> (Data, HTTPURLResponse) {
+    private func exchange(_ request: URLRequest, receive: Receive?, file: URL?) async throws -> (Data, HTTPURLResponse) {
+        if let file { return try await transport.upload(request, from: file) }
         guard let receive else { return try await transport.response(request) }
         var errorBody = Data()
         let response = try await transport.stream(request) { chunk, head in

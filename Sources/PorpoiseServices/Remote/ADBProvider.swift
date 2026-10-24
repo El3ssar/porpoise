@@ -122,10 +122,19 @@ final class ADBProvider: RemoteProvider, RemoteTransferTargetChecking {
     }
 
     func move(_ remote: [URL], into folder: URL) throws {
-        try shell("mv " + remote.map(q).joined(separator: " ") + " " + q(folder) + "/")
+        try relocate(remote, into: folder, command: "mv")
     }
 
     func copy(_ remote: [URL], into folder: URL) throws {
-        try shell("cp -r " + remote.map(q).joined(separator: " ") + " " + q(folder) + "/")
+        try relocate(remote, into: folder, command: "cp -r")
     }
+    private func relocate(_ remote: [URL], into folder: URL, command: String) throws {
+        for source in remote {
+            let target = q(folder.appendingPathComponent(source.lastPathComponent))
+            let result = try shell(
+                "if [ -e \(target) ] || [ -L \(target) ]; then echo \(Self.existsMarker); else \(command) \(q(source)) \(q(folder))/; fi")
+            if result.contains(Self.existsMarker) { throw RemoteError.exists(source.lastPathComponent) }
+        }
+    }
+
 }

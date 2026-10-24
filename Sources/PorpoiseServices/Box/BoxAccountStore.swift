@@ -101,6 +101,7 @@ import PorpoiseCore
     public func disconnect(_ id: UUID) async throws {
         guard let client = clients[id] else { return }
         guard await client.edits.pending().isEmpty else { throw CloudConnectionError.unsentEdits }
+        try await RemoteOpenCopyStore.checkUnchangedCopies(in: client.metadataCache.directory.appendingPathComponent("Opened Copies"))
         let owned = directory.appendingPathComponent(id.uuidString)
         let edits = client.metadataCache.directory.deletingLastPathComponent().appendingPathComponent("Edits")
         for path in (try? FileManager.default.contentsOfDirectory(at: edits, includingPropertiesForKeys: nil)) ?? []

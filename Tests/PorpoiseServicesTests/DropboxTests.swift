@@ -241,6 +241,10 @@ import Testing
         let server = try FakeDropboxServer(); let client = try server.client()
         let item = try await client.metadata("id:hello")
         let session = try await client.edits.begin(item)
+        #expect(session.localURL.lastPathComponent == item.name)
+        #expect(try client.journal.all().allSatisfy { $0.kind != "download" })
+        let downloads = client.journal.folder.appendingPathComponent("Downloads")
+        #expect((try? FileManager.default.contentsOfDirectory(atPath: downloads.path))?.isEmpty != false)
         #expect(await client.edits.holdsCopy(item.id))
         #expect(try await client.edits.begin(item).id == session.id)
         try Data("local changes".utf8).write(to: session.localURL)
@@ -383,7 +387,11 @@ import Testing
         try Data("pending".utf8).write(to: edit.localURL)
         await #expect(throws: CloudConnectionError.unsentEdits) { try await store.disconnect(account.id) }
         _ = try await client.edits.save(edit.id)
+        let openCopy = try await checkCloudCopyDisconnect(
+            root: client.metadataCache.directory.appendingPathComponent("Opened Copies"),
+            disconnect: { try await store.disconnect(account.id) })
         try await store.disconnect(account.id); #expect(store.accounts.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: openCopy.path))
         #expect(try credentials.read(clientID: server.config.appKey, accountID: account.id) == nil)
         // Nothing of the account stays: its folder (edits, journal, partials) and its offline copies.
         let needle = account.id.uuidString.lowercased()

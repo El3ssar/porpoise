@@ -98,6 +98,10 @@ public enum RemoteFS {
         use(provider, for: url); return true
     }
 
+    static var openCopyRoots: [URL] {
+        lock.withLock { providers.values.compactMap { ($0 as? any CloudOpenCopyOwning)?.openCopyDirectory } }
+    }
+
     static var transferJournals: [CloudTransferJournal] {
         let all = lock.withLock { Array(providers.values) }
         return all.compactMap { $0 as? CloudTransferProvider }.flatMap(\.recoveryTransferJournals)

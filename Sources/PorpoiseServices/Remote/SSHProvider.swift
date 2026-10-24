@@ -310,6 +310,13 @@ final class SSHProvider: RemoteProvider {
     }
 
     func copy(_ remote: [URL], into folder: URL) throws {
-        try exec(idempotent: false, "cp -R -p -- " + remote.map(shellPath).joined(separator: " ") + " " + shellPath(folder) + "/")
+        for source in remote {
+            let target = shellPath(folder.appendingPathComponent(source.lastPathComponent))
+            let result = try run(
+                "if [ -e \(target) ] || [ -L \(target) ]; then exit \(Self.existsStatus); fi; cp -R -p -n -- \(shellPath(source)) \(shellPath(folder))/",
+                idempotent: false)
+            if result.status == Self.existsStatus { throw RemoteError.exists(source.lastPathComponent) }
+            try check(result, fallback: "Could not copy “\(source.lastPathComponent)”.")
+        }
     }
 }

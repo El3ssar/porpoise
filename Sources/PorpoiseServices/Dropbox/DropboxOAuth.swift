@@ -108,7 +108,7 @@ public enum DropboxTokens {
 
     static func request(_ values: [String: String], configuration: DropboxConfiguration, http: CloudHTTPTransport) async throws -> CloudOAuthToken {
         let (data, response) = try await http.postForm(configuration.tokenURL, values)
-        guard response.statusCode != 400, response.statusCode != 401 else { throw DropboxError.reconnect }
+        guard response.statusCode != 400, response.statusCode != 401 else { throw CloudOAuthSession.refreshRejection(data) }
         try DropboxClient.check(data, response)
         return try JSONDecoder().decode(CloudOAuthToken.self, from: data)
     }

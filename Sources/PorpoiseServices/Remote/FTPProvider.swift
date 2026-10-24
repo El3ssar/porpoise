@@ -245,7 +245,10 @@ final class FTPProvider: RemoteProvider {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("ftpcopy-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
-        for r in remote { try upload(try download(r, into: tmp), into: folder) }
+        for r in remote {
+            if try exists(folder.appendingPathComponent(r.lastPathComponent)) { throw RemoteError.exists(r.lastPathComponent) }
+            try upload(try download(r, into: tmp), into: folder)
+        }
     }
 }
 

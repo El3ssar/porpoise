@@ -28,11 +28,17 @@ public struct OneDriveEditEngine: CloudEditEngine, @unchecked Sendable {
         let client = try connected()
         let file = try await client.metadata(file.id)
         guard file.revision != nil, file.parentID != nil, file.canDownload else { throw unavailable }
-        let staging = try await client.download(file, context: context)
-        let folder = directory.appendingPathComponent(id.uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let local = folder.appendingPathComponent("content").appendingPathExtension((file.name as NSString).pathExtension)
-        try cloudClone(staging, to: local); return (file, local)
+        return try await CloudStagedDownload.consume(
+            journal: client.journal,
+            download: {
+                try await client.download(file, operationID: $0, context: context)
+            }
+        ) { staging in
+            let folder = directory.appendingPathComponent(id.uuidString)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            let local = folder.appendingPathComponent(try RemoteFS.localName(file.name))
+            try cloudClone(staging, to: local); return (file, local)
+        }
     }
     public func validate(_ file: OneDriveItem) async throws {
         _ = try connected()

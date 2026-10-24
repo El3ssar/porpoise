@@ -334,6 +334,10 @@ import Testing
         let server = try FakeBoxServer(); let client = try server.client()
         let item = try await client.metadata("21")
         let session = try await client.edits.begin(item)
+        #expect(session.localURL.lastPathComponent == item.name)
+        #expect(try client.journal.all().allSatisfy { $0.kind != "download" })
+        let downloads = client.journal.folder.appendingPathComponent("Downloads")
+        #expect((try? FileManager.default.contentsOfDirectory(atPath: downloads.path))?.isEmpty != false)
         #expect(await client.edits.holdsCopy(item.id))
         #expect(try await client.edits.begin(item).id == session.id)
         try Data("local changes".utf8).write(to: session.localURL)
@@ -553,7 +557,11 @@ import Testing
         try Data("pending".utf8).write(to: edit.localURL)
         await #expect(throws: CloudConnectionError.unsentEdits) { try await restored.disconnect(account.id) }
         _ = try await restoredClient.edits.save(edit.id)
+        let openCopy = try await checkCloudCopyDisconnect(
+            root: restoredClient.metadataCache.directory.appendingPathComponent("Opened Copies"),
+            disconnect: { try await restored.disconnect(account.id) })
         try await restored.disconnect(account.id); #expect(restored.accounts.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: openCopy.path))
         #expect(try credentials.read(clientID: server.config.clientID, accountID: account.id) == nil)
         #expect((try await server.stats())["revoked"] as? [Bool] == [true])
         let needle = account.id.uuidString.lowercased()

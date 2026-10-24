@@ -298,6 +298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DispatchQueue.main.async {
             Settings.shared.prepareCustomToolsAfterFirstWindow()
             SharingPreparation.sweepStaleCopiesAfterLaunch()
+            RemoteOpener.sweepStaleCopiesAfterLaunch()
         }
     }
 

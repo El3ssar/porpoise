@@ -85,6 +85,7 @@ import Testing
         #expect(try await client.download(result).data == Data("my first edit".utf8))
         #expect(await client.edits.pending().isEmpty)
         try Data("my second edit".utf8).write(to: session.localURL)
+        let existingDownloads = Set(try client.mutationJournal.all().filter { $0.kind == "download" }.map(\.operationID))
         try await server.control(["conflictOnSave": true])
         await #expect(throws: DriveMutationError.conflict) { try await client.edits.save(session.id) }
         #expect(try await client.download(client.file(file.id)).data == Data("remote edit".utf8))
@@ -92,6 +93,7 @@ import Testing
         let conflict = try #require(await client.edits.session(session.id))
         #expect(conflict.state == .conflict)
         #expect(try Data(contentsOf: #require(conflict.conflictURL)) == Data("remote edit".utf8))
+        #expect(Set(try client.mutationJournal.all().filter { $0.kind == "download" }.map(\.operationID)) == existingDownloads)
         let reopened = try await client.edits.open(file)
         #expect(reopened.id == session.id)
         let kept = try await client.edits.keepBoth(session.id)
@@ -211,6 +213,23 @@ import Testing
         let current = try await client.file("binary-a")
         #expect(try await client.saveEdit(local, baseline: current).headRevisionId != current.headRevisionId)
         #expect(try await client.download(client.file("binary-a")).data == Data("mine".utf8))
+    }
+    @Test func fileBackedConditionalSaveAndOpaqueDownloadReleaseStaging() async throws {
+        let server = try DriveMutationTests().server(), scratch = try Scratch()
+        let client = try make(server, scratch.url)
+        let file = try await client.file("binary-a")
+        let local = scratch.url.appendingPathComponent("large.txt")
+        #expect(FileManager.default.createFile(atPath: local.path, contents: nil))
+        let output = try FileHandle(forWritingTo: local)
+        for _ in 0..<12 { try output.write(contentsOf: Data(repeating: 97, count: 1 << 20)) }
+        try output.close()
+        let saved = try await client.saveEdit(local, baseline: file)
+        #expect(saved.md5Checksum == (try DriveClient.md5(local)))
+        let provider = DriveProvider(accountID: client.accountID, client: client)
+        let remote = DriveLocation(accountID: client.accountID, collection: .folder(saved.id)).url
+        let downloaded = try await offThePool { try provider.download(remote, into: scratch.url.appendingPathComponent("Published")) }
+        #expect(try DriveClient.md5(downloaded) == saved.md5Checksum)
+        #expect(try client.mutationJournal.all().allSatisfy { $0.kind != "download" })
     }
     @Test func searchIsPagedEscapedScopedAndSupportsFullText() async throws {
         let server = try DriveMutationTests().server(), scratch = try Scratch()

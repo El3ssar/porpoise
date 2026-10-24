@@ -5,6 +5,24 @@ import Testing
 @testable import PorpoiseServices
 
 struct CloudChangeFeedTests {
+    @Test func transientPollingBacksOffAndRevocationStopsUntilRestart() async throws {
+        let cursors = Locked(["user": "start"]), requests = Counter(), delays = Locked<[TimeInterval]>([])
+        var adapter = source(cursors: cursors) { _, _ in .init(cursor: "next", hasMore: false, apply: {}) }
+        adapter.wait = {
+            requests.add()
+            if requests.value <= 9 { throw Fault.transport }
+            throw BoxError.reconnect
+        }
+        let feed = CloudChangeFeed(source: adapter, wait: { delays.append($0) })
+        await feed.start()
+        await expectEventually { requests.value == 10 }
+        #expect(delays.value == [5, 10, 20, 40, 80, 160, 300, 300, 300])
+        await feed.stop()
+        await feed.start()  // Explicit sign-in/start may try again; no timer retries a terminal grant by itself.
+        await expectEventually { requests.value == 11 }
+        #expect(delays.value.count == 9)
+        await feed.stop()
+    }
     private enum Fault: Error, Equatable { case transport, reset, invalid }
     private func source(
         scopes: [String] = ["user"], cursors: Locked<[String: String]>,

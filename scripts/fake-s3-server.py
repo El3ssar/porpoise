@@ -12,7 +12,7 @@ import uuid
 import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, unquote, urlsplit
+from urllib.parse import parse_qs, quote, quote_plus, unquote, urlsplit
 from xml.sax.saxutils import escape
 
 
@@ -93,12 +93,13 @@ class Handler(BaseHTTPRequestHandler):
                 start = int(query.get('continuation-token', ['0'])[0])
                 page = entries[start:start + 2]
                 more = start + len(page) < len(entries)
+                encode_key = quote_plus if s.config.get('listFormSpaces') else quote
                 xml = '<ListBucketResult><EncodingType>url</EncodingType><IsTruncated>' + str(more).lower() + '</IsTruncated>'
                 for kind, name in page:
                     if kind == 'prefix':
-                        xml += f'<CommonPrefixes><Prefix>{escape(quote(name, safe=""))}</Prefix></CommonPrefixes>'
+                        xml += f'<CommonPrefixes><Prefix>{escape(encode_key(name, safe=""))}</Prefix></CommonPrefixes>'
                     else:
-                        xml += f'<Contents><Key>{escape(quote(name, safe=""))}</Key><Size>{len(s.objects[name])}</Size><ETag>{escape(etag(s.objects[name]))}</ETag><LastModified>2026-01-01T00:00:00Z</LastModified></Contents>'
+                        xml += f'<Contents><Key>{escape(encode_key(name, safe=""))}</Key><Size>{len(s.objects[name])}</Size><ETag>{escape(etag(s.objects[name]))}</ETag><LastModified>2026-01-01T00:00:00Z</LastModified></Contents>'
                 if more:
                     xml += f'<NextContinuationToken>{start + len(page)}</NextContinuationToken>'
                 return self.reply(xml + '</ListBucketResult>')

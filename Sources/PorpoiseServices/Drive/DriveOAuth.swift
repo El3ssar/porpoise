@@ -118,7 +118,7 @@ public actor DriveTokenManager {
 
     static func request(_ values: [String: String], configuration: DriveOAuthConfiguration, http: DriveHTTP) async throws -> DriveTokenResponse {
         let (data, response) = try await http.transport.postForm(configuration.tokenURL, values)
-        if response.statusCode == 400 || response.statusCode == 401 { throw DriveError.reconnect }
+        if response.statusCode == 400 || response.statusCode == 401 { throw CloudOAuthSession.refreshRejection(data) }
         try DriveHTTP.check(response.statusCode)
         guard let token = try? JSONDecoder().decode(DriveTokenResponse.self, from: data) else { throw DriveError.invalidResponse }
         return token

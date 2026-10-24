@@ -65,11 +65,16 @@ public struct DriveEditEngine: CloudEditEngine, @unchecked Sendable {
     }
     public func conflict(_ error: Error) -> Bool { (error as? DriveMutationError) == .conflict }
     public func remoteCopy(_ file: DriveFile, beside: URL) async -> URL? {
-        guard let client, let remote = try? await client.file(file.id), let bytes = try? await client.download(remote).data,
+        guard let client, let remote = try? await client.file(file.id),
             let name = RemoteParsing.localName(forRemote: "Remote-" + remote.name)
         else { return nil }
         let copy = beside.deletingLastPathComponent().appendingPathComponent(name)
-        do { try bytes.write(to: copy, options: .atomic); return copy } catch { return nil }
+        return try? await CloudStagedDownload.consume(
+            journal: client.mutationJournal,
+            download: { operation in try await client.downloadToStaging(remote, operationID: operation).url },
+            using: { partial in
+                try cloudClone(partial, to: copy); return copy
+            })
     }
 }
 extension CloudEditSessionStore where Engine == DriveEditEngine {
@@ -97,8 +102,8 @@ extension DriveClient {
         else { throw DriveMutationError.conflict }
         do {
             let (result, _) = try await mutationResponse(
-                v2FileURL(baseline.id, fields: "id,md5Checksum", upload: true), method: "PUT", body: Data(contentsOf: local),
-                headers: ["Content-Type": fresh.mimeType, "If-Match": etag])
+                v2FileURL(baseline.id, fields: "id,md5Checksum", upload: true), method: "PUT",
+                headers: ["Content-Type": fresh.mimeType, "If-Match": etag], fileBody: local)
             let sent = try decode(Tagged.self, result)
             guard sent.id == baseline.id, sent.md5Checksum == (try Self.md5(local)) else { throw DriveError.invalidResponse }
         } catch DriveError.http(412) { throw DriveMutationError.conflict }

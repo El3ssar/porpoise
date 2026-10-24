@@ -175,7 +175,16 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
     }
 
     public func download(_ remote: URL, into localFolder: URL) throws -> URL {
-        try download(remote, into: localFolder, operationID: UUID())
+        guard let client else { throw DriveError.reconnect }
+        let operation = UUID()
+        do {
+            let local = try download(remote, into: localFolder, operationID: operation)
+            try CloudStagedDownload.discard(operation, journal: client.mutationJournal)
+            return local
+        } catch {
+            try? CloudStagedDownload.discard(operation, journal: client.mutationJournal)
+            throw error
+        }
     }
 
     func download(_ remote: URL, into localFolder: URL, operationID: UUID) throws -> URL {

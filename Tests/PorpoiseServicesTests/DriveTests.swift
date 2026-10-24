@@ -90,7 +90,11 @@ import Testing
         let server = try FakeDriveServer()
         let (client, tokens, credentials) = try server.client(refresh: "revoked")
         await #expect(throws: DriveError.reconnect) { try await tokens.accessToken() }
+        #expect(try credentials.read(clientID: server.config.clientID, accountID: client.accountID) == nil)
         try credentials.save("fixture-refresh", clientID: server.config.clientID, accountID: client.accountID)
+        // Replacing a saved secret cannot silently clear the explicit sign-in fence.
+        await #expect(throws: DriveError.reconnect) { try await tokens.accessToken() }
+        try await tokens.accept(.init(access_token: "fixture-access", expires_in: 3600, refresh_token: "fixture-refresh", token_type: "Bearer"))
         #expect(try await tokens.accessToken() == "fixture-access")
         try await tokens.revoke()
         #expect(try credentials.read(clientID: server.config.clientID, accountID: client.accountID) == nil)
@@ -166,8 +170,17 @@ import Testing
         #expect(restored.accounts == [account] && restored.client(for: account.id) != nil)
         await #expect(throws: CloudConnectionError.alreadyConnected(account.id)) { try await store.connect(openBrowser: browser) }
         #expect(store.accounts.count == 1)
+        let previous = try #require(store.client(for: account.id))
+        await previous.clearCaches()
+        let rejected = try await previous.tokens.accessToken()
+        try credentials.save("revoked", clientID: server.config.clientID, accountID: account.id)
+        await #expect(throws: DriveError.reconnect) { try await previous.tokens.accessToken(rejectedToken: rejected) }
         let reconnected = try await store.reauthorize(account, openBrowser: browser)
         #expect(reconnected.id == account.id)
+        let current = try #require(store.client(for: account.id))
+        #expect(current !== previous)
+        #expect(try await current.file("binary-a").id == "binary-a")
+        await #expect(throws: DriveError.reconnect) { try await previous.tokens.accessToken() }
         try await store.disconnect(account)
         #expect(store.accounts.isEmpty && store.client(for: account.id) == nil && store.status[account.id] == nil)
         #expect(try credentials.read(clientID: server.config.clientID, accountID: account.id) == nil)

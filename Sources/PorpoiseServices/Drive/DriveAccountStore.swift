@@ -152,6 +152,9 @@ public final class DriveAccountStore: ObservableObject {
     public func disconnect(_ account: DriveAccount) async throws {
         guard let manager = managers[account.id] else { return }
         if let client = clients[account.id], !(await client.edits.pending()).isEmpty { throw CloudConnectionError.unsentEdits }
+        if let client = clients[account.id] {
+            try await RemoteOpenCopyStore.checkUnchangedCopies(in: client.metadataCache.directory.appendingPathComponent("Opened Copies"))
+        }
         await CloudTransferJournal.stop(account: account.id.uuidString.lowercased())
         var failure: Error?
         do { try await manager.revoke() } catch let error as DriveError {

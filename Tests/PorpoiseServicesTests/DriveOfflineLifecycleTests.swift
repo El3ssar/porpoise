@@ -35,7 +35,11 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: copy.path))
         #expect(await store.snapshot().pins.contains(file.id))
         try Data(contentsOf: copy).write(to: session.localURL)
+        let openCopy = try await checkCloudCopyDisconnect(
+            root: client.metadataCache.directory.appendingPathComponent("Opened Copies"),
+            disconnect: { try await accounts.disconnect(account) })
         try await accounts.disconnect(account)
+        #expect(!FileManager.default.fileExists(atPath: openCopy.path))
         #expect(accounts.accounts.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: store.directory.path))
         #expect(CloudOffline.shared.usage(account: key).kept == 0)

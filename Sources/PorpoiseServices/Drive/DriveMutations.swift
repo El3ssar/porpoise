@@ -6,7 +6,7 @@ extension DriveClient {
     /// goes to reconciliation.
     func mutationResponse(
         _ url: URL, method: String = "GET", body: Data? = nil, headers: [String: String] = [:], context: DriveTransferContext? = nil,
-        receive: ((Data, HTTPURLResponse) async throws -> Void)? = nil
+        receive: ((Data, HTTPURLResponse) async throws -> Void)? = nil, fileBody: URL? = nil
     ) async throws -> (
         Data, HTTPURLResponse
     ) {
@@ -37,7 +37,8 @@ extension DriveClient {
         do {
             let result = try await authorized(mutation: true).send(
                 request, idempotent: method == "GET", receive: receive, before: { try await context?.checkpoint() },
-                onWait: { delay in if Date().timeIntervalSince(started) + delay >= 10 { context?.status("Slowed down by Google, retrying") } })
+                onWait: { delay in if Date().timeIntervalSince(started) + delay >= 10 { context?.status("Slowed down by Google, retrying") } },
+                uploading: fileBody)
             context?.status(nil)
             return result
         } catch let error as URLError {

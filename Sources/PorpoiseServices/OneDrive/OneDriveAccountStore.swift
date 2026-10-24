@@ -107,6 +107,7 @@ import PorpoiseCore
     public func disconnect(_ id: UUID) async throws {
         guard let client = clients[id] else { return }
         guard await client.edits.pending().isEmpty else { throw CloudConnectionError.unsentEdits }
+        try await RemoteOpenCopyStore.checkUnchangedCopies(in: client.metadataCache.directory.appendingPathComponent("Opened Copies"))
         let owned = directory.appendingPathComponent(id.uuidString)
         let drives = (try? FileManager.default.contentsOfDirectory(at: owned, includingPropertiesForKeys: nil)) ?? []
         // Other drives' clients (shared items) share the credential but keep their own edit and journal folders.
