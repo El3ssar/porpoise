@@ -229,21 +229,45 @@ import Testing
     @Test(.timeLimit(.minutes(2))) func cancellingAVideoFrameStopsFfmpeg() async throws {
         let scratch = try Scratch()
         let tool = scratch.url.appendingPathComponent("stuck-ffmpeg")
-        try "#!/bin/sh\nexec sleep 30\n".write(to: tool, atomically: true, encoding: .utf8)
+        let pidFile = scratch.url.appendingPathComponent("ffmpeg.pid")
+        try "#!/bin/sh\nprintf '%s\\n' \"$$\" > '\(pidFile.path)'\nexec /bin/sleep 86400\n"
+            .write(to: tool, atomically: true, encoding: .utf8)
         #expect(chmod(tool.path, 0o755) == 0)
         let saved = VideoPreview.testFFmpeg
         VideoPreview.testFFmpeg = tool.path
         defer { VideoPreview.testFFmpeg = saved }
         let video = scratch.url.appendingPathComponent("clip.mkv")
         #expect(Thumbnails.ffmpegFrame(video, size: 64) { true } == nil)
+        #expect(!FileManager.default.fileExists(atPath: pidFile.path))
         let flag = ThumbnailWorkScheduler.Flag()
-        let begin = Date()
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { flag.set() }
-        let frame = await withCheckedContinuation { c in
-            DispatchQueue(label: "test.ffmpeg").async { c.resume(returning: Thumbnails.ffmpegFrame(video, size: 64) { flag.isSet }) }
+        defer {
+            flag.set()
+            if let text = try? String(contentsOf: pidFile, encoding: .utf8),
+                let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            {
+                _ = kill(pid, SIGKILL)
+            }
         }
-        #expect(frame == nil)
-        #expect(Date().timeIntervalSince(begin) < 10, "stopped long before ffmpeg's 15 s timeout")
+        let stopped = Task {
+            try await awaitCallback("cancellation never ended ffmpeg") { (done: Callback<Bool>) in
+                DispatchQueue(label: "test.ffmpeg").async {
+                    // Only cancellation can end this tool during the test: its ordinary timeout is disabled.
+                    done.resume(returning: Thumbnails.ffmpegFrame(video, size: 64, timeout: 0) { flag.isSet } == nil)
+                }
+            }
+        }
+        var child: pid_t?
+        try #require(
+            await poll {
+                child = (try? String(contentsOf: pidFile, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                return child != nil
+            })
+        let pid = try #require(child)
+        #expect(kill(pid, 0) == 0)
+        flag.set()
+        #expect(try await stopped.value)
+        let status = kill(pid, 0), error = errno
+        #expect(status == -1 && error == ESRCH)
     }
 
     static let png: Data = {

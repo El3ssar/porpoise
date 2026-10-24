@@ -187,11 +187,15 @@ final class SSHProvider: RemoteProvider {
 
     /// Sleeps `seconds` in short steps, ending early when the transfer it runs for is cancelled.
     static func waitUnlessCancelled(_ seconds: TimeInterval) {
+        waitUnlessCancelled(seconds, now: Date.init, sleep: Thread.sleep(forTimeInterval:))
+    }
+
+    static func waitUnlessCancelled(_ seconds: TimeInterval, now: () -> Date, sleep: (TimeInterval) -> Void) {
         let control = Shell.currentTransferControl
-        let end = Date().addingTimeInterval(seconds)
-        while Date() < end {
+        let end = now().addingTimeInterval(seconds)
+        while now() < end {
             if control?.isCancelled() == true || control?.isInterrupted() == true { return }
-            Thread.sleep(forTimeInterval: min(0.1, max(0, end.timeIntervalSinceNow)))
+            sleep(min(0.1, max(0, end.timeIntervalSince(now()))))
         }
     }
 

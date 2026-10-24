@@ -12,11 +12,15 @@ import Testing
     @Test func theAdministratorPartRunsOffTheMainThreadAsAnActivity() async throws {
         let s = try Scratch()
         let item = try s.file("locked.txt", "x")
-        nonisolated(unsafe) var ranOnMain: Bool?
+        let entered = Flag(), release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
         let real = FileOperationsController.elevate
         FileOperationsController.elevate = { _, _, _ in
-            ranOnMain = Thread.isMainThread
-            Thread.sleep(forTimeInterval: 0.5)
+            #expect(!Thread.isMainThread)
+            // A regression onto the main thread must fail without blocking the test's own controller.
+            guard !Thread.isMainThread else { return .done }
+            entered.set()
+            #expect(release.wait(timeout: .now() + eventualTimeout) == .success)
             return .done
         }
         defer { FileOperationsController.elevate = real }
@@ -24,18 +28,20 @@ import Testing
         ui.authenticates = true
         let c = makeController(ui)
         var result: Bool?
-        let t = Date()
         c.authorize(verb: "delete", items: [item], commands: [["/bin/rm", "--", item.path]], kind: .delete, window: nil) { result = $0 }
-        let blocked = Date().timeIntervalSince(t)
-        #expect(blocked < 0.2, "the main thread waited \(blocked) s")
+        try #require(await eventually { entered.isSet })
         let activity = try #require(c.activities.last)
         #expect(result == nil && !activity.state.isEnded && activity.kind == .delete)
+        release.signal()
         #expect(await eventually { result == true && activity.state == .completed })
-        #expect(ranOnMain == false)
         // The waiting form (single-item actions) still waits.
-        let t2 = Date()
+        let synchronous = Flag()
+        FileOperationsController.elevate = { _, _, _ in
+            synchronous.set()
+            return .done
+        }
         #expect(c.authorize(verb: "delete", items: [item], commands: [["/bin/rm", "--", item.path]], window: nil))
-        #expect(Date().timeIntervalSince(t2) >= 0.45)
+        #expect(synchronous.isSet)
     }
 
     @Test func failuresAndCancellingEndTheActivity() async throws {

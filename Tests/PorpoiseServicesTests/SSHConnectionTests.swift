@@ -131,25 +131,29 @@ struct SSHConnectionTests {
         #expect(waits == 2)
     }
 
-    @Test func aRetiredConnectionLetsItsCommandFinishAndTheNextOneConnectsAfresh() throws {
+    @Test func aRetiredConnectionLetsItsCommandFinishAndTheNextOneConnectsAfresh() async throws {
         let dir = try server.folder()
         let p = server.provider()
         _ = try p.list(server.url(dir.path, isDirectory: true))
         let before = server.logins
+        let started = dir.appendingPathComponent("started"), release = dir.appendingPathComponent("release")
+        defer { try? Data().write(to: release) }
         // A command still running on the old connection when it is retired finishes there.
         nonisolated(unsafe) var running: Data?
         let done = DispatchSemaphore(value: 0)
         Thread.detachNewThread {
-            running = try? p.exec("sleep 1; echo finished")
+            running = try? p.exec(
+                "touch \(RemoteParsing.quote(started.path)); while [ ! -e \(RemoteParsing.quote(release.path)) ]; do sleep 0.01; done; echo finished")
             done.signal()
         }
-        Thread.sleep(forTimeInterval: 0.3)
+        try #require(await poll { fm.fileExists(atPath: started.path) })
         RemoteFS.use(p, for: server.url("/"))
         defer { RemoteFS.use(nil, for: server.url("/")) }
         RemoteFS.retireSharedConnections()
         _ = try p.list(server.url(dir.path, isDirectory: true))
         #expect(server.logins == before + 1)
-        #expect(done.wait(timeout: .now() + 10) == .success)
+        try Data().write(to: release)
+        #expect(await offThePool { done.wait(timeout: .now() + eventualTimeout) == .success })
         #expect(running.map { String(decoding: $0, as: UTF8.self) } == "finished\n")
     }
 
@@ -168,12 +172,22 @@ struct SSHConnectionTests {
     @Test func waitingStopsWhenTheTransferIsCancelled() {
         var cancelled = false
         let control = Shell.TransferControl(isPaused: { false }, isCancelled: { cancelled })
-        let start = Date()
+        var now = Date(timeIntervalSince1970: 1000), sleeps: [TimeInterval] = []
+        func sleep(_ seconds: TimeInterval) { sleeps.append(seconds); now += seconds }
         Shell.withTransferControl(control) {
             cancelled = true
-            SSHProvider.waitUnlessCancelled(10)
+            SSHProvider.waitUnlessCancelled(10, now: { now }, sleep: sleep)
         }
-        #expect(Date().timeIntervalSince(start) < 1)
+        #expect(sleeps.isEmpty)
+        // Cancellation after a step also prevents every remaining step, regardless of host scheduling.
+        cancelled = false
+        Shell.withTransferControl(control) {
+            SSHProvider.waitUnlessCancelled(10, now: { now }) { seconds in
+                sleep(seconds)
+                cancelled = true
+            }
+        }
+        #expect(sleeps == [0.1])
         let short = Date()
         SSHProvider.waitUnlessCancelled(0.05)
         #expect(Date().timeIntervalSince(short) >= 0.05)

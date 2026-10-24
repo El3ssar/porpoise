@@ -4,6 +4,9 @@ import PorpoiseFileSystem
 
 /// Each personal template is a portable JSON file; file names are IDs, never user-provided paths.
 public final class TemplateStore {
+    var renderTemplate: (FileTemplate, String, TemplateContext) throws -> (name: String, contents: Data) = {
+        try TemplateExpansion.render($0, filenamePattern: $1, context: $2)
+    }
     private struct Archive: Codable { var version = 1; var template: FileTemplate }
     public static let shared = TemplateStore()
     public let directory: URL
@@ -84,7 +87,7 @@ public final class TemplateStore {
             context.counter = counter
             let name = TemplateExpansion.expand(pattern, context: context)
             if !existing.contains(name) {
-                let rendered = try TemplateExpansion.render(template, filenamePattern: pattern, context: context)
+                let rendered = try renderTemplate(template, pattern, context)
                 return (rendered.name, rendered.contents, counter)
             }
             if !pattern.contains("{counter") { throw FileOperationError.failed("A file named “\(name)” already exists.") }

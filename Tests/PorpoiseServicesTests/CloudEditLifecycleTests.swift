@@ -12,18 +12,21 @@ import Testing
     private final class Gate: @unchecked Sendable {
         private let lock = NSLock()
         private var open = false
+        private var requests = 0
         private(set) var prepared = 0
+        func request() { lock.withLock { requests += 1 } }
         func release() { lock.withLock { open = true } }
         func enter() { lock.withLock { prepared += 1 } }
         var isOpen: Bool { lock.withLock { open } }
         var count: Int { lock.withLock { prepared } }
+        var requestCount: Int { lock.withLock { requests } }
     }
     private struct Engine: CloudEditEngine {
         let directory: URL
         let gate: Gate
         var unavailable: Error { Failure.unavailable }
         var sourceChanged: Error { Failure.unavailable }
-        func checkConnection() throws {}
+        func checkConnection() throws { gate.request() }
         func canUseCached(after error: Error) -> Bool { false }
         func identity(_ file: File) -> String { file.id }
         func revision(_ file: File) -> String? { file.revision }
@@ -76,7 +79,9 @@ import Testing
         async let a = store.openSession(file)
         async let b = store.openSession(file)
         await expectEventually { gate.count >= 1 }
-        try await Task.sleep(nanoseconds: 50_000_000)
+        // From checkConnection to awaiting the shared preparation, the store does not suspend. Once both
+        // requests entered its actor, preparation cannot finish before the second has joined it.
+        try #require(await eventually { gate.requestCount == 2 })
         gate.release()
         let (first, second) = try await (a, b)
         #expect(first.id == second.id && gate.count == 1)
@@ -91,7 +96,7 @@ import Testing
         let first = Task { try await store.openSession(file) }
         await expectEventually { gate.count == 1 }
         let second = Task { try await store.openSession(file) }
-        try await Task.sleep(nanoseconds: 50_000_000)
+        try #require(await eventually { gate.requestCount == 2 })
         first.cancel()
         await #expect(throws: CancellationError.self) { try await first.value }
         gate.release()
@@ -111,7 +116,7 @@ import Testing
         let first = Task { try await store.openSession(file, context: stoppable) }
         await expectEventually { gate.count == 1 }
         let second = Task { try await store.openSession(file) }
-        try await Task.sleep(nanoseconds: 50_000_000)
+        try #require(await eventually { gate.requestCount == 2 })
         stop.release()
         await #expect(throws: Stopped.self) { try await first.value }
         gate.release()
