@@ -59,6 +59,9 @@ extension MainWindowController {
 
     @objc func togglePreviews(_ sender: Any?) { mutateProps { $0.previews.toggle() } }
 
+    /// Column view's preview column for a selected file, on or off (every window).
+    @objc func togglePreviewColumn(_ sender: Any?) { Settings.shared.columnsShowPreview.toggle() }
+
     @objc func toggleHiddenFiles(_ sender: Any?) {
         mutateProps { $0.showHidden.toggle() }
         view.statusBar.showMessage(view.model.props.showHidden ? "Hidden files are shown." : "Hidden files are hidden.")

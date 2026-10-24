@@ -1011,4 +1011,119 @@ import Testing
         #expect(restored.applyLayout(layout))
         #expect(!restored.tab.isSplit && restored.view.url.path == other.path && restored.view.model.props.mode == .columns)
     }
+
+    // MARK: W-241
+
+    @Test func thePreviewKeepsItsPictureAndDetailsTogetherInAWideColumn() async throws {
+        let s = try tree()
+        let (pane, window, _) = try await pane(s.url, width: 1800)
+        defer { window.close() }
+        let b = try browser(pane)
+        pane.list.select(s.path("f.txt"))
+        b.layoutSubtreeIfNeeded()
+        b.preview.layoutSubtreeIfNeeded()
+        let info = b.preview.information.frame
+        #expect(b.preview.frame.width > 1000 && info.width == ColumnPreviewView.contentWidth)
+        #expect(abs(info.midX - b.preview.bounds.midX) <= 1, "\(info) in \(b.preview.bounds)")
+        // Narrower than that, it takes the whole column.
+        b.resize(column: b.shownColumns.count - 1, to: ColumnBrowserView.previewMinimum, all: false)
+        window.setContentSize(NSSize(width: 800, height: 600))
+        pane.layoutSubtreeIfNeeded()
+        b.preview.layoutSubtreeIfNeeded()
+        #expect(b.preview.information.frame.width == min(b.preview.bounds.width, ColumnPreviewView.contentWidth))
+    }
+
+    @Test func theHandleMenuRightSizesColumns() async throws {
+        let s = try tree()
+        try s.file("A long name that needs a wider column than the others.txt")
+        let (pane, window, _) = try await pane(s.url, width: 1400)
+        defer { window.close() }
+        let b = try browser(pane)
+        try #require(await eventually { pane.model.rows.count == 4 })
+        pane.list.select(s.path("A"))
+        try #require(await eventually { b.after?.model.isLoading == false })
+        b.layoutSubtreeIfNeeded()
+        let menu = try #require(b.handles[0].menu(for: NSEvent()))
+        #expect(menu.items.map(\.title) == ["Right Size This Column", "Right Size All Columns Individually", "Right Size All Columns Equally"])
+        func choose(_ i: Int) throws {
+            let item = menu.items[i]
+            _ = (item.target as AnyObject?)?.perform(item.action, with: item)
+        }
+        let wide = b.fittingWidth(pane.list), narrow = b.fittingWidth(try #require(b.after).list)
+        #expect(wide > narrow)
+        try choose(0)
+        #expect(b.width(of: s.url) == wide && b.width(of: s.path("A")) == ViewStyleStore.defaultBrowserColumnWidth)
+        try choose(1)
+        #expect(b.width(of: s.url) == wide && b.width(of: s.path("A")) == narrow)
+        try choose(2)
+        #expect(b.width(of: s.url) == wide && b.width(of: s.path("A")) == wide && ViewStyleStore().browserColumnWidth == wide)
+    }
+
+    @Test func thePreviewColumnCanBeTurnedOff() async throws {
+        let s = try tree()
+        let (pane, window, _) = try await pane(s.url)
+        defer {
+            window.close()
+            Settings.shared.columnsShowPreview = true
+        }
+        let b = try browser(pane)
+        Settings.shared.columnsShowPreview = false
+        pane.list.select(s.path("f.txt"))
+        #expect(!b.showsPreview && b.after == nil && b.folders == [s.url])
+        // Folders still open their column.
+        pane.list.select(s.path("A"))
+        #expect(b.after?.url == s.path("A"))
+        pane.list.select(s.path("f.txt"))
+        Settings.shared.columnsShowPreview = true
+        #expect(await eventually { b.showsPreview && b.preview.shownURL == s.path("f.txt") })
+        // The View menu's item: checked as the setting is, and only in Column view.
+        let wc = MainWindowController(urls: [s.url])
+        defer { wc.window?.close() }
+        let item = NSMenuItem(title: "Show Preview Column", action: #selector(MainWindowController.togglePreviewColumn(_:)), keyEquivalent: "")
+        try #require(await eventually { !wc.view.model.isLoading })
+        wc.show(.icons)
+        #expect(!wc.validateMenuItem(item))
+        wc.show(.columns)
+        #expect(wc.validateMenuItem(item) && item.state == .on)
+        wc.togglePreviewColumn(nil)
+        #expect(!Settings.shared.columnsShowPreview && wc.validateMenuItem(item) && item.state == .off)
+        wc.show(.icons)
+    }
+
+    @Test func tabGoesToTheNextItemByName() async throws {
+        let s = try Scratch()
+        try s.folder("Zeta")
+        try s.file("alpha.txt", "a")
+        try s.file("beta.txt", "b")
+        let (pane, window, _) = try await pane(s.url)
+        defer { window.close() }
+        // Shown folders first: Zeta, alpha.txt, beta.txt. By name: alpha.txt, beta.txt, Zeta.
+        #expect(pane.model.rows.map(\.item.name) == ["Zeta", "alpha.txt", "beta.txt"])
+        let tab: UInt16 = 48
+        var seen: [String] = []
+        for _ in 0..<4 {
+            key(tab, to: pane.list)
+            seen.append(pane.model.selection.first?.lastPathComponent ?? "-")
+        }
+        #expect(seen == ["alpha.txt", "beta.txt", "Zeta", "Zeta"])
+        key(tab, to: pane.list, .shift)
+        #expect(pane.model.selection == [s.path("beta.txt")])
+    }
+
+    @Test func voiceOverListsTheBrowsersColumns() async throws {
+        // The strip goes to the focused column at once.
+        let reduces = Animator.reducesMotion
+        Animator.reducesMotion = { true }
+        defer { Animator.reducesMotion = reduces }
+        let s = try deepTree()
+        let (pane, window, _) = try await pane(s.url, width: 700)
+        defer { window.close() }
+        let b = try browser(pane)
+        try await go(pane, s, to: 4, selecting: "f.txt")
+        b.layoutSubtreeIfNeeded()
+        let columns = try #require(b.accessibilityColumns() as? [NSView])
+        #expect(columns.count == b.shownColumns.count && zip(columns, b.shownColumns).allSatisfy { $0 === $1.view })
+        let visible = try #require(b.accessibilityVisibleColumns() as? [NSView])
+        #expect(!visible.isEmpty && visible.count < columns.count && visible.contains { $0 === pane.scroll })
+    }
 }

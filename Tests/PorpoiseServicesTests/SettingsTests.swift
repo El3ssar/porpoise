@@ -344,7 +344,7 @@ import Testing
                 "confirmRenameType", "confirmRenameHide", "confirmTerminals", "execAction", "appearance", "perFolder", "selectionMarker",
                 "renameInline", "toolTips", "autoExpand", "dblClickBg2", "dynamicView", "browseArchives", "allExtensions",
                 "hideBackup", "binaryUnits", "sorting", "folderDepth", "folderSize", "dateStyle", "permStyle", "elideMiddle", "labelWidth",
-                "maxLines", "compactMax", "clickRow", "labelFont", "labelFontSize", "expandable", "entireRow", "infoPreview",
+                "maxLines", "compactMax", "clickRow", "labelFont", "labelFontSize", "expandable", "entireRow", "infoPreview", "columnsShowPreview",
                 "infoHover", "infoAutoPlay", "infoCondensed", "foldersHome", "foldersHidden", "termFollow", "placesIcon", "jobsConcurrency",
                 "transferMBPerSecond", "transferRetries", "transferBackoffSeconds", "transferExclusions",
                 "verifyCopies", "transferConflictRule", "transferCompareMethod", "shortcutKeySet",
