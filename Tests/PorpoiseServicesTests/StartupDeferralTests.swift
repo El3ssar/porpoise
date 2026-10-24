@@ -7,7 +7,7 @@ import Testing
 @testable import PorpoiseServices
 
 @MainActor @Suite(.serialized, .isolatedSettings) struct StartupDeferralTests {
-    private final class CountingDefaults: UserDefaults, @unchecked Sendable {
+    private final class CountingDefaults: UserDefaults {
         private let lock = NSLock()
         private var reads: [Bool] = []
         var toolReads: [Bool] { lock.lock(); defer { lock.unlock() }; return reads }
@@ -91,13 +91,13 @@ import Testing
         }.value
         var model: DirectoryModel? = DirectoryModel(location: f.url, prefetchFolders: false)
         model?.reload()
-        weak var released = model
+        let wasReleased = { [weak model] in model == nil }
         model = nil
         let disabled = DirectoryModel(location: f.url, prefetchFolders: false)
         disabled.reload()
         Settings.shared.showGitStatus = false
         try #require(await eventually { !disabled.isLoading })
-        #expect(released == nil)
+        #expect(wasReleased())
         #expect(try await scanCount(f.url) == 0)
         #expect(disabled.gitStatus == nil)
     }
