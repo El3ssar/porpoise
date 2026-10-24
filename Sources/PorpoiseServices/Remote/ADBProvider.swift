@@ -100,11 +100,11 @@ final class ADBProvider: RemoteProvider, RemoteTransferTargetChecking {
     }
 
     func move(_ remote: [URL], into folder: URL) throws {
-        try relocate(remote, into: folder, command: "mv -n")
+        try relocate(remote, into: folder, command: "mv")
     }
 
     func copy(_ remote: [URL], into folder: URL) throws {
-        try relocate(remote, into: folder, command: "cp -r -n")
+        try relocate(remote, into: folder, command: "cp -r")
     }
     private func relocate(_ remote: [URL], into folder: URL, command: String) throws {
         for source in remote {

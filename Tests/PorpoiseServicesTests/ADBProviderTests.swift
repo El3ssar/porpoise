@@ -54,9 +54,9 @@ import Testing
                 "ls -la '/sdcard/it'\\''s $(reboot)/'",
                 "mkdir -p '/sdcard/new `x`'",
                 "rm -rf '/sdcard/a b' '/sdcard/-rf'",
-                "if [ -e '/sdcard/b c/a' ] || [ -L '/sdcard/b c/a' ]; then echo __PORPOISE_EXISTS__; else cp -r -n '/sdcard/a' '/sdcard/b c'/; fi",
-                "if [ -e '/sdcard/e/a' ] || [ -L '/sdcard/e/a' ]; then echo __PORPOISE_EXISTS__; else mv -n '/sdcard/a' '/sdcard/e'/; fi",
-                "if [ -e '/sdcard/e/d' ] || [ -L '/sdcard/e/d' ]; then echo __PORPOISE_EXISTS__; else mv -n '/sdcard/d' '/sdcard/e'/; fi",
+                "if [ -e '/sdcard/b c/a' ] || [ -L '/sdcard/b c/a' ]; then echo __PORPOISE_EXISTS__; else cp -r '/sdcard/a' '/sdcard/b c'/; fi",
+                "if [ -e '/sdcard/e/a' ] || [ -L '/sdcard/e/a' ]; then echo __PORPOISE_EXISTS__; else mv '/sdcard/a' '/sdcard/e'/; fi",
+                "if [ -e '/sdcard/e/d' ] || [ -L '/sdcard/e/d' ]; then echo __PORPOISE_EXISTS__; else mv '/sdcard/d' '/sdcard/e'/; fi",
             ])
     }
 
