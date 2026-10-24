@@ -106,6 +106,23 @@ import Testing
         #expect(capsule(wc.tab.navigators[0])?.showsCurrent == false)
     }
 
+    /// "Folder not found" keeps the status bar as it was: the free space of the disk the folder was on.
+    @Test func aMissingFolderKeepsTheFreeSpace() async throws {
+        let previous = NSApplication.shared.mainMenu
+        defer { NSApp.mainMenu = previous }
+        Settings.shared.statusBarMode = .fullWidth
+        let s = try Scratch()
+        _ = try s.file("a.txt", "a")
+        _ = try s.file("b.txt", "b")
+        let (wc, window) = try await browser(s, .mac)
+        defer { window.close() }
+        #expect(await eventually(Self.wait) { wc.view.statusBar.freeSpaceText.hasSuffix(" free") })
+        wc.view.setURL(s.url.appendingPathComponent("Gone/Deeper"))
+        try #require(await eventually(Self.wait) { wc.view.model.loadError != nil })
+        wc.view.updateStatus()
+        #expect(await eventually(Self.wait) { wc.view.statusBar.freeSpaceText.hasSuffix(" free") }, "\(wc.view.statusBar.freeSpaceText)")
+    }
+
     @Test func theFilterBarShownAlwaysComesBackAfterTheSearch() async throws {
         let previous = NSApplication.shared.mainMenu
         defer { NSApp.mainMenu = previous }

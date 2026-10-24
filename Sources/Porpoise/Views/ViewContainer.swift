@@ -860,7 +860,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             let folder = url
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 // URL copies share cached resource values; our five-second cache must not renew stale capacity.
-                var freshFolder = folder
+                // A folder that's gone is measured on its nearest existing folder, so the bar keeps its layout.
+                var freshFolder = DirectoryModel.nearestExisting(folder)
                 freshFolder.removeCachedResourceValue(forKey: .volumeAvailableCapacityKey)
                 freshFolder.removeCachedResourceValue(forKey: .volumeTotalCapacityKey)
                 // Match Finder Get Info's Available figure, rather than adding reclaimable "important usage" space.

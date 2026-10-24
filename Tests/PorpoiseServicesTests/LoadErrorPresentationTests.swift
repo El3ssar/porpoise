@@ -32,6 +32,7 @@ struct LoadErrorPresentationTests {
     @Test func folderProblemsOnThisMacOfferAWayOut() {
         let privacy = LoadErrorPresentation.error("x", location: local, missing: false, blockedByPrivacy: true, cloud: false)
         #expect(privacy.action == .openPrivacySettings && privacy.isError && privacy.title.contains("Full Disk Access"))
+        #expect(privacy.action?.title == "Allow Full Disk Access…")
         let missing = LoadErrorPresentation.error("Could not open “Projects”.", location: local, missing: true, blockedByPrivacy: false, cloud: false)
         #expect(missing.title == "Folder not found" && missing.message.contains("“Projects” doesn’t exist") && missing.action == .goUp)
         let denied = LoadErrorPresentation.error(

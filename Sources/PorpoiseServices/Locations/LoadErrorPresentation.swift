@@ -9,7 +9,7 @@ public struct ListState: Equatable, Sendable {
             switch self {
             case .retry: "Try Again"
             case .goUp: "Go to Enclosing Folder"
-            case .openPrivacySettings: "Open Privacy Settings…"
+            case .openPrivacySettings: "Allow Full Disk Access…"
             }
         }
     }
