@@ -35,6 +35,27 @@ extension Theme {
             column.headerCell = cell
         }
     }
+
+    /// A checkbox or radio button drawn by AppKit again (the native theme).
+    static func undressChoice(_ button: NSButton) {
+        guard button.image is ChoiceImage else { return }
+        button.image = nil
+        button.alternateImage = nil
+    }
+
+    /// A table's header row drawn by AppKit again (the native theme).
+    static func undressHeader(_ table: NSTableView) {
+        guard let header = table.headerView as? ThemedHeaderView else { return }
+        table.headerView = NSTableHeaderView(frame: header.frame)
+        for column in table.tableColumns where column.headerCell is ThemedHeaderCell {
+            let old = column.headerCell
+            let cell = NSTableHeaderCell(textCell: old.stringValue)
+            cell.alignment = old.alignment
+            cell.font = old.font
+            cell.lineBreakMode = old.lineBreakMode
+            column.headerCell = cell
+        }
+    }
 }
 
 /// A checkbox's or radio button's box in the palette, as Breeze draws it: a frame in the text color over the view color
@@ -131,19 +152,22 @@ final class ThemedHeaderCell: NSTableHeaderCell {
 /// Settings' pages as toolbar tabs drawn in the palette: the selected one in its accent on a pressed background, the
 /// others in its text color (macOS draws the selected tab in its own accent, which can't be changed). Each tab is a
 /// button: it takes the keyboard focus, and VoiceOver reads it as a radio button among the tabs, selected or not.
+/// Settings' tabs: in the native theme the toolbar's own selectable items, as macOS draws them; in a palette theme
+/// `TabButton`s, drawn in the palette. A change of theme while the window is open swaps one for the other.
 final class ThemedTabViewController: NSTabViewController {
     private var buttons: [NSToolbarItem.Identifier: TabButton] = [:]
+    private var items: [NSToolbarItem.Identifier: NSToolbarItem] = [:]
 
-    // The buttons show their own title. Set once the window (and its toolbar) is there: not yet in viewDidLoad.
+    // Set once the window (and its toolbar) is there: not yet in viewDidLoad.
     override func viewWillAppear() {
         super.viewWillAppear()
-        view.window?.toolbar?.displayMode = .iconOnly
+        applyTabStyle()
     }
 
     override func toolbar(
         _ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
-        // The tab view controller's own item (it removes exactly those when it goes), showing our button.
+        // The tab view controller's own item (it removes exactly those when it goes).
         guard let item = super.toolbar(toolbar, itemForItemIdentifier: itemIdentifier, willBeInsertedIntoToolbar: flag),
             let index = tabViewItems.firstIndex(where: { $0.label == item.label })
         else { return nil }
@@ -152,15 +176,42 @@ final class ThemedTabViewController: NSTabViewController {
         }
         button.isSelected = index == selectedTabViewItemIndex
         buttons[itemIdentifier] = button
-        item.view = button
-        // In the » menu when the window is too narrow for every tab.
-        let menuItem = NSMenuItem(title: item.label, action: #selector(TabButton.performClick(_:)), keyEquivalent: "")
-        menuItem.target = button
-        item.menuFormRepresentation = menuItem
+        items[itemIdentifier] = item
+        style(item, button)
         return item
     }
 
-    override func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [] }
+    override func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        Tokens.isNative ? super.toolbarSelectableItemIdentifiers(toolbar) : []
+    }
+
+    /// The item as the theme wants it: the system's (symbol over label, selection drawn by the toolbar) or our button.
+    private func style(_ item: NSToolbarItem, _ button: TabButton) {
+        if Tokens.isNative {
+            item.view = nil
+            item.menuFormRepresentation = nil
+        } else {
+            item.view = button
+            // In the » menu when the window is too narrow for every tab.
+            let menuItem = NSMenuItem(title: item.label, action: #selector(TabButton.performClick(_:)), keyEquivalent: "")
+            menuItem.target = button
+            item.menuFormRepresentation = menuItem
+        }
+    }
+
+    /// The buttons show their own title; the system's items need the toolbar to show it.
+    private func applyTabStyle() {
+        guard let toolbar = view.window?.toolbar else { return }
+        toolbar.displayMode = Tokens.isNative ? .iconAndLabel : .iconOnly
+        for (identifier, item) in items { if let button = buttons[identifier] { style(item, button) } }
+        if Tokens.isNative, let selected = tabView.selectedTabViewItem,
+            let identifier = items.first(where: { $0.value.label == selected.label })?.key
+        {
+            toolbar.selectedItemIdentifier = identifier
+        } else if !Tokens.isNative {
+            toolbar.selectedItemIdentifier = nil
+        }
+    }
 
     /// Called when the user (or code) shows another page.
     var onSelect: ((NSTabViewItem) -> Void)?
@@ -174,6 +225,7 @@ final class ThemedTabViewController: NSTabViewController {
     /// Marks the selected tab and draws every tab again, in the palette (also when the palette or the look changes,
     /// from `Theme.dress`).
     func tintTabs() {
+        applyTabStyle()
         let selected = tabView.selectedTabViewItem?.label
         for button in buttons.values {
             button.isSelected = button.title == selected
@@ -259,8 +311,19 @@ final class ThemedPopUpButtonCell: NSPopUpButtonCell {
             popUp.isBordered, popUp.bezelStyle == .push || popUp.bezelStyle == .flexiblePush
         else { return }
         object_setClass(cell, ThemedPopUpButtonCell.self)
-        // The control works out how its cell draws (macOS's layer, or the cell's drawing) when it is given one: give it
-        // the same cell again, so it draws ours from now on.
+        reattach(cell, to: popUp)
+    }
+
+    /// Makes `popUp` drawn by AppKit again (the native theme), keeping its cell as it is.
+    static func release(_ popUp: NSPopUpButton) {
+        guard let cell = popUp.cell as? ThemedPopUpButtonCell else { return }
+        object_setClass(cell, NSPopUpButtonCell.self)
+        reattach(cell, to: popUp)
+    }
+
+    /// The control works out how its cell draws (macOS's layer, or the cell's drawing) when it is given one: give it
+    /// the same cell again, so it draws the new way from now on.
+    private static func reattach(_ cell: NSPopUpButtonCell, to popUp: NSPopUpButton) {
         popUp.cell = NSPopUpButtonCell()
         popUp.cell = cell
         popUp.needsDisplay = true

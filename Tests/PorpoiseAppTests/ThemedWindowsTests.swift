@@ -10,7 +10,8 @@ import Testing
 /// Secondary windows take the app's theme: palette text and backgrounds instead of the system's, the palette's
 /// accent on native controls, and colors given on purpose left alone.
 @Suite(.serialized) struct ThemedWindowsTests {
-    @Test @MainActor func viewsTakeThePalette() throws {
+    @Test(.isolatedSettings) @MainActor func viewsTakeThePalette() throws {
+        Settings.shared.updateAppearance { $0.themeName = "Breeze Light" }
         let root = NSView()
         let label = NSTextField(labelWithString: "Label")
         let note = NSTextField(labelWithString: "Note")
@@ -41,7 +42,8 @@ import Testing
 
     /// Checkboxes and radio buttons, header rows and Settings' tabs are drawn in the palette (macOS ignores our accent on
     /// them), and stay AppKit's controls: the same roles for VoiceOver, the same state.
-    @Test @MainActor func systemDrawnControlsTakeThePalette() throws {
+    @Test(.isolatedSettings) @MainActor func systemDrawnControlsTakeThePalette() throws {
+        Settings.shared.updateAppearance { $0.themeName = "Breeze Light" }
         let root = NSView()
         let check = NSButton(checkboxWithTitle: "Check", target: nil, action: nil)
         check.state = .on
@@ -105,6 +107,72 @@ import Testing
         #expect(tabs.selectedTabViewItemIndex == 1 && buttons.map(\.isSelected) == [false, true])
         #expect(buttons[1].accessibilityValue() as? Int == 1)
         #expect(window.toolbar?.items.allSatisfy { $0.menuFormRepresentation?.title == $0.label } == true)
+        window.close()
+    }
+
+    /// The native theme (the default) leaves AppKit's controls as macOS draws them, and gives back those a palette theme
+    /// had replaced when the user switches back: checkboxes, radio buttons, pop-ups, header rows, the accent, tables'
+    /// alternating rows, and Settings' tabs (the toolbar's own selectable items).
+    @Test(.isolatedSettings) @MainActor func theNativeThemeKeepsAppKitsControls() throws {
+        let root = NSView()
+        let check = NSButton(checkboxWithTitle: "Check", target: nil, action: nil)
+        let radio = NSButton(radioButtonWithTitle: "Radio", target: nil, action: nil)
+        let label = NSTextField(labelWithString: "Label")
+        let push = NSButton(title: "OK", target: nil, action: nil)
+        push.keyEquivalent = "\r"
+        let segments = NSSegmentedControl(labels: ["A", "B"], trackingMode: .selectOne, target: nil, action: nil)
+        let popUp = NSPopUpButton(frame: .zero, pullsDown: false)
+        popUp.addItems(withTitles: ["A", "B"])
+        popUp.selectItem(at: 1)
+        let table = NSTableView()
+        table.usesAlternatingRowBackgroundColors = true
+        let column = NSTableColumn(identifier: .init("name"))
+        column.title = "Name"
+        table.addTableColumn(column)
+        table.headerView = NSTableHeaderView()
+        for v in [check, radio, label, push, segments, popUp, table] as [NSView] { root.addSubview(v) }
+
+        #expect(Tokens.isNative)
+        Theme.dress(root)
+        func isAppKits() -> Bool {
+            check.image == nil && radio.image == nil && !(popUp.cell is ThemedPopUpButtonCell) && !(table.headerView is ThemedHeaderView)
+                && !(column.headerCell is ThemedHeaderCell) && table.usesAlternatingRowBackgroundColors && push.bezelColor == nil
+                && segments.selectedSegmentBezelColor == nil && label.textColor == .labelColor
+                && check.attributedTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) == nil
+        }
+        #expect(isAppKits())
+
+        // Breeze dresses them; back to the native theme, they are AppKit's again, with their state and roles.
+        Settings.shared.updateAppearance { $0.themeName = "Breeze Light" }
+        Theme.dress(root)
+        #expect(check.image is ChoiceImage && popUp.cell is ThemedPopUpButtonCell && table.headerView is ThemedHeaderView)
+        #expect(push.bezelColor != nil && !table.usesAlternatingRowBackgroundColors && label.textColor == Theme.windowText)
+        Theme.dress(root)  // a second change of palette records nothing new
+        Settings.shared.updateAppearance { $0.themeName = AppearanceTheme.systemName }
+        Theme.dress(root)
+        #expect(isAppKits())
+        #expect(popUp.numberOfItems == 2 && popUp.indexOfSelectedItem == 1 && popUp.cell?.accessibilityRole() == .popUpButton)
+        #expect(radio.cell?.accessibilityRole() == .radioButton && column.headerCell.stringValue == "Name")
+
+        // Settings' tabs: the toolbar's own items, selectable, with their labels.
+        let tabs = ThemedTabViewController()
+        tabs.tabStyle = .toolbar
+        for (title, symbol) in [("One", "folder"), ("Two", "keyboard")] {
+            let item = NSTabViewItem(viewController: NSViewController())
+            item.viewController?.view = NSView()
+            item.label = title
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+            tabs.addTabViewItem(item)
+        }
+        let window = NSWindow(contentViewController: tabs)
+        window.isReleasedWhenClosed = false
+        tabs.tintTabs()
+        let toolbar = try #require(window.toolbar)
+        #expect(toolbar.items.allSatisfy { $0.view == nil } && toolbar.displayMode == .iconAndLabel)
+        #expect(toolbar.selectedItemIdentifier == toolbar.items.first?.itemIdentifier)
+        Settings.shared.updateAppearance { $0.themeName = "Breeze Light" }
+        tabs.tintTabs()
+        #expect(toolbar.items.allSatisfy { $0.view is TabButton } && toolbar.displayMode == .iconOnly)
         window.close()
     }
 
