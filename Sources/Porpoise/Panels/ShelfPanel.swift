@@ -284,11 +284,11 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
         report(plan)
         guard !plan.urls.isEmpty else { return }
         let sources = Dictionary(uniqueKeysWithValues: picked.compactMap { item in store.state(of: item).url.map { (item.id, $0) } })
-        let store = store
+        let shelf = store
         FileOperationsController.shared.run(
             kind, plan.urls, to: folder, window: window,
             moved: { results in
-                store.moved(results, sources: sources)
+                shelf.moved(results, sources: sources)
             })
     }
 
