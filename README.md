@@ -209,43 +209,43 @@ In the file list: arrows move (⇧ extends), Space is Quick Look, ⌫ goes back,
 | Porpoise | Hide Porpoise | ⌘H |
 | Porpoise | Hide Others | ⌥⌘H |
 | Porpoise | Quit Porpoise | ⌘Q |
-| File | Create New › Folder… | ⇧⌘N |
-| File | Open | ⌘O or ⌘↓ |
 | File | New Window | ⌘N |
+| File | New Folder… | ⇧⌘N |
 | File | New Tab | ⌘T |
+| File | New Folder with Selection | ⌃⌘N |
+| File | Open | ⌘O or ⌘↓ |
 | File | Close Tab | ⌘W |
 | File | Undo Close Tab | ⇧⌘T |
 | File | Close Window | ⇧⌘W |
+| File | Get Info | ⌘I |
 | File | Rename… | ↩ or F2 |
 | File | Duplicate Here | ⌘D |
+| File | Make Alias | ⌃⌘A |
+| File | Quick Look | ⌘Y |
+| File | Show Original | ⌘R |
+| File | Compare Files… | ⌥⌘Y |
+| File | Save Changes | ⌘S |
 | File | Move to Trash | ⌘⌫ |
 | File | Delete Immediately… | ⌥⌘⌫ |
-| File | Make Alias | ⌃⌘A |
-| File | Show Original | ⌘R |
-| File | New Folder with Selection | ⌃⌘N |
 | File | Eject | ⌘E |
-| File | Save Changes | ⌘S |
-| File | Compare Files… | ⌥⌘Y |
-| File | Quick Look | ⌘Y |
-| File | Get Info | ⌘I |
 | Edit | Undo | ⌘Z |
 | Edit | Redo | ⇧⌘Z |
-| Edit | Command Palette… | ⇧⌘P or ⌃⌥I |
 | Edit | Cut | ⌘X |
 | Edit | Copy | ⌘C |
 | Edit | Copy Location | ⌥⌘C |
-| Edit | Add to Shelf | ⌥⌘S |
 | Edit | Paste | ⌘V |
-| Edit | Filter… | ⌥⌘F |
-| Edit | Search… | ⌘F |
-| Edit | Select Files and Folders | ⇧⌘Space |
-| Edit | Copy to Other View | ⇧F5 |
-| Edit | Move to Other View | ⇧F6 |
 | Edit | Select All | ⌘A |
 | Edit | Deselect All | ⌥⌘A |
 | Edit | Invert Selection | ⌥⇧⌘A |
 | Edit | Select Matching… | ⇧⌘S |
 | Edit | Deselect Matching… | ⌥⇧⌘S |
+| Edit | Select Files and Folders | ⇧⌘Space |
+| Edit | Copy to Other View | ⇧F5 |
+| Edit | Move to Other View | ⇧F6 |
+| Edit | Add to Shelf | ⌥⌘S |
+| Edit | Filter… | ⌥⌘F |
+| Edit | Search… | ⌘F |
+| Edit | Command Palette… | ⇧⌘P or ⌃⌥I |
 | View | as Icons | ⌘1 |
 | View | as Details | ⌘2 |
 | View | as Compact | ⌘3 |

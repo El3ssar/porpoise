@@ -118,7 +118,7 @@ extension MainWindowController {
             }
             // Finder's first entry: the thing most often done on empty space.
             m.addItem(self.item("New Folder…", "folder-new", #selector(createFolder(_:)), key: "n", mods: [.command, .shift]))
-            m.addItem(sub("Create New", "list-add", Self.createNewMenu()))
+            m.addItem(sub("Create New", "list-add", Self.createNewMenu(folder: false)))
             m.addItem(.separator())
             m.addItem(self.item(FileOperationsController.shared.pasteTitle, "edit-paste", #selector(paste(_:))))
             m.addItem(self.item("Add to Places", "bookmark-new", #selector(addToPlaces(_:))))

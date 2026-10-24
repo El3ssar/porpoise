@@ -53,9 +53,16 @@ extension AppDelegate {
         app.addItem(mi("Quit Porpoise", #selector(NSApplication.terminate(_:)), "q"))
         main.addItem(.submenu("Porpoise", icon: nil, app))
 
-        // File
+        // File, in Finder's order: new things, open and close, the selected items, sharing, the Trash, Eject, Tags.
+        // Items that only apply elsewhere are hidden until they do (`menuNeedsUpdate`); their keys still work.
         let file = NSMenu(title: "File")
-        file.addItem(.submenu("Create New", icon: "list-add", W.createNewMenu()))
+        file.delegate = self
+        file.addItem(mi("New Window", #selector(W.newWindow(_:)), "n", icon: "window-new"))
+        file.addItem(mi("New Folder…", #selector(W.createFolder(_:)), "n", [.command, .shift], icon: "folder-new"))
+        file.addItem(mi("New Tab", #selector(W.newTab(_:)), "t", icon: "tab-new"))
+        file.addItem(.submenu("Create New", icon: "list-add", W.createNewMenu(folder: false)))
+        file.addItem(mi("New Folder with Selection", #selector(W.newFolderWithSelection(_:)), "n", [.command, .control], icon: "folder-new"))
+        file.addItem(sep())
         file.addItem(mi("Open", #selector(W.openSelected(_:)), dolphin ? "\r" : "o", dolphin ? [] : .command, icon: "document-open"))
         if !dolphin { file.addItem(mi("Open", #selector(W.openSelected(_:)), K.down, icon: "document-open").hiddenAlternate()) }
         // The context menu's Open in… items, on the selected folder (no default keys; assignable in Settings).
@@ -63,22 +70,29 @@ extension AppDelegate {
         file.addItem(mi("Open in New Window", #selector(W.ctxOpenInNewWindow(_:)), icon: "window-new"))
         file.addItem(mi("Open in Split View", #selector(W.ctxOpenInSplit(_:)), icon: "view-split-left-right"))
         file.addItem(mi("Show Package Contents", #selector(W.showPackageContents(_:)), icon: "folder-open"))
-        file.addItem(mi("New Window", #selector(W.newWindow(_:)), "n", icon: "window-new"))
-        file.addItem(mi("New Tab", #selector(W.newTab(_:)), "t", icon: "tab-new"))
         file.addItem(mi("Close Tab", #selector(W.closeCurrentTab(_:)), "w", icon: "tab-close"))
         file.addItem(mi("Undo Close Tab", #selector(W.undoCloseTab(_:)), "t", [.command, .shift], icon: "edit-undo"))
         file.addItem(mi("Close Window", #selector(NSWindow.performClose(_:)), "w", [.command, .shift]))
         file.addItem(sep())
-        file.addItem(mi("Add to Places", #selector(W.addToPlaces(_:)), icon: "bookmark-new"))
-        file.addItem(sep())
-        // Finder's cloud commands (iCloud Drive and connected accounts); no default shortcuts, assignable in Settings.
-        file.addItem(mi("Download", #selector(W.cloudDownload(_:))))
-        file.addItem(mi("Remove Download", #selector(W.cloudEvict(_:))))
-        file.addItem(sep())
+        file.addItem(mi("Get Info", #selector(W.properties(_:)), dolphin ? "\r" : "i", dolphin ? .option : .command, icon: "document-properties"))
         // Return renames, as in Finder (only in the file list, MainWindowActions+Validation); F2 too. Dolphin: F2, Return opens.
         file.addItem(mi("Rename…", #selector(W.renameItem(_:)), dolphin ? K.f(2) : "\r", [], icon: "edit-rename"))
         if !dolphin { file.addItem(mi("Rename…", #selector(W.renameItem(_:)), K.f(2), [], icon: "edit-rename").hiddenAlternate()) }
         file.addItem(mi("Duplicate Here", #selector(W.duplicateItem(_:)), "d", icon: "edit-duplicate"))
+        file.addItem(mi("Make Alias", #selector(W.makeAlias(_:)), "a", [.command, .control], icon: "insert-link"))
+        file.addItem(mi("Quick Look", #selector(W.quickLook(_:)), "y", icon: "document-preview"))
+        file.addItem(mi("Show Original", #selector(W.showOriginal(_:)), "r", icon: "document-open-folder"))
+        file.addItem(mi("Add to Places", #selector(W.addToPlaces(_:)), icon: "bookmark-new"))
+        // Finder's cloud commands (iCloud Drive and connected accounts), shown in cloud folders; no default shortcuts.
+        file.addItem(mi("Download", #selector(W.cloudDownload(_:))))
+        file.addItem(mi("Remove Download", #selector(W.cloudEvict(_:))))
+        file.addItem(mi("Compare Files…", #selector(W.compareFiles(_:)), "y", [.command, .option], icon: "document-preview"))
+        // Compare Files' own command, shown while its window is in front.
+        file.addItem(mi("Save Changes", #selector(FileDiffWindow.saveDocument(_:)), "s", icon: "media-floppy"))
+        file.addItem(sep())
+        file.addItem(mi("Share…", #selector(W.shareItems(_:)), icon: "document-share"))
+        file.addItem(mi("AirDrop…", #selector(W.airDropItems(_:)), icon: "airdrop"))
+        file.addItem(sep())
         if dolphin {
             // Dolphin's Delete (⌦) trashes and ⇧⌦ deletes; Finder's ⌘⌫ and ⌥⌘⌫ stay as alternates.
             file.addItem(mi("Move to Trash", #selector(W.moveToTrash(_:)), K.forwardDelete, [], icon: "user-trash"))
@@ -92,46 +106,37 @@ extension AppDelegate {
             file.addItem(mi("Delete Immediately…", #selector(W.deleteItem(_:)), K.backspace, [.command, .option], icon: "edit-delete"))
         }
         file.addItem(mi("Restore from Trash", #selector(W.restoreFromTrash(_:)), icon: "restoration"))
-        file.addItem(mi("Make Alias", #selector(W.makeAlias(_:)), "a", [.command, .control], icon: "insert-link"))
-        file.addItem(mi("Show Original", #selector(W.showOriginal(_:)), "r", icon: "document-open-folder"))
-        file.addItem(mi("New Folder with Selection", #selector(W.newFolderWithSelection(_:)), "n", [.command, .control], icon: "folder-new"))
-        file.addItem(mi("Eject", #selector(W.ejectVolume(_:)), "e", icon: "media-eject"))
         file.addItem(sep())
-        file.addItem(mi("Save Changes", #selector(FileDiffWindow.saveDocument(_:)), "s", icon: "media-floppy"))
-        file.addItem(mi("Compare Files…", #selector(W.compareFiles(_:)), "y", [.command, .option], icon: "document-preview"))
-        file.addItem(mi("Quick Look", #selector(W.quickLook(_:)), "y", icon: "document-preview"))
-        file.addItem(mi("Share…", #selector(W.shareItems(_:)), icon: "document-share"))
-        file.addItem(mi("AirDrop…", #selector(W.airDropItems(_:)), icon: "airdrop"))
-        file.addItem(mi("Get Info", #selector(W.properties(_:)), dolphin ? "\r" : "i", dolphin ? .option : .command, icon: "document-properties"))
+        file.addItem(mi("Eject", #selector(W.ejectVolume(_:)), "e", icon: "media-eject"))
         file.addItem(dynamicSubmenu("Tags", icon: "tag"))
         main.addItem(.submenu("File", icon: nil, file))
 
-        // Edit
+        // Edit: Undo, the clipboard, selecting; then the file-moving and finding commands; the Command Palette last.
         let edit = NSMenu(title: "Edit")
         edit.addItem(mi("Undo", #selector(W.undoFileOperation(_:)), "z", icon: "edit-undo"))
         edit.addItem(mi("Redo", #selector(W.redoFileOperation(_:)), "z", [.command, .shift], icon: "edit-redo"))
         edit.addItem(sep())
-        edit.addItem(mi("Command Palette…", #selector(showCommandPalette(_:)), "p", [.command, .shift], icon: "system-search"))
-        edit.addItem(mi("Command Palette…", #selector(showCommandPalette(_:)), "i", [.control, .option], icon: "system-search").hiddenAlternate())
-        edit.addItem(sep())
         edit.addItem(mi("Cut", #selector(W.cut(_:)), "x", icon: "edit-cut"))
         edit.addItem(mi("Copy", #selector(W.copy(_:)), "c", icon: "edit-copy"))
         edit.addItem(mi("Copy Location", #selector(W.copyLocation(_:)), "c", [.command, .option], icon: "link"))
-        edit.addItem(mi("Add to Shelf", #selector(W.addToShelf(_:)), "s", [.command, .option], icon: "bookmarks"))
         edit.addItem(mi("Paste", #selector(W.paste(_:)), "v", icon: "edit-paste"))
-        edit.addItem(sep())
-        edit.addItem(
-            mi("Filter…", #selector(W.showFilterBar(_:)), dolphin ? "i" : "f", dolphin ? .command : [.command, .option], icon: "view-filter"))
-        edit.addItem(mi("Search…", #selector(W.showSearch(_:)), "f", icon: "edit-find"))
-        edit.addItem(sep())
-        edit.addItem(mi("Select Files and Folders", #selector(W.toggleSelectionMode(_:)), " ", [.command, .shift], icon: "edit-select"))
-        edit.addItem(mi("Copy to Other View", #selector(W.copyToOtherView(_:)), K.f(5), .shift, icon: "edit-copy"))
-        edit.addItem(mi("Move to Other View", #selector(W.moveToOtherView(_:)), K.f(6), .shift, icon: "edit-move"))
         edit.addItem(mi("Select All", #selector(NSResponder.selectAll(_:)), "a", icon: "edit-select-all"))
         edit.addItem(mi("Deselect All", #selector(W.deselectAll(_:)), "a", [.command, .option], icon: "edit-select"))
         edit.addItem(mi("Invert Selection", #selector(W.invertSelection(_:)), "a", [.command, .option, .shift], icon: "edit-select-invert"))
         edit.addItem(mi("Select Matching…", #selector(W.selectMatching(_:)), "s", [.command, .shift], icon: "edit-select"))
         edit.addItem(mi("Deselect Matching…", #selector(W.deselectMatching(_:)), "s", [.command, .option, .shift], icon: "edit-select"))
+        edit.addItem(mi("Select Files and Folders", #selector(W.toggleSelectionMode(_:)), " ", [.command, .shift], icon: "edit-select"))
+        edit.addItem(sep())
+        edit.addItem(mi("Copy to Other View", #selector(W.copyToOtherView(_:)), K.f(5), .shift, icon: "edit-copy"))
+        edit.addItem(mi("Move to Other View", #selector(W.moveToOtherView(_:)), K.f(6), .shift, icon: "edit-move"))
+        edit.addItem(mi("Add to Shelf", #selector(W.addToShelf(_:)), "s", [.command, .option], icon: "bookmarks"))
+        edit.addItem(sep())
+        edit.addItem(
+            mi("Filter…", #selector(W.showFilterBar(_:)), dolphin ? "i" : "f", dolphin ? .command : [.command, .option], icon: "view-filter"))
+        edit.addItem(mi("Search…", #selector(W.showSearch(_:)), "f", icon: "edit-find"))
+        edit.addItem(sep())
+        edit.addItem(mi("Command Palette…", #selector(showCommandPalette(_:)), "p", [.command, .shift], icon: "system-search"))
+        edit.addItem(mi("Command Palette…", #selector(showCommandPalette(_:)), "i", [.control, .option], icon: "system-search").hiddenAlternate())
         main.addItem(.submenu("Edit", icon: nil, edit))
 
         // View: Finder's order. The view modes first, as "as Icons ⌘1"…; then sorting and what each item shows; the
@@ -307,6 +312,21 @@ extension AppDelegate {
         }
     }
 
+    /// File menu items for other places, hidden until they apply (their keys keep working): the cloud commands outside
+    /// cloud folders, and Compare Files' Save Changes while its window isn't in front.
+    @MainActor static func hideOutOfPlaceFileItems(in menu: NSMenu) {
+        let inCloud = menuBrowser(main: NSApp.mainWindow, windows: AppDelegate.shared.windows)?.offersCloudCommands ?? false
+        let comparing = NSApp.keyWindow?.windowController is FileDiffWindow
+        for item in menu.items {
+            switch item.action {
+            case #selector(MainWindowController.cloudDownload(_:)), #selector(MainWindowController.cloudEvict(_:)): item.isHidden = !inCloud
+            case #selector(FileDiffWindow.saveDocument(_:)): item.isHidden = !comparing
+            default: continue
+            }
+            item.allowsKeyEquivalentWhenHidden = true
+        }
+    }
+
     /// The browser window the menu bar acts on: the one in front (the main window), even while another kind of
     /// window (Activity, Get Info, Settings) is key.
     static func menuBrowser(main: NSWindow?, windows: [MainWindowController]) -> MainWindowController? {
@@ -315,6 +335,7 @@ extension AppDelegate {
 
     /// Fills the dynamic submenus (they need the active window's view state).
     @MainActor func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu.title == "File" { Self.hideOutOfPlaceFileItems(in: menu); return }
         guard let wc = Self.menuBrowser(main: NSApp.mainWindow, windows: windows) else { return }
         let built: NSMenu
         switch menu.title {

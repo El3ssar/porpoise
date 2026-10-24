@@ -171,11 +171,25 @@ extension MainWindowController {
 }
 
 extension MainWindowController {
+    /// How the window reads an item's cloud state (tests give scratch files iCloud states).
+    static var cloudState: (DirectoryModel, FileItem) -> (state: CloudState, isCloud: Bool) = { $0.cloud(for: $1) }
+
+    /// Whether File › Download and Remove Download are shown: in a connected account's folder, in an iCloud Drive or File
+    /// Provider folder (local file URLs, so `PlacesModel.isCloud` is false there), or for a selection they apply to. Only
+    /// the folder and the selection are read (one cached lookup each), never every listed item.
+    var offersCloudCommands: Bool {
+        let model = view.model
+        if PlacesModel.isCloud(view.url) { return true }
+        let state = { Self.cloudState(model, $0) }
+        if view.url.isFileURL, state(FileItem(url: view.url, name: view.url.lastPathComponent, isDirectory: true)).isCloud { return true }
+        return !CloudCommands.available(for: model.selectedItems, cloud: state).isEmpty
+    }
+
     /// Download and Remove Download in the File menu (the context menu builds its own): enabled as the selection
     /// allows, "Download Now" for iCloud Drive as in Finder.
     func validateCloud(_ item: NSMenuItem) -> Bool {
         let model = view.model
-        let a = CloudCommands.available(for: model.selectedItems) { model.cloud(for: $0) }
+        let a = CloudCommands.available(for: model.selectedItems) { Self.cloudState(model, $0) }
         // Disabled items say why (the context menu's own tooltips stay otherwise).
         switch item.action {
         case #selector(cloudDownload(_:)):
