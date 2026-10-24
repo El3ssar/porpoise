@@ -127,26 +127,30 @@ public struct PanelLayout: Codable, Equatable, Sendable {
     public var information = false
     public var terminal = false
     public var shelf = false
+    /// The sidebar navigator's tab ("places" or "folders"), kept while the navigator is hidden; nil in layouts from
+    /// before the tabs (Folders alone then means its tab).
+    public var sidebarTab: String?
     public var sidebarWidth: Double?
     public var informationWidth: Double?
     public var terminalHeight: Double?
 
     public init(
         places: Bool = true, folders: Bool = false, information: Bool = false, terminal: Bool = false, shelf: Bool = false,
-        sidebarWidth: Double? = nil, informationWidth: Double? = nil, terminalHeight: Double? = nil
+        sidebarTab: String? = nil, sidebarWidth: Double? = nil, informationWidth: Double? = nil, terminalHeight: Double? = nil
     ) {
         self.places = places
         self.folders = folders
         self.information = information
         self.terminal = terminal
         self.shelf = shelf
+        self.sidebarTab = sidebarTab
         self.sidebarWidth = sidebarWidth
         self.informationWidth = informationWidth
         self.terminalHeight = terminalHeight
     }
 
     enum CodingKeys: String, CodingKey {
-        case places, folders, information, terminal, shelf, sidebarWidth, informationWidth, terminalHeight
+        case places, folders, information, terminal, shelf, sidebarTab, sidebarWidth, informationWidth, terminalHeight
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -155,6 +159,7 @@ public struct PanelLayout: Codable, Equatable, Sendable {
         information = try c.decodeIfPresent(Bool.self, forKey: .information) ?? false
         terminal = try c.decodeIfPresent(Bool.self, forKey: .terminal) ?? false
         shelf = try c.decodeIfPresent(Bool.self, forKey: .shelf) ?? false
+        sidebarTab = try c.decodeIfPresent(String.self, forKey: .sidebarTab)
         sidebarWidth = try c.decodeIfPresent(Double.self, forKey: .sidebarWidth)
         informationWidth = try c.decodeIfPresent(Double.self, forKey: .informationWidth)
         terminalHeight = try c.decodeIfPresent(Double.self, forKey: .terminalHeight)

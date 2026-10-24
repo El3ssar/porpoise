@@ -16,6 +16,7 @@ extension MainWindowController {
         }
         let panels = PanelLayout(
             places: showPlaces, folders: showFolders, information: showInformation, terminal: showTerminal, shelf: showShelf,
+            sidebarTab: sidebarTab.rawValue,
             sidebarWidth: PanelSize.sidebarWidth.stored.map(Double.init), informationWidth: PanelSize.informationWidth.stored.map(Double.init),
             terminalHeight: PanelSize.terminalHeight.stored.map(Double.init))
         let frame = window.map { [$0.frame.minX, $0.frame.minY, $0.frame.width, $0.frame.height].map(Double.init) }
@@ -55,8 +56,8 @@ extension MainWindowController {
         p.sidebarWidth.map { PanelSize.sidebarWidth.restore(CGFloat($0)) }
         p.informationWidth.map { PanelSize.informationWidth.restore(CGFloat($0)) }
         p.terminalHeight.map { PanelSize.terminalHeight.restore(CGFloat($0)) }
-        showPlaces = p.places
-        showFolders = p.folders
+        sidebarTab = p.sidebarTab.flatMap(SidebarNavigator.Tab.init) ?? (p.folders && !p.places ? .folders : .places)
+        showNavigator = p.places || p.folders
         showInformation = p.information
         showTerminal = p.terminal
         showShelf = p.shelf
