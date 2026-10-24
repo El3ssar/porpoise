@@ -10,7 +10,13 @@ final class DiskUsageWindow: DiskUtilityWindow {
     private var current = 0
     private var children: [Int] = []
     private var allocated = false
-    private let map = DiskTreemapView()
+    let map = DiskTreemapView()
+    let metric = NSPopUpButton(frame: .zero, pullsDown: false)
+    private(set) var bar: UtilityToolbar?
+    /// How to look inside an item, and the fine print about the sizes (the map's help tag).
+    static let hint = "Click a tile, or double-click a folder in the list, to look inside it."
+    static let finePrint =
+        "Hard links count once across the selection. Allocated bytes exclude directory metadata and may overlap across APFS clones; they are not guaranteed reclaimable space. Scans stay on selected volumes."
     init(roots: [URL]) {
         self.roots = roots
         super.init(
@@ -18,23 +24,34 @@ final class DiskUsageWindow: DiskUtilityWindow {
             columns: [("name", "Name", 360), ("logical", "Logical size", 150), ("allocated", "Allocated size", 150), ("files", "Unique files", 100)],
             sortable: true)
         window?.setContentSize(NSSize(width: 1000, height: 740)); window?.minSize.height = 720; window?.center()
-        toolbar.addArrangedSubview(ClosureButton(title: "Back") { [weak self] _ in self?.back() })
-        toolbar.addArrangedSubview(ClosureButton(title: "Rescan") { [weak self] _ in self?.scan() })
-        toolbar.addArrangedSubview(ClosureButton(title: "Show in Folder") { [weak self] _ in self?.reveal() })
-        toolbar.addArrangedSubview(ClosureButton(title: "Move to Trash") { [weak self] _ in self?.trash() })
-        let metric = ClosurePopup { [weak self] p in
-            self?.allocated = p.indexOfSelectedItem == 1; self?.reload()
+        // A real toolbar (UI-10): Back as a chevron, the actions as symbols, the map's measure as a pop-up.
+        metric.target = self; metric.action = #selector(metricChanged)
+        metric.addItems(withTitles: ["Logical Size", "Allocated Size"])
+        if let window {
+            bar = UtilityToolbar.install(
+                [
+                    .button(id: "back", label: "Back", symbol: "chevron.left", enabled: { [weak self] in self?.canGoBack ?? false }) {
+                        [weak self] in self?.back()
+                    },
+                    .flexibleSpace,
+                    .control(id: "metric", label: "Map By", view: metric),
+                    .button(id: "rescan", label: "Rescan", symbol: "arrow.clockwise") { [weak self] in self?.scan() },
+                    .button(id: "reveal", label: "Show in Folder", symbol: "folder", enabled: { [weak self] in self?.selectedURL != nil }) {
+                        [weak self] in self?.reveal()
+                    },
+                    .button(
+                        id: "trash", label: "Move to Trash", symbol: "trash",
+                        enabled: { [weak self] in self.map { !$0.busy && $0.selectedURL != nil } ?? false }
+                    ) { [weak self] in self?.trash() },
+                ], on: window, name: "DiskUsage")
         }
-        metric.addItems(withTitles: ["Map logical bytes", "Map allocated bytes"]); toolbar.addArrangedSubview(metric)
+        toolbar.isHidden = true
         stack.insertArrangedSubview(map, at: 1)
         map.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true; map.heightAnchor.constraint(equalToConstant: 200).isActive = true
         map.activate = { [weak self] id in self?.enter(id) }
+        map.toolTip = Self.hint + "\n\n" + Self.finePrint
         table.target = self; table.doubleAction = #selector(openRow)
-        note(
-            "Click a tile, or double-click a folder in the list, to look inside it.",
-            details:
-                "Hard links count once across the selection. Allocated bytes exclude directory metadata and may overlap across APFS clones; they are not guaranteed reclaimable space. Scans stay on selected volumes."
-        )
+        emptyListState = ListState(title: "Folder is empty", symbol: "folder")
         scan()
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -51,6 +68,16 @@ final class DiskUsageWindow: DiskUtilityWindow {
                 self.reload()
             })
     }
+    /// The id of the item shown at this level with this name (tests, the bridge).
+    func itemID(named name: String) -> Int? { map.items.first { $0.1 == name }?.0 }
+    @objc private func metricChanged() { allocated = metric.indexOfSelectedItem == 1; reload() }
+    override func workChanged() {
+        bar?.validate()
+        // While a scan runs, the map says so; after it, an empty level says why there is nothing to draw.
+        map.placeholder = busy ? ListState(title: "Scanning…", symbol: "") : ListState(title: "Nothing here takes up space", symbol: "square.dashed")
+    }
+    func tableViewSelectionDidChange(_ notification: Notification) { bar?.validate() }
+    private var canGoBack: Bool { tree.map { $0.nodes.indices.contains(current) && $0.nodes[current].parent != nil } ?? false }
     private func reload() {
         guard let tree, tree.nodes.indices.contains(current) else { return }
         children = tree.nodes[current].children
@@ -72,6 +99,8 @@ final class DiskUsageWindow: DiskUtilityWindow {
             let n = tree.nodes[id]; return [n.name, FileFormat.size(n.logical), FileFormat.size(n.allocated), n.files.formatted()]
         }
         table.reloadData()
+        updateEmptyState()
+        bar?.validate()
         map.folders = Set(children.filter { tree.nodes[$0].directory })
         map.items = children.map { id in (id, tree.nodes[id].name, allocated ? tree.nodes[id].allocated : tree.nodes[id].logical) }
         let node = tree.nodes[current]
@@ -113,7 +142,7 @@ final class DiskUsageWindow: DiskUtilityWindow {
     }
     private func back() { guard let tree, let parent = tree.nodes[current].parent else { return }; current = parent; reload() }
     @objc private func openRow() { if children.indices.contains(table.clickedRow) { enter(children[table.clickedRow]) } }
-    private var selectedURL: URL? {
+    var selectedURL: URL? {
         guard children.indices.contains(table.selectedRow), let tree else { return nil }; return tree.nodes[children[table.selectedRow]].url
     }
     /// In a Porpoise window, never Finder.
@@ -131,6 +160,7 @@ final class DiskTreemapView: NSView {
         didSet {
             itemIndices = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.0, $0.offset) })
             kinds = [:]; layoutBounds = nil; needsDisplay = true
+            updatePlaceholder()
         }
     }
     /// The ids among `items` that are folders (the rest are files, colored by their kind).
@@ -146,7 +176,12 @@ final class DiskTreemapView: NSView {
     private(set) var layoutCount = 0
     var activate: ((Int) -> Void)?
     private var tiles: [UsageTreemap.Tile] = []
+    /// Centred over the map while it has no tiles (DESIGN-CONTRACT E1).
+    var placeholder: ListState? { didSet { updatePlaceholder() } }
+    let emptyState = ListStateView()
     override var isFlipped: Bool { true }
+
+    private func updatePlaceholder() { emptyState.show(items.isEmpty || items.allSatisfy { $0.2 <= 0 } ? placeholder : nil) }
 
     /// What a tile holds, for its color: one soft hue per kind, so the map reads at a glance (as DaisyDisk's does)
     /// instead of an arbitrary color per tile.
@@ -222,10 +257,6 @@ final class DiskTreemapView: NSView {
                     in: CGRect(x: inner.minX, y: inner.minY + 18, width: inner.width, height: 15), withAttributes: sizeAttrs)
             }
         }
-        if tiles.isEmpty {
-            ("No non-zero files in this level" as NSString).draw(
-                at: CGPoint(x: 10, y: 10), withAttributes: [.foregroundColor: Theme.windowTextInactive])
-        }
     }
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
@@ -234,5 +265,9 @@ final class DiskTreemapView: NSView {
     required init?(coder: NSCoder) { fatalError() }
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect); setAccessibilityLabel("Disk usage treemap. Use the file list for keyboard navigation.")
+        emptyState.frame = bounds
+        emptyState.autoresizingMask = [.width, .height]
+        addSubview(emptyState)
+        emptyState.show(nil)
     }
 }

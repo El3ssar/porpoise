@@ -49,4 +49,42 @@ import Testing
         window.errors = []
         #expect(window.errorsButton.isHidden)
     }
+
+    /// UI-10: a real toolbar (Back as a chevron, the actions as symbols, the measure as a pop-up), the progress row only
+    /// while scanning, and centred empty states for the map and the list.
+    @Test func diskUsageLooksFinished() async throws {
+        let scratch = try Scratch()
+        let folder = scratch.url.appendingPathComponent("Photos")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data(count: 50_000).write(to: folder.appendingPathComponent("a.jpg"))
+        try FileManager.default.createDirectory(at: scratch.url.appendingPathComponent("Empty"), withIntermediateDirectories: true)
+        let w = DiskUsageWindow(roots: [scratch.url])
+        let window = try #require(w.window)
+        defer { window.close() }
+        let bar = try #require(w.bar)
+        #expect(window.toolbar === bar.toolbar)
+        #expect(bar.toolbar.items.map(\.itemIdentifier.rawValue) == ["back", "NSToolbarFlexibleSpaceItem", "metric", "rescan", "reveal", "trash"])
+        #expect(bar.item("back")?.image?.name() == nil && bar.item("back")?.image != nil)
+        #expect(w.toolbar.isHidden, "no row of bordered buttons in the content")
+        #expect(await eventually { !w.busy && !w.rows.isEmpty })
+        #expect(w.progressRow.isHidden, "no idle progress bar or disabled Cancel")
+        // Nothing selected to reveal or trash.
+        for id in ["reveal", "trash"] { #expect(bar.validateToolbarItem(try #require(bar.item(id))) == false, "\(id)") }
+        #expect(bar.validateToolbarItem(try #require(bar.item("rescan"))))
+        // Into the empty folder: the list and the map say so, centred.
+        let empty = try #require(w.rows.firstIndex { $0.first == "Empty" })
+        w.table.selectRowIndexes([empty], byExtendingSelection: false)
+        #expect(bar.validateToolbarItem(try #require(bar.item("reveal"))))
+        let id = try #require(w.itemID(named: "Empty"))
+        w.map.activate?(id)
+        #expect(w.rows.isEmpty)
+        #expect(!w.emptyState.isHidden && w.emptyState.state?.title == "Folder is empty")
+        #expect(!w.map.emptyState.isHidden && w.map.emptyState.state?.title == "Nothing here takes up space")
+        #expect(bar.validateToolbarItem(try #require(bar.item("back"))))
+        bar.perform("back")
+        #expect(!w.rows.isEmpty && w.emptyState.isHidden && w.map.emptyState.isHidden)
+        // One footer line, secondary.
+        #expect(w.status.textColor == Theme.windowTextInactive)
+        #expect(!w.stack.arrangedSubviews.contains { ($0 as? NSTextField)?.stringValue == DiskUsageWindow.hint })
+    }
 }
