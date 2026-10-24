@@ -7,9 +7,9 @@ import Testing
 
 @testable import Porpoise
 
-/// Return in the file list does what its key set says: Open with Dolphin's keys, Rename with the Mac keys. The key
-/// presses go through AppKit's own dispatch (`NSApp.sendEvent`), which offers the menu bar only keys with ⌘ or ⌃: a
-/// bare Return reaches the list even though File › Open (or Rename) shows it.
+/// Return in the file list does what its key set says: Open with Dolphin's keys, Rename with the Mac keys; and every
+/// other menu key without ⌘ or ⌃ runs its item. The key presses go through AppKit's own dispatch (`NSApp.sendEvent`),
+/// which offers the menu bar only keys with ⌘, ⌃ or a function key: a bare Return, ⌥↩ or ⌥2 reaches the window.
 @MainActor @Suite(.serialized, .isolatedSettings) struct ReturnOpensTests {
     enum Layout: CaseIterable { case single, split, panels }
 
@@ -51,10 +51,10 @@ import Testing
     }
 
     /// A key press as the system delivers it: AppKit's current event while it's dispatched, then `NSApp.sendEvent`.
-    private func press(_ keyCode: UInt16, _ characters: String, in window: NSWindow) throws {
+    private func press(_ keyCode: UInt16, _ characters: String, _ flags: NSEvent.ModifierFlags = [], in window: NSWindow) throws {
         let event = try #require(
             NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters,
                 isARepeat: false, keyCode: keyCode))
         let current = MainWindowController.currentKeyEvent
@@ -105,5 +105,79 @@ import Testing
         #expect(await eventually { b.window.firstResponder is NSTextView }, "\(mode): \(String(describing: b.window.firstResponder))")
         #expect(b.opened().isEmpty)
         b.window.makeFirstResponder(b.wc.view.list)
+    }
+
+    /// Every menu key without ⌘ or ⌃, in both key sets, runs its item from the file list when the item is enabled there
+    /// (a split, a file selected): walked from the menu bar, so a new binding is covered too. Function keys (F2, ⌦, the
+    /// arrows) take AppKit's key-equivalent path to the menu bar, as ⌘ keys do; the test runner's app has none, so for
+    /// them the item must be the one the key finds and be enabled.
+    @Test(arguments: [ShortcutKeySet.mac, .dolphin]) func everyMenuKeyWithoutCommandRunsItsItem(_ keySet: ShortcutKeySet) async throws {
+        let previous = NSApplication.shared.mainMenu, send = MainWindowController.sendMenuAction
+        defer { NSApp.mainMenu = previous; MainWindowController.sendMenuAction = send }
+        let s = try Scratch()
+        _ = try s.file("a.txt", "a")
+        _ = try s.folder("Inner")
+        let b = try await browser(s, keySet, .icons, .split)
+        defer { b.window.close() }
+        try select("a.txt", in: b)
+        var ran: [Selector] = []
+        MainWindowController.sendMenuAction = { action, _, _ in
+            ran.append(action); return true
+        }
+        func all(_ m: NSMenu) -> [NSMenuItem] { m.items.flatMap { [$0] + ($0.submenu.map(all) ?? []) } }
+        let keys = all(try #require(NSApp.mainMenu)).filter {
+            $0.action != nil && !$0.keyEquivalent.isEmpty && $0.keyEquivalentModifierMask.intersection([.command, .control]).isEmpty
+        }
+        #expect(keys.count > 20, "\(keys.map(\.title))")
+        var dead: [String] = [], typed = 0
+        for item in keys {
+            #expect(b.window.makeFirstResponder(b.wc.view.list))
+            ran = []
+            let key = item.keyEquivalent, flags = item.keyEquivalentModifierMask
+            let function = key.utf16.first.map { $0 >= 0xF700 && $0 <= 0xF8FF } == true
+            let event = try #require(
+                NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: function ? flags.union(.function) : flags,
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: b.window.windowNumber, context: nil, characters: key,
+                    charactersIgnoringModifiers: key, isARepeat: false, keyCode: key == "\r" ? 36 : 0))
+            let current = MainWindowController.currentKeyEvent
+            MainWindowController.currentKeyEvent = { event }
+            defer { MainWindowController.currentKeyEvent = current }
+            let found = MainWindowController.menuItem(for: event)
+            #expect(found?.action == item.action, "\(item.title) finds \(found?.title ?? "nothing")")
+            guard let found, b.wc.validateMenuItem(found) else { continue }
+            if function { continue }
+            typed += 1
+            NSApp.sendEvent(event)
+            if ran != [item.action!] { dead.append("\(item.title) \(key.unicodeScalars.map { String($0.value, radix: 16) }) \(flags.rawValue)") }
+        }
+        #expect(typed >= 10 && dead.isEmpty, "\(keySet): \(dead)")
+    }
+
+    /// What some of those keys do, for real: ⌥2 and ⌥1 go to those tabs, Dolphin's ⌥↩ shows Get Info.
+    @Test func menuKeysWithoutCommandDoTheirJob() async throws {
+        let previous = NSApplication.shared.mainMenu
+        defer { NSApp.mainMenu = previous }
+        let s = try Scratch()
+        _ = try s.file("a.txt", "a")
+        _ = try s.folder("Inner")
+        let b = try await browser(s, .dolphin, .icons, .single)
+        defer { b.window.close() }
+        b.wc.newTab(nil)
+        b.wc.newTab(nil)
+        #expect(b.wc.current == 2)
+        #expect(b.window.makeFirstResponder(b.wc.view.list))
+        try press(19, "2", [.option], in: b.window)
+        #expect(b.wc.current == 1)
+        #expect(b.window.makeFirstResponder(b.wc.view.list))
+        try press(18, "1", [.option], in: b.window)
+        #expect(b.wc.current == 0)
+        #expect(b.window.makeFirstResponder(b.wc.view.list))
+        try select("a.txt", in: b)
+        let before = Set(NSApp.windows.map(ObjectIdentifier.init))
+        try press(36, "\r", [.option], in: b.window)
+        let shown = await eventually { NSApp.windows.contains { !before.contains(ObjectIdentifier($0)) && $0 is PropertiesPanel } }
+        #expect(shown)
+        for w in NSApp.windows where !before.contains(ObjectIdentifier(w)) && w is PropertiesPanel { w.close() }
     }
 }

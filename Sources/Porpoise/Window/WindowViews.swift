@@ -57,10 +57,11 @@ final class DolphinWindow: NSWindow {
 
     /// Tab and ⇧Tab move along the defined order from any view that doesn't take Tab itself (the file list, Places and
     /// the custom controls pass it on, and AppKit then went nowhere). Text fields and the terminal keep their Tab.
-    /// Esc in the terminal at its prompt goes back to the list (the terminal view takes every key itself).
+    /// Esc in the terminal at its prompt goes back to the list (the terminal view takes every key itself). A menu item's
+    /// key without ⌘ or ⌃ runs that item (`performMenuKey`).
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, let wc = windowController as? MainWindowController {
-            if wc.leaveTerminalOnEscape(event) { return }
+            if wc.leaveTerminalOnEscape(event) || wc.performMenuKey(event) { return }
             let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
             if event.keyCode == 48, mods.isEmpty || mods == [.shift], !(firstResponder is NSText),
                 firstResponder !== wc.terminal.terminalView, selectKeyView(backwards: mods == [.shift])

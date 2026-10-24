@@ -31,6 +31,50 @@ extension MainWindowController: NSMenuItemValidation {
             && event.charactersIgnoringModifiers == "\r"
     }
 
+    /// The menu bar's item for a key press, as its key equivalents stand now (the key set's, the user's bindings, the
+    /// custom tools').
+    static func menuItem(for event: NSEvent) -> NSMenuItem? {
+        let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        func find(_ menu: NSMenu) -> NSMenuItem? {
+            for item in menu.items {
+                if let submenu = item.submenu {
+                    if submenu !== NSApp.servicesMenu, let found = find(submenu) { return found }
+                    continue
+                }
+                if item.action != nil, item.keyEquivalentModifierMask.intersection([.command, .shift, .option, .control]) == mods,
+                    KeyEquivalent.matches(item.keyEquivalent, typed: event.charactersIgnoringModifiers)
+                {
+                    return item
+                }
+            }
+            return nil
+        }
+        return NSApp.mainMenu.flatMap(find)
+    }
+
+    /// Runs the menu item bound to a key press without ⌘, ⌃ or fn (Return, ⌥↩ Get Info, ⌥1 Tab 1…), as the menu bar
+    /// would: AppKit offers the menu bar only keys with ⌘, ⌃ or a function key (F2, ⌦, the arrows), and these would
+    /// otherwise reach the focused view alone. The item runs
+    /// on the first responder that takes its action, if that enables it (so keys stay with a field being typed in);
+    /// commands that change files only while the files have focus. False when no item takes the key.
+    func performMenuKey(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown, event.modifierFlags.intersection([.command, .control]).isEmpty,
+            let item = Self.menuItem(for: event), let action = item.action, let window
+        else { return false }
+        if Self.changesFiles.contains(action), !(window.firstResponder is ItemListView) { return false }
+        var responder = window.firstResponder
+        while let r = responder, !r.responds(to: action) { responder = r.nextResponder }
+        guard let target = item.target ?? responder ?? (NSApp.responds(to: action) ? NSApp : nil) else { return false }
+        let enabled =
+            (target as? NSMenuItemValidation)?.validateMenuItem(item) ?? (target as? NSUserInterfaceValidations)?.validateUserInterfaceItem(item)
+            ?? item.isEnabled
+        guard enabled else { return false }
+        return Self.sendMenuAction(action, target, item)
+    }
+
+    /// How `performMenuKey` runs an item (tests record it instead).
+    static var sendMenuAction: (Selector, Any, NSMenuItem) -> Bool = { NSApp.sendAction($0, to: $1, from: $2) }
+
     static let noSplitInColumns = "Column view shows one pane. Choose another view to split the window."
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
