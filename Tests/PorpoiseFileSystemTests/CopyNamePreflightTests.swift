@@ -33,7 +33,7 @@ struct CopyNamePreflightTests {
         #expect(s.read("second/._ordinary") == "user sidecar bytes")
     }
 
-    @Test(arguments: ["ExFAT", "MS-DOS FAT32"], [("Foo", "._foo"), ("É", "._é"), ("I", "._ı")])
+    @Test(arguments: ["ExFAT", "MS-DOS FAT32"], [("Foo", "._foo"), ("É", "._é")])
     func plannedPairsUseTheDrivesCaseInsensitiveNames(_ fileSystem: String, _ pair: (String, String)) throws {
         let s = try Scratch(), disk = try DiskImage(name: "PPNAMES", megabytes: 64, fileSystem: fileSystem, in: s)
         let source = try s.folder("tree"), probe = disk.volume.appendingPathComponent("case-probe")
@@ -47,6 +47,22 @@ struct CopyNamePreflightTests {
         #expect(job.errors.contains { $0.contains("reserved for file metadata") && $0.contains(pair.1) })
         #expect(!FileJob.itemExists(at: disk.volume.appendingPathComponent("tree")))
         #expect(s.read("tree/" + pair.1) == "user sidecar bytes")
+    }
+
+    @Test(arguments: ["ExFAT", "MS-DOS FAT32"])
+    func unicodeNamesThatTheDriveKeepsDistinctAreAllowed(_ fileSystem: String) throws {
+        let s = try Scratch(), disk = try DiskImage(name: "PPNAMES", megabytes: 64, fileSystem: fileSystem, in: s)
+        let source = try s.folder("tree"), probe = disk.volume.appendingPathComponent("case-probe")
+        try FileManager.default.createDirectory(at: probe, withIntermediateDirectories: false)
+        try Data().write(to: probe.appendingPathComponent("I"))
+        #expect(!FileJob.itemExists(at: probe.appendingPathComponent("ı")))
+        try s.file("tree/I", "ordinary bytes")
+        try s.file("tree/._ı", "user sidecar bytes")
+        let job = FileJob(kind: .copy, sources: [source], destinationFolder: disk.volume)
+        _ = try job.run()
+        #expect(job.errors.isEmpty && job.denied.isEmpty, "\(job.errors)")
+        #expect(try String(contentsOf: disk.volume.appendingPathComponent("tree/I"), encoding: .utf8) == "ordinary bytes")
+        #expect(try String(contentsOf: disk.volume.appendingPathComponent("tree/._ı"), encoding: .utf8) == "user sidecar bytes")
     }
 
     @Test(arguments: ["ExFAT", "MS-DOS FAT32"], [false, true])

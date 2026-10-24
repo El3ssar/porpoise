@@ -73,10 +73,10 @@ public enum CopyNamePreflight {
         )
     }
     private static let nameLocale = Locale(identifier: "en_US_POSIX")
-    /// FAT-family names are case insensitive. Uppercase before folding also covers dotless-I variants;
-    /// retain the original sidecar spelling separately for the refusal message.
+    /// Use locale-stable case folding, retaining original spelling for messages. I and dotless ı
+    /// remain distinct, as on the actual FAT/exFAT volumes.
     private static func nameKey(_ name: String) -> String {
-        name.uppercased(with: nameLocale).folding(options: .caseInsensitive, locale: nameLocale)
+        name.folding(options: .caseInsensitive, locale: nameLocale)
     }
     private static func isPackedMetadataVolume(_ folder: URL) -> Bool {
         guard folder.isFileURL else { return false }
