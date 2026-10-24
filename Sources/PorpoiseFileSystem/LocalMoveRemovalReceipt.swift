@@ -90,9 +90,12 @@ public struct LocalMoveRemovalReceipt {
         defer { _ = rmdir(holding.path) }
         let claimed = holding.appendingPathComponent(source.lastPathComponent)
         try onCheckpoint(.claimed(holding: holding, source: source, target: target, verified: false))
-        guard renamex_np(source.path, claimed.path, UInt32(RENAME_EXCL)) == 0 else {
-            try? onCheckpoint(.finished(holding: holding))
-            throw Self.posix()
+        do { try FilePublication.renameExclusively(source, to: claimed) } catch {
+            if rmdir(holding.path) == 0 {
+                try? onCheckpoint(.finished(holding: holding))
+                throw error
+            }
+            throw Retained(at: holding, detail: error.localizedDescription)
         }
         var deleting = false
         do {
@@ -112,7 +115,7 @@ public struct LocalMoveRemovalReceipt {
             if deleting {
                 throw Retained(at: holding, remaining: true, detail: error.localizedDescription)
             }
-            if renamex_np(claimed.path, source.path, UInt32(RENAME_EXCL)) != 0 {
+            do { try FilePublication.renameExclusively(claimed, to: source) } catch {
                 throw Retained(at: claimed, detail: error.localizedDescription)
             }
             if rmdir(holding.path) == 0 { try? onCheckpoint(.finished(holding: holding)) }
@@ -134,7 +137,7 @@ public struct LocalMoveRemovalReceipt {
         else { throw failure }
         try checkTarget(path)
         if expected.directory {
-            let names = try CopyVerification.directoryNames(url.path)
+            let names = try CopyVerification.contentNames(CopyVerification.directoryNames(url.path), at: url)
             for name in names {
                 let childPath = path + "/" + name
                 let child = url.appendingPathComponent(name)
@@ -145,7 +148,7 @@ public struct LocalMoveRemovalReceipt {
                     childExpected.sameGeneration(as: try Self.entry(at: child))
                 else { throw failure }
                 let owned = holding.appendingPathComponent(UUID().uuidString)
-                guard renamex_np(child.path, owned.path, UInt32(RENAME_EXCL)) == 0 else { throw Self.posix() }
+                try FilePublication.renameExclusively(child, to: owned)
                 do {
                     let renamed = try Self.entry(at: owned)
                     guard childExpected.sameGeneration(as: renamed, renamed: true) else { throw failure }
@@ -155,7 +158,7 @@ public struct LocalMoveRemovalReceipt {
                         renamedEntry: Entry(info: renamed.info, contents: capturedChild.contents),
                         linkedGenerations: &linkedGenerations, checkTarget: checkTarget)
                 } catch {
-                    if renamex_np(owned.path, child.path, UInt32(RENAME_EXCL)) != 0 {
+                    do { try FilePublication.renameExclusively(owned, to: child) } catch {
                         throw Retained(at: owned, detail: error.localizedDescription)
                     }
                     throw error
@@ -209,10 +212,10 @@ public struct LocalMoveRemovalReceipt {
         defer { _ = rmdir(holding.path) }
         let claimed = holding.appendingPathComponent(source.lastPathComponent)
         try onCheckpoint(.claimed(holding: holding, source: source, target: nil, verified: false))
-        guard renamex_np(source.path, claimed.path, UInt32(RENAME_EXCL)) == 0 else { throw Self.posix() }
+        try FilePublication.renameExclusively(source, to: claimed)
         let actual = try? Self.entry(at: claimed)
         guard actual?.info.st_dev == expected.info.st_dev, actual?.info.st_ino == expected.info.st_ino, rmdir(claimed.path) == 0 else {
-            if renamex_np(claimed.path, source.path, UInt32(RENAME_EXCL)) != 0 {
+            do { try FilePublication.renameExclusively(claimed, to: source) } catch {
                 throw Retained(at: claimed)
             }
             if rmdir(holding.path) == 0 { try? onCheckpoint(.finished(holding: holding)) }
@@ -248,7 +251,9 @@ public struct LocalMoveRemovalReceipt {
             case S_IFDIR:
                 contents = "directory"
                 if recursive {
-                    for name in try CopyVerification.directoryNames(url.path).sorted() {
+                    let all = try CopyVerification.directoryNames(url.path)
+                    let names = original == nil ? CopyVerification.contentNames(all, at: url) : all
+                    for name in names.sorted() {
                         let next = path + "/" + name
                         if let original, original[next] == nil, name.hasPrefix("._"),
                             original[path + "/" + name.dropFirst(2)] != nil,
