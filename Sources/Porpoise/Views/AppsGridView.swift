@@ -64,6 +64,8 @@ final class AppsGridView: NSView, NSDraggingSource {
     /// Some tile was drawn from a stand-in: the next frame renders more.
     private var tilesPending = false
     private var names: [URL: (text: String, width: CGFloat)] = [:]
+    /// The drag being held over the library, and whether its apps are on the library's volume.
+    private var installVolumes: (sequence: Int, same: Bool)?
     private var observers: [NSObjectProtocol] = []
 
     /// Where each shown app's cell is, after the last layout (an animation moves the drawing toward these).
@@ -814,10 +816,21 @@ final class AppsGridView: NSView, NSDraggingSource {
 
     private func installOperation(_ sender: NSDraggingInfo, _ apps: [URL]) -> NSDragOperation {
         guard !apps.isEmpty else { return [] }
-        // Finder's rule: same volume moves, another volume (a disk image) copies; Option always copies.
-        let vol = { (u: URL) in try? u.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier as? NSObject }
-        let sameVolume = apps.allSatisfy { vol($0) == vol(AppLibrary.location) }
-        return NSEvent.modifierFlags.contains(.option) || !sameVolume ? .copy : .move
+        // Asked once per drag (the volumes don't change while it's held), not on every move of the pointer.
+        if installVolumes?.sequence != sender.draggingSequenceNumber {
+            let vol = { (u: URL) in try? u.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier as? NSObject }
+            let library = vol(AppLibrary.location)
+            installVolumes = (sender.draggingSequenceNumber, apps.allSatisfy { vol($0) == library })
+        }
+        return Self.installOperation(sameVolume: installVolumes?.same ?? false, modifiers: DropTargetPolicy.heldModifiers())
+    }
+
+    /// Finder's rule, as every other drop target here: the same volume moves, another (a disk image) copies; ⌥ always
+    /// copies, ⌘ always moves.
+    static func installOperation(sameVolume: Bool, modifiers: NSEvent.ModifierFlags) -> NSDragOperation {
+        if modifiers.contains(.option) { return .copy }
+        if modifiers.contains(.command) { return .move }
+        return sameVolume ? .move : .copy
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { installOperation(sender, droppedApps(sender)) }

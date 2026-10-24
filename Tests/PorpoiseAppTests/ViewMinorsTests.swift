@@ -247,4 +247,66 @@ import Testing
         try FileManager.default.removeItem(at: s.path("Here/Old"))
         #expect(await eventually { node(s.path("Here/Old")) == nil })
     }
+
+    /// #15: a double-click on one of several selected items opens them all (Finder); one click on it, left alone,
+    /// still makes it the only one.
+    @Test func aDoubleClickOnTheSelectionOpensItAll() async throws {
+        let s = try Scratch("double-click")
+        for n in ["a.txt", "b.txt", "c.txt"] { try s.file(n, n) }
+        let model = DirectoryModel(location: s.url, prefetchFolders: false)
+        model.reload()
+        try #require(await eventually { !model.isLoading && model.rows.count == 3 })
+        let list = ItemListView(model: model)
+        let opener = Opener()
+        list.delegate = opener
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let scroll = NSScrollView(frame: window.contentView!.bounds)
+        scroll.documentView = list
+        window.contentView = scroll
+        defer { window.close() }
+        list.frame = scroll.bounds
+        list.computeLayout()
+        let saved = ItemListView.doubleClickInterval
+        ItemListView.doubleClickInterval = { 0.2 }
+        defer { ItemListView.doubleClickInterval = saved }
+        func click(_ type: NSEvent.EventType, count: Int) throws {
+            let f = list.frames[0]
+            let e = try #require(
+                NSEvent.mouseEvent(
+                    with: type, location: list.convert(CGPoint(x: f.midX, y: f.midY), to: nil), modifierFlags: [], timestamp: 0,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: count, pressure: 1))
+            if type == .leftMouseDown { list.mouseDown(with: e) } else { list.mouseUp(with: e) }
+        }
+        model.selection = Set(model.rows.map(\.item.url))
+        try click(.leftMouseDown, count: 1); try click(.leftMouseUp, count: 1)
+        #expect(model.selection.count == 3)  // not yet: it may be a double-click
+        try click(.leftMouseDown, count: 2); try click(.leftMouseUp, count: 2)
+        #expect(opener.opened.map { Set($0.map(\.name)) } == [["a.txt", "b.txt", "c.txt"]])
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(model.selection.count == 3)  // the collapse was called off
+        try click(.leftMouseDown, count: 1); try click(.leftMouseUp, count: 1)
+        #expect(await eventually { model.selection == [model.rows[0].item.url] })
+    }
+
+    /// #15: dropping apps on the library follows the same modifiers as every other drop target.
+    @Test func installDropsFollowTheModifiers() {
+        #expect(AppsGridView.installOperation(sameVolume: true, modifiers: []) == .move)
+        #expect(AppsGridView.installOperation(sameVolume: false, modifiers: []) == .copy)
+        #expect(AppsGridView.installOperation(sameVolume: true, modifiers: .option) == .copy)
+        #expect(AppsGridView.installOperation(sameVolume: false, modifiers: .command) == .move)
+    }
+
+    private final class Opener: ItemListViewDelegate {
+        var opened: [[FileItem]] = []
+        func itemList(_ view: ItemListView, open items: [FileItem], inNewTab: Bool) { opened.append(items) }
+        func itemList(_ view: ItemListView, menuFor item: FileItem?) -> NSMenu? { nil }
+        func itemList(_ view: ItemListView, drop urls: [URL], onto folder: URL, operation: NSDragOperation, event: NSEvent?) {}
+        func itemList(_ view: ItemListView, rename item: FileItem, to name: String) {}
+        func itemListDidBecomeActive(_ view: ItemListView) {}
+        func itemList(_ view: ItemListView, hovered item: FileItem?) {}
+        func itemListBackgroundDoubleClicked(_ view: ItemListView) {}
+        func itemList(_ view: ItemListView, middleClicked item: FileItem) {}
+        func itemListQuickLook(_ view: ItemListView) {}
+    }
 }

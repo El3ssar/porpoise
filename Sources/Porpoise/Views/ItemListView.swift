@@ -97,6 +97,11 @@ final class ItemListView: NSView {
     var mouseDownSelectedBefore = false
     /// The items being opened come from a double-click (Column view starts its columns at a double-clicked folder).
     var openingByDoubleClick = false
+    /// A click on one of several selected items selects just it after the double-click interval, unless a second
+    /// click (a double-click: open them all) comes first.
+    var pendingCollapse: DispatchWorkItem?
+    /// The system's double-click interval (tests shorten it).
+    nonisolated(unsafe) static var doubleClickInterval: () -> TimeInterval = { NSEvent.doubleClickInterval }
     var cloudRefreshPending = false
     var typeAhead = ""
     var typeAheadTime = Date.distantPast

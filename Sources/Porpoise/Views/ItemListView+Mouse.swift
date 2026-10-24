@@ -110,7 +110,12 @@ extension ItemListView {
                 if expanderRect(i)?.contains(p) == true { return }
                 openingByDoubleClick = true
                 defer { openingByDoubleClick = false }
-                delegate?.itemList(self, open: [model.rows[i].item], inNewTab: false)
+                // On one of the selected items: all of them (the first click's collapse to it hadn't happened yet).
+                pendingCollapse?.cancel()
+                pendingCollapse = nil
+                let item = model.rows[i].item
+                let items = model.selection.contains(item.url) && model.selection.count > 1 ? model.selectedItems : [item]
+                delegate?.itemList(self, open: items, inNewTab: false)
             } else {
                 delegate?.itemListBackgroundDoubleClicked(self)
             }
@@ -207,12 +212,25 @@ extension ItemListView {
             needsDisplay = true
             return
         }
-        // Click on an already selected item without modifiers: select just that one.
-        if let pressed = mouseDownURL, let i = model.index(of: pressed), event.clickCount == 1, !event.modifierFlags.contains(.command),
+        // Click on an already selected item without modifiers: select just that one, once it's clear the click isn't
+        // the first of a double-click (Finder: a double-click on one of the selected items opens them all).
+        if let pressed = mouseDownURL, model.index(of: pressed) != nil, event.clickCount == 1, !event.modifierFlags.contains(.command),
             !event.modifierFlags.contains(.shift)
         {
-            selecting.clickEnded(i, wasSelected: mouseDownSelectedBefore)
-            needsDisplay = true
+            let wasSelected = mouseDownSelectedBefore
+            let collapse = DispatchWorkItem { [weak self] in
+                guard let self, let i = self.model.index(of: pressed) else { return }
+                self.pendingCollapse = nil
+                self.selecting.clickEnded(i, wasSelected: wasSelected)
+                self.needsDisplay = true
+            }
+            pendingCollapse?.cancel()
+            if wasSelected && model.selection.count > 1 {
+                pendingCollapse = collapse
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.doubleClickInterval(), execute: collapse)
+            } else {
+                collapse.perform()
+            }
         }
         mouseDownURL = nil
     }
