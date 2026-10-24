@@ -166,7 +166,8 @@ extension PlacesPanel {
         } else {
             let name = e.icon == "user-trash" && trashIsFull() ? "user-trash-full" : e.icon
             let solid = current && hasKeyFocus
-            if let img = Icons.shared.image(name, size: iconSize, selected: Tokens.isNative ? solid : current, folder: e.url.isFileURL && !e.isVolume)
+            if let img = Icons.shared.image(
+                name, size: iconSize, selected: Tokens.isNative ? solid : current, folder: e.url.isFileURL && !e.isVolume, symbols: false)
             {
                 if Tokens.isNative && current && !solid {
                     drawTinted(img, in: iconRect, color: Theme.accent, alpha: alpha)
@@ -193,7 +194,7 @@ extension PlacesPanel {
         if e.isVolume, let c = capacities[e.url], c.total > 0 {
             CapacityBar.draw(fraction: c.fraction, in: CGRect(x: tx, y: ty + lh + 4, width: r.width - tx - 16 - ejectW, height: 3))
         }
-        if e.isEjectable, let img = Icons.shared.image("media-eject", size: Metrics.ejectIconSize) {
+        if e.isEjectable, let img = Icons.shared.image("media-eject", size: Metrics.ejectIconSize, symbols: false) {
             let s = Metrics.ejectIconSize
             img.draw(
                 in: CGRect(x: r.maxX - Metrics.ejectIconRightOffset, y: r.minY + (rowHeight - s) / 2, width: s, height: s),

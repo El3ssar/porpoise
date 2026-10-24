@@ -193,7 +193,7 @@ private final class AutomationTransferDetails: NSScrollView {
         let field = NSTextView(frame: bounds)
         field.isEditable = false
         field.isRichText = false
-        field.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        field.font = Tokens.font(.mono)
         field.textContainerInset = NSSize(width: 8, height: 8)
         field.isVerticallyResizable = true
         field.isHorizontallyResizable = false

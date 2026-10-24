@@ -31,7 +31,7 @@ final class CodePreviewView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius = 8
+        layer?.cornerRadius = Tokens.Radius.medium
         layer?.masksToBounds = true
         textView.isEditable = false
         textView.isSelectable = true
@@ -49,7 +49,7 @@ final class CodePreviewView: NSView {
         scrollView.contentView.clipsToBounds = true
         scrollView.hasVerticalScroller = true
         scrollView.documentView = textView
-        note.font = .systemFont(ofSize: 11)
+        note.font = Tokens.font(.footnote)
         note.textColor = .secondaryLabelColor
         note.lineBreakMode = .byTruncatingTail
         addSubview(scrollView)
@@ -134,7 +134,7 @@ final class CodePreviewView: NSView {
             colors[kind] = Self.syntaxColor(kind).usingColorSpace(.sRGB) ?? Self.syntaxColor(kind)
         }
         let style = TextStyle(
-            font: .monospacedSystemFont(ofSize: 12, weight: .regular),
+            font: Tokens.font(.mono),
             base: Self.color(Self.palette.text), colors: colors)
         isLoading = true
         rendering = Task { @MainActor [weak self] in

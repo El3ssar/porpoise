@@ -178,12 +178,17 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
             child.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(child)
         }
+        // The label sits on the value's first baseline (a field, a pop-up, a checkbox, wrapped text), or on its middle
+        // when it has no text (the tag dots), as System Settings lines up its rows.
+        let alignment =
+            v is NSControl
+            ? l.firstBaselineAnchor.constraint(equalTo: v.firstBaselineAnchor) : l.centerYAnchor.constraint(equalTo: v.centerYAnchor)
         NSLayoutConstraint.activate([
             l.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             l.widthAnchor.constraint(equalToConstant: 110),
-            l.topAnchor.constraint(equalTo: container.topAnchor),
+            alignment,
             l.heightAnchor.constraint(equalToConstant: 18),
-            v.leadingAnchor.constraint(equalTo: l.trailingAnchor, constant: 8),
+            v.leadingAnchor.constraint(equalTo: l.trailingAnchor, constant: Tokens.Space.s),
             v.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             v.topAnchor.constraint(equalTo: container.topAnchor),
             v.bottomAnchor.constraint(equalTo: container.bottomAnchor),
@@ -209,10 +214,11 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
     }
 
     /// The item's own picture (a photo, a PDF page), as Finder's Get Info shows it, once Thumbnails has made it.
-    private func showThumbnail(of item: FileItem, in view: NSImageView) {
+    private func showThumbnail(of item: FileItem, in view: PreviewImageView) {
         guard Thumbnails.wantsPreview(item) else { return }
         if let image = Thumbnails.shared.thumbnail(for: item, size: 128, exact: true) {
             view.image = image
+            view.isPicture = true
             return
         }
         thumbnailObserver = NotificationCenter.default.addObserver(forName: Thumbnails.ready, object: nil, queue: .main) {
@@ -220,6 +226,7 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
             guard (n.object as? URL) == item.url, let view, let image = Thumbnails.shared.thumbnail(for: item, size: 128, exact: true)
             else { return }
             view.image = image
+            view.isPicture = true
             if let o = self?.thumbnailObserver { NotificationCenter.default.removeObserver(o) }
             self?.thumbnailObserver = nil
         }
@@ -229,7 +236,7 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
         let v = NSView(frame: CGRect(x: 0, y: 0, width: 400, height: 600))
         var y: CGFloat = 572
         let items = localItems
-        let icon = NSImageView(frame: CGRect(x: 20, y: y - 40, width: 64, height: 64))
+        let icon = PreviewImageView(frame: CGRect(x: 20, y: y - 40, width: 64, height: 64))
         icon.autoresizingMask = [.minYMargin]
         icon.image = items.count == 1 ? Icons.shared.image(for: items[0], size: 64) : Icons.shared.image("document-multiple", size: 64)
         if items.count == 1 { showThumbnail(of: items[0], in: icon) }

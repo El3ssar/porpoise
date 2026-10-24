@@ -32,7 +32,7 @@ final class FileDiffImageView: NSView {
         let canvas = NSRect(
             x: rect.midX - maxW * scale / 2 + pan.x, y: rect.midY - maxH * scale / 2 + pan.y, width: maxW * scale, height: maxH * scale)
         NSGraphicsContext.saveGraphicsState(); rect.clip()
-        let frame = NSBezierPath(roundedRect: canvas, xRadius: 6, yRadius: 6)
+        let frame = NSBezierPath(roundedRect: canvas, xRadius: Tokens.Radius.row, yRadius: Tokens.Radius.row)
         NSGraphicsContext.saveGraphicsState(); frame.addClip()
         (difference ? NSColor.black : Theme.viewBackground).setFill(); canvas.fill()
         for (image, alpha) in layers {

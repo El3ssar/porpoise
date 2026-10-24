@@ -14,6 +14,7 @@ extension Theme {
     /// Gives a checkbox or radio button the palette's box (once: the box follows the palette by itself).
     static func dressChoice(_ button: NSButton) {
         guard !(button.image is ChoiceImage) else { return }
+        choiceImages.setObject(ChoiceOriginal(button.image, button.alternateImage), forKey: button)
         let radio = button.cell?.accessibilityRole() == .radioButton
         button.image = ChoiceImage(radio: radio, on: false)
         button.alternateImage = ChoiceImage(radio: radio, on: true)
@@ -29,6 +30,37 @@ extension Theme {
         for column in table.tableColumns where !(column.headerCell is ThemedHeaderCell) {
             let old = column.headerCell
             let cell = ThemedHeaderCell(textCell: old.stringValue)
+            cell.alignment = old.alignment
+            cell.font = old.font
+            cell.lineBreakMode = old.lineBreakMode
+            column.headerCell = cell
+        }
+    }
+
+    /// A checkbox or radio button drawn by AppKit again (the native theme), with the images AppKit gave it.
+    static func undressChoice(_ button: NSButton) {
+        guard button.image is ChoiceImage else { return }
+        let original = choiceImages.object(forKey: button)
+        button.image = original?.image
+        button.alternateImage = original?.alternate
+        choiceImages.removeObject(forKey: button)
+    }
+
+    private final class ChoiceOriginal {
+        let image: NSImage?, alternate: NSImage?
+        init(_ image: NSImage?, _ alternate: NSImage?) { (self.image, self.alternate) = (image, alternate) }
+    }
+
+    /// Each dressed checkbox's and radio button's own images, to give back in the native theme.
+    private static let choiceImages = NSMapTable<NSButton, ChoiceOriginal>.weakToStrongObjects()
+
+    /// A table's header row drawn by AppKit again (the native theme).
+    static func undressHeader(_ table: NSTableView) {
+        guard let header = table.headerView as? ThemedHeaderView else { return }
+        table.headerView = NSTableHeaderView(frame: header.frame)
+        for column in table.tableColumns where column.headerCell is ThemedHeaderCell {
+            let old = column.headerCell
+            let cell = NSTableHeaderCell(textCell: old.stringValue)
             cell.alignment = old.alignment
             cell.font = old.font
             cell.lineBreakMode = old.lineBreakMode
@@ -56,7 +88,7 @@ final class ChoiceImage: NSImage {
 
     static func draw(in rect: NSRect, radio: Bool, on: Bool) {
         let box = rect.insetBy(dx: 0.5, dy: 0.5)
-        let path = radio ? NSBezierPath(ovalIn: box) : NSBezierPath(roundedRect: box, xRadius: 3, yRadius: 3)
+        let path = radio ? NSBezierPath(ovalIn: box) : NSBezierPath(roundedRect: box, xRadius: 3, yRadius: 3)  // Breeze's box corner (measured)
         path.lineWidth = 1
         if on {
             Theme.accent.setFill()
@@ -128,9 +160,11 @@ final class ThemedHeaderCell: NSTableHeaderCell {
     }
 }
 
-/// Settings' pages as toolbar tabs drawn in the palette: the selected one in its accent on a pressed background, the
-/// others in its text color (macOS draws the selected tab in its own accent, which can't be changed). Each tab is a
-/// button: it takes the keyboard focus, and VoiceOver reads it as a radio button among the tabs, selected or not.
+/// Settings' pages as toolbar tabs drawn in the theme's colours (the system's in the native theme): the selected one
+/// with its symbol in the accent on a pressed background. Each tab is a button: it takes the keyboard focus, and
+/// VoiceOver reads it as a radio button among the tabs, selected or not. They stay buttons in every theme: the theme
+/// changes while Settings is open, and a toolbar item can't give up its view again (AppKit traps on nil), nor can the
+/// tab view controller's items be swapped under it.
 final class ThemedTabViewController: NSTabViewController {
     private var buttons: [NSToolbarItem.Identifier: TabButton] = [:]
 
@@ -225,12 +259,14 @@ final class TabButton: NSButton {
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 50) }
 
     override func draw(_ dirtyRect: NSRect) {
+        // The selected tab's symbol takes the accent; its title stays in the text colour, which reads in every palette
+        // (accent-coloured text falls below 4.5:1 in several).
         let color = isSelected ? Theme.accent : Theme.windowText
         if isSelected || isHighlighted {
             (isHighlighted ? Theme.buttonPressedBackground : Theme.buttonHoverBackground).setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 6, yRadius: 6).fill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: Tokens.Radius.row, yRadius: Tokens.Radius.row).fill()
         }
-        let titleAttributes: [NSAttributedString.Key: Any] = [.font: Self.titleFont, .foregroundColor: color]
+        let titleAttributes: [NSAttributedString.Key: Any] = [.font: Self.titleFont, .foregroundColor: Theme.windowText]
         let size = (title as NSString).size(withAttributes: titleAttributes)
         let titleY = isFlipped ? bounds.maxY - size.height - 4 : bounds.minY + 4
         (title as NSString).draw(at: NSPoint(x: bounds.midX - size.width / 2, y: titleY), withAttributes: titleAttributes)
@@ -259,8 +295,19 @@ final class ThemedPopUpButtonCell: NSPopUpButtonCell {
             popUp.isBordered, popUp.bezelStyle == .push || popUp.bezelStyle == .flexiblePush
         else { return }
         object_setClass(cell, ThemedPopUpButtonCell.self)
-        // The control works out how its cell draws (macOS's layer, or the cell's drawing) when it is given one: give it
-        // the same cell again, so it draws ours from now on.
+        reattach(cell, to: popUp)
+    }
+
+    /// Makes `popUp` drawn by AppKit again (the native theme), keeping its cell as it is.
+    static func release(_ popUp: NSPopUpButton) {
+        guard let cell = popUp.cell as? ThemedPopUpButtonCell else { return }
+        object_setClass(cell, NSPopUpButtonCell.self)
+        reattach(cell, to: popUp)
+    }
+
+    /// The control works out how its cell draws (macOS's layer, or the cell's drawing) when it is given one: give it
+    /// the same cell again, so it draws the new way from now on.
+    private static func reattach(_ cell: NSPopUpButtonCell, to popUp: NSPopUpButton) {
         popUp.cell = NSPopUpButtonCell()
         popUp.cell = cell
         popUp.needsDisplay = true

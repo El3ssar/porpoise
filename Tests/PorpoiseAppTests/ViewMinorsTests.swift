@@ -56,6 +56,31 @@ import Testing
         (view as? NSTextField).map { [$0.stringValue] } ?? view.subviews.flatMap { text(in: $0) }
     }
 
+    /// W-270 (verifier2 #7561): an open Information panel follows Settings › font size: its name (title3, 15 pt at 13)
+    /// and its values (body) grow with it.
+    @Test func theInformationPanelFollowsTheFontSize() async throws {
+        let s = try Scratch("info-font")
+        let file = try s.file("named.txt", "x")
+        let pane = ViewContainer(url: s.url)
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = pane
+        defer { window.close() }
+        try #require(await eventually { !pane.model.isLoading && pane.model.rows.count == 1 })
+        let panel = InformationPanel(frame: CGRect(x: 0, y: 0, width: 300, height: 600))
+        window.contentView?.addSubview(panel)
+        pane.list.select(file)
+        panel.show(hovered: nil, container: pane)
+        func fields(_ v: NSView) -> [NSTextField] { ((v as? NSTextField).map { [$0] } ?? []) + v.subviews.flatMap(fields) }
+        func nameSize() -> CGFloat? { fields(panel).first { $0.stringValue == "named.txt" }?.font?.pointSize }
+        try #require(await eventually { nameSize() != nil })
+        #expect(nameSize() == 15)
+        Settings.shared.updateAppearance { $0.uiFontSize = 16 }
+        panel.refresh()
+        #expect(await eventually { nameSize() == 18 })
+        #expect(await eventually { fields(panel).contains { $0.stringValue.hasSuffix(":") && $0.font?.pointSize == 16 } })
+    }
+
     /// #7: a file that changes while it stays selected (a download growing) shows its new size once it's listed again.
     @Test func theInformationPanelFollowsAChangedFile() async throws {
         let s = try Scratch("info-follows")

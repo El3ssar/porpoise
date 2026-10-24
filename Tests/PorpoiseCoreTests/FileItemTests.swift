@@ -46,7 +46,7 @@ import Testing
 
     @Test func defaultsDependOnPreviews() {
         var p = ViewProperties()
-        #expect(p.iconSize(for: .icons) == 64 && p.iconSize(for: .details) == 32)
+        #expect(p.iconSize(for: .icons) == 64 && p.iconSize(for: .details) == 20 && p.iconSize(for: .compact) == 24)
         p.previews = false
         #expect(p.iconSize(for: .icons) == 32 && p.iconSize(for: .details) == 16)
     }
@@ -74,7 +74,7 @@ import Testing
         #expect(Set(ViewMode.allCases.map(\.iconName)).count == 4)
         #expect(ViewMode.allCases.map(\.defaultZoom) == [2, 0, 0, 0])
         // Column view keeps Finder's 16 pt rows with previews on too.
-        #expect(ViewMode.allCases.map(\.defaultPreviewZoom) == [4, 2, 2, 0])
+        #expect(ViewMode.allCases.map(\.defaultPreviewSize) == [64, 24, 20, 16])
         #expect(Set(ItemRole.allCases.map(\.title)).count == ItemRole.allCases.count)
         #expect(Set(ItemRole.menuRoles + ItemRole.otherRoles) == Set(ItemRole.allCases))
         #expect(ItemRole.name.orderLabels.ascending == "A-Z" && ItemRole.size.orderLabels.descending == "Largest First")

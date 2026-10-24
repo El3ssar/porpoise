@@ -131,8 +131,8 @@ public struct AppearancePreferences: Codable, Equatable, Sendable {
     public var fileFontSize = 13.0
     public var density = ViewDensity.normal
     public var iconsSize = 64
-    public var compactSize = 32
-    public var detailsSize = 32
+    public var compactSize = 24
+    public var detailsSize = 20
     public var shell = ShellChoice.login
     public var customShell = "/bin/zsh"
     public var shellArguments: [String] = []

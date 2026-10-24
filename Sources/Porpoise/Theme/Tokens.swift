@@ -17,8 +17,20 @@ enum Tokens {
     /// The selection in the focused view: macOS's, which follows the accent colour.
     static var selection: NSColor { accentOverride ?? .selectedContentBackgroundColor }
 
-    /// The selection in a view that isn't focused, or a window that isn't key.
-    static let unemphasizedSelection = NSColor.unemphasizedSelectedContentBackgroundColor
+    /// The selection in a view that isn't focused, or a window that isn't key: macOS's grey. In dark it is only about
+    /// 1.5:1 against the alternate rows, so it is lightened until it stands out from both rows by 1.8:1.
+    static let unemphasizedSelection = NSColor(name: nil) { appearance in
+        var c = NSColor.unemphasizedSelectedContentBackgroundColor
+        appearance.performAsCurrentDrawingAppearance {
+            let system = opaque(.unemphasizedSelectedContentBackgroundColor)
+            let rows = [opaque(.controlBackgroundColor), opaque(color(.alternateRow))]
+            c = appearance.isDark ? distinct(system, from: rows, toward: .white, ratio: 1.8) : system
+        }
+        return c
+    }
+
+    /// Behind a selected item's icon in Icons view (Finder's neutral backing): the accent goes behind the name only.
+    static let iconSelectionBacking = NSColor.quaternaryLabelColor
 
     /// The system colour for each theme role.
     static func color(_ role: ThemeRole) -> NSColor {
@@ -95,7 +107,45 @@ enum Tokens {
     static let warning = NSColor.systemOrange
     static let danger = NSColor.systemRed
 
-    /// Type sizes for 13 pt body text, scaled with Settings › font size (`scaled`).
+    /// The type scale (DESIGN-CONTRACT §2): each style's size at 13 pt and its weight.
+    enum TextStyle: CaseIterable {
+        case largeTitle, title, title2, title3, headline, body, callout, subheadline, footnote, caption, mono
+
+        var size: CGFloat {
+            switch self {
+            case .largeTitle: return FontSize.largeTitle
+            case .title: return FontSize.title
+            case .title2: return FontSize.title2
+            case .title3: return FontSize.title3
+            case .headline, .body: return FontSize.body
+            case .callout, .mono: return FontSize.callout
+            case .subheadline, .footnote: return FontSize.small
+            case .caption: return FontSize.caption
+            }
+        }
+
+        var weight: NSFont.Weight {
+            switch self {
+            case .largeTitle: return .bold
+            case .title, .title2, .title3, .headline, .subheadline: return .semibold
+            case .caption: return .medium
+            case .body, .callout, .footnote, .mono: return .regular
+            }
+        }
+    }
+
+    /// The system font in `style` (SF Mono for `.mono`). `scaled`: sized for Settings › font size, for the main
+    /// window's content (its views, panels and bars); secondary windows and dialogs keep macOS's sizes, as macOS's own
+    /// do. `weight` replaces the style's; `digits` gives numbers that change in place equal widths.
+    static func font(_ style: TextStyle, weight: NSFont.Weight? = nil, digits: Bool = false, scaled: Bool = false) -> NSFont {
+        let size = scaled ? FontSize.scaled(style.size) : style.size
+        let w = weight ?? style.weight
+        if style == .mono { return .monospacedSystemFont(ofSize: size, weight: w) }
+        return digits ? .monospacedDigitSystemFont(ofSize: size, weight: w) : .systemFont(ofSize: size, weight: w)
+    }
+
+    /// Type sizes for 13 pt body text (`TextStyle` is the API; these are its table), scaled with Settings › font size
+    /// (`scaled`).
     enum FontSize {
         static let caption: CGFloat = 10
         static let small: CGFloat = 11
@@ -113,19 +163,34 @@ enum Tokens {
 
     /// Corner radii: small controls, rows, cards, sheets.
     enum Radius {
+        /// Progress and capacity bars (height 6 or less).
+        static let xsmall: CGFloat = 2
+        /// Badges, tag chips, the rename field, focus masks of small controls.
         static let small: CGFloat = 4
         static let row: CGFloat = 6
+        /// Preview surfaces, cards inside sheets, the icon backing of a selected item in Icons view.
+        static let medium: CGFloat = 8
         static let card: CGFloat = 10
         static let sheet: CGFloat = 14
     }
 
-    /// Spacing steps.
-    enum Spacing {
+    /// The 4-pt spacing grid (DESIGN-CONTRACT §3).
+    enum Space {
+        /// Hairline gaps: a badge to its text, an icon to its overlay.
+        static let xxs: CGFloat = 2
+        /// Inside tight controls; a label to its inline badge.
         static let xs: CGFloat = 4
+        /// Related controls in a row; a label to its control; a cell's inner padding.
         static let s: CGFloat = 8
+        /// Rows of a form; a heading to its group.
         static let m: CGFloat = 12
+        /// A group's inner padding; between cards.
         static let l: CGFloat = 16
-        static let xl: CGFloat = 24
-        static let xxl: CGFloat = 32
+        /// Window and sheet content margins (HIG); between form groups.
+        static let xl: CGFloat = 20
+        /// Above a sheet's button row; empty-state blocks.
+        static let xxl: CGFloat = 24
+        /// Around hero empty states and onboarding.
+        static let xxxl: CGFloat = 32
     }
 }

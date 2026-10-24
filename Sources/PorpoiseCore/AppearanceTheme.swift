@@ -155,8 +155,9 @@ public struct AppearanceTheme: Codable, Equatable, Sendable {
         Self(name: "Breeze Dark", isDark: true, background: "1d212f", view: "181c27", text: "d6dbf1", accent: "4489ce", secondary: "b4bcda"),
         Self(name: "Nord", isDark: true, background: "2e3440", view: "242933", text: "eceff4", accent: "88c0d0", secondary: "d8dee9"),
         Self(name: "Dracula", isDark: true, background: "282a36", view: "21222c", text: "f8f8f2", accent: "bd93f9", secondary: "a5a8c2"),
-        Self(name: "Solarized Light", isDark: false, background: "eee8d5", view: "fdf6e3", text: "657b83", accent: "268bd2", secondary: "839496"),
-        Self(name: "Solarized Dark", isDark: true, background: "073642", view: "002b36", text: "93a1a1", accent: "2aa198", secondary: "839496"),
+        // Solarized's emphasised content tones, not its body ones: base00/base0 text is below 4.5:1 on its own backgrounds.
+        Self(name: "Solarized Light", isDark: false, background: "eee8d5", view: "fdf6e3", text: "073642", accent: "268bd2", secondary: "52666e"),
+        Self(name: "Solarized Dark", isDark: true, background: "073642", view: "002b36", text: "b8c4c2", accent: "2aa198", secondary: "93a1a1"),
         Self(name: "Gruvbox", isDark: true, background: "282828", view: "1d2021", text: "ebdbb2", accent: "fabd2f", secondary: "a89984"),
         Self(name: "Catppuccin", isDark: true, background: "1e1e2e", view: "181825", text: "cdd6f4", accent: "cba6f7", secondary: "a6adc8"),
         Self(name: "Tokyo Night", isDark: true, background: "1a1b26", view: "16161e", text: "c0caf5", accent: "7aa2f7", secondary: "a9b1d6"),

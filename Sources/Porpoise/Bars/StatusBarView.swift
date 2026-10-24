@@ -2,9 +2,6 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
-/// The type scale, shortened for the text styles in this file.
-private typealias FontSize = Tokens.FontSize
-
 /// Dolphin's status bar. Full width (default here): a thin translucent strip with folder/selection info on the left,
 /// the icon-size slider and a disk-space bar on the right. Small mode: Dolphin's floating box in the view's corner.
 final class StatusBarView: NSView {
@@ -42,7 +39,9 @@ final class StatusBarView: NSView {
     private static let diskBarWidth: CGFloat = 72
     private static let sliderWidth: CGFloat = 96
     private static let messageDuration: TimeInterval = 2.5
-    private static let diskFont = NSFont.systemFont(ofSize: FontSize.small)
+    private static let diskFont = Tokens.font(.footnote, digits: true)
+    /// The message, in both the full and the small bar (window chrome: macOS's size, not Settings' font size).
+    private static let messageFont = Tokens.font(.callout)
 
     override var isFlipped: Bool { true }
 
@@ -115,12 +114,12 @@ final class StatusBarView: NSView {
 
     private var textAttrs: [NSAttributedString.Key: Any] {
         let p = NSMutableParagraphStyle(); p.lineBreakMode = .byClipping
-        return [.font: NSFont.systemFont(ofSize: FontSize.callout), .foregroundColor: Theme.windowText.withAlphaComponent(0.88), .paragraphStyle: p]
+        return [.font: Self.messageFont, .foregroundColor: Theme.windowText.withAlphaComponent(0.88), .paragraphStyle: p]
     }
 
     /// Width the floating small bar needs.
     var smallWidth: CGFloat {
-        let w = (displayText as NSString).size(withAttributes: [.font: Theme.font]).width + 18
+        let w = (displayText as NSString).size(withAttributes: [.font: Self.messageFont]).width + 18
         return progress != nil ? max(w, 180) : w
     }
 
@@ -187,16 +186,16 @@ final class StatusBarView: NSView {
             let p = NSBezierPath(roundedRect: box, xRadius: Theme.frameRadius, yRadius: Theme.frameRadius)
             Theme.windowBackground.setFill(); p.fill()
             Theme.frame.setStroke(); p.lineWidth = 1; p.stroke()
-            let message = fittedMessage(width: r.width - 16, font: Theme.font)
-            let s = (message as NSString).size(withAttributes: [.font: Theme.font])
+            let message = fittedMessage(width: r.width - 16, font: Self.messageFont)
+            let s = (message as NSString).size(withAttributes: [.font: Self.messageFont])
             (message as NSString).draw(
                 in: CGRect(x: 8, y: (r.height - s.height) / 2, width: r.width - 16, height: s.height + 2),
-                withAttributes: [.font: Theme.font, .foregroundColor: Theme.windowText])
+                withAttributes: [.font: Self.messageFont, .foregroundColor: Theme.windowText])
             return
         }
         let attrs = textAttrs
         let tx: CGFloat = progress != nil ? 32 : 12
-        let message = fittedMessage(width: max(0, leftContentEnd - tx), font: .systemFont(ofSize: FontSize.callout))
+        let message = fittedMessage(width: max(0, leftContentEnd - tx), font: Self.messageFont)
         let s = (message as NSString).size(withAttributes: attrs)
         (message as NSString).draw(
             in: CGRect(x: tx, y: (r.height - s.height) / 2, width: max(0, leftContentEnd - tx), height: s.height + 2),

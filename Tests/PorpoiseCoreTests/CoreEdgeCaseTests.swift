@@ -212,7 +212,7 @@ private var utc: Calendar {
         p.setIconSize(1, for: .details)
         #expect(p.iconSize(for: .details) == ZoomLevels.minSize)
         p.resetIconSize(for: .details)
-        #expect(p.iconSize(for: .details) == ZoomLevels.iconSize(for: ViewMode.details.defaultPreviewZoom))
+        #expect(p.iconSize(for: .details) == ViewMode.details.defaultPreviewSize)
     }
 
     @Test func rolesNeverIncludeName() {

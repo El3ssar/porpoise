@@ -91,7 +91,7 @@ final class TabBarView: NSView {
     override var focusRingMaskBounds: NSRect { focused.map { $0 < rects.count ? rects[$0] : .zero } ?? .zero }
     override func drawFocusRingMask() {
         guard let i = focused, i < rects.count else { return }
-        NSBezierPath(roundedRect: rects[i].insetBy(dx: 2, dy: 3), xRadius: 6, yRadius: 6).fill()
+        NSBezierPath(roundedRect: rects[i].insetBy(dx: 2, dy: 3), xRadius: Tokens.Radius.row, yRadius: Tokens.Radius.row).fill()
     }
 
     override func keyDown(with event: NSEvent) {
@@ -168,7 +168,10 @@ final class TabBarView: NSView {
                 tabPath.stroke()
                 // Breeze's active-tab highlight line on top.
                 Theme.selectionAlternate.withAlphaComponent(0.85).setFill()
-                NSBezierPath(roundedRect: CGRect(x: r.minX + 4, y: r.minY, width: r.width - 8, height: 2), xRadius: 1, yRadius: 1).fill()
+                NSBezierPath(
+                    roundedRect: CGRect(x: r.minX + 4, y: r.minY, width: r.width - 8, height: 2), xRadius: Tokens.Radius.xsmall,
+                    yRadius: Tokens.Radius.xsmall
+                ).fill()
                 Theme.viewBackground.setFill()
                 CGRect(x: r.minX + 0.5, y: r.maxY - 1.5, width: r.width - 1, height: 2).fill()
             } else if hover == i || dropTab == i {
@@ -193,7 +196,7 @@ final class TabBarView: NSView {
                 if let d = dragging, d.index == i { cr.origin.x += d.offset }
                 if hoverClose == i {
                     Theme.windowText.withAlphaComponent(0.14).setFill()
-                    NSBezierPath(roundedRect: cr, xRadius: 4, yRadius: 4).fill()
+                    NSBezierPath(roundedRect: cr, xRadius: Tokens.Radius.small, yRadius: Tokens.Radius.small).fill()
                 }
                 let x = NSBezierPath()
                 let c = CGPoint(x: cr.midX, y: cr.midY), d: CGFloat = 3.5
@@ -207,7 +210,7 @@ final class TabBarView: NSView {
         }
         if hoverPlus {
             Theme.windowText.withAlphaComponent(0.08).setFill()
-            NSBezierPath(roundedRect: plusRect, xRadius: 6, yRadius: 6).fill()
+            NSBezierPath(roundedRect: plusRect, xRadius: Tokens.Radius.row, yRadius: Tokens.Radius.row).fill()
         }
         Icons.shared.image("list-add", size: 16)?.draw(
             in: plusRect.insetBy(dx: 4, dy: 4), from: .zero, operation: .sourceOver,

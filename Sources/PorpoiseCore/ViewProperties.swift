@@ -29,12 +29,14 @@ public enum ViewMode: String, Codable, CaseIterable, Sendable {
         }
     }
 
-    /// Default zoom level used when previews are on.
-    public var defaultPreviewZoom: Int {
+    /// Default icon size when previews are on: Finder's list sizes in Details and Compact (rows stay compact, thumbnails
+    /// don't touch), 64 in Icons; Column view keeps Finder's 16 pt rows, previews or not.
+    public var defaultPreviewSize: CGFloat {
         switch self {
-        case .icons: return 4  // 64 px
-        case .compact, .details: return 2  // 32 px
-        case .columns: return 0  // Finder's column rows stay 16 px, previews or not
+        case .icons: return 64
+        case .compact: return 24
+        case .details: return 20
+        case .columns: return 16
         }
     }
 }
@@ -125,8 +127,8 @@ public struct ViewProperties: Codable, Equatable, Sendable {
     /// Icon size in points (continuous, 16–256).
     public func iconSize(for mode: ViewMode) -> CGFloat {
         if let s = sizes[key(mode)] { return CGFloat(s) }
-        let level = zoom[key(mode)] ?? (previews ? mode.defaultPreviewZoom : mode.defaultZoom)
-        return ZoomLevels.iconSize(for: level)
+        if let level = zoom[key(mode)] { return ZoomLevels.iconSize(for: level) }
+        return previews ? mode.defaultPreviewSize : ZoomLevels.iconSize(for: mode.defaultZoom)
     }
 
     public mutating func setIconSize(_ size: CGFloat, for mode: ViewMode) {

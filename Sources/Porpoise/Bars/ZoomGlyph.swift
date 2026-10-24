@@ -19,7 +19,7 @@ final class ZoomGlyph: NSView {
     override var acceptsFirstResponder: Bool { KeyboardAccess.isFull() }
     override var canBecomeKeyView: Bool { acceptsFirstResponder && !isHiddenOrHasHiddenAncestor }
     override var focusRingMaskBounds: NSRect { bounds }
-    override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: 3, yRadius: 3).fill() }
+    override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: Tokens.Radius.small, yRadius: Tokens.Radius.small).fill() }
     override func keyDown(with event: NSEvent) {
         if [36, 49, 76].contains(Int(event.keyCode)) { onClick?() } else { super.keyDown(with: event) }
     }

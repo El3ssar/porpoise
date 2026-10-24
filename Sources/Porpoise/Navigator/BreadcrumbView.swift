@@ -117,7 +117,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     override var focusRingMaskBounds: NSRect { focused.map { i in i < segments.count ? segments[i].rect : .zero } ?? .zero }
     override func drawFocusRingMask() {
         guard let i = focused, i < segments.count else { return }
-        NSBezierPath(roundedRect: segments[i].rect.insetBy(dx: 0, dy: 2), xRadius: 6, yRadius: 6).fill()
+        NSBezierPath(roundedRect: segments[i].rect.insetBy(dx: 0, dy: 2), xRadius: Tokens.Radius.row, yRadius: Tokens.Radius.row).fill()
     }
 
     override func keyDown(with event: NSEvent) {
@@ -351,7 +351,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         for (i, s) in segments.enumerated() {
             let r = s.rect
             if hover == i || pressed == i || dropHover == i {
-                let p = NSBezierPath(roundedRect: r.insetBy(dx: 0, dy: 2), xRadius: 6, yRadius: 6)
+                let p = NSBezierPath(roundedRect: r.insetBy(dx: 0, dy: 2), xRadius: Tokens.Radius.row, yRadius: Tokens.Radius.row)
                 (pressed == i || dropHover == i ? Theme.selection.withAlphaComponent(0.55) : Theme.windowText.withAlphaComponent(0.10)).setFill()
                 p.fill()
             }

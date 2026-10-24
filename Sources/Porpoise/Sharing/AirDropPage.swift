@@ -26,10 +26,10 @@ final class AirDropPage: NSView {
         scroll.drawsBackground = false
         addSubview(scroll)
         for view in [icon, title, prompt, detail, chooseButton, selectionButton, hint] as [NSView] { content.addSubview(view) }
-        title.font = .systemFont(ofSize: 26, weight: .semibold)
-        prompt.font = .systemFont(ofSize: 17, weight: .medium)
-        detail.font = .systemFont(ofSize: 13)
-        hint.font = .systemFont(ofSize: 12)
+        title.font = Tokens.font(.largeTitle, weight: .semibold)
+        prompt.font = Tokens.font(.title2, weight: .medium)
+        detail.font = Tokens.font(.body)
+        hint.font = Tokens.font(.callout)
         for label in [title, prompt, detail, hint] { label.alignment = .center }
         for button in [chooseButton, selectionButton] { button.bezelStyle = .rounded; button.target = self }
         chooseButton.action = #selector(chooseFiles)

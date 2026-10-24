@@ -26,7 +26,7 @@ final class ToolbarView: NSView {
     private let actionGroup = GlassGroup()
     private let transferGroup = GlassGroup()
     let transfers = TransferToolbarButton()
-    private let fieldGroups = [GlassGroup(cornerRadius: 17), GlassGroup(cornerRadius: 17)]
+    private let fieldGroups = [GlassGroup(), GlassGroup()]
     /// Space left of the first capsule (room for the traffic lights when there is no sidebar).
     var leftInset: CGFloat = 84 { didSet { needsLayout = true } }
     /// Navigator areas aligned to the panes below (split view shows one per pane).
@@ -52,7 +52,7 @@ final class ToolbarView: NSView {
         viewMode.showsMenuIndicator = true
         viewMode.isSplitButton = true
         if !IconTheme.shared.has("application-menu") { hamburger.iconName = "open-menu-symbolic" }
-        for b in [back, forward, viewMode, split, search, hamburger] { b.iconSize = 18; b.cornerRadius = 13 }
+        for b in [back, forward, viewMode, split, search, hamburger] { b.iconSize = 18; b.cornerRadius = Self.buttonSize.height / 2 }
         hairline.wantsLayer = true
         Theme.whenChanged(hairline) { [weak hairline] in hairline?.layer?.backgroundColor = Theme.hairline.cgColor }
         addSubview(background)

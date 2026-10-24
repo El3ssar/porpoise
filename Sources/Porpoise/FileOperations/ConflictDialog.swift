@@ -94,7 +94,7 @@ final class ConflictDialog: NSObject {
 
         let strip = NSView(frame: CGRect(x: 20, y: 95, width: 580, height: 66))
         strip.wantsLayer = true
-        strip.layer?.cornerRadius = 8
+        strip.layer?.cornerRadius = Tokens.Radius.medium
         strip.layer?.borderWidth = 1
         Theme.whenChanged(strip) { [weak strip] in
             strip?.layer?.backgroundColor = Theme.activeText.withAlphaComponent(0.08).cgColor
@@ -104,7 +104,7 @@ final class ConflictDialog: NSObject {
         _ = label("⇄  Replace if different, skip if identical", CGRect(x: 32, y: 133, width: 388, height: 18), size: 12, weight: .semibold)
         method.font = .systemFont(ofSize: FontSize.small)
         method.controlSize = .small
-        method.frame = CGRect(x: 238, y: 103, width: 234, height: 24)
+        method.frame = CGRect(x: 238, y: 103, width: 210, height: 24)
         method.addItems(withTitles: Self.methodTitles(tolerance: info.comparisonOptions.timestampTolerance))
         method.selectItem(at: methods.firstIndex(of: info.comparisonOptions.method) ?? 0)
         method.target = self; method.action = #selector(methodChanged)
@@ -115,33 +115,34 @@ final class ConflictDialog: NSObject {
         method.toolTip = "Size & date compares metadata; Contents reads every byte."
         window.contentView!.addSubview(method)
         let total = info.remainingConflicts ?? 1
-        let rule = ConflictActionButton(title: total > 1 ? "Apply to All \(total)" : "Apply", target: self, action: #selector(different))
-        rule.font = .systemFont(ofSize: FontSize.small)
-        rule.bezelStyle = .rounded
-        rule.titleTint = Theme.activeText
-        rule.frame = CGRect(x: 482, y: 115, width: 108, height: 28)
+        let rule = NSButton(title: total > 1 ? "Apply to All \(total)" : "Apply", target: self, action: #selector(different))
+        rule.bezelStyle = .push
+        rule.sizeToFit()
+        // Right-aligned in the strip, as wide as its title needs ("Apply to All 120").
+        rule.frame = CGRect(x: 594 - rule.frame.width, y: 113, width: rule.frame.width, height: 32)
         window.contentView!.addSubview(rule)
         applyAll.title = total > 1 ? "Do this for the other \(total - 1) conflicts" : "Do this for later conflicts in this transfer"
         if total > 1 { _ = label("Conflict 1 of \(total)", CGRect(x: 470, y: 325 + height, width: 130, height: 18), size: 11, secondary: true) }
         applyAll.font = .systemFont(ofSize: FontSize.small)
         applyAll.frame = CGRect(x: 20, y: 63, width: 386, height: 22)
         window.contentView!.addSubview(applyAll)
+        // AppKit's own buttons: the default one in the accent, keyboard focus shown, Escape and Return as macOS has them.
         func button(_ title: String, x: CGFloat, width: CGFloat, action: Selector, key: String = "") -> NSButton {
-            let button = ConflictActionButton(title: title, target: self, action: action)
-            button.bezelStyle = .rounded
-            button.frame = CGRect(x: x, y: 19, width: width, height: 30)
+            let button = NSButton(title: title, target: self, action: action)
+            button.bezelStyle = .push
+            button.controlSize = .large
+            button.frame = CGRect(x: x, y: 16, width: width, height: 36)
             button.keyEquivalent = key
-            button.primary = key == "\r"
             window.contentView!.addSubview(button)
             return button
         }
-        _ = button(kind == .move ? "Stop Moving" : "Stop Copying", x: 16, width: 114, action: #selector(cancel), key: "\u{1b}")
+        _ = button(kind == .move ? "Stop Moving" : "Stop Copying", x: 14, width: 124, action: #selector(cancel), key: "\u{1b}")
         // Return replaces only a same-kind item that is older: a folder is never replaced by a file (nor a file by a
         // folder) just by pressing Return.
         let replacesByDefault = Self.replacesByDefault(
             newer: newer, bothFolders: bothFolders, sameKind: info.source.isDirectory == info.destination.isDirectory)
-        _ = button("Skip", x: 274, width: 64, action: #selector(skip), key: replacesByDefault ? "" : "\r")
-        let keep = button("Keep Both", x: 344, width: 94, action: #selector(keepBoth), key: "d")
+        _ = button("Skip", x: 266, width: 76, action: #selector(skip), key: replacesByDefault ? "" : "\r")
+        let keep = button("Keep Both", x: 342, width: 104, action: #selector(keepBoth), key: "d")
         keep.keyEquivalentModifierMask = .command
         keep.toolTip = "Save as “\(info.suggestedName)”"
         let title =
@@ -151,27 +152,18 @@ final class ConflictDialog: NSObject {
                 ? "Replace with Older"
                 : info.destination.isDirectory != info.source.isDirectory
                     ? (info.destination.isDirectory ? "Replace Folder" : "Replace File") : "Replace"
-        let split = ConflictSplitView(frame: CGRect(x: 446, y: 19, width: 154, height: 30))
-        split.primary = replacesByDefault
-        split.showsDivider = !bothFolders
-        window.contentView!.addSubview(split)
-        let replace = ConflictActionButton(title: title, target: self, action: #selector(replace))
-        replace.drawsBackground = false; replace.primary = split.primary
-        replace.font = .systemFont(ofSize: FontSize.callout)
-        replace.keyEquivalent = split.primary ? "\r" : ""
-        replace.frame = CGRect(x: 0, y: 0, width: bothFolders ? 154 : 128, height: 30)
-        split.addSubview(replace)
-        let arrow = ConflictActionButton(title: "⌄", target: self, action: #selector(choices))
-        arrow.drawsBackground = false; arrow.primary = split.primary
-        arrow.frame = CGRect(x: 129, y: 0, width: 25, height: 30)
-        arrow.toolTip = "Conditional replacement rules"
-        arrow.isHidden = bothFolders
-        split.addSubview(arrow)
+        _ = button(title, x: 446, width: bothFolders ? 160 : 124, action: #selector(replace), key: replacesByDefault ? "\r" : "")
+        // The conditional rules, in a menu beside Replace.
+        let rules = button("", x: 570, width: 36, action: #selector(choices))
+        rules.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: "Conditional replacement rules")
+        rules.imagePosition = .imageOnly
+        rules.toolTip = "Conditional replacement rules"
+        rules.isHidden = bothFolders
     }
 
     private func card(_ item: FileItem, heading: String, x: CGFloat, newer: Bool, larger: Bool, summary: TransferFolderSummary? = nil) {
         let box = NSView(frame: CGRect(x: x, y: 173, width: 274, height: 136))
-        box.wantsLayer = true; box.layer?.cornerRadius = 8; box.layer?.borderWidth = 1
+        box.wantsLayer = true; box.layer?.cornerRadius = Tokens.Radius.medium; box.layer?.borderWidth = 1
         Theme.whenChanged(box) { [weak box] in
             box?.layer?.backgroundColor = Theme.viewBackground.cgColor
             box?.layer?.borderColor = Theme.frame.cgColor
@@ -265,6 +257,8 @@ final class ConflictDialog: NSObject {
     func present(on owner: NSWindow?, completion: @escaping (ConflictAnswer) -> Void) {
         self.completion = completion
         retainedSelf = self
+        // A palette theme gives the controls its look and the default button its accent (the native theme keeps macOS's).
+        Theme.dress(window)
         if let owner, owner.isVisible { owner.beginSheet(window) } else { window.center(); window.makeKeyAndOrderFront(nil) }
     }
 
@@ -288,52 +282,13 @@ final class ConflictDialog: NSObject {
     }
 }
 
-class ConflictActionButton: NSButton {
-    static var primaryTextColor: NSColor {
-        guard let color = Theme.activeText.usingColorSpace(.sRGB) else { return .white }
-        func linear(_ component: CGFloat) -> CGFloat {
-            component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
-        }
-        let luminance = 0.2126 * linear(color.redComponent) + 0.7152 * linear(color.greenComponent) + 0.0722 * linear(color.blueComponent)
-        return luminance > 0.179 ? .black : .white
-    }
-    var primary = false
-    var drawsBackground = true
-    var titleTint: NSColor?
-    override func draw(_ dirtyRect: NSRect) {
-        if drawsBackground { ConflictSplitView.paint(bounds.insetBy(dx: 1, dy: 1), primary: primary, highlighted: isHighlighted) }
-        let text = title as NSString
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font ?? NSFont.systemFont(ofSize: FontSize.callout),
-            .foregroundColor: titleTint ?? (primary ? Self.primaryTextColor : Theme.windowText),
-        ]
-        let size = text.size(withAttributes: attributes)
-        text.draw(at: CGPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2), withAttributes: attributes)
-    }
-}
-private final class ConflictSplitView: NSView {
-    var primary = false
-    var showsDivider = true
-    static func paint(_ rect: CGRect, primary: Bool, highlighted: Bool = false) {
-        (primary ? Theme.activeText : Theme.viewBackground).withAlphaComponent(highlighted ? 0.7 : 1).setFill()
-        let path = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6); path.fill()
-        (primary ? Theme.activeText : Theme.frame).setStroke(); path.lineWidth = 1; path.stroke()
-    }
-    override func draw(_ dirtyRect: NSRect) {
-        Self.paint(bounds.insetBy(dx: 1, dy: 1), primary: primary)
-        if showsDivider {
-            (primary ? ConflictActionButton.primaryTextColor.withAlphaComponent(0.3) : Theme.frame).setFill()
-            CGRect(x: 128, y: 4, width: 1, height: bounds.height - 8).fill()
-        }
-    }
-}
 private final class ConflictBadge: NSView {
     let text: String
     init(text: String) { self.text = text; super.init(frame: .zero) }
     required init?(coder: NSCoder) { fatalError() }
     override func draw(_ dirtyRect: NSRect) {
         Theme.transferChanged.withAlphaComponent(0.14).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
+        NSBezierPath(roundedRect: bounds, xRadius: Tokens.Radius.medium, yRadius: Tokens.Radius.medium).fill()
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: FontSize.caption, weight: .semibold), .foregroundColor: Theme.transferChanged,
         ]

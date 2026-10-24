@@ -112,7 +112,8 @@ extension ItemListView {
         let badge = cloudBadge(item, state: cloud)
         cloudRects[i] = nil
         if mode == .icons {
-            drawIconBadge(badge, row: i, imageRect: imageRect, selected: onSelection)
+            // The native selection leaves the icon on a neutral backing: its badges are drawn as on the view.
+            drawIconBadge(badge, row: i, imageRect: imageRect, selected: onSelection && !Tokens.isNative)
             GitBadge.draw(gitBadge(item), in: GitBadge.iconRect(imageRect: imageRect, iconSize: iconSize), selected: false, halo: true)
         }
         if item.isSymlink || item.isAliasFile || item.isWebDocument {
@@ -142,16 +143,55 @@ extension ItemListView {
     /// The native theme's selection, like Finder's: solid accent when it's the focused one, grey when not, no outline.
     private func drawNativeSelection(_ i: Int) {
         let url = model.rows[i].item.url
-        let rect = highlightRect(i)
+        var rect = highlightRect(i)
+        var radius = Tokens.Radius.row
+        if mode == .icons {
+            // Finder's Icons selection: a neutral backing behind the icon, so its colours stay readable (a blue folder
+            // on a blue fill disappears), and the accent behind the name only.
+            Tokens.iconSelectionBacking.setFill()
+            NSBezierPath(roundedRect: iconSelectionRect(i), xRadius: Tokens.Radius.medium, yRadius: Tokens.Radius.medium).fill()
+            rect = iconsNamePillRect(i)
+            radius = Tokens.Radius.small
+        }
         (selectionIsEmphasized ? Theme.selection : Tokens.unemphasizedSelection).setFill()
-        NSBezierPath(roundedRect: rect, xRadius: Tokens.Radius.row, yRadius: Tokens.Radius.row).fill()
+        NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
         // Several selected: the keyboard's current one keeps its focus frame, so arrow keys stay traceable.
         if model.selection.count > 1, model.currentURL == url, window?.firstResponder === self {
-            let inner = NSBezierPath(roundedRect: rect.insetBy(dx: 2, dy: 2), xRadius: Tokens.Radius.row - 2, yRadius: Tokens.Radius.row - 2)
+            let r = max(1, radius - 2)
+            let inner = NSBezierPath(roundedRect: rect.insetBy(dx: 2, dy: 2), xRadius: r, yRadius: r)
             inner.lineWidth = 1.5
             Theme.selectionText.withAlphaComponent(0.8).setStroke()
             inner.stroke()
         }
+    }
+
+    /// Icons view, native theme: the backing behind a selected item's icon, a little larger than the icon, ending a
+    /// little above the name's pill (the density's padding may leave less room below the icon than around it).
+    func iconSelectionRect(_ i: Int) -> CGRect {
+        let outset = Tokens.Space.xs
+        var r = iconRect(i).insetBy(dx: -outset, dy: -outset).intersection(frames[i].insetBy(dx: 1, dy: 1))
+        r.size.height = min(r.height, iconsNamePillRect(i).minY - Tokens.Space.xxs - r.minY)
+        return r
+    }
+
+    /// Icons view, native theme: the accent pill behind a selected item's name, its tag dots and its extra lines.
+    func iconsNamePillRect(_ i: Int) -> CGRect {
+        let item = model.rows[i].item
+        let tr = nameTextRect(i)
+        let size = iconsLabel(model.displayName(for: item), width: tr.width, maxLines: maxLabelLines).size
+        let tags = model.shownTags(for: item)
+        let dotsW = FinderTags.dotsWidth(tags.count, diameter: tagDotDiameter)
+        let inlineDots = !tags.isEmpty && size.height <= lineHeight + 1 && size.width + dotsW + 4 <= tr.width
+        var width = size.width + (inlineDots ? dotsW + 4 : 0)
+        var height = size.height
+        if !tags.isEmpty && !inlineDots { height += tagDotDiameter + 4; width = max(width, dotsW) }
+        for role in model.props.roles(for: .icons) {
+            width = max(width, ceil((model.text(for: role, of: item) as NSString).size(withAttributes: [.font: font]).width))
+            height += lineHeight
+        }
+        let pad = Tokens.Space.xs
+        let w = min(tr.width + 2 * pad, width + 2 * pad)
+        return CGRect(x: tr.midX - w / 2, y: tr.minY - 1, width: w, height: min(frames[i].maxY - tr.minY, height + 3))
     }
 
     /// Breeze item background: selected, hovered (fading), drop target, or the focus frame of the current item.
@@ -458,11 +498,12 @@ extension ItemListView {
         NSGraphicsContext.current?.cgContext.setAlpha(1)
         defer { NSGraphicsContext.restoreGraphicsState() }
         Theme.viewText.withAlphaComponent(0.14).setFill()
-        NSBezierPath(roundedRect: rect, xRadius: 1.5, yRadius: 1.5).fill()
+        NSBezierPath(roundedRect: rect, xRadius: Tokens.Radius.xsmall, yRadius: Tokens.Radius.xsmall).fill()
         Theme.activeText.setFill()
         NSBezierPath(
-            roundedRect: CGRect(x: rect.minX, y: rect.minY, width: rect.width * max(0, min(1, fraction)), height: rect.height), xRadius: 1.5,
-            yRadius: 1.5
+            roundedRect: CGRect(x: rect.minX, y: rect.minY, width: rect.width * max(0, min(1, fraction)), height: rect.height),
+            xRadius: Tokens.Radius.xsmall,
+            yRadius: Tokens.Radius.xsmall
         ).fill()
     }
 

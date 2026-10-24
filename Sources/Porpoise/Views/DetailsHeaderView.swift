@@ -62,10 +62,10 @@ final class DetailsHeaderView: NSView {
         if let (role, r) = moving {
             // The dragged section floats over the others, with an insertion marker where it will land.
             Theme.windowBackground.setFill()
-            NSBezierPath(roundedRect: r, xRadius: 4, yRadius: 4).fill()
+            NSBezierPath(roundedRect: r, xRadius: Tokens.Radius.small, yRadius: Tokens.Radius.small).fill()
             drawSection(role, in: r, sorted: props.sortRole == role, ascending: props.sortOrder == .ascending, highlighted: true)
             Theme.focus.setStroke()
-            NSBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), xRadius: 4, yRadius: 4).stroke()
+            NSBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), xRadius: Tokens.Radius.small, yRadius: Tokens.Radius.small).stroke()
             if let x = insertionX() {
                 Theme.selectionAlternate.setFill()
                 CGRect(x: x - 1, y: 3, width: 2, height: bounds.height - 6).fill()

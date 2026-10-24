@@ -76,7 +76,7 @@ final class MessageBar: NSView {
 
     override func draw(_ dirty: NSRect) {
         let c = isError ? Theme.negativeText : Theme.neutralText
-        let p = NSBezierPath(roundedRect: bounds.insetBy(dx: 6, dy: 3), xRadius: 4, yRadius: 4)
+        let p = NSBezierPath(roundedRect: bounds.insetBy(dx: 6, dy: 3), xRadius: Tokens.Radius.small, yRadius: Tokens.Radius.small)
         c.withAlphaComponent(0.2).setFill(); p.fill()
         c.setStroke(); p.stroke()
         Icons.shared.image(isError ? "dialog-error" : "dialog-information", size: 16)?

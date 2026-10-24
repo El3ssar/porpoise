@@ -35,9 +35,9 @@ final class ColumnResizeHandle: NSView {
     override func draw(_ dirty: NSRect) {
         let grip = CGRect(x: bounds.midX - 3, y: bounds.maxY - Self.gripHeight - 4, width: 6, height: Self.gripHeight)
         Theme.viewBackground.setFill()
-        NSBezierPath(roundedRect: grip.insetBy(dx: -1, dy: -1), xRadius: 2, yRadius: 2).fill()
+        NSBezierPath(roundedRect: grip.insetBy(dx: -1, dy: -1), xRadius: Tokens.Radius.xsmall, yRadius: Tokens.Radius.xsmall).fill()
         Theme.separator.setStroke()
-        let outline = NSBezierPath(roundedRect: grip, xRadius: 2, yRadius: 2)
+        let outline = NSBezierPath(roundedRect: grip, xRadius: Tokens.Radius.xsmall, yRadius: Tokens.Radius.xsmall)
         outline.lineWidth = 1
         outline.stroke()
         let lines = NSBezierPath()
