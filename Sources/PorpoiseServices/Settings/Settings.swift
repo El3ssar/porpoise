@@ -38,7 +38,7 @@ public final class Settings {
     private func get<T>(_ key: String, _ def: T) -> T { (d.object(forKey: key) as? T) ?? def }
     private func set(_ key: String, _ v: Any?) {
         d.set(v, forKey: key)
-        NotificationCenter.default.post(name: Settings.changed, object: key)
+        SettingsChange.key(key).post()
     }
 
     /// Read-only local repository badges and branch information.
@@ -186,6 +186,6 @@ public final class Settings {
                 "fileDiff.lastApp",
             ]
         keys.forEach(d.removeObject(forKey:))
-        NotificationCenter.default.post(name: Settings.changed, object: nil)
+        SettingsChange.all.post()
     }
 }

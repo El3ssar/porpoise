@@ -27,7 +27,7 @@ public struct Pref<Value> {
         get { Settings.store.object(forKey: key).flatMap(decode) ?? defaultValue }
         nonmutating set {
             Settings.store.set(encode(newValue), forKey: key)
-            NotificationCenter.default.post(name: Settings.changed, object: key)
+            SettingsChange.key(key).post()
         }
     }
 }
