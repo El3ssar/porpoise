@@ -48,7 +48,7 @@ extension MainWindowController {
     @objc func openWorkspaceInNewWindow(_ sender: Any?) {
         guard let w = workspace(sender) else { return }
         guard AppDelegate.shared.newWindow(layout: w.layout) else { return cantOpen(w) }
-        AppDelegate.shared.windows.last.map { $0.window?.makeFirstResponder($0.view.list) }
+        if let wc = AppDelegate.shared.windows.last { wc.window?.makeFirstResponder(wc.view.list) }
     }
 
     /// Shows `w` here: its tabs replace this window's, which Undo Close Tab can bring back (only once they're replaced).
