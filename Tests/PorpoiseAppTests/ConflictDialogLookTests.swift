@@ -66,7 +66,7 @@ import Testing
         #expect(replace?.bezelColor?.usingColorSpace(.sRGB) == Theme.accent.usingColorSpace(.sRGB))
     }
 
-    // MARK: Real events (AppKit's own dispatch: NSApp.sendEvent for keys)
+    // MARK: Real events (AppKit's own dispatch: the window's sendEvent and key equivalents)
 
     /// The sheet shown on its own, answering into `answers`.
     private func presented(newer: Bool, _ answers: @escaping (ConflictAnswer) -> Void) -> ConflictDialog {
@@ -83,7 +83,14 @@ import Testing
                 with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters,
                 isARepeat: false, keyCode: keyCode))
-        NSApp.sendEvent(event)
+        // A ⌘ key: the step NSApp.sendEvent takes for the key window, offering it to the window's key equivalents
+        // (AppKit's routing would pick whichever window is key, and suites running beside this one show windows too).
+        // Other keys: the window's own dispatch, as AppKit delivers them to it.
+        if flags.contains(.command) {
+            #expect(window.performKeyEquivalent(with: event))
+        } else {
+            window.sendEvent(event)
+        }
     }
 
     /// Return is Replace for a newer item and Skip for an older one; Escape stops the transfer; ⌘D keeps both.
