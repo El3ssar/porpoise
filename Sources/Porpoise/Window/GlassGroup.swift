@@ -17,8 +17,9 @@ final class GlassGroup: NSView {
         super.init(frame: .zero)
         if #available(macOS 26.0, *) {
             let g = NSGlassEffectView()
-            g.tintColor = Theme.windowBackground.withAlphaComponent(0.35)
             g.contentView = content
+            // Resolved again on every change of look or palette (a layer-backed tint keeps the colour it was given).
+            Theme.whenChanged(self) { [weak g] in g?.tintColor = Theme.windowBackground.usingColorSpace(.sRGB)?.withAlphaComponent(0.35) }
             glass = g
             addSubview(g)
         } else {

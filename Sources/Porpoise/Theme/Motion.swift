@@ -25,6 +25,12 @@ enum Motion {
     static let appsGlide: TimeInterval = 0.34
     /// A control fading in or out.
     static let fade: TimeInterval = 0.18
+    /// The Space preview window zooming out of its item and back.
+    static let previewZoom: TimeInterval = 0.16
+    /// A progress bar's fill moving to its new fraction.
+    static let progress: TimeInterval = 0.16
+    /// One sweep of an indeterminate progress bar's band (it repeats; Reduce Motion stops it).
+    static let indeterminate: TimeInterval = 1.2
     /// The hover highlight (Breeze animates hover): quick in, a little slower out.
     static let hoverIn: TimeInterval = 0.085
     static let hoverOut: TimeInterval = 0.14

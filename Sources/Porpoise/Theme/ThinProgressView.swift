@@ -66,7 +66,7 @@ final class ThinProgressView: NSView {
                 let animation = CABasicAnimation(keyPath: "position.x")
                 animation.fromValue = -band / 2
                 animation.toValue = width + band / 2
-                animation.duration = 1.2
+                animation.duration = Motion.indeterminate * Animator.timeScale
                 animation.repeatCount = .infinity
                 animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 fill.layer?.add(animation, forKey: Self.band)
@@ -79,7 +79,7 @@ final class ThinProgressView: NSView {
             fill.frame = target
         } else {
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.16
+                context.duration = Motion.progress * Animator.timeScale
                 context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 fill.animator().frame = target
             }

@@ -144,7 +144,7 @@ final class SpacePreviewPanel: NSPanel, NSWindowDelegate, MaterialBackedWindow {
             makeKeyAndOrderFront(nil)
             if animated {
                 zoom.run(
-                    duration: 0.16,
+                    duration: Motion.previewZoom,
                     step: { [weak self] p in
                         self?.setFrame(
                             NSRect(
