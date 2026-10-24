@@ -143,7 +143,7 @@ import Testing
     @Test func drawingReadsItemMetadataInTheBackground() async throws {
         let s = try Scratch()
         let tagged = try s.file("tagged.txt")
-        FinderTags.set(["Red"], on: tagged)
+        try FinderTags.set(["Red"], on: tagged)
         let m = try await DirectoryModel.loaded(s.url)
         var loaded = 0
         m.onMetadataLoaded = { loaded += 1 }
@@ -160,7 +160,7 @@ import Testing
                 _ = m.shownCloud(for: item); return loaded > before
             })
         // Tagging clears the tags, which are then read again.
-        FinderTags.set(["Blue"], on: tagged)
+        try FinderTags.set(["Blue"], on: tagged)
         m.refreshTags()
         #expect(await eventually { m.shownTags(for: item).map(\.name) == ["Blue"] })
     }
@@ -169,7 +169,7 @@ import Testing
     @Test func metadataOfAnEarlierLoadIsDropped() async throws {
         let s = try Scratch()
         let tagged = try s.file("tagged.txt")
-        FinderTags.set(["Red"], on: tagged)
+        try FinderTags.set(["Red"], on: tagged)
         let m = try await DirectoryModel.loaded(s.url)
         var loaded = 0
         m.onMetadataLoaded = { loaded += 1 }

@@ -22,10 +22,10 @@ import Testing
         let s = try Scratch()
         let f = try s.file("doc.txt")
         #expect(FinderTags.read(f).isEmpty)
-        FinderTags.set(["Red", "Project"], on: f)
+        try FinderTags.set(["Red", "Project"], on: f)
         #expect(FinderTags.read(f).map(\.name) == ["Red", "Project"])
         #expect(FinderTags.read(f).first?.color == 6)
-        FinderTags.set([], on: f)
+        try FinderTags.set([], on: f)
         #expect(FinderTags.read(f).isEmpty)
     }
 
@@ -76,8 +76,8 @@ import Testing
 @MainActor @Suite(.isolatedSettings) struct TaggedFolderTests {
     @Test func sortAndGroupByTags() async throws {
         let s = try Scratch()
-        FinderTags.set(["Red"], on: try s.file("b"))
-        FinderTags.set(["Blue"], on: try s.file("c"))
+        try FinderTags.set(["Red"], on: try s.file("b"))
+        try FinderTags.set(["Blue"], on: try s.file("c"))
         try s.file("a")
         let m = DirectoryModel(location: s.url)
         m.reload()
@@ -88,7 +88,7 @@ import Testing
         #expect(m.groups.map(\.title) == ["Blue", "Red", "No Tags"])
         #expect(m.text(for: .tags, of: m.rows[1].item) == "Red")
         // Tagging is seen after a refresh.
-        FinderTags.set(["Green"], on: s.path("a"))
+        try FinderTags.set(["Green"], on: s.path("a"))
         m.refreshTags()
         m.rebuild()
         #expect(m.groups.map(\.title) == ["Blue", "Green", "Red"])

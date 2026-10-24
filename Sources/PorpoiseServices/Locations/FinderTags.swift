@@ -60,6 +60,14 @@ public enum FinderTags {
         return failures
     }
 
+    private static let writeQueue = DispatchQueue(label: "app.porpoise.tag-writes", qos: .userInitiated)
+    public static func toggleAsync(_ tag: String, on urls: [URL], done: @escaping ([Failure]) -> Void) {
+        writeQueue.async {
+            let failures = toggle(tag, on: urls)
+            DispatchQueue.main.async { done(failures) }
+        }
+    }
+
     public static func url(for tag: String) -> URL {
         URL(string: "tags:/" + (tag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tag))!
     }

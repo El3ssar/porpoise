@@ -216,7 +216,7 @@ import Testing
     @Test func productionQueueCancelsPublicationAndReadsTagsOnItsWorker() async throws {
         let s = try Scratch()
         let a = try s.file("a.txt"), b = try s.file("b.txt")
-        FinderTags.set(["Red"], on: b)
+        try FinderTags.set(["Red"], on: b)
         var props = ViewProperties()
         props.sortRole = .tags
         props.groupRole = .tags
@@ -274,7 +274,7 @@ import Testing
         }
         let folder = try s.folder("folder")
         items.append(try #require(FileItem.load(folder)))
-        FinderTags.set(["Red"], on: s.path("Z2.log"))
+        try FinderTags.set(["Red"], on: s.path("Z2.log"))
         Settings.shared.sortingChoice = choice
         Settings.shared.hideBackupFiles = true
         for role in [ItemRole.name, .size, .extension_, .tags] {
