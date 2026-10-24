@@ -25,7 +25,7 @@ public struct AutomationCLI: Sendable {
         let args = Array(arguments.dropFirst())
         var i = 0
         func absolute(_ path: String) -> String {
-            URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: directory, isDirectory: true)).standardizedFileURL.path
+            URL(fileURLWithPath: path, isDirectory: false, relativeTo: URL(fileURLWithPath: directory, isDirectory: true)).standardizedFileURL.path
         }
         while i < args.count {
             let arg = args[i]

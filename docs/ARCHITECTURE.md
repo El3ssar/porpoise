@@ -4,6 +4,8 @@ Porpoise separates shared contracts, local filesystem IO, helper security and ap
 
 ```mermaid
 graph TD
+  CLI[PorpoiseCLI] --> Services[PorpoiseServices]
+  CLI --> Core[PorpoiseCore]
   App[Porpoise] --> Services[PorpoiseServices]
   App --> FS[PorpoiseFileSystem]
   App --> Core[PorpoiseCore]
@@ -48,6 +50,8 @@ never AppKit or SwiftUI.
 **Porpoise** (`Sources/Porpoise`). AppKit only where it draws or asks: `App` (delegate, `ServicesSetup`, system
 integration, updates, test bridge), `Window`, `Views`, `Panels`, `Bars`, `Navigator`, `Menus`, `Dialogs`, `Theme`,
 and `FileOperations` (the drop menu, jobs panel, conflict dialog and `FileOperationsDialogs`).
+
+**PorpoiseCLI** (`Sources/PorpoiseCLI`). The bundled `porpoise` command parses typed requests in Core and uses the local Unix transport in Services. It never performs file jobs itself; the app owns approval and Activity.
 
 **PorpoiseHelper** (`Sources/PorpoiseHelper`). The launchd daemon, run as root. It only accepts Porpoise's signature
 and hands every request to `HelperRequests` in PorpoiseHelperKit. Its binary is committed in `Resources/Helper`; see
