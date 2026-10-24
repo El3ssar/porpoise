@@ -45,8 +45,10 @@ final class ActivityHeaderView: NSView {
         clear.imagePosition = narrow ? .imageOnly : .imageLeading
         settingsGroup.frame = CGRect(x: bounds.width - 46, y: 9, width: 34, height: 34)
         clearGroup.frame = CGRect(x: settingsGroup.frame.minX - 8 - clearWidth, y: 9, width: clearWidth, height: 34)
-        tabGroup.frame = CGRect(x: max(88, min((bounds.width - 164) / 2, clearGroup.frame.minX - 176)), y: 9, width: 164, height: 34)
-        tabs.frame = CGRect(x: 4, y: 3, width: 156, height: 28)
+        let tabWidth: CGFloat = 252
+        let trailing = showsClear ? clearGroup.frame.minX : settingsGroup.frame.minX
+        tabGroup.frame = CGRect(x: max(88, min((bounds.width - tabWidth) / 2, trailing - 8 - tabWidth)), y: 9, width: tabWidth, height: 34)
+        tabs.frame = CGRect(x: 4, y: 3, width: tabWidth - 8, height: 28)
         clear.frame = CGRect(x: 4, y: 3, width: clearWidth - 8, height: 28)
         settings.frame = CGRect(x: 3, y: 3, width: 28, height: 28)
     }
