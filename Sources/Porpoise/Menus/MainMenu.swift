@@ -298,9 +298,15 @@ extension AppDelegate {
         }
     }
 
+    /// The browser window the menu bar acts on: the one in front (the main window), even while another kind of
+    /// window (Activity, Get Info, Settings) is key.
+    static func menuBrowser(main: NSWindow?, windows: [MainWindowController]) -> MainWindowController? {
+        main?.windowController as? MainWindowController ?? windows.first
+    }
+
     /// Fills the dynamic submenus (they need the active window's view state).
     @MainActor func menuNeedsUpdate(_ menu: NSMenu) {
-        guard let wc = NSApp.keyWindow?.windowController as? MainWindowController ?? windows.first else { return }
+        guard let wc = Self.menuBrowser(main: NSApp.mainWindow, windows: windows) else { return }
         let built: NSMenu
         switch menu.title {
         case "Sort By": built = wc.sortMenu()

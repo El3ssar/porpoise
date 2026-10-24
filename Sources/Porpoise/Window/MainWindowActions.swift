@@ -213,10 +213,7 @@ extension MainWindowController {
     // MARK: Go
 
     @objc func goUp(_ sender: Any?) { view.goUp() }
-    @objc func goBack(_ sender: Any?) {
-        if window?.firstResponder is NSTextView { return }
-        view.goBack()
-    }
+    @objc func goBack(_ sender: Any?) { view.goBack() }
     @objc func goForward(_ sender: Any?) { view.goForward() }
     @objc func goHome(_ sender: Any?) { view.setURL(Settings.shared.homeURL) }
     @objc func goNetwork(_ sender: Any?) { view.setURL(NetworkBrowser.url) }
