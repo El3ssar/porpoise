@@ -8,7 +8,7 @@ import Testing
 struct SharingStagingTests {
     private var future: Date { Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970) + 1200) }
 
-    @Test func releasingLeaseUnlocksDescriptorsInheritedBeforeExec() throws {
+    @Test func releasingLeaseUnlocksDuplicatedDescriptors() throws {
         let scratch = try Scratch(), fm = FileManager.default
         let root = try scratch.folder(SharingStaging.rootName)
         try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
@@ -22,8 +22,7 @@ struct SharingStagingTests {
             close(folderFD); close(rootFD); throw POSIXError(.EIO)
         }
         var lease: SharingStagingLease? = SharingStagingLease(folder: folder, rootFD: rootFD, folderFD: folderFD, name: name)
-        // dup shares the open-file description just like fork: CLOEXEC does not close the child's
-        // inherited descriptor until exec. Keep that descriptor open across the parent's release.
+        // A duplicate shares the open-file description and must not prolong the lease's ownership.
         let inherited = dup(folderFD)
         try #require(inherited >= 0)
         defer { close(inherited) }

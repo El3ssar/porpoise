@@ -12,8 +12,8 @@ final class SharingStagingLease: @unchecked Sendable {
         self.folder = folder; self.rootFD = rootFD; self.folderFD = folderFD; self.name = name
     }
     deinit {
-        // A concurrent spawn can inherit this open-file description before CLOEXEC takes effect.
-        // Release ownership explicitly: close alone leaves the flock held until that child execs.
+        // Release the flock explicitly: any duplicate of this open-file description would
+        // otherwise keep it held after close.
         _ = flock(folderFD, LOCK_UN)
         close(folderFD); close(rootFD)
     }
