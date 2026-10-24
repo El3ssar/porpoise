@@ -180,6 +180,7 @@ final class SettingsWindowController: SecondaryWindowController {
                 s.statusBarMode = StatusBarMode.allCases[$0]
             }
             // The small status bar has no room for it (Dolphin shows it in the full-width bar only).
+            f.check("Show Git status in local folders", s.showGitStatus) { s.showGitStatus = $0 }
             f.check("Show zoom slider", s.showZoomSlider, enabled: { s.statusBarMode == .fullWidth }) { s.showZoomSlider = $0 }
             f.section("Location bar")
             f.check("Make location bar editable", s.editableLocation) { s.editableLocation = $0 }

@@ -114,6 +114,7 @@ final class ItemAccessibilityElement: NSAccessibilityElement, NSAccessibilityEle
         if it.isAliasFile { parts.append("alias") } else if it.isSymlink { parts.append("symbolic link") }
         if list.cutURLs.contains(url) { parts.append("cut") }
         if it.isHidden { parts.append("hidden") }
+        if let git = list.gitBadge(it) { parts.append(git.label) }
         if let mark = list.editMark(it) { parts.append(mark.note(CloudAccounts.shared.providerTitle(for: url))) }
         return parts.joined(separator: ", ")
     }

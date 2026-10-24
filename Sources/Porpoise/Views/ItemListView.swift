@@ -151,6 +151,10 @@ final class ItemListView: NSView {
         lineHeight = Self.lineHeight(of: font)
         super.init(frame: .zero)
         registerForDraggedTypes(DropTargetPolicy.types)
+        observers.append(
+            NotificationCenter.default.addObserver(forName: DirectoryModel.gitStatusChanged, object: model, queue: .main) { [weak self] _ in
+                self?.needsDisplay = true
+            })
         hoverFade.target = { [weak self] in
             guard let self, let i = self.hoverIndex, i < self.model.rows.count else { return nil }
             return self.model.rows[i].item.url

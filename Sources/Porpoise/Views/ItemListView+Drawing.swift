@@ -99,7 +99,7 @@ extension ItemListView {
         let incoming = model.incomingProgress[item.url]
         let cloud = model.shownCloud(for: item).state
         NSGraphicsContext.saveGraphicsState()
-        if incoming != nil || dimmedOffline(cloud) { NSGraphicsContext.current?.cgContext.setAlpha(0.5) }
+        if incoming != nil || dimmedOffline(cloud) || gitBadge(item) == .ignored { NSGraphicsContext.current?.cgContext.setAlpha(0.5) }
         defer {
             NSGraphicsContext.restoreGraphicsState()
             if let incoming, mode != .details, mode != .columns {
@@ -111,7 +111,10 @@ extension ItemListView {
         // The list modes draw the badge after the name (drawNameWithTags); Icons on the icon's corner.
         let badge = cloudBadge(item, state: cloud)
         cloudRects[i] = nil
-        if mode == .icons { drawIconBadge(badge, row: i, imageRect: imageRect, selected: onSelection) }
+        if mode == .icons {
+            drawIconBadge(badge, row: i, imageRect: imageRect, selected: onSelection)
+            GitBadge.draw(gitBadge(item), in: GitBadge.iconRect(imageRect: imageRect, iconSize: iconSize), selected: false, halo: true)
+        }
         if item.isSymlink || item.isAliasFile || item.isWebDocument {
             drawLinkEmblem(i, besideCloudBadge: mode == .icons && badge != .none)
         }
@@ -190,7 +193,8 @@ extension ItemListView {
     private func drawIcon(_ i: Int) -> (NSImage, CGRect) {
         let item = model.rows[i].item
         let ir = iconRect(i)
-        let alpha: CGFloat = (cutURLs.contains(item.url) || item.isHidden || model.incomingProgress[item.url] != nil) ? 0.5 : 1
+        let alpha: CGFloat =
+            (cutURLs.contains(item.url) || item.isHidden || model.incomingProgress[item.url] != nil || gitBadge(item) == .ignored) ? 0.5 : 1
         if model.props.previews {
             if Thumbnails.wantsPreview(item), let thumb = Thumbnails.shared.thumbnail(for: item, size: iconSize, owner: self) {
                 let ts = thumb.size
@@ -497,7 +501,9 @@ extension ItemListView {
         let dw = tags.isEmpty ? 0 : FinderTags.dotsWidth(tags.count, diameter: d) + 5
         let badge = cloudBadge(item)
         // A long name gives way to the glyph, which always shows.
-        let gw = badge == .none ? 0 : statusGlyphSize + 5
+        let git = gitBadge(item)
+        let gitWidth: CGFloat = git == nil || git == .ignored ? 0 : 19
+        let gw = (badge == .none ? 0 : statusGlyphSize + 5) + gitWidth
         let nameW = min(textWidth(name) + 1, max(0, r.width - dw - gw - 2))
         (name as NSString).draw(
             in: CGRect(x: r.minX, y: r.minY, width: nameW, height: r.height), withAttributes: nameAttributes(item, selected: selected))
@@ -506,7 +512,9 @@ extension ItemListView {
                 tags, at: CGPoint(x: r.minX + nameW + 5, y: r.minY + (r.height - d) / 2 + 1), diameter: d,
                 background: itemBackground(selected: selected))
         }
-        return drawStatusGlyph(badge, row: i, at: r.minX + nameW + dw, in: r, selected: selected)
+        let end = drawStatusGlyph(badge, row: i, at: r.minX + nameW + dw, in: r, selected: selected)
+        GitBadge.draw(git, in: CGRect(x: end + 3, y: r.midY - 8, width: gitWidth, height: 16), selected: selected)
+        return end + gitWidth
     }
 
     /// Breeze's emblem-added / emblem-remove as KDE renders them with the color scheme: a light disc with +/−.

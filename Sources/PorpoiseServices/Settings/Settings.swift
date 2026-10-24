@@ -40,6 +40,9 @@ public final class Settings {
         NotificationCenter.default.post(name: Settings.changed, object: key)
     }
 
+    /// Read-only local repository badges and branch information.
+    @Pref("showGitStatus") public var showGitStatus: Bool = true
+
     // Interface › Folders & Tabs
     @Pref("startup") public var startup: StartupLocation = .lastSession
     /// Stored as a path.

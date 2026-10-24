@@ -161,6 +161,7 @@ extension MainWindowController {
         if single && item.isBrowsableFolder {
             m.addItem(self.item("Paste Into Folder", "edit-paste", #selector(paste(_:)), obj: Self.pasteIntoFolder))
         }
+        addGitChanges(to: m, item: item, in: c, single: single)
         if fileComparisonSelection.count == 2 {
             m.addItem(self.item("Compare Files…", "document-preview", #selector(compareFiles(_:))))
         }

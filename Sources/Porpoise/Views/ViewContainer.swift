@@ -253,6 +253,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
         let center = NotificationCenter.default
         observers.append(
+            center.addObserver(forName: DirectoryModel.gitStatusChanged, object: model, queue: .main) { [weak self] _ in self?.updateStatus() })
+        observers.append(
             center.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
                 self?.settingsChanged(key: n.object as? String)
             })
@@ -619,6 +621,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     }
 
     func updateStatus() {
+        statusBar.gitText = model.gitStatus?.statusText ?? ""
         refreshListState()
         if showsApps {
             // Apps, not files and bytes (bundle sizes would need a scan of every app).
