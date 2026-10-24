@@ -43,6 +43,7 @@ final class RemoteTransferJob {
     var listingIndices: [URL: [String: FileItem]] = [:]
     var publishedNames: [URL: Set<String>] = [:]
     var stageFolders: [URL: URL] = [:]
+    var stageJournal = TransferStageJournal.shared
     var lastPublish = Date.distantPast
     var logicalPaths: [URL: String] = [:]
 
@@ -207,10 +208,14 @@ final class RemoteTransferJob {
 
     private var moveRemovals: [URL: MoveSourceRemoval] = [:]
 
+    private func captureRemoval(_ source: URL) throws -> MoveSourceRemoval {
+        try MoveSourceRemoval(source, cancellation: control.asDiskCancellation(), onCheckpoint: { try self.stageJournal.checkpoint($0) })
+    }
+
     func transfer(_ source: URL, into folder: URL) throws -> URL? {
         if isExcluded(source) { control.recordExcluded(source); return nil }
         if kind == .move, let incoming = try item(source), !incoming.isDirectory {
-            moveRemovals[source] = try MoveSourceRemoval(source)
+            moveRemovals[source] = try captureRemoval(source)
         }
         if RemoteFS.provider(for: source) is CloudTransferProvider || RemoteFS.provider(for: folder) is CloudTransferProvider {
             return try transferCloud(source, into: folder)
@@ -305,7 +310,11 @@ final class RemoteTransferJob {
         if let provider = RemoteFS.provider(for: target) {
             try provider.makeFolder(stage)
         } else {
-            try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: false)
+            try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+            do { try stageJournal.stage(stage) } catch {
+                try? FileManager.default.removeItem(at: stage)
+                throw error
+            }
         }
         stageFolders[folder] = stage
         return stage
@@ -317,7 +326,10 @@ final class RemoteTransferJob {
                 if let provider = RemoteFS.provider(for: stage) {
                     try? provider.delete([stage])
                 } else {
-                    try? FileManager.default.removeItem(at: stage)
+                    do {
+                        try FileManager.default.removeItem(at: stage)
+                        try stageJournal.finish(stage)
+                    } catch { stageJournal.release(stage) }
                 }
             }
         }
@@ -363,7 +375,7 @@ final class RemoteTransferJob {
 
     func merge(_ source: URL, into target: URL) throws -> URL {
         let excludedBefore = control.excludedCount
-        let directoryRemoval = kind == .move ? try MoveSourceRemoval(source) : nil
+        let directoryRemoval = kind == .move ? try captureRemoval(source) : nil
         if sources.contains(source), let incoming = try item(source) { publishIncoming(source, item: incoming, target: target) }
         var firstFailure: Error?
         for child in try children(source) {
@@ -441,9 +453,10 @@ final class RemoteTransferJob {
                 return
             }
         }
-        let removal = kind == .move && !sourceRemovalHandled ? (try moveRemovals[source] ?? MoveSourceRemoval(source)) : nil
-        let scratch = try Self.temporaryFolder()
-        defer { try? FileManager.default.removeItem(at: scratch) }
+        let removal = kind == .move && !sourceRemovalHandled ? (try moveRemovals[source] ?? captureRemoval(source)) : nil
+        let destinationStaging = target.isFileURL && !source.isFileURL
+        let scratch = destinationStaging ? try stagingFolder(for: target) : try Self.temporaryFolder()
+        defer { if !destinationStaging { try? FileManager.default.removeItem(at: scratch) } }
         var downloaded: URL
         if let cloud = RemoteFS.provider(for: source) as? CloudTransferProvider, let operationID = sourceDownloadOperationID {
             downloaded = try TransferRetry.run(control: control, notice: onNotice) {
@@ -458,14 +471,6 @@ final class RemoteTransferJob {
                     try? FileManager.default.removeItem(at: attempt); throw error
                 }
             }
-        }
-        if source.isFileURL, removal != nil {
-            let snapshotFolder = scratch.appendingPathComponent("Snapshot")
-            try FileManager.default.createDirectory(at: snapshotFolder, withIntermediateDirectories: false)
-            let snapshot = snapshotFolder.appendingPathComponent(source.lastPathComponent)
-            try FileManager.default.copyItem(at: source, to: snapshot)
-            try removal?.local?.verifyCopy(snapshot)
-            downloaded = snapshot
         }
         let copiedDigest = removal != nil || replacing ? try FileChecksums.digest(downloaded, cancellation: control.asDiskCancellation()) : nil
         if let provider = RemoteFS.provider(for: target) {
@@ -515,33 +520,45 @@ final class RemoteTransferJob {
                     try provider.move([staged], into: target.deletingLastPathComponent())
                 }
                 published = true
-                try beforeSourceRemoval?()
-                if let removal {
-                    guard try digest(target) == copiedDigest else {
-                        throw RemoteError.failed("Copy published; source retained because destination verification failed.")
-                    }
-                    try removal.remove(afterVerifying: downloaded)
-                    movedItems[source] = target
+            }
+            try beforeSourceRemoval?()
+            if let removal {
+                try control.checkpoint()
+                guard let copiedDigest, try digest(target) == copiedDigest else {
+                    throw RemoteError.failed("Copy published; source retained because destination verification failed.")
                 }
+                if let local = removal.local {
+                    do { try local.removeSource(afterVerifyingDigest: copiedDigest, target: target) } catch {
+                        throw RemoteError.failed("Copy published; source retained. \(error.localizedDescription)")
+                    }
+                } else {
+                    try control.checkpoint()
+                    try Shell.withoutTransferControl { try removal.remove(afterVerifying: downloaded) }
+                }
+                movedItems[source] = target
             }
         } else {
             guard target.isFileURL else { throw RemoteError.unsupported("Unsupported destination.") }
             let stageFolder = try stagingFolder(for: target)
             var removeStage = true
-            let staged = stageFolder.appendingPathComponent(downloaded.lastPathComponent)
+            let staged =
+                downloaded.deletingLastPathComponent() == stageFolder || scratch == stageFolder
+                ? downloaded : stageFolder.appendingPathComponent(downloaded.lastPathComponent)
             defer { if removeStage { try? FileManager.default.removeItem(at: staged) } }
-            let copy = FileJob(kind: .copy, sources: [downloaded], destinationFolder: stageFolder)
-            var previous: Int64 = 0
-            copy.onProgress = { [weak copy] snapshot in
-                do { try self.control.checkpoint() } catch { copy?.cancel() }
-                let next = max(0, snapshot.doneBytes - previous)
-                previous = snapshot.doneBytes
-                self.advance(bytes: next)
-            }
-            _ = try copy.run()
-            if copy.isCancelled { try control.checkpoint() }
-            guard copy.errors.isEmpty, copy.denied.isEmpty, !copy.results.isEmpty else {
-                throw RemoteError.failed(copy.errors.first ?? "Could not stage the downloaded file.")
+            if staged != downloaded {
+                let copy = FileJob(kind: .copy, sources: [downloaded], destinationFolder: stageFolder)
+                var previous: Int64 = 0
+                copy.onProgress = { [weak copy] snapshot in
+                    do { try self.control.checkpoint() } catch { copy?.cancel() }
+                    let next = max(0, snapshot.doneBytes - previous)
+                    previous = snapshot.doneBytes
+                    self.advance(bytes: next)
+                }
+                _ = try copy.run()
+                if copy.isCancelled { try control.checkpoint() }
+                guard copy.errors.isEmpty, copy.denied.isEmpty, !copy.results.isEmpty else {
+                    throw RemoteError.failed(copy.errors.first ?? "Could not stage the downloaded file.")
+                }
             }
             try control.checkpoint()
             if replacing {
@@ -549,6 +566,8 @@ final class RemoteTransferJob {
                 guard lstat(target.path, &info) == 0, info.st_mode & S_IFMT != S_IFDIR else {
                     throw RemoteError.unsupported("A folder cannot be replaced by a remote file. Keep Both instead.")
                 }
+                // Once swapped, staging may hold the user's previous target. Persist that fact first.
+                try stageJournal.preserve(stageFolder)
                 guard renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 else {
                     throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
                 }
@@ -562,6 +581,7 @@ final class RemoteTransferJob {
                     guard renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 else {
                         removeStage = false
                         stageFolders[target.deletingLastPathComponent()] = nil
+                        stageJournal.release(stageFolder)
                         throw RemoteError.failed(
                             "The previous item could not be restored automatically. Its staging folder is kept at “\(stageFolder.path)”. \(error.localizedDescription)"
                         )

@@ -20,8 +20,15 @@ struct MoveSourceRemoval {
     let local: LocalMoveRemovalReceipt?
     let remote: RemoteRemovalReceipt?
 
-    init(_ source: URL) throws {
-        local = source.isFileURL ? try LocalMoveRemovalReceipt(source: source, directoryOnly: FileItem.load(source)?.isDirectory == true) : nil
+    init(
+        _ source: URL, cancellation: DiskCancellation = DiskCancellation(),
+        onCheckpoint: @escaping (LocalMoveRemovalReceipt.Checkpoint) throws -> Void = { _ in }
+    ) throws {
+        local =
+            source.isFileURL
+            ? try LocalMoveRemovalReceipt(
+                source: source, directoryOnly: FileItem.load(source)?.isDirectory == true,
+                cancellation: cancellation, onCheckpoint: onCheckpoint) : nil
         remote = try (RemoteFS.provider(for: source) as? RemoteTransferConditionalRemoval)?.captureTransferRemoval(source)
     }
 

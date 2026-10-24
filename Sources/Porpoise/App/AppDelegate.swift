@@ -352,6 +352,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Jobs left unfinished last time (a quit, a crash, a power cut): offers to resume each, after checking that
     /// its items haven't changed. Deleting is never resumed without asking.
     func offerRecovery() {
+        FileOperationsController.shared.transferStages.recover { retained in
+            DispatchQueue.main.async {
+                for item in retained {
+                    let alert = NSAlert()
+                    alert.messageText = "Files kept after an interrupted transfer"
+                    alert.informativeText = item.message
+                    alert.addButton(withTitle: "Reveal in Porpoise")
+                    alert.addButton(withTitle: "Later")
+                    if alert.runModal() == .alertFirstButtonReturn { self.reveal([item.url]) }
+                }
+                self.offerJobRecovery()
+            }
+        }
+    }
+
+    private func offerJobRecovery() {
         let c = FileOperationsController.shared
         for plan in c.recoveryPlans() {
             let a = NSAlert()

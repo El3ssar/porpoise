@@ -54,6 +54,7 @@ public final class FileOperationsController {
     public internal(set) var activities: [Activity] = []
     /// Where unfinished jobs are written down, to be resumed after a relaunch.
     public var journals = JournalStore(folder: JournalStore.defaultFolder)
+    public var transferStages = TransferStageJournal.shared
     public var driveJournals = DriveMutationJournal.shared
     /// An explicit recovery store set; nil discovers the registered provider journals.
     var cloudTransferJournals: [CloudTransferJournal]?

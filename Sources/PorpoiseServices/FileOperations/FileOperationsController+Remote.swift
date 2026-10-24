@@ -13,6 +13,7 @@ extension FileOperationsController {
             rule: rule ?? Settings.shared.transferConflictRule,
             options: options ?? TransferCompareOptions(method: Settings.shared.transferCompareMethod), completed: completed)
         runtime.disposeReplacedItem = replacementDisposal
+        runtime.stageJournal = transferStages
         runtime.cloudOperations = cloudOperations
         let activity = Activity(kind: kind, sources: urls, destination: folder, job: nil, control: control)
         runtime.cloudBatchID = cloudBatchID ?? activity.id

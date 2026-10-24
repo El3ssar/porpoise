@@ -44,6 +44,8 @@ let package = Package(
         // Fake-server-only subprocess used to verify durable journals across actual process death.
         .executableTarget(
             name: "DriveRecoveryProbe", dependencies: ["PorpoiseCore", "PorpoiseServices"], path: "Tests/DriveRecoveryProbe"),
+        .executableTarget(
+            name: "MoveRecoveryProbe", dependencies: ["PorpoiseCore", "PorpoiseFileSystem", "PorpoiseServices"], path: "Tests/MoveRecoveryProbe"),
         // Shared by the test targets: throwaway folders and disk images that clean up after themselves.
         .target(name: "PorpoiseTestSupport", path: "Tests/PorpoiseTestSupport"),
         // What the Services and App tests share: settings isolation, waiting, the fake servers and fakes.
