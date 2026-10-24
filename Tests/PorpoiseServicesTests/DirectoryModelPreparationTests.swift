@@ -264,7 +264,7 @@ import Testing
     }
 
     @Test(arguments: SortingChoice.allCases)
-    func preparedRowsMatchSynchronousModelAcrossSortingAndGrouping(_ choice: SortingChoice) throws {
+    func preparedRowsMatchSynchronousModelAcrossSortingAndGrouping(_ choice: SortingChoice) async throws {
         let s = try Scratch()
         let names = ["Z10.log", "Z2.log", "é.md", "E.txt", ".hidden", "backup~"]
         var items: [FileItem] = []
@@ -289,6 +289,7 @@ import Testing
                 reference.props = props
                 reference.applyEdit(ListingEdit(folder: s.url, added: items))
                 reference.filter = NameFilter(text: "")
+                try #require(await eventually { !reference.isLoading })
                 let input = DirectoryModelPreparation(
                     items: items, incoming: [], children: [:], expanded: [], props: props, filter: reference.filter,
                     choice: choice, hideBackups: true, sizes: [:], knownTags: [:], ordered: nil)

@@ -83,14 +83,17 @@ import Testing
         m.reload()
         #expect(await eventually { !m.isLoading })
         m.props.sortRole = .tags
+        try #require(await eventually { !m.isLoading })
         #expect(m.rows.map(\.item.name) == ["c", "b", "a"])
         m.props.groupSameAsSort = true
+        try #require(await eventually { !m.isLoading })
         #expect(m.groups.map(\.title) == ["Blue", "Red", "No Tags"])
         #expect(m.text(for: .tags, of: m.rows[1].item) == "Red")
         // Tagging is seen after a refresh.
         try FinderTags.set(["Green"], on: s.path("a"))
         m.refreshTags()
         m.rebuild()
+        try #require(await eventually { !m.isLoading })
         #expect(m.groups.map(\.title) == ["Blue", "Green", "Red"])
     }
 }
