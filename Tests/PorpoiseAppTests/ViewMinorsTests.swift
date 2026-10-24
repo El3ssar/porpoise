@@ -71,6 +71,9 @@ import Testing
         try Data(repeating: 1, count: 4096).write(to: file)
         pane.reload()
         #expect(await eventually { self.text(in: panel).contains("4 KB") })
+        // And it stays: a read of the item begun before it changed doesn't land afterwards.
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(self.text(in: panel).contains("4 KB"))
     }
 
     /// #10: a URL that isn't shown is looked up once per listing, however many thumbnails ask about it.

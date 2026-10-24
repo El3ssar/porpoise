@@ -43,7 +43,7 @@ import PorpoiseServices
 
     static let tiers = [
         "Standard approval — changing items that belong to the system, other people or another volume (an app in Applications, a file in /Library): Touch ID or your password once, then 5 minutes without asking.",
-        "Protected approval — system settings, what runs when your Mac starts, other people’s home folders, owners and setuid programs: asked every time, naming exactly what will change.",
+        "Protected approval — system settings, what runs when your Mac starts, other people’s files (an app another person installed, too), owners and setuid programs: asked every time, naming exactly what will change.",
         "Never — items macOS itself protects (System Integrity Protection), and requests from Shortcuts, scripts or the command line, which never use the helper.",
     ]
 
