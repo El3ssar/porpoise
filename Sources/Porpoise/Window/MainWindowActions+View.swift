@@ -14,6 +14,12 @@ extension MainWindowController {
 
     @objc func setViewMode(_ sender: NSMenuItem) {
         guard let m = ViewMode.allCases[safe: sender.tag] else { return }
+        show(m)
+    }
+
+    /// The active pane in mode `m`; Column view leaves it alone in the tab.
+    func show(_ m: ViewMode) {
+        if m == .columns { tab.keepAlone(view) }
         view.setMode(m)
         syncToActiveView()
     }
@@ -21,8 +27,7 @@ extension MainWindowController {
     func cycleViewMode() {
         let all = ViewMode.allCases
         let i = all.firstIndex(of: view.model.props.mode) ?? 0
-        view.setMode(all[(i + 1) % all.count])
-        syncToActiveView()
+        show(all[(i + 1) % all.count])
     }
 
     @objc func sortBy(_ sender: NSMenuItem) {

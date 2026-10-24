@@ -105,6 +105,15 @@ final class PorpoiseTab: NSView {
 
     var active: ViewContainer { activeIsSecondary ? (secondary ?? primary) : primary }
     var inactive: ViewContainer? { secondary == nil ? nil : (activeIsSecondary ? primary : secondary) }
+    /// Column view shows one pane: no split while it's the view.
+    var canSplit: Bool { !active.showsColumns }
+
+    /// Column view chosen in a split: the other pane closes, and `pane` (in Column view now) stays alone.
+    func keepAlone(_ pane: ViewContainer) {
+        guard isSplit, containers.contains(where: { $0 === pane }) else { return }
+        setActive(secondary: pane === secondary)
+        closeSplit(closeActive: false)
+    }
     var isSplit: Bool { secondary != nil }
     var containers: [ViewContainer] { [primary] + (secondary.map { [$0] } ?? []) }
 
@@ -217,7 +226,7 @@ final class PorpoiseTab: NSView {
 
     /// Opens the second view (Dolphin F3): it slides in from the right edge to its last width (OutCubic).
     func openSplit(url: URL? = nil, animated: Bool = true, loadsWhenShown: Bool = false) {
-        guard secondary == nil else { return }
+        guard secondary == nil, canSplit else { return }
         finishClosing()
         let s = ViewContainer(url: url ?? active.url, loadsWhenShown: loadsWhenShown && window == nil)
         s.delegate = primary.delegate
@@ -233,9 +242,7 @@ final class PorpoiseTab: NSView {
         // receives copies of them that fly over once it has listed its folder (its own style and order apply).
         let leftWidth = SplitLayout.lineX(fraction: Self.lastFraction, in: bounds.width)
         let rightWidth = bounds.width - leftWidth - SplitDividerView.lineWidth
-        // Column view: its columns keep their widths and the pane slides over them (flights would land on a list laid
-        // out at another width, and copies of its rows would stretch on the way).
-        let flies = primary.list.transitions.animates && !primary.showsColumns
+        let flies = primary.list.transitions.animates
         if flies {
             // Only Icons rearranges with the width; Details and Compact just follow it smoothly.
             if primary.list.mode == .icons {

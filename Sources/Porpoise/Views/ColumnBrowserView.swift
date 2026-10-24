@@ -5,8 +5,8 @@ import PorpoiseServices
 /// Where ← and → go in Column view.
 protocol ColumnNavigating: AnyObject {
     func columnKey(right: Bool, from list: ItemListView)
-    /// The list a zoom gesture over `list` acts on: the focused column's.
-    func zoomTarget(from list: ItemListView) -> ItemListView
+    /// A click in `list` (the focus goes to its column, if it's another one).
+    func columnClicked(_ list: ItemListView)
 }
 
 /// A Column view column that isn't the focused one: a folder on the path before it, or the folder its one selected
@@ -23,7 +23,8 @@ final class BrowserColumn {
     /// What the column shows while it has no rows: a quiet line at its top (the focused column has the pane's own).
     let stateLabel = ColumnStateLabel()
     private var loadingWork: DispatchWorkItem?
-    /// Where Back put the column's rows, once its folder has listed.
+    /// Where the column's rows go once it has listed and is laid out: where they were (the column was the focused
+    /// one, or Back put them back). A column never scrolls on its own after a click elsewhere.
     var pendingOrigin: CGPoint?
 
     var url: URL { model.location }
@@ -50,7 +51,12 @@ final class BrowserColumn {
             self.list.accessibilitySelectionChanged()
             if !self.settingPath { self.browser?.columnSelectionChanged(self) }
         }
-        model.onPropsChanged = { [weak self] in self?.list.relayout() }
+        model.onPropsChanged = { [weak self] in
+            guard let self else { return }
+            self.list.relayout()
+            // A pinch or ⌘-wheel over this column zoomed it: that's its own size now.
+            if self.list.committingZoom { self.browser?.columnZoomed(self) }
+        }
         model.onLoaded = { [weak self] in
             guard let self else { return }
             // The path item may have arrived with this listing.
@@ -96,7 +102,7 @@ final class BrowserColumn {
         model.selection = shown.map { [$0] } ?? []
         model.currentURL = shown
         model.anchorURL = shown
-        if let shown, let i = model.index(of: shown) {
+        if pendingOrigin == nil, let shown, let i = model.index(of: shown) {
             if list.frames.count != model.rows.count { list.computeLayout() }
             list.scrollToItem(i)
         }
@@ -228,6 +234,12 @@ final class ColumnBrowserView: NSView {
     /// The icon size of the column listing `url`.
     func iconSize(of url: URL) -> CGFloat? { size(of: url)?.iconSize }
 
+    /// Column `c` was zoomed under the pointer: its new icon size is its own.
+    func columnZoomed(_ c: BrowserColumn) {
+        let k = Self.key(c.url), s = c.model.props.iconSize(for: .columns)
+        if let i = sizes.firstIndex(where: { Self.key($0.url) == k }), sizes[i].iconSize != s { sizes[i].iconSize = s }
+    }
+
     private func size(of url: URL) -> ColumnSize? {
         let k = Self.key(url)
         return sizes.first { Self.key($0.url) == k }
@@ -239,7 +251,8 @@ final class ColumnBrowserView: NSView {
 
     /// The pane is about to go to `url`: the column already listing it lends its rows to the pane's model, and the
     /// folder the pane leaves stays at hand for the column it may become.
-    func willNavigate(to url: URL) -> BrowserColumn? {
+    /// `leftAt`: where the focused column's rows were scrolled; the column it becomes keeps them there.
+    func willNavigate(to url: URL, leftAt: CGPoint) -> BrowserColumn? {
         navigating = true
         let leaving = container.url
         let lender = column(listing: url)
@@ -247,8 +260,14 @@ final class ColumnBrowserView: NSView {
         // parent (←, Up).
         let below = ColumnPath.chain(from: root, to: url)?.contains { Self.key($0) == Self.key(leaving) } ?? false
         let parent = Self.key(leaving.deletingLastPathComponent()) == Self.key(url)
-        if below || parent, Self.key(leaving) != Self.key(url), column(listing: leaving) == nil, !container.model.items.isEmpty {
-            keepSpare(BrowserColumn(url: leaving, listing: container.model, browser: self))
+        if below || parent, Self.key(leaving) != Self.key(url), !container.model.items.isEmpty {
+            if let c = column(listing: leaving) {
+                c.pendingOrigin = leftAt
+            } else {
+                let c = BrowserColumn(url: leaving, listing: container.model, browser: self)
+                c.pendingOrigin = leftAt
+                keepSpare(c)
+            }
         }
         return lender
     }
@@ -446,6 +465,10 @@ final class ColumnBrowserView: NSView {
         for case let s as NSScrollView in shown.map(\.view) {
             (s.documentView as? ItemListView)?.relayout()
         }
+        for c in before + [after].compactMap({ $0 }) where c.pendingOrigin != nil && !c.model.rows.isEmpty && h > 0 {
+            c.list.scroll(c.pendingOrigin ?? .zero)
+            c.pendingOrigin = nil
+        }
         for c in before + [after].compactMap({ $0 }) where !c.stateLabel.isHidden { c.stateLabel.place() }
         content.needsDisplay = true
     }
@@ -606,12 +629,15 @@ final class ColumnBrowserView: NSView {
     func focus(_ c: BrowserColumn) {
         guard before.contains(where: { $0 === c }) || after === c else { return }
         let selection = c.model.selection, current = c.model.currentURL, anchor = c.model.anchorURL
+        let origin = c.list.visibleRect.origin
         container.setURL(c.url)
         let model = container.model
         model.selection = selection.filter { model.index(of: $0) != nil }
         model.currentURL = current.flatMap { model.index(of: $0) != nil ? $0 : nil }
         model.anchorURL = anchor
-        if let current, let i = model.index(of: current) { container.list.scrollToItem(i) }
+        // Its rows stay where they were: a click never scrolls the column it's in.
+        if container.list.frames.count != model.rows.count { container.list.computeLayout() }
+        container.list.scroll(origin)
         window?.makeFirstResponder(container.list)
         container.list.needsDisplay = true
     }
@@ -647,7 +673,9 @@ final class ColumnBrowserView: NSView {
 
 extension ColumnBrowserView: ColumnNavigating {
     /// ← goes to the column before (its folder selected); → into the selected folder, selecting its first item.
-    func zoomTarget(from list: ItemListView) -> ItemListView { container.list }
+    func columnClicked(_ list: ItemListView) {
+        if let c = column(of: list) { columnSelectionChanged(c) }
+    }
 
     func columnKey(right: Bool, from list: ItemListView) {
         if list !== container.list { focusNow(list) }
@@ -675,7 +703,7 @@ extension ColumnBrowserView: ColumnNavigating {
 extension ColumnBrowserView: ItemListViewDelegate {
     func itemList(_ view: ItemListView, open items: [FileItem], inNewTab: Bool) {
         focusNow(view)
-        container.itemList(container.list, open: items, inNewTab: inNewTab)
+        container.itemList(view, open: items, inNewTab: inNewTab)
     }
 
     func itemList(_ view: ItemListView, menuFor item: FileItem?) -> NSMenu? {

@@ -102,9 +102,14 @@ extension ItemListView {
         mouseDownIndex = idx
         let mods = event.modifierFlags
 
+        // Column view: a click in another column gives it the focus, even on the item already selected there.
+        defer { if mode == .columns, event.clickCount == 1 { columnNavigator?.columnClicked(self) } }
+
         if event.clickCount == 2 {
             if let i = idx {
                 if expanderRect(i)?.contains(p) == true { return }
+                openingByDoubleClick = true
+                defer { openingByDoubleClick = false }
                 delegate?.itemList(self, open: [model.rows[i].item], inNewTab: false)
             } else {
                 delegate?.itemListBackgroundDoubleClicked(self)
@@ -236,10 +241,6 @@ extension ItemListView {
 
 extension ItemListView {
     override func scrollWheel(with event: NSEvent) {
-        if event.modifierFlags.contains(.command), let target = columnNavigator?.zoomTarget(from: self), target !== self {
-            _ = target.zoomWithWheel(event, anchored: false)
-            return
-        }
         if zoomWithWheel(event) { return }
         super.scrollWheel(with: event)
         // The content moved under a still pointer.
@@ -248,11 +249,7 @@ extension ItemListView {
         }
     }
 
-    override func magnify(with event: NSEvent) {
-        // Column view: a zoom over another column is the focused column's (it stays where it is, as does the focus).
-        if let target = columnNavigator?.zoomTarget(from: self), target !== self { return target.zoomWithPinch(event, anchored: false) }
-        zoomWithPinch(event)
-    }
+    override func magnify(with event: NSEvent) { zoomWithPinch(event) }
 
     override func swipe(with event: NSEvent) {
         if event.deltaX > 0 {

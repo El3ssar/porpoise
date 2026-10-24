@@ -28,6 +28,17 @@ extension MainWindowController {
         }  // a background tab's title
     }
 
+    /// A pane of a split went into Column view on its own (a folder's own setting): the other pane closes, after
+    /// this layout pass.
+    func containerDidEnterColumns(_ c: ViewContainer) {
+        guard let t = tabs.first(where: { $0.containers.contains { $0 === c } }), t.isSplit else { return }
+        DispatchQueue.main.async { [weak self, weak t, weak c] in
+            guard let self, let t, let c, c.showsColumns else { return }
+            t.keepAlone(c)
+            if t === self.tab { self.syncToActiveView() }
+        }
+    }
+
     func containerSelectionChanged(_ c: ViewContainer) {
         if c === view {
             if showInformation { information.show(hovered: nil, container: c) }
