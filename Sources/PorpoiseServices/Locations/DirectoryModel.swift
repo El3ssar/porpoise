@@ -718,8 +718,6 @@ public final class DirectoryModel {
             return
         }
         let choice = Settings.shared.sortingChoice
-        var out: [Row] = []
-        var grps: [ItemGroup] = []
         let groupRole = props.effectiveGroupRole
         let top: [FileItem]
         if keepingOrder, let kept = sortedTop {
@@ -740,43 +738,28 @@ public final class DirectoryModel {
         let sorted = filter.matcher().map { match in top.filter { match($0.name) } } ?? top
         let tagNames = groupRole == .tags ? tagMap(sorted) : [:]
 
-        func add(_ list: [FileItem], depth: Int, groupIndex: Int) {
-            for it in list {
-                let isExp = expanded.contains(it.url) && props.mode == .details
-                out.append(Row(item: it, depth: depth, isExpanded: isExp, group: groupIndex))
-                if isExp, let kids = children[it.url] {
-                    let vk = visible(kids)
-                    let ks = ItemSorter.sort(
-                        vk, props: props, choice: choice, folderSizes: folderCounts,
-                        tags: props.sortRole == .tags ? tagMap(vk) : [:])
-                    add(ks, depth: depth + 1, groupIndex: groupIndex)
-                }
-            }
-        }
-
+        let sections: [(title: String, items: [FileItem])]?
         if isSearching, let m = searchMatches, m.contents {
             // Names first, then what was found inside files; each keeps the sort order.
             var byName: [FileItem] = [], inside: [FileItem] = []
             for it in sorted {
                 if m.nameMatches(it) { byName.append(it) } else { inside.append(it) }
             }
-            for (title, list) in [("Name matches", byName), ("Content matches", inside)] where !list.isEmpty {
-                let start = out.count
-                add(list, depth: 0, groupIndex: grps.count)
-                grps.append(ItemGroup(title: title, firstRow: start, count: out.count - start))
-            }
+            sections = [("Name matches", byName), ("Content matches", inside)].filter { !$0.1.isEmpty }
         } else if let role = groupRole {
-            let parts = ItemGrouper.groups(sorted, role: role, props: props, choice: choice, folderSizes: folderCounts, tags: tagNames)
-            for (gi, g) in parts.enumerated() {
-                let start = out.count
-                add(g.items, depth: 0, groupIndex: gi)
-                grps.append(ItemGroup(title: g.title, firstRow: start, count: out.count - start))
-            }
+            sections = ItemGrouper.groups(sorted, role: role, props: props, choice: choice, folderSizes: folderCounts, tags: tagNames)
         } else {
-            add(sorted, depth: 0, groupIndex: -1)
+            sections = nil
         }
-        rows = out
-        groups = grps
+        let assembly = DirectoryRowAssembly.build(sorted, groups: sections, expanded: expanded, expandsFolders: props.mode == .details) { url in
+            guard let kids = children[url] else { return nil }
+            let visibleKids = visible(kids)
+            return ItemSorter.sort(
+                visibleKids, props: props, choice: choice, folderSizes: folderCounts,
+                tags: props.sortRole == .tags ? tagMap(visibleKids) : [:])
+        }
+        rows = assembly.rows
+        groups = assembly.groups
         requestFolderCounts()
         onChange?()
         if loadedNotificationPending {
