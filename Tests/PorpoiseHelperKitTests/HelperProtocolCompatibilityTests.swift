@@ -4,7 +4,9 @@ import PorpoiseHelperKit
 import Testing
 
 struct HelperProtocolCompatibilityTests {
-    @Test func installedHelpersKeepTheSameProtocolAndSelectors() {
+    /// The wire name stays; the selectors are version 7's (W-245): every root action goes through `perform`, with
+    /// an authorization. A version 6 helper never meets this app: it's installed again first (another code hash).
+    @Test func installedHelpersKeepTheWireNameWithVersion7Selectors() {
         let wireName = "PorpoiseCore.PorpoiseHelperProtocol"
         let proto = PorpoiseHelperProtocol.self
         #expect(String(cString: protocol_getName(proto)) == wireName)
@@ -17,6 +19,7 @@ struct HelperProtocolCompatibilityTests {
         let descriptions = protocol_copyMethodDescriptionList(proto, true, true, &count)
         defer { free(descriptions) }
         let selectors = (0..<Int(count)).compactMap { descriptions?[$0].name.map(NSStringFromSelector) }
-        #expect(Set(selectors) == ["versionWithReply:", "run:reply:", "takeOwnershipOfTrashed:reply:", "checkFullDiskAccessWithReply:"])
+        #expect(Set(selectors) == ["versionWithReply:", "perform:authorization:handOver:reply:", "checkFullDiskAccessWithReply:"])
+        #expect(PorpoiseHelperInfo.version == "7")
     }
 }

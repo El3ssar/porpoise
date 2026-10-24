@@ -25,20 +25,10 @@ import Testing
             return
         }
         #expect(why.contains("Test instances"))
-        guard case .unavailable = PrivilegedHelper.run([], bestEffort: ["/bin/chmod"]) else {
+        guard case .unavailable = PrivilegedHelper.run([], handOver: ["/tmp/x"]) else {
             Issue.record("a test run must not use the helper")
             return
         }
-    }
-
-    @Test func takingOwnershipDoesNothing() throws {
-        let s = try Scratch()
-        let f = try s.file("trashed.txt", "x")
-        let before = try FileManager.default.attributesOfItem(atPath: f.path)[.ownerAccountID] as? NSNumber
-        PrivilegedHelper.takeOwnership(of: [])
-        PrivilegedHelper.takeOwnership(of: [f.path])
-        #expect(try FileManager.default.attributesOfItem(atPath: f.path)[.ownerAccountID] as? NSNumber == before)
-        #expect(s.read("trashed.txt") == "x")
     }
 
     @Test func loginItemsMigrationIsSkipped() {

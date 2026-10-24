@@ -130,7 +130,7 @@ enum SystemIntegration {
                 }
                 return PrivilegedHelper.hasFullDiskAccess == false
                     ? (false, "Installed. Click Allow…, then switch Porpoise Helper on under Full Disk Access.")
-                    : (true, "Allowed. Porpoise empties the Trash and changes system-owned items (such as App Store apps) without asking.")
+                    : (true, "Allowed. Porpoise asks for Touch ID or your password before it changes system-owned items (such as App Store apps).")
             },
             request: (
                 "Allow…",

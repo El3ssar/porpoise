@@ -33,7 +33,7 @@ struct HelperIdentity: Equatable, Hashable, Codable {
 
 /// A pinned parent plus a single basename. The original pathname is never passed to a mutating syscall.
 final class HelperPath {
-    enum Access { case read, write, remove }
+    enum Access { case read, write, remove, change }
     let parent: HelperDescriptor
     let name: String
     let display: String
@@ -55,6 +55,7 @@ final class HelperPath {
         case .read: allowed = HelperRequests.isPath(full)
         case .write: allowed = HelperRequests.writable(full)
         case .remove: allowed = HelperRequests.removable(full)
+        case .change: allowed = HelperRequests.isPath(full)
         }
         guard allowed else { throw HelperFailure("That location is not allowed for this operation.") }
         var parentInfo = stat()
@@ -79,6 +80,14 @@ final class HelperPath {
         expected = try Self.statAt(parent.fd, name, missing: false)
         leaf = try Self.openLeaf(parent.fd, name, expected: expected)
         try validate()
+    }
+
+    /// The item as opened: the parent descriptor's own path (not the one asked for) and the leaf's stat.
+    var facts: HelperPathFacts {
+        let full = HelperPolicy.normalized((parent.path ?? canonicalParent ?? "") + "/" + name)
+        return HelperPathFacts(
+            path: full, owner: expected?.st_uid, mode: expected?.st_mode, flags: expected?.st_flags,
+            restricted: HelperPathFacts.isRestricted((parent.path ?? canonicalParent ?? "") + "/" + name))
     }
 
     func validateParent() throws {

@@ -70,13 +70,13 @@ import Testing
             ["/bin/cp", "-pR", "--", "/Users/me/a", "/Library/Fonts/a"], ["/bin/cp", "--", "/tmp/x", "/Applications/new.txt"],
             ["/bin/ln", "-s", "--", "../relative target", "/usr/local/bin/tool"], ["/bin/mkdir", "--", "/Library/Application Support/X"],
             ["/bin/chmod", "-h", "--", "755", "/Applications/A.app"], ["/bin/rm", "-rf", "--", "/Applications/A.app"],
-            ["/usr/bin/chflags", "-R", "nouchg,noschg", "/Library/Old/thing"],
+            ["/usr/bin/chflags", "-R", "nouchg,noschg", "/Library/Old/thing"], ["/usr/bin/chflags", "-h", "schg", "/Library/Old/thing"],
+            ["/usr/sbin/chown", "-h", "--", "0:0", "/Library/Old/thing"],
         ]
         for args in sent { #expect(HelperRequests.refusal(args) == nil, "\(args)") }
         #expect(Set(sent.map { $0[0] }) == PorpoiseHelperInfo.allowedTools)
         #expect(PorpoiseHelperInfo.allowedTools.allSatisfy { $0.hasPrefix("/") })
-        #expect(
-            !PorpoiseHelperInfo.allowedTools.contains { $0.hasSuffix("/sh") || $0.hasSuffix("bash") || $0.hasSuffix("zsh") || $0.hasSuffix("chown") })
+        #expect(!PorpoiseHelperInfo.allowedTools.contains { $0.hasSuffix("/sh") || $0.hasSuffix("bash") || $0.hasSuffix("zsh") })
     }
 
     @Test func refusesEverythingElse() {
@@ -94,26 +94,22 @@ import Testing
         #expect(HelperRequests.refusal([]) == "Porpoise's helper doesn't run nothing.")
     }
 
-    /// The tools only in the shapes Porpoise uses: no other flags, no setuid, nothing written into the system's
-    /// own folders, no volume or system root removed, no relative paths or "..".
+    /// The tools only in the shapes Porpoise uses: no other flags, no volume or system root removed, no relative
+    /// paths or "..". (Where they may act, and with which approval, is the policy's: `HelperTierTests`.)
     @Test func refusesOtherArgumentsOfTheAllowedTools() throws {
-        let s = try Scratch()
-        try s.symlink("toEtc", to: "/private/etc")
         let bad: [[String]] = [
             ["/bin/rm", "-rf", "/"], ["/bin/rm", "-rf", "--", "/"], ["/bin/rm", "-rf", "--", "/Users"], ["/bin/rm", "-rf", "--", "/Volumes/Disk"],
-            ["/bin/rm", "-rf", "--", "/System/Library"], ["/bin/rm", "-rf", "--", "/usr/bin/true"], ["/bin/rm", "-f", "--", "/x/y"],
+            ["/bin/rm", "-f", "--", "/x/y"], ["/bin/rm", "-rf", "--", "/Library/LaunchDaemons"], ["/bin/rm", "-rf", "--", "/private/etc"],
             ["/bin/rm", "-rf", "--", "relative/x"], ["/bin/rm", "-rf", "--", "/x/../etc/y"], ["/bin/rm", "-rf", "--", "/a/b", "/c/d"],
-            ["/bin/cp", "--", "/tmp/x", "/etc/sudoers"], ["/bin/cp", "--", "/tmp/x", "/private/etc/sudoers"],
-            ["/bin/cp", "-pR", "--", "/tmp/x", "/Library/LaunchDaemons/evil.plist"], ["/bin/cp", "-f", "--", "/tmp/x", "/Users/me/y"],
-            ["/bin/mv", "--", "/tmp/x", "/LIBRARY/launchdaemons/evil.plist"], ["/bin/mv", "-f", "/a/b", "/c/d"],
-            ["/bin/mv", "--", "/tmp/x", s.path("toEtc").path + "/sudoers"],  // a link on the way into /private/etc
-            ["/bin/ln", "-s", "--", "/tmp/evil", "/Library/LaunchAgents/x.plist"], ["/bin/ln", "--", "/a", "/b/c"],
-            ["/bin/ln", "-s", "--", "", "/b/c"],
+            ["/bin/cp", "-f", "--", "/tmp/x", "/Users/me/y"], ["/bin/mv", "-f", "/a/b", "/c/d"],
+            ["/bin/ln", "--", "/a", "/b/c"], ["/bin/ln", "-s", "--", "", "/b/c"],
             ["/bin/chmod", "4755", "/Applications/A.app"], ["/bin/chmod", "--", "755", "/Applications/A.app"],
-            ["/bin/chmod", "-h", "--", "4755", "/Applications/A.app"], ["/bin/chmod", "-h", "--", "2755", "/x/y"],
-            ["/bin/chmod", "-h", "--", "u+s", "/x/y"], ["/bin/chmod", "-h", "--", "666", "/private/etc/periodic/daily/x"],
-            ["/bin/mkdir", "-p", "/x/y"], ["/bin/mkdir", "--", "/usr/libexec/x"], ["/usr/bin/chflags", "uchg", "/x/y"],
-            ["/usr/bin/chflags", "-R", "nouchg,noschg", "/"],
+            ["/bin/chmod", "-h", "--", "u+s", "/x/y"], ["/bin/chmod", "-h", "--", "17555", "/x/y"], ["/bin/chmod", "-h", "--", "", "/x/y"],
+            ["/bin/mkdir", "-p", "/x/y"], ["/usr/bin/chflags", "uchg", "/x/y"], ["/usr/bin/chflags", "-h", "nodump", "/x/y"],
+            ["/usr/bin/chflags", "-h", "schg,uchg", "/x/y"], ["/usr/bin/chflags", "-R", "nouchg,noschg", "/"],
+            ["/usr/sbin/chown", "0:0", "/x"], ["/usr/sbin/chown", "-h", "--", "root:wheel", "/x"], ["/usr/sbin/chown", "-h", "--", "0", "/x"],
+            ["/usr/sbin/chown", "-R", "--", "0:0", "/x"], ["/usr/sbin/chown", "-h", "--", "0:0:0", "/x"],
+            ["/usr/sbin/chown", "-h", "--", "99999999999:0", "/x"],
         ]
         for args in bad {
             #expect(HelperRequests.refusal(args)?.hasSuffix("like this.") == true, "\(args)")
@@ -124,7 +120,7 @@ import Testing
     /// can't see. Refused for every tool that writes, whatever the link points to.
     @Test func refusesALinkAsTheDestination() throws {
         let s = try Scratch()
-        for (i, folder) in (HelperRequests.protectedFolders + ["/Users/Shared"]).enumerated() {
+        for (i, folder) in ["/private/etc", "/Library/LaunchDaemons", "/System", "/usr/bin", "/Users/Shared"].enumerated() {
             let link = try s.symlink("link\(i)", to: folder).path
             for args in [
                 ["/bin/mv", "--", "/tmp/x", link], ["/bin/mv", "-n", "--", "/tmp/x", link], ["/bin/cp", "--", "/tmp/x", link],
@@ -142,17 +138,17 @@ import Testing
         #expect(HelperRequests.refusal(["/bin/mv", "--", "/tmp/x", s.path("new").path]) == nil)
     }
 
-    /// Removing: never a protected folder itself or anything in the system's configuration and secrets; what apps
-    /// install in the other protected folders may go (that's how they're uninstalled).
-    @Test func removesNothingOfTheSystemsOwn() {
-        for p in HelperRequests.protectedFolders + ["/private/etc/hosts", "/private/var/db/sudo", "/Library/Security/x", "/private/var/root/.ssh"] {
+    /// Removing or moving away: never the system's fixed folders themselves; what is in them takes a protected
+    /// approval (`HelperTierTests`), as an app's launch daemon is uninstalled.
+    @Test func removesNoneOfTheSystemsFixedFolders() {
+        for p in ["/Library/LaunchDaemons", "/Library/Security", "/private/etc", "/private/var/db", "/private/var/root", "/Users/Shared"] {
             #expect(HelperRequests.refusal(["/bin/rm", "-rf", "--", p]) != nil, "\(p)")
             #expect(HelperRequests.refusal(["/bin/mv", "--", p, "/Users/me/.Trash/x"]) != nil, "\(p)")
             #expect(HelperRequests.refusal(["/usr/bin/chflags", "-R", "nouchg,noschg", p]) != nil, "\(p)")
         }
         for p in [
             "/Library/LaunchDaemons/com.vendor.helper.plist", "/Library/LaunchAgents/com.vendor.agent.plist",
-            "/Library/PrivilegedHelperTools/com.vendor.helper",
+            "/Library/PrivilegedHelperTools/com.vendor.helper", "/private/etc/hosts",
         ] {
             #expect(HelperRequests.refusal(["/bin/mv", "--", p, "/Users/me/.Trash/x"]) == nil, "\(p)")
             #expect(HelperRequests.refusal(["/bin/rm", "-rf", "--", p]) == nil, "\(p)")

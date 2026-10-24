@@ -9,6 +9,9 @@ enum HelperOperation {
     case chmod(String, mode_t)
     case remove(String)
     case unlock(String)
+    case chown(String, uid_t, gid_t)
+    /// One flag set or cleared on the item itself (never a link's target): see `HelperRequests.settableFlags`.
+    case setFlag(String, flag: UInt32, on: Bool)
 
     init(_ arguments: [String]) throws {
         if let reason = HelperRequests.refusal(arguments) { throw HelperFailure(reason) }
@@ -20,7 +23,26 @@ enum HelperOperation {
         case "/bin/mkdir": self = .mkdir(last)
         case "/bin/chmod": self = .chmod(last, mode_t(arguments[3], radix: 8)!)
         case "/bin/rm": self = .remove(last)
-        default: self = .unlock(last)
+        case "/usr/sbin/chown":
+            let owner = arguments[3].split(separator: ":")
+            self = .chown(last, uid_t(owner[0])!, gid_t(owner[1])!)
+        default:
+            if arguments[1] == "-h", let (flag, on) = HelperRequests.settableFlag(arguments[2]) {
+                self = .setFlag(last, flag: flag, on: on)
+            } else {
+                self = .unlock(last)
+            }
+        }
+    }
+
+    /// The paths it names, with what it does to each.
+    var paths: [(path: String, role: HelperPathRole)] {
+        switch self {
+        case .move(let a, let b, _): return [(a, .remove), (b, .write)]
+        case .copy(let a, let b, _): return [(a, .read), (b, .write)]
+        case .link(_, let b), .mkdir(let b): return [(b, .write)]
+        case .remove(let p): return [(p, .remove)]
+        case .chmod(let p, _), .unlock(let p), .chown(let p, _, _), .setFlag(let p, _, _): return [(p, .change)]
         }
     }
 }

@@ -36,6 +36,24 @@ public enum CodeSigning {
         return isIntact(staticCode, requirement: requirement)
     }
 
+    /// The same check for the process that sent `auditToken` (an audit token names one process for good, where a
+    /// process number can be reused).
+    public static func isIntact(auditToken: Data, requirement: String) -> Bool {
+        var code: SecCode?
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributeAudit: auditToken] as CFDictionary, [], &code) == errSecSuccess,
+            let code, SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode
+        else { return false }
+        return isIntact(staticCode, requirement: requirement)
+    }
+
+    /// Whether the helper takes a connection: from a process it can name by audit token (none: refused), whose
+    /// program on disk is intact and signed as `requirement` says.
+    public static func accepts(auditToken: Data?, requirement: String?, isIntact: (Data, String) -> Bool = isIntact) -> Bool {
+        guard let auditToken, auditToken.count == MemoryLayout<audit_token_t>.size, let requirement else { return false }
+        return isIntact(auditToken, requirement)
+    }
+
     /// Whether the bundle or program at `url` is signed as `requirement` says and unchanged, nested code included.
     public static func isIntact(at url: URL, requirement: String) -> Bool {
         var staticCode: SecStaticCode?
