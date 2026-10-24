@@ -73,12 +73,30 @@ import Testing
         let server = try FakeDropboxServer()
         let store = DropboxAccountStore(
             defaults: MemoryDefaults(), credentials: MemoryCredentials(), configuration: server.config, directory: server.directory)
-        let waiting = Task { @MainActor in try await store.connect { _ in } }  // the browser never answers
-        for _ in 0..<200 where !store.connecting { await Task.yield() }
+        var waiting: Task<DropboxAccount, Error>?
+        defer { waiting?.cancel() }
+        do {
+            try await awaitCallback("first sign-in opened its browser") { (opened: Callback<Void>) in
+                waiting = Task { @MainActor in
+                    do {
+                        // Opening the browser acknowledges startup; it never answers, so sign-in stays busy.
+                        return try await store.connect { _ in opened.resume() }
+                    } catch {
+                        opened.resume(throwing: error)
+                        throw error
+                    }
+                }
+            }
+        } catch {
+            waiting?.cancel()
+            _ = try? await waiting?.value
+            throw error
+        }
+        let first = try #require(waiting)
         #expect(store.connecting)
         await #expect(throws: CloudConnectionError.busy) { try await store.connect { _ in } }
-        waiting.cancel()
-        _ = try? await waiting.value
+        first.cancel()
+        _ = try? await first.value
         #expect(!store.connecting && store.accounts.isEmpty)
     }
 
