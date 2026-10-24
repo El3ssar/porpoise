@@ -304,6 +304,11 @@ public final class FileJob: @unchecked Sendable {
             }
         }
         do {
+            if kind == .copy || (kind == .move && !Self.sameVolume(src, folder)) {
+                try CopyNamePreflight.validateCopy(
+                    src, to: target, siblings: sources, cancellation: control.asDiskCancellation(),
+                    excluded: { self.control.policy.excludes($0, sources: self.sources) })
+            }
             if !control.policy.exclusions.isEmpty, placement == .new, let item = FileItem.load(src), item.isDirectory, !item.isSymlink {
                 // A filtered move can remove the empty source folder during merge. Keep its complete
                 // metadata separately, so ACLs, xattrs, modes and dates survive even in that case.

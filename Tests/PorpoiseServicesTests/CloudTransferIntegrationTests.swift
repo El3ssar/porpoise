@@ -38,6 +38,20 @@ import Testing
         }
     }
 
+    @Test(arguments: ["ExFAT", "MS-DOS FAT32"])
+    func aCloudFolderCannotOverwriteAnOrdinaryDestinationSidecar(_ fileSystem: String) async throws {
+        let f = try Fixture(), folder = try await f.dropbox.createFolder(name: "ordinary")
+        let disk = try DiskImage(name: "PPNAMES", megabytes: 64, fileSystem: fileSystem, in: f.scratch)
+        let sidecar = disk.volume.appendingPathComponent("._ordinary")
+        try Data("existing user bytes".utf8).write(to: sidecar)
+        let source = DropboxLocation(accountID: f.dropbox.accountID, itemID: folder.id).url
+        let job = await f.run(.copy, source, disk.volume)
+        #expect(job.results.isEmpty && job.errors.contains { $0.contains("reserved for file metadata") })
+        #expect(!FileManager.default.fileExists(atPath: disk.volume.appendingPathComponent("ordinary").path))
+        #expect(try String(contentsOf: sidecar, encoding: .utf8) == "existing user bytes")
+        #expect(try await f.dropbox.metadata(folder.id).name == "ordinary")
+    }
+
     @Test func disconnectDrainsInventoryBeforeCachesCanBeWiped() async throws {
         let held = Locked<Callback<Void>?>(nil), forward = DriveHTTP(), stopped = Flag()
         let http = DriveHTTP { request in
