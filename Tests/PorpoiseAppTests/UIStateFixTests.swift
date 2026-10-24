@@ -140,4 +140,35 @@ import Testing
         #expect(other.tabs.count == 1, "\(other.tabs.map(\.primary.url))")
         #expect(other.tabs.first?.primary.url.resolvingSymlinksInPath().path == b.resolvingSymlinksInPath().path)
     }
+
+    private final class EmptyFolder: RemoteProvider {
+        func list(_ folder: URL) throws -> [FileItem] { [] }
+        func rootTitle(_ url: URL) -> String { "Empty fixture" }
+        func download(_ remote: URL, into localFolder: URL) throws -> URL { throw CocoaError(.featureUnsupported) }
+        func upload(_ local: URL, into remoteFolder: URL) throws { throw CocoaError(.featureUnsupported) }
+        func delete(_ remote: [URL]) throws { throw CocoaError(.featureUnsupported) }
+        func makeFolder(_ remote: URL) throws { throw CocoaError(.featureUnsupported) }
+        func rename(_ remote: URL, to newName: String) throws { throw CocoaError(.featureUnsupported) }
+        func move(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
+        func copy(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
+    }
+
+    /// CR-25: Add to Places is available in an empty cloud folder, as the action supports.
+    @Test func addToPlacesIsAvailableInAnEmptyCloudFolder() async throws {
+        let account = "cr25-\(UUID().uuidString.prefix(6).lowercased())"
+        let root = try #require(URL(string: "gdrive://\(account)/my-drive/"))
+        let backend = CloudAccounts.shared.backend
+        CloudAccounts.shared.backend = DemoCloudBackend(accounts: [
+            CloudAccount(id: account, email: "fixture@example.invalid", displayName: "Fixture")
+        ])
+        RemoteFS.use(EmptyFolder(), for: root)
+        defer {
+            RemoteFS.use(nil, for: root)
+            CloudAccounts.shared.backend = backend
+        }
+        let wc = try browser([root])
+        defer { close(wc) }
+        #expect(PlacesModel.isCloud(wc.view.url) && wc.view.model.selectedItems.isEmpty)
+        #expect(wc.validateMenuItem(NSMenuItem(title: "Add to Places", action: #selector(MainWindowController.addToPlaces(_:)), keyEquivalent: "")))
+    }
 }
