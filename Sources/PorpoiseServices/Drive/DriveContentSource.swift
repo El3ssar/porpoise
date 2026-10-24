@@ -108,6 +108,7 @@ public final class DriveContentSource: CloudContentSource, @unchecked Sendable {
             partial: partial, account: accountID, legacy: partial.deletingLastPathComponent().appendingPathComponent(".operation"), item: item)
         let fm = FileManager.default
         if try await CloudStagedDownload.reuseVerified(item, partial: partial, refresh: { self.remoteItem(try await client.file(fresh.id)) }) {
+            if let operation = try sidecar.existing() { try CloudStagedDownload.discard(operation, journal: client.mutationJournal) }
             try? sidecar.remove(); progress(item.size ?? 0, item.size); return
         }
         let operation = try sidecar.operation()
@@ -122,6 +123,7 @@ public final class DriveContentSource: CloudContentSource, @unchecked Sendable {
             if fm.fileExists(atPath: partial.path) { try fm.removeItem(at: partial) }
             // The staging engine has already fsynced and authenticated these bytes.
             do { try fm.moveItem(at: staged.url, to: partial) } catch { try cloudClone(staged.url, to: partial); try fm.removeItem(at: staged.url) }
+            try CloudStagedDownload.discard(operation, journal: client.mutationJournal)
             try? sidecar.remove()
         } catch {
             if (error as? DriveMutationError) == .sourceChanged || (error as? CloudContentError) == .changed {

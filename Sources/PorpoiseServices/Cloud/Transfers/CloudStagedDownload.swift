@@ -24,21 +24,22 @@ enum CloudStagedDownload {
         journal: J, download: (UUID) async throws -> URL, using consume: (URL) throws -> Value
     ) async throws -> Value {
         let operation = UUID()
-        func discard() throws {
-            try journal.claim(operation); defer { journal.release(operation) }
-            guard let record = try journal.load(operation) else { return }
-            let partial = journal.partial(operation)
-            guard record.stagedURL == nil || record.stagedURL == partial else { throw CloudTransferError.sourceChanged }
-            try removeOwned(partial, fingerprint: record.fingerprint)
-            try journal.remove(operation)
-        }
+
         do {
             let partial = try await download(operation)
             let value = try consume(partial)
-            try discard(); return value
+            try discard(operation, journal: journal); return value
         } catch {
-            try? discard(); throw error
+            try? discard(operation, journal: journal); throw error
         }
+    }
+    static func discard<J: CloudStagedDownloadJournal>(_ operation: UUID, journal: J) throws {
+        try journal.claim(operation); defer { journal.release(operation) }
+        guard let record = try journal.load(operation) else { return }
+        let partial = journal.partial(operation)
+        guard record.stagedURL == nil || record.stagedURL == partial else { throw CloudTransferError.sourceChanged }
+        try removeOwned(partial, fingerprint: record.fingerprint)
+        try journal.remove(operation)
     }
     /// A crash after publication into the offline store's partial must not cause another media request.
     static func reuseVerified(_ item: CloudRemoteItem, partial: URL, refresh: () async throws -> CloudRemoteItem) async throws -> Bool {

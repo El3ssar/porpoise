@@ -222,6 +222,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.server.fixtures.pop("conflictOnSave", False):
             item["version"] = str(int(item.get("version", "1")) + 1)
             item["headRevisionId"] = "remote-conflict"
+            item.update(size=str(len(b"remote edit")), md5Checksum=hashlib.md5(b"remote edit").hexdigest())
             self.server.fixtures.setdefault("media", {})[item_id] = base64.b64encode(b"remote edit").decode()
             self.changed(item)
         if not self.headers.get("If-Match") or self.headers["If-Match"] != self.etag(item):
