@@ -38,10 +38,7 @@ extension FileOperationsController {
             revertRemote(change, window: window, back: { self.undoStack.append($0) }, inverse: { self.redoStack.append($0) })
             return
         }
-        switch revert(r) {
-        case .success(let inverse): if let inverse { redoStack.append(inverse) }; stacksChanged()
-        case .failure(let error): undoStack.append(r); stacksChanged(); showErrors([error.localizedDescription], window: window)
-        }
+        revertLocal(r, window: window, back: { self.undoStack.append($0) }, inverse: { self.redoStack.append($0) })
     }
 
     public func redo(window: AnyObject?) {
@@ -54,9 +51,82 @@ extension FileOperationsController {
             revertRemote(change, window: window, back: { self.redoStack.append($0) }, inverse: { self.undoStack.append($0) })
             return
         }
-        switch revert(r) {
-        case .success(let inverse): if let inverse { undoStack.append(inverse) }; stacksChanged()
-        case .failure(let error): redoStack.append(r); stacksChanged(); showErrors([error.localizedDescription], window: window)
+        revertLocal(r, window: window, back: { self.redoStack.append($0) }, inverse: { self.undoStack.append($0) })
+    }
+
+    /// Undoes or redoes a record on this Mac. Renames and moves within a volume are instant and happen at once; a
+    /// move between volumes copies the data back, so it runs off the main thread as an Activity (the window stays
+    /// usable, and Activity shows it), its record off the stacks meanwhile.
+    private func revertLocal(
+        _ r: UndoRecord, window: AnyObject?, back: @escaping (UndoRecord) -> Void, inverse: @escaping (UndoRecord) -> Void
+    ) {
+        guard undosRunning > 0 || Self.copiesData(r) else {
+            switch revert(r) {
+            case .success(let i): if let i { inverse(i) }; stacksChanged()
+            case .failure(let error): back(r); stacksChanged(); showErrors([error.localizedDescription], window: window)
+            }
+            return
+        }
+        stacksChanged()
+        let activity = Activity(
+            kind: .move, sources: Self.moves(of: r).map(\.from), destination: Self.moves(of: r).first?.to.deletingLastPathComponent(), job: nil,
+            pauseUnavailable: "Undo can't be paused.")
+        activity.cloudTitle = "Undoing: \(r.label)"
+        activity.originWindow = window
+        activities.append(activity)
+        began(activity)
+        ui?.jobStarted(activity)
+        activityDidChange()
+        undosRunning += 1
+        // Items it puts in the Trash (undoing a creation queued behind) can go back where they were.
+        TrashService.shared.record([])
+        let trash = TrashService.shared.trash
+        undoQueue.async {
+            let result = Result { try FileActions.undo(r, trash: trash) }
+            DispatchQueue.main.async { [self] in
+                undosRunning -= 1
+                TrashService.shared.flush()
+                switch result {
+                case .success(let i):
+                    if let i {
+                        inverse(i)
+                        Self.notifyChanged(Self.urls(of: i))
+                    }
+                    ended(activity, errors: [])
+                case .failure(let error):
+                    back(r)
+                    ended(activity, errors: [error.localizedDescription], cause: error)
+                    showErrors([error.localizedDescription], window: window)
+                }
+                ui?.jobFinished(activity)
+                stacksChanged()
+            }
+        }
+    }
+
+    /// The moves undoing `r` makes (where each item is now, and where it goes back to).
+    static func moves(of r: UndoRecord) -> [(from: URL, to: URL)] {
+        switch r {
+        case .moved(let pairs): return pairs.map { (from: $0.to, to: $0.from) }
+        case .trashed(let pairs): return pairs.map { (from: $0.inTrash, to: $0.original) }
+        case .batchRenamed(let steps): return steps.map { (from: $0.to, to: $0.from) }
+        default: return []
+        }
+    }
+
+    /// Whether undoing `r` moves an item to another volume (a copy of its data, then a delete). Tests set it.
+    nonisolated(unsafe) static var copiesData: (UndoRecord) -> Bool = { movesBetweenVolumes($0) }
+
+    static func movesBetweenVolumes(_ r: UndoRecord) -> Bool {
+        func volume(_ u: URL) -> NSObject? {
+            (try? u.resourceValues(forKeys: [.volumeIdentifierKey]))?.volumeIdentifier as? NSObject
+        }
+        return moves(of: r).contains { m in
+            // The destination folder may be gone (it's recreated): its nearest existing ancestor tells the volume.
+            var to = m.to.deletingLastPathComponent()
+            while !FileManager.default.fileExists(atPath: to.path), to.pathComponents.count > 1 { to = to.deletingLastPathComponent() }
+            guard let a = volume(m.from), let b = volume(to) else { return false }
+            return !a.isEqual(b)
         }
     }
 
