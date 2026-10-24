@@ -122,10 +122,13 @@ extension MainWindowController {
     }
 
     /// Create New ▸ (menu bar, hamburger and context menus).
-    static func createNewMenu() -> NSMenu {
+    /// `folder` false: where New Folder… is its own item next to it (the File menu, empty space's context menu).
+    static func createNewMenu(folder: Bool = true) -> NSMenu {
         let m = NSMenu(title: "Create New")
-        m.addItem(.make("Folder…", #selector(createFolder(_:)), key: "n", mods: [.command, .shift], icon: "folder-new"))
-        m.addItem(.separator())
+        if folder {
+            m.addItem(.make("Folder…", #selector(createFolder(_:)), key: "n", mods: [.command, .shift], icon: "folder-new"))
+            m.addItem(.separator())
+        }
         for k in NewItemKind.allCases where k != .folder {
             m.addItem(.make(k.menuTitle, #selector(createFile(_:)), icon: k.icon, tag: k.rawValue))
         }
