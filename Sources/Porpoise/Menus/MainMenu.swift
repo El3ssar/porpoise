@@ -315,7 +315,7 @@ extension AppDelegate {
     /// File menu items for other places, hidden until they apply (their keys keep working): the cloud commands outside
     /// cloud folders, and Compare Files' Save Changes while its window isn't in front.
     @MainActor static func hideOutOfPlaceFileItems(in menu: NSMenu) {
-        let inCloud = menuBrowser(main: NSApp.mainWindow, windows: AppDelegate.shared.windows).map { PlacesModel.isCloud($0.view.url) } ?? false
+        let inCloud = menuBrowser(main: NSApp.mainWindow, windows: AppDelegate.shared.windows)?.offersCloudCommands ?? false
         let comparing = NSApp.keyWindow?.windowController is FileDiffWindow
         for item in menu.items {
             switch item.action {

@@ -46,6 +46,7 @@ import Testing
         NSApplication.shared.setActivationPolicy(.prohibited)
         let (file, _) = try menus(.mac)
         let s = try Scratch()
+        let doc = try s.file("doc.txt", "x")
         AppDelegate.shared.newWindow(at: s.url)
         let wc = try #require(AppDelegate.shared.windows.last)
         defer { wc.window?.close() }
@@ -58,6 +59,30 @@ import Testing
         let save = try #require(file.items.first { $0.action == #selector(FileDiffWindow.saveDocument(_:)) })
         #expect(save.keyEquivalent == "s" && save.keyEquivalentModifierMask == .command)
         #expect(visible(file).contains("Compare Files…") && !visible(file).contains("Save Changes"))
+
+        // iCloud Drive and File Provider items are file URLs: their folder or selection shows the cloud commands.
+        let saved = W.cloudState
+        defer { W.cloudState = saved }
+        let cloudItems: (DirectoryModel, FileItem) -> (state: CloudState, isCloud: Bool) = { model, item in
+            item.url.standardizedFileURL == doc.standardizedFileURL ? (.local, true) : model.cloud(for: item)
+        }
+        W.cloudState = cloudItems
+        wc.view.list.select(doc)
+        file.delegate?.menuNeedsUpdate?(file)
+        let download = try #require(file.items.first { $0.action == #selector(W.cloudDownload(_:)) })
+        let remove = try #require(file.items.first { $0.action == #selector(W.cloudEvict(_:)) })
+        #expect(!download.isHidden && !remove.isHidden)
+        #expect(wc.validateMenuItem(remove))  // a downloaded iCloud file: Remove Download applies
+        // The folder itself in iCloud Drive: shown with nothing selected.
+        W.cloudState = { model, item in item.url.standardizedFileURL == s.url.standardizedFileURL ? (.local, true) : cloudItems(model, item) }
+        wc.view.model.selection = []
+        file.delegate?.menuNeedsUpdate?(file)
+        #expect(!download.isHidden)
+        // Back in a plain folder with a plain selection: hidden again.
+        W.cloudState = saved
+        wc.view.list.select(doc)
+        file.delegate?.menuNeedsUpdate?(file)
+        #expect(download.isHidden && remove.isHidden)
     }
 
     @Test func editMenuInFinderOrder() throws {
