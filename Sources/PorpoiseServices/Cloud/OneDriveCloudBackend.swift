@@ -19,13 +19,13 @@ public final class OneDriveCloudBackend: CloudBackend {
     }
     private func install() {
         MainActor.assumeIsolated {
-            let live = Set(store.accounts.map(\.id))
-            for id in providers.keys where !live.contains(id) {
-                RemoteFS.registerCloud(nil, for: OneDriveLocation(accountID: id).url); providers[id] = nil; quotas[id] = nil
-            }
-            for account in store.accounts {
-                guard let client = store.client(for: account.id) else { continue }
-                if providers[account.id]?.client !== client {
+            reconcileCloudProviders(
+                store.accounts, id: \.id, installedIDs: Array(providers.keys),
+                client: store.client(for:), currentClient: { providers[$0]?.client },
+                remove: { id in
+                    RemoteFS.registerCloud(nil, for: OneDriveLocation(accountID: id).url); providers[id] = nil; quotas[id] = nil
+                },
+                install: { account, client in
                     let provider = OneDriveProvider(client: client); providers[account.id] = provider
                     RemoteFS.registerCloud(provider, for: OneDriveLocation(accountID: account.id).url)
                     CloudEditing.shared.restore(client)
@@ -36,8 +36,7 @@ public final class OneDriveCloudBackend: CloudBackend {
                             NotificationCenter.default.post(name: CloudAccounts.remoteChanged, object: self.key(account))
                         }
                     }
-                }
-            }
+                })
         }
         onChange?()
     }
