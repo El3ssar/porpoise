@@ -43,7 +43,7 @@ final class RemoteTransferJob {
     var listingIndices: [URL: [String: FileItem]] = [:]
     var publishedNames: [URL: Set<String>] = [:]
     var stageFolders: [URL: URL] = [:]
-    var stageJournal = TransferStageJournal.shared
+    var stageJournal: TransferStageJournal?
     var lastPublish = Date.distantPast
     var logicalPaths: [URL: String] = [:]
 
@@ -128,7 +128,10 @@ final class RemoteTransferJob {
                     }
                     progressLock.withLock { progress.doneItems += 1 }
                 } catch {
-                    if control.isCancelled { break }
+                    if control.isCancelled {
+                        if error is CancellationError { break }
+                        if case FileOperationError.cancelled = error { break }
+                    }
                     failedSources.append(source)
                     let name = RemoteFS.displayName(for: source)
                     firstError = firstError ?? error
@@ -210,7 +213,7 @@ final class RemoteTransferJob {
 
     private func captureRemoval(_ source: URL) throws -> MoveSourceRemoval {
         let journal = stageJournal
-        return try MoveSourceRemoval(source, cancellation: control.asDiskCancellation(), onCheckpoint: { try journal.checkpoint($0) })
+        return try MoveSourceRemoval(source, cancellation: control.asDiskCancellation(), onCheckpoint: { try journal?.checkpoint($0) })
     }
 
     func transfer(_ source: URL, into folder: URL) throws -> URL? {
@@ -312,7 +315,7 @@ final class RemoteTransferJob {
             try provider.makeFolder(stage)
         } else {
             try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-            do { try stageJournal.stage(stage) } catch {
+            do { try stageJournal?.stage(stage) } catch {
                 try? FileManager.default.removeItem(at: stage)
                 throw error
             }
@@ -329,8 +332,8 @@ final class RemoteTransferJob {
                 } else {
                     do {
                         try FileManager.default.removeItem(at: stage)
-                        try stageJournal.finish(stage)
-                    } catch { stageJournal.release(stage) }
+                        try stageJournal?.finish(stage)
+                    } catch { stageJournal?.release(stage) }
                 }
             }
         }
@@ -568,7 +571,7 @@ final class RemoteTransferJob {
                     throw RemoteError.unsupported("A folder cannot be replaced by a remote file. Keep Both instead.")
                 }
                 // Once swapped, staging may hold the user's previous target. Persist that fact first.
-                try stageJournal.preserve(stageFolder)
+                try stageJournal?.preserve(stageFolder)
                 guard renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 else {
                     throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
                 }
@@ -582,7 +585,7 @@ final class RemoteTransferJob {
                     guard renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 else {
                         removeStage = false
                         stageFolders[target.deletingLastPathComponent()] = nil
-                        stageJournal.release(stageFolder)
+                        stageJournal?.release(stageFolder)
                         throw RemoteError.failed(
                             "The previous item could not be restored automatically. Its staging folder is kept at “\(stageFolder.path)”. \(error.localizedDescription)"
                         )

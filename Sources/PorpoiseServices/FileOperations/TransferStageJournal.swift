@@ -8,12 +8,14 @@ public final class TransferStageJournal: @unchecked Sendable {
     public static let shared = TransferStageJournal(
         folder: JournalStore.defaultFolder.deletingLastPathComponent().appendingPathComponent("TransferStages"))
     struct Identity: Codable, Equatable, Sendable {
-        let device: Int32
+        let volume: String
         let inode: UInt64
         init(_ url: URL) throws {
             var info = stat()
             guard lstat(url.path, &info) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-            device = info.st_dev; inode = info.st_ino
+            let volumeURL = info.st_mode & S_IFMT == S_IFLNK ? url.deletingLastPathComponent() : url
+            guard let uuid = try volumeURL.resourceValues(forKeys: [.volumeUUIDStringKey]).volumeUUIDString else { throw POSIXError(.ENOTSUP) }
+            volume = uuid; inode = info.st_ino
         }
     }
     struct Record: CloudJournalRecord {
@@ -27,6 +29,7 @@ public final class TransferStageJournal: @unchecked Sendable {
         var target: URL?
         var targetIdentity: Identity?
         var verified = false
+        var deleting = false
         var preserved = false
     }
     public struct Retained: Sendable {
@@ -56,18 +59,27 @@ public final class TransferStageJournal: @unchecked Sendable {
             record.source = source; record.target = target; record.verified = verified
             if record.sourceIdentity == nil { record.sourceIdentity = try Identity(source) }
             if verified, let target, target.isFileURL { record.targetIdentity = try Identity(target) }
-            try store.save(record)
-            _ = lock.withLock { active.insert(id) }
+            try saveActive(record)
         case .finished(let holding): try finish(holding)
-        case .deleting: break
+        case .deleting(let holding):
+            guard var record = try store.load(id(holding)) else { throw CloudJournalError.invalidRecord }
+            record.deleting = true
+            try saveActive(record)
+        case .deletingEntry: break
         }
     }
 
     func stage(_ holding: URL) throws {
         let id = try id(holding)
-        try store.save(
+        try saveActive(
             Record(operationID: id, holding: holding, identity: Identity(holding), parentIdentity: Identity(holding.deletingLastPathComponent())))
-        _ = lock.withLock { active.insert(id) }
+    }
+    private func saveActive(_ record: Record) throws {
+        let inserted = lock.withLock { active.insert(record.operationID).inserted }
+        do { try store.save(record) } catch {
+            if inserted { _ = lock.withLock { active.remove(record.operationID) } }
+            throw error
+        }
     }
     func preserve(_ holding: URL) throws {
         let id = try id(holding)
@@ -84,18 +96,25 @@ public final class TransferStageJournal: @unchecked Sendable {
     func release(_ holding: URL) {
         if let id = try? id(holding) { _ = lock.withLock { active.remove(id) } }
     }
-    public func recover(completion: @escaping @Sendable ([Retained]) -> Void) {
-        Self.recoveryQueue.async { completion(self.recover()) }
+    public func recover(completion: @escaping @MainActor @Sendable ([Retained]) -> Void) {
+        Self.recoveryQueue.async {
+            let retained = self.recover()
+            Task { @MainActor in completion(retained) }
+        }
     }
     /// Must run off the main thread. A changed/missing target or uncertain ownership always retains data.
     func recover() -> [Retained] {
         var retained: [Retained] = []
         do {
-            for record in try store.all() {
-                if lock.withLock({ active.contains(record.operationID) }) { continue }
+            for var record in try store.all() {
+                guard lock.withLock({ active.insert(record.operationID).inserted }) else { continue }
+                defer { _ = lock.withLock { active.remove(record.operationID) } }
                 do {
                     // An unmounted source volume must not look like an already removed holding folder.
-                    guard try Identity(record.holding.deletingLastPathComponent()) == record.parentIdentity else {
+                    guard let parent = try? Identity(record.holding.deletingLastPathComponent()), parent.volume == record.parentIdentity.volume else {
+                        continue
+                    }
+                    guard parent == record.parentIdentity else {
                         throw CloudJournalError.invalidRecord
                     }
                     if !FileJob.itemExists(at: record.holding) { try finish(record.holding); continue }
@@ -103,11 +122,31 @@ public final class TransferStageJournal: @unchecked Sendable {
                     if let source = record.source {
                         let claimed = record.holding.appendingPathComponent(source.lastPathComponent)
                         if FileJob.itemExists(at: claimed) {
-                            guard record.verified, let target = record.target, let identity = record.targetIdentity,
-                                try Identity(target) == identity, try Identity(claimed) == record.sourceIdentity
-                            else { throw CloudJournalError.invalidRecord }
-                            let receipt = try LocalMoveRemovalReceipt(source: claimed)
-                            try receipt.removeSource(afterVerifying: target)
+                            guard try Identity(claimed) == record.sourceIdentity else { throw CloudJournalError.invalidRecord }
+                            if !record.verified {
+                                guard !record.deleting else { throw CloudJournalError.invalidRecord }
+                                try restore(claimed, to: source)
+                            } else {
+                                do {
+                                    guard let target = record.target, let identity = record.targetIdentity, try Identity(target) == identity else {
+                                        throw CloudJournalError.invalidRecord
+                                    }
+                                    let receipt = try LocalMoveRemovalReceipt(
+                                        source: claimed,
+                                        onCheckpoint: { checkpoint in
+                                            if case .deleting = checkpoint {
+                                                var committing = record
+                                                committing.deleting = true
+                                                try self.store.save(committing)
+                                                record = committing
+                                            }
+                                        })
+                                    try receipt.removeSource(afterVerifying: target)
+                                } catch {
+                                    guard !record.deleting else { throw error }
+                                    try restore(claimed, to: source)
+                                }
+                            }
                         }
                         // Never remove a partially deleted tree or an independently claimed leftover.
                         guard rmdir(record.holding.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
@@ -127,5 +166,10 @@ public final class TransferStageJournal: @unchecked Sendable {
             retained.append(Retained(url: store.folder, message: "Transfer recovery records could not be read. They have been kept for review."))
         }
         return retained
+    }
+    private func restore(_ claimed: URL, to source: URL) throws {
+        guard renamex_np(claimed.path, source.path, UInt32(RENAME_EXCL)) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
     }
 }

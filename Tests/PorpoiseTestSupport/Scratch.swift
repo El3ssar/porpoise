@@ -115,6 +115,12 @@ public final class DiskImage {
 
     deinit { try? Self.hdiutil(["detach", "-quiet", "-force", volume.path]) }
 
+    /// Tests durable identities across a real unmount/mount cycle of this fixture only.
+    public func remount() throws {
+        try Self.hdiutil(["detach", "-quiet", volume.path])
+        try Self.hdiutil(["attach", "-quiet", "-nobrowse", "-mountpoint", volume.path, image.path])
+    }
+
     /// The formatted, never attached image every fixture of that name and size is cloned from; made the first time.
     private static func template(name: String, megabytes: Int, fileSystem: String) throws -> URL {
         let fm = FileManager.default

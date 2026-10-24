@@ -158,12 +158,14 @@ public final class FileJob: @unchecked Sendable {
             } catch FileOperationError.cancelled {
                 onEvent(.finished(index: index, outcome: .cancelled))
                 break
-            } catch {
+            } catch is CancellationError {
                 if control.isInterrupted { break }
                 if control.isCancelled {
                     onEvent(.finished(index: index, outcome: .cancelled))
                     break
                 }
+                record(CancellationError(), for: src, target: nil)
+            } catch {
                 record(error, for: src, target: nil)
             }
             let failed = errors.count + denied.count > errorsBefore
@@ -502,13 +504,15 @@ public final class FileJob: @unchecked Sendable {
                 progress.verifiedBytes = 0
                 publish(force: true)
                 defer { progress.phase = .transferring }
-                do { try removal.removeSource(afterVerifying: target) } catch {
-                    if control.isCancelled {
-                        progress.retainedCopies += 1
-                        publish(force: true)
-                        try checkpoint()
-                    }
-                    throw error
+                do { try removal.removeSource(afterVerifying: target) } catch is CancellationError {
+                    progress.retainedCopies += 1
+                    publish(force: true)
+                    try checkpoint()
+                    throw CancellationError()
+                } catch FileOperationError.cancelled {
+                    progress.retainedCopies += 1
+                    publish(force: true)
+                    throw FileOperationError.cancelled
                 }
             }
             moved.append((src, target))

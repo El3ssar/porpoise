@@ -20,7 +20,7 @@ let receipt = try LocalMoveRemovalReceipt(
         {
             kill(getpid(), SIGKILL)
         }
-        if case .deleting = checkpoint {
+        if case .deletingEntry = checkpoint {
             deletions += 1
             if mode == "deleting", deletions == 2 { kill(getpid(), SIGKILL) }
         }

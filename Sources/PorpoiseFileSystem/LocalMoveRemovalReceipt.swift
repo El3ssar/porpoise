@@ -10,6 +10,7 @@ public struct LocalMoveRemovalReceipt {
         case claimed(holding: URL, source: URL, target: URL?, verified: Bool)
         /// Deletion has committed; a late Stop finishes this item before stopping the batch.
         case deleting(holding: URL)
+        case deletingEntry(holding: URL)
         case finished(holding: URL)
     }
     private struct Entry {
@@ -94,6 +95,7 @@ public struct LocalMoveRemovalReceipt {
             // complete source. Once unlink starts, finish this item before observing a late Stop.
             try onCheckpoint(.claimed(holding: holding, source: source, target: target, verified: true))
             try cancellation.check()
+            try onCheckpoint(.deleting(holding: holding))
             deleting = true
             var linkedGenerations: [DiskIdentity: Entry] = [:]
             try deleteClaimed(claimed, path: "", entries: captured, holding: holding, linkedGenerations: &linkedGenerations, checkTarget: checkTarget)
@@ -162,7 +164,7 @@ public struct LocalMoveRemovalReceipt {
                     throw failure
                 }
             }
-            try onCheckpoint(.deleting(holding: holding))
+            try onCheckpoint(.deletingEntry(holding: holding))
             guard unlink(url.path) == 0 else { throw Self.posix() }
             if descriptor >= 0 {
                 var held = stat()

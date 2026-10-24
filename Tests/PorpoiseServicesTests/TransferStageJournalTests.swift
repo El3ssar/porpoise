@@ -36,7 +36,8 @@ struct TransferStageJournalTests {
             try s.file("target/new", "replacement")
         }
         let retained = journal.recover()
-        if mode == "verified" && !replaceTarget {
+        let restored = mode == "claimed" || (mode == "verified" && replaceTarget)
+        if mode != "deleting" {
             #expect(retained.isEmpty)
             #expect(!FileJob.itemExists(at: record.holding))
             #expect(try journal.store.all().isEmpty)
@@ -44,12 +45,67 @@ struct TransferStageJournalTests {
             #expect(retained.map(\.url) == [record.holding])
             #expect(FileJob.itemExists(at: record.holding))
         }
-        #expect(!FileJob.itemExists(at: source))  // Never restore a partially deleted tree.
+        #expect(FileJob.itemExists(at: source) == restored)
+        if restored { #expect(CopyVerification.verify(source, replaceTarget ? s.path("old-target") : target).ok) }
         #expect(
             try String(contentsOf: (replaceTarget ? s.path("old-target") : target).appendingPathComponent("a/b/first"), encoding: .utf8) == "first")
     }
 
-    @Test func journalFailureBeforeCommitRestoresWholeSource() throws {
+    @Test func stagingIdentitySurvivesARealVolumeRemount() throws {
+        let s = try Scratch(), disk = try DiskImage(in: s)
+        let journal = TransferStageJournal(folder: s.path("journal"))
+        let stage = disk.volume.appendingPathComponent(".porpoise-transfer-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: false)
+        try Data("partial".utf8).write(to: stage.appendingPathComponent("file"))
+        try journal.stage(stage)
+        journal.release(stage)
+        try disk.remount()
+        #expect(TransferStageJournal(folder: s.path("journal")).recover().isEmpty)
+        #expect(!FileJob.itemExists(at: stage))
+    }
+
+    @Test func recoveryNeverReplacesAnArrivalAtTheOriginalName() throws {
+        let s = try Scratch(), journal = TransferStageJournal(folder: s.path("journal"))
+        let source = try s.file("source", "claimed bytes"), target = try s.file("target", "claimed bytes")
+        let holding = try s.folder(".porpoise-removal-" + UUID().uuidString)
+        try journal.checkpoint(.claimed(holding: holding, source: source, target: target, verified: false))
+        let claimed = holding.appendingPathComponent("source")
+        #expect(renamex_np(source.path, claimed.path, UInt32(RENAME_EXCL)) == 0)
+        journal.release(holding)
+        try s.file("source", "arrived")
+        #expect(journal.recover().map(\.url) == [holding])
+        #expect(s.read("source") == "arrived")
+        #expect(try String(contentsOf: claimed, encoding: .utf8) == "claimed bytes")
+    }
+
+    @Test func changedContentsAtTheSameTargetInodeRestoreTheWholeSource() throws {
+        let s = try Scratch(), journal = TransferStageJournal(folder: s.path("journal"))
+        let source = try s.file("source", "claimed bytes"), target = try s.file("target", "claimed bytes")
+        let holding = try s.folder(".porpoise-removal-" + UUID().uuidString)
+        try journal.checkpoint(.claimed(holding: holding, source: source, target: target, verified: false))
+        #expect(renamex_np(source.path, holding.appendingPathComponent("source").path, UInt32(RENAME_EXCL)) == 0)
+        try journal.checkpoint(.claimed(holding: holding, source: source, target: target, verified: true))
+        journal.release(holding)
+        try Data("changed bytes".utf8).write(to: target)
+        #expect(journal.recover().isEmpty)
+        #expect(s.read("source") == "claimed bytes" && s.read("target") == "changed bytes")
+        #expect(try journal.store.all().isEmpty)
+    }
+
+    @Test func anUnmountedVolumeIsKeptSilently() throws {
+        let s = try Scratch(), journal = TransferStageJournal(folder: s.path("journal"))
+        let parent = try s.folder("volume")
+        let stage = parent.appendingPathComponent(".porpoise-transfer-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: false)
+        try journal.stage(stage)
+        journal.release(stage)
+        try FileManager.default.moveItem(at: parent, to: s.path("detached-volume"))
+        #expect(journal.recover().isEmpty)
+        #expect(try journal.store.all().count == 1)
+    }
+
+    @Test(arguments: [false, true])
+    func journalFailureBeforeCommitRestoresWholeSource(_ atDeletionStart: Bool) throws {
         let s = try Scratch()
         let source = try s.folder("source")
         try s.file("source/a/b/file", "keep")
@@ -58,7 +114,8 @@ struct TransferStageJournalTests {
         let receipt = try LocalMoveRemovalReceipt(
             source: source,
             onCheckpoint: { checkpoint in
-                if case .claimed(_, _, _, true) = checkpoint { throw POSIXError(.ENOSPC) }
+                if !atDeletionStart, case .claimed(_, _, _, true) = checkpoint { throw POSIXError(.ENOSPC) }
+                if atDeletionStart, case .deleting = checkpoint { throw POSIXError(.ENOSPC) }
                 try journal.checkpoint(checkpoint)
             })
         #expect(throws: POSIXError.self) { try receipt.removeSource(afterVerifying: s.path("target")) }

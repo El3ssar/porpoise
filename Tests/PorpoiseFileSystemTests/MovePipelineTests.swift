@@ -7,6 +7,24 @@ import Testing
 @testable import PorpoiseFileSystem
 
 struct MovePipelineTests {
+    @Test func aRealFailureAfterCommitIsNotHiddenByALateStop() throws {
+        let s = try Scratch(), disk = try DiskImage(in: s)
+        let source = try s.folder("source")
+        try s.file("source/a/b/first", "first")
+        try s.file("source/z/second", "second")
+        let job = FileJob(kind: .move, sources: [source], destinationFolder: disk.volume)
+        var deleted = 0
+        job.removalCheckpoint = { checkpoint in
+            if case .deletingEntry = checkpoint {
+                deleted += 1
+                if deleted == 2 { job.cancel(); throw POSIXError(.EACCES) }
+            }
+        }
+        _ = try job.run()
+        #expect(job.errors.contains { $0.contains("remaining source retained at") })
+        #expect(!FileJob.itemExists(at: source))
+        #expect(s.listing().contains { $0.hasPrefix(".porpoise-removal-") })
+    }
     @Test func deletingOneHardLinkDoesNotRejectItsCapturedAliases() throws {
         let s = try Scratch()
         let source = try s.folder("source")
@@ -42,7 +60,7 @@ struct MovePipelineTests {
         let job = FileJob(kind: .move, sources: [source, next], destinationFolder: disk.volume)
         var deletions = 0
         job.removalCheckpoint = { checkpoint in
-            if case .deleting = checkpoint {
+            if case .deletingEntry = checkpoint {
                 deletions += 1
                 if deletions == 2 { job.cancel() }
             }

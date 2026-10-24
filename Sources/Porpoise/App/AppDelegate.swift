@@ -353,17 +353,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// its items haven't changed. Deleting is never resumed without asking.
     func offerRecovery() {
         FileOperationsController.shared.transferStages.recover { retained in
-            DispatchQueue.main.async {
-                for item in retained {
-                    let alert = NSAlert()
-                    alert.messageText = "Files kept after an interrupted transfer"
-                    alert.informativeText = item.message
-                    alert.addButton(withTitle: "Open in Porpoise")
-                    alert.addButton(withTitle: "Later")
-                    if alert.runModal() == .alertFirstButtonReturn { self.application(NSApp, open: [item.url]) }
-                }
-                self.offerJobRecovery()
+            if !retained.isEmpty {
+                let alert = NSAlert()
+                alert.messageText = "Files kept after \(retained.count == 1 ? "an interrupted transfer" : "\(retained.count) interrupted transfers")"
+                alert.informativeText = retained.map(\.message).joined(separator: "\n\n")
+                alert.addButton(withTitle: "Open in Porpoise")
+                alert.addButton(withTitle: "Later")
+                if alert.runModal() == .alertFirstButtonReturn { self.application(NSApp, open: retained.map(\.url)) }
             }
+            self.offerJobRecovery()
         }
     }
 

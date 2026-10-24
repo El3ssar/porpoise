@@ -19,7 +19,7 @@ public struct ActivityPresentation {
             .replacingOccurrences(of: " — ", with: " · ")
         actions = Self.actions(for: activity)
         fraction = min(1, max(0, activity.fraction))
-        hasFailures = activity.state == .failed || (activity.state == .completed && (!activity.errors.isEmpty || activity.verification?.ok == false))
+        hasFailures = activity.state == .failed || !activity.errors.isEmpty || activity.verification?.ok == false
         showsProgress = activity.state.isActive || activity.state == .queued
         isIndeterminate =
             (activity.progress?.phase == .preparing || activity.progress?.phase == .verifying) || (activity.fraction <= 0 && activity.state.isActive)
@@ -91,7 +91,7 @@ public struct ActivityPresentation {
             return [([base] + summary).joined(separator: " · "), verification?.summary].compactMap { $0 }.joined(separator: ". ")
         case .failed: return errors.first ?? "Failed"
         case .cancelled:
-            return (p?.retainedCopies ?? 0) > 0 ? "Cancelled — copy complete; original kept" : "Cancelled"
+            return errors.first ?? ((p?.retainedCopies ?? 0) > 0 ? "Cancelled — copy complete; original kept" : "Cancelled")
         case .interrupted: return "Interrupted: it can be resumed next time Porpoise starts"
         }
     }
