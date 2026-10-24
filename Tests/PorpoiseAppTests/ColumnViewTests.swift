@@ -638,8 +638,9 @@ import Testing
         let end = clip.bounds.minX
         for dy: Int32 in [15, -15] {
             scroll(.wheel, dx: 0, dy: dy, over: pane.scroll)
-            try await Task.sleep(for: .milliseconds(200))
-            #expect(!b.isScrolling && abs(clip.bounds.minX - end) < 0.5, "\(dy): \(clip.bounds.minX) from \(end)")
+            // Sideways it never went: right after, and once anything still due has run.
+            #expect(abs(clip.bounds.minX - end) < 0.5, "\(dy): \(clip.bounds.minX) from \(end)")
+            #expect(await eventually { !b.isScrolling && abs(clip.bounds.minX - end) < 0.5 }, "\(dy): \(clip.bounds.minX) from \(end)")
         }
         #expect(!NestedScrollView.isSideways(try #require(gesture(dx: 10, dy: -300).dropFirst().first)))
 
