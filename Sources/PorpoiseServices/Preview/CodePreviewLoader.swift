@@ -41,6 +41,7 @@ public enum CodePreviewLoader {
     }
 
     private static func read(_ url: URL, filename: String, limits: Limits) throws -> CodePreviewDocument {
+        assert(!Thread.isMainThread, "Code preview IO and tokenization must run off main.")
         try Task.checkCancellation()
         guard url.isFileURL else { throw Failure.notRegularFile }
         // O_NONBLOCK avoids hanging on a FIFO before fstat can reject it. Symlinks to ordinary files work.

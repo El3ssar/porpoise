@@ -124,6 +124,7 @@ final class CodePreviewView: NSView {
         isLoading = true
         rendering = Task { @MainActor [weak self] in
             let worker = Task.detached(priority: .userInitiated) {
+                assert(!Thread.isMainThread, "Preview attributed text must be assembled off main.")
                 let styled = NSMutableAttributedString(string: document.text, attributes: [.font: style.font, .foregroundColor: style.base])
                 for (index, token) in document.tokens.spans.enumerated() {
                     if index % 256 == 0 { try Task.checkCancellation() }
