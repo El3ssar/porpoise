@@ -83,6 +83,67 @@ import Testing
         #expect(editing.entries.isEmpty && editing.mark(for: item.url) == nil)
     }
 
+    @Test func reopeningACleanCopyTakesTheNewerRevision() async throws {
+        let (server, client, editing, item, scratch) = try await setup()
+        defer {
+            server.stop()
+            RemoteFS.unregisterDrive(accountID: client.accountID)
+        }
+        var opened: [URL] = []
+        editing.openFile = { opened.append($0) }
+        editing.open(item)
+        await expectEventually { opened.count == 1 }
+        let entry = try #require(editing.entry(for: item.url))
+
+        // A colleague saves a new version; the folder shows it, and Open edits it, not the old copy.
+        let theirs = scratch.url.appendingPathComponent("theirs.txt")
+        try Data("colleague's version".utf8).write(to: theirs)
+        _ = try await client.saveEdit(theirs, baseline: client.file("binary-a"))
+        let provider = try #require(RemoteFS.provider(for: item.url) as? DriveProvider)
+        let rows = try await provider.refresh(DriveLocation(accountID: client.accountID).url)
+        let newer = try #require(rows.first { $0.url == item.url })
+        editing.open(newer)
+        await expectEventually { opened.count == 2 }
+        #expect(opened[1] != entry.localURL && (try? Data(contentsOf: opened[1])) == Data("colleague's version".utf8))
+        #expect(editing.entry(for: item.url)?.localURL == opened[1])
+
+        // The old copy may still be open in its editor: a later save there is still followed, and conflicts.
+        try Data("a later save to the old copy".utf8).write(to: entry.localURL)
+        await expectEventually { editing.entries.contains { $0.id == entry.id && $0.mark == .conflict } }
+    }
+
+    @Test func changesToTheOldCopyDuringTheNewerDownloadAreKept() async throws {
+        let (server, client, editing, item, scratch) = try await setup()
+        defer {
+            server.stop()
+            RemoteFS.unregisterDrive(accountID: client.accountID)
+        }
+        // The old copy's save stays pending for the whole test, so its mark still reads "Editing".
+        editing.saveDelay = 60
+        var opened: [URL] = []
+        editing.openFile = { opened.append($0) }
+        editing.open(item)
+        await expectEventually { opened.count == 1 }
+        let entry = try #require(editing.entry(for: item.url))
+        let theirs = scratch.url.appendingPathComponent("theirs.txt")
+        try Data("colleague's version".utf8).write(to: theirs)
+        _ = try await client.saveEdit(theirs, baseline: client.file("binary-a"))
+        let provider = try #require(RemoteFS.provider(for: item.url) as? DriveProvider)
+        let rows = try await provider.refresh(DriveLocation(accountID: client.accountID).url)
+        let newer = try #require(rows.first { $0.url == item.url })
+
+        // The other app saves the old copy while the newer revision downloads.
+        let fetches = try #require(try await server.stats()["ranges"] as? [Any]).count
+        try await server.control(["mediaByteCap": 0])
+        editing.open(newer)
+        await expectEventually { ((try? await server.stats()["ranges"]) as? [Any])?.count ?? 0 > fetches }
+        try Data("mine, written meanwhile".utf8).write(to: entry.localURL)
+        try await server.control(["mediaByteCap": NSNull()])
+        await expectEventually { opened.count == 2 }
+        #expect(opened[1] != entry.localURL && editing.entries.count == 2)
+        #expect(editing.entries.contains { $0.id == entry.id } && editing.entry(for: item.url)?.localURL == opened[1])
+    }
+
     @Test func aConflictKeepsBothUntilTheUserChooses() async throws {
         let (server, client, editing, item, _) = try await setup()
         let marks = Marks(editing)

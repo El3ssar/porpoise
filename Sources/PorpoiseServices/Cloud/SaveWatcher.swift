@@ -1,6 +1,7 @@
 import Foundation
 
 /// Follows editor saves, including inode replacement, and debounces a burst into one callback.
+/// A file still missing after the debounce (an editor that writes its replacement slowly) is awaited in its folder.
 /// The callback queue may serialize uploads; events keep arriving while an upload runs.
 final class SaveWatcher: @unchecked Sendable {
     private let local: URL
@@ -12,6 +13,7 @@ final class SaveWatcher: @unchecked Sendable {
     private let events = DispatchQueue(label: "porpoise.save-watch", autoreleaseFrequency: .workItem)
     private let lock = NSRecursiveLock()
     private var source: DispatchSourceFileSystemObject?
+    private var folder: DispatchSourceFileSystemObject?
     private var pending: DispatchWorkItem?
     private var cancelled = false
 
@@ -27,7 +29,7 @@ final class SaveWatcher: @unchecked Sendable {
     deinit { cancel() }
     func cancel() {
         lock.withLock {
-            cancelled = true; pending?.cancel(); pending = nil; source?.cancel(); source = nil
+            cancelled = true; pending?.cancel(); pending = nil; source?.cancel(); source = nil; folder?.cancel(); folder = nil
         }
     }
     private func attach(uploading: ino_t? = nil) {
@@ -55,7 +57,7 @@ final class SaveWatcher: @unchecked Sendable {
             changed(); pending?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 guard let self, !self.lock.withLock({ self.cancelled }) else { return }
-                guard FileManager.default.fileExists(atPath: self.local.path) else { self.cancel(); return }
+                guard FileManager.default.fileExists(atPath: self.local.path) else { self.awaitReturn(); return }
                 if replaced {
                     var st = stat()
                     let inode = stat(self.local.path, &st) == 0 ? st.st_ino : nil
@@ -64,6 +66,26 @@ final class SaveWatcher: @unchecked Sendable {
                 self.save()
             }
             pending = work; queue.asyncAfter(deadline: .now() + delay, execute: work)
+        }
+    }
+    private func awaitReturn() {
+        lock.withLock {
+            guard !cancelled, folder == nil else { return }
+            source?.cancel(); source = nil
+            let fd = Darwin.open(local.deletingLastPathComponent().path, O_EVTONLY)
+            guard fd >= 0 else { return }
+            let watch = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: .write, queue: events)
+            watch.setCancelHandler { close(fd) }
+            watch.setEventHandler { [weak self] in self?.returned() }
+            folder = watch; watch.resume()
+        }
+        returned()
+    }
+    private func returned() {
+        lock.withLock {
+            guard !cancelled, folder != nil, FileManager.default.fileExists(atPath: local.path) else { return }
+            folder?.cancel(); folder = nil
+            event(replaced: true)
         }
     }
 }
