@@ -78,4 +78,28 @@ import Testing
         _ = panel.outlineView(outline, isItemExpandable: plain)
         #expect(await eventually { plain.knownExpandable == true })
     }
+
+    /// #15: in the Native theme, ordinary files and folders show their type's icon: macOS is asked once per type and
+    /// size, and a folder's recolouring is done once, not per path in the draw path.
+    @Test func nativeIconsAreSharedByType() throws {
+        let s = try Scratch()
+        try s.folder("One")
+        try s.folder("Two")
+        try s.file("a.txt", "a")
+        try s.file("b.txt", "b")
+        Settings.shared.appearancePreferences.iconTheme = "Native macOS"
+        func item(_ name: String) throws -> FileItem { try #require(FileItem.load(s.path(name))) }
+        let one = try item("One"), two = try item("Two"), a = try item("a.txt"), b = try item("b.txt")
+        #expect(Icons.sharedNativeType(for: one) == .folder && Icons.sharedNativeType(for: a) == .plainText)
+        #expect(Icons.shared.image(for: one, size: 64) === Icons.shared.image(for: two, size: 64))
+        #expect(Icons.shared.image(for: a, size: 64) === Icons.shared.image(for: b, size: 64))
+        // Folders macOS draws its own way keep their own icon.
+        let home = try #require(FileItem.load(FileManager.default.homeDirectoryForCurrentUser))
+        #expect(Icons.sharedNativeType(for: home) == nil)
+        if let desktop = FileItem.load(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")) {
+            #expect(Icons.sharedNativeType(for: desktop) == nil)
+        }
+        let app = try #require(FileItem.load(URL(fileURLWithPath: "/System/Applications/Calculator.app")))
+        #expect(Icons.sharedNativeType(for: app) == nil)
+    }
 }

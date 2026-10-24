@@ -366,7 +366,9 @@ final class Icons {
     private func nativeImage(for item: FileItem, size: CGFloat) -> NSImage {
         let p = Settings.shared.appearancePreferences
         let local = item.url.isFileURL
-        let type = local ? nil : Self.nativeType(for: item)
+        // Most items on this Mac show their type's icon: one icon (and one folder recolouring) per type and size,
+        // not one per file, asked of macOS once.
+        let type = local ? Self.sharedNativeType(for: item) : Self.nativeType(for: item)
         let source = type.map { "type|\($0.identifier)" } ?? "file|\(item.url.path)"
         let key = "native|\(source)|\(Int(size))|\(p.folderVariant)|\(Theme.paletteColor(.folderTint, dark: Theme.isDark).hex)" as NSString
         if let img = cache.object(forKey: key) { return img }
@@ -378,6 +380,34 @@ final class Icons {
         store(image, key, size: size)
         return image
     }
+
+    /// The type whose icon an item on this Mac shows in the Native theme, if it's its type's: not when it has a custom
+    /// icon, is an app, a package, an alias or a link, or is a folder macOS draws its own way (the home folder and the
+    /// folders in it, the system's, a volume, a cloud storage root). Nil: asked by its path.
+    static func sharedNativeType(for item: FileItem) -> UTType? {
+        guard !item.isApplication, !item.isPackage, !item.isAliasFile, !item.isSymlink, !item.hasCustomIcon else { return nil }
+        guard item.isBrowsableFolder else { return item.utType.flatMap { $0.isDynamic ? nil : $0 } }
+        let path = item.url.standardizedFileURL.path
+        let parent = (path as NSString).deletingLastPathComponent
+        if specialFolders.contains(path) || parent == "/Volumes" || parent == cloudStorage || path == "/" { return nil }
+        return .folder
+    }
+
+    /// Folders with an icon of their own in Finder.
+    private static let specialFolders: Set<String> = {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser.standardizedFileURL.path
+        let mine: [FileManager.SearchPathDirectory] = [
+            .desktopDirectory, .documentDirectory, .downloadsDirectory, .moviesDirectory, .musicDirectory, .picturesDirectory,
+            .sharedPublicDirectory, .libraryDirectory, .applicationDirectory, .developerDirectory,
+        ]
+        var paths = Set(mine.flatMap { fm.urls(for: $0, in: .userDomainMask).map(\.standardizedFileURL.path) })
+        paths.formUnion([home, "/Applications", "/Applications/Utilities", "/Library", "/System", "/Users", "/Users/Shared", "/Volumes"])
+        paths.formUnion([home + "/Library/Mobile Documents/com~apple~CloudDocs", home + "/Sites"])
+        return paths
+    }()
+
+    private static let cloudStorage = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path + "/Library/CloudStorage"
 
     /// The type whose icon a cloud or remote item shows in the Native theme: folders the folder, Google Docs and the
     /// like the Office document of their kind (they have no type of their own on a Mac), others their content type.
