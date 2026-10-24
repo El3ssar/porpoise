@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.14.0
+
+- **AirDrop opens in Porpoise.** Clicking AirDrop in the sidebar, Go › AirDrop (⇧⌘R) or a new tab shows an AirDrop page in the pane instead of Finder's window: drop files on it, choose files, or send the selection, and the system's list of nearby devices opens over the Porpoise window. Commands that make no sense there, such as Rename or Copy to Other View, are turned off.
+- **Menus show the keys you actually use.** File › Open and every other menu item, the command palette, Settings, pop-up menus and toolbar tooltips show the shortcuts of the active key preset (macOS or Dolphin) and your own changes, and update as soon as you switch. With the Dolphin keys, Open is Return.
+- **Space shows code in colour.** Text and code files are previewed with syntax highlighting for about twenty languages (Swift, C, Python, JavaScript/TypeScript, JSON, YAML, HTML, CSS, shell, Go, Rust, Java/Kotlin, Ruby, Markdown, SQL, Lua and more) in the Space preview, the Information panel and Column view, readable in light and dark. Large files show their first part with a note. The Space preview is now Porpoise's own window, so its glass stays on once the preview has loaded; it hides when you switch to another app, and cloud-only files are not downloaded just to show the Information panel. Markup, Rotate and Trim are coming back as Porpoise features in the next release.
+- **Column view, fixed and closer to Finder.** Pinching zooms the column under the pointer. Clicking a folder never scrolls any other column. Only a double-click starts the columns from a folder; ⌘↓, Enter and spring-loading during a drag open the folder as the next column. A click on an item already selected in another column moves the focus there. Column view no longer splits: choosing it closes the split. The preview column is centred and can be hidden (View › Show Preview Column); right-clicking a column's divider offers Right Size This Column, All Columns Individually and All Columns Equally; Tab and ⇧Tab move to the next and previous name; VoiceOver reads the columns as columns.
+- **No more freezes on slow disks.** The Information panel, the Folders panel, the breadcrumb's scroll wheel, folder icons, the Shelf, Templates, Undo of a move between disks and the administrator fallback no longer read the disk on the main thread (the Native icon theme on a folder of folders went from 8.6 s to 29 ms, the Shelf from 12.9 s to 39 ms).
+- **Safer with your files.**
+  - Holding ⇧ while clicking Move to Trash no longer deletes permanently.
+  - A file path typed or pasted in the location bar asks before running a program or script, as a double-click does.
+  - Renaming in the Properties window goes through the usual checks, and Esc cancels it.
+  - The Shelf and Cut follow the files a move actually moved, so they no longer point at a different file after Keep Both, Skip or Cancel.
+  - The Transfer Errors sheet names the right file for each error.
+  - With "Verify copies" on, queued copies no longer stall.
+  - In the conflict dialog, a missing date no longer counts as newer and makes Replace the default.
+  - Paste after Cut keeps the clipboard when the move failed.
+  - A click or drag no longer acts on a different file when the list reloads under it.
+- **Things stay where you are.** A slow network mount or an archive that finishes extracting no longer jumps the pane after you've moved on, Eject waits for the eject to succeed before moving panes, folders refresh after changes macOS couldn't name, the mouse's side buttons no longer close tabs, Go › Back works while typing in a field, menus follow the front window, and closed tabs and windows no longer stay in memory.
+- **Servers and clouds.**
+  - S3 names with spaces show correctly, and cancelled or failed uploads are cleaned up.
+  - An expired sign-in waits before retrying instead of retrying every 5 seconds.
+  - Box, Dropbox and OneDrive edit copies get safe, distinct names and no leftover partial download.
+  - Read-only copies of server and cloud files are cleaned up.
+  - Google Drive saves no longer load the whole file into memory.
+- The administrator password prompt now names Porpoise instead of "osascript".
+
 ## 0.13.0
 
 - **Custom tools.** Settings › Custom Tools runs programs you choose on the selection or the current folder, from the right-click menu, the toolbar, the command palette, the Tools menu or a shortcut of your own. Arguments are a list with placeholders for the selection, the folder, the other split pane's folder or a value you type in; each one is passed as it is, never through a shell, so names with spaces, quotes or newlines are safe. Output and exit status show in Activity › Tools, where a running tool can be cancelled. Add Examples adds a few to start from. Only tools saved in Settings can run; nothing in a folder can add one.
