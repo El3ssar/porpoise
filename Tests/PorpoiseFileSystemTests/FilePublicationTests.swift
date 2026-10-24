@@ -69,20 +69,17 @@ struct FilePublicationTests {
     }
 
     @Test(arguments: ["ExFAT", "MS-DOS FAT32"])
-    func malformedSourceSidecarsRetainTheOriginalWhenCopyfileOmitsThem(_ fileSystem: String) throws {
+    func pairedUserSidecarCollisionsRetainTheCompleteNativeMoveSource(_ fileSystem: String) throws {
         let s = try Scratch(), disk = try DiskImage(name: "PPPUB", megabytes: 64, fileSystem: fileSystem, in: s)
-        let source = disk.volume.appendingPathComponent("tree"), sidecar = source.appendingPathComponent("._ordinary")
-        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: false)
-        try Data("ordinary bytes".utf8).write(to: source.appendingPathComponent("ordinary"))
-        try Data("user sidecar bytes".utf8).write(to: sidecar)
-        let destination = try s.folder("dst")
-        let job = FileJob(kind: .move, sources: [source], destinationFolder: destination)
+        let source = try s.folder("tree"), sidecar = try s.file("tree/._ordinary", "user sidecar bytes")
+        try s.file("tree/ordinary", "ordinary bytes")
+        let job = FileJob(kind: .move, sources: [source], destinationFolder: disk.volume)
         _ = try job.run()
-        // The system recursive copier omits these names. They remain real manifest entries, so the
-        // failed verification must preserve the complete original rather than discard user bytes.
-        #expect(job.errors.contains { $0.contains("source retained") })
+        // Packed destination metadata can collide with an ordinary source ._ name. Copy failure or
+        // verification must retain the whole original; a structurally valid target sidecar is not an excuse to skip user data.
+        #expect(!job.errors.isEmpty || !job.denied.isEmpty)
         #expect(try String(contentsOf: sidecar, encoding: .utf8) == "user sidecar bytes")
-        #expect(try String(contentsOf: source.appendingPathComponent("ordinary"), encoding: .utf8) == "ordinary bytes")
+        #expect(s.read("tree/ordinary") == "ordinary bytes")
     }
 
     @Test(arguments: ["ExFAT", "MS-DOS FAT32"], [false, true])
