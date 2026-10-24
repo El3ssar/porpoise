@@ -78,6 +78,29 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     }
     /// Column view's columns, while the pane shows them (`ViewContainer+Columns`).
     var columnBrowser: ColumnBrowserView?
+    /// A share asked for when the pane had been sent somewhere `asked` times was mounted (or not): the pane goes
+    /// there (`go`) or shows the error, unless it was sent elsewhere meanwhile; then it stays where it is, and can
+    /// still go to the share from its message bar.
+    func mounted(_ result: Result<URL, Error>, asked: Int, go: (ViewContainer, URL) -> Void) {
+        switch result {
+        case .success(let local) where navigations == asked: go(self, local)
+        case .success(let local):
+            messageBar.show("“\(local.lastPathComponent)” is connected.", error: false, action: "Open") { [weak self] in self?.setURL(local) }
+        case .failure(let e) where navigations == asked: messageBar.show(e.localizedDescription, error: true)
+        case .failure: return
+        }
+        needsLayout = true
+    }
+
+    /// The browser window in front (the main one, even while a panel or another kind of window is key).
+    nonisolated(unsafe) static var frontBrowserWindow: () -> NSWindow? = {
+        if let w = NSApp.mainWindow, w.windowController is MainWindowController { return w }
+        return NSApp.orderedWindows.first { $0.windowController is MainWindowController }
+    }
+
+    /// How many times the pane was sent somewhere: work that ends later (mounting a share, extracting an archive)
+    /// goes there only if the pane wasn't sent elsewhere since.
+    private(set) var navigations = 0
     /// Column view's columns at each history entry (by its index), for Back and Forward.
     var columnSnapshots: [Int: ColumnBrowserView.Snapshot] = [:]
     /// Column view's →: the folder gone into selects its first item once it has listed.
@@ -87,7 +110,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     var showsActiveEdge = false { didSet { activeEdge.isHidden = !showsActiveEdge } }
     private let activeEdge = NSView()
     private var hoverItem: FileItem?
-    private var searchQuery: SearchRunner?
+    private var searchQuery: SearchRunner? { didSet { searchGeneration += 1 } }
+    /// Which search is running: results of an earlier one (stopped, or replaced) are dropped when they land.
+    private(set) var searchGeneration = 0
     #if PORPOISE_TEST_HOOKS
     /// Select an isolated search backend in integration tests, before the real runner starts.
     var configureSearchForTesting: ((SearchRunner) -> Void)?
@@ -264,7 +289,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             })
         observers.append(
             center.addObserver(forName: StatusCenter.message, object: nil, queue: .main) { [weak self] n in
-                guard let self, self.isActive, let text = n.object as? String else { return }
+                // Only the pane the person is looking at: the active one of the front browser window's tab.
+                guard let self, self.isActive, let w = self.window, w === Self.frontBrowserWindow(), !self.isHiddenOrHasHiddenAncestor,
+                    let text = n.object as? String
+                else { return }
                 if n.userInfo?["error"] != nil {
                     self.messageBar.show(text, error: true); self.needsLayout = true
                 } else {
@@ -451,14 +479,13 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     /// `restoring`: where the view was in `newURL` (Back/Forward). Set before loading: some locations (network:,
     /// recent:) load synchronously, and the position would otherwise wait for (and jump at) their next reload.
     func setURL(_ newURL: URL, addToHistory: Bool = true, selecting: URL? = nil, restoring position: ViewPosition? = nil) {
+        navigations += 1
         // smb://, afp://, nfs://, webdav:// → let macOS mount the share, then browse the mount point.
         if NetworkMounts.needsMount(newURL) {
             statusBar.showMessage("Connecting to \(newURL.host ?? newURL.absoluteString)…")
+            let asked = navigations
             NetworkMounts.mount(newURL) { [weak self] result in
-                switch result {
-                case .success(let local): self?.setURL(local, addToHistory: addToHistory, selecting: selecting, restoring: position)
-                case .failure(let e): self?.messageBar.show(e.localizedDescription, error: true); self?.needsLayout = true
-                }
+                self?.mounted(result, asked: asked) { $0.setURL($1, addToHistory: addToHistory, selecting: selecting, restoring: position) }
             }
             return
         }
@@ -859,14 +886,15 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         // What's shown stays until results come (the folder, or the previous results); then it all morphs at once,
         // like the split view: what still matches glides to its place among the results, the rest fades out, and
         // the new results come in one after another.
+        let generation = searchGeneration + 1
         searchQuery = SearchRunner(text: text, scope: scope, contents: contents, everywhere: everywhere) { [weak self] items, done in
             // "Nothing yet" while searching changes nothing: what's shown stays until there are results to morph to.
-            guard let self, done || !items.isEmpty, let runner = self.searchQuery else { return }
+            guard let self, self.searchGeneration == generation, done || !items.isEmpty, let runner = self.searchQuery else { return }
             let matches = SearchMatches(
                 text: text, contents: contents, snippets: runner.snippets, snippetsMarkContentMatches: runner.snippetsMarkContentMatches)
             // Sorted off the main thread: typing and scrolling stay smooth with thousands of results.
             self.model.sortSearchResults(items) { [weak self] apply in
-                guard let self, self.searchQuery === runner else { return }
+                guard let self, self.searchGeneration == generation else { return }
                 // The same search's next batch keeps what's shown and adds to it.
                 let old = self.model.searchResults ?? []
                 let adding =

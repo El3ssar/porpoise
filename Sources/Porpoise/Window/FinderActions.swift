@@ -96,11 +96,13 @@ extension MainWindowController {
         }
         guard !vols.isEmpty else { NSSound.beep(); return }
         // Every view showing it (other tabs, panes and windows too) leaves the volume first, or it is busy.
-        vols.forEach(Self.leaveVolume)
         for v in vols {
+            let left = Self.leaveVolume(v)
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 do { try NSWorkspace.shared.unmountAndEjectDevice(at: v) } catch {
                     DispatchQueue.main.async {
+                        // Still mounted: every pane goes back where it was.
+                        left.putBack()
                         self?.reportError("“\(v.lastPathComponent)” could not be ejected: \(error.localizedDescription)")
                     }
                 }

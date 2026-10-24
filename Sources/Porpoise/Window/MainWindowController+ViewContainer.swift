@@ -60,15 +60,9 @@ extension MainWindowController {
             }
             if inNewTab { openFiles(items); return }  // Preserve the existing fallback for uncommon formats.
             c.statusBar.showMessage("Opening “\(archive.name)”…")
-            ArchiveBrowser.extractedFolder(for: archive) { result in
-                switch result {
-                case .success(let dir):
-                    c.setURL(dir)
-                    c.messageBar.show(
-                        "Browsing the contents of “\(archive.name)”. This is a read-only copy; changes are not saved to the archive.", error: false)
-                    c.needsLayout = true
-                case .failure(let e): c.messageBar.show(e.localizedDescription, error: true); c.needsLayout = true
-                }
+            let asked = c.navigations
+            ArchiveBrowser.extractedFolder(for: archive) { [weak c] result in
+                if let c { Self.extracted(result, archive: archive.name, in: c, asked: asked) }
             }
             return
         }
@@ -149,18 +143,44 @@ extension MainWindowController {
     }
 
     /// Moves every view that shows something on `volume` to the home folder, so the volume can be ejected.
-    static func leaveVolume(_ volume: URL) {
+    /// An archive's contents were extracted for pane `c`, sent somewhere `asked` times then: it goes there, unless it
+    /// was sent elsewhere meanwhile; then it stays, and can open the contents from its message bar.
+    static func extracted(_ result: Result<URL, Error>, archive: String, in c: ViewContainer, asked: Int) {
+        guard c.navigations == asked else {
+            if case .success(let dir) = result {
+                c.messageBar.show("The contents of “\(archive)” are ready.", error: false, action: "Open") { [weak c] in c?.setURL(dir) }
+                c.needsLayout = true
+            }
+            return
+        }
+        switch result {
+        case .success(let dir):
+            c.setURL(dir)
+            c.messageBar.show("Browsing the contents of “\(archive)”. This is a read-only copy; changes are not saved to the archive.", error: false)
+        case .failure(let e): c.messageBar.show(e.localizedDescription, error: true)
+        }
+        c.needsLayout = true
+    }
+
+    /// Sends every pane showing `volume` home. Returns how to put them back where they were if the eject fails.
+    @discardableResult
+    static func leaveVolume(_ volume: URL) -> VolumeLeave {
         let root = volume.standardizedFileURL.path
         let prefix = root.hasSuffix("/") ? root : root + "/"
         let home = FileManager.default.homeDirectoryForCurrentUser
+        var left = VolumeLeave()
         for w in AppDelegate.shared.windows {
             for t in w.tabs {
                 for c in [t.primary, t.secondary].compactMap({ $0 }) where c.url.isFileURL {
                     let p = c.url.standardizedFileURL.path
-                    if p == root || p.hasPrefix(prefix) { c.setURL(home) }
+                    guard p == root || p.hasPrefix(prefix) else { continue }
+                    let was = c.url
+                    c.setURL(home)
+                    left.panes.append((VolumeLeave.Weak(c), was, c.navigations))
                 }
             }
         }
+        return left
     }
 
     func containerQuickLook(_ c: ViewContainer) { quickLook(nil) }
@@ -223,6 +243,19 @@ extension MainWindowController {
         } catch {
             let a = NSAlert(error: error)
             if let window { a.beginSheetModal(for: window) } else { a.runModal() }
+        }
+    }
+}
+
+/// The panes an eject sent home, and where they were.
+struct VolumeLeave {
+    struct Weak { weak var pane: ViewContainer?; init(_ p: ViewContainer) { pane = p } }
+    var panes: [(pane: Weak, url: URL, navigations: Int)] = []
+
+    /// The eject failed: each pane still at home (not sent anywhere since) goes back.
+    @MainActor func putBack() {
+        for (w, url, n) in panes {
+            if let c = w.pane, c.navigations == n { c.setURL(url) }
         }
     }
 }
