@@ -101,7 +101,7 @@ import Testing
             ])
         #expect(
             try headings(tabs, "Files") == [
-                "Ask for confirmation when", "Trash", "Copying and moving", "Copies and moves", "Transfer rules", "Archives", "Compare files",
+                "Ask for confirmation when", "Trash", "Copies and moves", "Transfer rules", "Name clashes", "Archives", "Compare files",
             ])
         let accounts = try headings(tabs, "Accounts & Servers")
         #expect(accounts.first == "Accounts and servers" && accounts.last == "Sign-in configuration", "\(accounts)")

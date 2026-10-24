@@ -232,7 +232,8 @@ import PorpoiseServices
             ExecutableAction.allCases.firstIndex(of: s.executableAction) ?? 0
         ) { s.executableAction = ExecutableAction.allCases[$0] }
         trash(f)
-        f.section("Copying and moving")
+        TransferSettingsPage.build(f)
+        f.section("Name clashes")
         let rules: [TransferConflictRule] = [.ask, .different, .newer, .keepBoth, .skip]
         f.popup("When names clash:", rules.map(\.title), rules.firstIndex(of: s.transferConflictRule) ?? 0) { s.transferConflictRule = rules[$0] }
         let methods: [TransferCompareMethod] = [.sizeAndDate, .sizeOnly, .content]
@@ -240,7 +241,6 @@ import PorpoiseServices
             "Compare using:", ["Size & date (2 second tolerance)", "Size only", "Contents"], methods.firstIndex(of: s.transferCompareMethod) ?? 0
         ) { s.transferCompareMethod = methods[$0] }
         f.note("Copy, move, paste and drop use this comparison when resolving name clashes.")
-        TransferSettingsPage.build(f)
         f.section("Archives")
         f.check("Browse compressed files as folders", s.browseArchives) { s.browseArchives = $0 }
         compareFiles(f)
