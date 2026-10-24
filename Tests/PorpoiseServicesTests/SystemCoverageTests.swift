@@ -119,7 +119,7 @@ import Testing
 @Suite struct SettingsEnumTitleTests {
     @Test func appearanceTitles() {
         #expect(AppearanceChoice.allCases.map(\.title) == ["Match macOS", "Light", "Dark"])
-        #expect(ContextMenuEntry.allCases.filter { !$0.defaultOn } == [.deleteAlongsideTrash, .copyMoveTo, .revealInFinder])
+        #expect(ContextMenuEntry.allCases.filter { !$0.defaultOn } == [.deleteAlongsideTrash, .copyMoveTo])
         #expect(Set(ContextMenuEntry.allCases.map(\.title)).count == ContextMenuEntry.allCases.count)
     }
 }

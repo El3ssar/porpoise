@@ -75,4 +75,29 @@ import Testing
         #expect(ItemRole.size.orderLabels.ascending == "Smallest First")
         #expect(ItemRole.modificationTime.orderLabels.descending == "Newest First")
     }
+
+    /// Porpoise never hands off to Finder (operator, P11 #9): no menu-bar or context-menu entry offers it.
+    @Test func nothingRevealsInFinder() async throws {
+        let old = NSApp.mainMenu
+        defer {
+            NSApp.mainMenu = old
+            MenuCommandRegistry.shared.refresh(fillDynamic: false)
+        }
+        func all(_ menu: NSMenu) -> [NSMenuItem] { menu.items.flatMap { [$0] + ($0.submenu.map(all) ?? []) } }
+        for set in ShortcutKeySet.allCases {
+            Settings.shared.shortcutKeySet = set
+            let bar = AppDelegate.shared.buildMainMenu()
+            #expect(!all(bar).contains { $0.title.contains("in Finder") }, "\(set)")
+        }
+        Settings.shared.shortcutKeySet = .mac
+        let scratch = try Scratch(), file = try scratch.file("one.txt", "x")
+        let owner = W(urls: [scratch.url])
+        defer { owner.window?.close() }
+        owner.showWindow(nil)
+        try #require(await eventually { !owner.view.model.isLoading })
+        let item = FileItem(url: file, name: "one.txt", isDirectory: false)
+        for menu in [owner.contextMenu(for: nil, in: owner.view), owner.contextMenu(for: item, in: owner.view)] {
+            #expect(!all(menu).contains { $0.title.contains("Finder") })
+        }
+    }
 }

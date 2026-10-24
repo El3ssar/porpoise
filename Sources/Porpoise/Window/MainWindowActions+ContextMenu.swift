@@ -29,7 +29,7 @@ extension MainWindowController {
             .openInSplit: ["Open in Split View"], .openTerminal: ["Open Terminal Here"], .otherView: ["Copy to Other View", "Move to Other View"],
             .sortBy: ["Sort By", "Group By"], .viewMode: ["View Mode", "Adjust View Display Style…"], .compress: ["Compress", "Extract Here"],
             .tags: ["Tags"],
-            .share: ["Share…", "AirDrop…"], .quickLook: ["Quick Look"], .revealInFinder: ["Reveal in Finder"],
+            .share: ["Share…", "AirDrop…"], .quickLook: ["Quick Look"],
         ]
         for (entry, names) in titles where !s.contextMenuShows(entry) {
             for it in m.items where names.contains(it.title) { m.removeItem(it) }
@@ -119,7 +119,6 @@ extension MainWindowController {
             m.addItem(self.item("Adjust View Display Style…", "configure", #selector(adjustViewStyle(_:))))
             m.addItem(.separator())
             m.addItem(self.item("Open Terminal Here", "utilities-terminal", #selector(openTerminalHere(_:))))
-            m.addItem(self.item("Reveal in Finder", "document-open-folder", #selector(revealInFinder(_:))))
             m.addItem(.separator())
             m.addItem(self.item("Get Info", "document-properties", #selector(properties(_:))))
             return m
@@ -207,7 +206,6 @@ extension MainWindowController {
         m.addItem(self.item("Share…", "document-share", #selector(shareItems(_:))))
         m.addItem(self.item("AirDrop…", "airdrop", #selector(airDropItems(_:))))
         m.addItem(self.item("Quick Look", "document-preview", #selector(quickLook(_:))))
-        m.addItem(self.item("Reveal in Finder", "document-open-folder", #selector(revealInFinder(_:))))
         if tab.isSplit {
             m.addItem(.separator())
             m.addItem(self.item("Copy to Other View", "edit-copy", #selector(copyToOtherView(_:))))

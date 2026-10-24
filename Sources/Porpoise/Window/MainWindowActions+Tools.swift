@@ -45,12 +45,6 @@ extension MainWindowController {
         showSpacePreview()
     }
 
-    @objc func revealInFinder(_ sender: Any?) {
-        let urls = actionTargets.filter(\.isFileURL)
-        guard !urls.isEmpty else { return }
-        NSWorkspace.shared.activateFileViewerSelecting(urls)
-    }
-
     @objc func emptyTrash(_ sender: Any?) { FileOperationsController.shared.emptyTrash(window: window) }
 
     /// Edit › Add to Shelf (⌥⌘S): the selection (or the folder shown) goes on the shelf, which opens if hidden.
