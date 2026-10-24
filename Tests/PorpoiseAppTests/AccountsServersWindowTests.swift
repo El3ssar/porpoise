@@ -7,8 +7,8 @@ import Testing
 
 @testable import Porpoise
 
-/// The Connections window over an in-memory profile store and Keychain stand-in.
-@Suite(.serialized) struct ConnectionsWindowTests {
+/// The Accounts & Servers window's servers, over an in-memory profile store and Keychain stand-in (no cloud accounts).
+@Suite(.serialized) struct AccountsServersWindowTests {
     static let config = SSHConfig(
         parsing: """
             Host work
@@ -19,9 +19,9 @@ import Testing
             """)
 
     @MainActor private func window(_ profiles: ConnectionProfiles, _ credentials: ConnectionCredentials, opened: @escaping (URL) -> Void = { _ in })
-        -> ConnectionsWindow
+        -> AccountsServersWindow
     {
-        ConnectionsWindow(profiles: profiles, credentials: credentials, sshConfig: { Self.config }, open: opened)
+        AccountsServersWindow(profiles: profiles, credentials: credentials, sshConfig: { Self.config }, open: opened)
     }
 
     @Test @MainActor func anEmptyListSaysWhatToDoNextInTheThemesColors() throws {
@@ -32,7 +32,7 @@ import Testing
         let table = try #require(views.compactMap { $0 as? NSTableView }.first)
         #expect(table.style == .inset)
         let add = try #require(views.compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "connections-empty-add" })
-        #expect(add.title == "Add Connection")
+        #expect(add.title == "Add Server")
         add.performClick(nil)
         #expect(w.form != nil)
     }
@@ -42,7 +42,7 @@ import Testing
         let credentials = ConnectionCredentials.inMemory()
         var opened: [URL] = []
         let w = window(profiles, credentials) { opened.append($0) }
-        #expect(w.rowCount == 0 && w.form == nil)
+        #expect(w.serverRowCount == 0 && w.form == nil)
 
         w.addProfile(nil)
         let form = try #require(w.form)
@@ -57,7 +57,7 @@ import Testing
         let saved = try #require(profiles.profiles.first)
         #expect(saved.kind == .ftps && saved.host == "files.example.com" && saved.user == "me")
         #expect(credentials.hasSecret(for: saved))
-        #expect(w.rowCount == 1)
+        #expect(w.serverRowCount == 1)
         #expect(!String(decoding: try JSONEncoder().encode(profiles.profiles), as: UTF8.self).contains("pw-123"))
         w.close()
     }
@@ -144,13 +144,13 @@ import Testing
         #expect(!w.saveForm())
         #expect(w.form === form && w.form?.draft == draft)
         #expect(form.problemLabel.stringValue.contains("wasn’t saved"))
-        #expect(profiles.profiles.isEmpty && w.rowCount == 0)
+        #expect(profiles.profiles.isEmpty && w.serverRowCount == 0)
         w.connectProfile(nil)
         #expect(opened.isEmpty)
         try FileManager.default.removeItem(at: parent)
         #expect(w.saveForm())
         #expect(ConnectionProfiles(storeURL: file).profiles == [draft])
-        #expect(w.rowCount == 1)
+        #expect(w.serverRowCount == 1)
         w.connectProfile(nil)
         #expect(opened == [draft.url!])
     }
@@ -208,5 +208,66 @@ import Testing
         #expect(p.kind == .sftp && p.host == "web.example.com" && p.name == "web.example.com" && p.port == nil)
         #expect(ServerForm(kind: .webdav).profile() == nil)
         #expect(ServerForm(kind: .sftp).profile() == nil)  // no server
+    }
+
+    /// ux #8: one window lists every cloud account and every saved server, each under its heading, and shows the
+    /// selected one's settings; the headings can't be chosen.
+    @Test @MainActor func listsCloudAccountsAndServersInOneWindow() throws {
+        let previous = CloudAccounts.shared.backend
+        CloudAccounts.shared.backend = DemoCloudBackend(accounts: [
+            CloudAccount(id: "one", email: "one@example.invalid", displayName: "One"),
+            CloudAccount(id: "two", email: "two@example.invalid", displayName: "Two"),
+        ])
+        defer { CloudAccounts.shared.backend = previous }
+        let profiles = ConnectionProfiles(storeURL: nil)
+        let server = ConnectionProfile(name: "Work", kind: .sftp, host: "work.example.com")
+        try profiles.save(server).get()
+        let w = window(profiles, .inMemory())
+        defer { w.close() }
+        #expect(
+            w.entries == [
+                .heading(AccountsServersWindow.accountsHeading), .account("one"), .account("two"), .heading(AccountsServersWindow.serversHeading),
+                .server(server.id),
+            ])
+        #expect(w.accountRowCount == 2 && w.serverRowCount == 1)
+        // An account first: its settings, no server form.
+        #expect(w.selection == .account("one") && w.accountDetail?.accountID == "one" && w.form == nil)
+        w.select(.server(server.id))
+        #expect(w.selection == .server(server.id) && w.form?.draft.host == "work.example.com" && w.accountDetail == nil)
+        w.select(.heading(AccountsServersWindow.serversHeading))
+        #expect(w.selection == .server(server.id))
+        w.select(.account("two"))
+        #expect(w.accountDetail?.accountID == "two")
+        // Signed out elsewhere (the sidebar's menu): the window shows the next row there is.
+        CloudAccounts.shared.backend = DemoCloudBackend(accounts: [CloudAccount(id: "one", email: "one@example.invalid", displayName: "One")])
+        #expect(w.entries.contains(.account("two")) == false)
+        #expect(w.selection == .account("one"))
+    }
+
+    /// "+" adds either kind: a cloud account (through the Connect sheet's sign-in) or a server filled in here.
+    @Test @MainActor func addOffersACloudAccountOrAServer() throws {
+        let w = window(ConnectionProfiles(storeURL: nil), .inMemory())
+        defer { w.close() }
+        let menu = w.addMenu()
+        #expect(menu.items.map(\.title) == ["Cloud Account…", "Server"])
+        let server = try #require(menu.items.last)
+        _ = server.target?.perform(server.action, with: server)
+        #expect(w.form?.draft.kind == .sftp)
+        let cloud = try #require(menu.items.first)
+        _ = cloud.target?.perform(cloud.action, with: cloud)
+        let sheet = try #require(ConnectSheet.current)
+        defer { sheet.window?.close() }
+        #expect(sheet.page == .pick)
+    }
+
+    /// Go › Accounts & Servers… is ⌥⌘K; ⌘K stays the quick Connect sheet.
+    @Test @MainActor func theGoMenuOpensBothDoors() throws {
+        let menu = AppDelegate.shared.buildMainMenu()
+        let go = try #require(menu.items.first { $0.title == "Go" }?.submenu)
+        let window = try #require(go.items.first { $0.action == #selector(MainWindowController.showConnections(_:)) })
+        #expect(window.title == "Accounts & Servers…")
+        #expect(window.keyEquivalent == "k" && window.keyEquivalentModifierMask == [.command, .option])
+        let sheet = try #require(go.items.first { $0.action == #selector(MainWindowController.connectToServer(_:)) })
+        #expect(sheet.title == "Connect to Server…" && sheet.keyEquivalent == "k" && sheet.keyEquivalentModifierMask == [.command])
     }
 }

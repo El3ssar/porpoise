@@ -2,8 +2,9 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
-/// Settings › Accounts: connected cloud accounts (+ / −), per account the sidebar rows, its name and storage, and one
-/// app-wide choice, what Google Docs become when copied out.
+/// Settings › Accounts & Servers: what the cloud accounts and saved servers are (each one's own settings are in the
+/// Accounts & Servers window), and the app-wide choices: what Google Docs become when copied out, how much space
+/// downloads may take, and the user's own sign-in registrations.
 enum AccountsSettingsPage {
     /// Documents that live only on the web (Google Docs, Sheets, Slides): shown while an account of a service that
     /// has them is connected.
@@ -24,10 +25,14 @@ enum AccountsSettingsPage {
     }
 
     static func build(_ f: FormBuilder) {
-        f.section("Cloud accounts")
-        let page = AccountsView()
-        f.stack.addArrangedSubview(page)
-        page.widthAnchor.constraint(equalTo: f.stack.widthAnchor, constant: -60).isActive = true
+        f.section("Accounts and servers")
+        f.status(
+            "Connected:", { (nil, summary(CloudAccounts.shared.accounts.count, ConnectionProfiles.shared.profiles.count)) },
+            button: { "Open Accounts & Servers…" }
+        ) { _ in AccountsServersWindow.showFromFront() }
+        f.observe(CloudAccounts.changed)
+        f.observe(ConnectionProfiles.changed)
+        _ = f.note("Each cloud account and saved server, with its own settings, is in the Accounts & Servers window (Go › Accounts & Servers…, ⌥⌘K).")
         webDocumentsSection(f)
         offlineSection(f)
         f.section("Sign-in configuration")
@@ -39,6 +44,13 @@ enum AccountsSettingsPage {
             }
         }
         _ = f.note("Leave blank to use the application key included with this build.")
+    }
+
+    /// "2 cloud accounts, 1 server".
+    static func summary(_ accounts: Int, _ servers: Int) -> String {
+        guard accounts + servers > 0 else { return "No cloud accounts or servers yet" }
+        func count(_ n: Int, _ noun: String) -> String { "\(n) \(noun)\(n == 1 ? "" : "s")" }
+        return count(accounts, "cloud account") + ", " + count(servers, "server")
     }
 
     /// Downloads: how much space recently opened files may take, what each account has on this Mac, and where.
@@ -60,153 +72,82 @@ enum AccountsSettingsPage {
             _ = f.note("Downloads are kept in \((root.path as NSString).abbreviatingWithTildeInPath).")
         }
     }
-
-    /// The selected account in the page, for the test bridge.
-    static weak var current: AccountsView?
 }
 
-/// The account list and the selected account's details, side by side.
-final class AccountsView: NSView {
-    let list = NSStackView()
-    private let detail = NSStackView()
-    private let add = NSButton()
-    private let remove = NSButton()
-    private(set) var selected: String?
+/// One cloud account's settings, in the Accounts & Servers window: its trouble, its name in the sidebar, the rows it
+/// shows there, its storage and what it keeps on this Mac.
+final class AccountDetailView: NSStackView {
+    let accountID: String
     private(set) var nameField: NSTextField?
 
-    init() {
+    init(accountID id: String) {
+        accountID = id
         super.init(frame: .zero)
-        translatesAutoresizingMaskIntoConstraints = false
-        list.orientation = .vertical
-        list.alignment = .leading
-        list.spacing = 2
-        list.edgeInsets = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
-        let listBox = NSBox()
-        listBox.boxType = .custom
-        listBox.cornerRadius = 8
-        listBox.borderColor = .separatorColor
-        listBox.fillColor = .controlBackgroundColor
-        listBox.contentViewMargins = .zero
-        listBox.contentView = list
-        for (b, symbol, action, tip) in [
-            (add, "plus", #selector(addAccount), "Connect an account"), (remove, "minus", #selector(removeAccount), "Remove the selected account"),
-        ] {
-            b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
-            b.bezelStyle = .smallSquare
-            b.target = self
-            b.action = action
-            b.toolTip = tip
-            b.widthAnchor.constraint(equalToConstant: 24).isActive = true
-        }
-        let buttons = NSStackView(views: [add, remove])
-        buttons.spacing = 0
-        let left = NSStackView(views: [listBox, buttons])
-        left.orientation = .vertical
-        left.alignment = .leading
-        left.spacing = 0
-        listBox.widthAnchor.constraint(equalToConstant: 240).isActive = true
-        listBox.heightAnchor.constraint(greaterThanOrEqualToConstant: 150).isActive = true
-        detail.orientation = .vertical
-        detail.alignment = .leading
-        detail.spacing = 10
-        let row = NSStackView(views: [left, detail])
-        row.alignment = .top
-        row.spacing = 20
-        row.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(row)
-        NSLayoutConstraint.activate([
-            row.topAnchor.constraint(equalTo: topAnchor), row.bottomAnchor.constraint(equalTo: bottomAnchor),
-            row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
-        ])
-        NotificationCenter.default.addObserver(self, selector: #selector(reload), name: CloudAccounts.changed, object: nil)
-        AccountsSettingsPage.current = self
-        reload()
+        orientation = .vertical
+        alignment = .leading
+        spacing = 10
+        build()
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    @objc func reload() {
-        let accounts = CloudAccounts.shared.accounts
-        if selected.flatMap(CloudAccounts.shared.account) == nil { selected = accounts.first?.id }
-        list.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        for a in accounts {
-            let r = AccountRow(account: a, avatar: CloudAccounts.shared.avatar(a.id), selected: a.id == selected)
-            r.onClick = { [weak self] in self?.select(a.id) }
-            r.onStep = { [weak self] step in self?.step(step) }
-            list.addArrangedSubview(r)
-            r.widthAnchor.constraint(equalTo: list.widthAnchor, constant: -12).isActive = true
-        }
-        if accounts.isEmpty {
-            let empty = ConnectSheet.secondary("No accounts yet.")
-            list.addArrangedSubview(empty)
-        }
-        remove.isEnabled = selected != nil
-        // A quota or picture arriving mid-typing doesn't rebuild the field being typed in.
-        if detailShows == selected, let field = nameField, field.currentEditor() != nil { return }
-        buildDetail()
-    }
+    /// True while the sidebar name is being typed: a quota or picture arriving then leaves the view as it is.
+    var isEditing: Bool { nameField?.currentEditor() != nil }
 
-    /// The account the detail pane shows.
-    private var detailShows: String?
-
-    func select(_ id: String) {
-        selected = id
-        reload()
-    }
-
-    /// ↑/↓ on a row: the account before or after, the focus going with it.
-    func step(_ by: Int) {
-        let accounts = CloudAccounts.shared.accounts
-        guard let i = accounts.firstIndex(where: { $0.id == selected }), accounts.indices.contains(i + by) else { return NSSound.beep() }
-        select(accounts[i + by].id)
-        if let row = list.arrangedSubviews.compactMap({ $0 as? AccountRow })[safe: i + by] { window?.makeFirstResponder(row) }
-    }
-
-    private func buildDetail() {
-        detail.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        detailShows = selected
+    func build() {
+        arrangedSubviews.forEach { $0.removeFromSuperview() }
         let accounts = CloudAccounts.shared
-        guard let id = selected, let a = accounts.account(id) else {
-            let text = ConnectSheet.secondary(
-                "Connect a cloud account to browse your files and shared folders in Porpoise, like any other folder.")
-            text.preferredMaxLayoutWidth = 320
-            let connect = ClosureButton(title: "Connect…") { [weak self] _ in self?.addAccount() }
-            detail.addArrangedSubview(text)
-            detail.addArrangedSubview(connect)
-            return
-        }
+        guard let a = accounts.account(accountID) else { return }
         let title = NSTextField(labelWithString: "\(a.provider.title) · \(a.email)")
         title.font = .systemFont(ofSize: Tokens.FontSize.body, weight: .semibold)
-        let signIn = ClosureButton(title: "Sign In Again") { [weak self] _ in self?.signInAgain(id) }
+        title.lineBreakMode = .byTruncatingMiddle
+        let signIn = ClosureButton(title: "Sign In Again") { [weak self] _ in
+            guard let self else { return }
+            AccountActions.signInAgain(self.accountID, window: self.window)
+        }
         signIn.identifier = NSUserInterfaceItemIdentifier("signInAgain")
         if a.status == .signInNeeded { signIn.keyEquivalent = "\r" }
-        detail.addArrangedSubview(ConnectSheet.row([title, signIn]))
-        if let warning = Self.statusLine(a) { detail.addArrangedSubview(warning) }
+        addArrangedSubview(ConnectSheet.row([title, signIn]))
+        if let warning = Self.statusLine(a) { addArrangedSubview(warning) }
 
-        let name = NSTextField(string: accounts.label(id))
-        name.placeholderString = accounts.label(id)
+        let name = NSTextField(string: accounts.label(accountID))
+        name.placeholderString = accounts.label(accountID)
         name.target = self
         name.action = #selector(nameChanged(_:))
         name.widthAnchor.constraint(equalToConstant: 200).isActive = true
+        name.setAccessibilityLabel("Name in sidebar")
         nameField = name
-        detail.addArrangedSubview(Self.labeled("Name in sidebar:", name))
+        addArrangedSubview(Self.labeled("Name in sidebar:", name))
         let note = ConnectSheet.secondary("Shown after “\(a.provider.title)” when you have more than one account.")
         note.preferredMaxLayoutWidth = 300
-        detail.addArrangedSubview(Self.labeled("", note))
+        addArrangedSubview(Self.labeled("", note))
 
         var checks: [NSView] = []
-        for root in accounts.availableRows(id) {
+        for root in accounts.availableRows(accountID) {
             let c = NSButton(checkboxWithTitle: accounts.rootTitle(root, for: a.id), target: self, action: #selector(toggleRow(_:)))
             c.identifier = NSUserInterfaceItemIdentifier(root.rawValue)
-            c.state = accounts.shows(root, for: id) ? .on : .off
+            c.state = accounts.shows(root, for: accountID) ? .on : .off
             checks.append(c)
         }
         let checkStack = NSStackView(views: checks)
         checkStack.orientation = .vertical
         checkStack.alignment = .leading
         checkStack.spacing = 6
-        detail.addArrangedSubview(Self.labeled("Show in sidebar:", checkStack))
-        if let quota = QuotaBar.make(used: a.quotaUsed, total: a.quotaTotal) { detail.addArrangedSubview(Self.labeled("Storage:", quota)) }
+        addArrangedSubview(Self.labeled("Show in sidebar:", checkStack))
+        if let quota = QuotaBar.make(used: a.quotaUsed, total: a.quotaTotal) { addArrangedSubview(Self.labeled("Storage:", quota)) }
+        if let service = CloudOfflineHub.service {
+            let u = service.usage(account: accountID)
+            let text = ConnectSheet.secondary(CloudCommands.usageText(u, account: accounts.title(accountID)))
+            text.preferredMaxLayoutWidth = 300
+            let id = accountID
+            let remove = ClosureButton(title: "Remove Recent Downloads") { _ in service.removeRecent(account: id) }
+            remove.isEnabled = u.recent > 0
+            let column = NSStackView(views: [text, remove])
+            column.orientation = .vertical
+            column.alignment = .leading
+            column.spacing = 6
+            addArrangedSubview(Self.labeled("On this Mac:", column))
+        }
     }
 
     /// Trouble only: needs signing in again, or offline.
@@ -232,107 +173,12 @@ final class AccountsView: NSView {
         return r
     }
 
-    @objc private func nameChanged(_ sender: NSTextField) {
-        guard let id = selected else { return }
-        CloudAccounts.shared.setLabel(id, sender.stringValue)
-    }
+    @objc private func nameChanged(_ sender: NSTextField) { CloudAccounts.shared.setLabel(accountID, sender.stringValue) }
 
     @objc private func toggleRow(_ sender: NSButton) {
-        guard let id = selected, let raw = sender.identifier?.rawValue, let root = CloudRoot(rawValue: raw) else { return }
-        CloudAccounts.shared.setShows(root, for: id, sender.state == .on)
+        guard let raw = sender.identifier?.rawValue, let root = CloudRoot(rawValue: raw) else { return }
+        CloudAccounts.shared.setShows(root, for: accountID, sender.state == .on)
     }
-
-    @objc func addAccount() {
-        // The browser window in front (Settings is in front of it), not whichever was opened first.
-        let front = ViewContainer.frontBrowserWindow().flatMap { w in AppDelegate.shared.windows.first { $0.window === w } }
-        ConnectSheet.run(window: window) { url in front?.view.setURL(url) }
-    }
-
-    @objc func removeAccount() {
-        guard let id = selected, let a = CloudAccounts.shared.account(id) else { return }
-        AccountActions.confirmRemove(a, window: window)
-    }
-
-    private func signInAgain(_ id: String) { AccountActions.signInAgain(id, window: window) }
-}
-
-/// One account in the list: picture, email, and its storage or its trouble.
-final class AccountRow: NSView {
-    var onClick: (() -> Void)?
-    /// ↑ (-1) or ↓ (+1) pressed while the row has the focus.
-    var onStep: ((Int) -> Void)?
-    private let isSelected: Bool
-
-    init(account a: CloudAccount, avatar: Data?, selected: Bool) {
-        isSelected = selected
-        super.init(frame: .zero)
-        let pic = NSImageView(image: BrandMarks.avatar(avatar, name: a.displayName, email: a.email, size: 26))
-        let mark = NSImageView(image: BrandMarks.image(a.provider.brand, size: 12) ?? NSImage())
-        mark.translatesAutoresizingMaskIntoConstraints = false
-        pic.addSubview(mark)
-        NSLayoutConstraint.activate([
-            pic.widthAnchor.constraint(equalToConstant: 26), pic.heightAnchor.constraint(equalToConstant: 26),
-            mark.trailingAnchor.constraint(equalTo: pic.trailingAnchor, constant: 3),
-            mark.bottomAnchor.constraint(equalTo: pic.bottomAnchor, constant: 3),
-        ])
-        let email = NSTextField(labelWithString: a.email)
-        email.font = .systemFont(ofSize: Tokens.FontSize.callout, weight: .medium)
-        email.lineBreakMode = .byTruncatingMiddle
-        let sub: String
-        switch a.status {
-        case .signInNeeded: sub = "⚠︎ Needs sign-in"
-        case .offline: sub = "Offline"
-        case .ok: sub = a.quotaUsed.map { QuotaBar.text(used: $0, total: a.quotaTotal) } ?? a.provider.title
-        }
-        let subtitle = NSTextField(labelWithString: sub)
-        subtitle.font = .systemFont(ofSize: Tokens.FontSize.small)
-        subtitle.lineBreakMode = .byTruncatingTail
-        subtitle.textColor = selected ? .alternateSelectedControlTextColor.withAlphaComponent(0.8) : .secondaryLabelColor
-        if selected { email.textColor = .alternateSelectedControlTextColor }
-        let text = NSStackView(views: [email, subtitle])
-        text.orientation = .vertical
-        text.alignment = .leading
-        text.spacing = 1
-        let row = NSStackView(views: [pic, text])
-        row.spacing = 8
-        row.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(row)
-        NSLayoutConstraint.activate([
-            row.topAnchor.constraint(equalTo: topAnchor, constant: 5), row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -5),
-            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
-            row.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -6),
-        ])
-        setAccessibilityRole(.row)
-        setAccessibilityLabel(a.email)
-        setAccessibilitySelected(selected)
-    }
-
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard isSelected else { return }
-        NSColor.selectedContentBackgroundColor.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
-    }
-
-    override func mouseUp(with event: NSEvent) { onClick?() }
-
-    // Keyboard and VoiceOver choose an account too: Tab to a row, Space or Return picks it, ↑/↓ move between them.
-    override var acceptsFirstResponder: Bool { true }
-    override var canBecomeKeyView: Bool { true }
-    override func becomeFirstResponder() -> Bool { needsDisplay = true; return true }
-    override func resignFirstResponder() -> Bool { needsDisplay = true; return true }
-    override func keyDown(with event: NSEvent) {
-        switch event.keyCode {
-        case 49, 36, 76: onClick?()
-        case 126: onStep?(-1)
-        case 125: onStep?(1)
-        default: super.keyDown(with: event)
-        }
-    }
-    override func accessibilityPerformPress() -> Bool { onClick?(); return true }
-    override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill() }
-    override var focusRingMaskBounds: NSRect { bounds }
 }
 
 /// What the sidebar header's menu, Settings and the message bar do with an account.
