@@ -210,6 +210,30 @@ import Testing
         #expect(field.attributedStringValue.size().width > field.bounds.width, "the name should need shortening at 200 pt")
     }
 
+    /// A hidden folder on the way to the shown one is in the tree anyway, and stays there, open, when a change on disk
+    /// lists its parent again (it was dropped with everything below it, and the shown folder lost its row).
+    @Test func revealedHiddenFoldersSurviveARelist() async throws {
+        let s = try Scratch()
+        try s.folder(".hidden/inner")
+        Settings.shared.homeURL = s.url
+        Settings.shared.foldersShowHidden = false
+        let panel = FoldersPanel(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
+        panel.watchesDisk = false
+        let outline = try #require((panel.subviews.first as? NSScrollView)?.documentView as? NSOutlineView)
+        func names() -> [String] { (0..<outline.numberOfRows).compactMap { (outline.item(atRow: $0) as? FoldersPanel.Node)?.name } }
+        func selected() -> String? { (outline.item(atRow: outline.selectedRow) as? FoldersPanel.Node)?.name }
+        panel.currentURL = s.path(".hidden/inner")
+        try #require(await eventually { selected() == "inner" }, "\(names())")
+        try s.folder("Later")
+        panel.foldersChanged([s.url.path])
+        try #require(await eventually { names().contains("Later") }, "\(names())")
+        #expect(names() == [".hidden", "inner", "Later"] && selected() == "inner", "\(names()) \(selected() ?? "none")")
+        // Gone from the disk, it goes from the tree too.
+        try FileManager.default.removeItem(at: s.path(".hidden"))
+        panel.foldersChanged([s.url.path])
+        try #require(await eventually { !names().contains(".hidden") }, "\(names())")
+    }
+
     /// "Limit to Home folder": inside Home the tree starts there; outside it, at the top of the disk (as Dolphin).
     @Test func limitToHomeStartsAtHomeOnlyInsideIt() async throws {
         let s = try Scratch()

@@ -41,6 +41,9 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         var relistedFor: String?
         /// The folder changed on disk while it was being listed: it's listed once more when that listing is done.
         var changedWhileListing = false
+        /// Hidden children shown anyway because they are on the way to the view's folder (`reveal`): a re-list keeps
+        /// those that are still there, with what's open below them.
+        private(set) var revealed: Set<String> = []
         init(_ url: URL) { self.url = url }
 
         var isLoading: Bool { listing != nil }
@@ -80,6 +83,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
             let c = names.map { old[$0] ?? Node(url.appendingPathComponent($0)) }
             children = c
             staleChildren = nil
+            revealed.formIntersection(names)
             return c
         }
 
@@ -107,6 +111,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
             var c = children ?? []
             if let n = c.first(where: { $0.url.lastPathComponent == name }) { return n }
             let n = Node(url.appendingPathComponent(name))
+            revealed.insert(name)
             c.append(n)
             c.sort { $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending }
             children = c
@@ -474,12 +479,18 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     private func startListing(_ node: Node) {
         guard !node.isLoading else { return }
         let token = node.beginListing()
-        let url = node.url, hidden = showHidden, tree = root
+        let url = node.url, hidden = showHidden, tree = root, revealed = node.revealed
         listingQueue.async { [weak self, weak node] in
-            let names = Node.sortedSubfolderNames(of: url, showHidden: hidden)
+            var names = Node.sortedSubfolderNames(of: url, showHidden: hidden)
+            let kept = revealed.subtracting(names).filter { name in
+                var isDir: ObjCBool = false
+                return FileManager.default.fileExists(atPath: url.appendingPathComponent(name).path, isDirectory: &isDir) && isDir.boolValue
+            }
+            if !kept.isEmpty { names = (names + kept).sorted { $0.localizedStandardCompare($1) == .orderedAscending } }
             DispatchQueue.main.async { [weak self, weak node] in
                 guard let self, let node, self.root === tree, self.remoteTree == nil else { return }
-                let selected = self.outline.item(atRow: self.outline.selectedRow) as? Node
+                let row = self.outline.selectedRow
+                let selected = row >= 0 ? self.outline.item(atRow: row) as? Node : nil
                 guard node.finishListing(token, names) else { return }
                 self.outline.reloadItem(node === self.root ? nil : node, reloadChildren: true)
                 if self.followWaiting {
