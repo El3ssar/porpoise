@@ -8,7 +8,7 @@ import Testing
 @testable import Porpoise
 
 /// The Accounts & Servers window's servers, over an in-memory profile store and Keychain stand-in (no cloud accounts).
-@Suite(.serialized) struct AccountsServersWindowTests {
+@Suite(.serialized, .isolatedSettings) struct AccountsServersWindowTests {
     static let config = SSHConfig(
         parsing: """
             Host work
@@ -274,5 +274,37 @@ import Testing
         #expect(window.keyEquivalent == "k" && window.keyEquivalentModifierMask == [.command, .option])
         let sheet = try #require(go.items.first { $0.action == #selector(MainWindowController.connectToServer(_:)) })
         #expect(sheet.title == "Connect to Server…" && sheet.keyEquivalent == "k" && sheet.keyEquivalentModifierMask == [.command])
+    }
+
+    /// A server connected after the window that opened Accounts & Servers has closed goes to the browser window in
+    /// front, never to the closed one.
+    @Test @MainActor func connectGoesToALiveWindowOnceTheOneThatAskedHasClosed() async throws {
+        let scratch = try Scratch()
+        let asked = MainWindowController(urls: [scratch.url]), other = MainWindowController(urls: [scratch.url])
+        defer { other.window?.close() }
+        let real = ViewContainer.frontBrowserWindow
+        ViewContainer.frontBrowserWindow = { other.window }
+        defer { ViewContainer.frontBrowserWindow = real }
+        // Local folders stand in for servers: the routing is the same, and nothing connects.
+        let server = scratch.path("server"), elsewhere = scratch.path("elsewhere")
+        for u in [server, elsewhere] { try FileManager.default.createDirectory(at: u, withIntermediateDirectories: true) }
+        asked.window?.orderFront(nil)
+        let open = AccountsServersWindow.opener(owner: asked)
+        open(server)
+        #expect(await eventually { asked.view.url.standardizedFileURL == server.standardizedFileURL })
+        asked.window?.close()
+        open(elsewhere)
+        #expect(await eventually { other.view.url.standardizedFileURL == elsewhere.standardizedFileURL })
+        #expect(asked.view.url.standardizedFileURL == server.standardizedFileURL)
+    }
+
+    /// The rows' text follows the selection: the selection's text colour on it, the window's otherwise.
+    @Test @MainActor func aSelectedRowTakesTheSelectionsTextColour() {
+        let cell = EntryCellView(icon: NSImageView(), title: "Build Server", detail: "SFTP · build.example.invalid", warning: true)
+        #expect(cell.colors.title == Theme.windowText)
+        cell.backgroundStyle = .emphasized
+        #expect(cell.colors.title == Theme.selectionText)
+        cell.backgroundStyle = .normal
+        #expect(cell.colors.detail == Theme.windowTextInactive)
     }
 }

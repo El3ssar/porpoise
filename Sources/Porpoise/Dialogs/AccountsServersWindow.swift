@@ -18,6 +18,8 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
     }
 
     static let accountsHeading = "Cloud Accounts"
+    /// The height of the bar of buttons under the list.
+    static let barHeight: CGFloat = 22
     static let serversHeading = "Servers"
 
     private var accounts: CloudAccounts { .shared }
@@ -63,10 +65,22 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
     }
 
     /// Shown from Settings or the sidebar: servers open in the browser window in front.
-    static func showFromFront(selecting entry: Entry? = nil) {
-        // The browser window in front (Settings may be in front of it), not whichever was opened first.
-        let front = ViewContainer.frontBrowserWindow().flatMap { w in AppDelegate.shared.windows.first { $0.window === w } }
-        show(selecting: entry) { url in (front ?? AppDelegate.shared.windows.first)?.view.setURL(url) }
+    static func showFromFront(selecting entry: Entry? = nil) { show(selecting: entry, open: opener(owner: frontBrowser())) }
+
+    /// Where a server opened from here goes: `owner` (the window that asked) while it's still open; once it has
+    /// closed, the browser window in front then, or a new window. Held weakly, so a closed window is never navigated.
+    static func opener(owner: MainWindowController?) -> (URL) -> Void {
+        weak var owner = owner
+        return { url in
+            if let owner, owner.window?.isVisible == true { return owner.view.setURL(url) }
+            if let front = frontBrowser() { return front.view.setURL(url) }
+            AppDelegate.shared.newWindow(at: url)
+        }
+    }
+
+    /// The browser window in front (Settings or this window may be in front of it), not whichever was opened first.
+    static func frontBrowser() -> MainWindowController? {
+        ViewContainer.frontBrowserWindow().flatMap { $0.windowController as? MainWindowController }
     }
 
     init(
@@ -107,6 +121,8 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
         // Inset, not source list: a source list draws the system's grey material whatever background it is given, a
         // slab against the themed window. This list takes the theme's view color, in a rounded frame.
         table.style = .inset
+        // Both headings drawn alike: a floating first heading gets a hairline the second doesn't.
+        table.floatsGroupRows = false
         table.setAccessibilityLabel("Cloud accounts and saved servers")
         let scroll = NSScrollView()
         scroll.documentView = table
@@ -131,9 +147,11 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
         removeButton.toolTip = "Remove the selected account or server"
         removeButton.target = self
         removeButton.action = #selector(removeSelected(_:))
+        // One 22-pt bar under the list: + and − and the import pull-down, all square-bezelled, as System Settings does.
         for b in [addButton, removeButton] { b.bezelStyle = .smallSquare; b.widthAnchor.constraint(equalToConstant: 26).isActive = true }
         importButton.addItem(withTitle: "Import from SSH Config")
-        importButton.controlSize = .small
+        importButton.bezelStyle = .smallSquare
+        for b in [addButton, removeButton, importButton] { b.heightAnchor.constraint(equalToConstant: Self.barHeight).isActive = true }
         importButton.target = self
         importButton.action = #selector(importAlias(_:))
         importButton.setAccessibilityLabel("Import a host from ~/.ssh/config")
@@ -296,34 +314,13 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
         case .server(let id):
             guard let p = profiles.profile(id) else { return nil }
             let icon = NSImageView(image: NSImage(systemSymbolName: Self.symbol(p.kind), accessibilityDescription: p.kind.title) ?? NSImage())
+            icon.symbolConfiguration = .init(pointSize: EntryCellView.symbolSize, weight: .regular)
             return Self.row(icon: icon, title: p.name, detail: "\(p.kind.title) · \(p.address)", id: p.id.uuidString)
         }
     }
 
     private static func row(icon: NSView, title: String, detail: String, id: String, warning: Bool = false) -> NSView {
-        let name = NSTextField(labelWithString: title)
-        name.font = .systemFont(ofSize: Tokens.FontSize.body, weight: .medium)
-        name.lineBreakMode = .byTruncatingMiddle
-        let sub = NSTextField(labelWithString: detail)
-        sub.font = .systemFont(ofSize: Tokens.FontSize.small)
-        sub.textColor = .secondaryLabelColor
-        sub.lineBreakMode = .byTruncatingTail
-        var subViews: [NSView] = [sub]
-        if warning {
-            let mark = NSImageView(
-                image: NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning") ?? NSImage())
-            mark.contentTintColor = .systemYellow
-            mark.symbolConfiguration = .init(pointSize: Tokens.FontSize.small, weight: .regular)
-            subViews.insert(mark, at: 0)
-        }
-        let subRow = NSStackView(views: subViews)
-        subRow.spacing = 3
-        let text = NSStackView(views: [name, subRow])
-        text.orientation = .vertical
-        text.alignment = .leading
-        text.spacing = 1
-        let row = NSStackView(views: [icon, text])
-        row.spacing = 8
+        let row = EntryCellView(icon: icon, title: title, detail: detail, warning: warning)
         row.identifier = NSUserInterfaceItemIdentifier(id)
         return row
     }
@@ -788,4 +785,75 @@ final class ConnectionInfoView: NSStackView {
         t.preferredMaxLayoutWidth = 480
         return t
     }
+}
+
+/// One account or server in the list: a 26-pt icon slot (so every title starts at the same x), the name and a detail
+/// line. Its text follows the row's selection, as a table cell's does.
+final class EntryCellView: NSTableCellView {
+    private let detail: NSTextField
+    private let warning: NSImageView?
+
+    init(icon: NSView, title: String, detail text: String, warning showsWarning: Bool) {
+        let name = NSTextField(labelWithString: title)
+        name.font = .systemFont(ofSize: Tokens.FontSize.body, weight: .medium)
+        name.lineBreakMode = .byTruncatingMiddle
+        detail = NSTextField(labelWithString: text)
+        detail.font = .systemFont(ofSize: Tokens.FontSize.small)
+        detail.lineBreakMode = .byTruncatingMiddle
+        if showsWarning {
+            let mark = NSImageView(
+                image: NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning") ?? NSImage())
+            mark.symbolConfiguration = .init(pointSize: Tokens.FontSize.small, weight: .regular)
+            warning = mark
+        } else {
+            warning = nil
+        }
+        super.init(frame: .zero)
+        textField = name
+        let slot = NSView()
+        slot.translatesAutoresizingMaskIntoConstraints = false
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        slot.addSubview(icon)
+        NSLayoutConstraint.activate([
+            slot.widthAnchor.constraint(equalToConstant: Self.iconSlot), slot.heightAnchor.constraint(equalToConstant: Self.iconSlot),
+            icon.centerXAnchor.constraint(equalTo: slot.centerXAnchor), icon.centerYAnchor.constraint(equalTo: slot.centerYAnchor),
+        ])
+        let subRow = NSStackView(views: [warning, detail].compactMap { $0 })
+        subRow.spacing = 3
+        let text = NSStackView(views: [name, subRow])
+        text.orientation = .vertical
+        text.alignment = .leading
+        text.spacing = 1
+        let row = NSStackView(views: [slot, text])
+        row.spacing = 8
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            row.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        backgroundStyleChanged()
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    /// The avatar's size: server symbols are centred in the same square.
+    static let iconSlot: CGFloat = 26
+    /// Server symbols at the sidebar's symbol size (design contract I1).
+    static let symbolSize: CGFloat = 16
+
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet { backgroundStyleChanged() }
+    }
+
+    /// On the selection, the selection's text colour (the detail at 80 %); otherwise the window's text colours.
+    private func backgroundStyleChanged() {
+        let selected = backgroundStyle == .emphasized
+        textField?.textColor = selected ? Theme.selectionText : Theme.windowText
+        detail.textColor = selected ? Theme.selectionText.withAlphaComponent(0.8) : Theme.windowTextInactive
+        warning?.contentTintColor = selected ? Theme.selectionText : .systemYellow
+    }
+
+    /// The colours the name and detail show now (tests).
+    var colors: (title: NSColor?, detail: NSColor?) { (textField?.textColor, detail.textColor) }
 }
