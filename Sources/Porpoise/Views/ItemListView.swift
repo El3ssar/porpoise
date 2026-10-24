@@ -109,6 +109,8 @@ final class ItemListView: NSView {
     var typeAheadTime = Date.distantPast
     var renameField: NSTextField?
     var renamingItem: FileItem?
+    /// Counts key presses and clicks in the list: a command ending later can tell the person acted meanwhile.
+    var userActions = 0
     var dropTargetIndex: Int?
     var dropOnBackground = false
     let springLoader = SpringLoader()

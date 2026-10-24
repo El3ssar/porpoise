@@ -349,6 +349,12 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 self.pendingAutomationSelection = nil
             }
             self.pendingSelect = nil
+            if let r = self.pendingRename, let i = self.model.index(of: self.listedURL(matching: r.url)) {
+                self.pendingRename = nil
+                if self.window?.firstResponder === self.list, self.list.userActions == r.userActions {
+                    self.list.beginRename(self.model.rows[i].item.url)
+                }
+            }
             if self.selectsFirstOnLoad {
                 self.selectsFirstOnLoad = false
                 if self.model.selection.isEmpty, let first = self.model.rows.first { self.list.select(first.item.url) }
@@ -441,6 +447,11 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     /// Item to select once the folder has loaded (e.g. the folder we came from after "Up").
     var pendingAutomationSelection: (folder: URL, paths: Set<URL>)?
     var pendingSelect: URL?
+    /// Item to rename once a load lists it (a new copy or folder), unless the list has lost focus or been used
+    /// (`userActions` then) by then; going elsewhere first forgets it.
+    var pendingRename: (url: URL, userActions: Int)?
+    /// Counts the folders gone to: a command finishing later can tell the pane went elsewhere meanwhile, even back.
+    private(set) var visits = 0
 
     /// The listed URL for `u`, even when the paths differ by a symlink (/tmp vs /private/tmp): such an item is
     /// matched by name when its parent resolves to the shown folder.
@@ -619,6 +630,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
         // Remember where the view was in the folder we leave, for Back/Forward.
         if u != url {
+            pendingRename = nil
+            visits += 1
             viewPositions[url] = (list.visibleRect.origin, model.currentURL)
             if viewPositions.count > 200 { viewPositions.removeAll() }
             pendingPosition = nil

@@ -136,12 +136,13 @@ extension MainWindowController {
             reportError(error.localizedDescription); return
         }
         // The view that asked, even if another tab or pane is active when the move ends.
-        let c = view
+        let c = view, visit = view.visits, acted = view.list.userActions
         FileOperationsController.shared.run(.move, items.map(\.url), to: folder, window: window) { [weak c] _ in
             guard let c else { return }
             c.pendingSelect = folder
+            // Not in a pane that went elsewhere or was used meanwhile.
+            if c.visits == visit && c.list.userActions == acted { c.pendingRename = (folder, acted) }
             c.reload()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { c.list.beginRename(folder) }
         }
     }
 

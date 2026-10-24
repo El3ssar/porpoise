@@ -273,6 +273,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func newWindow(urls: [URL], split: [URL?] = []) { show(add(MainWindowController(urls: urls, split: split))) }
 
+    /// A window showing `layout` where a new window goes (its saved frame aside); false when it can't be applied.
+    func newWindow(layout: WindowLayout) -> Bool {
+        var layout = layout
+        layout.frame = nil
+        guard let wc = MainWindowController(layout: layout) else { return false }
+        show(add(wc))
+        return true
+    }
+
     /// Keeps `wc` among the browser windows, not shown yet.
     private func add(_ wc: MainWindowController, cascading: Bool = true) -> MainWindowController {
         // Cascade from the previous window, like document windows.

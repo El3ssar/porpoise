@@ -43,8 +43,10 @@ public final class FileOperationsController {
     var undoStack: [UndoRecord] = []
     /// Undo and redo that copy data between volumes run here, one at a time and in order.
     let undoQueue = DispatchQueue(label: "porpoise.undo", qos: .userInitiated)
-    /// Undos running there: until they're done, every undo and redo goes there too, so they stay in order.
+    /// Undos and redos still running (off the main thread, or at a service): until they're done there's no other.
     var undosRunning = 0
+    /// Counts the actions recorded: one recorded while an undo runs means its result can't be redone.
+    var actionsRecorded = 0
     var redoStack: [UndoRecord] = []
     private var cutChangeCount = -1
     public private(set) var cutURLs: Set<URL> = []

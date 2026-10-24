@@ -174,7 +174,7 @@ extension MainWindowController: NSMenuItemValidation {
         case #selector(createFolder(_:)), #selector(createFile(_:)):
             return writable
         case #selector(addToPlaces(_:)):
-            return view.model.selectedItems.contains(where: \.isBrowsableFolder) || view.url.isFileURL
+            return view.model.selectedItems.contains(where: \.isBrowsableFolder) || view.url.isFileURL || PlacesModel.isCloud(view.url)
         case #selector(restoreFromTrash(_:)):
             return hasSelection && view.model.kind == .trash
         // The context menu's items carry their folder; from the menu bar and the palette they act on the selection.

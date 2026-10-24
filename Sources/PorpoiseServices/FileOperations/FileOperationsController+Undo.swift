@@ -8,6 +8,7 @@ extension FileOperationsController {
     public func pushUndo(_ r: UndoRecord) {
         undoStack.append(r)
         redoStack.removeAll()
+        actionsRecorded += 1
         NotificationCenter.default.post(name: Self.undoChanged, object: nil)
     }
 
@@ -25,33 +26,42 @@ extension FileOperationsController {
 
     public var undoTitle: String? { undoStack.last.map { "Undo: \($0.label)" } }
     public var redoTitle: String? { redoStack.last.map { "Redo: \($0.label)" } }
-    public var canUndo: Bool { !undoStack.isEmpty }
-    public var canRedo: Bool { !redoStack.isEmpty }
+    public var canUndo: Bool { !undoStack.isEmpty && undosRunning == 0 }
+    public var canRedo: Bool { !redoStack.isEmpty && undosRunning == 0 }
 
+    /// One at a time. An action recorded while it runs stays on top: the record goes back below it if the undo
+    /// fails, and its inverse isn't offered as Redo (the action cleared Redo).
     public func undo(window: AnyObject?) {
-        guard let r = undoStack.popLast() else { return }
+        guard undosRunning == 0, let r = undoStack.popLast() else { return }
+        let slot = undoStack.count, recorded = actionsRecorded
+        let back = { self.undoStack.insert($0, at: min(slot, self.undoStack.count)) }
+        let inverse = { if self.actionsRecorded == recorded { self.redoStack.append($0) } }
         if case .cloud(let change) = r {
-            revertCloud(change, window: window, back: { self.undoStack.append($0) }, inverse: { self.redoStack.append($0) })
+            revertCloud(change, window: window, back: back, inverse: inverse)
             return
         }
         if case .remote(let change) = r {
-            revertRemote(change, window: window, back: { self.undoStack.append($0) }, inverse: { self.redoStack.append($0) })
+            revertRemote(change, window: window, back: back, inverse: inverse)
             return
         }
-        revertLocal(r, window: window, back: { self.undoStack.append($0) }, inverse: { self.redoStack.append($0) })
+        revertLocal(r, window: window, back: back, inverse: inverse)
     }
 
+    /// As `undo`: an action recorded meanwhile drops a failed redo, and the redone record goes below that action.
     public func redo(window: AnyObject?) {
-        guard let r = redoStack.popLast() else { return }
+        guard undosRunning == 0, let r = redoStack.popLast() else { return }
+        let slot = undoStack.count, recorded = actionsRecorded
+        let back = { if self.actionsRecorded == recorded { self.redoStack.append($0) } }
+        let inverse = { self.undoStack.insert($0, at: min(slot, self.undoStack.count)) }
         if case .cloud(let change) = r {
-            revertCloud(change, window: window, back: { self.redoStack.append($0) }, inverse: { self.undoStack.append($0) })
+            revertCloud(change, window: window, back: back, inverse: inverse)
             return
         }
         if case .remote(let change) = r {
-            revertRemote(change, window: window, back: { self.redoStack.append($0) }, inverse: { self.undoStack.append($0) })
+            revertRemote(change, window: window, back: back, inverse: inverse)
             return
         }
-        revertLocal(r, window: window, back: { self.redoStack.append($0) }, inverse: { self.undoStack.append($0) })
+        revertLocal(r, window: window, back: back, inverse: inverse)
     }
 
     /// Undoes or redoes a record on this Mac. Renames and moves within a volume are instant and happen at once; a
@@ -60,7 +70,7 @@ extension FileOperationsController {
     private func revertLocal(
         _ r: UndoRecord, window: AnyObject?, back: @escaping (UndoRecord) -> Void, inverse: @escaping (UndoRecord) -> Void
     ) {
-        guard undosRunning > 0 || Self.copiesData(r) else {
+        guard Self.copiesData(r) else {
             switch revert(r) {
             case .success(let i): if let i { inverse(i) }; stacksChanged()
             case .failure(let error): back(r); stacksChanged(); showErrors([error.localizedDescription], window: window)
@@ -151,8 +161,10 @@ extension FileOperationsController {
     private func revertCloud(
         _ change: CloudChange, window: AnyObject?, back: @escaping (UndoRecord) -> Void, inverse: @escaping (UndoRecord) -> Void
     ) {
+        undosRunning += 1
         stacksChanged()
         (cloud ?? CloudAccounts.shared).revert(change) { [weak self] error in
+            self?.undosRunning -= 1
             if let error {
                 back(.cloud(change))
                 self?.showErrors([error.localizedDescription], window: window)
@@ -169,10 +181,12 @@ extension FileOperationsController {
     private func revertRemote(
         _ change: RemoteChange, window: AnyObject?, back: @escaping (UndoRecord) -> Void, inverse: @escaping (UndoRecord) -> Void
     ) {
+        undosRunning += 1
         stacksChanged()
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Result { try LocationOperations.revert(change) }
             DispatchQueue.main.async { [weak self] in
+                self?.undosRunning -= 1
                 switch result {
                 case .success:
                     inverse(.remote(change.inverse))
