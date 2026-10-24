@@ -60,6 +60,8 @@ public struct CloudEditEntry: Equatable, Sendable {
     /// Where the file is in its cloud account (the folder it was opened from).
     public var location: URL
     public var provider: CloudProvider = .googleDrive
+    /// The cloud revision the copy started from or last sent; a newer one in the folder means the copy is out of date.
+    public var revision: String?
 
     /// "Editing “Report.pdf”" and the like.
     public var title: String {

@@ -5,6 +5,8 @@ import PorpoiseCore
 private struct CloudEditBinding {
     var key: String
     var provider: CloudProvider
+    /// The selected file's revision, as its folder listed it.
+    var revision: String?
     var offline: () -> Bool
     var cached: () async -> CloudEditEntry?
     var open: (CloudTransferContext) async throws -> CloudEditEntry
@@ -25,11 +27,12 @@ private struct CloudEditBinding {
     ) {
         key = "\(provider):\(account):\(namespace ?? "")"
         self.provider = provider; self.offline = offline; self.compare = compare
+        revision = file.flatMap(store.engine.revision)
         func entry(_ session: CloudEditSession<E.File>) -> CloudEditEntry {
             CloudEditEntry(
                 id: session.id, account: account, fileID: store.engine.identity(session.file), name: name(session.file),
                 localURL: session.localURL, conflictURL: session.conflictURL, mark: CloudEditCoordinator.mark(session.state),
-                location: location(session.file), provider: provider)
+                location: location(session.file), provider: provider, revision: store.engine.revision(session.file))
         }
         cached = {
             guard let file, let session = await store.cachedSession(file) else { return nil }
@@ -210,7 +213,11 @@ public final class CloudEditCoordinator {
     public func open(_ item: FileItem, using launch: ((URL) -> Void)? = nil, done: @escaping (Bool) -> Void = { _ in }) {
         let launch = launch ?? openFile
         guard let binding = binding(item, checkAccount: false) else { done(false); return }
-        if let known = entry(for: item.url), FileManager.default.fileExists(atPath: known.localURL.path) {
+        let known = entry(for: item.url)
+        // A clean copy of an older revision is replaced; changed or conflicted bytes are always reopened.
+        if let known, FileManager.default.fileExists(atPath: known.localURL.path),
+            known.revision == binding.revision || (known.mark != .editing && known.mark != .saved)
+        {
             launch(known.localURL); if watchers[known.id] == nil { watch(known.id) }; done(true); return
         }
         post("Opening “\(item.name)”…", false)
@@ -225,6 +232,7 @@ public final class CloudEditCoordinator {
                 guard let self else { done(true); return }
                 if entry.mark == .saved { entry.mark = .editing }
                 entry.location = item.url
+                if let known, known.id != entry.id { self.dismiss(known.id) }
                 self.add(entry, binding: binding); launch(entry.localURL); self.watch(entry.id)
                 self.post("Editing “\(entry.name)”: changes you save go to \(binding.provider.title).", false)
                 done(true)
@@ -270,7 +278,8 @@ public final class CloudEditCoordinator {
                 self.set(id) { $0.mark = session.mark }; self.saveAgain.insert(id)
             } else {
                 self.set(id) {
-                    $0.mark = .saved; $0.lastSaved = Date(); if let session { $0.name = session.name }
+                    $0.mark = .saved; $0.lastSaved = Date()
+                    if let session { $0.name = session.name; $0.revision = session.revision }
                 }
                 self.post("Saved “\(entry.name)” to \(entry.provider.title).", false)
                 FileOperationsController.notifyChanged([entry.location]); self.backToEditing(id)
@@ -305,7 +314,7 @@ public final class CloudEditCoordinator {
                 self.saving.remove(id)
                 self.set(id) {
                     $0.mark = session?.mark ?? .saved; $0.conflictURL = nil; $0.lastSaved = Date()
-                    if let session { $0.fileID = session.fileID; $0.name = session.name }
+                    if let session { $0.fileID = session.fileID; $0.name = session.name; $0.revision = session.revision }
                 }
                 self.post("\(message) “\(entry.name)” in \(entry.provider.title).", false)
                 FileOperationsController.notifyChanged([entry.location]); self.backToEditing(id)
