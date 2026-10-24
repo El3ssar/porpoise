@@ -5,6 +5,15 @@ import PorpoiseCore
 /// Captures metadata before copying, without reading file contents. Once the source is privately
 /// claimed, both copies are hashed once. Deletion never repeats whole-subtree content scans.
 public struct LocalMoveRemovalReceipt {
+    /// A claimed source needs review at its private location; retrying the old pathname is unsafe.
+    public struct Retained: LocalizedError {
+        public let location: URL
+        public let errorDescription: String?
+        init(at location: URL, remaining: Bool = false, detail: String = "") {
+            self.location = location
+            errorDescription = "Copy published; \(remaining ? "remaining source" : "source") retained at “\(location.path)”. \(detail)"
+        }
+    }
     public enum Checkpoint {
         /// Persist the holding directory identity BEFORE rename, then persist verification BEFORE unlink.
         case claimed(holding: URL, source: URL, target: URL?, verified: Bool)
@@ -101,16 +110,16 @@ public struct LocalMoveRemovalReceipt {
             try deleteClaimed(claimed, path: "", entries: captured, holding: holding, linkedGenerations: &linkedGenerations, checkTarget: checkTarget)
         } catch {
             if deleting {
-                throw FileOperationError.failed("Copy published; remaining source retained at “\(holding.path)”. \(error.localizedDescription)")
+                throw Retained(at: holding, remaining: true, detail: error.localizedDescription)
             }
             if renamex_np(claimed.path, source.path, UInt32(RENAME_EXCL)) != 0 {
-                throw FileOperationError.failed("Copy published; source retained at “\(claimed.path)”. \(error.localizedDescription)")
+                throw Retained(at: claimed, detail: error.localizedDescription)
             }
             if rmdir(holding.path) == 0 { try? onCheckpoint(.finished(holding: holding)) }
             throw error
         }
         guard rmdir(holding.path) == 0 else {
-            throw FileOperationError.failed("Copy published; source remnants retained at “\(holding.path)”.")
+            throw Retained(at: holding, remaining: true)
         }
         try? onCheckpoint(.finished(holding: holding))
     }
@@ -147,7 +156,7 @@ public struct LocalMoveRemovalReceipt {
                         linkedGenerations: &linkedGenerations, checkTarget: checkTarget)
                 } catch {
                     if renamex_np(owned.path, child.path, UInt32(RENAME_EXCL)) != 0 {
-                        throw FileOperationError.failed("Copy published; source retained at “\(owned.path)”. \(error.localizedDescription)")
+                        throw Retained(at: owned, detail: error.localizedDescription)
                     }
                     throw error
                 }
@@ -204,7 +213,7 @@ public struct LocalMoveRemovalReceipt {
         let actual = try? Self.entry(at: claimed)
         guard actual?.info.st_dev == expected.info.st_dev, actual?.info.st_ino == expected.info.st_ino, rmdir(claimed.path) == 0 else {
             if renamex_np(claimed.path, source.path, UInt32(RENAME_EXCL)) != 0 {
-                throw FileOperationError.failed("Copy published; source retained at “\(claimed.path)”.")
+                throw Retained(at: claimed)
             }
             if rmdir(holding.path) == 0 { try? onCheckpoint(.finished(holding: holding)) }
             throw failure

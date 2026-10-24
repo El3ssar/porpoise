@@ -223,7 +223,7 @@ public final class FileJob: @unchecked Sendable {
 
     /// Files permission problems separately so the app can offer to authenticate.
     private func record(_ error: Error, for src: URL, target: URL?) {
-        if FileErrorKind.classify(error) == .permission {
+        if !(error is LocalMoveRemovalReceipt.Retained), FileErrorKind.classify(error) == .permission {
             denied.append(src)
             if let t = target { deniedTargets[src] = t }
         } else {
@@ -335,7 +335,7 @@ public final class FileJob: @unchecked Sendable {
             throw FileOperationError.cancelled
         } catch FileOperationError.interrupted {
             throw FileOperationError.interrupted
-        } catch  where FileErrorKind.classify(error) == .permission {
+        } catch  where !(error is LocalMoveRemovalReceipt.Retained) && FileErrorKind.classify(error) == .permission {
             record(error, for: src, target: target)
             return nil
         }

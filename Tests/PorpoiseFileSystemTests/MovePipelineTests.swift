@@ -22,6 +22,7 @@ struct MovePipelineTests {
         }
         _ = try job.run()
         #expect(job.errors.contains { $0.contains("remaining source retained at") })
+        #expect(job.denied.isEmpty)
         #expect(!FileJob.itemExists(at: source))
         #expect(s.listing().contains { $0.hasPrefix(".porpoise-removal-") })
     }
