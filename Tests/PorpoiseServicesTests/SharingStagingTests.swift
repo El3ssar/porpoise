@@ -8,6 +8,34 @@ import Testing
 struct SharingStagingTests {
     private var future: Date { Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970) + 1200) }
 
+    @Test func releasingLeaseUnlocksDescriptorsInheritedBeforeExec() throws {
+        let scratch = try Scratch(), fm = FileManager.default
+        let root = try scratch.folder(SharingStaging.rootName)
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+        let name = "Porpoise-Share-" + UUID().uuidString
+        let folder = try scratch.folder(SharingStaging.rootName + "/" + name)
+        let rootFD = open(root.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        try #require(rootFD >= 0)
+        let folderFD = open(folder.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        guard folderFD >= 0 else { close(rootFD); throw POSIXError(.EIO) }
+        guard flock(folderFD, LOCK_EX | LOCK_NB) == 0 else {
+            close(folderFD); close(rootFD); throw POSIXError(.EIO)
+        }
+        var lease: SharingStagingLease? = SharingStagingLease(folder: folder, rootFD: rootFD, folderFD: folderFD, name: name)
+        // dup shares the open-file description just like fork: CLOEXEC does not close the child's
+        // inherited descriptor until exec. Keep that descriptor open across the parent's release.
+        let inherited = dup(folderFD)
+        try #require(inherited >= 0)
+        defer { close(inherited) }
+        #expect(SharingStaging.sweep(root: root, now: future) == 0)
+        weak let releasedLease = lease
+        withExtendedLifetime(lease) {}
+        lease = nil
+        #expect(releasedLease == nil)
+        #expect(SharingStaging.sweep(root: root, now: future) == 1)
+        #expect(!fm.fileExists(atPath: folder.path))
+    }
+
     @Test func liveLeaseProtectsOldCopiesAndReleasedLeaseAllowsCrashCleanup() throws {
         let scratch = try Scratch(), fm = FileManager.default
         var lease: SharingStagingLease? = try SharingStaging.create(in: scratch.url)

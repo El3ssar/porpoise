@@ -11,7 +11,12 @@ final class SharingStagingLease: @unchecked Sendable {
     init(folder: URL, rootFD: Int32, folderFD: Int32, name: String) {
         self.folder = folder; self.rootFD = rootFD; self.folderFD = folderFD; self.name = name
     }
-    deinit { close(folderFD); close(rootFD) }
+    deinit {
+        // A concurrent spawn can inherit this open-file description before CLOEXEC takes effect.
+        // Release ownership explicitly: close alone leaves the flock held until that child execs.
+        _ = flock(folderFD, LOCK_UN)
+        close(folderFD); close(rootFD)
+    }
 
     func touch() { _ = futimes(folderFD, nil) }
 
