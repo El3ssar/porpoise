@@ -4,6 +4,10 @@ import PorpoiseServices
 @MainActor enum CLIAutomationSettings {
     static func build(_ form: FormBuilder) {
         form.section("Command-line tool")
+        form.check("Allow command-line control", Settings.shared.allowCommandLineControl) { Settings.shared.allowCommandLineControl = $0 }
+        form.note(
+            "When enabled, programs running as your user can read selected paths and open or reveal locations. Every automated copy or move requires approval in Porpoise and never uses administrator access."
+        )
         form.note(
             "Install porpoise in ~/.local/bin. Add that folder to your shell’s PATH to open folders, split panes, reveal files and queue transfers from Terminal."
         )

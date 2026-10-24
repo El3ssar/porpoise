@@ -18,7 +18,7 @@ import Testing
         let paths = [try scratch.file("Left/quote'\".txt"), try scratch.file("Left/日本語\n.txt")]
         let wc = MainWindowController(urls: [scratch.url])
         defer { wc.window?.close() }
-        let app = AppAutomation(windowProvider: { wc })
+        let app = AppAutomation(windowProvider: { wc }, approval: { _, _, _, _, _ in true })
         let open = await app.handle(.init(action: .open, paths: [left.path]))
         #expect(open.error == nil && wc.view.url.path == left.path)
         let split = await app.handle(.init(action: .split, paths: [left.path, right.path]))
@@ -37,13 +37,13 @@ import Testing
         let copied = try scratch.folder("copy"), moved = try scratch.folder("move")
         let wc = MainWindowController(urls: [scratch.url])
         defer { wc.window?.close() }
-        let app = AppAutomation(windowProvider: { wc })
+        let app = AppAutomation(windowProvider: { wc }, approval: { _, _, _, _, _ in true })
         let before = FileOperationsController.shared.activities.count
         let expired = await app.handle(.init(action: .move, paths: [source.path], destination: moved.path), deadline: .distantPast)
         #expect(expired.error != nil)
         #expect(FileOperationsController.shared.activities.count == before)
         let copy = await app.handle(.init(action: .copy, paths: [source.path], destination: copied.path))
-        #expect(copy.error == nil && copy.message == "Queued in Activity.")
+        #expect(copy.error == nil && copy.message == "Queued in Activity; awaiting approval in Porpoise.")
         let copiedFile = copied.appendingPathComponent(source.lastPathComponent)
         #expect(await eventually { FileManager.default.fileExists(atPath: copiedFile.path) })
         #expect(FileOperationsController.shared.activities.contains { $0.sources == [source] && $0.destination?.path == copied.path })
@@ -62,7 +62,7 @@ import Testing
         let file = try scratch.file("file")
         let wc = MainWindowController(urls: [scratch.url])
         defer { wc.window?.close() }
-        let app = AppAutomation(windowProvider: { wc })
+        let app = AppAutomation(windowProvider: { wc }, approval: { _, _, _, _, _ in true })
         for request in [
             AutomationRequest(action: .open, paths: [file.path]), .init(action: .open, paths: ["relative"]),
             .init(action: .runTool, toolID: UUID()), .init(action: .open, paths: ["/nonexistent/porpoise-automation"]),
@@ -73,7 +73,40 @@ import Testing
         }
     }
 
+    @Test func everyTransferRequiresApprovalAndSocketConsent() async throws {
+        let scratch = try Scratch(), source = try scratch.file("source"), destination = try scratch.folder("destination")
+        let wc = MainWindowController(urls: [scratch.url]); wc.showWindow(nil)
+        defer { wc.window?.close() }
+        var calls = 0
+        let app = AppAutomation(
+            windowProvider: { wc },
+            approval: { paths, folder, action, _, _ in
+                calls += 1
+                #expect(paths.map(\.path) == [source.path] && folder.path == destination.path && action == .copy)
+                return false
+            })
+        let request = AutomationRequest(action: .copy, paths: [source.path], destination: destination.path)
+        let declined = await app.handle(request)
+        #expect(declined.error == nil)
+        #expect(await eventually { calls == 1 })
+        #expect(!FileManager.default.fileExists(atPath: destination.appendingPathComponent("source").path))
+        Settings.shared.allowCommandLineControl = false
+        let disabled = await app.handle(.init(action: .selection), commandLine: true)
+        #expect(disabled.error != nil)
+        let approval = Task {
+            await AppAutomation.confirmTransfer(
+                [source], destination: destination, action: .copy, window: wc.window, deadline: Date().addingTimeInterval(2))
+        }
+        #expect(await eventually { wc.window?.attachedSheet != nil })
+        let sheet = try #require(wc.window?.attachedSheet)
+        wc.window?.endSheet(sheet, returnCode: .alertSecondButtonReturn)
+        #expect(await approval.value == false)
+    }
+
     @Test func intentsUseCurrentAppAndSavedTools() async throws {
+        let savedApproval = AppAutomation.shared.approveTransfer
+        AppAutomation.shared.approveTransfer = { _, _, _, _, _ in true }
+        defer { AppAutomation.shared.approveTransfer = savedApproval }
         let scratch = try Scratch()
         let folder = try scratch.folder("Folder")
         let file = try scratch.file("Folder/日本語 'quote\n.txt")

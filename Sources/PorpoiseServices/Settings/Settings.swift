@@ -42,6 +42,7 @@ public final class Settings {
 
     /// Read-only local repository badges and branch information.
     @Pref("showGitStatus") public var showGitStatus: Bool = true
+    @Pref("allowCommandLineControl") public var allowCommandLineControl = false
 
     // Interface › Folders & Tabs
     @Pref("startup") public var startup: StartupLocation = .lastSession
