@@ -47,6 +47,17 @@ import Testing
         #expect(call.stdin == "user = \"me:s3cret\"\n")
     }
 
+    @Test @MainActor func incidental530DoesNotAskForCredentials() throws {
+        var asked = false
+        RemoteFS.askLogin = { _, _ in
+            asked = true; return nil
+        }
+        defer { RemoteFS.askLogin = { _, _ in nil } }
+        try curl.reply("Could not read report530.txt", status: 78)
+        #expect(throws: (any Error).self) { try provider("ftp://h.invalid/").list(URL(string: "ftp://h.invalid/")!) }
+        #expect(!asked && curl.calls.count == 1)
+    }
+
     @Test func loginIsEscapedForCurlsConfigSyntax() throws {
         try curl.reply("")
         // Typed in a URL, the password is percent-encoded: curl must get the password itself.

@@ -120,7 +120,7 @@ final class FTPProvider: RemoteProvider {
         } catch let lost as Lost {
             r = lost.result
         }
-        if r.status == Self.loginDenied || r.err.contains("530"), retry, askCredentials() {
+        if r.status == Self.loginDenied, retry, askCredentials() {
             return try curlRun(args, stdoutFile: stdoutFile, retry: false, idempotent: idempotent)
         }
         if r.status != 0 {
