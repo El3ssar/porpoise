@@ -1022,9 +1022,10 @@ public final class DirectoryModel {
     public var selectedSnapshot: SelectionSnapshot {
         if let selectionSnapshotCache { return selectionSnapshotCache }
         let items = selectedRows.map { rows[$0].item }, urls = items.map(\.url)
+        let local = urls.allSatisfy(\.isFileURL)
         let snapshot = SelectionSnapshot(
-            items: items, urls: urls, cloudURLs: urls.filter(PlacesModel.isCloud), isLocal: urls.allSatisfy(\.isFileURL),
-            isManageable: urls.allSatisfy { $0.isFileURL || (RemoteFS.isRemote($0) && LocationKind.of($0) != .archive) })
+            items: items, urls: urls, cloudURLs: local ? [] : urls.filter { !$0.isFileURL && PlacesModel.isCloud($0) }, isLocal: local,
+            isManageable: local || urls.allSatisfy { $0.isFileURL || (RemoteFS.isRemote($0) && LocationKind.of($0) != .archive) })
         selectionSnapshotCache = snapshot
         return snapshot
     }

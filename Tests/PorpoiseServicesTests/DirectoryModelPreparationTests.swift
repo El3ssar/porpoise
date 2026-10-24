@@ -88,6 +88,26 @@ import Testing
         #expect(m.rows.count == 1000)
     }
 
+    @Test func selectionCapabilitiesKeepMixedCloudAndArchiveSemantics() throws {
+        let s = try Scratch(), m = DirectoryModel(location: s.url)
+        let local = s.path("local"), cloud = DriveLocation(accountID: UUID(), collection: .folder("file")).url
+        let archive = URL(string: "archive:/fixture/a")!
+        let urls = [local, cloud, archive]
+        m.applyEdit(
+            ListingEdit(
+                folder: s.url,
+                added: urls.enumerated().map {
+                    FileItem(url: $0.element, name: "item\($0.offset)", isDirectory: false)
+                }))
+        m.selection = Set(urls)
+        #expect(m.selectedSnapshot.cloudURLs == [cloud])
+        #expect(!m.selectedSnapshot.isLocal && !m.selectedSnapshot.isManageable)
+        m.selection = [local, cloud]
+        #expect(!m.selectedSnapshot.isLocal && m.selectedSnapshot.isManageable)
+        m.selection = [local]
+        #expect(m.selectedSnapshot.isLocal && m.selectedSnapshot.isManageable && m.selectedSnapshot.cloudURLs.isEmpty)
+    }
+
     @Test func geometryChangesKeepTheRowsAndOrderWhileExpansionStillRebuilds() throws {
         let s = try Scratch()
         let m = DirectoryModel(location: s.url)
