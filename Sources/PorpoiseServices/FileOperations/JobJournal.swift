@@ -46,6 +46,8 @@ public struct JobJournal: Codable, Equatable, Sendable {
     /// The interrupted job this one resumes: its journal is removed once this one is written, and ignored if a crash
     /// came in between.
     public var replaces: UUID?
+    /// Absent in older journals; false for automation transfers.
+    public var allowsAuthorization: Bool?
 
     public init(id: UUID, kind: FileOperationKind, sources: [URL], destination: URL?) {
         self.id = id

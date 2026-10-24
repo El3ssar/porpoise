@@ -12,8 +12,9 @@ extension FileOperationsController {
     /// `done` gets the items that ended up done: new copies/moves/links, or where trashed and deleted items were.
     func retryDenied(
         _ kind: FileOperationKind, _ urls: [URL], targets: [URL: URL], to folder: URL?,
-        window: AnyObject?, done: @escaping ([URL]) -> Void
+        window: AnyObject?, allowAuthorization: Bool = true, done: @escaping ([URL]) -> Void
     ) {
+        guard allowAuthorization else { done([]); return }
         guard kind == .delete || kind == .trash else {
             return finishRetryDenied(kind, urls, remaining: urls, unlocked: [], targets: targets, to: folder, window: window, done: done)
         }
@@ -154,6 +155,9 @@ extension FileOperationsController {
     /// successfully. Each command is a program and its arguments (see PorpoiseHelperInfo.allowedTools).
     @discardableResult
     public func authorize(verb: String, items: [URL], commands: [[String]], window: AnyObject?) -> Bool {
+        #if PORPOISE_TEST_HOOKS
+        authorizationAttempted?()
+        #endif
         guard !commands.isEmpty else { return false }
         // Standard users never use the helper (it's for administrators): macOS's prompt below, for an administrator's
         // name and password.
