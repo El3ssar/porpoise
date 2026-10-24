@@ -133,4 +133,74 @@ struct CloudMetadataCacheRetentionTests {
         #expect(cache.retentionAccounting?.ownerReferences == 0)
         #expect((0..<500).allSatisfy { cache.cursor("listing:folder-\($0)") == nil })
     }
+
+    @Test func aLeaseReleasedByDerivedValueInvalidationDoesNotReenterTheCacheLock() async throws {
+        let scratch = try Scratch(), cache = await cache(scratch)
+        cache.enableRetention(configuration())
+        cache.remember([Item("held")])
+        var lease: CloudMetadataLease? = cache.retainMetadata(.init(items: ["held"]))
+        _ = cache.derived("lease-holder") { _ in lease! }
+        lease = nil
+        // persist() destroys the derived lease while holding the cache lock. Its cleanup must be asynchronous.
+        await offThePool { cache.remember([Item("other")]) }
+        await cache.settleRetention()
+        #expect(cache.file("held") == nil && cache.retentionAccounting?.ownerReferences == 0)
+    }
+
+    @Test func aliasCanonicalInsertionOnlyOccursWhenRetentionIsEnabled() async throws {
+        let scratch = try Scratch(), cache = await cache(scratch)
+        cache.alias("legacy-alias", to: Item("legacy"))
+        #expect(cache.file("legacy-alias")?.id == "legacy" && cache.file("legacy") == nil)
+        cache.enableRetention(configuration())
+        cache.alias("new-alias", to: Item("new"))
+        await cache.settleRetention()
+        #expect(cache.file("new-alias")?.id == "new" && cache.file("new")?.id == "new")
+    }
+
+    @Test func aContinuousWriterDoesNotPreventOrdinaryEviction() async throws {
+        let scratch = try Scratch(), cache = await cache(scratch)
+        cache.remember([Item("root")])
+        cache.learn((0..<10_000).map { Item("ordinary-\($0)") }, since: cache.generation)
+        let stop = Flag(), ended = Flag(), writes = Locked(0)
+        defer { stop.set() }
+        Thread {
+            defer { ended.set() }
+            while !stop.isSet {
+                let count = writes.change {
+                    $0 += 1; return $0
+                }
+                cache.remember([Item("root", name: "update-\(count)")])
+                // A stream of writes, not a readiness assumption or a latency assertion.
+                Thread.sleep(forTimeInterval: 0.001)
+            }
+        }.start()
+        var config = configuration(files: 100)
+        config.roots = ["root"]
+        cache.enableRetention(config)
+        await expectEventually("writer entered") { writes.value > 1 }
+        await expectEventually("ordinary records prune while writer remains active", timeout: 10) { cache.files.count <= 101 }
+        #expect(!stop.isSet && !ended.isSet)
+        stop.set()
+        await expectEventually("writer exited") { ended.isSet }
+        await cache.settleRetention()
+        #expect(cache.files.count <= 101 && cache.file("root") != nil)
+    }
+
+    @Test func cachedCostsFollowChangedCanonicalAndSnapshotPayloads() async throws {
+        let scratch = try Scratch(), cache = await cache(scratch)
+        var config = configuration(files: 10, listings: 10)
+        config.limits.bytes = 2_000
+        cache.enableRetention(config)
+        cache.store([Item("a")], key: "folder")
+        await cache.settleRetention()
+        #expect(cache.snapshot("folder") != nil)
+        _ = cache.apply([Item("a", name: String(repeating: "x", count: 10_000))], removed: [], belongs: { _, _ in true })
+        cache.learn([Item("a")], since: cache.generation)
+        await cache.settleRetention()
+        // The canonical record is small again; only the old snapshot owns the large payload.
+        #expect(cache.snapshot("folder") == nil && cache.file("a") != nil)
+        cache.learn([Item("a", name: String(repeating: "x", count: 10_000))], since: cache.generation)
+        await cache.settleRetention()
+        #expect(cache.file("a") == nil && cache.retentionAccounting?.ordinaryBytes == 0)
+    }
 }

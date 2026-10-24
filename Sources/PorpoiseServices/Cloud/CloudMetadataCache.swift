@@ -23,6 +23,7 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     private var madeDirectory = false
     /// Bumped by every change: what a `derived` value was computed from.
     private var revision: UInt64 = 0
+    private var metadataRevision: UInt64 = 0
     private var derivedValues: [String: (revision: UInt64, value: Any)] = [:]
     /// Bumped by each `remember` (what a change made here returned). A listing or a page of changes fetched before
     /// then is older than what it remembered: it passes the generation it started at, and doesn't put that back.
@@ -52,6 +53,23 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     private var accessClock: UInt64 = 0
     private var fileAccess: [String: UInt64] = [:]
     private var listingAccess: [String: UInt64] = [:]
+    private var fileAccessEvents: [String: UInt64] = [:]
+    private var listingAccessEvents: [String: UInt64] = [:]
+    private var fileValueEvents: [String: UInt64] = [:]
+    private var listingValueEvents: [String: UInt64] = [:]
+    // Used only on retentionQueue. Input snapshots consume events instead of sharing the live access maps:
+    // a main-thread lookup must not copy a 100k-entry dictionary on its first write during planning.
+    private var plannedFileAccess: [String: UInt64] = [:]
+    private var plannedListingAccess: [String: UInt64] = [:]
+    private var plannedFileVersions: [String: UInt64] = [:]
+    private var plannedListingVersions: [String: UInt64] = [:]
+    private var fileCosts: [String: (version: UInt64, bytes: Int?)] = [:]
+    private var listingCosts: [String: (version: UInt64, bytes: Int?)] = [:]
+    private var aliasesByFile: [String: Set<String>] = [:]
+    private var filesByAlias: [String: Set<String>] = [:]
+    private var pendingAliasChanges: [String: Set<String>] = [:]
+    private var aliasBootstrap = true
+    private var retentionGeneration: UInt64 = 0
     private var lastRetentionAccounting: CloudMetadataRetention.Accounting?
     /// Where the cache is now: what a listing or a page of changes starts from (`store(_:key:since:)`, `apply`).
     public var generation: UInt64 { lock.withLock { current } }
@@ -70,14 +88,16 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     }
     public func snapshot(_ key: String) -> Snapshot? {
         lock.withLock {
-            if retentionConfiguration != nil, state.listings[key] != nil { accessClock &+= 1; listingAccess[key] = accessClock }
+            if retentionConfiguration != nil, state.listings[key] != nil {
+                accessClock &+= 1; listingAccess[key] = accessClock; listingAccessEvents[key] = accessClock
+            }
             return state.listings[key]
         }
     }
     public func file(_ id: String) -> Item? {
         lock.withLock {
             guard let file = state.files[id] else { return nil }
-            if retentionConfiguration != nil { accessClock &+= 1; fileAccess[file.id] = accessClock }
+            if retentionConfiguration != nil { accessClock &+= 1; fileAccess[file.id] = accessClock; fileAccessEvents[file.id] = accessClock }
             return file
         }
     }
@@ -122,8 +142,13 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     }
     public func alias(_ id: String, to file: Item) {
         lock.withLock {
+            let old = state.files[id]
             state.files[id] = file
-            if state.files[file.id] == nil { state.files[file.id] = file }
+            if retentionConfiguration != nil {
+                if state.files[file.id] == nil { state.files[file.id] = file }
+                ownerRevision &+= 1
+            }
+            if let old, old.id != file.id { touched(old.id) }
             touched(file.id); persist()
         }
     }
@@ -133,7 +158,11 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
             let files = files.map { newest($0, since: since) }
             state.listings[key] = Snapshot(files: files, savedAt: Date())
             for file in files { state.files[file.id] = file; touched(file.id) }
-            if retentionConfiguration != nil { accessClock &+= 1; listingAccess[key] = accessClock }
+            if let configuration = retentionConfiguration {
+                touchContext(configuration.context(key))
+                accessClock &+= 1; listingAccess[key] = accessClock; listingAccessEvents[key] = accessClock
+                listingValueEvents[key] = accessClock
+            }
             persist()
         }
     }
@@ -142,7 +171,8 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
         lock.withLock {
             // Polls set the same cursor again whenever nothing changed.
             guard state.cursors[scope] != token else { return }
-            state.cursors[scope] = token; persist()
+            state.cursors[scope] = token; persist(metadataChanged: false)
+            if scope.hasPrefix("listing:") { scheduleRetention() }
         }
     }
     public func invalidate(_ key: String? = nil) {
@@ -151,7 +181,7 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
         } else {
             lock.withLock {
                 guard !state.listings.isEmpty else { return }
-                state.listings.removeAll(); listingAccess.removeAll(); persist()
+                state.listings.removeAll(); listingAccess.removeAll(); listingAccessEvents.removeAll(); listingValueEvents.removeAll(); persist()
             }
         }
     }
@@ -159,7 +189,9 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     public func invalidate<Keys: Sequence>(keys: Keys) where Keys.Element == String {
         lock.withLock {
             var changed = false
-            for key in keys where state.listings.removeValue(forKey: key) != nil { listingAccess[key] = nil; changed = true }
+            for key in keys where state.listings.removeValue(forKey: key) != nil {
+                listingAccess[key] = nil; listingAccessEvents[key] = nil; listingValueEvents[key] = nil; changed = true
+            }
             if changed { persist() }
         }
     }
@@ -170,13 +202,18 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
         lock.withLock {
             let files = files.map { newest($0, since: since) }
             let removed = Set(removed.filter { since == nil || (rememberedAt[$0] ?? 0) <= since! })
-            for id in removed { state.files[id] = nil; fileAccess[id] = nil; rememberedAt[id] = nil }
+            for id in removed {
+                state.files[id] = nil; fileAccess[id] = nil; fileAccessEvents[id] = nil; fileValueEvents[id] = nil; rememberedAt[id] = nil
+                forgetAliases(id)
+            }
             let changed = files.filter { !removed.contains($0.id) }
             guard !changed.isEmpty || !removed.isEmpty else { return [] }
             for file in changed { state.files[file.id] = file; touched(file.id) }
             for key in state.listings.keys {
                 guard var snapshot = state.listings[key] else { continue }
+                let beforeRemoval = snapshot.files.count
                 snapshot.files.removeAll { removed.contains($0.id) }
+                var snapshotChanged = snapshot.files.count != beforeRemoval
                 // A page of changes looks files up in each listing once, rather than with a scan per changed file.
                 var position =
                     changed.count > 8
@@ -188,14 +225,17 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
                         position.map { $0[file.id] }
                         ?? snapshot.files.indices.first { !dropped.contains($0) && snapshot.files[$0].id == file.id }
                     if let index = found {
+                        snapshotChanged = true
                         if retainExisting(key) || member { snapshot.files[index] = file } else { dropped.insert(index); position?[file.id] = nil }
                     } else if member {
+                        snapshotChanged = true
                         position?[file.id] = snapshot.files.count
                         snapshot.files.append(file)
                     }
                 }
                 if !dropped.isEmpty { snapshot.files = snapshot.files.enumerated().filter { !dropped.contains($0.offset) }.map(\.element) }
                 state.listings[key] = snapshot
+                if snapshotChanged, retentionConfiguration != nil { accessClock &+= 1; listingValueEvents[key] = accessClock }
             }
             persist()
             return Array(removed)
@@ -203,10 +243,13 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     }
     public func clear() {
         lock.withLock {
-            state = State(); dirty = false; revision &+= 1
+            state = State(); dirty = false; revision &+= 1; metadataRevision &+= 1; ownerRevision &+= 1
             derivedValues.removeAll()
             rememberedAt.removeAll()
             fileAccess.removeAll(); listingAccess.removeAll(); lastRetentionAccounting = nil
+            fileAccessEvents.removeAll(); listingAccessEvents.removeAll()
+            fileValueEvents.removeAll(); listingValueEvents.removeAll()
+            aliasesByFile.removeAll(); filesByAlias.removeAll(); pendingAliasChanges.removeAll(); retentionGeneration &+= 1
             scheduleRetention()
         }
         CloudStateWriter.shared.discard(path.path) { [path] in try? FileManager.default.removeItem(at: path) }
@@ -214,12 +257,12 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     /// Writes what is pending now (tests, and a cache about to be dropped).
     public func flush() { CloudStateWriter.shared.flush(path.path) }
     /// Under the lock: marks the state changed and schedules one write for everything that changes meanwhile.
-    private func persist() {
+    private func persist(metadataChanged: Bool = true) {
         revision &+= 1
         // A stale index can own every item from the previous revision. Release it when the source changes,
         // including when nobody asks for this particular index again.
         derivedValues.removeAll()
-        scheduleRetention()
+        if metadataChanged { metadataRevision &+= 1; scheduleRetention() }
         if !madeDirectory {
             madeDirectory = true
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -240,6 +283,7 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
             return (ownerVersions, Set(state.files.values.map(\.id)))
         }
         retentionQueue.async { [self] in
+            initializeAliases(configuration)
             let restored = restore()
             lock.withLock {
                 for (name, value) in restored where ownerVersions[name] == initial.0[name] {
@@ -291,30 +335,80 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
         let generation = lock.withLock { () -> UInt64 in
             installOwner(name, RestoredOwner(owner: owner)); return current
         }
-        return CloudMetadataLease(generation: generation) { [weak self] in self?.setRetentionOwner(name, nil) }
+        return CloudMetadataLease(generation: generation) { [weak self] in
+            guard let self else { return }
+            self.retentionQueue.async { self.setRetentionOwner(name, nil) }
+        }
     }
     /// Keep the returned lease alive through both the network read and any deferred change-page application.
     func beginRead() -> CloudMetadataLease {
         let id = UUID()
         let generation = lock.withLock { () -> UInt64 in
-            reads[id] = current; ownerRevision &+= 1; return current
+            reads[id] = current; return current
         }
         return CloudMetadataLease(generation: generation) { [weak self] in
             guard let self else { return }
-            self.lock.withLock {
-                self.reads[id] = nil; self.ownerRevision &+= 1; self.scheduleRetention()
+            self.retentionQueue.async {
+                self.lock.withLock {
+                    self.reads[id] = nil; self.scheduleRetention()
+                }
             }
         }
     }
     private func touched(_ id: String) {
-        guard retentionConfiguration != nil else { return }
-        accessClock &+= 1; fileAccess[id] = accessClock
+        guard let configuration = retentionConfiguration, let item = state.files[id] else { return }
+        replaceAliases(id, configuration.aliases(item))
+        touchContext([id])
+        fileValueEvents[id] = accessClock
+    }
+    private func touchContext(_ references: Set<String>) {
+        guard let configuration = retentionConfiguration else { return }
+        var pending = Array(references), seen: Set<String> = []
+        while let reference = pending.popLast() {
+            let items = state.files[reference].map { [$0] } ?? (filesByAlias[reference] ?? []).compactMap { state.files[$0] }
+            for item in items where seen.insert(item.id).inserted {
+                accessClock &+= 1; fileAccess[item.id] = accessClock; fileAccessEvents[item.id] = accessClock
+                pending += configuration.parents(item)
+            }
+        }
+    }
+    private func replaceAliases(_ id: String, _ aliases: Set<String>) {
+        for alias in aliasesByFile[id] ?? [] {
+            filesByAlias[alias]?.remove(id)
+            if filesByAlias[alias]?.isEmpty == true { filesByAlias[alias] = nil }
+        }
+        aliasesByFile[id] = aliases.isEmpty ? nil : aliases
+        for alias in aliases { filesByAlias[alias, default: []].insert(id) }
+        if aliasBootstrap { pendingAliasChanges[id] = aliases }
+    }
+    private func forgetAliases(_ id: String) {
+        replaceAliases(id, []); aliasesByFile[id] = nil
+    }
+    private func initialAliasIndex(_ configuration: RetentionConfiguration) -> ([String: Set<String>], UInt64) {
+        let input = lock.withLock { (state.files, retentionGeneration) }
+        var result: [String: Set<String>] = [:]
+        for item in input.0.values {
+            let aliases = configuration.aliases(input.0[item.id] ?? item)
+            if !aliases.isEmpty { result[item.id] = aliases }
+        }
+        return (result, input.1)
+    }
+    private func initializeAliases(_ configuration: RetentionConfiguration) {
+        let initial = initialAliasIndex(configuration)
+        var reverse: [String: Set<String>] = [:]
+        for (id, aliases) in initial.0 { for alias in aliases { reverse[alias, default: []].insert(id) } }
+        lock.withLock {
+            if retentionGeneration == initial.1 { aliasesByFile = initial.0; filesByAlias = reverse }
+            let changes = pendingAliasChanges
+            aliasBootstrap = false; pendingAliasChanges = [:]
+            for (id, aliases) in changes { replaceAliases(id, aliases) }
+        }
     }
     /// Called only with the lock held. No encoding, graph traversal or waiting on the caller's thread.
-    private func scheduleRetention() {
-        guard retentionConfiguration != nil, retentionReady, retentionJob == nil else { return }
+    private func scheduleRetention(after delay: TimeInterval = 0.25, replacing: Bool = false) {
+        guard retentionConfiguration != nil, retentionReady, retentionJob == nil || replacing else { return }
         let id = UUID(); retentionJob = id
-        retentionQueue.asyncAfter(deadline: .now() + 0.25) { [self] in
+        retentionQueue.asyncAfter(deadline: .now() + delay) { [self] in
             let run = lock.withLock { () -> Bool in
                 guard retentionJob == id else { return false }
                 retentionJob = nil; return true
@@ -326,10 +420,9 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     private struct RetentionPlan {
         var revision: UInt64
         var owners: UInt64
-        var files: [String: UInt64]
-        var listings: [String: UInt64]
+        var boundary: UInt64
         var evictions: CloudMetadataRetention.Evictions
-        var actualKeys: [String]
+        var actualKeys: [String: [String]]
         var cursors: [String]
         var accounting: CloudMetadataRetention.Accounting
     }
@@ -342,39 +435,66 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
         var since: UInt64?
         var revision: UInt64
         var ownerRevision: UInt64
+        var boundary: UInt64
         var files: [String: UInt64]
         var listings: [String: UInt64]
+        var fileVersions: [String: UInt64]
+        var listingVersions: [String: UInt64]
     }
     /// The input's Item/COW state references die with this function, before the apply lock is taken.
     private func makeRetentionPlan() -> RetentionPlan? {
         guard
             let input = lock.withLock({ () -> RetentionInput? in
                 guard let configuration = retentionConfiguration, retentionReady else { return nil }
+                defer { fileAccessEvents = [:]; listingAccessEvents = [:]; fileValueEvents = [:]; listingValueEvents = [:] }
                 return RetentionInput(
                     state: state, configuration: configuration, owners: owners, failures: failedOwnerItems,
-                    remembered: rememberedAt, since: reads.values.min(), revision: revision, ownerRevision: ownerRevision,
-                    files: fileAccess, listings: listingAccess)
+                    remembered: rememberedAt, since: reads.values.min(), revision: metadataRevision, ownerRevision: ownerRevision,
+                    boundary: accessClock, files: fileAccessEvents, listings: listingAccessEvents,
+                    fileVersions: fileValueEvents, listingVersions: listingValueEvents)
             })
         else { return nil }
         var groups: [String: [String: Item]] = [:]
         for (key, item) in input.state.files { groups[item.id, default: [:]][key] = item }
+        plannedFileAccess = plannedFileAccess.filter { groups[$0.key] != nil }
+        plannedListingAccess = plannedListingAccess.filter { input.state.listings[$0.key] != nil }
+        for (id, stamp) in input.files where groups[id] != nil { plannedFileAccess[id] = stamp }
+        for (key, stamp) in input.listings where input.state.listings[key] != nil { plannedListingAccess[key] = stamp }
+        plannedFileVersions = plannedFileVersions.filter { groups[$0.key] != nil }
+        plannedListingVersions = plannedListingVersions.filter { input.state.listings[$0.key] != nil }
+        fileCosts = fileCosts.filter { groups[$0.key] != nil }
+        listingCosts = listingCosts.filter { input.state.listings[$0.key] != nil }
+        for (id, version) in input.fileVersions where groups[id] != nil { plannedFileVersions[id] = version }
+        for (key, version) in input.listingVersions where input.state.listings[key] != nil { plannedListingVersions[key] = version }
         var planner = CloudMetadataRetention()
         let encoder = JSONEncoder()
-        for id in groups.keys.sorted(by: { (input.files[$0] ?? 0, $0) < (input.files[$1] ?? 0, $1) }) {
+        for id in groups.keys.sorted(by: { (plannedFileAccess[$0] ?? 0, $0) < (plannedFileAccess[$1] ?? 0, $1) }) {
             let entries = groups[id]!
             guard let item = entries[id] ?? entries.sorted(by: { $0.key < $1.key }).first?.value else { continue }
             let aliases = input.configuration.aliases(item).union(entries.keys.filter { $0 != id })
             let parents = input.configuration.parents(item)
             // A codec failure cannot make an arbitrary payload look free: retain it as an explicit exception.
-            let bytes = (try? encoder.encode(entries).count)
+            let version = plannedFileVersions[id] ?? 0
+            let bytes: Int?
+            if let cached = fileCosts[id], cached.version == version {
+                bytes = cached.bytes
+            } else {
+                bytes = try? encoder.encode(entries).count; fileCosts[id] = (version, bytes)
+            }
             planner.putFile(
                 id, aliases: aliases, parents: parents,
                 bytes: (bytes ?? 0) + ((try? encoder.encode(Array(aliases)).count) ?? 0) + ((try? encoder.encode(Array(parents)).count) ?? 0))
             if bytes == nil { planner.setOwner("codec:" + id, .init(items: [id])) }
         }
-        for key in input.state.listings.keys.sorted(by: { (input.listings[$0] ?? 0, $0) < (input.listings[$1] ?? 0, $1) }) {
+        for key in input.state.listings.keys.sorted(by: { (plannedListingAccess[$0] ?? 0, $0) < (plannedListingAccess[$1] ?? 0, $1) }) {
             let snapshot = input.state.listings[key]!
-            let bytes = try? encoder.encode(snapshot).count
+            let version = plannedListingVersions[key] ?? 0
+            let bytes: Int?
+            if let cached = listingCosts[key], cached.version == version {
+                bytes = cached.bytes
+            } else {
+                bytes = try? encoder.encode(snapshot).count; listingCosts[key] = (version, bytes)
+            }
             planner.putListing(
                 key, items: Set(snapshot.files.map(\.id)), context: input.configuration.context(key),
                 bytes: (bytes ?? 0) + ((try? encoder.encode(key).count) ?? 0))
@@ -390,30 +510,61 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
         }
         let evicted = planner.prune(to: input.configuration.limits)
         return RetentionPlan(
-            revision: input.revision, owners: input.ownerRevision,
-            files: Dictionary(uniqueKeysWithValues: evicted.files.map { ($0, input.files[$0] ?? 0) }),
-            listings: Dictionary(uniqueKeysWithValues: evicted.listings.map { ($0, input.listings[$0] ?? 0) }),
-            evictions: evicted, actualKeys: input.state.files.compactMap { evicted.files.contains($0.value.id) ? $0.key : nil },
+            revision: input.revision, owners: input.ownerRevision, boundary: input.boundary,
+            evictions: evicted, actualKeys: groups.filter { evicted.files.contains($0.key) }.mapValues { Array($0.keys) },
             cursors: input.state.cursors.keys.filter { $0.hasPrefix("listing:") && input.state.listings[String($0.dropFirst(8))] == nil },
             accounting: planner.accounting)
     }
     @discardableResult private func pruneRetention() -> Bool {
         guard let plan = makeRetentionPlan() else { return true }
-        return lock.withLock {
-            guard revision == plan.revision, ownerRevision == plan.owners,
-                plan.files.allSatisfy({ (fileAccess[$0.key] ?? 0) == $0.value }),
-                plan.listings.allSatisfy({ (listingAccess[$0.key] ?? 0) == $0.value })
-            else { scheduleRetention(); return false }
-            for key in plan.evictions.listings {
-                state.listings[key] = nil; listingAccess[key] = nil
+        var accurate = true, expectedRevision = plan.revision
+        var removedListings: Set<String> = [], removedFiles: Set<String> = []
+        let mayRemoveFiles = lock.withLock { () -> Bool in
+            guard ownerRevision == plan.owners else { return false }
+            accurate = metadataRevision == expectedRevision
+            for key in plan.evictions.listings where (listingAccess[key] ?? 0) <= plan.boundary {
+                state.listings[key] = nil; listingAccess[key] = nil; listingAccessEvents[key] = nil; listingValueEvents[key] = nil
                 state.cursors["listing:" + key] = nil
+                removedListings.insert(key)
             }
-            for key in plan.actualKeys { state.files[key] = nil }
-            for id in plan.evictions.files { fileAccess[id] = nil; rememberedAt[id] = nil }
-            for key in plan.cursors { state.cursors[key] = nil }
-            lastRetentionAccounting = plan.accounting
-            if !plan.evictions.files.isEmpty || !plan.evictions.listings.isEmpty || !plan.cursors.isEmpty { persist() }
-            return true
+            var cursorChanged = false
+            for key in plan.cursors where state.listings[String(key.dropFirst(8))] == nil {
+                if state.cursors.removeValue(forKey: key) != nil { cursorChanged = true }
+            }
+            if !removedListings.isEmpty { persist() } else if cursorChanged { persist(metadataChanged: false) }
+            expectedRevision = metadataRevision
+            // A snapshot touched during planning stays complete; its members need a fresh plan too.
+            return removedListings.count == plan.evictions.listings.count
+        }
+        for key in removedListings { plannedListingAccess[key] = nil }
+        if mayRemoveFiles {
+            let ids = Array(plan.evictions.files)
+            for start in stride(from: 0, to: ids.count, by: 256) {
+                let chunk = ids[start..<min(start + 256, ids.count)]
+                let proceed = lock.withLock { () -> Bool in
+                    guard ownerRevision == plan.owners else { return false }
+                    if metadataRevision != expectedRevision { accurate = false }
+                    var changed = false
+                    for id in chunk where (fileAccess[id] ?? 0) <= plan.boundary {
+                        for key in plan.actualKeys[id] ?? [] where state.files[key]?.id == id { state.files[key] = nil; changed = true }
+                        fileAccess[id] = nil; fileAccessEvents[id] = nil; fileValueEvents[id] = nil; rememberedAt[id] = nil; forgetAliases(id)
+                        removedFiles.insert(id)
+                    }
+                    if changed { persist() }
+                    expectedRevision = metadataRevision
+                    return true
+                }
+                if !proceed { accurate = false; break }
+            }
+        }
+        for id in removedFiles { plannedFileAccess[id] = nil }
+        return lock.withLock {
+            let complete =
+                accurate && ownerRevision == plan.owners && metadataRevision == expectedRevision
+                && removedFiles.count == plan.evictions.files.count && removedListings.count == plan.evictions.listings.count
+            lastRetentionAccounting = complete ? plan.accounting : nil
+            if !complete { scheduleRetention(after: 1, replacing: true) }
+            return complete
         }
     }
     /// Test/diagnostic barrier; production paths register owners synchronously and never wait for pruning.
