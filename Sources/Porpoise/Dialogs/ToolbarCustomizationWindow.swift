@@ -87,10 +87,10 @@ final class ToolbarCustomizationWindow: SecondaryWindowController, NSToolbarDele
         let heading = NSTextField(labelWithString: "Customize Toolbar")
         heading.font = .systemFont(ofSize: Tokens.FontSize.title2, weight: .semibold)
         let buttons = NSStackView(views: [reset, NSView(), customize, done])
-        buttons.spacing = Tokens.Spacing.s
+        buttons.spacing = Tokens.Space.s
         let stack = contentStack(
             NSStackView(views: [heading, status, buttons]), insets: NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20),
-            spacing: Tokens.Spacing.m, pinBottom: false)
+            spacing: Tokens.Space.m, pinBottom: false)
         buttons.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         ready = true
         observation = toolbar.observe(\.itemIdentifiers, options: [.new]) { [weak self] _, _ in self?.schedulePersist() }
