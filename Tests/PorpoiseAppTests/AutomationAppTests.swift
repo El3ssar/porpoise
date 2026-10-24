@@ -99,6 +99,7 @@ import Testing
         }
         #expect(await eventually { wc.window?.attachedSheet != nil })
         let sheet = try #require(wc.window?.attachedSheet)
+        #expect(sheet.defaultButtonCell?.title == "Cancel")
         wc.window?.endSheet(sheet, returnCode: .alertSecondButtonReturn)
         #expect(await approval.value == false)
     }

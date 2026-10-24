@@ -134,6 +134,9 @@ import PorpoiseServices
             + sources.prefix(10).map { $0.isFileURL ? $0.path : $0.absoluteString }.joined(separator: "\n")
             + (sources.count > 10 ? "\n…" : "") + "\n\nDestination: " + destination.path
         alert.addButton(withTitle: "Allow Transfer"); alert.addButton(withTitle: "Cancel")
+        alert.buttons[0].keyEquivalent = ""
+        alert.buttons[1].keyEquivalent = "\r"
+        alert.window.defaultButtonCell = alert.buttons[1].cell as? NSButtonCell
         window.orderFront(nil)
         return await withCheckedContinuation { continuation in
             let timer = Task { @MainActor in
