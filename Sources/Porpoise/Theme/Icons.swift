@@ -4,8 +4,9 @@ import PorpoiseFileSystem
 import PorpoiseServices
 import UniformTypeIdentifiers
 
-/// Loads Tela-circle-dark icons from the app bundle and recolors them the way KDE's KIconLoader does
-/// (replacing the SVG "current-color-scheme" stylesheet with the active color scheme).
+/// File and UI icons: the system's in the "Native macOS" icon theme (the default), else one of the bundled SVG themes
+/// (Breeze, Colloid, Fluent, Papirus, WhiteSur), recoloured the way KDE's KIconLoader does (the SVG
+/// "current-color-scheme" stylesheet replaced with the active palette).
 final class Icons {
     static let shared = Icons()
 
