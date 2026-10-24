@@ -179,6 +179,18 @@ extension ShortcutModifiers {
         return dispatchBindings.values.contains { $0.contains { !$0.isEmpty && $0.normalized == wanted } }
     }
 
+    /// The menu item `shortcut` runs now (the key set's default or the user's binding), if any.
+    func item(bound shortcut: KeyboardShortcut) -> NSMenuItem? {
+        let wanted = shortcut.normalized
+        for command in commands {
+            guard let bindings = dispatchBindings[command.id],
+                let i = bindings.firstIndex(where: { !$0.isEmpty && $0.normalized == wanted })
+            else { continue }
+            return ([command.item] + command.aliases)[safe: i]
+        }
+        return nil
+    }
+
     /// View-local compatibility shortcuts must stop firing when their menu action is rebound or disabled.
     func fallbackAllowed(_ selector: Selector, tag: Int = 0) -> Bool {
         let prefix = NSStringFromSelector(selector) + "#\(tag)#"
