@@ -25,7 +25,9 @@ public struct AutomationCLI: Sendable {
         let args = Array(arguments.dropFirst())
         var i = 0
         func absolute(_ path: String) -> String {
-            URL(fileURLWithPath: path, isDirectory: false, relativeTo: URL(fileURLWithPath: directory, isDirectory: true)).standardizedFileURL.path
+            // Do not collapse `..`: link/../item belongs to the link's target's parent, not this directory.
+            // The receiving app resolves the parent on its filesystem worker, keeping a leaf link as an item.
+            path.hasPrefix("/") ? path : (directory.hasSuffix("/") ? directory : directory + "/") + path
         }
         while i < args.count {
             let arg = args[i]

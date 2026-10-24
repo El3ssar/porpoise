@@ -7,8 +7,15 @@ final class AutomationCLITests: XCTestCase {
         let names = ["space name", "quote'\"", "line\nbreak", "日本語", "$(touch INJECTED)"]
         let parsed = try AutomationCLI.parse(["copy"] + names + ["--to", "../target"], directory: "/work/source")
         XCTAssertEqual(parsed.request.paths, names.map { "/work/source/" + $0 })
-        XCTAssertEqual(parsed.request.destination, "/work/target")
+        XCTAssertEqual(parsed.request.destination, "/work/source/../target")
         XCTAssertEqual(parsed.request.action, .copy)
+    }
+
+    func testSymlinkSensitiveComponentsReachTheFilesystemUnchanged() throws {
+        let parsed = try AutomationCLI.parse(["move", "link/../item", "--to", "/out/link/../folder"], directory: "/work")
+        XCTAssertEqual(parsed.request.paths, ["/work/link/../item"])
+        XCTAssertEqual(parsed.request.destination, "/out/link/../folder")
+        XCTAssertEqual(try AutomationCLI.parse(["reveal", "./item"], directory: "/").request.paths, ["/./item"])
     }
 
     func testSelectionAndLiteralOptions() throws {
