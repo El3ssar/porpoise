@@ -2,8 +2,9 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
-/// Dolphin's default toolbar (Back, Forward, View settings, location, Split, Search, menu), presented like a
-/// macOS 26 unified toolbar: glass capsules over a translucent bar that sits right of the full-height sidebar.
+/// The default toolbar (Back, Forward, Up, View settings, location, Split, Search, then Dolphin's menu or, with the Mac
+/// key set, Finder's Share and Action ⋯), presented like a macOS 26 unified toolbar: glass capsules over a translucent
+/// bar that sits right of the full-height sidebar.
 final class ToolbarView: NSView {
     let linkFolders = PairToolbarButton(icon: nil, tooltip: "Linked Browsing")
     private let pairGroup = GlassGroup()
@@ -84,7 +85,10 @@ final class ToolbarView: NSView {
         setAccessibilityRole(.toolbar)
         shortcutsObserver = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
             guard note.object == nil || ["shortcutKeySet", "keyboardShortcuts"].contains(note.object as? String ?? "") else { return }
-            DispatchQueue.main.async { self?.refreshShortcutTooltips() }
+            // The key set also picks the default toolbar's last buttons (☰, or Share and Action ⋯).
+            DispatchQueue.main.async {
+                self?.refreshShortcutTooltips(); self?.needsLayout = true
+            }
         }
     }
 
@@ -114,7 +118,7 @@ final class ToolbarView: NSView {
         super.layout()
         background.frame = bounds
         hairline.frame = CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
-        if Settings.shared.toolbarCommands != ToolbarCommand.defaults
+        if Settings.shared.toolbarCommands != Settings.shared.defaultToolbarCommands
             || Settings.shared.customToolsIfLoaded.contains(where: { $0.placements.contains(.toolbar) })
         {
             layoutCustom(); return
@@ -139,11 +143,15 @@ final class ToolbarView: NSView {
         split.showsTitle = false
         let fieldMinX = modeGroup.frame.maxX + Self.fieldLeadingGap
         let splitW = split.intrinsicContentSize.width + 6
-        let actionW = splitW + 2 * bw + 2 * inset
+        let trailing = defaultTrailingButtons
+        let actionW = splitW + CGFloat(trailing.count) * bw + 2 * inset
         actionGroup.frame = CGRect(x: bounds.width - Self.trailingMargin - actionW, y: gy, width: actionW, height: gh)
         split.frame = CGRect(x: inset, y: by, width: splitW, height: bh)
-        search.frame = CGRect(x: split.frame.maxX, y: by, width: bw, height: bh)
-        hamburger.frame = CGRect(x: search.frame.maxX, y: by, width: bw, height: bh)
+        var x = split.frame.maxX
+        for b in trailing {
+            b.frame = CGRect(x: x, y: by, width: bw, height: bh)
+            x += bw
+        }
 
         transferGroup.isHidden = transfers.isHidden
         transferGroup.frame = CGRect(x: actionGroup.frame.minX - 42, y: gy, width: 34, height: gh)
@@ -193,7 +201,10 @@ final class ToolbarView: NSView {
         default: return extraButtons[command]
         }
     }
-    private func perform(_ command: ToolbarCommand) {
+    /// The button for a command, if the toolbar has it (tests).
+    func buttonForTesting(_ command: ToolbarCommand) -> FlatButton? { button(for: command) }
+
+    func perform(_ command: ToolbarCommand) {
         guard let controller = window?.windowController as? MainWindowController else { return }
         switch command {
         case .reload: controller.reloadView(nil)
@@ -205,19 +216,29 @@ final class ToolbarView: NSView {
         case .customTools: controller.showToolbarCustomTools(extraButtons[command])
         case .share: controller.shareItems(extraButtons[command])
         case .airDrop: controller.airDropItems(extraButtons[command])
+        case .action: if let button = extraButtons[command] { controller.showActionMenu(from: button) }
         default: break
         }
+    }
+
+    /// After Split in the default layout: Search, then Dolphin's menu, or Finder's Share and Action ⋯ with the Mac keys.
+    private var defaultTrailingButtons: [FlatButton] {
+        Settings.shared.shortcutKeySet == .dolphin ? [search, hamburger] : [search, extraButtons[.share], extraButtons[.action]].compactMap { $0 }
     }
     private func restoreDefaultGroups() {
         customGroups.values.forEach { $0.isHidden = true }
         navGroup.isHidden = false; modeGroup.isHidden = false; actionGroup.isHidden = false
         viewMode.showsMenuIndicator = true; viewMode.isSplitButton = true
-        for (button, group) in [
-            (back, navGroup), (forward, navGroup), (up, navGroup), (viewMode, modeGroup), (split, actionGroup), (search, actionGroup),
-            (hamburger, actionGroup),
-        ] {
+        let trailing = defaultTrailingButtons
+        for (button, group) in [(back, navGroup), (forward, navGroup), (up, navGroup), (viewMode, modeGroup), (split, actionGroup)]
+            + trailing.map({ ($0, actionGroup) })
+        {
             if button.superview !== group.content { button.removeFromSuperview(); group.content.addSubview(button) }
             button.isHidden = false
+        }
+        // The other key set's trailing buttons, left in the capsule from before a switch.
+        for b in [hamburger] + [extraButtons[.share], extraButtons[.action]].compactMap({ $0 }) where !trailing.contains(where: { $0 === b }) {
+            if b.superview === actionGroup.content { b.removeFromSuperview() }
         }
     }
     private func layoutCustom() {
@@ -316,6 +337,7 @@ private extension ToolbarCommand {
         case .customTools: return "system-run"
         case .share: return "document-share"
         case .airDrop: return "airdrop"
+        case .action: return "overflow-menu"
         default: return "application-menu"
         }
     }

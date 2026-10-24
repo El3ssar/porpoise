@@ -134,7 +134,8 @@ public struct ShortcutPreferences: Codable, Sendable, Equatable {
 
 /// Identifiers shared by the native customization palette and the custom unified toolbar.
 public enum ToolbarCommand: String, Codable, CaseIterable, Sendable {
-    case back, forward, up, viewMode, location, split, search, menu, reload, newTab, terminal, commandPalette, link, customTools, share, airDrop
+    case back, forward, up, viewMode, location, split, search, menu, reload, newTab, terminal, commandPalette, link, customTools, share, airDrop,
+        action
     public var title: String {
         switch self {
         case .back: return "Back"
@@ -153,9 +154,16 @@ public enum ToolbarCommand: String, Codable, CaseIterable, Sendable {
         case .customTools: return "Custom Tools"
         case .share: return "Share…"
         case .airDrop: return "AirDrop…"
+        case .action: return "Action"
         }
     }
-    public static let defaults: [Self] = [.back, .forward, .up, .viewMode, .location, .split, .search, .menu]
+    /// The toolbar each key set starts with: Dolphin's ends with its main menu (☰), the Mac (Finder) one with Finder's
+    /// Share button and Action (⋯) menu, since a Mac always has the menu bar.
+    public static func defaults(for keySet: ShortcutKeySet) -> [Self] {
+        keySet == .dolphin
+            ? [.back, .forward, .up, .viewMode, .location, .split, .search, .menu]
+            : [.back, .forward, .up, .viewMode, .location, .split, .search, .share, .action]
+    }
     public static func validate(_ commands: [Self]) throws {
         guard commands.contains(.location), Set(commands).count == commands.count else {
             throw ShortcutError.invalid("The toolbar needs one Location item and no duplicate actions.")

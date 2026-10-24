@@ -30,11 +30,13 @@ extension Settings {
         }
         keyboardShortcuts = preferences
     }
+    /// The toolbar of the key set in use, until the user customizes it.
+    public var defaultToolbarCommands: [ToolbarCommand] { ToolbarCommand.defaults(for: shortcutKeySet) }
     public var toolbarCommands: [ToolbarCommand] {
         get {
             // One by one: an item this version doesn't have (after a downgrade) is left out, not the whole layout.
             guard let data = Settings.store.data(forKey: "toolbarCommands"), let names = try? JSONDecoder().decode([String].self, from: data)
-            else { return ToolbarCommand.defaults }
+            else { return defaultToolbarCommands }
             var commands: [ToolbarCommand] = []
             for c in names.compactMap(ToolbarCommand.init(rawValue:)) where !commands.contains(c) { commands.append(c) }
             if !commands.contains(.location) { commands.insert(.location, at: min(4, commands.count)) }

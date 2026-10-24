@@ -134,17 +134,19 @@ extension AppDelegate {
         edit.addItem(mi("Deselect Matching…", #selector(W.deselectMatching(_:)), "s", [.command, .option, .shift], icon: "edit-select"))
         main.addItem(.submenu("Edit", icon: nil, edit))
 
-        // View
+        // View: Finder's order. The view modes first, as "as Icons ⌘1"…; then sorting and what each item shows; the
+        // bars; split view; zoom; the view's style; the toolbar and full screen.
         let view = NSMenu(title: "View")
-        view.addItem(mi("Zoom In", #selector(W.zoomIn(_:)), "+", icon: "zoom-in"))
-        view.addItem(mi("Zoom In", #selector(W.zoomIn(_:)), "=", icon: "zoom-in").hiddenAlternate())
-        view.addItem(mi("Reset Zoom Level", #selector(W.zoomReset(_:)), "0", icon: "zoom-original"))
-        view.addItem(mi("Zoom Out", #selector(W.zoomOut(_:)), "-", icon: "zoom-out"))
+        for item in W.viewModeItems() {
+            item.title = "as " + item.title
+            item.image = nil  // radio items, like Finder's: the checkmark says which
+            view.addItem(item)
+        }
         view.addItem(sep())
         view.addItem(dynamicSubmenu("Sort By", icon: "view-sort"))
         view.addItem(dynamicSubmenu("Group By", icon: "view-group"))
-        view.addItem(.submenu("View Mode", icon: "view-list-icons", W.viewModeMenu()))
         view.addItem(dynamicSubmenu("Show Additional Information", icon: "documentinfo"))
+        view.addItem(sep())
         view.addItem(mi("Show Previews", #selector(W.togglePreviews(_:)), K.f(12), [], icon: "view-preview"))
         view.addItem(mi("Show Preview Column", #selector(W.togglePreviewColumn(_:)), icon: "view-preview"))
         if dolphin {
@@ -154,18 +156,9 @@ extension AppDelegate {
             view.addItem(mi("Show Hidden Files", #selector(W.toggleHiddenFiles(_:)), ".", [.command, .shift], icon: "view-hidden"))
         }
         view.addItem(sep())
-        view.addItem(mi("Restore to Defaults", #selector(W.restoreViewDefaults(_:)), icon: "edit-undo"))
-        view.addItem(mi("Adjust View Display Style…", #selector(W.adjustViewStyle(_:)), "j", icon: "configure"))
-        view.addItem(sep())
-        view.addItem(mi("Linked Browsing", #selector(W.toggleLinkedBrowsing(_:)), "l", [.command, .control], icon: "insert-link"))
-        view.addItem(mi("Split", #selector(W.toggleSplit(_:)), K.f(3), [], icon: "view-split-left-right"))
-        view.addItem(mi("Split View to Tabs", #selector(W.splitToTabs(_:)), K.f(3), [.command, .shift], icon: "tab-new"))
-        view.addItem(mi("Pop out Split View", #selector(W.popOutSplit(_:)), K.f(3), .shift, icon: "window-new"))
-        view.addItem(mi("Focus Other View", #selector(W.focusOtherView(_:)), K.f(3), .command))
-        view.addItem(mi("Focus Left View", #selector(W.focusLeftPane(_:)), K.left, .option))
-        view.addItem(mi("Focus Right View", #selector(W.focusRightPane(_:)), K.right, .option))
-        view.addItem(mi("Reload", #selector(W.reloadView(_:)), K.f(5), [], icon: "view-refresh"))
-        view.addItem(sep())
+        // The bars, as Finder lists them (Hide Status Bar ⌘/); the title follows the state (validation).
+        view.addItem(mi("Always Show Tab Bar", #selector(W.toggleTabBar(_:))))
+        view.addItem(mi("Hide Status Bar", #selector(W.toggleStatusBar(_:)), "/"))
         let panels = W.panelsMenu()
         // F10 (macOS reserves F11 for Show Desktop); Cmd+Opt+I (Finder's inspector key) also toggles Information.
         panels.insertItem(
@@ -180,6 +173,22 @@ extension AppDelegate {
                     mi("Replace Location", #selector(W.replaceLocation(_:)), "l"),
                 ]))
         view.addItem(sep())
+        view.addItem(mi("Split", #selector(W.toggleSplit(_:)), K.f(3), [], icon: "view-split-left-right"))
+        view.addItem(mi("Linked Browsing", #selector(W.toggleLinkedBrowsing(_:)), "l", [.command, .control], icon: "insert-link"))
+        view.addItem(mi("Split View to Tabs", #selector(W.splitToTabs(_:)), K.f(3), [.command, .shift], icon: "tab-new"))
+        view.addItem(mi("Pop out Split View", #selector(W.popOutSplit(_:)), K.f(3), .shift, icon: "window-new"))
+        view.addItem(mi("Focus Other View", #selector(W.focusOtherView(_:)), K.f(3), .command))
+        view.addItem(mi("Focus Left View", #selector(W.focusLeftPane(_:)), K.left, .option))
+        view.addItem(mi("Focus Right View", #selector(W.focusRightPane(_:)), K.right, .option))
+        view.addItem(sep())
+        view.addItem(mi("Zoom In", #selector(W.zoomIn(_:)), "+", icon: "zoom-in"))
+        view.addItem(mi("Zoom In", #selector(W.zoomIn(_:)), "=", icon: "zoom-in").hiddenAlternate())
+        view.addItem(mi("Zoom Out", #selector(W.zoomOut(_:)), "-", icon: "zoom-out"))
+        view.addItem(mi("Reset Zoom Level", #selector(W.zoomReset(_:)), "0", icon: "zoom-original"))
+        view.addItem(mi("Reload", #selector(W.reloadView(_:)), K.f(5), [], icon: "view-refresh"))
+        view.addItem(sep())
+        view.addItem(mi("Adjust View Display Style…", #selector(W.adjustViewStyle(_:)), "j", icon: "configure"))
+        view.addItem(mi("Restore to Defaults", #selector(W.restoreViewDefaults(_:)), icon: "edit-undo"))
         view.addItem(mi("Customize Toolbar…", #selector(customizeToolbar(_:)), icon: "configure"))
         view.addItem(mi("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]))
         main.addItem(.submenu("View", icon: nil, view))

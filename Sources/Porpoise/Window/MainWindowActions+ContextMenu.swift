@@ -20,6 +20,16 @@ extension MainWindowController {
         return m
     }
 
+    /// The toolbar's Action (⋯) button, as in Finder: the selection's context menu (the folder's without one), under it.
+    func showActionMenu(from button: NSView) {
+        Self.popUpActionMenu(contextMenu(for: view.model.selectedItems.first, in: view), button)
+    }
+
+    /// Opens the Action menu under its button (tests record it instead: a real pop-up tracks the mouse until closed).
+    static var popUpActionMenu: (NSMenu, NSView) -> Void = { menu, button in
+        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: button.bounds.maxY + 4), in: button)
+    }
+
     /// Settings › Context Menu: hide switched-off entries, add Copy To / Move To, show Delete next to Trash.
     private func applyContextMenuSettings(_ m: NSMenu, hasItem: Bool) {
         let s = Settings.shared

@@ -67,6 +67,8 @@ import Testing
         expected.append("selectMatching:#0# [\"73\"] 1179648")
         expected.append("deselectMatching:#0# [\"73\"] 1703936")
         expected.append("saveWorkspace:#0# [\"73\"] 1310720")
+        // Hide/Show Status Bar (P11): Finder's ⌘/ in both key sets.
+        expected.append("toggleStatusBar:#0# [\"2f\"] 1048576")
         #expect(bindings(menu(.dolphin)) == expected.sorted())
         #expect(W.viewModeItems().map(\.title) == ["Icons", "Compact", "Details", "Columns"])
     }
