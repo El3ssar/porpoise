@@ -37,6 +37,9 @@ enum AppearancePage {
         f.popup("Appearance:", AppearanceChoice.allCases.map(\.title), AppearanceChoice.allCases.firstIndex(of: s.appearance) ?? 0) {
             s.appearance = AppearanceChoice.allCases[$0]
         }
+        f.popup("Code theme:", CodeTheme.allCases.map(\.title), CodeTheme.allCases.firstIndex(of: s.appearancePreferences.codeTheme) ?? 0) { i in
+            s.updateAppearance { $0.codeTheme = CodeTheme.allCases[i] }
+        }
         f.button("Import Theme…") {
             readFile(extensions: ["json", "colors"]) { url, data in
                 let theme =

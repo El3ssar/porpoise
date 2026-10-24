@@ -3,7 +3,7 @@ import Foundation
 /// Lexical highlighting, not a compiler grammar. Detection never opens a file or invokes a tool.
 public enum SyntaxLanguage: String, CaseIterable, Sendable {
     case plain, swift, c, cpp, objectiveC, python, javascript, typescript, json, yaml, toml
-    case html, xml, css, shell, go, rust, java, kotlin, ruby, markdown, sql, lua
+    case html, xml, css, shell, go, rust, java, kotlin, ruby, markdown, sql, lua, diff
 
     public static func detect(filename: String, prefix: String = "") -> SyntaxLanguage? {
         let name = (filename as NSString).lastPathComponent.lowercased()
@@ -16,6 +16,7 @@ public enum SyntaxLanguage: String, CaseIterable, Sendable {
             "plist": .xml, "xhtml": .html, "css": .css, "scss": .css, "sh": .shell, "bash": .shell, "zsh": .shell,
             "fish": .shell, "go": .go, "rs": .rust, "java": .java, "kt": .kotlin, "kts": .kotlin, "rb": .ruby,
             "md": .markdown, "markdown": .markdown, "sql": .sql, "lua": .lua,
+            "diff": .diff, "patch": .diff,
         ]
         if let language = extensions[ext] { return language }
         if ["gemfile", "rakefile"].contains(name) { return .ruby }
