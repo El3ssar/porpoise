@@ -32,6 +32,28 @@ import Testing
         #expect(!m.isLoading && m.rows.count == 3)
     }
 
+    @Test func repeatedSelectionReadsKeepOrderAndInvalidateAfterChanges() throws {
+        let s = try Scratch(), m = DirectoryModel(location: s.url)
+        // Preparation is immediate here so this measures selection reads only.
+        m.prepareRows = { input, done in
+            done(input.build()!); return LocationLoad()
+        }
+        m.applyEdit(ListingEdit(folder: s.url, added: files(s.url, count: 100_000)))
+        m.selection = Set(m.rows.map(\.item.url))
+        let expected = m.rows.map(\.item.url)
+        var counts = 0
+        let start = ContinuousClock.now
+        for _ in 0..<30 { counts += m.selectedItems.count }
+        print("W261 selection 100k x30: \(start.duration(to: .now)) count=\(counts)")
+        #expect(counts == 3_000_000 && m.selectedItems.map(\.url) == expected)
+        m.selection = [expected[20], expected[10]]
+        #expect(m.selectedItems.map(\.url) == [expected[10], expected[20]])
+        m.props.sortOrder = .descending
+        #expect(m.selectedItems.map(\.url) == [expected[20], expected[10]])
+        m.selection = []
+        #expect(m.selectedItems.isEmpty)
+    }
+
     @Test func geometryChangesKeepTheRowsAndOrderWhileExpansionStillRebuilds() throws {
         let s = try Scratch()
         let m = DirectoryModel(location: s.url)

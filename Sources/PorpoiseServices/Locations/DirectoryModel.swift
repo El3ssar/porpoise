@@ -84,6 +84,7 @@ public final class DirectoryModel {
     public private(set) var rows: [Row] = [] {
         didSet {
             rowsRevision &+= 1
+            selectionSnapshotCache = nil
             rowIndex = nil; rowIndexByPath = nil; rowFileKeys = nil; missedLookups = []
         }
     }
@@ -256,7 +257,9 @@ public final class DirectoryModel {
 
     /// Constant-time invalidation for selection-dependent UI caches.
     public private(set) var selectionRevision: UInt64 = 0
-    public var selection: Set<URL> = [] { didSet { if selection != oldValue { selectionRevision &+= 1; onSelectionChanged?() } } }
+    public var selection: Set<URL> = [] {
+        didSet { if selection != oldValue { selectionRevision &+= 1; selectionSnapshotCache = nil; onSelectionChanged?() } }
+    }
     public var currentURL: URL?
     public var anchorURL: URL?
 
@@ -1001,7 +1004,26 @@ public final class DirectoryModel {
     }
 
     /// In row order. Without copying every row's item first: the status bar asks on every selection change.
-    public var selectedItems: [FileItem] { selectedRows.map { rows[$0].item } }
+    public var selectedItems: [FileItem] { selectedSnapshot.items }
+
+    public struct SelectionSnapshot {
+        public let items: [FileItem]
+        public let urls: [URL]
+        public let cloudURLs: [URL]
+        public let isLocal: Bool
+        public let isManageable: Bool
+    }
+    private var selectionSnapshotCache: SelectionSnapshot?
+    /// Menu validation asks about the same selection repeatedly. Every row or selection change drops this snapshot.
+    public var selectedSnapshot: SelectionSnapshot {
+        if let selectionSnapshotCache { return selectionSnapshotCache }
+        let items = selectedRows.map { rows[$0].item }, urls = items.map(\.url)
+        let snapshot = SelectionSnapshot(
+            items: items, urls: urls, cloudURLs: urls.filter(PlacesModel.isCloud), isLocal: urls.allSatisfy(\.isFileURL),
+            isManageable: urls.allSatisfy { $0.isFileURL || (RemoteFS.isRemote($0) && LocationKind.of($0) != .archive) })
+        selectionSnapshotCache = snapshot
+        return snapshot
+    }
 
     /// The rows of the selected items, in order. A few are looked up (the status bar, the preview and Column view ask
     /// on every arrow key, and going through 100,000 rows each time made the keys lag); many are gone through.
