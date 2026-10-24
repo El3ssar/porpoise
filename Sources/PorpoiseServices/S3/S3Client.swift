@@ -53,6 +53,7 @@ public final class S3Client: @unchecked Sendable {
     public let location: S3Location
     let authorized: CloudAuthorizedClient
     let journal: CloudJournal<S3Operation>
+    let legacyJournal: CloudJournal<S3Operation>?
     let multipartCopyThreshold: Int64
     let copyPartSize: Int64
     public init(
@@ -63,8 +64,13 @@ public final class S3Client: @unchecked Sendable {
         self.location = location
         let identity = S3Signer.hash(Data("\(location.endpoint)|\(location.region)|\(location.bucket)".utf8))
         journal = CloudJournal(
-            folder: (directory ?? Settings.cachesFolder.appendingPathComponent("S3").appendingPathComponent(location.accountID.uuidString))
+            folder: (directory ?? Settings.supportFolder.appendingPathComponent("S3").appendingPathComponent(location.accountID.uuidString))
                 .appendingPathComponent(identity))
+        legacyJournal =
+            directory == nil
+            ? CloudJournal(
+                folder: Settings.cachesFolder.appendingPathComponent("S3").appendingPathComponent(location.accountID.uuidString)
+                    .appendingPathComponent(identity)) : nil
         authorized = CloudAuthorizedClient(
             transport: transport, token: { _ in "" },
             classify: { body, response, idempotent in

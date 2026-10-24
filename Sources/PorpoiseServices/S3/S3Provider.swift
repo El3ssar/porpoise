@@ -85,8 +85,7 @@ public final class S3Provider: RemoteProvider, @unchecked Sendable {
             }
             let context = transferContext()
             try CloudAwait.run {
-                let existing = try self.client.journal.all().first { $0.kind == "upload" && $0.key == key && $0.localURL == local }
-                try await self.client.upload(local, key: key, operationID: existing?.operationID ?? UUID(), context: context)
+                try await self.client.upload(local, key: key, context: context)
             }
         }
     }

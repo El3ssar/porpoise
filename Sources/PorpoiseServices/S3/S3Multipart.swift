@@ -19,6 +19,8 @@ struct S3Operation: CloudStagedDownloadRecord {
     var fingerprint: JobJournal.Fingerprint?
     var stagedURL: URL?
     var stagedComplete = false
+    var temporary: Bool?
+    var started: Date?
     mutating func beginDownload() {}
 }
 
@@ -53,10 +55,25 @@ extension S3Client {
     }
     /// Part ETags are checkpointed only after server acknowledgement. Retrying an uncheckpointed part replaces
     /// that part number. No session secrets are needed: every request is signed anew with Keychain credentials.
-    public func upload(_ local: URL, key: String, operationID: UUID = UUID(), context: CloudTransferContext = .init()) async throws {
+    /// Opaque operations cannot be resumed by a later job: abort their parts on failure or cancellation.
+    public func upload(_ local: URL, key: String, context: CloudTransferContext = .init()) async throws {
+        try await discardStaleUploads()
+        let operation = UUID()
+        var record = S3Operation(operationID: operation, kind: "upload", key: key)
+        record.temporary = true; record.started = Date()
+        try journal.save(record)
+        do { try await upload(local, key: key, operationID: operation, context: context) } catch {
+            // Cleanup must run even when the transfer's task has already been cancelled. Failed cleanup remains journalled.
+            _ = await Task.detached { try? await self.abortUpload(operationID: operation) }.value
+            throw error
+        }
+    }
+    /// An explicit operation identifier is the caller's durable resume contract. Failure retains acknowledged parts.
+    public func upload(_ local: URL, key: String, operationID: UUID, context: CloudTransferContext = .init()) async throws {
         guard !key.isEmpty, !key.hasSuffix("/"), let fingerprint = JobJournal.Fingerprint(local), fingerprint.size <= 5 * 1024 * 1024 * 1024 * 1024,
             (try local.resourceValues(forKeys: [.isRegularFileKey])).isRegularFile == true
         else { throw S3Error.invalidLocation }
+        try migrateUpload(operationID, from: legacyJournal)
         try journal.claim(operationID); defer { journal.release(operationID) }
         var record = try journal.load(operationID) ?? S3Operation(operationID: operationID, kind: "upload", key: key)
         guard record.kind == "upload", record.key == key, record.localURL == nil || record.localURL == local,
@@ -111,10 +128,27 @@ extension S3Client {
         guard xml.first("ETag") != nil, xml.first("Code") == nil else { throw S3Error.invalidResponse }
         try journal.remove(operationID); context.progress(record.total, record.total)
     }
+    /// Only abandoned opaque operations expire. Explicit caller-owned resume records are never swept.
+    func discardStaleUploads(now: Date = Date()) async throws {
+        for record in try journal.all() where record.kind == "upload" && record.temporary == true {
+            guard let started = record.started, now.timeIntervalSince(started) > 86400 else { continue }
+            do { try await abortUpload(operationID: record.operationID) } catch CloudJournalError.busy { continue }
+        }
+    }
+    /// Preserve explicit resume identifiers when upgrading from the old disposable journal location.
+    /// Download partials stay at their original location; only metadata-only upload records migrate.
+    func migrateUpload(_ operation: UUID, from legacy: CloudJournal<S3Operation>?) throws {
+        guard try journal.load(operation) == nil, let legacy, let record = try legacy.load(operation), record.kind == "upload" else { return }
+        try journal.save(record)
+        try legacy.remove(operation)
+    }
     public func abortUpload(operationID: UUID) async throws {
+        try migrateUpload(operationID, from: legacyJournal)
         try journal.claim(operationID); defer { journal.release(operationID) }
         guard let record = try journal.load(operationID), record.kind == "upload" else { throw S3Error.invalidLocation }
-        if let id = record.uploadID { _ = try await send("DELETE", key: record.key, query: ["uploadId": id]) }
+        if let id = record.uploadID {
+            do { _ = try await send("DELETE", key: record.key, query: ["uploadId": id]) } catch S3Error.service(404, _) {}
+        }
         try journal.remove(operationID)
     }
 }

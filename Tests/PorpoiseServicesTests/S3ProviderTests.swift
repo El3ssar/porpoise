@@ -136,6 +136,72 @@ import Testing
         try await client.abortUpload(operationID: aborted)
         #expect(try client.journal.load(aborted) == nil)
     }
+    @Test func opaqueUploadFailureAndCancellationAbortParts() async throws {
+        let local = try Scratch(), file = try local.file("opaque.bin", "")
+        try Data(repeating: 42, count: 17 << 20).write(to: file)
+        try await configure(["failPart": 2])
+        await #expect(throws: (any Error).self) { try await client.upload(file, key: "failed.bin") }
+        #expect(try await stats()["aborted"] as? Int == 1)
+        #expect(try client.journal.all().isEmpty)
+        let progress = Counter()
+        let context = CloudTransferContext(
+            checkpoint: { if progress.value > 0 { throw CancellationError() } },
+            progress: { _, _ in progress.add() })
+        await #expect(throws: CancellationError.self) { try await client.upload(file, key: "cancelled.bin", context: context) }
+        #expect(try await stats()["aborted"] as? Int == 2)
+        #expect(try client.journal.all().isEmpty)
+    }
+    @Test func cancelledTaskStillAbortsItsOpaqueMultipartUpload() async throws {
+        let local = try Scratch(), file = try local.file("cancel.bin", "")
+        try Data(repeating: 42, count: 17 << 20).write(to: file)
+        let progress = Counter(), held = Flag()
+        let context = CloudTransferContext(
+            checkpoint: {
+                if progress.value > 0 {
+                    held.set()
+                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                }
+            }, progress: { _, _ in progress.add() })
+        let upload = Task { try await client.upload(file, key: "task-cancel.bin", context: context) }
+        await expectEventually("first multipart part acknowledged") { held.isSet }
+        upload.cancel()
+        await #expect(throws: CancellationError.self) { try await upload.value }
+        #expect(try await stats()["aborted"] as? Int == 1)
+        #expect(try client.journal.all().isEmpty)
+    }
+    @Test func staleOpaqueSweepSkipsActiveAndExplicitResumeOperations() async throws {
+        let local = try Scratch(), file = try local.file("stale.bin", "")
+        try Data(repeating: 42, count: 9 << 20).write(to: file)
+        let opaque = UUID(), retained = UUID()
+        for operation in [opaque, retained] {
+            try await configure(["failPart": 1])
+            do { try await client.upload(file, key: operation.uuidString, operationID: operation) } catch {}
+        }
+        var record = try #require(try client.journal.load(opaque))
+        record.temporary = true; record.started = Date().addingTimeInterval(-2 * 86400)
+        try client.journal.save(record)
+        try client.journal.claim(opaque)
+        try await client.discardStaleUploads()
+        #expect(try client.journal.load(opaque) != nil)
+        client.journal.release(opaque)
+        try await client.discardStaleUploads()
+        #expect(try client.journal.load(opaque) == nil)
+        #expect(try client.journal.load(retained) != nil)
+        #expect(try await stats()["aborted"] as? Int == 1)
+        try await client.abortUpload(operationID: retained)
+    }
+    @Test func legacyUploadMetadataMigratesWithoutMovingDownloadPartials() throws {
+        let legacy = CloudJournal<S3Operation>(folder: server.scratch.url.appendingPathComponent("Legacy"))
+        let upload = S3Operation(operationID: UUID(), kind: "upload", key: "retained.bin")
+        let download = S3Operation(operationID: UUID(), kind: "download", key: "retained.bin")
+        try legacy.save(upload); try legacy.save(download)
+        try client.migrateUpload(upload.operationID, from: legacy)
+        try client.migrateUpload(download.operationID, from: legacy)
+        #expect(try client.journal.load(upload.operationID)?.key == upload.key)
+        #expect(try legacy.load(upload.operationID) == nil)
+        #expect(try legacy.load(download.operationID) != nil)
+        #expect(try client.journal.load(download.operationID) == nil)
+    }
     @Test func completionLostAfterCommitIsReconciled() async throws {
         let local = try Scratch(), file = try local.file("large.bin", "")
         try Data(repeating: 7, count: 9 << 20).write(to: file)
