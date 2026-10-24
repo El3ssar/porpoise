@@ -168,7 +168,7 @@ public final class DriveClient: @unchecked Sendable {
 
     public func file(_ id: String, resourceKey: String? = nil, includeTrashed: Bool = false) async throws -> DriveFile {
         guard DriveLink.isValidID(id) else { throw DriveError.invalidLocation }
-        let resourceKey = resourceKey ?? metadataCache.file(id)?.resourceKey
+        let resourceKey = resourceKey ?? metadataCache.resourceKey(id)
         let read = metadataCache.beginRead()
         defer { withExtendedLifetime(read) {} }
         let since = read.generation

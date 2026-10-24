@@ -27,7 +27,7 @@ extension DriveClient {
         }
         let keys = resourceIDs.sorted().compactMap { id -> String? in
             guard DriveLink.isValidID(id),
-                let key = cachedFile(for: DriveLocation(accountID: accountID, collection: .folder(id)).url)?.resourceKey,
+                let key = metadataCache.resourceKey(id),
                 DriveLink.isValidID(key)
             else { return nil }
             return "\(id)/\(key)"
