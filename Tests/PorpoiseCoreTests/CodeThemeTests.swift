@@ -6,6 +6,9 @@ struct CodeThemeTests {
     @Test func oldAppearanceFilesDefaultToGitHubDarkAndChoicesRoundTrip() throws {
         let old = try JSONDecoder().decode(AppearancePreferences.self, from: Data(#"{"themeName":"Nord"}"#.utf8))
         #expect(old.themeName == "Nord" && old.codeTheme == .githubDark)
+        let newer = try JSONDecoder().decode(
+            AppearancePreferences.self, from: Data(#"{"themeName":"Nord","iconTheme":"Tela-circle","codeTheme":"future-theme"}"#.utf8))
+        #expect(newer.codeTheme == .githubDark && newer.themeName == "Nord" && newer.iconTheme == "Tela-circle")
         #expect(AppearancePreferences().codeTheme == .githubDark)
         for theme in CodeTheme.allCases {
             var preferences = old

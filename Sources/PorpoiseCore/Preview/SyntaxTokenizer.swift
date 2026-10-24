@@ -15,6 +15,9 @@ public struct SyntaxTokens: Sendable {
 }
 
 public enum SyntaxTokenizer {
+    private static let literalConstants: Set<String> = ["true", "false", "nil", "null", "None", "True", "False", "undefined", "NULL"]
+    private static let nonFunctionLanguages: Set<SyntaxLanguage> = [.json, .yaml, .toml, .html, .xml, .css]
+
     public static func tokenize(_ text: String, language: SyntaxLanguage, maximumTokens: Int = 30000) throws -> SyntaxTokens {
         guard language != .plain else { return SyntaxTokens(spans: [], limited: false) }
         var scanner = Scanner(text, language: language, limit: max(0, maximumTokens))
@@ -240,14 +243,14 @@ public enum SyntaxTokenizer {
                         emit(start, .attribute)
                     } else if i - start <= 128 {
                         let word = String(decoding: units[start..<i], as: UTF16.self)
-                        if ["true", "false", "nil", "null", "None", "True", "False", "undefined", "NULL"].contains(word) {
+                        if SyntaxTokenizer.literalConstants.contains(word) {
                             emit(start, .constant)
                         } else if keywords.contains(language == .sql ? word.lowercased() : word) {
                             emit(start, .keyword)
                         } else if c >= 65 && c <= 90 {
                             emit(start, .type)
                         } else if next < units.count, units[next] == 40,
-                            ![SyntaxLanguage.json, .yaml, .toml, .html, .xml, .css].contains(language)
+                            !SyntaxTokenizer.nonFunctionLanguages.contains(language)
                         {
                             emit(start, .function)
                         }
