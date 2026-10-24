@@ -1,31 +1,21 @@
 import Foundation
 import PorpoiseCore
 
-/// Cloud files use their established editing flow. Other remote files live in durable local sessions; save-back
-/// is enabled only when the provider can conditionally publish an immutable snapshot.
+/// Editable cloud files use their established conditional save-back flow; other opens launch independent read-only copies.
 @MainActor public enum RemoteOpener {
     /// Opens a downloaded copy in its application (set by the app).
     nonisolated(unsafe) public static var openFile: (URL) -> Void = { _ in }
 
     /// Only on the main queue.
-    private static var watchers: [String: SaveWatcher] = [:]
-    private static var stores: [String: RemoteEditSessionStore] = [:]
+    private static var stores: [String: RemoteOpenCopyStore] = [:]
     private static var opening: [String: [(URL) -> Void]] = [:]
-    private static var saving: Set<String> = []
-    private static var saveAgain: Set<String> = []
-
-    /// Upload is delayed this long after the last change, so a burst of writes from one save uploads once.
-    private static let uploadDelay: TimeInterval = 0.6
-    /// Runs the watch of a file that replaced the one watched, on the main queue (a test holds it back, as a busy
-    /// main queue would).
-    nonisolated(unsafe) static var rewatchOnMain: (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }
     /// Legacy/cache-copy callers still get account/port-separated paths. Editable bytes use Application Support.
     nonisolated static func cacheFolder(for remote: URL) -> URL {
-        RemoteFS.cacheRoot.appendingPathComponent(RemoteEditSessionStore.identity(remote.deletingLastPathComponent()))
+        RemoteFS.cacheRoot.appendingPathComponent(RemoteOpenCopyStore.identity(remote.deletingLastPathComponent()))
     }
 
     private static var sessionRoot: URL {
-        (RemoteFS.cacheParentOverride ?? Settings.supportFolder).appendingPathComponent("Remote Edits", isDirectory: true)
+        (RemoteFS.cacheParentOverride ?? Settings.supportFolder).appendingPathComponent("Remote Copies", isDirectory: true)
     }
 
     /// Some bridge and service callbacks are synchronous and not actor-annotated. Marshal them before touching state.
@@ -61,7 +51,7 @@ import PorpoiseCore
             openCopy(item, provider: p, launch: launch)
             return
         }
-        let candidate = RemoteEditSessionStore(remote: item.url, root: sessionRoot)
+        let candidate = RemoteOpenCopyStore(remote: item.url, root: sessionRoot)
         let key = candidate.folder.path
         if opening[key] != nil { opening[key]?.append(launch); return }
         opening[key] = [launch]
@@ -71,13 +61,7 @@ import PorpoiseCore
             do {
                 let local = try await CloudRemoteOpen.prepare(item) { context in try await store.open(provider: p, context: context) }
                 let launches = opening.removeValue(forKey: key) ?? []
-                if p is RemoteEditPublishing {
-                    watch(store, remote: item.url, provider: p)
-                    StatusCenter.post("Opened “\(item.name)”. Saved changes are uploaded only if the server version is unchanged.")
-                } else {
-                    StatusCenter.post(
-                        "Opened a copy of “\(item.name)”. Changes stay on this Mac; this server cannot safely save them back automatically.")
-                }
+                StatusCenter.post("Opened a read-only copy of “\(item.name)”. Changes are not saved to the server.")
                 for launch in launches { launch(local) }
             } catch {
                 opening.removeValue(forKey: key)
@@ -92,7 +76,14 @@ import PorpoiseCore
     private static func openCopy(_ item: FileItem, provider p: RemoteProvider, launch: @escaping (URL) -> Void) {
         if let drive = p as? CloudFileProvider {
             Task { @MainActor in
-                do { launch(try await drive.preview(item.url)) } catch {
+                do {
+                    let source = try await drive.preview(item.url)
+                    let candidate = RemoteOpenCopyStore(remote: item.url, root: sessionRoot)
+                    let store = stores[candidate.folder.path] ?? candidate
+                    stores[candidate.folder.path] = store
+                    launch(try await store.copy(source))
+                    StatusCenter.post("Opened a read-only copy of “\(item.name)”. Changes are not saved to the server.")
+                } catch {
                     if !(error is CancellationError) { StatusCenter.error("Could not open “\(item.name)”: \(error.localizedDescription)") }
                 }
             }
@@ -113,36 +104,4 @@ import PorpoiseCore
         }
     }
 
-    private static func watch(_ store: RemoteEditSessionStore, remote: URL, provider: RemoteProvider) {
-        let key = store.folder.path
-        guard watchers[key] == nil else { return }
-        watchers[key] = SaveWatcher(store.local, delay: uploadDelay, queue: .main, reattach: { rewatchOnMain($0) }) {
-            save(store, remote: remote, provider: provider)
-        }
-    }
-
-    private static func save(_ store: RemoteEditSessionStore, remote: URL, provider: RemoteProvider) {
-        let key = store.folder.path
-        guard saving.insert(key).inserted else { saveAgain.insert(key); return }
-        Task { @MainActor in
-            do {
-                var dirty = false
-                _ = try await FileOperationsController.shared.cloudTask(title: "Saving “\(remote.lastPathComponent)”", sources: [remote]) { context in
-                    dirty = try await store.save(provider: provider, context: context)
-                    return [store.local]
-                }
-                if dirty { saveAgain.insert(key) }
-                StatusCenter.post("Uploaded changes to “\(remote.lastPathComponent)”.")
-                FileOperationsController.notifyChanged([remote])
-                saving.remove(key)
-                if saveAgain.remove(key) != nil { save(store, remote: remote, provider: provider) }
-            } catch {
-                saving.remove(key); saveAgain.remove(key)
-                if !(error is CancellationError) {
-                    StatusCenter.error(
-                        "Could not upload “\(remote.lastPathComponent)”: \(error.localizedDescription) Your changes are kept on this Mac.")
-                }
-            }
-        }
-    }
 }

@@ -50,14 +50,17 @@ final class RemoteOpenerTests {
         RemoteOpener.open(item)
         await expectEventually("opened") { opened.count == 1 }
         let local = try #require(opened.first)
-        #expect(local.path.hasPrefix(cache.url.path + "/Remote Edits/"))
+        #expect(local.path.hasPrefix(cache.url.path + "/Remote Copies/"))
         #expect(read(local) == "server")
+        #expect((try FileManager.default.attributesOfItem(atPath: local.path)[.posixPermissions] as? NSNumber)?.intValue == 0o444)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: local.path)
         try Data("my edits".utf8).write(to: local, options: .atomic)
         RemoteOpener.open(item)
         await expectEventually("reopened") { opened.count == 2 }
-        #expect(opened[1] == local && read(local) == "my edits")
+        #expect(opened[1] != local && read(local) == "my edits")
+        #expect(read(opened[1]) == "server")
         #expect(read(onServer) == "server")
-        #expect(messages.contains { $0.contains("Changes stay on this Mac") })
+        #expect(messages.contains { $0.contains("Changes are not saved to the server") })
     }
 
     /// A file that can't be downloaded: an error in the status bar, nothing opened.
@@ -81,8 +84,17 @@ final class RemoteOpenerTests {
         try Data("changed on server".utf8).write(to: onServer)
         RemoteOpener.open(item)
         await expectEventually("opened again") { opened.count == 2 }
-        #expect(opened[1] == local && read(local) == "v1")
+        #expect(opened[1] != local && read(local) == "v1")
+        #expect(read(opened[1]) == "changed on server")
         #expect(read(onServer) == "changed on server")
+    }
+
+    @Test func concurrentRequestsShareThePreparedCopy() async throws {
+        let (item, _) = try remoteFile("coalesced.txt", "v1")
+        RemoteOpener.open(item)
+        RemoteOpener.open(item)
+        await expectEventually("both requests") { opened.count == 2 }
+        #expect(opened[0] == opened[1])
     }
 
     @Test func cacheFolderStaysInsideTheCache() {
