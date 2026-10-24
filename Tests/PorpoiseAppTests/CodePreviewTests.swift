@@ -23,7 +23,9 @@ import Testing
         #expect(view.textView.isSelectable && !view.textView.isEditable)
         #expect(!view.textView.drawsBackground && !view.scrollView.drawsBackground && !view.scrollView.contentView.drawsBackground)
         let color = view.textView.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
-        #expect(color == CodePreviewView.syntaxColor(.keyword).usingColorSpace(.sRGB))
+        var expected: NSColor?
+        NSApp.effectiveAppearance.performAsCurrentDrawingAppearance { expected = CodePreviewView.syntaxColor(.keyword).usingColorSpace(.sRGB) }
+        #expect(color == expected)
         Theme.lookChanged()
         #expect(view.document?.language == .python && view.textView.string.contains("café"))
         view.cancel()
@@ -64,6 +66,33 @@ import Testing
         #expect(red != blue)
         for kind: SyntaxToken.Kind in [.keyword, .type, .string, .comment, .number, .key, .tag, .heading, .attribute] {
             #expect(Tokens.contrast(CodePreviewView.syntaxColor(kind), Theme.viewBackground) >= 4.5)
+        }
+    }
+
+    @Test func renderedTextContrastsWithBothBackdropExtremes() async throws {
+        let app = NSApplication.shared, previous = NSApplication.shared.appearance
+        defer { app.appearance = previous; Theme.lookChanged() }
+        let scratch = try Scratch()
+        let file = try scratch.file("contrast.swift", "let name: String = \"value\" // comment\nlet count = 42\n")
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            app.appearance = NSAppearance(named: appearance)
+            let view = CodePreviewView(frame: .zero)
+            let initial = try #require(view.layer?.backgroundColor)
+            view.load(file)
+            try #require(await poll { !view.isLoading })
+            #expect(view.layer?.backgroundColor == initial)
+            let backdrop = try #require(NSColor(cgColor: initial))
+            #expect(backdrop.alphaComponent > 0 && backdrop.alphaComponent < 1)
+            let storage = try #require(view.textView.textStorage)
+            let document = try #require(view.document)
+            let offsets = document.tokens.spans.map(\.range.location) + [4]
+            for underlay in [NSColor.black, .white] {
+                let composite = try #require(underlay.blended(withFraction: backdrop.alphaComponent, of: backdrop.withAlphaComponent(1)))
+                for offset in offsets {
+                    let foreground = try #require(storage.attribute(.foregroundColor, at: offset, effectiveRange: nil) as? NSColor)
+                    #expect(Tokens.contrast(foreground, composite) >= 4.5)
+                }
+            }
         }
     }
 

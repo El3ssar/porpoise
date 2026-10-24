@@ -4,6 +4,7 @@ import PorpoiseServices
 
 /// Shared selectable code surface. File work stays in Services; this view only applies bounded text.
 final class CodePreviewView: NSView {
+    private static let backdropOpacity: CGFloat = 0.85
     let textView = NSTextView()
     let scrollView = NSScrollView()
     let note = NSTextField(labelWithString: "")
@@ -30,6 +31,9 @@ final class CodePreviewView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.masksToBounds = true
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = false
@@ -49,7 +53,11 @@ final class CodePreviewView: NSView {
         note.lineBreakMode = .byTruncatingTail
         addSubview(scrollView)
         addSubview(note)
-        Theme.whenChanged(self) { [weak self] in self?.render() }
+        Theme.whenChanged(self) { [weak self] in
+            // Present from loading through ready: readable code without replacing the window's glass shell.
+            self?.layer?.backgroundColor = Theme.viewBackground.withAlphaComponent(Self.backdropOpacity).cgColor
+            self?.render()
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -87,7 +95,7 @@ final class CodePreviewView: NSView {
                 let document = try await CodePreviewLoader.load(local, filename: filename, materializeDataless: materializeDataless)
                 guard let self, !Task.isCancelled, self.generation == id else { return }
                 self.document = document
-                self.render()
+                NSApp.effectiveAppearance.performAsCurrentDrawingAppearance { self.render() }
             } catch {
                 guard let self, !Task.isCancelled, self.generation == id else { return }
                 self.isLoading = false
@@ -120,7 +128,7 @@ final class CodePreviewView: NSView {
         }
         let style = TextStyle(
             font: .monospacedSystemFont(ofSize: 12, weight: .regular),
-            base: Theme.windowText.usingColorSpace(.sRGB) ?? Theme.windowText, colors: colors)
+            base: Self.readableColor(Theme.windowText).usingColorSpace(.sRGB) ?? Theme.windowText, colors: colors)
         isLoading = true
         rendering = Task { @MainActor [weak self] in
             let worker = Task.detached(priority: .userInitiated) {
@@ -173,7 +181,14 @@ final class CodePreviewView: NSView {
         }
         let rgb = theme.terminalPalette[index]
         let initial = kind == .comment ? Theme.windowTextInactive : NSColor(rgb: rgb.red, rgb.green, rgb.blue)
-        let target: NSColor = Tokens.luminance(Theme.viewBackground) > 0.4 ? .black : .white
-        return Tokens.distinct(initial, from: [Theme.windowBackground, Theme.viewBackground], toward: target, ratio: 4.5)
+        return readableColor(initial)
+    }
+
+    private static func readableColor(_ initial: NSColor) -> NSColor {
+        let background = (Theme.viewBackground.usingColorSpace(.sRGB) ?? Theme.viewBackground).withAlphaComponent(1)
+        // The underlay can vary with the desktop. Bound both extremes of the translucent code backdrop.
+        let backgrounds = [NSColor.black, .white].map { background.blended(withFraction: 1 - backdropOpacity, of: $0) ?? background }
+        let target: NSColor = Tokens.luminance(background) > 0.4 ? .black : .white
+        return Tokens.distinct(initial, from: backgrounds, toward: target, ratio: 4.6)
     }
 }
