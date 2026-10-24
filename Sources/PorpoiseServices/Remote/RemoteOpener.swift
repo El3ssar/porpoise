@@ -8,6 +8,7 @@ import PorpoiseCore
 
     /// Only on the main queue.
     private static var stores: [String: RemoteOpenCopyStore] = [:]
+    private static var storeOrder: [String] = []
     private static var opening: [String: [(URL) -> Void]] = [:]
     /// Legacy/cache-copy callers still get account/port-separated paths. Editable bytes use Application Support.
     nonisolated static func cacheFolder(for remote: URL) -> URL {
@@ -16,6 +17,22 @@ import PorpoiseCore
 
     private static var sessionRoot: URL {
         (RemoteFS.cacheParentOverride ?? Settings.supportFolder).appendingPathComponent("Remote Copies", isDirectory: true)
+    }
+
+    /// Called after the first window has rendered; no cleanup filesystem work runs on the main actor.
+    public static func sweepStaleCopiesAfterLaunch() {
+        guard !Settings.isTesting else { return }
+        let roots = Set([sessionRoot] + RemoteFS.openCopyRoots)
+        DispatchQueue.global(qos: .utility).async {
+            for root in roots { try? RemoteOpenCopyStore.sweepRoot(root) }
+        }
+    }
+    private static func cachedStore(_ candidate: RemoteOpenCopyStore) -> RemoteOpenCopyStore {
+        let key = candidate.folder.path, store = stores[key] ?? candidate
+        stores[key] = store
+        storeOrder.removeAll { $0 == key }; storeOrder.append(key)
+        while storeOrder.count > 128 { stores[storeOrder.removeFirst()] = nil }
+        return store
     }
 
     /// Some bridge and service callbacks are synchronous and not actor-annotated. Marshal them before touching state.
@@ -55,8 +72,7 @@ import PorpoiseCore
         let key = candidate.folder.path
         if opening[key] != nil { opening[key]?.append(launch); return }
         opening[key] = [launch]
-        let store = stores[key] ?? candidate
-        stores[key] = store
+        let store = cachedStore(candidate)
         Task { @MainActor in
             do {
                 let local = try await CloudRemoteOpen.prepare(item) { context in try await store.open(provider: p, context: context) }
@@ -78,9 +94,9 @@ import PorpoiseCore
             Task { @MainActor in
                 do {
                     let source = try await drive.preview(item.url)
-                    let candidate = RemoteOpenCopyStore(remote: item.url, root: sessionRoot)
-                    let store = stores[candidate.folder.path] ?? candidate
-                    stores[candidate.folder.path] = store
+                    guard let root = (drive as? any CloudOpenCopyOwning)?.openCopyDirectory else { throw CloudContentError.unsupported }
+                    let candidate = RemoteOpenCopyStore(remote: item.url, root: root)
+                    let store = cachedStore(candidate)
                     launch(try await store.copy(source))
                     StatusCenter.post("Opened a read-only copy of “\(item.name)”. Changes are not saved to the server.")
                 } catch {

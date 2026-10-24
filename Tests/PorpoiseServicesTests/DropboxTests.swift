@@ -387,7 +387,11 @@ import Testing
         try Data("pending".utf8).write(to: edit.localURL)
         await #expect(throws: CloudConnectionError.unsentEdits) { try await store.disconnect(account.id) }
         _ = try await client.edits.save(edit.id)
+        let openCopy = try await checkCloudCopyDisconnect(
+            root: client.metadataCache.directory.appendingPathComponent("Opened Copies"),
+            disconnect: { try await store.disconnect(account.id) })
         try await store.disconnect(account.id); #expect(store.accounts.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: openCopy.path))
         #expect(try credentials.read(clientID: server.config.appKey, accountID: account.id) == nil)
         // Nothing of the account stays: its folder (edits, journal, partials) and its offline copies.
         let needle = account.id.uuidString.lowercased()

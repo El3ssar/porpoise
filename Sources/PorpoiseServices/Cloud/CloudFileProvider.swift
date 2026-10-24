@@ -71,3 +71,20 @@ public enum CloudAwait {
         semaphore.wait(); return try box.result!.get()
     }
 }
+
+/// Opened copies stay within the account's private data and participate in its disconnect checks and wipe.
+protocol CloudOpenCopyOwning {
+    var openCopyDirectory: URL? { get }
+}
+extension DriveProvider: CloudOpenCopyOwning {
+    var openCopyDirectory: URL? { client?.metadataCache.directory.appendingPathComponent("Opened Copies") }
+}
+extension BoxProvider: CloudOpenCopyOwning {
+    var openCopyDirectory: URL? { client.metadataCache.directory.appendingPathComponent("Opened Copies") }
+}
+extension DropboxProvider: CloudOpenCopyOwning {
+    var openCopyDirectory: URL? { client.metadataCache.directory.appendingPathComponent("Opened Copies") }
+}
+extension OneDriveProvider: CloudOpenCopyOwning {
+    var openCopyDirectory: URL? { client.metadataCache.directory.appendingPathComponent("Opened Copies") }
+}

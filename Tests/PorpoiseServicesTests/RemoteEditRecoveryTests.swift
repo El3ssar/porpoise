@@ -112,8 +112,8 @@ private final class UnavailableEditProvider: RemoteProvider {
             let created: Date
         }
         let root = try Scratch("remote-copy-sweep"), store = RemoteOpenCopyStore(remote: remote, root: root.url)
-        func seed(age: TimeInterval, changed: Bool, writable: Bool) throws -> URL {
-            let folder = store.folder.appendingPathComponent(UUID().uuidString)
+        func seed(age: TimeInterval, changed: Bool, writable: Bool, owner: RemoteOpenCopyStore? = nil) throws -> URL {
+            let folder = (owner ?? store).folder.appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let content = folder.appendingPathComponent("Content", isDirectory: true)
             try FileManager.default.createDirectory(at: content, withIntermediateDirectories: false)
@@ -131,8 +131,12 @@ private final class UnavailableEditProvider: RemoteProvider {
         let fresh = try seed(age: 60, changed: false, writable: false)
         let changed = try seed(age: 8 * 86400, changed: true, writable: false)
         let unlocked = try seed(age: 8 * 86400, changed: false, writable: true)
-        try store.sweep()
+        let other = RemoteOpenCopyStore(remote: URL(string: "sftp://another.invalid/file.txt")!, root: root.url)
+        let otherOld = try seed(age: 8 * 86400, changed: false, writable: false, owner: other)
+        try RemoteOpenCopyStore.sweepRoot(root.url)
         #expect(!FileManager.default.fileExists(atPath: old.path))
+        #expect(!FileManager.default.fileExists(atPath: otherOld.path))
+        #expect(!FileManager.default.fileExists(atPath: other.folder.path))
         for kept in [fresh, changed, unlocked] { #expect(FileManager.default.fileExists(atPath: kept.path)) }
     }
 }

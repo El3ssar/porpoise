@@ -457,7 +457,11 @@ import Testing
         try Data("pending".utf8).write(to: edit.localURL)
         await #expect(throws: CloudConnectionError.unsentEdits) { try await restored.disconnect(account.id) }
         _ = try await restoredClient.edits.save(edit.id)
+        let openCopy = try await checkCloudCopyDisconnect(
+            root: restoredClient.metadataCache.directory.appendingPathComponent("Opened Copies"),
+            disconnect: { try await restored.disconnect(account.id) })
         try await restored.disconnect(account.id); #expect(restored.accounts.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: openCopy.path))
         #expect(try credentials.read(clientID: server.config.clientID, accountID: account.id) == nil)
         let needle = account.id.uuidString.lowercased()
         for root in [scratch.url, CloudOffline.shared.root] {
