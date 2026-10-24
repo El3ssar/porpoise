@@ -51,7 +51,7 @@ extension RemoteTransferJob {
         guard let incoming = try item(source) else { throw CloudContentError.notFound }
         let snapshot = try sourceProvider?.transferSnapshot(source)
         if record.phase == .prepared {
-            record.batchID = cloudBatchID; record.topLevel = sources.contains(source)
+            record.batchID = cloudBatchID; record.topLevel = !temporaryCopy && sources.contains(source)
             record.sourceAccount = try sourceProvider?.transferAccount(source);
             record.destinationAccount = try targetProvider?.transferAccount(folder)
             record.sourceSnapshot = snapshot; record.sourceRevision = snapshot?.item.revision
