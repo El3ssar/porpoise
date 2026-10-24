@@ -229,7 +229,8 @@ import Testing
         panel.currentURL = s.path("Inner/Deeper")
         try #require(
             await eventually { selected().map(real) == real(s.path("Inner/Deeper")) },
-            "\((0..<outline.numberOfRows).map { (outline.item(atRow: $0) as? FoldersPanel.Node)?.url.path ?? "?" }) selected \(outline.selectedRow) home \(Settings.shared.homeURL.path)")
+            "\((0..<outline.numberOfRows).map { (outline.item(atRow: $0) as? FoldersPanel.Node)?.url.path ?? "?" }) selected \(outline.selectedRow) home \(Settings.shared.homeURL.path)"
+        )
         // A change on disk lists Home again (here a late event about the folders just made): the shown folder stays
         // selected through the reload.
         try s.folder("Later")
