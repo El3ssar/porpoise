@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import PorpoiseCore
 
@@ -99,25 +100,29 @@ public enum HostKeys {
         guard r.status == 0 else { throw RemoteError.failed("Could not remove the old key of \(name): \(r.err)") }
     }
 
-    /// Approve a changed key in isolation. A failed command never removes established trust.
+    /// Approve a changed key in isolation. A failed SSH connection never removes established trust.
     static func replacing(
         name: String, in file: String, fingerprint: String, approve: (String) throws -> Shell.Result
     ) throws -> Shell.Result {
-        let original = URL(fileURLWithPath: file)
+        let requested = URL(fileURLWithPath: file)
+        let original = requested.resolvingSymlinksInPath()
+        let attributes = try FileManager.default.attributesOfItem(atPath: original.path)
         let before = try Data(contentsOf: original)
         let temporary = original.deletingLastPathComponent().appendingPathComponent(".porpoise-known-hosts-\(UUID().uuidString)")
-        try FileManager.default.copyItem(at: original, to: temporary)
         defer {
             try? FileManager.default.removeItem(at: temporary)
             try? FileManager.default.removeItem(atPath: temporary.path + ".old")
         }
+        try FileManager.default.copyItem(at: original, to: temporary)
         try remove(name: name, from: temporary.path)
         let result = try approve(temporary.path)
-        guard result.status == 0 else { return result }
+        guard result.status != ReconnectPolicy.sshErrorStatus else { return result }
         guard known(name: name, in: [temporary.path]).contains(where: { $0.fingerprint == fingerprint }),
-            try Data(contentsOf: original) == before
+            requested.resolvingSymlinksInPath() == original, try Data(contentsOf: original) == before
         else { throw RemoteError.failed("The saved host keys changed during approval. Connect again to review them.") }
-        try Data(contentsOf: temporary).write(to: original, options: .atomic)
+        let preserved = attributes.filter { [FileAttributeKey.posixPermissions, .ownerAccountID, .groupOwnerAccountID].contains($0.key) }
+        try FileManager.default.setAttributes(preserved, ofItemAtPath: temporary.path)
+        guard rename(temporary.path, original.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         return result
     }
 
