@@ -165,10 +165,8 @@ extension MainWindowController {
                 guard let c, let first = results.first else { return }
                 if groups.count == 1 { c.model.selection = Set(results) }
                 c.pendingSelect = first
+                if urls.count == 1 && results.count == 1 { c.pendingRename = first }
                 c.reload()
-                if urls.count == 1 && results.count == 1 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { c.list.beginRename(first) }
-                }
             }
         }
     }

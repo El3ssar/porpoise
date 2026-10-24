@@ -140,8 +140,8 @@ extension MainWindowController {
         FileOperationsController.shared.run(.move, items.map(\.url), to: folder, window: window) { [weak c] _ in
             guard let c else { return }
             c.pendingSelect = folder
+            c.pendingRename = folder
             c.reload()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { c.list.beginRename(folder) }
         }
     }
 
