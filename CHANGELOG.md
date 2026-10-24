@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.0
+
+- **Custom tools.** Settings › Custom Tools runs programs you choose on the selection or the current folder, from the right-click menu, the toolbar, the command palette, the Tools menu or a shortcut of your own. Arguments are a list with placeholders for the selection, the folder, the other split pane's folder or a value you type in; each one is passed as it is, never through a shell, so names with spaces, quotes or newlines are safe. Output and exit status show in Activity › Tools, where a running tool can be cancelled. Add Examples adds a few to start from. Only tools saved in Settings can run; nothing in a folder can add one.
+- **Git status.** In folders inside a Git repository, files show a small badge when they are modified, new, untracked, renamed or in conflict, ignored files are dimmed, folders show a dot when something inside changed, and the status bar shows the branch and how far it is ahead or behind. "Show Changes" opens the change in Compare Files. Porpoise only reads: it never commits, pushes, contacts the network or runs repository hooks. Settings › Panels › "Show Git status in local folders" turns it off.
+- **AirDrop, as in Finder.** AirDrop is in the sidebar: drop files on it to send copies, or click it to open the AirDrop window. File › AirDrop…, the right-click menu, the Shelf and an optional toolbar button send the selection, and files on servers or in the cloud are downloaded first, with progress in Activity. The originals are never moved, and the temporary copies are removed afterwards.
+- **Each Column view column keeps its size.** A width or icon size you give a column stays when you select elsewhere. Opening another folder replaces only the columns after it, and the new column opens at the default width with its parent's icon size. Zooming changes the column you're working in; ⌥-dragging a divider still resizes every column. Double-click a folder to start the columns from it, and Back brings the previous columns back as they were.
+- **A `porpoise` command for Terminal, and Shortcuts actions.** Settings › Advanced installs a `porpoise` command (`porpoise open`, `split`, `reveal`, `selection`, `copy`, `move`) once you turn on "Allow command-line control", which is off by default. The Shortcuts app gets six actions: open a location, get the selection, reveal, run a custom tool, copy and move. Every copy or move asked for by a script or a shortcut waits for you to approve it in Porpoise, and never uses administrator rights.
+- **Faster first window.** Git status and custom tools start after the first window has drawn its folder.
+- The Activity window's tabs no longer cut off their names.
+- A partly downloaded offline cloud file could be taken for a changed one and downloaded again; fixed.
+
 ## 0.12.2
 
 - **Colour-coded file icons.** Settings › Appearance › Icon theme has a new "Native, colour-coded" choice: the macOS document icons with a colour per kind and the extension on a band at the bottom, so PDFs, documents, spreadsheets, slides, images, video, audio, archives and code tell apart at a glance, even at list size. Icons that already have colour (Swift, HTML, app documents) and custom icons stay as they are; folders and previews are unchanged. "Native macOS" stays the default.
