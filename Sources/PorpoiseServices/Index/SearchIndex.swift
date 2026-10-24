@@ -488,6 +488,7 @@ public final class SearchIndex: @unchecked Sendable {
             snapshot.contains(where: { FilePath.contains(path: scope, in: $0.path) && Self.sameVolume(scope, $0.path) }), !contents || config.content
         else { return nil }
         var found: [String] = [], snippets: [String: String] = [:]
+        var seen: Set<String> = []
         for root in snapshot where FilePath.contains(path: scope, in: root.path) || FilePath.contains(path: root.path, in: scope) {
             let excludedPaths = root.patches.map(\.path)
             let chunks = [Chunk(path: root.path, table: root.base)] + root.patches
@@ -495,18 +496,22 @@ public final class SearchIndex: @unchecked Sendable {
                 let exclusions = number == 0 ? excludedPaths : []
                 let ids = chunk.table.search(query, scope: scope, limit: limit, excluding: exclusions, cancelled: cancelled)
                 // The folder searched is not one of its results, as in a folder walk.
-                found.append(contentsOf: ids.map { chunk.table.path($0) }.filter { $0 != scope })
+                for id in ids {
+                    let path = chunk.table.path(id)
+                    if path != scope, seen.insert(path).inserted { found.append(path) }
+                }
                 if contents {
                     // Bloom candidates are always verified against current bytes. Unindexed files are included.
                     for id in chunk.table.contentCandidates(text, scope: scope, cancelled: cancelled) {
                         if cancelled() { return ([], [:], nil) }
                         let p = chunk.table.path(id)
-                        guard !exclusions.contains(where: { FilePath.contains(path: p, in: $0) }), !found.contains(p),
+                        guard !exclusions.contains(where: { FilePath.contains(path: p, in: $0) }), !seen.contains(p),
                             let value = IndexFileText.read(p, limit: 5_000_000),
                             let line = value.split(separator: "\n", omittingEmptySubsequences: false).first(where: {
                                 spec.contentMatches(String($0))
                             })
                         else { continue }
+                        seen.insert(p)
                         found.append(p); snippets[p] = FolderSearch.snippet(String(line), around: text)
                         if found.count >= limit { break }
                     }

@@ -21,6 +21,24 @@ import Testing
         service.configure(config)
         return service
     }
+    @Test func contentCandidatesKeepNameFirstOrderWithoutDuplicates() async throws {
+        let s = try Scratch()
+        for n in 0..<6000 { try s.file("root/\(n < 3000 ? "needle" : "other")\(n).txt", "needle in content") }
+        let index = setup(s, content: true)
+        defer { index.configure(IndexConfiguration()) }
+        try await index.waitUntilReady(timeout: Self.liveWait)
+        let root = s.path("root")
+        let nameHits = try #require(index.search("needle", scope: root, limit: 5000)).paths
+        for _ in 0..<3 {
+            let start = ContinuousClock.now
+            let result = try #require(index.search("needle", scope: root, contents: true, limit: 5000))
+            print("W261 content 6k/limit5k: \(start.duration(to: .now)) hits=\(result.paths.count)")
+            #expect(result.paths.count == 5000 && Set(result.paths).count == 5000)
+            #expect(Array(result.paths.prefix(nameHits.count)) == nameHits)
+            #expect(result.paths.dropFirst(nameHits.count).allSatisfy { result.snippets[$0] == "needle in content" })
+        }
+    }
+
     @Test func crawlerSkipsSymlinksAndExcludedTrees() throws {
         let s = try Scratch()
         try s.file("root/visible.txt")
