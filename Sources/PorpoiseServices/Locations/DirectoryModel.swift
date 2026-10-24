@@ -84,7 +84,7 @@ public final class DirectoryModel {
     public private(set) var rows: [Row] = [] {
         didSet {
             rowsRevision &+= 1
-            rowIndex = nil; rowIndexByPath = nil; rowFileKeys = nil
+            rowIndex = nil; rowIndexByPath = nil; rowFileKeys = nil; missedLookups = []
         }
     }
     public private(set) var groups: [ItemGroup] = []
@@ -951,6 +951,8 @@ public final class DirectoryModel {
 
     /// URL → row, built on first use after `rows` changes: views look rows up per hover, draw and key press.
     private var rowIndex: [URL: Int]?
+    /// URLs `index(of:)` didn't find in the current rows.
+    private(set) var missedLookups: Set<URL> = []
     /// Canonical entry identity, built only after a URL miss. Remote scopes retain their complete URL.
     private var rowIndexByPath: [String: Int]?
     private var rowFileKeys: [String]?
@@ -979,11 +981,21 @@ public final class DirectoryModel {
                 rows.indices.map { (identity(ofRow: $0), $0) },
                 uniquingKeysWith: { first, _ in first })
         }
+        // A URL not shown is asked about again and again (every view hears of every thumbnail made, and of its
+        // folder): known misses cost nothing until the rows change.
+        if missedLookups.contains(url) { return nil }
         if let index = rowIndexByPath?[FilePath.key(url)] { return index }
         // Drive permits redundant drive/resource context for the same opaque item. The provider owns that
-        // equivalence; Dropbox's namespaces (and remote authorities) must never collapse by path alone.
-        guard !url.isFileURL, let cloud = source as? CloudSource else { return nil }
-        return rows.firstIndex { cloud.provider.sameItem(url, $0.item.url) }
+        // equivalence; Dropbox's namespaces (and remote authorities) must never collapse by path alone. Another
+        // service or account is never the same item: no need to go through the rows for it.
+        guard !url.isFileURL, let cloud = source as? CloudSource, url.scheme == location.scheme, url.host == location.host,
+            let i = rows.firstIndex(where: { cloud.provider.sameItem(url, $0.item.url) })
+        else {
+            if missedLookups.count > 4096 { missedLookups.removeAll() }
+            missedLookups.insert(url)
+            return nil
+        }
+        return i
     }
 
     /// In row order. Without copying every row's item first: the status bar asks on every selection change.

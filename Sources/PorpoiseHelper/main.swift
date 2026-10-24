@@ -22,9 +22,18 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.idleTime, execute: w)
     }
 
+    /// The connecting process's audit token. NSXPCConnection has it but doesn't publish it: if it's ever gone, every
+    /// connection is refused (Porpoise then says to update it), never accepted on a process number instead.
+    private static func auditToken(_ c: NSXPCConnection) -> Data? {
+        guard c.responds(to: NSSelectorFromString("auditToken")), let value = c.value(forKey: "auditToken") as? NSValue else { return nil }
+        var token = audit_token_t()
+        value.getValue(&token, size: MemoryLayout<audit_token_t>.size)
+        return withUnsafeBytes(of: &token) { Data($0) }
+    }
+
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection c: NSXPCConnection) -> Bool {
         // XPC checks the running process; its bundle on disk must be intact too (see CodeSigning.isIntact).
-        guard let req = clientRequirement, CodeSigning.isIntact(pid: c.processIdentifier, requirement: req) else { return false }
+        guard let req = clientRequirement, CodeSigning.accepts(auditToken: Self.auditToken(c), requirement: req) else { return false }
         c.setCodeSigningRequirement(req)
         c.exportedInterface = NSXPCInterface(with: PorpoiseHelperProtocol.self)
         c.exportedObject = self
@@ -45,7 +54,7 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
         return true
     }
 
-    func version(reply: @escaping (String) -> Void) { reply("6") }
+    func version(reply: @escaping (String) -> Void) { reply(PorpoiseHelperInfo.version) }
 
     /// The user who asked (Porpoise runs as them; its signature was checked when it connected), if they may use the
     /// helper: administrators only. Checked on every request, so a user removed from admin is refused at once.
@@ -62,16 +71,14 @@ final class Helper: NSObject, NSXPCListenerDelegate, PorpoiseHelperProtocol {
         reply((try? FileManager.default.contentsOfDirectory(atPath: trash)) != nil)
     }
 
-    func takeOwnership(ofTrashed path: String, reply: @escaping (String?) -> Void) {
+    func perform(_ requests: [[String]], authorization: Data, handOver: [String], reply: @escaping (Bool, String?) -> Void) {
         let (uid, refusal) = caller()
-        if let refusal { reply(refusal); return }
-        guard uid != 0, let pw = getpwuid(uid) else { reply("Unknown user."); return }
-        // Done in-process, through file descriptors: a chown of a path could be redirected by the user meanwhile.
-        reply(HelperRequests.takeOwnership(path: path, uid: uid, gid: pw.pointee.pw_gid, home: String(cString: pw.pointee.pw_dir)))
-    }
-
-    func run(_ arguments: [String], reply: @escaping (String?) -> Void) {
-        reply(caller().refusal ?? HelperRequests.run(arguments))
+        if let refusal { reply(false, refusal); return }
+        guard uid != 0, let pw = getpwuid(uid) else { reply(false, "Unknown user."); return }
+        let r = HelperRequests.perform(
+            requests, authorization: authorization, handOver: handOver, caller: uid, group: pw.pointee.pw_gid,
+            home: String(cString: pw.pointee.pw_dir), authorizer: SystemAuthorizer(), policy: .live(caller: uid))
+        reply(r.cancelled, r.message)
     }
 }
 

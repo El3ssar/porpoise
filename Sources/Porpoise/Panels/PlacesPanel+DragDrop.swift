@@ -97,6 +97,9 @@ extension PlacesPanel {
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         defer { setDrop(nil, insert: nil); dragFolderCheck = nil }
+        // Where it's released, against the rows as they are now: a volume mounted or an account changed mid-drag
+        // moves the rows, and the index found by the last update may be another place's by now.
+        _ = draggingUpdated(sender)
         let pb = sender.draggingPasteboard
         if let sec = draggedSection(pb) {
             guard !PlacesModel.shared.isLocked else { return false }

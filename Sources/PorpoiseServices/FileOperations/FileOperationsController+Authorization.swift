@@ -40,13 +40,15 @@ extension FileOperationsController {
 
         let plan = Self.administratorCommands(kind, remaining, targets: targets, to: folder)
         if !plan.skipped.isEmpty { showErrors(plan.skipped, window: window) }
-        authorize(verb: Self.permissionVerb(kind), items: remaining, commands: plan.commands, kind: kind, window: window) { [self] ok in
+        // Trashed items become yours, as part of the same approved action: emptying the Trash won't need the helper.
+        authorize(
+            verb: Self.permissionVerb(kind), items: remaining, commands: plan.commands, handOver: plan.trashed.map(\.inTrash.path), kind: kind,
+            window: window
+        ) { [self] ok in
             // Remember where they came from, so "Restore" can put them back.
             if ok && !plan.trashed.isEmpty {
                 pushUndo(.trashed(plan.trashed))
                 TrashService.shared.record(plan.trashed)
-                // Yours from now on: emptying the Trash won't need the helper for them.
-                PrivilegedHelper.takeOwnership(of: plan.trashed.map(\.inTrash.path))
             }
             Self.notifyChanged(remaining + (folder.map { [$0] } ?? []) + plan.results + plan.trashed.map(\.inTrash))
             done(unlocked + (ok ? plan.results + plan.trashed.map(\.inTrash) + (kind == .delete ? remaining : []) : []))
@@ -159,13 +161,14 @@ extension FileOperationsController {
     /// File operations use the `done:` form, which works off the main thread.
     public func authorize(verb: String, items: [URL], commands: [[String]], window: AnyObject?) -> Bool {
         guard let viaHelper = confirmAuthorization(verb: verb, items: items, commands: commands, window: window) else { return false }
-        return report(Self.elevate(commands, viaHelper))
+        return report(Self.elevate(commands, viaHelper, []))
     }
 
     /// Runs `commands` as administrator off the main thread, shown as their own Activity (they may copy or delete a
     /// lot as root); only the confirmation is asked here. `done(true)` once they ran.
     public func authorize(
-        verb: String, items: [URL], commands: [[String]], kind: FileOperationKind, window: AnyObject?, done: @escaping (Bool) -> Void
+        verb: String, items: [URL], commands: [[String]], handOver: [String] = [], kind: FileOperationKind, window: AnyObject?,
+        done: @escaping (Bool) -> Void
     ) {
         guard let viaHelper = confirmAuthorization(verb: verb, items: items, commands: commands, window: window) else { return done(false) }
         let activity = Activity(kind: kind, sources: items, destination: nil, job: nil, pauseUnavailable: "Actions as administrator can't be paused.")
@@ -177,7 +180,7 @@ extension FileOperationsController {
         activityDidChange()
         let elevate = Self.elevate
         DispatchQueue.global(qos: .userInitiated).async {
-            let outcome = elevate(commands, viaHelper)
+            let outcome = elevate(commands, viaHelper, handOver)
             DispatchQueue.main.async { [self] in
                 let ok = report(outcome)
                 if case .cancelled = outcome { activity.control.cancel() }
@@ -211,7 +214,7 @@ extension FileOperationsController {
                 : "Porpoise needs your permission to \(verb) \(items.count) items.",
             detail: (items.count > 1 ? items.prefix(6).map { "“\($0.lastPathComponent)”" }.joined(separator: ", ") + "\n\n" : "")
                 + "These items belong to another user or the system. Authenticate as an administrator to continue"
-                + (PrivilegedHelper.isForThisUser ? ", or turn on Porpoise's helper in Porpoise › Permissions… to never be asked again." : "."),
+                + (PrivilegedHelper.isForThisUser ? ", or turn on Porpoise's helper in Porpoise › Permissions… to approve with Touch ID." : "."),
             confirmTitle: "Authenticate")
         return confirm(q, window: window) ? false : nil
     }
@@ -226,15 +229,17 @@ extension FileOperationsController {
     }
 
     /// Runs `commands` as root, on any thread: through Porpoise's helper (installed or updated first, with one
-    /// approval, if needed), or after macOS's administrator prompt. Tests replace it.
-    nonisolated(unsafe) static var elevate: ([[String]], Bool) -> ElevatedOutcome = { commands, viaHelper in
+    /// approval, if needed), or after macOS's administrator prompt. Items moved to the paths in the third argument
+    /// (the Trash) are handed to the person by the helper. Tests replace it.
+    nonisolated(unsafe) static var elevate: ([[String]], Bool, [String]) -> ElevatedOutcome = { commands, viaHelper, handOver in
         if viaHelper {
-            // Porpoise's helper does it at once, without asking. Not installed yet (or a new version of it): it's
-            // installed once, with macOS's administrator dialog, and the action continues.
+            // Not installed yet (or a new version of it): it's installed once, with macOS's administrator dialog, and
+            // the action continues. The helper then asks the person to approve the action itself (Touch ID).
             guard PrivilegedHelper.ensureOn() else { return .cancelled }
             // Clearing lock flags is best effort, as in Finder; the operation itself reports what went wrong.
-            switch PrivilegedHelper.run(commands, bestEffort: ["/usr/bin/chflags"]) {
+            switch PrivilegedHelper.run(commands, handOver: handOver) {
             case .done: return .done
+            case .cancelled: return .cancelled
             case .failed(let err): return .failed(err)
             case .unavailable(let why):
                 return .failed(

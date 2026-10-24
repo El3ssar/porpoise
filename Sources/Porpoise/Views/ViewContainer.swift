@@ -35,6 +35,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     let filterBar = FilterBar()
     let searchBar = SearchBar()
     let messageBar = MessageBar()
+    /// The folder's rows changed (the object is the container): what shows its items can catch up.
+    static let listingReloaded = Notification.Name("PorpoiseListingReloaded")
     /// What the list says when it shows nothing: empty, still loading, or why it failed and what to do.
     let listState = ListStateView()
     /// The search that last finished failed, in its own words ("Nothing found" would be wrong then).
@@ -263,7 +265,12 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             ("Get Info", "document-properties", #selector(MainWindowController.properties(_:))),
         ]
 
-        model.onChange = { [weak self] in self?.modelChanged() }
+        model.onChange = { [weak self] in
+            guard let self else { return }
+            self.modelChanged()
+            // Rows rebuilt (a listing, or a watched change applied): what shows an item can catch up.
+            NotificationCenter.default.post(name: Self.listingReloaded, object: self)
+        }
         model.onRemoteUpdate = { [weak self] apply in
             guard let self else { return apply() }
             self.animatingRemoteChange(apply)

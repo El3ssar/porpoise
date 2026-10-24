@@ -403,7 +403,13 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
         exec.frame.size = CGSize(width: 240, height: 20)
         row("", exec, y: &y, in: v)
         y -= 10
-        row("Ownership:", label("\(it.owner ?? "?") : \(it.group ?? "?")"), y: &y, in: v)
+        // Owner and group: as yourself when you may, else with an administrator's approval (Porpoise's helper).
+        let attributes = try? FileManager.default.attributesOfItem(atPath: urls[0].path)
+        let uid = (attributes?[.ownerAccountID] as? NSNumber)?.uint32Value, gid = (attributes?[.groupOwnerAccountID] as? NSNumber)?.uint32Value
+        ownerPopup = Self.idPopup(Self.people(including: uid), selected: uid, action: #selector(ownerChanged(_:)), target: self)
+        groupPopup = Self.idPopup(Self.groups(including: gid), selected: gid, action: #selector(ownerChanged(_:)), target: self)
+        row("Owner:", ownerPopup!, y: &y, in: v)
+        row("Group:", groupPopup!, y: &y, in: v)
         modeLabel.stringValue = Self.modeText(it)
         row("Mode:", modeLabel, y: &y, in: v)
         permControls = (popups, exec)
@@ -415,6 +421,67 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
     }
 
     private lazy var modeLabel = label("")
+    private var ownerPopup: NSPopUpButton?
+    private var groupPopup: NSPopUpButton?
+
+    /// The people who can own an item: root and everyone with a login (uid 501 and up), plus its current owner.
+    static func people(including current: uid_t?) -> [(id: UInt32, name: String)] {
+        var out: [(UInt32, String)] = [(0, "system (root)")]
+        setpwent()
+        while let pw = getpwent() {
+            let name = String(cString: pw.pointee.pw_name)
+            if pw.pointee.pw_uid >= 501, pw.pointee.pw_uid != uid_t(bitPattern: -2), !name.hasPrefix("_") { out.append((pw.pointee.pw_uid, name)) }
+        }
+        endpwent()
+        if let current, !out.contains(where: { $0.0 == current }) {
+            out.append((current, getpwuid(current).map { String(cString: $0.pointee.pw_name) } ?? "\(current)"))
+        }
+        return out.sorted { $0.0 == 0 || ($1.0 != 0 && $0.1.localizedStandardCompare($1.1) == .orderedAscending) }.map { (id: $0.0, name: $0.1) }
+    }
+
+    /// The groups an item can belong to: the ordinary ones (not the system's own "_…" and "com.apple.…"), plus its own.
+    static func groups(including current: gid_t?) -> [(id: UInt32, name: String)] {
+        var out: [(UInt32, String)] = []
+        setgrent()
+        while let gr = getgrent() {
+            let name = String(cString: gr.pointee.gr_name)
+            if !name.hasPrefix("_"), !name.hasPrefix("com.apple."), !out.contains(where: { $0.0 == gr.pointee.gr_gid }) {
+                out.append((gr.pointee.gr_gid, name))
+            }
+        }
+        endgrent()
+        if let current, !out.contains(where: { $0.0 == current }) {
+            out.append((current, getgrgid(current).map { String(cString: $0.pointee.gr_name) } ?? "\(current)"))
+        }
+        return out.sorted { $0.1.localizedStandardCompare($1.1) == .orderedAscending }.map { (id: $0.0, name: $0.1) }
+    }
+
+    private static func idPopup(_ ids: [(id: UInt32, name: String)], selected: UInt32?, action: Selector, target: AnyObject) -> NSPopUpButton {
+        let popup = NSPopUpButton(frame: CGRect(x: 0, y: 0, width: 240, height: 26), pullsDown: false)
+        for (id, name) in ids {
+            popup.addItem(withTitle: name)
+            popup.lastItem?.tag = Int(id)
+        }
+        if let selected { popup.selectItem(withTag: Int(selected)) }
+        popup.target = target
+        popup.action = action
+        return popup
+    }
+
+    /// chown, asking to authenticate when you may not (giving an item away, or one that isn't yours); then this page
+    /// shows what the item really has.
+    @objc private func ownerChanged(_ p: NSPopUpButton) {
+        guard let owner = ownerPopup?.selectedItem?.tag, let group = groupPopup?.selectedItem?.tag else { return }
+        let path = urls[0].path
+        do {
+            try FileManager.default.setAttributes([.ownerAccountID: owner, .groupOwnerAccountID: group], ofItemAtPath: path)
+        } catch {
+            FileOperationsController.shared.authorize(
+                verb: "change the owner of", items: [urls[0]], commands: [["/usr/sbin/chown", "-h", "--", "\(owner):\(group)", path]], window: window)
+        }
+        refreshPermissions()
+        FileOperationsController.notifyChanged(urls)
+    }
     private var permControls: (popups: [NSPopUpButton], exec: NSButton?) = ([], nil)
 
     /// Shows the permissions the item really has now (after a change, or a cancelled/failed one).
@@ -426,6 +493,9 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
             p.selectItem(at: bits & 0o2 != 0 ? 2 : (bits & 0o4 != 0 ? 1 : 0))
         }
         permControls.exec?.state = it.posixPermissions & 0o100 != 0 ? .on : .off
+        let attributes = try? FileManager.default.attributesOfItem(atPath: urls[0].path)
+        if let uid = (attributes?[.ownerAccountID] as? NSNumber)?.intValue { ownerPopup?.selectItem(withTag: uid) }
+        if let gid = (attributes?[.groupOwnerAccountID] as? NSNumber)?.intValue { groupPopup?.selectItem(withTag: gid) }
     }
 
     private var openWithApps: [URL] = []

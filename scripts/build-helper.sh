@@ -21,7 +21,10 @@ if [ "${1:-}" = "--check" ]; then
     ok=0
     shasum -a 256 "${INPUTS[@]}" | diff -u Resources/Helper/inputs.sha256 - ||
         { echo "::error::The helper's inputs changed: run scripts/build-helper.sh and commit Resources/Helper"; ok=1; }
-    if LC_ALL=C grep -r -a -q '/Users/' Resources/Helper; then echo "::error::The committed helper contains a home folder path"; ok=1; fi
+    # A home folder of the build machine; /Users/Shared is the helper's own policy (nobody's home).
+    if LC_ALL=C grep -r -a -h -o '/Users/[^/[:cntrl:]]*' Resources/Helper | grep -qv '^/Users/Shared$'; then
+        echo "::error::The committed helper contains a home folder path"; ok=1
+    fi
     if [ -d Resources/HelperSymbols/PorpoiseHelper.dSYM ]; then
         python3 scripts/check-symbols.py verify "$APP/Contents/MacOS/PorpoiseHelper" Resources/HelperSymbols/PorpoiseHelper.dSYM || ok=1
     else
@@ -61,7 +64,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleShortVersionString</key><string>1</string>
-  <key>CFBundleVersion</key><string>6</string>
+  <key>CFBundleVersion</key><string>7</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>LSBackgroundOnly</key><true/>
 </dict></plist>

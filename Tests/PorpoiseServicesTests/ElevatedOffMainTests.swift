@@ -14,7 +14,7 @@ import Testing
         let item = try s.file("locked.txt", "x")
         nonisolated(unsafe) var ranOnMain: Bool?
         let real = FileOperationsController.elevate
-        FileOperationsController.elevate = { _, _ in
+        FileOperationsController.elevate = { _, _, _ in
             ranOnMain = Thread.isMainThread
             Thread.sleep(forTimeInterval: 0.5)
             return .done
@@ -46,12 +46,12 @@ import Testing
         let ui = ScriptedUI()
         ui.authenticates = true
         let c = makeController(ui)
-        FileOperationsController.elevate = { _, _ in .failed("Operation not permitted") }
+        FileOperationsController.elevate = { _, _, _ in .failed("Operation not permitted") }
         var result: Bool?
         c.authorize(verb: "copy", items: [item], commands: [["/bin/cp"]], kind: .copy, window: nil) { result = $0 }
         #expect(await eventually { result == false })
         #expect(c.activities.last?.state == .failed && ui.authorizationErrors == ["Operation not permitted"])
-        FileOperationsController.elevate = { _, _ in .cancelled }
+        FileOperationsController.elevate = { _, _, _ in .cancelled }
         result = nil
         c.authorize(verb: "copy", items: [item], commands: [["/bin/cp"]], kind: .copy, window: nil) { result = $0 }
         #expect(await eventually { result == false })

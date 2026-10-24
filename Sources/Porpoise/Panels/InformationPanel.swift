@@ -29,6 +29,9 @@ final class InformationPanel: NSView {
     private var hoverArea: NSTrackingArea?
 
     private var shownURLs: [URL] = []
+    /// The size and date of the one item shown, as listed: a listing that says otherwise (a download growing, an
+    /// image edited) shows it again.
+    private var shownStamp: (size: Int64, date: Date?)?
     /// Where the shown items come from (remote items and the selection are looked up in its model), and the
     /// hovered item, so a settings change can re-decide what to show.
     private weak var container: ViewContainer?
@@ -42,6 +45,7 @@ final class InformationPanel: NSView {
     private var playerWork: DispatchWorkItem?
     private var thumbnailObserver: NSObjectProtocol?
     private var windowCloseObserver: NSObjectProtocol?
+    private var listingObserver: NSObjectProtocol?
     /// Spotlight attributes, keyed by path and modification date so edited files are re-read.
     private var metadataCache: [String: [(String, String)]] = [:]
 
@@ -69,6 +73,10 @@ final class InformationPanel: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Information")
+        listingObserver = NotificationCenter.default.addObserver(forName: ViewContainer.listingReloaded, object: nil, queue: .main) {
+            [weak self] n in
+            if let c = n.object as? ViewContainer { self?.listingReloaded(in: c) }
+        }
         previewSpinner.style = .spinning
         previewSpinner.controlSize = .small
         previewSpinner.isDisplayedWhenStopped = false
@@ -103,7 +111,7 @@ final class InformationPanel: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     deinit {
-        [thumbnailObserver, windowCloseObserver].compactMap { $0 }.forEach(NotificationCenter.default.removeObserver)
+        [thumbnailObserver, windowCloseObserver, listingObserver].compactMap { $0 }.forEach(NotificationCenter.default.removeObserver)
         playerWork?.cancel()
         drivePreview?.cancel()
         if let codeCleanup { try? FileManager.default.removeItem(at: codeCleanup) }
@@ -214,6 +222,16 @@ final class InformationPanel: NSView {
         needsLayout = true
     }
 
+    /// The container's folder was listed again: the item shown is read again if it changed since.
+    func listingReloaded(in c: ViewContainer) {
+        guard c === container, shownURLs.count == 1, let u = shownURLs.first, let stamp = shownStamp,
+            let i = c.model.index(of: u), c.model.rows.indices.contains(i)
+        else { return }
+        let listed = c.model.rows[i].item
+        guard listed.size != stamp.size || listed.modificationDate != stamp.date else { return }
+        update(shownURLs)
+    }
+
     /// Shows the hovered item (if "Show item on hover"), else the selection, else the folder.
     func show(hovered: URL?, container c: ViewContainer) {
         container = c
@@ -278,10 +296,13 @@ final class InformationPanel: NSView {
         let listed = container.flatMap { c in c.model.index(of: u).flatMap { c.model.rows.indices.contains($0) ? c.model.rows[$0].item : nil } }
         if let listed { show(listed, details: nil) }
         let cached = metadataCache
+        // Only the latest read lands: one begun before the item changed (and shown again) would put back what it was.
+        detailGeneration &+= 1
+        let generation = detailGeneration
         let work = DispatchWorkItem { [weak self] in
             let read = Self.readDetails(of: u, spotlight: cached)
             DispatchQueue.main.async {
-                guard let self, self.shownURLs == urls else { return }
+                guard let self, self.shownURLs == urls, self.detailGeneration == generation else { return }
                 guard let read else { return self.clear() }
                 self.metadataCache[read.spotlightKey] = read.spotlight
                 if self.metadataCache.count >= Self.metadataCacheLimit { self.metadataCache.removeAll() }
@@ -306,6 +327,7 @@ final class InformationPanel: NSView {
     /// `item`'s name, preview and details (`details`: what was read from disk; nil: what the item itself knows).
     /// `keepsPreview`: it already shows (from the listing), the picture or player isn't set up again.
     private func show(_ item: FileItem, details: Details?, keepsPreview: Bool = false) {
+        shownStamp = (item.size, item.modificationDate)
         grid.arrangedSubviews.forEach { $0.removeFromSuperview() }
         nameLabel.stringValue = PlacesModel.shared.title(for: item.url) ?? item.name
         if !keepsPreview {
@@ -317,6 +339,7 @@ final class InformationPanel: NSView {
     }
 
     private var detailWork: DispatchWorkItem?
+    private var detailGeneration: UInt64 = 0
     /// Disk and Spotlight reads for the panel, one at a time; a newer selection cancels those not started.
     private static let detailQueue = DispatchQueue(label: "porpoise.information", qos: .userInitiated)
 
@@ -332,7 +355,8 @@ final class InformationPanel: NSView {
 
     /// Reads it (nil: the item is gone). `spotlight`: details already read, by item and date.
     nonisolated static func readDetails(of u: URL, spotlight cache: [String: [(String, String)]]) -> Details? {
-        guard let item = FileItem.load(u) else { return nil }
+        // A new URL: one already asked keeps the resource values it read then (a grown file would show its old size).
+        guard let item = FileItem.load(URL(fileURLWithPath: u.path, isDirectory: u.hasDirectoryPath)) else { return nil }
         let key = item.url.path + "|" + String(item.modificationDate?.timeIntervalSinceReferenceDate ?? 0)
         return Details(
             item: item,

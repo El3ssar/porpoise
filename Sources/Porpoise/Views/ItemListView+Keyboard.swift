@@ -269,7 +269,7 @@ extension ItemListView {
         // and a new search starts after the current item, so typing "a" on an "a…" item moves on.
         let first = typeAhead.first.map(String.init) ?? ""
         let sameKey = typeAhead.count > 1 && typeAhead.allSatisfy { String($0) == first }
-        let needle = (sameKey ? first : typeAhead).lowercased()
+        let needle = sameKey ? first : typeAhead
         let rows = model.rows
         let n = rows.count
         guard n > 0 else { return }
@@ -278,10 +278,16 @@ extension ItemListView {
         let start = ((current ?? 0) + (fromNext ? (backwards ? n - 1 : 1) : 0)) % n
         for k in 0..<n {
             let j = backwards ? (start - k + n) % n : (start + k) % n
-            if rows[j].item.name.lowercased().hasPrefix(needle) {
+            if Self.name(rows[j].item.name, startsWith: needle) {
                 select(rows[j].item.url)
                 return
             }
         }
+    }
+
+    /// Type-ahead's match: ignoring case and accents ("e" finds "École"), and without copying the name, which in a
+    /// 100,000-item folder is one allocation per item per key.
+    static func name(_ name: String, startsWith needle: String) -> Bool {
+        name.range(of: needle, options: [.anchored, .caseInsensitive, .diacriticInsensitive]) != nil
     }
 }

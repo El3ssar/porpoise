@@ -163,28 +163,67 @@ import Testing
         #expect(PrivilegedHelper.codeHash(stripped) == nil)
     }
 
+    /// The lines the shell runs: heredoc bodies (the rules, the launchd job) left out.
+    private func commands(_ script: String) -> [String] {
+        var out: [String] = [], end: String?
+        for line in script.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            if let e = end { if line == e { end = nil }; continue }
+            if let r = line.range(of: "<<'") { end = String(line[r.upperBound...].dropLast()) }
+            out.append(line)
+        }
+        return out.filter { !$0.isEmpty }
+    }
+
     @Test func installScriptIsValidShellAndQuotesEveryPath() throws {
         let script = PrivilegedHelper.installScript
         #expect(script.hasPrefix("set -e\n"))
         #expect(try Shell.run("/bin/sh", ["-n", "-c", script]).status == 0)
-        // The bundled app and plist come in as $1/$2, quoted; never pasted into the text.
+        // The bundled app comes in as $1, quoted; never pasted into the text.
         #expect(script.contains(#"/usr/bin/ditto "$1" ""#))
-        #expect(script.contains(#"-m 0644 "$2" ""#))
         #expect(!script.contains("Contents/Helpers"))
+        let lines = commands(script)
         // Every path with a space is inside quotes.
-        for line in script.split(separator: "\n") where line.contains("Porpoise Helper.app") {
+        for line in lines where line.contains("Porpoise Helper.app") {
             let unquoted = line.split(separator: "\"", omittingEmptySubsequences: false).enumerated().filter { $0.offset % 2 == 0 }.map(\.element)
             #expect(!unquoted.contains { $0.contains("Porpoise Helper") }, "\(line)")
         }
         // Old files go before the new ones are moved in, and the job is loaded last.
-        let lines = script.split(separator: "\n").map(String.init)
         let ditto = try #require(lines.firstIndex { $0.contains("ditto") })
         let chown = try #require(lines.firstIndex { $0.contains("chown -R root:wheel") })
-        let move = try #require(lines.firstIndex { $0.hasPrefix("/bin/mv ") })
+        let move = try #require(lines.firstIndex { $0.hasPrefix("/bin/mv \"/Library/PrivilegedHelperTools") })
         #expect(lines.firstIndex { $0.contains(#"rm -rf "/Library/PrivilegedHelperTools/Porpoise Helper.app.new""#) }! < ditto)
         #expect(ditto < chown && chown < move)
         #expect(lines.last?.contains("launchctl bootstrap system") == true)
         #expect(lines.allSatisfy { $0.hasPrefix("/") || $0 == "set -e" })  // absolute tools only
+    }
+
+    /// H4 (W-245): root's own copy is checked against a requirement fixed in the text (only the certificate hash comes
+    /// from the app, and must look like one) before it's moved in; the launchd job and the rights are written from the
+    /// script's own text, never copied from the app's folder.
+    @Test func installScriptVerifiesWhatItInstalls() throws {
+        let script = PrivilegedHelper.installScript
+        let lines = commands(script)
+        #expect(lines[1] == "/usr/bin/printf '%s' \"$2\" | /usr/bin/grep -Eq '^[0-9A-F]{40}$'")
+        let verify = try #require(lines.firstIndex { $0.hasPrefix("/usr/bin/codesign --verify --deep --strict -R ") })
+        let move = try #require(lines.firstIndex { $0.hasPrefix("/bin/mv \"/Library/PrivilegedHelperTools") })
+        #expect(verify > (lines.firstIndex { $0.contains("chown -R root:wheel") } ?? .max) && verify < move)
+        #expect(lines[verify].contains(#"-R "=identifier \"app.porpoise.Porpoise.helper\" and certificate leaf = H\"$2\"""#))
+        #expect(lines[verify].hasSuffix(#"|| { /bin/rm -rf "/Library/PrivilegedHelperTools/Porpoise Helper.app.new"; exit 1; }"#))
+        #expect(script.contains(PorpoiseHelperInfo.launchdPlist))
+        #expect(!script.contains("$3") && !script.contains("install -o root"))
+        for right in [HelperRights.standard, HelperRights.protected] {
+            #expect(script.contains("/usr/bin/security authorizationdb write \(right) >/dev/null <<'RIGHT'\n\(HelperRights.plist(right))RIGHT"))
+        }
+        // The requirement as the shell gives it to codesign, for a made-up hash.
+        let hash = String(repeating: "AB", count: 20)
+        let echoed = try Shell.run(
+            "/bin/sh",
+            ["-c", "set -- x \(hash); /usr/bin/printf '%s' \"=identifier \\\"app.porpoise.Porpoise.helper\\\" and certificate leaf = H\\\"$2\\\"\""])
+        #expect(String(decoding: echoed.out, as: UTF8.self) == "=" + PorpoiseHelperInfo.helperRequirement(certificateHash: hash))
+        // The launchd job runs the installed helper, nothing else.
+        let job = try #require(
+            try PropertyListSerialization.propertyList(from: Data(PorpoiseHelperInfo.launchdPlist.utf8), format: nil) as? [String: Any])
+        #expect(job["Program"] as? String == PorpoiseHelperInfo.installedTool && job["Label"] as? String == PorpoiseHelperInfo.machService)
     }
 
     @Test func removeScriptIsValidShell() throws {
@@ -193,6 +232,8 @@ import Testing
         #expect(script.contains(#"/bin/rm -rf "\#(PorpoiseHelperInfo.installedApp)""#))
         #expect(script.contains("bootout system/\(PorpoiseHelperInfo.machService)"))
         #expect(script.split(separator: "\n").allSatisfy { $0.hasPrefix("/") })
+        #expect(
+            script.contains("authorizationdb remove \(HelperRights.standard)") && script.contains("authorizationdb remove \(HelperRights.protected)"))
     }
 }
 

@@ -58,19 +58,7 @@ install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS
 HELPER_APP="$APP/Contents/Helpers/Porpoise Helper.app"
 mkdir -p "$APP/Contents/Helpers"
 ditto "Resources/Helper/Porpoise Helper.app" "$HELPER_APP"
-# Its launchd job, copied to /Library/LaunchDaemons when Porpoise installs the helper (one approval).
-cat > "$APP/Contents/Resources/app.porpoise.helper.plist" <<HELPER
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>app.porpoise.helper</string>
-  <key>Program</key><string>/Library/PrivilegedHelperTools/Porpoise Helper.app/Contents/MacOS/PorpoiseHelper</string>
-  <key>MachServices</key><dict><key>app.porpoise.helper</key><true/></dict>
-  <!-- Started on demand, quits when idle: no waiting before starting it again. -->
-  <key>ThrottleInterval</key><integer>1</integer>
-  <key>AssociatedBundleIdentifiers</key><array><string>app.porpoise.Porpoise</string></array>
-</dict></plist>
-HELPER
+# Its launchd job is written by the install itself (PorpoiseHelperInfo.launchdPlist), never copied from the app.
 cp -R Resources/icons "$APP/Contents/Resources/icons"
 cp -R Resources/brands "$APP/Contents/Resources/brands"
 cp Resources/Desert-Konsole.colorscheme "$APP/Contents/Resources/"

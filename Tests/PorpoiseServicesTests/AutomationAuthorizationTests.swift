@@ -31,8 +31,16 @@ import Testing
         controller.ui = ui
         var authorizationCalls = 0
         controller.authorizationAttempted = { authorizationCalls += 1 }
+        // W-245: nor root by any path: the helper (or the administrator prompt) is never asked.
+        let elevated = Locked(0)
+        let real = FileOperationsController.elevate
+        FileOperationsController.elevate = { _, _, _ in
+            elevated.change { $0 += 1 }; return .cancelled
+        }
+        defer { FileOperationsController.elevate = real }
         controller.run(.move, [source], to: destination, window: nil, allowAuthorization: false)
         await ui.nextJobFinished()
+        #expect(elevated.value == 0)
         #expect(controller.activities.last?.job?.denied == [source])
         #expect(authorizationCalls == 0 && ui.questions.isEmpty && ui.authorizationErrors.isEmpty)
         #expect(FileManager.default.fileExists(atPath: source.path))

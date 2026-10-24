@@ -28,7 +28,7 @@ extension FinderTags {
             if let c = color(t.color) {
                 c.setFill(); path.fill()
             } else {
-                NSColor.secondaryLabelColor.setStroke(); path.lineWidth = 1.2
+                Theme.viewTextInactive.setStroke(); path.lineWidth = 1.2
                 NSBezierPath(ovalIn: r.insetBy(dx: 0.6, dy: 0.6)).stroke()
             }
         }

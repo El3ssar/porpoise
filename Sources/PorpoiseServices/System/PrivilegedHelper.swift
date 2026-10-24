@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import PorpoiseCore
 import PorpoiseHelperKit
@@ -7,37 +8,44 @@ import ServiceManagement
 /// Porpoise's helper for items that belong to the system or other users (see PorpoiseHelperProtocol).
 ///
 /// Installed once, with the administrator's approval (password or Touch ID), into /Library/PrivilegedHelperTools with
-/// a launchd job: outside the app, so app updates never affect it. After that it works without asking. Only a new
-/// helper binary (rare: scripts/build-helper.sh) is installed again, once, the next time it's needed.
+/// a launchd job: outside the app, so app updates never affect it. Only a new helper binary (rare:
+/// scripts/build-helper.sh) is installed again, once, the next time it's needed. Each action it does is approved by
+/// the person (W-245): the helper asks, with Touch ID or the password, naming what it will do (`HelperTier`).
 public enum PrivilegedHelper {
     private static var bundled: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/Porpoise Helper.app") }
-    private static var bundledPlist: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/app.porpoise.helper.plist") }
+
+    /// What the helper must be signed as: its identifier and Porpoise's own certificate (nil: Porpoise is unsigned).
+    static var requirement: String? { CodeSigning.ownLeafCertificateHash().map(PorpoiseHelperInfo.helperRequirement) }
 
     /// Whether the user Porpoise runs as may use the helper (administrators only; it refuses everyone else).
     /// Standard users get macOS's administrator prompt for each action instead. Asked each time (one directory
     /// lookup): someone removed from the admin group meanwhile gets the prompt, not the helper's refusal.
     public static var isForThisUser: Bool { PorpoiseHelperInfo.isAdministrator(getuid()) }
 
-    /// Installed, and the same binary as the one in this app.
+    /// Installed, the same binary as the one in this app, and intact: signed as the helper, by Porpoise's certificate.
     public static var isEnabled: Bool {
-        guard FileManager.default.fileExists(atPath: PorpoiseHelperInfo.installedPlist),
-            let installed = codeHash(URL(fileURLWithPath: PorpoiseHelperInfo.installedApp))
+        let installed = URL(fileURLWithPath: PorpoiseHelperInfo.installedApp)
+        guard FileManager.default.fileExists(atPath: PorpoiseHelperInfo.installedPlist), let hash = codeHash(installed), let requirement
         else { return false }
-        return installed == codeHash(bundled)
+        return hash == codeHash(bundled) && CodeSigning.isIntact(at: installed, requirement: requirement)
     }
+
+    /// Installed, but not the one in this app (an update is ready).
+    public static var isOutdated: Bool { FileManager.default.fileExists(atPath: PorpoiseHelperInfo.installedPlist) && !isEnabled }
 
     /// Installs (or updates) the helper. macOS shows its administrator dialog (password or Touch ID). True once the
     /// helper answers.
     @discardableResult
     public static func enable() -> Bool {
-        guard !Settings.isTesting, isForThisUser, FileManager.default.fileExists(atPath: bundled.path),
-            FileManager.default.fileExists(atPath: bundledPlist.path)
+        // A helper that isn't Porpoise's own, intact, is never offered for root (the app's folder may be writable).
+        guard !Settings.isTesting, isForThisUser, let hash = CodeSigning.ownLeafCertificateHash(), let requirement,
+            CodeSigning.isIntact(at: bundled, requirement: requirement)
         else { return false }
         guard
             runAsAdministrator(
-                script: installScript, arguments: [bundled.path, bundledPlist.path],
+                script: installScript, arguments: [bundled.path, hash],
                 prompt:
-                    "Porpoise wants to install its helper, so it can empty the Trash and change items that belong to the system without asking again."
+                    "Porpoise wants to install its helper, so it can change items that belong to the system when you approve each change."
             )
         else { return false }
         DispatchQueue.main.async { NotificationCenter.default.post(name: PrivacyAccess.statusChanged, object: nil) }
@@ -74,37 +82,52 @@ public enum PrivilegedHelper {
         return ok
     }
 
-    /// Run as root by `enable` with the bundled helper app as $1 and its launchd plist as $2.
-    /// Replace, never stack: an old job is stopped, the files are written atomically, then the job is loaded.
+    /// Run as root by `enable` with the bundled helper app as $1 and Porpoise's certificate hash as $2. Replace,
+    /// never stack: an old job is stopped, the files are written atomically, then the job is loaded. Root's own copy
+    /// is checked before it's used (the bundle could be swapped between the app's check and the copy), and the
+    /// launchd job and the rights are written from this text, never from the app's folder.
     static var installScript: String {
         let dest = PorpoiseHelperInfo.installedApp
+        let requirement = PorpoiseHelperInfo.helperRequirement(certificateHash: "$2")
+        let rights = [HelperRights.standard, HelperRights.protected].map { right in
+            "/usr/bin/security authorizationdb write \(right) >/dev/null <<'RIGHT'\n\(HelperRights.plist(right))RIGHT"
+        }.joined(separator: "\n")
         return """
             set -e
+            /usr/bin/printf '%s' "$2" | /usr/bin/grep -Eq '^[0-9A-F]{40}$'
             /bin/launchctl bootout system/\(PorpoiseHelperInfo.machService) 2>/dev/null || true
             /bin/mkdir -p /Library/PrivilegedHelperTools
             /bin/rm -rf "\(dest).new"
             /usr/bin/ditto "$1" "\(dest).new"
             /usr/sbin/chown -R root:wheel "\(dest).new"
             /bin/chmod -R go-w "\(dest).new"
+            /usr/bin/codesign --verify --deep --strict -R "=\(requirement.replacingOccurrences(of: "\"", with: "\\\""))" "\(dest).new" || { /bin/rm -rf "\(dest).new"; exit 1; }
             /bin/rm -rf "\(dest)"
             /bin/mv "\(dest).new" "\(dest)"
             /bin/rm -f "\(PorpoiseHelperInfo.oldInstalledTool)"
-            /usr/bin/install -o root -g wheel -m 0644 "$2" "\(PorpoiseHelperInfo.installedPlist)"
+            \(rights)
+            /bin/cat > "\(PorpoiseHelperInfo.installedPlist).new" <<'PLIST'
+            \(PorpoiseHelperInfo.launchdPlist)PLIST
+            /usr/sbin/chown root:wheel "\(PorpoiseHelperInfo.installedPlist).new"
+            /bin/chmod 0644 "\(PorpoiseHelperInfo.installedPlist).new"
+            /bin/mv "\(PorpoiseHelperInfo.installedPlist).new" "\(PorpoiseHelperInfo.installedPlist)"
             /bin/launchctl bootstrap system "\(PorpoiseHelperInfo.installedPlist)"
             """
     }
 
-    /// Run as root by `disable`.
+    /// Run as root by `disable`: the job, the helper and its rights.
     static var removeScript: String {
         """
         /bin/launchctl bootout system/\(PorpoiseHelperInfo.machService) 2>/dev/null || true
         /bin/rm -f "\(PorpoiseHelperInfo.installedPlist)" "\(PorpoiseHelperInfo.oldInstalledTool)"
         /bin/rm -rf "\(PorpoiseHelperInfo.installedApp)"
+        /usr/bin/security authorizationdb remove \(HelperRights.standard) >/dev/null 2>&1 || true
+        /usr/bin/security authorizationdb remove \(HelperRights.protected) >/dev/null 2>&1 || true
         """
     }
 
     /// Removes the helper (Settings).
-    static func disable() {
+    public static func disable() {
         _ = runAsAdministrator(script: removeScript, arguments: [], prompt: "Porpoise wants to remove its helper.")
         NotificationCenter.default.post(name: PrivacyAccess.statusChanged, object: nil)
     }
@@ -212,53 +235,106 @@ public enum PrivilegedHelper {
         return ok
     }
 
-    /// Hands items Porpoise moved into the Trash to the user, so emptying it needs no administrator rights (best effort).
-    static func takeOwnership(of paths: [String]) {
-        guard !paths.isEmpty, isForThisUser, isEnabled, !Settings.isTesting, let c = connection() else { return }
-        defer { c.invalidate() }
-        let proxy = c.synchronousRemoteObjectProxyWithErrorHandler { NSLog("helper: \($0)") } as? PorpoiseHelperProtocol
-        for p in paths { proxy?.takeOwnership(ofTrashed: p) { if let e = $0 { NSLog("take ownership of \(p): \(e)") } } }
-    }
-
-    enum Outcome {
+    enum Outcome: Equatable {
         case done
+        /// The person didn't approve: nothing ran.
+        case cancelled
         /// A command ran and failed (its message).
         case failed(String)
         /// The helper couldn't be reached before anything ran: the caller can install it or ask for a password.
         case unavailable(String)
     }
 
-    /// Runs file tools as administrator (see PorpoiseHelperInfo.allowedTools), in order, over one connection: the
-    /// helper quits when it closes, so one action is one short run. Stops at the first failure, except for tools in
-    /// `bestEffort`. Checks first that the helper answers at all, so a broken one can't freeze the window.
-    static func run(_ commands: [[String]], bestEffort: Set<String> = []) -> Outcome {
+    /// Runs one action as administrator (see PorpoiseHelperInfo.allowedTools): the helper asks the person to approve
+    /// it, naming what it does, then runs the commands in order; lock flags are cleared best effort. Items moved to
+    /// the paths in `handOver` (the Trash) become the person's. Checks first that the helper answers at all, so a
+    /// broken one can't freeze the window.
+    static func run(_ commands: [[String]], handOver: [String] = []) -> Outcome {
         // Test instances take commands from other processes (DebugBridge): they never get root.
         guard !Settings.isTesting else { return .unavailable("Test instances don't use Porpoise's helper.") }
-        return diagnosed(runChecked(commands, bestEffort: bestEffort))
+        return diagnosed(runChecked(commands, handOver: handOver))
     }
 
     /// A failed run as a diagnostic event: its kind only, never the command, its paths or the helper's message.
     static func diagnosed(_ outcome: Outcome, store: DiagnosticStore = Diagnostics.shared) -> Outcome {
         switch outcome {
-        case .done: break
+        case .done, .cancelled: break
         case .unavailable: store.record(.helperUnavailable, failure: .unavailable)
         case .failed: store.record(.helperFailed, failure: .unknown)
         }
         return outcome
     }
 
-    private static func runChecked(_ commands: [[String]], bestEffort: Set<String>) -> Outcome {
+    private static func runChecked(_ commands: [[String]], handOver: [String]) -> Outcome {
         guard ping(timeout: 4) || ping(timeout: 4) else { return .unavailable("Porpoise's helper didn't answer.") }
         guard let c = connection() else { return .unavailable("This copy of Porpoise isn't signed, so its helper can't be used.") }
+        guard let authorization = HelperAuthorization.shared.externalForm() else {
+            return .unavailable("macOS didn't give Porpoise an authorization to ask with.")
+        }
         defer { c.invalidate() }
         var failure: String?
         let proxy = c.synchronousRemoteObjectProxyWithErrorHandler { failure = $0.localizedDescription } as? PorpoiseHelperProtocol
-        for (i, args) in commands.enumerated() {
-            var result: String? = "Porpoise's helper didn't answer."
-            proxy?.run(args) { result = $0 }
-            if let f = failure { return i == 0 ? .unavailable(f) : .failed(f) }
-            if let r = result, !bestEffort.contains(args.first ?? "") { return .failed(r) }
-        }
-        return .done
+        var result: (cancelled: Bool, message: String?) = (false, "Porpoise's helper didn't answer.")
+        proxy?.perform(commands, authorization: authorization, handOver: handOver) { result = ($0, $1) }
+        if let failure { return .unavailable(failure) }
+        if result.cancelled { return .cancelled }
+        return result.message.map(Outcome.failed) ?? .done
     }
+}
+
+/// Porpoise's own authorization, which the helper asks the person's approval for. Kept for 5 minutes, so a standard
+/// approval (`HelperRights.standard`) covers the actions that follow; dropped sooner when the screen sleeps or
+/// locks, or another user takes over the Mac. A protected right is asked for every time whatever it holds.
+final class HelperAuthorization: @unchecked Sendable {
+    static let shared = HelperAuthorization()
+    private let lock = NSLock()
+    private var current: (ref: AuthorizationRef, made: Date)?
+    /// Seams for tests.
+    var now: () -> Date = Date.init
+    var make: () -> AuthorizationRef? = {
+        var ref: AuthorizationRef?
+        return AuthorizationCreate(nil, nil, [], &ref) == errAuthorizationSuccess ? ref : nil
+    }
+    private var observers: [NSObjectProtocol] = []
+
+    /// When the approval is forgotten: the screens sleep, or another user is switched to.
+    static let dropping: [Notification.Name] = [NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification]
+
+    init(
+        observing workspace: NotificationCenter? = NSWorkspace.shared.notificationCenter,
+        distributed: NotificationCenter? = DistributedNotificationCenter.default()
+    ) {
+        for name in Self.dropping {
+            if let o = workspace?.addObserver(forName: name, object: nil, queue: nil, using: { [weak self] _ in self?.drop() }) {
+                observers.append(o)
+            }
+        }
+        if let o = distributed?.addObserver(
+            forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: nil, using: { [weak self] _ in self?.drop() })
+        {
+            observers.append(o)
+        }
+    }
+
+    /// The authorization to send with a request, made again once it's older than a standard approval lasts.
+    func externalForm() -> Data? {
+        lock.lock(); defer { lock.unlock() }
+        if let c = current, now().timeIntervalSince(c.made) >= TimeInterval(HelperRights.standardTimeout) { free(c.ref); current = nil }
+        if current == nil, let ref = make() { current = (ref, now()) }
+        guard let ref = current?.ref else { return nil }
+        var form = AuthorizationExternalForm()
+        guard AuthorizationMakeExternalForm(ref, &form) == errAuthorizationSuccess else { return nil }
+        return withUnsafeBytes(of: form.bytes) { Data($0) }
+    }
+
+    /// Forgets the authorization (and with it a standard approval).
+    func drop() {
+        lock.lock(); defer { lock.unlock() }
+        if let c = current { free(c.ref) }
+        current = nil
+    }
+
+    var holdsOne: Bool { lock.withLock { current != nil } }
+
+    private func free(_ ref: AuthorizationRef) { AuthorizationFree(ref, [.destroyRights]) }
 }

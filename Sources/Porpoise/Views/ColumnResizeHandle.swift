@@ -36,7 +36,7 @@ final class ColumnResizeHandle: NSView {
         let grip = CGRect(x: bounds.midX - 3, y: bounds.maxY - Self.gripHeight - 4, width: 6, height: Self.gripHeight)
         Theme.viewBackground.setFill()
         NSBezierPath(roundedRect: grip.insetBy(dx: -1, dy: -1), xRadius: 2, yRadius: 2).fill()
-        NSColor.separatorColor.setStroke()
+        Theme.separator.setStroke()
         let outline = NSBezierPath(roundedRect: grip, xRadius: 2, yRadius: 2)
         outline.lineWidth = 1
         outline.stroke()
@@ -45,7 +45,7 @@ final class ColumnResizeHandle: NSView {
             lines.move(to: CGPoint(x: floor(x) + 0.5, y: grip.minY + 4))
             lines.line(to: CGPoint(x: floor(x) + 0.5, y: grip.maxY - 4))
         }
-        NSColor.tertiaryLabelColor.setStroke()
+        Theme.viewTextInactive.setStroke()
         lines.lineWidth = 1
         lines.stroke()
     }

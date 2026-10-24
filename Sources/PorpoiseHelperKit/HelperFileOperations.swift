@@ -4,15 +4,29 @@ import Foundation
 /// Privileged operations use descriptor capabilities, never re-launch a tool with the original paths.
 struct HelperFileOperations {
     let boundary: (HelperBoundary) -> Void
+    /// Each step is classified again from what it opened, right before it changes anything: a folder swapped for a
+    /// link after the person approved can't take it somewhere that needs more approval than they gave. Nil: no
+    /// check (tests of the descriptor mechanics).
+    var policy: HelperPolicy?
+    var authorized: HelperTier = .standard
     private let move: (Int32, String, Int32, String, UInt32) -> Int32
     private var stages: [HelperStage] = []
     private var visited: Set<HelperIdentity> = []
     private var entries = 0
 
     init(
-        boundary: @escaping (HelperBoundary) -> Void = { _ in },
+        boundary: @escaping (HelperBoundary) -> Void = { _ in }, policy: HelperPolicy? = nil, authorized: HelperTier = .standard,
         move: @escaping (Int32, String, Int32, String, UInt32) -> Int32 = { renameatx_np($0, $1, $2, $3, $4) }
-    ) { self.boundary = boundary; self.move = move }
+    ) { self.boundary = boundary; self.policy = policy; self.authorized = authorized; self.move = move }
+
+    static let changedTier = HelperFailure("The item changed during the request; try again.")
+
+    /// Refuses `op` when what it opened needs more approval than was given.
+    private func permit(_ op: HelperOperation, _ opened: [HelperPath]) throws {
+        guard let policy else { return }
+        let tier = policy.tier(of: op) { p in opened.first { $0.display == p }?.facts ?? HelperPathFacts.read(p) }.tier
+        guard tier <= authorized, tier != .never else { throw Self.changedTier }
+    }
 
     mutating func run(_ arguments: [String]) -> String? {
         stages.removeAll(); visited.removeAll(); entries = 0
@@ -38,6 +52,7 @@ struct HelperFileOperations {
         switch operation {
         case .mkdir(let path):
             let target = try HelperPath(path, access: .write, missing: true, boundary: boundary)
+            try permit(operation, [target])
             guard target.expected == nil else { throw HelperFailure("The destination already exists.") }
             let output = try stage(in: target.parent, entry: "new")
             try check(mkdirat(output.directory.fd, output.entry, 0o755), "Could not create the folder")
@@ -45,6 +60,7 @@ struct HelperFileOperations {
             try publish(output, to: target)
         case .link(let text, let path):
             let target = try HelperPath(path, access: .write, missing: true, boundary: boundary)
+            try permit(operation, [target])
             guard target.expected == nil else { throw HelperFailure("The destination already exists.") }
             let output = try stage(in: target.parent, entry: "new")
             try check(symlinkat(text, output.directory.fd, output.entry), "Could not create the symbolic link")
@@ -52,21 +68,38 @@ struct HelperFileOperations {
             try publish(output, to: target)
         case .chmod(let path, let mode):
             let target = try HelperPath(path, access: .write, boundary: boundary)
+            try permit(operation, [target])
             guard let leaf = target.leaf else { throw HelperFailure.changed }
             try target.validate(); try mutable(leaf)
             try check(fchmod(leaf.fd, mode), "Could not change permissions")
+        case .chown(let path, let uid, let gid):
+            let target = try HelperPath(path, access: .change, boundary: boundary)
+            try permit(operation, [target])
+            guard let leaf = target.leaf else { throw HelperFailure.changed }
+            try target.validate(); try mutable(leaf)
+            try check(fchown(leaf.fd, uid, gid), "Could not change the owner")
+        case .setFlag(let path, let flag, let on):
+            let target = try HelperPath(path, access: .change, boundary: boundary)
+            try permit(operation, [target])
+            guard let leaf = target.leaf else { throw HelperFailure.changed }
+            try target.validate(); try mutable(leaf)
+            let flags = try leaf.info.st_flags
+            try check(fchflags(leaf.fd, on ? flags | flag : flags & ~flag), "Could not change the lock")
         case .unlock(let path):
             let target = try HelperPath(path, access: .remove, boundary: boundary)
+            try permit(operation, [target])
             guard (target.expected?.st_mode ?? 0) & S_IFMT != S_IFLNK else { throw HelperFailure.changed }
             try unlock(target, device: try target.parent.info.st_dev, depth: 0)
         case .remove(let path):
             let target = try HelperPath(path, access: .remove, missing: true, boundary: boundary)
+            try permit(operation, [target])
             guard target.expected != nil else { return }  // rm -f
             let captured = try capture(target)
             try removeCaptured(captured, device: target.expected!.st_dev, depth: 0)
         case .copy(let source, let destination, let recursive):
             let source = try HelperPath(source, access: .read, boundary: boundary)
             let target = try HelperPath(destination, access: .write, missing: true, boundary: boundary)
+            try permit(operation, [source, target])
             guard recursive || (source.expected?.st_mode ?? 0) & S_IFMT != S_IFDIR else { throw HelperFailure("A folder requires a recursive copy.") }
             try rejectFolder(target)
             try rejectDescendant(target, of: source)
@@ -79,6 +112,7 @@ struct HelperFileOperations {
         case .move(let source, let destination, let noReplace):
             let source = try HelperPath(source, access: .remove, boundary: boundary)
             let target = try HelperPath(destination, access: .write, missing: true, boundary: boundary)
+            try permit(operation, [source, target])
             try rejectFolder(target)
             try rejectDescendant(target, of: source)
             if noReplace, target.expected != nil { return }

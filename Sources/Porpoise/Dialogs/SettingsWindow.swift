@@ -250,6 +250,7 @@ final class SettingsWindowController: SecondaryWindowController {
             f.button("Empty Trash…", enabled: { !TrashInfo.isEmpty }) {
                 FileOperationsController.shared.emptyTrash(window: SettingsWindowController.window)
             }
+            HelperSettings.build(f)
             f.section("Compare files")
             f.status(
                 "Default compare app:",

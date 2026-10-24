@@ -238,8 +238,8 @@ final class ItemListView: NSView {
 
     private func thumbnailReady(_ n: Notification) {
         guard let url = n.object as? URL else { return }
-        // The item itself, or its folder (whose preview shows it).
-        for u in [url, url.deletingLastPathComponent()] {
+        // The item itself, or its folder (whose preview shows it, when folders show previews).
+        for u in Settings.shared.previewFolders ? [url, url.deletingLastPathComponent()] : [url] {
             if let i = model.index(of: u), i < frames.count { setNeedsDisplay(frames[i].insetBy(dx: -4, dy: -4)) }
         }
     }

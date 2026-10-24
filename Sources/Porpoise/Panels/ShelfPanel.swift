@@ -42,7 +42,7 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
         shelves.target = self
         shelves.action = #selector(shelfChosen)
         count.font = .systemFont(ofSize: Tokens.FontSize.small)
-        count.textColor = .secondaryLabelColor
+        count.textColor = Theme.windowTextInactive
         table.headerView = nil
         table.addTableColumn(NSTableColumn(identifier: .init("item")))
         table.rowHeight = 34
@@ -79,7 +79,7 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
         copyHere.toolTip = "Copy the selected items (all when none is selected) to the folder shown"
         moveHere.toolTip = "Move the selected items (all when none is selected) to the folder shown"
         hint.font = .systemFont(ofSize: Tokens.FontSize.callout)
-        hint.textColor = .secondaryLabelColor
+        hint.textColor = Theme.windowTextInactive
         hint.alignment = .center
         let header = NSStackView(views: [shelves, NSView(), count])
         // The shelf's name keeps a readable width; the count gives way.
@@ -194,7 +194,7 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
             items.isEmpty
             ? nil
             : FileFormat.itemCount(items.count) + (missing > 0 ? ", \(missing) unavailable (missing or disconnected)" : "")
-        count.textColor = missing > 0 ? Theme.negativeText : .secondaryLabelColor
+        count.textColor = missing > 0 ? Theme.negativeText : Theme.windowTextInactive
     }
 
     /// The selected items, or all of them when none is selected.
@@ -476,7 +476,7 @@ final class ShelfRowView: NSView {
         name.lineBreakMode = .byTruncatingMiddle
         name.font = Theme.font
         detail.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        detail.textColor = .secondaryLabelColor
+        detail.textColor = Theme.windowTextInactive
         detail.lineBreakMode = .byTruncatingHead
         for v in [icon, name, detail] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
