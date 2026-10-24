@@ -264,7 +264,11 @@ extension DebugBridge {
     }
 
     /// Open the app-owned preview without application activation or global input.
-    func previewCommand(_ arg: String) { wc?.quickLook(nil) }
+    func previewCommand(_ arg: String) {
+        wc?.quickLook(nil)
+        // An inactive test instance has no key window. Order only its own preview forward; never activate it.
+        if let panel = wc?.spacePreview, panel.isVisible { panel.orderFrontRegardless() }
+    }
 
     func selectCommand(_ arg: String) {
         if let v = wc?.view { v.list.select(arg.hasPrefix("/") ? URL(fileURLWithPath: arg) : v.url.appendingPathComponent(arg)) }

@@ -257,6 +257,8 @@ import SwiftTerm
             "renaming": v.list.isRenaming,
             "quickLookVisible": w.spacePreview?.isVisible == true,
             "previewState": w.spacePreview?.state ?? "closed",
+            "previewWindowNumber": w.spacePreview?.windowNumber ?? 0,
+            "previewWindowAlpha": w.spacePreview?.alphaValue ?? 0,
             "previewCodeLines": w.spacePreview?.code.document?.displayedLines ?? 0,
             "previewCodeLimited": w.spacePreview?.code.document?.truncated ?? false,
             "previewLoadMS": w.spacePreview?.code.loadMilliseconds ?? 0,
