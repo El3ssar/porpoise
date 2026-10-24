@@ -260,4 +260,19 @@ import Testing
         again.open(url)
         #expect(first.isEmpty && second == [url])
     }
+
+    /// #18: an Option-drag onto the item's own folder copies it alongside, as Finder duplicates.
+    @Test func anOptionDragInTheSameFolderDuplicates() async throws {
+        let s = try Scratch("drop-same")
+        let a = try s.file("a.txt", "a")
+        let controller = FileOperationsController(), ui = ScriptedUI()
+        controller.ui = ui
+        let view = NSView()
+        controller.handleDrop([a], onto: s.url, operation: .move, in: view)
+        #expect(controller.activities.isEmpty)  // moving it where it is does nothing
+        controller.handleDrop([a], onto: s.url, operation: .copy, in: view)
+        await ui.nextJobFinished()
+        let names = try FileManager.default.contentsOfDirectory(atPath: s.url.path).sorted()
+        #expect(names.count == 2 && names.contains("a.txt") && s.read("a.txt") == "a", "\(names)")
+    }
 }
