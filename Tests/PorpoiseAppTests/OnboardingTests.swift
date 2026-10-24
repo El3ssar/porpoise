@@ -1,13 +1,15 @@
 import AppKit
 import PorpoiseCore
 import PorpoiseServices
+import PorpoiseServicesTestSupport
 import Testing
 
 @testable import Porpoise
 
 /// The first-run welcome is one sheet of two steps on the browser window, and the other permissions are asked for
-/// when an action first needs them.
-@MainActor @Suite(.serialized) struct OnboardingTests {
+/// when an action first needs them. These tests replace process-wide permission hooks and read/write Settings.store;
+/// take the shared settings turn as well as serializing this suite's own tests.
+@MainActor @Suite(.serialized, .isolatedSettings) struct OnboardingTests {
     private func withWelcome(granted: Bool, _ body: (OnboardingWindowController, NSWindow) throws -> Void) throws {
         let saved = (OnboardingWindowController.fullDiskGranted, Settings.store.object(forKey: OnboardingWindowController.doneKey))
         let browser = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 900, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
