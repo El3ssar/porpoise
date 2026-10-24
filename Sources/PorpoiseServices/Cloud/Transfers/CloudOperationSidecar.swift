@@ -16,11 +16,20 @@ struct CloudOperationSidecar {
     let legacy: URL
     var item: CloudRemoteItem?
     private var url: URL { partial.appendingPathExtension("cloud-operation") }
+    private static func canonicalPath(_ url: URL) -> String {
+        let normalized = url.standardizedFileURL
+        // The partial itself may not exist yet (or may already have moved into the store).
+        return normalized.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(normalized.lastPathComponent).path
+    }
     func existing() throws -> UUID? { try Self.lock.withLock { try read() } }
     private func read() throws -> UUID? {
         if FileManager.default.fileExists(atPath: url.path) {
             let record = try JSONDecoder().decode(Record.self, from: Data(contentsOf: url))
-            guard record.version == 1, record.partial == partial, record.account == account,
+            // Directory enumeration can resolve the staging root's aliases (/var becomes /private/var).
+            // Bind to the same canonical path while accepting both current and legacy URL spellings.
+            guard record.version == 1,
+                Self.canonicalPath(record.partial) == Self.canonicalPath(partial),
+                record.account == account,
                 item == nil || (record.item == item?.ref.item && record.revision == item?.revision)
             else { throw CloudContentError.changed }
             return record.operation
