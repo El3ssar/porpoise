@@ -434,6 +434,7 @@ extension DebugBridge {
         let w: NSWindow?
         if parts.count > 1 {
             switch parts[1] {
+            case "QuickLook": w = QLPreviewPanel.sharedPreviewPanelExists() ? QLPreviewPanel.shared() : nil
             case "FileDiff": w = FileDiffWindow.current?.window
             case "Settings": w = settingsWindow
             case "Sheet": w = NSApp.windows.first { $0.isVisible && $0.isSheet }
