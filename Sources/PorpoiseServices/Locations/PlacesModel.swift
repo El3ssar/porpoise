@@ -88,6 +88,7 @@ public final class PlacesModel {
     public static let shared = PlacesModel()
     public static let changed = Notification.Name("PorpoisePlacesChanged")
 
+    public static let airDropURL = URL(string: "airdrop:/")!
     public static let recentFilesURL = URL(string: "recent:/files")!
     static let recentLocationsURL = URL(string: "recent:/locations")!
     /// How often Android phones are polled while adb is installed.
@@ -258,6 +259,7 @@ public final class PlacesModel {
     static func defaultEntries() -> [PlaceEntry] {
         let h = FileManager.default.homeDirectoryForCurrentUser
         var e: [PlaceEntry] = [
+            airDropEntry,
             PlaceEntry(title: "Home", url: h, icon: "user-home", section: .places),
             PlaceEntry(title: "Desktop", url: h.appendingPathComponent("Desktop"), icon: "user-desktop", section: .places),
             PlaceEntry(title: "Documents", url: h.appendingPathComponent("Documents"), icon: "folder-documents", section: .places),
@@ -278,6 +280,10 @@ public final class PlacesModel {
         return e
     }
 
+    private static var airDropEntry: PlaceEntry {
+        PlaceEntry(title: "AirDrop", url: airDropURL, icon: "airdrop", section: .places)
+    }
+
     private static var networkEntry: PlaceEntry {
         PlaceEntry(title: "Network", url: NetworkBrowser.url, icon: "network-workgroup", section: .remote)
     }
@@ -294,7 +300,7 @@ public final class PlacesModel {
         /// Format version: nil for files written before it existed (they get the places added since).
         var version: Int?
     }
-    private static let storeVersion = 1
+    private static let storeVersion = 2
 
     private func load() {
         guard let storeURL, var data = try? Data(contentsOf: storeURL) else {
@@ -328,6 +334,9 @@ public final class PlacesModel {
         if stored.version == nil, !userEntries.contains(where: { $0.url == NetworkBrowser.url }) {
             let at = userEntries.firstIndex { $0.section == .remote } ?? userEntries.count
             userEntries.insert(Self.networkEntry, at: at)
+        }
+        if (stored.version ?? 0) < 2, !userEntries.contains(where: { $0.url == Self.airDropURL }) {
+            userEntries.insert(Self.airDropEntry, at: userEntries.firstIndex { $0.section == .places } ?? 0)
         }
         storedHiddenSections = Set(stored.hiddenSections)
         collapsedSections = Set(stored.collapsedSections ?? [])

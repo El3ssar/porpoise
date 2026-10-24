@@ -76,6 +76,7 @@ extension MainWindowController {
     // MARK: PlacesPanelDelegate
 
     func places(_ p: PlacesPanel, open url: URL, newTab: Bool, splitView: Bool) {
+        if url == PlacesModel.airDropURL { SharingCoordinator.browseAirDrop(); return }
         if newTab { addTab(url: url, select: false); return }
         if splitView {
             if !tab.isSplit { tab.openSplit(url: url); tab.secondary?.delegate = self } else { tab.inactive?.setURL(url) }
@@ -96,6 +97,10 @@ extension MainWindowController {
     }
 
     func places(_ p: PlacesPanel, drop urls: [URL], onto url: URL, operation: NSDragOperation) {
+        if url == PlacesModel.airDropURL {
+            SharingCoordinator.shared.share(urls, mode: .airDrop, from: p)
+            return
+        }
         if LocationKind.of(url) == .trash {
             FileOperationsController.shared.trash(urls, window: window)
             return

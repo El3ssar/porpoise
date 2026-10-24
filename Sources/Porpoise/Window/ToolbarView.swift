@@ -167,6 +167,8 @@ final class ToolbarView: NSView {
         case .commandPalette: AppDelegate.shared.showCommandPalette(nil)
         case .link: controller.toggleLinkedBrowsing(nil)
         case .customTools: controller.showToolbarCustomTools(extraButtons[command])
+        case .share: controller.shareItems(extraButtons[command])
+        case .airDrop: controller.airDropItems(extraButtons[command])
         default: break
         }
     }
@@ -276,6 +278,8 @@ private extension ToolbarCommand {
         case .commandPalette: return "system-search"
         case .link: return "insert-link"
         case .customTools: return "system-run"
+        case .share: return "document-share"
+        case .airDrop: return "airdrop"
         default: return "application-menu"
         }
     }

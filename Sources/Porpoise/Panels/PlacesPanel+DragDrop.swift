@@ -33,6 +33,10 @@ extension PlacesPanel {
         }
         // Devices, tags and detected places can't be reordered (and are already listed).
         if sender.draggingPasteboard.types?.contains(.placeEntry) == true { return setDrop(nil, insert: nil) }
+        if let i, entry(at: i)?.url == PlacesModel.airDropURL, SharingPreparation.supports(DropTargetPolicy.urls(sender)) {
+            setDrop(i, insert: nil)
+            return .copy
+        }
         let cloudFolders = !Self.cloudFolders(sender.draggingPasteboard).isEmpty
         let allFolders = cloudFolders || draggedURLsAreFolders(sender)
         if let i, let e = entry(at: i), Self.takesDrops(DropTargetPolicy.urls(sender), into: e.url) {
@@ -107,7 +111,8 @@ extension PlacesPanel {
         if let e = entry(at: dropIndex) {
             let urls = DropTargetPolicy.urls(sender)
             guard Self.takesDrops(urls, into: e.url) else { return false }
-            delegate?.places(self, drop: urls, onto: e.url, operation: DropTargetPolicy.operation(for: sender))
+            delegate?.places(
+                self, drop: urls, onto: e.url, operation: e.url == PlacesModel.airDropURL ? .copy : DropTargetPolicy.operation(for: sender))
             return true
         }
         let clouds = Self.cloudFolders(pb)
@@ -154,7 +159,8 @@ extension PlacesPanel {
     /// Whether the place at `url` takes `urls`: a folder the items can go into (`DropTargetPolicy`), or the Trash,
     /// which moves them there.
     static func takesDrops(_ urls: [URL], into url: URL) -> Bool {
-        LocationKind.of(url) == .trash ? !urls.isEmpty && urls.allSatisfy(\.isFileURL) : DropTargetPolicy.accepts(urls, into: url)
+        if url == PlacesModel.airDropURL { return SharingPreparation.supports(urls) }
+        return LocationKind.of(url) == .trash ? !urls.isEmpty && urls.allSatisfy(\.isFileURL) : DropTargetPolicy.accepts(urls, into: url)
     }
 
     private static func fileURLs(_ pb: NSPasteboard) -> [URL] {

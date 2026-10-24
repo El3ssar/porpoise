@@ -1,4 +1,5 @@
 import AppKit
+import PorpoiseServices
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
@@ -52,6 +53,17 @@ private final class TabDrops: TabBarDelegate {
     func tabBar(_ bar: TabBarView, folderAt index: Int) -> URL? { folder }
     func tabBar(_ bar: TabBarView, drop urls: [URL], onto index: Int, operation: NSDragOperation) { dropped.append((urls, operation)) }
     func tabBar(_ bar: TabBarView, detach index: Int) {}
+}
+
+private final class SharingPlaceDrops: PlacesPanelDelegate {
+    var dropped: [(urls: [URL], operation: NSDragOperation)] = []
+    func places(_ p: PlacesPanel, open url: URL, newTab: Bool, splitView: Bool) {}
+    func places(_ p: PlacesPanel, drop urls: [URL], onto url: URL, operation: NSDragOperation) {
+        dropped.append((urls, operation))
+    }
+    func places(_ p: PlacesPanel, emptyTrash: Void) {}
+    func places(_ p: PlacesPanel, properties url: URL) {}
+    func placesWantsViewFocus(_ p: PlacesPanel) {}
 }
 
 /// One drop policy for every target: the items a drag carries (remote ones too), the operation the cursor shows and
@@ -137,6 +149,32 @@ private final class TabDrops: TabBarDelegate {
         let other = FakeDrag([remote], mask: [.copy], at: bar.convert(CGPoint(x: 20, y: 15), to: nil))
         #expect(bar.draggingUpdated(other) == [])
         #expect(!bar.performDragOperation(other))
+    }
+
+    @Test func airDropRowAlwaysCopiesTheFullSelectionWithoutMovingOriginals() throws {
+        _ = NSApplication.shared
+        let panel = PlacesPanel(frame: CGRect(x: 0, y: 0, width: 240, height: 500))
+        let drops = SharingPlaceDrops()
+        panel.delegate = drops
+        let airDrop = try #require(PlacesModel.shared.userEntries.first { $0.url == PlacesModel.airDropURL })
+        panel.rows = [.init(kind: .entry(airDrop), y: 0, height: 28)]
+        // Including the row edges: folders here are shared, not inserted as bookmarks.
+        for y in [1.0, 14.0, 27.0] {
+            let drag = FakeDrag([home, remote], mask: [.copy, .move, .link], at: panel.convert(CGPoint(x: 80, y: y), to: nil))
+            holding([.command, .option]) {
+                #expect(panel.draggingUpdated(drag) == .copy)
+                #expect(panel.performDragOperation(drag))
+            }
+            #expect(drops.dropped.last?.urls == [home, remote] && drops.dropped.last?.operation == .copy)
+        }
+        #expect(drops.dropped.count == 3)
+        #expect(PlaceAccessibilityElement(panel: panel, index: 0).accessibilityLabel() == "AirDrop")
+        let event = try #require(
+            NSEvent.mouseEvent(
+                with: .rightMouseDown, location: panel.convert(CGPoint(x: 80, y: 14), to: nil), modifierFlags: [],
+                timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
+        let titles = try #require(panel.menu(for: event)).items.map(\.title)
+        #expect(titles.contains("Open AirDrop") && !titles.contains("Open in New Window") && !titles.contains("Open in Split View"))
     }
 
     /// A drag inside the app runs an event-tracking run loop: spring-loading must still open what it rests on.

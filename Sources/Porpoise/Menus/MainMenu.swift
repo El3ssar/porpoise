@@ -101,6 +101,7 @@ extension AppDelegate {
         file.addItem(mi("Compare Files…", #selector(W.compareFiles(_:)), "y", [.command, .option], icon: "document-preview"))
         file.addItem(mi("Quick Look", #selector(W.quickLook(_:)), "y", icon: "document-preview"))
         file.addItem(mi("Share…", #selector(W.shareItems(_:)), icon: "document-share"))
+        file.addItem(mi("AirDrop…", #selector(W.airDropItems(_:)), icon: "airdrop"))
         file.addItem(mi("Get Info", #selector(W.properties(_:)), dolphin ? "\r" : "i", dolphin ? .option : .command, icon: "document-properties"))
         file.addItem(dynamicSubmenu("Tags", icon: "tag"))
         main.addItem(.submenu("File", icon: nil, file))
@@ -195,7 +196,7 @@ extension AppDelegate {
         go.addItem(mi("Home", #selector(W.goHome(_:)), K.home, .option, icon: "go-home"))
         go.addItem(mi("Home", #selector(W.goHome(_:)), "h", [.command, .shift], icon: "go-home").hiddenAlternate())
         for (i, t) in W.goTargets.enumerated() { go.addItem(mi(t.title, #selector(W.goToTarget(_:)), t.key, t.mods, icon: t.icon, tag: i)) }
-        go.addItem(mi("AirDrop", #selector(W.goAirDrop(_:)), "r", [.command, .shift], icon: "network-wireless"))
+        go.addItem(mi("AirDrop", #selector(W.goAirDrop(_:)), "r", [.command, .shift], icon: "airdrop"))
         go.addItem(mi("Network", #selector(W.goNetwork(_:)), "k", [.command, .shift], icon: "network-workgroup"))
         go.addItem(sep())
         go.addItem(mi("Go to Folder…", #selector(W.goToFolder(_:)), "g", [.command, .shift], icon: "document-open-folder"))

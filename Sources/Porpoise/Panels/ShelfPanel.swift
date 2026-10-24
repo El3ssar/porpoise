@@ -11,7 +11,7 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
     /// Opens a folder in the window.
     var openFolder: ((URL) -> Void)?
 
-    private let store = ShelfStore.shared
+    private let store: ShelfStore
     private let shelves = NSPopUpButton()
     private let count = NSTextField(labelWithString: "")
     private let table = ShelfTableView()
@@ -23,7 +23,10 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
     private var states: [UUID: ShelfItemState] = [:]
     private var observer: NSObjectProtocol?
 
-    override init(frame: NSRect) {
+    override convenience init(frame: NSRect) { self.init(frame: frame, store: .shared) }
+
+    init(frame: NSRect, store: ShelfStore) {
+        self.store = store
         super.init(frame: frame)
         // The panel's header, in the sidebar's section-title style ("Places", "Remote"): the shelf's name opens its menu.
         shelves.isBordered = false
@@ -321,12 +324,18 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
         }
     }
 
-    @objc private func share() {
-        let urls = store.plan(chosen).urls.filter(\.isFileURL)
-        guard !urls.isEmpty else { return }
-        let picker = NSSharingServicePicker(items: urls)
+    @objc private func share() { shareChosen(mode: .picker) }
+    @objc private func airDrop() { shareChosen(mode: .airDrop) }
+
+    func shareChosen(mode: SharingCoordinator.Mode, using coordinator: SharingCoordinator = .shared) {
+        let plan = store.plan(chosen)
+        report(plan)
+        // Do not share a subset when a bookmarked local item is unavailable.
+        guard plan.skipped.isEmpty else { return }
         let row = max(0, table.selectedRow)
-        picker.show(relativeTo: row < table.numberOfRows ? table.rect(ofRow: row) : table.visibleRect, of: table, preferredEdge: .maxX)
+        coordinator.share(
+            plan.urls, mode: mode, from: table,
+            rect: row < table.numberOfRows ? table.rect(ofRow: row) : table.visibleRect)
     }
 
     @objc func removeChosen() {
@@ -372,6 +381,7 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
         add(onItem ? "Move Here" : "Move All Here", #selector(moveToCurrent), enabled: hasItems)
         add("Rename…", #selector(rename), enabled: hasItems)
         add("Share…", #selector(share), enabled: hasItems)
+        add("AirDrop…", #selector(airDrop), enabled: hasItems)
         menu.addItem(.separator())
         if onItem { add("Remove from Shelf", #selector(removeChosen)) }
         if items.contains(where: { states[$0.id]?.problem != nil }) { add("Remove Unavailable Items", #selector(removeUnavailable)) }
