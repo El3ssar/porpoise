@@ -13,6 +13,7 @@ extension MainWindowController {
     }
 
     @objc func setViewMode(_ sender: NSMenuItem) {
+        guard !view.showsAirDrop else { return }
         guard let m = ViewMode.allCases[safe: sender.tag] else { return }
         view.setMode(m)
         syncToActiveView()

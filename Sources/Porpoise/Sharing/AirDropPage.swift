@@ -11,8 +11,9 @@ final class AirDropPage: NSView {
     private let detail = NSTextField(wrappingLabelWithString: "Choose a nearby recipient in the system AirDrop sheet.")
     let chooseButton = NSButton(title: "Choose Files…", target: nil, action: nil)
     let selectionButton = NSButton(title: "Send Selection", target: nil, action: nil)
-    private let hint = NSTextField(wrappingLabelWithString: "Change who can discover this Mac in Control Centre’s AirDrop controls.")
+    private let hint = NSTextField(wrappingLabelWithString: "Change who can discover this Mac in Control Center’s AirDrop controls.")
     var selection: () -> [URL] = { [] }
+    var selectionAllowed = true
     var selectionAvailable: () -> Bool = { false }
     var choose: ((NSWindow, @escaping ([URL]) -> Void) -> Void)?
     var onActivate: (() -> Void)?
@@ -44,7 +45,7 @@ final class AirDropPage: NSView {
     override var acceptsFirstResponder: Bool { true }
     override func becomeFirstResponder() -> Bool { window?.makeFirstResponder(chooseButton) ?? false }
 
-    func refreshSelection() { selectionButton.isEnabled = selectionAvailable() }
+    func refreshSelection() { selectionButton.isEnabled = selectionAllowed && selectionAvailable() }
 
     override func layout() {
         super.layout()

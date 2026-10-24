@@ -33,6 +33,15 @@ extension MainWindowController: NSMenuItemValidation {
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         guard tabs.indices.contains(current) else { return false }
+        if view.showsAirDrop, let action = item.action,
+            [
+                #selector(cut(_:)), #selector(copy(_:)), #selector(copyLocation(_:)), #selector(renameItem(_:)),
+                #selector(moveToTrash(_:)), #selector(deleteItem(_:)), #selector(toggleSelectionMode(_:)),
+                #selector(showSearch(_:)), #selector(showFilterBar(_:)), #selector(setViewMode(_:)), #selector(zoomIn(_:)), #selector(zoomOut(_:)),
+            ].contains(action)
+        {
+            return false
+        }
         // Shortcuts without ⌘ (⌫, ⌥←, ⌥1…), and any on a key that moves the insertion point (⌘← Back, ⌘↑ Up), must not
         // steal keys while typing in a field or the terminal.
         // Only key presses are affected: the same items stay usable from an open menu.
@@ -134,7 +143,8 @@ extension MainWindowController: NSMenuItemValidation {
             return !TrashInfo.isEmpty
 
         // Split view
-        case #selector(copyToOtherView(_:)), #selector(moveToOtherView(_:)): return tab.isSplit
+        case #selector(copyToOtherView(_:)), #selector(moveToOtherView(_:)):
+            return tab.isSplit && !view.showsAirDrop && tab.inactive?.showsAirDrop != true
         case #selector(splitToTabs(_:)), #selector(popOutSplit(_:)), #selector(focusOtherView(_:)): return tab.isSplit
         case #selector(focusLeftPane(_:)): return tab.isSplit && tab.activeIsSecondary
         case #selector(focusRightPane(_:)): return tab.isSplit && !tab.activeIsSecondary

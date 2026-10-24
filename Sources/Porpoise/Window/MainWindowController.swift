@@ -342,6 +342,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         toolbar.forward.isEnabled = v.history.canGoForward
         // Same rule as goUp(_:) and its menu item.
         toolbar.up.isEnabled = v.canGoUp
+        toolbar.viewMode.isEnabled = !v.showsAirDrop
+        toolbar.search.isEnabled = !v.showsAirDrop
         toolbar.viewMode.iconName = v.model.props.mode.iconName
         toolbar.linkFolders.isToggled = t.linkedRoots != nil
         toolbar.linkFolders.iconName = t.missingCounterpart == nil ? "insert-link" : "edit-unlink"

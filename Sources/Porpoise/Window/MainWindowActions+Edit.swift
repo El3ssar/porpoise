@@ -61,6 +61,7 @@ extension MainWindowController {
     }
 
     @objc func showFilterBar(_ sender: Any?) {
+        guard !view.showsAirDrop else { return }
         if !view.filterBar.isHidden && window?.firstResponder === view.filterBar.field.currentEditor() {
             view.filterBarClosed(view.filterBar)
         } else {
@@ -69,6 +70,7 @@ extension MainWindowController {
     }
 
     @objc func showSearch(_ sender: Any?) {
+        guard !view.showsAirDrop else { return }
         if !view.searchBar.isHidden && sender is FlatButton { view.searchBarClosed(view.searchBar) } else { view.showSearch() }
         syncToActiveView()
     }
@@ -97,13 +99,13 @@ extension MainWindowController {
     }
 
     @objc func copyToOtherView(_ sender: Any?) {
-        guard let other = tab.inactive else { return }
+        guard let other = tab.inactive, !other.showsAirDrop, !view.showsAirDrop else { return }
         guard hasSelection else { enterSelectionMode(prompt: "Select the files and folders that should be copied to the other view."); return }
         FileOperationsController.shared.run(.copy, selectedURLs, to: other.url, window: window)
     }
 
     @objc func moveToOtherView(_ sender: Any?) {
-        guard let other = tab.inactive else { return }
+        guard let other = tab.inactive, !other.showsAirDrop, !view.showsAirDrop else { return }
         guard hasSelection else { enterSelectionMode(prompt: "Select the files and folders that should be moved to the other view."); return }
         FileOperationsController.shared.run(.move, selectedURLs, to: other.url, window: window)
     }

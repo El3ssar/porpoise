@@ -124,6 +124,50 @@ import Testing
 
     }
 
+    @Test func airDropDisablesFilesystemCommandsAndOtherPaneDestinations() async throws {
+        let scratch = try Scratch(), file = try scratch.file("original", "original")
+        let controller = MainWindowController(urls: [scratch.url], split: [PlacesModel.airDropURL])
+        defer { controller.window?.close() }
+        controller.showWindow(nil)
+        try #require(await eventually { !controller.tab.primary.model.isLoading })
+        controller.tab.setActive(secondary: false); controller.syncToActiveView()
+        controller.view.model.selection = [file]
+        for action in [#selector(MainWindowController.copyToOtherView(_:)), #selector(MainWindowController.moveToOtherView(_:))] {
+            #expect(!controller.validateMenuItem(NSMenuItem(title: "Other View", action: action, keyEquivalent: "")))
+        }
+        let before = FileOperationsController.shared.activities.count
+        controller.copyToOtherView(nil); controller.moveToOtherView(nil)
+        #expect(FileOperationsController.shared.activities.count == before)
+        #expect(scratch.read("original") == "original")
+        controller.tab.setActive(secondary: true); controller.syncToActiveView()
+        #expect(!controller.toolbar.viewMode.isEnabled && !controller.toolbar.search.isEnabled)
+        for action in [
+            #selector(MainWindowController.renameItem(_:)), #selector(MainWindowController.cut(_:)),
+            #selector(MainWindowController.moveToTrash(_:)), #selector(MainWindowController.deleteItem(_:)),
+            #selector(MainWindowController.setViewMode(_:)), #selector(MainWindowController.showSearch(_:)),
+        ] { #expect(!controller.validateMenuItem(NSMenuItem(title: "Files", action: action, keyEquivalent: ""))) }
+        controller.showSearch(nil)
+        #expect(controller.view.searchBar.isHidden && !controller.view.selectionMode)
+    }
+
+    @Test func aMissingPreviousItemRejectsTheWholeSelectionOffMain() async throws {
+        let scratch = try Scratch(), first = try scratch.file("first", "keep"), second = try scratch.file("second", "gone")
+        let controller = MainWindowController(urls: [scratch.url])
+        defer { controller.window?.close() }
+        controller.showWindow(nil)
+        try #require(await eventually { !controller.view.model.isLoading })
+        controller.view.model.selection = [first, second]
+        controller.goAirDrop(nil); controller.view.layoutSubtreeIfNeeded()
+        let page = try #require(controller.view.airDropPage)
+        #expect(page.selectionButton.isEnabled)
+        try FileManager.default.removeItem(at: second)
+        var sent = false
+        controller.view.sendAirDrop([first, second], from: page) { _, _ in sent = true }
+        try #require(await eventually { controller.view.messageBar.text.contains("Nothing was shared") })
+        #expect(!sent && !page.selectionButton.isEnabled)
+        #expect(scratch.read("first") == "keep")
+    }
+
     @Test func lightDarkAndSplitCaptures() async throws {
         let controller = MainWindowController(urls: [PlacesModel.airDropURL])
         defer { controller.window?.close() }

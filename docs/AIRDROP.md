@@ -2,7 +2,7 @@
 
 Use **File › AirDrop…**, **AirDrop…** in a file's context menu, or drop files and folders onto **AirDrop** in Places. The native macOS AirDrop chooser opens so you can select a recipient. A drop always sends a copy; Command and Option never turn it into a move or remove the original. Multiple selected items are sent together.
 
-**Go › AirDrop** (⇧⌘R) and clicking AirDrop in Places open the AirDrop page inside the current Porpoise pane. Use its drop zone, Choose Files… or Send Selection to open the system device sheet in the Porpoise window. Send Selection uses the other pane’s selected items, or the selection held before opening AirDrop. AirDrop supports tabs, Back/Forward and session restoration. Change discoverability using the AirDrop controls in Control Centre. AirDrop depends on the Mac's normal hardware, connectivity and receiving settings.
+**Go › AirDrop** (⇧⌘R) and clicking AirDrop in Places open the AirDrop page inside the current Porpoise pane. Use its drop zone, Choose Files… or Send Selection to open the system device sheet in the Porpoise window. Send Selection uses the other pane’s selected items, or the selection held before opening AirDrop. AirDrop supports tabs, Back/Forward and session restoration. Change discoverability using the AirDrop controls in Control Center. AirDrop depends on the Mac's normal hardware, connectivity and receiving settings.
 
 **File › Share…** and the file context menu offer the native sharing picker, including the sharing services installed on the Mac. **Share…** and **AirDrop…** can also be added using **Customize Toolbar…**. The Shelf's context menu offers both actions for its selected items, or the whole Shelf when none is selected.
 
