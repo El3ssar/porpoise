@@ -24,6 +24,11 @@ struct S3Operation: CloudStagedDownloadRecord {
     mutating func beginDownload() {}
 }
 
+private enum S3UploadClaims {
+    static let lock = NSLock()
+    static var active: Set<String> = []
+}
+
 extension S3Client {
     /// Immutable revision reads and durable staging are owned by the shared download engine.
     func download(_ object: S3Object, operationID: UUID = UUID(), context: CloudTransferContext = .init()) async throws -> URL {
@@ -57,7 +62,7 @@ extension S3Client {
     /// that part number. No session secrets are needed: every request is signed anew with Keychain credentials.
     /// Opaque operations cannot be resumed by a later job: abort their parts on failure or cancellation.
     public func upload(_ local: URL, key: String, context: CloudTransferContext = .init()) async throws {
-        try await discardStaleUploads()
+        try? await discardStaleUploads()
         let operation = UUID()
         var record = S3Operation(operationID: operation, kind: "upload", key: key)
         record.temporary = true; record.started = Date()
@@ -74,7 +79,7 @@ extension S3Client {
             (try local.resourceValues(forKeys: [.isRegularFileKey])).isRegularFile == true
         else { throw S3Error.invalidLocation }
         try migrateUpload(operationID, from: legacyJournal)
-        try journal.claim(operationID); defer { journal.release(operationID) }
+        let claim = try claimUpload(operationID); defer { releaseUpload(operationID, claim: claim) }
         var record = try journal.load(operationID) ?? S3Operation(operationID: operationID, kind: "upload", key: key)
         guard record.kind == "upload", record.key == key, record.localURL == nil || record.localURL == local,
             record.sourceFingerprint == nil || record.sourceFingerprint == fingerprint
@@ -135,6 +140,22 @@ extension S3Client {
             do { try await abortUpload(operationID: record.operationID) } catch CloudJournalError.busy { continue }
         }
     }
+    /// Providers may construct distinct clients for the same account; sweeps must respect all their live uploads.
+    func claimUpload(_ operation: UUID) throws -> String {
+        let key = journal.folder.resolvingSymlinksInPath().appendingPathComponent(operation.uuidString).path
+        try S3UploadClaims.lock.withLock {
+            guard S3UploadClaims.active.insert(key).inserted else { throw CloudJournalError.busy }
+        }
+        do { try journal.claim(operation) } catch {
+            S3UploadClaims.lock.withLock { _ = S3UploadClaims.active.remove(key) }
+            throw error
+        }
+        return key
+    }
+    func releaseUpload(_ operation: UUID, claim: String) {
+        journal.release(operation)
+        S3UploadClaims.lock.withLock { _ = S3UploadClaims.active.remove(claim) }
+    }
     /// Preserve explicit resume identifiers when upgrading from the old disposable journal location.
     /// Download partials stay at their original location; only metadata-only upload records migrate.
     func migrateUpload(_ operation: UUID, from legacy: CloudJournal<S3Operation>?) throws {
@@ -144,7 +165,7 @@ extension S3Client {
     }
     public func abortUpload(operationID: UUID) async throws {
         try migrateUpload(operationID, from: legacyJournal)
-        try journal.claim(operationID); defer { journal.release(operationID) }
+        let claim = try claimUpload(operationID); defer { releaseUpload(operationID, claim: claim) }
         guard let record = try journal.load(operationID), record.kind == "upload" else { throw S3Error.invalidLocation }
         if let id = record.uploadID {
             do { _ = try await send("DELETE", key: record.key, query: ["uploadId": id]) } catch S3Error.service(404, _) {}
