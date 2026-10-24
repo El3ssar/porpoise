@@ -145,7 +145,7 @@ import Testing
                     #expect(presented == before + 1)
                     #expect(recorder.targets.last == url && recorder.opened == 0)
                     #expect(model.selection == expected && model.currentURL == url)
-                    #expect(list.mouseDownIndex == nil && list.rubberStart == nil)
+                    #expect(list.mouseDownURL == nil && list.rubberStart == nil)
                 }
             }
         }

@@ -73,7 +73,6 @@ extension ItemListView {
     private func dropStaleIndexes() {
         let n = frames.count
         if let i = hoverIndex, i >= n { hoverIndex = nil }
-        if let i = mouseDownIndex, i >= n { mouseDownIndex = nil }
         if let i = dropTargetIndex, i >= n { dropTargetIndex = nil }
     }
 

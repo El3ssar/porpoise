@@ -22,7 +22,8 @@ final class AppsGridView: NSView, NSDraggingSource {
     private var hover: Int?
     let hoverFade = HoverFade(name: "apps.hover")
     private var mouseDownPoint: CGPoint?
-    private var mouseDownIndex: Int?
+    /// The app a press is on: by URL, since apps installed or removed during the press move the rows.
+    private var mouseDownURL: URL?
     private var mouseDownSelectedBefore = false
     /// Clicks, Shift and Cmd, and moves of the current app, as in the folder view.
     private var selecting: ItemSelectionController { ItemSelectionController(model: model) }
@@ -674,7 +675,7 @@ final class AppsGridView: NSView, NSDraggingSource {
     override func mouseDown(with event: NSEvent) {
         if SecondaryClick.matches(event) {
             mouseDownPoint = nil
-            mouseDownIndex = nil
+            mouseDownURL = nil
             SecondaryClick.present(event, in: self)
             return
         }
@@ -682,7 +683,7 @@ final class AppsGridView: NSView, NSDraggingSource {
         let p = convert(event.locationInWindow, from: nil)
         let i = index(at: p)
         mouseDownPoint = p
-        mouseDownIndex = i
+        mouseDownURL = i.map { model.rows[$0].item.url }
         guard let i else {
             selecting.clickBackground(modifiers: event.modifierFlags)
             return
@@ -695,7 +696,7 @@ final class AppsGridView: NSView, NSDraggingSource {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let start = mouseDownPoint, mouseDownIndex != nil else { return }
+        guard let start = mouseDownPoint, let pressed = mouseDownURL, model.index(of: pressed) != nil else { return }
         let p = convert(event.locationInWindow, from: nil)
         guard hypot(p.x - start.x, p.y - start.y) > 4 else { return }
         mouseDownPoint = nil
@@ -705,8 +706,10 @@ final class AppsGridView: NSView, NSDraggingSource {
     override func mouseUp(with event: NSEvent) {
         guard !SecondaryClick.matches(event) else { mouseDownPoint = nil; return }
         // A plain click on one of several selected apps selects just that one.
-        // The index is from mouseDown: an app installed or removed meanwhile can have changed the rows.
-        if mouseDownPoint != nil, let i = mouseDownIndex, event.modifierFlags.intersection([.command, .shift]).isEmpty, event.clickCount == 1 {
+        // The app pressed, wherever an app installed or removed meanwhile put it.
+        if mouseDownPoint != nil, let pressed = mouseDownURL, let i = model.index(of: pressed),
+            event.modifierFlags.intersection([.command, .shift]).isEmpty, event.clickCount == 1
+        {
             selecting.clickEnded(i, wasSelected: mouseDownSelectedBefore)
             needsDisplay = true
         }
