@@ -281,7 +281,8 @@ final class TabBarView: NSView {
     }
 
     override func otherMouseUp(with event: NSEvent) {
-        // Middle-click closes a tab.
+        // Middle-click closes a tab; other buttons (the mouse's Back and Forward) go up the responder chain.
+        guard event.buttonNumber == 2 else { return super.otherMouseUp(with: event) }
         if let i = tab(at: convert(event.locationInWindow, from: nil)) { delegate?.tabBar(self, close: i) }
     }
 

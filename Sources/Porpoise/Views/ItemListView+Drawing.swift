@@ -99,7 +99,7 @@ extension ItemListView {
         let incoming = model.incomingProgress[item.url]
         let cloud = model.shownCloud(for: item).state
         NSGraphicsContext.saveGraphicsState()
-        if incoming != nil || dimmedOffline(cloud) || gitBadge(item) == .ignored { NSGraphicsContext.current?.cgContext.setAlpha(0.5) }
+        if rowDimmed(item, cloud: cloud) { NSGraphicsContext.current?.cgContext.setAlpha(0.5) }
         defer {
             NSGraphicsContext.restoreGraphicsState()
             if let incoming, mode != .details, mode != .columns {
@@ -189,12 +189,19 @@ extension ItemListView {
         }
     }
 
+    /// A row drawn at half strength, icon and text: still arriving, offline in the cloud, or ignored by Git.
+    func rowDimmed(_ item: FileItem, cloud: CloudState) -> Bool {
+        model.incomingProgress[item.url] != nil || dimmedOffline(cloud) || gitBadge(item) == .ignored
+    }
+
+    /// The icon's own strength: half for cut and hidden items. (A dimmed row's icon is dimmed with the row, once.)
+    func iconAlpha(_ item: FileItem) -> CGFloat { cutURLs.contains(item.url) || item.isHidden ? 0.5 : 1 }
+
     /// Draws the preview, folder preview or icon; returns the image and where it went (for the cloud badge).
     private func drawIcon(_ i: Int) -> (NSImage, CGRect) {
         let item = model.rows[i].item
         let ir = iconRect(i)
-        let alpha: CGFloat =
-            (cutURLs.contains(item.url) || item.isHidden || model.incomingProgress[item.url] != nil || gitBadge(item) == .ignored) ? 0.5 : 1
+        let alpha = iconAlpha(item)
         if model.props.previews {
             if Thumbnails.wantsPreview(item), let thumb = Thumbnails.shared.thumbnail(for: item, size: iconSize, owner: self) {
                 let ts = thumb.size

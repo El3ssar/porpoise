@@ -91,7 +91,8 @@ final class ItemListView: NSView {
     var rubberBand: CGRect?
     var rubberStart: CGPoint?
     var rubberBaseSelection: Set<URL> = []
-    var mouseDownIndex: Int?
+    /// The item a press is on: by URL, since a reload during the press can move the rows.
+    var mouseDownURL: URL?
     var mouseDownPoint: CGPoint = .zero
     var mouseDownSelectedBefore = false
     /// The items being opened come from a double-click (Column view starts its columns at a double-clicked folder).

@@ -6,7 +6,8 @@ import PorpoiseFileSystem
 /// unindexed folders included). Everywhere: Spotlight, like Dolphin's Baloo search, with live results; where it finds
 /// nothing or doesn't answer, the folders are searched as above. Without the tools, a simple walk of the folders.
 public final class SearchRunner: NSObject {
-    private let update: ([FileItem], Bool) -> Void
+    /// Where the results go (tests deliver stale ones by hand).
+    let update: ([FileItem], Bool) -> Void
     private let spec: SearchSpec?
     private let scope: URL
     private let contents: Bool

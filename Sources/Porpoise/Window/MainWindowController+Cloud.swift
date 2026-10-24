@@ -139,7 +139,7 @@ extension MainWindowController {
         let folder = c.url
         if c.list.isRenaming { c.list.cancelRename() }
         let edit = CloudEdit(ListingEdit(folder: folder, removed: Set(urls)))
-        CloudAccounts.shared.trash(urls) { [weak self] trashed, error in
+        CloudAccounts.shared.trash(urls) { [weak self, c] trashed, error in
             edit.end(rollback: false)
             // Whatever didn't go comes back.
             let kept = originals.filter { !trashed.contains($0.url) }
@@ -154,7 +154,8 @@ extension MainWindowController {
             if let error { text += ". \(kept.count) couldn’t be moved: \(error.localizedDescription)" }
             c.cloudTrashNotice = Set(trashed)
             if CloudAccounts.shared.supportsTrashUndo(trashed) {
-                c.messageBar.show(text, error: false, action: "Undo") { [weak self] in
+                c.messageBar.show(text, error: false, action: "Undo") { [weak self, weak c] in
+                    guard let c else { return }
                     self?.undoCloudTrash(originals.filter { trashed.contains($0.url) }, folder: folder, in: c)
                 }
             } else {

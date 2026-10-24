@@ -55,7 +55,13 @@ final class MessageBar: NSView {
         onDismiss?()
     }
 
-    func dismiss() { isHidden = true; onDismiss?() }
+    /// Hidden, and its handlers let go: they often hold the pane or window the bar is in.
+    func dismiss() {
+        isHidden = true
+        actionHandler = nil
+        closeHandler = nil
+        onDismiss?()
+    }
     /// Where the action button is, in the bar (nil without one).
     var actionFrame: CGRect? { isHidden || actionButton.isHidden ? nil : actionButton.frame }
     var text: String { label.stringValue }

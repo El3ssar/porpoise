@@ -87,7 +87,7 @@ extension ItemListView {
 
     override func mouseDown(with event: NSEvent) {
         if SecondaryClick.matches(event) {
-            mouseDownIndex = nil
+            mouseDownURL = nil
             rubberStart = nil
             rubberBand = nil
             SecondaryClick.present(event, in: self)
@@ -99,7 +99,7 @@ extension ItemListView {
         if downloadFromCloudBadge(at: p) { return }
         mouseDownPoint = p
         let idx = index(at: p)
-        mouseDownIndex = idx
+        mouseDownURL = idx.map { model.rows[$0].item.url }
         let mods = event.modifierFlags
 
         // Column view: a click in another column gives it the focus, even on the item already selected there.
@@ -129,18 +129,18 @@ extension ItemListView {
         // Expander and marker clicks are complete here: mouseUp must not treat them as an item click.
         if let er = expanderRect(i), er.insetBy(dx: -2, dy: -2).contains(p) {
             model.toggleExpanded(url)
-            mouseDownIndex = nil
+            mouseDownURL = nil
             return
         }
         if Settings.shared.showSelectionMarker && markerRect(i).contains(p) {
             toggleSelected(url)
-            mouseDownIndex = nil
+            mouseDownURL = nil
             return
         }
         mouseDownSelectedBefore = model.selection.contains(url)
         if selectionModeActive && !mods.contains(.shift) {
             toggleSelected(url)
-            mouseDownIndex = nil
+            mouseDownURL = nil
             return
         }
         selecting.click(i, modifiers: mods)
@@ -179,8 +179,10 @@ extension ItemListView {
             autoscroll(with: event)
             return
         }
-        if let i = mouseDownIndex, hypot(p.x - mouseDownPoint.x, p.y - mouseDownPoint.y) > 4 {
-            mouseDownIndex = nil
+        if let pressed = mouseDownURL, hypot(p.x - mouseDownPoint.x, p.y - mouseDownPoint.y) > 4 {
+            mouseDownURL = nil
+            // The pressed item, wherever a reload put it (none: it went).
+            guard let i = model.index(of: pressed) else { return }
             startDrag(from: i, event: event)
         }
     }
@@ -198,7 +200,7 @@ extension ItemListView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard !SecondaryClick.matches(event) else { mouseDownIndex = nil; return }
+        guard !SecondaryClick.matches(event) else { mouseDownURL = nil; return }
         if rubberStart != nil {
             rubberStart = nil
             rubberBand = nil
@@ -206,13 +208,13 @@ extension ItemListView {
             return
         }
         // Click on an already selected item without modifiers: select just that one.
-        if let i = mouseDownIndex, i < model.rows.count, event.clickCount == 1, !event.modifierFlags.contains(.command),
+        if let pressed = mouseDownURL, let i = model.index(of: pressed), event.clickCount == 1, !event.modifierFlags.contains(.command),
             !event.modifierFlags.contains(.shift)
         {
             selecting.clickEnded(i, wasSelected: mouseDownSelectedBefore)
             needsDisplay = true
         }
-        mouseDownIndex = nil
+        mouseDownURL = nil
     }
 
     override func otherMouseDown(with event: NSEvent) {

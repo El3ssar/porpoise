@@ -217,7 +217,7 @@ extension PlacesPanel {
     func eject(_ e: PlaceEntry) {
         guard ejecting.insert(e.url).inserted else { return }
         // Every view showing the volume (all windows, tabs and split sides) must let go of it.
-        MainWindowController.leaveVolume(e.url)
+        let left = MainWindowController.leaveVolume(e.url)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let failure: Error?
             do { try NSWorkspace.shared.unmountAndEjectDevice(at: e.url); failure = nil } catch { failure = error }
@@ -225,6 +225,8 @@ extension PlacesPanel {
                 guard let self else { return }
                 self.ejecting.remove(e.url)
                 guard let failure else { return }
+                // Still mounted: every pane goes back where it was.
+                left.putBack()
                 let a = NSAlert(error: failure)
                 a.messageText = "Couldn’t eject “\(e.title)”"
                 if let w = self.window { a.beginSheetModal(for: w) } else { a.runModal() }
