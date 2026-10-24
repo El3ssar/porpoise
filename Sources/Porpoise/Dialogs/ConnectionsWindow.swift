@@ -346,15 +346,16 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
             f.problemLabel.stringValue = problem
             return false
         }
-        if !f.secret.isEmpty {
-            do { try credentials.saveSecret(f.secret, for: p) } catch {
-                f.problemLabel.stringValue = error.localizedDescription
-                return false
-            }
-        }
+        // The connection first: a secret saved for one that then failed to save would stay in the Keychain, orphaned.
         do { try profiles.save(p).get() } catch {
             f.problemLabel.stringValue = "Connection wasn’t saved. " + error.localizedDescription + " Try Save again."
             return false
+        }
+        if !f.secret.isEmpty {
+            do { try credentials.saveSecret(f.secret, for: p) } catch {
+                f.problemLabel.stringValue = "The connection was saved, but not its password: " + error.localizedDescription
+                return false
+            }
         }
         f.problemLabel.stringValue = ""
         select(p.id)

@@ -275,4 +275,18 @@ import Testing
         let names = try FileManager.default.contentsOfDirectory(atPath: s.url.path).sorted()
         #expect(names.count == 2 && names.contains("a.txt") && s.read("a.txt") == "a", "\(names)")
     }
+
+    /// #21: a server Connections manages, with a problem in its fields, says so instead of becoming a plain place.
+    @Test func aServerWithAProblemSaysSo() throws {
+        let form = ServerForm(kind: .sftp)
+        form.server.stringValue = "example.invalid"
+        form.port.stringValue = "70000"
+        #expect(form.url() != nil)  // an address it could open…
+        let draft = try #require(form.draftProfile())
+        #expect(draft.problem == "The port must be between 1 and 65535.")  // …but not a connection to save
+        #expect(form.profile() == nil)
+        form.port.stringValue = "2222"
+        #expect(form.draftProfile()?.problem == nil && form.profile()?.port == 2222)
+        #expect(ServerForm(kind: .webdav).draftProfile() == nil)  // not one Connections manages: a place, as before
+    }
 }
