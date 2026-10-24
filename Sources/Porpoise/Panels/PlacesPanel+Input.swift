@@ -79,7 +79,7 @@ extension PlacesPanel {
 
     private func tooltip(for e: PlaceEntry?) -> String? {
         guard let e else { return nil }
-        if e.url == PlacesModel.airDropURL { return "Drop files here to send with AirDrop." }
+        if e.url == PlacesModel.airDropURL { return "Opens Finder’s AirDrop window. Drop files here to send a copy." }
         if e.isVolume, let c = capacities[e.url] { return c.summary }
         if e.url.isFileURL { return e.url.path }
         if let account = CloudAccounts.shared.account(for: e.url) {

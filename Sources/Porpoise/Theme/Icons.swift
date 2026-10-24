@@ -62,7 +62,34 @@ final class Icons {
         let tintKey = Theme.paletteColor(.folderTint, dark: true).hex + Theme.paletteColor(.folderTint, dark: false).hex
         let key = "\(preferences.iconTheme)|\(preferences.folderVariant)|\(tintKey)|\(name)|\(px)|\(selected)|\(folder)" as NSString
         if let img = cache.object(forKey: key) { return img }
-        guard let url = IconTheme.shared.file(name, size: px) else { return nil }
+        let image: NSImage?
+        if name == "airdrop", ["Native macOS", Self.nativeColourTheme].contains(preferences.iconTheme) {
+            image = airDropImage(size: size, selected: selected, systemGlyph: Self.systemAirDropGlyph)
+        } else {
+            image = portableImage(name, size: size, selected: selected, folder: folder)
+        }
+        guard let image else { return nil }
+        store(image, key, size: size, looks: 2)
+        return image
+    }
+
+    /// A missing system resource must leave the action visible. The optional source also permits a real fallback
+    /// rendering test on systems where CoreTypes is present.
+    func airDropImage(size: CGFloat, selected: Bool, systemGlyph: NSImage?) -> NSImage? {
+        guard let source = systemGlyph else { return portableImage("airdrop", size: size, selected: selected, folder: false) }
+        return NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            context.saveGState(); context.beginTransparencyLayer(in: rect, auxiliaryInfo: nil)
+            source.draw(in: rect)
+            (selected ? Theme.selectionText : Theme.windowText).setFill()
+            rect.fill(using: .sourceAtop)
+            context.endTransparencyLayer(); context.restoreGState()
+            return true
+        }
+    }
+
+    private func portableImage(_ name: String, size: CGFloat, selected: Bool, folder: Bool) -> NSImage? {
+        guard let url = IconTheme.shared.file(name, size: Int(size)) else { return nil }
         func render(dark: Bool) -> NSImage? {
             let source: NSImage?
             if url.pathExtension == "svg", let svg = try? String(contentsOf: url, encoding: .utf8) {
@@ -81,9 +108,14 @@ final class Icons {
             (NSAppearance.currentDrawing().isDark ? darkImg : lightImg).draw(in: r)
             return true
         }
-        store(img, key, size: size, looks: 2)
         return img
     }
+
+    /// Finder's own sidebar artwork, loaded from macOS rather than copied into the app. Public symbols are fallback
+    /// for a system version without this CoreTypes resource; portable icon themes retain their bundled SVG.
+    static let systemAirDropGlyph: NSImage? =
+        NSImage(contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarAirDrop.icns")
+        ?? NSImage(systemSymbolName: "airdrop", accessibilityDescription: "AirDrop")
 
     /// Icons drawn at another size on every frame (mid-zoom), as plain bitmaps per look: drawn as they are, an icon
     /// that follows light and dark renders itself again for each new size it's drawn at.

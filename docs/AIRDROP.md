@@ -8,8 +8,10 @@ Use **File › AirDrop…**, **AirDrop…** in a file's context menu, or drop fi
 
 Items from connected servers, cloud accounts, archives and devices are downloaded before the chooser opens. **Window › Activity** shows **Preparing to share**, with progress, pause and cancel. The whole selection must be prepared successfully: an unavailable item, a failed download or cancellation prevents a partial send. Identically named items from different folders keep their names in separate private temporary folders. Cloud-native document exports use the provider's downloaded name and format.
 
-Temporary copies stay available while the picker and chosen sharing service use them. They are removed after dismissal, cancellation, success or failure; removing large trees happens off the UI thread. Original local items and remote sources remain in place. Temporary preparation destinations are not offered as resumable user copy jobs after interruption. A crash can leave private files in the operating system's temporary directory until its cleanup runs.
+Temporary copies stay available while the picker and chosen sharing service use them. Cancellation, dismissal without sharing and failure remove them promptly. After a successful native callback they remain for a ten-minute grace period, because the system sharing process may still be reading them; cleanup runs off the UI thread. Quitting cancels the remaining sharing sessions and waits asynchronously for temporary copies to be removed. Original local items and remote sources remain in place. Temporary preparation destinations are not offered as resumable user copy jobs after interruption. A crash can leave private files in the operating system's temporary directory until its cleanup runs.
 
 Downloaded symlinks pointing outside the prepared selection are refused so the sharing service cannot read unrelated local files. Virtual locations such as Recents and Network are not files to share; choose their actual files instead. A missing Shelf item must be reconnected or removed before sharing that selection.
+
+The native icon themes use macOS’s own Finder sidebar glyph; portable icon themes use their themed AirDrop artwork.
 
 AirDrop is added once to existing Places configurations. It can be hidden, removed or reordered like other Places bookmarks.
