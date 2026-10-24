@@ -71,7 +71,7 @@ watched() {
     rm -f "$fifo"
     # Crash reports are written a moment after the process dies.
     if ((status != 0)); then sleep 5; python3 "$here/crash-reports.py" "$marker"; return "$status"; fi
-    python3 "$here/check-test-completion.py" "$discovery" "$output"
+    python3 "$here/check-test-completion.py" "$discovery" "$output" -- "$@"
 }
 
 status=0

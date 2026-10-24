@@ -75,6 +75,31 @@ class CompletionTests(unittest.TestCase):
         output = run_output('Unknown', 0) + '\x1b[32m' + run_output('Math', 1) + '\x1b[0m'
         self.assertEqual(completion.check(discovery, output), (1, 1, 2))
 
+    def test_discovery_is_filtered_even_when_swift_test_list_ignores_filters(self):
+        self.assertEqual(completion.check(self.discovery, run_output('Buttons', 1),
+                                         ['--filter=Buttons|Math', '--skip', 'Math']), (1, 1, 1))
+        self.assertEqual(completion.check(self.discovery, run_output('Math', 2),
+                                         ['--filter', 'one', '--filter', 'two']), (2, 1, 1))
+
+    def test_filter_selecting_nothing_fails(self):
+        with self.assertRaisesRegex(ValueError, 'no tests'):
+            completion.check(self.discovery, run_output('Buttons', 1), ['--filter', 'Typo'])
+
+    def test_xctest_and_swift_testing_are_counted_separately(self):
+        discovery = self.discovery + 'CoreTests.Legacy/testOldAPI\n'
+        output = ("Test Suite 'All tests' started at now\nTest Suite 'Legacy' started at now\n"
+                  "Test Suite 'Legacy' passed at now\nExecuted 1 test, with 0 failures\n"
+                  "Test Suite 'All tests' passed at now\nExecuted 1 test, with 0 failures\n"
+                  + run_output('Math', 2) + run_output('Buttons', 1))
+        self.assertEqual(completion.check(discovery, output), (4, 3, 3))
+
+    def test_xctest_early_exit_and_missing_final_count_fail(self):
+        discovery = 'CoreTests.Legacy/testOldAPI\n'
+        output = "Test Suite 'Selected tests' started at now\nTest Suite 'CoreTests.Legacy' started at now\n"
+        for suffix in ['', "Test Suite 'Selected tests' passed at now\n"]:
+            with self.subTest(suffix=suffix), self.assertRaisesRegex(ValueError, 'XCTest host exited'):
+                completion.check(discovery, output + suffix)
+
 
 class WatchdogProcessTests(unittest.TestCase):
     def setUp(self):
@@ -90,11 +115,13 @@ class WatchdogProcessTests(unittest.TestCase):
         swift.write_text('''#!/usr/bin/env python3
 import json, os, sys, time
 scenario = json.loads(os.environ['FAKE_SWIFT_SCENARIO'])
+alone = os.environ.get('PORPOISE_TESTS_ALONE') == '1'
 if sys.argv[1] == 'build': sys.exit(0)
 if 'list' in sys.argv:
-    print(scenario.get('discovery', 'AppTests.Buttons/click()'))
+    discovery = scenario.get('discovery', 'AppTests.Buttons/click()')
+    print(discovery.replace('Buttons', 'BusyPoolTests') if alone else discovery)
     sys.exit(scenario.get('discovery_status', 0))
-print(scenario['output'], flush=True)
+print(scenario['output'].replace('Buttons', 'BusyPoolTests') if alone else scenario['output'], flush=True)
 time.sleep(scenario.get('sleep', 0))
 sys.exit(scenario.get('status', 0))
 ''')
