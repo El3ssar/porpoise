@@ -1,10 +1,11 @@
 #!/bin/bash
 # Builds Porpoise.app into build/ and (with --install) copies it to ~/Applications.
-# Works with only the Command Line Tools (no Xcode needed).
+# Full Xcode is required to extract the bundled Shortcuts actions.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # Use the Command Line Tools if Xcode is installed but its license isn't accepted yet.
 if ! xcodebuild -version >/dev/null 2>&1; then export DEVELOPER_DIR=/Library/Developer/CommandLineTools; fi
+xcrun --find appintentsmetadataprocessor >/dev/null 2>&1 || { echo "Packaging Shortcuts actions requires full Xcode; select an installed Xcode developer directory." >&2; exit 1; }
 CONFIG=${CONFIG:-release}
 # No paths from the machine that builds it: sources are named relative to the project folder, and the linker's debug
 # map (object file paths, for dsymutil) is stripped from the executables below.
@@ -14,11 +15,16 @@ FLAGS=(-Xswiftc -file-prefix-map -Xswiftc "$PWD=." -Xcc "-ffile-prefix-map=$PWD=
 [ "${PORPOISE_RELEASE:-}" = 1 ] || FLAGS+=(-Xswiftc -DPORPOISE_TEST_HOOKS)
 # Only what ships: the test support targets don't build in release.
 swift build -c "$CONFIG" --arch arm64 -j "${SWIFT_JOBS:-2}" "${FLAGS[@]}" --product Porpoise
+swift build -c "$CONFIG" --arch arm64 -j "${SWIFT_JOBS:-2}" "${FLAGS[@]}" --product PorpoiseCLI
 BIN=$(swift build -c "$CONFIG" --arch arm64 "${FLAGS[@]}" --show-bin-path)
 APP=build/Porpoise.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/Porpoise" "$APP/Contents/MacOS/Porpoise"
+mkdir -p "$APP/Contents/Helpers"
+cp "$BIN/PorpoiseCLI" "$APP/Contents/Helpers/porpoise"
+strip -S "$APP/Contents/Helpers/porpoise"
+python3 scripts/build-app-intents.py --configuration "$CONFIG" --output "$APP/Contents/Resources"
 # Capture the exact linked build while its debug map and object files still exist.
 # Symbols stay outside the app/DMG. Release CI retains them as a separate artifact.
 if [ "$CONFIG" = release ]; then
@@ -183,6 +189,7 @@ SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 "${SIGN[@]}" "$SPARKLE/Autoupdate"
 "${SIGN[@]}" "$SPARKLE/Updater.app"
 "${SIGN[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
+"${SIGN[@]}" --identifier app.porpoise.Porpoise.cli "$APP/Contents/Helpers/porpoise"
 "${SIGN[@]}" --identifier app.porpoise.Porpoise.ffmpeg "$APP/Contents/Helpers/ffmpeg"
 "${SIGN[@]}" --identifier app.porpoise.Porpoise.fd "$APP/Contents/Helpers/fd"
 "${SIGN[@]}" --identifier app.porpoise.Porpoise.rg "$APP/Contents/Helpers/rg"

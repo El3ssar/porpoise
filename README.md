@@ -332,7 +332,7 @@ an optional export of diagnostics to attach (shown before saving; no file names,
 
 ## Build from source
 
-You need macOS 15+ on Apple Silicon and Xcode 26 (or its Command Line Tools).
+You need macOS 15+ on Apple Silicon and Xcode 26 or newer. Command Line Tools alone can build and test package targets; packaging the app requires full Xcode to extract its Shortcuts actions.
 
 ```bash
 ./scripts/make-app.sh             # builds build/Porpoise.app (the first run also builds the bundled FFmpeg)

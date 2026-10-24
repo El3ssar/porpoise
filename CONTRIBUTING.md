@@ -33,7 +33,7 @@ contain private paths, filenames, server names or account information. Never inc
 
 ## Building and testing
 
-You need macOS 15+ on Apple Silicon and Xcode 26 (or its command line tools).
+You need macOS 15+ on Apple Silicon and Xcode 26 or newer. Command Line Tools alone can build and test package targets; packaging the app requires full Xcode to extract its Shortcuts actions.
 
 ```bash
 swift build                    # quick compile check
