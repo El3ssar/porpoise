@@ -138,6 +138,34 @@ import Testing
         #expect(checked().contains("Places") && !checked().contains("Folders"), "\(checked())")
     }
 
+    /// Folders shown after navigating with Places shown selects the folder the window shows (the tree learns the
+    /// location when its tab comes, not only at the next navigation), and keeps following from there.
+    @Test func theFoldersTabSelectsTheFolderShown() async throws {
+        let s = try Scratch()
+        try s.folder("Projects/Porpoise/Sources/Panels")
+        let (wc, window) = try browser(s)
+        defer { window.close() }
+        func selected() -> String? {
+            let outline = (wc.folders.subviews.first as? NSScrollView)?.documentView as? NSOutlineView
+            return outline.flatMap { ($0.item(atRow: $0.selectedRow) as? FoldersPanel.Node)?.name }
+        }
+        // Once with Folders never shown, once after it was shown somewhere else.
+        for (i, target) in ["Projects/Porpoise/Sources/Panels", "Projects/Porpoise"].enumerated() {
+            wc.view.setURL(s.path(target))
+            try #require(await eventually { wc.view.url.lastPathComponent == s.path(target).lastPathComponent })
+            wc.chooseSidebarTab(.folders)
+            try #require(await eventually { selected() == s.path(target).lastPathComponent }, "pass \(i): \(selected() ?? "none")")
+            wc.chooseSidebarTab(.places)
+        }
+        wc.chooseSidebarTab(.folders)
+        wc.view.setURL(s.path("Projects/Porpoise/Sources"))
+        try #require(await eventually { selected() == "Sources" }, "\(selected() ?? "none")")
+        // A change of look reloads the tree's cells (new icons): the folder stays selected.
+        NotificationCenter.default.post(name: Settings.changed, object: "appearancePreferences")
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(selected() == "Sources")
+    }
+
     /// Switching tabs while the focus is in the tab that leaves gives it to the one that comes.
     @Test func focusFollowsTheTab() throws {
         let s = try Scratch()
@@ -219,6 +247,83 @@ import Testing
             c.layoutSubtreeIfNeeded()
             #expect(f.convert(f.bounds, to: outline).maxX <= outline.visibleRect.maxX + 0.5, "row \(r)")
         }
+    }
+
+    /// A folder 14 levels down in a 230-pt sidebar with an always-shown (legacy) scroller, as Breeze or a mouse gives:
+    /// the folder shown and the one above it keep a readable name, and no name runs under the scroller.
+    @Test func deepTreesKeepTheShownFolderReadable() async throws {
+        let s = try Scratch()
+        let levels = (1...13).map { "level-\($0)-folder" }
+        let deep = (levels + ["the-folder-shown-here"]).joined(separator: "/")
+        try s.folder(deep)
+        for i in 0..<40 { try s.folder("sibling-folder-with-a-long-name-\(i)") }
+        Settings.shared.homeURL = s.url
+        let panel = FoldersPanel(frame: NSRect(x: 0, y: 0, width: 230, height: 300))
+        let window = NSWindow(contentRect: panel.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = panel
+        defer { window.close() }
+        let scroll = try #require(panel.subviews.first as? NSScrollView)
+        scroll.scrollerStyle = .legacy
+        scroll.autohidesScrollers = false
+        let outline = try #require(scroll.documentView as? NSOutlineView)
+        panel.currentURL = s.path(deep)
+        try #require(await eventually { (outline.item(atRow: outline.selectedRow) as? FoldersPanel.Node)?.name == "the-folder-shown-here" })
+        panel.layoutSubtreeIfNeeded()
+        outline.layoutSubtreeIfNeeded()
+        #expect(scroll.verticalScroller?.isHidden == false && scroll.contentView.bounds.width < 230, "\(scroll.contentView.bounds)")
+        #expect(outline.tableColumns[0].width <= scroll.contentView.bounds.width + 0.5, "\(outline.tableColumns[0].width)")
+        let clipEnd = scroll.contentView.bounds.width
+        for r in 0..<outline.numberOfRows {
+            guard let c = outline.view(atColumn: 0, row: r, makeIfNecessary: true) as? NSTableCellView, let f = c.textField else { continue }
+            c.layoutSubtreeIfNeeded()
+            #expect(f.convert(f.bounds, to: outline).maxX <= clipEnd + 0.5, "row \(r) runs under the scroller")
+        }
+        for (row, name) in [(outline.selectedRow, "shown"), (outline.selectedRow - 1, "its parent")] {
+            let c = try #require(outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView)
+            c.layoutSubtreeIfNeeded()
+            #expect((c.textField?.bounds.width ?? 0) >= 70, "\(name): \(c.textField?.bounds.width ?? 0) pt for the name")
+        }
+    }
+
+    /// Palette themes give the selected segment their accent only while the window is key: in an inactive window the
+    /// accent fill came out darker than the other segment and read as the opposite tab.
+    @Test func paletteSwitchFallsBackToAppKitWhenInactive() throws {
+        let s = try Scratch()
+        var prefs = Settings.shared.appearancePreferences
+        prefs.themeName = "Breeze Dark"
+        Settings.shared.appearancePreferences = prefs
+        Theme.lookChanged()
+        defer {
+            Settings.shared.appearancePreferences.themeName = AppearanceTheme.systemName
+            Theme.lookChanged()
+        }
+        let (wc, window) = try browser(s)
+        defer { window.close() }
+        #expect(!Tokens.isNative && !window.isKeyWindow)
+        #expect(wc.navigator.picker.selectedSegmentBezelColor == nil)
+        // The window becoming key or not is followed.
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        #expect(wc.navigator.picker.selectedSegmentBezelColor == nil)
+    }
+
+    /// A hairline under the switch while the tab's list is scrolled away from its top, none at the top.
+    @Test func anEdgeShowsUnderTheSwitchWhenTheListIsScrolled() throws {
+        let s = try Scratch()
+        let (wc, window) = try browser(s)
+        defer { window.close() }
+        window.setContentSize(NSSize(width: 1000, height: 420))
+        window.layoutIfNeeded()
+        let nav = wc.navigator
+        #expect(nav.edge.isHidden && !nav.contentIsScrolled)
+        let clip = wc.placesScroll.contentView
+        let doc = try #require(wc.placesScroll.documentView)
+        try #require(doc.bounds.height > clip.bounds.height, "Places should need scrolling at 420 pt: \(doc.bounds.height)")
+        doc.scroll(doc.isFlipped ? NSPoint(x: 0, y: doc.bounds.maxY) : .zero)
+        #expect(nav.contentIsScrolled && !nav.edge.isHidden)
+        #expect(abs(nav.edge.frame.maxY - (nav.picker.frame.minY - Tokens.Space.s)) < 0.5 && nav.edge.frame.height == 1)
+        doc.scroll(doc.isFlipped ? .zero : NSPoint(x: 0, y: doc.bounds.maxY))
+        #expect(nav.edge.isHidden)
     }
 
     /// A hidden folder on the way to the shown one is in the tree anyway, and stays there, open, when a change on disk

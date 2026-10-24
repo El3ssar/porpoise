@@ -15,6 +15,10 @@ final class SidebarNavigator: NSView {
     var onChoose: ((Tab) -> Void)?
     private(set) var tab: Tab = .places
     private(set) var content: NSView?
+    /// A hairline under the switch while the tab's list is scrolled, so fixed chrome and scrolling rows stay apart.
+    let edge = NSView()
+    private var observers: [NSObjectProtocol] = []
+    private var contentObserver: NSObjectProtocol?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -29,7 +33,34 @@ final class SidebarNavigator: NSView {
         for t in Tab.allCases { picker.setToolTip("Show \(t.title)", forSegment: t.index) }
         picker.sizeToFit()
         addSubview(picker)
-        Theme.whenChanged(self) { [weak self] in self?.picker.selectedSegmentBezelColor = Tokens.isNative ? nil : Theme.accent }
+        edge.wantsLayer = true
+        edge.isHidden = true
+        addSubview(edge)
+        Theme.whenChanged(self) { [weak self] in
+            self?.edge.layer?.backgroundColor = Theme.separator.cgColor
+            self?.dressPicker()
+        }
+    }
+
+    deinit {
+        observers.forEach(NotificationCenter.default.removeObserver)
+        contentObserver.map(NotificationCenter.default.removeObserver)
+    }
+
+    /// Palette themes fill the selected segment with their accent while the window is key. Not otherwise: an accent
+    /// fill in an inactive window comes out darker than the other segment and reads as the opposite choice; AppKit's
+    /// own inactive look (the selected segment raised) is right in every theme.
+    private func dressPicker() {
+        picker.selectedSegmentBezelColor = !Tokens.isNative && window?.isKeyWindow == true ? Theme.accent : nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers = [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification].map {
+            NotificationCenter.default.addObserver(forName: $0, object: window, queue: .main) { [weak self] _ in self?.dressPicker() }
+        }
+        dressPicker()
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -41,10 +72,32 @@ final class SidebarNavigator: NSView {
         guard content !== view else { return }
         content?.removeFromSuperview()
         content = view
-        addSubview(view)
+        addSubview(view, positioned: .below, relativeTo: edge)
+        contentObserver.map(NotificationCenter.default.removeObserver)
+        contentObserver = nil
+        if let clip = Self.scrollView(in: view)?.contentView {
+            clip.postsBoundsChangedNotifications = true
+            contentObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) {
+                [weak self] _ in self?.updateEdge()
+            }
+        }
         needsLayout = true
         layoutSubtreeIfNeeded()
+        updateEdge()
     }
+
+    private static func scrollView(in view: NSView) -> NSScrollView? {
+        view as? NSScrollView ?? view.subviews.lazy.compactMap { $0 as? NSScrollView }.first
+    }
+
+    /// The tab's list is scrolled away from its top.
+    var contentIsScrolled: Bool {
+        guard let content, let scroll = Self.scrollView(in: content), let doc = scroll.documentView else { return false }
+        let visible = scroll.documentVisibleRect
+        return doc.isFlipped ? visible.minY > 0.5 : visible.maxY < doc.bounds.maxY - 0.5
+    }
+
+    private func updateEdge() { edge.isHidden = !contentIsScrolled }
 
     override func layout() {
         super.layout()
@@ -53,6 +106,7 @@ final class SidebarNavigator: NSView {
         let h = picker.fittingSize.height
         picker.frame = CGRect(x: inset, y: bounds.height - gap - h, width: max(0, bounds.width - inset * 2), height: h)
         content?.frame = CGRect(x: 0, y: 0, width: bounds.width, height: max(0, picker.frame.minY - gap))
+        edge.frame = CGRect(x: 0, y: max(0, picker.frame.minY - gap - 1), width: bounds.width, height: 1)
     }
 
     @objc private func chosen() {
