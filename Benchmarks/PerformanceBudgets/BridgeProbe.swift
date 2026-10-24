@@ -29,6 +29,13 @@ extension DebugBridge {
             view.searchBar.field.stringValue = "needle-target"
             view.searchBar.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: view.searchBar.field))
         case "ready":
+            // A local Stage Manager session can thumbnail an inactive test app. Keep the owned benchmark window
+            // visible without activating it or changing system settings; both apps receive this identical overlay.
+            if ProcessInfo.processInfo.environment["PORPOISE_BUDGET_VISIBLE"] == "1" {
+                window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+                window.level = .floating
+                window.orderFrontRegardless()
+            }
             window.setContentSize(NSSize(width: 1180, height: 760))
             modeCommand("details")
         default: return
