@@ -472,25 +472,33 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         let step = event.scrollingDeltaY > 0 ? -1 : 1
         // The next ticks of one turn of the wheel use the list the first one read.
         if let c = siblings, c.parent == parent, Date().timeIntervalSince(c.time) < 2 { return go(from: u, in: c.folders, by: step) }
+        // Ticks while that folder is being listed add up (one listing at a time, however slow the disk).
+        if let l = siblingListing, l.parent == parent, l.from == u {
+            siblingListing?.steps += step
+            return
+        }
         // Listed off the main thread: a big folder or a disk on the network (under /Volumes, a file URL too) never
-        // stalls the window; the step applies if the crumb still shows that folder by then.
+        // stalls the window; the steps apply if the crumb still shows that folder by then.
         siblingRequest += 1
         let request = siblingRequest
+        siblingListing = (parent, u, step)
         let list = Self.listFolders
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let folders = list(parent)
             DispatchQueue.main.async {
-                guard let self, self.siblingRequest == request else { return }
+                guard let self, self.siblingRequest == request, let l = self.siblingListing else { return }
+                self.siblingListing = nil
                 self.siblings = (parent, folders, Date())
                 guard self.window != nil, self.url.path == u.path || self.url.path.hasPrefix(u.path + "/") else { return }
-                self.go(from: u, in: folders, by: step)
+                self.go(from: u, in: folders, by: l.steps)
             }
         }
     }
 
     private func go(from u: URL, in folders: [URL], by step: Int) {
-        guard let i = folders.firstIndex(where: { $0.path == u.path }), folders.indices.contains(i + step) else { return }
-        delegate?.breadcrumb(self, navigateTo: folders[i + step], newTab: false)
+        guard let i = folders.firstIndex(where: { $0.path == u.path }), !folders.isEmpty, step != 0 else { return }
+        let next = min(max(i + step, 0), folders.count - 1)
+        if next != i { delegate?.breadcrumb(self, navigateTo: folders[next], newTab: false) }
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -555,6 +563,8 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     /// The wheel's sibling folders, by parent, and when they were read.
     private var siblings: (parent: URL, folders: [URL], time: Date)?
     private var siblingRequest = 0
+    /// The listing the wheel waits for: its folder, the crumb it turned on, and the steps asked meanwhile.
+    private var siblingListing: (parent: URL, from: URL, steps: Int)?
     /// Lists a folder's subfolders (tests watch where it runs).
     nonisolated(unsafe) static var listFolders: (URL) -> [URL] = { BreadcrumbView.subfolders(of: $0) }
 
