@@ -407,6 +407,14 @@ import Testing
         #expect(window.toolbar?.displayMode == .iconOnly)
     }
 
+    /// #22: an account's avatar is made once per picture and size, not decoded again on every Places redraw.
+    @Test func avatarsAreMadeOnce() {
+        let a = BrandMarks.avatar(nil, name: "Ann", email: "ann@example.invalid", size: 20)
+        #expect(BrandMarks.avatar(nil, name: "Ann", email: "ann@example.invalid", size: 20) === a)
+        #expect(BrandMarks.avatar(nil, name: "Ann", email: "ann@example.invalid", size: 26) !== a)
+        #expect(BrandMarks.avatar(Data([1, 2, 3]), name: "Ann", email: "ann@example.invalid", size: 20) !== a)
+    }
+
     private final class OneFileProvider: RemoteProvider {
         let file: URL
         init(_ file: URL) { self.file = file }
