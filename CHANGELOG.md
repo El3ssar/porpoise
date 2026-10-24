@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.4
+
+- **Return works again.** With the Dolphin keys, Return opens the selected file or folder again, and with the Mac keys it starts a rename again, in every view, in a split and with panels open. Since 0.14.0 the file list handed Return to the menu, which macOS never offers a key without ⌘ or ⌃, so the key did nothing.
+- ⌥1…⌥0 switch tabs and ⌥↩ opens Get Info again, in both key presets; like Return, these keys without ⌘ or ⌃ never reached the menu.
+
 ## 0.14.3
 
 - **The Information panel stays on the right.** In a split view, the Information panel (F10) always sits at the right edge of the window, beside both panes; switching panes changes what it shows, without moving it. (0.12.2 had it follow the highlighted pane.)
