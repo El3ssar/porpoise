@@ -32,7 +32,8 @@ import Testing
         return item
     }
 
-    @Test(arguments: ViewMode.allCases) func togglingWithLeftActiveAndChangingFocus(mode: ViewMode) async throws {
+    /// Column view shows one pane (no split): every other mode.
+    @Test(arguments: ViewMode.allCases.filter { $0 != .columns }) func togglingWithLeftActiveAndChangingFocus(mode: ViewMode) async throws {
         _ = NSApplication.shared
         let reduces = Animator.reducesMotion
         Animator.reducesMotion = { true }
@@ -99,10 +100,6 @@ import Testing
         #expect(wc.tab.primary.frame == leftFrame)
         #expect(wc.validateMenuItem(item) && item.state == .off)
 
-        if mode == .columns {
-            #expect(wc.tab.primary.columnBrowser?.preview.shownURL == leftFile)
-            #expect(right.columnBrowser?.preview.shownURL == rightFile)
-        }
     }
 
     @Test func rapidFocusChangesFinishTheInspectorHandoff() async throws {
@@ -124,7 +121,7 @@ import Testing
         #expect(wc.tab.containers.allSatisfy { $0.list.layoutWidthOverride == nil })
     }
 
-    @Test(arguments: [ViewMode.icons, .columns]) func inspectorSurvivesAnimatedSplitChanges(mode: ViewMode) async throws {
+    @Test(arguments: [ViewMode.icons, .details]) func inspectorSurvivesAnimatedSplitChanges(mode: ViewMode) async throws {
         _ = NSApplication.shared
         let reduces = Animator.reducesMotion
         Animator.reducesMotion = { false }
@@ -227,7 +224,7 @@ import Testing
         left.list.cancelRename()
     }
 
-    @Test func playingColumnVideoStaysAttachedAcrossInspectorAndFocusChanges() async throws {
+    @Test func playingColumnVideoStaysAttachedAcrossInspectorChanges() async throws {
         _ = NSApplication.shared
         let reduces = Animator.reducesMotion
         Animator.reducesMotion = { true }
@@ -235,11 +232,10 @@ import Testing
         let scratch = try Scratch()
         let video = scratch.url.appendingPathComponent("demo.mp4")
         try FileManager.default.copyItem(at: TestPaths.fixtures.appendingPathComponent("Videos/h264.mp4"), to: video)
-        let wc = MainWindowController(urls: [scratch.url], split: [scratch.url])
+        let wc = MainWindowController(urls: [scratch.url])
         defer { wc.window?.close() }
         wc.showInformation = false
         wc.rebuildPanels()
-        wc.focusLeftPane(nil)
         let left = wc.view
         try #require(await poll { left.model.rows.count == 1 })
         left.setMode(.columns)
@@ -255,8 +251,6 @@ import Testing
         try #require(await poll { player.timeControlStatus == .playing })
         let time = player.currentTime()
         wc.togglePanel(panelItem())
-        wc.focusRightPane(nil)
-        wc.focusLeftPane(nil)
         wc.togglePanel(panelItem())
         try await Task.sleep(for: .milliseconds(100))
         #expect(probe.detachments == 0 && column.shownURL == video)
