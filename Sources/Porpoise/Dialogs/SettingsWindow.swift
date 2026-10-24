@@ -51,7 +51,7 @@ final class SettingsWindowController: SecondaryWindowController {
         let s = Settings.shared
         page("General", "gearshape") { f in
             f.section("Show on startup")
-            f.radio(["Folders, tabs, and window state from last time", "Home location"], s.startup == .lastSession ? 0 : 1) {
+            f.radio(["Folders, tabs, and window state from last time", "The home location below"], s.startup == .lastSession ? 0 : 1) {
                 s.startup = $0 == 0 ? .lastSession : .home
             }
             f.text("Home location:", s.homeURL.path) { [weak f] text in
@@ -109,7 +109,7 @@ final class SettingsWindowController: SecondaryWindowController {
             }
             // Only with the common style: a folder's remembered style always wins.
             f.check(
-                "Use icons view mode for locations which mostly contain media files", s.dynamicView,
+                "Use Icons for folders that hold mostly photos and videos", s.dynamicView,
                 enabled: { !s.rememberPerFolder }
             ) { s.dynamicView = $0 }
             f.section("Browsing")
@@ -128,7 +128,7 @@ final class SettingsWindowController: SecondaryWindowController {
             ) { s.doubleClickBackground = BackgroundDoubleClick.allCases[$0] }
             f.section("Content display")
             f.check("Binary units (KiB)", s.binaryUnits) { s.binaryUnits = $0 }
-            f.popup("Sorting mode:", SortingChoice.allCases.map(\.title), SortingChoice.allCases.firstIndex(of: s.sortingChoice) ?? 0) {
+            f.popup("Sort names:", SortingChoice.allCases.map(\.title), SortingChoice.allCases.firstIndex(of: s.sortingChoice) ?? 0) {
                 s.sortingChoice = SortingChoice.allCases[$0]
             }
             f.popup(
@@ -176,7 +176,7 @@ final class SettingsWindowController: SecondaryWindowController {
         }
         page("Panels", "sidebar.left") { f in
             f.section("Status bar")
-            f.popup("Status bar:", ["Small", "Full width", "Disabled"], StatusBarMode.allCases.firstIndex(of: s.statusBarMode) ?? 1) {
+            f.popup("Style:", ["Small", "Full width", "Hidden"], StatusBarMode.allCases.firstIndex(of: s.statusBarMode) ?? 1) {
                 s.statusBarMode = StatusBarMode.allCases[$0]
             }
             // The small status bar has no room for it (Dolphin shows it in the full-width bar only).
@@ -189,7 +189,12 @@ final class SettingsWindowController: SecondaryWindowController {
             f.check("Show preview", s.infoShowPreview) { s.infoShowPreview = $0 }
             f.check("Auto-play media files", s.infoAutoPlay, enabled: { s.infoShowPreview }) { s.infoAutoPlay = $0 }
             f.check("Show item on hover", s.infoShowHovered) { s.infoShowHovered = $0 }
-            f.radio(["Long date format", "Condensed date format"], s.infoCondensedDates ? 1 : 0) { s.infoCondensedDates = $0 == 1 }
+            // Examples in the user's own date format, as the panel will show them.
+            let yesterday = Date().addingTimeInterval(-86_400)
+            let short = DateFormatter.localizedString(from: yesterday, dateStyle: .short, timeStyle: .short)
+            f.popup("Dates:", ["Relative (\(FileFormat.relativeDate(yesterday)))", "Short (\(short))"], s.infoCondensedDates ? 1 : 0) {
+                s.infoCondensedDates = $0 == 1
+            }
             f.section("Folders panel")
             f.check("Limit to Home folder", s.foldersLimitToHome) { s.foldersLimitToHome = $0 }
             f.check("Show hidden folders", s.foldersShowHidden) { s.foldersShowHidden = $0 }
@@ -218,7 +223,6 @@ final class SettingsWindowController: SecondaryWindowController {
             CLIAutomationSettings.build(f)
             f.section("Ask for confirmation when")
             f.check("Moving files or folders to the Trash", s.confirmTrash) { s.confirmTrash = $0 }
-            f.check("Moving an app to the Trash: review its leftover files", s.reviewAppLeftovers) { s.reviewAppLeftovers = $0 }
             f.check("Deleting files or folders", s.confirmDelete) { s.confirmDelete = $0 }
             f.check("Emptying the Trash", s.confirmEmptyTrash) { s.confirmEmptyTrash = $0 }
             f.check("Renaming changes a file's type", s.confirmRenameType) { s.confirmRenameType = $0 }
@@ -247,6 +251,7 @@ final class SettingsWindowController: SecondaryWindowController {
             Self.trashWatcher = FolderWatcher { _ in refresh() }
             Self.trashWatcher?.watch([TrashInfo.folder])
             f.check("Remove items from the Trash after 30 days (Finder setting)", TrashInfo.autoEmpty) { TrashInfo.autoEmpty = $0 }
+            f.check("Review an app's leftover files when it's moved to the Trash", s.reviewAppLeftovers) { s.reviewAppLeftovers = $0 }
             f.button("Empty Trash…", enabled: { !TrashInfo.isEmpty }) {
                 FileOperationsController.shared.emptyTrash(window: SettingsWindowController.window)
             }
@@ -356,7 +361,9 @@ final class SettingsWindowController: SecondaryWindowController {
 
         let w = NSWindow(contentViewController: tabs)
         w.initialFirstResponder = nil
-        w.title = "Settings"
+        // Titled after the page shown, as every page after the first is when chosen (the tab controller only retitles
+        // on a change of page).
+        w.title = tabs.tabViewItems[safe: tabs.selectedTabViewItemIndex]?.label ?? "Settings"
         w.styleMask = [.titled, .closable, .resizable]
         // Wide enough for every page's toolbar item (narrower hides the last ones behind a » menu).
         w.setContentSize(NSSize(width: 760, height: 580))

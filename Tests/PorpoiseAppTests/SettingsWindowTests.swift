@@ -21,12 +21,15 @@ import Testing
                 "General", "Appearance", "View", "Panels", "Terminal", "Search", "Accounts", "Activity", "Shortcuts", "Custom Tools", "Advanced",
             ])
         #expect(tabs.tabViewItems[tabs.selectedTabViewItemIndex].label == "General")
+        // Titled after its page from the start, as after a change of page.
+        #expect(first.window?.title == "General")
         tabs.selectedTabViewItemIndex = 4
         #expect(Settings.store.string(forKey: SettingsWindowController.lastPageKey) == "Terminal")
         let again = SettingsWindowController()
         defer { again.window?.close() }
         let reopened = try pages(again)
         #expect(reopened.tabViewItems[reopened.selectedTabViewItemIndex].label == "Terminal")
+        #expect(again.window?.title == "Terminal")
         // A page that no longer exists (an older version's "Bars & Panels"): General.
         Settings.store.set("Bars & Panels", forKey: SettingsWindowController.lastPageKey)
         let renamed = SettingsWindowController()

@@ -20,7 +20,7 @@ final class DiskUsageWindow: DiskUtilityWindow {
         window?.setContentSize(NSSize(width: 1000, height: 740)); window?.minSize.height = 720; window?.center()
         toolbar.addArrangedSubview(ClosureButton(title: "Back") { [weak self] _ in self?.back() })
         toolbar.addArrangedSubview(ClosureButton(title: "Rescan") { [weak self] _ in self?.scan() })
-        toolbar.addArrangedSubview(ClosureButton(title: "Reveal in Finder") { [weak self] _ in self?.reveal() })
+        toolbar.addArrangedSubview(ClosureButton(title: "Show in Folder") { [weak self] _ in self?.reveal() })
         toolbar.addArrangedSubview(ClosureButton(title: "Move to Trash") { [weak self] _ in self?.trash() })
         let metric = ClosurePopup { [weak self] p in
             self?.allocated = p.indexOfSelectedItem == 1; self?.reload()
@@ -116,7 +116,8 @@ final class DiskUsageWindow: DiskUtilityWindow {
     private var selectedURL: URL? {
         guard children.indices.contains(table.selectedRow), let tree else { return nil }; return tree.nodes[children[table.selectedRow]].url
     }
-    private func reveal() { if let url = selectedURL { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
+    /// In a Porpoise window, never Finder.
+    private func reveal() { if let url = selectedURL { AppDelegate.shared.reveal([url]) } }
     private func trash() {
         guard !busy, let url = selectedURL else { return }
         FileOperationsController.shared.trash([url], window: window)

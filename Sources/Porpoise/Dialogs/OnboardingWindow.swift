@@ -1,10 +1,12 @@
 import AppKit
+import PorpoiseCore
 import PorpoiseServices
 
 /// First-run welcome: one sheet over the first browser window, in two steps (welcome, then Full Disk Access, the one
 /// permission worth asking for up front). Everything else is asked for the first time it's needed: the helper at the
 /// first action on a system-owned item, App Management at the first app moved, Local Network at the first Network visit
-/// (see `SystemIntegration.FirstNeed`). All of them are listed in Settings › System.
+/// (see `SystemIntegration.FirstNeed`). All of them are listed in Porpoise › Permissions. The welcome step also offers
+/// the two choices a newcomer can't find later without knowing where to look: the key set and the default file browser.
 final class OnboardingWindowController: SecondaryWindowController {
     static var shared: OnboardingWindowController?
     /// Set once the welcome has been seen (finished, skipped or closed): Porpoise asks in context from then on.
@@ -44,6 +46,13 @@ final class OnboardingWindowController: SecondaryWindowController {
     let secondary = NSButton(title: "", target: nil, action: nil)
     let back = NSButton(title: "Back", target: nil, action: nil)
     let dots = NSStackView()
+    // Welcome page choices.
+    let keySet = NSSegmentedControl()
+    let keySetHint = NSTextField(labelWithString: "")
+    let defaultBrowser = NSButton(checkboxWithTitle: "Show files for other apps in Porpoise, not Finder", target: nil, action: nil)
+    /// Makes Porpoise (or Finder) the app that shows files for other apps; tests replace it, it changes a system setting.
+    static var setDefaultBrowser: (Bool, @escaping (Error?) -> Void) -> Void = SystemIntegration.setDefaultBrowser
+    static var isDefaultBrowser: () -> Bool = { SystemIntegration.isDefaultBrowser }
     // Permission page parts that change live.
     private let statusIcon = NSImageView()
     private let statusText = NSTextField(labelWithString: "")
@@ -184,8 +193,8 @@ final class OnboardingWindowController: SecondaryWindowController {
 
     private func buildWelcome() {
         let icon = NSImageView(image: NSApp.applicationIconImage)
-        icon.widthAnchor.constraint(equalToConstant: 96).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 96).isActive = true
+        icon.widthAnchor.constraint(equalToConstant: 64).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 64).isActive = true
         anchored([
             icon,
             label("Welcome to Porpoise", size: 26, weight: .semibold),
@@ -196,9 +205,58 @@ final class OnboardingWindowController: SecondaryWindowController {
             label(
                 "One permission helps from the start. Anything else, Porpoise asks for the first time you need it.",
                 size: 13, color: .secondaryLabelColor),
+            choices(),
         ])
         primary.title = "Continue"
-        secondary.title = "Not Now"
+        secondary.title = "Skip"
+    }
+
+    /// The key set (Mac or Dolphin) and the default file browser: both are in Settings too, but a newcomer from Dolphin
+    /// wouldn't look for the first, and the second is what lets Porpoise stand in for Finder.
+    private func choices() -> NSView {
+        let caption = NSTextField(labelWithString: "Keyboard shortcuts:")
+        caption.font = .systemFont(ofSize: Tokens.FontSize.body)
+        keySet.segmentCount = ShortcutKeySet.allCases.count
+        for (i, set) in ShortcutKeySet.allCases.enumerated() { keySet.setLabel(set.title, forSegment: i) }
+        keySet.trackingMode = .selectOne
+        keySet.selectedSegment = ShortcutKeySet.allCases.firstIndex(of: Settings.shared.shortcutKeySet) ?? 0
+        keySet.target = self
+        keySet.action = #selector(keySetChanged(_:))
+        keySet.setAccessibilityLabel("Keyboard shortcuts")
+        keySetHint.font = .systemFont(ofSize: Tokens.FontSize.callout)
+        keySetHint.textColor = .secondaryLabelColor
+        updateKeySetHint()
+        defaultBrowser.target = self
+        defaultBrowser.action = #selector(defaultBrowserChanged(_:))
+        defaultBrowser.state = Self.isDefaultBrowser() ? .on : .off
+        let keys = NSStackView(views: [caption, keySet])
+        keys.spacing = 8
+        let stack = NSStackView(views: [keys, keySetHint, defaultBrowser])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 6
+        stack.setCustomSpacing(14, after: keySetHint)
+        return stack
+    }
+
+    private func updateKeySetHint() {
+        keySetHint.stringValue =
+            Settings.shared.shortcutKeySet == .dolphin
+            ? "F2 renames, Return opens, ⌦ moves to the Trash, ⌘H shows hidden files"
+            : "As in Finder: Return renames, ⌘O opens, ⌘⌫ moves to the Trash, ⌘I Get Info"
+    }
+
+    @objc func keySetChanged(_ sender: NSSegmentedControl) {
+        guard let set = ShortcutKeySet.allCases[safe: sender.selectedSegment] else { return }
+        Settings.shared.shortcutKeySet = set
+        updateKeySetHint()
+    }
+
+    @objc func defaultBrowserChanged(_ sender: NSButton) {
+        Self.setDefaultBrowser(sender.state == .on) { [weak self] error in
+            sender.state = Self.isDefaultBrowser() ? .on : .off
+            if let error { NSAlert(error: error).runSheet(for: self?.window) }
+        }
     }
 
     /// Full Disk Access: what it's for, how to allow it (collapsed to one line once it's on), and its live status.
@@ -243,7 +301,7 @@ final class OnboardingWindowController: SecondaryWindowController {
         views.append(
             label(
                 "Administrator actions, App Management and Local Network are asked for when first needed. "
-                    + "All of them are in Settings › System.",
+                    + "All of them are in Porpoise › Permissions.",
                 size: 11, color: .secondaryLabelColor))
         anchored(views, spacing: 18)
         secondary.title = granted ? "" : "Not Now"
@@ -307,7 +365,7 @@ final class OnboardingWindowController: SecondaryWindowController {
         }
     }
 
-    /// Not Now: closes, with nothing left to warn about; Porpoise asks again when a protected folder is opened.
+    /// Skip (welcome) or Not Now (Full Disk Access): closes, with nothing left to warn about; Porpoise asks again when a protected folder is opened.
     @objc private func secondaryClicked() { finish() }
 
     @objc private func backClicked() { go(to: .welcome) }

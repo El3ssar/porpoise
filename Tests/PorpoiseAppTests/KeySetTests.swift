@@ -260,7 +260,6 @@ import Testing
         ("reloadView:#0#", "\u{f708}", 0),
         ("renameItem:#0#", "\u{f705}", 0),
         ("replaceLocation:#0#", "\u{6c}", 1048576),
-        ("revealInFinder:#0#", "\u{72}", 1572864),
         ("saveDocument:#0#", "\u{73}", 1048576),
         ("selectAll:#0#", "\u{61}", 1048576),
         ("setViewMode:#0#", "\u{31}", 1048576),

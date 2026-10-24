@@ -211,7 +211,6 @@ extension AppDelegate {
         let tools = NSMenu(title: "Tools")
         tools.addItem(mi("Open Terminal", #selector(W.openTerminal(_:)), K.f(4), .shift, icon: "utilities-terminal"))
         tools.addItem(mi("Open Terminal Here", #selector(W.openTerminalHere(_:)), K.f(4), [.shift, .option], icon: "utilities-terminal"))
-        tools.addItem(mi("Reveal in Finder", #selector(W.revealInFinder(_:)), "r", [.command, .option], icon: "document-open-folder"))
         tools.addItem(mi("Checksums…", #selector(W.showChecksums(_:)), icon: "documentinfo"))
         tools.addItem(mi("Disk Usage…", #selector(W.showDiskUsage(_:)), icon: "drive-harddisk"))
         tools.addItem(mi("Find Duplicates…", #selector(W.showDuplicates(_:)), icon: "edit-copy"))

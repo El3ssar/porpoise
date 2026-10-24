@@ -36,7 +36,7 @@ public enum BackgroundDoubleClick: String, CaseIterable {
 /// Context menu entries that can be switched on/off (Dolphin's Context Menu settings page).
 public enum ContextMenuEntry: String, CaseIterable {
     case addToPlaces, copyLocation, duplicate, openInNewTab, openInNewWindow, openInSplit, openTerminal, otherView,
-        sortBy, viewMode, deleteAlongsideTrash, copyMoveTo, compress, tags, share, quickLook, revealInFinder
+        sortBy, viewMode, deleteAlongsideTrash, copyMoveTo, compress, tags, share, quickLook
     public var title: String {
         switch self {
         case .addToPlaces: return "Add to Places"
@@ -47,19 +47,18 @@ public enum ContextMenuEntry: String, CaseIterable {
         case .openInSplit: return "Open in Split View"
         case .openTerminal: return "Open Terminal Here"
         case .otherView: return "Copy/Move to Other View"
-        case .sortBy: return "Sort By"
-        case .viewMode: return "View Mode"
+        case .sortBy: return "Sort By / Group By"
+        case .viewMode: return "View Mode / Display Style"
         case .deleteAlongsideTrash: return "Delete (next to Move to Trash)"
         case .copyMoveTo: return "“Copy To” and “Move To” commands"
         case .compress: return "Compress / Extract"
         case .tags: return "Tags"
         case .share: return "Share…"
         case .quickLook: return "Quick Look"
-        case .revealInFinder: return "Reveal in Finder"
         }
     }
     /// Dolphin defaults: everything on except Delete-alongside and Copy To/Move To.
-    /// Off unless switched on: Delete beside Move to Trash, Copy To/Move To, and Reveal in Finder (Porpoise is the
-    /// file manager; Finder is one click away for whoever wants it).
-    var defaultOn: Bool { ![.deleteAlongsideTrash, .copyMoveTo, .revealInFinder].contains(self) }
+    /// Off unless switched on: Delete beside Move to Trash, and Copy To/Move To. (Reveal in Finder is gone: Porpoise
+    /// never hands off to Finder.)
+    var defaultOn: Bool { ![.deleteAlongsideTrash, .copyMoveTo].contains(self) }
 }

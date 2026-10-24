@@ -27,8 +27,9 @@ extension MainWindowController {
             .addToPlaces: ["Add to Places"], .copyLocation: ["Copy Location"], .duplicate: ["Duplicate Here"],
             .openInNewTab: ["Open in New Tab", "Open in New Tabs", "Open Path in New Tab"], .openInNewWindow: ["Open in New Window"],
             .openInSplit: ["Open in Split View"], .openTerminal: ["Open Terminal Here"], .otherView: ["Copy to Other View", "Move to Other View"],
-            .sortBy: ["Sort By"], .viewMode: ["View Mode"], .compress: ["Compress", "Extract Here"], .tags: ["Tags"],
-            .share: ["Share…", "AirDrop…"], .quickLook: ["Quick Look"], .revealInFinder: ["Reveal in Finder"],
+            .sortBy: ["Sort By", "Group By"], .viewMode: ["View Mode", "Adjust View Display Style…"], .compress: ["Compress", "Extract Here"],
+            .tags: ["Tags"],
+            .share: ["Share…", "AirDrop…"], .quickLook: ["Quick Look"],
         ]
         for (entry, names) in titles where !s.contextMenuShows(entry) {
             for it in m.items where names.contains(it.title) { m.removeItem(it) }
@@ -105,16 +106,19 @@ extension MainWindowController {
                 m.addItem(self.item("Empty Trash", "trash-empty", #selector(emptyTrash(_:))))
                 return m
             }
+            // Finder's first entry: the thing most often done on empty space.
+            m.addItem(self.item("New Folder…", "folder-new", #selector(createFolder(_:)), key: "n", mods: [.command, .shift]))
             m.addItem(sub("Create New", "list-add", Self.createNewMenu()))
             m.addItem(.separator())
             m.addItem(self.item(FileOperationsController.shared.pasteTitle, "edit-paste", #selector(paste(_:))))
             m.addItem(self.item("Add to Places", "bookmark-new", #selector(addToPlaces(_:))))
             m.addItem(.separator())
             m.addItem(sub("Sort By", "view-sort", sortMenu()))
+            m.addItem(sub("Group By", "view-group", groupMenu()))
             m.addItem(sub("View Mode", "view-list-icons", Self.viewModeMenu()))
+            m.addItem(self.item("Adjust View Display Style…", "configure", #selector(adjustViewStyle(_:))))
             m.addItem(.separator())
             m.addItem(self.item("Open Terminal Here", "utilities-terminal", #selector(openTerminalHere(_:))))
-            m.addItem(self.item("Reveal in Finder", "document-open-folder", #selector(revealInFinder(_:))))
             m.addItem(.separator())
             m.addItem(self.item("Get Info", "document-properties", #selector(properties(_:))))
             return m
@@ -202,7 +206,6 @@ extension MainWindowController {
         m.addItem(self.item("Share…", "document-share", #selector(shareItems(_:))))
         m.addItem(self.item("AirDrop…", "airdrop", #selector(airDropItems(_:))))
         m.addItem(self.item("Quick Look", "document-preview", #selector(quickLook(_:))))
-        m.addItem(self.item("Reveal in Finder", "document-open-folder", #selector(revealInFinder(_:))))
         if tab.isSplit {
             m.addItem(.separator())
             m.addItem(self.item("Copy to Other View", "edit-copy", #selector(copyToOtherView(_:))))

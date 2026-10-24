@@ -294,7 +294,6 @@ In the file list: arrows move (⇧ extends), Space is Quick Look, ⌫ goes back,
 | Go | Connections… | ⌥⌘K |
 | Tools | Open Terminal | ⇧F4 |
 | Tools | Open Terminal Here | ⌥⇧F4 |
-| Tools | Reveal in Finder | ⌥⌘R |
 | Tools | Empty Trash | ⇧⌘⌫ |
 | Window | Minimize | ⌘M |
 | Window | Activity | ⌥⌘J |

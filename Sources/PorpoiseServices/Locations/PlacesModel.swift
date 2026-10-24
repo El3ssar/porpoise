@@ -266,7 +266,7 @@ public final class PlacesModel {
             PlaceEntry(title: "Downloads", url: h.appendingPathComponent("Downloads"), icon: "folder-download", section: .places),
             PlaceEntry(title: "Music", url: h.appendingPathComponent("Music"), icon: "folder-music", section: .places),
             PlaceEntry(title: "Pictures", url: h.appendingPathComponent("Pictures"), icon: "folder-pictures", section: .places),
-            PlaceEntry(title: "Videos", url: h.appendingPathComponent("Movies"), icon: "folder-videos", section: .places),
+            PlaceEntry(title: "Movies", url: h.appendingPathComponent("Movies"), icon: "folder-videos", section: .places),
             PlaceEntry(title: "Applications", url: URL(fileURLWithPath: "/Applications"), icon: "view-list-icons", section: .places),
             PlaceEntry(title: "Trash", url: h.appendingPathComponent(".Trash"), icon: "user-trash", section: .places),
             networkEntry,
@@ -300,7 +300,7 @@ public final class PlacesModel {
         /// Format version: nil for files written before it existed (they get the places added since).
         var version: Int?
     }
-    private static let storeVersion = 2
+    private static let storeVersion = 3
 
     private func load() {
         guard let storeURL, var data = try? Data(contentsOf: storeURL) else {
@@ -337,6 +337,14 @@ public final class PlacesModel {
         }
         if (stored.version ?? 0) < 2, !userEntries.contains(where: { $0.url == Self.airDropURL }) {
             userEntries.insert(Self.airDropEntry, at: userEntries.firstIndex { $0.section == .places } ?? 0)
+        }
+        // ~/Movies was called "Videos" (Dolphin's name) before version 3; the breadcrumb and Finder say "Movies". A
+        // name the user gave it stays.
+        if (stored.version ?? 0) < 3 {
+            let movies = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Movies").standardizedFileURL
+            for i in userEntries.indices where userEntries[i].title == "Videos" && userEntries[i].url.standardizedFileURL == movies {
+                userEntries[i].title = "Movies"
+            }
         }
         storedHiddenSections = Set(stored.hiddenSections)
         collapsedSections = Set(stored.collapsedSections ?? [])

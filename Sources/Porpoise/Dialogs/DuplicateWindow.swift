@@ -20,7 +20,7 @@ final class DuplicateWindow: DiskUtilityWindow {
         toolbar.addArrangedSubview(ClosureButton(title: "Choose Keep Folder…") { [weak self] _ in self?.chooseFolder() })
         toolbar.addArrangedSubview(ClosureButton(title: "Apply Keep Rule") { [weak self] _ in self?.applyRule() })
         toolbar.addArrangedSubview(ClosureButton(title: "Move Marked to Trash") { [weak self] _ in self?.trash() })
-        toolbar.addArrangedSubview(ClosureButton(title: "Reveal") { [weak self] _ in self?.reveal() })
+        toolbar.addArrangedSubview(ClosureButton(title: "Show in Folder") { [weak self] _ in self?.reveal() })
         note(
             "Nothing is marked automatically. A keep rule marks the other copies for review; keep at least one file in each group. Files and keepers are rehashed before the undoable Trash action. APFS clone families may already share space, so logical duplicate bytes are not promised free disk space."
         )
@@ -88,7 +88,8 @@ final class DuplicateWindow: DiskUtilityWindow {
         reload(); status.stringValue = "Marked copies: \(marked.count). Review the list before moving to Trash."
     }
     private func reveal() {
-        if files.indices.contains(table.selectedRow) { NSWorkspace.shared.activateFileViewerSelecting([files[table.selectedRow].file.entry.url]) }
+        // In a Porpoise window, never Finder.
+        if files.indices.contains(table.selectedRow) { AppDelegate.shared.reveal([files[table.selectedRow].file.entry.url]) }
     }
     private func trash() {
         guard !busy, !marked.isEmpty else { return }

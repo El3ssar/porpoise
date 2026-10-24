@@ -40,7 +40,7 @@ import Testing
         let m = PlacesModel(storeURL: s.path("places.json"))
         #expect(
             m.titles(in: .places) == [
-                "AirDrop", "Home", "Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos",
+                "AirDrop", "Home", "Desktop", "Documents", "Downloads", "Music", "Pictures", "Movies",
                 "Applications", "Trash",
             ])
         #expect(m.titles(in: .remote).contains("Network"))
@@ -82,11 +82,11 @@ import Testing
         #expect(m.titles(in: .places).contains("Pictures"))
         m.showHidden = false
 
-        let videos = try entry(m, "Videos")
+        let videos = try entry(m, "Movies")
         #expect(m.isUserEntry(videos))
         let order = m.userEntries
         let at = try #require(m.removeForUndo(videos))
-        #expect(!m.isUserEntry(videos) && !m.titles(in: .places).contains("Videos"))
+        #expect(!m.isUserEntry(videos) && !m.titles(in: .places).contains("Movies"))
         #expect(m.removeForUndo(videos) == nil)  // already gone: nothing happens
         // Undo puts it back where it was, once.
         m.restore(videos, at: at)
@@ -174,7 +174,7 @@ import Testing
         m.remove(try entry(m, "Network"))
         let again = PlacesModel(storeURL: store)
         #expect(again.userEntries.map(\.title) == ["AirDrop", "Home", "Apps", "Stuff", "Server"])
-        #expect(try String(contentsOf: store, encoding: .utf8).contains("\"version\":2"))
+        #expect(try String(contentsOf: store, encoding: .utf8).contains("\"version\":3"))
     }
 
     @Test func aDamagedFileIsKeptAside() throws {
@@ -241,5 +241,26 @@ import Testing
         #expect(migrated.userEntries.filter { $0.url == PlacesModel.airDropURL }.count == 1)
         let again = PlacesModel(storeURL: file)
         #expect(again.userEntries == migrated.userEntries)
+    }
+
+    /// Version 3 renames the untouched "Videos" place (~/Movies) to "Movies"; a name the user chose stays.
+    @Test func videosBecomesMovies() throws {
+        let scratch = try Scratch(), file = scratch.path("places.json")
+        let model = PlacesModel(storeURL: file)
+        let movies = try entry(model, "Movies")
+        model.add(scratch.url)
+        let added = try #require(model.userEntries.first { $0.url.standardizedFileURL == scratch.url.standardizedFileURL })
+        model.update(added, title: "Videos", url: scratch.url)
+        var document = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        var entries = try #require(document["entries"] as? [[String: Any]])
+        for i in entries.indices where (entries[i]["title"] as? String) == "Movies" { entries[i]["title"] = "Videos" }
+        document["entries"] = entries
+        document["version"] = 2
+        try JSONSerialization.data(withJSONObject: document).write(to: file)
+        let migrated = PlacesModel(storeURL: file)
+        #expect(migrated.title(for: movies.url) == "Movies")
+        // Another folder the user named "Videos" keeps its name.
+        #expect(migrated.userEntries.contains { $0.url == added.url && $0.title == "Videos" })
+        #expect(migrated.userEntries.filter { $0.title == "Videos" }.count == 1)
     }
 }
