@@ -83,6 +83,7 @@ import Testing
             let r = try #require(crumbs.crumbRect(crumbs.url))
             let p = crumbs.convert(CGPoint(x: r.midX, y: r.midY), to: nil)
             let cg = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: -1, wheel2: 0, wheel3: 0))
+            cg.flags = []
             // A window-less event's location reads as its point in the window.
             cg.location = CGPoint(x: p.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - p.y)
             crumbs.scrollWheel(with: try #require(NSEvent(cgEvent: cg)))
@@ -338,6 +339,7 @@ import Testing
         let p = crumbs.convert(CGPoint(x: r.midX, y: r.midY), to: nil)
         for _ in 0..<3 {
             let cg = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: -1, wheel2: 0, wheel3: 0))
+            cg.flags = []
             cg.location = CGPoint(x: p.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - p.y)
             crumbs.scrollWheel(with: try #require(NSEvent(cgEvent: cg)))
         }

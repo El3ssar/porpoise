@@ -302,7 +302,8 @@ extension DebugBridge {
                     scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: shift ? dx / 5 : dy / 5, wheel2: shift ? 0 : dx / 5,
                     wheel3: 0)
                 cg?.location = CGPoint(x: inWindow.x, y: top - inWindow.y)
-                if shift { cg?.flags = .maskShift }
+                // Its own modifiers: a new event takes the ones held at that moment (⇧ would turn the wheel sideways).
+                cg?.flags = shift ? .maskShift : []
                 if let e = cg.flatMap({ NSEvent(cgEvent: $0) }) { w.sendEvent(e) }
             }
         }
