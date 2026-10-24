@@ -187,6 +187,28 @@ final class ColumnBrowserView: NSView {
         setAccessibilityRole(.browser)
         setAccessibilityLabel("Columns")
         Theme.whenChanged(self) { [weak self] in self?.strip.backgroundColor = Theme.viewBackground }
+        // Servers and cloud folders aren't watched as this Mac's are: the other columns follow an operation's changes
+        // and the service's own (the focused column is the pane's, which already does).
+        let center = NotificationCenter.default
+        observers.append(
+            center.addObserver(forName: FileOperationsController.foldersChanged, object: nil, queue: .main) { [weak self] n in
+                guard let self, let remote = n.userInfo?["remote"] as? Set<String>, !remote.isEmpty else { return }
+                self.reloadOtherColumns { remote.contains(FileOperationsController.remoteKey($0)) }
+            })
+        observers.append(
+            center.addObserver(forName: CloudAccounts.remoteChanged, object: nil, queue: .main) { [weak self] n in
+                guard let self, let id = n.object as? String else { return }
+                self.reloadOtherColumns { CloudAccounts.shared.backend?.accountID(for: $0) == id }
+            })
+    }
+
+    private var observers: [NSObjectProtocol] = []
+
+    /// Reads again the columns other than the focused one, on servers and in the cloud, whose folder `changed` names.
+    func reloadOtherColumns(where changed: (URL) -> Bool) {
+        for column in before + (after.map { [$0] } ?? []) where !column.url.isFileURL && changed(column.url) {
+            column.model.reload()
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -199,6 +221,7 @@ final class ColumnBrowserView: NSView {
     }
 
     deinit {
+        observers.forEach(NotificationCenter.default.removeObserver)
         focusPoll?.invalidate()
         scroller.stop()
     }

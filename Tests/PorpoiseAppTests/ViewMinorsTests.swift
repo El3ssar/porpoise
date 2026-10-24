@@ -183,4 +183,46 @@ import Testing
         func move(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
         func copy(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
     }
+
+    /// #8: in Column view on a server, a column other than the focused one shows what an operation changed in it.
+    @Test func otherColumnsOnAServerFollowChanges() async throws {
+        let root = try #require(URL(string: "sftp://columns-\(UUID().uuidString.prefix(6).lowercased()).invalid/"))
+        let server = ChangingServer()
+        RemoteFS.use(server, for: root)
+        defer { RemoteFS.use(nil, for: root) }
+        let pane = ViewContainer(url: root)
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 900, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = pane
+        defer { window.close() }
+        try #require(await eventually { !pane.model.isLoading && pane.model.rows.count == 2 })
+        pane.setMode(.columns)
+        pane.setURL(root.appendingPathComponent("a/"))
+        let browser = try #require(pane.columnBrowser)
+        try #require(await eventually { browser.before.first.map { !$0.model.isLoading && $0.model.rows.count == 2 } == true })
+        server.extra = ["new.txt"]
+        FileOperationsController.notifyChanged([root.appendingPathComponent("new.txt")])
+        #expect(await eventually { browser.before.first?.model.rows.contains { $0.item.name == "new.txt" } == true })
+    }
+
+    private final class ChangingServer: RemoteProvider, @unchecked Sendable {
+        var extra: [String] = []
+        func list(_ folder: URL) throws -> [FileItem] {
+            if folder.lastPathComponent == "a" {
+                return [FileItem(url: folder.appendingPathComponent("inner.txt"), name: "inner.txt", isDirectory: false)]
+            }
+            return [
+                FileItem(url: folder.appendingPathComponent("a/"), name: "a", isDirectory: true),
+                FileItem(url: folder.appendingPathComponent("b.txt"), name: "b.txt", isDirectory: false),
+            ] + extra.map { FileItem(url: folder.appendingPathComponent($0), name: $0, isDirectory: false) }
+        }
+        func rootTitle(_ url: URL) -> String { "Changing" }
+        func download(_ remote: URL, into localFolder: URL) throws -> URL { throw CocoaError(.featureUnsupported) }
+        func upload(_ local: URL, into remoteFolder: URL) throws { throw CocoaError(.featureUnsupported) }
+        func delete(_ remote: [URL]) throws { throw CocoaError(.featureUnsupported) }
+        func makeFolder(_ remote: URL) throws { throw CocoaError(.featureUnsupported) }
+        func rename(_ remote: URL, to newName: String) throws { throw CocoaError(.featureUnsupported) }
+        func move(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
+        func copy(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
+    }
 }
