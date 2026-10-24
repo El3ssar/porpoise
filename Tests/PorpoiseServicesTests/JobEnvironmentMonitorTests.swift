@@ -5,6 +5,25 @@ import Testing
 @testable import PorpoiseServices
 
 @MainActor @Suite struct JobEnvironmentMonitorTests {
+    @Test func noticesAreSynchronousOnMainAndUnregisterStopsDelivery() {
+        let monitor = JobEnvironmentMonitor(monitorsNetwork: false)
+        let control = JobControl()
+        var notices: [String?] = []
+        monitor.register(control, network: true) {
+            #expect(Thread.isMainThread)
+            notices.append($0)
+        }
+        #expect(notices == [nil])
+        monitor.setOnline(false)
+        #expect(notices == [nil, "Waiting for network"])
+        monitor.setSleeping(true)
+        #expect(notices == [nil, "Waiting for network", "Waiting for wake"])
+        monitor.unregister(control)
+        monitor.setSleeping(false)
+        monitor.setOnline(true)
+        #expect(notices == [nil, "Waiting for network", "Waiting for wake"])
+    }
+
     @Test func jobsRegisteredDuringSleepInheritBothIndependentHolds() {
         let monitor = JobEnvironmentMonitor(monitorsNetwork: false)
         monitor.setSleeping(true)

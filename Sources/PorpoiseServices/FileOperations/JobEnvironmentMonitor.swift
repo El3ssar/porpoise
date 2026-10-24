@@ -3,7 +3,9 @@ import Network
 import PorpoiseCore
 
 /// Automatic holds are independent of a user's Pause. A reconnect must never undo that choice.
-/// All registrations and notifications are serialized on main; controls remain thread-safe.
+/// Registering, unregistering and changing environment state must run on the main thread. Notice callbacks run
+/// synchronously there; the reachability worker only snapshots availability before dispatching it to main.
+/// Controls remain thread-safe, including hold cleanup when the monitor is released.
 public final class JobEnvironmentMonitor {
     public static let shared = JobEnvironmentMonitor()
     private final class Registration {
@@ -41,16 +43,26 @@ public final class JobEnvironmentMonitor {
     }
 
     func register(_ control: JobControl, network: Bool, changed: @escaping (String?) -> Void) {
+        assert(Thread.isMainThread)
         registrations[ObjectIdentifier(control)] = Registration(control, network: network, changed: changed)
         apply()
     }
 
-    func unregister(_ control: JobControl) { registrations[ObjectIdentifier(control)] = nil }
+    func unregister(_ control: JobControl) {
+        assert(Thread.isMainThread)
+        registrations[ObjectIdentifier(control)] = nil
+    }
 
-    func setOnline(_ available: Bool) { online = available; apply() }
+    func setOnline(_ available: Bool) {
+        assert(Thread.isMainThread)
+        online = available; apply()
+    }
 
     /// The app's workspace adapter delivers sleep/wake on main, before jobs are started.
-    public func setSleeping(_ asleep: Bool) { sleeping = asleep; apply() }
+    public func setSleeping(_ asleep: Bool) {
+        assert(Thread.isMainThread)
+        sleeping = asleep; apply()
+    }
 
     private func apply() {
         registrations = registrations.filter { $0.value.control != nil && $0.value.control?.hasEnded == false }
