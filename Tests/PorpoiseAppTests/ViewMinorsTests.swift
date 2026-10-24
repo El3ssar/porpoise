@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseFileSystem
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
@@ -224,5 +225,26 @@ import Testing
         func rename(_ remote: URL, to newName: String) throws { throw CocoaError(.featureUnsupported) }
         func move(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
         func copy(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
+    }
+
+    /// #9: the Folders panel shows a folder made in an open folder by another app, and stops showing one deleted.
+    @Test(.timeLimit(.minutes(3))) func theFoldersPanelFollowsTheDisk() async throws {
+        let s = try Scratch("folders-follow")
+        try s.folder("Here/Old")
+        let here = s.path("Here")
+        let panel = FoldersPanel(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
+        let outline = try #require((panel.subviews.first as? NSScrollView)?.documentView as? NSOutlineView)
+        panel.currentURL = here
+        func node(_ url: URL) -> FoldersPanel.Node? {
+            (0..<outline.numberOfRows).lazy.compactMap { outline.item(atRow: $0) as? FoldersPanel.Node }
+                .first { FilePath.canonical($0.url.path) == FilePath.canonical(url.path) }
+        }
+        try #require(await eventually { node(here) != nil })
+        outline.expandItem(try #require(node(here)))
+        try #require(await eventually { node(s.path("Here/Old")) != nil })
+        try FileManager.default.createDirectory(at: s.path("Here/New"), withIntermediateDirectories: false)
+        #expect(await eventually { node(s.path("Here/New")) != nil })
+        try FileManager.default.removeItem(at: s.path("Here/Old"))
+        #expect(await eventually { node(s.path("Here/Old")) == nil })
     }
 }
