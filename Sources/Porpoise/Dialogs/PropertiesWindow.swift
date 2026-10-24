@@ -178,12 +178,17 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
             child.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(child)
         }
+        // The label sits on the value's first baseline (a field, a pop-up, a checkbox, wrapped text), or on its middle
+        // when it has no text (the tag dots), as System Settings lines up its rows.
+        let alignment =
+            v is NSControl
+            ? l.firstBaselineAnchor.constraint(equalTo: v.firstBaselineAnchor) : l.centerYAnchor.constraint(equalTo: v.centerYAnchor)
         NSLayoutConstraint.activate([
             l.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             l.widthAnchor.constraint(equalToConstant: 110),
-            l.topAnchor.constraint(equalTo: container.topAnchor),
+            alignment,
             l.heightAnchor.constraint(equalToConstant: 18),
-            v.leadingAnchor.constraint(equalTo: l.trailingAnchor, constant: 8),
+            v.leadingAnchor.constraint(equalTo: l.trailingAnchor, constant: Tokens.Space.s),
             v.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             v.topAnchor.constraint(equalTo: container.topAnchor),
             v.bottomAnchor.constraint(equalTo: container.bottomAnchor),
