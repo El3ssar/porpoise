@@ -164,6 +164,8 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     public func clear() {
         lock.withLock {
             state = State(); dirty = false; revision &+= 1
+            derivedValues.removeAll()
+            rememberedAt.removeAll()
         }
         CloudStateWriter.shared.discard(path.path) { [path] in try? FileManager.default.removeItem(at: path) }
     }
@@ -172,6 +174,9 @@ public final class CloudMetadataCache<Item: CloudMetadataItem>: @unchecked Senda
     /// Under the lock: marks the state changed and schedules one write for everything that changes meanwhile.
     private func persist() {
         revision &+= 1
+        // A stale index can own every item from the previous revision. Release it when the source changes,
+        // including when nobody asks for this particular index again.
+        derivedValues.removeAll()
         if !madeDirectory {
             madeDirectory = true
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
