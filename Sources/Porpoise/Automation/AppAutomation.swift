@@ -17,14 +17,21 @@ import PorpoiseServices
 
     init(
         windowProvider: @escaping @MainActor () -> MainWindowController? = {
-            (NSApp.keyWindow?.windowController as? MainWindowController)
-                ?? (NSApp.mainWindow?.windowController as? MainWindowController)
-                ?? AppDelegate.shared.windows.last
+            AppAutomation.browserWindow(
+                key: NSApp.keyWindow, main: NSApp.mainWindow, ordered: NSApp.orderedWindows, known: AppDelegate.shared.windows)
         },
         approval: @escaping Approval = { sources, destination, action, window, deadline in
             await AppAutomation.confirmTransfer(sources, destination: destination, action: action, window: window, deadline: deadline)
         }
     ) { self.windowProvider = windowProvider; self.approveTransfer = approval }
+
+    /// Secondary windows can become main; preserve the frontmost browser rather than the last one created.
+    static func browserWindow(key: NSWindow?, main: NSWindow?, ordered: [NSWindow], known: [MainWindowController]) -> MainWindowController? {
+        let identities = Set(known.map { ObjectIdentifier($0) })
+        return ([key, main].compactMap { $0 } + ordered).lazy
+            .compactMap { $0.windowController as? MainWindowController }
+            .first { identities.contains(ObjectIdentifier($0)) } ?? known.last
+    }
 
     func start() {
         if observation == nil {

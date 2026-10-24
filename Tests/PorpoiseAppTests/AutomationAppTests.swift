@@ -12,6 +12,22 @@ import Testing
 @MainActor @Suite(.serialized, .isolatedSettings) struct AutomationAppTests {
     init() { _ = NSApplication.shared }
 
+    @Test func secondaryWindowKeepsTheFrontmostBrowsersSelection() async throws {
+        let scratch = try Scratch(), left = try scratch.folder("left"), right = try scratch.folder("right")
+        let firstFile = try scratch.file("left/first.txt"), secondFile = try scratch.file("right/second.txt")
+        let first = MainWindowController(urls: [left]), second = MainWindowController(urls: [right])
+        defer { first.window?.close(); second.window?.close() }
+        #expect(await eventually { !first.view.model.isLoading && !second.view.model.isLoading })
+        first.view.model.selection = [firstFile]; second.view.model.selection = [secondFile]
+        let firstWindow = try #require(first.window), secondWindow = try #require(second.window)
+        let secondary = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let app = AppAutomation(windowProvider: {
+            AppAutomation.browserWindow(key: secondary, main: secondary, ordered: [secondary, firstWindow, secondWindow], known: [first, second])
+        })
+        let response = await app.handle(.init(action: .selection))
+        #expect(response.error == nil && response.paths == [firstFile.path])
+    }
+
     @Test func opensTabsSplitsAndRevealsLiteralSelection() async throws {
         let scratch = try Scratch()
         let left = try scratch.folder("Left"), right = try scratch.folder("Right")
