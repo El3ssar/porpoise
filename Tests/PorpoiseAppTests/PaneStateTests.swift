@@ -73,6 +73,39 @@ import Testing
         #expect(await eventually(Self.wait) { pane.model.rows.count == 2 })
     }
 
+    private func capsule(_ b: BreadcrumbView) -> GlassGroup? {
+        var v = b.superview
+        while let s = v, !(s is GlassGroup) { v = s.superview }
+        return v as? GlassGroup
+    }
+
+    /// The toolbar's Back, Forward and Up act on the active pane: its location's capsule is marked, the other isn't.
+    @Test func theActivePanesLocationIsMarked() async throws {
+        let previous = NSApplication.shared.mainMenu
+        defer { NSApp.mainMenu = previous }
+        let s = try Scratch()
+        _ = try s.file("a.txt", "a")
+        _ = try s.file("b.txt", "b")
+        let (wc, window) = try await browser(s, .mac)
+        defer { window.close() }
+        #expect(capsule(wc.tab.navigators[0])?.showsCurrent == false)
+        try press(99, "\u{F706}", .function, in: window)
+        try #require(await eventually(Self.wait) { wc.tab.isSplit && wc.toolbar.navigatorViews.count == 2 })
+        let marks = { wc.tab.navigators.map { self.capsule($0)?.showsCurrent } }
+        window.makeFirstResponder(wc.view.list)
+        #expect(marks() == (wc.tab.activeIsSecondary ? [false, true] : [true, false]))
+        try press(124, "\u{F703}", [.option, .numericPad, .function], in: window)
+        #expect(await eventually(Self.wait) { wc.tab.activeIsSecondary }, "⌥→ focuses the right pane")
+        #expect(marks() == [false, true])
+        try press(123, "\u{F702}", [.option, .numericPad, .function], in: window)
+        #expect(await eventually(Self.wait) { !wc.tab.activeIsSecondary })
+        #expect(marks() == [true, false])
+        // One pane again: nothing to tell apart.
+        try press(99, "\u{F706}", .function, in: window)
+        try #require(await eventually(Self.wait) { !wc.tab.isSplit })
+        #expect(capsule(wc.tab.navigators[0])?.showsCurrent == false)
+    }
+
     @Test func theFilterBarShownAlwaysComesBackAfterTheSearch() async throws {
         let previous = NSApplication.shared.mainMenu
         defer { NSApp.mainMenu = previous }

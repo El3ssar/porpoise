@@ -20,6 +20,21 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         }
     }
     var isActive = true { didSet { needsDisplay = true } }
+    /// In a split, the active pane's location: its capsule carries the accent ring.
+    var isCurrent = false { didSet { if isCurrent != oldValue { capsule?.showsCurrent = isCurrent } } }
+    private var capsule: GlassGroup? {
+        var v = superview
+        while let s = v, !(s is GlassGroup) { v = s.superview }
+        return v as? GlassGroup
+    }
+    override func viewWillMove(toSuperview newSuperview: NSView?) {
+        capsule?.showsCurrent = false
+        super.viewWillMove(toSuperview: newSuperview)
+    }
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        capsule?.showsCurrent = isCurrent
+    }
     var missingTail = false { didSet { needsDisplay = true } }
     var preferredAncestorName: String? { didSet { if preferredAncestorName != oldValue { rebuild() } } }
     var showPlacesButton = false { didSet { rebuild() } }
