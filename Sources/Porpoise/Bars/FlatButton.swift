@@ -60,8 +60,8 @@ class FlatButton: NSControl {
 
     /// Reachable with Tab when Full Keyboard Access is on (System Settings › Keyboard), as standard buttons are.
     override var acceptsFirstResponder: Bool { KeyboardAccess.isFull() }
-    /// Not while hidden (a closed filter or search bar): overriding this skips AppKit's own check.
-    override var canBecomeKeyView: Bool { KeyboardAccess.isFull() && !isHiddenOrHasHiddenAncestor }
+    /// Not while hidden (a closed filter or search bar) or disabled: overriding this skips AppKit's own checks.
+    override var canBecomeKeyView: Bool { KeyboardAccess.isFull() && isEnabled && !isHiddenOrHasHiddenAncestor }
     override var focusRingMaskBounds: NSRect { bounds }
     override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius).fill() }
 
@@ -72,7 +72,11 @@ class FlatButton: NSControl {
         }
     }
 
-    override func accessibilityPerformPress() -> Bool { perform(); return true }
+    override func accessibilityPerformPress() -> Bool {
+        guard isEnabled else { return false }
+        perform()
+        return true
+    }
 
     override func accessibilityPerformShowMenu() -> Bool {
         guard let m = menuProvider?() else { return false }
@@ -80,7 +84,9 @@ class FlatButton: NSControl {
         return true
     }
 
+    /// Every way of pressing it (mouse, Space or Return, VoiceOver) does nothing while it's disabled.
     private func perform() {
+        guard isEnabled else { return }
         onClick?()
         if let a = action { NSApp.sendAction(a, to: target, from: self) }
     }
