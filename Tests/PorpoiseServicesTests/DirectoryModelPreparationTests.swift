@@ -73,6 +73,19 @@ import Testing
         #expect(pending.count == 2)
     }
 
+    @Test func tagOrderingMainThreadReturnTiming() async throws {
+        let s = try Scratch()
+        for n in 0..<1000 { try s.file("file\(n).txt") }
+        let m = DirectoryModel(location: s.url)
+        m.reload()
+        try #require(await eventually { !m.isLoading })
+        let start = ContinuousClock.now
+        m.props.sortRole = .tags
+        print("W261 tag sort 1k main return: \(start.duration(to: .now))")
+        try #require(await eventually { !m.isLoading })
+        #expect(m.rows.count == 1000)
+    }
+
     @Test func geometryChangesKeepTheRowsAndOrderWhileExpansionStillRebuilds() throws {
         let s = try Scratch()
         let m = DirectoryModel(location: s.url)
