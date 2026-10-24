@@ -7,6 +7,27 @@ import Testing
 @testable import PorpoiseServices
 
 struct TransferRuleSafetyTests {
+    @Test(arguments: ["published", "unchanged", "different"])
+    func replacementReconcilesLostReplyOnlyWhenStageIsGoneAndBytesMatch(_ outcome: String) throws {
+        let scratch = try Scratch(), server = try Scratch()
+        let source = try scratch.file("source", "incoming")
+        try server.file("destination/source", "previous")
+        let remote = URL(string: "sftp://\(UUID().uuidString)/destination")!
+        let provider = RuleProvider(root: server.url)
+        provider.replacementOutcome = outcome
+        RemoteFS.use(provider, for: remote)
+        defer { RemoteFS.use(nil, for: remote) }
+        let job = RemoteTransferJob(
+            kind: .copy, sources: [source], destination: remote,
+            control: JobControl(policy: .init(retries: 2, backoff: 0.01)), rule: .replace, options: .init())
+        job.run()
+        #expect(provider.publications == 1)
+        #expect(job.errors.isEmpty == (outcome == "published"))
+        #expect(job.results.count == (outcome == "published" ? 1 : 0))
+        #expect(scratch.read("source") == "incoming")
+        if outcome == "unchanged" { #expect(server.read("destination/source") == "previous") }
+    }
+
     @Test(arguments: [false, true])
     func partialStagingCanRetryButUncertainPublicationCannot(_ failPublication: Bool) throws {
         let scratch = try Scratch(), server = try Scratch()
@@ -57,9 +78,10 @@ struct TransferRuleSafetyTests {
     }
 }
 
-private final class RuleProvider: RemoteProvider, RemoteTransferTargetChecking {
+private final class RuleProvider: RemoteProvider, RemoteTransferTargetChecking, RemoteTransferPublishing {
     let base: CountingTransferProvider
     var failUpload = false, failDownload = false, failPublication = false
+    var replacementOutcome = "published"
     var uploads = 0, publications = 0
     var downloadFolders: [URL] = []
     init(root: URL) { base = CountingTransferProvider(root: root) }
@@ -87,6 +109,15 @@ private final class RuleProvider: RemoteProvider, RemoteTransferTargetChecking {
         if failPublication { throw URLError(.networkConnectionLost) }
     }
     func copy(_ urls: [URL], into folder: URL) throws { try base.copy(urls, into: folder) }
+    func publishTransferFile(_ staged: URL, to target: URL, modified: Date?) throws {
+        publications += 1
+        if replacementOutcome != "unchanged" {
+            try FileManager.default.removeItem(at: base.local(target))
+            try FileManager.default.moveItem(at: base.local(staged), to: base.local(target))
+            if replacementOutcome == "different" { try Data("other writer".utf8).write(to: base.local(target)) }
+        }
+        throw TransferConnectionError(message: "Reply lost")
+    }
     func rootTitle(_ url: URL) -> String { "Scratch transfer server" }
     func transferTargetExists(_ url: URL) throws -> Bool { try base.transferTargetExists(url) }
 }

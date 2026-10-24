@@ -495,7 +495,14 @@ final class RemoteTransferJob {
                     guard let publishing = provider as? RemoteTransferPublishing else {
                         throw RemoteError.unsupported("This server cannot safely replace a file. Keep Both instead.")
                     }
-                    try publishing.publishTransferFile(staged, to: target, modified: options.method == .sizeAndDate ? modified : nil)
+                    do {
+                        try publishing.publishTransferFile(staged, to: target, modified: options.method == .sizeAndDate ? modified : nil)
+                    } catch is TransferConnectionError {
+                        // A rename may have committed before its reply was lost. Never repeat publication.
+                        guard try !provider.list(stageFolder).contains(where: { $0.name == staged.lastPathComponent }),
+                            try digest(target) == (copiedDigest ?? FileChecksums.digest(downloaded))
+                        else { throw TransferConnectionError(message: "Could not verify whether the file was published.") }
+                    }
                 } else {
                     let exists: Bool
                     if let checking = provider as? RemoteTransferTargetChecking {

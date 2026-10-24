@@ -18,7 +18,7 @@ extension SSHProvider: RemoteTransferPublishing {
             script +=
                 "TZ=UTC touch -c -m -t \(RemoteParsing.quote(FileFormat.posixString(modified, format: "yyyyMMddHHmm.ss", timeZone: .gmt))) \(source) && "
         }
-        try exec(script + "mv -f -- \(source) \(destination)")
+        try exec(idempotent: false, script + "mv -f -- \(source) \(destination)")
     }
 }
 
