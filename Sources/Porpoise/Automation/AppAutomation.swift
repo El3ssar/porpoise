@@ -8,6 +8,7 @@ import PorpoiseServices
     private var server: AutomationServer?
     private var observation: NSObjectProtocol?
     private var generation = 0
+    private var startup: Task<Void, Never>?
     private var pendingApprovals = 0
     typealias Approval = @MainActor ([URL], URL, AutomationRequest.Action, NSWindow?, Date) async -> Bool
     var approveTransfer: Approval
@@ -40,7 +41,11 @@ import PorpoiseServices
         let current = generation
         server?.stop(); server = nil
         guard Settings.shared.allowCommandLineControl else { return }
-        Task {
+        let previous = startup
+        startup = Task {
+            // A rapid off/on must wait for the obsolete constructor to release its lifetime lock.
+            await previous?.value
+            guard current == generation, Settings.shared.allowCommandLineControl else { return }
             let result = await Task.detached {
                 Result {
                     try AutomationServer { request, deadline in
@@ -63,10 +68,10 @@ import PorpoiseServices
             let selected = request.action == .selection || request.useSelection ? await selectionContext() : nil
             let selection = await Task.detached { selected?.items.map(\.url) ?? [] }.value
             let urls = try await Task.detached {
-                try Self.localURLs(request.paths, folders: request.action == .open || request.action == .split)
+                try AutomationLocations.localURLs(request.paths, folders: request.action == .open || request.action == .split)
             }.value
             let destination = try await Task.detached {
-                try request.destination.map { try Self.localURLs([$0], folders: true)[0] }
+                try request.destination.map { try AutomationLocations.localURLs([$0], folders: true)[0] }
             }.value
             guard deadline > Date(), !Task.isCancelled, !commandLine || Settings.shared.allowCommandLineControl else {
                 throw AutomationError.timedOut
@@ -86,7 +91,7 @@ import PorpoiseServices
                     view.pendingSelect = items.first
                 }
             case .selection:
-                let paths = await Task.detached { selection.map { $0.isFileURL ? $0.path : $0.absoluteString } }.value
+                let paths = await Task.detached { selection.map { $0.isFileURL ? $0.path : RemoteFS.withoutPassword($0).absoluteString } }.value
                 guard !commandLine || Settings.shared.allowCommandLineControl else { throw AutomationError.unavailable }
                 return AutomationResponse(id: request.id, paths: paths)
             case .copy, .move:
@@ -130,13 +135,20 @@ import PorpoiseServices
         let alert = NSAlert()
         alert.messageText = "Allow an automation request to \(action.rawValue) \(sources.count) items?"
         alert.informativeText =
-            "A command-line request or Shortcut wants to transfer these items using Porpoise’s access. Administrator access is never used.\n\n"
-            + sources.prefix(10).map { $0.isFileURL ? $0.path : $0.absoluteString }.joined(separator: "\n")
-            + (sources.count > 10 ? "\n…" : "") + "\n\nDestination: " + destination.path
+            "A command-line request or Shortcut wants to transfer these items using Porpoise’s access. Review the paths below. Administrator access is never used."
         alert.addButton(withTitle: "Allow Transfer"); alert.addButton(withTitle: "Cancel")
         alert.buttons[0].keyEquivalent = ""
         alert.buttons[1].keyEquivalent = "\r"
         alert.window.defaultButtonCell = alert.buttons[1].cell as? NSButtonCell
+        let detail =
+            "Sources" + (sources.count > 10 ? " (first 10 shown)" : "") + "\n"
+            + sources.prefix(10).map { AutomationDisplay.quotedPath($0.isFileURL ? $0.path : RemoteFS.withoutPassword($0).absoluteString) }.joined(
+                separator: "\n")
+            + "\n\nDestination\n" + AutomationDisplay.quotedPath(destination.path)
+        alert.accessoryView = AutomationTransferDetails(text: detail) { [weak panel = alert.window] in
+            guard let panel else { return }
+            panel.sheetParent?.endSheet(panel, returnCode: .alertSecondButtonReturn)
+        }
         window.orderFront(nil)
         return await withCheckedContinuation { continuation in
             let timer = Task { @MainActor in
@@ -160,18 +172,38 @@ import PorpoiseServices
         }.value
     }
 
-    nonisolated private static func localURLs(_ paths: [String], folders: Bool) throws -> [URL] {
-        try paths.map { path in
-            guard path.hasPrefix("/"), !path.contains("\0") else { throw AutomationError.invalidRequest }
-            let url = URL(fileURLWithPath: path).standardizedFileURL
-            _ = try FileManager.default.attributesOfItem(atPath: url.path)
-            if folders {
-                var isDirectory: ObjCBool = false
-                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
-                    throw AutomationError.invalidRequest
-                }
-            }
-            return url
+}
+
+/// Keeps long paths reviewable within the sheet and gives its Cancel action both native keyboard bindings.
+private final class AutomationTransferDetails: NSScrollView {
+    private let cancel: () -> Void
+    init(text: String, cancel: @escaping () -> Void) {
+        self.cancel = cancel
+        super.init(frame: NSRect(x: 0, y: 0, width: 500, height: 160))
+        hasVerticalScroller = true
+        autohidesScrollers = true
+        borderType = .bezelBorder
+        let field = NSTextView(frame: bounds)
+        field.isEditable = false
+        field.isRichText = false
+        field.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        field.textContainerInset = NSSize(width: 8, height: 8)
+        field.isVerticallyResizable = true
+        field.isHorizontallyResizable = false
+        field.autoresizingMask = [.width]
+        field.textContainer?.widthTracksTextView = true
+        field.string = text
+        field.setAccessibilityLabel("Requested source paths and destination")
+        documentView = field
+    }
+    required init?(coder: NSCoder) { return nil }
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.charactersIgnoringModifiers == "\u{1b}" || event.charactersIgnoringModifiers == "\r",
+            event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+        {
+            cancel()
+            return true
         }
+        return super.performKeyEquivalent(with: event)
     }
 }

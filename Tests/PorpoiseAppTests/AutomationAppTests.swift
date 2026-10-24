@@ -74,7 +74,7 @@ import Testing
     }
 
     @Test func everyTransferRequiresApprovalAndSocketConsent() async throws {
-        let scratch = try Scratch(), source = try scratch.file("source"), destination = try scratch.folder("destination")
+        let scratch = try Scratch(), source = try scratch.file("日本語 'quote\n\u{202e}.txt"), destination = try scratch.folder("destination")
         let wc = MainWindowController(urls: [scratch.url]); wc.showWindow(nil)
         defer { wc.window?.close() }
         var calls = 0
@@ -89,19 +89,43 @@ import Testing
         let declined = await app.handle(request)
         #expect(declined.error == nil)
         #expect(await eventually { calls == 1 })
-        #expect(!FileManager.default.fileExists(atPath: destination.appendingPathComponent("source").path))
+        #expect(!FileManager.default.fileExists(atPath: destination.appendingPathComponent(source.lastPathComponent).path))
         Settings.shared.allowCommandLineControl = false
         let disabled = await app.handle(.init(action: .selection), commandLine: true)
         #expect(disabled.error != nil)
-        let approval = Task {
-            await AppAutomation.confirmTransfer(
-                [source], destination: destination, action: .copy, window: wc.window, deadline: Date().addingTimeInterval(2))
+        for clearFocus in [false, true] {
+            for (characters, keyCode): (String, UInt16) in [("\u{1b}", 53), ("\r", 36)] {
+                let approval = Task {
+                    await AppAutomation.confirmTransfer(
+                        [source], destination: destination, action: .copy,
+                        window: wc.window, deadline: Date().addingTimeInterval(2))
+                }
+                #expect(await eventually { wc.window?.attachedSheet != nil })
+                let sheet = try #require(wc.window?.attachedSheet)
+                #expect(sheet.defaultButtonCell?.title == "Cancel")
+                func scrolls(_ view: NSView) -> [NSScrollView] {
+                    (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrolls)
+                }
+                let content = try #require(sheet.contentView)
+                let scroll = try #require(scrolls(content).first)
+                let paths = try #require(scroll.documentView as? NSTextView)
+                #expect(scroll.frame.height <= 160 && !paths.isEditable && paths.isSelectable)
+                #expect(paths.accessibilityLabel() == "Requested source paths and destination")
+                #expect(paths.string.contains("日本語") && paths.string.contains("\\n"))
+                #expect(!paths.string.contains("\u{202e}") && paths.string.lowercased().contains("\\u{202e}"))
+                if clearFocus { #expect(sheet.makeFirstResponder(nil)) }
+                let event = try #require(
+                    NSEvent.keyEvent(
+                        with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                        windowNumber: sheet.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                        isARepeat: false, keyCode: keyCode))
+                if !sheet.performKeyEquivalent(with: event) { sheet.sendEvent(event) }
+                let dismissed = await eventually(0.5) { wc.window?.attachedSheet == nil }
+                if !dismissed { wc.window?.endSheet(sheet, returnCode: .alertSecondButtonReturn) }
+                #expect(dismissed, "Key code \(keyCode) should cancel")
+                #expect(await approval.value == false)
+            }
         }
-        #expect(await eventually { wc.window?.attachedSheet != nil })
-        let sheet = try #require(wc.window?.attachedSheet)
-        #expect(sheet.defaultButtonCell?.title == "Cancel")
-        wc.window?.endSheet(sheet, returnCode: .alertSecondButtonReturn)
-        #expect(await approval.value == false)
     }
 
     @Test func intentsUseCurrentAppAndSavedTools() async throws {
