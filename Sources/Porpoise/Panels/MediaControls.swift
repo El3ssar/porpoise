@@ -40,7 +40,7 @@ final class MediaControls: NSView {
         slider.action = #selector(scrub(_:))
         slider.setAccessibilityLabel("Playback Position")
         for l in [elapsed, total] {
-            l.font = .monospacedDigitSystemFont(ofSize: Tokens.FontSize.small, weight: .regular)
+            l.font = Tokens.font(.footnote, digits: true)
             l.textColor = Theme.windowTextInactive
         }
         total.alignment = .right

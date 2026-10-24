@@ -83,7 +83,7 @@ final class InformationPanel: NSView {
         previewSpinner.controlSize = .small
         previewSpinner.isDisplayedWhenStopped = false
         preview.imageScaling = .scaleProportionallyUpOrDown
-        nameLabel.font = NSFont.systemFont(ofSize: Tokens.FontSize.title3, weight: .semibold)
+        nameLabel.font = Tokens.font(.title3, scaled: true)
         nameLabel.textColor = Theme.windowText
         nameLabel.alignment = .center
         grid.orientation = .vertical
@@ -101,7 +101,7 @@ final class InformationPanel: NSView {
         codePreview.isHidden = true
         [preview, codePreview, player, controls, nameLabel, grid].forEach(addSubview)
         addSubview(previewSpinner)
-        previewStatus.font = .systemFont(ofSize: Tokens.FontSize.caption)
+        previewStatus.font = Tokens.font(.caption, weight: .regular)
         previewStatus.textColor = Theme.windowTextInactive
         previewStatus.alignment = .center
         addSubview(previewStatus)
@@ -580,12 +580,12 @@ final class InformationPanel: NSView {
         row.orientation = .horizontal
         row.alignment = .firstBaseline
         let k = NSTextField(labelWithString: key)
-        k.font = Theme.font
+        k.font = Tokens.font(.body, scaled: true)
         k.textColor = Theme.windowTextInactive
         k.alignment = .right
         k.widthAnchor.constraint(equalToConstant: 96).isActive = true
         let v = NSTextField(wrappingLabelWithString: value)
-        v.font = Theme.font
+        v.font = Tokens.font(.body, scaled: true)
         v.textColor = Theme.windowText
         v.isSelectable = true
         v.preferredMaxLayoutWidth = valueWidth

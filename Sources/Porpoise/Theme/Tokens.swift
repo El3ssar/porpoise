@@ -98,7 +98,45 @@ enum Tokens {
     static let warning = NSColor.systemOrange
     static let danger = NSColor.systemRed
 
-    /// Type sizes for 13 pt body text, scaled with Settings › font size (`scaled`).
+    /// The type scale (DESIGN-CONTRACT §2): each style's size at 13 pt and its weight.
+    enum TextStyle: CaseIterable {
+        case largeTitle, title, title2, title3, headline, body, callout, subheadline, footnote, caption, mono
+
+        var size: CGFloat {
+            switch self {
+            case .largeTitle: return FontSize.largeTitle
+            case .title: return FontSize.title
+            case .title2: return FontSize.title2
+            case .title3: return FontSize.title3
+            case .headline, .body: return FontSize.body
+            case .callout, .mono: return FontSize.callout
+            case .subheadline, .footnote: return FontSize.small
+            case .caption: return FontSize.caption
+            }
+        }
+
+        var weight: NSFont.Weight {
+            switch self {
+            case .largeTitle: return .bold
+            case .title, .title2, .title3, .headline, .subheadline: return .semibold
+            case .caption: return .medium
+            case .body, .callout, .footnote, .mono: return .regular
+            }
+        }
+    }
+
+    /// The system font in `style` (SF Mono for `.mono`). `scaled`: sized for Settings › font size, for the main
+    /// window's content (its views, panels and bars); secondary windows and dialogs keep macOS's sizes, as macOS's own
+    /// do. `weight` replaces the style's; `digits` gives numbers that change in place equal widths.
+    static func font(_ style: TextStyle, weight: NSFont.Weight? = nil, digits: Bool = false, scaled: Bool = false) -> NSFont {
+        let size = scaled ? FontSize.scaled(style.size) : style.size
+        let w = weight ?? style.weight
+        if style == .mono { return .monospacedSystemFont(ofSize: size, weight: w) }
+        return digits ? .monospacedDigitSystemFont(ofSize: size, weight: w) : .systemFont(ofSize: size, weight: w)
+    }
+
+    /// Type sizes for 13 pt body text (`TextStyle` is the API; these are its table), scaled with Settings › font size
+    /// (`scaled`).
     enum FontSize {
         static let caption: CGFloat = 10
         static let small: CGFloat = 11

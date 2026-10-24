@@ -124,7 +124,7 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
         for v in [header, body, footer] { root.addSubview(v) }
         for v in [leftCapsule, navigation, rightCapsule, externalCapsule] { header.addSubview(v) }
         addFile(leftURL, to: leftCapsule); addFile(rightURL, to: rightCapsule)
-        for b in [previous, next] { b.isBordered = false; b.font = .systemFont(ofSize: 23); navigation.content.addSubview(b) }
+        for b in [previous, next] { b.isBordered = false; b.font = Tokens.font(.title, weight: .regular); navigation.content.addSubview(b) }
         previous.setAccessibilityLabel("Previous Change"); next.setAccessibilityLabel("Next Change")
         previous.handler = { [weak self] _ in self?.move(-1) }; next.handler = { [weak self] _ in self?.move(1) }
         toolMenu.delegate = self; toolMenu.minimumWidth = 190
@@ -838,8 +838,16 @@ private final class FileDiffSuccessIcon: NSView {
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
         Theme.transferPositive.withAlphaComponent(effectiveAppearance.isDark ? 0.20 : 0.16).setFill(); NSBezierPath(ovalIn: bounds).fill()
-        ("✓" as NSString).draw(
-            at: NSPoint(x: 14, y: 8),
-            withAttributes: [.font: NSFont.systemFont(ofSize: 25, weight: .medium), .foregroundColor: Theme.transferPositive])
+        // The check centred in the circle, about half its height.
+        let config = NSImage.SymbolConfiguration(pointSize: (bounds.height * 0.42).rounded(), weight: .semibold)
+        guard let check = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)?.withSymbolConfiguration(config) else { return }
+        let tinted = NSImage(size: check.size, flipped: false) { rect in
+            check.draw(in: rect)
+            Theme.transferPositive.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+        let size = check.size
+        tinted.draw(in: CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2, width: size.width, height: size.height))
     }
 }

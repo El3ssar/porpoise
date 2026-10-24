@@ -52,9 +52,9 @@ final class SpacePreviewPanel: NSPanel, NSWindowDelegate, MaterialBackedWindow {
         contentView = material
         material.state = .active
         material.addSubview(body)
-        heading.font = .systemFont(ofSize: 13, weight: .semibold)
+        heading.font = Tokens.font(.headline)
         heading.lineBreakMode = .byTruncatingMiddle
-        indexLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        indexLabel.font = Tokens.font(.footnote, digits: true)
         indexLabel.alignment = .center
         indexLabel.textColor = .secondaryLabelColor
         status.alignment = .center

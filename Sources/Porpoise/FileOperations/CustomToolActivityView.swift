@@ -16,7 +16,7 @@ final class CustomToolActivityView: NSView, NSTableViewDataSource, NSTableViewDe
         let list = NSScrollView(); list.documentView = table; list.hasVerticalScroller = true
         list.heightAnchor.constraint(equalToConstant: 116).isActive = true
         output.isEditable = false; output.isSelectable = true; output.isRichText = false
-        output.font = .monospacedSystemFont(ofSize: 12, weight: .regular); output.setAccessibilityLabel("Custom tool output")
+        output.font = Tokens.font(.mono); output.setAccessibilityLabel("Custom tool output")
         output.autoresizingMask = [.width]; output.isVerticallyResizable = true; output.isHorizontallyResizable = false
         output.textContainer?.widthTracksTextView = true
         let scroll = NSScrollView(); scroll.documentView = output; scroll.hasVerticalScroller = true
