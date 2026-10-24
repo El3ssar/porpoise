@@ -102,4 +102,14 @@ import Testing
         let app = try #require(FileItem.load(URL(fileURLWithPath: "/System/Applications/Calculator.app")))
         #expect(Icons.sharedNativeType(for: app) == nil)
     }
+
+    /// W15: restoring a session never stats a folder on a network share (it's tried when shown); local folders that
+    /// are gone are still left out.
+    @Test func sessionRestoreDoesntStatNetworkFolders() throws {
+        let s = try Scratch()
+        #expect(SessionState.exists(s.url) && !SessionState.exists(s.path("gone")))
+        #expect(SessionState.exists(URL(string: "sftp://server/x")!))
+        let mounts = (try? String(contentsOfFile: "/etc/auto_master", encoding: .utf8)) ?? ""
+        if mounts.contains("auto_home") { #expect(SessionState.exists(URL(fileURLWithPath: "/System/Volumes/Data/home/nobody/gone"))) }
+    }
 }

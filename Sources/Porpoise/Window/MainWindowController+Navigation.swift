@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseFileSystem
 import PorpoiseServices
 
 // MARK: - BreadcrumbDelegate
@@ -17,7 +18,10 @@ extension MainWindowController {
             target.needsLayout = true
             return
         }
-        if url.isFileURL && !(FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue) {
+        // On a network share the pane finds out itself (a stat here would hold the window if the server is gone).
+        if url.isFileURL, !MountTable.isNetwork(url.path),
+            !(FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue)
+        {
             if let item = FileItem.load(url) { openFiles([item]); return }
             target.messageBar.show("The folder “\(url.path)” does not exist.", error: true)
             target.needsLayout = true
