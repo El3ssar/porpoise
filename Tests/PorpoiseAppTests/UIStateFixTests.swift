@@ -111,4 +111,33 @@ import Testing
         try await Task.sleep(for: .milliseconds(200))
         #expect(old.messageBar.isHidden || !old.messageBar.text.contains("from a link"))
     }
+
+    /// CR-16: a workspace that can't be opened leaves Recently Closed Tabs alone; one opened in a new window lists no
+    /// Home tab there.
+    @Test func workspacesRecordOnlyTabsTheyReplace() async throws {
+        let s = try Scratch()
+        let a = try s.folder("A"), b = try s.folder("B")
+        let wc = try browser([a])
+        defer { close(wc) }
+        let before = wc.closedTabs.count
+        var newer = WindowLayout(tabs: [TabLayout(primary: PaneLayout(url: b))])
+        newer.version = WindowLayout.currentVersion + 1
+        wc.open(Workspace(name: "Newer", layout: newer))
+        #expect(wc.closedTabs.count == before)
+        #expect(wc.tabs.count == 1 && wc.tabs[0].primary.url.standardizedFileURL == a.standardizedFileURL)
+        wc.window?.attachedSheet.map { wc.window?.endSheet($0) }
+
+        let saved = try #require(Settings.shared.saveWorkspace(named: "CR16", layout: WindowLayout(tabs: [TabLayout(primary: PaneLayout(url: b))])))
+        defer { Settings.shared.deleteWorkspace(id: saved.id) }
+        let item = NSMenuItem(title: "CR16", action: #selector(MainWindowController.openWorkspaceInNewWindow(_:)), keyEquivalent: "")
+        item.representedObject = saved.id.uuidString
+        let count = AppDelegate.shared.windows.count
+        wc.openWorkspaceInNewWindow(item)
+        let other = try #require(AppDelegate.shared.windows.last)
+        defer { close(other) }
+        #expect(AppDelegate.shared.windows.count == count + 1 && other !== wc)
+        #expect(other.closedTabs.isEmpty)
+        #expect(other.tabs.count == 1, "\(other.tabs.map(\.primary.url))")
+        #expect(other.tabs.first?.primary.url.resolvingSymlinksInPath().path == b.resolvingSymlinksInPath().path)
+    }
 }

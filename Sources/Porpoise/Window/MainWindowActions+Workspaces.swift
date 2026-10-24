@@ -44,20 +44,24 @@ extension MainWindowController {
         if let w = workspace(sender) { open(w) }
     }
 
+    /// A window made from the workspace alone: no Home tab first, which it would replace.
     @objc func openWorkspaceInNewWindow(_ sender: Any?) {
         guard let w = workspace(sender) else { return }
-        AppDelegate.shared.newWindow(at: Settings.shared.homeURL)
-        AppDelegate.shared.windows.last?.open(w)
+        guard AppDelegate.shared.newWindow(layout: w.layout) else { return cantOpen(w) }
+        AppDelegate.shared.windows.last.map { $0.window?.makeFirstResponder($0.view.list) }
     }
 
-    /// Shows `w` here: its tabs replace this window's, which Undo Close Tab can bring back.
+    /// Shows `w` here: its tabs replace this window's, which Undo Close Tab can bring back (only once they're replaced).
     func open(_ w: Workspace) {
-        tabs.forEach(rememberClosed)
-        if !applyLayout(w.layout) {
-            Prompt.message("“\(w.name)” can’t be opened.", detail: "It was saved by a newer version of Porpoise.", warning: true, on: window)
-            return
-        }
+        guard w.layout.normalized != nil else { return cantOpen(w) }
+        let replaced = tabs
+        applyLayout(w.layout)
+        replaced.forEach(rememberClosed)
         window?.makeFirstResponder(view.list)
+    }
+
+    private func cantOpen(_ w: Workspace) {
+        Prompt.message("“\(w.name)” can’t be opened.", detail: "It was saved by a newer version of Porpoise.", warning: true, on: window)
     }
 
     @objc func deleteWorkspace(_ sender: Any?) {
