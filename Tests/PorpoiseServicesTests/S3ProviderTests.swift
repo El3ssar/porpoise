@@ -76,6 +76,23 @@ import Testing
         #expect(try String(contentsOf: got.appendingPathComponent("a & b.txt"), encoding: .utf8) == "nested")
         #expect(try await stats()["invalidSignatures"] as? Int == 0)
     }
+    @Test(arguments: [false, true]) func percentEncodedSpacesAndLiteralPlusesNeverAlias(_ formSpaces: Bool) async throws {
+        try await configure(["listFormSpaces": formSpaces])
+        let local = try Scratch()
+        for (key, bytes) in [("a b.txt", "space"), ("a+b.txt", "plus"), ("Tax 2025/a.txt", "folder space"), ("Tax+2025/a.txt", "folder plus")] {
+            try await client.upload(local.file(UUID().uuidString, bytes), key: key)
+        }
+        let objects = try await client.list(prefix: "")
+        #expect(objects.contains { $0.key == "a b.txt" } && objects.contains { $0.key == "a+b.txt" })
+        #expect(objects.contains { $0.key == "Tax 2025/" } && objects.contains { $0.key == "Tax+2025/" })
+        for (key, bytes) in [("a b.txt", "space"), ("a+b.txt", "plus"), ("Tax 2025/a.txt", "folder space"), ("Tax+2025/a.txt", "folder plus")] {
+            let object = try await client.head(key)
+            let downloaded = try await client.download(object)
+            #expect(try String(contentsOf: downloaded, encoding: .utf8) == bytes)
+        }
+        _ = try await client.send("DELETE", key: "a+b.txt")
+        #expect(try await client.head("a b.txt").size == 5)
+    }
     @Test func sharedProviderMutationsAndNoOverwrite() async throws {
         let provider = provider, location = location
         let local = try Scratch(), downloads = try Scratch()

@@ -111,7 +111,9 @@ public final class S3Client: @unchecked Sendable {
             }
             func decoded(_ key: String) throws -> String {
                 guard xml.first("EncodingType") == "url" else { return key }
-                guard let decoded = key.removingPercentEncoding else { throw S3Error.invalidResponse }; return decoded
+                // Match the AWS SDK decoder: spaces may be '+', while literal plus keys are percent-escaped.
+                guard let decoded = key.replacingOccurrences(of: "+", with: " ").removingPercentEncoding else { throw S3Error.invalidResponse }
+                return decoded
             }
             result += try xml.objects.map { object in
                 var object = object; object.key = try decoded(object.key); return object

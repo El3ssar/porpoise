@@ -9,6 +9,13 @@ public struct CloudOAuthToken: Decodable, Sendable {
 }
 public enum CloudOAuthSessionError: Error { case reconnect }
 
+protocol CloudReconnectFailure: Error { var needsSignIn: Bool { get } }
+extension CloudOAuthSessionError: CloudReconnectFailure { var needsSignIn: Bool { true } }
+extension DriveError: CloudReconnectFailure { var needsSignIn: Bool { self == .reconnect } }
+extension DropboxError: CloudReconnectFailure { var needsSignIn: Bool { self == .reconnect } }
+extension BoxError: CloudReconnectFailure { var needsSignIn: Bool { self == .reconnect } }
+extension OneDriveError: CloudReconnectFailure { var needsSignIn: Bool { self == .reconnect } }
+
 /// Coalesced refresh and sign-out fencing. Refresh tokens/session secrets use the injected credential store only.
 public actor CloudOAuthSession {
     private let clientID: String
@@ -20,6 +27,7 @@ public actor CloudOAuthSession {
     private var refreshTask: Task<CloudOAuthToken, Error>?
     private var generation = 0
     private var disconnected = false
+    private var requiresSignIn = false
     public private(set) var grantedScope: String?
     /// The coalesced refresh is a task of its own, so it doesn't inherit its first caller's executor: on a queue it
     /// always gets a thread, as a preview range read waiting on it must answer within its idle deadline (W-138).
@@ -37,9 +45,10 @@ public actor CloudOAuthSession {
         if let refresh = token.refresh_token, !refresh.isEmpty { try credentials.save(refresh, clientID: clientID, accountID: accountID) }
         if let scope = token.scope { grantedScope = scope }
         access = token.access_token; expiry = Date().addingTimeInterval(token.expires_in)
+        requiresSignIn = false
     }
     public func accessToken(rejectedToken: String? = nil) async throws -> String {
-        guard !disconnected else { throw CloudOAuthSessionError.reconnect }
+        guard !disconnected, !requiresSignIn else { throw CloudOAuthSessionError.reconnect }
         if let access, access != rejectedToken, expiry.timeIntervalSinceNow > 60 { return access }
         if refreshTask == nil {
             guard let token = try credentials.read(clientID: clientID, accountID: accountID) else { throw CloudOAuthSessionError.reconnect }
@@ -53,7 +62,13 @@ public actor CloudOAuthSession {
             try accept(token); refreshTask = nil
             return token.access_token
         } catch {
-            if generation == epoch { refreshTask = nil; access = nil }
+            if generation == epoch {
+                refreshTask = nil; access = nil
+                if (error as? any CloudReconnectFailure)?.needsSignIn == true {
+                    requiresSignIn = true
+                    try? credentials.remove(clientID: clientID, accountID: accountID)
+                }
+            }
             throw error
         }
     }

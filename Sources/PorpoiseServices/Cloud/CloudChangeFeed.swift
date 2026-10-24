@@ -26,6 +26,7 @@ struct CloudChangeSource {
 /// Owns polling and page ordering for each account/namespace. Concurrent checks await the same flight.
 public actor CloudChangeFeed {
     private let source: CloudChangeSource
+    private let wait: @Sendable (TimeInterval) async throws -> Void
     private var task: Task<Void, Never>?
     private var flight: (UUID, Task<Void, Error>)?
     private var pollFlight: (UUID, Task<Bool, Error>)?
@@ -34,7 +35,9 @@ public actor CloudChangeFeed {
     private var pollingGeneration = 0
     private var interval: TimeInterval?
     private var nextPoll = Date.distantPast
-    init(source: CloudChangeSource) { self.source = source }
+    init(source: CloudChangeSource, wait: @escaping @Sendable (TimeInterval) async throws -> Void = CloudAuthorizedClient.defaultWait) {
+        self.source = source; self.wait = wait
+    }
 
     public func check() async throws {
         guard stopping == nil else { throw CancellationError() }
@@ -95,14 +98,20 @@ public actor CloudChangeFeed {
         wantsPolling = true
         guard task == nil, stopping == nil else { return }
         task = Task { [weak self] in
+            var failures = 0
             while !Task.isCancelled {
                 guard let self else { return }
-                do { _ = try await self.pollOnce() } catch {
-                    if Task.isCancelled || error is CancellationError { return }; try? await Task.sleep(nanoseconds: 5_000_000_000)
+                do { _ = try await self.pollOnce(); failures = 0 } catch {
+                    if Task.isCancelled || error is CancellationError { return }
+                    if (error as? any CloudReconnectFailure)?.needsSignIn == true { await self.signInRequired(); return }
+                    failures = min(failures + 1, 7)
+                    let delay = min(300, 5 * (1 << (failures - 1)))
+                    try? await self.wait(TimeInterval(delay))
                 }
             }
         }
     }
+    private func signInRequired() { wantsPolling = false; task = nil }
     /// Synchronous client facades submit generations so a delayed start cannot overtake a newer stop.
     func setPolling(_ active: Bool, generation: Int, interval: TimeInterval) async {
         guard generation >= pollingGeneration else { return }

@@ -14,10 +14,32 @@ protocol CloudStagedDownloadJournal: Sendable {
     func load(_ id: UUID) throws -> Record?
     func save(_ record: Record) throws
     func partial(_ id: UUID) -> URL
+    func remove(_ id: UUID) throws
 }
 
 /// Owns private bytes and durable checkpoints; providers supply identity, transport and final revision checks.
 enum CloudStagedDownload {
+    /// A caller with no recovery contract owns its temporary operation until the consumed copy is published.
+    static func consume<J: CloudStagedDownloadJournal, Value>(
+        journal: J, download: (UUID) async throws -> URL, using consume: (URL) throws -> Value
+    ) async throws -> Value {
+        let operation = UUID()
+        func discard() throws {
+            try journal.claim(operation); defer { journal.release(operation) }
+            guard let record = try journal.load(operation) else { return }
+            let partial = journal.partial(operation)
+            guard record.stagedURL == nil || record.stagedURL == partial else { throw CloudTransferError.sourceChanged }
+            try removeOwned(partial, fingerprint: record.fingerprint)
+            try journal.remove(operation)
+        }
+        do {
+            let partial = try await download(operation)
+            let value = try consume(partial)
+            try discard(); return value
+        } catch {
+            try? discard(); throw error
+        }
+    }
     /// A crash after publication into the offline store's partial must not cause another media request.
     static func reuseVerified(_ item: CloudRemoteItem, partial: URL, refresh: () async throws -> CloudRemoteItem) async throws -> Bool {
         guard item.export == nil, let checksum = item.checksum, let size = item.size,

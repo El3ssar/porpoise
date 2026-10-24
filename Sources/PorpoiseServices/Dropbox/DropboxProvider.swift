@@ -119,9 +119,17 @@ public final class DropboxProvider: CloudFileProvider, @unchecked Sendable {
             }
         }
         let context = transferContext()
-        let staging = try CloudAwait.run { try await scoped.download(file, context: context) }
-        return try RemoteFS.downloadStaged(name, into: localFolder) { folder in
-            try FileManager.default.copyItem(at: staging, to: folder.appendingPathComponent(name))
+        return try CloudAwait.run {
+            try await CloudStagedDownload.consume(
+                journal: scoped.journal,
+                download: {
+                    try await scoped.download(file, operationID: $0, context: context)
+                }
+            ) { staging in
+                try RemoteFS.downloadStaged(name, into: localFolder) { folder in
+                    try FileManager.default.copyItem(at: staging, to: folder.appendingPathComponent(name))
+                }
+            }
         }
     }
     public func upload(_ local: URL, into remoteFolder: URL) throws {
