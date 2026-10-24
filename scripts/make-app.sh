@@ -1,19 +1,23 @@
 #!/bin/bash
 # Builds Porpoise.app into build/ and (with --install) copies it to ~/Applications.
-# Full Xcode is required to extract the bundled Shortcuts actions.
+# Command Line Tools suffice locally; full Xcode is required for release/Shortcuts metadata.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # Use the Command Line Tools if Xcode is installed but its license isn't accepted yet.
 if ! xcodebuild -version >/dev/null 2>&1; then export DEVELOPER_DIR=/Library/Developer/CommandLineTools; fi
-xcrun --find appintentsmetadataprocessor >/dev/null 2>&1 || { echo "Packaging Shortcuts actions requires full Xcode; select an installed Xcode developer directory." >&2; exit 1; }
 CONFIG=${CONFIG:-release}
-# No paths from the machine that builds it: sources are named relative to the project folder, and the linker's debug
-# map (object file paths, for dsymutil) is stripped from the executables below.
 FLAGS=(-Xswiftc -file-prefix-map -Xswiftc "$PWD=." -Xcc "-ffile-prefix-map=$PWD=.")
-# Native SwiftPM also needs compiler constants; Xcode’s engine normally enables this automatically.
 INTENT_PROTOCOLS="$(dirname "$(xcrun --find swiftc)")/../share/swift/SwiftConstantValues/AppIntents.json"
-[ -r "$INTENT_PROTOCOLS" ] || { echo "The selected Xcode toolchain lacks App Intents compiler protocols." >&2; exit 1; }
-FLAGS+=(-Xswiftc -emit-const-values -Xswiftc -Xfrontend -Xswiftc -const-gather-protocols-file -Xswiftc -Xfrontend -Xswiftc "$INTENT_PROTOCOLS")
+INTENTS_AVAILABLE=0
+if xcrun --find appintentsmetadataprocessor >/dev/null 2>&1 && [ -r "$INTENT_PROTOCOLS" ]; then
+  INTENTS_AVAILABLE=1
+  FLAGS+=(-Xswiftc -emit-const-values -Xswiftc -Xfrontend -Xswiftc -const-gather-protocols-file -Xswiftc -Xfrontend -Xswiftc "$INTENT_PROTOCOLS")
+elif [ "${PORPOISE_RELEASE:-}" = 1 ]; then
+  echo "Release packaging requires full Xcode to extract Shortcuts metadata." >&2
+  exit 1
+else
+  echo "Warning: packaging without Shortcuts metadata; full Xcode is required for Shortcuts actions." >&2
+fi
 # The debug bridge and the PORPOISE_* test switches (TestEnvironment) are in local and UI-test builds, never in a
 # release (PORPOISE_RELEASE=1, set by .github/workflows/release.yml; scripts/check-release.sh checks the disk image).
 [ "${PORPOISE_RELEASE:-}" = 1 ] || FLAGS+=(-Xswiftc -DPORPOISE_TEST_HOOKS)
@@ -28,7 +32,9 @@ cp "$BIN/Porpoise" "$APP/Contents/MacOS/Porpoise"
 mkdir -p "$APP/Contents/Helpers"
 cp "$BIN/PorpoiseCLI" "$APP/Contents/Helpers/porpoise"
 strip -S "$APP/Contents/Helpers/porpoise"
-python3 scripts/build-app-intents.py --configuration "$CONFIG" --output "$APP/Contents/Resources"
+if [ "$INTENTS_AVAILABLE" = 1 ]; then
+  python3 scripts/build-app-intents.py --configuration "$CONFIG" --output "$APP/Contents/Resources"
+fi
 # Capture the exact linked build while its debug map and object files still exist.
 # Symbols stay outside the app/DMG. Release CI retains them as a separate artifact.
 if [ "$CONFIG" = release ]; then
