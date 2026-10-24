@@ -63,3 +63,21 @@ extension DesignTokensTests {
         #expect(alpha(0.5, 25.5) < 0.2 && alpha(50, 50) > 0.9)
     }
 }
+
+extension DesignTokensTests {
+    /// In the native icon theme the toolbar, menu and list glyphs are SF Symbols (each one exists on this macOS);
+    /// the bundled themes keep their artwork, and file icons are untouched.
+    @Test func nativeIconThemeUsesSFSymbolsForUIGlyphs() throws {
+        #expect(Settings.shared.appearancePreferences.iconTheme == "Native macOS")
+        for (name, symbol) in Icons.nativeSymbols {
+            #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil, "\(symbol) for \(name)")
+            #expect(Icons.nativeSymbol(for: name) == symbol)
+        }
+        let menu = try #require(Icons.shared.menuIcon("go-previous"))
+        #expect(menu.isTemplate)
+        #expect(Icons.shared.image("go-previous", size: 18) != nil && Icons.nativeSymbol(for: "folder") == nil)
+        Settings.shared.updateAppearance { $0.iconTheme = "Breeze" }
+        #expect(Icons.nativeSymbol(for: "go-previous") == nil)
+        #expect(Icons.shared.menuIcon("go-previous")?.isTemplate != true)
+    }
+}

@@ -66,6 +66,8 @@ final class Icons {
         let image: NSImage?
         if name == "airdrop", ["Native macOS", Self.nativeColourTheme].contains(preferences.iconTheme) {
             image = airDropImage(size: size, selected: selected, systemGlyph: Self.systemAirDropGlyph)
+        } else if let symbol = Self.nativeSymbol(for: name), let glyph = symbolImage(symbol, size: size, selected: selected) {
+            image = glyph
         } else {
             image = portableImage(name, size: size, selected: selected, folder: folder)
         }
@@ -600,5 +602,57 @@ final class Icons {
     }
 
     /// Small action icon for menus/buttons (16 px), nil when the theme lacks it.
-    func menuIcon(_ name: String) -> NSImage? { image(name, size: 16) }
+    /// A menu item's icon: in the native icon theme the SF Symbol itself, a template, so the menu tints it as macOS's
+    /// own menus do (white on the highlight).
+    func menuIcon(_ name: String) -> NSImage? {
+        if let symbol = Self.nativeSymbol(for: name), let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) {
+            return glyph
+        }
+        return image(name, size: 16)
+    }
+
+    /// The SF Symbol standing in for a freedesktop UI icon in the native icon theme (DESIGN-CONTRACT I2): toolbar,
+    /// menu and list glyphs look like the rest of macOS there. File and folder icons are the system's own already;
+    /// names not listed keep the bundled artwork.
+    static func nativeSymbol(for name: String) -> String? {
+        guard Settings.shared.appearancePreferences.iconTheme == "Native macOS" else { return nil }
+        return nativeSymbols[name]
+    }
+
+    static let nativeSymbols: [String: String] = [
+        "go-previous": "chevron.left", "go-next": "chevron.right", "go-up": "chevron.up", "go-down": "chevron.down",
+        "go-home": "house", "view-list-icons": "square.grid.2x2", "view-split-left-right": "rectangle.split.2x1",
+        "view-sidetree": "sidebar.left", "edit-find": "magnifyingglass", "system-search": "command",
+        "application-menu": "line.3.horizontal", "open-menu-symbolic": "line.3.horizontal", "overflow-menu": "ellipsis.circle",
+        "view-refresh": "arrow.clockwise", "tab-new": "plus.square.on.square", "tab-close": "xmark.square",
+        "window-new": "macwindow.badge.plus", "utilities-terminal": "terminal", "terminal": "terminal", "insert-link": "link",
+        "system-run": "hammer", "document-share": "square.and.arrow.up", "dialog-close": "xmark", "zoom-in": "plus.magnifyingglass",
+        "zoom-out": "minus.magnifyingglass", "zoom-original": "1.magnifyingglass", "view-hidden": "eye.slash", "view-preview": "eye",
+        "document-preview": "eye", "edit-copy": "doc.on.doc", "edit-rename": "pencil", "edit-undo": "arrow.uturn.backward",
+        "folder-new": "folder.badge.plus", "document-new": "doc.badge.plus", "bookmark-new": "bookmark", "configure": "gearshape",
+        "help-contents": "questionmark.circle", "list-add": "plus", "media-eject": "eject", "view-sort": "arrow.up.arrow.down",
+        "view-filter": "line.3.horizontal.decrease", "tag": "tag", "edit-select": "checkmark.circle", "documentinfo": "info.circle",
+        "user-trash": "trash",
+    ]
+
+    /// An SF Symbol fitted into a `size` square, in the text colour (the selected text colour when selected) of the look
+    /// it is drawn in.
+    private func symbolImage(_ symbol: String, size: CGFloat, selected: Bool) -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: (size * 0.78).rounded(), weight: .regular)
+        guard let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config) else {
+            return nil
+        }
+        return NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            let g = glyph.size, scale = min(1, rect.width / max(g.width, 1), rect.height / max(g.height, 1))
+            let w = g.width * scale, h = g.height * scale
+            let box = CGRect(x: rect.midX - w / 2, y: rect.midY - h / 2, width: w, height: h)
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            context.saveGState(); context.beginTransparencyLayer(in: box, auxiliaryInfo: nil)
+            glyph.draw(in: box)
+            (selected ? Theme.selectionText : Theme.windowText).setFill()
+            box.fill(using: .sourceAtop)
+            context.endTransparencyLayer(); context.restoreGState()
+            return true
+        }
+    }
 }
