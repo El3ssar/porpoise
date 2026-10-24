@@ -91,22 +91,26 @@ final class CustomToolsEditorView: NSView, NSTableViewDataSource, NSTableViewDel
         do {
             let data = try Data(contentsOf: url, options: .mappedIfSafe)
             let document = try CustomToolDocument.decode(data)
-            let alert = NSAlert(); alert.messageText = "Replace custom tools with \(document.tools.count) imported tools?"
-            alert.informativeText =
-                "Review commands from files you trust. Existing tools will be replaced; export them first to keep them. Importing does not run a tool."
-            let commands = document.tools.map { tool in
-                "\(tool.name)\n\(tool.executable)\n" + tool.arguments.map { "  " + String(reflecting: $0) }.joined(separator: "\n")
-            }.joined(separator: "\n\n")
-            let review = NSTextView(frame: CGRect(x: 0, y: 0, width: 520, height: 240))
-            review.isEditable = false; review.isSelectable = true; review.string = commands
-            review.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-            review.setAccessibilityLabel("Commands to import")
-            let scroll = NSScrollView(frame: review.frame); scroll.documentView = review; scroll.hasVerticalScroller = true
-            review.autoresizingMask = [.width]; review.textContainer?.widthTracksTextView = true
-            alert.accessoryView = scroll
-            alert.addButton(withTitle: "Import"); alert.addButton(withTitle: "Cancel")
+            let alert = Self.importConfirmation(for: document)
             alert.runSheet(for: window) { [weak self] response in if response == .alertFirstButtonReturn { self?.save(document.tools) } }
         } catch { status.stringValue = error.localizedDescription }
+    }
+    static func importConfirmation(for document: CustomToolDocument) -> NSAlert {
+        let alert = NSAlert(); alert.messageText = "Replace custom tools with \(document.tools.count) imported tools?"
+        alert.informativeText =
+            "Review commands from files you trust. Existing tools will be replaced; export them first to keep them. Importing does not run a tool."
+        let commands = document.tools.map { tool in
+            "\(tool.name)\n\(tool.executable)\n" + tool.arguments.map { "  " + String(reflecting: $0) }.joined(separator: "\n")
+        }.joined(separator: "\n\n")
+        let review = NSTextView(frame: CGRect(x: 0, y: 0, width: 520, height: 240))
+        review.isEditable = false; review.isSelectable = true; review.string = commands
+        review.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        review.setAccessibilityLabel("Commands to import")
+        let scroll = NSScrollView(frame: review.frame); scroll.documentView = review; scroll.hasVerticalScroller = true
+        review.autoresizingMask = [.width]; review.textContainer?.widthTracksTextView = true
+        alert.accessoryView = scroll
+        alert.addButton(withTitle: "Import"); alert.addButton(withTitle: "Cancel")
+        return alert
     }
     private func exportFile() {
         let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "Porpoise-tools.json"
