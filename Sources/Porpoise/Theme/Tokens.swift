@@ -20,6 +20,9 @@ enum Tokens {
     /// The selection in a view that isn't focused, or a window that isn't key.
     static let unemphasizedSelection = NSColor.unemphasizedSelectedContentBackgroundColor
 
+    /// Behind a selected item's icon in Icons view (Finder's neutral backing): the accent goes behind the name only.
+    static let iconSelectionBacking = NSColor.quaternaryLabelColor
+
     /// The system colour for each theme role.
     static func color(_ role: ThemeRole) -> NSColor {
         switch role {
@@ -115,17 +118,29 @@ enum Tokens {
     enum Radius {
         static let small: CGFloat = 4
         static let row: CGFloat = 6
+        /// Preview surfaces, cards inside sheets, the icon backing of a selected item in Icons view.
+        static let medium: CGFloat = 8
         static let card: CGFloat = 10
         static let sheet: CGFloat = 14
     }
 
-    /// Spacing steps.
-    enum Spacing {
+    /// The 4-pt spacing grid (DESIGN-CONTRACT §3).
+    enum Space {
+        /// Hairline gaps: a badge to its text, an icon to its overlay.
+        static let xxs: CGFloat = 2
+        /// Inside tight controls; a label to its inline badge.
         static let xs: CGFloat = 4
+        /// Related controls in a row; a label to its control; a cell's inner padding.
         static let s: CGFloat = 8
+        /// Rows of a form; a heading to its group.
         static let m: CGFloat = 12
+        /// A group's inner padding; between cards.
         static let l: CGFloat = 16
-        static let xl: CGFloat = 24
-        static let xxl: CGFloat = 32
+        /// Window and sheet content margins (HIG); between form groups.
+        static let xl: CGFloat = 20
+        /// Above a sheet's button row; empty-state blocks.
+        static let xxl: CGFloat = 24
+        /// Around hero empty states and onboarding.
+        static let xxxl: CGFloat = 32
     }
 }
