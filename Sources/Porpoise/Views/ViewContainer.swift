@@ -902,8 +902,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     // MARK: Filter bar
 
+    /// One bar at a time (as Dolphin): the filter bar closes the search, and the search closes the filter bar.
     func showFilterBar() {
         if showsApps, let a = apps { window?.makeFirstResponder(a.field); return }
+        if !searchBar.isHidden { closeSearch() }
         filterBar.isHidden = false
         needsLayout = true
         layoutSubtreeIfNeeded()
@@ -974,6 +976,11 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             needsLayout = true
             return
         }
+        // Closed as its own close button does; unlocked, so no filter goes on unseen.
+        if !filterBar.isHidden {
+            filterBar.isLocked = false
+            filterBarClosed(filterBar)
+        }
         searchBar.isHidden = false
         searchBar.cloudService = cloud ? CloudAccounts.shared.providerTitle(for: url) : nil
         searchBar.scopeFolder = url
@@ -991,6 +998,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         statusBar.progress = nil
         searchBar.isHidden = true
         searchBar.clear()
+        // The filter bar that's always shown comes back.
+        if Settings.shared.showFilterBarOnStartup { filterBar.isHidden = false }
         animatingItems(searchStyle: true) {
             model.searchMatches = nil
             model.searchResults = nil
