@@ -8,8 +8,11 @@ public final class PreparedSharingItems: @unchecked Sendable {
     let folder: URL?
     private let lock = NSLock()
     private var cleaned = false
+    private let lease: SharingStagingLease?
 
-    init(urls: [URL], folder: URL? = nil) { self.urls = urls; self.folder = folder }
+    init(urls: [URL], folder: URL? = nil, lease: SharingStagingLease? = nil) {
+        self.urls = urls; self.folder = folder; self.lease = lease
+    }
     deinit { cleanup() }
 
     /// Removing a large staged folder must not block AppKit's sharing delegate callback.
@@ -21,60 +24,87 @@ public final class PreparedSharingItems: @unchecked Sendable {
         }
         guard remove, let folder else { return }
         let delay = delay.isFinite ? min(max(0, delay), 24 * 60 * 60) : 0
-        Self.cleanupQueue.schedule(folder, after: delay)
+        Self.cleanupQueue.schedule(folder, after: delay, lease: lease)
     }
 
-    /// After the app cancels its sharing sessions, finish pending removals off-main before approving termination.
+    /// After the app cancels its sharing sessions, drain removals off-main, waiting at most ten seconds.
     /// False means there is nothing to wait for; otherwise completion is delivered on the main queue.
     public static func cleanupBeforeQuit(completion: @escaping () -> Void) -> Bool {
         cleanupQueue.finishBeforeQuit(completion: completion)
     }
 }
 
-private final class SharingCleanupQueue: @unchecked Sendable {
+final class SharingCleanupQueue: @unchecked Sendable {
     private let queue = DispatchQueue(label: "porpoise.sharing-cleanup", qos: .utility)
     private let lock = NSLock()
-    private var pending: [UUID: (URL, DispatchWorkItem)] = [:]
-    private var finishing = false
+    private typealias Removal = (remove: @Sendable () -> Void, work: DispatchWorkItem)
+    private var pending: [UUID: Removal] = [:]
+    private var finishing: UUID?
     private var completions: [() -> Void] = []
+    private let remove: @Sendable (URL) -> Void
 
-    func schedule(_ folder: URL, after delay: TimeInterval) {
+    init(remove: @escaping @Sendable (URL) -> Void = { try? FileManager.default.removeItem(at: $0) }) { self.remove = remove }
+
+    func schedule(_ folder: URL, after delay: TimeInterval, lease: SharingStagingLease? = nil) {
         let id = UUID()
+        let remove: @Sendable () -> Void = { [remove] in
+            if let lease { lease.remove() } else { remove(folder) }
+        }
         let work = DispatchWorkItem { [self] in
-            try? FileManager.default.removeItem(at: folder)
+            remove()
             lock.withLock { _ = pending.removeValue(forKey: id) }
         }
-        lock.withLock { pending[id] = (folder, work) }
+        lock.withLock { pending[id] = (remove, work) }
+        // Refresh on the worker, retaining the lease throughout both the grace period and deletion.
+        if let lease { queue.async { lease.touch() } }
         queue.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    func finishBeforeQuit(completion: @escaping () -> Void) -> Bool {
+    func finishBeforeQuit(timeout: TimeInterval = 10, completion: @escaping () -> Void) -> Bool {
         var alreadyFinishing = false
+        let id = UUID()
         let removals = lock.withLock {
-            if finishing { completions.append(completion); alreadyFinishing = true; return [(URL, DispatchWorkItem)]() }
+            if finishing != nil { completions.append(completion); alreadyFinishing = true; return [Removal]() }
             let removals = Array(pending.values)
-            if !removals.isEmpty { finishing = true; completions.append(completion) }
+            if !removals.isEmpty { finishing = id; completions.append(completion) }
             pending.removeAll()
             return removals
         }
         if alreadyFinishing { return true }
         guard !removals.isEmpty else { return false }
-        for (_, work) in removals { work.cancel() }
-        // This queue also runs any timer already deleting a folder, so completion waits for those removals too.
+        for removal in removals { removal.work.cancel() }
+        // Even a blocked filesystem must not hold application termination indefinitely.
+        let deadline = timeout.isFinite ? max(0, timeout) : 10
+        DispatchQueue.main.asyncAfter(deadline: .now() + deadline) { self.finished(id) }
+        // This queue also runs any timer already deleting a folder.
         queue.async {
-            for (folder, _) in removals { try? FileManager.default.removeItem(at: folder) }
-            let completions = self.lock.withLock {
-                self.finishing = false
-                let completions = self.completions; self.completions = []
-                return completions
-            }
-            DispatchQueue.main.async { for completion in completions { completion() } }
+            for removal in removals { removal.remove() }
+            self.finished(id)
         }
         return true
+    }
+
+    private func finished(_ id: UUID) {
+        let callbacks = lock.withLock {
+            guard finishing == id else { return [() -> Void]() }
+            finishing = nil
+            let callbacks = completions; completions = []
+            return callbacks
+        }
+        DispatchQueue.main.async { for callback in callbacks { callback() } }
     }
 }
 
 public enum SharingPreparation {
+    public static let successfulShareRetentionInterval: TimeInterval = 10 * 60
+
+    /// Called after the first window draws. All enumeration and deletion stays on a utility worker.
+    public static func sweepStaleCopiesAfterLaunch() {
+        DispatchQueue.global(qos: .utility).async {
+            SharingStaging.sweep(root: FileManager.default.temporaryDirectory.appendingPathComponent(SharingStaging.rootName, isDirectory: true))
+        }
+    }
+
     /// Metadata-only eligibility: no network requests or disk reads during menu validation or drag updates.
     public static func supports(_ urls: [URL]) -> Bool {
         !urls.isEmpty && urls.allSatisfy { $0.isFileURL || LocationKind.of($0).isRemote }
@@ -88,10 +118,10 @@ public enum SharingPreparation {
         guard supports(urls) else { throw SharingPreparationError.unsupported }
         try control.checkpoint()
         guard urls.contains(where: { !$0.isFileURL }) else { return PreparedSharingItems(urls: urls) }
-        let folder = temporaryDirectory.appendingPathComponent("Porpoise-Share-" + UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        let lease = try SharingStaging.create(in: temporaryDirectory)
+        let folder = lease.folder
         var succeeded = false
-        defer { if !succeeded { try? FileManager.default.removeItem(at: folder) } }
+        defer { if !succeeded { lease.remove() } }
         let accounts = try urls.compactMap { try (RemoteFS.provider(for: $0) as? CloudTransferProvider)?.transferAccount($0) }
         try CloudTransferJournal.shared.claim(batchID, accounts: accounts, control: control)
         defer { CloudTransferJournal.shared.release(batchID) }
@@ -130,8 +160,9 @@ public enum SharingPreparation {
             prepared.append(result)
         }
         try control.checkpoint()
+        lease.touch()
         succeeded = true
-        return PreparedSharingItems(urls: prepared, folder: folder)
+        return PreparedSharingItems(urls: prepared, folder: folder, lease: lease)
     }
 
     /// A remote/archive symlink must not make the native service read an unrelated local path.
