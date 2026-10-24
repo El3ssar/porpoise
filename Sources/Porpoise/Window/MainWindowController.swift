@@ -248,6 +248,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         layoutToolbar()
         if tabs.indices.contains(current) { tab.frame = tabHost.bounds }
         alignNavigators()
+        toolbar.refreshShortcutTooltips()
     }
 
     /// The toolbar lives inside the (enlarged) title bar, over the main column only; in full screen the title bar
@@ -342,6 +343,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         toolbar.forward.isEnabled = v.history.canGoForward
         // Same rule as goUp(_:) and its menu item.
         toolbar.up.isEnabled = v.canGoUp
+        toolbar.viewMode.isEnabled = !v.showsAirDrop
+        toolbar.search.isEnabled = !v.showsAirDrop
         toolbar.viewMode.iconName = v.model.props.mode.iconName
         toolbar.linkFolders.isToggled = t.linkedRoots != nil
         toolbar.linkFolders.iconName = t.missingCounterpart == nil ? "insert-link" : "edit-unlink"
@@ -380,14 +383,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         if t.isSplit {
             b.iconName = t.activeIsSecondary ? "view-right-close" : "view-left-close"
             b.title = "Close"
-            b.toolTip = t.activeIsSecondary ? "Close right view" : "Close left view"
+            toolbar.splitTooltipTitle = t.activeIsSecondary ? "Close right view" : "Close left view"
         } else {
             b.iconName = "view-split-left-right"
             b.title = "Split"
-            b.toolTip = "Split view"
+            toolbar.splitTooltipTitle = "Split view"
         }
         // Icon only: what it does now is in its tooltip, and VoiceOver reads the same.
-        b.setAccessibilityLabel(b.toolTip)
+        b.setAccessibilityLabel(toolbar.splitTooltipTitle)
+        toolbar.refreshShortcutTooltips()
     }
 
     // MARK: - Window

@@ -138,8 +138,54 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     private(set) var apps: AppsView?
     private(set) var airDropPage: AirDropPage?
     private var previousAirDropSelection: [URL] = []
+    private var airDropVisit = UUID()
+    private var airDropValidation: Task<Void, Never>?
+    private var airDropSendCheck: Task<Void, Never>?
+    nonisolated private static func airDropFilesExist(_ urls: [URL], priority: TaskPriority) async -> Bool {
+        let check = Task.detached(priority: priority) {
+            urls.allSatisfy { !Task.isCancelled && (!$0.isFileURL || FileManager.default.fileExists(atPath: $0.path)) }
+        }
+        return await withTaskCancellationHandler {
+            await check.value
+        } onCancel: {
+            check.cancel()
+        }
+    }
+    private func validatePreviousAirDropSelection() {
+        guard showsAirDrop, !previousAirDropSelection.isEmpty else { return }
+        let urls = previousAirDropSelection, visit = airDropVisit
+        airDropValidation?.cancel()
+        airDropValidation = Task { [weak self] in
+            let exists = await Self.airDropFilesExist(urls, priority: .utility)
+            guard !Task.isCancelled, let self, self.airDropVisit == visit else { return }
+            if !exists { self.previousAirDropSelection = []; self.airDropPage?.refreshSelection() }
+        }
+    }
+    func sendAirDrop(_ urls: [URL], from anchor: NSView, using share: (([URL], NSView) -> Void)? = nil) {
+        let visit = airDropVisit
+        airDropPage?.selectionAllowed = false; airDropPage?.refreshSelection()
+        airDropSendCheck?.cancel()
+        airDropSendCheck = Task { [weak self, weak anchor] in
+            let exists = await Self.airDropFilesExist(urls, priority: .userInitiated)
+            guard !Task.isCancelled, let self, let anchor, self.showsAirDrop, self.airDropVisit == visit, anchor.window?.isVisible == true else {
+                return
+            }
+            guard exists else {
+                self.previousAirDropSelection = []
+                self.airDropPage?.refreshSelection()
+                self.messageBar.show("The selection is no longer available. Choose files again. Nothing was shared.", error: true)
+                self.needsLayout = true
+                return
+            }
+            self.airDropPage?.selectionAllowed = true; self.airDropPage?.refreshSelection()
+            if let share { share(urls, anchor) } else { self.delegate?.container(self, shareWithAirDrop: urls, from: anchor) }
+        }
+    }
     var showsAirDrop: Bool { LocationKind.of(url) == .airDrop }
-    func refreshAirDropSelection() { airDropPage?.refreshSelection() }
+    func refreshAirDropSelection() {
+        airDropPage?.selectionAllowed = true
+        airDropPage?.refreshSelection()
+    }
     private func airDropSelection() -> [URL] {
         if let peer = delegate?.containerAirDropPeer(self), !peer.model.selection.isEmpty { return peer.model.selectedItems.map(\.url) }
         return previousAirDropSelection
@@ -351,6 +397,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         observers.append(
             center.addObserver(forName: FileOperationsController.foldersChanged, object: nil, queue: .main) { [weak self] n in
                 guard let self, let paths = n.userInfo?["paths"] as? Set<String> else { return }
+                if self.showsAirDrop { self.validatePreviousAirDropSelection() }
                 let mine = ([self.model.location] + Array(self.model.expanded)).map {
                     $0.isFileURL ? FilePath.canonical($0.path) : $0.path
                 }
@@ -445,7 +492,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 }
                 page.onSend = { [weak self] urls, anchor in
                     guard let self else { return }
-                    self.delegate?.container(self, shareWithAirDrop: urls, from: anchor)
+                    self.sendAirDrop(urls, from: anchor)
                 }
                 addSubview(page, positioned: .above, relativeTo: scroll)
                 airDropPage = page
@@ -542,7 +589,11 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
         // A password typed into the address goes to the Keychain, never into the tab, its history or the session.
         let u = newURL.isFileURL ? newURL.standardizedFileURL : RemoteFS.storingPassword(newURL)
-        if u == PlacesModel.airDropURL, !showsAirDrop { previousAirDropSelection = model.selectedItems.map(\.url) }
+        if u != url { airDropVisit = UUID(); airDropValidation?.cancel(); airDropSendCheck?.cancel() }
+        if u == PlacesModel.airDropURL, !showsAirDrop {
+            previousAirDropSelection = model.selectedItems.map(\.url)
+            refreshAirDropSelection()
+        }
         if !filterBar.isLocked { filterBar.clear(notifying: false); if !Settings.shared.showFilterBarOnStartup { filterBar.isHidden = true } }
         if !searchBar.isHidden { closeSearch() }
         messageBar.isHidden = true
@@ -571,6 +622,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         columnsDidNavigate(lender: lender, selecting: selecting)
         if AppLibrary.isActive(for: u) { apps?.prepareForDisplay() }
         RecentLocations.shared.visit(u)
+        validatePreviousAirDropSelection()
         needsLayout = true
         delegate?.containerDidChangeURL(self)
     }

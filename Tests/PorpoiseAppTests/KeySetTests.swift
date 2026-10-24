@@ -55,11 +55,11 @@ import Testing
         #expect(W.viewModeItems().map(\.title) == ["Icons", "Details", "Compact", "Columns"])
     }
 
-    /// The Dolphin preset gives back exactly the map earlier versions had (captured from 0.9.1's menu bar), except ⌘?,
-    /// which now opens the shortcut sheet instead of the website in both key sets.
+    /// The Dolphin preset gives back exactly the map earlier versions had (captured from 0.9.1's menu bar), except ⌘? and Open: the shortcut sheet replaces Help, and Return now appears in the menu.
     @Test(.isolatedSettings) func dolphinKeysRestoreTheEarlierMap() {
         let before = Self.map091.map { "\($0.0) \($0.1.unicodeScalars.map { String($0.value, radix: 16) }) \($0.2)" }
-        var expected = before.filter { !$0.hasPrefix("showHelp:") }
+        var expected = before.filter { !$0.hasPrefix("showHelp:") && !$0.hasPrefix("openSelected:") }
+        expected.append("openSelected:#0# [\"d\"] 0")
         expected.append("showKeyboardShortcuts:#0# [\"3f\"] 1048576")
         // Column view (0.11) came after: ⌘4 in both key sets.
         expected.append("setViewMode:#3# [\"34\"] 1048576")
@@ -146,7 +146,9 @@ import Testing
         #expect(file?.rows.contains(ShortcutSheet.Row(title: "Rename…", keys: "↩  F2")) == true)
         #expect(file?.rows.contains(ShortcutSheet.Row(title: "Open", keys: "⌘O  ⌘↓")) == true)
         #expect(sections.last?.title == "In the File List" && !(sections.last?.rows.contains { $0.title == "Open" } ?? true))
-        #expect(ShortcutSheet.listKeys(.dolphin).contains(ShortcutSheet.Row(title: "Open", keys: "↩")))
+        #expect(!ShortcutSheet.listKeys(.dolphin).contains(ShortcutSheet.Row(title: "Open", keys: "↩")))
+        let dolphin = ShortcutSheet.menuSections(menu(.dolphin)).first { $0.title == "File" }
+        #expect(dolphin?.rows.contains(ShortcutSheet.Row(title: "Open", keys: "↩")) == true)
     }
 
     /// The README's shortcut table is the Mac key set's menu bar. On a mismatch, the expected table is written next to

@@ -50,7 +50,7 @@ final class ShortcutSheet: SecondaryWindowController, NSTableViewDataSource, NST
         window.center()
         window.initialFirstResponder = search
         observer = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] _ in
-            self?.reload()
+            DispatchQueue.main.async { self?.reload() }
         }
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -139,8 +139,6 @@ final class ShortcutSheet: SecondaryWindowController, NSTableViewDataSource, NST
             Row(title: "Move the selection", keys: "↑ ↓ ← →"), Row(title: "Extend the selection", keys: "⇧↑ ⇧↓ ⇧← ⇧→"),
             Row(title: "First or last item", keys: "Home  End"), Row(title: "Select by name", keys: "Type the name"),
         ]
-        // With the Mac keys Return renames (File › Rename); with Dolphin's it opens.
-        if keySet == .dolphin { rows.append(Row(title: "Open", keys: "↩")) }
         rows += [
             Row(title: "Quick Look", keys: "Space"), Row(title: "Back", keys: "⌫"), Row(title: "Filter", keys: "/"),
             Row(title: "Show Hidden Files", keys: "⌥."), Row(title: "Add or remove the current item", keys: "⌃Space"),

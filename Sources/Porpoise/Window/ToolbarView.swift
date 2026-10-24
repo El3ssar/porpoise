@@ -5,15 +5,17 @@ import PorpoiseServices
 /// Dolphin's default toolbar (Back, Forward, View settings, location, Split, Search, menu), presented like a
 /// macOS 26 unified toolbar: glass capsules over a translucent bar that sits right of the full-height sidebar.
 final class ToolbarView: NSView {
-    let linkFolders = PairToolbarButton(icon: nil, tooltip: "Linked Browsing (⌃⌘L)")
+    let linkFolders = PairToolbarButton(icon: nil, tooltip: "Linked Browsing")
     private let pairGroup = GlassGroup()
     let back = FlatButton(icon: "go-previous", tooltip: "Back")
     let forward = FlatButton(icon: "go-next", tooltip: "Forward")
-    let up = FlatButton(icon: "go-up", tooltip: "Up (⌘↑)")
+    let up = FlatButton(icon: "go-up", tooltip: "Up")
     let viewMode = FlatButton(icon: "view-list-icons", tooltip: "Change View Mode")
     let split = FlatButton(icon: "view-split-left-right", title: "Split", tooltip: "Split view")
+    var splitTooltipTitle = "Split view"
     let search = FlatButton(icon: "edit-find", tooltip: "Search")
     let hamburger = FlatButton(icon: "application-menu", tooltip: "Main Menu")
+    private var shortcutsObserver: NSObjectProtocol?
     private var customGroups: [ToolbarCommand: GlassGroup] = [:]
     private var extraButtons: [ToolbarCommand: FlatButton] = [:]
     private let background = TintedMaterialView(material: .titlebar, alpha: 0.78)
@@ -80,9 +82,14 @@ final class ToolbarView: NSView {
         fieldGroups[0].identifier = .init("Porpoise.toolbar.location.primary")
         fieldGroups[1].identifier = .init("Porpoise.toolbar.location.secondary")
         setAccessibilityRole(.toolbar)
+        shortcutsObserver = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
+            guard note.object == nil || ["shortcutKeySet", "keyboardShortcuts"].contains(note.object as? String ?? "") else { return }
+            DispatchQueue.main.async { self?.refreshShortcutTooltips() }
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
+    deinit { if let shortcutsObserver { NotificationCenter.default.removeObserver(shortcutsObserver) } }
 
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { true }
@@ -103,6 +110,7 @@ final class ToolbarView: NSView {
     private static let trailingMargin: CGFloat = 12
 
     override func layout() {
+        defer { refreshShortcutTooltips() }
         super.layout()
         background.frame = bounds
         hairline.frame = CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
@@ -142,6 +150,34 @@ final class ToolbarView: NSView {
         transfers.frame = CGRect(origin: .zero, size: transferGroup.frame.size)
         layoutFields(
             from: fieldMinX, to: transferGroup.frame.minX - Self.fieldTrailingGap, y: gy, height: gh)
+    }
+
+    func refreshShortcutTooltips() {
+        typealias W = MainWindowController
+        func update(_ view: NSView, title: String, action: Selector, tag: Int = 0) {
+            let shortcut = MenuCommandRegistry.shared.shortcut(for: action, tag: tag)
+            let tooltip = shortcut.isEmpty ? title : title + " (" + shortcut.display + ")"
+            guard view.toolTip != tooltip else { return }
+            view.toolTip = tooltip; view.setAccessibilityHelp(tooltip)
+        }
+        update(back, title: "Back", action: #selector(W.goBack(_:)))
+        update(forward, title: "Forward", action: #selector(W.goForward(_:)))
+        update(up, title: "Up", action: #selector(W.goUp(_:)))
+        update(search, title: "Search", action: #selector(W.showSearch(_:)))
+        update(split, title: splitTooltipTitle, action: #selector(W.toggleSplit(_:)))
+        update(linkFolders, title: "Linked Browsing", action: #selector(W.toggleLinkedBrowsing(_:)))
+        for (command, button) in extraButtons {
+            switch command {
+            case .reload: update(button, title: command.title, action: #selector(W.reloadView(_:)))
+            case .newTab: update(button, title: command.title, action: #selector(W.newTab(_:)))
+            case .terminal: update(button, title: command.title, action: #selector(W.togglePanel(_:)), tag: 3)
+            case .commandPalette: update(button, title: command.title, action: #selector(AppDelegate.showCommandPalette(_:)))
+            case .link: update(button, title: command.title, action: #selector(W.toggleLinkedBrowsing(_:)))
+            case .share: update(button, title: command.title, action: #selector(W.shareItems(_:)))
+            case .airDrop: update(button, title: command.title, action: #selector(W.airDropItems(_:)))
+            default: break
+            }
+        }
     }
 
     private func button(for command: ToolbarCommand) -> FlatButton? {

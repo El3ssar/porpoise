@@ -16,6 +16,7 @@ extension MainWindowController {
         let tools = customToolMenu(.contextMenu)
         if !tools.items.isEmpty { m.addItem(.separator()); m.addItem(sub("Custom Tools", "system-run", tools)) }
         applyContextMenuSettings(m, hasItem: item != nil)
+        MenuCommandRegistry.shared.apply(to: m)
         return m
     }
 
