@@ -24,6 +24,14 @@ struct CodePreviewLoaderTests {
         }
     }
 
+    @Test func automaticReadsRefuseDatalessPlaceholders() {
+        let dataless: UInt32 = 0x4000_0000
+        #expect(!CodePreviewLoader.permitsRead(flags: dataless, materializeDataless: false))
+        #expect(!CodePreviewLoader.permitsRead(flags: dataless | 0x2, materializeDataless: false))
+        #expect(CodePreviewLoader.permitsRead(flags: dataless, materializeDataless: true))
+        #expect(CodePreviewLoader.permitsRead(flags: 0x2, materializeDataless: false))
+    }
+
     @Test func byteAndLineCapsAreIndependent() async throws {
         try await withFile(Data(String(repeating: "let x = 1\r\n", count: 10000).utf8)) { file in
             let lines = try await CodePreviewLoader.load(file, limits: .init(lines: 3))

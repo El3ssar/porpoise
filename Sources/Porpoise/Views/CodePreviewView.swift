@@ -71,7 +71,7 @@ final class CodePreviewView: NSView {
         note.stringValue = ""
     }
 
-    func load(_ local: URL, filename: String? = nil) {
+    func load(_ local: URL, filename: String? = nil, materializeDataless: Bool = false) {
         cancel()
         #if PORPOISE_TEST_HOOKS
         loadStarted = ProcessInfo.processInfo.systemUptime
@@ -84,7 +84,7 @@ final class CodePreviewView: NSView {
         needsLayout = true
         loading = Task { @MainActor [weak self] in
             do {
-                let document = try await CodePreviewLoader.load(local, filename: filename)
+                let document = try await CodePreviewLoader.load(local, filename: filename, materializeDataless: materializeDataless)
                 guard let self, !Task.isCancelled, self.generation == id else { return }
                 self.document = document
                 self.render()
@@ -116,7 +116,7 @@ final class CodePreviewView: NSView {
         let id = generation
         var colors: [SyntaxToken.Kind: NSColor] = [:]
         for kind: SyntaxToken.Kind in [.keyword, .type, .string, .comment, .number, .key, .tag, .heading, .attribute] {
-            colors[kind] = color(kind).usingColorSpace(.sRGB) ?? color(kind)
+            colors[kind] = Self.syntaxColor(kind).usingColorSpace(.sRGB) ?? Self.syntaxColor(kind)
         }
         let style = TextStyle(
             font: .monospacedSystemFont(ofSize: 12, weight: .regular),
@@ -159,14 +159,21 @@ final class CodePreviewView: NSView {
         }
     }
 
-    private func color(_ kind: SyntaxToken.Kind) -> NSColor {
+    /// Syntax hues come from the selected theme's ANSI palette, adjusted for readable body text.
+    static func syntaxColor(_ kind: SyntaxToken.Kind) -> NSColor {
+        let theme = Theme.palette(dark: Theme.isDark)
+        let index: Int
         switch kind {
-        case .keyword, .tag: return .systemPurple
-        case .type, .attribute: return .systemTeal
-        case .string: return .systemRed
-        case .comment: return .secondaryLabelColor
-        case .number: return .systemOrange
-        case .key, .heading: return .systemBlue
+        case .keyword, .tag: index = 5
+        case .type, .attribute: index = 6
+        case .string: index = 2
+        case .number: index = 3
+        case .key, .heading: index = 4
+        case .comment: index = 7
         }
+        let rgb = theme.terminalPalette[index]
+        let initial = kind == .comment ? Theme.windowTextInactive : NSColor(rgb: rgb.red, rgb.green, rgb.blue)
+        let target: NSColor = Tokens.luminance(Theme.viewBackground) > 0.4 ? .black : .white
+        return Tokens.distinct(initial, from: [Theme.windowBackground, Theme.viewBackground], toward: target, ratio: 4.5)
     }
 }

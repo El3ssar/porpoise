@@ -23,13 +23,15 @@ public enum CodePreviewLoader {
         }
     }
 
-    public enum Failure: Error { case notRegularFile, unreadable, invalidText }
+    public enum Failure: Error { case notRegularFile, unreadable, invalidText, notDownloaded }
 
     /// No file reads, decoding or tokenization run on the caller's actor. Cancellation reaches the worker.
-    public static func load(_ url: URL, filename: String? = nil, limits: Limits = Limits()) async throws -> CodePreviewDocument {
+    public static func load(_ url: URL, filename: String? = nil, limits: Limits = Limits(), materializeDataless: Bool = false) async throws
+        -> CodePreviewDocument
+    {
         try Task.checkCancellation()
         let worker = Task.detached(priority: .userInitiated) {
-            try read(url, filename: filename ?? url.lastPathComponent, limits: limits)
+            try read(url, filename: filename ?? url.lastPathComponent, limits: limits, materializeDataless: materializeDataless)
         }
         return try await withTaskCancellationHandler {
             let document = try await worker.value
@@ -40,7 +42,7 @@ public enum CodePreviewLoader {
         }
     }
 
-    private static func read(_ url: URL, filename: String, limits: Limits) throws -> CodePreviewDocument {
+    private static func read(_ url: URL, filename: String, limits: Limits, materializeDataless: Bool) throws -> CodePreviewDocument {
         assert(!Thread.isMainThread, "Code preview IO and tokenization must run off main.")
         try Task.checkCancellation()
         guard url.isFileURL else { throw Failure.notRegularFile }
@@ -53,6 +55,7 @@ public enum CodePreviewLoader {
         var metadata = stat()
         guard fstat(descriptor, &metadata) == 0 else { throw Failure.unreadable }
         guard metadata.st_mode & S_IFMT == S_IFREG else { throw Failure.notRegularFile }
+        guard permitsRead(flags: metadata.st_flags, materializeDataless: materializeDataless) else { throw Failure.notDownloaded }
         var bytes = [UInt8](repeating: 0, count: limits.bytes + 1)
         var count = 0
         while count < bytes.count {
@@ -90,6 +93,11 @@ public enum CodePreviewLoader {
         let language = SyntaxLanguage.detect(filename: filename, prefix: text) ?? .plain
         let tokens = try SyntaxTokenizer.tokenize(text, language: language, maximumTokens: limits.tokens)
         return CodePreviewDocument(text: text, language: language, tokens: tokens, displayedLines: displayedLines, truncated: truncated)
+    }
+
+    /// Automatic previews must not hydrate iCloud/File Provider placeholders just by following the selection.
+    static func permitsRead(flags: UInt32, materializeDataless: Bool) -> Bool {
+        materializeDataless || flags & 0x4000_0000 == 0  // SF_DATALESS, as in FileChecksums.
     }
 
     private static func decode(_ data: Data, truncated: Bool) throws -> String {

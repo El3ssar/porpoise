@@ -300,7 +300,7 @@ final class InformationPanel: NSView {
         addRow("Size:", FileFormat.size(files.reduce(Int64(0)) { $0 + $1.size }))
     }
 
-    private func showPreview(of item: FileItem) {
+    private func showPreview(of item: FileItem, allowsCode: Bool = true) {
         drivePreview?.cancel(); drivePreview = nil
         previewStatus.stringValue = ""
         previewSpinner.stopAnimation(nil)
@@ -310,7 +310,7 @@ final class InformationPanel: NSView {
         let settings = Settings.shared
         let withinSizeLimit = settings.previewMaxSizeMiB <= 0 || item.size <= Int64(settings.previewMaxSizeMiB) * 1024 * 1024
         let remoteText = settings.previewRemote && (SyntaxLanguage.detect(filename: item.name) != nil || item.utType?.conforms(to: .text) == true)
-        if settings.infoShowPreview, withinSizeLimit, CodePreviewView.supports(item), item.url.isFileURL || remoteText {
+        if allowsCode, settings.infoShowPreview, withinSizeLimit, CodePreviewView.supports(item), item.url.isFileURL || remoteText {
             showCodePreview(item)
             return
         }
@@ -360,6 +360,7 @@ final class InformationPanel: NSView {
 
     private func clearCodePreview() {
         codePreview.cancel()
+        codePreview.onCompletion = nil
         codePreview.isHidden = true
         preview.isHidden = false
         if let codeCleanup { try? FileManager.default.removeItem(at: codeCleanup) }
@@ -367,6 +368,11 @@ final class InformationPanel: NSView {
     }
 
     private func showCodePreview(_ item: FileItem) {
+        codePreview.onCompletion = { [weak self] success in
+            guard !success, let self, self.shownURLs == [item.url] else { return }
+            self.clearCodePreview()
+            self.showPreview(of: item, allowsCode: false)
+        }
         codePreview.isHidden = false
         preview.isHidden = true
         if item.url.isFileURL { codePreview.load(item.url, filename: item.name); return }

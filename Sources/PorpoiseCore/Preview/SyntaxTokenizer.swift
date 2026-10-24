@@ -25,12 +25,34 @@ public enum SyntaxTokenizer {
         let limit: Int
         let keywords: Set<String>
         let supportsSlashComments: Bool
+        let isMarkup: Bool
+        let supportsNestedComments: Bool
+        let supportsHashComments: Bool
+        let supportsDashComments: Bool
+        let supportsBacktickStrings: Bool
+        let supportsTripleStrings: Bool
+        let literalSingleQuotes: Bool
+        let doubledQuotes: Bool
+        let colonKeys: Bool
+        let supportsAtAttributes: Bool
+        let hyphenIdentifiers: Bool
         var i = 0
         var spans: [SyntaxToken] = []
         var limited = false
         init(_ text: String, language: SyntaxLanguage, limit: Int) {
             units = Array(text.utf16); self.language = language; self.limit = limit
             keywords = SyntaxTokenizer.words(for: language)
+            isMarkup = [.html, .xml].contains(language)
+            supportsNestedComments = [.swift, .rust, .kotlin].contains(language)
+            supportsHashComments = [.python, .shell, .ruby, .yaml, .toml].contains(language)
+            supportsDashComments = [.sql, .lua].contains(language)
+            supportsBacktickStrings = [.javascript, .typescript, .go].contains(language)
+            supportsTripleStrings = [.swift, .python, .kotlin, .toml].contains(language)
+            literalSingleQuotes = [.toml, .sql, .yaml].contains(language)
+            doubledQuotes = [.sql, .yaml].contains(language)
+            colonKeys = [.yaml, .css].contains(language)
+            supportsAtAttributes = [.swift, .objectiveC, .python, .java, .kotlin].contains(language)
+            hyphenIdentifiers = [.css, .html, .xml].contains(language)
             supportsSlashComments = [.swift, .c, .cpp, .objectiveC, .javascript, .typescript, .css, .go, .rust, .java, .kotlin, .json].contains(
                 language)
         }
@@ -132,15 +154,15 @@ public enum SyntaxTokenizer {
                     }
                     i += 1; continue
                 }
-                if [.html, .xml].contains(language) && matches("<!--", at: i) { try block("<!--", "-->", nested: false); continue }
+                if isMarkup && matches("<!--", at: i) { try block("<!--", "-->", nested: false); continue }
                 if language == .lua && matches("--[[", at: i) { try block("--[[", "]]", nested: false); continue }
                 if supportsSlashComments && matches("/*", at: i) {
-                    try block("/*", "*/", nested: [.swift, .rust, .kotlin].contains(language)); continue
+                    try block("/*", "*/", nested: supportsNestedComments); continue
                 }
                 let lineComment =
                     supportsSlashComments && matches("//", at: i)
-                    || [.python, .shell, .ruby, .yaml, .toml].contains(language) && c == 35
-                    || [.sql, .lua].contains(language) && matches("--", at: i)
+                    || supportsHashComments && c == 35
+                    || supportsDashComments && matches("--", at: i)
                 if lineComment { throughLine(); emit(start, .comment); continue }
                 // Swift raw strings and Rust r###"..."### keep escape characters literal.
                 if language == .swift && c == 35 || language == .rust && c == 114 {
@@ -169,19 +191,19 @@ public enum SyntaxTokenizer {
                         emit(start, .attribute); continue
                     }
                 }
-                if c == 34 || c == 39 || c == 96 && [.javascript, .typescript, .go].contains(language) {
+                if c == 34 || c == 39 || c == 96 && supportsBacktickStrings {
                     let quote = String(UnicodeScalar(c)!)
-                    let triple = [.swift, .python, .kotlin, .toml].contains(language) && matches(String(repeating: quote, count: 3), at: i)
+                    let triple = supportsTripleStrings && matches(String(repeating: quote, count: 3), at: i)
                     try quoted(
                         triple ? String(repeating: quote, count: 3) : quote,
-                        escaped: !(c == 96 && language == .go) && !(c == 39 && [.toml, .sql, .yaml].contains(language))
+                        escaped: !(c == 96 && language == .go) && !(c == 39 && literalSingleQuotes)
                             && !(triple && language == .kotlin),
-                        doubled: [.sql, .yaml].contains(language))
+                        doubled: doubledQuotes)
                     continue
                 }
-                if [.html, .xml].contains(language) && c == 60 {
+                if isMarkup && c == 60 {
                     i += 1
-                    if i < units.count && [UInt16(47), 33, 63].contains(units[i]) { i += 1 }
+                    if i < units.count && (units[i] == 47 || units[i] == 33 || units[i] == 63) { i += 1 }
                     while i < units.count && (identifier(units[i]) || digit(units[i]) || units[i] == 45 || units[i] == 58) { i += 1 }
                     emit(start, .tag); continue
                 }
@@ -189,18 +211,18 @@ public enum SyntaxTokenizer {
                     consumeNumber()
                     emit(start, .number); continue
                 }
-                if identifier(c) || c == 64 && [.swift, .objectiveC, .python, .java, .kotlin].contains(language) {
+                if identifier(c) || c == 64 && supportsAtAttributes {
                     i += 1
-                    while i < units.count && (identifier(units[i]) || digit(units[i]) || units[i] == 45 && [.css, .html, .xml].contains(language)) {
+                    while i < units.count && (identifier(units[i]) || digit(units[i]) || units[i] == 45 && hyphenIdentifiers) {
                         i += 1
                     }
                     let next = nextNonspace(i)
-                    let key = next < units.count && (units[next] == 58 && [.yaml, .css].contains(language) || units[next] == 61 && language == .toml)
+                    let key = next < units.count && (units[next] == 58 && colonKeys || units[next] == 61 && language == .toml)
                     if key {
                         emit(start, .key)
                     } else if c == 64 {
                         emit(start, .attribute)
-                    } else if [.html, .xml].contains(language) && next < units.count && units[next] == 61 {
+                    } else if isMarkup && next < units.count && units[next] == 61 {
                         emit(start, .attribute)
                     } else if i - start <= 128 {
                         let word = String(decoding: units[start..<i], as: UTF16.self)

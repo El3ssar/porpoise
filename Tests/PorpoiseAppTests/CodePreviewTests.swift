@@ -23,7 +23,7 @@ import Testing
         #expect(view.textView.isSelectable && !view.textView.isEditable)
         #expect(!view.textView.drawsBackground && !view.scrollView.drawsBackground && !view.scrollView.contentView.drawsBackground)
         let color = view.textView.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
-        #expect(color == NSColor.systemPurple.usingColorSpace(.sRGB))
+        #expect(color == CodePreviewView.syntaxColor(.keyword).usingColorSpace(.sRGB))
         Theme.lookChanged()
         #expect(view.document?.language == .python && view.textView.string.contains("café"))
         view.cancel()
@@ -41,6 +41,30 @@ import Testing
         view.load(script)
         try #require(await poll { !view.isLoading })
         #expect(view.document?.language == .python)
+    }
+
+    @Test func syntaxColorsFollowCustomPaletteWithReadableContrast() {
+        _ = NSApplication.shared
+        let app = NSApplication.shared, previous = NSApplication.shared.appearance
+        defer { app.appearance = previous }
+        app.appearance = NSAppearance(named: .aqua)
+        var theme = AppearanceTheme.system(dark: false)
+        theme.name = "Preview test palette"
+        theme[.windowBackground] = ThemeColor(255, 255, 255)
+        theme[.viewBackground] = ThemeColor(255, 255, 255)
+        theme.terminalPalette[5] = ThemeColor(130, 0, 20)
+        var preferences = Settings.shared.appearancePreferences
+        preferences.customTheme = theme; preferences.themeName = "Custom"
+        Settings.shared.appearancePreferences = preferences
+        let red = CodePreviewView.syntaxColor(.keyword)
+        theme.terminalPalette[5] = ThemeColor(0, 45, 145)
+        preferences.customTheme = theme
+        Settings.shared.appearancePreferences = preferences
+        let blue = CodePreviewView.syntaxColor(.keyword)
+        #expect(red != blue)
+        for kind: SyntaxToken.Kind in [.keyword, .type, .string, .comment, .number, .key, .tag, .heading, .attribute] {
+            #expect(Tokens.contrast(CodePreviewView.syntaxColor(kind), Theme.viewBackground) >= 4.5)
+        }
     }
 
     @Test func boundedViewExplainsTruncationAndRejectsBinary() async throws {
@@ -69,6 +93,7 @@ import Testing
         defer { panel.close(); parent.close() }
         let material = panel.material
         panel.show([try #require(FileItem.load(source))], relativeTo: parent)
+        #expect(panel.hidesOnDeactivate)
         #expect(panel.contentView === material && !panel.isOpaque && panel.backgroundColor == .clear)
         try #require(await poll { panel.state == "code" })
         for look in [AppearanceChoice.light, .dark] {
@@ -123,6 +148,27 @@ import Testing
                         keyCode: key)))
             #expect(!panel.isVisible && panel.state == "empty")
         }
+    }
+
+    @Test func invalidInspectorTextFallsBackToTheIcon() async throws {
+        _ = NSApplication.shared
+        Settings.shared.infoShowPreview = true
+        Settings.shared.previewText = false
+        let scratch = try Scratch()
+        let binary = try scratch.file("binary.plist", "bplist00\0binary")
+        let wc = MainWindowController(urls: [binary.deletingLastPathComponent()])
+        defer { wc.window?.close() }
+        try #require(await poll { wc.view.model.rows.count == 1 })
+        wc.view.list.select(binary)
+        let panel = InformationPanel(frame: NSRect(x: 0, y: 0, width: 300, height: 600))
+        panel.show(hovered: nil, container: wc.view)
+        try #require(await poll { panel.codePreview.isHidden })
+        #expect(panel.codePreview.document == nil)
+        #expect(panel.subviews.contains { ($0 as? NSImageView)?.image != nil && !$0.isHidden })
+        let column = ColumnPreviewView(frame: .zero)
+        column.show(binary, container: wc.view)
+        try #require(await poll { column.information.codePreview.isHidden })
+        #expect(column.information.subviews.contains { ($0 as? NSImageView)?.image != nil && !$0.isHidden })
     }
 
     @Test func informationUsesCodeEvenWhenTextThumbnailsAreOff() async throws {

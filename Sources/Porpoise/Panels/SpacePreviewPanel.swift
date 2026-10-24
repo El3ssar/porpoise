@@ -39,7 +39,7 @@ final class SpacePreviewPanel: NSPanel, NSWindowDelegate, MaterialBackedWindow {
             styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: false)
         isReleasedWhenClosed = false
         isFloatingPanel = true
-        hidesOnDeactivate = false
+        hidesOnDeactivate = true
         level = .floating
         isOpaque = false
         backgroundColor = .clear
@@ -241,7 +241,7 @@ final class SpacePreviewPanel: NSPanel, NSWindowDelegate, MaterialBackedWindow {
         if CodePreviewView.supports(item) {
             quickLook?.isHidden = true
             code.isHidden = false
-            code.load(local, filename: item.name)
+            code.load(local, filename: item.name, materializeDataless: true)
         } else {
             showQuickLook(local)
         }
@@ -250,7 +250,10 @@ final class SpacePreviewPanel: NSPanel, NSWindowDelegate, MaterialBackedWindow {
     private func showQuickLook(_ local: URL) {
         code.isHidden = true
         if quickLook == nil {
-            let view = QLPreviewView(frame: body.bounds, style: .normal)!
+            guard let view = QLPreviewView(frame: body.bounds, style: .normal) else {
+                status.isHidden = false; status.stringValue = "Preview unavailable"; state = "unavailable"
+                return
+            }
             view.shouldCloseWithWindow = false
             view.autoresizingMask = [.width, .height]
             body.addSubview(view, positioned: .below, relativeTo: status)
@@ -268,9 +271,9 @@ final class SpacePreviewPanel: NSPanel, NSWindowDelegate, MaterialBackedWindow {
     }
     @objc private func showOpenWith() {
         guard let item = items[safe: itemIndex] else { return }
-        let association = item.url.isFileURL ? item.url : URL(fileURLWithPath: "/tmp").appendingPathComponent(item.name)
         let menu = NSMenu()
-        for app in NSWorkspace.shared.urlsForApplications(toOpen: association).prefix(20) {
+        let applications = item.utType.map { NSWorkspace.shared.urlsForApplications(toOpen: $0) } ?? []
+        for app in applications.prefix(20) {
             let entry = NSMenuItem(title: MainWindowController.appName(app), action: #selector(openInApplication(_:)), keyEquivalent: "")
             entry.target = self; entry.representedObject = app
             menu.addItem(entry)
