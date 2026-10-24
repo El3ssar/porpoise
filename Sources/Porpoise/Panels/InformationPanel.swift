@@ -93,7 +93,7 @@ final class InformationPanel: NSView {
         player.controlsStyle = .none
         player.isHidden = true
         player.wantsLayer = true
-        player.layer?.cornerRadius = 8
+        player.layer?.cornerRadius = Tokens.Radius.medium
         player.layer?.masksToBounds = true
         // Clicking the video plays or pauses it.
         player.addGestureRecognizer(NSClickGestureRecognizer(target: controls, action: #selector(MediaControls.togglePlay)))

@@ -23,7 +23,7 @@ final class MediaControls: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius = 8
+        layer?.cornerRadius = Tokens.Radius.medium
         layer?.cornerCurve = .continuous
         Theme.whenChanged(self) { [weak self] in self?.layer?.backgroundColor = Theme.windowBackground.withAlphaComponent(0.82).cgColor }
         playButton.isBordered = false

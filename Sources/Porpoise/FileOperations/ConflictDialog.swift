@@ -94,7 +94,7 @@ final class ConflictDialog: NSObject {
 
         let strip = NSView(frame: CGRect(x: 20, y: 95, width: 580, height: 66))
         strip.wantsLayer = true
-        strip.layer?.cornerRadius = 8
+        strip.layer?.cornerRadius = Tokens.Radius.medium
         strip.layer?.borderWidth = 1
         Theme.whenChanged(strip) { [weak strip] in
             strip?.layer?.backgroundColor = Theme.activeText.withAlphaComponent(0.08).cgColor
@@ -161,7 +161,7 @@ final class ConflictDialog: NSObject {
 
     private func card(_ item: FileItem, heading: String, x: CGFloat, newer: Bool, larger: Bool, summary: TransferFolderSummary? = nil) {
         let box = NSView(frame: CGRect(x: x, y: 173, width: 274, height: 136))
-        box.wantsLayer = true; box.layer?.cornerRadius = 8; box.layer?.borderWidth = 1
+        box.wantsLayer = true; box.layer?.cornerRadius = Tokens.Radius.medium; box.layer?.borderWidth = 1
         Theme.whenChanged(box) { [weak box] in
             box?.layer?.backgroundColor = Theme.viewBackground.cgColor
             box?.layer?.borderColor = Theme.frame.cgColor
@@ -286,7 +286,7 @@ private final class ConflictBadge: NSView {
     required init?(coder: NSCoder) { fatalError() }
     override func draw(_ dirtyRect: NSRect) {
         Theme.transferChanged.withAlphaComponent(0.14).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
+        NSBezierPath(roundedRect: bounds, xRadius: Tokens.Radius.medium, yRadius: Tokens.Radius.medium).fill()
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: FontSize.caption, weight: .semibold), .foregroundColor: Theme.transferChanged,
         ]

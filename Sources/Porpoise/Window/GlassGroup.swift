@@ -9,12 +9,14 @@ final class GlassGroup: NSView {
     private let ring = Ring()
     /// The accent outline that marks this capsule as the current one: the active pane's location in a split.
     var showsCurrent = false { didSet { ring.isHidden = !showsCurrent } }
+    /// The corner radius asked for; nil: a capsule (half the height), whatever height it is given.
+    private let fixedRadius: CGFloat?
 
-    init(cornerRadius: CGFloat = 17) {
+    init(cornerRadius: CGFloat? = nil) {
+        fixedRadius = cornerRadius
         super.init(frame: .zero)
         if #available(macOS 26.0, *) {
             let g = NSGlassEffectView()
-            g.cornerRadius = cornerRadius
             g.tintColor = Theme.windowBackground.withAlphaComponent(0.35)
             g.contentView = content
             glass = g
@@ -25,7 +27,6 @@ final class GlassGroup: NSView {
             v.blendingMode = .withinWindow
             v.state = .active
             v.wantsLayer = true
-            v.layer?.cornerRadius = cornerRadius
             v.layer?.cornerCurve = .continuous
             v.layer?.masksToBounds = true
             v.addSubview(content)
@@ -49,7 +50,13 @@ final class GlassGroup: NSView {
         glass?.frame = bounds
         content.frame = bounds
         ring.frame = bounds
-        ring.layer?.cornerRadius = bounds.height / 2
+        let radius = fixedRadius ?? bounds.height / 2
+        ring.layer?.cornerRadius = radius
+        if #available(macOS 26.0, *), let g = glass as? NSGlassEffectView {
+            g.cornerRadius = radius
+        } else {
+            glass?.layer?.cornerRadius = radius
+        }
     }
 
     /// Drawn over the glass; clicks go through to what it surrounds.

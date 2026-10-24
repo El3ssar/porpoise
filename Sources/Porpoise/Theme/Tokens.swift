@@ -163,6 +163,9 @@ enum Tokens {
 
     /// Corner radii: small controls, rows, cards, sheets.
     enum Radius {
+        /// Progress and capacity bars (height 6 or less).
+        static let xsmall: CGFloat = 2
+        /// Badges, tag chips, the rename field, focus masks of small controls.
         static let small: CGFloat = 4
         static let row: CGFloat = 6
         /// Preview surfaces, cards inside sheets, the icon backing of a selected item in Icons view.

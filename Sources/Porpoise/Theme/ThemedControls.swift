@@ -77,7 +77,7 @@ final class ChoiceImage: NSImage {
 
     static func draw(in rect: NSRect, radio: Bool, on: Bool) {
         let box = rect.insetBy(dx: 0.5, dy: 0.5)
-        let path = radio ? NSBezierPath(ovalIn: box) : NSBezierPath(roundedRect: box, xRadius: 3, yRadius: 3)
+        let path = radio ? NSBezierPath(ovalIn: box) : NSBezierPath(roundedRect: box, xRadius: 3, yRadius: 3)  // Breeze's box corner (measured)
         path.lineWidth = 1
         if on {
             Theme.accent.setFill()
@@ -282,7 +282,7 @@ final class TabButton: NSButton {
         let color = isSelected ? Theme.accent : Theme.windowText
         if isSelected || isHighlighted {
             (isHighlighted ? Theme.buttonPressedBackground : Theme.buttonHoverBackground).setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 6, yRadius: 6).fill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: Tokens.Radius.row, yRadius: Tokens.Radius.row).fill()
         }
         let titleAttributes: [NSAttributedString.Key: Any] = [.font: Self.titleFont, .foregroundColor: Theme.windowText]
         let size = (title as NSString).size(withAttributes: titleAttributes)

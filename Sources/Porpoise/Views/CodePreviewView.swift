@@ -31,7 +31,7 @@ final class CodePreviewView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius = 8
+        layer?.cornerRadius = Tokens.Radius.medium
         layer?.masksToBounds = true
         textView.isEditable = false
         textView.isSelectable = true

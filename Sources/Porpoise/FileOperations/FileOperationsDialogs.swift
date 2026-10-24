@@ -149,7 +149,7 @@ final class FileOperationsDialogs: FileOperationsUI {
         let scroll = NSScrollView(frame: CGRect(x: 20, y: 54, width: 520, height: listHeight))
         scroll.hasVerticalScroller = failures.count > 7
         scroll.drawsBackground = false
-        scroll.wantsLayer = true; scroll.layer?.cornerRadius = 6; scroll.layer?.borderWidth = 1
+        scroll.wantsLayer = true; scroll.layer?.cornerRadius = Tokens.Radius.row; scroll.layer?.borderWidth = 1
         Theme.whenChanged(scroll) { [weak scroll] in
             scroll?.layer?.backgroundColor = Theme.viewBackground.cgColor
             scroll?.layer?.borderColor = Theme.frame.cgColor
@@ -297,7 +297,7 @@ final class SystemClipboard: FileClipboard {
 
 private final class TransferErrorListView: NSView {
     override func draw(_ dirtyRect: NSRect) {
-        let box = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
+        let box = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: Tokens.Radius.row, yRadius: Tokens.Radius.row)
         Theme.viewBackground.setFill(); box.fill()
         Theme.frame.setStroke(); box.lineWidth = 1; box.stroke()
     }

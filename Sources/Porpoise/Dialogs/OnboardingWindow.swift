@@ -318,7 +318,7 @@ final class OnboardingWindowController: SecondaryWindowController {
         badge.wantsLayer = true
         badge.drawsBackground = true
         badge.backgroundColor = Theme.accent
-        badge.layer?.cornerRadius = 10
+        badge.layer?.cornerRadius = Tokens.Radius.card
         badge.layer?.masksToBounds = true
         badge.widthAnchor.constraint(equalToConstant: 20).isActive = true
         badge.heightAnchor.constraint(equalToConstant: 20).isActive = true

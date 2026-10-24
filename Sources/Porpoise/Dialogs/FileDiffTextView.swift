@@ -247,7 +247,9 @@ final class FileDiffTextView: NSView {
             let a = (before.replacingOccurrences(of: "\t", with: "    ") as NSString).size(withAttributes: [.font: font]).width,
                 w = (word.replacingOccurrences(of: "\t", with: "    ") as NSString).size(withAttributes: [.font: font]).width
             tint.withAlphaComponent(Self.wordTintAlpha(dark: effectiveAppearance.isDark)).setFill();
-            NSBezierPath(roundedRect: NSRect(x: origin.x + a, y: y + 1, width: w, height: 16), xRadius: 3, yRadius: 3).fill()
+            NSBezierPath(
+                roundedRect: NSRect(x: origin.x + a, y: y + 1, width: w, height: 16), xRadius: Tokens.Radius.small, yRadius: Tokens.Radius.small
+            ).fill()
         }
         (text.replacingOccurrences(of: "\t", with: "    ") as NSString).draw(
             at: origin, withAttributes: [.font: font, .foregroundColor: Theme.viewText])

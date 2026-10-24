@@ -495,11 +495,12 @@ extension ItemListView {
         NSGraphicsContext.current?.cgContext.setAlpha(1)
         defer { NSGraphicsContext.restoreGraphicsState() }
         Theme.viewText.withAlphaComponent(0.14).setFill()
-        NSBezierPath(roundedRect: rect, xRadius: 1.5, yRadius: 1.5).fill()
+        NSBezierPath(roundedRect: rect, xRadius: Tokens.Radius.xsmall, yRadius: Tokens.Radius.xsmall).fill()
         Theme.activeText.setFill()
         NSBezierPath(
-            roundedRect: CGRect(x: rect.minX, y: rect.minY, width: rect.width * max(0, min(1, fraction)), height: rect.height), xRadius: 1.5,
-            yRadius: 1.5
+            roundedRect: CGRect(x: rect.minX, y: rect.minY, width: rect.width * max(0, min(1, fraction)), height: rect.height),
+            xRadius: Tokens.Radius.xsmall,
+            yRadius: Tokens.Radius.xsmall
         ).fill()
     }
 

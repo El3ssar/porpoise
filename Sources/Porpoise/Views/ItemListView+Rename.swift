@@ -30,7 +30,7 @@ extension ItemListView: NSTextFieldDelegate {
         f.wantsLayer = true
         f.layer?.borderColor = Theme.focus.cgColor
         f.layer?.borderWidth = 1
-        f.layer?.cornerRadius = 3
+        f.layer?.cornerRadius = Tokens.Radius.small
         addSubview(f)
         renameField = f
         positionRenameField(i)
