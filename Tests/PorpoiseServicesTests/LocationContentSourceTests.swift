@@ -11,7 +11,8 @@ import Testing
     /// Lists `folder` through `source` and waits for the last page.
     func listing(_ source: LocationContentSource, _ folder: URL, expanded: Set<URL> = []) async throws -> LocationListing {
         var answer: LocationListing?
-        _ = source.load(folder, expanded: expanded) { if $0.complete { answer = $0 } }
+        let load = source.load(folder, expanded: expanded) { if $0.complete { answer = $0 } }
+        defer { load.cancel() }
         try #require(await eventually { answer != nil })
         return try #require(answer)
     }
@@ -68,13 +69,13 @@ import Testing
         #expect(!model.isLoading && model.items.isEmpty && loaded == 1)
     }
 
-    @Test func recentLocationsListTheFoldersVisited() {
+    @Test func recentLocationsListTheFoldersVisited() async throws {
         let recent = URL(string: "recent:/locations")!
         let source = LocationContentSources.source(for: recent)
         #expect(source is RecentSource && LocationContentSources.source(for: URL(string: "recent:/files")!) is RecentSource)
-        var listed: [FileItem]?
-        _ = source.load(recent, expanded: []) { listed = $0.items }
-        #expect(listed?.map(\.url) == RecentLocations.shared.urls.compactMap { FileItem.load($0)?.url })
+        let expected = RecentLocations.shared.urls.compactMap { FileItem.load($0)?.url }
+        let listed = try await listing(source, recent)
+        #expect(listed.items.map(\.url) == expected)
         #expect(!source.traits.prunesSelection && !source.traits.optimisticEdits && source.traits.watch == .none)
     }
 
