@@ -446,9 +446,9 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         guard !node.probing else { return }
         node.beginProbe()
         let url = node.url, hidden = showHidden, tree = root
-        listingQueue.async {
+        listingQueue.async { [weak self, weak node] in
             let e = Node.hasSubfolder(url, showHidden: hidden)
-            DispatchQueue.main.async { [weak self, weak node] in
+            DispatchQueue.main.async {
                 guard let self, let node, self.root === tree, self.remoteTree == nil, node.probing else { return }
                 node.finishProbe(e)
                 if !e, self.outline.row(forItem: node) >= 0 { self.outline.reloadItem(node) }

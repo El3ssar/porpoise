@@ -266,15 +266,18 @@ extension FileOperationsController {
     }
 
     /// The AppleScript that runs `commands` in one administrator shell, stopping at the first failure (lock flags
-    /// are cleared best effort).
+    /// are cleared best effort). Its prompt names Porpoise: run by osascript, macOS would otherwise say "osascript".
     static func administratorScript(_ commands: [[String]]) -> String {
         let q = RemoteParsing.quote
         let shell = commands.map { c in
             let line = c.map(q).joined(separator: " ")
             return c.first == "/usr/bin/chflags" ? "( \(line) 2>/dev/null; true )" : "( \(line) )"
         }.joined(separator: " && ")
-        return "do shell script \(Escaping.appleScriptString(shell)) with administrator privileges"
+        return "do shell script \(Escaping.appleScriptString(shell)) with prompt \(Escaping.appleScriptString(administratorPrompt))"
+            + " with administrator privileges"
     }
+
+    static let administratorPrompt = "Porpoise needs an administrator’s permission to make this change."
 
     /// AppleScript's "User canceled." error number.
     static let userCancelledError = -128
