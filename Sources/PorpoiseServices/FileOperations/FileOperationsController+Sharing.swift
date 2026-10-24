@@ -56,6 +56,7 @@ extension FileOperationsController {
         } catch {
             if error is CancellationError { control.cancel() }
             ended(activity, errors: control.isCancelled ? [] : [error.localizedDescription], cause: error)
+            if control.isCancelled { throw CancellationError() }
             throw error
         }
     }

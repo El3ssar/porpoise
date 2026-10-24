@@ -83,7 +83,7 @@ import Testing
         #expect(scratch.read("server/good.txt") == "good")
     }
 
-    @Test func cancellingAnInFlightPreparationStopsBeforeNativeHandoff() async throws {
+    @Test(arguments: [true, false]) func cancellingAnInFlightPreparationStopsBeforeNativeHandoff(cancelTask: Bool) async throws {
         let scratch = try Scratch(), server = try scratch.folder("server")
         try scratch.file("server/file.txt", "original")
         let root = URL(string: "sftp://share-\(UUID().uuidString).invalid/")!
@@ -98,8 +98,9 @@ import Testing
         let controller = FileOperationsController()
         let task = Task { try await controller.prepareForSharing([root.appendingPathComponent("file.txt")]) }
         try #require(await offThePool { entered.wait(timeout: .now() + 5) == .success })
-        task.cancel(); release.signal()
-        await #expect(throws: (any Error).self) { try await task.value }
+        if cancelTask { task.cancel() } else { controller.cancel(try #require(controller.activities.last)) }
+        release.signal()
+        await #expect(throws: CancellationError.self) { try await task.value }
         #expect(controller.activities.last?.state == .cancelled)
         #expect(scratch.read("server/file.txt") == "original")
     }
