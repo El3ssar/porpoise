@@ -27,13 +27,25 @@ import Testing
         store.set(try CustomToolDocument(tools: tools).encoded(), forKey: "customTools")
         for _ in 0..<20 { #expect(Settings.shared.customToolsIfLoaded.isEmpty) }
         #expect(store.toolReads.isEmpty)
+        var rebuilt = false
+        let observer = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { note in
+            guard note.object as? String == "customTools" else { return }
+            #expect(Thread.isMainThread)
+            #expect(Settings.shared.customToolsIfLoaded == tools)
+            #expect(Settings.shared.customTools == tools)
+            rebuilt = true
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
         var completed = false
         Settings.shared.prepareCustomToolsAfterFirstWindow {
             #expect(Thread.isMainThread)
             completed = true
         }
         try #require(await eventually { completed })
-        #expect(store.toolReads == [false])
+        // Preparation must do the first read off-main. Its notification can immediately rebuild warm consumers,
+        // whose legitimate preference reads must not be mistaken for eager loading before preparation.
+        #expect(store.toolReads.first == false)
+        #expect(rebuilt)
         #expect(Settings.shared.customToolsIfLoaded == tools)
         #expect(Settings.shared.customTools == tools)
         // Once loaded, an explicit preference edit is reflected by menu reconstruction too.
