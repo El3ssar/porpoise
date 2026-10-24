@@ -92,14 +92,17 @@ import Testing
             p.themeName = "Nord"; p.shell = .fish; p.density = .comfortable
             p.customTheme = AppearanceTheme.builtIns[3]
             p.shellArguments = ["-l", "a b"]; p.externalTerminal = .kitty; p.uiFontName = "Menlo"
+            p.codeTheme = .githubLight
         }
         s.labelFontName = "Monaco"; s.labelFontSize = 15; s.appearance = .dark
         let exported = try s.exportAppearance()
         s.resetAll()
         #expect(s.appearancePreferences.themeName == AppearanceTheme.systemName)
+        #expect(s.appearancePreferences.codeTheme == .githubDark)
         try s.importAppearance(exported, includingCommands: true)
         #expect(s.appearancePreferences.themeName == "Nord")
         #expect(s.appearancePreferences.shell == .fish)
+        #expect(s.appearancePreferences.codeTheme == .githubLight)
         #expect(s.labelFontName == "Monaco" && s.labelFontSize == 15 && s.appearance == .dark)
         #expect(s.appearancePreferences.customTheme == AppearanceTheme.builtIns[3])
         #expect(s.appearancePreferences.externalTerminal == .kitty)

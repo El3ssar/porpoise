@@ -4,7 +4,6 @@ import PorpoiseServices
 
 /// Shared selectable code surface. File work stays in Services; this view only applies bounded text.
 final class CodePreviewView: NSView {
-    private static let backdropOpacity: CGFloat = 0.85
     let textView = NSTextView()
     let scrollView = NSScrollView()
     let note = NSTextField(labelWithString: "")
@@ -57,8 +56,14 @@ final class CodePreviewView: NSView {
         addSubview(note)
         Theme.whenChanged(self) { [weak self] in
             // Present from loading through ready: readable code without replacing the window's glass shell.
-            self?.layer?.backgroundColor = Theme.viewBackground.withAlphaComponent(Self.backdropOpacity).cgColor
-            self?.render()
+            guard let self else { return }
+            let palette = Self.palette
+            self.layer?.backgroundColor = Self.color(palette.background).cgColor
+            self.appearance = NSAppearance(named: palette.isDark ? .darkAqua : .aqua)
+            self.note.textColor = Self.color(palette.comment)
+            self.textView.textColor = Self.color(palette.text)
+            self.scrollView.scrollerKnobStyle = palette.isDark ? .light : .dark
+            self.render()
         }
     }
 
@@ -125,12 +130,12 @@ final class CodePreviewView: NSView {
         rendering?.cancel()
         let id = generation
         var colors: [SyntaxToken.Kind: NSColor] = [:]
-        for kind: SyntaxToken.Kind in [.keyword, .type, .string, .comment, .number, .key, .tag, .heading, .attribute] {
+        for kind in SyntaxToken.Kind.allCases {
             colors[kind] = Self.syntaxColor(kind).usingColorSpace(.sRGB) ?? Self.syntaxColor(kind)
         }
         let style = TextStyle(
             font: .monospacedSystemFont(ofSize: 12, weight: .regular),
-            base: Self.readableColor(Theme.windowText).usingColorSpace(.sRGB) ?? Theme.windowText, colors: colors)
+            base: Self.color(Self.palette.text), colors: colors)
         isLoading = true
         rendering = Task { @MainActor [weak self] in
             let worker = Task.detached(priority: .userInitiated) {
@@ -169,28 +174,9 @@ final class CodePreviewView: NSView {
         }
     }
 
-    /// Syntax hues come from the selected theme's ANSI palette, adjusted for readable body text.
-    static func syntaxColor(_ kind: SyntaxToken.Kind) -> NSColor {
-        let theme = Theme.palette(dark: Theme.isDark)
-        let index: Int
-        switch kind {
-        case .keyword, .tag: index = 5
-        case .type, .attribute: index = 6
-        case .string: index = 2
-        case .number: index = 3
-        case .key, .heading: index = 4
-        case .comment: index = 7
-        }
-        let rgb = theme.terminalPalette[index]
-        let initial = kind == .comment ? Theme.windowTextInactive : NSColor(rgb: rgb.red, rgb.green, rgb.blue)
-        return readableColor(initial)
-    }
+    static var palette: CodePalette { Settings.shared.appearancePreferences.codeTheme.palette(darkAppearance: Theme.isDark) }
 
-    private static func readableColor(_ initial: NSColor) -> NSColor {
-        let background = (Theme.viewBackground.usingColorSpace(.sRGB) ?? Theme.viewBackground).withAlphaComponent(1)
-        // The underlay can vary with the desktop. Bound both extremes of the translucent code backdrop.
-        let backgrounds = [NSColor.black, .white].map { background.blended(withFraction: 1 - backdropOpacity, of: $0) ?? background }
-        let target: NSColor = Tokens.luminance(background) > 0.4 ? .black : .white
-        return Tokens.distinct(initial, from: backgrounds, toward: target, ratio: 4.6)
-    }
+    static func syntaxColor(_ kind: SyntaxToken.Kind) -> NSColor { color(palette.color(for: kind)) }
+
+    private static func color(_ value: ThemeColor) -> NSColor { NSColor(rgb: value.red, value.green, value.blue) }
 }

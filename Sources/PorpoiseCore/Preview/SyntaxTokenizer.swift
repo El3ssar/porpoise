@@ -1,7 +1,9 @@
 import Foundation
 
 public struct SyntaxToken: Equatable, Sendable {
-    public enum Kind: String, Sendable { case keyword, type, string, comment, number, key, tag, heading, attribute }
+    public enum Kind: String, CaseIterable, Sendable {
+        case keyword, type, string, comment, number, key, tag, heading, attribute, function, constant, inserted, deleted
+    }
     /// UTF16 offsets match AppKit text storage; spans never overlap or escape the input.
     public let range: NSRange
     public let kind: Kind
@@ -13,6 +15,9 @@ public struct SyntaxTokens: Sendable {
 }
 
 public enum SyntaxTokenizer {
+    private static let literalConstants: Set<String> = ["true", "false", "nil", "null", "None", "True", "False", "undefined", "NULL"]
+    private static let nonFunctionLanguages: Set<SyntaxLanguage> = [.json, .yaml, .toml, .html, .xml, .css]
+
     public static func tokenize(_ text: String, language: SyntaxLanguage, maximumTokens: Int = 30000) throws -> SyntaxTokens {
         guard language != .plain else { return SyntaxTokens(spans: [], limited: false) }
         var scanner = Scanner(text, language: language, limit: max(0, maximumTokens))
@@ -144,6 +149,18 @@ public enum SyntaxTokenizer {
             while i < units.count && !limited {
                 if i % 4096 == 0 { try Task.checkCancellation() }
                 let start = i, c = units[i]
+                if language == .diff {
+                    if c == 10 || c == 13 { i += 1; continue }
+                    throughLine()
+                    if matches("+++", at: start) || matches("---", at: start) || matches("@@", at: start) {
+                        emit(start, .heading)
+                    } else if c == 43 {
+                        emit(start, .inserted)
+                    } else if c == 45 {
+                        emit(start, .deleted)
+                    }
+                    continue
+                }
                 if whitespace(c) { i += 1; continue }
                 if language == .markdown {
                     if c == 35 && (i == 0 || units[i - 1] == 10 || units[i - 1] == 13) { throughLine(); emit(start, .heading); continue }
@@ -226,10 +243,16 @@ public enum SyntaxTokenizer {
                         emit(start, .attribute)
                     } else if i - start <= 128 {
                         let word = String(decoding: units[start..<i], as: UTF16.self)
-                        if keywords.contains(language == .sql ? word.lowercased() : word) {
+                        if SyntaxTokenizer.literalConstants.contains(word) {
+                            emit(start, .constant)
+                        } else if keywords.contains(language == .sql ? word.lowercased() : word) {
                             emit(start, .keyword)
                         } else if c >= 65 && c <= 90 {
                             emit(start, .type)
+                        } else if next < units.count, units[next] == 40,
+                            !SyntaxTokenizer.nonFunctionLanguages.contains(language)
+                        {
+                            emit(start, .function)
                         }
                     }
                     continue
@@ -274,7 +297,7 @@ public enum SyntaxTokenizer {
         case .lua: specific = "local function end then elseif do until repeat nil and or not require"
         case .json, .yaml, .toml: specific = "true false null True False None inf nan"
         case .css: specific = "important inherit initial unset none auto block flex grid inline absolute relative fixed sticky solid transparent"
-        case .html, .xml, .markdown, .plain: specific = ""
+        case .html, .xml, .markdown, .plain, .diff: specific = ""
         }
         return Set((common + " " + specific).split(separator: " ").map(String.init))
     }

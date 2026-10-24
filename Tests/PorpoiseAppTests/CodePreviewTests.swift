@@ -45,7 +45,7 @@ import Testing
         #expect(view.document?.language == .python)
     }
 
-    @Test func syntaxColorsFollowCustomPaletteWithReadableContrast() {
+    @Test func syntaxColorsStayGitHubWhenTheApplicationPaletteChanges() {
         _ = NSApplication.shared
         let app = NSApplication.shared, previous = NSApplication.shared.appearance
         defer { app.appearance = previous }
@@ -63,13 +63,15 @@ import Testing
         preferences.customTheme = theme
         Settings.shared.appearancePreferences = preferences
         let blue = CodePreviewView.syntaxColor(.keyword)
-        #expect(red != blue)
-        for kind: SyntaxToken.Kind in [.keyword, .type, .string, .comment, .number, .key, .tag, .heading, .attribute] {
-            #expect(Tokens.contrast(CodePreviewView.syntaxColor(kind), Theme.viewBackground) >= 4.5)
+        #expect(red == blue && red.hexString == "#ff7b72")
+        for kind in SyntaxToken.Kind.allCases {
+            #expect(Tokens.contrast(CodePreviewView.syntaxColor(kind), NSColor(rgb: 13, 17, 23)) >= 4.5)
         }
     }
 
-    @Test func renderedTextContrastsWithBothBackdropExtremes() async throws {
+    @Test(arguments: CodeTheme.allCases)
+    func renderedTextContrastsWithBothBackdropExtremes(codeTheme: CodeTheme) async throws {
+        Settings.shared.updateAppearance { $0.codeTheme = codeTheme }
         let app = NSApplication.shared, previous = NSApplication.shared.appearance
         defer { app.appearance = previous; Theme.lookChanged() }
         let scratch = try Scratch()
@@ -82,12 +84,18 @@ import Testing
             try #require(await poll { !view.isLoading })
             #expect(view.layer?.backgroundColor == initial)
             let backdrop = try #require(NSColor(cgColor: initial))
-            #expect(backdrop.alphaComponent > 0 && backdrop.alphaComponent < 1)
+            #expect(backdrop.alphaComponent == 1)
+            let palette = codeTheme.palette(darkAppearance: appearance == .darkAqua)
+            #expect(backdrop.hexString == palette.background.hex)
+            #expect(view.effectiveAppearance.isDark == palette.isDark)
             let storage = try #require(view.textView.textStorage)
             let document = try #require(view.document)
             let offsets = document.tokens.spans.map(\.range.location) + [4]
             for underlay in [NSColor.black, .white] {
                 let composite = try #require(underlay.blended(withFraction: backdrop.alphaComponent, of: backdrop.withAlphaComponent(1)))
+                for kind in SyntaxToken.Kind.allCases {
+                    #expect(Tokens.contrast(CodePreviewView.syntaxColor(kind), composite) >= 4.5)
+                }
                 for offset in offsets {
                     let foreground = try #require(storage.attribute(.foregroundColor, at: offset, effectiveRange: nil) as? NSColor)
                     #expect(Tokens.contrast(foreground, composite) >= 4.5)
@@ -112,6 +120,33 @@ import Testing
         view.load(binary)
         try #require(await poll { !view.isLoading })
         #expect(view.document == nil && view.note.stringValue == "Text preview unavailable")
+    }
+
+    @Test func appearancePickerPersistsAndExistingPreviewRecolorsWithoutReload() async throws {
+        _ = NSApplication.shared
+        let form = FormBuilder()
+        AppearancePage.build(form)
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        let picker = try #require(
+            descendants(form.view).compactMap { $0 as? NSPopUpButton }.first { $0.itemTitles == CodeTheme.allCases.map(\.title) })
+        #expect(picker.titleOfSelectedItem == "GitHub Dark")
+        let scratch = try Scratch()
+        let file = try scratch.file("theme.swift", "let selected: String = \"🐬\"\n")
+        let view = CodePreviewView(frame: NSRect(x: 0, y: 0, width: 400, height: 240))
+        view.load(file)
+        try #require(await poll { !view.isLoading })
+        view.textView.setSelectedRange(NSRange(location: 4, length: 8))
+        for (index, theme) in CodeTheme.allCases.enumerated() {
+            picker.selectItem(at: index)
+            _ = picker.sendAction(picker.action, to: picker.target)
+            #expect(Settings.shared.appearancePreferences.codeTheme == theme)
+            Theme.lookChanged()
+            try #require(await poll { !view.isLoading })
+            #expect(view.document?.text == "let selected: String = \"🐬\"\n")
+            #expect(view.textView.selectedRange() == NSRange(location: 4, length: 8))
+            let color = try #require(view.textView.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor)
+            #expect(color.hexString == theme.palette(darkAppearance: Theme.isDark).keyword.hex)
+        }
     }
 
     @Test func glassRootSurvivesContentThemeErrorAndReopen() async throws {

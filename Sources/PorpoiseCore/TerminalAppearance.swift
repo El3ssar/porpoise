@@ -122,6 +122,7 @@ public struct AppearancePreferences: Codable, Equatable, Sendable {
     public var customTheme: AppearanceTheme?
     public var lightThemeName = "Breeze Light"
     public var darkThemeName = "Breeze Dark"
+    public var codeTheme = CodeTheme.githubDark
     public var iconTheme = "Native macOS"
     public var folderVariant = "default"
     public var uiFontName = ""
@@ -154,6 +155,8 @@ public struct AppearancePreferences: Codable, Equatable, Sendable {
         customTheme = try c.decodeIfPresent(type(of: customTheme).self, forKey: .customTheme) ?? nil
         lightThemeName = try c.decodeIfPresent(type(of: lightThemeName).self, forKey: .lightThemeName) ?? lightThemeName
         darkThemeName = try c.decodeIfPresent(type(of: darkThemeName).self, forKey: .darkThemeName) ?? darkThemeName
+        // A newer code theme must not discard the rest of a user's portable appearance settings.
+        codeTheme = (try c.decodeIfPresent(String.self, forKey: .codeTheme)).flatMap(CodeTheme.init(rawValue:)) ?? codeTheme
         iconTheme = try c.decodeIfPresent(type(of: iconTheme).self, forKey: .iconTheme) ?? iconTheme
         folderVariant = try c.decodeIfPresent(type(of: folderVariant).self, forKey: .folderVariant) ?? folderVariant
         uiFontName = try c.decodeIfPresent(type(of: uiFontName).self, forKey: .uiFontName) ?? uiFontName
