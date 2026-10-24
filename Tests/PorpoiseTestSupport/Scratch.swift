@@ -94,14 +94,14 @@ public final class DiskImage {
     /// Larger images (benchmarks) are created as they are needed, not kept.
     private static let largestTemplate = 256
 
-    public init(name: String = "PorpoiseTest", megabytes: Int = 20, in scratch: Scratch) throws {
+    public init(name: String = "PorpoiseTest", megabytes: Int = 20, fileSystem: String = "APFS", in scratch: Scratch) throws {
         self.scratch = scratch
         image = scratch.path("\(name).dmg")
         volume = scratch.path("mnt-\(name)")
         if megabytes <= Self.largestTemplate {
-            try FileManager.default.copyItem(at: Self.template(name: name, megabytes: megabytes), to: image)
+            try FileManager.default.copyItem(at: Self.template(name: name, megabytes: megabytes, fileSystem: fileSystem), to: image)
         } else {
-            try Self.hdiutil(["create", "-size", "\(megabytes)m", "-fs", "APFS", "-volname", name, image.path])
+            try Self.hdiutil(["create", "-size", "\(megabytes)m", "-fs", fileSystem, "-volname", name, image.path])
         }
         try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
         do {
@@ -115,11 +115,17 @@ public final class DiskImage {
 
     deinit { try? Self.hdiutil(["detach", "-quiet", "-force", volume.path]) }
 
+    /// Tests durable identities across a real unmount/mount cycle of this fixture only.
+    public func remount() throws {
+        try Self.hdiutil(["detach", "-quiet", volume.path])
+        try Self.hdiutil(["attach", "-quiet", "-nobrowse", "-mountpoint", volume.path, image.path])
+    }
+
     /// The formatted, never attached image every fixture of that name and size is cloned from; made the first time.
-    private static func template(name: String, megabytes: Int) throws -> URL {
+    private static func template(name: String, megabytes: Int, fileSystem: String) throws -> URL {
         let fm = FileManager.default
         let folder = fm.temporaryDirectory.appendingPathComponent("porpoise-disk-image-templates-\(getuid())", isDirectory: true)
-        let template = folder.appendingPathComponent("\(name)-\(megabytes)m.dmg")
+        let template = folder.appendingPathComponent("\(name)-\(fileSystem)-\(megabytes)m.dmg")
         if fm.fileExists(atPath: template.path) { return template }
         try fm.createDirectory(at: folder, withIntermediateDirectories: true)
         let made = folder.appendingPathComponent("making-\(UUID().uuidString).dmg")
@@ -128,7 +134,7 @@ public final class DiskImage {
         // formatter's own failure for that is tried again (only that one).
         for attempt in 1...3 {
             do {
-                try hdiutil(["create", "-size", "\(megabytes)m", "-fs", "APFS", "-volname", name, made.path])
+                try hdiutil(["create", "-size", "\(megabytes)m", "-fs", fileSystem, "-volname", name, made.path])
                 break
             } catch let error as CocoaError where attempt < 3 && "\(error.userInfo)".contains("Directory not empty") {
                 try? fm.removeItem(at: made)

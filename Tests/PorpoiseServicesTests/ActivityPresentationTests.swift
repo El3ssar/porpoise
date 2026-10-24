@@ -75,6 +75,17 @@ struct ActivityPresentationTests {
         #expect(ActivityPresentation.summary(a) == a.statusText)
     }
 
+    @Test(.isolatedSettings) func cancellationKeepsTheActualRetainedSourceFailureVisible() {
+        let a = activity()
+        a.state = .cancelled
+        a.errors = ["Copy published; remaining source retained at an isolated holding folder."]
+        a.progress?.retainedCopies = 1
+        let presentation = ActivityPresentation(a)
+        #expect(presentation.hasFailures)
+        #expect(presentation.detailLine == a.errors[0])
+        #expect(presentation.actions.contains(.failures))
+    }
+
     @Test(.isolatedSettings) func noticePreparationTitlesAndUnicodeEmphasisStayConsistent() throws {
         let a = activity()
         a.state = .running

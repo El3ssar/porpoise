@@ -200,6 +200,8 @@ extension FileOperationsController {
             }
         }
         let store = journals
+        let stages = transferStages
+        job.removalCheckpoint = { try stages.checkpoint($0) }
         let id = activity.id
         job.onEvent = { [weak activity] e in
             store.record(e, id: id)
@@ -209,7 +211,7 @@ extension FileOperationsController {
 
     func progressed(_ activity: Activity, _ p: JobProgress) {
         activity.progress = p
-        if activity.state == .running && p.phase == .preparing { activity.rate.reset() }
+        if activity.state == .running && p.phase != .transferring { activity.rate.reset() }
         if activity.state == .running && p.phase == .transferring {
             activity.rate.add(
                 bytes: p.doneBytes, at: ProcessInfo.processInfo.systemUptime, totalBytes: p.totalBytes, items: p.doneFiles, totalItems: p.totalFiles)

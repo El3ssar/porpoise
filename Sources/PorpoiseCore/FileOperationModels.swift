@@ -179,8 +179,10 @@ public enum UndoRecord: Sendable {
 
 /// Progress snapshot published by a running job.
 public struct JobProgress: Sendable {
-    public enum Phase: String, Sendable { case preparing, transferring }
+    public enum Phase: String, Sendable { case preparing, transferring, verifying }
     public var phase: Phase = .transferring
+    public var verifiedBytes: Int64 = 0
+    public var retainedCopies: Int = 0
     public var totalFiles: Int = 0
     public var totalFolders: Int = 0
     public var doneFiles: Int = 0

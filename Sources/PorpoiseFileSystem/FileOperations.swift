@@ -21,6 +21,8 @@ public final class FileJob: @unchecked Sendable {
     public var completedTransfers: [URL: URL] = [:]
     /// Each top-level item's start, resumable progress, placement and end (see `JobEvent`).
     public var onEvent: (JobEvent) -> Void = { _ in }
+    /// Services persists private source claims so a crash never makes them undiscoverable.
+    public var removalCheckpoint: (LocalMoveRemovalReceipt.Checkpoint) throws -> Void = { _ in }
     /// Partial copies to continue instead of starting over, by source (from a journal, after a relaunch).
     public var resumePoints: [URL: ResumePoint] = [:]
     /// Clone files where the volume can (APFS). Off in tests that need real byte copies on one volume.
@@ -156,6 +158,13 @@ public final class FileJob: @unchecked Sendable {
             } catch FileOperationError.cancelled {
                 onEvent(.finished(index: index, outcome: .cancelled))
                 break
+            } catch is CancellationError {
+                if control.isInterrupted { break }
+                if control.isCancelled {
+                    onEvent(.finished(index: index, outcome: .cancelled))
+                    break
+                }
+                record(CancellationError(), for: src, target: nil)
             } catch {
                 record(error, for: src, target: nil)
             }
@@ -214,7 +223,7 @@ public final class FileJob: @unchecked Sendable {
 
     /// Files permission problems separately so the app can offer to authenticate.
     private func record(_ error: Error, for src: URL, target: URL?) {
-        if FileErrorKind.classify(error) == .permission {
+        if !(error is LocalMoveRemovalReceipt.Retained), FileErrorKind.classify(error) == .permission {
             denied.append(src)
             if let t = target { deniedTargets[src] = t }
         } else {
@@ -326,7 +335,7 @@ public final class FileJob: @unchecked Sendable {
             throw FileOperationError.cancelled
         } catch FileOperationError.interrupted {
             throw FileOperationError.interrupted
-        } catch  where FileErrorKind.classify(error) == .permission {
+        } catch  where !(error is LocalMoveRemovalReceipt.Retained) && FileErrorKind.classify(error) == .permission {
             record(error, for: src, target: target)
             return nil
         }
@@ -408,7 +417,13 @@ public final class FileJob: @unchecked Sendable {
     private func place(_ src: URL, at target: URL, replacing: Bool) throws -> URL {
         let sameVolumeMove = kind == .move && Self.sameVolume(src, target.deletingLastPathComponent())
         let copying = kind != .link && !sameVolumeMove
-        let removal = kind == .move && copying ? try LocalMoveRemovalReceipt(source: src) : nil
+        let removal =
+            kind == .move && copying
+            ? try LocalMoveRemovalReceipt(
+                source: src, cancellation: control.asDiskCancellation(),
+                onRead: { bytes in
+                    self.progress.verifiedBytes += bytes; self.publish()
+                }, onCheckpoint: removalCheckpoint) : nil
         let top = depth == 0
         // A path too long for a hidden name next to it is written in place, as before.
         var dest =
@@ -484,7 +499,22 @@ public final class FileJob: @unchecked Sendable {
         if top { onEvent(.placed(index: currentIndex, target: target)) }
         if kind == .move {
             // A published copy does not authorize deleting a newer source generation.
-            if !renamed { try removal?.removeSource(afterVerifying: target) }
+            if !renamed, let removal {
+                progress.phase = .verifying
+                progress.verifiedBytes = 0
+                publish(force: true)
+                defer { progress.phase = .transferring }
+                do { try removal.removeSource(afterVerifying: target) } catch is CancellationError {
+                    progress.retainedCopies += 1
+                    publish(force: true)
+                    try checkpoint()
+                    throw CancellationError()
+                } catch FileOperationError.cancelled {
+                    progress.retainedCopies += 1
+                    publish(force: true)
+                    throw FileOperationError.cancelled
+                }
+            }
             moved.append((src, target))
         } else {
             created.append(target)
@@ -581,7 +611,10 @@ public final class FileJob: @unchecked Sendable {
 
     /// "Write Into": transfers the children one by one; a failing child doesn't stop the others.
     private func merge(_ src: URL, into target: URL) throws {
-        let removal = kind == .move ? try LocalMoveRemovalReceipt(source: src, directoryOnly: true) : nil
+        let removal =
+            kind == .move
+            ? try LocalMoveRemovalReceipt(
+                source: src, directoryOnly: true, cancellation: control.asDiskCancellation(), onCheckpoint: removalCheckpoint) : nil
         depth += 1
         defer { depth -= 1 }
         let children = try fm.contentsOfDirectory(at: src, includingPropertiesForKeys: nil).sorted { $0.lastPathComponent < $1.lastPathComponent }
@@ -811,140 +844,4 @@ public final class FileJob: @unchecked Sendable {
         return s
     }
 
-}
-
-/// Captured before copying. Content equality and source ownership are separate requirements.
-/// Removal first claims the pathname by rename into a private sibling directory, then validates again:
-/// a replacement arriving at the original name can never be recursively deleted by this receipt.
-public struct LocalMoveRemovalReceipt {
-    private struct Entry: Equatable {
-        let device: Int32
-        let inode: UInt64
-        let mode: UInt16
-        let modifiedSeconds: Int
-        let modifiedNanos: Int
-        let contents: String
-    }
-    private let source: URL
-    private let entries: [String: Entry]
-
-    public init(source: URL, directoryOnly: Bool = false) throws {
-        self.source = source
-        entries = try Self.scan(source, recursive: !directoryOnly)
-    }
-
-    public func verifyCopy(_ target: URL) throws {
-        let copied = try Self.scan(target)
-        guard entries.mapValues(\.contents) == copied.mapValues(\.contents) else { throw failure }
-    }
-
-    public func removeSource(afterVerifying target: URL) throws {
-        try verifyCopy(target)
-        guard try Self.scan(source) == entries else { throw failure }
-        let holding = source.deletingLastPathComponent().appendingPathComponent(".porpoise-removal-" + UUID().uuidString)
-        try FileManager.default.createDirectory(at: holding, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-        defer { _ = rmdir(holding.path) }
-        let claimed = holding.appendingPathComponent(source.lastPathComponent)
-        guard renamex_np(source.path, claimed.path, UInt32(RENAME_EXCL)) == 0 else { throw failure }
-        do {
-            guard try Self.scan(claimed) == entries else { throw failure }
-            try verifyCopy(target)
-        } catch {
-            // Never overwrite an item that arrived while the old pathname was claimed.
-            if renamex_np(claimed.path, source.path, UInt32(RENAME_EXCL)) != 0 {
-                throw FileOperationError.failed("Copy published; source retained at “\(claimed.path)”. \(error.localizedDescription)")
-            }
-            throw error
-        }
-        do {
-            if entries[""]?.contents == "directory" {
-                for name in try FileManager.default.contentsOfDirectory(atPath: claimed.path) {
-                    let prefix = "/" + name
-                    let subtree = entries.filter { $0.key == prefix || $0.key.hasPrefix(prefix + "/") }
-                    guard !subtree.isEmpty else { throw failure }
-                    let child = LocalMoveRemovalReceipt(
-                        source: claimed.appendingPathComponent(name),
-                        entries: Dictionary(uniqueKeysWithValues: subtree.map { (String($0.key.dropFirst(prefix.count)), $0.value) }))
-                    try child.removeSource(afterVerifying: target.appendingPathComponent(name))
-                }
-                guard rmdir(claimed.path) == 0 else { throw failure }
-            } else {
-                try FileManager.default.removeItem(at: claimed)
-            }
-        } catch {
-            if renamex_np(claimed.path, source.path, UInt32(RENAME_EXCL)) != 0 {
-                throw FileOperationError.failed("Copy published; source retained at “\(claimed.path)”. \(error.localizedDescription)")
-            }
-            throw error
-        }
-    }
-
-    private init(source: URL, entries: [String: Entry]) {
-        self.source = source
-        self.entries = entries
-    }
-
-    /// Merge removes children individually; only the captured directory inode may then be removed,
-    /// and only with rmdir semantics. A late child or a replacement is retained and reported.
-    public func verifyDirectoryIdentity() throws {
-        guard let expected = entries[""], let current = try Self.scan(source, recursive: false)[""],
-            expected.device == current.device, expected.inode == current.inode, expected.mode == current.mode
-        else { throw failure }
-    }
-
-    public func removeEmptyDirectory() throws {
-        try verifyDirectoryIdentity()
-        guard let expected = entries[""] else { throw failure }
-        let holding = source.deletingLastPathComponent().appendingPathComponent(".porpoise-removal-" + UUID().uuidString)
-        try FileManager.default.createDirectory(at: holding, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-        defer { _ = rmdir(holding.path) }
-        let claimed = holding.appendingPathComponent(source.lastPathComponent)
-        guard renamex_np(source.path, claimed.path, UInt32(RENAME_EXCL)) == 0 else { throw failure }
-        let claimedEntry = try? Self.scan(claimed, recursive: false)[""]
-        guard claimedEntry?.device == expected.device, claimedEntry?.inode == expected.inode, rmdir(claimed.path) == 0 else {
-            if renamex_np(claimed.path, source.path, UInt32(RENAME_EXCL)) != 0 {
-                throw FileOperationError.failed("Copy published; source retained at “\(claimed.path)”.")
-            }
-            throw failure
-        }
-    }
-
-    private var failure: FileOperationError {
-        .failed("Copy published; source retained because its generation changed or the destination could not be verified.")
-    }
-
-    private static func scan(_ root: URL, recursive: Bool = true) throws -> [String: Entry] {
-        var result: [String: Entry] = [:]
-        func walk(_ url: URL, _ path: String) throws {
-            var before = stat(), after = stat()
-            guard lstat(url.path, &before) == 0 else { throw POSIXError(.ENOENT) }
-            let type = before.st_mode & S_IFMT
-            let contents: String
-            switch type {
-            case S_IFDIR:
-                contents = "directory"
-                if recursive {
-                    for name in try FileManager.default.contentsOfDirectory(atPath: url.path).sorted() {
-                        try autoreleasepool { try walk(url.appendingPathComponent(name), path + "/" + name) }
-                    }
-                }
-            case S_IFREG:
-                guard let digest = CopyVerification.digest(url) else { throw POSIXError(.EIO) }
-                contents = "file:" + digest
-            case S_IFLNK:
-                contents = "link:" + (try FileManager.default.destinationOfSymbolicLink(atPath: url.path))
-            default:
-                throw FileOperationError.failed("Cannot safely move this kind of filesystem item.")
-            }
-            guard lstat(url.path, &after) == 0, before.st_dev == after.st_dev, before.st_ino == after.st_ino,
-                before.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec, before.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec,
-                before.st_ctimespec.tv_sec == after.st_ctimespec.tv_sec, before.st_ctimespec.tv_nsec == after.st_ctimespec.tv_nsec
-            else { throw FileOperationError.failed("Source changed while its generation was being read; source retained.") }
-            result[path] = Entry(
-                device: before.st_dev, inode: before.st_ino, mode: before.st_mode,
-                modifiedSeconds: before.st_mtimespec.tv_sec, modifiedNanos: before.st_mtimespec.tv_nsec, contents: contents)
-        }
-        try walk(root, "")
-        return result
-    }
 }
