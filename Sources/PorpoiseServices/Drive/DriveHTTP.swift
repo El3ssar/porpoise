@@ -12,7 +12,7 @@ public enum DriveError: LocalizedError, Equatable {
         case .rateLimited: return "Google Drive is slowing requests. Retrying shortly."
         case .offline: return "Google Drive is offline. Your originals have been kept."
         case .exportTooLarge: return "This Google document is too large to export. Open it in your browser."
-        case .configuration: return "Set a Google Desktop OAuth client ID in Settings → Accounts to connect Google Drive."
+        case .configuration: return "Set a Google Desktop OAuth client ID in Settings › Accounts & Servers to connect Google Drive."
         case .reconnect: return "Your Google Drive session expired or was revoked. Reconnect this account."
         case .permissionDenied: return "Google Drive denied access. Check the item's sharing and download permissions."
         case .notFound: return "This Drive item is unavailable or you no longer have access."

@@ -48,7 +48,7 @@ enum ExternalTerminal {
             return
         }
         let alert = NSAlert(); alert.messageText = "The selected terminal is not installed"
-        alert.informativeText = "Choose an installed terminal in Settings › Terminal."; alert.runModal()
+        alert.informativeText = "Choose an installed terminal in Settings › Advanced › Terminal."; alert.runModal()
     }
     private static func process(_ executable: String, _ arguments: [String]) throws {
         let p = Process(); p.executableURL = URL(fileURLWithPath: executable); p.arguments = arguments; try p.run()

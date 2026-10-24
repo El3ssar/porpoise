@@ -49,7 +49,9 @@ enum KeepDownloadedSheet {
                 guard let a = alert(for: plan, name: name, folder: folder) else { return service.keep(urls) }
                 let answer: (NSApplication.ModalResponse) -> Void = { r in
                     if plan.fits, r == .alertFirstButtonReturn { service.keep(urls) }
-                    if !plan.fits, r == .alertSecondButtonReturn { (NSApp.delegate as? AppDelegate)?.showSettings(page: "Accounts") }
+                    if !plan.fits, r == .alertSecondButtonReturn {
+                        (NSApp.delegate as? AppDelegate)?.showSettings(page: SettingsPages.accountsAndServers, section: "On this Mac")
+                    }
                 }
                 a.runSheet(for: window, answer)
             }

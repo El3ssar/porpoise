@@ -67,7 +67,8 @@ import Testing
         defer { alert.window.close() }
         try await capture(alert.window, name: "import")
         try Settings.shared.saveCustomTools(document.tools)
-        let settings = SettingsWindowController(page: "Custom Tools")
+        let settings = SettingsWindowController(page: "Keyboard")
+        settings.show(page: "Keyboard", section: "Custom tools")
         defer { settings.window?.close() }
         try await capture(try #require(settings.window), name: "settings")
         let editor = CustomToolEditor(tool: tool) { _ in Issue.record("Capture fixture must not save the draft.") }

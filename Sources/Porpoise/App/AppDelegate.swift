@@ -342,8 +342,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Cmd+W in windows without tabs (Settings, Properties…) closes the window, as on any Mac.
     @objc func closeCurrentTab(_ sender: Any?) { NSApp.keyWindow?.performClose(sender) }
 
-    /// Every permission, its state and its switch: Settings › System.
-    @objc func showPermissions(_ sender: Any?) { showSettings(page: "Advanced") }
+    /// Every permission, its state and its switch: Settings › Advanced › Permissions.
+    @objc func showPermissions(_ sender: Any?) { showSettings(page: "Advanced", section: SettingsPages.permissionsSection) }
     @objc func checkForUpdates(_ sender: Any?) { Updates.shared.checkForUpdates(sender) }
     @objc func supportPorpoise(_ sender: Any?) { if let u = URL(string: AppInfo.sponsorPage) { NSWorkspace.shared.open(u) } }
 
@@ -391,16 +391,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settingsWindow?.window?.makeKeyAndOrderFront(nil)
     }
 
-    /// Settings, on the page with this title.
-    func showSettings(page: String) {
+    /// Settings, on the page with this title (or an old page's), scrolled to `section` when given.
+    func showSettings(page: String, section: String? = nil) {
         showSettings(nil)
-        guard let tabs = settingsWindow?.window?.contentViewController as? NSTabViewController,
-            let i = tabs.tabViewItems.firstIndex(where: { $0.label == page })
-        else { return }
-        tabs.selectedTabViewItemIndex = i
+        settingsWindow?.show(page: page, section: section)
     }
 
-    @objc func configureShortcuts(_ sender: Any?) { showSettings(page: "Shortcuts") }
+    @objc func configureShortcuts(_ sender: Any?) { showSettings(page: "Keyboard") }
 
     @objc func exportDiagnostics(_ sender: Any?) { DiagnosticsExportWindowController.show() }
 
