@@ -11,7 +11,12 @@ final class SharingStagingLease: @unchecked Sendable {
     init(folder: URL, rootFD: Int32, folderFD: Int32, name: String) {
         self.folder = folder; self.rootFD = rootFD; self.folderFD = folderFD; self.name = name
     }
-    deinit { close(folderFD); close(rootFD) }
+    deinit {
+        // Release the flock explicitly: any duplicate of this open-file description would
+        // otherwise keep it held after close.
+        _ = flock(folderFD, LOCK_UN)
+        close(folderFD); close(rootFD)
+    }
 
     func touch() { _ = futimes(folderFD, nil) }
 
