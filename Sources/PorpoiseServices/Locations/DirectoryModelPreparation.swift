@@ -101,35 +101,22 @@ struct DirectoryModelPreparation {
         let shown = filter.matcher().map { match in top.filter { match($0.name) } } ?? top
         let groupRole = props.effectiveGroupRole
         let groupTags = groupRole == .tags ? tagNames(shown) : [:]
-        var rows: [Row] = []
-        rows.reserveCapacity(shown.count)
-        var groups: [ItemGroup] = []
-        func add(_ list: [FileItem], depth: Int, group: Int) {
-            for item in list {
-                if cancelled() { return }
-                let open = props.mode == .details && expanded.contains(item.url)
-                rows.append(Row(item: item, depth: depth, isExpanded: open, group: group))
-                if open, let kids = children[item.url] { add(sort(visible(kids, filtered: true)), depth: depth + 1, group: group) }
-            }
-        }
+        let sections: [(title: String, items: [FileItem])]?
         if let search, search.contents {
             let named = shown.filter { search.nameMatches($0) }
             let content = shown.filter { !search.nameMatches($0) }
-            for (title, list) in [("Name matches", named), ("Content matches", content)] where !list.isEmpty {
-                let first = rows.count, index = groups.count
-                add(list, depth: 0, group: index)
-                groups.append(ItemGroup(title: title, firstRow: first, count: rows.count - first))
-            }
+            sections = [("Name matches", named), ("Content matches", content)].filter { !$0.1.isEmpty }
         } else if let role = groupRole {
-            let parts = ItemGrouper.groups(shown, role: role, props: props, choice: choice, folderSizes: sizes, tags: groupTags)
-            for (index, part) in parts.enumerated() {
-                let first = rows.count
-                add(part.items, depth: 0, group: index)
-                groups.append(ItemGroup(title: part.title, firstRow: first, count: rows.count - first))
-            }
+            sections = ItemGrouper.groups(shown, role: role, props: props, choice: choice, folderSizes: sizes, tags: groupTags)
         } else {
-            add(shown, depth: 0, group: -1)
+            sections = nil
         }
+        let assembly = DirectoryRowAssembly.build(
+            shown, groups: sections, expanded: expanded, expandsFolders: props.mode == .details, cancelled: cancelled
+        ) { url in
+            children[url].map { sort(visible($0, filtered: true)) }
+        }
+        let rows = assembly.rows, groups = assembly.groups
         guard !cancelled() else { return nil }
         let urls = rows.map(\.item.url)
         let keys = FilePath.keys(urls)
