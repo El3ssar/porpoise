@@ -3,6 +3,7 @@ import PorpoiseCore
 
 /// The local items handed to a sharing service. Temporary copies live until that service finishes reading them.
 public final class PreparedSharingItems: @unchecked Sendable {
+    private static let cleanupQueue = SharingCleanupQueue()
     public let urls: [URL]
     let folder: URL?
     private let lock = NSLock()
@@ -12,14 +13,64 @@ public final class PreparedSharingItems: @unchecked Sendable {
     deinit { cleanup() }
 
     /// Removing a large staged folder must not block AppKit's sharing delegate callback.
-    public func cleanup() {
+    public func cleanup(after delay: TimeInterval = 0) {
         let remove = lock.withLock {
             guard !cleaned else { return false }
             cleaned = true
             return true
         }
         guard remove, let folder else { return }
-        DispatchQueue.global(qos: .utility).async { try? FileManager.default.removeItem(at: folder) }
+        let delay = delay.isFinite ? min(max(0, delay), 24 * 60 * 60) : 0
+        Self.cleanupQueue.schedule(folder, after: delay)
+    }
+
+    /// After the app cancels its sharing sessions, finish pending removals off-main before approving termination.
+    /// False means there is nothing to wait for; otherwise completion is delivered on the main queue.
+    public static func cleanupBeforeQuit(completion: @escaping () -> Void) -> Bool {
+        cleanupQueue.finishBeforeQuit(completion: completion)
+    }
+}
+
+private final class SharingCleanupQueue: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "porpoise.sharing-cleanup", qos: .utility)
+    private let lock = NSLock()
+    private var pending: [UUID: (URL, DispatchWorkItem)] = [:]
+    private var finishing = false
+    private var completions: [() -> Void] = []
+
+    func schedule(_ folder: URL, after delay: TimeInterval) {
+        let id = UUID()
+        let work = DispatchWorkItem { [self] in
+            try? FileManager.default.removeItem(at: folder)
+            lock.withLock { _ = pending.removeValue(forKey: id) }
+        }
+        lock.withLock { pending[id] = (folder, work) }
+        queue.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    func finishBeforeQuit(completion: @escaping () -> Void) -> Bool {
+        var alreadyFinishing = false
+        let removals = lock.withLock {
+            if finishing { completions.append(completion); alreadyFinishing = true; return [(URL, DispatchWorkItem)]() }
+            let removals = Array(pending.values)
+            if !removals.isEmpty { finishing = true; completions.append(completion) }
+            pending.removeAll()
+            return removals
+        }
+        if alreadyFinishing { return true }
+        guard !removals.isEmpty else { return false }
+        for (_, work) in removals { work.cancel() }
+        // This queue also runs any timer already deleting a folder, so completion waits for those removals too.
+        queue.async {
+            for (folder, _) in removals { try? FileManager.default.removeItem(at: folder) }
+            let completions = self.lock.withLock {
+                self.finishing = false
+                let completions = self.completions; self.completions = []
+                return completions
+            }
+            DispatchQueue.main.async { for completion in completions { completion() } }
+        }
+        return true
     }
 }
 

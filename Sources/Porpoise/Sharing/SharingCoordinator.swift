@@ -8,17 +8,22 @@ import PorpoiseServices
     typealias Preparation = @MainActor ([URL], AnyObject?) async throws -> PreparedSharingItems
     private let prepare: Preparation
     private let presenter: ((SharingSession) -> Void)?
+    private let successfulShareRetention: TimeInterval
     private(set) var sessions: [UUID: SharingSession] = [:]
 
-    init(prepare: Preparation? = nil, presenter: ((SharingSession) -> Void)? = nil) {
+    init(
+        prepare: Preparation? = nil, presenter: ((SharingSession) -> Void)? = nil,
+        successfulShareRetention: TimeInterval = SharingSession.successfulShareRetentionInterval
+    ) {
         self.prepare = prepare ?? { try await FileOperationsController.shared.prepareForSharing($0, window: $1) }
         self.presenter = presenter
+        self.successfulShareRetention = successfulShareRetention
     }
 
     /// Snapshot the URLs and anchor before any asynchronous download or selection/navigation change.
     @discardableResult func share(_ urls: [URL], mode: Mode, from view: NSView, rect: NSRect? = nil) -> SharingSession? {
         guard SharingPreparation.supports(urls) else { return nil }
-        let session = SharingSession(mode: mode, anchor: view, rect: rect ?? view.bounds)
+        let session = SharingSession(mode: mode, anchor: view, rect: rect ?? view.bounds, successfulShareRetention: successfulShareRetention)
         session.onFinish = { [weak self, weak session] in
             guard let session else { return }
             self?.sessions.removeValue(forKey: session.id)
@@ -41,6 +46,10 @@ import PorpoiseServices
         return session
     }
 
+    func cancelAll() {
+        for session in Array(sessions.values) { session.finish() }
+    }
+
     /// Go/Places opens the system's receiver browser; sending is an explicit, separate action.
     static func browseAirDrop() {
         let app = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app/Contents/Applications/AirDrop.app")
@@ -49,6 +58,8 @@ import PorpoiseServices
 }
 
 @MainActor final class SharingSession: NSObject, @preconcurrency NSSharingServicePickerDelegate, NSSharingServiceDelegate {
+    /// A successful native callback can precede sharingd finishing its file reads. Keep remote staging available.
+    nonisolated static let successfulShareRetentionInterval: TimeInterval = 10 * 60
     let id = UUID()
     let mode: SharingCoordinator.Mode
     weak var anchor: NSView?
@@ -59,8 +70,11 @@ import PorpoiseServices
     private(set) var finished = false
     private var picker: NSSharingServicePicker?
     private var service: NSSharingService?
+    private let successfulShareRetention: TimeInterval
 
-    init(mode: SharingCoordinator.Mode, anchor: NSView, rect: NSRect) { self.mode = mode; self.anchor = anchor; self.rect = rect }
+    init(mode: SharingCoordinator.Mode, anchor: NSView, rect: NSRect, successfulShareRetention: TimeInterval) {
+        self.mode = mode; self.anchor = anchor; self.rect = rect; self.successfulShareRetention = successfulShareRetention
+    }
 
     func present() {
         guard !finished, let prepared, let anchor, anchor.window?.isVisible == true else { finish(); return }
@@ -88,11 +102,11 @@ import PorpoiseServices
         }
     }
 
-    func finish() {
+    func finish(successfullyShared: Bool = false) {
         guard !finished else { return }
         finished = true
         task?.cancel(); task = nil
-        prepared?.cleanup(); prepared = nil
+        prepared?.cleanup(after: successfullyShared ? successfulShareRetention : 0); prepared = nil
         picker?.delegate = nil; picker = nil
         service?.delegate = nil; service = nil
         let finish = onFinish; onFinish = nil; finish?()
@@ -110,7 +124,7 @@ import PorpoiseServices
         if service == nil { finish() }
     }
 
-    func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) { finish() }
+    func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) { finish(successfullyShared: true) }
     func sharingService(_ sharingService: NSSharingService, didFailToShareItems items: [Any], error: Error) {
         let error = error as NSError
         if error.code != NSUserCancelledError && !(error.domain == NSCocoaErrorDomain && error.code == CocoaError.userCancelled.rawValue) {

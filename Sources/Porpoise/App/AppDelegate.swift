@@ -186,13 +186,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if a.runModal() != .alertFirstButtonReturn { return .terminateCancel }
         }
         if FileDiffWindow.confirmQuitIfNeeded({ [weak self] approved in
-            if approved { self?.saveSession() }
+            if approved {
+                self?.saveSession()
+                if self?.finishSharingBeforeQuit({ NSApp.reply(toApplicationShouldTerminate: true) }) == true { return }
+            }
             NSApp.reply(toApplicationShouldTerminate: approved)
         }) {
             return .terminateLater
         }
         saveSession()
+        if finishSharingBeforeQuit({ NSApp.reply(toApplicationShouldTerminate: true) }) { return .terminateLater }
         return .terminateNow
+    }
+
+    @MainActor private func finishSharingBeforeQuit(_ completion: @escaping () -> Void) -> Bool {
+        SharingCoordinator.shared.cancelAll()
+        return PreparedSharingItems.cleanupBeforeQuit(completion: completion)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

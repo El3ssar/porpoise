@@ -7,6 +7,34 @@ import Testing
 @testable import PorpoiseServices
 
 @MainActor @Suite(.serialized, .isolatedSettings) struct SharingPreparationTests {
+    @Test func quitDrainsRetainedCopiesBeforeItsMainQueueReply() async throws {
+        let scratch = try Scratch(), folder = try scratch.folder("retained")
+        let file = try scratch.file("retained/file", "private temporary copy")
+        let prepared = PreparedSharingItems(urls: [file], folder: folder)
+        prepared.cleanup(after: 600)
+        #expect(FileManager.default.fileExists(atPath: file.path))
+        try await awaitCallback("sharing quit cleanup") { continuation in
+            let waiting = PreparedSharingItems.cleanupBeforeQuit {
+                #expect(Thread.isMainThread)
+                #expect(!FileManager.default.fileExists(atPath: folder.path))
+                continuation.resume()
+            }
+            #expect(waiting)
+        }
+        #expect(!PreparedSharingItems.cleanupBeforeQuit { Issue.record("An empty cleanup queue must not reply asynchronously") })
+    }
+    @Test func successfulSharingGraceSurvivesOwnerReleaseAndDuplicateCleanup() async throws {
+        let scratch = try Scratch(), folder = try scratch.folder("staged")
+        let file = try scratch.file("staged/file", "sharingd can still read this")
+        var prepared: PreparedSharingItems? = PreparedSharingItems(urls: [file], folder: folder)
+        let start = ContinuousClock.now
+        prepared?.cleanup(after: 1)
+        prepared?.cleanup()
+        prepared = nil  // Deinitialization must not shorten the already scheduled grace period.
+        #expect(FileManager.default.fileExists(atPath: file.path))
+        #expect(await eventually { !FileManager.default.fileExists(atPath: folder.path) })
+        #expect(start.duration(to: .now) >= .seconds(1))
+    }
     @Test func localItemsPassThroughWithoutTemporaryCopies() async throws {
         let scratch = try Scratch()
         let urls = [try scratch.file("quote'\" 日本語\n.txt", "local"), try scratch.folder("folder")]

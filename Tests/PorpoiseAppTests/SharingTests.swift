@@ -20,7 +20,7 @@ import Testing
                 prepare: { urls, _ in
                     #expect(urls == [remote])
                     return PreparedSharingItems(urls: [local], folder: staged)
-                }, presenter: { _ in presented += 1 })
+                }, presenter: { _ in presented += 1 }, successfulShareRetention: 1)
             let anchor = NSView()
             let session = try #require(coordinator.share([remote], mode: .picker, from: anchor))
             try #require(await eventually { presented == 1 })
@@ -33,6 +33,7 @@ import Testing
                 session.sharingServicePicker(picker, didChoose: service)
                 #expect(!session.finished && coordinator.sessions.count == 1 && FileManager.default.fileExists(atPath: local.path))
                 session.sharingService(service, didShareItems: [local])
+                #expect(FileManager.default.fileExists(atPath: local.path))
             } else if outcome == 1 {
                 session.sharingService(service, didFailToShareItems: [local], error: CocoaError(.userCancelled))
             } else {
@@ -42,6 +43,7 @@ import Testing
             #expect(await eventually { !FileManager.default.fileExists(atPath: staged.path) })
             session.finish()  // Terminal callbacks may be delivered more than once.
         }
+        #expect(SharingSession.successfulShareRetentionInterval == 600)
     }
 
     @Test func cancellationBeforePreparationCompletesNeverPresents() async throws {
@@ -112,13 +114,22 @@ import Testing
         func buttons(_ view: NSView) -> [FlatButton] {
             (view as? FlatButton).map { [$0] } ?? view.subviews.flatMap(buttons)
         }
+        func hasFlight(_ view: NSView) -> Bool { view is SplitFlightOverlay || view.subviews.contains(where: hasFlight) }
+        func settled() -> Bool {
+            !controller.tab.isSliding && !hasFlight(controller.root)
+                && controller.tab.containers.allSatisfy {
+                    !$0.model.isLoading && $0.list.transition == nil && $0.list.transitionHidden.isEmpty
+                }
+        }
         for split in [false, true] {
             if split { controller.toggleSplit(nil) }
+            try #require(await eventually { settled() })
             for look in [AppearanceChoice.light, .dark] {
                 Settings.shared.appearance = look; app.appearance = Theme.appearance
                 try #require(await eventually { window.effectiveAppearance.isDark == (look == .dark) })
                 Theme.lookChanged(); controller.layoutRoot()
                 window.contentView?.layoutSubtreeIfNeeded()
+                try #require(await eventually { settled() })
                 let actions = buttons(controller.toolbar).filter {
                     $0.identifier?.rawValue == ToolbarCommand.share.toolbarIdentifier.rawValue
                         || $0.identifier?.rawValue == ToolbarCommand.airDrop.toolbarIdentifier.rawValue
